@@ -1,0 +1,19 @@
+# Math
+torch
+numpy
+
+# Decorators
+wrapt
+
+# Testing
+pytest
+pytest-cov
+
+# Linting
+flake8
+
+# Mocking
+mock
+
+# Auto Formatter 
+yapf
