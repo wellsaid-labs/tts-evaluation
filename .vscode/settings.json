@@ -23,5 +23,6 @@
     "cover/**": true
   },
   "reflow.preferredLineLength": 100,
-  "files.trimTrailingWhitespace": true
+  "files.trimTrailingWhitespace": true,
+  "git.autofetch": true
 }
