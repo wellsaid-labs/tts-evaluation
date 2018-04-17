@@ -1,6 +1,10 @@
 # Math
 torch
+tensorflow
 numpy
+
+# Audio Library
+librosa
 
 # Decorators
 wrapt
@@ -15,5 +19,5 @@ flake8
 # Mocking
 mock
 
-# Auto Formatter 
+# Auto Formatter
 yapf
