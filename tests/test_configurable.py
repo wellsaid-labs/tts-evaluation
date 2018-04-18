@@ -1,7 +1,6 @@
 import unittest
 import numpy as np
 
-from src.configurable import _dict_to_flat_config
 from src.configurable import add_config
 from src.configurable import clear_config
 from src.configurable import configurable
@@ -63,27 +62,6 @@ class TestConfigurable(unittest.TestCase):
 
     def tearDown(self):
         clear_config()
-
-    def test_dict_to_flat_config(self):
-        dict_ = {
-            'mock_func_2.kwarg': 'kwarg',
-            'mock_func_2': {
-                'arg': 'arg',
-            },
-        }
-        expected = {'mock_func_2.kwarg': 'kwarg', 'mock_func_2.arg': 'arg'}
-        flat_dict = _dict_to_flat_config(dict_)
-        self.assertEqual(flat_dict, expected)
-
-    def test_dict_to_flat_config_invalid(self):
-        dict_ = {
-            'mock_func_2.kwarg': 'kwarg',
-            'mock_func_2': {
-                'arg': 'arg',
-            },
-            'mock_func_2.arg': 'arg',
-        }
-        self.assertRaises(TypeError, lambda: _dict_to_flat_config(dict_))
 
     def test_add_config_numpy(self):
         # Regression test, add_config printer failed with numpy types
