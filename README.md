@@ -5,7 +5,6 @@ Implementation of Google Brain's Tacotron 2. A deep neural network architecture 
 ![PyPI - Python Version](https://img.shields.io/badge/python-3.5%2C%203.6-blue.svg?style=flat-square)
 [![Build Status](https://img.shields.io/travis/AI2Incubator/Tacotron-2/master.svg?style=flat-square)](https://travis-ci.org/AI2Incubator/Tacotron-2)
 
-
 ## Basics
 
 Make sure you have Python 3.5+.
@@ -21,9 +20,9 @@ Install dependencies with the PIP package manager, like so:
 Convert ``.wav`` files to spectrograms, like so:
 
     export PYTHONPATH=.
-    python3 src/spectrogram.py tests/_test_data/sample_ljspeech.wav
+    python3 src/spectrogram.py tests/_test_data/lj_speech.wav
 
-Following this command, you'll find the file ``tests/_test_data/sample_ljspeech_spectrogram.png``
+Following this command, you'll find the file ``tests/_test_data/lj_speech_spectrogram.png``
 
 ## Contributing
 
