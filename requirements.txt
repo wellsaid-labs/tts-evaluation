@@ -3,6 +3,9 @@ torch
 tensorflow
 numpy
 
+# Image Library
+Pillow
+
 # Audio Library
 librosa
 

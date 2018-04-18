@@ -122,48 +122,6 @@ def _parse_configuration_helper(dict_, new_dict):
         new_dict = past_dict  # Reset dict
 
 
-def _dict_to_flat_config(dict_):
-    """
-    Reduce a dictionary from deep to shallow by concatenating keys as python `dotted module names`.
-    Example:
-        `dict_`:
-            {
-              'abc.abc': {
-                'cda': 'abc
-              }
-            }
-        Returns:
-            {
-              'abc.abc.cda': 'abc'
-            }
-    Args:
-        dict_ (dict)
-    Returns:
-        (dict) shallow dictionary with every key concatenated by "." similar to module names in
-        python
-    Raises:
-        (TypeError) module names (keys) are formatted improperly (Example: 'torchutils..models')
-        (TypeError) duplicate functions/modules/packages are defined
-    """
-    flat = {}
-    parsed = _parse_configuration(dict_)  # Make sure it can be parsed
-    _dict_to_flat_config_helper(parsed, flat, [])
-    return flat
-
-
-def _dict_to_flat_config_helper(dict_, flat_dict, keys):
-    """ Recursive helper for `dict_to_flat_config` """
-    for key in dict_:
-        next_keys = keys + [key]
-        if isinstance(dict_[key], dict):
-            _dict_to_flat_config_helper(dict_[key], flat_dict, next_keys)
-        else:
-            flat_key = '.'.join(next_keys)
-            if flat_key in flat_dict:
-                raise TypeError('Invalid config: Key %s already seen.' % key)
-            flat_dict[flat_key] = dict_[key]
-
-
 def _check_configuration(dict_, keys=[]):
     """ Check the parsed configuration every module that it points too exists with @configurable.
     Cases to handle recursively:
@@ -180,8 +138,10 @@ def _check_configuration(dict_, keys=[]):
         # Recursive function walked up the chain and never found a @configurable
         logger.warn("""
 Path %s does not contain @configurable.
-NOTE: Due to Python remaining the __main__ module, this check can be ignored here.
-NOTE: _check_configuration can be ignored for external libraries.
+
+FALSE POSITIVES:
+- For modules in __main__, this check can be ignored. (TODO)
+- For modules in external libraries, this check can be ignored. (TODO)
         """.strip(), keys)
         return
 
@@ -202,6 +162,7 @@ NOTE: _check_configuration can be ignored for external libraries.
         # Scenario: Class
         try:
             module_path = '.'.join(keys[:-2])
+            # TODO: Replace module_path with ``__main__`` if it matches
             module = import_module(module_path)
             if hasattr(module, keys[-2]):
                 class_ = getattr(module, keys[-2])
@@ -269,13 +230,18 @@ def clear_config():
     _configuration = _KeyListDictionary()
 
 
+def _get_main_module_name():
+    """ Get __main__ module name """
+    file_name = sys.argv[0]
+    no_extension = file_name.split('.')[0]
+    return no_extension.replace('/', '.')
+
+
 def _get_module_name(func):
     """ Get the name of a module. Handles `__main__` by inspecting sys.argv[0]. """
     module = inspect.getmodule(func)
     if module.__name__ == '__main__':
-        file_name = sys.argv[0]
-        no_extension = file_name.split('.')[0]
-        return no_extension.replace('/', '.')
+        return _get_main_module_name()
     else:
         return module.__name__
 

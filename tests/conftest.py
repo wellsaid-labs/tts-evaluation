@@ -1,11 +1,12 @@
 import pytest
+import tensorflow as tf
 
 from src.utils import config_logging
+from src.hparams import set_hparams
 
-
-# Add test environment variable before all tests
-def pytest_sessionstart(session):
-    config_logging()
+tf.enable_eager_execution()
+set_hparams()
+config_logging()
 
 
 def pytest_configure(config):
