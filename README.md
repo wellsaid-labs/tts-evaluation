@@ -11,9 +11,11 @@ Make sure you have Python 3.5+.
 
 ### Install Dependencies
 
-Install dependencies with the PIP package manager, like so:
+Install most of the dependencies with the PIP package manager, like so:
 
     pip3 install -r requirements.txt
+
+Follow the "Get Started" guide on [pytorch.org](pytorch.org) to install ``torch``.
 
 ### WAV to Spectrogram Image
 
