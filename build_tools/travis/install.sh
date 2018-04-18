@@ -18,10 +18,9 @@ if [ -d $HOME/.cache/pip ]; then
 fi
 
 # TODO: Add a script similar to Travis to test locally with virtual environment
-# TODO: Add a script similar to RTD to test locally with virtual environment
 
 # Install requirements via pip
-pip install -r requirements.txt
+pip install -r --no-progress requirements.txt
 
 # Install PyTorch Dependancies
 if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then
