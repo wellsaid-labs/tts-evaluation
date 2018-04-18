@@ -1,6 +1,6 @@
-# Tacotron-2
+# Tacotron 2
 
-Implementation of Google Brain's Tacotron-2. A deep neural network architecture described in this paper: [Natural TTS synthesis by conditioning Wavenet on MEL spectogram predictions](https://arxiv.org/pdf/1712.05884.pdf)
+Implementation of Google Brain's Tacotron 2. A deep neural network architecture described in this paper: [Natural TTS synthesis by conditioning Wavenet on MEL spectogram predictions](https://arxiv.org/pdf/1712.05884.pdf)
 
 ![PyPI - Python Version](https://img.shields.io/badge/python-3.5%2C%203.6-blue.svg?style=flat-square)
 [![Build Status](https://img.shields.io/travis/AI2Incubator/Tacotron-2/master.svg?style=flat-square)](https://travis-ci.org/AI2Incubator/Tacotron-2)
