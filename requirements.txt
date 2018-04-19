@@ -8,6 +8,9 @@ Pillow
 # Audio Library
 librosa
 
+# Visualization Lib
+matplotlib
+
 # Decorators
 wrapt
 

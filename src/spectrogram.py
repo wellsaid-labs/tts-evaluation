@@ -1,10 +1,9 @@
-from matplotlib import cm
-
 import argparse
 import glob
 import logging
 import os
 
+from matplotlib import cm
 from PIL import Image
 
 import librosa
