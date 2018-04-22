@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import unidecode
 
 from num2words import num2words
 
@@ -57,6 +58,7 @@ def lj_speech_dataset(directory='data/',
             line = line.strip()
             wav_filename, text, _ = tuple(line.split('|'))
             text = _normalize_whitespace(text)
+            text = _normalize_quotations(text)
 
             if verbalize:
                 text = _verbalize_special_cases(wav_filename, text)
@@ -69,6 +71,9 @@ def lj_speech_dataset(directory='data/',
                 text = _verbalize_numeral(text)
                 text = _verbalize_number(text)
                 text = _verbalize_roman_number(text)
+
+            # Messes up pound sign (£); therefore, this is after _verbalize_currency
+            text = _remove_accents(text)
 
             examples.append({
                 'text': text,
@@ -195,10 +200,46 @@ def _normalize_whitespace(text):
         str: Normalized text.
 
     Example:
-        >>> normalize_whitespace('Mr.     Gurney')
+        >>> _normalize_whitespace('Mr.     Gurney   ')
         Mr. Gurney
     """
     return re.sub(_whitespace_re, ' ', text).strip()
+
+
+def _normalize_quotations(text):
+    """ Remove accents from the text.
+
+    Args:
+        text (str): Text to normalize.
+
+    Returns
+        str: Normalized text.
+
+    Example:
+        >>> _normalize_quotations('“sponge,”')
+        "sponge,"
+    """
+    text = text.replace('“', '"')
+    text = text.replace('”', '"')
+    text = text.replace('’', '\'')
+    text = text.replace('‘', '\'')
+    return text
+
+
+def _remove_accents(text):
+    """ Remove accents from the text.
+
+    Args:
+        text (str): Text to normalize.
+
+    Returns
+        str: Normalized text.
+
+    Example:
+        >>> _remove_accents('Málaga')
+        Malaga
+    """
+    return unidecode.unidecode(text)
 
 
 _special_cases = {
