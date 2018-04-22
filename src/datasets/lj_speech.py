@@ -2,10 +2,10 @@ import io
 import os
 import re
 
-from num2words import num2words
-
 # Fix this weird error: https://github.com/pytorch/pytorch/issues/2083
 import torch  # noqa: F401
+
+from num2words import num2words
 
 from torchnlp.utils import download_compressed_directory
 from torchnlp.datasets import Dataset
