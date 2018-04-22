@@ -2,9 +2,6 @@ import io
 import os
 import re
 
-# Fix this weird error: https://github.com/pytorch/pytorch/issues/2083
-import torch  # noqa: F401
-
 from num2words import num2words
 
 from torchnlp.utils import download_compressed_directory
