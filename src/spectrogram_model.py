@@ -63,14 +63,14 @@ class SpectrogramModel(nn.Module):
       """
 
     @configurable
-    def __init__(self, vocab_size, embedding_size):
+    def __init__(self):
 
         super(SpectrogramModel, self).__init__()
 
-    def forward(self, sequence):
+    def forward(self, tokens):
         """
         Args:
-            sequence (torch.LongTensor [num_tokens, batch_size]): Batch of sequences.
+            tokens (torch.LongTensor [batch_size, num_tokens]): Batch of sequences.
         """
         pass
 
