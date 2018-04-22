@@ -41,13 +41,16 @@ def lj_speech_dataset(directory='data/',
         >>> from src.datasets import lj_speech_dataset
         >>> data = lj_speech_dataset()
         >>> data[0:2]
-        [{
-          'text': 'For a movie that gets no respect there sure are a lot of memorable quotes...',
-          'sentiment': 'pos'
-        }, {
-          'text': 'Bizarre horror movie filled with famous faces but stolen by Cristina Raines...',
-          'sentiment': 'pos'
-        }]
+        [
+          {
+            'text': 'Printing, in the only sense with which we are at present concerned,...',
+            'wav': 'data/LJSpeech-1.1/wavs/LJ001-0001.wav'
+          },
+          {
+            'text': 'in being comparatively modern.',
+            'wav': 'data/LJSpeech-1.1/wavs/LJ001-0002.wav'
+          }
+        ]
     """
     download_compressed_directory(url, directory, check_file)
     path = os.path.join(directory, extracted_name, text_file)
@@ -76,8 +79,10 @@ def lj_speech_dataset(directory='data/',
             text = _remove_accents(text)
 
             examples.append({
-                'text': text,
-                'wav': os.path.join(audio_directory, wav_filename + '.wav')
+                'text':
+                    text,
+                'wav':
+                    os.path.join(directory, extracted_name, audio_directory, wav_filename + '.wav')
             })
 
     return Dataset(examples)
