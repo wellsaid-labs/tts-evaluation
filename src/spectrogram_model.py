@@ -88,9 +88,21 @@ class _Encoder(nn.Module):
         passed into a single bi-directional [19] LSTM [20] layer containing 512 units (256 in each
         direction) to generate the encoded features.
 
-      Reference:
-          * PyTorch BatchNorm vs Tensorflow parameterization possible source of error...
-            https://stackoverflow.com/questions/48345857/batchnorm-momentum-convention-pytorch?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
+    Reference:
+        * PyTorch BatchNorm vs Tensorflow parameterization possible source of error...
+          https://stackoverflow.com/questions/48345857/batchnorm-momentum-convention-pytorch?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
+
+    Args:
+        vocab_size (int): Maximum size of the vocabulary used to encode ``tokens``.
+        embedding_dim (int, optional): Size of the embedding dimensions.
+        num_convolution_layers (int, optional): Number of convolution layers to apply.
+        num_convolution_filters (odd :clas:`int`, optional): Number of dimensions (channels)
+            produced by the convolution.
+        convolution_filter_size (int, optional): Size of the convolving kernel.
+        lstm_hidden_size (int, optional): The number of features in the LSTM hidden state. Must be
+            an even integer if ``lstm_bidirectional`` is True.
+        lstm_layers (int, optional): Number of recurrent LSTM layers.
+        lstm_bidirectional (bool, optional): If True, becomes a bidirectional LSTM.
     """
 
     @configurable
@@ -108,8 +120,7 @@ class _Encoder(nn.Module):
 
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
-        assert convolution_filter_size % 2 == 1, (
-            '`convolution_filter_size` must be odd for divisible padding')
+        assert convolution_filter_size % 2 == 1, ('`convolution_filter_size` must be odd')
 
         self.embed = nn.Embedding(vocab_size, embedding_dim, padding_idx=PADDING_INDEX)
         self.convolution_layers = nn.Sequential(*tuple([
