@@ -33,8 +33,8 @@ verbalize_test_cases = {
     'LJ016-0257': 'd\'etre',  # Test Remove Accents
     'LJ018-0029': 'Muller',  # Test Remove Accents
     'LJ018-0396': 'celebre',  # Test Remove Accents
-    'LJ020-0106': 'three hours\'',  # Test Remove Accents
-    'LJ020-0002': '"sponge,"',  # Test Remove Accents
+    'LJ020-0106': 'three hours\'',  # Test Quotation Normalization
+    'LJ020-0002': '"sponge,"',  # Test Quotation Normalization
 }
 
 
