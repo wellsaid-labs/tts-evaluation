@@ -130,8 +130,9 @@ class _Encoder(nn.Module):
                     out_channels=num_convolution_filters,
                     kernel_size=convolution_filter_size,
                     padding=int((convolution_filter_size - 1) / 2)),
-                nn.BatchNorm1d(num_features=num_convolution_filters, momentum=0.01), nn.ReLU())
-            for i in range(num_convolution_layers)
+                # NOTE: `momentum=0.01` to match Tensorflow defaults
+                nn.BatchNorm1d(num_features=num_convolution_filters, momentum=0.01),
+                nn.ReLU()) for i in range(num_convolution_layers)
         ]))
 
         if lstm_bidirectional:
