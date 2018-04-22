@@ -104,20 +104,27 @@ class _Encoder(nn.Module):
                  lstm_layers=1,
                  lstm_bidirectional=True):
 
+        super(_Encoder, self).__init__()
+
+        # LEARN MORE:
+        # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
+        assert convolution_filter_size % 2 == 1, (
+            '`convolution_filter_size` must be odd for divisible padding')
+
         self.embed = nn.Embedding(vocab_size, embedding_dim, padding_idx=PADDING_INDEX)
-        self.convolution_layers = nn.Sequential([
+        self.convolution_layers = nn.Sequential(*tuple([
             nn.Sequential(
                 nn.Conv1d(
                     in_channels=num_convolution_filters if i != 0 else embedding_dim,
                     out_channels=num_convolution_filters,
                     kernel_size=convolution_filter_size,
-                    padding=(convolution_filter_size - 1) / 2),
+                    padding=int((convolution_filter_size - 1) / 2)),
                 nn.BatchNorm1d(num_features=num_convolution_filters, momentum=0.01), nn.ReLU())
             for i in range(num_convolution_layers)
-        ])
+        ]))
 
         if lstm_bidirectional:
-            assert lstm_hidden_size % 2 == 2, '`lstm_hidden_size` must be divisable by 2'
+            assert lstm_hidden_size % 2 == 0, '`lstm_hidden_size` must be divisable by 2'
             lstm_hidden_size = lstm_hidden_size // 2
 
         self.lstm = nn.LSTM(
@@ -126,12 +133,16 @@ class _Encoder(nn.Module):
             num_layers=lstm_layers,
             bidirectional=lstm_bidirectional,
         )
-        super(_Encoder, self).__init__()
 
     def forward(self, tokens):
         """
         Args:
             tokens (torch.LongTensor [batch_size, num_tokens]): Batch of sequences.
+        Returns:
+            tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batch of sequences
+                encoded where:
+                ``hidden_size = (lstm_hidden_size / 2) * (2 if lstm_bidirectional else 1)``
+
         """
         # [batch_size, num_tokens] → [batch_size, num_tokens, embedding_dim]
         tokens = self.embed(tokens)
@@ -141,11 +152,9 @@ class _Encoder(nn.Module):
         # `[batch_size, in_channels (embedding_dim), sequence_length (num_tokens)]`. We thus need to
         # transpose the tensor first.
         tokens = torch.transpose(tokens, 1, 2)
-        shape = tokens.shape
 
         # [batch_size, num_convolution_filters, num_tokens]
         tokens = self.convolution_layers(tokens)
-        assert shape == tokens.shape
 
         # Our input is expected to have shape `[batch_size, num_convolution_filters, num_tokens]`.
         # The lstm layers expect input of shape
