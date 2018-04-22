@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+from torchnlp.text_encoders import PADDING_INDEX
+
 from src.configurable import configurable
 
 
@@ -54,6 +56,10 @@ class SpectrogramModel(nn.Module):
         0.5, and LSTM layers are regularized using zoneout [26] with probability 0.1. In order to
         introduce output variation at inference time, dropout with probability 0.5 is applied only
         to layers in the pre-net of the autoregressive decoder.
+
+      Reference:
+          * Tacotron 2 Paper:
+            https://arxiv.org/pdf/1712.05884.pdf
       """
 
     @configurable
@@ -64,6 +70,95 @@ class SpectrogramModel(nn.Module):
     def forward(self, sequence):
         """
         Args:
-            sequence (torch.LongTensor [seq_length, batch_size]): Batch of sequences.
+            sequence (torch.LongTensor [num_tokens, batch_size]): Batch of sequences.
         """
         pass
+
+
+class _Encoder(nn.Module):
+    """ Encodes sequence as a hidden feature representation.
+
+    SOURCE (Tacotron 2):
+        The encoder converts a character sequence into a hidden feature representation. Input
+        characters are represented using a learned 512-dimensional character embedding, which are
+        passed through a stack of 3 convolutional layers each containing 512 filters with shape 5 ×
+        1, i.e., where each filter spans 5 characters, followed by batch normalization [18] and ReLU
+        activations. As in Tacotron, these convolutional layers model longer-term context (e.g.,
+        N-grams) in the input character sequence. The output of the final convolutional layer is
+        passed into a single bi-directional [19] LSTM [20] layer containing 512 units (256 in each
+        direction) to generate the encoded features.
+
+      Reference:
+          * PyTorch BatchNorm vs Tensorflow parameterization possible source of error...
+            https://stackoverflow.com/questions/48345857/batchnorm-momentum-convention-pytorch?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
+    """
+
+    @configurable
+    def __init__(self,
+                 vocab_size,
+                 embedding_dim=512,
+                 num_convolution_layers=3,
+                 num_convolution_filters=512,
+                 convolution_filter_size=5,
+                 lstm_hidden_size=512,
+                 lstm_layers=1,
+                 lstm_bidirectional=True):
+
+        self.embed = nn.Embedding(vocab_size, embedding_dim, padding_idx=PADDING_INDEX)
+        self.convolution_layers = nn.Sequential([
+            nn.Sequential(
+                nn.Conv1d(
+                    in_channels=num_convolution_filters if i != 0 else embedding_dim,
+                    out_channels=num_convolution_filters,
+                    kernel_size=convolution_filter_size,
+                    padding=(convolution_filter_size - 1) / 2),
+                nn.BatchNorm1d(num_features=num_convolution_filters, momentum=0.01), nn.ReLU())
+            for i in range(num_convolution_layers)
+        ])
+
+        if lstm_bidirectional:
+            assert lstm_hidden_size % 2 == 2, '`lstm_hidden_size` must be divisable by 2'
+            lstm_hidden_size = lstm_hidden_size // 2
+
+        self.lstm = nn.LSTM(
+            input_size=num_convolution_filters,
+            hidden_size=lstm_hidden_size,
+            num_layers=lstm_layers,
+            bidirectional=lstm_bidirectional,
+        )
+        super(_Encoder, self).__init__()
+
+    def forward(self, tokens):
+        """
+        Args:
+            tokens (torch.LongTensor [batch_size, num_tokens]): Batch of sequences.
+        """
+        # [batch_size, num_tokens] → [batch_size, num_tokens, embedding_dim]
+        tokens = self.embed(tokens)
+
+        # Our input is expected to have shape `[batch_size, num_tokens, embedding_dim]`.  The
+        # convolution layers expect input of shape
+        # `[batch_size, in_channels (embedding_dim), sequence_length (num_tokens)]`. We thus need to
+        # transpose the tensor first.
+        tokens = torch.transpose(tokens, 1, 2)
+        shape = tokens.shape
+
+        # [batch_size, num_convolution_filters, num_tokens]
+        tokens = self.convolution_layers(tokens)
+        assert shape == tokens.shape
+
+        # Our input is expected to have shape `[batch_size, num_convolution_filters, num_tokens]`.
+        # The lstm layers expect input of shape
+        # `[seq_len (num_tokens), batch_size, input_size (num_convolution_filters)]`. We thus need
+        # to transpose the tensor first.
+
+        # [batch_size, num_convolution_filters, num_tokens] →
+        # [batch_size, num_tokens, num_convolution_filters]
+        tokens = torch.transpose(tokens, 1, 2)
+        # [batch_size, num_tokens, num_convolution_filters] →
+        # [num_tokens, batch_size, num_convolution_filters]
+        tokens = torch.transpose(tokens, 0, 1)
+
+        # [num_tokens, batch_size, lstm_hidden_size * (2 if lstm_bidirectional else 1) ]
+        tokens, _ = self.lstm(tokens)
+        return tokens

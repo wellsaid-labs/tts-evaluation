@@ -103,7 +103,7 @@ def wav_to_log_mel_spectrograms(filename, frame_size, frame_hop, window_function
     Reference:
         * DSP MFCC Tutorial:
           http://haythamfayek.com/2016/04/21/speech-processing-for-machine-learning.html
-        * Tacontron Paper:
+        * Tacotron Paper:
           https://arxiv.org/pdf/1703.10135.pdf
         * Tacotron 2 Paper:
           https://arxiv.org/pdf/1712.05884.pdf
