@@ -149,11 +149,11 @@ class _Encoder(nn.Module):
         """
         Args:
             tokens (torch.LongTensor [batch_size, num_tokens]): Batch of sequences.
+
         Returns:
             tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batch of sequences
                 encoded where:
                 ``hidden_size = (lstm_hidden_size / 2) * (2 if lstm_bidirectional else 1)``
-
         """
         # [batch_size, num_tokens] → [batch_size, num_tokens, embedding_dim]
         tokens = self.embed(tokens)
