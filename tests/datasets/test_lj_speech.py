@@ -49,7 +49,7 @@ def test_lj_speech_dataset(mock_urlretrieve):
         'text': 'Printing, in the only sense with which we are at present concerned, '
                 'differs from most if not from all the arts and crafts represented in '
                 'the Exhibition',
-        'wav': 'wavs/LJ001-0001.wav'
+        'wav': 'tests/_test_data/LJSpeech-1.1/wavs/LJ001-0001.wav'
     }
 
     data = lj_speech_dataset(directory=lj_directory, verbalize=True)
