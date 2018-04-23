@@ -1,3 +1,6 @@
+# Fix this weird error: https://github.com/pytorch/pytorch/issues/2083
+import torch  # noqa: F401
+
 import pytest
 import tensorflow as tf
 

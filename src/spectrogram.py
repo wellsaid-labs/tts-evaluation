@@ -205,8 +205,6 @@ def _save_image_of_spectrogram(spectrogram, filename):
 def command_line_interface():
     """ Command line interface to convert a directory of WAV files or WAV file to spectrograms.
     """
-    if not tf.executing_eagerly():
-        tf.enable_eager_execution()
     config_logging()
     set_hparams()
 
@@ -223,4 +221,5 @@ def command_line_interface():
 
 
 if __name__ == "__main__":  # pragma: no cover
+    tf.enable_eager_execution()
     command_line_interface()
