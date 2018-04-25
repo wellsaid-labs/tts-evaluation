@@ -202,7 +202,6 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
         # TODO: Attention
         # TODO: Dropout + Zoneout
-        # TODO: Stop Token
         num_tokens, batch_size, _ = encoded_tokens.shape
 
         # frames [num_frames, batch_size, frame_channels]

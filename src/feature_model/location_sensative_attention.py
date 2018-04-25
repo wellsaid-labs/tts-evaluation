@@ -26,6 +26,8 @@ class LocationSensitiveAttention(nn.Module):
         convolving it with a matrix F ∈ R^k×r.
     """
 
+    # TODO: Add attention visualization
+
     @configurable
     def __init__(self,
                  encoder_hidden_size=512,

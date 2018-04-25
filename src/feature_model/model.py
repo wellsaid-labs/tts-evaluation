@@ -1,14 +1,9 @@
-from functools import partial
-
 from torch import nn
 
 from src.feature_model.encoder import Encoder
 from src.feature_model.decoder import Decoder
 
 from src.configurable import configurable
-
-# NOTE: `momentum=0.01` to match Tensorflow defaults
-nn.BatchNorm1d = partial(nn.BatchNorm1d, momentum=0.01)
 
 
 class SpectrogramModel(nn.Module):
@@ -65,19 +60,59 @@ class SpectrogramModel(nn.Module):
       Reference:
           * Tacotron 2 Paper:
             https://arxiv.org/pdf/1712.05884.pdf
+
+      Args:
+        vocab_size (int): Maximum size of the vocabulary used to encode ``tokens``.
+        lstm_hidden_size (int, optional): The hidden size of the final hidden feature
+            representation from the Encoder.
       """
 
     @configurable
-    def __init__(self, encoder_hidden_size=512):
+    def __init__(self, vocab_size, encoder_hidden_size=512):
 
         super(SpectrogramModel, self).__init__()
 
-        self.Decoder(encoder_hidden_size=encoder_hidden_size)
-        self.Encoder(lstm_hidden_size=encoder_hidden_size)
+        self.encoder = Encoder(vocab_size, lstm_hidden_size=encoder_hidden_size)
+        self.decoder = Decoder(encoder_hidden_size=encoder_hidden_size)
 
-    def forward(self, tokens):
+    def _get_stopped_indexes(self, predictions):
+        """ Get a list of indices that predicted stop.
+
+        Args:
+            stop_token (torch.FloatTensor [1, batch_size]): Probablity of stopping.
+
+        Returns:
+            (list) Indices that predicted stop.
+        """
+        stopped = predictions.data.view(-1).ge(0.5).nonzero()
+        if stopped.dim() > 0:
+            return stopped.squeeze(1).tolist()
+        else:
+            return []
+
+    def forward(self, tokens, ground_truth_frames=None):
         """
         Args:
-            tokens (torch.LongTensor [batch_size, num_tokens]): Batch of sequences.
+            tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
+            ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
+                optional): During training, ground truth frames for teacher-forcing.
+
+        Returns:
+            frames (torch.FloatTensor [num_frames, batch_size, frame_channels]) Predicted frames.
+            frames_with_residual (torch.FloatTensor [num_frames, batch_size, frame_channels]):
+                Predicted frames with the post net residual added.
+            stop_token (torch.FloatTensor [num_frames, batch_size]): Probablity of stopping.
         """
-        pass
+        encoded_tokens = self.encoder(tokens)
+        _, batch_size, _ = encoded_tokens.shape
+        frames, frames_with_residual, stop_token, new_hidden_state = self.decoder(
+            encoded_tokens, ground_truth_frames=ground_truth_frames)
+
+        if ground_truth_frames is None:  # Unrolling the decoder.
+            stopped = set(self._get_stopped_indexes(stop_token))
+            while len(stopped) != batch_size:
+                frames, frames_with_residual, stop_token, new_hidden_state = self.decoder(
+                    encoded_tokens, hidden_state=new_hidden_state)
+                stopped.update(self._get_stopped_indexes(stop_token))
+
+        return frames, frames_with_residual, stop_token
