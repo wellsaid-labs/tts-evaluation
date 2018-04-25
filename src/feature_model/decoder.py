@@ -1,5 +1,3 @@
-from functools import partial
-
 from torch import nn
 from torch.autograd import Variable
 
@@ -9,9 +7,6 @@ from src.configurable import configurable
 from src.feature_model.pre_net import PreNet
 from src.feature_model.post_net import PostNet
 from src.feature_model.location_sensative_attention import LocationSensitiveAttention
-
-# NOTE: `momentum=0.01` to match Tensorflow defaults
-nn.BatchNorm1d = partial(nn.BatchNorm1d, momentum=0.01)
 
 
 class Decoder(nn.Module):
