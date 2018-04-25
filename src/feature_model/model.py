@@ -105,14 +105,14 @@ class SpectrogramModel(nn.Module):
         """
         encoded_tokens = self.encoder(tokens)
         _, batch_size, _ = encoded_tokens.shape
-        frames, frames_with_residual, stop_token, new_hidden_state = self.decoder(
+        frames, frames_with_residual, stop_token, hidden_state = self.decoder(
             encoded_tokens, ground_truth_frames=ground_truth_frames)
 
         if ground_truth_frames is None:  # Unrolling the decoder.
             stopped = set(self._get_stopped_indexes(stop_token))
             while len(stopped) != batch_size:
-                frames, frames_with_residual, stop_token, new_hidden_state = self.decoder(
-                    encoded_tokens, hidden_state=new_hidden_state)
+                frames, frames_with_residual, stop_token, hidden_state = self.decoder(
+                    encoded_tokens, hidden_state=hidden_state)
                 stopped.update(self._get_stopped_indexes(stop_token))
 
         return frames, frames_with_residual, stop_token

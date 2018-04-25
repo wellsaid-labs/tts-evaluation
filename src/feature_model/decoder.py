@@ -64,6 +64,11 @@ class AutoregressiveDecoder(nn.Module):
           https://arxiv.org/pdf/1712.05884.pdf
 
     Args:
+        frame_channels (int, optional): Number of channels in each frame (sometimes refered to
+            as "Mel-frequency bins" or "FFT bins" or "FFT bands")
+        pre_net_hidden_size (int): Hidden size of the pre-net to use.
+        encoder_hidden_size (int): Hidden size of the encoder used; for reference.
+        lstm_hidden_size (int): Hidden size of both LSTM layers to use.
     """
 
     @configurable

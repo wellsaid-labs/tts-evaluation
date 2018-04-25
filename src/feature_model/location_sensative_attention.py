@@ -1,5 +1,3 @@
-from functools import partial
-
 from torch import nn
 
 from src.configurable import configurable
@@ -24,6 +22,12 @@ class LocationSensitiveAttention(nn.Module):
         by making it take into account the alignment produced at the previous step. First, we
         extract k vectors fi,j ∈ R^k for every position j of the previous alignment αi−1 by
         convolving it with a matrix F ∈ R^k×r.
+
+    Reference:
+        * Tacotron 2 Paper:
+          https://arxiv.org/pdf/1712.05884.pdf
+        * Attention-Based Models for Speech Recognition
+          https://arxiv.org/pdf/1506.07503.pdf
     """
 
     # TODO: Add attention visualization
