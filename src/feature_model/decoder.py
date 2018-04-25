@@ -244,7 +244,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
             # frame [seq_len (1), batch (batch_size),
             # input_size (pre_net_hidden_size + self.attention_context_size)]  →
-            # [num_frames, batch_size, lstm_hidden_size]
+            # [1, batch_size, lstm_hidden_size]
             if hidden_state is None:
                 frame, lstm_one_hidden_state = self.lstm_layer_one(frame)
             else:
@@ -255,7 +255,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             # attention_context [batch_size, self.attention_context_size]
             attention_context, last_attention_alignment = self.attention(
                 encoded_tokens=encoded_tokens,
-                query=frame,
+                query=frame.squeeze(0),
                 previous_alignment=last_attention_alignment)
             attention_contexts.append(attention_context)
 

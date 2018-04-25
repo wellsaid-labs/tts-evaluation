@@ -1,10 +1,13 @@
+import torch
+
 from torch import nn
+from torch.autograd import Variable
 
 from src.configurable import configurable
 
 
 class LocationSensitiveAttention(nn.Module):
-    """ Query using the attention mechanism.
+    """ Query using the Bahdanau attention mechanism with additional location features.
 
     SOURCE (Tacotron 2):
         The encoder output is consumed by an attention network which summarizes the full encoded
@@ -18,6 +21,12 @@ class LocationSensitiveAttention(nn.Module):
         32 1-D convolution filters of length 31.
 
     SOURCE (Attention-Based Models for Speech Recognition):
+        This is achieved by adding as inputs to the attention mechanism auxiliary convolutional
+        features which are extracted by convolving the attention weights from the previous step
+        with trainable filters.
+
+        ...
+
         We extend this content-based attention mechanism of the original model to be location-aware
         by making it take into account the alignment produced at the previous step. First, we
         extract k vectors fi,j ∈ R^k for every position j of the previous alignment αi−1 by
@@ -28,9 +37,15 @@ class LocationSensitiveAttention(nn.Module):
           https://arxiv.org/pdf/1712.05884.pdf
         * Attention-Based Models for Speech Recognition
           https://arxiv.org/pdf/1506.07503.pdf
+
+    Args:
+        encoder_hidden_size (int): Hidden size of the encoder used; for reference.
+        num_convolution_filters (odd :clas:`int`, optional): Number of dimensions (channels)
+            produced by the convolution.
+        convolution_filter_size (int, optional): Size of the convolving kernel.
     """
 
-    # TODO: Add attention visualization
+    # TODO: Add attention visualization for debugging
 
     @configurable
     def __init__(self,
@@ -41,34 +56,104 @@ class LocationSensitiveAttention(nn.Module):
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, ('`convolution_filter_size` must be odd')
 
-        # self.conv = nn.Conv1d(
-        #     in_channels=token_dim,
-        #     out_channels=num_convolution_filters,
-        #     kernel_size=convolution_filter_size,
-        #     padding=int((convolution_filter_size - 1) / 2))
+        self.location_conv = nn.Conv1d(
+            in_channels=1,
+            out_channels=num_convolution_filters,
+            kernel_size=convolution_filter_size,
+            padding=int((convolution_filter_size - 1) / 2))
 
-        # self.linear_in = nn.Linear(dimensions, dimensions, bias=False)
-        pass
+        self.score_linear = nn.Sequential(
+            nn.Linear(encoder_hidden_size * 2 + num_convolution_filters, encoder_hidden_size),
+            nn.Tanh())
+        self.score_parameter = nn.Parameter(torch.FloatTensor(1, encoder_hidden_size, 1))
+        self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, encoded_tokens, query, previous_alignment=None):
         """
         Args:
-            encoded_tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batched set of
-                encoded sequences.
-            query (torch.FloatTensor [batch_size, hidden_size]): Query vector used to score
+            encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size]):
+                Batched set of encoded sequences.
+            query (torch.FloatTensor [batch_size, encoder_hidden_size]): Query vector used to score
                 individual token vectors.
-            previous_alignment (torch.FloatTensor [num_tokens, batch_size]): Attention alignment
-                from the last query.
+            previous_alignment (torch.FloatTensor [batch_size, num_tokens], optional): Attention
+                alignment from the last query. If this vector is not included, the
+                ``previous_alignment`` defaults to a zero vector.
 
         Returns:
-            context (torch.FloatTensor [batch_size, hidden_size])
-            alignment (torch.FloatTensor [num_tokens, batch_size])
+            context (torch.FloatTensor [batch_size, encoder_hidden_size]): Computed attention
+                context vector.
+            alignment (torch.FloatTensor [batch_size, num_tokens]): Computed attention alignment
+                vector.
         """
         if previous_alignment is None:
             # Attention alignment, sometimes refered to as attention weights.
-            previous_alignment = torch.autograd.Variable(
-                torch.LongTensor(encoded_tokens.shape[0], encoded_tokens.shape[1]).zero_(),
-                requires_grad=False)
-        # query = query.view(batch_size * output_len, dimensions)
-        # query = self.linear_in(query)
-        # query = query.view(batch_size, output_len, dimensions)
+            num_tokens, batch_size, _ = encoded_tokens.shape
+            previous_alignment = Variable(
+                torch.LongTensor(num_tokens, batch_size).zero_(), requires_grad=False)
+
+        # Our input is expected to have shape `[num_tokens, batch_size]`.  The
+        # convolution layers expect input of shape
+        # `[batch_size, in_channels (1), sequence_length (num_tokens)]`. We thus need to
+        # transpose the tensor and unsqueeze first.
+        previous_alignment = previous_alignment.transpose(0, 1)
+        # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
+        previous_alignment = previous_alignment.unsqueeze(1)
+        # [batch_size, 1, num_tokens] → [batch_size, num_convolution_filters, num_tokens]
+        previous_alignment = self.location_conv(previous_alignment)
+        # [batch_size, num_convolution_filters, num_tokens] →
+        # [num_tokens, batch_size, num_convolution_filters]
+        previous_alignment = previous_alignment.permute(2, 0, 1)
+
+        # [batch_size, hidden_size] → [1, batch_size, hidden_size]
+        query = query.unsqueeze(0)
+        num_tokens, batch_size = previous_alignment.shape
+        # [1, batch_size, hidden_size] → [num_tokens, batch_size, hidden_size]
+        query = query.expand(num_tokens, -1, -1)
+
+        # encoded_tokens [num_tokens, batch_size, encoder_hidden_size] (concat)
+        # query [num_tokens, batch_size, encoder_hidden_size] (concat)
+        # previous_alignment [num_tokens, batch_size, num_convolution_filters] →
+        # [num_tokens, batch_size, num_convolution_filters + 2 * encoder_hidden_size]
+        concat = torch.cat((encoded_tokens, query, previous_alignment), -1)
+        # [num_tokens, batch_size, num_convolution_filters + 2 * encoder_hidden_size] →
+        # [num_tokens, batch_size, encoder_hidden_size]
+        score = self.score_linear(concat)
+
+        # Transpose and expand to fit the requirements for ``torch.bmm``
+        # [num_tokens, batch_size, encoder_hidden_size] →
+        # [batch_size, num_tokens, encoder_hidden_size]
+        score = score.transpose(0, 1)
+        # [1, encoder_hidden_size, 1] →
+        # [batch_size, encoder_hidden_size, 1]
+        score_parameter = self.score_parameter.expand(batch_size, -1, -1)
+
+        # [batch_size (b), num_tokens (n), encoder_hidden_size (m)] (bmm)
+        # [batch_size (b), encoder_hidden_size (m), 1 (p)] →
+        # [batch_size (b), num_tokens (n), 1 (p)]
+        score = torch.bmm(score, score_parameter)
+
+        # Squeeze extra single dimension
+        # [batch_size, num_tokens, 1] → [batch_size, num_tokens]
+        score = score.squeeze(2)
+
+        # [batch_size, num_tokens] → [batch_size, num_tokens]
+        alignment = self.softmax(score)
+
+        # Transpose and unsqueeze to fit the requirements for ``torch.bmm``
+        # [num_tokens, batch_size, encoder_hidden_size] →
+        # [batch_size, num_tokens, encoder_hidden_size]
+        encoded_tokens = encoded_tokens.transpose(0, 1)
+        # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
+        alignment = alignment.unsqueeze(1)
+
+        # alignment [batch_size (b), 1 (n), num_tokens (m)] (bmm)
+        # encoded_tokens [batch_size (b), num_tokens (m), encoder_hidden_size (p)] →
+        # [batch_size (b), 1 (n), encoder_hidden_size (p)]
+        context = torch.bmm(alignment, encoded_tokens)
+
+        # Squeeze extra single dimension
+        # [batch_size, 1, encoder_hidden_size] → [batch_size, encoder_hidden_size]
+        context = context.squeeze(1)
+
+        # Normalize energies to weights in range 0 to 1, resize to 1 x 1 x seq_len
+        return context, alignment
