@@ -52,6 +52,8 @@ class LocationSensitiveAttention(nn.Module):
                  encoder_hidden_size=512,
                  num_convolution_filters=32,
                  convolution_filter_size=31):
+
+        super(LocationSensitiveAttention, self).__init__()
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, ('`convolution_filter_size` must be odd')
@@ -89,13 +91,8 @@ class LocationSensitiveAttention(nn.Module):
             # Attention alignment, sometimes refered to as attention weights.
             num_tokens, batch_size, _ = encoded_tokens.shape
             previous_alignment = Variable(
-                torch.LongTensor(num_tokens, batch_size).zero_(), requires_grad=False)
+                torch.FloatTensor(batch_size, num_tokens).zero_(), requires_grad=False)
 
-        # Our input is expected to have shape `[num_tokens, batch_size]`.  The
-        # convolution layers expect input of shape
-        # `[batch_size, in_channels (1), sequence_length (num_tokens)]`. We thus need to
-        # transpose the tensor and unsqueeze first.
-        previous_alignment = previous_alignment.transpose(0, 1)
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
         previous_alignment = previous_alignment.unsqueeze(1)
         # [batch_size, 1, num_tokens] → [batch_size, num_convolution_filters, num_tokens]
@@ -106,7 +103,7 @@ class LocationSensitiveAttention(nn.Module):
 
         # [batch_size, hidden_size] → [1, batch_size, hidden_size]
         query = query.unsqueeze(0)
-        num_tokens, batch_size = previous_alignment.shape
+        num_tokens, batch_size, _ = previous_alignment.shape
         # [1, batch_size, hidden_size] → [num_tokens, batch_size, hidden_size]
         query = query.expand(num_tokens, -1, -1)
 
@@ -154,6 +151,9 @@ class LocationSensitiveAttention(nn.Module):
         # Squeeze extra single dimension
         # [batch_size, 1, encoder_hidden_size] → [batch_size, encoder_hidden_size]
         context = context.squeeze(1)
+        # Squeeze extra single dimension
+        # [batch_size, 1, num_tokens] → [batch_size, num_tokens]
+        alignment = alignment.squeeze(1)
 
         # Normalize energies to weights in range 0 to 1, resize to 1 x 1 x seq_len
         return context, alignment
