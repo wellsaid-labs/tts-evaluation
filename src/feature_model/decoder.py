@@ -66,9 +66,12 @@ class AutoregressiveDecoder(nn.Module):
     Args:
         frame_channels (int, optional): Number of channels in each frame (sometimes refered to
             as "Mel-frequency bins" or "FFT bins" or "FFT bands")
-        pre_net_hidden_size (int): Hidden size of the pre-net to use.
-        encoder_hidden_size (int): Hidden size of the encoder used; for reference.
-        lstm_hidden_size (int): Hidden size of both LSTM layers to use.
+        pre_net_hidden_size (int, optional): Hidden size of the pre-net to use.
+        encoder_hidden_size (int, optional): Hidden size of the encoder used; for reference.
+        lstm_hidden_size (int, optional): Hidden size of both LSTM layers to use.
+        lstm_variational_dropout (float, optional): If non-zero, introduces a Dropout layer on the
+            outputs of each LSTM layer except the last layer, with dropout probability equal to
+            dropout.
     """
 
     @configurable
@@ -77,7 +80,8 @@ class AutoregressiveDecoder(nn.Module):
                  pre_net_hidden_size=256,
                  encoder_hidden_size=512,
                  query_hidden_size=128,
-                 lstm_hidden_size=1024):
+                 lstm_hidden_size=1024,
+                 lstm_variational_dropout=0.1):
 
         super(AutoregressiveDecoder, self).__init__()
 
@@ -92,10 +96,12 @@ class AutoregressiveDecoder(nn.Module):
             num_layers=1)
         self.frame_to_query = nn.Linear(
             in_features=lstm_hidden_size, out_features=query_hidden_size)
+        self.lstm_dropout = nn.Dropout(p=lstm_variational_dropout)
         self.lstm_layer_two = nn.LSTM(
             input_size=pre_net_hidden_size + self.attention_context_size,
             hidden_size=lstm_hidden_size,
-            num_layers=1)
+            num_layers=1,
+            dropout=lstm_variational_dropout)
         self.attention = LocationSensitiveAttention(
             encoder_hidden_size=self.attention_context_size, query_hidden_size=query_hidden_size)
         self.linear_out = nn.Linear(
@@ -259,6 +265,8 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             else:
                 frame, lstm_one_hidden_state = self.lstm_layer_one(
                     frame, hidden_state.lstm_one_hidden_state)
+
+            frame = self.lstm_dropout(frame)
 
             # [1, batch_size, lstm_hidden_size] → [batch_size, lstm_hidden_size]
             query = frame.squeeze(0)

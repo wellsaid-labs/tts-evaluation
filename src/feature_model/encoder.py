@@ -26,6 +26,13 @@ class Encoder(nn.Module):
         passed into a single bi-directional [19] LSTM [20] layer containing 512 units (256 in each
         direction) to generate the encoded features.
 
+        ...
+
+        The convolutional layers in the network are regularized using dropout [25] with probability
+        0.5, and LSTM layers are regularized using zoneout [26] with probability 0.1. In order to
+        introduce output variation at inference time, dropout with probability 0.5 is applied only
+        to layers in the pre-net of the autoregressive decoder.
+
     Reference:
         * PyTorch BatchNorm vs Tensorflow parameterization possible source of error...
           https://stackoverflow.com/questions/48345857/batchnorm-momentum-convention-pytorch?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
@@ -51,9 +58,11 @@ class Encoder(nn.Module):
                  num_convolution_layers=3,
                  num_convolution_filters=512,
                  convolution_filter_size=5,
+                 convolution_dropout=0.5,
                  lstm_hidden_size=512,
                  lstm_layers=1,
-                 lstm_bidirectional=True):
+                 lstm_bidirectional=True,
+                 lstm_variational_dropout=0.1):
 
         super(Encoder, self).__init__()
 
@@ -70,7 +79,8 @@ class Encoder(nn.Module):
                     kernel_size=convolution_filter_size,
                     padding=int((convolution_filter_size - 1) / 2)),
                 nn.BatchNorm1d(num_features=num_convolution_filters),
-                nn.ReLU()) for i in range(num_convolution_layers)
+                nn.ReLU(),
+                nn.Dropout(p=convolution_dropout)) for i in range(num_convolution_layers)
         ]))
 
         if lstm_bidirectional:
@@ -82,6 +92,11 @@ class Encoder(nn.Module):
             hidden_size=lstm_hidden_size,
             num_layers=lstm_layers,
             bidirectional=lstm_bidirectional,
+            # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunatly, Zoneout in PyTorch
+            # forces us to unroll the LSTM and slow down this component x3 to x4. For right now, we
+            # will by using variational dropout.
+            # NOTE: The Zoneout paper also mentions that it fairs worse than variational dropout.
+            dropout=lstm_variational_dropout,
         )
 
     def forward(self, tokens):
