@@ -40,6 +40,8 @@ class LocationSensitiveAttention(nn.Module):
 
     Args:
         encoder_hidden_size (int): Hidden size of the encoder used; for reference.
+        query_hidden_size (int): The hidden size of the query to expect.
+        alignment_hidden_size (int): The hidden size of the alignment to project to.
         num_convolution_filters (odd :clas:`int`, optional): Number of dimensions (channels)
             produced by the convolution.
         convolution_filter_size (int, optional): Size of the convolving kernel.
@@ -50,6 +52,8 @@ class LocationSensitiveAttention(nn.Module):
     @configurable
     def __init__(self,
                  encoder_hidden_size=512,
+                 query_hidden_size=128,
+                 alignment_hidden_size=128,
                  num_convolution_filters=32,
                  convolution_filter_size=31):
 
@@ -58,28 +62,30 @@ class LocationSensitiveAttention(nn.Module):
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, ('`convolution_filter_size` must be odd')
 
-        self.location_conv = nn.Conv1d(
+        self.alignment_conv = nn.Conv1d(
             in_channels=1,
             out_channels=num_convolution_filters,
             kernel_size=convolution_filter_size,
             padding=int((convolution_filter_size - 1) / 2))
+        self.project_alignment = nn.Linear(
+            in_features=num_convolution_filters, out_features=alignment_hidden_size)
 
         self.score_linear = nn.Sequential(
-            nn.Linear(encoder_hidden_size * 2 + num_convolution_filters, encoder_hidden_size),
-            nn.Tanh())
+            nn.Linear(query_hidden_size + encoder_hidden_size + alignment_hidden_size,
+                      encoder_hidden_size), nn.Tanh())
         self.score_parameter = nn.Parameter(torch.FloatTensor(1, encoder_hidden_size, 1))
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, encoded_tokens, query, previous_alignment=None):
+    def forward(self, encoded_tokens, query, last_alignment=None):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size]):
                 Batched set of encoded sequences.
-            query (torch.FloatTensor [batch_size, encoder_hidden_size]): Query vector used to score
+            query (torch.FloatTensor [batch_size, query_hidden_size]): Query vector used to score
                 individual token vectors.
-            previous_alignment (torch.FloatTensor [batch_size, num_tokens], optional): Attention
+            last_alignment (torch.FloatTensor [batch_size, num_tokens], optional): Attention
                 alignment from the last query. If this vector is not included, the
-                ``previous_alignment`` defaults to a zero vector.
+                ``last_alignment`` defaults to a zero vector.
 
         Returns:
             context (torch.FloatTensor [batch_size, encoder_hidden_size]): Computed attention
@@ -87,33 +93,36 @@ class LocationSensitiveAttention(nn.Module):
             alignment (torch.FloatTensor [batch_size, num_tokens]): Computed attention alignment
                 vector.
         """
-        if previous_alignment is None:
+        if last_alignment is None:
             # Attention alignment, sometimes refered to as attention weights.
             num_tokens, batch_size, _ = encoded_tokens.shape
-            previous_alignment = Variable(
+            last_alignment = Variable(
                 torch.FloatTensor(batch_size, num_tokens).zero_(), requires_grad=False)
 
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
-        previous_alignment = previous_alignment.unsqueeze(1)
+        last_alignment = last_alignment.unsqueeze(1)
         # [batch_size, 1, num_tokens] → [batch_size, num_convolution_filters, num_tokens]
-        previous_alignment = self.location_conv(previous_alignment)
+        last_alignment = self.alignment_conv(last_alignment)
         # [batch_size, num_convolution_filters, num_tokens] →
         # [num_tokens, batch_size, num_convolution_filters]
-        previous_alignment = previous_alignment.permute(2, 0, 1)
+        last_alignment = last_alignment.permute(2, 0, 1)
+        # [num_tokens, batch_size, num_convolution_filters] →
+        # [num_tokens, batch_size, alignment_hidden_size]
+        last_alignment = self.project_alignment(last_alignment)
 
-        # [batch_size, hidden_size] → [1, batch_size, hidden_size]
+        # [batch_size, query_hidden_size] → [1, batch_size, query_hidden_size]
         query = query.unsqueeze(0)
-        num_tokens, batch_size, _ = previous_alignment.shape
-        # [1, batch_size, hidden_size] → [num_tokens, batch_size, hidden_size]
+        num_tokens, batch_size, _ = last_alignment.shape
+        # [1, batch_size, query_hidden_size] → [num_tokens, batch_size, query_hidden_size]
         query = query.expand(num_tokens, -1, -1)
 
         # encoded_tokens [num_tokens, batch_size, encoder_hidden_size] (concat)
-        # query [num_tokens, batch_size, encoder_hidden_size] (concat)
-        # previous_alignment [num_tokens, batch_size, num_convolution_filters] →
-        # [num_tokens, batch_size, num_convolution_filters + 2 * encoder_hidden_size]
-        concat = torch.cat((encoded_tokens, query, previous_alignment), -1)
-        # [num_tokens, batch_size, num_convolution_filters + 2 * encoder_hidden_size] →
-        # [num_tokens, batch_size, encoder_hidden_size]
+        # query [num_tokens, batch_size, query_hidden_size] (concat)
+        # last_alignment [num_tokens, batch_size, alignment_hidden_size] →
+        # [num_tokens, batch_size, alignment_hidden_size + query_hidden_size + encoder_hidden_size]
+        concat = torch.cat((encoded_tokens, query, last_alignment), -1)
+        # [num_tokens, batch_size, alignment_hidden_size + query_hidden_size + encoder_hidden_size]
+        # → [num_tokens, batch_size, encoder_hidden_size]
         score = self.score_linear(concat)
 
         # Transpose and expand to fit the requirements for ``torch.bmm``

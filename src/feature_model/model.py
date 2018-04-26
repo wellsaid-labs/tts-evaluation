@@ -1,7 +1,7 @@
 from torch import nn
 
 from src.feature_model.encoder import Encoder
-from src.feature_model.decoder import Decoder
+from src.feature_model.decoder import AutoregressiveDecoder
 
 from src.configurable import configurable
 
@@ -63,17 +63,23 @@ class SpectrogramModel(nn.Module):
 
       Args:
         vocab_size (int): Maximum size of the vocabulary used to encode ``tokens``.
-        lstm_hidden_size (int, optional): The hidden size of the final hidden feature
+        encoder_hidden_size (int, optional): The hidden size of the final hidden feature
             representation from the Encoder.
+        frame_channels (int, optional): Number of channels in each frame (sometimes refered to
+            as "Mel-frequency bins" or "FFT bins" or "FFT bands")
+        max_recursion (int, optional): The maximum sequential predictions to make before quitting;
+            Used for testing and defensive design.
       """
 
     @configurable
-    def __init__(self, vocab_size, encoder_hidden_size=512):
+    def __init__(self, vocab_size, encoder_hidden_size=512, frame_channels=80, max_recursion=10000):
 
         super(SpectrogramModel, self).__init__()
 
         self.encoder = Encoder(vocab_size, lstm_hidden_size=encoder_hidden_size)
-        self.decoder = Decoder(encoder_hidden_size=encoder_hidden_size)
+        self.decoder = AutoregressiveDecoder(
+            encoder_hidden_size=encoder_hidden_size, frame_channels=frame_channels)
+        self.max_recursion = max_recursion
 
     def _get_stopped_indexes(self, predictions):
         """ Get a list of indices that predicted stop.
@@ -110,9 +116,11 @@ class SpectrogramModel(nn.Module):
 
         if ground_truth_frames is None:  # Unrolling the decoder.
             stopped = set(self._get_stopped_indexes(stop_token))
-            while len(stopped) != batch_size:
+            recursion = 0
+            while len(stopped) != batch_size and recursion < self.max_recursion:
                 frames, frames_with_residual, stop_token, hidden_state = self.decoder(
                     encoded_tokens, hidden_state=hidden_state)
                 stopped.update(self._get_stopped_indexes(stop_token))
+                recursion += 1
 
         return frames, frames_with_residual, stop_token
