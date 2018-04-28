@@ -70,6 +70,12 @@ pytest.approx = configurable(pytest.approx)
 
 class Mock(object):
 
+    def __init__(self):
+        pass
+
+
+class MockConfigurable(object):
+
     @configurable
     def __init__(self):
         pass
@@ -99,7 +105,33 @@ def test_check_configuration_error_external_libraries():
 
 def test_check_configuration_class():
     # Test that check configuration works for classes
-    _check_configuration({'tests': {'test_configurable': {'Mock': {'__init__': {'kwarg': None}}}}})
+    _check_configuration({
+        'tests': {
+            'test_configurable': {
+                'MockConfigurable': {
+                    '__init__': {
+                        'kwarg': None
+                    }
+                }
+            }
+        }
+    })
+
+
+def test_check_configuration_error_class():
+    # Test that check configuration works for classes
+    with pytest.raises(TypeError):
+        _check_configuration({
+            'tests': {
+                'test_configurable': {
+                    'Mock': {
+                        '__init__': {
+                            'kwarg': None
+                        }
+                    }
+                }
+            }
+        })
 
 
 def test_add_config_and_arguments():

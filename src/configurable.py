@@ -200,6 +200,7 @@ def _check_configuration_helper(dict_, keys):
             module = import_module(module_path)
             if hasattr(module, keys[-1]):
                 function = getattr(module, keys[-1])
+                # TODO: Inspect and check if the required parameters exist
                 if (hasattr(function, '_configurable')):
                     return
         except (ImportError, AttributeError) as _:
