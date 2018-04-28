@@ -8,9 +8,6 @@ from src.configurable import add_config
 from src.configurable import log_config
 from src.configurable import configurable
 
-# NOTE: Concerning Zoneout it does not seem that the Tacotron 2 authors tried the model without
-# Zoneout.
-
 
 def set_hparams():
     """ Using the ``configurable`` module set the hyperparameters for the source code.
