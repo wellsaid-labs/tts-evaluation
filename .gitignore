@@ -86,4 +86,7 @@ data/**
 
 # ReadTheDocs build files
 docs/_build
+
+# Other
 experiments/
+bin/

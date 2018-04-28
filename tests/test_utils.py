@@ -1,6 +1,5 @@
 import os
 
-from src.utils import batch
 from src.utils import split_dataset
 from src.utils import get_root_path
 from src.utils import get_total_parameters
@@ -40,19 +39,6 @@ def test_split_dataset():
     dataset = [1, 2, 3, 4, 5]
     splits = (.6, .2, .2)
     assert split_dataset(dataset, splits) == [[1, 2, 3], [4], [5]]
-
-
-def test_batch_generator():
-
-    def generator():
-        for i in range(11):
-            yield i
-
-    assert len(list(batch(generator(), n=2))) == 6
-
-
-def test_batch():
-    assert len(list(batch([i for i in range(11)], n=2))) == 6
 
 
 def test_get_total_parameters():

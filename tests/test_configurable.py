@@ -133,18 +133,17 @@ def test_arguments():
 def test_arguments_many():
     # Check that the parameters were recorded
     arg_kwarg = configurable(lambda a, *args, **kwargs: (a, args, kwargs))
-    arg_kwarg('abc', 'abc', abc='abc')
+    arg_kwarg('abc', 'def', 'ghi', 'klm', abc='abc')
     arg_kwarg('abc', abc='xyz')
     arg_kwarg('abc', abc='cdf')
     arg_kwarg('abc', abc='ghf')
     arg_kwarg('abc', xyz='abc')
-    print(_get_arguments())
     assert str(_get_arguments()['tests']['test_configurable']['test_arguments_many']['<locals>'][
         '<lambda>']['abc']) == str(['xyz', 'cdf', 'ghf'])
     assert _get_arguments()['tests']['test_configurable']['test_arguments_many']['<locals>'][
         '<lambda>']['xyz'] == 'abc'
     assert _get_arguments()['tests']['test_configurable']['test_arguments_many']['<locals>'][
-        '<lambda>']['args'] == ('abc',)
+        '<lambda>']['args'] == ('def', 'ghi', 'klm')
     clear_arguments()
 
 

@@ -350,7 +350,7 @@ def _merge_args(parameters, args, kwargs, other_kwargs):
     # Delete ``other_kwargs`` that conflict with ``args``
     # Positional arguments must come before key word arguments
     for i, _ in enumerate(args):
-        if parameters[i].kind == parameters[i].VAR_POSITIONAL:  # TODO: Create a test for this.
+        if parameters[i].kind == parameters[i].VAR_POSITIONAL:
             # Rest of the args are absorbed by VAR_POSITIONAL (e.g. ``*args``)
             break
 
