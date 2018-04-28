@@ -55,4 +55,4 @@ def test_wav_to_log_mel_spectrograms_smoke():
     wav_filename = 'tests/_test_data/lj_speech.wav'
     log_mel_spectrogram = wav_to_log_mel_spectrograms(wav_filename)
 
-    assert log_mel_spectrogram.shape == (602, 80)
+    assert log_mel_spectrogram.shape == (603, 80)

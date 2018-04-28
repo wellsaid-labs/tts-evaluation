@@ -6,7 +6,6 @@ import unidecode
 from num2words import num2words
 
 from torchnlp.utils import download_compressed_directory
-from torchnlp.datasets import Dataset
 
 
 def lj_speech_dataset(directory='data/',
@@ -85,7 +84,7 @@ def lj_speech_dataset(directory='data/',
                     os.path.join(directory, extracted_name, audio_directory, wav_filename + '.wav')
             })
 
-    return Dataset(examples)
+    return examples
 
 
 '''

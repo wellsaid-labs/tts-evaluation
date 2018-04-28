@@ -1,5 +1,3 @@
-from functools import partial
-
 import torch
 import torch.nn as nn
 
@@ -7,14 +5,9 @@ from torchnlp.text_encoders import PADDING_INDEX
 
 from src.configurable import configurable
 
-# NOTE: `momentum=0.01` to match Tensorflow defaults
-nn.BatchNorm1d = partial(nn.BatchNorm1d, momentum=0.01)
-
 
 class Encoder(nn.Module):
     """ Encodes sequence as a hidden feature representation.
-
-    TODO: Add dropout
 
     SOURCE (Tacotron 2):
         The encoder converts a character sequence into a hidden feature representation. Input
@@ -105,8 +98,8 @@ class Encoder(nn.Module):
             tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
 
         Returns:
-            tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batched set of encoded
-                sequences where:
+            encoded_tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batched set of
+                encoded sequences where:
                 ``hidden_size = (lstm_hidden_size / 2) * (2 if lstm_bidirectional else 1)``
         """
         # [batch_size, num_tokens] → [batch_size, num_tokens, embedding_dim]
@@ -128,5 +121,5 @@ class Encoder(nn.Module):
         tokens = tokens.permute(2, 0, 1)
 
         # [num_tokens, batch_size, lstm_hidden_size * (2 if lstm_bidirectional else 1) ]
-        tokens, _ = self.lstm(tokens)
-        return tokens
+        encoded_tokens, _ = self.lstm(tokens)
+        return encoded_tokens

@@ -8,7 +8,7 @@ def test_feature_model():
     batch_size = 5
     num_tokens = 6
     frame_channels = 20
-    vocab_size = 200
+    vocab_size = 20
     model = FeatureModel(
         vocab_size,
         encoder_hidden_size=encoder_hidden_size,
@@ -37,7 +37,7 @@ def test_feature_model_ground_truth():
     batch_size = 5
     num_tokens = 6
     frame_channels = 20
-    vocab_size = 200
+    vocab_size = 20
     num_frames = 5
     model = FeatureModel(
         vocab_size,

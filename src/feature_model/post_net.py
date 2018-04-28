@@ -1,11 +1,6 @@
-from functools import partial
-
 from torch import nn
 
 from src.configurable import configurable
-
-# NOTE: `momentum=0.01` to match Tensorflow defaults
-nn.BatchNorm1d = partial(nn.BatchNorm1d, momentum=0.01)
 
 
 class PostNet(nn.Module):

@@ -110,7 +110,7 @@ class SpectrogramModel(nn.Module):
             stop_token (torch.FloatTensor [num_frames, batch_size]): Probablity of stopping.
         """
         encoded_tokens = self.encoder(tokens)
-        _, batch_size, _ = encoded_tokens.shape
+        batch_size, _, _ = encoded_tokens.shape
         frames, frames_with_residual, stop_token, hidden_state = self.decoder(
             encoded_tokens, ground_truth_frames=ground_truth_frames)
 
