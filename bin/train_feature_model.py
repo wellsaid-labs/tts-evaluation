@@ -13,72 +13,118 @@ from tqdm import tqdm
 import torch
 
 from src.utils import split_dataset
+from src.utils import get_total_parameters
 from src.datasets import lj_speech_dataset
 from src.spectrogram import wav_to_log_mel_spectrograms
-from src.experiment import Experiment
+from src.experiment_context_manager import ExperimentContextManager
 from src.feature_model import FeatureModel
 from src.configurable import configurable
+from src.optimizer import Optimizer
 
 Adam.__init__ = configurable(Adam.__init__)
 
 logger = logging.getLogger(__name__)
 
-with Experiment(label='feature_model') as X:
 
-    def load_data(cache=os.path.join(X.root_path, '/data/lj_speech.pt')):
-        """ Load dataset with splits """
-        if not os.path.isfile(cache):
-            data = lj_speech_dataset()
-            text_encoder = CharacterEncoder([r['text'] for r in data])
-            logger.info('Data loaded, creating spectrograms and encoding text...')
-            for row in tqdm(data):
-                row['log_mel_spectrograms'] = wav_to_log_mel_spectrograms(row['wav'])
-                row['text'] = text_encoder.encode(row['text'])
-            logger.info('Text encoder vocab size: %d' % text_encoder.vocab_size)
-            to_save = (data, text_encoder)
-            X.save(to_save, cache)
-            return to_save
+def load_data(context, cache):
+    """ Load the Linda Johnson (LJ) Speech dataset with spectrograms and encoded text.
 
-        return X.load(cache)
+    Args:
+        context (ExperimentContextManager): Context manager for the experiment
+        cache (str): Path to cache the processed dataset
 
-    def make_splits(data):
-        """ Split the data into train, dev, test """
-        random.shuffle(data)
-        train, dev, test = split_dataset(data, (0.7, 0.15, 0.15))
-        logger.info('Number Training Rows: %d', len(train))
-        logger.info('Number Development Rows: %d', len(dev))
-        logger.info('Number Test Rows: %d', len(test))
-        logger.info('Sample Data:\n%s', train[:5])
-        return train, dev, test
+    Returns:
+        (list): Linda Johnson (LJ) Speech dataset with ``log_mel_spectrograms`` and ``text``
+        (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
+    """
+    if not os.path.isfile(cache):
+        data = lj_speech_dataset()
+        text_encoder = CharacterEncoder([r['text'] for r in data])
+        logger.info('Data loaded, creating spectrograms and encoding text...')
+        for row in tqdm(data):
+            row['log_mel_spectrograms'] = torch.FloatTensor(wav_to_log_mel_spectrograms(row['wav']))
+            row['text'] = text_encoder.encode(row['text'])
+        logger.info('Text encoder vocab size: %d' % text_encoder.vocab_size)
+        to_save = (data, text_encoder)
+        context.save(to_save, cache)
+        return to_save
 
-    def get_iterator(dataset, batch_size, train=True, sort_key=lambda r: r['text'].size()[0]):
+    return context.load(cache)
 
-        def collate_fn(batch):
-            """ List of tensors to a batch variable """
-            output_batch, _ = pad_batch([row['log_mel_spectrograms'] for row in batch])
-            input_batch, _ = pad_batch([row['text'] for row in batch])
-            to_variable = (lambda b: Variable(torch.stack(b).contiguous(), volatile=not train))
-            return (to_variable(input_batch), to_variable(output_batch).t_(0, 1))
 
-        # Use bucket sampling to group similar sized text but with noise + random
-        batch_sampler = BucketBatchSampler(dataset, sort_key, batch_size, sort_key_noise=0.5)
-        return DataLoader(
-            dataset,
-            batch_sampler=batch_sampler,
-            collate_fn=collate_fn,
-            pin_memory=X.is_cuda,
-            num_workers=0)
+def make_splits(data, splits=(0.7, 0.15, 0.15)):
+    """ Split a dataset at 70% for train, 15% for development and 15% for test.
 
-    def make_model(vocab_size):
-        model = FeatureModel(vocab_size)
-        for param in model.parameters():
-            param.data.uniform_(-0.1, 0.1)
-        return model
+    Args:
+        (list): Data to split
 
-    data, text_encoder = load_data()
+    Returns:
+        train (list): Train split.
+        dev (list): Development split.
+        test (list): Test split.
+    """
+    random.shuffle(data)
+    train, dev, test = split_dataset(data, splits)
+    logger.info('Number Training Rows: %d', len(train))
+    logger.info('Number Development Rows: %d', len(dev))
+    logger.info('Number Test Rows: %d', len(test))
+    logger.info('Sample Data:\n%s', train[:5])
+    return train, dev, test
+
+
+def get_iterator(context, dataset, batch_size, train=True, sort_key=lambda r: r['text'].size()[0]):
+    """ Get a batch iterator over the ``dataset``.
+
+    Args:
+        context (ExperimentContextManager): Context manager for the experiment
+        dataset (list): Dataset to iterate over.
+        batch_size (int): Size of the batch for iteration.
+        train (bool): If ``True``, the batch will store gradients.
+        sort_key (callable): Sort key used to group similar length data used to minimize padding.
+
+    Returns:
+        (torch.utils.data.DataLoader) Single-process or multi-process iterators over the dataset.
+    """
+
+    def collate_fn(batch):
+        """ List of tensors to a batch variable """
+        output_batch, _ = pad_batch([row['log_mel_spectrograms'] for row in batch])
+        input_batch, _ = pad_batch([row['text'] for row in batch])
+        to_variable = (lambda b: Variable(torch.stack(b).contiguous(), volatile=not train))
+        return (to_variable(input_batch), to_variable(output_batch).t_(0, 1))
+
+    # Use bucket sampling to group similar sized text but with noise + random
+    batch_sampler = BucketBatchSampler(dataset, sort_key, batch_size, sort_key_noise=0.5)
+    return DataLoader(
+        dataset,
+        batch_sampler=batch_sampler,
+        collate_fn=collate_fn,
+        pin_memory=context.is_cuda,
+        num_workers=0)
+
+
+def init_model(vocab_size):
+    """ Intitiate the ``FeatureModel`` with random weights.
+
+    Args:
+        vocab_size (int): Size of the vocab used for model embeddings.
+
+    Returns:
+        (FeatureModel): Feature model intialized.
+    """
+    model = FeatureModel(vocab_size)
+    for param in model.parameters():
+        param.data.uniform_(-0.1, 0.1)
+    return model
+
+
+with ExperimentContextManager(label='feature_model') as context:
+
+    cache = os.path.join(context.root_path, '/data/lj_speech.pt')
+    data, text_encoder = load_data(context, cache)
     train, dev, test = make_splits(data)
-    model = make_model(text_encoder.vocab_size)
-    # NOTE: https://github.com/pytorch/pytorch/issues/679
+    model = init_model(text_encoder.vocab_size)
+    # LEARN MORE: https://github.com/pytorch/pytorch/issues/679
     params = filter(lambda p: p.requires_grad, model.parameters())
     optimizer = Optimizer(Adam(params=params))
 
