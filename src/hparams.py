@@ -23,9 +23,13 @@ def set_hparams():
         },
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999, eps = 10−6
+        # learning rate of 10−3
+        # We also apply L2 regularization with weight 10−6
         'torch.optim.Adam.__init__': {
             'betas': (0.9, 0.999),
             'eps': 10e-6,
+            'lr': 10e-3,
+            'weight_decay': 10e-6,
         }
     })
 
@@ -54,6 +58,15 @@ def set_hparams():
 
     add_config({
         'src': {
+            'lr_schedulers.DelayedExponentialLR.__init__': {
+                # SOURCE (Tacotron 2):
+                # learning rate of 10−3 exponentially decaying to 10−5 starting after 50,000
+                # iterations.
+                # NOTE: Over email the authors confirmed they ended decay at 100,000 steps
+                'epoch_end_decay': 100000,
+                'end_lr': 10e-5,
+                'epoch_start_decay': 10e-3,
+            },
             'spectrogram': {
                 # SOURCE (Tacotron 1):
                 # We use 24 kHz sampling rate for all experiments.

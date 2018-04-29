@@ -12,9 +12,9 @@ class DelayedExponentialLR(_LRScheduler):
 
     Args:
         optimizer (Optimizer): Wrapped optimizer.
-        epoch_start_decay (int): Epoch to start exponential decay
         epoch_end_decay (int): Epoch to end exponential decay
         end_lr (float): Learning rate to be reached at ``epoch_end_decay``
+        epoch_start_decay (int): Epoch to start exponential decay
         last_epoch (int): The index of last epoch. Default: -1.
     """
 
