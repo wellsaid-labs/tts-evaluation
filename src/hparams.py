@@ -5,7 +5,6 @@ from tensorflow.contrib.signal.python.ops import window_ops
 from torch.optim import Adam
 
 from src.configurable import add_config
-from src.configurable import log_config
 from src.configurable import configurable
 
 
@@ -187,4 +186,3 @@ def set_hparams():
             }
         }
     })
-    log_config()

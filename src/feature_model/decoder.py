@@ -98,8 +98,7 @@ class AutoregressiveDecoder(nn.Module):
         self.lstm_layer_two = nn.LSTM(
             input_size=pre_net_hidden_size + self.attention_context_size,
             hidden_size=lstm_hidden_size,
-            num_layers=1,
-            dropout=lstm_variational_dropout)
+            num_layers=1)
         self.attention = LocationSensitiveAttention(
             encoder_hidden_size=self.attention_context_size, query_hidden_size=query_hidden_size)
         self.linear_out = nn.Linear(

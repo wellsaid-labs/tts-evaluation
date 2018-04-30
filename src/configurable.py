@@ -71,6 +71,9 @@ class _ArgumentsList():
     def __str__(self):
         return str(self.list)
 
+    def __repr__(self):
+        return str(self.list)
+
 
 _configuration = _KeyListDictionary()  # Global private configuration
 
@@ -306,7 +309,7 @@ def _add_arguments(keys, parameters, args, kwargs):
 def log_arguments():
     """ Log the parameters saved up to this point. """
     logger.info('Paramters:')
-    logging.info(pretty_printer.pformat(_arguments))
+    logger.info(pretty_printer.pformat(_arguments))
 
 
 def clear_arguments():
@@ -323,7 +326,7 @@ def _get_arguments():
 def log_config():
     """ Log the current global configuration. """
     logger.info('Global configuration:')
-    logging.info(pretty_printer.pformat(_configuration))
+    logger.info(pretty_printer.pformat(_configuration))
 
 
 def clear_config():
@@ -398,7 +401,6 @@ def configurable(func):
 
         parameters = list(inspect.signature(func).parameters.values())
         args, kwargs = _merge_args(parameters, args, kwargs, config)
-        print(print_name, kwargs)
         _add_arguments(keys, parameters, args, kwargs)
 
         return func(*args, **kwargs)

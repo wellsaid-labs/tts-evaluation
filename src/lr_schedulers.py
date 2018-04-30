@@ -2,6 +2,8 @@ import math
 
 from torch.optim.lr_scheduler import _LRScheduler
 
+from src.configurable import configurable
+
 
 class DelayedExponentialLR(_LRScheduler):
     """Set the learning rate of each parameter group to the initial lr decayed
@@ -18,6 +20,7 @@ class DelayedExponentialLR(_LRScheduler):
         last_epoch (int): The index of last epoch. Default: -1.
     """
 
+    @configurable
     def __init__(self, optimizer, epoch_end_decay, end_lr, epoch_start_decay=0, last_epoch=-1):
         self.epoch_start_decay = epoch_start_decay
 

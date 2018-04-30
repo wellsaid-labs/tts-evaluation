@@ -19,6 +19,7 @@ class Optimizer(object):
     def __init__(self, optim, max_grad_norm=0.0):
         self.optimizer = optim
         self.max_grad_norm = max_grad_norm
+        self.zero_grad = self.optimizer.zero_grad
 
     def step(self):
         """ Performs a single optimization step, including gradient norm clipping if necessary.

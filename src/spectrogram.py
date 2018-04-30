@@ -1,6 +1,5 @@
 import argparse
 import glob
-import logging
 import os
 
 from matplotlib import cm
@@ -11,9 +10,6 @@ import numpy as np
 import tensorflow as tf
 
 from src.configurable import configurable
-
-logger = logging.getLogger(__name__)
-tf.enable_eager_execution()
 
 
 @configurable
@@ -42,7 +38,7 @@ def _read_audio(filename, sample_rate=None):
         int: Sample rate of the file.
     """
     audio, sample_rate = librosa.core.load(filename, sr=sample_rate, mono=True)
-    audio = tf.expand_dims(audio, axis=1)
+    audio = np.expand_dims(audio, axis=1)
     return audio, sample_rate
 
 
@@ -181,7 +177,7 @@ def wav_to_log_mel_spectrograms(filename, frame_size, frame_hop, window_function
     return log_mel_spectrograms[0].numpy()
 
 
-def _save_image_of_spectrogram(spectrogram, filename):
+def save_image_of_spectrogram(spectrogram, filename):
     """ Save image of spectrogram to disk.
 
     Args:
@@ -204,9 +200,7 @@ def command_line_interface():
     """ Command line interface to convert a directory of WAV files or WAV file to spectrograms.
     """
     from src.hparams import set_hparams
-    from src.utils import config_logging
 
-    config_logging()
     set_hparams()
 
     parser = argparse.ArgumentParser(description='Convert WAV to a log mel spectrogram CLI.')
@@ -218,8 +212,9 @@ def command_line_interface():
     for filename in filenames:
         spectrogram = wav_to_log_mel_spectrograms(filename)
         filename = filename.replace('.wav', '_spectrogram.png')
-        _save_image_of_spectrogram(spectrogram, filename)
+        save_image_of_spectrogram(spectrogram, filename)
 
 
 if __name__ == "__main__":  # pragma: no cover
+    tf.enable_eager_execution()
     command_line_interface()

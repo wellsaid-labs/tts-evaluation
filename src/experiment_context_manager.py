@@ -2,6 +2,7 @@ import argparse
 import dill
 import logging
 import os
+import platform
 import random
 import subprocess
 import sys
@@ -14,10 +15,7 @@ import torch
 from src.configurable import log_config
 from src.configurable import log_arguments
 from src.hparams import set_hparams
-from src.utils import config_logging
 from src.utils import get_root_path
-
-logger = logging.getLogger(__name__)
 
 
 class CopyStream(object):
@@ -48,6 +46,9 @@ class CopyStream(object):
 
 class ExperimentContextManager(object):
     """ ExperimentContextManager is a context manager for PyTorch enabling reproducible experiments.
+
+    Side Effect:
+        In order to redirect stdout, resets the logging module and setups new handlers.
 
     Args:
         label (str): Label, typically the model name, for a set of experiments.
@@ -98,10 +99,26 @@ class ExperimentContextManager(object):
         torch.save(data, full_path, pickle_module=dill)
         return full_path
 
-    def _copy_standard_streams(self,
-                               directory='',
-                               stdout_filename='stdout.log',
-                               stderr_filename='stderr.log'):
+    def notify(self, title, text):
+        """ Queue a desktop notification on a Linux or OSX machine.
+
+        Args:
+            title (str): Notification title
+            text (str): Notification description
+        """
+        system = platform.system()
+        cmd = ''
+        if system == 'Darwin':  # OSX
+            cmd = """osascript -e 'display notification "{text}" with title "{title}"'"""
+        elif system == 'Linux':
+            cmd = "notify-send '{title}' '{text}'"
+
+        try:
+            os.system(cmd.format(text=text, title=title))
+        except:
+            pass
+
+    def _copy_standard_streams(self, stdout_filename='stdout.log', stderr_filename='stderr.log'):
         """ Copy stdout and stderr to a ``{directory}/stdout.log`` and ``{directory}/stderr.log``.
 
         Args:
@@ -109,8 +126,8 @@ class ExperimentContextManager(object):
             stdout_filename (str): Filename used to save the stdout stream.
             stderr_filename (str): Filename used to save the stderr stream.
         """
-        self.stdout_filename = os.path.join(directory, stdout_filename)
-        self.stderr_filename = os.path.join(directory, stderr_filename)
+        self.stdout_filename = os.path.join(self.directory, stdout_filename)
+        self.stderr_filename = os.path.join(self.directory, stderr_filename)
         sys.stdout = CopyStream(self.stdout_filename, sys.stdout)
         sys.stderr = CopyStream(self.stderr_filename, sys.stderr)
 
@@ -178,8 +195,16 @@ class ExperimentContextManager(object):
         self._copy_standard_streams()
 
         # Setup logging
-        config_logging()
+        self._stream_handler = logging.StreamHandler(stream=sys.stdout)
+        self._stream_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter(
+            '[%(asctime)s][%(processName)s][%(name)s][%(levelname)s] %(message)s')
+        self._stream_handler.setFormatter(formatter)
+        root = logging.getLogger()
+        root.addHandler(self._stream_handler)
+        root.setLevel(logging.INFO)
 
+        logger = logging.getLogger(__name__)
         logger.info('Experiment Folder: %s' % self.directory)
         logger.info('Label: %s', self.label)
         logger.info('Device: %d', self.device)
@@ -200,11 +225,20 @@ class ExperimentContextManager(object):
     def __exit__(self, type_, value, traceback):
         """ Runs after the experiment context ends.
         """
+        # Print all arguments used
+        log_arguments()
+
         # Flush stdout and stderr to capture everything
         sys.stdout.flush()
         sys.stderr.flush()
 
-        if type_ is None or type_ is KeyboardInterrupt:  # No exception
-            # Print all arguments used
-            log_arguments()
+        # Reset streams
+        sys.stdout = sys.stdout.stream
+        sys.stderr = sys.stderr.stream
+
+        logging.getLogger().removeHandler(self._stream_handler)
+
+        if type_ is None:  # No exception
             self.git_commit()
+
+        self.notify('Experiment: %s' % os.path.basename(self.directory), 'Experiment has exited.')
