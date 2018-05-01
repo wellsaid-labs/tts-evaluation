@@ -4,31 +4,33 @@ import logging
 import os
 import random
 
-from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torch.optim import Adam
 from torch.nn import MSELoss
 from torch.nn import BCELoss
-from torchnlp.utils import pad_batch
 from torchnlp.samplers import BucketBatchSampler
 from torchnlp.text_encoders import CharacterEncoder
 from tqdm import tqdm
 
 import torch
+import tensorflow as tf
 
-from src.utils import split_dataset
-from src.utils import get_total_parameters
+tf.enable_eager_execution()
+
 from src.datasets import lj_speech_dataset
-from src.spectrogram import wav_to_log_mel_spectrograms
 from src.experiment_context_manager import ExperimentContextManager
 from src.feature_model import FeatureModel
-from src.configurable import configurable
-from src.optimizer import Optimizer
 from src.lr_schedulers import DelayedExponentialLR
-
-Adam.__init__ = configurable(Adam.__init__)
+from src.optimizer import Optimizer
+from src.spectrogram import save_image_of_spectrogram
+from src.spectrogram import wav_to_log_mel_spectrograms
+from src.utils import get_total_parameters
+from src.utils import pad_batch
+from src.utils import split_dataset
 
 logger = logging.getLogger(__name__)
+
+# TODO: Consider an integration test run on this with a mock over load_data to have 10 items
 
 
 def load_data(context, cache):
@@ -44,18 +46,24 @@ def load_data(context, cache):
     """
     if not os.path.isfile(cache):
         data = lj_speech_dataset()
+        logger.info('Sample Data:\n%s', data[:5])
         text_encoder = CharacterEncoder([r['text'] for r in data])
         logger.info('Data loaded, creating spectrograms and encoding text...')
-        for row in tqdm(data):
-            row['log_mel_spectrograms'] = torch.FloatTensor(wav_to_log_mel_spectrograms(row['wav']))
-            row['text'] = text_encoder.encode(row['text'])
-            row['stop_token'] = torch.LongTensor(
-                [0 for _ in range(row['log_mel_spectrograms'].shape[0])])
-            row['stop_token'][row['log_mel_spectrograms'].shape[0]] = 1
-            row['mask'] = torch.LongTensor([1 for _ in range(row['log_mel_spectrograms'].shape[0])])
+        # ``requires_grad`` Neither the inputs nor outputs are to change with the gradient
+        tf_device = '/{device}:{num}'.format(
+            device='gpu' if context.is_cuda else 'cpu', num=context.device)
+        with tf.device(tf_device):
+            for row in tqdm(data):
+                row['log_mel_spectrograms'] = torch.tensor(wav_to_log_mel_spectrograms(row['wav']))
+                row['text'] = torch.tensor(text_encoder.encode(row['text']).data)
+                row['stop_token'] = torch.FloatTensor(
+                    [0 for _ in range(row['log_mel_spectrograms'].shape[0])])
+                row['stop_token'][row['log_mel_spectrograms'].shape[0] - 1] = 1
+                row['mask'] = torch.FloatTensor(
+                    [1 for _ in range(row['log_mel_spectrograms'].shape[0])])
         logger.info('Text encoder vocab size: %d' % text_encoder.vocab_size)
         to_save = (data, text_encoder)
-        context.save(to_save, cache)
+        context.save(cache, to_save)
         return to_save
 
     return context.load(cache)
@@ -76,11 +84,14 @@ def make_splits(data, splits=(0.8, 0.2)):
     train, dev = split_dataset(data, splits)
     logger.info('Number Training Rows: %d', len(train))
     logger.info('Number Dev Rows: %d', len(dev))
-    logger.info('Sample Data:\n%s', train[:5])
     return train, dev
 
 
-def get_iterator(context, dataset, batch_size, train=True, sort_key=lambda r: r['text'].size()[0]):
+def get_iterator(context,
+                 dataset,
+                 batch_size,
+                 train=True,
+                 sort_key=lambda r: r['log_mel_spectrograms'].shape[0]):
     """ Get a batch iterator over the ``dataset``.
 
     Args:
@@ -99,32 +110,27 @@ def get_iterator(context, dataset, batch_size, train=True, sort_key=lambda r: r[
             mask_batch (torch.LongTensor [num_frames, batch_size, 1])
     """
 
-    def to_variable(padded_batch):
-        """ Given a ``padded_batch`` (list of Tensors), convert into a ``maybe_cuda`` Variable. """
-        return context.maybe_cuda(
-            Variable(torch.stack(padded_batch, dim=0).t_(0, 1).contiguous(), volatile=not train),
-            async=True)
-
     def collate_fn(batch):
         """ List of tensors to a batch variable """
         text_batch, _ = pad_batch([row['text'] for row in batch])
         frames_batch, _ = pad_batch([row['log_mel_spectrograms'] for row in batch])
         stop_token_batch, _ = pad_batch([row['stop_token'] for row in batch])
         mask_batch, _ = pad_batch([row['mask'] for row in batch])
-        return (to_variable(text_batch).t_(0, 1), to_variable(frames_batch),
-                to_variable(stop_token_batch), to_variable(mask_batch))
+        process = lambda b: context.maybe_cuda(b.transpose_(0, 1).contiguous(), async=True)
+        return (context.maybe_cuda(text_batch, async=True), process(frames_batch),
+                process(stop_token_batch), process(mask_batch))
 
     # Use bucket sampling to group similar sized text but with noise + random
-    batch_sampler = BucketBatchSampler(dataset, sort_key, batch_size, sort_key_noise=0.5)
+    batch_sampler = BucketBatchSampler(dataset, batch_size, False, sort_key=sort_key)
     return DataLoader(
         dataset,
         batch_sampler=batch_sampler,
         collate_fn=collate_fn,
-        pin_memory=context.is_cuda,
+        pin_memory=False,
         num_workers=0)
 
 
-def init_model(vocab_size):
+def init_model(context, vocab_size):
     """ Intitiate the ``FeatureModel`` with random weights.
 
     Args:
@@ -136,6 +142,7 @@ def init_model(vocab_size):
     model = FeatureModel(vocab_size)
     for param in model.parameters():
         param.data.uniform_(-0.1, 0.1)
+    model = context.maybe_cuda(model)
     return model
 
 
@@ -148,7 +155,7 @@ def get_loss_frames(criterion, frames_batch, predicted_frames, mask_batch, size_
             frames.
         predicted_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Predicted
             frames.
-        mask_batch (torch.LongTensor [num_frames, batch_size]): Mask of zero's and one's to apply.
+        mask_batch (torch.FloatTensor [num_frames, batch_size]): Mask of zero's and one's to apply.
         size_average (bool, optional): By default, the losses are averaged over observations for
             each minibatch;However, if the field size_average is set to ``False``, the losses are
             instead summed for each minibatch.
@@ -157,7 +164,7 @@ def get_loss_frames(criterion, frames_batch, predicted_frames, mask_batch, size_
         (torch.Tensor) scalar loss value
     """
     # loss [num_frames, batch_size, frame_channels]
-    loss = criterion(frames_batch, predicted_frames, reduce=False)
+    loss = criterion(predicted_frames, frames_batch)
     loss = loss * mask_batch.unsqueeze(-1)
     return torch.mean(loss) if size_average else torch.sum(loss)
 
@@ -181,36 +188,49 @@ def get_loss_stop_token(criterion,
     Returns:
         (torch.Tensor) scalar loss value
     """
-    loss = criterion(stop_token_batch, predicted_stop_token, reduce=False)
+    loss = criterion(predicted_stop_token, stop_token_batch)
     loss = loss * mask_batch
     return torch.mean(loss) if size_average else torch.sum(loss)
 
 
+def save_sample_spectrogram(context, data):
+    """ Save the first spectrogram in data to ensure it computed correctly.
+
+    Args:
+        context (ExperimentContextManager): Context manager for the experiment
+        data (list): Data from which to grab sample spectrogram.
+    """
+    save_image_of_spectrogram(data[0]['log_mel_spectrograms'].numpy(),
+                              os.path.join(context.directory, 'sample_spectrogram.png'))
+
+
 with ExperimentContextManager(label='feature_model') as context:
-    cache = os.path.join(context.root_path, '/data/lj_speech.pt')
+    cache = os.path.join(context.root_path, 'data/lj_speech.pt')
     data, text_encoder = load_data(context, cache)
+    save_sample_spectrogram(context, data)
     train, dev = make_splits(data)
-    model = init_model(text_encoder.vocab_size)
+    model = init_model(context, text_encoder.vocab_size)
     # LEARN MORE: https://github.com/pytorch/pytorch/issues/679
     params = filter(lambda p: p.requires_grad, model.parameters())
     optimizer = Optimizer(Adam(params=params))
-    scheduler = DelayedExponentialLR(optimizer)
-    criterion_frames = context.maybe_cuda(MSELoss())
-    criterion_stop_token = context.maybe_cuda(BCELoss())
+    scheduler = DelayedExponentialLR(optimizer.optimizer)
+    criterion_frames = context.maybe_cuda(MSELoss(reduce=False))
+    criterion_stop_token = context.maybe_cuda(BCELoss(reduce=False))
 
-    train_batch_size = 64
-    dev_batch_size = 256
+    train_batch_size = 24
+    dev_batch_size = 64
     logger.info('Train Batch Size: %d', train_batch_size)
     logger.info('Total Parameters: %d', get_total_parameters(model))
     logger.info('Model:\n%s' % model)
-    epoch = -1
+    epoch = 0
+    step = 0
 
     while True:
-        epoch += 1
-        logger.info('Epoch: %d', epoch)
+        logger.info('Epoch: %d, Step: %d', epoch, step)
 
         # Iterate over the training data
         logger.info('Training...')
+        torch.set_grad_enabled(True)
         model.train(mode=True)
         train_iterator = get_iterator(context, train, train_batch_size, train=True)
         for text_batch, frames_batch, stop_token_batch, mask_batch in tqdm(train_iterator):
@@ -221,10 +241,11 @@ with ExperimentContextManager(label='feature_model') as context:
                                           mask_batch)
             loss_stop_token = get_loss_stop_token(criterion_stop_token, stop_token_batch,
                                                   predicted_stop_token, mask_batch)
-            loss_frames.backward()
-            loss_stop_token.backward()
+            (loss_stop_token + loss_frames).backward()
             optimizer.step()
             scheduler.step()
+            step += 1
+        epoch += 1
 
         checkpoint_path = context.save(
             '%d.pt' % epoch, {
@@ -236,25 +257,26 @@ with ExperimentContextManager(label='feature_model') as context:
             })
         logger.info('Checkpoint created at %s', checkpoint_path)
 
+        torch.set_grad_enabled(False)
         model.train(mode=False)
-        dev_iterator = get_iterator(context, dev, dev_batch_size, train=False)
         loss_frames = 0
         loss_stop_token = 0
         num_elements_stop_token = 0
         num_elements_frames = 0
+        dev_iterator = get_iterator(context, dev, dev_batch_size, train=False)
         for text_batch, frames_batch, stop_token_batch, mask_batch in tqdm(dev_iterator):
             predicted_frames, predicted_frames_with_residual, predicted_stop_token = model(
                 text_batch, frames_batch)
             loss_frames += get_loss_frames(
                 criterion_frames, frames_batch, predicted_frames, mask_batch,
-                size_average=False).data[0]
+                size_average=False).item()
             num_elements_frames += reduce(lambda x, y: x * y, frames_batch.shape)
             loss_stop_token += get_loss_stop_token(
                 criterion_stop_token,
                 stop_token_batch,
                 predicted_stop_token,
                 mask_batch,
-                size_average=False).data[0]
+                size_average=False).item()
             num_elements_stop_token += reduce(lambda x, y: x * y, stop_token_batch.shape)
 
         logger.info('Frame loss: %f', loss_frames / num_elements_frames)

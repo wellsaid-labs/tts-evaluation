@@ -1,7 +1,6 @@
 import torch
 
 from torch import nn
-from torch.autograd import Variable
 
 from src.configurable import configurable
 
@@ -52,8 +51,8 @@ class LocationSensitiveAttention(nn.Module):
     @configurable
     def __init__(self,
                  encoder_hidden_size=512,
-                 query_hidden_size=128,
-                 alignment_hidden_size=128,
+                 query_hidden_size=1024,
+                 hidden_size=128,
                  num_convolution_filters=32,
                  convolution_filter_size=31):
 
@@ -66,14 +65,12 @@ class LocationSensitiveAttention(nn.Module):
             in_channels=1,
             out_channels=num_convolution_filters,
             kernel_size=convolution_filter_size,
-            padding=int((convolution_filter_size - 1) / 2))
-        self.project_alignment = nn.Linear(
-            in_features=num_convolution_filters, out_features=alignment_hidden_size)
-
-        self.score_linear = nn.Sequential(
-            nn.Linear(query_hidden_size + encoder_hidden_size + alignment_hidden_size,
-                      encoder_hidden_size), nn.Tanh())
-        self.score_parameter = nn.Parameter(torch.FloatTensor(1, encoder_hidden_size, 1))
+            padding=int((convolution_filter_size - 1) / 2),
+            bias=False)
+        self.project_query = nn.Linear(query_hidden_size, hidden_size)
+        self.project_tokens = nn.Linear(encoder_hidden_size, hidden_size)
+        self.project_alignment = nn.Linear(num_convolution_filters, hidden_size)
+        self.score = nn.Sequential(nn.Tanh(), nn.Linear(hidden_size, 1))
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, encoded_tokens, query, last_alignment=None):
@@ -81,23 +78,25 @@ class LocationSensitiveAttention(nn.Module):
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size]):
                 Batched set of encoded sequences.
-            query (torch.FloatTensor [batch_size, query_hidden_size]): Query vector used to score
+            query (torch.FloatTensor [1, batch_size, query_hidden_size]): Query vector used to score
                 individual token vectors.
             last_alignment (torch.FloatTensor [batch_size, num_tokens], optional): Attention
                 alignment from the last query. If this vector is not included, the
                 ``last_alignment`` defaults to a zero vector.
 
         Returns:
-            context (torch.FloatTensor [batch_size, encoder_hidden_size]): Computed attention
+            context (torch.FloatTensor [batch_size, hidden_size]): Computed attention
                 context vector.
             alignment (torch.FloatTensor [batch_size, num_tokens]): Computed attention alignment
                 vector.
         """
+        num_tokens, batch_size, _ = encoded_tokens.shape
+
         if last_alignment is None:
             # Attention alignment, sometimes refered to as attention weights.
-            num_tokens, batch_size, _ = encoded_tokens.shape
-            last_alignment = Variable(
-                torch.FloatTensor(batch_size, num_tokens).zero_(), requires_grad=False)
+            last_alignment = torch.FloatTensor(batch_size, num_tokens).zero_()
+            if encoded_tokens.is_cuda:
+                last_alignment = last_alignment.cuda()
 
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
         last_alignment = last_alignment.unsqueeze(1)
@@ -107,36 +106,26 @@ class LocationSensitiveAttention(nn.Module):
         # [num_tokens, batch_size, num_convolution_filters]
         last_alignment = last_alignment.permute(2, 0, 1)
         # [num_tokens, batch_size, num_convolution_filters] →
-        # [num_tokens, batch_size, alignment_hidden_size]
+        # [num_tokens, batch_size, hidden_size]
         last_alignment = self.project_alignment(last_alignment)
 
-        # [batch_size, query_hidden_size] → [1, batch_size, query_hidden_size]
-        query = query.unsqueeze(0)
-        num_tokens, batch_size, _ = last_alignment.shape
-        # [1, batch_size, query_hidden_size] → [num_tokens, batch_size, query_hidden_size]
+        # [1, batch_size, query_hidden_size] → [1, batch_size, hidden_size]
+        query = self.project_query(query)
+        # [1, batch_size, hidden_size] → [num_tokens, batch_size, hidden_size]
         query = query.expand(num_tokens, -1, -1)
 
-        # encoded_tokens [num_tokens, batch_size, encoder_hidden_size] (concat)
-        # query [num_tokens, batch_size, query_hidden_size] (concat)
-        # last_alignment [num_tokens, batch_size, alignment_hidden_size] →
-        # [num_tokens, batch_size, alignment_hidden_size + query_hidden_size + encoder_hidden_size]
-        concat = torch.cat((encoded_tokens, query, last_alignment), -1)
-        # [num_tokens, batch_size, alignment_hidden_size + query_hidden_size + encoder_hidden_size]
-        # → [num_tokens, batch_size, encoder_hidden_size]
-        score = self.score_linear(concat)
+        # TODO: We can optimize this by taking it outside of the loop
+        # [num_tokens, batch_size, encoder_hidden_size] → [num_tokens, batch_size, hidden_size]
+        encoded_tokens = self.project_tokens(encoded_tokens)
 
-        # Transpose and expand to fit the requirements for ``torch.bmm``
-        # [num_tokens, batch_size, encoder_hidden_size] →
-        # [batch_size, num_tokens, encoder_hidden_size]
+        # [num_tokens, batch_size, hidden_size] → [num_tokens, batch_size, 1]
+        score = self.score(encoded_tokens + query + last_alignment)
+
+        del last_alignment  # Clear memory
+        del query  # Clear memory
+
+        # [num_tokens, batch_size, 1] → [batch_size, num_tokens, 1]
         score = score.transpose(0, 1)
-        # [1, encoder_hidden_size, 1] →
-        # [batch_size, encoder_hidden_size, 1]
-        score_parameter = self.score_parameter.expand(batch_size, -1, -1)
-
-        # [batch_size (b), num_tokens (n), encoder_hidden_size (m)] (bmm)
-        # [batch_size (b), encoder_hidden_size (m), 1 (p)] →
-        # [batch_size (b), num_tokens (n), 1 (p)]
-        score = torch.bmm(score, score_parameter)
 
         # Squeeze extra single dimension
         # [batch_size, num_tokens, 1] → [batch_size, num_tokens]
@@ -145,16 +134,18 @@ class LocationSensitiveAttention(nn.Module):
         # [batch_size, num_tokens] → [batch_size, num_tokens]
         alignment = self.softmax(score)
 
+        del score  # Clear memory
+
         # Transpose and unsqueeze to fit the requirements for ``torch.bmm``
-        # [num_tokens, batch_size, encoder_hidden_size] →
-        # [batch_size, num_tokens, encoder_hidden_size]
+        # [num_tokens, batch_size, hidden_size] →
+        # [batch_size, num_tokens, hidden_size]
         encoded_tokens = encoded_tokens.transpose(0, 1)
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
         alignment = alignment.unsqueeze(1)
 
         # alignment [batch_size (b), 1 (n), num_tokens (m)] (bmm)
-        # encoded_tokens [batch_size (b), num_tokens (m), encoder_hidden_size (p)] →
-        # [batch_size (b), 1 (n), encoder_hidden_size (p)]
+        # encoded_tokens [batch_size (b), num_tokens (m), hidden_size (p)] →
+        # [batch_size (b), 1 (n), hidden_size (p)]
         context = torch.bmm(alignment, encoded_tokens)
 
         # Squeeze extra single dimension

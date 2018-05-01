@@ -88,7 +88,7 @@ class Encoder(nn.Module):
             # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunatly, Zoneout in PyTorch
             # forces us to unroll the LSTM and slow down this component x3 to x4. For right now, we
             # will by using variational dropout.
-            dropout=lstm_variational_dropout,
+            dropout=0 if lstm_layers == 1 else lstm_variational_dropout,
         )
 
     def forward(self, tokens):
