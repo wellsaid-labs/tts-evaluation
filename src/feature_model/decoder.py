@@ -87,6 +87,7 @@ class AutoregressiveDecoder(nn.Module):
         # Is this case, the encoder hidden feature representation size directly informs the size
         # of the attention context.
         self.attention_context_size = attention_context_size
+        attention_hidden_size = attention_context_size
         self.pre_net = PreNet(hidden_size=pre_net_hidden_size, frame_channels=frame_channels)
         self.lstm_layer_one = nn.LSTM(
             input_size=pre_net_hidden_size + self.attention_context_size,
@@ -97,10 +98,11 @@ class AutoregressiveDecoder(nn.Module):
             input_size=lstm_hidden_size + self.attention_context_size,
             hidden_size=lstm_hidden_size,
             num_layers=1)
+        self.project_tokens = nn.Linear(encoder_hidden_size, attention_hidden_size)
         self.attention = LocationSensitiveAttention(
             encoder_hidden_size=encoder_hidden_size,
             query_hidden_size=lstm_hidden_size,
-            hidden_size=self.attention_context_size)
+            hidden_size=attention_hidden_size)
         self.linear_out = nn.Linear(
             in_features=lstm_hidden_size + self.attention_context_size, out_features=frame_channels)
         self.post_net = PostNet(frame_channels=self.frame_channels)
@@ -212,6 +214,10 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         num_tokens, batch_size, _ = encoded_tokens.shape
         is_cuda = encoded_tokens.is_cuda
 
+        # [num_tokens, batch_size, encoder_hidden_size] →
+        # [num_tokens, batch_size, attention_hidden_size]
+        encoded_tokens = self.project_tokens(encoded_tokens)
+
         # frames [num_frames, batch_size, frame_channels]
         frames = self._get_past_frames(
             is_cuda=is_cuda,
@@ -265,6 +271,8 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
             updated_frames.append(frame.squeeze(0))
             attention_contexts.append(last_attention_context)
+
+        del encoded_tokens  # Clear Memory
 
         # [num_frames, batch_size, lstm_hidden_size]
         frames = torch.stack(updated_frames, dim=0)

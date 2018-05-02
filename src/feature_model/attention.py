@@ -68,7 +68,6 @@ class LocationSensitiveAttention(nn.Module):
             padding=int((convolution_filter_size - 1) / 2),
             bias=False)
         self.project_query = nn.Linear(query_hidden_size, hidden_size)
-        self.project_tokens = nn.Linear(encoder_hidden_size, hidden_size)
         self.project_alignment = nn.Linear(num_convolution_filters, hidden_size)
         self.score = nn.Sequential(nn.Tanh(), nn.Linear(hidden_size, 1))
         self.softmax = nn.Softmax(dim=-1)
@@ -76,7 +75,7 @@ class LocationSensitiveAttention(nn.Module):
     def forward(self, encoded_tokens, query, last_alignment=None):
         """
         Args:
-            encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size]):
+            encoded_tokens (torch.FloatTensor [num_tokens, batch_size, attention_hidden_size]):
                 Batched set of encoded sequences.
             query (torch.FloatTensor [1, batch_size, query_hidden_size]): Query vector used to score
                 individual token vectors.
@@ -113,10 +112,6 @@ class LocationSensitiveAttention(nn.Module):
         query = self.project_query(query)
         # [1, batch_size, hidden_size] → [num_tokens, batch_size, hidden_size]
         query = query.expand(num_tokens, -1, -1)
-
-        # TODO: We can optimize this by taking it outside of the loop
-        # [num_tokens, batch_size, encoder_hidden_size] → [num_tokens, batch_size, hidden_size]
-        encoded_tokens = self.project_tokens(encoded_tokens)
 
         # [num_tokens, batch_size, hidden_size] → [num_tokens, batch_size, 1]
         score = self.score(encoded_tokens + query + last_alignment)

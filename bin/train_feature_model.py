@@ -239,9 +239,11 @@ with ExperimentContextManager(label='feature_model') as context:
                 text_batch, frames_batch)
             loss_frames = get_loss_frames(criterion_frames, frames_batch, predicted_frames,
                                           mask_batch)
+            loss_frames_with_residual = get_loss_frames(criterion_frames, frames_batch,
+                                                        predicted_frames_with_residual, mask_batch)
             loss_stop_token = get_loss_stop_token(criterion_stop_token, stop_token_batch,
                                                   predicted_stop_token, mask_batch)
-            (loss_stop_token + loss_frames).backward()
+            (loss_stop_token + loss_frames + loss_frames_with_residual).backward()
             optimizer.step()
             scheduler.step()
             step += 1
@@ -260,6 +262,7 @@ with ExperimentContextManager(label='feature_model') as context:
         torch.set_grad_enabled(False)
         model.train(mode=False)
         loss_frames = 0
+        loss_frames_with_residual = 0
         loss_stop_token = 0
         num_elements_stop_token = 0
         num_elements_frames = 0
@@ -269,6 +272,12 @@ with ExperimentContextManager(label='feature_model') as context:
                 text_batch, frames_batch)
             loss_frames += get_loss_frames(
                 criterion_frames, frames_batch, predicted_frames, mask_batch,
+                size_average=False).item()
+            loss_frames_with_residual += get_loss_frames(
+                criterion_frames,
+                frames_batch,
+                predicted_frames_with_residual,
+                mask_batch,
                 size_average=False).item()
             num_elements_frames += reduce(lambda x, y: x * y, frames_batch.shape)
             loss_stop_token += get_loss_stop_token(
@@ -280,6 +289,7 @@ with ExperimentContextManager(label='feature_model') as context:
             num_elements_stop_token += reduce(lambda x, y: x * y, stop_token_batch.shape)
 
         logger.info('Frame loss: %f', loss_frames / num_elements_frames)
+        logger.info('Frame loss: %f', loss_frames_with_residual / num_elements_frames)
         logger.info('Stop token loss: %f', loss_stop_token / num_elements_stop_token)
 
         print('–' * 100)
