@@ -45,19 +45,22 @@ def load_data(context, cache):
         (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
     """
     if not os.path.isfile(cache):
-        data = lj_speech_dataset()[:10]
+        data = lj_speech_dataset()
         logger.info('Sample Data:\n%s', data[:5])
         text_encoder = CharacterEncoder([r['text'] for r in data])
         logger.info('Data loaded, creating spectrograms and encoding text...')
         # ``requires_grad`` Neither the inputs nor outputs are to change with the gradient
-        for row in tqdm(data):
-            row['log_mel_spectrograms'] = torch.tensor(wav_to_log_mel_spectrograms(row['wav']))
-            row['text'] = torch.tensor(text_encoder.encode(row['text']).data)
-            row['stop_token'] = torch.FloatTensor(
-                [0 for _ in range(row['log_mel_spectrograms'].shape[0])])
-            row['stop_token'][row['log_mel_spectrograms'].shape[0] - 1] = 1
-            row['mask'] = torch.FloatTensor(
-                [1 for _ in range(row['log_mel_spectrograms'].shape[0])])
+        tf_device = '/{device}:{num}'.format(
+            device='gpu' if context.is_cuda else 'cpu', num=context.device)
+        with tf.device(tf_device):
+            for row in tqdm(data):
+                row['log_mel_spectrograms'] = torch.tensor(wav_to_log_mel_spectrograms(row['wav']))
+                row['text'] = torch.tensor(text_encoder.encode(row['text']).data)
+                row['stop_token'] = torch.FloatTensor(
+                    [0 for _ in range(row['log_mel_spectrograms'].shape[0])])
+                row['stop_token'][row['log_mel_spectrograms'].shape[0] - 1] = 1
+                row['mask'] = torch.FloatTensor(
+                    [1 for _ in range(row['log_mel_spectrograms'].shape[0])])
         logger.info('Text encoder vocab size: %d' % text_encoder.vocab_size)
         to_save = (data, text_encoder)
         context.save(cache, to_save)
@@ -113,8 +116,8 @@ def get_iterator(context,
         frames_batch, _ = pad_batch([row['log_mel_spectrograms'] for row in batch])
         stop_token_batch, _ = pad_batch([row['stop_token'] for row in batch])
         mask_batch, _ = pad_batch([row['mask'] for row in batch])
-        process = lambda b: context.maybe_cuda(b.transpose_(0, 1), async=True)
-        return (process(text_batch).transpose_(0, 1), process(frames_batch),
+        process = lambda b: context.maybe_cuda(b.transpose_(0, 1).contiguous(), async=True)
+        return (context.maybe_cuda(text_batch, async=True), process(frames_batch),
                 process(stop_token_batch), process(mask_batch))
 
     # Use bucket sampling to group similar sized text but with noise + random
@@ -123,11 +126,11 @@ def get_iterator(context,
         dataset,
         batch_sampler=batch_sampler,
         collate_fn=collate_fn,
-        pin_memory=context.is_cuda,
+        pin_memory=False,
         num_workers=0)
 
 
-def init_model(vocab_size):
+def init_model(context, vocab_size):
     """ Intitiate the ``FeatureModel`` with random weights.
 
     Args:
@@ -139,6 +142,7 @@ def init_model(vocab_size):
     model = FeatureModel(vocab_size)
     for param in model.parameters():
         param.data.uniform_(-0.1, 0.1)
+    model = context.maybe_cuda(model)
     return model
 
 
@@ -205,7 +209,7 @@ with ExperimentContextManager(label='feature_model') as context:
     data, text_encoder = load_data(context, cache)
     save_sample_spectrogram(context, data)
     train, dev = make_splits(data)
-    model = init_model(text_encoder.vocab_size)
+    model = init_model(context, text_encoder.vocab_size)
     # LEARN MORE: https://github.com/pytorch/pytorch/issues/679
     params = filter(lambda p: p.requires_grad, model.parameters())
     optimizer = Optimizer(Adam(params=params))
@@ -213,8 +217,8 @@ with ExperimentContextManager(label='feature_model') as context:
     criterion_frames = context.maybe_cuda(MSELoss(reduce=False))
     criterion_stop_token = context.maybe_cuda(BCELoss(reduce=False))
 
-    train_batch_size = 64
-    dev_batch_size = 256
+    train_batch_size = 24
+    dev_batch_size = 64
     logger.info('Train Batch Size: %d', train_batch_size)
     logger.info('Total Parameters: %d', get_total_parameters(model))
     logger.info('Model:\n%s' % model)
@@ -226,6 +230,7 @@ with ExperimentContextManager(label='feature_model') as context:
 
         # Iterate over the training data
         logger.info('Training...')
+        torch.set_grad_enabled(True)
         model.train(mode=True)
         train_iterator = get_iterator(context, train, train_batch_size, train=True)
         for text_batch, frames_batch, stop_token_batch, mask_batch in tqdm(train_iterator):
@@ -234,10 +239,11 @@ with ExperimentContextManager(label='feature_model') as context:
                 text_batch, frames_batch)
             loss_frames = get_loss_frames(criterion_frames, frames_batch, predicted_frames,
                                           mask_batch)
+            loss_frames_with_residual = get_loss_frames(criterion_frames, frames_batch,
+                                                        predicted_frames_with_residual, mask_batch)
             loss_stop_token = get_loss_stop_token(criterion_stop_token, stop_token_batch,
                                                   predicted_stop_token, mask_batch)
-            loss_frames.backward(retain_graph=True)
-            loss_stop_token.backward()
+            (loss_stop_token + loss_frames + loss_frames_with_residual).backward()
             optimizer.step()
             scheduler.step()
             step += 1
@@ -253,8 +259,10 @@ with ExperimentContextManager(label='feature_model') as context:
             })
         logger.info('Checkpoint created at %s', checkpoint_path)
 
+        torch.set_grad_enabled(False)
         model.train(mode=False)
         loss_frames = 0
+        loss_frames_with_residual = 0
         loss_stop_token = 0
         num_elements_stop_token = 0
         num_elements_frames = 0
@@ -264,6 +272,12 @@ with ExperimentContextManager(label='feature_model') as context:
                 text_batch, frames_batch)
             loss_frames += get_loss_frames(
                 criterion_frames, frames_batch, predicted_frames, mask_batch,
+                size_average=False).item()
+            loss_frames_with_residual += get_loss_frames(
+                criterion_frames,
+                frames_batch,
+                predicted_frames_with_residual,
+                mask_batch,
                 size_average=False).item()
             num_elements_frames += reduce(lambda x, y: x * y, frames_batch.shape)
             loss_stop_token += get_loss_stop_token(
@@ -275,6 +289,7 @@ with ExperimentContextManager(label='feature_model') as context:
             num_elements_stop_token += reduce(lambda x, y: x * y, stop_token_batch.shape)
 
         logger.info('Frame loss: %f', loss_frames / num_elements_frames)
+        logger.info('Frame loss: %f', loss_frames_with_residual / num_elements_frames)
         logger.info('Stop token loss: %f', loss_stop_token / num_elements_stop_token)
 
         print('–' * 100)

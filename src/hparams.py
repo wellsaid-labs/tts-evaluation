@@ -53,7 +53,7 @@ def set_hparams():
     # SOURCE (Tacotron 2):
     # Attention probabilities are computed after projecting inputs and location
     # features to 128-dimensional hidden representations.
-    query_hidden_size = 128
+    attention_hidden_size = 128
 
     add_config({
         'src': {
@@ -125,8 +125,7 @@ def set_hparams():
                     # SOURCE (Tacotron 2):
                     # Attention probabilities are computed after projecting inputs and location
                     # features to 128-dimensional hidden representations.
-                    'query_hidden_size': query_hidden_size,
-                    'alignment_hidden_size': 128,
+                    'hidden_size': attention_hidden_size,
 
                     # SOURCE (Tacotron 2):
                     # Location features are computed using 32 1-D convolution filters of length
@@ -139,7 +138,7 @@ def set_hparams():
                     'pre_net_hidden_size': pre_net_hidden_size,
                     'encoder_hidden_size': encoder_hidden_size,
                     'lstm_variational_dropout': lstm_variational_dropout,
-                    'query_hidden_size': query_hidden_size,
+                    'attention_context_size': attention_hidden_size,
 
                     # SOURCE (Tacotron 2):
                     # The prenet output and attention context vector are concatenated and

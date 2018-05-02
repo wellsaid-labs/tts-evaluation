@@ -1,5 +1,6 @@
+# import os
+
 from torch import nn
-from torch.autograd import Variable
 
 import torch
 
@@ -77,30 +78,32 @@ class AutoregressiveDecoder(nn.Module):
                  frame_channels=80,
                  pre_net_hidden_size=256,
                  encoder_hidden_size=512,
-                 query_hidden_size=128,
                  lstm_hidden_size=1024,
-                 lstm_variational_dropout=0.1):
+                 lstm_variational_dropout=0.1,
+                 attention_context_size=128):
 
         super(AutoregressiveDecoder, self).__init__()
 
         self.frame_channels = frame_channels
         # Is this case, the encoder hidden feature representation size directly informs the size
         # of the attention context.
-        self.attention_context_size = encoder_hidden_size
+        self.attention_context_size = attention_context_size
+        attention_hidden_size = attention_context_size
         self.pre_net = PreNet(hidden_size=pre_net_hidden_size, frame_channels=frame_channels)
         self.lstm_layer_one = nn.LSTM(
             input_size=pre_net_hidden_size + self.attention_context_size,
             hidden_size=lstm_hidden_size,
             num_layers=1)
-        self.frame_to_query = nn.Linear(
-            in_features=lstm_hidden_size, out_features=query_hidden_size)
         self.lstm_dropout = nn.Dropout(p=lstm_variational_dropout)
         self.lstm_layer_two = nn.LSTM(
-            input_size=pre_net_hidden_size + self.attention_context_size,
+            input_size=lstm_hidden_size + self.attention_context_size,
             hidden_size=lstm_hidden_size,
             num_layers=1)
+        self.project_tokens = nn.Linear(encoder_hidden_size, attention_hidden_size)
         self.attention = LocationSensitiveAttention(
-            encoder_hidden_size=self.attention_context_size, query_hidden_size=query_hidden_size)
+            encoder_hidden_size=encoder_hidden_size,
+            query_hidden_size=lstm_hidden_size,
+            hidden_size=attention_hidden_size)
         self.linear_out = nn.Linear(
             in_features=lstm_hidden_size + self.attention_context_size, out_features=frame_channels)
         self.post_net = PostNet(frame_channels=self.frame_channels)
@@ -132,7 +135,6 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         # Tacotron 2 authors confirmed that initially the decoder is conditioned on a fixed zero
         # frame.
         initial_frame = torch.FloatTensor(1, batch_size, self.frame_channels).zero_()
-        initial_frame = Variable(initial_frame, requires_grad=False)
         if is_cuda:
             initial_frame = initial_frame.cuda()
 
@@ -163,7 +165,6 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         # attention context.
         initial_attention_context = torch.FloatTensor(batch_size,
                                                       self.attention_context_size).zero_()
-        initial_attention_context = Variable(initial_attention_context, requires_grad=False)
         if is_cuda:
             initial_attention_context = initial_attention_context.cuda()
         return initial_attention_context
@@ -186,7 +187,6 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         # Tacotron 2 authors confirmed that initially the decoder is conditioned on a fixed zero
         # attention context.
         initial_attention_alignment = torch.FloatTensor(batch_size, num_tokens).zero_()
-        initial_attention_alignment = Variable(initial_attention_alignment, requires_grad=False)
         if is_cuda:
             initial_attention_alignment = initial_attention_alignment.cuda()
         return initial_attention_alignment
@@ -215,6 +215,10 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         num_tokens, batch_size, _ = encoded_tokens.shape
         is_cuda = encoded_tokens.is_cuda
 
+        # [num_tokens, batch_size, encoder_hidden_size] →
+        # [num_tokens, batch_size, attention_hidden_size]
+        encoded_tokens = self.project_tokens(encoded_tokens)
+
         # frames [num_frames, batch_size, frame_channels]
         frames = self._get_past_frames(
             is_cuda=is_cuda,
@@ -235,13 +239,16 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             num_tokens=num_tokens,
             batch_size=batch_size,
             hidden_state=hidden_state)
+        lstm_one_hidden_state = None if hidden_state is None else hidden_state.lstm_one_hidden_state
 
-        # Tacotron 2 authors confirmed over email this concat (``torch.cat``) strategy.
-
-        attention_contexts = []
         # Iterate over all frames for incase teacher-forcing; in sequential prediction, iterates
         # over a single frame.
-        for frame in frames:
+        updated_frames = []
+        attention_contexts = []
+        frames = list(frames.split(1, dim=0))
+        while len(frames) > 0:
+            frame = frames.pop(0).squeeze(0)
+
             # [batch_size, pre_net_hidden_size] (concat)
             # [batch_size, self.attention_context_size] →
             # [batch_size, pre_net_hidden_size + self.attention_context_size]
@@ -255,41 +262,34 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             # frame [seq_len (1), batch (batch_size),
             # input_size (pre_net_hidden_size + self.attention_context_size)]  →
             # [1, batch_size, lstm_hidden_size]
-            if hidden_state is None:
-                frame, lstm_one_hidden_state = self.lstm_layer_one(frame)
-            else:
-                frame, lstm_one_hidden_state = self.lstm_layer_one(
-                    frame, hidden_state.lstm_one_hidden_state)
-
+            frame, lstm_one_hidden_state = self.lstm_layer_one(frame, lstm_one_hidden_state)
             frame = self.lstm_dropout(frame)
-
-            # [1, batch_size, lstm_hidden_size] → [batch_size, lstm_hidden_size]
-            query = frame.squeeze(0)
-            # [1, batch_size, lstm_hidden_size] → [batch_size, query_hidden_size]
-            query = self.frame_to_query(query)
 
             # Initial attention alignment, sometimes refered to as attention weights.
             # attention_context [batch_size, self.attention_context_size]
-            attention_context, last_attention_alignment = self.attention(
-                encoded_tokens=encoded_tokens, query=query, last_alignment=last_attention_alignment)
-            attention_contexts.append(attention_context)
+            last_attention_context, last_attention_alignment = self.attention(
+                encoded_tokens=encoded_tokens, query=frame, last_alignment=last_attention_alignment)
 
-        # attention_context [num_frames (len(frames)), batch_size, self.attention_context_size]
-        attention_contexts = torch.stack(attention_contexts)
+            updated_frames.append(frame.squeeze(0))
+            attention_contexts.append(last_attention_context)
 
-        # [num_frames, batch_size, pre_net_hidden_size] (concat)
+        del encoded_tokens  # Clear Memory
+
+        # [num_frames, batch_size, lstm_hidden_size]
+        frames = torch.stack(updated_frames, dim=0)
+        # [num_frames, batch_size, self.attention_context_size]
+        attention_contexts = torch.stack(attention_contexts, dim=0)
+
+        # [num_frames, batch_size, lstm_hidden_size] (concat)
         # [num_frames, batch_size, self.attention_context_size] →
-        # [num_frames, batch_size, pre_net_hidden_size + self.attention_context_size]
+        # [num_frames, batch_size, lstm_hidden_size + self.attention_context_size]
         frames = torch.cat([frames, attention_contexts], dim=2)
 
         # frames [seq_len (num_frames), batch (batch_size),
-        # input_size (pre_net_hidden_size + self.attention_context_size)]  →
+        # input_size (lstm_hidden_size + self.attention_context_size)]  →
         # [num_frames, batch_size, lstm_hidden_size]
-        if hidden_state is None:
-            frames, lstm_two_hidden_state = self.lstm_layer_two(frames)
-        else:
-            frames, lstm_two_hidden_state = self.lstm_layer_two(frames,
-                                                                hidden_state.lstm_two_hidden_state)
+        lstm_two_hidden_state = None if hidden_state is None else hidden_state.lstm_two_hidden_state
+        frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
 
         # [num_frames, batch_size, lstm_hidden_size] (concat)
         # [num_frames, batch_size, self.attention_context_size] →

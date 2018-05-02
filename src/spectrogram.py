@@ -132,6 +132,7 @@ def wav_to_log_mel_spectrograms(filename, frame_size, frame_hop, window_function
     # A batch of float32 time-domain signal in the range [-1, 1] with shape
     # [signal_length].
     signals, sample_rate = _read_audio(filename)
+    signals = tf.convert_to_tensor(signals)
 
     # [signal_length, batch_size] -> [batch_size, signal_length]
     signals = tf.transpose(signals)

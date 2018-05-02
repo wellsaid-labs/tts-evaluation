@@ -91,7 +91,7 @@ class SpectrogramModel(nn.Module):
             (list) Indices that predicted stop.
         """
         stopped = predictions.data.view(-1).ge(0.5).nonzero()
-        if stopped.dim() > 0:
+        if stopped.dim() > 1:
             return stopped.squeeze(1).tolist()
         else:
             return []
@@ -110,17 +110,21 @@ class SpectrogramModel(nn.Module):
             stop_token (torch.FloatTensor [num_frames, batch_size]): Probablity of stopping.
         """
         encoded_tokens = self.encoder(tokens)
-        batch_size, _, _ = encoded_tokens.shape
-        frames, frames_with_residual, stop_token, hidden_state = self.decoder(
-            encoded_tokens, ground_truth_frames=ground_truth_frames)
+
+        # [num_tokens, batch_size, hidden_size]
+        _, batch_size, _ = encoded_tokens.shape
 
         if ground_truth_frames is None:  # Unrolling the decoder.
-            stopped = set(self._get_stopped_indexes(stop_token))
+            stopped = set()
             recursion = 0
+            hidden_state = None
             while len(stopped) != batch_size and recursion < self.max_recursion:
                 frames, frames_with_residual, stop_token, hidden_state = self.decoder(
                     encoded_tokens, hidden_state=hidden_state)
                 stopped.update(self._get_stopped_indexes(stop_token))
                 recursion += 1
+        else:
+            frames, frames_with_residual, stop_token, hidden_state = self.decoder(
+                encoded_tokens, ground_truth_frames=ground_truth_frames)
 
         return frames, frames_with_residual, stop_token

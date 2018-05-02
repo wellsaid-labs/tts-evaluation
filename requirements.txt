@@ -1,5 +1,6 @@
 # Math
 tensorflow
+# NOTE: You may need to install tensorflow-gpu if you plan to use a GPU
 numpy
 
 # Image Library
