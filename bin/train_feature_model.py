@@ -23,7 +23,7 @@ from src.feature_model import FeatureModel
 from src.lr_schedulers import DelayedExponentialLR
 from src.optimizer import Optimizer
 from src.spectrogram import save_image_of_spectrogram
-from src.spectrogram import wav_to_log_mel_spectrograms
+from src.spectrogram import wav_to_log_mel_spectrogram
 from src.utils import get_total_parameters
 from src.utils import pad_batch
 from src.utils import split_dataset
@@ -54,7 +54,7 @@ def load_data(context, cache):
             device='gpu' if context.is_cuda else 'cpu', num=context.device)
         with tf.device(tf_device):
             for row in tqdm(data):
-                row['log_mel_spectrograms'] = torch.tensor(wav_to_log_mel_spectrograms(row['wav']))
+                row['log_mel_spectrograms'] = torch.tensor(wav_to_log_mel_spectrogram(row['wav']))
                 row['text'] = torch.tensor(text_encoder.encode(row['text']).data)
                 row['stop_token'] = torch.FloatTensor(
                     [0 for _ in range(row['log_mel_spectrograms'].shape[0])])
