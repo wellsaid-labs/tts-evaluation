@@ -1,19 +1,21 @@
+import matplotlib
+matplotlib.use('Agg')
+
 from functools import partial
 
 import argparse
 import glob
-import os
-import math
 import logging
+import math
+import os
 
-from matplotlib import cm
-from PIL import Image
 from tensorflow.python.framework import constant_op
+from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_util
 from tensorflow.python.ops import math_ops
-from tensorflow.python.framework import ops
 
 import librosa
+import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
@@ -344,23 +346,29 @@ def log_mel_spectrogram_to_wav(log_mel_spectrogram,
     librosa.output.write_wav(filename, waveform[0].numpy(), sr=sample_rate)
 
 
-def save_image_of_spectrogram(spectrogram, filename):
+def plot_spectrogram(spectrogram, filename, title='Mel-Spectrogram'):
     """ Save image of spectrogram to disk.
 
     Args:
         spectrogram (Tensor): A ``[frames, num_mel_bins]`` ``Tensor`` of ``complex64`` STFT
             values.
         filename (str): Name of the file to save to.
+        title (str): Title of the plot.
 
     Returns:
         None
     """
-    assert '.png' in filename, "Filename must be a PNG"
-    spectrogram = (spectrogram - np.min(spectrogram)) / (np.max(spectrogram) - np.min(spectrogram))
-    spectrogram = np.flip(spectrogram, axis=1)  # flip against freq axis
-    spectrogram = np.uint8(cm.viridis(spectrogram.T) * 255)
-    image = Image.fromarray(spectrogram)
-    image.save(filename, 'png')
+    assert '.png' in filename.lower(), "Filename saves in PNG format"
+
+    plt.figure()
+    plt.style.use('ggplot')
+    plt.imshow(np.rot90(spectrogram))
+    plt.colorbar(orientation='horizontal')
+    plt.ylabel('Mel-Channels')
+    xlabel = 'Frames'
+    plt.xlabel(xlabel)
+    plt.title(title)
+    plt.savefig(filename, format='png', bbox_inches='tight')
 
 
 def command_line_interface():
@@ -379,7 +387,7 @@ def command_line_interface():
     for filename in filenames:
         spectrogram = wav_to_log_mel_spectrogram(filename)
         filename = filename.replace('.wav', '_spectrogram.png')
-        save_image_of_spectrogram(spectrogram, filename)
+        plot_spectrogram(spectrogram, filename)
 
 
 if __name__ == "__main__":  # pragma: no cover

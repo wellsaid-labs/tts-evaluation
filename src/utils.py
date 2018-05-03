@@ -2,6 +2,7 @@ import logging
 import logging.config
 import os
 
+import matplotlib.pyplot as plt
 import torch
 
 from torchnlp.text_encoders import PADDING_INDEX
@@ -80,3 +81,29 @@ def split_dataset(dataset, splits):
         datasets.append(dataset[:split])
         dataset = dataset[split:]
     return datasets
+
+
+def plot_attention(alignment, filename, title='Attention Alignment'):
+    """ Plot alignment of attention.
+
+    Args:
+        alignment (numpy.array([decoder_timestep, encoder_timestep])): Attention alignment weights
+            computed at every timestep of the decoder.
+        filename (str): Location to save the file.
+        title (str): Title of the plot.
+
+    Returns:
+        None
+    """
+    assert '.png' in filename.lower(), "Filename saves in PNG format"
+
+    plt.style.use('ggplot')
+    figure, axis = plt.subplots()
+    im = axis.imshow(alignment, aspect='auto', origin='lower', interpolation='none')
+    figure.colorbar(im, ax=axis, orientation='horizontal')
+    xlabel = 'Decoder timestep'
+    plt.xlabel(xlabel)
+    plt.title(title, y=1.1)
+    plt.ylabel('Encoder timestep')
+    plt.tight_layout()
+    plt.savefig(filename, format='png')

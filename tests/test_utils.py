@@ -6,12 +6,14 @@ from torchnlp.text_encoders import PADDING_INDEX
 
 import torch
 import pytest
+import numpy as np
 
 from src.utils import split_dataset
 from src.utils import get_root_path
 from src.utils import get_total_parameters
 from src.utils import pad_batch
 from src.utils import pad_tensor
+from src.utils import plot_attention
 
 
 class MockModel(nn.Module):
@@ -76,3 +78,14 @@ def test_pad_batch():
     padded = [r.tolist() for r in padded]
     assert padded == [[1, 2, 3], [1, 2, PADDING_INDEX], [1, PADDING_INDEX, PADDING_INDEX]]
     assert lengths == [3, 2, 1]
+
+
+def test_plot_attention():
+    filename = 'tests/_test_data/sample_plot.png'
+    arr = np.random.rand(5, 6)
+    plot_attention(arr, filename)
+
+    assert os.path.isfile(filename)
+
+    # Clean up
+    os.remove(filename)
