@@ -1,11 +1,12 @@
 from functools import reduce
 from functools import wraps
+from importlib import import_module
 
 import inspect
 import logging
 import operator
 import pprint
-from importlib import import_module
+import sys
 
 pretty_printer = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
@@ -180,6 +181,16 @@ def _check_configuration(dict_):
     return _check_configuration_helper(dict_, [])
 
 
+def _get_main_module_name():
+    """ Get __main__ module name """
+    file_name = sys.argv[0]
+    no_extension = file_name.split('.')[0]
+    return no_extension.replace('/', '.')
+
+
+_main_module_name = _get_main_module_name()
+
+
 def _check_configuration_helper(dict_, keys):
     """ Recursive helper of ``_check_configuration``.
 
@@ -187,6 +198,7 @@ def _check_configuration_helper(dict_, keys):
         dict_ (dict): Parsed dict to check
         keys (list): Current key route in ``dict_``
     """
+
     if not isinstance(dict_, dict):
         # Recursive function walked up the chain and never found a @configurable
         raise TypeError('Path %s does not contain @configurable.' % keys)
@@ -200,6 +212,8 @@ def _check_configuration_helper(dict_, keys):
         try:
             # Try to import a function
             module_path = '.'.join(keys[:-1])
+            if module_path == _main_module_name:
+                module_path = '__main__'
             module = import_module(module_path)
             if hasattr(module, keys[-1]):
                 function = getattr(module, keys[-1])
@@ -218,6 +232,8 @@ def _check_configuration_helper(dict_, keys):
         #   function = nn.BatchNorm1d.__init__
         try:
             module_path = '.'.join(keys[:-2])
+            if module_path == _main_module_name:
+                module_path = '__main__'
             module = import_module(module_path)
             if hasattr(module, keys[-2]):
                 class_ = getattr(module, keys[-2])
@@ -387,6 +403,8 @@ def configurable(func):
 
         # Get the module name
         module_keys = inspect.getmodule(func).__name__.split('.')
+        if module_keys == ['__main__']:
+            module_keys = _main_module_name.split('.')
         keys = module_keys + func.__qualname__.split('.')
 
         # Get the module config

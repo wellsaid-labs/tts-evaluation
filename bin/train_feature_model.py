@@ -22,7 +22,7 @@ from src.experiment_context_manager import ExperimentContextManager
 from src.feature_model import FeatureModel
 from src.lr_schedulers import DelayedExponentialLR
 from src.optimizer import Optimizer
-from src.spectrogram import save_image_of_spectrogram
+from src.spectrogram import plot_spectrogram
 from src.spectrogram import wav_to_log_mel_spectrogram
 from src.utils import get_total_parameters
 from src.utils import pad_batch
@@ -197,7 +197,7 @@ def save_sample_spectrogram(context, data, name='sample_spectrogram.png'):
         context (ExperimentContextManager): Context manager for the experiment
         data (list): Data from which to grab sample spectrogram.
     """
-    save_image_of_spectrogram(data, os.path.join(context.directory, name))
+    plot_spectrogram(data, os.path.join(context.directory, name))
 
 
 with ExperimentContextManager(label='feature_model') as context:
