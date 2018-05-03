@@ -1,6 +1,3 @@
-import matplotlib
-matplotlib.use('Agg')
-
 from functools import partial
 
 import argparse
@@ -15,7 +12,7 @@ from tensorflow.python.framework import tensor_util
 from tensorflow.python.ops import math_ops
 
 import librosa
-import matplotlib.pyplot as plt
+
 import numpy as np
 import tensorflow as tf
 
@@ -360,6 +357,8 @@ def plot_spectrogram(spectrogram, filename, title='Mel-Spectrogram'):
     Returns:
         None
     """
+    import matplotlib.pyplot as plt
+
     assert '.png' in filename.lower(), "Filename saves in PNG format"
 
     plt.figure()
@@ -371,6 +370,7 @@ def plot_spectrogram(spectrogram, filename, title='Mel-Spectrogram'):
     plt.xlabel(xlabel)
     plt.title(title)
     plt.savefig(filename, format='png', bbox_inches='tight')
+    plt.close()
 
 
 def command_line_interface():
@@ -393,5 +393,8 @@ def command_line_interface():
 
 
 if __name__ == "__main__":  # pragma: no cover
+    import matplotlib
+    matplotlib.use('Agg')
+
     tf.enable_eager_execution()
     command_line_interface()

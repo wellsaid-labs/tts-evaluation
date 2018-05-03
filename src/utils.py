@@ -108,3 +108,4 @@ def plot_attention(alignment, filename, title='Attention Alignment'):
     plt.ylabel('Encoder timestep')
     plt.tight_layout()
     plt.savefig(filename, format='png')
+    plt.close()

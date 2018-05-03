@@ -1,4 +1,3 @@
-import argparse
 import dill
 import logging
 import os
@@ -224,10 +223,6 @@ class ExperimentContextManager(object):
         logger.info('Device: %d', self.device)
         logger.info('Seed: %s', self.seed)
 
-        parser = argparse.ArgumentParser()
-        parser.add_argument('message', help='Message describing the experiment.')
-        self.message = parser.parse_args().message
-
         # Set the hyperparameters with configurable
         set_hparams()
 
@@ -251,8 +246,5 @@ class ExperimentContextManager(object):
         sys.stderr = sys.stderr.stream
 
         logging.getLogger().removeHandler(self._stream_handler)
-
-        if type_ is None:  # No exception
-            self.git_commit()
 
         self.notify('Experiment: %s' % os.path.basename(self.directory), 'Experiment has exited.')

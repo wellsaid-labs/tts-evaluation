@@ -1,9 +1,10 @@
 from functools import reduce
 
+import argparse
+import gc
 import logging
 import os
 import random
-import argparse
 
 from torch.utils.data import DataLoader
 from torch.optim import Adam
@@ -55,8 +56,7 @@ def load_data(context, cache, text_encoder=None):
             text_encoder = CharacterEncoder([r['text'] for r in data])
         logger.info('Data loaded, creating spectrograms and encoding text...')
         # ``requires_grad`` Neither the inputs nor outputs are to change with the gradient
-        tf_device = '/{device}:{num}'.format(
-            device='gpu' if context.is_cuda else 'cpu', num=context.device)
+        tf_device = '/gpu:%d' % context.device if context.is_cuda else '/cpu'
         with tf.device(tf_device):
             for row in tqdm(data):
                 row['log_mel_spectrograms'] = torch.tensor(wav_to_log_mel_spectrogram(row['wav']))
@@ -92,11 +92,7 @@ def make_splits(data, splits=(0.8, 0.2)):
     return train, dev
 
 
-def get_data_iterator(context,
-                      dataset,
-                      batch_size,
-                      train=True,
-                      sort_key=lambda r: r['log_mel_spectrograms'].shape[0]):
+class DataIterator(object):
     """ Get a batch iterator over the ``dataset``.
 
     Args:
@@ -115,7 +111,24 @@ def get_data_iterator(context,
             mask_batch (torch.LongTensor [num_frames, batch_size, 1])
     """
 
-    def collate_fn(batch):
+    def __init__(self,
+                 context,
+                 dataset,
+                 batch_size,
+                 train=True,
+                 sort_key=lambda r: r['log_mel_spectrograms'].shape[0]):
+        batch_sampler = BucketBatchSampler(
+            dataset, batch_size, False, sort_key=sort_key, biggest_batches_first=False)
+        self.context = context
+        self.iterator = DataLoader(
+            dataset,
+            batch_sampler=batch_sampler,
+            collate_fn=DataIterator._collate_fn,
+            pin_memory=True,
+            num_workers=1)
+
+    @staticmethod
+    def _collate_fn(batch):
         """ List of tensors to a batch variable """
         text_batch, _ = pad_batch([row['text'] for row in batch])
         frames_batch, _ = pad_batch([row['log_mel_spectrograms'] for row in batch])
@@ -125,13 +138,12 @@ def get_data_iterator(context,
         return (text_batch, transpose(frames_batch), transpose(stop_token_batch),
                 transpose(mask_batch))
 
-    # Use bucket sampling to group similar sized text but with noise + random
-    batch_sampler = BucketBatchSampler(
-        dataset, batch_size, False, sort_key=sort_key, biggest_batches_first=False)
-    iterator = DataLoader(
-        dataset, batch_sampler=batch_sampler, collate_fn=collate_fn, pin_memory=True, num_workers=1)
-    for batch in iterator:
-        yield tuple([context.maybe_cuda(t, non_blocking=True) for t in batch])
+    def __len__(self):
+        return len(self.iterator)
+
+    def __iter__(self):
+        for batch in self.iterator:
+            yield tuple([self.context.maybe_cuda(t, non_blocking=True) for t in batch])
 
 
 def init_model(context, vocab_size):
@@ -221,26 +233,18 @@ def get_model_iterator(context,
     Returns:
         (torch.Tensor) Loss at every iteration
     """
-    total_pre_frames_loss = 0
-    total_post_frames_loss = 0
-    total_stop_token_loss = 0
-    total_frame_values = 0
-    total_stop_token_values = 0
+    total_pre_frames_loss, total_post_frames_loss, total_stop_token_loss = 0, 0, 0
+    total_frame_values, total_stop_token_values = 0, 0
 
     torch.set_grad_enabled(train)
     model.train(mode=train)
-    data_iterator = get_data_iterator(context, dataset, batch_size, train=train)
+    data_iterator = DataIterator(context, dataset, batch_size, train=train)
     with tqdm(data_iterator) as iterator:
         # Description will be displayed on the left
         iterator.set_description(label)
         for text_batch, frames_batch, stop_token_batch, mask_batch in iterator:
-
             predicted_pre_frames, predicted_post_frames, predicted_stop_token = model(
                 text_batch, frames_batch)
-            num_frame_values = reduce(lambda x, y: x * y, frames_batch.shape)
-            num_stop_token_values = reduce(lambda x, y: x * y, stop_token_batch.shape)
-            total_frame_values += num_frame_values
-            total_stop_token_values += num_stop_token_values
 
             pre_frames_loss, post_frames_loss, stop_token_loss = get_loss(
                 criterion_frames,
@@ -252,43 +256,58 @@ def get_model_iterator(context,
                 predicted_stop_token,
                 mask_batch,
                 size_average=True)
-            total_pre_frames_loss += pre_frames_loss.item() * num_frame_values  # Undo size average
-            total_post_frames_loss += post_frames_loss.item() * num_frame_values
-            total_stop_token_loss += stop_token_loss.item() * num_stop_token_values
-
-            # Postfix will be displayed on the right of progress bar
-            iterator.set_postfix(
-                pre_frames_loss=pre_frames_loss,
-                post_frames_loss=post_frames_loss,
-                stop_token_loss=stop_token_loss)
 
             yield pre_frames_loss + post_frames_loss + stop_token_loss
 
-    def plot_spectrogram_partial(batch, name):
-        plot_spectrogram(
-            batch.transpose_(0, 1)[0].cpu().numpy(), os.path.join(context.epoch_directory, name))
+            # Clear Memory
+            frames_batch = frames_batch.detach()
+            predicted_pre_frames = predicted_pre_frames.detach()
+            predicted_post_frames = predicted_post_frames.detach()
+            pre_frames_loss = pre_frames_loss.item()
+            post_frames_loss = post_frames_loss.item()
+            stop_token_loss = stop_token_loss.item()
 
-    plot_spectrogram_partial(frames_batch, 'sample_spectrogram.png')
-    plot_spectrogram_partial(predicted_pre_frames, 'sample_predicted_pre_spectrogram.png')
-    plot_spectrogram_partial(predicted_post_frames, 'sample_predicted_post_spectrogram.png')
+            # Compute metrics
+            num_frame_values = reduce(lambda x, y: x * y, frames_batch.shape)
+            num_stop_token_values = reduce(lambda x, y: x * y, stop_token_batch.shape)
+            total_frame_values += num_frame_values
+            total_stop_token_values += num_stop_token_values
 
-    def log_mel_spectrogram_to_wav_partial(batch, name):
-        log_mel_spectrogram_to_wav(
-            batch.transpose_(0, 1)[0].cpu().numpy(), os.path.join(context.epoch_directory, name))
+            total_pre_frames_loss += pre_frames_loss * num_frame_values  # Undo size average
+            total_post_frames_loss += post_frames_loss * num_frame_values
+            total_stop_token_loss += stop_token_loss * num_stop_token_values
 
-    log_mel_spectrogram_to_wav_partial(frames_batch, 'sample_spectrogram.wav')
-    log_mel_spectrogram_to_wav_partial(predicted_pre_frames, 'sample_predicted_pre_spectrogram.wav')
-    log_mel_spectrogram_to_wav_partial(predicted_post_frames,
-                                       'sample_predicted_post_spectrogram.wav')
+            # Postfix will be displayed on the right of progress bar
+            iterator.set_postfix(
+                pre_frames_loss=total_pre_frames_loss / total_frame_values,
+                post_frames_loss=total_post_frames_loss / total_frame_values,
+                stop_token_loss=total_stop_token_loss / total_stop_token_values)
 
-    log_mel_spectrogram_to_wav()
+    logger.info('[%s] Pre Frame Loss: %f', label.upper(),
+                total_pre_frames_loss / total_frame_values)
+    logger.info('[%s] Post Frame Loss: %f', label.upper(),
+                total_post_frames_loss / total_frame_values)
+    logger.info('[%s] Stop Token Loss: %f', label.upper(),
+                total_stop_token_loss / total_stop_token_values)
 
-    logger.info('%s Pre Frame Loss: %f', label, total_pre_frames_loss / total_frame_values)
-    logger.info('%s Post Frame Loss: %f', label, total_post_frames_loss / total_frame_values)
-    logger.info('%s Stop Token Loss: %f', label, total_stop_token_loss / total_stop_token_values)
+    def sample_spectrogram(batch, name):
+        spectrogram = batch.transpose_(0, 1)[random.randint(0, batch_size - 1)].cpu().numpy()
+        name = os.path.join(context.epoch_directory, label.lower() + '_' + name)
+        plot_spectrogram(spectrogram, name + '.png')
+        with tf.device('/cpu'):
+            log_mel_spectrogram_to_wav(spectrogram, name + '.wav')
+
+    if not train:
+        sample_spectrogram(frames_batch, 'sample_spectrogram')
+        sample_spectrogram(predicted_pre_frames, 'sample_predicted_pre_spectrogram')
+        sample_spectrogram(predicted_post_frames, 'sample_predicted_post_spectrogram')
+
+    # Clear any extra memory
+    gc.collect()
 
 
 def main():
+    """ Main module if this file is invoked directly """
     with ExperimentContextManager(label='feature_model') as context:
         # Load checkpoint
         parser = argparse.ArgumentParser()
@@ -297,6 +316,7 @@ def main():
         checkpoint, text_encoder = None, None
         if args.checkpoint is not None:
             checkpoint = context.load(os.path.join(context.root_path, args.checkpoint))
+            logger.info('Loaded checkpoint: %s' % (args.checkpoint,))
             text_encoder = checkpoint['text_encoder']
 
         # Load data
@@ -307,8 +327,12 @@ def main():
         # Initialize deep learning components
         if checkpoint is not None:
             model = checkpoint['model']
+            model.apply(
+                lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
             optimizer = checkpoint['optimizer']
             scheduler = checkpoint['scheduler']
+            # ISSUE: https://github.com/pytorch/pytorch/issues/7255
+            scheduler.optimizer = optimizer.optimizer
         else:
             model = init_model(context, text_encoder.vocab_size)
             optimizer = Optimizer(
@@ -333,8 +357,8 @@ def main():
             # Iterate over the training data
             logger.info('Training...')
             iterator = get_model_iterator(context, train, train_batch_size, model, criterion_frames,
-                                          criterion_stop_token, True, '[TRAIN]')
-            for loss in iterator():
+                                          criterion_stop_token, True, 'TRAIN')
+            for loss in iterator:
                 loss.backward()
 
                 optimizer.step()
@@ -343,6 +367,7 @@ def main():
 
                 # Clean up
                 optimizer.zero_grad()
+                del loss
 
             logger.info('Saving Checkpoint...')
             context.save(
@@ -354,8 +379,9 @@ def main():
                 })
 
             logger.info('Evaluating...')
-            iterator = get_model_iterator(context, dev, dev_batch_size, model, criterion_frames,
-                                          criterion_stop_token, True, '[DEV]')
+            list(
+                get_model_iterator(context, dev, dev_batch_size, model, criterion_frames,
+                                   criterion_stop_token, False, 'DEV'))
 
             epoch += 1
             print('–' * 100)
