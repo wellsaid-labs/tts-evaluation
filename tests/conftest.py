@@ -1,3 +1,8 @@
+# Fix this weird error:
+# https://stackoverflow.com/questions/37604289/tkinter-tclerror-no-display-name-and-no-display-environment-variable
+import matplotlib
+matplotlib.use('Agg')
+
 # Fix this weird error: https://github.com/pytorch/pytorch/issues/2083
 import torch  # noqa: F401
 
