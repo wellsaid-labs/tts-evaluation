@@ -99,6 +99,19 @@ class ExperimentContextManager(object):
         torch.save(data, full_path, pickle_module=dill)
         return full_path
 
+    def epoch(self, epoch):
+        """ Updates the context for the epoch.
+
+        Updates:
+            * Creates a directory ``self.epoch_directory`` to store epoch samples and a checkpoint.
+
+        Args:
+            epoch (int)
+        """
+        path = os.path.join(self.directory, 'epochs/%d' % (epoch,))
+        os.makedirs(path)
+        self.epoch_directory = path
+
     def notify(self, title, text):
         """ Queue a desktop notification on a Linux or OSX machine.
 

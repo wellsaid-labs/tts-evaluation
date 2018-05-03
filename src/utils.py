@@ -48,6 +48,7 @@ def pad_batch(batch, padding_index=PADDING_INDEX):
 
 def get_root_path():
     """ Get the path to the root directory
+
     Returns (str):
         Root directory path
     """

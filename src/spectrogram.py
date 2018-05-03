@@ -300,6 +300,8 @@ def log_mel_spectrogram_to_wav(log_mel_spectrogram,
         loss_diff (float): Difference in loss used to determine convergance.
         log (bool): If bool is True, prints the RMSE as the algorithm runs.
     """
+    assert '.wav' in filename, "Filename must be a .wav file"
+
     # Convert hertz to more relevant units like samples
     frame_size = _milliseconds_to_samples(frame_size, sample_rate)
     frame_hop = _milliseconds_to_samples(frame_hop, sample_rate)
