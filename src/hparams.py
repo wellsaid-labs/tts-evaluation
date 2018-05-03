@@ -55,6 +55,31 @@ def set_hparams():
     # features to 128-dimensional hidden representations.
     attention_hidden_size = 128
 
+    wav_to_log_mel_spectrogram = {
+        # SOURCE (Tacotron 2):
+        # mel spectrograms are computed through a shorttime Fourier transform (STFT)
+        # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
+        'frame_size': 50,
+        'frame_hop': 12.5,
+        'window_function': functools.partial(window_ops.hann_window, periodic=True),
+        # SOURCE (Tacotron 2):
+        # We transform the STFT magnitude to the mel scale using an 80 channel mel
+        # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
+        # compression.
+        'num_mel_bins': frame_channels,
+        'lower_hertz': 125,
+        'upper_hertz': 7600,
+        # SOURCE (Tacotron 2):
+        # Prior to log compression, the filterbank output magnitudes are clipped to a
+        # minimum value of 0.01 in order to limit dynamic range in the logarithmic
+        # domain.
+        'min_magnitude': 0.01,
+    }
+
+    # SOURCE (Tacotron 1):
+    # We use 24 kHz sampling rate for all experiments.
+    sample_rate = 24000
+
     add_config({
         'src': {
             'lr_schedulers.DelayedExponentialLR.__init__': {
@@ -67,31 +92,19 @@ def set_hparams():
                 'epoch_start_decay': 10e-3,
             },
             'spectrogram': {
-                # SOURCE (Tacotron 1):
-                # We use 24 kHz sampling rate for all experiments.
-                '_read_audio.sample_rate': 24000,
-                # SOURCE (Tacotron 2):
-                # "mel spectrograms are computed through a shorttime Fourier transform (STFT) using
-                # a 50 ms frame size, 12.5 ms frame hop, and a Hann window function."
-                'wav_to_log_mel_spectrograms': {
-                    # SOURCE (Tacotron 2):
-                    # mel spectrograms are computed through a shorttime Fourier transform (STFT)
-                    # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
-                    'frame_size': 50,
-                    'frame_hop': 12.5,
-                    'window_function': functools.partial(window_ops.hann_window, periodic=True),
-                    # SOURCE (Tacotron 2):
-                    # We transform the STFT magnitude to the mel scale using an 80 channel mel
-                    # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
-                    # compression.
-                    'num_mel_bins': frame_channels,
-                    'lower_hertz': 125,
-                    'upper_hertz': 7600,
-                    # SOURCE (Tacotron 2):
-                    # Prior to log compression, the filterbank output magnitudes are clipped to a
-                    # minimum value of 0.01 in order to limit dynamic range in the logarithmic
-                    # domain.
-                    'min_magnitude': 0.01,
+                '_read_audio.sample_rate': sample_rate,
+                'wav_to_log_mel_spectrogram': wav_to_log_mel_spectrogram,
+                'log_mel_spectrogram_to_wav': {
+                    'frame_size': wav_to_log_mel_spectrogram['frame_size'],
+                    'frame_hop': wav_to_log_mel_spectrogram['frame_hop'],
+                    'window_function': wav_to_log_mel_spectrogram['window_function'],
+                    'lower_hertz': wav_to_log_mel_spectrogram['lower_hertz'],
+                    'upper_hertz': wav_to_log_mel_spectrogram['upper_hertz'],
+                    'sample_rate': sample_rate,
+                    # SOURCE (Tacotron 1):
+                    # We observed that Griffin-Lim converges after 50 iterations (in fact, about 30
+                    # iterations seems to be enough), which is reasonably fast.
+                    'iterations': 50,
                 },
             },
             'feature_model': {

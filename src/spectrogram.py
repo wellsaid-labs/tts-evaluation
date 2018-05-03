@@ -1,9 +1,15 @@
+from functools import partial
+
 import argparse
 import glob
 import os
 
 from matplotlib import cm
 from PIL import Image
+from tensorflow.python.framework import constant_op
+from tensorflow.python.framework import tensor_util
+from tensorflow.python.ops import math_ops
+from tensorflow.python.framework import ops
 
 import librosa
 import numpy as np
@@ -76,8 +82,8 @@ def _get_wav_filenames_from_path(path):
 
 
 @configurable
-def wav_to_log_mel_spectrograms(filename, frame_size, frame_hop, window_function, num_mel_bins,
-                                lower_hertz, upper_hertz, min_magnitude):
+def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function, num_mel_bins,
+                               lower_hertz, upper_hertz, min_magnitude):
     """ Transform wav file to a log mel spectrogram.
 
     Tacotron 2 Reference:
@@ -93,6 +99,13 @@ def wav_to_log_mel_spectrograms(filename, frame_size, frame_hop, window_function
         We use log magnitude spectrogram  with Hann windowing, 50 ms frame length, 12.5 ms frame
         shift, and 2048-point Fourier transform. We also found pre-emphasis (0.97) to be helpful.
         We use 24 kHz sampling rate for all experiments.
+
+    TODO: This function runs slowly (23 minutes on a GPU for the LJSpeech dataset) due to running
+    one signal at a time. Consider, batching Waveforms. That requires Waveforms to be padded with
+    zero on the end to remove length variability. Using the original length, we compute the expected
+    frames of the Spectrogram. Finally, we generate the Spectrogram and cut it at the appropriate
+    length. To ensure correctness of this approach, we can easily test batched vs non-batched
+    spectrograms.
 
     Reference:
         * DSP MFCC Tutorial:
@@ -127,8 +140,6 @@ def wav_to_log_mel_spectrograms(filename, frame_size, frame_hop, window_function
     Returns:
         A ``[frames, num_mel_bins]`` ``Tensor`` of ``complex64`` STFT values.
     """
-    # TODO: Concat multiple audio files and run spectrogram computation on a larger batch size
-
     # A batch of float32 time-domain signal in the range [-1, 1] with shape
     # [signal_length].
     signals, sample_rate = _read_audio(filename)
@@ -142,6 +153,8 @@ def wav_to_log_mel_spectrograms(filename, frame_size, frame_hop, window_function
     # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
     frame_size = _milliseconds_to_samples(frame_size, sample_rate)
     frame_hop = _milliseconds_to_samples(frame_hop, sample_rate)
+    print('frame_size', frame_size)
+    print('frame_hop', frame_hop)
 
     spectrograms = tf.contrib.signal.stft(
         signals,
@@ -158,6 +171,7 @@ def wav_to_log_mel_spectrograms(filename, frame_size, frame_hop, window_function
     # We transform the STFT magnitude to the mel scale using an 80 channel mel filterbank
     # spanning 125 Hz to 7.6 kHz, followed by log dynamic range compression.
     num_spectrogram_bins = magnitude_spectrograms.shape[-1].value
+    print('num_spectrogram_bins', num_spectrogram_bins)
     linear_to_mel_weight_matrix = tf.contrib.signal.linear_to_mel_weight_matrix(
         num_mel_bins, num_spectrogram_bins, sample_rate, lower_hertz, upper_hertz)
     # Warp the linear-scale, magnitude spectrograms into the mel-scale.
@@ -176,6 +190,100 @@ def wav_to_log_mel_spectrograms(filename, frame_size, frame_hop, window_function
     log_mel_spectrograms = tf.log(mel_spectrograms)
 
     return log_mel_spectrograms[0].numpy()
+
+
+# INSPIRED BY:
+# https://github.com/tensorflow/tensorflow/blob/r1.8/tensorflow/contrib/signal/python/ops/spectral_ops.py
+def _enclosing_power_of_two(value):
+    """ Return 2**N for integer N such that 2**N >= value. """
+    value = ops.convert_to_tensor(value, name='frame_length')
+    value_static = tensor_util.constant_value(value)
+    if value_static is not None:
+        return constant_op.constant(
+            int(2**np.ceil(np.log(value_static) / np.log(2.0))), value.dtype)
+    return math_ops.cast(
+        math_ops.pow(2.0, math_ops.ceil(
+            math_ops.log(math_ops.to_float(value)) / math_ops.log(2.0))), value.dtype)
+
+
+@configurable
+def log_mel_spectrogram_to_wav(log_mel_spectrogram, filename, frame_size, frame_hop,
+                               window_function, sample_rate, lower_hertz, upper_hertz, iterations):
+    """ Transform log mel spectrogram to wav file with the Griffin-Lim algorithm.
+
+    Tacotron 1 Reference:
+        We use the Griffin-Lim algorithm (Griffin & Lim, 1984) to synthesize waveform from the
+        predicted spectrogram. We found that raising the predicted magnitudes by a power of 1.2
+        before feeding to Griffin-Lim reduces artifacts, likely due to its harmonic enhancement
+        effect. We observed that Griffin-Lim converges after 50 iterations (in fact, about 30
+        iterations seems to be enough), which is reasonably fast.
+
+
+    Reference:
+        * Tacotron Paper:
+          https://arxiv.org/pdf/1703.10135.pdf
+
+    Args:
+        log_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
+        filename (:class:`list` of :class:`str`): Filename of the resulting wav file.
+        frame_size (float): The frame size in milliseconds.
+        frame_hop (float): The frame hop in milliseconds.
+        window_function (callable): A callable that takes a window length and a dtype keyword
+            argument and returns a [window_length] Tensor of samples in the provided datatype. If
+            set to None, no windowing is used.
+        lower_hertz (int): Lower bound on the frequencies to be included in the mel spectrum. This
+            corresponds to the lower edge of the lowest triangular band.
+        upper_hertz (int): The desired top edge of the highest frequency band.
+    """
+    log_mel_spectrogram = tf.convert_to_tensor(log_mel_spectrogram, dtype=tf.complex64)
+    frame_size = _milliseconds_to_samples(frame_size, sample_rate)
+    frame_hop = _milliseconds_to_samples(frame_hop, sample_rate)
+    log_mel_spectrograms = tf.expand_dims(log_mel_spectrogram, 0)
+
+    # Reverse the log operation
+    mel_spectrograms = tf.exp(log_mel_spectrograms)  # `tf.log`` is the natural log
+    num_mel_bins = mel_spectrograms.shape[-1].value
+    # Documentation of Tensorflow mentions:
+    # "num_spectrogram_bins ... understood to be fft_size // 2 + 1"
+    # https://www.tensorflow.org/api_docs/python/tf/contrib/signal/linear_to_mel_weight_matrix
+    # "fft_unique_bins is fft_length // 2 + 1"
+    # https://www.tensorflow.org/api_docs/python/tf/contrib/signal/stft
+    # "fft_length ...  uses the smallest power of 2 enclosing frame_length."
+    num_spectrogram_bins = _enclosing_power_of_two(frame_size) // 2 + 1
+    linear_to_mel_weight_matrix = tf.contrib.signal.linear_to_mel_weight_matrix(
+        num_mel_bins, num_spectrogram_bins, sample_rate, lower_hertz, upper_hertz)
+    mel_to_linear_weight_matrix = tf.py_func(np.linalg.pinv, [linear_to_mel_weight_matrix],
+                                             tf.float32)
+    mel_to_linear_weight_matrix = tf.cast(mel_to_linear_weight_matrix, tf.complex64)
+    # Warp the linear-scale, magnitude spectrograms into the mel-scale.
+    spectrograms = tf.tensordot(mel_spectrograms, mel_to_linear_weight_matrix, 1)
+    # Note: Shape inference for `tf.tensordot` does not currently handle this case.
+    spectrograms.set_shape(spectrograms.shape[:-1].concatenate(
+        mel_to_linear_weight_matrix.shape[-1:]))
+    # spectrograms = tf.maximum(1e-10, spectrograms)
+    print('spectrograms', tf.reduce_sum(spectrograms))
+
+    inverse_stft = partial(
+        tf.contrib.signal.inverse_stft,
+        frame_length=frame_size,
+        frame_step=frame_hop,
+        window_fn=tf.contrib.signal.inverse_stft_window_fn(
+            frame_step=frame_hop, forward_window_fn=window_function))
+    stft = partial(
+        tf.contrib.signal.stft,
+        frame_length=frame_size,
+        frame_step=frame_hop,
+        window_fn=window_function)
+
+    angles = tf.cast(np.exp(2j * np.pi * np.random.rand(*spectrograms.shape)), dtype=tf.complex64)
+    spectrogram_complex = tf.cast(tf.abs(spectrograms), dtype=tf.complex64)
+    y = inverse_stft(spectrogram_complex * angles)
+    for i in range(iterations):
+        angles = tf.cast(np.exp(1j * np.angle(stft(y).numpy())), dtype=tf.complex64)
+        y = inverse_stft(spectrogram_complex * angles)
+
+    waveform = tf.real(y)
+    librosa.output.write_wav(filename, waveform[0].numpy(), sr=sample_rate)
 
 
 def save_image_of_spectrogram(spectrogram, filename):
@@ -211,7 +319,7 @@ def command_line_interface():
     filenames = _get_wav_filenames_from_path(args.path)
 
     for filename in filenames:
-        spectrogram = wav_to_log_mel_spectrograms(filename)
+        spectrogram = wav_to_log_mel_spectrogram(filename)
         filename = filename.replace('.wav', '_spectrogram.png')
         save_image_of_spectrogram(spectrogram, filename)
 
