@@ -5,7 +5,7 @@ from src.feature_model.attention import LocationSensitiveAttention
 
 
 def test_location_sensative_attention():
-    encoder_hidden_size = 32
+    encoder_hidden_size = 8
     query_hidden_size = 16
     attention_hidden_size = 8
     batch_size = 5
