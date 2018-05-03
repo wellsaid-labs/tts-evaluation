@@ -13,7 +13,8 @@ export PYTHONPATH=.
 python --version
 
 if [[ "$RUN_FLAKE8" == "true" ]]; then
-    flake8
+    flake8 src/
+    flake8 tests/
 fi
 
 run_tests() {

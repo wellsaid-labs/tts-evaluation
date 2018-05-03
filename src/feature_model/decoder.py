@@ -35,8 +35,6 @@ class AutoregressiveDecoderHiddenState(object):
 class AutoregressiveDecoder(nn.Module):
     """ Decodes the sequence hidden feature representation into a mel-spectrogram.
 
-    TODO: Add dropout
-
     SOURCE (Tacotron 2):
         The decoder is an autoregressive recurrent neural network which predicts a mel spectrogram
         from the encoded input sequence one frame at a time. The prediction from the previous time
@@ -215,8 +213,6 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         assert ground_truth_frames is None or hidden_state is None, ("""Either the decoder is
 conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
-        # TODO: Attention
-        # TODO: Dropout + Zoneout
         num_tokens, batch_size, _ = encoded_tokens.shape
         is_cuda = encoded_tokens.is_cuda
 

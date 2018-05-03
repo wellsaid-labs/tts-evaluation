@@ -1,149 +1,243 @@
-import unittest
-import numpy as np
+import pytest
+import inspect
 
+from src.configurable import _parse_configuration
+from src.configurable import _check_configuration
+from src.configurable import configurable
 from src.configurable import add_config
 from src.configurable import clear_config
-from src.configurable import configurable
-from src.configurable import log_config
+from src.configurable import clear_arguments
+from src.configurable import _get_arguments
+from src.configurable import _merge_args
+from src.configurable import log_arguments
+
+
+def test_parse_configuration_example():
+    # Test a simple case
+    parsed = _parse_configuration({'abc.abc': {'cda': 'abc'}})
+    assert parsed == {'abc': {'abc': {'cda': 'abc'}}}
+
+
+def test_parse_configuration_improper_format():
+    # Test if the key is improperly formatted, TypeError is raised
+    with pytest.raises(TypeError):
+        _parse_configuration({'abc..abc': 'abc'})
+
+
+def test_parse_configuration_improper_format_2():
+    # Test if the key is improperly formatted, TypeError is raised
+    with pytest.raises(TypeError):
+        _parse_configuration({'abc.abc.': 'abc'})
+
+
+def test_parse_configuration_improper_format_3():
+    # Test if the key is improperly formatted, TypeError is raised
+    with pytest.raises(TypeError):
+        _parse_configuration({'.abc.abc': 'abc'})
+
+
+def test_parse_configuration_improper_format_4():
+    # Test if the key is improperly formatted, TypeError is raised
+    with pytest.raises(TypeError):
+        _parse_configuration({'.': 'abc'})
+
+
+def test_parse_configuration_duplicate_key():
+    # Test if the key is duplicated, TypeError is raised
+    with pytest.raises(TypeError):
+        _parse_configuration({'abc.abc': 'abc', 'abc': {'abc': 'xyz'}})
 
 
 @configurable
-def mock_func(*args, **kwargs):
-    return args, kwargs
+def mock_configurable(*args, **kwargs):
+    # Mock function with configurable
+    return kwargs
 
 
-@configurable
-def mock_func_2(arg, kwarg=None):
-    return arg, kwarg
+def mock(**kwargs):
+    # Mock function without configurable
+    return kwargs
 
 
-class MockClass(object):
+def test_mock_attributes():
+    # Test the attributes mock is give, if it's ``@configurable``
+    assert hasattr(mock_configurable, '_configurable')
+    assert not hasattr(mock, '_configurable')
+
+
+pytest.approx = configurable(pytest.approx)
+
+
+class Mock(object):
+
+    def __init__(self):
+        pass
+
+
+class MockConfigurable(object):
 
     @configurable
-    def __init__(self, arg):
-        self.arg = arg
-
-    @configurable
-    def mock_func(self, arg):
-        return arg
+    def __init__(self):
+        pass
 
 
-class MockClass2(object):
+def test_check_configuration_external_libraries():
+    # Test that check configuration can check ``configurable`` on external libraries
+    _check_configuration({'pytest': {'approx': {'rel': None}}})
 
-    def __init__(self, arg):
-        self.arg = arg
+
+def test_check_configuration_internal_libraries():
+    # Test that check configuration can check ``configurable`` on internal libraries
+    _check_configuration({'tests': {'test_configurable': {'mock_configurable': {'kwarg': None}}}})
 
 
-class TestConfigurable(unittest.TestCase):
+def test_check_configuration_error_internal_libraries():
+    # Test that check configuration fails on internal libraries
+    with pytest.raises(TypeError):
+        _check_configuration({'tests': {'test_configurable': {'mock': {'kwarg': None}}}})
 
-    def setUp(self):
-        self.defaults = {
-            'mock_func': {
-                'arg': 'arg'
-            },
-            'mock_func_2.kwarg': 'kwarg',
-            'mock_func_2': {
-                'arg': 'arg',
-            },
-            'MockClass': {
-                '__init__': {
-                    'arg': 'arg'
-                },
-                'mock_func': {
-                    'arg': 'arg'
-                }
-            },
-            'MockClass2': {
-                '__init__': {
-                    'arg': 'arg'
+
+def test_check_configuration_error_external_libraries():
+    # Test that check configuration fails on internal libraries
+    with pytest.raises(TypeError):
+        _check_configuration({'random': {'seed': {'a': 1}}})
+
+
+def test_check_configuration_class():
+    # Test that check configuration works for classes
+    _check_configuration({
+        'tests': {
+            'test_configurable': {
+                'MockConfigurable': {
+                    '__init__': {
+                        'kwarg': None
+                    }
                 }
             }
         }
+    })
 
-    def tearDown(self):
-        clear_config()
 
-    def test_add_config_numpy(self):
-        # Regression test, add_config printer failed with numpy types
-        self.defaults['mock_func.kwarg'] = np.float32(1.0)
-        add_config({__name__: self.defaults})
+def test_check_configuration_error_class():
+    # Test that check configuration works for classes
+    with pytest.raises(TypeError):
+        _check_configuration({
+            'tests': {
+                'test_configurable': {
+                    'Mock': {
+                        '__init__': {
+                            'kwarg': None
+                        }
+                    }
+                }
+            }
+        })
 
-    def test_invalid_duplicate_key(self):
-        self.defaults['mock_func.arg'] = 'arg_duplicate'
-        self.assertRaises(TypeError, lambda: add_config({__name__: self.defaults}))
 
-    def test_invalid_invalid_key(self):
-        self.defaults['mock_func.arg.'] = 'arg'
-        self.assertRaises(TypeError, lambda: add_config({__name__: self.defaults}))
+def test_add_config_and_arguments():
+    # Check that a function can be configured
+    kwargs = {'xyz': 'xyz'}
+    add_config({'tests.test_configurable.mock_configurable': kwargs})
+    assert mock_configurable() == kwargs
 
-    def test_invalid_invalid_key_2(self):
-        self.defaults['.'] = 'arg'
-        self.assertRaises(TypeError, lambda: add_config({__name__: self.defaults}))
+    # Check that the parameters were recorded
+    assert _get_arguments()['tests']['test_configurable']['mock_configurable']['xyz'] == 'xyz'
 
-    def test_invalid_invalid_key_3(self):
-        self.defaults['.mock_func'] = 'arg'
-        self.assertRaises(TypeError, lambda: add_config({__name__: self.defaults}))
+    # Reset
+    clear_config()
+    clear_arguments()
 
-    def test_invalid_invalid_key_4(self):
-        self.defaults['mock_func..arg'] = 'arg'
-        self.assertRaises(TypeError, lambda: add_config({__name__: self.defaults}))
+    # Check reset worked
+    assert mock_configurable() == {}
 
-    def test_merge_config_dict(self):
-        add_config({__name__: self.defaults})
-        add_config({__name__: {'mock_func_2': {'arg': 'arg_new'}}})
-        self.assertEqual(('arg_new', 'kwarg'), mock_func_2())
 
-    def test_merge_config_dots(self):
-        add_config({__name__: self.defaults})
-        add_config({__name__: {'mock_func_2.kwarg': 'kwarg_new'}})
-        self.assertEqual(('arg', 'kwarg_new'), mock_func_2())
+def test_arguments():
+    # Check that the parameters were recorded
+    mock_configurable(abc='abc')
+    assert _get_arguments()['tests']['test_configurable']['mock_configurable']['abc'] == 'abc'
 
-    def test_mock_func(self):
-        add_config({__name__: self.defaults})
-        self.assertEqual(self.defaults['mock_func'], mock_func()[1])
+    # Smoke test for log
+    log_arguments()
 
-    def test_mock_func_clean(self):
-        add_config({__name__: self.defaults})
-        clear_config()
-        self.assertNotEqual(self.defaults['mock_func'], mock_func()[1])
+    clear_arguments()
 
-    def test_mock_func_var_args(self):
-        add_config({__name__: self.defaults})
-        self.assertEqual(mock_func('arg')[0][0], 'arg')
 
-    def test_mock_func_2(self):
-        add_config({__name__: self.defaults})
-        self.assertEqual(('arg', 'kwarg'), mock_func_2())
+def test_arguments_many():
+    # Check that the parameters were recorded
+    arg_kwarg = configurable(lambda a, *args, **kwargs: (a, args, kwargs))
+    arg_kwarg('abc', 'def', 'ghi', 'klm', abc='abc')
+    arg_kwarg('abc', abc='xyz')
+    arg_kwarg('abc', abc='cdf')
+    arg_kwarg('abc', abc='ghf')
+    arg_kwarg('abc', xyz='abc')
+    assert str(_get_arguments()['tests']['test_configurable']['test_arguments_many']['<locals>'][
+        '<lambda>']['abc']) == str(['xyz', 'cdf', 'ghf'])
+    assert _get_arguments()['tests']['test_configurable']['test_arguments_many']['<locals>'][
+        '<lambda>']['xyz'] == 'abc'
+    assert _get_arguments()['tests']['test_configurable']['test_arguments_many']['<locals>'][
+        '<lambda>']['args'] == ('def', 'ghi', 'klm')
+    clear_arguments()
 
-    def test_mock_func_2_log_config(self):
-        """ Ensure log_config does not break """
-        add_config({__name__: self.defaults})
-        log_config()
 
-    def test_mock_func_2_missing_argument(self):
-        del self.defaults['mock_func_2']['arg']
-        add_config(self.defaults)
-        self.assertRaises(TypeError, lambda: mock_func_2())
+def test_merge_arg_kwarg():
+    arg_kwarg = lambda a, b='abc': (a, b)
+    parameters = list(inspect.signature(arg_kwarg).parameters.values())
 
-    def test_mock_func_2_extra_kwarg(self):
-        self.defaults['mock_func_2']['kwarg_extra'] = 'b'
-        add_config(self.defaults)
-        self.assertRaises(TypeError, lambda: mock_func_2())
+    # Prefer ``args`` over ``other_kwargs``
+    merged = _merge_args(parameters, ['a', 'abc'], {}, {'b': 'xyz'})
+    assert merged == (['a', 'abc'], {})
 
-    def test_mock_func_2_override(self):
-        add_config({__name__: self.defaults})
-        defaults_mock_func_2 = tuple(self.defaults['mock_func_2'].values())
-        self.assertNotEqual(defaults_mock_func_2, mock_func_2('other_arg'))
+    # Prefer ``kwargs`` over ``other_kwargs``
+    merged = _merge_args(parameters, ['a'], {'b': 'abc'}, {'b': 'xyz'})
+    assert merged == (['a'], {'b': 'abc'})
 
-    def test_mock_class_init(self):
-        add_config({__name__: self.defaults})
-        self.assertEqual(MockClass().arg, self.defaults['MockClass']['__init__']['arg'])
+    # Prefer ``other_kwargs`` over default argument
+    merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz'})
+    assert merged == (['a'], {'b': 'xyz'})
 
-    def test_mock_class_func(self):
-        add_config({__name__: self.defaults})
-        self.assertEqual(MockClass().mock_func(), self.defaults['MockClass']['mock_func']['arg'])
 
-    def test_decorate_mock_class(self):
-        add_config({__name__: self.defaults})
-        MockClass2.__init__ = configurable(MockClass2.__init__)
-        self.assertEqual(MockClass2().arg, self.defaults['MockClass2']['__init__']['arg'])
+def test_merge_arg_variable():
+    """
+    For arguments, order matters; therefore, unless we are able to abstract everything into a
+    key word argument, we have to keep the ``args`` the same.
+
+    The case where we are unable to shift everything to ``args`` is when there exists a ``*args``.
+    Because some
+
+    For example (a, b) cannot be flipped with kwarg:
+    >>> arg_kwarg = lambda a, b='abc': (a, b)
+    >>> arg_kwarg('b', a='a')
+    Traceback (most recent call last):
+      File "<stdin>", line 1, in <module>
+    TypeError: <lambda>() got multiple values for argument 'a'
+    """
+    arg_kwarg = lambda a, *args, b='abc': (a, args, b)
+    parameters = list(inspect.signature(arg_kwarg).parameters.values())
+
+    # Handling of variable ``*args``
+    merged = _merge_args(parameters, ['a', 'b', 'c'], {}, {'b': 'xyz'})
+    assert merged == (['a', 'b', 'c'], {'b': 'xyz'})
+
+    # Handling of variable ``*args``
+    merged = _merge_args(parameters, ['a', 'b', 'c'], {}, {'a': 'xyz'})
+    assert merged == (['a', 'b', 'c'], {})
+
+
+def test_merge_kwarg_variable():
+    """
+    If there exists a ``**kwargs``, then
+    """
+    arg_kwarg = lambda a, b, **kwargs: (a, b, kwargs)
+    parameters = list(inspect.signature(arg_kwarg).parameters.values())
+
+    # Handling of variable ``**kwargs``
+    merged = _merge_args(parameters, ['a', 'b'], {}, {'b': 'xyz'})
+    assert merged == (['a', 'b'], {})
+
+    # Handling of variable ``**kwargs``
+    merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz'})
+    assert merged == (['a'], {'b': 'xyz'})
+
+    # Handling of variable ``**kwargs``
+    merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz', 'c': 'abc'})
+    assert merged == (['a'], {'b': 'xyz', 'c': 'abc'})

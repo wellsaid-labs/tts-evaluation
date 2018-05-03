@@ -16,9 +16,6 @@ librosa
 # Visualization Lib
 matplotlib
 
-# Decorators
-wrapt
-
 # Testing
 pytest
 pytest-cov
@@ -31,3 +28,7 @@ mock
 
 # Auto Formatter
 yapf
+
+# Utils
+tqdm
+dill

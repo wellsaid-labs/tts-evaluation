@@ -5,7 +5,7 @@ from src.feature_model.encoder import Encoder
 encoder_params = {
     'batch_size': 4,
     'num_tokens': 5,
-    'vocab_size': 1000,
+    'vocab_size': 10,
     'lstm_hidden_size': 64,
     'embedding_dim': 32,
     'lstm_bidirectional': True,

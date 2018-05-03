@@ -2,15 +2,33 @@ import functools
 
 from torch import nn
 from tensorflow.contrib.signal.python.ops import window_ops
+from torch.optim import Adam
 
 from src.configurable import add_config
 from src.configurable import log_config
-
-# NOTE: Concerning Zoneout it does not seem that the Tacotron 2 authors tried the model without
-# Zoneout. They are happ
+from src.configurable import configurable
 
 
 def set_hparams():
+    """ Using the ``configurable`` module set the hyperparameters for the source code.
+    """
+
+    Adam.__init__ = configurable(Adam.__init__)
+    nn.modules.batchnorm._BatchNorm.__init__ = configurable(
+        nn.modules.batchnorm._BatchNorm.__init__)
+    add_config({
+        # NOTE: `momentum=0.01` to match Tensorflow defaults
+        'torch.nn.modules.batchnorm._BatchNorm.__init__': {
+            'momentum': 0.01,
+        },
+        # SOURCE (Tacotron 2):
+        # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999, eps = 10−6
+        'torch.optim.Adam.__init__': {
+            'betas': (0.9, 0.999),
+            'eps': 10e-6,
+        }
+    })
+
     # SOURCE (Tacotron 2):
     # The convolutional layers in the network are regularized using dropout [25] with probability
     # 0.5, and LSTM layers are regularized using zoneout [26] with probability 0.1
@@ -39,7 +57,7 @@ def set_hparams():
             'spectrogram': {
                 # SOURCE (Tacotron 1):
                 # We use 24 kHz sampling rate for all experiments.
-                'read_audio.sample_rate': 24000,
+                '_read_audio.sample_rate': 24000,
                 # SOURCE (Tacotron 2):
                 # "mel spectrograms are computed through a shorttime Fourier transform (STFT) using
                 # a 50 ms frame size, 12.5 ms frame hop, and a Hann window function."
@@ -56,102 +74,102 @@ def set_hparams():
                     # compression.
                     'num_mel_bins': frame_channels,
                     'lower_hertz': 125,
-                    'upper_hertz': 7500,
+                    'upper_hertz': 7600,
                     # SOURCE (Tacotron 2):
                     # Prior to log compression, the filterbank output magnitudes are clipped to a
                     # minimum value of 0.01 in order to limit dynamic range in the logarithmic
                     # domain.
                     'min_magnitude': 0.01,
                 },
-                'feature_model': {
-                    'encoder.Encoder.__init__': {
-                        'lstm_variational_dropout': lstm_variational_dropout,
-                        'convolution_dropout': convolution_dropout,
+            },
+            'feature_model': {
+                'encoder.Encoder.__init__': {
+                    'lstm_variational_dropout': lstm_variational_dropout,
+                    'convolution_dropout': convolution_dropout,
 
-                        # SOURCE (Tacotron 2):
-                        # Input characters are represented using a learned 512-dimensional character
-                        # embedding
-                        'embedding_dim': 512,
+                    # SOURCE (Tacotron 2):
+                    # Input characters are represented using a learned 512-dimensional character
+                    # embedding
+                    'embedding_dim': 512,
 
-                        # SOURCE (Tacotron 2):
-                        # which are passed through a stack of 3 convolutional layers each containing
-                        # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
-                        'num_convolution_layers': 512,
-                        'num_convolution_filters': 512,
-                        'convolution_filter_size': 5,
+                    # SOURCE (Tacotron 2):
+                    # which are passed through a stack of 3 convolutional layers each containing
+                    # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
+                    'num_convolution_layers': 3,
+                    'num_convolution_filters': 512,
+                    'convolution_filter_size': 5,
 
-                        # SOURCE (Tacotron 2)
-                        # The output of the final convolutional layer is passed into a single
-                        # bi-directional [19] LSTM [20] layer containing 512 units (256) in each
-                        # direction) to generate the encoded features.
-                        'lstm_hidden_size': encoder_hidden_size,  # 512
-                        'lstm_layers': 1,
-                        'lstm_bidirectional': True,
-                    },
-                    'attention.LocationSensitiveAttention.__init__': {
-                        'encoder_hidden_size': encoder_hidden_size,
+                    # SOURCE (Tacotron 2)
+                    # The output of the final convolutional layer is passed into a single
+                    # bi-directional [19] LSTM [20] layer containing 512 units (256) in each
+                    # direction) to generate the encoded features.
+                    'lstm_hidden_size': encoder_hidden_size,  # 512
+                    'lstm_layers': 1,
+                    'lstm_bidirectional': True,
+                },
+                'attention.LocationSensitiveAttention.__init__': {
+                    'encoder_hidden_size': encoder_hidden_size,
 
-                        # SOURCE (Tacotron 2):
-                        # Attention probabilities are computed after projecting inputs and location
-                        # features to 128-dimensional hidden representations.
-                        'query_hidden_size': query_hidden_size,
-                        'alignment_hidden_size': 128,
+                    # SOURCE (Tacotron 2):
+                    # Attention probabilities are computed after projecting inputs and location
+                    # features to 128-dimensional hidden representations.
+                    'query_hidden_size': query_hidden_size,
+                    'alignment_hidden_size': 128,
 
-                        # SOURCE (Tacotron 2):
-                        # Location features are computed using 32 1-D convolution filters of length
-                        # 31.
-                        'num_convolution_filters': 32,
-                        'convolution_filter_size': 31,
-                    },
-                    'decoder.AutoregressiveDecoder.__init__': {
-                        'frame_channels': frame_channels,
-                        'pre_net_hidden_size': pre_net_hidden_size,
-                        'encoder_hidden_size': encoder_hidden_size,
-                        'lstm_variational_dropout': lstm_variational_dropout,
-                        'query_hidden_size': query_hidden_size,
+                    # SOURCE (Tacotron 2):
+                    # Location features are computed using 32 1-D convolution filters of length
+                    # 31.
+                    'num_convolution_filters': 32,
+                    'convolution_filter_size': 31,
+                },
+                'decoder.AutoregressiveDecoder.__init__': {
+                    'frame_channels': frame_channels,
+                    'pre_net_hidden_size': pre_net_hidden_size,
+                    'encoder_hidden_size': encoder_hidden_size,
+                    'lstm_variational_dropout': lstm_variational_dropout,
+                    'query_hidden_size': query_hidden_size,
 
-                        # SOURCE (Tacotron 2):
-                        # The prenet output and attention context vector are concatenated and
-                        # passed through a stack of 2 uni-directional LSTM layers with 1024 units.
-                        'lstm_hidden_size': 1024,
-                    },
-                    'pre_net.PreNet.__init__': {
-                        'frame_channels': frame_channels,
+                    # SOURCE (Tacotron 2):
+                    # The prenet output and attention context vector are concatenated and
+                    # passed through a stack of 2 uni-directional LSTM layers with 1024 units.
+                    'lstm_hidden_size': 1024,
+                },
+                'pre_net.PreNet.__init__': {
+                    'frame_channels': frame_channels,
 
-                        # SOURCE (Tacotron 2):
-                        # The prediction from the previous time step is first passed through a small
-                        # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
-                        'num_layers': 2,
-                        'hidden_size': pre_net_hidden_size,
-                        'nonlinearity': nn.ReLU,
+                    # SOURCE (Tacotron 2):
+                    # The prediction from the previous time step is first passed through a small
+                    # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
+                    'num_layers': 2,
+                    'hidden_size': pre_net_hidden_size,
+                    'nonlinearity': nn.ReLU,
 
-                        # SOURCE (Tacotron 2):
-                        # In order to introduce output variation at inference time, dropout with
-                        # probability 0.5 is applied only to layers in the pre-net of the
-                        # autoregressive decoder.
-                        'dropout': 0.5,
-                    },
-                    'post_net.PostNet.__init__': {
-                        'frame_channels': frame_channels,
-                        'convolution_dropout': convolution_dropout,
+                    # SOURCE (Tacotron 2):
+                    # In order to introduce output variation at inference time, dropout with
+                    # probability 0.5 is applied only to layers in the pre-net of the
+                    # autoregressive decoder.
+                    'dropout': 0.5,
+                },
+                'post_net.PostNet.__init__': {
+                    'frame_channels': frame_channels,
+                    'convolution_dropout': convolution_dropout,
 
-                        # SOURCE (Tacotron 2):
-                        # Finally, the predicted mel spectrogram is passed
-                        # through a 5-layer convolutional post-net which predicts a residual
-                        # to add to the prediction to improve the overall reconstruction
-                        'num_convolution_layers': 5,
+                    # SOURCE (Tacotron 2):
+                    # Finally, the predicted mel spectrogram is passed
+                    # through a 5-layer convolutional post-net which predicts a residual
+                    # to add to the prediction to improve the overall reconstruction
+                    'num_convolution_layers': 5,
 
-                        # SOURCE (Tacotron 2):
-                        # Each post-net layer is comprised of 512 filters with shape 5 × 1 with
-                        # batch normalization, followed by tanh activations on all but the final
-                        # layer
-                        'num_convolution_filters': 512,
-                        'convolution_filter_size': 5,
-                    },
-                    'model.SpectrogramModel.__init__': {
-                        'encoder_hidden_size': encoder_hidden_size,
-                        'frame_channels': frame_channels,
-                    }
+                    # SOURCE (Tacotron 2):
+                    # Each post-net layer is comprised of 512 filters with shape 5 × 1 with
+                    # batch normalization, followed by tanh activations on all but the final
+                    # layer
+                    'num_convolution_filters': 512,
+                    'convolution_filter_size': 5,
+                },
+                'model.SpectrogramModel.__init__': {
+                    'encoder_hidden_size': encoder_hidden_size,
+                    'frame_channels': frame_channels,
                 }
             }
         }

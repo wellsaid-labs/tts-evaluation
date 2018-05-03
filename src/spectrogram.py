@@ -11,10 +11,9 @@ import numpy as np
 import tensorflow as tf
 
 from src.configurable import configurable
-from src.hparams import set_hparams
-from src.utils import config_logging
 
 logger = logging.getLogger(__name__)
+tf.enable_eager_execution()
 
 
 @configurable
@@ -42,7 +41,6 @@ def _read_audio(filename, sample_rate=None):
         numpy.ndarray [shape=(n, 1)]: Audio time series.
         int: Sample rate of the file.
     """
-    logger.info('Loading %s', filename)
     audio, sample_rate = librosa.core.load(filename, sr=sample_rate, mono=True)
     audio = tf.expand_dims(audio, axis=1)
     return audio, sample_rate
@@ -133,7 +131,7 @@ def wav_to_log_mel_spectrograms(filename, frame_size, frame_hop, window_function
     Returns:
         A ``[frames, num_mel_bins]`` ``Tensor`` of ``complex64`` STFT values.
     """
-    # TODO: Concat multiple spectrogram and run spectrogram computation on a larger batch size
+    # TODO: Concat multiple audio files and run spectrogram computation on a larger batch size
 
     # A batch of float32 time-domain signal in the range [-1, 1] with shape
     # [signal_length].
@@ -180,7 +178,7 @@ def wav_to_log_mel_spectrograms(filename, frame_size, frame_hop, window_function
     # followed by log dynamic range compression.
     log_mel_spectrograms = tf.log(mel_spectrograms)
 
-    return log_mel_spectrograms[0]
+    return log_mel_spectrograms[0].numpy()
 
 
 def _save_image_of_spectrogram(spectrogram, filename):
@@ -205,6 +203,9 @@ def _save_image_of_spectrogram(spectrogram, filename):
 def command_line_interface():
     """ Command line interface to convert a directory of WAV files or WAV file to spectrograms.
     """
+    from src.hparams import set_hparams
+    from src.utils import config_logging
+
     config_logging()
     set_hparams()
 
@@ -215,11 +216,10 @@ def command_line_interface():
     filenames = _get_wav_filenames_from_path(args.path)
 
     for filename in filenames:
-        spectrogram = wav_to_log_mel_spectrograms(filename).numpy()
+        spectrogram = wav_to_log_mel_spectrograms(filename)
         filename = filename.replace('.wav', '_spectrogram.png')
         _save_image_of_spectrogram(spectrogram, filename)
 
 
 if __name__ == "__main__":  # pragma: no cover
-    tf.enable_eager_execution()
     command_line_interface()
