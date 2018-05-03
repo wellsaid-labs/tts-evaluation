@@ -23,7 +23,7 @@ def test_librosa_tf_decode_wav():
 
     audio, _ = _read_audio(wav_filename, sample_rate=None)
 
-    np.testing.assert_array_equal(tf_audio.numpy(), audio)
+    np.testing.assert_array_equal(tf_audio, audio)
 
 
 @mock.patch(

@@ -1,11 +1,13 @@
 import argparse
+import logging
 import mock
 import os
-import sys
 
 import torch
 
 from src.experiment_context_manager import ExperimentContextManager
+
+logger = logging.getLogger(__name__)
 
 
 @mock.patch('argparse.ArgumentParser.parse_args', return_value=argparse.Namespace(message='test'))
@@ -14,28 +16,24 @@ def test_save_standard_streams(*_):
     with ExperimentContextManager(label='test_save_standard_streams') as context:
         # Check if 'Test' gets captured
         print('Test')
+        logger.info('Test Logger')
 
-        stdout_filename = context.stdout_filename
-        stderr_filename = context.stderr_filename
-
-    # Reset streams
-    sys.stdout = sys.stdout.stream
-    sys.stderr = sys.stderr.stream
-
-    assert os.path.isfile(stdout_filename)
-    assert os.path.isfile(stderr_filename)
+    assert os.path.isfile(context.stdout_filename)
+    assert os.path.isfile(context.stderr_filename)
 
     # Just `Test` print in stdout
-    lines = [l.strip() for l in open(stdout_filename, 'r')]
-    assert lines[0] == 'Test'
+    lines = '\n'.join([l.strip() for l in open(context.stdout_filename, 'r')])
+    assert 'Test' in lines
+    assert 'Test Logger' in lines
 
     # Nothing in stderr
-    lines = [l.strip() for l in open(stderr_filename, 'r')]
+    lines = [l.strip() for l in open(context.stderr_filename, 'r')]
     assert len(lines) == 0
 
     # Clean up files
-    os.remove(stdout_filename)
-    os.remove(stderr_filename)
+    os.remove(context.stdout_filename)
+    os.remove(context.stderr_filename)
+    os.rmdir(context.directory)
 
 
 @mock.patch('argparse.ArgumentParser.parse_args', return_value=argparse.Namespace(message='test'))
@@ -53,8 +51,9 @@ def test_experiment(*_):
         # Smore test
         context.maybe_cuda(torch.LongTensor([1, 2]))
 
-        # Clear up
+        # Clean up
         os.remove(path)
-        os.rmdir(context.directory)
-        os.remove(context.stdout_filename)
-        os.remove(context.stderr_filename)
+
+    os.remove(context.stdout_filename)
+    os.remove(context.stderr_filename)
+    os.rmdir(context.directory)

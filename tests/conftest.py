@@ -1,13 +1,17 @@
 # Fix this weird error: https://github.com/pytorch/pytorch/issues/2083
 import torch  # noqa: F401
 
-import pytest
+import logging
 
-from src.utils import config_logging
+import pytest
+import tensorflow as tf
+
+tf.enable_eager_execution()
+
 from src.hparams import set_hparams
 
+logging.getLogger().setLevel(logging.INFO)
 set_hparams()
-config_logging()
 
 
 def pytest_configure(config):

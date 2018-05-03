@@ -5,7 +5,6 @@ from tensorflow.contrib.signal.python.ops import window_ops
 from torch.optim import Adam
 
 from src.configurable import add_config
-from src.configurable import log_config
 from src.configurable import configurable
 
 
@@ -23,9 +22,13 @@ def set_hparams():
         },
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999, eps = 10−6
+        # learning rate of 10−3
+        # We also apply L2 regularization with weight 10−6
         'torch.optim.Adam.__init__': {
             'betas': (0.9, 0.999),
             'eps': 10e-6,
+            'lr': 10e-3,
+            'weight_decay': 10e-6,
         }
     })
 
@@ -50,10 +53,19 @@ def set_hparams():
     # SOURCE (Tacotron 2):
     # Attention probabilities are computed after projecting inputs and location
     # features to 128-dimensional hidden representations.
-    query_hidden_size = 128
+    attention_hidden_size = 128
 
     add_config({
         'src': {
+            'lr_schedulers.DelayedExponentialLR.__init__': {
+                # SOURCE (Tacotron 2):
+                # learning rate of 10−3 exponentially decaying to 10−5 starting after 50,000
+                # iterations.
+                # NOTE: Over email the authors confirmed they ended decay at 100,000 steps
+                'epoch_end_decay': 100000,
+                'end_lr': 10e-5,
+                'epoch_start_decay': 10e-3,
+            },
             'spectrogram': {
                 # SOURCE (Tacotron 1):
                 # We use 24 kHz sampling rate for all experiments.
@@ -113,8 +125,7 @@ def set_hparams():
                     # SOURCE (Tacotron 2):
                     # Attention probabilities are computed after projecting inputs and location
                     # features to 128-dimensional hidden representations.
-                    'query_hidden_size': query_hidden_size,
-                    'alignment_hidden_size': 128,
+                    'hidden_size': attention_hidden_size,
 
                     # SOURCE (Tacotron 2):
                     # Location features are computed using 32 1-D convolution filters of length
@@ -127,7 +138,7 @@ def set_hparams():
                     'pre_net_hidden_size': pre_net_hidden_size,
                     'encoder_hidden_size': encoder_hidden_size,
                     'lstm_variational_dropout': lstm_variational_dropout,
-                    'query_hidden_size': query_hidden_size,
+                    'attention_context_size': attention_hidden_size,
 
                     # SOURCE (Tacotron 2):
                     # The prenet output and attention context vector are concatenated and
@@ -174,4 +185,3 @@ def set_hparams():
             }
         }
     })
-    log_config()

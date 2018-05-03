@@ -5,12 +5,15 @@ from src.feature_model.attention import LocationSensitiveAttention
 
 
 def test_location_sensative_attention():
-    encoder_hidden_size = 32
+    encoder_hidden_size = 8
     query_hidden_size = 16
+    attention_hidden_size = 8
     batch_size = 5
     num_tokens = 6
     attention = LocationSensitiveAttention(
-        encoder_hidden_size=encoder_hidden_size, query_hidden_size=query_hidden_size)
+        encoder_hidden_size=encoder_hidden_size,
+        query_hidden_size=query_hidden_size,
+        hidden_size=attention_hidden_size)
     for param in attention.parameters():
         param.data.uniform_(-0.1, 0.1)
 
@@ -23,11 +26,12 @@ def test_location_sensative_attention():
         context, alignment = attention(encoded_tokens, query, last_alignment=alignment)
 
         assert context.data.type() == 'torch.FloatTensor'
-        assert context.shape == (batch_size, encoder_hidden_size)
+        assert context.shape == (batch_size, attention_hidden_size)
 
         assert alignment.data.type() == 'torch.FloatTensor'
         assert alignment.shape == (batch_size, num_tokens)
 
         # Check the Softmax computation was applied correctly.
+        sum_ = alignment.sum(dim=1)
         for i in range(batch_size):
-            assert alignment.sum(1).data[i] == pytest.approx(1, 0.0001)
+            assert sum_[i].item() == pytest.approx(1, 0.0001)
