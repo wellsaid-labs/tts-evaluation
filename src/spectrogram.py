@@ -353,10 +353,13 @@ def plot_spectrogram(spectrogram, filename, title='Mel-Spectrogram'):
         spectrogram (Tensor): A ``[frames, num_mel_bins]`` ``Tensor`` of ``complex64`` STFT
             values.
         filename (str): Name of the file to save to.
+        title (str): Title of the plot.
 
     Returns:
         None
     """
+    assert '.png' in filename.lower(), "Filename saves in PNG format"
+
     plt.figure()
     plt.style.use('ggplot')
     plt.imshow(np.rot90(spectrogram))
@@ -364,7 +367,7 @@ def plot_spectrogram(spectrogram, filename, title='Mel-Spectrogram'):
     plt.ylabel('Mel-Channels')
     xlabel = 'Frames'
     plt.xlabel(xlabel)
-    plt.title(title, y=1.1)
+    plt.title(title)
     plt.savefig(filename, format='png', bbox_inches='tight')
 
 
