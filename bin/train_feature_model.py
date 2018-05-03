@@ -116,18 +116,15 @@ def get_iterator(context,
         frames_batch, _ = pad_batch([row['log_mel_spectrograms'] for row in batch])
         stop_token_batch, _ = pad_batch([row['stop_token'] for row in batch])
         mask_batch, _ = pad_batch([row['mask'] for row in batch])
-        process = lambda b: context.maybe_cuda(b.transpose_(0, 1).contiguous(), async=True)
-        return (context.maybe_cuda(text_batch, async=True), process(frames_batch),
-                process(stop_token_batch), process(mask_batch))
+        transpose = lambda b: b.transpose_(0, 1).contiguous()
+        return (text_batch, transpose(frames_batch), transpose(stop_token_batch),
+                transpose(mask_batch))
 
     # Use bucket sampling to group similar sized text but with noise + random
-    batch_sampler = BucketBatchSampler(dataset, batch_size, False, sort_key=sort_key)
+    batch_sampler = BucketBatchSampler(
+        dataset, batch_size, False, sort_key=sort_key, biggest_batches_first=False)
     return DataLoader(
-        dataset,
-        batch_sampler=batch_sampler,
-        collate_fn=collate_fn,
-        pin_memory=False,
-        num_workers=0)
+        dataset, batch_sampler=batch_sampler, collate_fn=collate_fn, pin_memory=True, num_workers=1)
 
 
 def init_model(context, vocab_size):
@@ -193,21 +190,20 @@ def get_loss_stop_token(criterion,
     return torch.mean(loss) if size_average else torch.sum(loss)
 
 
-def save_sample_spectrogram(context, data):
+def save_sample_spectrogram(context, data, name='sample_spectrogram.png'):
     """ Save the first spectrogram in data to ensure it computed correctly.
 
     Args:
         context (ExperimentContextManager): Context manager for the experiment
         data (list): Data from which to grab sample spectrogram.
     """
-    save_image_of_spectrogram(data[0]['log_mel_spectrograms'].numpy(),
-                              os.path.join(context.directory, 'sample_spectrogram.png'))
+    save_image_of_spectrogram(data, os.path.join(context.directory, name))
 
 
 with ExperimentContextManager(label='feature_model') as context:
     cache = os.path.join(context.root_path, 'data/lj_speech.pt')
     data, text_encoder = load_data(context, cache)
-    save_sample_spectrogram(context, data)
+    save_sample_spectrogram(context, data[0]['log_mel_spectrograms'].numpy())
     train, dev = make_splits(data)
     model = init_model(context, text_encoder.vocab_size)
     # LEARN MORE: https://github.com/pytorch/pytorch/issues/679
@@ -217,9 +213,10 @@ with ExperimentContextManager(label='feature_model') as context:
     criterion_frames = context.maybe_cuda(MSELoss(reduce=False))
     criterion_stop_token = context.maybe_cuda(BCELoss(reduce=False))
 
-    train_batch_size = 24
-    dev_batch_size = 64
+    train_batch_size = 36
+    dev_batch_size = 72
     logger.info('Train Batch Size: %d', train_batch_size)
+    logger.info('Dev Batch Size: %d', dev_batch_size)
     logger.info('Total Parameters: %d', get_total_parameters(model))
     logger.info('Model:\n%s' % model)
     epoch = 0
@@ -229,11 +226,12 @@ with ExperimentContextManager(label='feature_model') as context:
         logger.info('Epoch: %d, Step: %d', epoch, step)
 
         # Iterate over the training data
-        logger.info('Training...')
         torch.set_grad_enabled(True)
         model.train(mode=True)
         train_iterator = get_iterator(context, train, train_batch_size, train=True)
-        for text_batch, frames_batch, stop_token_batch, mask_batch in tqdm(train_iterator):
+        for batch in tqdm(train_iterator):
+            text_batch, frames_batch, stop_token_batch, mask_batch = tuple(
+                [context.maybe_cuda(t, non_blocking=True) for t in batch])
             optimizer.zero_grad()
             predicted_frames, predicted_frames_with_residual, predicted_stop_token = model(
                 text_batch, frames_batch)
@@ -250,12 +248,13 @@ with ExperimentContextManager(label='feature_model') as context:
         epoch += 1
 
         checkpoint_path = context.save(
-            '%d.pt' % epoch, {
+            '%d.pt' % step, {
                 'model': model,
                 'optimizer': optimizer,
                 'scheduler': scheduler,
                 'text_encoder': text_encoder,
-                'train_batch_size': train_batch_size
+                'train_batch_size': train_batch_size,
+                'dev_batch_size': dev_batch_size,
             })
         logger.info('Checkpoint created at %s', checkpoint_path)
 
@@ -267,7 +266,9 @@ with ExperimentContextManager(label='feature_model') as context:
         num_elements_stop_token = 0
         num_elements_frames = 0
         dev_iterator = get_iterator(context, dev, dev_batch_size, train=False)
-        for text_batch, frames_batch, stop_token_batch, mask_batch in tqdm(dev_iterator):
+        for batch in tqdm(dev_iterator):
+            text_batch, frames_batch, stop_token_batch, mask_batch = tuple(
+                [context.maybe_cuda(t, non_blocking=True) for t in batch])
             predicted_frames, predicted_frames_with_residual, predicted_stop_token = model(
                 text_batch, frames_batch)
             loss_frames += get_loss_frames(
@@ -288,8 +289,15 @@ with ExperimentContextManager(label='feature_model') as context:
                 size_average=False).item()
             num_elements_stop_token += reduce(lambda x, y: x * y, stop_token_batch.shape)
 
+        save_sample_spectrogram(context,
+                                frames_batch.transpose_(0, 1)[0].cpu().numpy(),
+                                '%d_true_spectrogram.png' % (step,))
+        save_sample_spectrogram(context,
+                                predicted_frames_with_residual.transpose_(0, 1)[0].cpu().numpy(),
+                                '%d_predicted_spectrogram.png' % (step,))
+
         logger.info('Frame loss: %f', loss_frames / num_elements_frames)
-        logger.info('Frame loss: %f', loss_frames_with_residual / num_elements_frames)
+        logger.info('Frame with residual loss: %f', loss_frames_with_residual / num_elements_frames)
         logger.info('Stop token loss: %f', loss_stop_token / num_elements_stop_token)
 
         print('–' * 100)
