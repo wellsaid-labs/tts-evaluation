@@ -102,9 +102,9 @@ def set_hparams():
                     'upper_hertz': wav_to_log_mel_spectrogram['upper_hertz'],
                     'sample_rate': sample_rate,
                     # SOURCE (Tacotron 1):
-                    # We observed that Griffin-Lim converges after 50 iterations (in fact, about 30
-                    # iterations seems to be enough), which is reasonably fast.
-                    'iterations': 50,
+                    # We found that raising the predicted magnitudes by a power of 1.2 before
+                    # feeding to Griffin-Lim reduces artifacts
+                    'power': 1.20,
                 },
             },
             'feature_model': {
