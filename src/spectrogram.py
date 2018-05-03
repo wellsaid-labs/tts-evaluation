@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg')
+
 from functools import partial
 
 import argparse
