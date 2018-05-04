@@ -14,6 +14,7 @@ from src.utils import get_total_parameters
 from src.utils import pad_batch
 from src.utils import pad_tensor
 from src.utils import plot_attention
+from src.utils import Average
 
 
 class MockModel(nn.Module):
@@ -89,3 +90,10 @@ def test_plot_attention():
 
     # Clean up
     os.remove(filename)
+
+
+def test_average():
+    average = Average()
+    average.add(1)
+    average.add(2)
+    assert average.get() == 1.5

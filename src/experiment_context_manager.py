@@ -127,10 +127,6 @@ class ExperimentContextManager(object):
 
         os.system(cmd.format(text=text, title=title))
 
-    def usage(self):
-        """ Print CUDA usage """
-        os.system('nvidia-smi')
-
     def _copy_standard_streams(self, stdout_filename='stdout.log', stderr_filename='stderr.log'):
         """ Copy stdout and stderr to a ``{directory}/stdout.log`` and ``{directory}/stderr.log``.
 
@@ -154,17 +150,6 @@ class ExperimentContextManager(object):
         path = os.path.join(self.top_level_directory, name)
         os.makedirs(path)
         return path
-
-    def git_commit(self):
-        """ Commit the current code structure before every experiment with an emoji: 🎓
-
-        Args:
-            messsage (str): Message to add to git commit
-        """
-        subprocess.call([
-            'git', 'commit', '-am',
-            ':mortar_board: %s | %s' % (os.path.basename(self.directory), self.message)
-        ])
 
     def set_seed(self, seed):
         """ To ensure reproducibility, by seeding ``numpy``, ``random``, ``tf`` and ``torch``.
