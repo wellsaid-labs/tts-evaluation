@@ -112,14 +112,26 @@ def plot_attention(alignment, filename, title='Attention Alignment'):
 
 
 class Average(object):
+    """ Average metric helps track and compute an average """
 
     def __init__(self):
         self.total = 0
         self.num_values = 0
 
     def add(self, value, num_values=1):
+        """ Add values to average metric to track.
+
+        Args:
+            value (int): Value to add to the total
+            num_values (int): Number of values considered
+        """
         self.total += value
         self.num_values += num_values
 
     def get(self):
+        """ Get the average.
+
+        Returns:
+            (float): average value
+        """
         return self.total / self.num_values

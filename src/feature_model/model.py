@@ -1,5 +1,7 @@
 from torch import nn
 
+import torch
+
 from src.feature_model.encoder import Encoder
 from src.feature_model.decoder import AutoregressiveDecoder
 
@@ -108,6 +110,8 @@ class SpectrogramModel(nn.Module):
             frames_with_residual (torch.FloatTensor [num_frames, batch_size, frame_channels]):
                 Predicted frames with the post net residual added.
             stop_token (torch.FloatTensor [num_frames, batch_size]): Probablity of stopping.
+            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]) All attention
+                alignments, stored for visualization and debugging
         """
         encoded_tokens = self.encoder(tokens)
 
@@ -116,15 +120,25 @@ class SpectrogramModel(nn.Module):
 
         if ground_truth_frames is None:  # Unrolling the decoder.
             stopped = set()
-            recursion = 0
             hidden_state = None
-            while len(stopped) != batch_size and recursion < self.max_recursion:
-                frames, frames_with_residual, stop_token, hidden_state = self.decoder(
+            alignments, frames_with_residual, frames, stop_tokens = [], [], [], []
+            while len(stopped) != batch_size and len(frames_with_residual) < self.max_recursion:
+                frame, frame_with_residual, stop_token, hidden_state, alignment = self.decoder(
                     encoded_tokens, hidden_state=hidden_state)
                 stopped.update(self._get_stopped_indexes(stop_token))
-                recursion += 1
+
+                # Store results
+                frames_with_residual.append(frame_with_residual.squeeze(0))
+                frames.append(frame.squeeze(0))
+                stop_tokens.append(stop_token.squeeze(0))
+                alignments.append(alignment.squeeze(0))
+
+            alignments = torch.stack(alignments, dim=0)
+            frames_with_residual = torch.stack(frames_with_residual, dim=0)
+            frames = torch.stack(frames, dim=0)
+            stop_tokens = torch.stack(stop_tokens, dim=0)
         else:
-            frames, frames_with_residual, stop_token, hidden_state = self.decoder(
+            frames, frames_with_residual, stop_tokens, hidden_state, alignments = self.decoder(
                 encoded_tokens, ground_truth_frames=ground_truth_frames)
 
-        return frames, frames_with_residual, stop_token
+        return frames, frames_with_residual, stop_tokens, alignments

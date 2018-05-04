@@ -207,6 +207,8 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             stop_token (torch.FloatTensor [num_frames, batch_size]): Probablity of stopping.
             new_hidden_state (AutoregressiveDecoderHiddenState): For sequential prediction, decoder
                 hidden state used to predict the next frame.
+            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]) All attention
+                alignments, stored for visualization and debugging
         """
         assert ground_truth_frames is None or hidden_state is None, ("""Either the decoder is
 conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
@@ -244,6 +246,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         # over a single frame.
         updated_frames = []
         attention_contexts = []
+        alignments = []
         frames = list(frames.split(1, dim=0))
         while len(frames) > 0:
             frame = frames.pop(0).squeeze(0)
@@ -271,9 +274,12 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
             updated_frames.append(frame.squeeze(0))
             attention_contexts.append(last_attention_context)
+            alignments.append(last_attention_alignment.detach().cpu())
 
         del encoded_tokens  # Clear Memory
 
+        # [num_frames, batch_size, num_tokens]
+        alignments = torch.stack(alignments, dim=0)
         # [num_frames, batch_size, lstm_hidden_size]
         frames = torch.stack(updated_frames, dim=0)
         # [num_frames, batch_size, self.attention_context_size]
@@ -331,4 +337,4 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             lstm_two_hidden_state=lstm_two_hidden_state)
 
         # Loss is computed on both the ``frames`` and ``frames_with_residual`` to aid convergance.
-        return frames, frames_with_residual, stop_token, new_hidden_state
+        return frames, frames_with_residual, stop_token, new_hidden_state, alignments

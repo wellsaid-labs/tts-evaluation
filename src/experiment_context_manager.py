@@ -17,6 +17,24 @@ from src.hparams import set_hparams
 from src.utils import get_root_path
 
 
+def load(path, device=-1):
+    """ Using ``torch.load`` and ``dill`` load an object from ``path`` onto ``self.device``.
+
+    Args:
+        path (str): Filename to load in ``self.directory``
+
+    Returns:
+        (any): Object loaded.
+    """
+
+    def remap(storage, loc):
+        if 'cuda' in loc and device >= 0:
+            return storage.cuda(device=device)
+        return storage
+
+    return torch.load(path, map_location=remap, pickle_module=dill)
+
+
 class CopyStream(object):
     """ Wrapper that copies a stream to a file without affecting the stream.
 
@@ -67,22 +85,7 @@ class ExperimentContextManager(object):
         self.set_seed(seed)
 
     def load(self, path):
-        """ Using ``torch.load`` and ``dill`` load an object from ``path`` onto ``self.device``.
-
-        Args:
-            path (str): Filename to load in ``self.directory``
-
-        Returns:
-            (any): Object loaded.
-        """
-
-        def remap(storage, loc):
-            if 'cuda' in loc and self.device >= 0:
-                return storage.cuda(device=self.device)
-            return storage
-
-        return torch.load(
-            os.path.join(self.directory, path), map_location=remap, pickle_module=dill)
+        return load(os.path.join(self.directory, path), device=self.device)
 
     def save(self, path, data):
         """ Using ``torch.save`` and ``dill`` save an object to ``path`` in ``self.directory``
