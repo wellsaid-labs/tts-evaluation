@@ -220,7 +220,7 @@ best_stop_token_loss = math.inf
 
 def get_model_iterator(context,
                        dataset,
-                       batch_size,
+                       max_batch_size,
                        model,
                        criterion_frames,
                        criterion_stop_token,
@@ -231,7 +231,7 @@ def get_model_iterator(context,
     Args:
         context (ExperimentContextManager): Context manager for the experiment
         dataset (list): Dataset to iterate over.
-        batch_size (int): Size of the batch for iteration.
+        max_batch_size (int): Size of the batch for iteration.
         model (FeatureModel): Model used to predict frames and a stop token.
         criterion_frames (torch.nn.modules.loss._Loss): Torch loss module instantiated for frames.
         criterion_stop_token (torch.nn.modules.loss._Loss): Torch loss module instantiated for
@@ -246,7 +246,7 @@ def get_model_iterator(context,
     avg_post_frames_loss, avg_stop_token_loss, avg_pre_frames_loss = Average(), Average(), Average()
     torch.set_grad_enabled(train)
     model.train(mode=train)
-    data_iterator = DataIterator(context, dataset, batch_size, train=train)
+    data_iterator = DataIterator(context, dataset, max_batch_size, train=train)
     with tqdm(data_iterator) as iterator:
         iterator.set_description(label)
 
@@ -286,6 +286,7 @@ def get_model_iterator(context,
     logger.info('[%s] Stop Token Loss: %f', label.upper(), avg_stop_token_loss.get())
 
     def sample_spectrogram(batch, name):
+        _, batch_size, _ = batch.shape
         spectrogram = batch.transpose_(0, 1)[random.randint(0, batch_size - 1)].cpu().numpy()
         name = os.path.join(context.epoch_directory, label.lower() + '_' + name)
         plot_spectrogram(spectrogram, name + '.png')
@@ -328,11 +329,15 @@ def main():
             scheduler = checkpoint['scheduler']
             # ISSUE: https://github.com/pytorch/pytorch/issues/7255
             scheduler.optimizer = optimizer.optimizer
+            epoch = checkpoint['epoch']
+            step = checkpoint['step']
         else:
             model = init_model(context, text_encoder.vocab_size)
             optimizer = Optimizer(
                 Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
             scheduler = DelayedExponentialLR(optimizer.optimizer)
+            epoch = 0
+            step = 0
         criterion_frames = context.maybe_cuda(MSELoss(reduce=False))
         criterion_stop_token = context.maybe_cuda(BCELoss(reduce=False))
 
@@ -342,8 +347,6 @@ def main():
         logger.info('Dev Batch Size: %d', dev_batch_size)
         logger.info('Total Parameters: %d', get_total_parameters(model))
         logger.info('Model:\n%s' % model)
-        epoch = 0
-        step = 0
 
         while True:
             logger.info('Starting Epoch %d, Step %d', epoch, step)
@@ -368,7 +371,9 @@ def main():
                 'model': model,
                 'optimizer': optimizer,
                 'scheduler': scheduler,
-                'text_encoder': text_encoder
+                'text_encoder': text_encoder,
+                'epoch': epoch + 1,
+                'step': step,
             }
             checkpoint_path = context.save(
                 os.path.join(context.epoch_directory, 'checkpoint.pt'), checkpoint)
