@@ -46,8 +46,7 @@ class LocationSensitiveAttention(nn.Module):
         convolution_filter_size (int, optional): Size of the convolving kernel.
     """
 
-    # TODO: Add attention visualization for debugging
-
+    #
     @configurable
     def __init__(self,
                  encoder_hidden_size=512,

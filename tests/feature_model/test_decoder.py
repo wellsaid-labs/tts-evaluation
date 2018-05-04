@@ -11,8 +11,6 @@ def test_autoregressive_decoder():
     frame_channels = 20
     decoder = AutoregressiveDecoder(
         encoder_hidden_size=encoder_hidden_size, frame_channels=frame_channels)
-    for param in decoder.parameters():
-        param.data.uniform_(-0.1, 0.1)
 
     encoded_tokens = torch.autograd.Variable(
         torch.FloatTensor(num_tokens, batch_size, encoder_hidden_size).uniform_(0, 1))
@@ -42,8 +40,6 @@ def test_autoregressive_decoder_ground_truth():
     num_frames = 10
     decoder = AutoregressiveDecoder(
         encoder_hidden_size=encoder_hidden_size, frame_channels=frame_channels)
-    for param in decoder.parameters():
-        param.data.uniform_(-0.1, 0.1)
 
     encoded_tokens = torch.autograd.Variable(
         torch.FloatTensor(num_tokens, batch_size, encoder_hidden_size).uniform_(0, 1))

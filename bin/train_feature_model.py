@@ -38,7 +38,7 @@ from src.utils import Average
 
 logger = logging.getLogger(__name__)
 
-# TODO: Consider an integration test run on this with a mock over load_data to have 10 items
+# TODO: Consider an integration test run on this with a mock over load_data on 10 items
 
 
 def load_data(context, cache, text_encoder=None):
@@ -149,22 +149,6 @@ class DataIterator(object):
     def __iter__(self):
         for batch in self.iterator:
             yield tuple([self.context.maybe_cuda(t, non_blocking=True) for t in batch])
-
-
-def init_model(context, vocab_size):
-    """ Intitiate the ``FeatureModel`` with random weights.
-
-    Args:
-        vocab_size (int): Size of the vocab used for model embeddings.
-
-    Returns:
-        (FeatureModel): Feature model intialized.
-    """
-    model = FeatureModel(vocab_size)
-    for param in model.parameters():
-        param.data.uniform_(-0.1, 0.1)
-    model = context.maybe_cuda(model)
-    return model
 
 
 def get_loss(criterion_frames,
@@ -332,7 +316,7 @@ def main():
             epoch = checkpoint['epoch']
             step = checkpoint['step']
         else:
-            model = init_model(context, text_encoder.vocab_size)
+            model = context.maybe_cuda(FeatureModel(text_encoder.vocab_size))
             optimizer = Optimizer(
                 Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
             scheduler = DelayedExponentialLR(optimizer.optimizer)
@@ -354,6 +338,7 @@ def main():
 
             # Iterate over the training data
             logger.info('Training...')
+            exit()
             iterator = get_model_iterator(context, train, train_batch_size, model, criterion_frames,
                                           criterion_stop_token, True, 'TRAIN')
             for loss in iterator:

@@ -12,7 +12,7 @@ import tensorflow as tf
 import torch
 
 from src.configurable import log_config
-# from src.configurable import log_arguments
+from src.configurable import log_arguments
 from src.hparams import set_hparams
 from src.utils import get_root_path
 
@@ -235,7 +235,7 @@ class ExperimentContextManager(object):
         """ Runs after the experiment context ends.
         """
         # Print all arguments used
-        # log_arguments()
+        log_arguments()
 
         # Flush stdout and stderr to capture everything
         sys.stdout.flush()

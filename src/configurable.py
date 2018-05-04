@@ -7,6 +7,7 @@ import logging
 import operator
 import pprint
 import sys
+import textwrap
 
 pretty_printer = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
@@ -65,21 +66,39 @@ class _ArgumentsList():
 
     def string(self, item):
         try:
-            return str(item)
+            string = str(item)
+            return textwrap.shorten(string, width=75, placeholder="[…]")
         except:
-            return ''
+            return '[_ArgumentsList: To String Error]'
 
     def __str__(self):
+        if len(self.list) == 1:
+            return str(self.list[0])
         return str(self.list)
 
     def __repr__(self):
-        return str(self.list)
+        return str(self)
 
 
 _configuration = _KeyListDictionary()  # Global private configuration
 
 
-def _dict_merge(dict_, merge_dict, overwrite=False, arguments=False):
+def _dict_update(dict_, update):
+    """ Recursive `dict` update.
+
+    Args:
+        dict_ (dict): dict onto which the merge is executed
+        update (callable): Update function to run
+    """
+    for key in dict_:
+        if isinstance(dict_[key], dict):
+            dict_[key] = _dict_update(dict_[key], update)
+        else:
+            dict_[key] = update(dict_[key])
+    return dict_
+
+
+def _dict_merge(dict_, merge_dict, overwrite=False):
     """ Recursive `dict` merge.
 
     `dict_merge` recurses down into dicts nested to an arbitrary depth, updating keys. The
@@ -88,24 +107,17 @@ def _dict_merge(dict_, merge_dict, overwrite=False, arguments=False):
     Args:
         dict_ (dict): dict onto which the merge is executed
         merge_dict (dict): dict merged into ``dict_``
-        overwrite (bool): If True, ``merge_dict`` may overwrite ``dict_`` values; otherwise,
-            original ``dict_`` values are kept.
-        arguments (bool): If True, uses ``_ArgumentsList`` to store values.
+        overwrite (bool or lambda): If True, ``merge_dict`` may overwrite ``dict_`` values;
+            otherwise, original ``dict_`` values are kept.
     """
-    assert overwrite is False or arguments is False, (
-        "Arguments are not overwritten the same way; therefore, ``overwrite=True`` and " +
-        "``arguments=True`` does not make sense together")
-
     for key in merge_dict:
-        if key in dict_ and isinstance(dict_[key], dict):
-            _dict_merge(dict_[key], merge_dict[key], overwrite=overwrite, arguments=arguments)
-        elif overwrite and key in dict_:
-            dict_[key] = merge_dict[key]
-        elif arguments and key in dict_:
-            if isinstance(dict_[key], _ArgumentsList):
-                dict_[key].append(merge_dict[key])
-            else:
-                dict_[key] = _ArgumentsList(dict_[key], merge_dict[key])
+        if key in dict_ and isinstance(merge_dict[key], dict) and isinstance(dict_[key], dict):
+            _dict_merge(dict_[key], merge_dict[key], overwrite=overwrite)
+        elif key in dict_:
+            if isinstance(overwrite, bool) and overwrite:
+                dict_[key] = merge_dict[key]
+            elif callable(overwrite):
+                overwrite(dict_[key], merge_dict[key])
         elif key not in dict_:
             dict_[key] = merge_dict[key]
 
@@ -312,20 +324,20 @@ def _add_arguments(keys, parameters, args, kwargs):
             named_args[parameter.name] = args[i:]
             break
 
-    def to_dict(_keys, value):
+    def _to_dict(_keys, value):
         if len(_keys) == 0:
-            return named_args
-        return {_keys[0]: to_dict(_keys[1:], named_args)}
+            return value
+        return {_keys[0]: _to_dict(_keys[1:], value)}
 
-    parsed = to_dict(keys, named_args)
-    _dict_merge(_arguments, parsed, arguments=True)
+    parsed = _to_dict(keys, named_args)
+    parsed = _dict_update(parsed, update=lambda x: _ArgumentsList(x))
+    _dict_merge(_arguments, parsed, overwrite=lambda org, new: org.append(new))
     _arguments = _KeyListDictionary(_arguments)
 
 
 def log_arguments():
     """ Log the parameters saved up to this point. """
-    logger.info('Paramters:')
-    logger.info(pretty_printer.pformat(_arguments))
+    logger.info('Paramters:\n%s', pretty_printer.pformat(_arguments))
 
 
 def clear_arguments():
@@ -341,8 +353,7 @@ def _get_arguments():
 
 def log_config():
     """ Log the current global configuration. """
-    logger.info('Global configuration:')
-    logger.info(pretty_printer.pformat(_configuration))
+    logger.info('Global configuration:\n%s', pretty_printer.pformat(_configuration))
 
 
 def clear_config():

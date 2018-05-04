@@ -141,7 +141,7 @@ def test_add_config_and_arguments():
     assert mock_configurable() == kwargs
 
     # Check that the parameters were recorded
-    assert _get_arguments()['tests']['test_configurable']['mock_configurable']['xyz'] == 'xyz'
+    assert str(_get_arguments()['tests']['test_configurable']['mock_configurable']['xyz']) == 'xyz'
 
     # Reset
     clear_config()
@@ -154,7 +154,7 @@ def test_add_config_and_arguments():
 def test_arguments():
     # Check that the parameters were recorded
     mock_configurable(abc='abc')
-    assert _get_arguments()['tests']['test_configurable']['mock_configurable']['abc'] == 'abc'
+    assert str(_get_arguments()['tests']['test_configurable']['mock_configurable']['abc']) == 'abc'
 
     # Smoke test for log
     log_arguments()
@@ -172,10 +172,10 @@ def test_arguments_many():
     arg_kwarg('abc', xyz='abc')
     assert str(_get_arguments()['tests']['test_configurable']['test_arguments_many']['<locals>'][
         '<lambda>']['abc']) == str(['xyz', 'cdf', 'ghf'])
-    assert _get_arguments()['tests']['test_configurable']['test_arguments_many']['<locals>'][
-        '<lambda>']['xyz'] == 'abc'
-    assert _get_arguments()['tests']['test_configurable']['test_arguments_many']['<locals>'][
-        '<lambda>']['args'] == ('def', 'ghi', 'klm')
+    assert str(_get_arguments()['tests']['test_configurable']['test_arguments_many']['<locals>'][
+        '<lambda>']['xyz']) == 'abc'
+    assert str(_get_arguments()['tests']['test_configurable']['test_arguments_many']['<locals>'][
+        '<lambda>']['args']) == str(tuple(['def', 'ghi', 'klm']))
     clear_arguments()
 
 

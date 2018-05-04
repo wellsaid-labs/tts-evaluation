@@ -14,9 +14,6 @@ def test_feature_model():
         encoder_hidden_size=encoder_hidden_size,
         frame_channels=frame_channels,
         max_recursion=10)
-    for param in model.parameters():
-        param.data.uniform_(-0.1, 0.1)
-
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.autograd.Variable(
         torch.LongTensor(batch_size, num_tokens).random_(1, vocab_size))
@@ -44,8 +41,6 @@ def test_feature_model_ground_truth():
         encoder_hidden_size=encoder_hidden_size,
         frame_channels=frame_channels,
         max_recursion=10)
-    for param in model.parameters():
-        param.data.uniform_(-0.1, 0.1)
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.autograd.Variable(
