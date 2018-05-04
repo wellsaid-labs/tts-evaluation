@@ -89,7 +89,7 @@ def set_hparams():
                 # NOTE: Over email the authors confirmed they ended decay at 100,000 steps
                 'epoch_end_decay': 100000,
                 'end_lr': 10e-5,
-                'epoch_start_decay': 10e-3,
+                'epoch_start_decay': 50000,
             },
             'spectrogram': {
                 '_read_audio.sample_rate': sample_rate,

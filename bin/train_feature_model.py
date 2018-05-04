@@ -1,8 +1,12 @@
+# TODO: Plot attention alignment
+# TODO: Write generation code
+
 from functools import reduce
 
 import argparse
 import gc
 import logging
+import math
 import os
 import random
 
@@ -30,6 +34,7 @@ from src.spectrogram import wav_to_log_mel_spectrogram
 from src.utils import get_total_parameters
 from src.utils import pad_batch
 from src.utils import split_dataset
+from src.utils import Average
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +214,10 @@ def get_loss(criterion_frames,
     return loss_frames, loss_frames_with_residual, loss_stop_token
 
 
+best_post_frames_loss = math.inf
+best_stop_token_loss = math.inf
+
+
 def get_model_iterator(context,
                        dataset,
                        batch_size,
@@ -233,62 +242,48 @@ def get_model_iterator(context,
     Returns:
         (torch.Tensor) Loss at every iteration
     """
-    total_pre_frames_loss, total_post_frames_loss, total_stop_token_loss = 0, 0, 0
-    total_frame_values, total_stop_token_values = 0, 0
-
+    global best_stop_token_loss, best_post_frames_loss
+    avg_post_frames_loss, avg_stop_token_loss, avg_pre_frames_loss = Average(), Average(), Average()
     torch.set_grad_enabled(train)
     model.train(mode=train)
     data_iterator = DataIterator(context, dataset, batch_size, train=train)
     with tqdm(data_iterator) as iterator:
-        # Description will be displayed on the left
         iterator.set_description(label)
+
         for text_batch, frames_batch, stop_token_batch, mask_batch in iterator:
-            predicted_pre_frames, predicted_post_frames, predicted_stop_token = model(
-                text_batch, frames_batch)
-
-            pre_frames_loss, post_frames_loss, stop_token_loss = get_loss(
-                criterion_frames,
-                criterion_stop_token,
-                frames_batch,
-                stop_token_batch,
-                predicted_pre_frames,
-                predicted_post_frames,
-                predicted_stop_token,
-                mask_batch,
-                size_average=True)
-
-            yield pre_frames_loss + post_frames_loss + stop_token_loss
+            predicted = model(text_batch, frames_batch)
+            losses = get_loss(criterion_frames, criterion_stop_token, frames_batch,
+                              stop_token_batch, *predicted, mask_batch, True)
+            yield sum(losses)
 
             # Clear Memory
-            frames_batch = frames_batch.detach()
-            predicted_pre_frames = predicted_pre_frames.detach()
-            predicted_post_frames = predicted_post_frames.detach()
-            pre_frames_loss = pre_frames_loss.item()
-            post_frames_loss = post_frames_loss.item()
-            stop_token_loss = stop_token_loss.item()
+            predicted_pre_frames, predicted_post_frames = tuple(t.detach() for t in predicted[:-1])
+            pre_frames_loss, post_frames_loss, stop_token_loss = tuple(t.item() for t in losses)
 
             # Compute metrics
             num_frame_values = reduce(lambda x, y: x * y, frames_batch.shape)
             num_stop_token_values = reduce(lambda x, y: x * y, stop_token_batch.shape)
-            total_frame_values += num_frame_values
-            total_stop_token_values += num_stop_token_values
-
-            total_pre_frames_loss += pre_frames_loss * num_frame_values  # Undo size average
-            total_post_frames_loss += post_frames_loss * num_frame_values
-            total_stop_token_loss += stop_token_loss * num_stop_token_values
+            avg_post_frames_loss.add(post_frames_loss * num_frame_values, num_frame_values)
+            avg_pre_frames_loss.add(pre_frames_loss * num_frame_values, num_frame_values)
+            avg_stop_token_loss.add(stop_token_loss * num_stop_token_values, num_stop_token_values)
 
             # Postfix will be displayed on the right of progress bar
             iterator.set_postfix(
-                pre_frames_loss=total_pre_frames_loss / total_frame_values,
-                post_frames_loss=total_post_frames_loss / total_frame_values,
-                stop_token_loss=total_stop_token_loss / total_stop_token_values)
+                pre_frames_loss=avg_pre_frames_loss.get(),
+                post_frames_loss=avg_post_frames_loss.get(),
+                stop_token_loss=avg_stop_token_loss.get())
 
-    logger.info('[%s] Pre Frame Loss: %f', label.upper(),
-                total_pre_frames_loss / total_frame_values)
-    logger.info('[%s] Post Frame Loss: %f', label.upper(),
-                total_post_frames_loss / total_frame_values)
-    logger.info('[%s] Stop Token Loss: %f', label.upper(),
-                total_stop_token_loss / total_stop_token_values)
+    if not train and avg_post_frames_loss.get() < best_post_frames_loss:
+        logger.info('[%s] Best Post Frame Loss', label.upper())
+        best_post_frames_loss = avg_post_frames_loss.get()
+
+    if not train and avg_stop_token_loss.get() < best_stop_token_loss:
+        logger.info('[%s] Best Stop Token Loss', label.upper())
+        best_stop_token_loss = avg_stop_token_loss.get()
+
+    logger.info('[%s] Pre Frame Loss: %f', label.upper(), avg_pre_frames_loss.get())
+    logger.info('[%s] Post Frame Loss: %f', label.upper(), avg_post_frames_loss.get())
+    logger.info('[%s] Stop Token Loss: %f', label.upper(), avg_stop_token_loss.get())
 
     def sample_spectrogram(batch, name):
         spectrogram = batch.transpose_(0, 1)[random.randint(0, batch_size - 1)].cpu().numpy()
@@ -369,14 +364,15 @@ def main():
                 optimizer.zero_grad()
                 del loss
 
-            logger.info('Saving Checkpoint...')
-            context.save(
-                os.path.join(context.epoch_directory, 'checkpoint.pt'), {
-                    'model': model,
-                    'optimizer': optimizer,
-                    'scheduler': scheduler,
-                    'text_encoder': text_encoder
-                })
+            checkpoint = {
+                'model': model,
+                'optimizer': optimizer,
+                'scheduler': scheduler,
+                'text_encoder': text_encoder
+            }
+            checkpoint_path = context.save(
+                os.path.join(context.epoch_directory, 'checkpoint.pt'), checkpoint)
+            logger.info('Saved Checkpoint: %s', checkpoint_path)
 
             logger.info('Evaluating...')
             list(
@@ -386,9 +382,6 @@ def main():
             epoch += 1
             print('–' * 100)
 
-
-# TODO: Plot attention alignment
-# TODO: Write generation code
 
 if __name__ == '__main__':
     main()

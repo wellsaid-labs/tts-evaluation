@@ -109,3 +109,17 @@ def plot_attention(alignment, filename, title='Attention Alignment'):
     plt.tight_layout()
     plt.savefig(filename, format='png')
     plt.close()
+
+
+class Average(object):
+
+    def __init__(self):
+        self.total = 0
+        self.num_values = 0
+
+    def add(self, value, num_values=1):
+        self.total += value
+        self.num_values += num_values
+
+    def get(self):
+        return self.total / self.num_values
