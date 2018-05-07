@@ -102,10 +102,9 @@ def plot_attention(alignment, filename, title='Attention Alignment'):
     figure, axis = plt.subplots()
     im = axis.imshow(alignment, aspect='auto', origin='lower', interpolation='none')
     figure.colorbar(im, ax=axis, orientation='horizontal')
-    xlabel = 'Decoder timestep'
-    plt.xlabel(xlabel)
+    plt.xlabel('Encoder timestep')
     plt.title(title, y=1.1)
-    plt.ylabel('Encoder timestep')
+    plt.ylabel('Decoder timestep')
     plt.tight_layout()
     plt.savefig(filename, format='png')
     plt.close()

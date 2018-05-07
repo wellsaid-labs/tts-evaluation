@@ -69,19 +69,16 @@ class SpectrogramModel(nn.Module):
             representation from the Encoder.
         frame_channels (int, optional): Number of channels in each frame (sometimes refered to
             as "Mel-frequency bins" or "FFT bins" or "FFT bands")
-        max_recursion (int, optional): The maximum sequential predictions to make before quitting;
-            Used for testing and defensive design.
       """
 
     @configurable
-    def __init__(self, vocab_size, encoder_hidden_size=512, frame_channels=80, max_recursion=10000):
+    def __init__(self, vocab_size, encoder_hidden_size=512, frame_channels=80):
 
         super(SpectrogramModel, self).__init__()
 
         self.encoder = Encoder(vocab_size, lstm_hidden_size=encoder_hidden_size)
         self.decoder = AutoregressiveDecoder(
             encoder_hidden_size=encoder_hidden_size, frame_channels=frame_channels)
-        self.max_recursion = max_recursion
 
     def _get_stopped_indexes(self, predictions):
         """ Get a list of indices that predicted stop.
@@ -98,12 +95,14 @@ class SpectrogramModel(nn.Module):
         else:
             return []
 
-    def forward(self, tokens, ground_truth_frames=None):
+    def forward(self, tokens, ground_truth_frames=None, max_recursion=2000):
         """
         Args:
             tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
             ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
                 optional): During training, ground truth frames for teacher-forcing.
+            max_recursion (int, optional): The maximum sequential predictions to make before
+                quitting; Used for testing and defensive design.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels]) Predicted frames.
@@ -122,7 +121,7 @@ class SpectrogramModel(nn.Module):
             stopped = set()
             hidden_state = None
             alignments, frames_with_residual, frames, stop_tokens = [], [], [], []
-            while len(stopped) != batch_size and len(frames_with_residual) < self.max_recursion:
+            while len(stopped) != batch_size and len(frames_with_residual) < max_recursion:
                 frame, frame_with_residual, stop_token, hidden_state, alignment = self.decoder(
                     encoded_tokens, hidden_state=hidden_state)
                 stopped.update(self._get_stopped_indexes(stop_token))

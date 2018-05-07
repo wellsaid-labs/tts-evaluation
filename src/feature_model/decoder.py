@@ -78,7 +78,7 @@ class AutoregressiveDecoder(nn.Module):
                  pre_net_hidden_size=256,
                  encoder_hidden_size=512,
                  lstm_hidden_size=1024,
-                 lstm_variational_dropout=0.1,
+                 lstm_dropout=0.1,
                  attention_context_size=128):
 
         super(AutoregressiveDecoder, self).__init__()
@@ -93,7 +93,7 @@ class AutoregressiveDecoder(nn.Module):
             input_size=pre_net_hidden_size + self.attention_context_size,
             hidden_size=lstm_hidden_size,
             num_layers=1)
-        self.lstm_dropout = nn.Dropout(p=lstm_variational_dropout)
+        self.lstm_dropout = nn.Dropout(p=lstm_dropout)
         self.lstm_layer_two = nn.LSTM(
             input_size=lstm_hidden_size + self.attention_context_size,
             hidden_size=lstm_hidden_size,
@@ -274,7 +274,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
             updated_frames.append(frame.squeeze(0))
             attention_contexts.append(last_attention_context)
-            alignments.append(last_attention_alignment.detach().cpu())
+            alignments.append(last_attention_alignment.detach())
 
         del encoded_tokens  # Clear Memory
 
@@ -300,6 +300,8 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         # [num_frames, batch_size, self.attention_context_size] →
         # [num_frames, batch_size, lstm_hidden_size + self.attention_context_size]
         frames = torch.cat([frames, attention_contexts], dim=2)
+
+        del attention_contexts
 
         # Predict the stop token
         # [num_frames, batch_size, lstm_hidden_size + self.attention_context_size] →
@@ -329,10 +331,13 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         # [num_frames, batch_size, frame_channels]
         frames_with_residual = frames.add(residual)
 
+        del residual
+
         new_hidden_state = AutoregressiveDecoderHiddenState(
             last_attention_context=last_attention_context,
             last_attention_alignment=last_attention_alignment,
-            last_frame=frames,  # Frames without the residual is used to condition in Tacotron
+            last_frame=frames[-1].unsqueeze(
+                0),  # Frames without the residual is used to condition in Tacotron
             lstm_one_hidden_state=lstm_one_hidden_state,
             lstm_two_hidden_state=lstm_two_hidden_state)
 

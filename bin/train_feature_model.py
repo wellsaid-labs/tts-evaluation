@@ -1,4 +1,10 @@
 # TODO: Plot attention alignment
+# TODO: Write generation code
+# TODO: Add CUDA out of memory restart protection to context manager
+# TODO: Reduce memory requirements of the model
+
+import matplotlib
+matplotlib.use('Agg')
 
 from functools import reduce
 
@@ -122,8 +128,7 @@ class DataIterator(object):
                  batch_size,
                  train=True,
                  sort_key=lambda r: r['log_mel_spectrograms'].shape[0]):
-        batch_sampler = BucketBatchSampler(
-            dataset, batch_size, False, sort_key=sort_key, biggest_batches_first=False)
+        batch_sampler = BucketBatchSampler(dataset, batch_size, False, sort_key=sort_key)
         self.context = context
         self.iterator = DataLoader(
             dataset,
@@ -212,7 +217,7 @@ def sample_spectrogram(batch, filename):
         log_mel_spectrogram_to_wav(spectrogram, filename + '.wav')
 
 
-def sample_attention(batch, filename, alignments=3):
+def sample_attention(batch, filename):
     """ Sample an alignment from a batch and save a visualization.
 
     Args:
@@ -261,13 +266,17 @@ def get_model_iterator(context,
         iterator.set_description(label)
 
         for text_batch, frames_batch, stop_token_batch, mask_batch in iterator:
-            predicted = model(text_batch, frames_batch)
+            if train:
+                predicted = model(text_batch, frames_batch)
+            else:
+                predicted = model(text_batch, max_recursion=frames_batch.shape[0])
+
             losses = get_loss(criterion_frames, criterion_stop_token, frames_batch,
-                              stop_token_batch, *predicted, mask_batch, True)
+                              stop_token_batch, *predicted[:-1], mask_batch, True)
             yield sum(losses)
 
             # Clear Memory
-            predicted_pre_frames, predicted_post_frames = tuple(t.detach() for t in predicted[:-1])
+            predicted_pre_frames, predicted_post_frames = tuple(t.detach() for t in predicted[:-2])
             pre_frames_loss, post_frames_loss, stop_token_loss = tuple(t.item() for t in losses)
 
             # Compute metrics
@@ -348,7 +357,7 @@ def main():
         criterion_stop_token = context.maybe_cuda(BCELoss(reduce=False))
 
         train_batch_size = 36
-        dev_batch_size = 72
+        dev_batch_size = 128
         logger.info('Train Batch Size: %d', train_batch_size)
         logger.info('Dev Batch Size: %d', dev_batch_size)
         logger.info('Total Parameters: %d', get_total_parameters(model))
@@ -360,7 +369,6 @@ def main():
 
             # Iterate over the training data
             logger.info('Training...')
-            exit()
             iterator = get_model_iterator(context, train, train_batch_size, model, criterion_frames,
                                           criterion_stop_token, True, 'TRAIN')
             for loss in iterator:
