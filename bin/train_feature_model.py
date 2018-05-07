@@ -1,5 +1,4 @@
 # TODO: Plot attention alignment
-# TODO: Write generation code
 
 from functools import reduce
 
@@ -28,13 +27,14 @@ from src.experiment_context_manager import ExperimentContextManager
 from src.feature_model import FeatureModel
 from src.lr_schedulers import DelayedExponentialLR
 from src.optimizer import Optimizer
-from src.spectrogram import plot_spectrogram
 from src.spectrogram import log_mel_spectrogram_to_wav
+from src.spectrogram import plot_spectrogram
 from src.spectrogram import wav_to_log_mel_spectrogram
+from src.utils import Average
 from src.utils import get_total_parameters
 from src.utils import pad_batch
+from src.utils import plot_attention
 from src.utils import split_dataset
-from src.utils import Average
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +198,32 @@ def get_loss(criterion_frames,
     return loss_frames, loss_frames_with_residual, loss_stop_token
 
 
+def sample_spectrogram(batch, filename):
+    """ Sample a spectrogram from a batch and save a visualization.
+
+    Args:
+        batch (torch.FloatTensor [num_frames, batch_size, frame_channels]): Batch of frames.
+        filename (str): Filename to use for sample without an extension
+    """
+    _, batch_size, _ = batch.shape
+    spectrogram = batch.transpose_(0, 1)[random.randint(0, batch_size - 1)].cpu().numpy()
+    plot_spectrogram(spectrogram, filename + '.png')
+    with tf.device('/cpu'):
+        log_mel_spectrogram_to_wav(spectrogram, filename + '.wav')
+
+
+def sample_attention(batch, filename, alignments=3):
+    """ Sample an alignment from a batch and save a visualization.
+
+    Args:
+        batch (torch.FloatTensor [num_frames, batch_size, num_tokens]): Batch of alignments.
+        filename (str): Filename to use for sample without an extension
+    """
+    _, batch_size, _ = batch.shape
+    alignment = batch.transpose_(0, 1)[random.randint(0, batch_size - 1)].cpu().numpy()
+    plot_attention(alignment, filename + '.png')
+
+
 best_post_frames_loss = math.inf
 best_stop_token_loss = math.inf
 
@@ -269,18 +295,14 @@ def get_model_iterator(context,
     logger.info('[%s] Post Frame Loss: %f', label.upper(), avg_post_frames_loss.get())
     logger.info('[%s] Stop Token Loss: %f', label.upper(), avg_stop_token_loss.get())
 
-    def sample_spectrogram(batch, name):
-        _, batch_size, _ = batch.shape
-        spectrogram = batch.transpose_(0, 1)[random.randint(0, batch_size - 1)].cpu().numpy()
-        name = os.path.join(context.epoch_directory, label.lower() + '_' + name)
-        plot_spectrogram(spectrogram, name + '.png')
-        with tf.device('/cpu'):
-            log_mel_spectrogram_to_wav(spectrogram, name + '.wav')
+    sample_name = lambda n: os.path.join(context.epoch_directory, label.lower() + '_' + n)
 
     if not train:
-        sample_spectrogram(frames_batch, 'sample_spectrogram')
-        sample_spectrogram(predicted_pre_frames, 'sample_predicted_pre_spectrogram')
-        sample_spectrogram(predicted_post_frames, 'sample_predicted_post_spectrogram')
+        sample_spectrogram(frames_batch, sample_name('sample_spectrogram'))
+        sample_spectrogram(predicted_pre_frames, sample_name('sample_predicted_pre_spectrogram'))
+        sample_spectrogram(predicted_post_frames, sample_name('sample_predicted_post_spectrogram'))
+        alignment = predicted[-1]
+        sample_attention(alignment, sample_name('sample_attention'))
 
     # Clear any extra memory
     gc.collect()
