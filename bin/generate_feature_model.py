@@ -20,6 +20,8 @@ from src.hparams import set_hparams
 
 logger = logging.getLogger(__name__)
 
+# TODO: Generate ground truth aligned mel spectrogram predications for training vocoder
+
 
 def sample_spectrogram(batch, directory, name):
     spectrogram = batch.transpose_(0, 1)[0].cpu().numpy()

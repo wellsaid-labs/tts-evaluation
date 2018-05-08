@@ -141,9 +141,8 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
         # Tacotron 2 authors confirmed that initially the decoder is conditioned on a fixed zero
         # frame.
-        initial_frame = torch.FloatTensor(1, batch_size, self.frame_channels).zero_()
-        if is_cuda:
-            initial_frame = initial_frame.cuda()
+        tensor = torch.cuda.FloatTensor if is_cuda else torch.FloatTensor
+        initial_frame = tensor(1, batch_size, self.frame_channels).zero_()
 
         if ground_truth_frames is None:
             return initial_frame
@@ -171,10 +170,8 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
         # Tacotron 2 authors confirmed that initially the decoder is conditioned on a fixed zero
         # attention context.
-        initial_attention_context = torch.FloatTensor(batch_size,
-                                                      self.attention_context_size).zero_()
-        if is_cuda:
-            initial_attention_context = initial_attention_context.cuda()
+        tensor = torch.cuda.FloatTensor if is_cuda else torch.FloatTensor
+        initial_attention_context = tensor(batch_size, self.attention_context_size).zero_()
         return initial_attention_context
 
     def _get_cumulative_alignment(self, num_tokens, batch_size, is_cuda, hidden_state=None):
@@ -196,9 +193,8 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
         # Tacotron 2 authors confirmed that initially the decoder is conditioned on a fixed zero
         # attention context.
-        initial_attention_alignment = torch.FloatTensor(batch_size, num_tokens).zero_()
-        if is_cuda:
-            initial_attention_alignment = initial_attention_alignment.cuda()
+        tensor = torch.cuda.FloatTensor if is_cuda else torch.FloatTensor
+        initial_attention_alignment = tensor(batch_size, num_tokens).zero_()
         return initial_attention_alignment
 
     def _get_initial_lstm_hidden_state(self, batch_size, is_cuda):
@@ -212,11 +208,9 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             hidden_state (torch.FloatTensor [1, batch_size, self.lstm_hidden_size])
             cell_state (torch.FloatTensor [1, batch_size, self.lstm_hidden_size])
         """
-        hidden_state = torch.FloatTensor(1, batch_size, self.lstm_hidden_size).zero_()
-        cell_state = torch.FloatTensor(1, batch_size, self.lstm_hidden_size).zero_()
-        if is_cuda:
-            cell_state = cell_state.cuda()
-            hidden_state = hidden_state.cuda()
+        tensor = torch.cuda.FloatTensor if is_cuda else torch.FloatTensor
+        hidden_state = tensor(1, batch_size, self.lstm_hidden_size).zero_()
+        cell_state = tensor(1, batch_size, self.lstm_hidden_size).zero_()
         return hidden_state, cell_state
 
     def forward(self, encoded_tokens, ground_truth_frames=None, hidden_state=None):
@@ -307,6 +301,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
                 next_lstm_one_hidden_state[0], lstm_one_hidden_state[0])
             next_lstm_one_hidden_state[1] = self.lstm_layer_one_zoneout(
                 next_lstm_one_hidden_state[1], lstm_one_hidden_state[1])
+            lstm_one_hidden_state = next_lstm_one_hidden_state
             del next_lstm_one_hidden_state
 
             # Initial attention alignment, sometimes refered to as attention weights.
@@ -320,7 +315,8 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             attention_contexts.append(last_attention_context)
             alignments.append(alignment.detach())
 
-            del alignment
+            del alignment  # Clear Memory
+            del frame  # Clear Memory
 
         del encoded_tokens  # Clear Memory
 
@@ -328,6 +324,9 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         alignments = torch.stack(alignments, dim=0)
         # [num_frames, batch_size, lstm_hidden_size]
         frames = torch.stack(updated_frames, dim=0)
+
+        del updated_frames  # Clear Memory
+
         # [num_frames, batch_size, self.attention_context_size]
         attention_contexts = torch.stack(attention_contexts, dim=0)
 
@@ -348,7 +347,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         # [num_frames, batch_size, lstm_hidden_size + self.attention_context_size]
         frames = torch.cat([frames, attention_contexts], dim=2)
 
-        del attention_contexts
+        del attention_contexts  # Clear Memory
 
         # Predict the stop token
         # [num_frames, batch_size, lstm_hidden_size + self.attention_context_size] →
@@ -383,8 +382,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         new_hidden_state = AutoregressiveDecoderHiddenState(
             last_attention_context=last_attention_context,
             cumulative_alignment=cumulative_alignment,
-            last_frame=frames[-1].unsqueeze(
-                0),  # Frames without the residual is used to condition in Tacotron
+            last_frame=frames[-1].unsqueeze(0),
             lstm_one_hidden_state=lstm_one_hidden_state,
             lstm_two_hidden_state=lstm_two_hidden_state)
 

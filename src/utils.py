@@ -4,6 +4,7 @@ import os
 
 import matplotlib.pyplot as plt
 import torch
+import numpy as np
 
 from torchnlp.text_encoders import PADDING_INDEX
 
@@ -99,14 +100,14 @@ def plot_attention(alignment, filename, title='Attention Alignment'):
         None
     """
     assert '.png' in filename.lower(), "Filename saves in PNG format"
-
+    alignment = np.transpose(alignment)
     plt.style.use('ggplot')
     figure, axis = plt.subplots()
     im = axis.imshow(alignment, aspect='auto', origin='lower', interpolation='none')
     figure.colorbar(im, ax=axis, orientation='horizontal')
-    plt.xlabel('Encoder timestep')
+    plt.xlabel('Decoder timestep')
     plt.title(title, y=1.1)
-    plt.ylabel('Decoder timestep')
+    plt.ylabel('Encoder timestep')
     plt.tight_layout()
     plt.savefig(filename, format='png')
     plt.close()

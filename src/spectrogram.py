@@ -307,50 +307,53 @@ def log_mel_spectrogram_to_wav(log_mel_spectrogram,
     """
     assert '.wav' in filename, "Filename must be a .wav file"
 
-    # Convert hertz to more relevant units like samples
-    frame_size = _milliseconds_to_samples(frame_size, sample_rate)
-    frame_hop = _milliseconds_to_samples(frame_hop, sample_rate)
-    spectrogram = _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, frame_size, sample_rate,
-                                                      lower_hertz, upper_hertz)
-    spectrograms = tf.expand_dims(spectrogram, 0)
+    # Complex operations are not defined for GPU
+    with tf.device('/cpu'):
+        # Convert hertz to more relevant units like samples
+        frame_size = _milliseconds_to_samples(frame_size, sample_rate)
+        frame_hop = _milliseconds_to_samples(frame_hop, sample_rate)
+        spectrogram = _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, frame_size,
+                                                          sample_rate, lower_hertz, upper_hertz)
+        spectrograms = tf.expand_dims(spectrogram, 0)
 
-    inverse_stft = partial(
-        tf.contrib.signal.inverse_stft,
-        frame_length=frame_size,
-        frame_step=frame_hop,
-        window_fn=tf.contrib.signal.inverse_stft_window_fn(
-            frame_step=frame_hop, forward_window_fn=window_function))
-    stft = partial(
-        tf.contrib.signal.stft,
-        frame_length=frame_size,
-        frame_step=frame_hop,
-        window_fn=window_function)
+        inverse_stft = partial(
+            tf.contrib.signal.inverse_stft,
+            frame_length=frame_size,
+            frame_step=frame_hop,
+            window_fn=tf.contrib.signal.inverse_stft_window_fn(
+                frame_step=frame_hop, forward_window_fn=window_function))
+        stft = partial(
+            tf.contrib.signal.stft,
+            frame_length=frame_size,
+            frame_step=frame_hop,
+            window_fn=window_function)
 
-    # SOURCE (Tacotron 1):
-    # We found that raising the predicted magnitudes by a power of 1.2 before feeding to Griffin-Lim
-    # reduces artifacts, likely due to its harmonic enhancement effect.
-    spectrograms = spectrograms**power
+        # SOURCE (Tacotron 1):
+        # We found that raising the predicted magnitudes by a power of 1.2 before feeding to
+        # Griffin-Lim reduces artifacts, likely due to its harmonic enhancement effect.
+        spectrograms = tf.pow(spectrograms, power)
 
-    # Run the Griffin-Lim algorithm
-    spectrograms = tf.cast(tf.abs(spectrograms), dtype=tf.complex64)
-    time_slices = spectrograms.shape[1] - 1
-    len_samples = int(time_slices * frame_hop + frame_size)
-    waveform = tf.random_uniform((1, len_samples))
-    for i in range(iterations):
-        reconstruction_spectrogram = stft(waveform)
-        reconstruction_angle = tf.cast(tf.angle(reconstruction_spectrogram), dtype=tf.complex64)
-        # Discard magnitude part of the reconstruction and use the supplied magnitude spectrogram
-        # instead.
-        proposal_spectrogram = spectrograms * tf.exp(tf.complex(0.0, 1.0) * reconstruction_angle)
-        previous_waveform = waveform
-        waveform = inverse_stft(proposal_spectrogram)
-        if log:
-            loss = tf.reduce_sum((waveform - previous_waveform)**2)
-            loss = math.sqrt(loss / tf.size(waveform, out_type=tf.float32))
-            logger.info('Reconstruction iteration: {} RMSE: {} '.format(i, loss))
+        # Run the Griffin-Lim algorithm
+        spectrograms = tf.cast(tf.abs(spectrograms), dtype=tf.complex64)
+        time_slices = spectrograms.shape[1] - 1
+        len_samples = int(time_slices * frame_hop + frame_size)
+        waveform = tf.random_uniform((1, len_samples))
+        for i in range(iterations):
+            reconstruction_spectrogram = stft(waveform)
+            reconstruction_angle = tf.cast(tf.angle(reconstruction_spectrogram), dtype=tf.complex64)
+            # Discard magnitude part of the reconstruction and use the supplied magnitude
+            # spectrogram instead.
+            proposal_spectrogram = spectrograms * tf.exp(
+                tf.complex(0.0, 1.0) * reconstruction_angle)
+            previous_waveform = waveform
+            waveform = inverse_stft(proposal_spectrogram)
+            if log:
+                loss = tf.reduce_sum((waveform - previous_waveform)**2)
+                loss = math.sqrt(loss / tf.size(waveform, out_type=tf.float32))
+                logger.info('Reconstruction iteration: {} RMSE: {} '.format(i, loss))
 
-    waveform = tf.real(waveform)
-    librosa.output.write_wav(filename, waveform[0].numpy(), sr=sample_rate)
+        waveform = tf.real(waveform)
+        librosa.output.write_wav(filename, waveform[0].numpy(), sr=sample_rate)
 
 
 def plot_spectrogram(spectrogram, filename, title='Mel-Spectrogram'):

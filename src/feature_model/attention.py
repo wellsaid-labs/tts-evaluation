@@ -151,9 +151,8 @@ class LocationSensitiveAttention(nn.Module):
 
         if cumulative_alignment is None:
             # Attention alignment, sometimes refered to as attention weights.
-            cumulative_alignment = torch.FloatTensor(batch_size, num_tokens).zero_()
-            if encoded_tokens.is_cuda:
-                cumulative_alignment = cumulative_alignment.cuda()
+            tensor = torch.cuda.FloatTensor if encoded_tokens.is_cuda else torch.FloatTensor
+            cumulative_alignment = tensor(batch_size, num_tokens).zero_()
 
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
         location_features = cumulative_alignment.unsqueeze(1)

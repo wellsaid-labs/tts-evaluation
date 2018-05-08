@@ -6,8 +6,6 @@
 import matplotlib
 matplotlib.use('Agg')
 
-from functools import reduce
-
 import argparse
 import gc
 import logging
@@ -25,6 +23,7 @@ from tqdm import tqdm
 
 import torch
 import tensorflow as tf
+import numpy as np
 
 tf.enable_eager_execution()
 
@@ -156,15 +155,8 @@ class DataIterator(object):
             yield tuple([self.context.maybe_cuda(t, non_blocking=True) for t in batch])
 
 
-def get_loss(criterion_frames,
-             criterion_stop_token,
-             frames_batch,
-             stop_token_batch,
-             predicted_frames,
-             predicted_frames_with_residual,
-             predicted_stop_token,
-             mask_batch,
-             size_average=True):
+def get_loss(criterion_frames, criterion_stop_token, frames_batch, stop_token_batch,
+             predicted_frames, predicted_frames_with_residual, predicted_stop_token, mask_batch):
     """ Compute the losses for Tacotron.
 
     Args:
@@ -180,9 +172,6 @@ def get_loss(criterion_frames,
             Predicted frames with residual
         predicted_stop_token (torch.FloatTensor [num_frames, batch_size]): Predicted stop tokens.
         mask_batch (torch.LongTensor [num_frames, batch_size]): Mask of zero's and one's to apply.
-        size_average (bool, optional): By default, the losses are averaged over observations for
-            each minibatch;However, if the field size_average is set to ``False``, the losses are
-            instead summed for each minibatch.
 
     Returns:
         (torch.Tensor) scalar loss value
@@ -191,19 +180,19 @@ def get_loss(criterion_frames,
     def get_loss_frames(predicted_frames):
         loss = criterion_frames(predicted_frames, frames_batch)
         loss = loss * mask_batch.unsqueeze(-1)
-        return torch.mean(loss) if size_average else torch.sum(loss)
+        return torch.mean(loss)
 
     loss_frames = get_loss_frames(predicted_frames)
     loss_frames_with_residual = get_loss_frames(predicted_frames_with_residual)
 
     loss_stop_token = criterion_stop_token(predicted_stop_token, stop_token_batch)
     loss_stop_token = loss_stop_token * mask_batch
-    loss_stop_token = torch.mean(loss_stop_token) if size_average else torch.sum(loss_stop_token)
+    loss_stop_token = torch.mean(loss_stop_token)
 
     return loss_frames, loss_frames_with_residual, loss_stop_token
 
 
-def sample_spectrogram(batch, filename):
+def sample_spectrogram(context, batch, filename):
     """ Sample a spectrogram from a batch and save a visualization.
 
     Args:
@@ -211,10 +200,9 @@ def sample_spectrogram(batch, filename):
         filename (str): Filename to use for sample without an extension
     """
     _, batch_size, _ = batch.shape
-    spectrogram = batch.transpose_(0, 1)[random.randint(0, batch_size - 1)].cpu().numpy()
+    spectrogram = batch.transpose_(0, 1)[0].cpu().numpy()
     plot_spectrogram(spectrogram, filename + '.png')
-    with tf.device('/cpu'):
-        log_mel_spectrogram_to_wav(spectrogram, filename + '.wav')
+    log_mel_spectrogram_to_wav(spectrogram, filename + '.wav')
 
 
 def sample_attention(batch, filename):
@@ -225,7 +213,7 @@ def sample_attention(batch, filename):
         filename (str): Filename to use for sample without an extension
     """
     _, batch_size, _ = batch.shape
-    alignment = batch.transpose_(0, 1)[random.randint(0, batch_size - 1)].cpu().numpy()
+    alignment = batch.transpose_(0, 1)[0].cpu().numpy()
     plot_attention(alignment, filename + '.png')
 
 
@@ -261,12 +249,15 @@ def get_model_iterator(context,
     Returns:
         (torch.Tensor) Loss at every iteration
     """
+    if trial_run:
+        logger.info('Starting a trial run with one batch...')
+
     global best_stop_token_loss, best_post_frames_loss
     avg_post_frames_loss, avg_stop_token_loss, avg_pre_frames_loss = Average(), Average(), Average()
     torch.set_grad_enabled(train)
     model.train(mode=train)
     data_iterator = DataIterator(context, dataset, max_batch_size, train=train)
-    with tqdm(data_iterator) as iterator:
+    with tqdm(data_iterator, total=1 if trial_run else len(data_iterator)) as iterator:
         iterator.set_description(label)
 
         for text_batch, frames_batch, stop_token_batch, mask_batch in iterator:
@@ -275,17 +266,22 @@ def get_model_iterator(context,
             else:
                 predicted = model(text_batch, max_recursion=frames_batch.shape[0])
 
+            (predicted_pre_frames, predicted_post_frames, predicted_stop_tokens,
+             predicted_alignments) = predicted
+
             losses = get_loss(criterion_frames, criterion_stop_token, frames_batch,
-                              stop_token_batch, *predicted[:-1], mask_batch, True)
+                              stop_token_batch, predicted_pre_frames, predicted_post_frames,
+                              predicted_stop_tokens, mask_batch)
             yield sum(losses)
 
             # Clear Memory
-            predicted_pre_frames, predicted_post_frames = tuple(t.detach() for t in predicted[:-2])
+            predicted_pre_frames = predicted_pre_frames.detach()
+            predicted_post_frames = predicted_post_frames.detach()
             pre_frames_loss, post_frames_loss, stop_token_loss = tuple(t.item() for t in losses)
 
             # Compute metrics
-            num_frame_values = reduce(lambda x, y: x * y, frames_batch.shape)
-            num_stop_token_values = reduce(lambda x, y: x * y, stop_token_batch.shape)
+            num_frame_values = np.prod(frames_batch.shape)
+            num_stop_token_values = np.prod(stop_token_batch.shape)
             avg_post_frames_loss.add(post_frames_loss * num_frame_values, num_frame_values)
             avg_pre_frames_loss.add(pre_frames_loss * num_frame_values, num_frame_values)
             avg_stop_token_loss.add(stop_token_loss * num_stop_token_values, num_stop_token_values)
@@ -297,6 +293,8 @@ def get_model_iterator(context,
                 stop_token_loss=avg_stop_token_loss.get())
 
             if trial_run:
+                # NOTE: Break does not update the iterator; therefore, we do this manually.
+                iterator.update()
                 break
 
     if not train and avg_post_frames_loss.get() < best_post_frames_loss:
@@ -314,11 +312,11 @@ def get_model_iterator(context,
     sample_name = lambda n: os.path.join(context.epoch_directory, label.lower() + '_' + n)
 
     if not train:
-        sample_spectrogram(frames_batch, sample_name('sample_spectrogram'))
-        sample_spectrogram(predicted_pre_frames, sample_name('sample_predicted_pre_spectrogram'))
-        sample_spectrogram(predicted_post_frames, sample_name('sample_predicted_post_spectrogram'))
         alignment = predicted[-1]
         sample_attention(alignment, sample_name('sample_attention'))
+        sample_spectrogram(context, frames_batch, sample_name('sample_spectrogram'))
+        sample_spectrogram(context, predicted_post_frames,
+                           sample_name('sample_predicted_post_spectrogram'))
 
     # Clear any extra memory
     gc.collect()
@@ -363,7 +361,7 @@ def main():
         criterion_frames = context.maybe_cuda(MSELoss(reduce=False))
         criterion_stop_token = context.maybe_cuda(BCELoss(reduce=False))
 
-        train_batch_size = 36
+        train_batch_size = 32
         dev_batch_size = 128
         logger.info('Train Batch Size: %d', train_batch_size)
         logger.info('Dev Batch Size: %d', dev_batch_size)
@@ -408,7 +406,7 @@ def main():
             }
             checkpoint_path = context.save(
                 os.path.join(context.epoch_directory, 'checkpoint.pt'), checkpoint)
-            logger.info('Saved Checkpoint: %s', checkpoint_path)
+            logger.info('Saved Checkpoint: %s', os.path.normpath(checkpoint_path))
 
             logger.info('Evaluating...')
             list(
