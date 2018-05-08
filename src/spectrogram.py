@@ -47,8 +47,14 @@ def _read_audio(filename, sample_rate=None):
         int: Sample rate of the file.
     """
     audio, sample_rate = librosa.core.load(filename, sr=sample_rate, mono=True)
+    audio = trim_silence(audio)
     audio = np.expand_dims(audio, axis=1)
     return audio, sample_rate
+
+
+def trim_silence(wav):
+    """ Trim leading and trailing silence. """
+    return librosa.effects.trim(wav)[0]
 
 
 def _milliseconds_to_samples(milliseconds, sample_rate):
@@ -262,6 +268,8 @@ def log_mel_spectrogram_to_wav(log_mel_spectrogram,
                                iterations=50,
                                log=False):
     """ Transform log mel spectrogram to wav file with the Griffin-Lim algorithm.
+
+    # TODO: Try using Mozillas/TTS Griffin lim
 
     Given a magnitude spectrogram as input, reconstruct the audio signal and return it using the
     Griffin-Lim algorithm from the paper:

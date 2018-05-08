@@ -15,5 +15,5 @@ def test_pre_net():
         torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1))
     output = pre_net(input_)
 
-    assert output.data.type() == 'torch.FloatTensor'
+    assert output.type() == 'torch.FloatTensor'
     assert output.shape == (num_frames, batch_size, hidden_size)

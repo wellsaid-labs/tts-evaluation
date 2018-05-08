@@ -29,6 +29,7 @@ def set_hparams():
             'eps': 10e-6,
             'lr': 10e-3,
             'weight_decay': 10e-6,
+            'amsgrad': True,
         }
     })
 

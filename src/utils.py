@@ -87,6 +87,8 @@ def split_dataset(dataset, splits):
 def plot_attention(alignment, filename, title='Attention Alignment'):
     """ Plot alignment of attention.
 
+    TODO: Mask alignments / cut off after sequence end
+
     Args:
         alignment (numpy.array([decoder_timestep, encoder_timestep])): Attention alignment weights
             computed at every timestep of the decoder.

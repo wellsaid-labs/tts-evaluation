@@ -68,7 +68,8 @@ class PostNet(nn.Module):
                     out_channels=frame_channels,
                     kernel_size=convolution_filter_size,
                     padding=int((convolution_filter_size - 1) / 2)),
-                nn.BatchNorm1d(num_features=frame_channels)))
+                nn.BatchNorm1d(num_features=frame_channels),
+                nn.Dropout(p=convolution_dropout)))
         self.layers = nn.Sequential(*tuple(self.layers))
 
     def forward(self, frames):

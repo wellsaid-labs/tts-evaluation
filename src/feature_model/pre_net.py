@@ -39,12 +39,10 @@ class PreNet(nn.Module):
         self.layers = nn.Sequential(*tuple([
             nn.Sequential(
                 nn.Linear(
-                    in_features=hidden_size
-                    if i != 0 else frame_channels, out_features=hidden_size),
+                    in_features=frame_channels
+                    if i == 0 else hidden_size, out_features=hidden_size),
                 nonlinearity(),
-                # NOTE: ``.train()`` to ensure dropout does not turn off during inference as
-                # mentioned in the Tacotron 2 paper.
-                nn.Dropout(p=0.5).train()) for i in range(num_layers)
+                nn.Dropout(p=dropout)) for i in range(num_layers)
         ]))
 
     def forward(self, frames):
@@ -57,4 +55,8 @@ class PreNet(nn.Module):
             frames (torch.FloatTensor [num_frames, batch_size, hidden_size]): Batched set of
                 spectrogram frames processed by the Pre-net.
         """
+        # NOTE: ``.train()`` to ensure dropout does not turn off during inference as mentioned in
+        # the Tacotron 2 paper.
+        for layer in self.layers:
+            layer[2].train()
         return self.layers(frames)

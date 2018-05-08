@@ -240,7 +240,8 @@ def get_model_iterator(context,
                        criterion_frames,
                        criterion_stop_token,
                        train=True,
-                       label=''):
+                       label='',
+                       teacher_forcing=True):
     """ Iterate over a dataset with the model, computing the loss function every iteration.
 
     Args:
@@ -253,6 +254,7 @@ def get_model_iterator(context,
            stop tokens.
         train (bool): If ``True``, the batch will store gradients.
         label (str): Label to add to progress bar and logs.
+        teacher_forcing (bool): Feed ground truth to the model.
 
     Returns:
         (torch.Tensor) Loss at every iteration
@@ -266,7 +268,7 @@ def get_model_iterator(context,
         iterator.set_description(label)
 
         for text_batch, frames_batch, stop_token_batch, mask_batch in iterator:
-            if train:
+            if teacher_forcing:
                 predicted = model(text_batch, frames_batch)
             else:
                 predicted = model(text_batch, max_recursion=frames_batch.shape[0])
@@ -370,7 +372,7 @@ def main():
             # Iterate over the training data
             logger.info('Training...')
             iterator = get_model_iterator(context, train, train_batch_size, model, criterion_frames,
-                                          criterion_stop_token, True, 'TRAIN')
+                                          criterion_stop_token, True, 'TRAIN', True)
             for loss in iterator:
                 loss.backward()
 
@@ -397,7 +399,7 @@ def main():
             logger.info('Evaluating...')
             list(
                 get_model_iterator(context, dev, dev_batch_size, model, criterion_frames,
-                                   criterion_stop_token, False, 'DEV'))
+                                   criterion_stop_token, False, 'DEV', False))
 
             epoch += 1
             print('–' * 100)

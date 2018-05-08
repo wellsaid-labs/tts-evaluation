@@ -17,17 +17,20 @@ def test_autoregressive_decoder():
 
     hidden_state = None
     for _ in range(3):
-        frames, frames_with_residual, stop_token, hidden_state = decoder(
+        frames, frames_with_residual, stop_token, hidden_state, alignment = decoder(
             encoded_tokens=encoded_tokens, hidden_state=hidden_state)
 
-        assert frames.data.type() == 'torch.FloatTensor'
+        assert frames.type() == 'torch.FloatTensor'
         assert frames.shape == (1, batch_size, frame_channels)
 
-        assert frames_with_residual.data.type() == 'torch.FloatTensor'
+        assert frames_with_residual.type() == 'torch.FloatTensor'
         assert frames_with_residual.shape == (1, batch_size, frame_channels)
 
-        assert stop_token.data.type() == 'torch.FloatTensor'
+        assert stop_token.type() == 'torch.FloatTensor'
         assert stop_token.shape == (1, batch_size)
+
+        assert alignment.type() == 'torch.FloatTensor'
+        assert alignment.shape == (1, batch_size, num_tokens)
 
         assert isinstance(hidden_state, AutoregressiveDecoderHiddenState)
 
@@ -46,16 +49,19 @@ def test_autoregressive_decoder_ground_truth():
     ground_truth_frames = torch.autograd.Variable(
         torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1))
 
-    frames, frames_with_residual, stop_token, hidden_state = decoder(
+    frames, frames_with_residual, stop_token, hidden_state, alignment = decoder(
         encoded_tokens=encoded_tokens, ground_truth_frames=ground_truth_frames)
 
-    assert frames.data.type() == 'torch.FloatTensor'
+    assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, batch_size, frame_channels)
 
-    assert frames_with_residual.data.type() == 'torch.FloatTensor'
+    assert frames_with_residual.type() == 'torch.FloatTensor'
     assert frames_with_residual.shape == (num_frames, batch_size, frame_channels)
 
-    assert stop_token.data.type() == 'torch.FloatTensor'
+    assert stop_token.type() == 'torch.FloatTensor'
     assert stop_token.shape == (num_frames, batch_size)
+
+    assert alignment.type() == 'torch.FloatTensor'
+    assert alignment.shape == (num_frames, batch_size, num_tokens)
 
     assert isinstance(hidden_state, AutoregressiveDecoderHiddenState)
