@@ -1,22 +1,17 @@
-# TODO: Plot attention alignment
-# TODO: Write generation code
-# TODO: Add CUDA out of memory restart protection to context manager
-# TODO: Reduce memory requirements of the model
-
 import matplotlib
 matplotlib.use('Agg')
 
 import argparse
-import gc
 import logging
 import math
 import os
 import random
 
-from torch.utils.data import DataLoader
-from torch.optim import Adam
-from torch.nn import MSELoss
 from torch.nn import BCELoss
+from torch.nn import MSELoss
+from torch.optim import Adam
+from torch.optim.lr_scheduler import _LRScheduler
+from torch.utils.data import DataLoader
 from torchnlp.samplers import BucketBatchSampler
 from torchnlp.text_encoders import CharacterEncoder
 from tqdm import tqdm
@@ -44,9 +39,11 @@ from src.utils import split_dataset
 logger = logging.getLogger(__name__)
 
 # TODO: Consider an integration test run on this with a mock over load_data on 10 items
+# TODO: Add CUDA out of memory restart protection to context manager
+# TODO: Reduce memory requirements of the model
 
 
-def load_data(context, cache, text_encoder=None):
+def load_data(context, cache, text_encoder=None, splits=(0.8, 0.2)):
     """ Load the Linda Johnson (LJ) Speech dataset with spectrograms and encoded text.
 
     Args:
@@ -54,20 +51,25 @@ def load_data(context, cache, text_encoder=None):
         cache (str): Path to cache the processed dataset
         text_encoder (torchnlp.TextEncoder, optional): Text encoder used to encode and decode the
             text.
+        splits (tuple): Train and dev splits to use with the dataset
 
     Returns:
         (list): Linda Johnson (LJ) Speech dataset with ``log_mel_spectrograms`` and ``text``
         (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
     """
+    assert len(splits) == 2
+
+    cache = os.path.join(context.root_path, cache)
     if not os.path.isfile(cache):
         data = lj_speech_dataset()
+        random.shuffle(data)
         logger.info('Sample Data:\n%s', data[:5])
+
         if text_encoder is None:
             text_encoder = CharacterEncoder([r['text'] for r in data])
-        logger.info('Data loaded, creating spectrograms and encoding text...')
-        # ``requires_grad`` Neither the inputs nor outputs are to change with the gradient
-        tf_device = '/gpu:%d' % context.device if context.is_cuda else '/cpu'
-        with tf.device(tf_device):
+            logger.info('Text encoder vocab size: %d' % text_encoder.vocab_size)
+
+        with tf.device('/gpu:%d' % context.device if context.is_cuda else '/cpu'):
             for row in tqdm(data):
                 row['log_mel_spectrograms'] = torch.tensor(wav_to_log_mel_spectrogram(row['wav']))
                 row['text'] = torch.tensor(text_encoder.encode(row['text']).data)
@@ -76,30 +78,15 @@ def load_data(context, cache, text_encoder=None):
                 row['stop_token'][row['log_mel_spectrograms'].shape[0] - 1] = 1
                 row['mask'] = torch.FloatTensor(
                     [1 for _ in range(row['log_mel_spectrograms'].shape[0])])
-        logger.info('Text encoder vocab size: %d' % text_encoder.vocab_size)
-        to_save = (data, text_encoder)
+
+        train, dev = split_dataset(data, splits)
+        logger.info('Number Training Rows: %d', len(train))
+        logger.info('Number Dev Rows: %d', len(dev))
+        to_save = (train, dev, text_encoder)
         context.save(cache, to_save)
         return to_save
 
     return context.load(cache)
-
-
-def make_splits(data, splits=(0.8, 0.2)):
-    """ Split a dataset at 80% for train and 20% for development.
-
-    Args:
-        (list): Data to split
-
-    Returns:
-        train (list): Train split.
-        dev (list): Development split.
-        test (list): Test split.
-    """
-    random.shuffle(data)
-    train, dev = split_dataset(data, splits)
-    logger.info('Number Training Rows: %d', len(train))
-    logger.info('Number Dev Rows: %d', len(dev))
-    return train, dev
 
 
 class DataIterator(object):
@@ -126,7 +113,8 @@ class DataIterator(object):
                  dataset,
                  batch_size,
                  train=True,
-                 sort_key=lambda r: r['log_mel_spectrograms'].shape[0]):
+                 sort_key=lambda r: r['log_mel_spectrograms'].shape[0],
+                 trial_run=False):
         batch_sampler = BucketBatchSampler(dataset, batch_size, False, sort_key=sort_key)
         self.context = context
         self.iterator = DataLoader(
@@ -135,6 +123,7 @@ class DataIterator(object):
             collate_fn=DataIterator._collate_fn,
             pin_memory=True,
             num_workers=1)
+        self.trial_run = trial_run
 
     @staticmethod
     def _collate_fn(batch):
@@ -148,136 +137,146 @@ class DataIterator(object):
                 transpose(mask_batch))
 
     def __len__(self):
-        return len(self.iterator)
+        return 1 if self.trial_run else len(self.iterator)
 
     def __iter__(self):
         for batch in self.iterator:
             yield tuple([self.context.maybe_cuda(t, non_blocking=True) for t in batch])
 
-
-def get_loss(criterion_frames, criterion_stop_token, frames_batch, stop_token_batch,
-             predicted_frames, predicted_frames_with_residual, predicted_stop_token, mask_batch):
-    """ Compute the losses for Tacotron.
-
-    Args:
-        criterion_frames (torch.nn.modules.loss._Loss): Torch loss module instantiated for frames.
-        criterion_stop_token (torch.nn.modules.loss._Loss): Torch loss module instantiated for
-           stop tokens.
-        frames_batch (torch.FloatTensor [num_frames, batch_size, frame_channels]): Ground truth
-            frames.
-        stop_token_batch (torch.FloatTensor [num_frames, batch_size]): Ground truth stop tokens.
-        predicted_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Predicted
-            frames.
-        predicted_frames_with_residual (torch.FloatTensor [num_frames, batch_size, frame_channels]):
-            Predicted frames with residual
-        predicted_stop_token (torch.FloatTensor [num_frames, batch_size]): Predicted stop tokens.
-        mask_batch (torch.LongTensor [num_frames, batch_size]): Mask of zero's and one's to apply.
-
-    Returns:
-        (torch.Tensor) scalar loss value
-    """
-
-    def get_loss_frames(predicted_frames):
-        loss = criterion_frames(predicted_frames, frames_batch)
-        loss = loss * mask_batch.unsqueeze(-1)
-        return torch.mean(loss)
-
-    loss_frames = get_loss_frames(predicted_frames)
-    loss_frames_with_residual = get_loss_frames(predicted_frames_with_residual)
-
-    loss_stop_token = criterion_stop_token(predicted_stop_token, stop_token_batch)
-    loss_stop_token = loss_stop_token * mask_batch
-    loss_stop_token = torch.mean(loss_stop_token)
-
-    return loss_frames, loss_frames_with_residual, loss_stop_token
+            if self.trial_run:
+                break
 
 
-def sample_spectrogram(context, batch, filename):
-    """ Sample a spectrogram from a batch and save a visualization.
-
-    Args:
-        batch (torch.FloatTensor [num_frames, batch_size, frame_channels]): Batch of frames.
-        filename (str): Filename to use for sample without an extension
-    """
-    _, batch_size, _ = batch.shape
-    spectrogram = batch.transpose_(0, 1)[0].cpu().numpy()
-    plot_spectrogram(spectrogram, filename + '.png')
-    log_mel_spectrogram_to_wav(spectrogram, filename + '.wav')
-
-
-def sample_attention(batch, filename):
-    """ Sample an alignment from a batch and save a visualization.
-
-    Args:
-        batch (torch.FloatTensor [num_frames, batch_size, num_tokens]): Batch of alignments.
-        filename (str): Filename to use for sample without an extension
-    """
-    _, batch_size, _ = batch.shape
-    alignment = batch.transpose_(0, 1)[0].cpu().numpy()
-    plot_attention(alignment, filename + '.png')
-
-
-best_post_frames_loss = math.inf
-best_stop_token_loss = math.inf
-
-
-def get_model_iterator(context,
-                       dataset,
-                       max_batch_size,
-                       model,
-                       criterion_frames,
-                       criterion_stop_token,
-                       train=True,
-                       label='',
-                       teacher_forcing=True,
-                       trial_run=False):
-    """ Iterate over a dataset with the model, computing the loss function every iteration.
+class Trainer():
+    """ Trainer that manages Tacotron training (i.e. checkpoints, epochs, steps).
 
     Args:
         context (ExperimentContextManager): Context manager for the experiment
-        dataset (list): Dataset to iterate over.
-        max_batch_size (int): Size of the batch for iteration.
-        model (FeatureModel): Model used to predict frames and a stop token.
-        criterion_frames (torch.nn.modules.loss._Loss): Torch loss module instantiated for frames.
-        criterion_stop_token (torch.nn.modules.loss._Loss): Torch loss module instantiated for
-           stop tokens.
-        train (bool): If ``True``, the batch will store gradients.
-        label (str): Label to add to progress bar and logs.
-        teacher_forcing (bool): Feed ground truth to the model.
-        trial_run (bool): If True, then runs only 1 batch.
-
-    Returns:
-        (torch.Tensor) Loss at every iteration
+        train_dataset (iterable): Train dataset used to optimize the model.
+        dev_dataset (iterable): Dev dataset used to evaluate.
+        text_encoder (torchnlp.TextEncoder, optional): Text encoder used to encode and decode the
+            text.
+        train_batch_size (int, optional): Batch size used for training.
+        dev_batch_size (int, optional): Batch size used for evaluation.
+        model (torch.nn.Module, optional): Model to train and evaluate.
+        step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
+        epoch (int, optional): Starting epoch, useful warm starts (i.e. checkpoints).
+        criterion_frames (callable): Loss function used to score frame predictions.
+        criterion_stop_token (callable): Loss function used to score stop token predictions.
+        optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
+        scheduler (torch.optim.lr_scheduler): Scheduler used to adjust learning rate.
     """
-    if trial_run:
-        logger.info('Starting a trial run with one batch...')
 
-    global best_stop_token_loss, best_post_frames_loss
-    avg_post_frames_loss, avg_stop_token_loss, avg_pre_frames_loss = Average(), Average(), Average()
-    torch.set_grad_enabled(train)
-    model.train(mode=train)
-    data_iterator = DataIterator(context, dataset, max_batch_size, train=train)
-    with tqdm(data_iterator, total=1 if trial_run else len(data_iterator)) as iterator:
-        iterator.set_description(label)
+    def __init__(self,
+                 context,
+                 train_dataset,
+                 dev_dataset,
+                 vocab_size,
+                 train_batch_size=36,
+                 dev_batch_size=128,
+                 model=FeatureModel,
+                 step=0,
+                 epoch=0,
+                 criterion_frames=MSELoss,
+                 criterion_stop_token=BCELoss,
+                 optimizer=Adam,
+                 scheduler=DelayedExponentialLR):
 
-        for text_batch, frames_batch, stop_token_batch, mask_batch in iterator:
-            if teacher_forcing:
-                predicted = model(text_batch, frames_batch)
-            else:
-                predicted = model(text_batch, max_recursion=frames_batch.shape[0])
+        # Allow for ``class`` or a class instance
+        self.model = context.maybe_cuda(
+            model if isinstance(model, torch.nn.Module) else model(vocab_size))
+        self.optimizer = optimizer if isinstance(optimizer, Optimizer) else Optimizer(
+            optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
+        self.scheduler = scheduler if isinstance(scheduler, _LRScheduler) else scheduler(
+            self.optimizer.optimizer)
 
-            (predicted_pre_frames, predicted_post_frames, predicted_stop_tokens,
-             predicted_alignments) = predicted
+        self.context = context
+        self.step = step
+        self.epoch = epoch
+        self.train_batch_size = train_batch_size
+        self.dev_batch_size = dev_batch_size
+        self.train_dataset = train_dataset
+        self.dev_dataset = dev_dataset
+        self.criterion_frames = context.maybe_cuda(criterion_frames(reduce=False))
+        self.criterion_stop_token = context.maybe_cuda(criterion_stop_token(reduce=False))
+        self.best_post_frames_loss = math.inf
+        self.best_stop_token_loss = math.inf
 
-            losses = get_loss(criterion_frames, criterion_stop_token, frames_batch,
-                              stop_token_batch, predicted_pre_frames, predicted_post_frames,
-                              predicted_stop_tokens, mask_batch)
-            yield sum(losses)
+        logger.info('Train Batch Size: %d', train_batch_size)
+        logger.info('Dev Batch Size: %d', dev_batch_size)
+        logger.info('Total Parameters: %d', get_total_parameters(self.model))
+        logger.info('Model:\n%s' % self.model)
 
-            # Clear Memory
-            predicted_pre_frames = predicted_pre_frames.detach()
-            predicted_post_frames = predicted_post_frames.detach()
-            pre_frames_loss, post_frames_loss, stop_token_loss = tuple(t.item() for t in losses)
+    def compute_loss(self, frames_batch, stop_token_batch, predicted_pre_frames,
+                     predicted_post_frames, predicted_stop_tokens, mask_batch):
+        """ Compute the losses for Tacotron.
+
+        Args:
+            frames_batch (torch.FloatTensor [num_frames, batch_size, frame_channels]): Ground truth
+                frames.
+            stop_token_batch (torch.FloatTensor [num_frames, batch_size]): Ground truth stop tokens.
+            predicted_pre_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
+                Predicted frames.
+            predicted_post_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
+                Predicted frames with residual
+            predicted_stop_tokens (torch.FloatTensor [num_frames, batch_size]): Predicted stop
+                tokens.
+            mask_batch (torch.FloatTensor [num_frames, batch_size]): Mask of zero's and one's to
+                apply.
+
+        Returns:
+            (torch.Tensor) scalar loss values
+        """
+
+        def get_loss_frames(predicted_frames):
+            loss = self.criterion_frames(predicted_frames, frames_batch)
+            loss = loss * mask_batch.unsqueeze(-1)
+            return torch.mean(loss)
+
+        pre_frames_loss = get_loss_frames(predicted_pre_frames)
+        post_frames_loss = get_loss_frames(predicted_post_frames)
+
+        stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, stop_token_batch)
+        stop_token_loss = stop_token_loss * mask_batch
+        stop_token_loss = torch.mean(stop_token_loss)
+
+        return pre_frames_loss, post_frames_loss, stop_token_loss
+
+    def run_epoch(self, train=False, trial_run=False, teacher_forcing=True):
+        """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
+
+        Args:
+            train (bool): If ``True``, the batch will store gradients.
+            trial_run (bool): If True, then runs only 1 batch.
+            teacher_forcing (bool): Feed ground truth to the model.
+        """
+        label = 'TRAIN' if train else 'DEV'
+        logger.info('[%s] Running Epoch %d, Step %d', label, self.epoch, self.step)
+        if trial_run:
+            logger.info('[%s] Trial run with one batch.', label)
+
+        # Set mode
+        self.context.epoch(self.epoch)
+        torch.set_grad_enabled(train)
+        self.model.train(mode=train)
+
+        # Setup iterator and metrics
+        (avg_post_frames_loss, avg_stop_token_loss,
+         avg_pre_frames_loss) = Average(), Average(), Average()
+        dataset = self.train_dataset if train else self.dev_dataset
+        max_batch_size = self.train_batch_size if train else self.dev_batch_size
+        data_iterator = tqdm(
+            DataIterator(self.context, dataset, max_batch_size, train=train, trial_run=trial_run),
+            desc=label)
+        for text_batch, frames_batch, stop_token_batch, mask_batch in data_iterator:
+            pre_frames_loss, post_frames_loss, stop_token_loss = self.run_step(
+                text_batch,
+                frames_batch,
+                stop_token_batch,
+                mask_batch,
+                teacher_forcing=teacher_forcing,
+                train=train,
+                sample=not train and random.randint(1, len(data_iterator)) == 1)
 
             # Compute metrics
             num_frame_values = np.prod(frames_batch.shape)
@@ -287,144 +286,149 @@ def get_model_iterator(context,
             avg_stop_token_loss.add(stop_token_loss * num_stop_token_values, num_stop_token_values)
 
             # Postfix will be displayed on the right of progress bar
-            iterator.set_postfix(
+            data_iterator.set_postfix(
                 pre_frames_loss=avg_pre_frames_loss.get(),
                 post_frames_loss=avg_post_frames_loss.get(),
                 stop_token_loss=avg_stop_token_loss.get())
 
-            if trial_run:
-                # NOTE: Break does not update the iterator; therefore, we do this manually.
-                iterator.update()
-                break
+        # Print metrics
+        if not train and avg_post_frames_loss.get() < self.best_post_frames_loss:
+            logger.info('[%s] Best Post Frame Loss', label.upper())
+            self.best_post_frames_loss = avg_post_frames_loss.get()
 
-    if not train and avg_post_frames_loss.get() < best_post_frames_loss:
-        logger.info('[%s] Best Post Frame Loss', label.upper())
-        best_post_frames_loss = avg_post_frames_loss.get()
+        if not train and avg_stop_token_loss.get() < self.best_stop_token_loss:
+            logger.info('[%s] Best Stop Token Loss', label.upper())
+            self.best_stop_token_loss = avg_stop_token_loss.get()
 
-    if not train and avg_stop_token_loss.get() < best_stop_token_loss:
-        logger.info('[%s] Best Stop Token Loss', label.upper())
-        best_stop_token_loss = avg_stop_token_loss.get()
+        logger.info('[%s] Pre Frame Loss: %f', label.upper(), avg_pre_frames_loss.get())
+        logger.info('[%s] Post Frame Loss: %f', label.upper(), avg_post_frames_loss.get())
+        logger.info('[%s] Stop Token Loss: %f', label.upper(), avg_stop_token_loss.get())
 
-    logger.info('[%s] Pre Frame Loss: %f', label.upper(), avg_pre_frames_loss.get())
-    logger.info('[%s] Post Frame Loss: %f', label.upper(), avg_post_frames_loss.get())
-    logger.info('[%s] Stop Token Loss: %f', label.upper(), avg_stop_token_loss.get())
+    def sample_spectrogram(self, batch, item, filename):
+        """ Sample a spectrogram from a batch and save a visualization.
 
-    sample_name = lambda n: os.path.join(context.epoch_directory, label.lower() + '_' + n)
+        Args:
+            batch (torch.FloatTensor [num_frames, batch_size, frame_channels]): Batch of frames.
+            item (int): Item from the batch to sample.
+            filename (str): Filename to use for sample without an extension
+        """
+        _, batch_size, _ = batch.shape
+        spectrogram = batch.detach().transpose_(0, 1)[item].cpu().numpy()
+        plot_spectrogram(spectrogram, filename + '.png')
+        log_mel_spectrogram_to_wav(spectrogram, filename + '.wav')
 
-    if not train:
-        alignment = predicted[-1]
-        sample_attention(alignment, sample_name('sample_attention'))
-        sample_spectrogram(context, frames_batch, sample_name('sample_spectrogram'))
-        sample_spectrogram(context, predicted_post_frames,
-                           sample_name('sample_predicted_post_spectrogram'))
+    def sample_attention(self, batch, item, filename):
+        """ Sample an alignment from a batch and save a visualization.
 
-    # Clear any extra memory
-    gc.collect()
+        Args:
+            batch (torch.FloatTensor [num_frames, batch_size, num_tokens]): Batch of alignments.
+            item (int): Item from the batch to sample.
+            filename (str): Filename to use for sample without an extension
+        """
+        _, batch_size, _ = batch.shape
+        alignment = batch.detach().transpose_(0, 1)[item].cpu().numpy()
+        plot_attention(alignment, filename + '.png')
+
+    def run_step(self,
+                 text_batch,
+                 frames_batch,
+                 stop_token_batch,
+                 mask_batch,
+                 teacher_forcing=True,
+                 train=False,
+                 sample=False):
+        """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
+
+        Args:
+            text_batch (torch.LongTensor [batch_size, num_tokens])
+            frames_batch (torch.LongTensor [num_frames, batch_size, frame_channels])
+            stop_token_batch (torch.LongTensor [num_frames, batch_size])
+            mask_batch (torch.LongTensor [num_frames, batch_size, 1])
+            teacher_forcing (bool): If ``True``, feed ground truth to the model.
+            train (bool): If ``True``, takes a optimization step.
+            sample (bool): If ``True``, samples the current step.
+
+        Returns:
+            (torch.Tensor) Loss at every iteration
+        """
+        if teacher_forcing:
+            predicted = self.model(text_batch, frames_batch)
+        else:
+            predicted = self.model(text_batch, max_recursion=frames_batch.shape[0])
+
+        (predicted_pre_frames, predicted_post_frames, predicted_stop_tokens,
+         predicted_alignments) = predicted
+
+        losses = self.compute_loss(frames_batch, stop_token_batch, predicted_pre_frames,
+                                   predicted_post_frames, predicted_stop_tokens, mask_batch)
+
+        if train:
+            sum(losses).backward()
+            self.optimizer.step()
+            self.scheduler.step()
+            self.step += 1
+            self.optimizer.zero_grad()
+
+        if sample:
+            label = 'train' if train else 'dev'
+
+            def build_filename(base):
+                return os.path.join(self.context.epoch_directory,
+                                    label + '_' + str(self.step) + '_' + base)
+
+            logger.info('Saving samples in: %s', build_filename('**'))
+            _, batch_size, _ = predicted_alignments.shape
+            item = random.randint(0, batch_size - 1)
+            self.sample_attention(predicted_alignments, item, build_filename('alignment'))
+            self.sample_spectrogram(frames_batch, item, build_filename('gold_spectrogram'))
+            self.sample_spectrogram(predicted_post_frames, item,
+                                    build_filename('predicted_pectrogram'))
+
+        return tuple(t.item() for t in losses)
 
 
-def main():
+def main(checkpoint=None, dataset_cache='data/lj_speech.pt'):
     """ Main module if this file is invoked directly """
     with ExperimentContextManager(label='feature_model') as context:
         # Load checkpoint
-        parser = argparse.ArgumentParser()
-        parser.add_argument("-c", "--checkpoint", type=str, default=None, help="load a checkpoint")
-        args = parser.parse_args()
-        checkpoint, text_encoder = None, None
-        if args.checkpoint is not None:
-            checkpoint = context.load(os.path.join(context.root_path, args.checkpoint))
-            logger.info('Loaded checkpoint: %s' % (args.checkpoint,))
-            text_encoder = checkpoint['text_encoder']
-
-        # Load data
-        cache = os.path.join(context.root_path, 'data/lj_speech.pt')
-        data, text_encoder = load_data(context, cache, text_encoder=text_encoder)
-        train, dev = make_splits(data)
-
-        # Initialize deep learning components
+        text_encoder = None
         if checkpoint is not None:
-            model = checkpoint['model']
-            model.apply(
+            checkpoint = context.load(os.path.join(context.root_path, checkpoint))
+            text_encoder = checkpoint['text_encoder']
+            checkpoint['model'].apply(
                 lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
-            optimizer = checkpoint['optimizer']
-            scheduler = checkpoint['scheduler']
             # ISSUE: https://github.com/pytorch/pytorch/issues/7255
-            scheduler.optimizer = optimizer.optimizer
-            epoch = checkpoint['epoch']
-            step = checkpoint['step']
-        else:
-            model = context.maybe_cuda(FeatureModel(text_encoder.vocab_size))
-            optimizer = Optimizer(
-                Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
-            scheduler = DelayedExponentialLR(optimizer.optimizer)
-            epoch = 0
-            step = 0
-        criterion_frames = context.maybe_cuda(MSELoss(reduce=False))
-        criterion_stop_token = context.maybe_cuda(BCELoss(reduce=False))
+            checkpoint['scheduler'].optimizer = checkpoint['optimizer'].optimizer
 
-        train_batch_size = 32
-        dev_batch_size = 128
-        logger.info('Train Batch Size: %d', train_batch_size)
-        logger.info('Dev Batch Size: %d', dev_batch_size)
-        logger.info('Total Parameters: %d', get_total_parameters(model))
-        logger.info('Model:\n%s' % model)
+        train, dev, text_encoder = load_data(context, dataset_cache, text_encoder=text_encoder)
+
+        # Setup the trainer
+        if checkpoint is None:
+            trainer = Trainer(context, train, dev, text_encoder.vocab_size)
+        else:
+            del checkpoint['text_encoder']
+            trainer = Trainer(context, train, dev, text_encoder.vocab_size, **checkpoint)
 
         while True:
-            logger.info('Starting Epoch %d, Step %d', epoch, step)
-            context.epoch(epoch)
-
-            # Iterate over the training data
             logger.info('Training...')
-            iterator = get_model_iterator(
-                context,
-                train,
-                train_batch_size,
-                model,
-                criterion_frames,
-                criterion_stop_token,
-                train=True,
-                label='TRAIN',
-                teacher_forcing=True,
-                trial_run=(epoch == 0))
-            for loss in iterator:
-                loss.backward()
-
-                optimizer.step()
-                scheduler.step()
-                step += 1
-
-                # Clean up
-                optimizer.zero_grad()
-                del loss
-
-            checkpoint = {
-                'model': model,
-                'optimizer': optimizer,
-                'scheduler': scheduler,
-                'text_encoder': text_encoder,
-                'epoch': epoch,
-                'step': step,
-            }
-            checkpoint_path = context.save(
-                os.path.join(context.epoch_directory, 'checkpoint.pt'), checkpoint)
-            logger.info('Saved Checkpoint: %s', os.path.normpath(checkpoint_path))
-
+            trainer.run_epoch(train=True, trial_run=(trainer.epoch == 0))
+            context.save(
+                os.path.join(context.epoch_directory, 'checkpoint.pt'), {
+                    'model': trainer.model,
+                    'optimizer': trainer.optimizer,
+                    'scheduler': trainer.scheduler,
+                    'text_encoder': text_encoder,
+                    'epoch': trainer.epoch,
+                    'step': trainer.step,
+                })
             logger.info('Evaluating...')
-            list(
-                get_model_iterator(
-                    context,
-                    dev,
-                    dev_batch_size,
-                    model,
-                    criterion_frames,
-                    criterion_stop_token,
-                    train=False,
-                    label='DEV',
-                    teacher_forcing=False,
-                    trial_run=(epoch == 0)))
-
-            epoch += 1
+            trainer.run_epoch(train=False, trial_run=(trainer.epoch == 0))
+            trainer.epoch += 1
             print('–' * 100)
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-c", "--checkpoint", type=str, default=None, help="load a checkpoint")
+    args = parser.parse_args()
+    main(checkpoint=args.checkpoint)

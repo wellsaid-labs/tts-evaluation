@@ -15,6 +15,8 @@ from src.configurable import log_arguments
 from src.hparams import set_hparams
 from src.utils import get_root_path
 
+logger = logging.getLogger(__name__)
+
 
 def load(path, device=-1):
     """ Using ``torch.load`` and ``dill`` load an object from ``path`` onto ``self.device``.
@@ -74,7 +76,8 @@ class ExperimentContextManager(object):
     def __init__(self, label='', top_level_directory='experiments/', seed=1212212, device=None):
         self.label = label
         self.root_path = get_root_path()
-        self.top_level_directory = os.path.join(self.root_path, top_level_directory)
+        self.top_level_directory = os.path.normpath(
+            os.path.join(self.root_path, top_level_directory))
 
         if device is None:
             self.device = torch.cuda.current_device() if torch.cuda.is_available() else -1
@@ -84,6 +87,7 @@ class ExperimentContextManager(object):
         self.set_seed(seed)
 
     def load(self, path):
+        logger.info('Loading: %s' % (path,))
         return load(os.path.join(self.directory, path), device=self.device)
 
     def save(self, path, data):
@@ -96,6 +100,7 @@ class ExperimentContextManager(object):
         Returns:
             (str): Full path saved too
         """
+        logger.info('Saving: %s' % (path,))
         full_path = os.path.join(self.directory, path)
         torch.save(data, full_path, pickle_module=dill)
         return full_path
@@ -110,7 +115,7 @@ class ExperimentContextManager(object):
             epoch (int)
         """
         path = os.path.join(self.directory, 'epochs/%d' % (epoch,))
-        os.makedirs(path)
+        os.makedirs(path, exist_ok=True)
         self.epoch_directory = path
 
     def notify(self, title, text):
