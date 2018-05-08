@@ -100,6 +100,11 @@ class AutoregressiveDecoder(nn.Module):
             input_size=lstm_hidden_size + self.attention_context_size,
             hidden_size=lstm_hidden_size,
             num_layers=1)
+        # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunatly, Zoneout or any LSTM state
+        # dropout in PyTorch forces us to unroll the LSTM and slow down this component x3 to x4. For
+        # right now, we will not be using state dropout on the LSTM. We are applying dropout onto
+        # the LSTM output instead.
+        self.lstm_layer_two_dropout = nn.Dropout(p=lstm_dropout)
         self.project_tokens = nn.Linear(encoder_hidden_size, attention_hidden_size)
         self.attention = LocationSensitiveAttention(
             encoder_hidden_size=encoder_hidden_size,
@@ -336,6 +341,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         # [num_frames, batch_size, lstm_hidden_size]
         lstm_two_hidden_state = None if hidden_state is None else hidden_state.lstm_two_hidden_state
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
+        frames = self.lstm_layer_two_dropout(frames)
 
         # [num_frames, batch_size, lstm_hidden_size] (concat)
         # [num_frames, batch_size, self.attention_context_size] →

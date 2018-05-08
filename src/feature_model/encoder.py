@@ -84,14 +84,13 @@ class Encoder(nn.Module):
             input_size=num_convolution_filters,
             hidden_size=lstm_hidden_size,
             num_layers=lstm_layers,
-            bidirectional=lstm_bidirectional,
-            # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunatly, Zoneout in PyTorch
-            # forces us to unroll the LSTM and slow down this component x3 to x4. For right now, we
-            # will by using variational dropout.
-            dropout=0 if lstm_layers == 1 else lstm_dropout,
-        )
+            bidirectional=lstm_bidirectional)
 
-        self.dropout = nn.Dropout(p=lstm_dropout)
+        # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunatly, Zoneout or any LSTM state
+        # dropout in PyTorch forces us to unroll the LSTM and slow down this component x3 to x4. For
+        # right now, we will not be using state dropout on the LSTM. We are applying dropout onto
+        # the LSTM output instead.
+        self.lstm_dropout = nn.Dropout(p=lstm_dropout)
 
     def forward(self, tokens):
         """
@@ -123,4 +122,5 @@ class Encoder(nn.Module):
 
         # [num_tokens, batch_size, lstm_hidden_size * (2 if lstm_bidirectional else 1) ]
         encoded_tokens, _ = self.lstm(tokens)
+        encoded_tokens = self.lstm_dropout(encoded_tokens)
         return encoded_tokens

@@ -241,7 +241,8 @@ def get_model_iterator(context,
                        criterion_stop_token,
                        train=True,
                        label='',
-                       teacher_forcing=True):
+                       teacher_forcing=True,
+                       trial_run=False):
     """ Iterate over a dataset with the model, computing the loss function every iteration.
 
     Args:
@@ -255,6 +256,7 @@ def get_model_iterator(context,
         train (bool): If ``True``, the batch will store gradients.
         label (str): Label to add to progress bar and logs.
         teacher_forcing (bool): Feed ground truth to the model.
+        trial_run (bool): If True, then runs only 1 batch.
 
     Returns:
         (torch.Tensor) Loss at every iteration
@@ -293,6 +295,9 @@ def get_model_iterator(context,
                 pre_frames_loss=avg_pre_frames_loss.get(),
                 post_frames_loss=avg_post_frames_loss.get(),
                 stop_token_loss=avg_stop_token_loss.get())
+
+            if trial_run:
+                break
 
     if not train and avg_post_frames_loss.get() < best_post_frames_loss:
         logger.info('[%s] Best Post Frame Loss', label.upper())
@@ -371,8 +376,17 @@ def main():
 
             # Iterate over the training data
             logger.info('Training...')
-            iterator = get_model_iterator(context, train, train_batch_size, model, criterion_frames,
-                                          criterion_stop_token, True, 'TRAIN', True)
+            iterator = get_model_iterator(
+                context,
+                train,
+                train_batch_size,
+                model,
+                criterion_frames,
+                criterion_stop_token,
+                train=True,
+                label='TRAIN',
+                teacher_forcing=True,
+                trial_run=(epoch == 0))
             for loss in iterator:
                 loss.backward()
 
@@ -389,7 +403,7 @@ def main():
                 'optimizer': optimizer,
                 'scheduler': scheduler,
                 'text_encoder': text_encoder,
-                'epoch': epoch + 1,
+                'epoch': epoch,
                 'step': step,
             }
             checkpoint_path = context.save(
@@ -398,8 +412,17 @@ def main():
 
             logger.info('Evaluating...')
             list(
-                get_model_iterator(context, dev, dev_batch_size, model, criterion_frames,
-                                   criterion_stop_token, False, 'DEV', False))
+                get_model_iterator(
+                    context,
+                    dev,
+                    dev_batch_size,
+                    model,
+                    criterion_frames,
+                    criterion_stop_token,
+                    train=False,
+                    label='DEV',
+                    teacher_forcing=False,
+                    trial_run=(epoch == 0)))
 
             epoch += 1
             print('–' * 100)
