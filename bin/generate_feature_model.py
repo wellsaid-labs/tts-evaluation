@@ -2,6 +2,9 @@ import argparse
 import logging
 import os
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 import torch
 import tensorflow as tf
 
@@ -15,8 +18,6 @@ from src.utils import get_root_path
 from src.utils import plot_attention
 from src.hparams import set_hparams
 
-logger = logging.getLogger(__name__)
-
 # TODO: Generate ground truth aligned mel spectrogram predications for training vocoder
 
 
@@ -28,13 +29,14 @@ def sample_spectrogram(batch, directory, name):
         log_mel_spectrogram_to_wav(spectrogram, name + '.wav')
 
 
-def sample_attention(batch, filename):
+def sample_attention(batch, directory, filename):
     """ Sample an alignment from a batch and save a visualization.
 
     Args:
         batch (torch.FloatTensor [num_frames, batch_size, num_tokens]): Batch of alignments.
         filename (str): Filename to use for sample without an extension
     """
+    filename = os.path.join(directory, filename)
     _, batch_size, _ = batch.shape
     alignment = batch.transpose_(0, 1)[0].cpu().numpy()
     plot_attention(alignment, filename + '.png')
@@ -64,12 +66,14 @@ def main():
     logger.info('Model:\n%s' % model)
 
     while True:
-        text = input("Text: ")
+        text = input('Text: ').strip()
+        logger.info('Got text: %s', text)
         text = text_encoder.encode(text).unsqueeze(0)
         frames, frames_with_residual, stop_tokens, alignments = model(text)
+        logger.info('Predicted Mel-spectrogram')
         sample_spectrogram(frames_with_residual, directory, 'generated_predicted_post_spectrogram')
         sample_spectrogram(frames, directory, 'generated_predicted_pre_spectrogram')
-        sample_attention(alignments, 'generated_attention')
+        sample_attention(alignments, directory, 'generated_attention')
 
 
 if __name__ == '__main__':
