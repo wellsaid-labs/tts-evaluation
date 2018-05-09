@@ -1,6 +1,3 @@
-# TODO: Plot attention alignment
-# TODO: Write generation code
-
 import argparse
 import logging
 import os

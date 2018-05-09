@@ -118,11 +118,17 @@ class AutoregressiveDecoder(nn.Module):
             nn.Linear(in_features=lstm_hidden_size + self.attention_context_size, out_features=1),
             nn.Sigmoid())
 
-    def _get_past_frames(self, batch_size, is_cuda, ground_truth_frames=None, hidden_state=None):
-        """ Get the past frames to condition the decoder on.
+    def _get_initial_state(self,
+                           batch_size,
+                           num_tokens,
+                           is_cuda,
+                           hidden_state=None,
+                           ground_truth_frames=None):
+        """ Get an initial LSTM hidden state.
 
         Args:
-            batch_size (int): Size of the batch; used to shape initital tensor.
+            batch_size (int): Batch size for the forward pass; used to shape initital tensor.
+            num_tokens (int): Number of tokens for the forward pass; used to shape initital tensor.
             is_cuda (bool): If True, move the tensors to CUDA memory.
             ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
                 optional): Ground truth frames for teacher-forcing.
@@ -133,86 +139,42 @@ class AutoregressiveDecoder(nn.Module):
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Ground truth frames
                 shifted back one timestep if ``ground_truth_frames is not None``; otherwise, the
                 initial or last frame is returned.
+            lstm_one_hidden_state (tuple): Hidden state for lstm.
+            last_attention_context (torch.FloatTensor [batch_size, attention_context_size]):
+                Last attention context to condition the decoder.
+            cumulative_alignment (torch.FloatTensor [batch_size, num_tokens]): The last
+                predicted attention alignment.
         """
         assert ground_truth_frames is None or hidden_state is None, ("""Either the decoder is
 conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
-        if hidden_state is not None:
-            return hidden_state.last_frame
-
-        # Tacotron 2 authors confirmed that initially the decoder is conditioned on a fixed zero
-        # frame.
         tensor = torch.cuda.FloatTensor if is_cuda else torch.FloatTensor
-        initial_frame = tensor(1, batch_size, self.frame_channels).zero_()
 
-        if ground_truth_frames is None:
-            return initial_frame
+        if hidden_state is None:
+            # Tacotron 2 authors confirmed that initially the decoder is conditioned on a fixed zero
+            # initial vectors.
+            hidden_state = tensor(1, batch_size, self.lstm_hidden_size).zero_()
+            cell_state = tensor(1, batch_size, self.lstm_hidden_size).zero_()
+            initial_lstm_one_hidden_state = (hidden_state, cell_state)
+            initial_alignment = tensor(batch_size, num_tokens).zero_()
+            initial_attention_context = tensor(batch_size, self.attention_context_size).zero_()
+            initial_frames = tensor(1, batch_size, self.frame_channels).zero_()
 
-        # Tacotron 2 authors use teacher-forcing on the ground truth during training.
-        # To use the ``initial_frame`` we concat it onto the beginning; furthermore, it does not
-        # need to use the very last frame of the ``ground_truth_frames`` so we remove it.
-        return torch.cat([initial_frame, ground_truth_frames[0:-1]])
+            # Tacotron 2 authors use teacher-forcing on the ground truth during training.
+            # To use the ``initial_frame`` we concat it onto the beginning; furthermore, it does not
+            # need to use the very last frame of the ``ground_truth_frames`` so we remove it.
+            if ground_truth_frames is not None:
+                initial_frames = torch.cat([initial_frames, ground_truth_frames[0:-1]])
 
-    def _get_last_attention_context(self, batch_size, is_cuda, hidden_state=None):
-        """ Get the last attention context to condition the decoder on.
+            return (initial_frames, initial_lstm_one_hidden_state, initial_attention_context,
+                    initial_alignment)
 
-        Args:
-            batch_size (int): Size of the batch; used to shape initital tensor.
-            is_cuda (bool): If True, move the tensors to CUDA memory.
-            hidden_state (AutoregressiveDecoderHiddenState): For sequential prediction, decoder
-                hidden state used to predict the next frame.
+        lstm_one_hidden_state = hidden_state.lstm_one_hidden_state
+        cumulative_alignment = hidden_state.cumulative_alignment
+        last_attention_context = hidden_state.last_attention_context
+        last_frame = hidden_state.last_frame
 
-        Returns:
-            last_attention_context (torch.FloatTensor [batch_size, attention_context_size]):
-                Last attention context to condition the decoder.
-        """
-        if hidden_state is not None:
-            return hidden_state.last_attention_context
-
-        # Tacotron 2 authors confirmed that initially the decoder is conditioned on a fixed zero
-        # attention context.
-        tensor = torch.cuda.FloatTensor if is_cuda else torch.FloatTensor
-        initial_attention_context = tensor(batch_size, self.attention_context_size).zero_()
-        return initial_attention_context
-
-    def _get_cumulative_alignment(self, num_tokens, batch_size, is_cuda, hidden_state=None):
-        """ Get the last attention alignment to condition the decoder on.
-
-        Args:
-            num_tokens (int): Number of tokens passed by the encoder; used to shape initital tensor.
-            batch_size (int): Size of the batch; used to shape initital tensor.
-            is_cuda (bool): If True, move the tensors to CUDA memory.
-            hidden_state (AutoregressiveDecoderHiddenState): For sequential prediction, decoder
-                hidden state used to predict the next frame.
-
-        Returns:
-            cumulative_alignment (torch.FloatTensor [batch_size, num_tokens]): The last
-                predicted attention alignment.
-        """
-        if hidden_state is not None:
-            return hidden_state.cumulative_alignment
-
-        # Tacotron 2 authors confirmed that initially the decoder is conditioned on a fixed zero
-        # attention context.
-        tensor = torch.cuda.FloatTensor if is_cuda else torch.FloatTensor
-        initial_attention_alignment = tensor(batch_size, num_tokens).zero_()
-        return initial_attention_alignment
-
-    def _get_initial_lstm_hidden_state(self, batch_size, is_cuda):
-        """ Get an initial LSTM hidden state.
-
-        Args:
-            batch_size (int): Batch size for the forward pass; used to shape initital tensor.
-            is_cuda (bool): If True, move the tensors to CUDA memory.
-
-        Returns:
-            hidden_state (torch.FloatTensor [1, batch_size, self.lstm_hidden_size])
-            cell_state (torch.FloatTensor [1, batch_size, self.lstm_hidden_size])
-        """
-        tensor = torch.cuda.FloatTensor if is_cuda else torch.FloatTensor
-        hidden_state = tensor(1, batch_size, self.lstm_hidden_size).zero_()
-        cell_state = tensor(1, batch_size, self.lstm_hidden_size).zero_()
-        return hidden_state, cell_state
+        return last_frame, lstm_one_hidden_state, last_attention_context, cumulative_alignment
 
     def forward(self, encoded_tokens, tokens_mask, ground_truth_frames=None, hidden_state=None):
         """
@@ -246,33 +208,17 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         # [num_tokens, batch_size, attention_hidden_size]
         encoded_tokens = self.project_tokens(encoded_tokens)
 
-        # frames [num_frames, batch_size, frame_channels]
-        frames = self._get_past_frames(
-            is_cuda=is_cuda,
-            batch_size=batch_size,
-            ground_truth_frames=ground_truth_frames,
-            hidden_state=hidden_state)
+        (frames, lstm_one_hidden_state, last_attention_context,
+         cumulative_alignment) = self._get_initial_state(
+             num_tokens=num_tokens,
+             batch_size=batch_size,
+             is_cuda=is_cuda,
+             ground_truth_frames=ground_truth_frames,
+             hidden_state=hidden_state)
 
         # [num_frames, batch_size, frame_channels] →
         # [num_frames, batch_size, pre_net_hidden_size]
         frames = self.pre_net(frames)
-
-        # last_attention_context [batch_size, attention_context_size]
-        last_attention_context = self._get_last_attention_context(
-            is_cuda=is_cuda, batch_size=batch_size, hidden_state=hidden_state)
-
-        # last_attention_context [num_tokens, batch_size]
-        cumulative_alignment = self._get_cumulative_alignment(
-            is_cuda=is_cuda,
-            num_tokens=num_tokens,
-            batch_size=batch_size,
-            hidden_state=hidden_state)
-
-        # lstm_one_hidden_state tuple([1, batch_size, self.lstm_hidden_size],
-        # [1, batch_size, self.lstm_hidden_size])
-        lstm_one_hidden_state = self._get_initial_lstm_hidden_state(
-            batch_size=batch_size,
-            is_cuda=is_cuda) if hidden_state is None else hidden_state.lstm_one_hidden_state
 
         # Iterate over all frames for incase teacher-forcing; in sequential prediction, iterates
         # over a single frame.
