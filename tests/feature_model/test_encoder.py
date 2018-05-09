@@ -30,6 +30,9 @@ def test_encoder():
                             (encoder_params['lstm_hidden_size'] / 2) *
                             (2 if encoder_params['lstm_bidirectional'] else 1))
 
+    # Smoke test backward
+    output.sum().backward()
+
 
 def test_encoder_filter_size():
     for filter_size in [1, 3, 5]:

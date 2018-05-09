@@ -213,11 +213,13 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         cell_state = tensor(1, batch_size, self.lstm_hidden_size).zero_()
         return hidden_state, cell_state
 
-    def forward(self, encoded_tokens, ground_truth_frames=None, hidden_state=None):
+    def forward(self, encoded_tokens, tokens_mask, ground_truth_frames=None, hidden_state=None):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size]):
                 Batched set of encoded sequences.
+            tokens_mask (torch.FloatTensor [batch_size, num_tokens]): Binary mask where one's
+                represent padding in ``encoded_tokens``.
             ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
                 optional): During training, ground truth frames for teacher-forcing.
             hidden_state (AutoregressiveDecoderHiddenState): For sequential prediction, decoder
@@ -308,6 +310,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             # attention_context [batch_size, self.attention_context_size]
             last_attention_context, cumulative_alignment, alignment = self.attention(
                 encoded_tokens=encoded_tokens,
+                tokens_mask=tokens_mask,
                 query=frame,
                 cumulative_alignment=cumulative_alignment)
 

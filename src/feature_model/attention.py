@@ -74,12 +74,14 @@ class LocationSensitiveAttention(nn.Module):
         self.score_bias = nn.Parameter(torch.FloatTensor(1, 1, hidden_size).zero_())
         self.softmax = nn.Softmax(dim=1)
 
-    def score(self, encoded_tokens, query, location_features):
+    def score(self, encoded_tokens, tokens_mask, query, location_features):
         """ Compute addative attention score with location features.
 
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]):
                 Batched set of encoded sequences.
+            tokens_mask (torch.FloatTensor [batch_size, num_tokens]): Binary mask where one's
+                represent padding in ``encoded_tokens``.
             query (torch.FloatTensor [1, batch_size, hidden_size]): Query vector used to score
                 individual token vectors.
             location_features (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Location
@@ -121,6 +123,9 @@ class LocationSensitiveAttention(nn.Module):
         # [batch_size, num_tokens, 1] → [batch_size, num_tokens]
         score = score.squeeze(2)
 
+        # Mask encoded tokens padding
+        score.data.masked_fill_(tokens_mask, float('-inf'))
+
         # [batch_size, num_tokens] → [batch_size, num_tokens]
         alignment = self.softmax(score)
 
@@ -128,11 +133,13 @@ class LocationSensitiveAttention(nn.Module):
 
         return alignment
 
-    def forward(self, encoded_tokens, query, cumulative_alignment=None):
+    def forward(self, encoded_tokens, tokens_mask, query, cumulative_alignment=None):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, attention_hidden_size]):
                 Batched set of encoded sequences.
+            tokens_mask (torch.FloatTensor [batch_size, num_tokens]): Binary mask where one's
+                represent padding in ``encoded_tokens``.
             query (torch.FloatTensor [1, batch_size, query_hidden_size]): Query vector used to score
                 individual token vectors.
             cumulative_alignment (torch.FloatTensor [batch_size, num_tokens], optional): Cumlative
@@ -169,7 +176,7 @@ class LocationSensitiveAttention(nn.Module):
         query = self.project_query(query)
 
         # alignment [batch_size, num_tokens]
-        alignment = self.score(encoded_tokens, query, location_features)
+        alignment = self.score(encoded_tokens, tokens_mask, query, location_features)
 
         # Transpose and unsqueeze to fit the requirements for ``torch.bmm``
         # [num_tokens, batch_size, hidden_size] →

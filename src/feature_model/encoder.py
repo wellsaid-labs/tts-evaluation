@@ -95,7 +95,7 @@ class Encoder(nn.Module):
     def forward(self, tokens):
         """
         Args:
-            tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
+            tokens (torch.FloatTensor [batch_size, num_tokens]): Batched set of sequences.
 
         Returns:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batched set of
@@ -120,7 +120,8 @@ class Encoder(nn.Module):
         # to permute the tensor first.
         tokens = tokens.permute(2, 0, 1)
 
-        # [num_tokens, batch_size, lstm_hidden_size * (2 if lstm_bidirectional else 1) ]
+        # [num_tokens, batch_size, lstm_hidden_size * (2 if lstm_bidirectional else 1)]
         encoded_tokens, _ = self.lstm(tokens)
         encoded_tokens = self.lstm_dropout(encoded_tokens)
+
         return encoded_tokens

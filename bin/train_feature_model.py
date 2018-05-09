@@ -14,6 +14,8 @@ from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader
 from torchnlp.samplers import BucketBatchSampler
 from torchnlp.text_encoders import CharacterEncoder
+from torchnlp.text_encoders import PADDING_INDEX
+from torchnlp.utils import pad_batch
 from tqdm import tqdm
 
 import torch
@@ -32,7 +34,6 @@ from src.spectrogram import plot_spectrogram
 from src.spectrogram import wav_to_log_mel_spectrogram
 from src.utils import Average
 from src.utils import get_total_parameters
-from src.utils import pad_batch
 from src.utils import plot_attention
 from src.utils import split_dataset
 
@@ -76,8 +77,6 @@ def load_data(context, cache, text_encoder=None, splits=(0.8, 0.2)):
                 row['stop_token'] = torch.FloatTensor(
                     [0 for _ in range(row['log_mel_spectrograms'].shape[0])])
                 row['stop_token'][row['log_mel_spectrograms'].shape[0] - 1] = 1
-                row['mask'] = torch.FloatTensor(
-                    [1 for _ in range(row['log_mel_spectrograms'].shape[0])])
 
         train, dev = split_dataset(data, splits)
         logger.info('Number Training Rows: %d', len(train))
@@ -105,7 +104,6 @@ class DataIterator(object):
             text_batch (torch.LongTensor [batch_size, num_tokens])
             frames_batch (torch.LongTensor [num_frames, batch_size, frame_channels])
             stop_token_batch (torch.LongTensor [num_frames, batch_size])
-            mask_batch (torch.LongTensor [num_frames, batch_size, 1])
     """
 
     def __init__(self,
@@ -131,10 +129,8 @@ class DataIterator(object):
         text_batch, _ = pad_batch([row['text'] for row in batch])
         frames_batch, _ = pad_batch([row['log_mel_spectrograms'] for row in batch])
         stop_token_batch, _ = pad_batch([row['stop_token'] for row in batch])
-        mask_batch, _ = pad_batch([row['mask'] for row in batch])
         transpose = lambda b: b.transpose_(0, 1).contiguous()
-        return (text_batch, transpose(frames_batch), transpose(stop_token_batch),
-                transpose(mask_batch))
+        return (text_batch, transpose(frames_batch), transpose(stop_token_batch))
 
     def __len__(self):
         return 1 if self.trial_run else len(self.iterator)
@@ -207,37 +203,36 @@ class Trainer():
         logger.info('Total Parameters: %d', get_total_parameters(self.model))
         logger.info('Model:\n%s' % self.model)
 
-    def compute_loss(self, frames_batch, stop_token_batch, predicted_pre_frames,
-                     predicted_post_frames, predicted_stop_tokens, mask_batch):
+    def compute_loss(self, gold_frames, gold_stop_tokens, predicted_pre_frames,
+                     predicted_post_frames, predicted_stop_tokens):
         """ Compute the losses for Tacotron.
 
         Args:
-            frames_batch (torch.FloatTensor [num_frames, batch_size, frame_channels]): Ground truth
+            gold_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Ground truth
                 frames.
-            stop_token_batch (torch.FloatTensor [num_frames, batch_size]): Ground truth stop tokens.
+            gold_stop_tokens (torch.FloatTensor [num_frames, batch_size]): Ground truth stop tokens.
             predicted_pre_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
                 Predicted frames.
             predicted_post_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
                 Predicted frames with residual
             predicted_stop_tokens (torch.FloatTensor [num_frames, batch_size]): Predicted stop
                 tokens.
-            mask_batch (torch.FloatTensor [num_frames, batch_size]): Mask of zero's and one's to
-                apply.
 
         Returns:
             (torch.Tensor) scalar loss values
         """
+        gold_frames_mask = gold_frames.detach().ne(PADDING_INDEX)
 
         def get_loss_frames(predicted_frames):
-            loss = self.criterion_frames(predicted_frames, frames_batch)
-            loss = loss * mask_batch.unsqueeze(-1)
+            loss = self.criterion_frames(predicted_frames, gold_frames)
+            loss = loss * gold_frames_mask
             return torch.mean(loss)
 
         pre_frames_loss = get_loss_frames(predicted_pre_frames)
         post_frames_loss = get_loss_frames(predicted_post_frames)
 
-        stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, stop_token_batch)
-        stop_token_loss = stop_token_loss * mask_batch
+        stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, gold_stop_tokens)
+        stop_token_loss = stop_token_loss * gold_frames_mask
         stop_token_loss = torch.mean(stop_token_loss)
 
         return pre_frames_loss, post_frames_loss, stop_token_loss
@@ -268,19 +263,18 @@ class Trainer():
         data_iterator = tqdm(
             DataIterator(self.context, dataset, max_batch_size, train=train, trial_run=trial_run),
             desc=label)
-        for text_batch, frames_batch, stop_token_batch, mask_batch in data_iterator:
+        for (gold_texts, gold_frames, gold_stop_tokens) in data_iterator:
             pre_frames_loss, post_frames_loss, stop_token_loss = self.run_step(
-                text_batch,
-                frames_batch,
-                stop_token_batch,
-                mask_batch,
+                gold_texts,
+                gold_frames,
+                gold_stop_tokens,
                 teacher_forcing=teacher_forcing,
                 train=train,
                 sample=not train and random.randint(1, len(data_iterator)) == 1)
 
             # Compute metrics
-            num_frame_values = np.prod(frames_batch.shape)
-            num_stop_token_values = np.prod(stop_token_batch.shape)
+            num_frame_values = np.prod(gold_frames.shape)
+            num_stop_token_values = np.prod(gold_stop_tokens.shape)
             avg_post_frames_loss.add(post_frames_loss * num_frame_values, num_frame_values)
             avg_pre_frames_loss.add(pre_frames_loss * num_frame_values, num_frame_values)
             avg_stop_token_loss.add(stop_token_loss * num_stop_token_values, num_stop_token_values)
@@ -330,20 +324,18 @@ class Trainer():
         plot_attention(alignment, filename + '.png')
 
     def run_step(self,
-                 text_batch,
-                 frames_batch,
-                 stop_token_batch,
-                 mask_batch,
+                 gold_texts,
+                 gold_frames,
+                 gold_stop_tokens,
                  teacher_forcing=True,
                  train=False,
                  sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
         Args:
-            text_batch (torch.LongTensor [batch_size, num_tokens])
-            frames_batch (torch.LongTensor [num_frames, batch_size, frame_channels])
-            stop_token_batch (torch.LongTensor [num_frames, batch_size])
-            mask_batch (torch.LongTensor [num_frames, batch_size, 1])
+            gold_texts (torch.LongTensor [batch_size, num_tokens])
+            gold_frames (torch.LongTensor [num_frames, batch_size, frame_channels])
+            gold_stop_tokens (torch.LongTensor [num_frames, batch_size])
             teacher_forcing (bool): If ``True``, feed ground truth to the model.
             train (bool): If ``True``, takes a optimization step.
             sample (bool): If ``True``, samples the current step.
@@ -352,15 +344,15 @@ class Trainer():
             (torch.Tensor) Loss at every iteration
         """
         if teacher_forcing:
-            predicted = self.model(text_batch, frames_batch)
+            predicted = self.model(gold_texts, ground_truth_frames=gold_frames)
         else:
-            predicted = self.model(text_batch, max_recursion=frames_batch.shape[0])
+            predicted = self.model(gold_texts, max_recursion=gold_frames.shape[0])
 
         (predicted_pre_frames, predicted_post_frames, predicted_stop_tokens,
          predicted_alignments) = predicted
 
-        losses = self.compute_loss(frames_batch, stop_token_batch, predicted_pre_frames,
-                                   predicted_post_frames, predicted_stop_tokens, mask_batch)
+        losses = self.compute_loss(gold_frames, gold_stop_tokens, predicted_pre_frames,
+                                   predicted_post_frames, predicted_stop_tokens)
 
         if train:
             sum(losses).backward()
@@ -380,7 +372,7 @@ class Trainer():
             _, batch_size, _ = predicted_alignments.shape
             item = random.randint(0, batch_size - 1)
             self.sample_attention(predicted_alignments, item, build_filename('alignment'))
-            self.sample_spectrogram(frames_batch, item, build_filename('gold_spectrogram'))
+            self.sample_spectrogram(gold_frames, item, build_filename('gold_spectrogram'))
             self.sample_spectrogram(predicted_post_frames, item,
                                     build_filename('predicted_pectrogram'))
 

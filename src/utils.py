@@ -3,48 +3,9 @@ import logging.config
 import os
 
 import matplotlib.pyplot as plt
-import torch
 import numpy as np
 
-from torchnlp.text_encoders import PADDING_INDEX
-
 logger = logging.getLogger(__name__)
-
-
-def pad_tensor(tensor, length, padding_index=PADDING_INDEX):
-    """ Pad a ``tensor`` to ``length`` with ``padding_index``.
-
-    Args:
-        tensor (torch.Tensor [n, *]): Tensor to pad.
-        length (int): Pad the ``tensor`` up to ``length``.
-        padding_index (int, optional): Index to pad tensor with.
-
-    Returns
-        (torch.Tensor [length, *]) Padded Tensor.
-    """
-    n_padding = length - tensor.shape[0]
-    assert n_padding >= 0
-    if n_padding == 0:
-        return tensor
-    padding = tensor.new(n_padding, *tensor.shape[1:]).fill_(padding_index)
-    return torch.cat((tensor, padding), dim=0)
-
-
-def pad_batch(batch, padding_index=PADDING_INDEX):
-    """ Pad a :class:`list` of ``tensors`` (``batch``) with ``padding_index``.
-
-    Args:
-        batch (:class:`list` of :class:`torch.Tensor`): Batch of tensors to pad.
-        padding_index (int, optional): Index to pad tensors with.
-
-    Returns
-        torch.Tensor, list of int: Padded tensors and original lengths of tensors.
-    """
-    lengths = [tensor.shape[0] for tensor in batch]
-    max_len = max(lengths)
-    padded = [pad_tensor(tensor, max_len, padding_index) for tensor in batch]
-    padded = torch.stack(padded, dim=0).contiguous()
-    return padded, lengths
 
 
 def get_root_path():

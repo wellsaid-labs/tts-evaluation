@@ -2,17 +2,12 @@ import os
 
 from torch import nn
 from torch.nn import functional
-from torchnlp.text_encoders import PADDING_INDEX
 
-import torch
-import pytest
 import numpy as np
 
 from src.utils import split_dataset
 from src.utils import get_root_path
 from src.utils import get_total_parameters
-from src.utils import pad_batch
-from src.utils import pad_tensor
 from src.utils import plot_attention
 from src.utils import Average
 
@@ -53,32 +48,6 @@ def test_split_dataset():
     dataset = [1, 2, 3, 4, 5]
     splits = (.6, .2, .2)
     assert split_dataset(dataset, splits) == [[1, 2, 3], [4], [5]]
-
-
-def test_pad_tensor():
-    padded = pad_tensor(torch.LongTensor([1, 2, 3]), 5, PADDING_INDEX)
-    assert padded.tolist() == [1, 2, 3, PADDING_INDEX, PADDING_INDEX]
-
-
-def test_pad_tensor_multiple_dim():
-    padded = pad_tensor(torch.LongTensor(1, 2, 3), 5, PADDING_INDEX)
-    assert padded.size() == (5, 2, 3)
-    assert padded[1].sum().item() == pytest.approx(0)
-
-
-def test_pad_tensor_multiple_dim_float_tensor():
-    padded = pad_tensor(torch.FloatTensor(778, 80), 804, PADDING_INDEX)
-    assert padded.size() == (804, 80)
-    assert padded[-1].sum().item() == pytest.approx(0)
-    assert padded.type() == 'torch.FloatTensor'
-
-
-def test_pad_batch():
-    batch = [torch.LongTensor([1, 2, 3]), torch.LongTensor([1, 2]), torch.LongTensor([1])]
-    padded, lengths = pad_batch(batch, PADDING_INDEX)
-    padded = [r.tolist() for r in padded]
-    assert padded == [[1, 2, 3], [1, 2, PADDING_INDEX], [1, PADDING_INDEX, PADDING_INDEX]]
-    assert lengths == [3, 2, 1]
 
 
 def test_plot_attention():

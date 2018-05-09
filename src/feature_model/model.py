@@ -1,4 +1,5 @@
 from torch import nn
+from torchnlp.text_encoders import PADDING_INDEX
 
 import torch
 
@@ -112,6 +113,8 @@ class SpectrogramModel(nn.Module):
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]) All attention
                 alignments, stored for visualization and debugging
         """
+        # [batch_size, num_tokens]
+        tokens_mask = tokens.detach().eq(PADDING_INDEX)
         encoded_tokens = self.encoder(tokens)
 
         # [num_tokens, batch_size, hidden_size]
@@ -123,7 +126,7 @@ class SpectrogramModel(nn.Module):
             alignments, frames_with_residual, frames, stop_tokens = [], [], [], []
             while len(stopped) != batch_size and len(frames_with_residual) < max_recursion:
                 frame, frame_with_residual, stop_token, hidden_state, alignment = self.decoder(
-                    encoded_tokens, hidden_state=hidden_state)
+                    encoded_tokens, tokens_mask, hidden_state=hidden_state)
                 stopped.update(self._get_stopped_indexes(stop_token))
 
                 # Store results
@@ -138,6 +141,6 @@ class SpectrogramModel(nn.Module):
             stop_tokens = torch.stack(stop_tokens, dim=0)
         else:
             frames, frames_with_residual, stop_tokens, hidden_state, alignments = self.decoder(
-                encoded_tokens, ground_truth_frames=ground_truth_frames)
+                encoded_tokens, tokens_mask, ground_truth_frames=ground_truth_frames)
 
         return frames, frames_with_residual, stop_tokens, alignments

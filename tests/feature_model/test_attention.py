@@ -14,6 +14,8 @@ def test_location_sensative_attention():
         encoder_hidden_size=encoder_hidden_size,
         query_hidden_size=query_hidden_size,
         hidden_size=attention_hidden_size)
+    tokens_mask = torch.autograd.Variable(torch.ByteTensor(batch_size, num_tokens).zero_())
+    tokens_mask[:, -1].fill_(1)
     encoded_tokens = torch.autograd.Variable(
         torch.FloatTensor(num_tokens, batch_size, encoder_hidden_size).uniform_(0, 1))
     query = torch.autograd.Variable(torch.FloatTensor(batch_size, query_hidden_size).uniform_(0, 1))
@@ -21,7 +23,7 @@ def test_location_sensative_attention():
     cumulative_alignment = None
     for j in range(3):
         context, cumulative_alignment, alignment = attention(
-            encoded_tokens, query, cumulative_alignment=cumulative_alignment)
+            encoded_tokens, tokens_mask, query, cumulative_alignment=cumulative_alignment)
 
         assert context.type() == 'torch.FloatTensor'
         assert context.shape == (batch_size, attention_hidden_size)
@@ -31,6 +33,12 @@ def test_location_sensative_attention():
 
         assert cumulative_alignment.type() == 'torch.FloatTensor'
         assert cumulative_alignment.shape == (batch_size, num_tokens)
+
+        # Check the mask computation was applied correctly.
+        tokens_sum = alignment.sum(dim=0)
+        assert tokens_sum[-1].sum() == 0  # Masked
+        for i in range(num_tokens - 1):
+            assert tokens_sum[i].sum() != 0  # Not Masked
 
         # Check the Softmax computation was applied correctly.
         alignment_sum = alignment.sum(dim=1)

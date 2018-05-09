@@ -83,6 +83,12 @@ def set_hparams():
 
     add_config({
         'src': {
+            'optimizer.Optimizer.__init__': {
+                # NOTE: Tacotron authors did not mention using this; but this is fairly common
+                # practice. Used in both the NVIDIA/tacotron2, Rayhane-mamah/Tacotron-2, and
+                # mozilla/TTS implementations.
+                'max_grad_norm': 1.0
+            },
             'lr_schedulers.DelayedExponentialLR.__init__': {
                 # SOURCE (Tacotron 2):
                 # learning rate of 10−3 exponentially decaying to 10−5 starting after 50,000
