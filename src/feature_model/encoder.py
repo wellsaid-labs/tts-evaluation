@@ -92,6 +92,11 @@ class Encoder(nn.Module):
         # the LSTM output instead.
         self.lstm_dropout = nn.Dropout(p=lstm_dropout)
 
+        # Initialize weights
+        for module in self.convolution_layers.modules():
+            if isinstance(module, nn.Conv1d):
+                nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
+
     def forward(self, tokens):
         """
         Args:

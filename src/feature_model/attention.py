@@ -66,13 +66,14 @@ class LocationSensitiveAttention(nn.Module):
             kernel_size=convolution_filter_size,
             padding=int((convolution_filter_size - 1) / 2),
             bias=False)
-        self.project_query = nn.Linear(query_hidden_size, hidden_size)
-        self.project_alignment = nn.Linear(num_convolution_filters, hidden_size)
+        self.project_query = nn.Linear(query_hidden_size, hidden_size, bias=False)
+        self.project_alignment = nn.Linear(num_convolution_filters, hidden_size, bias=False)
         self.score_weights = nn.Parameter(torch.FloatTensor(1, hidden_size, 1))
-        self.score_weights = nn.init.xavier_uniform_(
-            self.score_weights, gain=nn.init.calculate_gain('linear'))
         self.score_bias = nn.Parameter(torch.FloatTensor(1, 1, hidden_size).zero_())
         self.softmax = nn.Softmax(dim=1)
+
+        # Initialize Weights
+        nn.init.xavier_uniform_(self.score_weights, gain=nn.init.calculate_gain('linear'))
 
     def score(self, encoded_tokens, tokens_mask, query, location_features):
         """ Compute addative attention score with location features.
@@ -100,6 +101,7 @@ class LocationSensitiveAttention(nn.Module):
         score_bias = self.score_bias.expand(num_tokens, batch_size, hidden_size)
 
         # score [num_tokens, batch_size, hidden_size]
+        # ei,j = w * tanh(W * si−1 + V * hj + U * fi,j + b)
         score = functional.tanh(encoded_tokens + query + location_features + score_bias)
 
         del location_features  # Clear memory

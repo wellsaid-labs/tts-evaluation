@@ -173,7 +173,6 @@ def set_hparams():
                     # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
                     'num_layers': 2,
                     'hidden_size': pre_net_hidden_size,
-                    'nonlinearity': nn.ReLU,
 
                     # SOURCE (Tacotron 2):
                     # In order to introduce output variation at inference time, dropout with

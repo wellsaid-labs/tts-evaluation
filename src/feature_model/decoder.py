@@ -105,7 +105,8 @@ class AutoregressiveDecoder(nn.Module):
         # right now, we will not be using state dropout on the LSTM. We are applying dropout onto
         # the LSTM output instead.
         self.lstm_layer_two_dropout = nn.Dropout(p=lstm_dropout)
-        self.project_tokens = nn.Linear(encoder_hidden_size, attention_hidden_size)
+        # NOTE: ``project_tokens`` is to be used in Attention later; that already applies bias.
+        self.project_tokens = nn.Linear(encoder_hidden_size, attention_hidden_size, bias=False)
         self.attention = LocationSensitiveAttention(
             encoder_hidden_size=encoder_hidden_size,
             query_hidden_size=lstm_hidden_size,

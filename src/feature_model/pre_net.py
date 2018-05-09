@@ -29,21 +29,21 @@ class PreNet(nn.Module):
     """
 
     @configurable
-    def __init__(self,
-                 frame_channels=80,
-                 num_layers=2,
-                 hidden_size=256,
-                 dropout=0.5,
-                 nonlinearity=nn.ReLU):
+    def __init__(self, frame_channels=80, num_layers=2, hidden_size=256, dropout=0.5):
         super(PreNet, self).__init__()
         self.layers = nn.Sequential(*tuple([
             nn.Sequential(
                 nn.Linear(
                     in_features=frame_channels
                     if i == 0 else hidden_size, out_features=hidden_size),
-                nonlinearity(),
+                nn.ReLU(),
                 nn.Dropout(p=dropout)) for i in range(num_layers)
         ]))
+
+        # Initialize weights
+        for module in self.layers.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
 
     def forward(self, frames):
         """

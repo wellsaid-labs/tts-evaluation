@@ -59,8 +59,16 @@ class PostNet(nn.Module):
                 nn.Tanh(),
                 nn.Dropout(p=convolution_dropout)) for i in range(num_convolution_layers - 1)
         ]
+
+        # Initialize weights
+        for layer in self.layers:
+            for module in layer.modules():
+                if isinstance(module, nn.Conv1d):
+                    nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('tanh'))
+
         self.layers.append(
-            # SOURCE: (Tacotron 2): followed by tanh activations on all but the final layer.
+            # SOURCE: (Tacotron 2):
+            # followed by tanh activations on all but the final layer.
             # Last Layer without ``nn.Tanh`` and different number of ``out_channels``
             nn.Sequential(
                 nn.Conv1d(
