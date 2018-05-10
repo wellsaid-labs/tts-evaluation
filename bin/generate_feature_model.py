@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg')
+
 import argparse
 import logging
 import os
@@ -69,7 +72,7 @@ def main():
         text = input('Text: ').strip()
         logger.info('Got text: %s', text)
         text = text_encoder.encode(text).unsqueeze(0)
-        frames, frames_with_residual, stop_tokens, alignments = model(text)
+        frames, frames_with_residual, stop_tokens, alignments = model(text, max_recursion=10000)
         logger.info('Predicted Mel-spectrogram')
         sample_spectrogram(frames_with_residual, directory, 'generated_predicted_post_spectrogram')
         sample_spectrogram(frames, directory, 'generated_predicted_pre_spectrogram')

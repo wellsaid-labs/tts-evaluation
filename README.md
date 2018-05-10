@@ -32,6 +32,8 @@ Following this command, you'll find the file ``tests/_test_data/lj_speech_spectr
 ](https://arxiv.org/abs/1804.09849v2) and [
 Regularizing and Optimizing LSTM Language Models](https://arxiv.org/pdf/1708.02182.pdf) add
 embedding dropout.
+* Following [The Best of Both Worlds: Combining Recent Advances in Neural Machine Translation
+](https://arxiv.org/abs/1804.09849v2) add multi-headed attention.
 * Following [Batch Normalization before or after ReLU?](https://www.reddit.com/r/MachineLearning/comments/67gonq/d_batch_normalization_before_or_after_relu/)
 move the BatchNorm layer following ReLU
 * Following [Deep contextualized word representations](https://arxiv.org/abs/1802.05365) consider
