@@ -53,7 +53,7 @@ def plot_attention(alignment, filename, title='Attention Alignment'):
         alignment (numpy.array([decoder_timestep, encoder_timestep])): Attention alignment weights
             computed at every timestep of the decoder.
         filename (str): Location to save the file.
-        title (str): Title of the plot.
+        title (str, optional): Title of the plot.
 
     Returns:
         None
@@ -70,29 +70,3 @@ def plot_attention(alignment, filename, title='Attention Alignment'):
     plt.tight_layout()
     plt.savefig(filename, format='png')
     plt.close()
-
-
-class Average(object):
-    """ Average metric helps track and compute an average """
-
-    def __init__(self):
-        self.total = 0
-        self.num_values = 0
-
-    def add(self, value, num_values=1):
-        """ Add values to average metric to track.
-
-        Args:
-            value (int): Value to add to the total
-            num_values (int): Number of values considered
-        """
-        self.total += value
-        self.num_values += num_values
-
-    def get(self):
-        """ Get the average.
-
-        Returns:
-            (float): average value
-        """
-        return self.total / self.num_values

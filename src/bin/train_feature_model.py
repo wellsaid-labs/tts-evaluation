@@ -14,13 +14,11 @@ from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader
 from torchnlp.samplers import BucketBatchSampler
 from torchnlp.text_encoders import CharacterEncoder
-from torchnlp.text_encoders import PADDING_INDEX
 from torchnlp.utils import pad_batch
 from tqdm import tqdm
 
 import torch
 import tensorflow as tf
-import numpy as np
 
 tf.enable_eager_execution()
 
@@ -32,16 +30,13 @@ from src.optimizer import Optimizer
 from src.spectrogram import log_mel_spectrogram_to_wav
 from src.spectrogram import plot_spectrogram
 from src.spectrogram import wav_to_log_mel_spectrogram
-from src.utils import Average
 from src.utils import get_total_parameters
 from src.utils import plot_attention
 from src.utils import split_dataset
+from src.utils import Loss
+from src.utils import plot_loss
 
 logger = logging.getLogger(__name__)
-
-# TODO: Consider an integration test run on this with a mock over load_data on 10 items
-# TODO: Add CUDA out of memory restart protection to context manager
-# TODO: Reduce memory requirements of the model
 
 
 def load_data(context, cache, text_encoder=None, splits=(0.8, 0.2)):
@@ -120,24 +115,27 @@ class DataIterator(object):
             batch_sampler=batch_sampler,
             collate_fn=DataIterator._collate_fn,
             pin_memory=True,
-            num_workers=1)
+            num_workers=0)
         self.trial_run = trial_run
 
     @staticmethod
     def _collate_fn(batch):
         """ List of tensors to a batch variable """
         text_batch, _ = pad_batch([row['text'] for row in batch])
-        frames_batch, _ = pad_batch([row['log_mel_spectrograms'] for row in batch])
+        frame_batch, frame_length_batch = pad_batch([row['log_mel_spectrograms'] for row in batch])
         stop_token_batch, _ = pad_batch([row['stop_token'] for row in batch])
         transpose = lambda b: b.transpose_(0, 1).contiguous()
-        return (text_batch, transpose(frames_batch), transpose(stop_token_batch))
+        return (text_batch, transpose(frame_batch), frame_length_batch, transpose(stop_token_batch))
 
     def __len__(self):
         return 1 if self.trial_run else len(self.iterator)
 
     def __iter__(self):
         for batch in self.iterator:
-            yield tuple([self.context.maybe_cuda(t, non_blocking=True) for t in batch])
+            yield tuple([
+                self.context.maybe_cuda(t, non_blocking=True) if torch.is_tesnor(t) else t
+                for t in batch
+            ])
 
             if self.trial_run:
                 break
@@ -193,8 +191,9 @@ class Trainer():
         self.dev_batch_size = dev_batch_size
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
-        self.criterion_frames = context.maybe_cuda(criterion_frames(reduce=False))
-        self.criterion_stop_token = context.maybe_cuda(criterion_stop_token(reduce=False))
+        self.loss_pre_frames = context.maybe_cuda(Loss(criterion_frames))
+        self.loss_post_frames = context.maybe_cuda(Loss(criterion_frames))
+        self.loss_stop_token = context.maybe_cuda(Loss(criterion_stop_token))
         self.best_post_frames_loss = math.inf
         self.best_stop_token_loss = math.inf
 
@@ -203,13 +202,14 @@ class Trainer():
         logger.info('Total Parameters: %d', get_total_parameters(self.model))
         logger.info('Model:\n%s' % self.model)
 
-    def compute_loss(self, gold_frames, gold_stop_tokens, predicted_pre_frames,
+    def compute_loss(self, gold_frames, gold_frame_lengths, gold_stop_tokens, predicted_pre_frames,
                      predicted_post_frames, predicted_stop_tokens):
         """ Compute the losses for Tacotron.
 
         Args:
             gold_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Ground truth
                 frames.
+            gold_frame_lengths (list): Lengths of each spectrogram in the batch.
             gold_stop_tokens (torch.FloatTensor [num_frames, batch_size]): Ground truth stop tokens.
             predicted_pre_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
                 Predicted frames.
@@ -221,20 +221,12 @@ class Trainer():
         Returns:
             (torch.Tensor) scalar loss values
         """
-        gold_frames_mask = gold_frames.detach().ne(PADDING_INDEX)
-
-        def get_loss_frames(predicted_frames):
-            loss = self.criterion_frames(predicted_frames, gold_frames)
-            loss = loss * gold_frames_mask
-            return torch.mean(loss)
-
-        pre_frames_loss = get_loss_frames(predicted_pre_frames)
-        post_frames_loss = get_loss_frames(predicted_post_frames)
-
-        stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, gold_stop_tokens)
-        stop_token_loss = stop_token_loss * gold_frames_mask
-        stop_token_loss = torch.mean(stop_token_loss)
-
+        mask = [torch.FloatTensor(length).fill_(1) for length in gold_frame_lengths]
+        mask, _ = pad_batch(mask)  # [batch_size, num_frames]
+        mask = mask.transpose(0, 1)  # [num_frames, batch_size]
+        pre_frames_loss = self.loss_pre_frames(predicted_pre_frames, gold_frames, mask=mask)
+        post_frames_loss = self.loss_post_frames(predicted_post_frames, gold_frames, mask=mask)
+        stop_token_loss = self.loss_stop_token(predicted_stop_tokens, gold_stop_tokens, mask=mask)
         return pre_frames_loss, post_frames_loss, stop_token_loss
 
     def run_epoch(self, train=False, trial_run=False, teacher_forcing=True):
@@ -256,47 +248,39 @@ class Trainer():
         self.model.train(mode=train)
 
         # Setup iterator and metrics
-        (avg_post_frames_loss, avg_stop_token_loss,
-         avg_pre_frames_loss) = Average(), Average(), Average()
         dataset = self.train_dataset if train else self.dev_dataset
         max_batch_size = self.train_batch_size if train else self.dev_batch_size
         data_iterator = tqdm(
             DataIterator(self.context, dataset, max_batch_size, train=train, trial_run=trial_run),
             desc=label)
-        for (gold_texts, gold_frames, gold_stop_tokens) in data_iterator:
+        for (gold_texts, gold_frames, gold_frame_lengths, gold_stop_tokens) in data_iterator:
             pre_frames_loss, post_frames_loss, stop_token_loss = self.run_step(
                 gold_texts,
                 gold_frames,
+                gold_frame_lengths,
                 gold_stop_tokens,
                 teacher_forcing=teacher_forcing,
                 train=train,
                 sample=not train and random.randint(1, len(data_iterator)) == 1)
 
-            # Compute metrics
-            num_frame_values = np.prod(gold_frames.shape)
-            num_stop_token_values = np.prod(gold_stop_tokens.shape)
-            avg_post_frames_loss.add(post_frames_loss * num_frame_values, num_frame_values)
-            avg_pre_frames_loss.add(pre_frames_loss * num_frame_values, num_frame_values)
-            avg_stop_token_loss.add(stop_token_loss * num_stop_token_values, num_stop_token_values)
-
             # Postfix will be displayed on the right of progress bar
             data_iterator.set_postfix(
-                pre_frames_loss=avg_pre_frames_loss.get(),
-                post_frames_loss=avg_post_frames_loss.get(),
-                stop_token_loss=avg_stop_token_loss.get())
+                pre_frames_loss=self.loss_pre_frames.total / self.loss_pre_frames.num_values,
+                post_frames_loss=self.loss_post_frames.total / self.loss_post_frames.num_values,
+                stop_token_loss=self.loss_stop_token.total / self.loss_stop_token.num_values)
 
-        # Print metrics
-        if not train and avg_post_frames_loss.get() < self.best_post_frames_loss:
-            logger.info('[%s] Best Post Frame Loss', label.upper())
-            self.best_post_frames_loss = avg_post_frames_loss.get()
+        epoch_loss_pre_frames = self.loss_pre_frames.epoch()
+        epoch_loss_post_frames = self.loss_post_frames.epoch()
+        epoch_loss_stop_token = self.loss_stop_token.epoch()
 
-        if not train and avg_stop_token_loss.get() < self.best_stop_token_loss:
-            logger.info('[%s] Best Stop Token Loss', label.upper())
-            self.best_stop_token_loss = avg_stop_token_loss.get()
+        logger.info('[%s] Pre Frame Loss: %f', label.upper(), epoch_loss_pre_frames)
+        logger.info('[%s] Post Frame Loss: %f', label.upper(), epoch_loss_post_frames)
+        logger.info('[%s] Stop Token Loss: %f', label.upper(), epoch_loss_stop_token)
 
-        logger.info('[%s] Pre Frame Loss: %f', label.upper(), avg_pre_frames_loss.get())
-        logger.info('[%s] Post Frame Loss: %f', label.upper(), avg_post_frames_loss.get())
-        logger.info('[%s] Stop Token Loss: %f', label.upper(), avg_stop_token_loss.get())
+        if train:
+            self.epoch += 1
+
+        return epoch_loss_pre_frames, epoch_loss_post_frames, epoch_loss_stop_token
 
     def sample_spectrogram(self, batch, item, filename):
         """ Sample a spectrogram from a batch and save a visualization.
@@ -326,6 +310,7 @@ class Trainer():
     def run_step(self,
                  gold_texts,
                  gold_frames,
+                 gold_frame_lengths,
                  gold_stop_tokens,
                  teacher_forcing=True,
                  train=False,
@@ -351,8 +336,9 @@ class Trainer():
         (predicted_pre_frames, predicted_post_frames, predicted_stop_tokens,
          predicted_alignments) = predicted
 
-        losses = self.compute_loss(gold_frames, gold_stop_tokens, predicted_pre_frames,
-                                   predicted_post_frames, predicted_stop_tokens)
+        losses = self.compute_loss(gold_frames, gold_frame_lengths, gold_stop_tokens,
+                                   predicted_pre_frames, predicted_post_frames,
+                                   predicted_stop_tokens)
 
         if train:
             sum(losses).backward()
@@ -374,24 +360,36 @@ class Trainer():
             self.sample_attention(predicted_alignments, item, build_filename('alignment'))
             self.sample_spectrogram(gold_frames, item, build_filename('gold_spectrogram'))
             self.sample_spectrogram(predicted_post_frames, item,
-                                    build_filename('predicted_pectrogram'))
+                                    build_filename('predicted_spectrogram'))
 
         return tuple(t.item() for t in losses)
+
+
+def load_checkpoint(context, checkpoint=None):
+    """ Load a checkpoint.
+
+    Args:
+        context (ExperimentContextManager): Context manager for the experiment
+        checkpoint (str or None): Path to a checkpoint to load.
+
+    Returns:
+        checkpoint (dict or None): Loaded checkpoint or None
+    """
+    # Load checkpoint
+    if checkpoint is not None:
+        checkpoint = context.load(os.path.join(context.root_path, checkpoint))
+        checkpoint['model'].apply(
+            lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
+        # ISSUE: https://github.com/pytorch/pytorch/issues/7255
+        checkpoint['scheduler'].optimizer = checkpoint['optimizer'].optimizer
+    return checkpoint
 
 
 def main(checkpoint=None, dataset_cache='data/lj_speech.pt'):
     """ Main module if this file is invoked directly """
     with ExperimentContextManager(label='feature_model') as context:
-        # Load checkpoint
-        text_encoder = None
-        if checkpoint is not None:
-            checkpoint = context.load(os.path.join(context.root_path, checkpoint))
-            text_encoder = checkpoint['text_encoder']
-            checkpoint['model'].apply(
-                lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
-            # ISSUE: https://github.com/pytorch/pytorch/issues/7255
-            checkpoint['scheduler'].optimizer = checkpoint['optimizer'].optimizer
-
+        checkpoint = load_checkpoint()
+        text_encoder = None if checkpoint is None else checkpoint['text_encoder']
         train, dev, text_encoder = load_data(context, dataset_cache, text_encoder=text_encoder)
 
         # Setup the trainer
@@ -401,9 +399,13 @@ def main(checkpoint=None, dataset_cache='data/lj_speech.pt'):
             del checkpoint['text_encoder']
             trainer = Trainer(context, train, dev, text_encoder.vocab_size, **checkpoint)
 
+        # Training Loop
+        train_losses = []
+        dev_losses = []
         while True:
             logger.info('Training...')
-            trainer.run_epoch(train=True, trial_run=(trainer.epoch == 0))
+            train_losses.append(trainer.run_epoch(train=True, trial_run=(trainer.epoch == 0)))
+            # Save Checkpoint
             context.save(
                 os.path.join(context.epoch_directory, 'checkpoint.pt'), {
                     'model': trainer.model,
@@ -414,8 +416,18 @@ def main(checkpoint=None, dataset_cache='data/lj_speech.pt'):
                     'step': trainer.step,
                 })
             logger.info('Evaluating...')
-            trainer.run_epoch(train=False, trial_run=(trainer.epoch == 0))
-            trainer.epoch += 1
+            dev_losses.append(trainer.run_epoch(train=False, trial_run=(trainer.epoch == 0)))
+
+            # Plot losses
+            logger.info('Saving Loss...')
+            loss_names = ['Pre Frame Loss', 'Post Frame Loss', 'Stop Token Loss']
+            iterator = zip(zip(*train_losses), zip(*dev_losses), loss_names)
+            for train_loss, dev_loss, loss_name in iterator:
+                filename = loss_name.replace(' ', '_').lower() + '.png'
+                directory = os.path.join(context.directory, filename)
+                plot_loss(
+                    [train_loss, dev_loss], ['Train', 'Dev'], filename=directory, title=loss_name)
+
             print('–' * 100)
 
 
