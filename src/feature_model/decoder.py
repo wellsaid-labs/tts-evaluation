@@ -94,7 +94,7 @@ class AutoregressiveDecoder(nn.Module):
             input_size=pre_net_hidden_size + self.attention_context_size,
             hidden_size=lstm_hidden_size,
             num_layers=1)
-        self.lstm_layer_one_zoneout = Zoneout(p=lstm_variational_dropout)
+        self.lstm_layer_one_zoneout = Zoneout(p=lstm_dropout)
         self.lstm_hidden_size = lstm_hidden_size
         self.lstm_layer_two = nn.LSTM(
             input_size=lstm_hidden_size + self.attention_context_size,
