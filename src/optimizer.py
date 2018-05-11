@@ -2,7 +2,7 @@ import itertools
 
 import torch
 
-from src.configurable import configurable
+from src.utils.configurable import configurable
 
 
 class Optimizer(object):

@@ -25,7 +25,7 @@ import numpy as np
 tf.enable_eager_execution()
 
 from src.datasets import lj_speech_dataset
-from src.experiment_context_manager import ExperimentContextManager
+from src.utils.experiment_context_manager import ExperimentContextManager
 from src.feature_model import FeatureModel
 from src.lr_schedulers import DelayedExponentialLR
 from src.optimizer import Optimizer

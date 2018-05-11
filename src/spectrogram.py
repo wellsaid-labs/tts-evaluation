@@ -16,7 +16,7 @@ import librosa
 import numpy as np
 import tensorflow as tf
 
-from src.configurable import configurable
+from src.utils.configurable import configurable
 
 logger = logging.getLogger(__name__)
 
@@ -163,12 +163,23 @@ def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function,
     frame_size = _milliseconds_to_samples(frame_size, sample_rate)
     frame_hop = _milliseconds_to_samples(frame_hop, sample_rate)
 
+    # We assume the ``frame_size`` and ``frame_hop`` are divisable to ensure the math is easier.
+    assert frame_size % frame_hop == 0
+    remainder = ((signals.shape[1] - frame_size) % frame_hop)
+    pad = tf.zeros([1, frame_size - remainder])
+    signals = tf.concat([signals, pad], 1)
     spectrograms = tf.contrib.signal.stft(
         signals,
         frame_length=frame_size,
         frame_step=frame_hop,
         window_fn=window_function,
     )
+    # We cut the signal short on padding to ensure that:
+    # spectrograms.shape[1] * frame_hop == signals.shape[1]
+    # This is useful for Wavenet; that requires us to upsample the spectrogram to the signals
+    # dimension.
+    signals = signals[:, :(-frame_size + frame_hop)]
+    assert spectrograms.shape[1] * frame_hop == signals.shape[1]
 
     # SOURCE (Tacotron 2):
     # "STFT magnitude"
@@ -194,6 +205,7 @@ def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function,
     # SOURCE (Tacotron 2):
     # followed by log dynamic range compression.
     log_mel_spectrograms = tf.log(mel_spectrograms)
+    print('log_mel_spectrograms', log_mel_spectrograms.shape)
 
     return log_mel_spectrograms[0].numpy()
 

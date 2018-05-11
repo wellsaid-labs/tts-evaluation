@@ -4,8 +4,8 @@ from torch import nn
 from tensorflow.contrib.signal.python.ops import window_ops
 from torch.optim import Adam
 
-from src.configurable import add_config
-from src.configurable import configurable
+from src.utils.configurable import add_config
+from src.utils.configurable import configurable
 
 
 def set_hparams():

@@ -3,7 +3,7 @@ from torch import nn
 
 import torch
 
-from src.configurable import configurable
+from src.utils.configurable import configurable
 from src.feature_model.pre_net import PreNet
 from src.feature_model.post_net import PostNet
 from src.feature_model.attention import LocationSensitiveAttention

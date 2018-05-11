@@ -6,7 +6,7 @@ import torch
 from src.feature_model.encoder import Encoder
 from src.feature_model.decoder import AutoregressiveDecoder
 
-from src.configurable import configurable
+from src.utils.configurable import configurable
 
 
 class SpectrogramModel(nn.Module):

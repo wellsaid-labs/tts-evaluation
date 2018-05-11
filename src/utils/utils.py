@@ -14,7 +14,7 @@ def get_root_path():
     Returns (str):
         Root directory path
     """
-    return os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
+    return os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..')
 
 
 def get_total_parameters(model):
@@ -49,8 +49,6 @@ def split_dataset(dataset, splits):
 def plot_attention(alignment, filename, title='Attention Alignment'):
     """ Plot alignment of attention.
 
-    TODO: Mask alignments / cut off after sequence end
-
     Args:
         alignment (numpy.array([decoder_timestep, encoder_timestep])): Attention alignment weights
             computed at every timestep of the decoder.
@@ -64,7 +62,7 @@ def plot_attention(alignment, filename, title='Attention Alignment'):
     alignment = np.transpose(alignment)
     plt.style.use('ggplot')
     figure, axis = plt.subplots()
-    im = axis.imshow(alignment, aspect='auto', origin='lower', interpolation='none')
+    im = axis.imshow(alignment, aspect='auto', origin='lower', interpolation='none', vmin=0, vmax=1)
     figure.colorbar(im, ax=axis, orientation='horizontal')
     plt.xlabel('Decoder timestep')
     plt.title(title, y=1.1)

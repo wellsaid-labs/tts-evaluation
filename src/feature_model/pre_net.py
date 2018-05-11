@@ -1,6 +1,6 @@
 from torch import nn
 
-from src.configurable import configurable
+from src.utils.configurable import configurable
 
 
 class PreNet(nn.Module):

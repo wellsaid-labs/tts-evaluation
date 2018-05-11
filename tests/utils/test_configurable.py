@@ -1,15 +1,15 @@
 import pytest
 import inspect
 
-from src.configurable import _parse_configuration
-from src.configurable import _check_configuration
-from src.configurable import configurable
-from src.configurable import add_config
-from src.configurable import clear_config
-from src.configurable import clear_arguments
-from src.configurable import _get_arguments
-from src.configurable import _merge_args
-from src.configurable import log_arguments
+from src.utils.configurable import _parse_configuration
+from src.utils.configurable import _check_configuration
+from src.utils.configurable import configurable
+from src.utils.configurable import add_config
+from src.utils.configurable import clear_config
+from src.utils.configurable import clear_arguments
+from src.utils.configurable import _get_arguments
+from src.utils.configurable import _merge_args
+from src.utils.configurable import log_arguments
 
 
 def test_parse_configuration_example():
@@ -88,13 +88,23 @@ def test_check_configuration_external_libraries():
 
 def test_check_configuration_internal_libraries():
     # Test that check configuration can check ``configurable`` on internal libraries
-    _check_configuration({'tests': {'test_configurable': {'mock_configurable': {'kwarg': None}}}})
+    _check_configuration({
+        'tests': {
+            'utils': {
+                'test_configurable': {
+                    'mock_configurable': {
+                        'kwarg': None
+                    }
+                }
+            }
+        }
+    })
 
 
 def test_check_configuration_error_internal_libraries():
     # Test that check configuration fails on internal libraries
     with pytest.raises(TypeError):
-        _check_configuration({'tests': {'test_configurable': {'mock': {'kwarg': None}}}})
+        _check_configuration({'tests': {'utils': {'test_configurable': {'mock': {'kwarg': None}}}}})
 
 
 def test_check_configuration_error_external_libraries():
@@ -107,10 +117,12 @@ def test_check_configuration_class():
     # Test that check configuration works for classes
     _check_configuration({
         'tests': {
-            'test_configurable': {
-                'MockConfigurable': {
-                    '__init__': {
-                        'kwarg': None
+            'utils': {
+                'test_configurable': {
+                    'MockConfigurable': {
+                        '__init__': {
+                            'kwarg': None
+                        }
                     }
                 }
             }
@@ -123,10 +135,12 @@ def test_check_configuration_error_class():
     with pytest.raises(TypeError):
         _check_configuration({
             'tests': {
-                'test_configurable': {
-                    'Mock': {
-                        '__init__': {
-                            'kwarg': None
+                'utils': {
+                    'test_configurable': {
+                        'Mock': {
+                            '__init__': {
+                                'kwarg': None
+                            }
                         }
                     }
                 }
@@ -137,11 +151,12 @@ def test_check_configuration_error_class():
 def test_add_config_and_arguments():
     # Check that a function can be configured
     kwargs = {'xyz': 'xyz'}
-    add_config({'tests.test_configurable.mock_configurable': kwargs})
+    add_config({'tests.utils.test_configurable.mock_configurable': kwargs})
     assert mock_configurable() == kwargs
 
     # Check that the parameters were recorded
-    assert str(_get_arguments()['tests']['test_configurable']['mock_configurable']['xyz']) == 'xyz'
+    assert str(_get_arguments()['tests']['utils']['test_configurable']['mock_configurable'][
+        'xyz']) == 'xyz'
 
     # Reset
     clear_config()
@@ -154,7 +169,8 @@ def test_add_config_and_arguments():
 def test_arguments():
     # Check that the parameters were recorded
     mock_configurable(abc='abc')
-    assert str(_get_arguments()['tests']['test_configurable']['mock_configurable']['abc']) == 'abc'
+    assert str(_get_arguments()['tests']['utils']['test_configurable']['mock_configurable'][
+        'abc']) == 'abc'
 
     # Smoke test for log
     log_arguments()
@@ -170,12 +186,12 @@ def test_arguments_many():
     arg_kwarg('abc', abc='cdf')
     arg_kwarg('abc', abc='ghf')
     arg_kwarg('abc', xyz='abc')
-    assert str(_get_arguments()['tests']['test_configurable']['test_arguments_many']['<locals>'][
-        '<lambda>']['abc']) == str(['xyz', 'cdf', 'ghf'])
-    assert str(_get_arguments()['tests']['test_configurable']['test_arguments_many']['<locals>'][
-        '<lambda>']['xyz']) == 'abc'
-    assert str(_get_arguments()['tests']['test_configurable']['test_arguments_many']['<locals>'][
-        '<lambda>']['args']) == str(tuple(['def', 'ghi', 'klm']))
+    assert str(_get_arguments()['tests']['utils']['test_configurable']['test_arguments_many'][
+        '<locals>']['<lambda>']['abc']) == str(['xyz', 'cdf', 'ghf'])
+    assert str(_get_arguments()['tests']['utils']['test_configurable']['test_arguments_many'][
+        '<locals>']['<lambda>']['xyz']) == 'abc'
+    assert str(_get_arguments()['tests']['utils']['test_configurable']['test_arguments_many'][
+        '<locals>']['<lambda>']['args']) == str(tuple(['def', 'ghi', 'klm']))
     clear_arguments()
 
 

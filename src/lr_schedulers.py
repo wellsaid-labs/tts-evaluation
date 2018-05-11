@@ -3,7 +3,7 @@ import logging
 
 from torch.optim.lr_scheduler import _LRScheduler
 
-from src.configurable import configurable
+from src.utils.configurable import configurable
 
 logger = logging.getLogger(__name__)
 

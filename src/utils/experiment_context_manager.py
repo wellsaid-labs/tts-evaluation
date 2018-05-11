@@ -10,10 +10,8 @@ import numpy as np
 import tensorflow as tf
 import torch
 
-from src.configurable import log_config
-from src.configurable import log_arguments
-from src.hparams import set_hparams
-from src.utils import get_root_path
+from src.utils.configurable import log_config
+from src.utils.configurable import log_arguments
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +34,13 @@ def load(path, device=-1):
     return torch.load(path, map_location=remap, pickle_module=dill)
 
 
-class CopyStream(object):
+class _CopyStream(object):
     """ Wrapper that copies a stream to a file without affecting the stream.
 
     **Reference:** https://stackoverflow.com/questions/4675728/redirect-stdout-to-a-file-in-python
 
     Example:
-        >>> sys.stdout = CopyStream(stdout_filename, sys.stdout)
+        >>> sys.stdout = _CopyStream(stdout_filename, sys.stdout)
     """
 
     def __init__(self, filename, stream):
@@ -74,6 +72,9 @@ class ExperimentContextManager(object):
     """
 
     def __init__(self, label='', top_level_directory='experiments/', seed=1212212, device=None):
+        # Fix circular reference
+        from src.utils import get_root_path
+
         self.label = label
         self.root_path = get_root_path()
         self.top_level_directory = os.path.normpath(
@@ -144,8 +145,8 @@ class ExperimentContextManager(object):
         """
         self.stdout_filename = os.path.join(self.directory, stdout_filename)
         self.stderr_filename = os.path.join(self.directory, stderr_filename)
-        sys.stdout = CopyStream(self.stdout_filename, sys.stdout)
-        sys.stderr = CopyStream(self.stderr_filename, sys.stderr)
+        sys.stdout = _CopyStream(self.stdout_filename, sys.stdout)
+        sys.stderr = _CopyStream(self.stderr_filename, sys.stderr)
 
     def _new_experiment_directory(self):
         """ Create a experiment directory named with ``self.label`` and the current time.
@@ -189,6 +190,9 @@ class ExperimentContextManager(object):
     def __enter__(self):
         """ Runs before the experiment context begins.
         """
+        # Fix a circular reference chain
+        from src.hparams import set_hparams
+
         # LEARN MORE:
         # https://stackoverflow.com/questions/42270739/how-do-i-resolve-these-tensorflow-warnings
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'

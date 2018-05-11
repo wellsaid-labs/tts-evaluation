@@ -13,7 +13,7 @@ import tensorflow as tf
 
 tf.enable_eager_execution()
 
-from src.experiment_context_manager import load
+from src.utils.experiment_context_manager import load
 from src.spectrogram import plot_spectrogram
 from src.spectrogram import log_mel_spectrogram_to_wav
 from src.utils import get_total_parameters

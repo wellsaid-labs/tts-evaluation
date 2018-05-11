@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torch.nn import functional
 
-from src.configurable import configurable
+from src.utils.configurable import configurable
 
 
 class LocationSensitiveAttention(nn.Module):
