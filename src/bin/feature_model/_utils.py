@@ -108,7 +108,6 @@ def load_data(context, cache, text_encoder=None, splits=(0.8, 0.2)):
 
         if text_encoder is None:
             text_encoder = CharacterEncoder([r['text'] for r in data])
-            logger.info('Text encoder vocab size: %d' % text_encoder.vocab_size)
 
         with tf.device('/gpu:%d' % context.device if context.is_cuda else '/cpu'):
             for row in tqdm(data):
@@ -121,8 +120,6 @@ def load_data(context, cache, text_encoder=None, splits=(0.8, 0.2)):
                 row['stop_token'][row['log_mel_spectrogram'].shape[0] - 1] = 1
 
         train, dev = split_dataset(data, splits)
-        logger.info('Number Training Rows: %d', len(train))
-        logger.info('Number Dev Rows: %d', len(dev))
         to_save = (train, dev, text_encoder)
         context.save(cache, to_save)
         return to_save

@@ -90,6 +90,9 @@ class Trainer():  # pragma: no cover
         self.best_post_frames_loss = math.inf
         self.best_stop_token_loss = math.inf
 
+        logger.info('Number of Training Rows: %d', len(self.train_dataset))
+        logger.info('Number of Dev Rows: %d', len(self.dev_dataset))
+        logger.info('Vocab Size: %d', vocab_size)
         logger.info('Train Batch Size: %d', train_batch_size)
         logger.info('Dev Batch Size: %d', dev_batch_size)
         logger.info('Total Parameters: %d', get_total_parameters(self.model))
