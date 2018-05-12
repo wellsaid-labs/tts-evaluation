@@ -147,7 +147,9 @@ def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function,
             singularity at zero in the mel spectrograms.
 
     Returns:
-        A ``[frames, num_mel_bins]`` ``Tensor`` of ``complex64`` STFT values.
+        log_mel_spectrograms (np.array [frames, num_mel_bins]): Log mel spectrogram
+        signal (np.array [samples]): Samples for a signal
+        sample_rate (int): Sample rate for the signal
     """
     # A batch of float32 time-domain signal in the range [-1, 1] with shape
     # [signal_length].
@@ -205,9 +207,8 @@ def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function,
     # SOURCE (Tacotron 2):
     # followed by log dynamic range compression.
     log_mel_spectrograms = tf.log(mel_spectrograms)
-    print('log_mel_spectrograms', log_mel_spectrograms.shape)
 
-    return log_mel_spectrograms[0].numpy()
+    return log_mel_spectrograms[0].numpy(), signals[0].numpy(), sample_rate
 
 
 # INSPIRED BY:
@@ -410,7 +411,7 @@ def command_line_interface():
     filenames = _get_wav_filenames_from_path(args.path)
 
     for filename in filenames:
-        spectrogram = wav_to_log_mel_spectrogram(filename)
+        spectrogram, _, _ = wav_to_log_mel_spectrogram(filename)
         filename = filename.replace('.wav', '_spectrogram.png')
         plot_spectrogram(spectrogram, filename)
 

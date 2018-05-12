@@ -1,9 +1,10 @@
-import torch
-import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
 
 
-def plot_loss(losses, names, filename, title='Loss', step='Epoch'):
+def plot_loss(losses, names, filename, title='Loss', timestep='Epoch'):
     """ Plot loss over time.
 
     Args:
@@ -11,7 +12,7 @@ def plot_loss(losses, names, filename, title='Loss', step='Epoch'):
         names (list): Name of each loss curve
         filename (str): Location to save the file.
         title (str, optional): Title of the plot.
-        step (str, optional): Name of the x axis representing a timestep (i.e. epoch)
+        timestep (str, optional): Name of the x axis representing a timestep (i.e. epoch)
     """
     assert '.png' in filename.lower(), "Filename saves in PNG format"
     plt.style.use('ggplot')
@@ -28,8 +29,8 @@ def plot_loss(losses, names, filename, title='Loss', step='Epoch'):
         plt.plot(np.argmin(loss), min(loss), color=color, marker='v')
         plt.plot(np.argmax(loss), max(loss), color=color, marker='^')
     plt.title(title, y=1.1)
-    plt.ylabel('Loss Curve')
-    plt.xlabel(step)
+    plt.ylabel('Loss')
+    plt.xlabel(timestep)
     plt.legend(loc='upper right')
     plt.tight_layout()
     plt.savefig(filename, format='png')
@@ -63,7 +64,7 @@ class Loss(object):
 
     def __call__(self, input_, target, *args, mask=None, **kwargs):
         if mask is None:
-            values = np.prod(input_.shape).item()
+            values = int(np.prod(input_.shape))
         else:
             values = torch.sum(mask).item()
         self.num_values += values

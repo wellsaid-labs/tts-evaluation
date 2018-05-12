@@ -2,6 +2,7 @@ import argparse
 import logging
 import mock
 import os
+import shutil
 
 import torch
 
@@ -30,9 +31,7 @@ def test_save_standard_streams(*_):
     assert len(lines) == 0
 
     # Clean up files
-    os.remove(context.stdout_filename)
-    os.remove(context.stderr_filename)
-    os.rmdir(context.directory)
+    shutil.rmtree(context.directory)
 
 
 @mock.patch('argparse.ArgumentParser.parse_args', return_value=argparse.Namespace(message='test'))
@@ -49,14 +48,10 @@ def test_experiment(*_):
         # Smoke test
         context.maybe_cuda(torch.LongTensor([1, 2]))
 
-        context.epoch(1)
+        context.epoch(0)
         assert os.path.isdir(context.epoch_directory)
 
         # Clean up
         os.remove(path)
 
-    os.rmdir(context.epoch_directory)
-    os.rmdir(os.path.dirname(context.epoch_directory))
-    os.remove(context.stdout_filename)
-    os.remove(context.stderr_filename)
-    os.rmdir(context.directory)
+    shutil.rmtree(context.directory)

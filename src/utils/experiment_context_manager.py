@@ -225,6 +225,9 @@ class ExperimentContextManager(object):
         # Log the hyperparameter configuration
         log_config()
 
+        # Create directory for first epoch
+        self.epoch(0)
+
         return self
 
     def __exit__(self, type_, value, traceback):

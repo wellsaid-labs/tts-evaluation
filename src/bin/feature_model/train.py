@@ -11,137 +11,30 @@ from torch.nn import BCELoss
 from torch.nn import MSELoss
 from torch.optim import Adam
 from torch.optim.lr_scheduler import _LRScheduler
-from torch.utils.data import DataLoader
-from torchnlp.samplers import BucketBatchSampler
-from torchnlp.text_encoders import CharacterEncoder
 from torchnlp.utils import pad_batch
 from tqdm import tqdm
 
 import torch
 import tensorflow as tf
 
-tf.enable_eager_execution()
-
-from src.datasets import lj_speech_dataset
-from src.utils.experiment_context_manager import ExperimentContextManager
+from src.bin.feature_model._utils import DataIterator
+from src.bin.feature_model._utils import load_checkpoint
+from src.bin.feature_model._utils import load_data
+from src.bin.feature_model._utils import sample_attention
+from src.bin.feature_model._utils import sample_spectrogram
+from src.bin.feature_model._utils import save_checkpoint
 from src.feature_model import FeatureModel
+from src.loss import Loss
+from src.loss import plot_loss
 from src.lr_schedulers import DelayedExponentialLR
 from src.optimizer import Optimizer
-from src.spectrogram import log_mel_spectrogram_to_wav
-from src.spectrogram import plot_spectrogram
-from src.spectrogram import wav_to_log_mel_spectrogram
 from src.utils import get_total_parameters
-from src.utils import plot_attention
-from src.utils import split_dataset
-from src.utils import Loss
-from src.utils import plot_loss
+from src.utils.experiment_context_manager import ExperimentContextManager
 
 logger = logging.getLogger(__name__)
 
 
-def load_data(context, cache, text_encoder=None, splits=(0.8, 0.2)):
-    """ Load the Linda Johnson (LJ) Speech dataset with spectrograms and encoded text.
-
-    Args:
-        context (ExperimentContextManager): Context manager for the experiment
-        cache (str): Path to cache the processed dataset
-        text_encoder (torchnlp.TextEncoder, optional): Text encoder used to encode and decode the
-            text.
-        splits (tuple): Train and dev splits to use with the dataset
-
-    Returns:
-        (list): Linda Johnson (LJ) Speech dataset with ``log_mel_spectrograms`` and ``text``
-        (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
-    """
-    assert len(splits) == 2
-
-    cache = os.path.join(context.root_path, cache)
-    if not os.path.isfile(cache):
-        data = lj_speech_dataset()
-        random.shuffle(data)
-        logger.info('Sample Data:\n%s', data[:5])
-
-        if text_encoder is None:
-            text_encoder = CharacterEncoder([r['text'] for r in data])
-            logger.info('Text encoder vocab size: %d' % text_encoder.vocab_size)
-
-        with tf.device('/gpu:%d' % context.device if context.is_cuda else '/cpu'):
-            for row in tqdm(data):
-                row['log_mel_spectrograms'] = torch.tensor(wav_to_log_mel_spectrogram(row['wav']))
-                row['text'] = torch.tensor(text_encoder.encode(row['text']).data)
-                row['stop_token'] = torch.FloatTensor(
-                    [0 for _ in range(row['log_mel_spectrograms'].shape[0])])
-                row['stop_token'][row['log_mel_spectrograms'].shape[0] - 1] = 1
-
-        train, dev = split_dataset(data, splits)
-        logger.info('Number Training Rows: %d', len(train))
-        logger.info('Number Dev Rows: %d', len(dev))
-        to_save = (train, dev, text_encoder)
-        context.save(cache, to_save)
-        return to_save
-
-    return context.load(cache)
-
-
-class DataIterator(object):
-    """ Get a batch iterator over the ``dataset``.
-
-    Args:
-        context (ExperimentContextManager): Context manager for the experiment
-        dataset (list): Dataset to iterate over.
-        batch_size (int): Size of the batch for iteration.
-        train (bool): If ``True``, the batch will store gradients.
-        sort_key (callable): Sort key used to group similar length data used to minimize padding.
-
-    Returns:
-        (torch.utils.data.DataLoader) Single-process or multi-process iterators over the dataset.
-        Iterator includes variables:
-            text_batch (torch.LongTensor [batch_size, num_tokens])
-            frames_batch (torch.LongTensor [num_frames, batch_size, frame_channels])
-            stop_token_batch (torch.LongTensor [num_frames, batch_size])
-    """
-
-    def __init__(self,
-                 context,
-                 dataset,
-                 batch_size,
-                 train=True,
-                 sort_key=lambda r: r['log_mel_spectrograms'].shape[0],
-                 trial_run=False):
-        batch_sampler = BucketBatchSampler(dataset, batch_size, False, sort_key=sort_key)
-        self.context = context
-        self.iterator = DataLoader(
-            dataset,
-            batch_sampler=batch_sampler,
-            collate_fn=DataIterator._collate_fn,
-            pin_memory=True,
-            num_workers=0)
-        self.trial_run = trial_run
-
-    @staticmethod
-    def _collate_fn(batch):
-        """ List of tensors to a batch variable """
-        text_batch, _ = pad_batch([row['text'] for row in batch])
-        frame_batch, frame_length_batch = pad_batch([row['log_mel_spectrograms'] for row in batch])
-        stop_token_batch, _ = pad_batch([row['stop_token'] for row in batch])
-        transpose = lambda b: b.transpose_(0, 1).contiguous()
-        return (text_batch, transpose(frame_batch), frame_length_batch, transpose(stop_token_batch))
-
-    def __len__(self):
-        return 1 if self.trial_run else len(self.iterator)
-
-    def __iter__(self):
-        for batch in self.iterator:
-            yield tuple([
-                self.context.maybe_cuda(t, non_blocking=True) if torch.is_tesnor(t) else t
-                for t in batch
-            ])
-
-            if self.trial_run:
-                break
-
-
-class Trainer():
+class Trainer():  # pragma: no cover
     """ Trainer that manages Tacotron training (i.e. checkpoints, epochs, steps).
 
     Args:
@@ -191,9 +84,9 @@ class Trainer():
         self.dev_batch_size = dev_batch_size
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
-        self.loss_pre_frames = context.maybe_cuda(Loss(criterion_frames))
-        self.loss_post_frames = context.maybe_cuda(Loss(criterion_frames))
-        self.loss_stop_token = context.maybe_cuda(Loss(criterion_stop_token))
+        self.criterion_pre_frames = context.maybe_cuda(Loss(criterion_frames))
+        self.criterion_post_frames = context.maybe_cuda(Loss(criterion_frames))
+        self.criterion_stop_token = context.maybe_cuda(Loss(criterion_stop_token))
         self.best_post_frames_loss = math.inf
         self.best_stop_token_loss = math.inf
 
@@ -223,10 +116,14 @@ class Trainer():
         """
         mask = [torch.FloatTensor(length).fill_(1) for length in gold_frame_lengths]
         mask, _ = pad_batch(mask)  # [batch_size, num_frames]
-        mask = mask.transpose(0, 1)  # [num_frames, batch_size]
-        pre_frames_loss = self.loss_pre_frames(predicted_pre_frames, gold_frames, mask=mask)
-        post_frames_loss = self.loss_post_frames(predicted_post_frames, gold_frames, mask=mask)
-        stop_token_loss = self.loss_stop_token(predicted_stop_tokens, gold_stop_tokens, mask=mask)
+        stop_token_mask = mask.transpose(0, 1)  # [num_frames, batch_size]
+        frames_mask = stop_token_mask.unsqueeze(2)
+        pre_frames_loss = self.criterion_pre_frames(
+            predicted_pre_frames, gold_frames, mask=frames_mask)
+        post_frames_loss = self.criterion_post_frames(
+            predicted_post_frames, gold_frames, mask=frames_mask)
+        stop_token_loss = self.criterion_stop_token(
+            predicted_stop_tokens, gold_stop_tokens, mask=stop_token_mask)
         return pre_frames_loss, post_frames_loss, stop_token_loss
 
     def run_epoch(self, train=False, trial_run=False, teacher_forcing=True):
@@ -265,47 +162,25 @@ class Trainer():
 
             # Postfix will be displayed on the right of progress bar
             data_iterator.set_postfix(
-                pre_frames_loss=self.loss_pre_frames.total / self.loss_pre_frames.num_values,
-                post_frames_loss=self.loss_post_frames.total / self.loss_post_frames.num_values,
-                stop_token_loss=self.loss_stop_token.total / self.loss_stop_token.num_values)
+                pre_frames_loss=self.criterion_pre_frames.total /
+                self.criterion_pre_frames.num_values,
+                post_frames_loss=self.criterion_post_frames.total /
+                self.criterion_post_frames.num_values,
+                stop_token_loss=self.criterion_stop_token.total /
+                self.criterion_stop_token.num_values)
 
-        epoch_loss_pre_frames = self.loss_pre_frames.epoch()
-        epoch_loss_post_frames = self.loss_post_frames.epoch()
-        epoch_loss_stop_token = self.loss_stop_token.epoch()
+        loss_pre_frames = self.criterion_pre_frames.epoch()
+        loss_post_frames = self.criterion_post_frames.epoch()
+        loss_stop_token = self.criterion_stop_token.epoch()
 
-        logger.info('[%s] Pre Frame Loss: %f', label.upper(), epoch_loss_pre_frames)
-        logger.info('[%s] Post Frame Loss: %f', label.upper(), epoch_loss_post_frames)
-        logger.info('[%s] Stop Token Loss: %f', label.upper(), epoch_loss_stop_token)
+        logger.info('[%s] Pre Frame Loss: %f', label.upper(), loss_pre_frames)
+        logger.info('[%s] Post Frame Loss: %f', label.upper(), loss_post_frames)
+        logger.info('[%s] Stop Token Loss: %f', label.upper(), loss_stop_token)
 
         if train:
             self.epoch += 1
 
-        return epoch_loss_pre_frames, epoch_loss_post_frames, epoch_loss_stop_token
-
-    def sample_spectrogram(self, batch, item, filename):
-        """ Sample a spectrogram from a batch and save a visualization.
-
-        Args:
-            batch (torch.FloatTensor [num_frames, batch_size, frame_channels]): Batch of frames.
-            item (int): Item from the batch to sample.
-            filename (str): Filename to use for sample without an extension
-        """
-        _, batch_size, _ = batch.shape
-        spectrogram = batch.detach().transpose_(0, 1)[item].cpu().numpy()
-        plot_spectrogram(spectrogram, filename + '.png')
-        log_mel_spectrogram_to_wav(spectrogram, filename + '.wav')
-
-    def sample_attention(self, batch, item, filename):
-        """ Sample an alignment from a batch and save a visualization.
-
-        Args:
-            batch (torch.FloatTensor [num_frames, batch_size, num_tokens]): Batch of alignments.
-            item (int): Item from the batch to sample.
-            filename (str): Filename to use for sample without an extension
-        """
-        _, batch_size, _ = batch.shape
-        alignment = batch.detach().transpose_(0, 1)[item].cpu().numpy()
-        plot_attention(alignment, filename + '.png')
+        return loss_pre_frames, loss_post_frames, loss_stop_token
 
     def run_step(self,
                  gold_texts,
@@ -357,38 +232,18 @@ class Trainer():
             logger.info('Saving samples in: %s', build_filename('**'))
             _, batch_size, _ = predicted_alignments.shape
             item = random.randint(0, batch_size - 1)
-            self.sample_attention(predicted_alignments, item, build_filename('alignment'))
-            self.sample_spectrogram(gold_frames, item, build_filename('gold_spectrogram'))
-            self.sample_spectrogram(predicted_post_frames, item,
-                                    build_filename('predicted_spectrogram'))
+            sample_attention(predicted_alignments, build_filename('alignment'), item)
+            sample_spectrogram(gold_frames, build_filename('gold_spectrogram'), item)
+            sample_spectrogram(predicted_post_frames, build_filename('predicted_spectrogram'), item)
 
         return tuple(t.item() for t in losses)
 
 
-def load_checkpoint(context, checkpoint=None):
-    """ Load a checkpoint.
-
-    Args:
-        context (ExperimentContextManager): Context manager for the experiment
-        checkpoint (str or None): Path to a checkpoint to load.
-
-    Returns:
-        checkpoint (dict or None): Loaded checkpoint or None
-    """
-    # Load checkpoint
-    if checkpoint is not None:
-        checkpoint = context.load(os.path.join(context.root_path, checkpoint))
-        checkpoint['model'].apply(
-            lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
-        # ISSUE: https://github.com/pytorch/pytorch/issues/7255
-        checkpoint['scheduler'].optimizer = checkpoint['optimizer'].optimizer
-    return checkpoint
-
-
-def main(checkpoint=None, dataset_cache='data/lj_speech.pt'):
+def main(checkpoint=None, dataset_cache='data/lj_speech.pt', epochs=1000):  # pragma: no cover
     """ Main module if this file is invoked directly """
+
     with ExperimentContextManager(label='feature_model') as context:
-        checkpoint = load_checkpoint()
+        checkpoint = load_checkpoint(checkpoint)
         text_encoder = None if checkpoint is None else checkpoint['text_encoder']
         train, dev, text_encoder = load_data(context, dataset_cache, text_encoder=text_encoder)
 
@@ -402,19 +257,17 @@ def main(checkpoint=None, dataset_cache='data/lj_speech.pt'):
         # Training Loop
         train_losses = []
         dev_losses = []
-        while True:
+        for _ in range(epochs):
             logger.info('Training...')
             train_losses.append(trainer.run_epoch(train=True, trial_run=(trainer.epoch == 0)))
-            # Save Checkpoint
-            context.save(
-                os.path.join(context.epoch_directory, 'checkpoint.pt'), {
-                    'model': trainer.model,
-                    'optimizer': trainer.optimizer,
-                    'scheduler': trainer.scheduler,
-                    'text_encoder': text_encoder,
-                    'epoch': trainer.epoch,
-                    'step': trainer.step,
-                })
+            checkpoint_path = save_checkpoint(
+                context,
+                model=trainer.model,
+                optimizer=trainer.optimizer,
+                scheduler=trainer.scheduler,
+                text_encoder=text_encoder,
+                epoch=trainer.epoch,
+                step=trainer.step)
             logger.info('Evaluating...')
             dev_losses.append(trainer.run_epoch(train=False, trial_run=(trainer.epoch == 0)))
 
@@ -430,8 +283,12 @@ def main(checkpoint=None, dataset_cache='data/lj_speech.pt'):
 
             print('–' * 100)
 
+    return checkpoint_path
 
-if __name__ == '__main__':
+
+if __name__ == '__main__':  # pragma: no cover
+    tf.enable_eager_execution()
+
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--checkpoint", type=str, default=None, help="load a checkpoint")
     args = parser.parse_args()
