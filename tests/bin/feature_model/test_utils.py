@@ -57,6 +57,7 @@ def test_load_data(lj_speech_dataset_mock):
         assert len(dev) == 1
 
         assert train[0]['stop_token'].shape[0] == train[0]['log_mel_spectrogram'].shape[0]
+        assert train[0]['quantized_signal'].shape[0] % train[0]['log_mel_spectrogram'].shape[0] == 0
 
         # Test Cache
         train, dev, encoder = load_data(context, cache)

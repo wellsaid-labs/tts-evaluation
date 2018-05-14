@@ -17,15 +17,6 @@ Install most of the dependencies with the PIP package manager, like so:
 
 Follow the "Get Started" guide on [pytorch.org](pytorch.org) to install ``torch``.
 
-### WAV to Spectrogram Image
-
-Convert ``.wav`` files to spectrograms, like so:
-
-    export PYTHONPATH=.
-    python3 src/spectrogram.py tests/_test_data/lj_speech.wav
-
-Following this command, you'll find the file ``tests/_test_data/lj_speech_spectrogram.png``
-
 ## Research Ideas
 
 * Following [The Best of Both Worlds: Combining Recent Advances in Neural Machine Translation

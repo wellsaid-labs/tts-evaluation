@@ -13,11 +13,15 @@ from tqdm import tqdm
 
 import torch
 import tensorflow as tf
+import numpy as np
 
 from src.datasets import lj_speech_dataset
-from src.spectrogram import log_mel_spectrogram_to_wav
-from src.spectrogram import plot_spectrogram
-from src.spectrogram import wav_to_log_mel_spectrogram
+from src.preprocess import log_mel_spectrogram_to_wav
+from src.preprocess import plot_spectrogram
+from src.preprocess import wav_to_log_mel_spectrogram
+from src.preprocess import mu_law_quantize
+from src.preprocess import find_silence
+from src.preprocess import read_audio
 from src.utils import plot_attention
 from src.utils import split_dataset
 from src.utils import get_root_path
@@ -84,6 +88,35 @@ class DataIterator(object):
                 break
 
 
+def _preprocess_row(row, text_encoder):
+    """ Preprocess a speech dataset: computing a spectrogram, encoding text and quantizing.
+
+    Args:
+        row (dict {'wav', 'text'}): Example with a corresponding wav filename and text snippet.
+        text_encoder (torchnlp.text_encoders.TextEncoder): Text encoder used to encode text.
+    """
+    signal, sample_rate = read_audio(row['wav'])
+    quantized_signal = mu_law_quantize(signal)
+
+    # Trim silence
+    end_silence, start_silence = find_silence(quantized_signal)
+    signal = signal[end_silence:start_silence]
+    quantized_signal = quantized_signal[end_silence:start_silence]
+
+    log_mel_spectrogram, right_pad = wav_to_log_mel_spectrogram(signal, sample_rate)
+
+    # Right pad so: ``log_mel_spectrogram.shape[0] % quantized_signal.shape[0] == frame_hop``
+    # We property is required for Wavenet.
+    quantized_signal = np.concatenate((quantized_signal, np.zeros((right_pad))))
+
+    row['log_mel_spectrogram'] = torch.tensor(log_mel_spectrogram)
+    row['quantized_signal'] = torch.tensor(quantized_signal)
+    row['sample_rate'] = sample_rate
+    row['text'] = torch.tensor(text_encoder.encode(row['text']).data)
+    row['stop_token'] = torch.FloatTensor(row['log_mel_spectrogram'].shape[0]).zero_()
+    row['stop_token'][row['log_mel_spectrogram'].shape[0] - 1] = 1
+
+
 def load_data(context, cache, text_encoder=None, splits=(0.8, 0.2)):
     """ Load the Linda Johnson (LJ) Speech dataset with spectrograms and encoded text.
 
@@ -111,13 +144,7 @@ def load_data(context, cache, text_encoder=None, splits=(0.8, 0.2)):
 
         with tf.device('/gpu:%d' % context.device if context.is_cuda else '/cpu'):
             for row in tqdm(data):
-                log_mel_spectrogram, signal, sample_rate = wav_to_log_mel_spectrogram(row['wav'])
-                row['log_mel_spectrogram'] = torch.tensor(log_mel_spectrogram)
-                row['signal'] = torch.tensor(signal)
-                row['sample_rate'] = sample_rate
-                row['text'] = torch.tensor(text_encoder.encode(row['text']).data)
-                row['stop_token'] = torch.FloatTensor(row['log_mel_spectrogram'].shape[0]).zero_()
-                row['stop_token'][row['log_mel_spectrogram'].shape[0] - 1] = 1
+                _preprocess_row(row, text_encoder)
 
         train, dev = split_dataset(data, splits)
         to_save = (train, dev, text_encoder)

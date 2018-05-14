@@ -1,11 +1,10 @@
 from functools import partial
 
-import argparse
-import glob
+import functools
 import logging
 import math
-import os
 
+from tensorflow.contrib.signal.python.ops import window_ops
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_util
@@ -22,7 +21,85 @@ logger = logging.getLogger(__name__)
 
 
 @configurable
-def _read_audio(filename, sample_rate=None):
+def mu_law_quantize(x, mu=256):
+    """Mu-Law companding + quantize
+    Args:
+        x (array-like): Input signal. Each value of input signal must be in
+          range of [-1, 1].
+        mu (number): Compression parameter ``μ``.
+    Returns:
+        array-like: Quantized signal (dtype=int)
+          - y ∈ [0, mu] if x ∈ [-1, 1]
+          - y ∈ [0, mu) if x ∈ [-1, 1)
+    .. note::
+        If you want to get quantized values of range [0, mu) (not [0, mu]),
+        then you need to provide input signal of range [-1, 1).
+    Examples:
+        >>> from scipy.io import wavfile
+        >>> import pysptk
+        >>> import numpy as np
+        >>> from nnmnkwii import preprocessing as P
+        >>> fs, x = wavfile.read(pysptk.util.example_audio_file())
+        >>> x = (x / 32768.0).astype(np.float32)
+        >>> y = P.mulaw_quantize(x)
+        >>> print(y.min(), y.max(), y.dtype)
+        15 246 int64
+    See also:
+        :func:`nnmnkwii.preprocessing.mulaw`
+        :func:`nnmnkwii.preprocessing.inv_mulaw`
+        :func:`nnmnkwii.preprocessing.inv_mulaw_quantize`
+    """
+    y = mu_law(x, mu=mu)
+    # scale [-1, 1] to [0, mu]
+    return ((y + 1) / 2 * mu).astype(np.int)
+
+
+def mu_law(x, mu=256):
+    """Mu-Law companding
+    Method described in paper [1]_.
+    .. math::
+        f(x) = sign(x) \ln (1 + \mu |x|) / \ln (1 + \mu)
+    Args:
+        x (array-like): Input signal. Each value of input signal must be in
+          range of [-1, 1].
+        mu (number): Compression parameter ``μ``.
+    Returns:
+        array-like: Compressed signal ([-1, 1])
+    See also:
+        :func:`nnmnkwii.preprocessing.inv_mulaw`
+        :func:`nnmnkwii.preprocessing.mulaw_quantize`
+        :func:`nnmnkwii.preprocessing.inv_mulaw_quantize`
+    .. [1] Brokish, Charles W., and Michele Lewis. "A-law and mu-law companding
+        implementations using the tms320c54x." SPRA163 (1997).
+    """
+    return np.sign(x) * np.log1p(mu * np.abs(x)) / np.log1p(mu)
+
+
+@configurable
+def find_silence(quantized, silence_threshold=15):
+    """ Given a Mu-Law companding quantized signal, trim the silence off the audio.
+
+    Args:
+        quantized (np.array dtype=int): Quantized signal.
+        silence_threshold (int): Threshold for silence.
+
+    Returns:
+        start (int): End of silence in the start of the signal
+        end (int): Start of silence at the end of the signal
+    """
+    for start in range(quantized.size):
+        if abs(quantized[start] - 128) > silence_threshold:
+            break
+
+    for end in range(quantized.size - 1, 1, -1):
+        if abs(quantized[end] - 128) > silence_threshold:
+            break
+
+    return start, end
+
+
+@configurable
+def read_audio(filename, sample_rate=None):
     """ Read an audio file into a mono signal.
 
     Tacotron 1 Reference:
@@ -43,18 +120,10 @@ def _read_audio(filename, sample_rate=None):
         filename (str): Name of the file to load.
         sample_rate (int or None): Target sample rate or None to keep native sample rate.
     Returns:
-        numpy.ndarray [shape=(n, 1)]: Audio time series.
+        numpy.ndarray [shape=(n,)]: Audio time series.
         int: Sample rate of the file.
     """
-    audio, sample_rate = librosa.core.load(filename, sr=sample_rate, mono=True)
-    audio = trim_silence(audio)
-    audio = np.expand_dims(audio, axis=1)
-    return audio, sample_rate
-
-
-def trim_silence(wav):
-    """ Trim leading and trailing silence. """
-    return librosa.effects.trim(wav)[0]
+    return librosa.core.load(filename, sr=sample_rate, mono=True)
 
 
 def _milliseconds_to_samples(milliseconds, sample_rate):
@@ -70,29 +139,17 @@ def _milliseconds_to_samples(milliseconds, sample_rate):
     return int(round(milliseconds * (sample_rate / 1000)))
 
 
-def _get_wav_filenames_from_path(path):
-    """ Get a list of WAV files from a path.
-
-    Args:
-        path (str): Path to a directory of WAV files or WAV file.
-
-    Returns:
-        :class:`list` of :class`str`: List of WAV files.
-    """
-    if os.path.isfile(path):
-        assert '.wav' in path, "Path must be a directory of WAV files or a WAV file."
-        filenames = [path]
-    elif os.path.isdir(path):
-        filenames = [f for f in glob.iglob(os.path.join(path, '**/*.wav'), recursive=True)]
-        assert len(filenames) != 0, "Path must be a directory of WAV files or a WAV file."
-    else:
-        raise ValueError('Pass either a directory or file')
-    return filenames
-
-
 @configurable
-def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function, num_mel_bins,
-                               lower_hertz, upper_hertz, min_magnitude):
+def wav_to_log_mel_spectrogram(signal,
+                               sample_rate,
+                               frame_size=50,
+                               frame_hop=12.5,
+                               window_function=functools.partial(
+                                   window_ops.hann_window, periodic=True),
+                               num_mel_bins=80,
+                               lower_hertz=125,
+                               upper_hertz=7600,
+                               min_magnitude=0.01):
     """ Transform wav file to a log mel spectrogram.
 
     Tacotron 2 Reference:
@@ -108,13 +165,6 @@ def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function,
         We use log magnitude spectrogram  with Hann windowing, 50 ms frame length, 12.5 ms frame
         shift, and 2048-point Fourier transform. We also found pre-emphasis (0.97) to be helpful.
         We use 24 kHz sampling rate for all experiments.
-
-    TODO: This function runs slowly (23 minutes on a GPU for the LJSpeech dataset) due to running
-    one signal at a time. Consider, batching Waveforms. That requires Waveforms to be padded with
-    zero on the end to remove length variability. Using the original length, we compute the expected
-    frames of the Spectrogram. Finally, we generate the Spectrogram and cut it at the appropriate
-    length. To ensure correctness of this approach, we can easily test batched vs non-batched
-    spectrograms.
 
     Reference:
         * DSP MFCC Tutorial:
@@ -133,7 +183,9 @@ def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function,
           https://www.tensorflow.org/api_guides/python/contrib.signal
 
     Args:
-        filenames (:class:`list` of :class:`str`): Names of the files to load.
+        signal (np.array [signal_length]): A batch of float32 time-domain signals in the range
+            [-1, 1].
+        sample_rate (int): Sample rate for the signal.
         frame_size (float): The frame size in milliseconds.
         frame_hop (float): The frame hop in milliseconds.
         window_function (callable): A callable that takes a window length and a dtype keyword
@@ -147,17 +199,15 @@ def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function,
             singularity at zero in the mel spectrograms.
 
     Returns:
-        log_mel_spectrograms (np.array [frames, num_mel_bins]): Log mel spectrogram
-        signal (np.array [samples]): Samples for a signal
-        sample_rate (int): Sample rate for the signal
+        log_mel_spectrograms (np.array [frames, num_mel_bins]): Log mel spectrogram.
+        right_pad (int): Number of zeros padding the end of the signal.
     """
-    # A batch of float32 time-domain signal in the range [-1, 1] with shape
-    # [signal_length].
-    signals, sample_rate = _read_audio(filename)
-    signals = tf.convert_to_tensor(signals)
+    # TODO: Update tests after args update
+    signals = np.expand_dims(signal, axis=0)
 
-    # [signal_length, batch_size] -> [batch_size, signal_length]
-    signals = tf.transpose(signals)
+    # A batch of float32 time-domain signal in the range [-1, 1] with shape
+    # [1, signal_length].
+    signals = tf.convert_to_tensor(signals)
 
     # SOURCE (Tacotron 2):
     # As in Tacotron, mel spectrograms are computed through a shorttime Fourier transform (STFT)
@@ -165,22 +215,42 @@ def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function,
     frame_size = _milliseconds_to_samples(frame_size, sample_rate)
     frame_hop = _milliseconds_to_samples(frame_hop, sample_rate)
 
-    # We assume the ``frame_size`` and ``frame_hop`` are divisable to ensure the math is easier.
+    # Simplifies padding mathematics.
     assert frame_size % frame_hop == 0
-    remainder = ((signals.shape[1] - frame_size) % frame_hop)
-    pad = tf.zeros([1, frame_size - remainder])
-    signals = tf.concat([signals, pad], 1)
+
+    # NOTE: Tacotron 2 authors confirmed they padded the signal over GChat to fullfil requirements
+    # for Wavenet.
+
+    # Specotrogram shape ``[1, (signals.shape[1] - frame_size + frame_hop) // frame_hop]``.
+    # We need the shape to be divisable by ``signals.shape[1] % frame_hop == 0`` for Wavenet
+    # upsampling. First, we deal with ``- frame_size + frame_hop``:
+    front_pad = tf.zeros([1, frame_size - frame_hop])
+
+    # Next, we deal with ``// frame_hop`` (fyi ``//`` is floor division):
+    remainder = (signals.shape[1] + frame_size - frame_hop) % frame_hop
+    remainder = (frame_hop - remainder)
+    right_pad = remainder
+    end_pad = tf.zeros([1, remainder])
+
+    signals = tf.concat([front_pad, signals, end_pad], 1)
+    assert signals.shape[1] % frame_hop == 0
+
+    # NOTE: Zero padding affects the ``stft`` for the particular frames it's applied. We apply it
+    # consistently at the beginning ``frame_size - frame_hop`` but inconsistently at the end
+    # ``remainder``; therefore, it may be useful to mask the loss for Wavenet.
     spectrograms = tf.contrib.signal.stft(
         signals,
         frame_length=frame_size,
         frame_step=frame_hop,
         window_fn=window_function,
     )
-    # We cut the signal short on padding to ensure that:
-    # spectrograms.shape[1] * frame_hop == signals.shape[1]
-    # This is useful for Wavenet; that requires us to upsample the spectrogram to the signals
-    # dimension.
-    signals = signals[:, :(-frame_size + frame_hop)]
+
+    # Finally, we need ``spectrograms.shape[1] * frame_hop == signals.shape[1]``. At this point:
+    # ``spectrograms.shape[1] = (signals.shape[1] - frame_size + frame_hop) / frame_hop``
+    # ``(signals.shape[1] - frame_size + frame_hop) == signals.shape[1]``
+    # The ``signals.shape[1]`` is ``frame_size - frame_hop`` too big; therefore, we cut out the
+    # padding from before:
+    signals = signals[:, (frame_size - frame_hop):]
     assert spectrograms.shape[1] * frame_hop == signals.shape[1]
 
     # SOURCE (Tacotron 2):
@@ -208,7 +278,7 @@ def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function,
     # followed by log dynamic range compression.
     log_mel_spectrograms = tf.log(mel_spectrograms)
 
-    return log_mel_spectrograms[0].numpy(), signals[0].numpy(), sample_rate
+    return log_mel_spectrograms[0].numpy(), right_pad
 
 
 # INSPIRED BY:
@@ -271,13 +341,14 @@ def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, frame_size, sample_
 @configurable
 def log_mel_spectrogram_to_wav(log_mel_spectrogram,
                                filename,
-                               frame_size,
-                               frame_hop,
-                               window_function,
                                sample_rate,
-                               lower_hertz,
-                               upper_hertz,
-                               power,
+                               frame_size=50,
+                               frame_hop=12.5,
+                               window_function=functools.partial(
+                                   window_ops.hann_window, periodic=True),
+                               lower_hertz=125,
+                               upper_hertz=7600,
+                               power=1.2,
                                iterations=50,
                                log=False):
     """ Transform log mel spectrogram to wav file with the Griffin-Lim algorithm.
@@ -395,30 +466,3 @@ def plot_spectrogram(spectrogram, filename, title='Mel-Spectrogram'):
     plt.title(title)
     plt.savefig(filename, format='png', bbox_inches='tight')
     plt.close()
-
-
-def command_line_interface():
-    """ Command line interface to convert a directory of WAV files or WAV file to spectrograms.
-    """
-    from src.hparams import set_hparams
-
-    set_hparams()
-
-    parser = argparse.ArgumentParser(description='Convert WAV to a log mel spectrogram CLI.')
-    parser.add_argument('path', type=str, help='filename or directory of WAVs to convert')
-    args = parser.parse_args()
-
-    filenames = _get_wav_filenames_from_path(args.path)
-
-    for filename in filenames:
-        spectrogram, _, _ = wav_to_log_mel_spectrogram(filename)
-        filename = filename.replace('.wav', '_spectrogram.png')
-        plot_spectrogram(spectrogram, filename)
-
-
-if __name__ == "__main__":  # pragma: no cover
-    import matplotlib
-    matplotlib.use('Agg')
-
-    tf.enable_eager_execution()
-    command_line_interface()

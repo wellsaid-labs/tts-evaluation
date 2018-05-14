@@ -98,8 +98,14 @@ def set_hparams():
                 'epoch_end_decay': 100000,
                 'end_lr': 10e-5,
             },
-            'spectrogram': {
-                '_read_audio.sample_rate': sample_rate,
+            'preprocess': {
+                # SOURCE (Wavenet):
+                # To make this more tractable, we first apply a µ-law companding transformation
+                # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
+                'mu_law_quantize.mu': 256,
+                # Silence theshold was discovered in the notebook: ``Silence Threshold.ipynb``
+                'find_silence.silence_threshold': 15,
+                'read_audio.sample_rate': sample_rate,
                 'wav_to_log_mel_spectrogram': wav_to_log_mel_spectrogram,
                 'log_mel_spectrogram_to_wav': {
                     'frame_size': wav_to_log_mel_spectrogram['frame_size'],
