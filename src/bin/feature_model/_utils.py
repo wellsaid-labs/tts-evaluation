@@ -154,7 +154,7 @@ def load_data(context, cache, text_encoder=None, splits=(0.8, 0.2)):
     return context.load(cache)
 
 
-def load_checkpoint(checkpoint=None):
+def load_checkpoint(checkpoint=None, device=-1):
     """ Load a checkpoint.
 
     Args:
@@ -162,10 +162,11 @@ def load_checkpoint(checkpoint=None):
 
     Returns:
         checkpoint (dict or None): Loaded checkpoint or None
+        TODO
     """
     # Load checkpoint
     if checkpoint is not None:
-        checkpoint = load(os.path.join(get_root_path(), checkpoint))
+        checkpoint = load(os.path.join(get_root_path(), checkpoint), device=device)
         if 'model' in checkpoint:
             checkpoint['model'].apply(
                 lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)

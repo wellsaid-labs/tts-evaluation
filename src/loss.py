@@ -37,6 +37,9 @@ def plot_loss(losses, names, filename, title='Loss', timestep='Epoch'):
     plt.close()
 
 
+# TODO: Replace this with Tensorboard
+
+
 class Loss(object):
     """ Loss object that keeps track of average loss over time for an epoch.
 
@@ -60,12 +63,12 @@ class Loss(object):
         self.reduce = reduce
         self.total = 0
         self.num_values = 0
-        self.epochs = []
 
     def __call__(self, input_, target, *args, mask=None, **kwargs):
         if mask is None:
             values = int(np.prod(input_.shape))
         else:
+            mask = mask.expand_as(target)
             values = torch.sum(mask).item()
         self.num_values += values
 
@@ -87,10 +90,6 @@ class Loss(object):
             (float) Average loss over the epoch
         """
         epoch_loss = self.total / self.num_values
-        self.epochs.append(epoch_loss)
         self.total = 0
         self.num_values = 0
         return epoch_loss
-
-    def __getattr__(self, attr):
-        return getattr(self.criterion, attr)

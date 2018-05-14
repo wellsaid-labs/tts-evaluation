@@ -59,7 +59,7 @@ class Trainer():  # pragma: no cover
                  train_dataset,
                  dev_dataset,
                  vocab_size,
-                 train_batch_size=36,
+                 train_batch_size=32,
                  dev_batch_size=128,
                  model=FeatureModel,
                  step=0,
@@ -84,11 +84,16 @@ class Trainer():  # pragma: no cover
         self.dev_batch_size = dev_batch_size
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
-        self.criterion_pre_frames = context.maybe_cuda(Loss(criterion_frames))
-        self.criterion_post_frames = context.maybe_cuda(Loss(criterion_frames))
-        self.criterion_stop_token = context.maybe_cuda(Loss(criterion_stop_token))
         self.best_post_frames_loss = math.inf
         self.best_stop_token_loss = math.inf
+
+        self.criterion_pre_frames = Loss(criterion_frames)
+        self.criterion_post_frames = Loss(criterion_frames)
+        self.criterion_stop_token = Loss(criterion_stop_token)
+
+        self.context.maybe_cuda(self.criterion_pre_frames.criterion)
+        self.context.maybe_cuda(self.criterion_post_frames.criterion)
+        self.context.maybe_cuda(self.criterion_stop_token.criterion)
 
         logger.info('Number of Training Rows: %d', len(self.train_dataset))
         logger.info('Number of Dev Rows: %d', len(self.dev_dataset))
@@ -119,6 +124,7 @@ class Trainer():  # pragma: no cover
         """
         mask = [torch.FloatTensor(length).fill_(1) for length in gold_frame_lengths]
         mask, _ = pad_batch(mask)  # [batch_size, num_frames]
+        mask = self.context.maybe_cuda(mask)
         stop_token_mask = mask.transpose(0, 1)  # [num_frames, batch_size]
         frames_mask = stop_token_mask.unsqueeze(2)
         pre_frames_loss = self.criterion_pre_frames(
@@ -129,13 +135,14 @@ class Trainer():  # pragma: no cover
             predicted_stop_tokens, gold_stop_tokens, mask=stop_token_mask)
         return pre_frames_loss, post_frames_loss, stop_token_loss
 
-    def run_epoch(self, train=False, trial_run=False, teacher_forcing=True):
+    def run_epoch(self, train=False, trial_run=False, teacher_forcing=True, sample_every=5):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
 
         Args:
             train (bool): If ``True``, the batch will store gradients.
             trial_run (bool): If True, then runs only 1 batch.
             teacher_forcing (bool): Feed ground truth to the model.
+            sample_every (int): Sample randomly every number of epochs
         """
         label = 'TRAIN' if train else 'DEV'
         logger.info('[%s] Running Epoch %d, Step %d', label, self.epoch, self.step)
@@ -161,7 +168,8 @@ class Trainer():  # pragma: no cover
                 gold_stop_tokens,
                 teacher_forcing=teacher_forcing,
                 train=train,
-                sample=not train and random.randint(1, len(data_iterator)) == 1)
+                sample=not train and random.randint(1,
+                                                    len(data_iterator) * sample_every) == 1)
 
             # Postfix will be displayed on the right of progress bar
             data_iterator.set_postfix(
@@ -181,6 +189,7 @@ class Trainer():  # pragma: no cover
         logger.info('[%s] Stop Token Loss: %f', label.upper(), loss_stop_token)
 
         if train:
+            # todo: ONLY UPDATE ON DEV
             self.epoch += 1
 
         return loss_pre_frames, loss_post_frames, loss_stop_token
@@ -227,6 +236,8 @@ class Trainer():  # pragma: no cover
 
         if sample:
             label = 'train' if train else 'dev'
+            predicted_alignments = predicted_alignments.detach()
+            predicted_post_frames = predicted_post_frames.detach()
 
             def build_filename(base):
                 return os.path.join(self.context.epoch_directory,
@@ -242,11 +253,14 @@ class Trainer():  # pragma: no cover
         return tuple(t.item() for t in losses)
 
 
-def main(checkpoint=None, dataset_cache='data/lj_speech.pt', epochs=1000):  # pragma: no cover
+def main(checkpoint=None, dataset_cache='data/lj_speech.pt', epochs=1000,
+         plot_loss_every=5):  # pragma: no cover
+    # TODO: Add comments
+    # TDOO: Start checkpoint in the same folder as before
     """ Main module if this file is invoked directly """
 
     with ExperimentContextManager(label='feature_model') as context:
-        checkpoint = load_checkpoint(checkpoint)
+        checkpoint = load_checkpoint(checkpoint, context.device)
         text_encoder = None if checkpoint is None else checkpoint['text_encoder']
         train, dev, text_encoder = load_data(context, dataset_cache, text_encoder=text_encoder)
 
@@ -261,8 +275,9 @@ def main(checkpoint=None, dataset_cache='data/lj_speech.pt', epochs=1000):  # pr
         train_losses = []
         dev_losses = []
         for _ in range(epochs):
+            is_trial_run = trainer.epoch == 0
             logger.info('Training...')
-            train_losses.append(trainer.run_epoch(train=True, trial_run=(trainer.epoch == 0)))
+            train_losses.append(trainer.run_epoch(train=True, trial_run=is_trial_run))
             checkpoint_path = save_checkpoint(
                 context,
                 model=trainer.model,
@@ -272,17 +287,20 @@ def main(checkpoint=None, dataset_cache='data/lj_speech.pt', epochs=1000):  # pr
                 epoch=trainer.epoch,
                 step=trainer.step)
             logger.info('Evaluating...')
-            dev_losses.append(trainer.run_epoch(train=False, trial_run=(trainer.epoch == 0)))
+            dev_losses.append(trainer.run_epoch(train=False, trial_run=is_trial_run))
 
             # Plot losses
-            logger.info('Saving Loss...')
-            loss_names = ['Pre Frame Loss', 'Post Frame Loss', 'Stop Token Loss']
-            iterator = zip(zip(*train_losses), zip(*dev_losses), loss_names)
-            for train_loss, dev_loss, loss_name in iterator:
-                filename = loss_name.replace(' ', '_').lower() + '.png'
-                directory = os.path.join(context.directory, filename)
-                plot_loss(
-                    [train_loss, dev_loss], ['Train', 'Dev'], filename=directory, title=loss_name)
+            if trainer.epoch % plot_loss_every == 0 or is_trial_run:
+                logger.info('Saving Loss...')
+                loss_names = ['Pre Frame Loss', 'Post Frame Loss', 'Stop Token Loss']
+                iterator = zip(zip(*train_losses), zip(*dev_losses), loss_names)
+                for train_loss, dev_loss, loss_name in iterator:
+                    filename = loss_name.replace(' ', '_').lower() + '.png'
+                    directory = os.path.join(context.directory, filename)
+                    plot_loss(
+                        [train_loss, dev_loss], ['Train', 'Dev'],
+                        filename=directory,
+                        title=loss_name)
 
             print('–' * 100)
 

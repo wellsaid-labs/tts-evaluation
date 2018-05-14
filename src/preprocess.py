@@ -349,7 +349,7 @@ def log_mel_spectrogram_to_wav(log_mel_spectrogram,
                                lower_hertz=125,
                                upper_hertz=7600,
                                power=1.2,
-                               iterations=50,
+                               iterations=30,
                                log=False):
     """ Transform log mel spectrogram to wav file with the Griffin-Lim algorithm.
 
