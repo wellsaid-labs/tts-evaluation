@@ -54,6 +54,7 @@ class Trainer():  # pragma: no cover
         scheduler (torch.optim.lr_scheduler): Scheduler used to adjust learning rate.
     """
 
+    # TODO: Allow batch size to be configurable per machine
     def __init__(self,
                  context,
                  train_dataset,

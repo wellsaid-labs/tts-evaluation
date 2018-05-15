@@ -25,6 +25,7 @@ def load(path, device=-1):
     Returns:
         (any): Object loaded.
     """
+    logger.info('Loading: %s' % (path,))
 
     def remap(storage, loc):
         if 'cuda' in loc and device >= 0:
@@ -88,7 +89,6 @@ class ExperimentContextManager(object):
         self.set_seed(seed)
 
     def load(self, path):
-        logger.info('Loading: %s' % (path,))
         return load(os.path.join(self.directory, path), device=self.device)
 
     def save(self, path, data):

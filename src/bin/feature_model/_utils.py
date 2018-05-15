@@ -62,7 +62,7 @@ class DataIterator(object):
             batch_sampler=batch_sampler,
             collate_fn=DataIterator._collate_fn,
             pin_memory=True,
-            num_workers=0)
+            num_workers=3)
         self.trial_run = trial_run
 
     @staticmethod

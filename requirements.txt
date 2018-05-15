@@ -33,3 +33,4 @@ yapf
 # Utils
 tqdm
 dill
+jupyter

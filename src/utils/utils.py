@@ -7,6 +7,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# TODO: Plot stop token
 
 def get_root_path():
     """ Get the path to the root directory
