@@ -50,6 +50,7 @@ def main(checkpoint, destination='data/vocoder/'):  # pragma: no cover
     metadata = open(os.path.join(destination, 'train.txt'), 'w+')
     batch_size = 128
 
+    logger.info('Device: %d', device)
     logger.info('Number of Rows: %d', len(data))
     logger.info('Vocab Size: %d', text_encoder.vocab_size)
     logger.info('Batch Size: %d', batch_size)
@@ -64,13 +65,13 @@ def main(checkpoint, destination='data/vocoder/'):  # pragma: no cover
             gold_signals) in enumerate(data_iterator):
         _, batch_predicted_frames, _, _ = model(gold_texts, ground_truth_frames=gold_frames)
         # [num_frames, batch_size, frame_channels] → [batch_size, num_tokens, frame_channels]
-        batch_predicted_frames = batch_predicted_frames.transpose(0, 1).numpy()
+        batch_predicted_frames = batch_predicted_frames.transpose(0, 1).cpu().numpy()
 
         # Save predictions
         for j in range(batch_predicted_frames.shape[0]):
             length = gold_frame_lengths[j]
             predicted_frames = batch_predicted_frames[j][:length]  # Cutoff padding
-            signal = gold_signals[j].numpy()
+            signal = gold_signals[j].cpu().numpy()
             text = text_encoder.decode(gold_texts[j])
             assert signal.shape[0] % predicted_frames.shape[0] == 0
 

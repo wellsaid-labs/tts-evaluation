@@ -171,18 +171,16 @@ def load_data(device=-1,
             [r['text'] for r in data]) if text_encoder is None else text_encoder
         for row in data:
             row['text'] = text_encoder.encode(row['text'])
-        logger.info('Done ... Processing Text')
 
         if use_multiprocessing:
             # Preprocess audio with multi-threading
             pool = Pool()
-            logger.info('Created process pool.')
             # LEARN MORE (multiprocessing and tqdm integration):
             # https://stackoverflow.com/questions/41920124/multiprocessing-use-tqdm-to-display-a-progress-bar
             data = list(tqdm(pool.imap(_preprocess_audio, data), total=len(data)))
+            pool.close()
         else:
             data = [_preprocess_audio(r) for r in data]
-        logger.info('Done ... Processing Audio')
 
         train, dev = split_dataset(data, splits)
         # Save cache
