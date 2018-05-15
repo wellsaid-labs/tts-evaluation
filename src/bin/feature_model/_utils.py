@@ -170,7 +170,7 @@ def load_data(device=-1,
         text_encoder = CharacterEncoder(
             [r['text'] for r in data]) if text_encoder is None else text_encoder
         for row in data:
-            row['text'] = torch.tensor(text_encoder.encode(row['text']).data)
+            row['text'] = text_encoder.encode(row['text'])
 
         if use_multiprocessing:
             # Preprocess audio with multi-threading
