@@ -1,4 +1,3 @@
-import dill
 import logging
 import os
 import platform
@@ -12,27 +11,10 @@ import torch
 
 from src.utils.configurable import log_config
 from src.utils.configurable import log_arguments
+from src.utils.utils import save
+from src.utils.utils import load
 
 logger = logging.getLogger(__name__)
-
-
-def load(path, device=-1):
-    """ Using ``torch.load`` and ``dill`` load an object from ``path`` onto ``self.device``.
-
-    Args:
-        path (str): Filename to load in ``self.directory``
-
-    Returns:
-        (any): Object loaded.
-    """
-    logger.info('Loading: %s' % (path,))
-
-    def remap(storage, loc):
-        if 'cuda' in loc and device >= 0:
-            return storage.cuda(device=device)
-        return storage
-
-    return torch.load(path, map_location=remap, pickle_module=dill)
 
 
 class _CopyStream(object):
@@ -89,6 +71,14 @@ class ExperimentContextManager(object):
         self.set_seed(seed)
 
     def load(self, path):
+        """ Using ``torch.load`` and ``dill`` load an object from ``path`` onto ``self.device``.
+
+        Args:
+            path (str): Filename to load in ``self.directory``
+
+        Returns:
+            (any): Object loaded.
+        """
         return load(os.path.join(self.directory, path), device=self.device)
 
     def save(self, path, data):
@@ -101,10 +91,9 @@ class ExperimentContextManager(object):
         Returns:
             (str): Full path saved too
         """
-        logger.info('Saving: %s' % (path,))
-        full_path = os.path.join(self.directory, path)
-        torch.save(data, full_path, pickle_module=dill)
-        return full_path
+        path = os.path.join(self.directory, path)
+        save(path, data, device=self.device)
+        return path
 
     def epoch(self, epoch):
         """ Updates the context for the epoch.

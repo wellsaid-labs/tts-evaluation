@@ -57,8 +57,3 @@ def test_loss_epoch():
     criterion(input_, target)
 
     assert criterion.epoch() == (8 + 4) / (2 + 3)
-
-
-def test_loss_get_attr():
-    criterion = Loss(MSELoss)
-    assert hasattr(criterion, 'cuda')

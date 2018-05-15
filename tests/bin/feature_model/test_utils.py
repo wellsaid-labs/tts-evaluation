@@ -30,11 +30,11 @@ def test_data_iterator():
         }]
         batch_size = 1
 
-        iterator = DataIterator(context, dataset, batch_size)
+        iterator = DataIterator(context.device, dataset, batch_size)
         assert len(iterator) == 2
         next(iter(iterator))
 
-        iterator = DataIterator(context, dataset, batch_size, trial_run=True)
+        iterator = DataIterator(context.device, dataset, batch_size, trial_run=True)
         assert len(iterator) == 1
         next(iter(iterator))
 
@@ -42,36 +42,49 @@ def test_data_iterator():
 @mock.patch('src.bin.feature_model._utils.lj_speech_dataset')
 def test_load_data(lj_speech_dataset_mock):
     cache = 'tests/_test_data/lj_speech.pt'
+    signal_cache = 'tests/_test_data/lj_speech_signals.pt'
 
     with ExperimentContextManager(label='test_load_data') as context:
         lj_speech_dataset_mock.return_value = Dataset([{
             'text': 'Printing, in the only sense with which we are at present concerned,...',
-            'wav': 'data/LJSpeech-1.1/wavs/LJ001-0001.wav'
+            'wav': 'tests/_test_data/LJ001-0001.wav'
         }, {
             'text': 'in being comparatively modern.',
-            'wav': 'data/LJSpeech-1.1/wavs/LJ001-0002.wav'
+            'wav': 'tests/_test_data/LJ001-0002.wav'
         }])
-        train, dev, encoder = load_data(context, cache, splits=(0.5, 0.5))
+        train, dev, encoder = load_data(
+            context,
+            cache=cache,
+            signal_cache=signal_cache,
+            splits=(0.5, 0.5),
+            load_signal=True,
+            use_multiprocessing=False)
         assert os.path.isfile(cache)
         assert len(train) == 1
         assert len(dev) == 1
 
         assert train[0]['stop_token'].shape[0] == train[0]['log_mel_spectrogram'].shape[0]
-        assert train[0]['quantized_signal'].shape[0] % train[0]['log_mel_spectrogram'].shape[0] == 0
+        assert train[0]['signal'].shape[0] % train[0]['log_mel_spectrogram'].shape[0] == 0
 
         # Test Cache
-        train, dev, encoder = load_data(context, cache)
+        train, dev, encoder = load_data(
+            context,
+            cache=cache,
+            signal_cache=signal_cache,
+            load_signal=True,
+            use_multiprocessing=False)
         lj_speech_dataset_mock.assert_called_once()
         assert len(train) == 1
         assert len(dev) == 1
 
     # Clean up
     os.remove(cache)
+    os.remove(signal_cache)
     shutil.rmtree(context.directory)
 
 
 def test_load_save_checkpoint():
-    with ExperimentContextManager(label='test_load_data') as context:
+    with ExperimentContextManager(label='test_load_save_checkpoint') as context:
         model = FeatureModel(10)
         optimizer = Optimizer(
             torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
@@ -92,7 +105,7 @@ def test_load_save_checkpoint():
 @mock.patch('src.bin.feature_model._utils.log_mel_spectrogram_to_wav', return_value=None)
 def test_sample_spectrogram(log_mel_spectrogram_to_wav_mock, plot_spectrogram_mock):
     # Smoke test
-    sample_spectrogram(torch.FloatTensor(4, 4, 80), '')
+    sample_spectrogram(torch.FloatTensor(4, 4, 80), '', synthesize=True)
 
     plot_spectrogram_mock.assert_called_once()
     log_mel_spectrogram_to_wav_mock.assert_called_once()

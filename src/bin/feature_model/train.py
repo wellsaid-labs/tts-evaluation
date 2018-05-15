@@ -263,7 +263,7 @@ def main(checkpoint=None, dataset_cache='data/lj_speech.pt', epochs=1000,
     with ExperimentContextManager(label='feature_model') as context:
         checkpoint = load_checkpoint(checkpoint, context.device)
         text_encoder = None if checkpoint is None else checkpoint['text_encoder']
-        train, dev, text_encoder = load_data(context, dataset_cache, text_encoder=text_encoder)
+        train, dev, text_encoder = load_data(text_encoder=text_encoder)
 
         # Setup the trainer
         if checkpoint is None:

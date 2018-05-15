@@ -2,12 +2,15 @@ import logging
 import logging.config
 import os
 
+import dill
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 
 logger = logging.getLogger(__name__)
 
 # TODO: Plot stop token
+
 
 def get_root_path():
     """ Get the path to the root directory
@@ -71,3 +74,38 @@ def plot_attention(alignment, filename, title='Attention Alignment'):
     plt.tight_layout()
     plt.savefig(filename, format='png')
     plt.close()
+
+
+def load(path, device=-1):
+    """ Using ``torch.load`` and ``dill`` load an object from ``path`` onto ``self.device``.
+
+    Args:
+        path (str): Filename to load in ``self.directory``
+
+    Returns:
+        (any): Object loaded.
+    """
+    # TODO: Rewrite ^
+    logger.info('Loading: %s' % (path,))
+
+    def remap(storage, loc):
+        if 'cuda' in loc and device >= 0:
+            return storage.cuda(device=device)
+        return storage
+
+    return torch.load(path, map_location=remap, pickle_module=dill)
+
+
+def save(path, data, device=-1):
+    """ Using ``torch.save`` and ``dill`` save an object to ``path`` in ``self.directory``
+
+    Args:
+        path (str): Filename to save to in ``self.directory``
+        data (any): Data to save into file.
+
+    Returns:
+        (str): Full path saved too
+    """
+    # TODO: Rewrite ^
+    logger.info('Saving: %s' % (path,))
+    torch.save(data, path, pickle_module=dill)
