@@ -97,7 +97,6 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         "-nm",
         "--no_multiprocessing",
-        type=bool,
         default=False,
         action='store_true',
         help="Sometimes multiprocessing breaks due to various reasons, this bool lets you turn off "
