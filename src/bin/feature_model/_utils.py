@@ -102,6 +102,10 @@ def _preprocess_audio(row):
         row (dict {'wav', 'text'}): Example with a corresponding wav filename and text snippet.
     """
     signal, sample_rate = read_audio(row['wav'])
+    if not np.amax(signal) <= 1:
+        print("%s failed invariant: %f <= 1" % (row['wav'], np.amax(signal)))
+    if not np.amin(signal) >= -1:
+        print("%s failed invariant: %f >= -1" % (row['wav'], np.amin(signal)))
     quantized_signal = mu_law_quantize(signal)
 
     # Trim silence
@@ -116,7 +120,8 @@ def _preprocess_audio(row):
 
     # Right pad so: ``log_mel_spectrogram.shape[0] % quantized_signal.shape[0] == frame_hop``
     # We property is required for Wavenet.
-    quantized_signal = np.concatenate((quantized_signal, np.zeros((right_pad))))
+    padding_index = mu_law_quantize(0)
+    quantized_signal = np.concatenate((quantized_signal, np.full((right_pad), padding_index)))
     row.update({
         'log_mel_spectrogram': log_mel_spectrogram,
         'stop_token': stop_token,
@@ -180,7 +185,7 @@ def load_data(device=-1,
             data = list(tqdm(pool.imap(_preprocess_audio, data), total=len(data)))
             pool.close()
         else:
-            data = [_preprocess_audio(r) for r in data]
+            data = [_preprocess_audio(r) for r in tqdm(data)]
 
         train, dev = split_dataset(data, splits)
         # Save cache

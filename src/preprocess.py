@@ -38,16 +38,11 @@ def mu_law_quantize(x, mu=255):
         >>> from scipy.io import wavfile
         >>> import pysptk
         >>> import numpy as np
-        >>> from nnmnkwii import preprocessing as P
         >>> fs, x = wavfile.read(pysptk.util.example_audio_file())
         >>> x = (x / 32768.0).astype(np.float32)
-        >>> y = P.mulaw_quantize(x)
+        >>> y = mulaw_quantize(x)
         >>> print(y.min(), y.max(), y.dtype)
         15 246 int64
-    See also:
-        :func:`nnmnkwii.preprocessing.mulaw`
-        :func:`nnmnkwii.preprocessing.inv_mulaw`
-        :func:`nnmnkwii.preprocessing.inv_mulaw_quantize`
     """
     y = mu_law(x, mu=mu)
     # scale [-1, 1] to [0, mu]
@@ -65,10 +60,7 @@ def mu_law(x, mu=255):
         mu (number): Compression parameter ``μ``.
     Returns:
         array-like: Compressed signal ([-1, 1])
-    See also:
-        :func:`nnmnkwii.preprocessing.inv_mulaw`
-        :func:`nnmnkwii.preprocessing.mulaw_quantize`
-        :func:`nnmnkwii.preprocessing.inv_mulaw_quantize`
+
     .. [1] Brokish, Charles W., and Michele Lewis. "A-law and mu-law companding
         implementations using the tms320c54x." SPRA163 (1997).
     """
@@ -99,7 +91,7 @@ def find_silence(quantized, silence_threshold=15):
 
 
 @configurable
-def read_audio(filename, sample_rate=None):
+def read_audio(filename, sample_rate=None, normalize=True):
     """ Read an audio file into a mono signal.
 
     Tacotron 1 Reference:
@@ -111,19 +103,30 @@ def read_audio(filename, sample_rate=None):
           sampling rate.
         * ``tests/test_spectrogram.py#test_librosa_tf_decode_wav`` tests that ``librosa`` and ``tf``
           decode outputs are similar.
+        * Scaling is done because resampling can push the Waveform past [-1, 1] limits.
 
     References:
         * WAV specs:
           http://www-mmsp.ece.mcgill.ca/Documents/AudioFormats/WAVE/WAVE.html
+        * Resampy the Librosa resampler.
+          https://github.com/bmcfee/resampy
+        * All Python audio resamplers:
+          https://livingthing.danmackinlay.name/python_audio.html
+        * Issue on scaling amplitude:
+          https://github.com/bmcfee/resampy/issues/61
 
     Args:
         filename (str): Name of the file to load.
         sample_rate (int or None): Target sample rate or None to keep native sample rate.
+        normalize (bool): If ``True``, rescale audio from [1, -1].
     Returns:
         numpy.ndarray [shape=(n,)]: Audio time series.
         int: Sample rate of the file.
     """
-    return librosa.core.load(filename, sr=sample_rate, mono=True)
+    signal, sample_rate = librosa.core.load(filename, sr=sample_rate, mono=True)
+    if normalize:
+        signal = signal / np.abs(signal).max()  # Normalize to [1, -1]
+    return signal, sample_rate
 
 
 def _milliseconds_to_samples(milliseconds, sample_rate):
@@ -142,8 +145,8 @@ def _milliseconds_to_samples(milliseconds, sample_rate):
 @configurable
 def wav_to_log_mel_spectrogram(signal,
                                sample_rate,
-                               frame_size=50,
-                               frame_hop=12.5,
+                               frame_size=1200,
+                               frame_hop=300,
                                window_function=functools.partial(
                                    window_ops.hann_window, periodic=True),
                                num_mel_bins=80,
@@ -186,8 +189,8 @@ def wav_to_log_mel_spectrogram(signal,
         signal (np.array [signal_length]): A batch of float32 time-domain signals in the range
             [-1, 1].
         sample_rate (int): Sample rate for the signal.
-        frame_size (float): The frame size in milliseconds.
-        frame_hop (float): The frame hop in milliseconds.
+        frame_size (float): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
+        frame_hop (float): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
         window_function (callable): A callable that takes a window length and a dtype keyword
             argument and returns a [window_length] Tensor of samples in the provided datatype. If
             set to None, no windowing is used.
@@ -208,12 +211,6 @@ def wav_to_log_mel_spectrogram(signal,
     # A batch of float32 time-domain signal in the range [-1, 1] with shape
     # [1, signal_length].
     signals = tf.convert_to_tensor(signals)
-
-    # SOURCE (Tacotron 2):
-    # As in Tacotron, mel spectrograms are computed through a shorttime Fourier transform (STFT)
-    # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
-    frame_size = _milliseconds_to_samples(frame_size, sample_rate)
-    frame_hop = _milliseconds_to_samples(frame_hop, sample_rate)
 
     # Simplifies padding mathematics.
     assert frame_size % frame_hop == 0
@@ -342,8 +339,8 @@ def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, frame_size, sample_
 def log_mel_spectrogram_to_wav(log_mel_spectrogram,
                                filename,
                                sample_rate,
-                               frame_size=50,
-                               frame_hop=12.5,
+                               frame_size=1200,
+                               frame_hop=300,
                                window_function=functools.partial(
                                    window_ops.hann_window, periodic=True),
                                lower_hertz=125,
@@ -394,8 +391,6 @@ def log_mel_spectrogram_to_wav(log_mel_spectrogram,
     # Complex operations are not defined for GPU
     with tf.device('/cpu'):
         # Convert hertz to more relevant units like samples
-        frame_size = _milliseconds_to_samples(frame_size, sample_rate)
-        frame_hop = _milliseconds_to_samples(frame_hop, sample_rate)
         spectrogram = _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, frame_size,
                                                           sample_rate, lower_hertz, upper_hertz)
         spectrograms = tf.expand_dims(spectrogram, 0)
