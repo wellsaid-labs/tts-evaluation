@@ -158,7 +158,8 @@ class Trainer():  # pragma: no cover
         dataset = self.train_dataset if train else self.dev_dataset
         max_batch_size = self.train_batch_size if train else self.dev_batch_size
         data_iterator = tqdm(
-            DataIterator(self.context, dataset, max_batch_size, train=train, trial_run=trial_run),
+            DataIterator(
+                self.context.device, dataset, max_batch_size, train=train, trial_run=trial_run),
             desc=label)
         for (gold_texts, gold_frames, gold_frame_lengths, gold_stop_tokens) in data_iterator:
             pre_frames_loss, post_frames_loss, stop_token_loss = self.run_step(
@@ -223,17 +224,18 @@ class Trainer():  # pragma: no cover
                                    predicted_stop_tokens)
 
         if train:
+            self.optimizer.zero_grad()
             sum(losses).backward()
             self.optimizer.step()
             self.scheduler.step()
             self.step += 1
-            self.optimizer.zero_grad()
 
         if sample:
             label = 'train' if train else 'dev'
             predicted_alignments = predicted_alignments.detach()
             predicted_post_frames = predicted_post_frames.detach()
 
+            # TODO: unique filename if multiple times during dev
             def build_filename(base):
                 return os.path.join(self.context.epoch_directory,
                                     label + '_' + str(self.step) + '_' + base)
