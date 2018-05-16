@@ -162,7 +162,7 @@ class Trainer():  # pragma: no cover
                 self.context.device, dataset, max_batch_size, train=train, trial_run=trial_run),
             desc=label)
         for (gold_texts, gold_frames, gold_frame_lengths, gold_stop_tokens) in data_iterator:
-            pre_frames_loss, post_frames_loss, stop_token_loss = self.run_step(
+            self.run_step(
                 gold_texts,
                 gold_frames,
                 gold_frame_lengths,
@@ -246,8 +246,6 @@ class Trainer():  # pragma: no cover
             sample_attention(predicted_alignments, build_filename('alignment'), item)
             sample_spectrogram(gold_frames, build_filename('gold_spectrogram'), item)
             sample_spectrogram(predicted_post_frames, build_filename('predicted_spectrogram'), item)
-
-        return tuple(t.item() for t in losses)
 
 
 def main(checkpoint=None, dataset_cache='data/lj_speech.pt', epochs=1000):  # pragma: no cover
