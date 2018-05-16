@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 @configurable
-def mu_law_quantize(x, mu=256):
+def mu_law_quantize(x, mu=255):
     """Mu-Law companding + quantize
     Args:
         x (array-like): Input signal. Each value of input signal must be in
@@ -54,7 +54,7 @@ def mu_law_quantize(x, mu=256):
     return ((y + 1) / 2 * mu).astype(np.int)
 
 
-def mu_law(x, mu=256):
+def mu_law(x, mu=255):
     """Mu-Law companding
     Method described in paper [1]_.
     .. math::

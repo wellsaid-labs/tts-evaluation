@@ -85,7 +85,7 @@ def load(path, device=-1):
     Returns:
         (any): Object loaded.
     """
-    # TODO: Rewrite ^
+    # TODO: Rewrite ^ and rename this function
     logger.info('Loading: %s' % (path,))
 
     def remap(storage, loc):

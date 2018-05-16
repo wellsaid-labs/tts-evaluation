@@ -102,7 +102,7 @@ def set_hparams():
                 # SOURCE (Wavenet):
                 # To make this more tractable, we first apply a µ-law companding transformation
                 # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
-                'mu_law_quantize.mu': 256,
+                'mu_law_quantize.mu': 255,
                 # Silence theshold was discovered in the notebook: ``Silence Threshold.ipynb``
                 'find_silence.silence_threshold': 15,
                 'read_audio.sample_rate': sample_rate,
