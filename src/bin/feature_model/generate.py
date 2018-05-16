@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def main(checkpoint, destination='data/vocoder/'):  # pragma: no cover
+def main(checkpoint, destination='data/vocoder/', use_multiprocessing=True):  # pragma: no cover
     """ Main module.
 
     Notes:
@@ -35,6 +35,7 @@ def main(checkpoint, destination='data/vocoder/'):  # pragma: no cover
     Args:
         checkpoint (str): Checkpoint to load used to generate.
         destination (str, optional): Directory to save generated files.
+        use_multiprocessing (bool, optional): If `True`, use multiple processes to preprocess data.
     """
     set_hparams()
 
@@ -45,7 +46,8 @@ def main(checkpoint, destination='data/vocoder/'):  # pragma: no cover
     checkpoint = load_checkpoint(checkpoint, device)
     text_encoder = None if checkpoint is None else checkpoint['text_encoder']
     model = checkpoint['model']
-    train, dev, text_encoder = load_data(text_encoder=text_encoder, load_signal=True)
+    train, dev, text_encoder = load_data(
+        text_encoder=text_encoder, load_signal=True, use_multiprocessing=use_multiprocessing)
     data = train + dev
     metadata = open(os.path.join(destination, 'train.txt'), 'w+')
     batch_size = 128
@@ -92,5 +94,13 @@ if __name__ == '__main__':  # pragma: no cover
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--checkpoint", type=str, default=None, help="load a checkpoint")
+    parser.add_argument(
+        "-nm",
+        "--no_multiprocessing",
+        type=bool,
+        default=False,
+        action='store_true',
+        help="Sometimes multiprocessing breaks due to various reasons, this bool lets you turn off "
+        + "multiprocessing.")
     args = parser.parse_args()
-    main(checkpoint=args.checkpoint)
+    main(checkpoint=args.checkpoint, use_multiprocessing=not args.no_multiprocessing)
