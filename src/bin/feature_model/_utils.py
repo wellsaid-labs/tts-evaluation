@@ -5,7 +5,7 @@ import logging
 import os
 import random
 
-from multiprocessing import Pool
+from torch.multiprocessing import Pool
 from torch.utils.data import DataLoader
 from torchnlp.samplers import BucketBatchSampler
 from torchnlp.text_encoders import CharacterEncoder
