@@ -16,6 +16,8 @@ from src.utils.utils import load
 
 logger = logging.getLogger(__name__)
 
+# TODO: Checkpoint before crash, possibly restart.
+
 
 class _CopyStream(object):
     """ Wrapper that copies a stream to a file without affecting the stream.

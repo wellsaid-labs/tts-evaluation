@@ -8,7 +8,6 @@ from tensorflow.contrib.framework.python.ops import audio_ops
 from src.preprocess import read_audio
 from src.preprocess import wav_to_log_mel_spectrogram
 from src.preprocess import log_mel_spectrogram_to_wav
-from src.preprocess import _milliseconds_to_samples
 from src.preprocess import mu_law_quantize
 
 
@@ -32,22 +31,31 @@ def test_librosa_tf_decode_wav():
     audio_binary = tf.read_file(wav_filename)
     tf_audio, _ = audio_ops.decode_wav(audio_binary)
 
-    audio, _ = read_audio(wav_filename, sample_rate=None)
+    audio, _ = read_audio(wav_filename, sample_rate=None, normalize=False)
 
     np.testing.assert_array_equal(tf_audio[:, 0], audio)
+
+
+def test_read_audio_normalize():
+    """ Resampling can mess with amplitude """
+    wav_filename = 'tests/_test_data/LJ044-0089.wav'
+    audio, _ = read_audio(wav_filename, sample_rate=24000, normalize=False)
+    assert np.abs(audio).max() > 1
+
+    audio, _ = read_audio(wav_filename, sample_rate=24000, normalize=True)
+    assert np.abs(audio).max() == 1
 
 
 def test_wav_to_log_mel_spectrogram_smoke():
     """ Smoke test to ensure everything runs.
     """
-    frame_size = 50
-    frame_hop = 12.5
+    frame_size = 1200
+    frame_hop = 300
     num_mel_bins = 80
     wav_filename = 'tests/_test_data/lj_speech.wav'
     signal, sample_rate = read_audio(wav_filename)
     log_mel_spectrogram, right_pad = wav_to_log_mel_spectrogram(
         signal, sample_rate, frame_size=frame_size, frame_hop=frame_hop, num_mel_bins=num_mel_bins)
-    frame_hop = _milliseconds_to_samples(frame_hop, sample_rate)
 
     assert log_mel_spectrogram.shape == (607, num_mel_bins)
     assert signal.shape == (182015,)

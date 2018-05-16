@@ -60,8 +60,8 @@ def set_hparams():
         # SOURCE (Tacotron 2):
         # mel spectrograms are computed through a shorttime Fourier transform (STFT)
         # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
-        'frame_size': 50,
-        'frame_hop': 12.5,
+        'frame_size': 1200,  # 50ms * 24,000 / 1000 == 1200
+        'frame_hop': 300,  # 12.5ms * 24,000 / 1000 == 300
         'window_function': functools.partial(window_ops.hann_window, periodic=True),
         # SOURCE (Tacotron 2):
         # We transform the STFT magnitude to the mel scale using an 80 channel mel
@@ -105,7 +105,10 @@ def set_hparams():
                 'mu_law_quantize.mu': 255,
                 # Silence theshold was discovered in the notebook: ``Silence Threshold.ipynb``
                 'find_silence.silence_threshold': 15,
-                'read_audio.sample_rate': sample_rate,
+                'read_audio': {
+                    'sample_rate': sample_rate,
+                    'normalize': True,
+                },
                 'wav_to_log_mel_spectrogram': wav_to_log_mel_spectrogram,
                 'log_mel_spectrogram_to_wav': {
                     'frame_size': wav_to_log_mel_spectrogram['frame_size'],
