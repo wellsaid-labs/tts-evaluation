@@ -161,7 +161,7 @@ class Trainer():  # pragma: no cover
             DataIterator(
                 self.context.device, dataset, max_batch_size, train=train, trial_run=trial_run),
             desc=label)
-        for (gold_texts, gold_frames, gold_frame_lengths, gold_stop_tokens) in data_iterator:
+        for (gold_texts, _, gold_frames, gold_frame_lengths, gold_stop_tokens) in data_iterator:
             self.run_step(
                 gold_texts,
                 gold_frames,

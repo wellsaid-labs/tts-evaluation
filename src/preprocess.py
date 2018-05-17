@@ -80,11 +80,11 @@ def find_silence(quantized, silence_threshold=15):
         end (int): Start of silence at the end of the signal
     """
     for start in range(quantized.size):
-        if abs(quantized[start] - 128) > silence_threshold:
+        if abs(quantized[start] - mu_law_quantize(0)) > silence_threshold:
             break
 
     for end in range(quantized.size - 1, 1, -1):
-        if abs(quantized[end] - 128) > silence_threshold:
+        if abs(quantized[end] - mu_law_quantize(0)) > silence_threshold:
             break
 
     return start, end

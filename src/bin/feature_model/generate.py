@@ -17,8 +17,8 @@ import numpy as np
 from src.bin.feature_model._utils import DataIterator
 from src.bin.feature_model._utils import load_checkpoint
 from src.bin.feature_model._utils import load_data
-from src.utils import get_total_parameters
 from src.hparams import set_hparams
+from src.utils import get_total_parameters
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ def main(checkpoint, destination='data/vocoder/', use_multiprocessing=True):  # 
     model.train(mode=False)
 
     data_iterator = tqdm(DataIterator(device, data, batch_size, train=False, load_signal=True))
-    for i, (gold_texts, gold_frames, gold_frame_lengths, _,
+    for i, (gold_texts, gold_text_lengths, gold_frames, gold_frame_lengths, _,
             gold_signals) in enumerate(data_iterator):
         _, batch_predicted_frames, _, _ = model(gold_texts, ground_truth_frames=gold_frames)
         # [num_frames, batch_size, frame_channels] → [batch_size, num_tokens, frame_channels]
@@ -71,10 +71,9 @@ def main(checkpoint, destination='data/vocoder/', use_multiprocessing=True):  # 
 
         # Save predictions
         for j in range(batch_predicted_frames.shape[0]):
-            length = gold_frame_lengths[j]
-            predicted_frames = batch_predicted_frames[j][:length]  # Cutoff padding
+            predicted_frames = batch_predicted_frames[j][:gold_frame_lengths[j]]  # Cutoff padding
             signal = gold_signals[j].cpu().numpy()
-            text = text_encoder.decode(gold_texts[j])
+            text = text_encoder.decode(gold_texts[j][:gold_text_lengths[j]])
             assert signal.shape[0] % predicted_frames.shape[0] == 0
 
             audio_filename = os.path.abspath(

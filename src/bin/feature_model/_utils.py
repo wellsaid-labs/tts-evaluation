@@ -46,6 +46,7 @@ class DataIterator(object):
         (torch.utils.data.DataLoader) Single-process or multi-process iterators over the dataset.
         Iterator includes variables:
             text_batch (torch.LongTensor [batch_size, num_tokens])
+            text_length_batch (list): List of lengths for each sentence.
             frames_batch (torch.LongTensor [num_frames, batch_size, frame_channels])
             frame_length_batch (list): List of lengths for each spectrogram.
             stop_token_batch (torch.LongTensor [num_frames, batch_size])
@@ -73,11 +74,15 @@ class DataIterator(object):
 
     def _collate_fn(self, batch):
         """ List of tensors to a batch variable """
-        text_batch, _ = pad_batch([row['text'] for row in batch])
+        text_batch, text_length_batch = pad_batch([row['text'] for row in batch])
         frame_batch, frame_length_batch = pad_batch([row['log_mel_spectrogram'] for row in batch])
         stop_token_batch, _ = pad_batch([row['stop_token'] for row in batch])
         transpose = lambda b: b.transpose_(0, 1).contiguous()
-        ret = [text_batch, transpose(frame_batch), frame_length_batch, transpose(stop_token_batch)]
+        ret = [
+            text_batch, text_length_batch,
+            transpose(frame_batch), frame_length_batch,
+            transpose(stop_token_batch)
+        ]
         if self.load_signal:
             signal_batch = [row['signal'] for row in batch]
             ret.append(signal_batch)
@@ -102,10 +107,6 @@ def _preprocess_audio(row):
         row (dict {'wav', 'text'}): Example with a corresponding wav filename and text snippet.
     """
     signal, sample_rate = read_audio(row['wav'])
-    if not np.amax(signal) <= 1:
-        print("%s failed invariant: %f <= 1" % (row['wav'], np.amax(signal)))
-    if not np.amin(signal) >= -1:
-        print("%s failed invariant: %f >= -1" % (row['wav'], np.amin(signal)))
     quantized_signal = mu_law_quantize(signal)
 
     # Trim silence
@@ -121,6 +122,7 @@ def _preprocess_audio(row):
     # Right pad so: ``log_mel_spectrogram.shape[0] % quantized_signal.shape[0] == frame_hop``
     # We property is required for Wavenet.
     padding_index = mu_law_quantize(0)
+    assert quantized_signal.shape == signal.shape
     quantized_signal = np.concatenate((quantized_signal, np.full((right_pad), padding_index)))
     row.update({
         'log_mel_spectrogram': log_mel_spectrogram,
