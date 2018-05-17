@@ -98,7 +98,7 @@ if __name__ == '__main__':  # pragma: no cover
         "--no_multiprocessing",
         default=False,
         action='store_true',
-        help="Sometimes multiprocessing breaks due to various reasons, this bool lets you turn off "
-        + "multiprocessing.")
+        help="Sometimes multiprocessing breaks due to various reasons, this bool lets you turn " +
+        "off multiprocessing.")
     args = parser.parse_args()
     main(checkpoint=args.checkpoint, use_multiprocessing=not args.no_multiprocessing)
