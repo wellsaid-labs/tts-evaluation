@@ -212,29 +212,21 @@ def wav_to_log_mel_spectrogram(signal,
     # [1, signal_length].
     signals = tf.convert_to_tensor(signals)
 
-    # Simplifies padding mathematics.
-    assert frame_size % frame_hop == 0
+    # LEARN MORE: (Tensorflow ``pad_end``)
+    # https://github.com/tensorflow/tensorflow/blob/ed48c1dffcccf6c547e6355562f7bcca64967200/tensorflow/contrib/signal/python/ops/shape_ops.py#L133
 
-    # NOTE: Tacotron 2 authors confirmed they padded the signal over GChat to fullfil requirements
-    # for Wavenet.
+    # Pad the signal by up to frame_size samples based on how many samples are remaining starting
+    # from the last frame.
+    # FYI: Originally, the number of spectrogram frames was
+    # ``(signals.shape[1] - frame_size + frame_hop) // frame_hop``.
+    # Following padding the number of spectrogram frames is
+    # ``math.ceil(signals.shape[1] / frame_hop)`` a tad bit larger than the original signal.
+    num_frames = math.ceil(signals.shape[1].value / frame_hop)
+    remainder = frame_hop * (num_frames - 1) - signals.shape[1].value
+    end_pad = tf.zeros([1, frame_size + remainder])
+    signals = tf.concat([signals, end_pad], 1)
+    assert signals.shape[1].value % frame_hop == 0
 
-    # Specotrogram shape ``[1, (signals.shape[1] - frame_size + frame_hop) // frame_hop]``.
-    # We need the shape to be divisable by ``signals.shape[1] % frame_hop == 0`` for Wavenet
-    # upsampling. First, we deal with ``- frame_size + frame_hop``:
-    front_pad = tf.zeros([1, frame_size - frame_hop])
-
-    # Next, we deal with ``// frame_hop`` (fyi ``//`` is floor division):
-    remainder = (signals.shape[1] + frame_size - frame_hop) % frame_hop
-    remainder = (frame_hop - remainder)
-    right_pad = remainder
-    end_pad = tf.zeros([1, remainder])
-
-    signals = tf.concat([front_pad, signals, end_pad], 1)
-    assert signals.shape[1] % frame_hop == 0
-
-    # NOTE: Zero padding affects the ``stft`` for the particular frames it's applied. We apply it
-    # consistently at the beginning ``frame_size - frame_hop`` but inconsistently at the end
-    # ``remainder``; therefore, it may be useful to mask the loss for Wavenet.
     spectrograms = tf.contrib.signal.stft(
         signals,
         frame_length=frame_size,
@@ -242,13 +234,10 @@ def wav_to_log_mel_spectrogram(signal,
         window_fn=window_function,
     )
 
-    # Finally, we need ``spectrograms.shape[1] * frame_hop == signals.shape[1]``. At this point:
-    # ``spectrograms.shape[1] = (signals.shape[1] - frame_size + frame_hop) / frame_hop``
-    # ``(signals.shape[1] - frame_size + frame_hop) == signals.shape[1]``
-    # The ``signals.shape[1]`` is ``frame_size - frame_hop`` too big; therefore, we cut out the
-    # padding from before:
-    signals = signals[:, (frame_size - frame_hop):]
-    assert spectrograms.shape[1] * frame_hop == signals.shape[1]
+    assert spectrograms.shape[1].value == num_frames
+    # Return number of padding needed to pad signal such that
+    # ``spectrograms.shape[1] * num_frames == signals.shape[1]``
+    ret_pad = frame_hop + remainder
 
     # SOURCE (Tacotron 2):
     # "STFT magnitude"
@@ -275,7 +264,7 @@ def wav_to_log_mel_spectrogram(signal,
     # followed by log dynamic range compression.
     log_mel_spectrograms = tf.log(mel_spectrograms)
 
-    return log_mel_spectrograms[0].numpy(), right_pad
+    return log_mel_spectrograms[0].numpy(), ret_pad
 
 
 # INSPIRED BY:
