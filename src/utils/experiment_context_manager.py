@@ -118,6 +118,7 @@ class ExperimentContextManager(object):
         self.checkpoints_directory = os.path.join(self.directory, 'checkpoints')
         os.makedirs(self.checkpoints_directory)
 
+    def _tensorboard(self):
         # Setup tensorboard
         log_dir = os.path.join(self.directory, 'tensorboard')
         self.tensorboard = SummaryWriter(log_dir=log_dir)
@@ -170,6 +171,8 @@ class ExperimentContextManager(object):
         logger.info('Label: %s', self.label)
         logger.info('Device: %s', self.device)
         logger.info('Seed: %s', self.seed)
+
+        self._tensorboard()
 
         # Set the hyperparameters with configurable
         set_hparams()
