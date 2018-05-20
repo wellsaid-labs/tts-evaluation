@@ -1,7 +1,7 @@
-# Math
-tensorflow
-# NOTE: You may need to install tensorflow-gpu if you plan to use a GPU
+# Math Library
 numpy
+tensorflow # NOTE: You may need to install with CUDA support seperatly
+pytorch # NOTE: You may need to install with CUDA support seperatly
 
 # Image Library
 Pillow
@@ -14,8 +14,9 @@ unidecode
 # Audio Library
 librosa
 
-# Visualization Lib
+# Visualization Library
 matplotlib
+tensorboardX
 
 # Testing
 pytest
@@ -31,6 +32,6 @@ mock
 yapf
 
 # Utils
-tqdm
-dill
-jupyter
+tqdm # Progress bar
+dill # Serialization Library (like pickle but better)
+jupyter # Notebooks

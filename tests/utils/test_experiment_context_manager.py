@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 @mock.patch('argparse.ArgumentParser.parse_args', return_value=argparse.Namespace(message='test'))
 def test_save_standard_streams(*_):
-    with ExperimentContextManager(label='test_save_standard_streams') as context:
+    with ExperimentContextManager(label='test_save_standard_streams', min_time=-1) as context:
         # Check if 'Test' gets captured
         print('Test')
         logger.info('Test Logger')
@@ -36,22 +36,10 @@ def test_save_standard_streams(*_):
 
 @mock.patch('argparse.ArgumentParser.parse_args', return_value=argparse.Namespace(message='test'))
 def test_experiment(*_):
-    with ExperimentContextManager(label='test_experiment', device=-1) as context:
+    with ExperimentContextManager(label='test_experiment', device=torch.device('cpu')) as context:
         # Check context directory was created
         assert os.path.isdir(context.directory)
+        assert os.path.isdir(context.checkpoint_directory)
 
-        # Check save and load into the directory work
-        path = context.save('test.pt', {'test': True})
-        data = context.load('test.pt')
-        assert data['test']
-
-        # Smoke test
-        context.maybe_cuda(torch.LongTensor([1, 2]))
-
-        context.epoch(0)
-        assert os.path.isdir(context.epoch_directory)
-
-        # Clean up
-        os.remove(path)
-
-    shutil.rmtree(context.directory)
+    # Automatically cleaned up
+    assert not os.path.isdir(context.directory)

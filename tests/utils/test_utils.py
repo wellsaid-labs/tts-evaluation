@@ -6,7 +6,7 @@ from torch.nn import functional
 import numpy as np
 
 from src.utils import split_dataset
-from src.utils import get_root_path
+from src.utils import ROOT_PATH
 from src.utils import get_total_parameters
 from src.utils import plot_attention
 
@@ -39,7 +39,7 @@ def test_get_total_parameters():
 
 
 def test_get_root_path():
-    root_path = get_root_path()
+    root_path = ROOT_PATH
     assert os.path.isfile(os.path.join(root_path, 'requirements.txt'))
 
 

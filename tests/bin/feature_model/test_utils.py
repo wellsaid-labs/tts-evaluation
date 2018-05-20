@@ -1,7 +1,6 @@
 import mock
 import os
 import torch
-import shutil
 
 from torchnlp.datasets import Dataset
 from torch.optim.lr_scheduler import StepLR
@@ -80,7 +79,6 @@ def test_load_data(lj_speech_dataset_mock):
     # Clean up
     os.remove(cache)
     os.remove(signal_cache)
-    shutil.rmtree(context.directory)
 
 
 def test_load_save_checkpoint():
@@ -98,7 +96,6 @@ def test_load_save_checkpoint():
 
     # Clean up
     os.remove(filename)
-    shutil.rmtree(context.directory)
 
 
 @mock.patch('src.bin.feature_model._utils.plot_spectrogram', return_value=None)

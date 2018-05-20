@@ -54,7 +54,6 @@ class Trainer():  # pragma: no cover
         scheduler (torch.optim.lr_scheduler): Scheduler used to adjust learning rate.
     """
 
-    # TODO: Allow batch size to be configurable per machine
     def __init__(self,
                  context,
                  train_dataset,
@@ -71,10 +70,11 @@ class Trainer():  # pragma: no cover
                  scheduler=DelayedExponentialLR):
 
         # Allow for ``class`` or a class instance
-        self.model = context.maybe_cuda(
-            model if isinstance(model, torch.nn.Module) else model(vocab_size))
+        self.model = model if isinstance(model, torch.nn.Module) else model(vocab_size)
+        self.model.to(context.device)
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else Optimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
+        self.optimizer.to(context.device)
         self.scheduler = scheduler if isinstance(scheduler, _LRScheduler) else scheduler(
             self.optimizer.optimizer)
 
@@ -92,9 +92,9 @@ class Trainer():  # pragma: no cover
         self.criterion_post_frames = Loss(criterion_frames)
         self.criterion_stop_token = Loss(criterion_stop_token)
 
-        self.context.maybe_cuda(self.criterion_pre_frames.criterion)
-        self.context.maybe_cuda(self.criterion_post_frames.criterion)
-        self.context.maybe_cuda(self.criterion_stop_token.criterion)
+        self.criterion_pre_frames.criterion.to(self.context.device)
+        self.criterion_post_frames.criterion.to(self.context.device)
+        self.criterion_stop_token.criterion.to(self.context.device)
 
         logger.info('Number of Training Rows: %d', len(self.train_dataset))
         logger.info('Number of Dev Rows: %d', len(self.dev_dataset))
@@ -125,7 +125,7 @@ class Trainer():  # pragma: no cover
         """
         mask = [torch.FloatTensor(length).fill_(1) for length in gold_frame_lengths]
         mask, _ = pad_batch(mask)  # [batch_size, num_frames]
-        mask = self.context.maybe_cuda(mask)
+        mask = mask.to(self.context.device)
         stop_token_mask = mask.transpose(0, 1)  # [num_frames, batch_size]
         frames_mask = stop_token_mask.unsqueeze(2)
         pre_frames_loss = self.criterion_pre_frames(
@@ -248,22 +248,32 @@ class Trainer():  # pragma: no cover
             sample_spectrogram(predicted_post_frames, build_filename('predicted_spectrogram'), item)
 
 
-def main(checkpoint=None, dataset_cache='data/lj_speech.pt', epochs=1000):  # pragma: no cover
-    # TODO: Add comments
-    # TDOO: Start checkpoint in the same folder as before
-    """ Main module if this file is invoked directly """
+def main(checkpoint=None, epochs=1000, train_batch_size=32):  # pragma: no cover
+    """ Main module that trains a the feature model saving checkpoints incrementally.
 
+    Args:
+        checkpoint (str, optional): If provided, path to a checkpoint to load.
+        epochs (int, optional): Number of epochs to run for.
+        train_batch_size (int, optional): Maximum training batch size.
+    """
     with ExperimentContextManager(label='feature_model') as context:
         checkpoint = load_checkpoint(checkpoint, context.device)
         text_encoder = None if checkpoint is None else checkpoint['text_encoder']
         train, dev, text_encoder = load_data(text_encoder=text_encoder, load_signal=False)
 
-        # Setup the trainer
-        if checkpoint is None:
-            trainer = Trainer(context, train, dev, text_encoder.vocab_size)
-        else:
+        # Set up trainer.
+        trainer_kwargs = {}
+        if checkpoint is not None:
             del checkpoint['text_encoder']
-            trainer = Trainer(context, train, dev, text_encoder.vocab_size, **checkpoint)
+            trainer_kwargs = checkpoint
+        trainer = Trainer(
+            context,
+            train,
+            dev,
+            text_encoder.vocab_size,
+            train_batch_size=train_batch_size,
+            dev_batch_size=train_batch_size * 4,
+            **trainer_kwargs)
 
         # Training Loop
         train_losses = []
@@ -303,6 +313,13 @@ if __name__ == '__main__':  # pragma: no cover
     tf.enable_eager_execution()
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--checkpoint", type=str, default=None, help="load a checkpoint")
+    parser.add_argument(
+        "-c", "--checkpoint", type=str, default=None, help="Load a checkpoint from a path")
+    parser.add_argument(
+        "-b",
+        "--train_batch_size",
+        type=int,
+        default=32,
+        help="Set the maximum training batch size; this figure depends on the GPU memory")
     args = parser.parse_args()
-    main(checkpoint=args.checkpoint)
+    main(checkpoint=args.checkpoint, train_batch_size=args.train_batch_size)

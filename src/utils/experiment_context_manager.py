@@ -4,19 +4,18 @@ import platform
 import random
 import sys
 import time
+import shutil
 
 import numpy as np
 import tensorflow as tf
 import torch
+from tensorboardX import SummaryWriter
 
 from src.utils.configurable import log_config
 from src.utils.configurable import log_arguments
-from src.utils.utils import save
-from src.utils.utils import load
+from src.utils.utils import torch_save
 
 logger = logging.getLogger(__name__)
-
-# TODO: Checkpoint before crash, possibly restart.
 
 
 class _CopyStream(object):
@@ -46,69 +45,47 @@ class _CopyStream(object):
 
 
 class ExperimentContextManager(object):
-    """ ExperimentContextManager is a context manager for PyTorch enabling reproducible experiments.
-
-    Side Effect:
-        In order to redirect stdout, resets the logging module and setups new handlers.
+    """ Context manager for seeding, organizing and recording experiments.
 
     Args:
-        label (str): Label, typically the model name, for a set of experiments.
-        directory (str): Top level directory for all experiments.
+        label (str, optional): Group a set of experiments with a label, typically the model name.
+        root (str, optional): Top level directory for all experiments.
+        seed (int, optional): The seed to use.
+        device (torch.Device, optional): Set a device. By default, we the device is:
+            ``torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')``
+        min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
+            files are deleted.
     """
 
-    def __init__(self, label='', top_level_directory='experiments/', seed=1212212, device=None):
+    def __init__(self,
+                 label='other',
+                 root='experiments/',
+                 seed=1212212,
+                 device=None,
+                 min_time=60 * 5):
         # Fix circular reference
-        from src.utils import get_root_path
+        from src.utils import ROOT_PATH
 
         self.label = label
-        self.root_path = get_root_path()
-        self.top_level_directory = os.path.normpath(
-            os.path.join(self.root_path, top_level_directory))
+        self.root = os.path.normpath(os.path.join(ROOT_PATH, root))
 
-        if device is None:
-            self.device = torch.cuda.current_device() if torch.cuda.is_available() else -1
-        else:
-            self.device = device
-        self.is_cuda = self.device >= 0
+        self.device = device
+        if self.device is None:
+            self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
+        self.is_cuda = self.device.type == 'cuda'
         self.set_seed(seed)
+        self.min_time = min_time
+        self._start_time = time.time()
 
-    def load(self, path):
-        """ Using ``torch.load`` and ``dill`` load an object from ``path`` onto ``self.device``.
-
-        Args:
-            path (str): Filename to load in ``self.directory``
-
-        Returns:
-            (any): Object loaded.
-        """
-        return load(os.path.join(self.directory, path), device=self.device)
-
-    def save(self, path, data):
-        """ Using ``torch.save`` and ``dill`` save an object to ``path`` in ``self.directory``
+    def save_checkpoint(self, name, data):
+        """ Save checkpoint in checkpoint directory for this experiment.
 
         Args:
-            path (str): Filename to save to in ``self.directory``
-            data (any): Data to save into file.
-
-        Returns:
-            (str): Full path saved too
+            name (str): Filename of the checkpoints file.
+            data (any): Data to store for the checkpoint.
         """
-        path = os.path.join(self.directory, path)
-        save(path, data, device=self.device)
-        return path
-
-    def epoch(self, epoch):
-        """ Updates the context for the epoch.
-
-        Updates:
-            * Creates a directory ``self.epoch_directory`` to store epoch samples and a checkpoint.
-
-        Args:
-            epoch (int)
-        """
-        path = os.path.join(self.directory, 'epochs/%d' % (epoch,))
-        os.makedirs(path, exist_ok=True)
-        self.epoch_directory = path
+        torch_save(os.path.join(self.checkpoints_directory, name), data)
 
     def notify(self, title, text):
         """ Queue a desktop notification on a Linux or OSX machine.
@@ -140,15 +117,22 @@ class ExperimentContextManager(object):
         sys.stderr = _CopyStream(self.stderr_filename, sys.stderr)
 
     def _new_experiment_directory(self):
-        """ Create a experiment directory named with ``self.label`` and the current time.
+        """ Create a experiment directory with epochs, tensorboard and time organization.
 
         Returns:
             path (str): Path to the new experiment directory
         """
-        name = '%s.%s' % (self.label, time.strftime('%m_%d_%H:%M:%S', time.localtime()))
-        path = os.path.join(self.top_level_directory, name)
-        os.makedirs(path)
-        return path
+        run_day = time.strftime('%m_%d', time.localtime())
+        run_time = time.strftime('%H:%M:%S', time.localtime())
+        self.directory = os.path.join(self.root, self.label, run_day, run_time)
+        os.makedirs(self.directory)
+
+        # Make checkpoints directory
+        self.checkpoints_directory = os.path.join(self.directory, 'checkpoints')
+        os.makedirs(self.checkpoints_directory)
+
+        # Setup tensorboard
+        self.tensorboard = SummaryWriter(log_dir=os.path.join(self.directory, 'tensorboard'))
 
     def set_seed(self, seed):
         """ To ensure reproducibility, by seeding ``numpy``, ``random``, ``tf`` and ``torch``.
@@ -166,18 +150,6 @@ class ExperimentContextManager(object):
         torch.backends.cudnn.deterministic = True
         self.seed = seed
 
-    def maybe_cuda(self, any_, **kwargs):
-        """ Move ``any`` to CUDA iff ``self.is_cuda`` is True.
-
-        Args:
-            any_ (any): Any object that has ``cuda`` attribute.
-            **kwargs (dict): Other keyword arguments to pass to ``cuda`` callable.
-
-        Returns:
-            (any): Object after calling the ``cuda`` callable.
-        """
-        return any_.cuda(device=self.device, **kwargs) if self.is_cuda else any_
-
     def __enter__(self):
         """ Runs before the experiment context begins.
         """
@@ -189,7 +161,7 @@ class ExperimentContextManager(object):
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
         # Create a local directory to store logs, checkpoints, etc..
-        self.directory = self._new_experiment_directory()
+        self._new_experiment_directory()
 
         # Copy ``stdout`` and ``stderr`` to experiments folder
         self._copy_standard_streams()
@@ -207,7 +179,7 @@ class ExperimentContextManager(object):
         logger = logging.getLogger(__name__)
         logger.info('Experiment Folder: %s' % self.directory)
         logger.info('Label: %s', self.label)
-        logger.info('Device: %d', self.device)
+        logger.info('Device: %s', self.device)
         logger.info('Seed: %s', self.seed)
 
         # Set the hyperparameters with configurable
@@ -215,9 +187,6 @@ class ExperimentContextManager(object):
 
         # Log the hyperparameter configuration
         log_config()
-
-        # Create directory for first epoch
-        self.epoch(0)
 
         return self
 
@@ -237,4 +206,18 @@ class ExperimentContextManager(object):
 
         logging.getLogger().removeHandler(self._stream_handler)
 
-        self.notify('Experiment: %s' % os.path.basename(self.directory), 'Experiment has exited.')
+        elapsed_seconds = time.time() - self._start_time
+        if self.min_time is not None and elapsed_seconds < self.min_time:
+            shutil.rmtree(self.directory)
+
+            # Remove empty directories
+            for root, directories, files in os.walk(self.root):
+                for directory in directories:
+                    directory = os.path.join(root, directory)
+                    # Only works when the directory is empty
+                    try:
+                        os.rmdir(directory)
+                    except OSError:
+                        pass
+
+        self.notify('Experiment', 'Experiment has exited after %d seconds.' % (elapsed_seconds))

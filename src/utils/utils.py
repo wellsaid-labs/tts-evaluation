@@ -11,14 +11,8 @@ logger = logging.getLogger(__name__)
 
 # TODO: Plot stop token
 
-
-def get_root_path():
-    """ Get the path to the root directory
-
-    Returns (str):
-        Root directory path
-    """
-    return os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..')
+# Repository root path
+ROOT_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..')
 
 
 def get_total_parameters(model):
@@ -76,36 +70,54 @@ def plot_attention(alignment, filename, title='Attention Alignment'):
     plt.close()
 
 
-def load(path, device=-1):
+def plot_stop_token(stop_token, filename, title='Stop Token'):
+    """ Plot alignment of attention.
+
+    TODO: test this.
+
+    Args:
+        alignment (numpy.array([decoder_timestep])): Stop token probablity per decoder timestep.
+        filename (str): Location to save the file.
+        title (str, optional): Title of the plot.
+
+    Returns:
+        None
+    """
+    plt.style.use('ggplot')
+    plt.plot(list(range(len(stop_token))), stop_token, marker='.', linestyle='solid')
+    plt.title(title, y=1.1)
+    plt.ylabel('Probability')
+    plt.xlabel('Timestep')
+    plt.tight_layout()
+    plt.savefig(filename, format='png')
+    plt.close()
+
+
+def torch_load(path, device=torch.device('cpu')):
     """ Using ``torch.load`` and ``dill`` load an object from ``path`` onto ``self.device``.
 
     Args:
-        path (str): Filename to load in ``self.directory``
+        path (str): Filename to load.
 
     Returns:
         (any): Object loaded.
     """
-    # TODO: Rewrite ^ and rename this function
     logger.info('Loading: %s' % (path,))
 
     def remap(storage, loc):
-        if 'cuda' in loc and device >= 0:
-            return storage.cuda(device=device)
+        if 'cuda' in loc and device.type == 'cuda':
+            return storage.to(device=device)
         return storage
 
-    return torch.load(path, map_location=remap, pickle_module=dill)
+    torch.load(path, map_location=remap, pickle_module=dill)
 
 
-def save(path, data, device=-1):
-    """ Using ``torch.save`` and ``dill`` save an object to ``path`` in ``self.directory``
+def torch_save(path, data, device=torch.device('cpu')):
+    """ Using ``torch.save`` and ``dill`` save an object to ``path``.
 
     Args:
-        path (str): Filename to save to in ``self.directory``
+        path (str): Filename to save to.
         data (any): Data to save into file.
-
-    Returns:
-        (str): Full path saved too
     """
-    # TODO: Rewrite ^
     logger.info('Saving: %s' % (path,))
     torch.save(data, path, pickle_module=dill)

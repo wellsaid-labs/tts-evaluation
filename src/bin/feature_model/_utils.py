@@ -22,10 +22,10 @@ from src.preprocess import mu_law_quantize
 from src.preprocess import plot_spectrogram
 from src.preprocess import read_audio
 from src.preprocess import wav_to_log_mel_spectrogram
-from src.utils import get_root_path
-from src.utils import load
+from src.utils import ROOT_PATH
+from src.utils import torch_load
 from src.utils import plot_attention
-from src.utils import save
+from src.utils import torch_save
 from src.utils import split_dataset
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class DataIterator(object):
     """ Get a batch iterator over the ``dataset``.
 
     Args:
-        device (int, optional): Device onto which to load data.
+        device (torch.device, optional): Device onto which to load data.
         dataset (list): Dataset to iterate over.
         batch_size (int): Size of the batch for iteration.
         train (bool): If ``True``, the batch will store gradients.
@@ -132,13 +132,14 @@ def _preprocess_audio(row):
     return row
 
 
-def load_data(device=-1,
-              cache='data/cache.pt',
-              signal_cache='data/cache_signals.pt',
-              load_signal=False,
-              text_encoder=None,
-              splits=(0.8, 0.2),
-              use_multiprocessing=True):
+def load_data(
+        device=torch.device('cpu'),
+        cache='data/cache.pt',
+        signal_cache='data/cache_signals.pt',
+        load_signal=False,
+        text_encoder=None,
+        splits=(0.8, 0.2),
+        use_multiprocessing=True):
     """ Load the Linda Johnson (LJ) Speech dataset with spectrograms and encoded text.
 
     Notes:
@@ -146,7 +147,7 @@ def load_data(device=-1,
               footprint.
 
     Args:
-        device (int, optional): Device onto which to load data.
+        device (torch.device, optional): Device onto which to load data.
         cache (str, optional): Path to cache the processed dataset.
         signal_cache (str, optional): Path to cache signal in the processed dataset.
         load_signal (bool, optional): If `True`, load signal files.
@@ -161,13 +162,13 @@ def load_data(device=-1,
     """
     assert len(splits) == 2
 
-    cache = os.path.join(get_root_path(), cache)
-    signal_cache = os.path.join(get_root_path(), signal_cache)
+    cache = os.path.join(ROOT_PATH, cache)
+    signal_cache = os.path.join(ROOT_PATH, signal_cache)
 
     if os.path.isfile(cache) and os.path.isfile(signal_cache):  # Load cache
-        train, dev, text_encoder = load(cache, device)
+        train, dev, text_encoder = torch_load(cache, device)
         if load_signal:
-            train_signals, dev_signals = load(signal_cache, device)
+            train_signals, dev_signals = torch_load(signal_cache, device)
     else:  # Otherwise, preprocess dataset
         data = lj_speech_dataset()
         random.shuffle(data)
@@ -193,8 +194,8 @@ def load_data(device=-1,
         # Save cache
         train_signals = [r.pop('signal') for r in train]
         dev_signals = [r.pop('signal') for r in dev]
-        save(cache, (train, dev, text_encoder))
-        save(signal_cache, (train_signals, dev_signals))
+        torch_save(cache, (train, dev, text_encoder))
+        torch_save(signal_cache, (train_signals, dev_signals))
 
     if load_signal:
         # Combine signals and dataset together
@@ -207,7 +208,7 @@ def load_data(device=-1,
     return train, dev, text_encoder
 
 
-def load_checkpoint(checkpoint=None, device=-1):
+def load_checkpoint(checkpoint=None, device=torch.device('cpu')):
     """ Load a checkpoint.
 
     Args:
@@ -219,7 +220,7 @@ def load_checkpoint(checkpoint=None, device=-1):
     """
     # Load checkpoint
     if checkpoint is not None:
-        checkpoint = load(os.path.join(get_root_path(), checkpoint), device=device)
+        checkpoint = torch_load(os.path.join(ROOT_PATH, checkpoint), device=device)
         if 'model' in checkpoint:
             checkpoint['model'].apply(
                 lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
@@ -257,7 +258,7 @@ def save_checkpoint(context,
     if filename is None:
         filename = os.path.join(context.epoch_directory, 'checkpoint.pt')
 
-    context.save(
+    torch_save(
         filename, {
             'model': model,
             'optimizer': optimizer,

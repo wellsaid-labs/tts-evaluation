@@ -42,7 +42,7 @@ def main(checkpoint, destination='data/vocoder/', use_multiprocessing=True):  # 
     if not os.path.isdir(destination):
         os.makedirs(destination)
 
-    device = torch.cuda.current_device() if torch.cuda.is_available() else -1
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     checkpoint = load_checkpoint(checkpoint, device)
     text_encoder = None if checkpoint is None else checkpoint['text_encoder']
     model = checkpoint['model']
@@ -52,7 +52,7 @@ def main(checkpoint, destination='data/vocoder/', use_multiprocessing=True):  # 
     metadata = open(os.path.join(destination, 'train.txt'), 'w+')
     batch_size = 128
 
-    logger.info('Device: %d', device)
+    logger.info('Device: %s', device)
     logger.info('Number of Rows: %d', len(data))
     logger.info('Vocab Size: %d', text_encoder.vocab_size)
     logger.info('Batch Size: %d', batch_size)
