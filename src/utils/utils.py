@@ -9,8 +9,6 @@ import torch
 
 logger = logging.getLogger(__name__)
 
-# TODO: Plot stop token
-
 # Repository root path
 ROOT_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..')
 
@@ -44,19 +42,36 @@ def split_dataset(dataset, splits):
     return datasets
 
 
-def plot_attention(alignment, filename, title='Attention Alignment'):
+def figure_to_numpy_array(figure):
+    """ Turn a figure into an image array.
+
+    References:
+        * https://github.com/lanpa/tensorboard-pytorch/blob/master/examples/matplotlib_demo.py
+        * https://stackoverflow.com/questions/7821518/matplotlib-save-plot-to-numpy-array
+        * https://stackoverflow.com/questions/20051160/renderer-problems-using-matplotlib-from-within-a-script # noqa: E501
+
+    Args:
+        figure (matplotlib.figure): Figure with the plot.
+
+    Returns:
+        array (np.array [H, W, 3]): Numpy array representing the image of the figure.
+    """
+    figure.canvas.draw()
+    data = np.fromstring(figure.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    return data.reshape(figure.canvas.get_width_height()[::-1] + (3,))
+
+
+def plot_attention(alignment, title='Attention Alignment'):
     """ Plot alignment of attention.
 
     Args:
         alignment (numpy.array([decoder_timestep, encoder_timestep])): Attention alignment weights
             computed at every timestep of the decoder.
-        filename (str): Location to save the file.
         title (str, optional): Title of the plot.
 
     Returns:
-        None
+        figure (matplotlib.figure): Closed figure with the plot.
     """
-    assert '.png' in filename.lower(), "Filename saves in PNG format"
     alignment = np.transpose(alignment)
     plt.style.use('ggplot')
     figure, axis = plt.subplots()
@@ -65,32 +80,59 @@ def plot_attention(alignment, filename, title='Attention Alignment'):
     plt.xlabel('Decoder timestep')
     plt.title(title, y=1.1)
     plt.ylabel('Encoder timestep')
-    plt.tight_layout()
-    plt.savefig(filename, format='png')
-    plt.close()
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
 
 
-def plot_stop_token(stop_token, filename, title='Stop Token'):
-    """ Plot alignment of attention.
-
-    TODO: test this.
+def plot_stop_token(stop_token, title='Stop Token'):
+    """ Plot probability of the stop token over time.
 
     Args:
-        alignment (numpy.array([decoder_timestep])): Stop token probablity per decoder timestep.
-        filename (str): Location to save the file.
+        stop_token (numpy.array([decoder_timestep])): Stop token probablity per decoder timestep.
         title (str, optional): Title of the plot.
+
+    Returns:
+        figure (matplotlib.figure): Closed figure with the plot.
+    """
+    plt.style.use('ggplot')
+    figure = plt.figure()
+    plt.plot(list(range(len(stop_token))), stop_token, marker='.', linestyle='solid')
+    plt.title(title, y=1.1)
+    plt.ylabel('Probability')
+    plt.xlabel('Timestep')
+    figure.tight_layout()
+    # LEARN MORE: https://github.com/matplotlib/matplotlib/issues/8560/
+    # ``plt.close`` removes the figure from it's internal state and (if there is a gui) closes the
+    # window. However it does not clear the figure and if you are still holding a reference to the
+    # ``Figure`` object (and it holds references to all of it's children) so it is not garbage
+    # collected.
+    plt.close(figure)
+    return figure
+
+
+def plot_spectrogram(spectrogram, title='Mel-Spectrogram'):
+    """ Save image of spectrogram to disk.
+
+    Args:
+        spectrogram (Tensor): A ``[frames, num_mel_bins]`` ``Tensor`` of ``complex64`` STFT
+            values.
+        title (str): Title of the plot.
 
     Returns:
         None
     """
     plt.style.use('ggplot')
-    plt.plot(list(range(len(stop_token))), stop_token, marker='.', linestyle='solid')
-    plt.title(title, y=1.1)
-    plt.ylabel('Probability')
-    plt.xlabel('Timestep')
-    plt.tight_layout()
-    plt.savefig(filename, format='png')
-    plt.close()
+    figure = plt.figure()
+    plt.imshow(np.rot90(spectrogram))
+    plt.colorbar(orientation='horizontal')
+    plt.ylabel('Mel-Channels')
+    xlabel = 'Frames'
+    plt.xlabel(xlabel)
+    plt.title(title)
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
 
 
 def torch_load(path, device=torch.device('cpu')):
@@ -109,7 +151,7 @@ def torch_load(path, device=torch.device('cpu')):
             return storage.to(device=device)
         return storage
 
-    torch.load(path, map_location=remap, pickle_module=dill)
+    return torch.load(path, map_location=remap, pickle_module=dill)
 
 
 def torch_save(path, data, device=torch.device('cpu')):

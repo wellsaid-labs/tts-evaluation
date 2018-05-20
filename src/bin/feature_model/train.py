@@ -4,7 +4,6 @@ matplotlib.use('Agg')
 import argparse
 import logging
 import math
-import os
 import random
 
 from torch.nn import BCELoss
@@ -20,22 +19,22 @@ import tensorflow as tf
 from src.bin.feature_model._utils import DataIterator
 from src.bin.feature_model._utils import load_checkpoint
 from src.bin.feature_model._utils import load_data
-from src.bin.feature_model._utils import sample_attention
-from src.bin.feature_model._utils import sample_spectrogram
 from src.bin.feature_model._utils import save_checkpoint
 from src.feature_model import FeatureModel
-from src.loss import Loss
-from src.loss import plot_loss
 from src.lr_schedulers import DelayedExponentialLR
 from src.optimizer import Optimizer
 from src.utils import get_total_parameters
+from src.utils import plot_spectrogram
+from src.utils import plot_attention
+from src.utils import plot_stop_token
+from src.utils import figure_to_numpy_array
 from src.utils.experiment_context_manager import ExperimentContextManager
 
 logger = logging.getLogger(__name__)
 
 
 class Trainer():  # pragma: no cover
-    """ Trainer that manages Tacotron training (i.e. checkpoints, epochs, steps).
+    """ Trainer that manages Tacotron training (i.e. running epochs, tensorboard, logging).
 
     Args:
         context (ExperimentContextManager): Context manager for the experiment
@@ -74,7 +73,6 @@ class Trainer():  # pragma: no cover
         self.model.to(context.device)
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else Optimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
-        self.optimizer.to(context.device)
         self.scheduler = scheduler if isinstance(scheduler, _LRScheduler) else scheduler(
             self.optimizer.optimizer)
 
@@ -88,13 +86,8 @@ class Trainer():  # pragma: no cover
         self.best_post_frames_loss = math.inf
         self.best_stop_token_loss = math.inf
 
-        self.criterion_pre_frames = Loss(criterion_frames)
-        self.criterion_post_frames = Loss(criterion_frames)
-        self.criterion_stop_token = Loss(criterion_stop_token)
-
-        self.criterion_pre_frames.criterion.to(self.context.device)
-        self.criterion_post_frames.criterion.to(self.context.device)
-        self.criterion_stop_token.criterion.to(self.context.device)
+        self.criterion_frames = criterion_frames(reduce=False).to(self.context.device)
+        self.criterion_stop_token = criterion_stop_token(reduce=False).to(self.context.device)
 
         logger.info('Number of Training Rows: %d', len(self.train_dataset))
         logger.info('Number of Dev Rows: %d', len(self.dev_dataset))
@@ -104,8 +97,8 @@ class Trainer():  # pragma: no cover
         logger.info('Total Parameters: %d', get_total_parameters(self.model))
         logger.info('Model:\n%s' % self.model)
 
-    def compute_loss(self, gold_frames, gold_frame_lengths, gold_stop_tokens, predicted_pre_frames,
-                     predicted_post_frames, predicted_stop_tokens):
+    def _compute_loss(self, gold_frames, gold_frame_lengths, gold_stop_tokens, predicted_pre_frames,
+                      predicted_post_frames, predicted_stop_tokens):
         """ Compute the losses for Tacotron.
 
         Args:
@@ -123,18 +116,29 @@ class Trainer():  # pragma: no cover
         Returns:
             (torch.Tensor) scalar loss values
         """
+        # Create masks
         mask = [torch.FloatTensor(length).fill_(1) for length in gold_frame_lengths]
         mask, _ = pad_batch(mask)  # [batch_size, num_frames]
         mask = mask.to(self.context.device)
         stop_token_mask = mask.transpose(0, 1)  # [num_frames, batch_size]
-        frames_mask = stop_token_mask.unsqueeze(2)
-        pre_frames_loss = self.criterion_pre_frames(
-            predicted_pre_frames, gold_frames, mask=frames_mask)
-        post_frames_loss = self.criterion_post_frames(
-            predicted_post_frames, gold_frames, mask=frames_mask)
-        stop_token_loss = self.criterion_stop_token(
-            predicted_stop_tokens, gold_stop_tokens, mask=stop_token_mask)
-        return pre_frames_loss, post_frames_loss, stop_token_loss
+        # [num_frames, batch_size] → [num_frames, batch_size, frame_channels]
+        frames_mask = stop_token_mask.unsqueeze(2).expand_as(gold_frames)
+
+        num_frame_predictions = torch.sum(frames_mask)
+        num_stop_token_predictions = torch.sum(stop_token_mask)
+
+        # Average loss for pre frames, post frames and stop token loss
+        pre_frames_loss = self.criterion_frames(predicted_pre_frames, gold_frames)
+        pre_frames_loss = torch.sum(pre_frames_loss * frames_mask) / num_frame_predictions
+
+        post_frames_loss = self.criterion_frames(predicted_post_frames, gold_frames)
+        post_frames_loss = torch.sum(post_frames_loss * frames_mask) / num_frame_predictions
+
+        stop_token_loss = self.criterion_frames(predicted_stop_tokens, gold_stop_tokens)
+        stop_token_loss = torch.sum(stop_token_loss * stop_token_mask) / num_stop_token_predictions
+
+        return (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
+                num_stop_token_predictions)
 
     def run_epoch(self, train=False, trial_run=False, teacher_forcing=True):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
@@ -154,6 +158,10 @@ class Trainer():  # pragma: no cover
         torch.set_grad_enabled(train)
         self.model.train(mode=train)
 
+        # Epoch Average Loss Metrics
+        total_pre_frames_loss, total_post_frames_loss, total_stop_token_loss = 0, 0, 0
+        total_stop_token_predictions, total_frame_predictions = 0, 0
+
         # Setup iterator and metrics
         dataset = self.train_dataset if train else self.dev_dataset
         max_batch_size = self.train_batch_size if train else self.dev_batch_size
@@ -162,42 +170,60 @@ class Trainer():  # pragma: no cover
                 self.context.device, dataset, max_batch_size, train=train, trial_run=trial_run),
             desc=label)
         for (gold_texts, _, gold_frames, gold_frame_lengths, gold_stop_tokens) in data_iterator:
-            self.run_step(
-                gold_texts,
-                gold_frames,
-                gold_frame_lengths,
-                gold_stop_tokens,
-                teacher_forcing=teacher_forcing,
-                train=train,
-                sample=not train and random.randint(1, len(data_iterator)) == 1)
-
-            # Postfix will be displayed on the right of progress bar
-            data_iterator.set_postfix(
-                pre_frames_loss=self.criterion_pre_frames.total /
-                self.criterion_pre_frames.num_values,
-                post_frames_loss=self.criterion_post_frames.total /
-                self.criterion_post_frames.num_values,
-                stop_token_loss=self.criterion_stop_token.total /
-                self.criterion_stop_token.num_values)
-
-        loss_pre_frames = self.criterion_pre_frames.epoch()
-        loss_post_frames = self.criterion_post_frames.epoch()
-        loss_stop_token = self.criterion_stop_token.epoch()
-
-        logger.info('[%s] Pre Frame Loss: %f', label.upper(), loss_pre_frames)
-        logger.info('[%s] Post Frame Loss: %f', label.upper(), loss_post_frames)
-        logger.info('[%s] Stop Token Loss: %f', label.upper(), loss_stop_token)
-
-        return loss_pre_frames, loss_post_frames, loss_stop_token
-
-    def run_step(self,
+            (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
+             num_stop_token_predictions) = self._run_step(
                  gold_texts,
                  gold_frames,
                  gold_frame_lengths,
                  gold_stop_tokens,
-                 teacher_forcing=True,
-                 train=False,
-                 sample=False):
+                 teacher_forcing=teacher_forcing,
+                 train=train,
+                 sample=not train and random.randint(1, len(data_iterator)) == 1)
+
+            total_pre_frames_loss += pre_frames_loss * num_frame_predictions
+            total_post_frames_loss += post_frames_loss * num_frame_predictions
+            total_stop_token_loss += stop_token_loss * num_stop_token_predictions
+            total_stop_token_predictions += num_stop_token_predictions
+            total_frame_predictions += num_frame_predictions
+
+        self._add_scalar([label, 'epoch_loss', 'pre_frames'],
+                         total_pre_frames_loss / total_frame_predictions)
+        self._add_scalar([label, 'epoch_loss', 'post_frames'],
+                         total_post_frames_loss / total_frame_predictions)
+        self._add_scalar([label, 'epoch_loss', 'stop_token'],
+                         total_stop_token_loss / total_stop_token_predictions)
+
+    def _add_scalar(self, path, scalar):
+        """ Add scalar to tensorboard
+
+        Args:
+            path (list): List of tags to use as label.
+            scalar (number): Scalar to add to tensorboard.
+        """
+        path = [s.lower() for s in path]
+        return self.context.tensorboard('/'.join(path), scalar, self.step)
+
+    def _add_image(self, path, batch, plot, item=0):
+        """ Plot data and add image to tensorboard.
+
+        Args:
+            path (list): List of tags to use as label
+            batch (torch.Tensor ([n, batch_size, ...])): Batch of data
+            plot (callable): Callable plot an item from the batch to a ``matplotlib.figure``
+            item (int, optional): Item to pick from batch
+        """
+        data = batch[:, item].detach().cpu().numpy()
+        image = figure_to_numpy_array(plot(data))
+        self.context.tensorboard.add_image('/'.join(path), image, self.step)
+
+    def _run_step(self,
+                  gold_texts,
+                  gold_frames,
+                  gold_frame_lengths,
+                  gold_stop_tokens,
+                  teacher_forcing=True,
+                  train=False,
+                  sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
         Args:
@@ -219,33 +245,39 @@ class Trainer():  # pragma: no cover
         (predicted_pre_frames, predicted_post_frames, predicted_stop_tokens,
          predicted_alignments) = predicted
 
-        losses = self.compute_loss(gold_frames, gold_frame_lengths, gold_stop_tokens,
-                                   predicted_pre_frames, predicted_post_frames,
-                                   predicted_stop_tokens)
+        (pre_frames_loss, post_frames_loss, stop_token_loss,
+         num_frame_predictions, num_stop_token_predictions) = self._compute_loss(
+             gold_frames, gold_frame_lengths, gold_stop_tokens, predicted_pre_frames,
+             predicted_post_frames, predicted_stop_tokens)
 
         if train:
             self.optimizer.zero_grad()
-            sum(losses).backward()
+            sum(pre_frames_loss + post_frames_loss + stop_token_loss).backward()
             self.optimizer.step()
             self.scheduler.step()
             self.step += 1
 
+        (pre_frames_loss, post_frames_loss, stop_token_loss) = tuple(
+            loss.item() for loss in (pre_frames_loss, post_frames_loss, stop_token_loss))
+
+        label = 'train' if train else 'dev'
+        self._add_scalar([label, 'step_loss', 'pre_frames'], pre_frames_loss)
+        self._add_scalar([label, 'step_loss', 'post_frames'], post_frames_loss)
+        self._add_scalar([label, 'step_loss', 'stop_token'], stop_token_loss)
+
         if sample:
-            label = 'train' if train else 'dev'
-            predicted_alignments = predicted_alignments.detach()
-            predicted_post_frames = predicted_post_frames.detach()
-
-            # TODO: unique filename if multiple times during dev
-            def build_filename(base):
-                return os.path.join(self.context.epoch_directory,
-                                    label + '_' + str(self.step) + '_' + base)
-
-            logger.info('Saving samples in: %s', build_filename('**'))
-            _, batch_size, _ = predicted_alignments.shape
+            batch_size = predicted_post_frames.shape[1]
             item = random.randint(0, batch_size - 1)
-            sample_attention(predicted_alignments, build_filename('alignment'), item)
-            sample_spectrogram(gold_frames, build_filename('gold_spectrogram'), item)
-            sample_spectrogram(predicted_post_frames, build_filename('predicted_spectrogram'), item)
+            self._add_image([label, 'predicted', 'spectrogram'], predicted_post_frames,
+                            plot_spectrogram, item)
+            self._add_image([label, 'gold', 'spectrogram'], gold_frames, plot_spectrogram, item)
+            self._add_image([label, 'predicted', 'alignment'], predicted_alignments, plot_attention,
+                            item)
+            self._add_image([label, 'predicted', 'stop_token'], predicted_stop_tokens,
+                            plot_stop_token, item)
+
+        return (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
+                num_stop_token_predictions)
 
 
 def main(checkpoint=None, epochs=1000, train_batch_size=32):  # pragma: no cover
@@ -276,12 +308,9 @@ def main(checkpoint=None, epochs=1000, train_batch_size=32):  # pragma: no cover
             **trainer_kwargs)
 
         # Training Loop
-        train_losses = []
-        dev_losses = []
         for _ in range(epochs):
             is_trial_run = trainer.epoch == 0
-            logger.info('Training...')
-            train_losses.append(trainer.run_epoch(train=True, trial_run=is_trial_run))
+            trainer.run_epoch(train=True, trial_run=is_trial_run)
             checkpoint_path = save_checkpoint(
                 context,
                 model=trainer.model,
@@ -290,19 +319,8 @@ def main(checkpoint=None, epochs=1000, train_batch_size=32):  # pragma: no cover
                 text_encoder=text_encoder,
                 epoch=trainer.epoch,
                 step=trainer.step)
-            logger.info('Evaluating...')
-            dev_losses.append(trainer.run_epoch(train=False, trial_run=is_trial_run))
+            trainer.run_epoch(train=False, trial_run=is_trial_run)
             trainer.epoch += 1
-
-            # Plot losses
-            logger.info('Saving Loss...')
-            loss_names = ['Pre Frame Loss', 'Post Frame Loss', 'Stop Token Loss']
-            iterator = zip(zip(*train_losses), zip(*dev_losses), loss_names)
-            for train_loss, dev_loss, loss_name in iterator:
-                filename = loss_name.replace(' ', '_').lower() + '.png'
-                directory = os.path.join(context.directory, filename)
-                plot_loss(
-                    [train_loss, dev_loss], ['Train', 'Dev'], filename=directory, title=loss_name)
 
             print('–' * 100)
 

@@ -39,7 +39,7 @@ def test_experiment(*_):
     with ExperimentContextManager(label='test_experiment', device=torch.device('cpu')) as context:
         # Check context directory was created
         assert os.path.isdir(context.directory)
-        assert os.path.isdir(context.checkpoint_directory)
+        assert os.path.isdir(context.checkpoints_directory)
 
     # Automatically cleaned up
     assert not os.path.isdir(context.directory)

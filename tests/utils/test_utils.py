@@ -2,13 +2,17 @@ import os
 
 from torch import nn
 from torch.nn import functional
+from PIL import Image
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 from src.utils import split_dataset
 from src.utils import ROOT_PATH
 from src.utils import get_total_parameters
 from src.utils import plot_attention
+from src.utils import plot_stop_token
+from src.utils import figure_to_numpy_array
 
 
 class MockModel(nn.Module):
@@ -50,11 +54,37 @@ def test_split_dataset():
 
 
 def test_plot_attention():
-    filename = 'tests/_test_data/sample_plot.png'
     arr = np.random.rand(5, 6)
-    plot_attention(arr, filename)
+    figure = plot_attention(arr)
+
+    filename = 'tests/_test_data/sample_plot.png'
+    figure.savefig(filename)
 
     assert os.path.isfile(filename)
 
     # Clean up
     os.remove(filename)
+
+
+def test_plot_stop_token():
+    arr = np.random.rand(5)
+    figure = plot_stop_token(arr)
+
+    filename = 'tests/_test_data/sample_plot.png'
+    data = figure_to_numpy_array(figure)
+    image = Image.fromarray(data, 'RGB')
+    image.save(filename)
+
+    assert os.path.isfile(filename)
+
+    # Clean up
+    os.remove(filename)
+
+
+def test_figure_to_numpy_array():
+    y = [1, 4, 5, 6]
+    figure = plt.figure()
+    plt.plot(list(range(len(y))), y)
+    plt.close(figure)
+
+    assert figure_to_numpy_array(figure).shape == (480, 640, 3)

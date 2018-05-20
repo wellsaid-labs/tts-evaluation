@@ -9,8 +9,6 @@ from src.optimizer import Optimizer
 from src.bin.feature_model._utils import DataIterator
 from src.bin.feature_model._utils import load_checkpoint
 from src.bin.feature_model._utils import load_data
-from src.bin.feature_model._utils import sample_attention
-from src.bin.feature_model._utils import sample_spectrogram
 from src.bin.feature_model._utils import save_checkpoint
 from src.feature_model import FeatureModel
 from src.utils.experiment_context_manager import ExperimentContextManager
@@ -88,28 +86,8 @@ def test_load_save_checkpoint():
             torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
         scheduler = StepLR(optimizer.optimizer, step_size=30)
         filename = save_checkpoint(
-            context, model=FeatureModel(10), optimizer=optimizer, scheduler=scheduler)
+            context, model=FeatureModel(10), optimizer=optimizer, scheduler=scheduler, step=10)
         assert os.path.isfile(filename)
 
         # Smoke test
         load_checkpoint(filename)
-
-    # Clean up
-    os.remove(filename)
-
-
-@mock.patch('src.bin.feature_model._utils.plot_spectrogram', return_value=None)
-@mock.patch('src.bin.feature_model._utils.log_mel_spectrogram_to_wav', return_value=None)
-def test_sample_spectrogram(log_mel_spectrogram_to_wav_mock, plot_spectrogram_mock):
-    # Smoke test
-    sample_spectrogram(torch.FloatTensor(4, 4, 80), '', synthesize=True)
-
-    plot_spectrogram_mock.assert_called_once()
-    log_mel_spectrogram_to_wav_mock.assert_called_once()
-
-
-@mock.patch('src.bin.feature_model._utils.plot_attention', return_value=None)
-def test_sample_attention(plot_attention_mock):
-    # Smoke test
-    sample_attention(torch.FloatTensor(4, 4, 80), '')
-    plot_attention_mock.assert_called_once()

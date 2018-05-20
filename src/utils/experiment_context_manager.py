@@ -13,7 +13,6 @@ from tensorboardX import SummaryWriter
 
 from src.utils.configurable import log_config
 from src.utils.configurable import log_arguments
-from src.utils.utils import torch_save
 
 logger = logging.getLogger(__name__)
 
@@ -77,15 +76,6 @@ class ExperimentContextManager(object):
         self.set_seed(seed)
         self.min_time = min_time
         self._start_time = time.time()
-
-    def save_checkpoint(self, name, data):
-        """ Save checkpoint in checkpoint directory for this experiment.
-
-        Args:
-            name (str): Filename of the checkpoints file.
-            data (any): Data to store for the checkpoint.
-        """
-        torch_save(os.path.join(self.checkpoints_directory, name), data)
 
     def notify(self, title, text):
         """ Queue a desktop notification on a Linux or OSX machine.
@@ -211,7 +201,7 @@ class ExperimentContextManager(object):
             shutil.rmtree(self.directory)
 
             # Remove empty directories
-            for root, directories, files in os.walk(self.root):
+            for root, directories, files in os.walk(self.root, topdown=False):
                 for directory in directories:
                     directory = os.path.join(root, directory)
                     # Only works when the directory is empty

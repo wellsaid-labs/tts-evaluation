@@ -1,4 +1,4 @@
-""" Generate relevant files for the ``r9y9/wavenet_vocoder``.
+""" Generate relevant training files for the Wavenet model.
 """
 
 import matplotlib
@@ -24,13 +24,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def main(checkpoint, destination='data/vocoder/', use_multiprocessing=True):  # pragma: no cover
+def main(checkpoint, destination='data/vocoder/', use_multiprocessing=True,
+         batch_size=128):  # pragma: no cover
     """ Main module.
 
-    Notes:
-        * ``r9y9/wavenet_vocoder`` does it's own test and train split; therefore, we do not have
-            control over that split. It may be difficult to find text files neither model has
-            trained on.
+    TODO: Rewrite for my own Wavenet implementation.
 
     Args:
         checkpoint (str): Checkpoint to load used to generate.
@@ -49,8 +47,6 @@ def main(checkpoint, destination='data/vocoder/', use_multiprocessing=True):  # 
     train, dev, text_encoder = load_data(
         text_encoder=text_encoder, load_signal=True, use_multiprocessing=use_multiprocessing)
     data = train + dev
-    metadata = open(os.path.join(destination, 'train.txt'), 'w+')
-    batch_size = 128
 
     logger.info('Device: %s', device)
     logger.info('Number of Rows: %d', len(data))
@@ -73,7 +69,6 @@ def main(checkpoint, destination='data/vocoder/', use_multiprocessing=True):  # 
         for j in range(batch_predicted_frames.shape[0]):
             predicted_frames = batch_predicted_frames[j][:gold_frame_lengths[j]]  # Cutoff padding
             signal = gold_signals[j].cpu().numpy()
-            text = text_encoder.decode(gold_texts[j][:gold_text_lengths[j]])
             assert signal.shape[0] % predicted_frames.shape[0] == 0
 
             audio_filename = os.path.abspath(
@@ -82,8 +77,6 @@ def main(checkpoint, destination='data/vocoder/', use_multiprocessing=True):  # 
                 os.path.join(destination, 'ljspeech-mel-%d-%d.npy' % (i, j)))
             np.save(audio_filename, signal.astype(np.int16), allow_pickle=False)
             np.save(mel_filename, predicted_frames.astype(np.float32), allow_pickle=False)
-            metadata.write('|'.join([audio_filename, mel_filename, str(len(signal)), text]) + '\n')
-    metadata.close()
 
 
 if __name__ == '__main__':  # pragma: no cover

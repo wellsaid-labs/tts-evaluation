@@ -13,11 +13,13 @@ import tensorflow as tf
 
 tf.enable_eager_execution()
 
-from src.utils import get_total_parameters
-from src.hparams import set_hparams
-from src.bin.feature_model._utils import sample_attention
-from src.bin.feature_model._utils import sample_spectrogram
 from src.bin.feature_model._utils import load_checkpoint
+from src.hparams import set_hparams
+from src.preprocess import log_mel_spectrogram_to_wav
+from src.utils import get_total_parameters
+from src.utils import plot_attention
+from src.utils import plot_spectrogram
+from src.utils import plot_stop_token
 
 
 def main():  # pragma: no cover
@@ -43,13 +45,28 @@ def main():  # pragma: no cover
     while True:
         text = input('Text: ').strip()
         logger.info('Got text: %s', text)
-        text = text_encoder.encode(text).unsqueeze(0)
-        frames, frames_with_residual, stop_tokens, alignments = model(text, max_recursion=10000)
-        logger.info('Predicted Mel-spectrogram')
-        sample_spectrogram(frames_with_residual,
-                           os.path.join(directory, 'generated_predicted_post_spectrogram'))
-        sample_spectrogram(frames, os.path.join(directory, 'generated_predicted_pre_spectrogram'))
-        sample_attention(alignments, os.path.join(directory, 'generated_attention'))
+
+        text = text_encoder.encode(text.strip()).unsqueeze(0)
+
+        logger.info('Predicting mel-spectrogram...')
+        (predicted_pre_frames, predicted_post_frames, predicted_stop_tokens,
+         predicted_alignments) = model(
+             text, max_recursion=10000)
+
+        logger.info('Plotting graphs...')
+        plot_spectrogram(predicted_post_frames[:, 0]).savefig(
+            os.path.join(directory, 'predicted_post_spectrogram.png'))
+        plot_spectrogram(predicted_pre_frames[:, 0]).savefig(
+            os.path.join(directory, 'predicted_pre_spectrogram.png'))
+        plot_attention(predicted_alignments[:, 0]).savefig(
+            os.path.join(directory, 'predicted_aligments.png'))
+        plot_stop_token(predicted_stop_tokens[:, 0]).savefig(
+            os.path.join(directory, 'predicted_stop_token.png'))
+
+        logger.info('Running Griffin-lim...')
+        log_mel_spectrogram_to_wav(predicted_post_frames[:, 0],
+                                   os.path.join(directory, 'predicted_audio.wav'))
+
         print('–' * 100)
 
 

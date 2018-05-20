@@ -17,14 +17,11 @@ import numpy as np
 
 from src.datasets import lj_speech_dataset
 from src.preprocess import find_silence
-from src.preprocess import log_mel_spectrogram_to_wav
 from src.preprocess import mu_law_quantize
-from src.preprocess import plot_spectrogram
 from src.preprocess import read_audio
 from src.preprocess import wav_to_log_mel_spectrogram
 from src.utils import ROOT_PATH
 from src.utils import torch_load
-from src.utils import plot_attention
 from src.utils import torch_save
 from src.utils import split_dataset
 
@@ -62,7 +59,7 @@ class DataIterator(object):
                  trial_run=False,
                  load_signal=False):
         batch_sampler = BucketBatchSampler(dataset, batch_size, False, sort_key=sort_key)
-        self.maybe_cuda = lambda t, **kwargs: t.cuda(device=device, **kwargs) if device > -1 else t
+        self.device = device
         self.iterator = DataLoader(
             dataset,
             batch_sampler=batch_sampler,
@@ -71,6 +68,9 @@ class DataIterator(object):
             num_workers=0)
         self.trial_run = trial_run
         self.load_signal = load_signal
+
+    def _maybe_cuda(self, tensor, **kwargs):
+        return tensor.cuda(device=self.device, **kwargs) if self.device.type == 'cuda' else tensor
 
     def _collate_fn(self, batch):
         """ List of tensors to a batch variable """
@@ -93,8 +93,9 @@ class DataIterator(object):
 
     def __iter__(self):
         for batch in self.iterator:
-            yield tuple(
-                [self.maybe_cuda(t, non_blocking=True) if torch.is_tensor(t) else t for t in batch])
+            yield tuple([
+                self._maybe_cuda(t, non_blocking=True) if torch.is_tensor(t) else t for t in batch
+            ])
 
             if self.trial_run:
                 break
@@ -256,7 +257,8 @@ def save_checkpoint(context,
         checkpoint (dict or None): Loaded checkpoint or None
     """
     if filename is None:
-        filename = os.path.join(context.epoch_directory, 'checkpoint.pt')
+        name = 'step_%d.pt' % (step,) if step is not None else 'checkpoint.pt'
+        filename = os.path.join(context.checkpoints_directory, name)
 
     torch_save(
         filename, {
@@ -269,32 +271,3 @@ def save_checkpoint(context,
         })
 
     return filename
-
-
-def sample_spectrogram(batch, filename, item=0, synthesize=False):
-    """ Sample a spectrogram from a batch and save a visualization.
-
-    Args:
-        batch (torch.FloatTensor [num_frames, batch_size, frame_channels]): Batch of frames.
-        filename (str): Filename to use for sample without an extension.
-        item (int, optional): Item from the batch to sample.
-        synthesize (bool, optional): Use griffin-lim to synthesize spectrogram.
-    """
-    _, batch_size, _ = batch.shape
-    spectrogram = batch.detach().transpose_(0, 1)[item].cpu().numpy()
-    plot_spectrogram(spectrogram, filename + '.png')
-    if synthesize:
-        log_mel_spectrogram_to_wav(spectrogram, filename + '.wav')
-
-
-def sample_attention(batch, filename, item=0):
-    """ Sample an alignment from a batch and save a visualization.
-
-    Args:
-        batch (torch.FloatTensor [num_frames, batch_size, num_tokens]): Batch of alignments.
-        item (int): Item from the batch to sample.
-        filename (str): Filename to use for sample without an extension
-    """
-    _, batch_size, _ = batch.shape
-    alignment = batch.detach().transpose_(0, 1)[item].cpu().numpy()
-    plot_attention(alignment, filename + '.png')

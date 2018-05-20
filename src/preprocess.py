@@ -205,7 +205,6 @@ def wav_to_log_mel_spectrogram(signal,
         log_mel_spectrograms (np.array [frames, num_mel_bins]): Log mel spectrogram.
         right_pad (int): Number of zeros padding the end of the signal.
     """
-    # TODO: Update tests after args update
     signals = np.expand_dims(signal, axis=0)
 
     # A batch of float32 time-domain signal in the range [-1, 1] with shape
@@ -422,31 +421,3 @@ def log_mel_spectrogram_to_wav(log_mel_spectrogram,
 
         waveform = tf.real(waveform)
         librosa.output.write_wav(filename, waveform[0].numpy(), sr=sample_rate)
-
-
-def plot_spectrogram(spectrogram, filename, title='Mel-Spectrogram'):
-    """ Save image of spectrogram to disk.
-
-    Args:
-        spectrogram (Tensor): A ``[frames, num_mel_bins]`` ``Tensor`` of ``complex64`` STFT
-            values.
-        filename (str): Name of the file to save to.
-        title (str): Title of the plot.
-
-    Returns:
-        None
-    """
-    import matplotlib.pyplot as plt
-
-    assert '.png' in filename.lower(), "Filename saves in PNG format"
-
-    plt.figure()
-    plt.style.use('ggplot')
-    plt.imshow(np.rot90(spectrogram))
-    plt.colorbar(orientation='horizontal')
-    plt.ylabel('Mel-Channels')
-    xlabel = 'Frames'
-    plt.xlabel(xlabel)
-    plt.title(title)
-    plt.savefig(filename, format='png', bbox_inches='tight')
-    plt.close()
