@@ -157,7 +157,6 @@ class Trainer():  # pragma: no cover
             logger.info('[%s] Trial run with one batch.', label)
 
         # Set mode
-        self.context.epoch(self.epoch)
         torch.set_grad_enabled(train)
         self.model.train(mode=train)
 

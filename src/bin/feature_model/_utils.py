@@ -5,6 +5,7 @@ import logging
 import os
 import random
 
+from torch import multiprocessing
 from torch.multiprocessing import Pool
 from torch.utils.data import DataLoader
 from torchnlp.samplers import BucketBatchSampler
@@ -183,7 +184,7 @@ def load_data(
 
         if use_multiprocessing:
             # Preprocess audio with multi-threading
-            pool = Pool()
+            pool = Pool(processes=min(len(data), multiprocessing.cpu_count()))
             # LEARN MORE (multiprocessing and tqdm integration):
             # https://stackoverflow.com/questions/41920124/multiprocessing-use-tqdm-to-display-a-progress-bar
             data = list(tqdm(pool.imap(_preprocess_audio, data), total=len(data)))
