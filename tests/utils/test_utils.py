@@ -12,6 +12,7 @@ from src.utils import ROOT_PATH
 from src.utils import get_total_parameters
 from src.utils import plot_attention
 from src.utils import plot_stop_token
+from src.utils import plot_spectrogram
 from src.utils import figure_to_numpy_array
 
 
@@ -51,6 +52,19 @@ def test_split_dataset():
     dataset = [1, 2, 3, 4, 5]
     splits = (.6, .2, .2)
     assert split_dataset(dataset, splits) == [[1, 2, 3], [4], [5]]
+
+
+def test_plot_spectrogram():
+    arr = np.random.rand(5, 6)
+    figure = plot_spectrogram(arr)
+
+    filename = 'tests/_test_data/sample_plot.png'
+    figure.savefig(filename)
+
+    assert os.path.isfile(filename)
+
+    # Clean up
+    os.remove(filename)
 
 
 def test_plot_attention():

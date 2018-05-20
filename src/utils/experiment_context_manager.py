@@ -56,12 +56,7 @@ class ExperimentContextManager(object):
             files are deleted.
     """
 
-    def __init__(self,
-                 label='other',
-                 root='experiments/',
-                 seed=1212212,
-                 device=None,
-                 min_time=60 * 5):
+    def __init__(self, label='other', root='experiments/', seed=1212212, device=None, min_time=60):
         # Fix circular reference
         from src.utils import ROOT_PATH
 
@@ -90,6 +85,8 @@ class ExperimentContextManager(object):
             cmd = """osascript -e 'display notification "{text}" with title "{title}"'"""
         elif system == 'Linux':
             cmd = "notify-send '{title}' '{text}'"
+
+        logger.info('Notify: %s', text)
 
         os.system(cmd.format(text=text, title=title))
 

@@ -32,6 +32,9 @@ from src.utils.experiment_context_manager import ExperimentContextManager
 
 logger = logging.getLogger(__name__)
 
+# TODO: Use find_lr to optimize the learning rate
+# TODO: Add the model to tensorboard graph with ``tensorboard.add_graph(model, (dummy_input, ))``
+
 
 class Trainer():  # pragma: no cover
     """ Trainer that manages Tacotron training (i.e. running epochs, tensorboard, logging).
