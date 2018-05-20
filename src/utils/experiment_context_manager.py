@@ -195,6 +195,7 @@ class ExperimentContextManager(object):
 
         elapsed_seconds = time.time() - self._start_time
         if self.min_time is not None and elapsed_seconds < self.min_time:
+            logger.info('Deleting Experiment: %s', self.directory)
             shutil.rmtree(self.directory)
 
             # Remove empty directories

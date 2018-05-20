@@ -203,7 +203,7 @@ class Trainer():  # pragma: no cover
             scalar (number): Scalar to add to tensorboard.
         """
         path = [s.lower() for s in path]
-        return self.context.tensorboard('/'.join(path), scalar, self.step)
+        return self.context.tensorboard.add_scalar('/'.join(path), scalar, self.step)
 
     def _add_image(self, path, batch, plot, item=0):
         """ Plot data and add image to tensorboard.
