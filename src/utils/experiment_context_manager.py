@@ -119,7 +119,9 @@ class ExperimentContextManager(object):
         os.makedirs(self.checkpoints_directory)
 
         # Setup tensorboard
-        self.tensorboard = SummaryWriter(log_dir=os.path.join(self.directory, 'tensorboard'))
+        log_dir = os.path.join(self.directory, 'tensorboard')
+        self.tensorboard = SummaryWriter(log_dir=log_dir)
+        logger.info('Started tensorboard at %s', log_dir)
 
     def set_seed(self, seed):
         """ To ensure reproducibility, by seeding ``numpy``, ``random``, ``tf`` and ``torch``.
@@ -183,16 +185,7 @@ class ExperimentContextManager(object):
         # Print all arguments used
         log_arguments()
 
-        # Flush stdout and stderr to capture everything
-        sys.stdout.flush()
-        sys.stderr.flush()
-
-        # Reset streams
-        sys.stdout = sys.stdout.stream
-        sys.stderr = sys.stderr.stream
-
-        logging.getLogger().removeHandler(self._stream_handler)
-
+        # NOTE: Log before removing handlers.
         elapsed_seconds = time.time() - self._start_time
         if self.min_time is not None and elapsed_seconds < self.min_time:
             logger.info('Deleting Experiment: %s', self.directory)
@@ -209,3 +202,13 @@ class ExperimentContextManager(object):
                         pass
 
         self.notify('Experiment', 'Experiment has exited after %d seconds.' % (elapsed_seconds))
+
+        # Flush stdout and stderr to capture everything
+        sys.stdout.flush()
+        sys.stderr.flush()
+
+        # Reset streams
+        sys.stdout = sys.stdout.stream
+        sys.stderr = sys.stderr.stream
+
+        logging.getLogger().removeHandler(self._stream_handler)
