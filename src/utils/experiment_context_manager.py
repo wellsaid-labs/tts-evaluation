@@ -56,7 +56,12 @@ class ExperimentContextManager(object):
             files are deleted.
     """
 
-    def __init__(self, label='other', root='experiments/', seed=1212212, device=None, min_time=60):
+    def __init__(self,
+                 label='other',
+                 root='experiments/',
+                 seed=1212212,
+                 device=None,
+                 min_time=60 * 3):
         # Fix circular reference
         from src.utils import ROOT_PATH
 
