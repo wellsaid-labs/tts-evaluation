@@ -254,7 +254,7 @@ class Trainer():  # pragma: no cover
 
         if train:
             self.optimizer.zero_grad()
-            sum(pre_frames_loss + post_frames_loss + stop_token_loss).backward()
+            (pre_frames_loss + post_frames_loss + stop_token_loss).backward()
             self.optimizer.step()
             self.scheduler.step()
             self.step += 1
