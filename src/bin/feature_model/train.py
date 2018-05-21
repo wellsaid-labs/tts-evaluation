@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 # TODO: Use find_lr to optimize the learning rate
 # TODO: Add the model to tensorboard graph with ``tensorboard.add_graph(model, (dummy_input, ))``
 # TODO: Log gradient norm scalar
+# TODO: Remove torch.autograd.Variable from the code
+# TODO: ``super().__init__()`` fix
 
 
 class Trainer():  # pragma: no cover
