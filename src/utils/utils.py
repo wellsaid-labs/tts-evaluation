@@ -2,8 +2,10 @@ import logging
 import logging.config
 import os
 
+from matplotlib import pyplot
+from matplotlib import cm as colormap
+
 import dill
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
@@ -70,19 +72,18 @@ def plot_attention(alignment, title='Attention Alignment'):
         title (str, optional): Title of the plot.
 
     Returns:
-        figure (matplotlib.figure): Closed figure with the plot.
+        image (np.array [width, height, 3]): Attention plot image.
     """
     alignment = np.transpose(alignment)
-    plt.style.use('ggplot')
-    figure, axis = plt.subplots()
+    pyplot.style.use('ggplot')
+    figure, axis = pyplot.subplots()
     im = axis.imshow(alignment, aspect='auto', origin='lower', interpolation='none', vmin=0, vmax=1)
     figure.colorbar(im, ax=axis, orientation='horizontal')
-    plt.xlabel('Decoder timestep')
-    plt.title(title, y=1.1)
-    plt.ylabel('Encoder timestep')
-    figure.tight_layout()
-    plt.close(figure)
-    return figure
+    pyplot.xlabel('Decoder timestep')
+    pyplot.title(title)
+    pyplot.ylabel('Encoder timestep')
+    pyplot.close(figure)
+    return figure_to_numpy_array(figure)
 
 
 def plot_stop_token(stop_token, title='Stop Token'):
@@ -93,22 +94,38 @@ def plot_stop_token(stop_token, title='Stop Token'):
         title (str, optional): Title of the plot.
 
     Returns:
-        figure (matplotlib.figure): Closed figure with the plot.
+        image (np.array [width, height, 3]): Stop token plot image.
     """
-    plt.style.use('ggplot')
-    figure = plt.figure()
-    plt.plot(list(range(len(stop_token))), stop_token, marker='.', linestyle='solid')
-    plt.title(title, y=1.1)
-    plt.ylabel('Probability')
-    plt.xlabel('Timestep')
-    figure.tight_layout()
+    pyplot.style.use('ggplot')
+    figure = pyplot.figure()
+    pyplot.plot(list(range(len(stop_token))), stop_token, marker='.', linestyle='solid')
+    pyplot.title(title)
+    pyplot.ylabel('Probability')
+    pyplot.xlabel('Timestep')
     # LEARN MORE: https://github.com/matplotlib/matplotlib/issues/8560/
-    # ``plt.close`` removes the figure from it's internal state and (if there is a gui) closes the
-    # window. However it does not clear the figure and if you are still holding a reference to the
-    # ``Figure`` object (and it holds references to all of it's children) so it is not garbage
+    # ``pyplot.close`` removes the figure from it's internal state and (if there is a gui) closes
+    # the window. However it does not clear the figure and if you are still holding a reference to
+    # the ``Figure`` object (and it holds references to all of it's children) so it is not garbage
     # collected.
-    plt.close(figure)
-    return figure
+    pyplot.close(figure)
+    return figure_to_numpy_array(figure)
+
+
+def spectrogram_to_image(spectrogram):
+    """ Create an image array form a spectrogram.
+
+    Args:
+        spectrogram (Tensor): A ``[frames, num_mel_bins]`` ``Tensor`` of ``complex64`` STFT
+            values.
+
+    Returns:
+        image (np.array [width, height, 3]): Spectrogram image.
+    """
+    spectrogram = (spectrogram - np.min(spectrogram)) / (np.max(spectrogram) - np.min(spectrogram))
+    spectrogram = np.flip(spectrogram, axis=1)  # flip against freq axis
+    spectrogram = np.uint8(colormap.viridis(spectrogram.T) * 255)
+    spectrogram = spectrogram[:, :, :-1]  # RGBA → RGB
+    return spectrogram
 
 
 def plot_spectrogram(spectrogram, title='Mel-Spectrogram'):
@@ -120,19 +137,18 @@ def plot_spectrogram(spectrogram, title='Mel-Spectrogram'):
         title (str): Title of the plot.
 
     Returns:
-        None
+        image (np.array [width, height, 3]): Spectrogram image.
     """
-    plt.style.use('ggplot')
-    figure = plt.figure()
-    plt.imshow(np.rot90(spectrogram))
-    plt.colorbar(orientation='horizontal')
-    plt.ylabel('Mel-Channels')
+    pyplot.style.use('ggplot')
+    figure = pyplot.figure()
+    pyplot.imshow(np.rot90(spectrogram))
+    pyplot.colorbar(orientation='horizontal')
+    pyplot.ylabel('Mel-Channels')
     xlabel = 'Frames'
-    plt.xlabel(xlabel)
-    plt.title(title)
-    figure.tight_layout()
-    plt.close(figure)
-    return figure
+    pyplot.xlabel(xlabel)
+    pyplot.title(title)
+    pyplot.close(figure)
+    return figure_to_numpy_array(figure)
 
 
 def torch_load(path, device=torch.device('cpu')):

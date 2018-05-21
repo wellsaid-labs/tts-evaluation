@@ -62,7 +62,7 @@ class ExperimentContextManager(object):
                  seed=1212212,
                  device=None,
                  min_time=60 * 3):
-        # Fix circular reference
+        # Handle circular reference
         from src.utils import ROOT_PATH
 
         self.label = label
@@ -109,7 +109,7 @@ class ExperimentContextManager(object):
         sys.stderr = _CopyStream(self.stderr_filename, sys.stderr)
 
     def _new_experiment_directory(self):
-        """ Create a experiment directory with epochs, tensorboard and time organization.
+        """ Create a experiment directory with checkpoints.
 
         Returns:
             path (str): Path to the new experiment directory
@@ -124,10 +124,14 @@ class ExperimentContextManager(object):
         os.makedirs(self.checkpoints_directory)
 
     def _tensorboard(self):
+        """ Within ``self.directory`` setup tensorboard.
+        """
         # Setup tensorboard
         log_dir = os.path.join(self.directory, 'tensorboard')
-        self.tensorboard = SummaryWriter(log_dir=log_dir)
-        logger.info('Started tensorboard at %s', log_dir)
+        os.makedirs(log_dir)
+        self.dev_tensorboard = SummaryWriter(log_dir=os.path.join(log_dir, 'dev'))
+        self.train_tensorboard = SummaryWriter(log_dir=os.path.join(log_dir, 'train'))
+        logger.info('Started tensorboard at %s/**', log_dir)
 
     def set_seed(self, seed):
         """ To ensure reproducibility, by seeding ``numpy``, ``random``, ``tf`` and ``torch``.

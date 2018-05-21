@@ -39,6 +39,7 @@ class DataIterator(object):
         train (bool): If ``True``, the batch will store gradients.
         sort_key (callable): Sort key used to group similar length data used to minimize padding.
         load_signal (bool, optional): If `True`, return signal during iteration.
+        num_workers (int, optional): Number of workers for data loading.
 
     Returns:
         (torch.utils.data.DataLoader) Single-process or multi-process iterators over the dataset.
@@ -58,7 +59,8 @@ class DataIterator(object):
                  train=True,
                  sort_key=lambda r: r['log_mel_spectrogram'].shape[0],
                  trial_run=False,
-                 load_signal=False):
+                 load_signal=False,
+                 num_workers=0):
         batch_sampler = BucketBatchSampler(dataset, batch_size, False, sort_key=sort_key)
         self.device = device
         self.iterator = DataLoader(
@@ -66,7 +68,7 @@ class DataIterator(object):
             batch_sampler=batch_sampler,
             collate_fn=self._collate_fn,
             pin_memory=True,
-            num_workers=0)
+            num_workers=num_workers)
         self.trial_run = trial_run
         self.load_signal = load_signal
 

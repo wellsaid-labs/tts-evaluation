@@ -14,6 +14,7 @@ from src.utils import plot_attention
 from src.utils import plot_stop_token
 from src.utils import plot_spectrogram
 from src.utils import figure_to_numpy_array
+from src.utils import spectrogram_to_image
 
 
 class MockModel(nn.Module):
@@ -65,6 +66,12 @@ def test_plot_spectrogram():
 
     # Clean up
     os.remove(filename)
+
+
+def test_spectrogram_to_image():
+    arr = np.random.rand(5, 6)
+    image = spectrogram_to_image(arr)
+    assert image.shape == (6, 5, 3)
 
 
 def test_plot_attention():

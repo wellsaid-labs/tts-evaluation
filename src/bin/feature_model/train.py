@@ -24,10 +24,9 @@ from src.feature_model import FeatureModel
 from src.lr_schedulers import DelayedExponentialLR
 from src.optimizer import Optimizer
 from src.utils import get_total_parameters
-from src.utils import plot_spectrogram
+from src.utils import spectrogram_to_image
 from src.utils import plot_attention
 from src.utils import plot_stop_token
-from src.utils import figure_to_numpy_array
 from src.utils.experiment_context_manager import ExperimentContextManager
 
 logger = logging.getLogger(__name__)
@@ -40,11 +39,12 @@ class Trainer():  # pragma: no cover
     """ Trainer that manages Tacotron training (i.e. running epochs, tensorboard, logging).
 
     Args:
-        context (ExperimentContextManager): Context manager for the experiment
+        device (torch.device): Device to train on.
         train_dataset (iterable): Train dataset used to optimize the model.
         dev_dataset (iterable): Dev dataset used to evaluate.
-        text_encoder (torchnlp.TextEncoder, optional): Text encoder used to encode and decode the
-            text.
+        vocab_size (int): Size of the input text vocabular used with embeddings.
+        train_tensorboard (tensorboardX.SummaryWriter): Writer for train events.
+        dev_tensorboard (tensorboardX.SummaryWriter): Writer for dev events.
         train_batch_size (int, optional): Batch size used for training.
         dev_batch_size (int, optional): Batch size used for evaluation.
         model (torch.nn.Module, optional): Model to train and evaluate.
@@ -54,13 +54,16 @@ class Trainer():  # pragma: no cover
         criterion_stop_token (callable): Loss function used to score stop token predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
         scheduler (torch.optim.lr_scheduler): Scheduler used to adjust learning rate.
+        num_workers (int, optional): Number of workers for data loading.
     """
 
     def __init__(self,
-                 context,
+                 device,
                  train_dataset,
                  dev_dataset,
                  vocab_size,
+                 train_tensorboard,
+                 dev_tensorboard,
                  train_batch_size=32,
                  dev_batch_size=128,
                  model=FeatureModel,
@@ -69,17 +72,21 @@ class Trainer():  # pragma: no cover
                  criterion_frames=MSELoss,
                  criterion_stop_token=BCELoss,
                  optimizer=Adam,
-                 scheduler=DelayedExponentialLR):
+                 scheduler=DelayedExponentialLR,
+                 num_workers=0):
 
         # Allow for ``class`` or a class instance
         self.model = model if isinstance(model, torch.nn.Module) else model(vocab_size)
-        self.model.to(context.device)
+        self.model.to(device)
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else Optimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.scheduler = scheduler if isinstance(scheduler, _LRScheduler) else scheduler(
             self.optimizer.optimizer)
 
-        self.context = context
+        self.dev_tensorboard = dev_tensorboard
+        self.train_tensorboard = train_tensorboard
+        self.tensorboard = train_tensorboard  # Default tensorboard is changed per epoch.
+        self.device = device
         self.step = step
         self.epoch = epoch
         self.train_batch_size = train_batch_size
@@ -88,15 +95,17 @@ class Trainer():  # pragma: no cover
         self.dev_dataset = dev_dataset
         self.best_post_frames_loss = math.inf
         self.best_stop_token_loss = math.inf
+        self.num_workers = num_workers
 
-        self.criterion_frames = criterion_frames(reduce=False).to(self.context.device)
-        self.criterion_stop_token = criterion_stop_token(reduce=False).to(self.context.device)
+        self.criterion_frames = criterion_frames(reduce=False).to(self.device)
+        self.criterion_stop_token = criterion_stop_token(reduce=False).to(self.device)
 
         logger.info('Number of Training Rows: %d', len(self.train_dataset))
         logger.info('Number of Dev Rows: %d', len(self.dev_dataset))
         logger.info('Vocab Size: %d', vocab_size)
         logger.info('Train Batch Size: %d', train_batch_size)
         logger.info('Dev Batch Size: %d', dev_batch_size)
+        logger.info('Number of data loading workers: %d', num_workers)
         logger.info('Total Parameters: %d', get_total_parameters(self.model))
         logger.info('Model:\n%s' % self.model)
 
@@ -122,7 +131,7 @@ class Trainer():  # pragma: no cover
         # Create masks
         mask = [torch.FloatTensor(length).fill_(1) for length in gold_frame_lengths]
         mask, _ = pad_batch(mask)  # [batch_size, num_frames]
-        mask = mask.to(self.context.device)
+        mask = mask.to(self.device)
         stop_token_mask = mask.transpose(0, 1)  # [num_frames, batch_size]
         # [num_frames, batch_size] → [num_frames, batch_size, frame_channels]
         frames_mask = stop_token_mask.unsqueeze(2).expand_as(gold_frames)
@@ -159,17 +168,21 @@ class Trainer():  # pragma: no cover
         # Set mode
         torch.set_grad_enabled(train)
         self.model.train(mode=train)
+        self.tensorboard = self.train_tensorboard if train else self.dev_tensorboard
 
         # Epoch Average Loss Metrics
         total_pre_frames_loss, total_post_frames_loss, total_stop_token_loss = 0, 0, 0
         total_stop_token_predictions, total_frame_predictions = 0, 0
 
         # Setup iterator and metrics
-        dataset = self.train_dataset if train else self.dev_dataset
-        max_batch_size = self.train_batch_size if train else self.dev_batch_size
         data_iterator = tqdm(
             DataIterator(
-                self.context.device, dataset, max_batch_size, train=train, trial_run=trial_run),
+                self.device,
+                self.train_dataset if train else self.dev_dataset,
+                self.train_batch_size if train else self.dev_batch_size,
+                train=train,
+                trial_run=trial_run,
+                num_workers=self.num_workers),
             desc=label)
         for (gold_texts, _, gold_frames, gold_frame_lengths, gold_stop_tokens) in data_iterator:
             (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
@@ -188,14 +201,14 @@ class Trainer():  # pragma: no cover
             total_stop_token_predictions += num_stop_token_predictions
             total_frame_predictions += num_frame_predictions
 
-        self._add_scalar([label, 'epoch_loss', 'pre_frames'],
-                         total_pre_frames_loss / total_frame_predictions)
-        self._add_scalar([label, 'epoch_loss', 'post_frames'],
-                         total_post_frames_loss / total_frame_predictions)
-        self._add_scalar([label, 'epoch_loss', 'stop_token'],
-                         total_stop_token_loss / total_stop_token_predictions)
+        self._add_scalar(['pre_frames', 'epoch'], total_pre_frames_loss / total_frame_predictions,
+                         self.epoch)
+        self._add_scalar(['post_frames', 'epoch'], total_post_frames_loss / total_frame_predictions,
+                         self.epoch)
+        self._add_scalar(['stop_token', 'epoch'],
+                         total_stop_token_loss / total_stop_token_predictions, self.epoch)
 
-    def _add_scalar(self, path, scalar):
+    def _add_scalar(self, path, scalar, step):
         """ Add scalar to tensorboard
 
         Args:
@@ -203,20 +216,19 @@ class Trainer():  # pragma: no cover
             scalar (number): Scalar to add to tensorboard.
         """
         path = [s.lower() for s in path]
-        return self.context.tensorboard.add_scalar('/'.join(path), scalar, self.step)
+        self.tensorboard.add_scalar('/'.join(path), scalar, step)
 
-    def _add_image(self, path, batch, plot, item=0):
+    def _add_image(self, path, tensor, to_image, step):
         """ Plot data and add image to tensorboard.
 
         Args:
-            path (list): List of tags to use as label
-            batch (torch.Tensor ([n, batch_size, ...])): Batch of data
-            plot (callable): Callable plot an item from the batch to a ``matplotlib.figure``
-            item (int, optional): Item to pick from batch
+            path (list): List of tags to use as label.
+            batch (torch.Tensor): Data to visualize.
+            to_image (callable): Callable plot an item from the batch to an image array.
+            item (int, optional): Item to pick from batch.
         """
-        data = batch[:, item].detach().cpu().numpy()
-        image = figure_to_numpy_array(plot(data))
-        self.context.tensorboard.add_image('/'.join(path), image, self.step)
+        data = tensor.detach().cpu().numpy()
+        self.tensorboard.add_image('/'.join(path), to_image(data), step)
 
     def _run_step(self,
                   gold_texts,
@@ -262,33 +274,38 @@ class Trainer():  # pragma: no cover
         (pre_frames_loss, post_frames_loss, stop_token_loss) = tuple(
             loss.item() for loss in (pre_frames_loss, post_frames_loss, stop_token_loss))
 
-        label = 'train' if train else 'dev'
-        self._add_scalar([label, 'step_loss', 'pre_frames'], pre_frames_loss)
-        self._add_scalar([label, 'step_loss', 'post_frames'], post_frames_loss)
-        self._add_scalar([label, 'step_loss', 'stop_token'], stop_token_loss)
+        if train:
+            self._add_scalar(['pre_frames', 'step'], pre_frames_loss, self.step)
+            self._add_scalar(['post_frames', 'step'], post_frames_loss, self.step)
+            self._add_scalar(['stop_token', 'step'], stop_token_loss, self.step)
+            for i, lr in enumerate(self.scheduler.get_lr()):
+                self._add_scalar(['learning_rate', str(i), 'step'], lr, self.step)
 
         if sample:
             batch_size = predicted_post_frames.shape[1]
             item = random.randint(0, batch_size - 1)
-            self._add_image([label, 'predicted', 'spectrogram'], predicted_post_frames,
-                            plot_spectrogram, item)
-            self._add_image([label, 'gold', 'spectrogram'], gold_frames, plot_spectrogram, item)
-            self._add_image([label, 'predicted', 'alignment'], predicted_alignments, plot_attention,
-                            item)
-            self._add_image([label, 'predicted', 'stop_token'], predicted_stop_tokens,
-                            plot_stop_token, item)
+            length = gold_frame_lengths[item]
+            self._add_image(['spectrogram', 'predicted'], predicted_post_frames[:length, item],
+                            spectrogram_to_image, self.step)
+            self._add_image(['spectrogram', 'gold'], gold_frames[:length, item],
+                            spectrogram_to_image, self.step)
+            self._add_image(['alignment', 'predicted'], predicted_alignments[:length, item],
+                            plot_attention, self.step)
+            self._add_image(['stop_token', 'predicted'], predicted_stop_tokens[:length, item],
+                            plot_stop_token, self.step)
 
         return (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
                 num_stop_token_predictions)
 
 
-def main(checkpoint=None, epochs=1000, train_batch_size=32):  # pragma: no cover
+def main(checkpoint=None, epochs=1000, train_batch_size=32, num_workers=0):  # pragma: no cover
     """ Main module that trains a the feature model saving checkpoints incrementally.
 
     Args:
         checkpoint (str, optional): If provided, path to a checkpoint to load.
         epochs (int, optional): Number of epochs to run for.
         train_batch_size (int, optional): Maximum training batch size.
+        num_workers (int, optional): Number of workers for data loading.
     """
     with ExperimentContextManager(label='feature_model') as context:
         checkpoint = load_checkpoint(checkpoint, context.device)
@@ -301,12 +318,15 @@ def main(checkpoint=None, epochs=1000, train_batch_size=32):  # pragma: no cover
             del checkpoint['text_encoder']
             trainer_kwargs = checkpoint
         trainer = Trainer(
-            context,
+            context.device,
             train,
             dev,
             text_encoder.vocab_size,
+            context.train_tensorboard,
+            context.dev_tensorboard,
             train_batch_size=train_batch_size,
             dev_batch_size=train_batch_size * 4,
+            num_workers=num_workers,
             **trainer_kwargs)
 
         # Training Loop
@@ -341,5 +361,10 @@ if __name__ == '__main__':  # pragma: no cover
         type=int,
         default=32,
         help="Set the maximum training batch size; this figure depends on the GPU memory")
+    parser.add_argument(
+        "-w", "--num_workers", type=int, default=0, help="Numer of workers used for data loading")
     args = parser.parse_args()
-    main(checkpoint=args.checkpoint, train_batch_size=args.train_batch_size)
+    main(
+        checkpoint=args.checkpoint,
+        train_batch_size=args.train_batch_size,
+        num_workers=args.num_workers)
