@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 # TODO: Use find_lr to optimize the learning rate
 # TODO: Add the model to tensorboard graph with ``tensorboard.add_graph(model, (dummy_input, ))``
+# TODO: Log gradient norm scalar
 
 
 class Trainer():  # pragma: no cover
