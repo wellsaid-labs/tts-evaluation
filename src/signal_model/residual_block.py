@@ -9,7 +9,12 @@ from src.utils.configurable import configurable
 class ResidualBlock(nn.Module):
 
     @configurable
-    def __init__(self, hidden_size=64, skip_size=256, kernel_size=2, dilation=1):
+    def __init__(self,
+                 hidden_size=64,
+                 skip_size=256,
+                 kernel_size=2,
+                 dilation=1,
+                 is_last_layer=False):
         """
         Args:
             hidden_size (int, optional): The number of channels for the ``signal_features`` and
@@ -20,12 +25,15 @@ class ResidualBlock(nn.Module):
                 ``signal_features``. [NV-WaveNet assumes kernel size 2]
             dilation (int, optional): Spacing between kernel elements applied onto
                 ``signal_features``.
+            is_last_layer (bool, optional): If True, residual block does not return additional
+                signal features.
         """
 
         super().__init__()
 
         self.kernel_size = kernel_size
         self.dilation = dilation
+        self.is_last_layer = is_last_layer
 
         self.dilated_conv = nn.Conv1d(
             in_channels=hidden_size,
@@ -40,12 +48,13 @@ class ResidualBlock(nn.Module):
         # implement this by shifting the output of a normal convolution by a few timesteps.
         self.padding = (dilation * (kernel_size - 1), 0)
 
-        self.out_conv = nn.Conv1d(
-            in_channels=hidden_size,
-            out_channels=hidden_size,
-            kernel_size=1,
-            bias=True  # [NV-WaveNet assumes biases for the residual connection]
-        )
+        if not self.is_last_layer:
+            self.out_conv = nn.Conv1d(
+                in_channels=hidden_size,
+                out_channels=hidden_size,
+                kernel_size=1,
+                bias=True  # [NV-WaveNet assumes biases for the residual connection]
+            )
 
         self.skip_conv = nn.Conv1d(
             in_channels=hidden_size,
@@ -108,10 +117,11 @@ class ResidualBlock(nn.Module):
         # [batch_size, hidden_size, signal_length] → [batch_size, skip_size, signal_length]
         skip = self.skip_conv(signal_features)
 
+        if self.is_last_layer:
+            return None, skip
+
         # [batch_size, hidden_size, signal_length] → [batch_size, hidden_size, signal_length]
         residual = self.out_conv(signal_features)
-
-        # TODO: Last residual output is not used, it can be removed.
 
         # [batch_size, hidden_size, signal_length] + [batch_size, hidden_size, signal_length] →
         # [batch_size, hidden_size, signal_length]

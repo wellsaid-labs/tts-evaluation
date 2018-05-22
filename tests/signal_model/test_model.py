@@ -33,3 +33,29 @@ def test_signal_model():
 
     # Smoke test back prop
     predicted.sum().backward()
+
+
+def test_signal_model_infer():
+    if not torch.cuda.is_available():
+        return
+
+    batch_size = 2
+    local_length = 16
+    local_features_size = 80
+    upsample_convs = [2, 3]
+    upsample_repeat = 2
+    mu = 255
+    signal_length = local_length * upsample_convs[0] * upsample_convs[1] * upsample_repeat
+
+    local_features = torch.FloatTensor(local_length, batch_size, local_features_size)
+
+    net = SignalModel(
+        mu=mu,
+        upsample_convs=upsample_convs,
+        upsample_repeat=upsample_repeat,
+        local_features_size=local_features_size).eval()
+    predicted = net(local_features)
+
+    assert predicted.shape == (batch_size, signal_length)
+    # Everything is below mu + 1
+    assert (predicted < mu + 1).sum() == batch_size * signal_length

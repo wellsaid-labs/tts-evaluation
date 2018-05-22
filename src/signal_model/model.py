@@ -1,7 +1,10 @@
-import torch
 import logging
+import sys
+sys.path.insert(0, 'third_party/nv-wavenet/pytorch')
 
 from torch import nn
+
+import torch
 
 from src.signal_model.residual_block import ResidualBlock
 from src.signal_model.upsample import ConditionalFeaturesUpsample
@@ -30,7 +33,7 @@ class WaveNet(nn.Module):
           repeat each value 75x".
 
     Args:
-        mu (int): Mu used to encode signal with mu-law encoding.
+        mu (int): Mu used to encode signal with mu-law encoding. [Parameter ``A - 1`` in NV-WaveNet]
         block_hidden_size (int): Hidden size of each residual block.
         num_layers (int): Number of residual layers to use with Wavenet.
         cycle_size (int): Cycles such that dilation is equal to:
@@ -52,14 +55,18 @@ class WaveNet(nn.Module):
                  local_features_size=80):
         super().__init__()
 
+        self.cycle_size = cycle_size
+        self.block_hidden_size = block_hidden_size
         self.mu = mu
         self.num_layers = num_layers
         self.embed = nn.Conv1d(
             in_channels=self.mu + 1, out_channels=block_hidden_size, kernel_size=1)
         self.layers = nn.ModuleList([
             ResidualBlock(
-                hidden_size=block_hidden_size, dilation=2**(i % cycle_size), skip_size=skip_size)
-            for i in range(num_layers)
+                hidden_size=block_hidden_size,
+                dilation=2**(i % cycle_size),
+                skip_size=skip_size,
+                is_last_layer=(num_layers == i + 1)) for i in range(num_layers)
         ])
         self.conditional_features_upsample = ConditionalFeaturesUpsample(
             block_hidden_size=block_hidden_size,
@@ -68,34 +75,111 @@ class WaveNet(nn.Module):
             local_features_size=local_features_size)
         self.out = nn.Sequential(
             nn.ReLU(),
-            nn.Conv1d(in_channels=skip_size, out_channels=self.mu + 1, kernel_size=1),
+            nn.Conv1d(in_channels=skip_size, out_channels=self.mu + 1, kernel_size=1, bias=False),
             nn.ReLU(),
-            nn.Conv1d(in_channels=self.mu + 1, out_channels=self.mu + 1, kernel_size=1),
+            nn.Conv1d(in_channels=self.mu + 1, out_channels=self.mu + 1, kernel_size=1, bias=False),
             nn.Softmax(dim=1),
         )
+        self.has_new_weights = True  # Whether the weights have been updated since last export
+        self.kernel = None
 
         self.receptive_field_size = get_receptive_field_size(self.layers)
         logger.info('Receptive field size in samples: %d' % self.receptive_field_size)
 
-    def forward(self, local_features, signal):
+    def _export(self):  # pragma: no cover
+        """
+        Notes:
+            * Edit hyperparameters inside ``wavenet_infer.cu`` to match.
+            * Make sure to build the CUDA kernel.
+
+        Returns:
+            kernel (NVWaveNet): NVIDIA optimize wavenet CUDA kernel.
+        """
+        # This implementation does not use embeded ``embedding_prev``
+        embedding_prev = torch.FloatTensor(self.mu + 1, self.block_hidden_size).zero_()
+
+        # Compute embedding current by the identity matrix through a conv
+        # embedding_curr [1, self.mu + 1 (signal_length), self.mu + 1 (channels)]
+        embedding_curr = torch.eye(self.mu + 1).unsqueeze(0)
+        # Convolution operater expects input_ of the form:
+        # [batch_size (1), channels (self.mu + 1), signal_length (self.mu + 1)]
+        embedding_curr = embedding_curr.transpose_(1, 2)
+        # [1, self.mu + 1, self.mu + 1]  → [1, block_hidden_size, self.mu + 1]
+        embedding_curr = self.embed(embedding_curr)
+        # [1, block_hidden_size, self.mu + 1]  → [self.mu + 1, block_hidden_size]
+        embedding_curr = embedding_curr.squeeze(0).transpose_(0, 1)
+
+        conv_out_weight = self.out[1].weight
+        conv_end_weight = self.out[3].weight
+        dilate_weights = [l.dilated_conv.weight for l in self.layers]
+        dilate_biases = [l.dilated_conv.bias for l in self.layers]
+        max_dilation = 2**(self.cycle_size - 1)
+        # Last residual layer does not matter
+        res_weights = [l.out_conv.weight for l in self.layers[:-1]]
+        res_biases = [l.out_conv.bias for l in self.layers[:-1]]
+        skip_weights = [l.skip_conv.weight for l in self.layers]
+        skip_biases = [l.skip_conv.bias for l in self.layers]
+        use_embed_tanh = False  # This implementation does not use embeded ``tanh``
+
+        return __import__('nv_wavenet').NVWaveNet(
+            embedding_prev=embedding_prev,
+            embedding_curr=embedding_curr,
+            conv_out_weight=conv_out_weight,
+            conv_end_weight=conv_end_weight,
+            dilate_weights=dilate_weights,
+            dilate_biases=dilate_biases,
+            max_dilation=max_dilation,
+            res_weights=res_weights,
+            res_biases=res_biases,
+            skip_weights=skip_weights,
+            skip_biases=skip_biases,
+            use_embed_tanh=use_embed_tanh)
+
+    def forward(self, local_features, signal=None, implementation=None):
         """
         Args:
             local_features (torch.FloatTensor [local_length, batch_size, local_features_size]):
                 Local feature to condition signal generation (e.g. spectrogram).
-            signal (torch.FloatTensor [signal_length, batch_size]): Mu-law encoded signal used for
-                teacher-forcing.
+            signal (torch.FloatTensor [signal_length, batch_size], optional): Mu-law encoded signal
+                used for teacher-forcing.
+            implementation (nv_wavenet.Impl, optional): An implementation used for inference,
+                either: AUTO, SINGLE_BLOCK, DUAL_BLOCK, or PERSISTENT
 
         Returns:
-            predicted_signal (torch.FloatTensor [batch_size, mu + 1, signal_length]): Categorical
-                distribution over ``mu + 1`` energy levels.
+
+            predicted_signal: Returns former if ``self.training`` else returns latter.
+                * (torch.FloatTensor [batch_size, mu + 1, signal_length]): Categorical
+                    distribution over ``mu + 1`` energy levels.
+                * (torch.FloatTensor [batch_size, signal_length]): Categorical
+                    distribution over ``mu + 1`` energy levels.
         """
+        if signal is None and self.training:
+            raise ValueError('Training without teacher forcing is not supported.')
+
+        if self.training:
+            # On a forward pass with signal, we assume this is
+            self.has_new_weights = True
+
         # [local_length, batch_size, local_features_size] →
         # [2 * block_hidden_size, batch_size, num_layers, signal_length]
         conditional_features = self.conditional_features_upsample(local_features)
 
-        assert conditional_features.shape[3] == signal.shape[0], (
-            "Upsampling parameters in tangent with signal shape and local features shape must " +
-            "be partible")
+        if signal is not None:
+            assert conditional_features.shape[3] == signal.shape[0], (
+                "Upsampling parameters in tangent with signal shape and local features shape " +
+                "must be partible")
+
+        if signal is None and not self.training:  # pragma: no cover
+            assert torch.cuda.is_available(), "Inference only works for CUDA."
+
+            if self.has_new_weights:
+                # Re export weights if ``self.has_new_weights``
+                self.kernel = self._export()
+                self.has_new_weights = False
+
+            implementation = __import__(
+                'nv_wavenet').Impl.AUTO if implementation is None else implementation
+            return self.kernel.infer(cond_input=conditional_features, implementation=implementation)
 
         # [signal_length, batch_size] → [signal_length, batch_size, mu + 1]
         # Encode signal with one-hot encoding, reference:
@@ -130,6 +214,3 @@ class WaveNet(nn.Module):
 
         # [batch_size, skip_size, signal_length] → [batch_size, mu + 1, signal_length]
         return self.out(cumulative_skip)
-
-    def export(self):
-        pass
