@@ -18,22 +18,22 @@ import tensorflow as tf
 from src.bin.feature_model._utils import DataIterator
 from src.bin.feature_model._utils import load_checkpoint
 from src.bin.feature_model._utils import load_data
-from src.bin.feature_model._utils import set_hparams
 from src.bin.feature_model._utils import save_checkpoint
+from src.bin.feature_model._utils import set_hparams
 from src.feature_model import FeatureModel
 from src.lr_schedulers import DelayedExponentialLR
 from src.optimizer import Optimizer
 from src.utils import get_total_parameters
-from src.utils import spectrogram_to_image
 from src.utils import plot_attention
 from src.utils import plot_stop_token
+from src.utils import spectrogram_to_image
+from src.utils.configurable import log_config
 from src.utils.experiment_context_manager import ExperimentContextManager
 
 logger = logging.getLogger(__name__)
 
 # TODO: Use find_lr to optimize the learning rate
 # TODO: Add the model to tensorboard graph with ``tensorboard.add_graph(model, (dummy_input, ))``
-# TODO: Do I have a +1 error with the stop token?
 
 
 class Trainer():  # pragma: no cover
@@ -179,6 +179,9 @@ class Trainer():  # pragma: no cover
         total_stop_token_predictions, total_frame_predictions = 0, 0
 
         # Setup iterator and metrics
+        # TODO: DataIterator uses multiprocessing processes; meaning it needs to copy the training
+        # data to set this up; therefore, this component is slow. Consider having data on the disk
+        # loaded on request.
         data_iterator = tqdm(
             DataIterator(
                 self.device,
@@ -307,11 +310,13 @@ def main(checkpoint=None, epochs=1000, train_batch_size=32, num_workers=0):  # p
         train_batch_size (int, optional): Maximum training batch size.
         num_workers (int, optional): Number of workers for data loading.
     """
-    with ExperimentContextManager(label='feature_model') as context:
+    with ExperimentContextManager(label='feature_model', min_time=60 * 15) as context:
         set_hparams()
+        log_config()
 
         checkpoint = load_checkpoint(checkpoint, context.device)
         text_encoder = None if checkpoint is None else checkpoint['text_encoder']
+        # TODO: Apply ``num_workers`` to ``load_data``
         train, dev, text_encoder = load_data(text_encoder=text_encoder, load_signal=False)
 
         # Set up trainer.

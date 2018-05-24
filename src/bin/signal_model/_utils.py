@@ -6,11 +6,11 @@ import os
 import random
 
 from torch.utils.data import DataLoader
-from torch.utils.data.sampler import Sampler
-from torchnlp.samplers import ShuffleBatchSampler
 from torchnlp.utils import pad_batch
+from torch.utils import data
 
 import torch
+import numpy as np
 
 from src.audio import mu_law_quantize
 from src.utils import ROOT_PATH
@@ -20,6 +20,86 @@ from src.utils.configurable import add_config
 from src.utils.configurable import configurable
 
 logger = logging.getLogger(__name__)
+
+
+class LoaderDataset(data.Dataset):
+    """ Load rows on ``__getitem__`` dataset with ``load_row``"""
+
+    def __init__(self, rows, load_row):
+        self.rows = rows
+        self.load_row = load_row
+
+    def __len__(self):
+        return len(self.rows)
+
+    def __getitem__(self, index):
+        return self.load_row(self.rows[index])
+
+
+def _get_filename_table(directory, prefixes=[], extension=''):
+    """ Get a table of filenames; such that every row has multiple filenames of different prefixes.
+
+    Notes:
+        * Filenames are aligned via string sorting.
+        * The table must be full; therefore, all filenames associated with a prefix must have an
+          equal number of files as every other prefix.
+
+    Args:
+        directory (str): Path to a directory.
+        prefixes (str): Prefixes to load.
+        extension (str): Filename extensions to load.
+
+    Returns:
+        (list of dict): List of dictionaries where prefixes are the key names.
+    """
+    rows = []
+    for prefix in prefixes:
+        # Get filenames with associated prefixes
+        filenames = []
+        for filename in os.listdir(directory):
+            if filename.endswith(extension) and prefix in filename:
+                filenames.append(os.path.join(directory, filename))
+
+        # Sorted to align with other prefixes
+        filenames = sorted(filenames)
+
+        # Add to rows
+        if len(rows) == 0:
+            rows = [{prefix: filename} for filename in filenames]
+        else:
+            assert len(filenames) == len(rows), "Each row must have an associated filename."
+            for i, filename in enumerate(filenames):
+                rows[i][prefix] = filename
+
+    return rows
+
+
+def load_data(source_train='data/signal_dataset/train',
+              source_dev='data/signal_dataset/dev',
+              prefixes=['log_mel_spectrogram', 'quantized_signal'],
+              extension='.npy'):
+    """ Load train and dev datasets as ``FileLoaderDataset``s.
+
+    Args:
+        source_train (str): Directory with training examples.
+        source_dev (str): Directory with dev examples.
+
+    Returns:
+        train (FileLoaderDataset)
+        dev (FileLoaderDataset)
+    """
+    train = _get_filename_table(source_train, prefixes=prefixes, extension=extension)
+    dev = _get_filename_table(source_dev, prefixes=prefixes, extension=extension)
+
+    def _load_row(row):
+        row['log_mel_spectrogram'] = torch.from_numpy(np.load(row['log_mel_spectrogram']))
+        row['quantized_signal'] = torch.from_numpy(np.load(row['quantized_signal']))
+        return row
+
+    train = LoaderDataset(train, load_row=_load_row)
+    dev = LoaderDataset(dev, load_row=_load_row)
+
+    return train, dev
 
 
 def set_hparams():
@@ -39,30 +119,6 @@ def set_hparams():
             'weight_decay': 0
         }
     })
-
-
-class ShuffleSampler(Sampler):
-    """Samples elements randomly.
-
-    Args:
-        data (iterable): Iterable data.
-
-    Example:
-        >>> list(ShuffleSampler(range(10)))
-        [5, 6, 2, 0, 3, 4, 7, 9, 1, 8]
-    """
-
-    def __init__(self, data):
-        super().__init__(data)
-        self.data = data
-        self.shuffled_indicies = list(range(len(self.data)))
-        random.shuffle(self.shuffled_indicies)
-
-    def __iter__(self):
-        return iter(self.shuffled_indicies)
-
-    def __len__(self):
-        return len(self.data)
 
 
 class DataIterator(object):
@@ -85,14 +141,15 @@ class DataIterator(object):
                  num_workers=0,
                  max_samples=7800):
         # ``drop_last`` to ensure full utilization of mutliple GPUs
-        batch_sampler = ShuffleBatchSampler(ShuffleSampler(dataset), batch_size, drop_last=True)
         self.device = device
         self.iterator = DataLoader(
             dataset,
-            batch_sampler=batch_sampler,
+            batch_size=batch_size,
+            shuffle=True,
             collate_fn=self._collate_fn,
             pin_memory=True,
-            num_workers=num_workers)
+            num_workers=num_workers,
+            drop_last=True)
         self.trial_run = trial_run
         self.max_samples = max_samples
 
@@ -121,10 +178,10 @@ class DataIterator(object):
         frames_batch = []
         zero_index = mu_law_quantize(0)
         for row in batch:
-            assert len(row['quantized_signal']) % len(row['log_mel_spectrogram']) == 0
-            factor = int(len(row['quantized_signal']) / len(row['log_mel_spectrogram']))
+            assert row['quantized_signal'].shape[0] % row['log_mel_spectrogram'].shape[0] == 0
+            factor = int(row['quantized_signal'].shape[0] / row['log_mel_spectrogram'].shape[0])
 
-            if len(row['quantized_signal']) < self.max_samples:
+            if row['quantized_signal'].shape[0] < self.max_samples:
                 target_signal_batch.append(row['quantized_signal'])
                 zero_point = row['quantized_signal'].new_full((1,), zero_index)
                 source_signal_batch.append(
@@ -135,7 +192,7 @@ class DataIterator(object):
 
                 # Get a frame slice
                 max_frames = int(self.max_samples / factor)
-                start_frame = random.randint(0, len(row['log_mel_spectrogram']) - max_frames)
+                start_frame = random.randint(0, row['log_mel_spectrogram'].shape[0] - max_frames)
                 frames_slice = row['log_mel_spectrogram'][start_frame:start_frame + max_frames]
 
                 # Get a signal slice
@@ -153,7 +210,11 @@ class DataIterator(object):
         target_signal_batch, signal_length_batch = pad_batch(
             target_signal_batch, padding_index=zero_index)
         source_signal_batch, _ = pad_batch(source_signal_batch, padding_index=zero_index)
+        print('frames_batch[0]', frames_batch[0].shape)
         frames_batch, frame_length_batch = pad_batch(frames_batch)
+        print('frames_batch', frames_batch.shape)
+        print('source_signal_batch', source_signal_batch.shape)
+        print('target_signal_batch', target_signal_batch.shape)
         return (source_signal_batch, target_signal_batch, signal_length_batch, frames_batch,
                 frame_length_batch)
 

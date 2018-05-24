@@ -170,12 +170,12 @@ def torch_load(path, device=torch.device('cpu')):
     return torch.load(path, map_location=remap, pickle_module=dill)
 
 
-def torch_save(path, data, device=torch.device('cpu')):
+def torch_save(path, data):
     """ Using ``torch.save`` and ``dill`` save an object to ``path``.
 
     Args:
         path (str): Filename to save to.
         data (any): Data to save into file.
     """
-    logger.info('Saving: %s' % (path,))
     torch.save(data, path, pickle_module=dill)
+    logger.info('Saved: %s' % (path,))

@@ -53,8 +53,8 @@ class DataIterator(object):
         device (torch.device, optional): Device onto which to load data.
         dataset (list): Dataset to iterate over.
         batch_size (int): Size of the batch for iteration.
-        train (bool): If ``True``, the batch will store gradients.
         sort_key (callable): Sort key used to group similar length data used to minimize padding.
+        trial_run (bool or int): If ``True``, iterates over one batch.
         load_signal (bool, optional): If `True`, return signal during iteration.
         num_workers (int, optional): Number of workers for data loading.
 

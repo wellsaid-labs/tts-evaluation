@@ -18,11 +18,12 @@ from src.bin.signal_model._utils import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
+from src.bin.signal_model._utils import load_data
 from src.optimizer import Optimizer
 from src.signal_model import SignalModel
-from src.utils.configurable import configurable
 from src.utils import get_total_parameters
-from src.utils import torch_load
+from src.utils.configurable import configurable
+from src.utils.configurable import log_config
 from src.utils.experiment_context_manager import ExperimentContextManager
 
 logger = logging.getLogger(__name__)
@@ -65,10 +66,10 @@ class Trainer():  # pragma: no cover
 
         # Allow for ``class`` or a class instance
         self.model = model if isinstance(model, torch.nn.Module) else model()
-        if torch.cuda.device_count() > 1:
+        self.model.to(device)
+        if device.type == 'cuda' and torch.cuda.device_count() > 1:
+            logger.info('Training on %d GPUs', torch.cuda.device_count())
             self.model = torch.nn.DataParallel(self.model, dim=0, output_device=device)
-        else:
-            self.model.to(device)
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else Optimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
 
@@ -99,7 +100,7 @@ class Trainer():  # pragma: no cover
         """ Compute the losses for Tacotron.
 
         Args:
-            gold_signal (torch.FloatTensor [signal_length, batch_size])
+            gold_signal (torch.FloatTensor [batch_size, signal_length])
             gold_signal_lengths (list): Lengths of each signal in the batch.
             predicted_signal (torch.FloatTensor [batch_size, mu + 1, signal_length])
 
@@ -111,9 +112,6 @@ class Trainer():  # pragma: no cover
         mask = mask.to(self.device)
 
         num_predictions = torch.sum(mask)
-
-        # [signal_length, batch_size] → [batch_size, signal_length]
-        gold_signal = gold_signal.transpose(0, 1)
 
         # signal_loss [batch_size, signal_length]
         signal_loss = self.criterion(predicted_signal, gold_signal)
@@ -143,14 +141,13 @@ class Trainer():  # pragma: no cover
         total_signal_loss, total_signal_predictions = 0, 0
 
         # Setup iterator and metrics
-        data_iterator = tqdm(
-            DataIterator(
-                self.device,
-                self.train_dataset if train else self.dev_dataset,
-                self.train_batch_size if train else self.dev_batch_size,
-                trial_run=trial_run,
-                num_workers=self.num_workers),
-            desc=label)
+        data_iterator = DataIterator(
+            self.device,
+            self.train_dataset if train else self.dev_dataset,
+            self.train_batch_size if train else self.dev_batch_size,
+            trial_run=trial_run,
+            num_workers=self.num_workers)
+        data_iterator = tqdm(data_iterator, desc=label)
         for (source_signal_batch, target_signal_batch, signal_lengths, frames,
              frames_lengths) in data_iterator:
             signal_loss, num_signal_predictions = self._run_step(
@@ -202,12 +199,12 @@ class Trainer():  # pragma: no cover
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
         Args:
-            source_signal_batch (torch.FloatTensor [signal_length, batch_size]): One timestep
+            source_signal_batch (torch.FloatTensor [batch_size, signal_length]): One timestep
                 behind the target signal batch.
-            target_signal_batch (torch.FloatTensor [signal_length, batch_size]): Corresponds with
+            target_signal_batch (torch.FloatTensor [batch_size, signal_length]): Corresponds with
                 the predicted signal batch for loss computation.
             signal_lengths (list of int): Lengths of each signal behind padding.
-            frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Spectrogram
+            frames (torch.FloatTensor [batch_size, num_frames, frame_channels]): Spectrogram
                 frames used to predict the signal.
             frames_lengths (list of int): Length of each spectrogram before padding.
             train (bool): If ``True``, takes a optimization step.
@@ -216,6 +213,9 @@ class Trainer():  # pragma: no cover
         Returns:
             (torch.Tensor) Loss at every iteration
         """
+        print(source_signal_batch.shape)
+        print(frames.shape)
+
         predicted_signal = self.model(frames, gold_signal=source_signal_batch)
         signal_loss, num_signal_predictions = self._compute_loss(target_signal_batch,
                                                                  signal_lengths, predicted_signal)
@@ -261,11 +261,7 @@ class Trainer():  # pragma: no cover
 
 
 @configurable
-def main(checkpoint=None,
-         epochs=1000,
-         train_batch_size=32,
-         num_workers=0,
-         source='data/signal_dataset.pt',
+def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
          sample_rate=24000):  # pragma: no cover
     """ Main module that trains a the signal model saving checkpoints incrementally.
 
@@ -277,10 +273,11 @@ def main(checkpoint=None,
         source (str, optional): Torch file with the signal dataset including features and signals.
         sample_rate (int, optional): Sample rate of the audio files.
     """
-    with ExperimentContextManager(label='signal_model') as context:
+    with ExperimentContextManager(label='signal_model', min_time=60 * 15) as context:
         set_hparams()
+        log_config()
         checkpoint = load_checkpoint(checkpoint, context.device)
-        train, dev = torch_load(source)
+        train, dev = load_data()
 
         # Set up trainer.
         trainer_kwargs = {}
@@ -327,7 +324,7 @@ if __name__ == '__main__':  # pragma: no cover
         "-b",
         "--train_batch_size",
         type=int,
-        default=32,
+        default=2,
         help="Set the maximum training batch size; this figure depends on the GPU memory")
     parser.add_argument(
         "-w", "--num_workers", type=int, default=0, help="Numer of workers used for data loading")

@@ -7,7 +7,6 @@ from src.bin.signal_model._utils import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
-from src.bin.signal_model._utils import ShuffleSampler
 from src.signal_model import SignalModel
 from src.utils.experiment_context_manager import ExperimentContextManager
 
@@ -17,15 +16,6 @@ def test_set_hparams():
     model = SignalModel()
     optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()))
     assert optimizer.defaults['eps'] == 1e-07
-
-
-def test_shuffle_sampler():
-    sampler = ShuffleSampler(range(100))
-
-    # Smoke test iterator
-    list(sampler)
-
-    assert len(sampler) == 100
 
 
 def test_data_iterator():

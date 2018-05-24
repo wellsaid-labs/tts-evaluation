@@ -11,7 +11,6 @@ import tensorflow as tf
 import torch
 from tensorboardX import SummaryWriter
 
-from src.utils.configurable import log_config
 from src.utils.configurable import log_arguments
 
 logger = logging.getLogger(__name__)
@@ -185,9 +184,6 @@ class ExperimentContextManager(object):
 
         # Set the hyperparameters with configurable
         set_hparams()
-
-        # Log the hyperparameter configuration
-        log_config()
 
         return self
 
