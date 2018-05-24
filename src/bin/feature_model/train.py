@@ -3,7 +3,6 @@ matplotlib.use('Agg')
 
 import argparse
 import logging
-import math
 import random
 
 from torch.nn import BCELoss
@@ -19,6 +18,7 @@ import tensorflow as tf
 from src.bin.feature_model._utils import DataIterator
 from src.bin.feature_model._utils import load_checkpoint
 from src.bin.feature_model._utils import load_data
+from src.bin.feature_model._utils import set_hparams
 from src.bin.feature_model._utils import save_checkpoint
 from src.feature_model import FeatureModel
 from src.lr_schedulers import DelayedExponentialLR
@@ -33,9 +33,7 @@ logger = logging.getLogger(__name__)
 
 # TODO: Use find_lr to optimize the learning rate
 # TODO: Add the model to tensorboard graph with ``tensorboard.add_graph(model, (dummy_input, ))``
-# TODO: Log gradient norm scalar
-# TODO: Remove torch.autograd.Variable from the code
-# TODO: ``super().__init__()`` fix
+# TODO: Do I have a +1 error with the stop token?
 
 
 class Trainer():  # pragma: no cover
@@ -96,8 +94,6 @@ class Trainer():  # pragma: no cover
         self.dev_batch_size = dev_batch_size
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
-        self.best_post_frames_loss = math.inf
-        self.best_stop_token_loss = math.inf
         self.num_workers = num_workers
 
         self.criterion_frames = criterion_frames(reduce=False).to(self.device)
@@ -129,7 +125,13 @@ class Trainer():  # pragma: no cover
                 tokens.
 
         Returns:
-            (torch.Tensor) scalar loss values
+            pre_frames_loss (torch.Tensor [scalar])
+            post_frames_loss (torch.Tensor [scalar])
+            stop_token_loss (torch.Tensor [scalar])
+            num_frame_predictions (int): Number of realized frame predictions taking masking into
+                account.
+            num_stop_token_predictions (int): Number of realized stop token predictions taking
+                masking into account.
         """
         # Create masks
         mask = [torch.FloatTensor(length).fill_(1) for length in gold_frame_lengths]
@@ -155,13 +157,12 @@ class Trainer():  # pragma: no cover
         return (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
                 num_stop_token_predictions)
 
-    def run_epoch(self, train=False, trial_run=False, teacher_forcing=True):
+    def run_epoch(self, train=False, trial_run=False):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
 
         Args:
             train (bool): If ``True``, the batch will store gradients.
             trial_run (bool): If True, then runs only 1 batch.
-            teacher_forcing (bool): Feed ground truth to the model.
         """
         label = 'TRAIN' if train else 'DEV'
         logger.info('[%s] Running Epoch %d, Step %d', label, self.epoch, self.step)
@@ -183,7 +184,6 @@ class Trainer():  # pragma: no cover
                 self.device,
                 self.train_dataset if train else self.dev_dataset,
                 self.train_batch_size if train else self.dev_batch_size,
-                train=train,
                 trial_run=trial_run,
                 num_workers=self.num_workers),
             desc=label)
@@ -194,7 +194,6 @@ class Trainer():  # pragma: no cover
                  gold_frames,
                  gold_frame_lengths,
                  gold_stop_tokens,
-                 teacher_forcing=teacher_forcing,
                  train=train,
                  sample=not train and random.randint(1, len(data_iterator)) == 1)
 
@@ -217,6 +216,7 @@ class Trainer():  # pragma: no cover
         Args:
             path (list): List of tags to use as label.
             scalar (number): Scalar to add to tensorboard.
+            step (int): Step value to record.
         """
         path = [s.lower() for s in path]
         self.tensorboard.add_scalar('/'.join(path), scalar, step)
@@ -226,9 +226,9 @@ class Trainer():  # pragma: no cover
 
         Args:
             path (list): List of tags to use as label.
-            batch (torch.Tensor): Data to visualize.
-            to_image (callable): Callable plot an item from the batch to an image array.
-            item (int, optional): Item to pick from batch.
+            tensor (torch.Tensor): Tensor to visualize.
+            to_image (callable): Callable that returns an image given tensor data.
+            step (int): Step value to record.
         """
         data = tensor.detach().cpu().numpy()
         self.tensorboard.add_image('/'.join(path), to_image(data), step)
@@ -238,7 +238,6 @@ class Trainer():  # pragma: no cover
                   gold_frames,
                   gold_frame_lengths,
                   gold_stop_tokens,
-                  teacher_forcing=True,
                   train=False,
                   sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
@@ -247,17 +246,13 @@ class Trainer():  # pragma: no cover
             gold_texts (torch.LongTensor [batch_size, num_tokens])
             gold_frames (torch.LongTensor [num_frames, batch_size, frame_channels])
             gold_stop_tokens (torch.LongTensor [num_frames, batch_size])
-            teacher_forcing (bool): If ``True``, feed ground truth to the model.
             train (bool): If ``True``, takes a optimization step.
             sample (bool): If ``True``, samples the current step.
 
         Returns:
             (torch.Tensor) Loss at every iteration
         """
-        if teacher_forcing:
-            predicted = self.model(gold_texts, ground_truth_frames=gold_frames)
-        else:
-            predicted = self.model(gold_texts, max_recursion=gold_frames.shape[0])
+        predicted = self.model(gold_texts, ground_truth_frames=gold_frames)
 
         (predicted_pre_frames, predicted_post_frames, predicted_stop_tokens,
          predicted_alignments) = predicted
@@ -270,7 +265,9 @@ class Trainer():  # pragma: no cover
         if train:
             self.optimizer.zero_grad()
             (pre_frames_loss + post_frames_loss + stop_token_loss).backward()
-            self.optimizer.step()
+            parameter_norm = self.optimizer.step()
+            if parameter_norm is not None:
+                self._add_scalar(['parameter_norm', 'step'], parameter_norm, self.step)
             self.scheduler.step()
             self.step += 1
 
@@ -311,6 +308,8 @@ def main(checkpoint=None, epochs=1000, train_batch_size=32, num_workers=0):  # p
         num_workers (int, optional): Number of workers for data loading.
     """
     with ExperimentContextManager(label='feature_model') as context:
+        set_hparams()
+
         checkpoint = load_checkpoint(checkpoint, context.device)
         text_encoder = None if checkpoint is None else checkpoint['text_encoder']
         train, dev, text_encoder = load_data(text_encoder=text_encoder, load_signal=False)
@@ -337,7 +336,7 @@ def main(checkpoint=None, epochs=1000, train_batch_size=32, num_workers=0):  # p
             is_trial_run = trainer.epoch == 0
             trainer.run_epoch(train=True, trial_run=is_trial_run)
             checkpoint_path = save_checkpoint(
-                context,
+                context.checkpoints_directory,
                 model=trainer.model,
                 optimizer=trainer.optimizer,
                 scheduler=trainer.scheduler,

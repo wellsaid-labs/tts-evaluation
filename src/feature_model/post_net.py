@@ -39,7 +39,7 @@ class PostNet(nn.Module):
                  convolution_filter_size=5,
                  convolution_dropout=0.5,
                  frame_channels=80):
-        super(PostNet, self).__init__()
+        super().__init__()
 
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size

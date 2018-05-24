@@ -16,17 +16,34 @@ from tqdm import tqdm
 import torch
 import numpy as np
 
+from src.audio import find_silence
+from src.audio import mu_law_quantize
+from src.audio import read_audio
+from src.audio import wav_to_log_mel_spectrogram
 from src.datasets import lj_speech_dataset
-from src.preprocess import find_silence
-from src.preprocess import mu_law_quantize
-from src.preprocess import read_audio
-from src.preprocess import wav_to_log_mel_spectrogram
 from src.utils import ROOT_PATH
+from src.utils import split_dataset
 from src.utils import torch_load
 from src.utils import torch_save
-from src.utils import split_dataset
+from src.utils.configurable import add_config
 
 logger = logging.getLogger(__name__)
+
+
+def set_hparams():
+    """ Set auxillary hyperparameters specific to the signal model. """
+
+    add_config({
+        # SOURCE (Tacotron 2):
+        # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999, eps = 10−6
+        # learning rate of 10−3
+        # We also apply L2 regularization with weight 10−6
+        'torch.optim.adam.Adam.__init__': {
+            'eps': 10e-6,
+            'lr': 10e-3,
+            'weight_decay': 10e-6,
+        }
+    })
 
 
 class DataIterator(object):
@@ -46,9 +63,9 @@ class DataIterator(object):
         Iterator includes variables:
             text_batch (torch.LongTensor [batch_size, num_tokens])
             text_length_batch (list): List of lengths for each sentence.
-            frames_batch (torch.LongTensor [num_frames, batch_size, frame_channels])
+            frames_batch (torch.FloatTensor [num_frames, batch_size, frame_channels])
             frame_length_batch (list): List of lengths for each spectrogram.
-            stop_token_batch (torch.LongTensor [num_frames, batch_size])
+            stop_token_batch (torch.FloatTensor [num_frames, batch_size])
             signal_batch (list): List of signals.
     """
 
@@ -56,7 +73,6 @@ class DataIterator(object):
                  device,
                  dataset,
                  batch_size,
-                 train=True,
                  sort_key=lambda r: r['log_mel_spectrogram'].shape[0],
                  trial_run=False,
                  load_signal=False,
@@ -87,7 +103,7 @@ class DataIterator(object):
             transpose(stop_token_batch)
         ]
         if self.load_signal:
-            signal_batch = [row['signal'] for row in batch]
+            signal_batch = [row['quantized_signal'] for row in batch]
             ret.append(signal_batch)
         return ret
 
@@ -109,8 +125,12 @@ def _preprocess_audio(row):
 
     Args:
         row (dict {'wav', 'text'}): Example with a corresponding wav filename and text snippet.
+
+    Returns:
+        row (dict {'log_mel_spectrogram', 'stop_token', 'quantized_signal', 'text', 'wav'}): Updated
+            row with a ``log_mel_spectrogram``, ``stop_token``, and ``quantized_signal`` features.
     """
-    signal, sample_rate = read_audio(row['wav'])
+    signal, _ = read_audio(row['wav'])
     quantized_signal = mu_law_quantize(signal)
 
     # Trim silence
@@ -118,7 +138,7 @@ def _preprocess_audio(row):
     signal = signal[end_silence:start_silence]
     quantized_signal = quantized_signal[end_silence:start_silence]
 
-    log_mel_spectrogram, right_pad = wav_to_log_mel_spectrogram(signal, sample_rate)
+    log_mel_spectrogram, right_pad = wav_to_log_mel_spectrogram(signal)
     log_mel_spectrogram = torch.tensor(log_mel_spectrogram)
     stop_token = torch.FloatTensor(log_mel_spectrogram.shape[0]).zero_()
     stop_token[-1] = 1
@@ -131,7 +151,7 @@ def _preprocess_audio(row):
     row.update({
         'log_mel_spectrogram': log_mel_spectrogram,
         'stop_token': stop_token,
-        'signal': torch.tensor(quantized_signal),
+        'quantized_signal': torch.tensor(quantized_signal)
     })
     return row
 
@@ -196,18 +216,18 @@ def load_data(
 
         train, dev = split_dataset(data, splits)
         # Save cache
-        train_signals = [r.pop('signal') for r in train]
-        dev_signals = [r.pop('signal') for r in dev]
+        train_signals = [r.pop('quantized_signal') for r in train]
+        dev_signals = [r.pop('quantized_signal') for r in dev]
         torch_save(cache, (train, dev, text_encoder))
         torch_save(signal_cache, (train_signals, dev_signals))
 
     if load_signal:
         # Combine signals and dataset together
         for row, signal in zip(train, train_signals):
-            row['signal'] = signal
+            row['quantized_signal'] = signal
 
         for row, signal in zip(dev, dev_signals):
-            row['signal'] = signal
+            row['quantized_signal'] = signal
 
     return train, dev, text_encoder
 
@@ -234,7 +254,7 @@ def load_checkpoint(checkpoint=None, device=torch.device('cpu')):
     return checkpoint
 
 
-def save_checkpoint(context,
+def save_checkpoint(directory,
                     model=None,
                     optimizer=None,
                     scheduler=None,
@@ -245,7 +265,7 @@ def save_checkpoint(context,
     """ Save a checkpoint.
 
     Args:
-        context (ExperimentContextManager): Context manager for the experiment
+        directory (str): Directory where to save the checkpoint.
         model (torch.nn.Module, optional): Model to train and evaluate.
         optimizer (torch.optim.Optimizer, optional): Optimizer used for gradient descent.
         scheduler (torch.optim.lr_scheduler, optional): Scheduler used to adjust learning rate.
@@ -261,7 +281,7 @@ def save_checkpoint(context,
     """
     if filename is None:
         name = 'step_%d.pt' % (step,) if step is not None else 'checkpoint.pt'
-        filename = os.path.join(context.checkpoints_directory, name)
+        filename = os.path.join(directory, name)
 
     torch_save(
         filename, {

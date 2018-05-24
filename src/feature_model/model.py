@@ -75,7 +75,7 @@ class SpectrogramModel(nn.Module):
     @configurable
     def __init__(self, vocab_size, encoder_hidden_size=512, frame_channels=80):
 
-        super(SpectrogramModel, self).__init__()
+        super().__init__()
 
         self.encoder = Encoder(vocab_size, lstm_hidden_size=encoder_hidden_size)
         self.decoder = AutoregressiveDecoder(
@@ -127,6 +127,7 @@ class SpectrogramModel(nn.Module):
             while len(stopped) != batch_size and len(frames_with_residual) < max_recursion:
                 frame, frame_with_residual, stop_token, hidden_state, alignment = self.decoder(
                     encoded_tokens, tokens_mask, hidden_state=hidden_state)
+                # TODO: Do something like ``output.data <= 0.5.all()`` instead of a ``set()``.
                 stopped.update(self._get_stopped_indexes(stop_token))
 
                 # Store results

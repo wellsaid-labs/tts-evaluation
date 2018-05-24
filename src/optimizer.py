@@ -23,10 +23,16 @@ class Optimizer(object):
 
     def step(self):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
+
+        Returns:
+            parameter_norm (float): Total norm of the parameters if ``max_grad_norm > 0``;
+                otherwise, returns None.
         """
+        parameter_norm = None
         if self.max_grad_norm and self.max_grad_norm > 0:
             params = itertools.chain.from_iterable(
                 [group['params'] for group in self.optimizer.param_groups])
-            torch.nn.utils.clip_grad_norm_(params, self.max_grad_norm)
+            parameter_norm = torch.nn.utils.clip_grad_norm_(params, self.max_grad_norm)
 
         self.optimizer.step()
+        return parameter_norm

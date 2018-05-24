@@ -2,7 +2,8 @@ import functools
 
 from torch import nn
 from tensorflow.contrib.signal.python.ops import window_ops
-from torch.optim import Adam
+
+import torch
 
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
@@ -12,7 +13,7 @@ def set_hparams():
     """ Using the ``configurable`` module set the hyperparameters for the source code.
     """
 
-    Adam.__init__ = configurable(Adam.__init__)
+    torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
     nn.modules.batchnorm._BatchNorm.__init__ = configurable(
         nn.modules.batchnorm._BatchNorm.__init__)
     add_config({
@@ -21,14 +22,9 @@ def set_hparams():
             'momentum': 0.01,
         },
         # SOURCE (Tacotron 2):
-        # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999, eps = 10−6
-        # learning rate of 10−3
-        # We also apply L2 regularization with weight 10−6
-        'torch.optim.Adam.__init__': {
+        # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
+        'torch.optim.adam.Adam.__init__': {
             'betas': (0.9, 0.999),
-            'eps': 10e-6,
-            'lr': 10e-3,
-            'weight_decay': 10e-6,
             'amsgrad': True,
         }
     })
@@ -56,7 +52,12 @@ def set_hparams():
     # features to 128-dimensional hidden representations.
     attention_hidden_size = 128
 
+    # SOURCE (Tacotron 1):
+    # We use 24 kHz sampling rate for all experiments.
+    sample_rate = 24000
+
     wav_to_log_mel_spectrogram = {
+        'sample_rate': sample_rate,
         # SOURCE (Tacotron 2):
         # mel spectrograms are computed through a shorttime Fourier transform (STFT)
         # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
@@ -77,9 +78,9 @@ def set_hparams():
         'min_magnitude': 0.01,
     }
 
-    # SOURCE (Tacotron 1):
-    # We use 24 kHz sampling rate for all experiments.
-    sample_rate = 24000
+    # SOURCE (WaveNet):
+    # where −1 < xt < 1 and µ = 255.
+    mu = 255
 
     add_config({
         'src': {
@@ -98,11 +99,11 @@ def set_hparams():
                 'epoch_end_decay': 100000,
                 'end_lr': 10e-5,
             },
-            'preprocess': {
+            'audio': {
                 # SOURCE (Wavenet):
                 # To make this more tractable, we first apply a µ-law companding transformation
                 # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
-                'mu_law_quantize.mu': 255,
+                'mu_law_quantize.mu': mu,
                 # Silence theshold was discovered in the notebook: ``Silence Threshold.ipynb``
                 'find_silence.silence_threshold': 15,
                 'read_audio': {
@@ -209,6 +210,50 @@ def set_hparams():
                 'model.SpectrogramModel.__init__': {
                     'encoder_hidden_size': encoder_hidden_size,
                     'frame_channels': frame_channels,
+                }
+            },
+            'signal_model': {
+                'residual_block.ResidualBlock.__init__': {
+                    # The Deep Voice and Wavenet paper seem to imply a kernel size of 2 with their
+                    # illustrations.
+                    'kernel_size': 2
+                },
+                'model.WaveNet.__init__': {
+                    'mu': mu,
+                    'local_features_size': frame_channels,
+
+                    # SOURCE Parallel WaveNet: (256 block hidden size)
+                    # The number of hidden units in the gating layers is 512 (split into two groups
+                    # of 256 for the two parts of the activation function (1)).
+                    # SOURCE Deep Voice: (64 block hidden size)
+                    # Our highest-quality final model uses l = 40 layers, r = 64 residual channels,
+                    # and s = 256 skip channels.
+                    'block_hidden_size': 64,
+                    'skip_size': 256,
+
+                    # SOURCE Tacotron 2: (From their ablation studies)
+                    # Total Layers: 24 | Num Cycles: 4 |  Dilation cycle size: 6
+                    'num_layers': 24,
+                    'cycle_size': 6,
+
+                    # SOURCE: Tacotron 2
+                    # only 2 upsampling layers are used in the conditioning stack instead of 3
+                    # layers.
+                    # SOURCE: Tacotron 2 Author Google Chat
+                    # We upsample 4x with the layers and then repeat each value 75x
+                    'upsample_convs': [4],
+                    'upsample_repeat': 75,
+                }
+            },
+            'bin.signal_model': {
+                '_utils.DataIterator.__init__': {
+                    # SOURCE (Parallel WaveNet):
+                    # minibatch size of 32 audio clips, each containing 7,680 timesteps
+                    # (roughly 320ms).
+                    'max_samples': 7800  # We use 7,800 to evenly divide with ``frame_hop``
+                },
+                'train.main': {
+                    'sample_rate': sample_rate
                 }
             }
         }

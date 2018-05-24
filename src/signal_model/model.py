@@ -25,7 +25,6 @@ def get_receptive_field_size(layers):
     return sum([layer.dilation * (layer.kernel_size - 1) for layer in layers])
 
 
-@configurable
 class WaveNet(nn.Module):
     """
     Notes:
@@ -44,6 +43,7 @@ class WaveNet(nn.Module):
         local_features_size (int): Dimensionality of local features.
     """
 
+    @configurable
     def __init__(self,
                  mu=255,
                  block_hidden_size=64,
@@ -72,7 +72,8 @@ class WaveNet(nn.Module):
             block_hidden_size=block_hidden_size,
             upsample_repeat=upsample_repeat,
             upsample_convs=upsample_convs,
-            local_features_size=local_features_size)
+            local_features_size=local_features_size,
+            num_layers=num_layers)
         self.out = nn.Sequential(
             nn.ReLU(),
             nn.Conv1d(in_channels=skip_size, out_channels=self.mu + 1, kernel_size=1, bias=False),
@@ -135,13 +136,13 @@ class WaveNet(nn.Module):
             skip_biases=skip_biases,
             use_embed_tanh=use_embed_tanh)
 
-    def forward(self, local_features, signal=None, implementation=None):
+    def forward(self, local_features, gold_signal=None, implementation=None):
         """
         Args:
-            local_features (torch.FloatTensor [local_length, batch_size, local_features_size]):
+            local_features (torch.FloatTensor [batch_size, local_length, local_features_size]):
                 Local feature to condition signal generation (e.g. spectrogram).
-            signal (torch.FloatTensor [signal_length, batch_size], optional): Mu-law encoded signal
-                used for teacher-forcing.
+            gold_signal (torch.FloatTensor [batch_size, signal_length], optional): Mu-law encoded
+                signal used for teacher-forcing.
             implementation (nv_wavenet.Impl, optional): An implementation used for inference,
                 either: AUTO, SINGLE_BLOCK, DUAL_BLOCK, or PERSISTENT
 
@@ -152,24 +153,29 @@ class WaveNet(nn.Module):
                     distribution over ``mu + 1`` energy levels.
                 * (torch.FloatTensor [batch_size, signal_length]): Categorical
                     distribution over ``mu + 1`` energy levels.
+                The predicted signal is one time step ahead of the gold signal.
         """
-        if signal is None and self.training:
+        if gold_signal is None and self.training:
             raise ValueError('Training without teacher forcing is not supported.')
 
         if self.training:
             # On a forward pass with signal, we assume this is
             self.has_new_weights = True
 
+        # [batch_size, local_length, local_features_size] →
+        # [local_length, batch_size, local_features_size]
+        local_features = local_features.transpose(0, 1)
+
         # [local_length, batch_size, local_features_size] →
         # [2 * block_hidden_size, batch_size, num_layers, signal_length]
         conditional_features = self.conditional_features_upsample(local_features)
 
-        if signal is not None:
-            assert conditional_features.shape[3] == signal.shape[0], (
+        if gold_signal is not None:
+            assert conditional_features.shape[3] == gold_signal.shape[1], (
                 "Upsampling parameters in tangent with signal shape and local features shape " +
                 "must be partible")
 
-        if signal is None and not self.training:  # pragma: no cover
+        if gold_signal is None and not self.training:  # pragma: no cover
             assert torch.cuda.is_available(), "Inference only works for CUDA."
 
             if self.has_new_weights:
@@ -181,30 +187,34 @@ class WaveNet(nn.Module):
                 'nv_wavenet').Impl.AUTO if implementation is None else implementation
             return self.kernel.infer(cond_input=conditional_features, implementation=implementation)
 
+        # [batch_size, signal_length] →
+        # [signal_length, batch_size]
+        gold_signal = gold_signal.transpose(0, 1)
+
         # [signal_length, batch_size] → [signal_length, batch_size, mu + 1]
         # Encode signal with one-hot encoding, reference:
         # https://discuss.pytorch.org/t/convert-int-into-one-hot-format/507/25
-        signal = (signal.unsqueeze(2) == torch.arange(self.mu + 1).reshape(1, 1,
-                                                                           self.mu + 1)).float()
+        gold_signal = (gold_signal.unsqueeze(2) == torch.arange(self.mu + 1).reshape(
+            1, 1, self.mu + 1)).float()
 
         # Convolution operater expects input_ of the form:
         # [batch_size, channels (mu + 1), signal_length]
-        signal = signal.permute(1, 2, 0)
+        gold_signal = gold_signal.permute(1, 2, 0)
 
         # Using a convoluion, we compute an embedding from the one-hot encoding.
         # [batch_size, mu + 1, signal_length] → [batch_size, block_hidden_size, signal_length]
-        signal_features = self.embed(signal)
+        gold_signal_features = self.embed(gold_signal)
 
-        del signal
+        del gold_signal
 
         # [batch_size, block_hidden_size, signal_length] →
         # [block_hidden_size, batch_size, signal_length]
-        signal_features.transpose_(0, 1)
+        gold_signal_features.transpose_(0, 1)
 
         cumulative_skip = None
         for i, layer in enumerate(self.layers):
-            signal_features, skip = layer(
-                signal_features=signal_features,
+            gold_signal_features, skip = layer(
+                signal_features=gold_signal_features,
                 conditional_features=conditional_features[:, :, i, :])
 
             if cumulative_skip is None:

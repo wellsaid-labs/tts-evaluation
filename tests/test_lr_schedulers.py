@@ -14,7 +14,7 @@ from src.lr_schedulers import DelayedExponentialLR
 class SchedulerTestNet(torch.nn.Module):
 
     def __init__(self):
-        super(SchedulerTestNet, self).__init__()
+        super().__init__()
         self.conv1 = torch.nn.Conv2d(1, 1, 1)
         self.conv2 = torch.nn.Conv2d(1, 1, 1)
 

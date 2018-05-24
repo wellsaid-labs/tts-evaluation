@@ -12,9 +12,8 @@ def test_autoregressive_decoder():
     decoder = AutoregressiveDecoder(
         encoder_hidden_size=encoder_hidden_size, frame_channels=frame_channels)
 
-    encoded_tokens = torch.autograd.Variable(
-        torch.FloatTensor(num_tokens, batch_size, encoder_hidden_size).uniform_(0, 1))
-    tokens_mask = torch.autograd.Variable(torch.ByteTensor(batch_size, num_tokens).zero_())
+    encoded_tokens = torch.FloatTensor(num_tokens, batch_size, encoder_hidden_size).uniform_(0, 1)
+    tokens_mask = torch.ByteTensor(batch_size, num_tokens).zero_()
 
     hidden_state = None
     for _ in range(3):
@@ -45,11 +44,9 @@ def test_autoregressive_decoder_ground_truth():
     decoder = AutoregressiveDecoder(
         encoder_hidden_size=encoder_hidden_size, frame_channels=frame_channels)
 
-    encoded_tokens = torch.autograd.Variable(
-        torch.FloatTensor(num_tokens, batch_size, encoder_hidden_size).uniform_(0, 1))
-    tokens_mask = torch.autograd.Variable(torch.ByteTensor(batch_size, num_tokens).zero_())
-    ground_truth_frames = torch.autograd.Variable(
-        torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1))
+    encoded_tokens = torch.FloatTensor(num_tokens, batch_size, encoder_hidden_size).uniform_(0, 1)
+    tokens_mask = torch.ByteTensor(batch_size, num_tokens).zero_()
+    ground_truth_frames = torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1)
 
     frames, frames_with_residual, stop_token, hidden_state, alignment = decoder(
         encoded_tokens=encoded_tokens,

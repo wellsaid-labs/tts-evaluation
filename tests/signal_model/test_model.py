@@ -14,8 +14,8 @@ def test_signal_model():
     upsample_repeat = 2
     signal_length = local_length * upsample_convs[0] * upsample_convs[1] * upsample_repeat
 
-    local_features = torch.FloatTensor(local_length, batch_size, local_features_size)
-    signal = torch.randint(0, mu + 1, (signal_length, batch_size))
+    local_features = torch.FloatTensor(batch_size, local_length, local_features_size)
+    signal = torch.randint(0, mu + 1, (batch_size, signal_length))
 
     net = SignalModel(
         num_layers=3,
@@ -47,7 +47,7 @@ def test_signal_model_infer():
     mu = 255
     signal_length = local_length * upsample_convs[0] * upsample_convs[1] * upsample_repeat
 
-    local_features = torch.FloatTensor(local_length, batch_size, local_features_size)
+    local_features = torch.FloatTensor(batch_size, local_length, local_features_size)
 
     net = SignalModel(
         mu=mu,

@@ -55,7 +55,7 @@ class LocationSensitiveAttention(nn.Module):
                  num_convolution_filters=32,
                  convolution_filter_size=31):
 
-        super(LocationSensitiveAttention, self).__init__()
+        super().__init__()
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, ('`convolution_filter_size` must be odd')

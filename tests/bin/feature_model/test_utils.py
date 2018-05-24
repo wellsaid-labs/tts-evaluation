@@ -33,7 +33,13 @@ def test_data_iterator():
 
         iterator = DataIterator(context.device, dataset, batch_size, trial_run=True)
         assert len(iterator) == 1
-        next(iter(iterator))
+        iterator = iter(iterator)
+        next(iterator)
+        try:
+            next(iterator)
+        except StopIteration:
+            error = True
+        assert error
 
 
 @mock.patch('src.bin.feature_model._utils.lj_speech_dataset')
@@ -61,7 +67,7 @@ def test_load_data(lj_speech_dataset_mock):
         assert len(dev) == 1
 
         assert train[0]['stop_token'].shape[0] == train[0]['log_mel_spectrogram'].shape[0]
-        assert train[0]['signal'].shape[0] % train[0]['log_mel_spectrogram'].shape[0] == 0
+        assert train[0]['quantized_signal'].shape[0] % train[0]['log_mel_spectrogram'].shape[0] == 0
 
         # Test Cache
         train, dev, encoder = load_data(
@@ -86,7 +92,11 @@ def test_load_save_checkpoint():
             torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
         scheduler = StepLR(optimizer.optimizer, step_size=30)
         filename = save_checkpoint(
-            context, model=FeatureModel(10), optimizer=optimizer, scheduler=scheduler, step=10)
+            context.checkpoints_directory,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            step=10)
         assert os.path.isfile(filename)
 
         # Smoke test

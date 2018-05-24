@@ -13,27 +13,24 @@ import tensorflow as tf
 
 tf.enable_eager_execution()
 
+from src.audio import log_mel_spectrogram_to_wav
 from src.bin.feature_model._utils import load_checkpoint
+from src.bin.feature_model._utils import set_hparams as set_feature_model_auxiliary_hparams
 from src.hparams import set_hparams
-from src.preprocess import log_mel_spectrogram_to_wav
 from src.utils import get_total_parameters
 from src.utils import plot_attention
 from src.utils import plot_spectrogram
 from src.utils import plot_stop_token
 
 
-def main():  # pragma: no cover
+def main(checkpoint):  # pragma: no cover
     """ Main module if this file is invoked directly """
     set_hparams()
+    set_feature_model_auxiliary_hparams()
 
-    # Load checkpoint
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--checkpoint", type=str, help="load a checkpoint")
-    args = parser.parse_args()
-
-    checkpoint = load_checkpoint(args.checkpoint)
-    directory = os.path.dirname(args.checkpoint)
-    logger.info('Loaded checkpoint: %s (%d step)' % (args.checkpoint, checkpoint['step']))
+    checkpoint = load_checkpoint(checkpoint)
+    directory = os.path.dirname(checkpoint)
+    logger.info('Loaded checkpoint: %s (%d step)' % (checkpoint, checkpoint['step']))
     text_encoder = checkpoint['text_encoder']
     model = checkpoint['model']
     torch.set_grad_enabled(False)
@@ -71,4 +68,9 @@ def main():  # pragma: no cover
 
 
 if __name__ == '__main__':  # pragma: no cover
-    main()
+    # Load checkpoint
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-c", "--checkpoint", type=str, help="load a checkpoint", required=True)
+    args = parser.parse_args()
+
+    main(args.checkpoint)

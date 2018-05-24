@@ -164,7 +164,7 @@ def torch_load(path, device=torch.device('cpu')):
 
     def remap(storage, loc):
         if 'cuda' in loc and device.type == 'cuda':
-            return storage.to(device=device)
+            return storage.cuda(device=device.index)
         return storage
 
     return torch.load(path, map_location=remap, pickle_module=dill)

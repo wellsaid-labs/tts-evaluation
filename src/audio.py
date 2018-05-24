@@ -20,20 +20,93 @@ from src.utils.configurable import configurable
 logger = logging.getLogger(__name__)
 
 
+def _asint(x):
+    """
+    Args:
+        x (torch.tensor, np.ndarray, python number): Some value or array x
+
+    Returns:
+        x converted to an integer for the appropriate library
+    """
+    isnumpy = isinstance(x, np.ndarray)
+    isscalar = np.isscalar(x)
+    return x.astype(np.int) if isnumpy else int(x) if isscalar else x.long()
+
+
+def _asfloat(x):
+    """
+    Args:
+        x (torch.tensor, np.ndarray, python number): Some value or array x
+
+    Returns:
+        x converted to an float for the appropriate library
+    """
+    isnumpy = isinstance(x, np.ndarray)
+    isscalar = np.isscalar(x)
+    return x.astype(np.float32) if isnumpy else float(x) if isscalar else x.float()
+
+
+@configurable
+def inverse_mu_law(y, mu=255):
+    """ Inverse of mu-law companding (mu-law expansion).
+
+    .. math::
+        f^{-1}(x) = sign(y) (1 / \mu) (1 + \mu)^{|y|} - 1)
+
+    Args:
+        y (array-like): Compressed signal. Each value of input signal must be in
+          range of [-1, 1].
+        mu (number): Compression parameter ``μ``.
+
+    Returns:
+        array-like: Uncomprresed signal (-1 <= x <= 1)
+    """
+    return np.sign(y) * (1.0 / mu) * ((1.0 + mu)**np.abs(y) - 1.0)
+
+
+@configurable
+def inverse_mu_law_quantize(y, mu=255):
+    """ Inverse of mu-law companding and quantize.
+
+    Args:
+        y (array-like): Quantized signal (∈ [0, mu]).
+        mu (number): Compression parameter ``μ``.
+
+    Returns:
+        array-like: Uncompressed signal ([-1, 1])
+
+    Examples:
+        >>> from scipy.io import wavfile
+        >>> import pysptk
+        >>> import numpy as np
+        >>> fs, x = wavfile.read(pysptk.util.example_audio_file())
+        >>> x = (x / 32768.0).astype(np.float32)
+        >>> x_hat = inverse_mu_law_quantize(P.mulaw_quantize(x))
+        >>> x_hat = (x_hat * 32768).astype(np.int16)
+    """
+    # [0, m) to [-1, 1]
+    y = 2 * _asfloat(y) / mu - 1
+    return inverse_mu_law(y, mu)
+
+
 @configurable
 def mu_law_quantize(x, mu=255):
-    """Mu-Law companding + quantize
+    """ Mu-Law companding and quantize.
+
     Args:
         x (array-like): Input signal. Each value of input signal must be in
           range of [-1, 1].
         mu (number): Compression parameter ``μ``.
+
     Returns:
         array-like: Quantized signal (dtype=int)
           - y ∈ [0, mu] if x ∈ [-1, 1]
           - y ∈ [0, mu) if x ∈ [-1, 1)
+
     .. note::
         If you want to get quantized values of range [0, mu) (not [0, mu]),
         then you need to provide input signal of range [-1, 1).
+
     Examples:
         >>> from scipy.io import wavfile
         >>> import pysptk
@@ -46,18 +119,21 @@ def mu_law_quantize(x, mu=255):
     """
     y = mu_law(x, mu=mu)
     # scale [-1, 1] to [0, mu]
-    return ((y + 1) / 2 * mu).astype(np.int)
+    return _asint((y + 1) / 2 * mu)
 
 
 def mu_law(x, mu=255):
-    """Mu-Law companding
+    """ Mu-Law companding.
+
     Method described in paper [1]_.
     .. math::
         f(x) = sign(x) \ln (1 + \mu |x|) / \ln (1 + \mu)
+
     Args:
         x (array-like): Input signal. Each value of input signal must be in
           range of [-1, 1].
         mu (number): Compression parameter ``μ``.
+
     Returns:
         array-like: Compressed signal ([-1, 1])
 

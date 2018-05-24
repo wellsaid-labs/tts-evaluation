@@ -57,7 +57,7 @@ class Encoder(nn.Module):
                  lstm_bidirectional=True,
                  lstm_dropout=0.1):
 
-        super(Encoder, self).__init__()
+        super().__init__()
 
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size

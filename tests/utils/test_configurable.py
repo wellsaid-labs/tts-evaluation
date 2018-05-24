@@ -1,4 +1,5 @@
 import pytest
+import _pytest
 import inspect
 
 from src.utils.configurable import _parse_configuration
@@ -65,7 +66,7 @@ def test_mock_attributes():
     assert not hasattr(mock, '_configurable')
 
 
-pytest.approx = configurable(pytest.approx)
+_pytest.python_api.approx = configurable(_pytest.python_api.approx)
 
 
 class Mock(object):
@@ -82,8 +83,9 @@ class MockConfigurable(object):
 
 
 def test_check_configuration_external_libraries():
+    # TODO: Rewrite test to not rely on internal components
     # Test that check configuration can check ``configurable`` on external libraries
-    _check_configuration({'pytest': {'approx': {'rel': None}}})
+    _check_configuration({'_pytest': {'python_api': {'approx': {'rel': None}}}})
 
 
 def test_check_configuration_internal_libraries():

@@ -14,11 +14,10 @@ def test_location_sensative_attention():
         encoder_hidden_size=encoder_hidden_size,
         query_hidden_size=query_hidden_size,
         hidden_size=attention_hidden_size)
-    tokens_mask = torch.autograd.Variable(torch.ByteTensor(batch_size, num_tokens).zero_())
+    tokens_mask = torch.ByteTensor(batch_size, num_tokens).zero_()
     tokens_mask[:, -1].fill_(1)
-    encoded_tokens = torch.autograd.Variable(
-        torch.FloatTensor(num_tokens, batch_size, encoder_hidden_size).uniform_(0, 1))
-    query = torch.autograd.Variable(torch.FloatTensor(batch_size, query_hidden_size).uniform_(0, 1))
+    encoded_tokens = torch.FloatTensor(num_tokens, batch_size, encoder_hidden_size).uniform_(0, 1)
+    query = torch.FloatTensor(batch_size, query_hidden_size).uniform_(0, 1)
 
     cumulative_alignment = None
     for j in range(3):

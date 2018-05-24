@@ -81,7 +81,7 @@ class AutoregressiveDecoder(nn.Module):
                  lstm_dropout=0.1,
                  attention_context_size=128):
 
-        super(AutoregressiveDecoder, self).__init__()
+        super().__init__()
 
         self.frame_channels = frame_channels
         # Is this case, the encoder hidden feature representation size directly informs the size

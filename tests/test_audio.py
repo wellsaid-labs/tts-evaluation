@@ -5,13 +5,16 @@ import tensorflow as tf
 
 from tensorflow.contrib.framework.python.ops import audio_ops
 
-from src.preprocess import read_audio
-from src.preprocess import wav_to_log_mel_spectrogram
-from src.preprocess import log_mel_spectrogram_to_wav
-from src.preprocess import mu_law_quantize
+from src.audio import read_audio
+from src.audio import wav_to_log_mel_spectrogram
+from src.audio import log_mel_spectrogram_to_wav
+from src.audio import mu_law_quantize
+from src.audio import mu_law
+from src.audio import inverse_mu_law
+from src.audio import inverse_mu_law_quantize
 
 
-def test_mulaw():
+def test_mu_law_quantize_edge_cases():
     assert mu_law_quantize(-1.0, 2) == 0
     assert mu_law_quantize(-0.5, 2) == 0
     assert mu_law_quantize(-0.001, 2) == 0
@@ -20,6 +23,49 @@ def test_mulaw():
     assert mu_law_quantize(0.5, 2) == 1
     assert mu_law_quantize(0.99999, 2) == 1
     assert mu_law_quantize(1.0, 2) == 2
+
+
+def test_mu_law_forward_backward_quantize():
+    # forward/backward correctness for quantize
+    for mu in [128, 256, 512]:
+        for x, y in [(-1.0, 0), (0.0, mu // 2), (0.99999, mu - 1)]:
+            y_hat = mu_law_quantize(x, mu)
+            err = np.abs(x - inverse_mu_law_quantize(y_hat, mu))
+            assert np.allclose(y, y_hat)
+            # have small quantize error
+            assert err <= 0.1
+
+
+def test_mu_law_torch():
+    import torch
+    torch.manual_seed(1234)
+    for mu in [128, 256, 512]:
+        x = torch.rand(10)
+        y = mu_law(x, mu)
+        x_hat = inverse_mu_law(y, mu)
+        assert np.allclose(x, x_hat)
+        inverse_mu_law_quantize(mu_law_quantize(x))
+
+
+def test_mu_law_nd_array():
+    # ndarray input
+    for mu in [128, 256, 512]:
+        x = np.random.rand(10)
+        y = mu_law(x, mu)
+        x_hat = inverse_mu_law(y, mu)
+        assert np.allclose(x, x_hat)
+        inverse_mu_law_quantize(mu_law_quantize(x))
+
+
+def test_mu_law_forward_backward():
+    np.random.seed(1234)
+    # forward/backward correctness
+    for mu in [128, 256, 512]:
+        for x in np.random.rand(100):
+            y = mu_law(x, mu)
+            assert y >= 0 and y <= 1
+            x_hat = inverse_mu_law(y, mu)
+            assert np.allclose(x, x_hat)
 
 
 def test_librosa_tf_decode_wav():

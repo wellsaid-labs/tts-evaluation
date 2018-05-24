@@ -203,6 +203,24 @@ def _get_main_module_name():
 _main_module_name = _get_main_module_name()
 
 
+def _get_module_name(func):
+    """ Get the name of a module as expressed by it's absolute path.
+
+    Args:
+        func (callable): Callable to be inspected.
+
+    Returns:
+        keys (list of str): Full path of the module.
+        print_name (str): Short name of the module for logging.
+    """
+    module_keys = inspect.getmodule(func).__name__.split('.')
+    if module_keys == ['__main__']:
+        module_keys = _main_module_name.split('.')
+    keys = module_keys + func.__qualname__.split('.')
+    print_name = module_keys[-1] + '.' + func.__qualname__
+    return keys, print_name
+
+
 def _check_configuration_helper(dict_, keys):
     """ Recursive helper of ``_check_configuration``.
 
@@ -231,7 +249,13 @@ def _check_configuration_helper(dict_, keys):
                 function = getattr(module, keys[-1])
                 # TODO: Inspect and check if the required parameters exist
                 if (hasattr(function, '_configurable')):
+                    absolute_keys = _get_module_name(function)[0]
+                    if keys != absolute_keys:
+                        raise TypeError('The module path must be absolute: %s vs %s' %
+                                        (keys, absolute_keys))
                     return
+        # TODO: Provide a reasonable error if loading ``module_path`` causes TypeError due to
+        # being unable to load the module.
         except (ImportError, AttributeError) as _:
             pass
 
@@ -251,6 +275,12 @@ def _check_configuration_helper(dict_, keys):
                 class_ = getattr(module, keys[-2])
                 function = getattr(class_, keys[-1])
                 if (hasattr(function, '_configurable')):
+                    # NOTE: ``_get_module_name`` is used by configurable for identification;
+                    # therefore, enabling us to close the loop with verification.
+                    absolute_keys = _get_module_name(function)[0]
+                    if keys != absolute_keys:
+                        raise TypeError('The module path must be absolute: %s vs %s' %
+                                        (keys, absolute_keys))
                     return
         except (ImportError, AttributeError):
             pass
@@ -413,14 +443,10 @@ def configurable(func):
         global _configuration
 
         # Get the module name
-        module_keys = inspect.getmodule(func).__name__.split('.')
-        if module_keys == ['__main__']:
-            module_keys = _main_module_name.split('.')
-        keys = module_keys + func.__qualname__.split('.')
+        keys, print_name = _get_module_name(func)
 
         # Get the module config
         config = _configuration[keys] if keys in _configuration else {}  # Get default
-        print_name = module_keys[-1] + '.' + func.__qualname__
         if len(config) == 0:
             logger.info('%s no config for: %s', print_name, '.'.join(keys))
 

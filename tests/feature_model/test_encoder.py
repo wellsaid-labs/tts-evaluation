@@ -20,9 +20,8 @@ def test_encoder():
         embedding_dim=encoder_params['embedding_dim'])
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
-    input_ = torch.autograd.Variable(
-        torch.LongTensor(encoder_params['batch_size'], encoder_params['num_tokens']).random_(
-            1, encoder_params['vocab_size']))
+    input_ = torch.LongTensor(encoder_params['batch_size'], encoder_params['num_tokens']).random_(
+        1, encoder_params['vocab_size'])
     output = encoder(input_)
 
     assert output.type() == 'torch.FloatTensor'
@@ -44,9 +43,9 @@ def test_encoder_filter_size():
             convolution_filter_size=filter_size)
 
         # NOTE: 1-index to avoid using 0 typically associated with padding
-        input_ = torch.autograd.Variable(
-            torch.LongTensor(encoder_params['batch_size'], encoder_params['num_tokens']).random_(
-                1, encoder_params['vocab_size']))
+        input_ = torch.LongTensor(encoder_params['batch_size'],
+                                  encoder_params['num_tokens']).random_(
+                                      1, encoder_params['vocab_size'])
         output = encoder(input_)
 
         assert output.type() == 'torch.FloatTensor'
