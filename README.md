@@ -32,6 +32,8 @@ incorporating ELMo and tokenizing on words.
 * Following [The Best of Both Worlds: Combining Recent Advances in Neural Machine Translation
 ](https://arxiv.org/abs/1804.09849v2) and [Deep contextualized word representations](https://arxiv.org/abs/1802.05365) add
 layer norm to LSTM.
+* https://github.com/NVIDIA/nv-wavenet/issues/5
+* Document carefully crafted getting this running guide
 
 ## Contributing
 

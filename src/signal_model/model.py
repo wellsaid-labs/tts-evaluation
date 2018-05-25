@@ -22,7 +22,7 @@ def get_receptive_field_size(layers):
     Returns:
         receptive_field_size (int): Receptive field size in samples.
     """
-    return sum([layer.dilation * (layer.kernel_size - 1) for layer in layers])
+    return sum([layer.dilation * (layer.kernel_size - 1) for layer in layers]) + 1
 
 
 class WaveNet(nn.Module):
@@ -79,7 +79,7 @@ class WaveNet(nn.Module):
             nn.Conv1d(in_channels=skip_size, out_channels=self.mu + 1, kernel_size=1, bias=False),
             nn.ReLU(),
             nn.Conv1d(in_channels=self.mu + 1, out_channels=self.mu + 1, kernel_size=1, bias=False),
-            nn.Softmax(dim=1),
+            nn.LogSoftmax(dim=1),
         )
         self.has_new_weights = True  # Whether the weights have been updated since last export
         self.kernel = None
@@ -87,7 +87,7 @@ class WaveNet(nn.Module):
         self.receptive_field_size = get_receptive_field_size(self.layers)
         logger.info('Receptive field size in samples: %d' % self.receptive_field_size)
 
-    def _export(self):  # pragma: no cover
+    def _export(self, dtype, device):  # pragma: no cover
         """
         Notes:
             * Edit hyperparameters inside ``wavenet_infer.cu`` to match.
@@ -97,11 +97,12 @@ class WaveNet(nn.Module):
             kernel (NVWaveNet): NVIDIA optimize wavenet CUDA kernel.
         """
         # This implementation does not use embeded ``embedding_prev``
-        embedding_prev = torch.FloatTensor(self.mu + 1, self.block_hidden_size).zero_()
+        embedding_prev = torch.zeros(
+            (self.mu + 1, self.block_hidden_size), dtype=dtype, device=device)
 
         # Compute embedding current by the identity matrix through a conv
         # embedding_curr [1, self.mu + 1 (signal_length), self.mu + 1 (channels)]
-        embedding_curr = torch.eye(self.mu + 1).unsqueeze(0)
+        embedding_curr = torch.eye(self.mu + 1, dtype=dtype, device=device).unsqueeze(0)
         # Convolution operater expects input_ of the form:
         # [batch_size (1), channels (self.mu + 1), signal_length (self.mu + 1)]
         embedding_curr = embedding_curr.transpose_(1, 2)
@@ -180,7 +181,7 @@ class WaveNet(nn.Module):
 
             if self.has_new_weights:
                 # Re export weights if ``self.has_new_weights``
-                self.kernel = self._export()
+                self.kernel = self._export(conditional_features.dtype, conditional_features.device)
                 self.has_new_weights = False
 
             implementation = __import__(
@@ -194,8 +195,9 @@ class WaveNet(nn.Module):
         # [signal_length, batch_size] → [signal_length, batch_size, mu + 1]
         # Encode signal with one-hot encoding, reference:
         # https://discuss.pytorch.org/t/convert-int-into-one-hot-format/507/25
-        gold_signal = (gold_signal.unsqueeze(2) == torch.arange(self.mu + 1).reshape(
-            1, 1, self.mu + 1)).float()
+        gold_signal = (gold_signal.unsqueeze(2) == torch.arange(
+            self.mu + 1, dtype=gold_signal.dtype, device=gold_signal.device).reshape(
+                1, 1, self.mu + 1)).float()
 
         # Convolution operater expects input_ of the form:
         # [batch_size, channels (mu + 1), signal_length]

@@ -62,7 +62,9 @@ class Trainer():  # pragma: no cover
                  epoch=0,
                  criterion=NLLLoss,
                  optimizer=Adam,
-                 num_workers=0):
+                 num_workers=0,
+                 model_state_dict=None,
+                 optimizer_state_dict=None):
 
         # Allow for ``class`` or a class instance
         self.model = model if isinstance(model, torch.nn.Module) else model()
@@ -70,8 +72,13 @@ class Trainer():  # pragma: no cover
         if device.type == 'cuda' and torch.cuda.device_count() > 1:
             logger.info('Training on %d GPUs', torch.cuda.device_count())
             self.model = torch.nn.DataParallel(self.model, dim=0, output_device=device)
+        if model_state_dict is not None:
+            self.model.load_state_dict(model_state_dict)
+
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else Optimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
+        if optimizer_state_dict is not None:
+            self.optimizer.load_state_dict(optimizer_state_dict)
 
         self.dev_tensorboard = dev_tensorboard
         self.train_tensorboard = train_tensorboard
@@ -100,9 +107,9 @@ class Trainer():  # pragma: no cover
         """ Compute the losses for Tacotron.
 
         Args:
-            gold_signal (torch.FloatTensor [batch_size, signal_length])
+            gold_signal (torch.ShortTensor [batch_size, signal_length])
             gold_signal_lengths (list): Lengths of each signal in the batch.
-            predicted_signal (torch.FloatTensor [batch_size, mu + 1, signal_length])
+            predicted_signal (torch.LongTensor [batch_size, mu + 1, signal_length])
 
         Returns:
             (torch.Tensor) scalar loss values
@@ -114,7 +121,7 @@ class Trainer():  # pragma: no cover
         num_predictions = torch.sum(mask)
 
         # signal_loss [batch_size, signal_length]
-        signal_loss = self.criterion(predicted_signal, gold_signal)
+        signal_loss = self.criterion(predicted_signal, gold_signal.long())
         signal_loss = torch.sum(signal_loss * mask) / num_predictions
 
         return signal_loss, num_predictions
@@ -185,7 +192,9 @@ class Trainer():  # pragma: no cover
         """
         signal = signal.detach().cpu()
         signal = inverse_mu_law_quantize(signal)
-        assert torch.max(signal) <= 1 and torch.min(signal) >= 1
+        assert torch.max(signal) <= 1.0 and torch.min(
+            signal) >= -1.0, "Should be [-1, 1] it is [%f, %f]" % (torch.max(signal),
+                                                                   torch.min(signal))
         self.tensorboard.add_audio('/'.join(path), signal, step, self.sample_rate)
 
     def _run_step(self,
@@ -213,9 +222,6 @@ class Trainer():  # pragma: no cover
         Returns:
             (torch.Tensor) Loss at every iteration
         """
-        print(source_signal_batch.shape)
-        print(frames.shape)
-
         predicted_signal = self.model(frames, gold_signal=source_signal_batch)
         signal_loss, num_signal_predictions = self._compute_loss(target_signal_batch,
                                                                  signal_lengths, predicted_signal)
@@ -226,32 +232,31 @@ class Trainer():  # pragma: no cover
             parameter_norm = self.optimizer.step()
             if parameter_norm is not None:
                 self._add_scalar(['parameter_norm', 'step'], parameter_norm, self.step)
-            self.scheduler.step()
             self.step += 1
 
         signal_loss = signal_loss.item()
 
         if train:
             self._add_scalar(['loss', 'signal', 'step'], signal_loss, self.step)
-            for i, lr in enumerate(self.scheduler.get_lr()):
-                self._add_scalar(['learning_rate', str(i), 'step'], lr, self.step)
 
         if sample:
             batch_size = predicted_signal.shape[0]
             item = random.randint(0, batch_size - 1)
             length = signal_lengths[item]
 
-            # gold_frames [num_frames, batch_size, frame_channels] → [batch_size, signal_length]
-            gold_frames = frames[:, item, :frames_lengths[item]].unsqueeze(1)
+            # gold_frames [batch_size, num_frames, frame_channels] → [batch_size (1), num_frames]
+            gold_frames = frames[item, :frames_lengths[item], :].unsqueeze(0)
+            # predicted_signal_no_teacher_forcing [batch_size (1), signal_length]
             predicted_signal_no_teacher_forcing = self.model(gold_frames)
 
             # predicted_signal [batch_size, mu + 1, signal_length] → [signal_length]
             predicted_signal = predicted_signal.max(dim=1)[1][item, :length]
-            # predicted_signal_no_teacher_forcing [batch_size, signal_length] → [signal_length]
-            predicted_signal_no_teacher_forcing = predicted_signal_no_teacher_forcing[item, :length]
+            # predicted_signal_no_teacher_forcing [batch_size (1), signal_length] → [signal_length]
+            predicted_signal_no_teacher_forcing = predicted_signal_no_teacher_forcing[0, :length]
             # gold_signal [batch_size, signal_length] → [signal_length]
             target_signal = target_signal_batch[item, :length]
 
+            # TODO: Save a visualization of the wav
             self._add_audio(['teacher_forcing', 'predicted'], predicted_signal, self.step)
             self._add_audio(['no_teacher_forcing', 'predicted'],
                             predicted_signal_no_teacher_forcing, self.step)

@@ -97,13 +97,14 @@ def set_hparams():
                 # NOTE: Over email the authors confirmed they ended decay at 100,000 steps
                 'epoch_start_decay': 50000,
                 'epoch_end_decay': 100000,
-                'end_lr': 10e-5,
+                'end_lr': 10**-5,
             },
             'audio': {
                 # SOURCE (Wavenet):
                 # To make this more tractable, we first apply a µ-law companding transformation
                 # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
                 'mu_law_quantize.mu': mu,
+                'inverse_mu_law_quantize.mu': mu,
                 # Silence theshold was discovered in the notebook: ``Silence Threshold.ipynb``
                 'find_silence.silence_threshold': 15,
                 'read_audio': {
@@ -214,8 +215,9 @@ def set_hparams():
             },
             'signal_model': {
                 'residual_block.ResidualBlock.__init__': {
-                    # The Deep Voice and Wavenet paper seem to imply a kernel size of 2 with their
-                    # illustrations.
+                    # Tacotron and Parallel WaveNet use kernel size of 3 to increase their receptive
+                    # field. However, nv-Wavenet only supports a kernel size of 2.
+                    # ISSUE: https://github.com/NVIDIA/nv-wavenet/issues/21
                     'kernel_size': 2
                 },
                 'model.WaveNet.__init__': {
@@ -233,8 +235,10 @@ def set_hparams():
 
                     # SOURCE Tacotron 2: (From their ablation studies)
                     # Total Layers: 24 | Num Cycles: 4 |  Dilation cycle size: 6
+                    # NOTE: We increase the cycle size to 8 to increase the receptive field to 766
+                    # samples. Unfortunatly, we cannot increase the kernel size.
                     'num_layers': 24,
-                    'cycle_size': 6,
+                    'cycle_size': 8,
 
                     # SOURCE: Tacotron 2
                     # only 2 upsampling layers are used in the conditioning stack instead of 3

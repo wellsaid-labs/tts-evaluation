@@ -114,8 +114,8 @@ def set_hparams():
         # For training, we use the Adam optimization algorithm with β1 = 0.9, β2 = 0.999, ε = 10−8,
         # a batch size of 8, a learning rate of 10−3
         'torch.optim.adam.Adam.__init__': {
-            'eps': 10e-8,
-            'lr': 10e-3,
+            'eps': 10**-8,
+            'lr': 10**-3,
             'weight_decay': 0
         }
     })
@@ -185,7 +185,7 @@ class DataIterator(object):
                 target_signal_batch.append(row['quantized_signal'])
                 zero_point = row['quantized_signal'].new_full((1,), zero_index)
                 source_signal_batch.append(
-                    torch.cat((zero_point, target_signal_batch[-1][:1]), dim=0))
+                    torch.cat((zero_point, target_signal_batch[-1][:-1]), dim=0))
                 frames_batch.append(row['log_mel_spectrogram'])
             else:
                 assert self.max_samples % factor == 0
@@ -204,17 +204,14 @@ class DataIterator(object):
                 last_index = target_signal_slice.new_full((1,), last_index)
 
                 frames_batch.append(frames_slice)
-                source_signal_batch.append(torch.cat((last_index, target_signal_slice[:1]), dim=0))
+                source_signal_batch.append(torch.cat((last_index, target_signal_slice[:-1]), dim=0))
                 target_signal_batch.append(target_signal_slice)
 
         target_signal_batch, signal_length_batch = pad_batch(
             target_signal_batch, padding_index=zero_index)
         source_signal_batch, _ = pad_batch(source_signal_batch, padding_index=zero_index)
-        print('frames_batch[0]', frames_batch[0].shape)
+        assert source_signal_batch.shape == target_signal_batch.shape
         frames_batch, frame_length_batch = pad_batch(frames_batch)
-        print('frames_batch', frames_batch.shape)
-        print('source_signal_batch', source_signal_batch.shape)
-        print('target_signal_batch', target_signal_batch.shape)
         return (source_signal_batch, target_signal_batch, signal_length_batch, frames_batch,
                 frame_length_batch)
 
@@ -244,9 +241,6 @@ def load_checkpoint(checkpoint=None, device=torch.device('cpu')):
     # Load checkpoint
     if checkpoint is not None:
         checkpoint = torch_load(os.path.join(ROOT_PATH, checkpoint), device=device)
-        if 'model' in checkpoint:
-            checkpoint['model'].apply(
-                lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
     return checkpoint
 
 
@@ -269,11 +263,12 @@ def save_checkpoint(directory, model=None, optimizer=None, epoch=None, step=None
         name = 'step_%d.pt' % (step,) if step is not None else 'checkpoint.pt'
         filename = os.path.join(directory, name)
 
-    torch_save(filename, {
-        'model': model,
-        'optimizer': optimizer,
-        'epoch': epoch,
-        'step': step,
-    })
+    torch_save(
+        filename, {
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'epoch': epoch,
+            'step': step,
+        })
 
     return filename

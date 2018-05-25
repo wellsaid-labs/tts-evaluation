@@ -46,7 +46,6 @@ def _asfloat(x):
     return x.astype(np.float32) if isnumpy else float(x) if isscalar else x.float()
 
 
-@configurable
 def inverse_mu_law(y, mu=255):
     """ Inverse of mu-law companding (mu-law expansion).
 

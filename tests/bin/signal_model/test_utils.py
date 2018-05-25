@@ -15,7 +15,7 @@ def test_set_hparams():
     set_hparams()
     model = SignalModel()
     optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()))
-    assert optimizer.defaults['eps'] == 1e-07
+    assert optimizer.defaults['eps'] == 10**-8
 
 
 def test_data_iterator():
