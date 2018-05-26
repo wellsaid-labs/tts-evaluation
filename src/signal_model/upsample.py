@@ -93,6 +93,7 @@ class ConditionalFeaturesUpsample(nn.Module):
 
         # [2 * block_hidden_size, batch_size, 1, signal_length] →
         # [2 * block_hidden_size, batch_size, num_layers, signal_length]
+        # TODO: Seperate 1by1 convolution for each layer; rather than repeating.
         conditional_features = conditional_features.repeat(1, 1, self.num_layers, 1)
 
         return conditional_features

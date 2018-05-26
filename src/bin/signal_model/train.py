@@ -249,6 +249,8 @@ class Trainer():  # pragma: no cover
             # predicted_signal_no_teacher_forcing [batch_size (1), signal_length]
             predicted_signal_no_teacher_forcing = self.model(gold_frames)
 
+            # TODO: Consider sampling with the entire phrase since we cannot do partial conditions
+
             # predicted_signal [batch_size, mu + 1, signal_length] → [signal_length]
             predicted_signal = predicted_signal.max(dim=1)[1][item, :length]
             # predicted_signal_no_teacher_forcing [batch_size (1), signal_length] → [signal_length]

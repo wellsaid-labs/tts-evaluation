@@ -109,13 +109,13 @@ class ResidualBlock(nn.Module):
         left, right = tuple(torch.chunk(signal_features, 2, dim=1))
 
         # signal_features [batch_size, hidden_size, signal_length]
-        signal_features = functional.tanh(left) * functional.sigmoid(right)
+        signal_features = functional.tanh(left) * functional.sigmoid(right)  # TODO: tanh init
 
         del left
         del right
 
         # [batch_size, hidden_size, signal_length] → [batch_size, skip_size, signal_length]
-        skip = self.skip_conv(signal_features)
+        skip = self.skip_conv(signal_features)  # TODO: relu init
 
         if self.is_last_layer:
             return None, skip

@@ -140,6 +140,7 @@ class DataIterator(object):
                  trial_run=False,
                  num_workers=0,
                  max_samples=7800):
+        # TODO: Try removing this...
         # ``drop_last`` to ensure full utilization of mutliple GPUs
         self.device = device
         self.iterator = DataLoader(

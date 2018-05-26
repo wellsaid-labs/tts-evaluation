@@ -76,9 +76,11 @@ class WaveNet(nn.Module):
             num_layers=num_layers)
         self.out = nn.Sequential(
             nn.ReLU(),
-            nn.Conv1d(in_channels=skip_size, out_channels=self.mu + 1, kernel_size=1, bias=False),
+            nn.Conv1d(in_channels=skip_size, out_channels=self.mu + 1, kernel_size=1,
+                      bias=False),  # TODO: RELu init
             nn.ReLU(),
-            nn.Conv1d(in_channels=self.mu + 1, out_channels=self.mu + 1, kernel_size=1, bias=False),
+            nn.Conv1d(in_channels=self.mu + 1, out_channels=self.mu + 1, kernel_size=1,
+                      bias=False),  # TODO: Linear init
             nn.LogSoftmax(dim=1),
         )
         self.has_new_weights = True  # Whether the weights have been updated since last export
@@ -184,6 +186,16 @@ class WaveNet(nn.Module):
                 self.kernel = self._export(conditional_features.dtype, conditional_features.device)
                 self.has_new_weights = False
 
+            # TODO: Somehow provide the last output to kernel to infer
+            # TODO: Work witn scalars instead of one hot embeddings, it'll be easier for the model
+            # Wavenet authors say
+            # https://github.com/ibab/tensorflow-wavenet/issues/47#issuecomment-249080343
+            # TODO: Do we need receptive size of initial source for convolutions to get information
+            # on the next. 720 samples of padding, for the convolutions?
+            # TODO: Remove max grad norm, it's not mentioned anywhere
+            # TODO: We could hack the nv_wavenet impelemtation to do a scalar embedding
+            # TODO: Write a test that nv_wavenet given zero, predicts one output the same as
+            # my system does!
             implementation = __import__(
                 'nv_wavenet').Impl.AUTO if implementation is None else implementation
             return self.kernel.infer(cond_input=conditional_features, implementation=implementation)
