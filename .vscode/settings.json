@@ -29,5 +29,14 @@
   "files.trimTrailingWhitespace": true,
   "git.autofetch": true,
   "editor.minimap.enabled": false,
-  "files.insertFinalNewline": true
+  "files.insertFinalNewline": true,
+  "files.exclude": {
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/CVS": true,
+    "**/.DS_Store": true,
+    "*.pyc": true,
+    "**/__pycache__/**": true
+  }
 }

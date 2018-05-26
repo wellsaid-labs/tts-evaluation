@@ -27,9 +27,6 @@ def test_signal_model():
     predicted = net(local_features, signal)
 
     assert predicted.shape == (batch_size, mu + 1, signal_length)
-    for i in range(batch_size):
-        for j in range(signal_length):
-            assert predicted[i, :, j].sum().item() == pytest.approx(1, 0.0001)
 
     # Smoke test back prop
     predicted.sum().backward()

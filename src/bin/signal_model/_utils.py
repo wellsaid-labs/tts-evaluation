@@ -80,6 +80,8 @@ def load_data(source_train='data/signal_dataset/train',
               extension='.npy'):
     """ Load train and dev datasets as ``FileLoaderDataset``s.
 
+    # TODO: Test this.
+
     Args:
         source_train (str): Directory with training examples.
         source_dev (str): Directory with dev examples.

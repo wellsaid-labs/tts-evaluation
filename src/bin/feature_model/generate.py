@@ -7,7 +7,6 @@ matplotlib.use('Agg')
 import argparse
 import logging
 import os
-import random
 
 from tqdm import tqdm
 
@@ -24,52 +23,6 @@ from src.utils import get_total_parameters
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-def process_dataset(device, dataset, batch_size, model):
-    """ Process a dataset through a trained model, outputing training data for the vocoder.
-
-    Args:
-        device (torch.device): Device to run on.
-        dataset (list): Dataset to process with the help of ``DataIterator``.
-        batch_size (int): Maximum batch size to load at once.
-        model (torch.nn.Module): Pretrained model to process data with.
-
-    Returns:
-        (list): Processed dataset with predicted ``log_mel_spectrogram``s and gold
-            ``quantized_signal``s
-    """
-    processed = []
-    data_iterator = tqdm(DataIterator(device, dataset, batch_size, load_signal=True))
-    for i, (gold_texts, gold_text_lengths, gold_frames, gold_frame_lengths, _,
-            gold_quantized_signals) in enumerate(data_iterator):
-
-        _, batch_predicted_frames, _, _ = model(gold_texts, ground_truth_frames=gold_frames)
-        # [num_frames, batch_size, frame_channels] → [batch_size, num_tokens, frame_channels]
-        batch_predicted_frames = batch_predicted_frames.transpose_(0, 1).cpu()
-        batch_size = batch_predicted_frames.shape[0]
-
-        # Save predictions
-        for j in range(batch_size):
-            # [batch_size, num_tokens, frame_channels] → [num_tokens, frame_channels]
-            predicted_frames = batch_predicted_frames[j][:gold_frame_lengths[j]]
-            # [batch_size, signal_length] → [signal_length]
-            quantized_signal = gold_quantized_signals[j].cpu()
-            assert quantized_signal.shape[0] % predicted_frames.shape[0] == 0
-            processed.append({
-                'log_mel_spectrogram': predicted_frames,  # [num_tokens, frame_channels]
-                'quantized_signal': quantized_signal,  # [signal_length]
-            })
-
-    # Shuffle to not be affected by ordering
-    random.shuffle(processed)
-    return processed
-
-
-def get_chunks(list, n):
-    """ Yield successive n-sized chunks from a list. """
-    for i in range(0, len(list), n):
-        yield list[i:i + n]
 
 
 def main(checkpoint,
