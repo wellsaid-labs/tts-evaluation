@@ -20,7 +20,7 @@ fi
 # TODO: Add a script similar to Travis to test locally with virtual environment
 
 # Install requirements via pip
-pip install -r requirements.txt --quiet --upgrade
+pip install -r requirements.txt --quiet --upgrade --user
 
 # Install PyTorch Dependancies
 if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then
