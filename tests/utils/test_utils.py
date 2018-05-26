@@ -7,21 +7,21 @@ from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
 
-from src.utils import split_dataset
-from src.utils import ROOT_PATH
+from src.utils import figure_to_numpy_array
 from src.utils import get_total_parameters
 from src.utils import plot_attention
-from src.utils import plot_stop_token
 from src.utils import plot_spectrogram
-from src.utils import figure_to_numpy_array
+from src.utils import plot_stop_token
+from src.utils import ROOT_PATH
 from src.utils import spectrogram_to_image
+from src.utils import split_dataset
 
 
 class MockModel(nn.Module):
     # REFERENCE: http://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html
 
     def __init__(self):
-        super(MockModel, self).__init__()
+        super().__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 5)
@@ -58,14 +58,7 @@ def test_split_dataset():
 def test_plot_spectrogram():
     arr = np.random.rand(5, 6)
     figure = plot_spectrogram(arr)
-
-    filename = 'tests/_test_data/sample_plot.png'
-    figure.savefig(filename)
-
-    assert os.path.isfile(filename)
-
-    # Clean up
-    os.remove(filename)
+    assert isinstance(figure, np.ndarray)
 
 
 def test_spectrogram_to_image():
@@ -77,14 +70,7 @@ def test_spectrogram_to_image():
 def test_plot_attention():
     arr = np.random.rand(5, 6)
     figure = plot_attention(arr)
-
-    filename = 'tests/_test_data/sample_plot.png'
-    figure.savefig(filename)
-
-    assert os.path.isfile(filename)
-
-    # Clean up
-    os.remove(filename)
+    assert isinstance(figure, np.ndarray)
 
 
 def test_plot_stop_token():
@@ -92,8 +78,7 @@ def test_plot_stop_token():
     figure = plot_stop_token(arr)
 
     filename = 'tests/_test_data/sample_plot.png'
-    data = figure_to_numpy_array(figure)
-    image = Image.fromarray(data, 'RGB')
+    image = Image.fromarray(figure, 'RGB')
     image.save(filename)
 
     assert os.path.isfile(filename)

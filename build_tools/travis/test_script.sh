@@ -15,7 +15,6 @@ python --version
 if [[ "$RUN_FLAKE8" == "true" ]]; then
     flake8 src/
     flake8 tests/
-    flake8 bin/
 fi
 
 run_tests() {
