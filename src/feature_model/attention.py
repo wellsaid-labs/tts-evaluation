@@ -64,10 +64,9 @@ class LocationSensitiveAttention(nn.Module):
             in_channels=1,
             out_channels=num_convolution_filters,
             kernel_size=convolution_filter_size,
-            padding=int((convolution_filter_size - 1) / 2),
-            bias=False)
-        self.project_query = nn.Linear(query_hidden_size, hidden_size, bias=False)
-        self.project_alignment = nn.Linear(num_convolution_filters, hidden_size, bias=False)
+            padding=int((convolution_filter_size - 1) / 2))
+        self.project_query = nn.Linear(query_hidden_size, hidden_size)
+        self.project_alignment = nn.Linear(num_convolution_filters, hidden_size)
         self.score_weights = nn.Parameter(torch.FloatTensor(1, hidden_size, 1))
         self.score_bias = nn.Parameter(torch.FloatTensor(1, 1, hidden_size).zero_())
         self.softmax = nn.Softmax(dim=1)
