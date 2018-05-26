@@ -2,12 +2,14 @@ import matplotlib
 matplotlib.use('Agg')
 
 import logging
+import math
 import os
 import random
 
 from torch.utils.data import DataLoader
 from torchnlp.utils import pad_batch
 from torch.utils import data
+from torchnlp.utils import get_tensors
 
 import torch
 import numpy as np
@@ -22,18 +24,109 @@ from src.utils.configurable import configurable
 logger = logging.getLogger(__name__)
 
 
-class LoaderDataset(data.Dataset):
-    """ Load rows on ``__getitem__`` dataset with ``load_row``"""
+class SignalDataset(data.Dataset):
+    """ Signal dataset loads and preprocesses a spectrogram and signal for training.
 
-    def __init__(self, rows, load_row):
-        self.rows = rows
-        self.load_row = load_row
+    Args:
+        source (str): Directory with data.
+        log_mel_spectrogram_prefix (str): Prefix of log mel spectrogram files.
+        quantized_signal_prefix (str): Prefix of quantized signal files.
+        extension (str): Filename extension to load.
+        slice_size (int): Size of slices to load for training data.
+        receptive_field_size (int): Context added to slice; to compute target signal.
+
+    References:
+        * Parallel WaveNet https://arxiv.org/pdf/1711.10433.pdf
+          "each containing 7,680 timesteps (roughly 320ms)."
+    """
+
+    @configurable
+    def __init__(self,
+                 source,
+                 log_mel_spectrogram_prefix='log_mel_spectrogram',
+                 quantized_signal_prefix='quantized_signal',
+                 extension='.npy',
+                 slice_size=7000,
+                 receptive_field_size=721):
+        assert receptive_field_size >= 1  # Invariant: Must be larger than zero
+        prefixes = [log_mel_spectrogram_prefix, quantized_signal_prefix]
+        self.rows = _get_filename_table(source, prefixes=prefixes, extension=extension)
+        self.slice_samples = slice_size
+        self.set_receptive_field_size(receptive_field_size)
+        self.log_mel_spectrogram_prefix = log_mel_spectrogram_prefix
+        self.quantized_signal_prefix = quantized_signal_prefix
 
     def __len__(self):
         return len(self.rows)
 
+    def set_receptive_field_size(self, receptive_field_size):
+        """
+        Args:
+            receptive_field_size (int): Context added to slice; to compute target signal.
+        """
+        # Remove one, because the current sample is not tallied as context
+        self.context_samples = receptive_field_size - 1
+
+    def _preprocess(self, log_mel_spectrogram, quantized_signal):
+        """ Preprocess the data into training data.
+
+        Notes:
+            * Frames batch needs to line up with the target signal. Each frame, is used to predict
+              the target. While for the source singal, we use the last output to predict the
+              target; therefore, the source signal is one timestep behind.
+            * Source signal batch is one time step behind the target batch. They have the same
+              signal lengths.
+
+        Args:
+            log_mel_spectrogram (torch.Tensor [num_frames, channels])
+            quantized_signal (torch.Tensor [signal_length])
+
+        Returns:
+            (dict): Dictionary with slices up to ``max_samples`` appropriate size for training.
+        """
+        samples, num_frames = quantized_signal.shape[0], log_mel_spectrogram.shape[0]
+        samples_per_frame = int(samples / num_frames)
+        slice_frames = int(self.slice_samples / samples_per_frame)
+        context_frames = int(math.ceil(self.context_samples / samples_per_frame))
+
+        # Invariants
+        assert self.slice_samples % samples_per_frame == 0
+        assert samples % num_frames == 0
+
+        # Cut it up
+        start_frame = random.randint(0, num_frames)
+        start_context_frame = max(start_frame - context_frames, 0)
+        end_frame = min(start_frame + slice_frames, num_frames)
+        frames_slice = log_mel_spectrogram[start_context_frame:end_frame]
+        if start_context_frame * samples_per_frame == 0:
+            # Source signal is one timestep back
+            zero_point = quantized_signal.new_full((1,), mu_law_quantize(0))
+            source_signal_slice = quantized_signal[start_context_frame * samples_per_frame:
+                                                   end_frame * samples_per_frame - 1]
+            source_signal_slice = torch.cat((zero_point, source_signal_slice), dim=0)
+        else:
+            source_signal_slice = quantized_signal[start_context_frame * samples_per_frame - 1:
+                                                   end_frame * samples_per_frame - 1]
+        target_signal_slice = quantized_signal[start_frame * samples_per_frame:
+                                               end_frame * samples_per_frame]
+
+        return {
+            self.log_mel_spectrogram_prefix: log_mel_spectrogram,  # [num_frames, channels]
+            self.quantized_signal_prefix: quantized_signal,  # [signal_length]
+            'source_signal_slice': source_signal_slice,  # [slice_size + receptive_field_size]
+            'target_signal_slice': target_signal_slice,  # [slice_size]
+            # [(slice_size + receptive_field_size) / samples_per_frame]
+            'frames_slice': frames_slice,
+        }
+
     def __getitem__(self, index):
-        return self.load_row(self.rows[index])
+        # Load data
+        # log_mel_spectrogram [num_frames, channels]
+        log_mel_spectrogram = torch.from_numpy(np.load(self.rows[index]['log_mel_spectrogram']))
+        # quantized_signal [signal_length]
+        quantized_signal = torch.from_numpy(np.load(self.rows[index]['quantized_signal']))
+
+        return self._preprocess(log_mel_spectrogram, quantized_signal)
 
 
 def _get_filename_table(directory, prefixes=[], extension=''):
@@ -76,32 +169,28 @@ def _get_filename_table(directory, prefixes=[], extension=''):
 
 def load_data(source_train='data/signal_dataset/train',
               source_dev='data/signal_dataset/dev',
-              prefixes=['log_mel_spectrogram', 'quantized_signal'],
+              log_mel_spectrogram_prefix='log_mel_spectrogram',
+              quantized_signal_prefix='quantized_signal',
               extension='.npy'):
-    """ Load train and dev datasets as ``FileLoaderDataset``s.
-
-    # TODO: Test this.
+    """ Load train and dev datasets as ``SignalDataset``s.
 
     Args:
         source_train (str): Directory with training examples.
         source_dev (str): Directory with dev examples.
+        log_mel_spectrogram_prefix (str): Prefix of log mel spectrogram files.
+        quantized_signal_prefix (str): Prefix of quantized signal files.
+        extension (str): Filename extension to load.
 
     Returns:
-        train (FileLoaderDataset)
-        dev (FileLoaderDataset)
+        train (SignalDataset)
+        dev (SignalDataset)
     """
-    train = _get_filename_table(source_train, prefixes=prefixes, extension=extension)
-    dev = _get_filename_table(source_dev, prefixes=prefixes, extension=extension)
-
-    def _load_row(row):
-        row['log_mel_spectrogram'] = torch.from_numpy(np.load(row['log_mel_spectrogram']))
-        row['quantized_signal'] = torch.from_numpy(np.load(row['quantized_signal']))
-        return row
-
-    train = LoaderDataset(train, load_row=_load_row)
-    dev = LoaderDataset(dev, load_row=_load_row)
-
-    return train, dev
+    kwargs = {
+        'log_mel_spectrogram_prefix': log_mel_spectrogram_prefix,
+        'quantized_signal_prefix': quantized_signal_prefix,
+        'extension': extension,
+    }
+    return SignalDataset(source_train, **kwargs), SignalDataset(source_dev, **kwargs)
 
 
 def set_hparams():
@@ -130,19 +219,12 @@ class DataIterator(object):
         device (torch.device, optional): Device onto which to load data.
         dataset (list): Dataset to iterate over.
         batch_size (int): Size of the batch for iteration.
-        train (bool): If ``True``, the batch will store gradients.
+        trial_run (bool): If ``True``, the data iterator runs only one batch.
         num_workers (int, optional): Number of workers for data loading.
     """
 
     @configurable
-    def __init__(self,
-                 device,
-                 dataset,
-                 batch_size,
-                 trial_run=False,
-                 num_workers=0,
-                 max_samples=7800):
-        # TODO: Try removing this...
+    def __init__(self, device, dataset, batch_size, trial_run=False, num_workers=0):
         # ``drop_last`` to ensure full utilization of mutliple GPUs
         self.device = device
         self.iterator = DataLoader(
@@ -154,7 +236,6 @@ class DataIterator(object):
             num_workers=num_workers,
             drop_last=True)
         self.trial_run = trial_run
-        self.max_samples = max_samples
 
     def _maybe_cuda(self, tensor, **kwargs):
         return tensor.cuda(device=self.device, **kwargs) if self.device.type == 'cuda' else tensor
@@ -162,61 +243,26 @@ class DataIterator(object):
     def _collate_fn(self, batch):
         """ Collage function to turn a list of tensors into one batch tensor.
 
-        Notes:
-            * Frames batch needs to line up with the target signal. Each frame, is used to predict
-              the target. While for the source singal, we use the last output to predict the
-              target; therefore, the source signal is one timestep behind.
-            * Source signal batch is one time step behind the target batch. They have the same
-              signal lengths.
-
-        Returns:
-            source_signal_batch (torch.FloatTensor [signal_length, batch_size])
-            target_signal_batch (torch.FloatTensor [signal_length, batch_size])
-            signal_length_batch (list): List of lengths for each signal.
-            frames_batch (torch.FloatTensor [num_frames, batch_size, frame_channels])
-            frame_length_batch (list): List of lengths for each spectrogram.
+        Returns: (dict) with:
+            * source_signal (torch.FloatTensor [signal_length, batch_size])
+            * target_signal (torch.FloatTensor [signal_length, batch_size])
+            * signal_lengths (list): List of lengths for each signal.
+            * frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
+            * spectrograms (list): List of spectrograms to be used for sampling.
         """
-        source_signal_batch = []
-        target_signal_batch = []
-        frames_batch = []
-        zero_index = mu_law_quantize(0)
-        for row in batch:
-            assert row['quantized_signal'].shape[0] % row['log_mel_spectrogram'].shape[0] == 0
-            factor = int(row['quantized_signal'].shape[0] / row['log_mel_spectrogram'].shape[0])
-
-            if row['quantized_signal'].shape[0] < self.max_samples:
-                target_signal_batch.append(row['quantized_signal'])
-                zero_point = row['quantized_signal'].new_full((1,), zero_index)
-                source_signal_batch.append(
-                    torch.cat((zero_point, target_signal_batch[-1][:-1]), dim=0))
-                frames_batch.append(row['log_mel_spectrogram'])
-            else:
-                assert self.max_samples % factor == 0
-
-                # Get a frame slice
-                max_frames = int(self.max_samples / factor)
-                start_frame = random.randint(0, row['log_mel_spectrogram'].shape[0] - max_frames)
-                frames_slice = row['log_mel_spectrogram'][start_frame:start_frame + max_frames]
-
-                # Get a signal slice
-                start_sample = start_frame * factor
-                target_signal_slice = row['quantized_signal'][start_sample:
-                                                              start_sample + self.max_samples]
-                last_index = zero_index if start_frame == 0 else row['quantized_signal'][
-                    start_sample - 1]
-                last_index = target_signal_slice.new_full((1,), last_index)
-
-                frames_batch.append(frames_slice)
-                source_signal_batch.append(torch.cat((last_index, target_signal_slice[:-1]), dim=0))
-                target_signal_batch.append(target_signal_slice)
-
-        target_signal_batch, signal_length_batch = pad_batch(
-            target_signal_batch, padding_index=zero_index)
-        source_signal_batch, _ = pad_batch(source_signal_batch, padding_index=zero_index)
-        assert source_signal_batch.shape == target_signal_batch.shape
-        frames_batch, frame_length_batch = pad_batch(frames_batch)
-        return (source_signal_batch, target_signal_batch, signal_length_batch, frames_batch,
-                frame_length_batch)
+        source_signal, signal_lengths = pad_batch(
+            [r['source_signal_slice'] for r in batch], padding_index=mu_law_quantize(0))
+        target_signal, _ = pad_batch(
+            [r['target_signal_slice'] for r in batch], padding_index=mu_law_quantize(0))
+        frames, _ = pad_batch([r['frames_slice'] for r in batch])
+        spectrograms = [r['log_mel_spectrogram'] for r in batch]
+        return {
+            'source_signals': source_signal,
+            'target_signals': target_signal,
+            'signal_lengths': signal_lengths,
+            'frames': frames,
+            'spectrograms': spectrograms
+        }
 
     def __len__(self):
         return 1 if self.trial_run else len(self.iterator)
@@ -224,7 +270,8 @@ class DataIterator(object):
     def __iter__(self):
         for batch in self.iterator:
             yield tuple([
-                self._maybe_cuda(t, non_blocking=True) if torch.is_tensor(t) else t for t in batch
+                self._maybe_cuda(t, non_blocking=True) if torch.is_tensor(t) else t
+                for t in get_tensors(batch)
             ])
 
             if self.trial_run:

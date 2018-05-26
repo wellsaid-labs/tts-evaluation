@@ -84,12 +84,6 @@ def set_hparams():
 
     add_config({
         'src': {
-            'optimizer.Optimizer.__init__': {
-                # NOTE: Tacotron authors did not mention using this; but this is fairly common
-                # practice. Used in both the NVIDIA/tacotron2, Rayhane-mamah/Tacotron-2, and
-                # mozilla/TTS implementations.
-                'max_grad_norm': 1.0
-            },
             'lr_schedulers.DelayedExponentialLR.__init__': {
                 # SOURCE (Tacotron 2):
                 # learning rate of 10−3 exponentially decaying to 10−5 starting after 50,000
@@ -230,7 +224,7 @@ def set_hparams():
                     # SOURCE Deep Voice: (64 block hidden size)
                     # Our highest-quality final model uses l = 40 layers, r = 64 residual channels,
                     # and s = 256 skip channels.
-                    'block_hidden_size': 64,
+                    'block_hidden_size': 128,
                     'skip_size': 256,
 
                     # SOURCE Tacotron 2: (From their ablation studies)
@@ -250,15 +244,19 @@ def set_hparams():
                 }
             },
             'bin.signal_model': {
-                '_utils.DataIterator.__init__': {
+                '_utils.SignalDataset.__init__': {
                     # SOURCE (Parallel WaveNet):
                     # minibatch size of 32 audio clips, each containing 7,680 timesteps
                     # (roughly 320ms).
-                    'max_samples': 7800  # We use 7,800 to evenly divide with ``frame_hop``
+                    # NOTE:
+                    # We use 6,900 to evenly divide with ``frame_hop`` which in addition with
+                    # ``receptive_field_size`` will be around 7,680 timesteps.
+                    'slice_size': 6900
                 },
                 'train.main': {
                     'sample_rate': sample_rate
                 }
-            }
+            },
+            'utils.utils.plot_waveform.sample_rate': sample_rate,
         }
     })

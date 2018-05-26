@@ -145,7 +145,6 @@ class ExperimentContextManager(object):
         if self.is_cuda:
             torch.cuda.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
         self.seed = seed
 
     def __enter__(self):

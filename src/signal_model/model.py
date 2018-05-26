@@ -1,6 +1,7 @@
-import logging
 import sys
 sys.path.insert(0, 'third_party/nv-wavenet/pytorch')
+
+import logging
 
 from torch import nn
 
@@ -61,6 +62,8 @@ class WaveNet(nn.Module):
         self.num_layers = num_layers
         self.embed = nn.Conv1d(
             in_channels=self.mu + 1, out_channels=block_hidden_size, kernel_size=1)
+        torch.nn.init.xavier_uniform_(
+            self.embed.weight, gain=torch.nn.init.calculate_gain('linear'))
         self.layers = nn.ModuleList([
             ResidualBlock(
                 hidden_size=block_hidden_size,
@@ -76,13 +79,14 @@ class WaveNet(nn.Module):
             num_layers=num_layers)
         self.out = nn.Sequential(
             nn.ReLU(),
-            nn.Conv1d(in_channels=skip_size, out_channels=self.mu + 1, kernel_size=1,
-                      bias=False),  # TODO: RELu init
+            nn.Conv1d(in_channels=skip_size, out_channels=self.mu + 1, kernel_size=1, bias=False),
             nn.ReLU(),
-            nn.Conv1d(in_channels=self.mu + 1, out_channels=self.mu + 1, kernel_size=1,
-                      bias=False),  # TODO: Linear init
+            nn.Conv1d(in_channels=self.mu + 1, out_channels=self.mu + 1, kernel_size=1, bias=False),
             nn.LogSoftmax(dim=1),
         )
+        torch.nn.init.xavier_uniform_(self.out[1].weight, gain=torch.nn.init.calculate_gain('relu'))
+        torch.nn.init.xavier_uniform_(
+            self.out[3].weight, gain=torch.nn.init.calculate_gain('linear'))
         self.has_new_weights = True  # Whether the weights have been updated since last export
         self.kernel = None
 
@@ -91,6 +95,10 @@ class WaveNet(nn.Module):
 
     def _export(self, dtype, device):  # pragma: no cover
         """
+        Args:
+            dtype (torch.dtype): Type to use with new tensors.
+            device (torch.device): Device to put new tensors.
+
         Notes:
             * Edit hyperparameters inside ``wavenet_infer.cu`` to match.
             * Make sure to build the CUDA kernel.
@@ -100,29 +108,26 @@ class WaveNet(nn.Module):
         """
         # This implementation does not use embeded ``embedding_prev``
         embedding_prev = torch.zeros(
-            (self.mu + 1, self.block_hidden_size), dtype=dtype, device=device)
+            (self.mu + 1, self.block_hidden_size), dtype=dtype, device=device).data
 
         # Compute embedding current by the identity matrix through a conv
-        # embedding_curr [1, self.mu + 1 (signal_length), self.mu + 1 (channels)]
+        # embedding_curr [1, self.mu + 1, self.mu + 1]
         embedding_curr = torch.eye(self.mu + 1, dtype=dtype, device=device).unsqueeze(0)
-        # Convolution operater expects input_ of the form:
-        # [batch_size (1), channels (self.mu + 1), signal_length (self.mu + 1)]
-        embedding_curr = embedding_curr.transpose_(1, 2)
         # [1, self.mu + 1, self.mu + 1]  → [1, block_hidden_size, self.mu + 1]
         embedding_curr = self.embed(embedding_curr)
         # [1, block_hidden_size, self.mu + 1]  → [self.mu + 1, block_hidden_size]
-        embedding_curr = embedding_curr.squeeze(0).transpose_(0, 1)
+        embedding_curr = embedding_curr.squeeze(0).transpose_(0, 1).data
 
-        conv_out_weight = self.out[1].weight
-        conv_end_weight = self.out[3].weight
-        dilate_weights = [l.dilated_conv.weight for l in self.layers]
-        dilate_biases = [l.dilated_conv.bias for l in self.layers]
+        conv_out_weight = self.out[1].weight.data
+        conv_end_weight = self.out[3].weight.data
+        dilate_weights = [l.dilated_conv.weight.data for l in self.layers]
+        dilate_biases = [l.dilated_conv.bias.data for l in self.layers]
         max_dilation = 2**(self.cycle_size - 1)
         # Last residual layer does not matter
-        res_weights = [l.out_conv.weight for l in self.layers[:-1]]
-        res_biases = [l.out_conv.bias for l in self.layers[:-1]]
-        skip_weights = [l.skip_conv.weight for l in self.layers]
-        skip_biases = [l.skip_conv.bias for l in self.layers]
+        res_weights = [l.out_conv.weight.data for l in self.layers[:-1]]
+        res_biases = [l.out_conv.bias.data for l in self.layers[:-1]]
+        skip_weights = [l.skip_conv.weight.data for l in self.layers]
+        skip_biases = [l.skip_conv.bias.data for l in self.layers]
         use_embed_tanh = False  # This implementation does not use embeded ``tanh``
 
         return __import__('nv_wavenet').NVWaveNet(
@@ -141,6 +146,11 @@ class WaveNet(nn.Module):
 
     def forward(self, local_features, gold_signal=None, implementation=None):
         """
+        TODO:
+            * Investigate using scalars instead of one-hot embeddings, due to this comment:
+              https://github.com/ibab/tensorflow-wavenet/issues/47#issuecomment-249080343
+              Note, we can use the embedding weights with nv-wavenet to imitate ths.
+
         Args:
             local_features (torch.FloatTensor [batch_size, local_length, local_features_size]):
                 Local feature to condition signal generation (e.g. spectrogram).
@@ -186,16 +196,6 @@ class WaveNet(nn.Module):
                 self.kernel = self._export(conditional_features.dtype, conditional_features.device)
                 self.has_new_weights = False
 
-            # TODO: Somehow provide the last output to kernel to infer
-            # TODO: Work witn scalars instead of one hot embeddings, it'll be easier for the model
-            # Wavenet authors say
-            # https://github.com/ibab/tensorflow-wavenet/issues/47#issuecomment-249080343
-            # TODO: Do we need receptive size of initial source for convolutions to get information
-            # on the next. 720 samples of padding, for the convolutions?
-            # TODO: Remove max grad norm, it's not mentioned anywhere
-            # TODO: We could hack the nv_wavenet impelemtation to do a scalar embedding
-            # TODO: Write a test that nv_wavenet given zero, predicts one output the same as
-            # my system does!
             implementation = __import__(
                 'nv_wavenet').Impl.AUTO if implementation is None else implementation
             return self.kernel.infer(cond_input=conditional_features, implementation=implementation)

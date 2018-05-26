@@ -1,3 +1,5 @@
+import mock
+import numpy as np
 import os
 import torch
 
@@ -7,8 +9,46 @@ from src.bin.signal_model._utils import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
+from src.bin.signal_model._utils import SignalDataset
+from src.bin.signal_model._utils import load_data
 from src.signal_model import SignalModel
 from src.utils.experiment_context_manager import ExperimentContextManager
+
+
+@mock.patch('src.bin.signal_model._utils.random.randint')
+def test_signal_dataset_preprocess(randint_mock):
+    randint_mock.return_value = 5
+    samples_per_frame = 10
+    spectrogram_channels = 80
+    log_mel_spectrogram = np.random.rand(10, spectrogram_channels)
+    quantized_signal = np.random.rand(100)
+    receptive_field_size = samples_per_frame
+    slice_size = 30
+    dataset = SignalDataset(
+        source='.', slice_size=slice_size, receptive_field_size=receptive_field_size)
+    preprocessed = dataset._preprocess(log_mel_spectrogram, quantized_signal)
+    assert preprocessed['log_mel_spectrogram'].shape == log_mel_spectrogram.shape
+    assert preprocessed['quantized_signal'].shape == quantized_signal.shape
+    assert preprocessed['source_signal_slice'].shape == (slice_size + receptive_field_size,)
+    assert preprocessed['target_signal_slice'].shape == (slice_size,)
+    np.testing.assert_allclose(preprocessed['source_signal_slice'][receptive_field_size + 1:],
+                               preprocessed['target_signal_slice'][:-1])
+    assert preprocessed['frames_slice'].shape == ((
+        slice_size + receptive_field_size) / samples_per_frame, spectrogram_channels)
+
+
+def test_load_data():
+    train, dev = load_data(
+        source_train='tests/_test_data/signal_dataset/train',
+        source_dev='tests/_test_data/signal_dataset/dev',
+        log_mel_spectrogram_prefix='log_mel_spectrogram',
+        quantized_signal_prefix='quantized_signal',
+        extension='.npy')
+    assert len(train) == 1
+    assert len(dev) == 1
+
+    # Smoke test
+    dev[0]
 
 
 def test_set_hparams():
@@ -21,15 +61,19 @@ def test_set_hparams():
 def test_data_iterator():
     with ExperimentContextManager(label='test_data_iterator') as context:
         dataset = [{
-            'quantized_signal': torch.randint(low=0, high=255, size=(900,)),
+            'source_signal_slice': torch.randint(low=0, high=255, size=(100,)),
+            'target_signal_slice': torch.randint(low=0, high=255, size=(100,)),
+            'frames_slice': torch.FloatTensor(10, 80),
             'log_mel_spectrogram': torch.FloatTensor(30, 80),
         }, {
-            'quantized_signal': torch.randint(low=0, high=255, size=(300,)),
-            'log_mel_spectrogram': torch.FloatTensor(10, 80),
+            'source_signal_slice': torch.randint(low=0, high=255, size=(100,)),
+            'target_signal_slice': torch.randint(low=0, high=255, size=(100,)),
+            'frames_slice': torch.FloatTensor(10, 80),
+            'log_mel_spectrogram': torch.FloatTensor(30, 80),
         }]
         batch_size = 1
 
-        iterator = DataIterator(context.device, dataset, batch_size, max_samples=600)
+        iterator = DataIterator(context.device, dataset, batch_size)
         assert len(iterator) == 2
         next(iter(iterator))
 

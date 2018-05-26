@@ -42,6 +42,8 @@ class ResidualBlock(nn.Module):
             dilation=dilation,
             bias=True,  # [NV-WaveNet assumes biases for the dilated convolution]
             padding=0)
+        torch.nn.init.xavier_uniform_(
+            self.dilated_conv.weight, gain=torch.nn.init.calculate_gain('tanh'))
 
         # SOURCE WaveNet:
         # By using causal convolutions ... For 1-D data such as audio one can more easily
@@ -55,6 +57,8 @@ class ResidualBlock(nn.Module):
                 kernel_size=1,
                 bias=True  # [NV-WaveNet assumes biases for the residual connection]
             )
+            torch.nn.init.xavier_uniform_(
+                self.out_conv.weight, gain=torch.nn.init.calculate_gain('linear'))
 
         self.skip_conv = nn.Conv1d(
             in_channels=hidden_size,
@@ -62,6 +66,8 @@ class ResidualBlock(nn.Module):
             kernel_size=1,
             bias=True  # [NV-WaveNet assumes biases for the residual connection]
         )
+        torch.nn.init.xavier_uniform_(
+            self.skip_conv.weight, gain=torch.nn.init.calculate_gain('relu'))
 
     def forward(self, signal_features, conditional_features):
         """
@@ -86,6 +92,8 @@ class ResidualBlock(nn.Module):
         # original [batch_size, hidden_size, signal_length]
         original = signal_features
 
+        # TODO: Investigate if it's faster to pad left or to pad equal with clipping.
+
         # [batch_size, hidden_size, signal_length] →
         # [batch_size, hidden_size, signal_length + self.padding[0]]
         signal_features = functional.pad(signal_features, self.padding)
@@ -109,13 +117,13 @@ class ResidualBlock(nn.Module):
         left, right = tuple(torch.chunk(signal_features, 2, dim=1))
 
         # signal_features [batch_size, hidden_size, signal_length]
-        signal_features = functional.tanh(left) * functional.sigmoid(right)  # TODO: tanh init
+        signal_features = functional.tanh(left) * functional.sigmoid(right)
 
         del left
         del right
 
         # [batch_size, hidden_size, signal_length] → [batch_size, skip_size, signal_length]
-        skip = self.skip_conv(signal_features)  # TODO: relu init
+        skip = self.skip_conv(signal_features)
 
         if self.is_last_layer:
             return None, skip

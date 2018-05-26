@@ -6,8 +6,11 @@ from matplotlib import pyplot
 from matplotlib import cm as colormap
 
 import dill
+import librosa
 import numpy as np
 import torch
+
+from src.utils.configurable import configurable
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +66,7 @@ def figure_to_numpy_array(figure):
     return data.reshape(figure.canvas.get_width_height()[::-1] + (3,))
 
 
-def plot_attention(alignment, title='Attention Alignment'):
+def plot_attention(alignment):
     """ Plot alignment of attention.
 
     Args:
@@ -80,13 +83,12 @@ def plot_attention(alignment, title='Attention Alignment'):
     im = axis.imshow(alignment, aspect='auto', origin='lower', interpolation='none', vmin=0, vmax=1)
     figure.colorbar(im, ax=axis, orientation='horizontal')
     pyplot.xlabel('Decoder timestep')
-    pyplot.title(title)
     pyplot.ylabel('Encoder timestep')
     pyplot.close(figure)
     return figure_to_numpy_array(figure)
 
 
-def plot_stop_token(stop_token, title='Stop Token'):
+def plot_stop_token(stop_token):
     """ Plot probability of the stop token over time.
 
     Args:
@@ -99,7 +101,6 @@ def plot_stop_token(stop_token, title='Stop Token'):
     pyplot.style.use('ggplot')
     figure = pyplot.figure()
     pyplot.plot(list(range(len(stop_token))), stop_token, marker='.', linestyle='solid')
-    pyplot.title(title)
     pyplot.ylabel('Probability')
     pyplot.xlabel('Timestep')
     # LEARN MORE: https://github.com/matplotlib/matplotlib/issues/8560/
@@ -128,13 +129,31 @@ def spectrogram_to_image(spectrogram):
     return spectrogram
 
 
-def plot_spectrogram(spectrogram, title='Mel-Spectrogram'):
+@configurable
+def plot_waveform(signal, sample_rate=24000):
+    """ Save image of spectrogram to disk.
+
+    Args:
+        signal (Tensor [signal_length]): Signal to plot.
+        sample_rate (int): Sample rate of the associated wave.
+
+    Returns:
+        image (np.array [width, height, 3]): Spectrogram image.
+    """
+    figure = pyplot.figure()
+    librosa.display.waveplot(signal, sr=sample_rate)
+    pyplot.ylabel('Energy')
+    pyplot.xlabel('Time')
+    pyplot.close()
+    return figure_to_numpy_array(figure)
+
+
+def plot_spectrogram(spectrogram):
     """ Save image of spectrogram to disk.
 
     Args:
         spectrogram (Tensor): A ``[frames, num_mel_bins]`` ``Tensor`` of ``complex64`` STFT
             values.
-        title (str): Title of the plot.
 
     Returns:
         image (np.array [width, height, 3]): Spectrogram image.
@@ -144,9 +163,7 @@ def plot_spectrogram(spectrogram, title='Mel-Spectrogram'):
     pyplot.imshow(np.rot90(spectrogram))
     pyplot.colorbar(orientation='horizontal')
     pyplot.ylabel('Mel-Channels')
-    xlabel = 'Frames'
-    pyplot.xlabel(xlabel)
-    pyplot.title(title)
+    pyplot.xlabel('Frames')
     pyplot.close(figure)
     return figure_to_numpy_array(figure)
 

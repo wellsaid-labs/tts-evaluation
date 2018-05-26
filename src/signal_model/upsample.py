@@ -30,16 +30,23 @@ class ConditionalFeaturesUpsample(nn.Module):
         super().__init__()
         self.upsample_repeat = upsample_repeat
         self.num_layers = num_layers
-        self.upsample_convs = nn.Sequential(*tuple([
-            nn.ConvTranspose1d(
-                in_channels=local_features_size,
-                out_channels=local_features_size,
-                kernel_size=size,
-                stride=size,
-                bias=True) for size in upsample_convs
-        ]))
-        self.project_local_features = nn.Conv1d(
+        self.upsample_convs = None
+        if upsample_convs is not None:
+            self.upsample_convs = nn.Sequential(*tuple([
+                nn.ConvTranspose1d(
+                    in_channels=local_features_size,
+                    out_channels=local_features_size,
+                    kernel_size=size,
+                    stride=size,
+                    bias=True) for size in upsample_convs
+            ]))
+        self.project_local_features_block_hidden_size = nn.Conv1d(
             in_channels=local_features_size, out_channels=block_hidden_size, kernel_size=1)
+        self.project_local_features_num_layers = nn.Conv2d(
+            in_channels=1, out_channels=num_layers, kernel_size=(1, 1))
+        torch.nn.init.xavier_uniform_(
+            self.project_local_features_num_layers.weight,
+            gain=torch.nn.init.calculate_gain('tanh'))
 
     def forward(self, local_features):
         """
@@ -60,40 +67,38 @@ class ConditionalFeaturesUpsample(nn.Module):
 
         # [batch_size, local_features_size, local_length] →
         # [batch_size, local_features_size, signal_length]
-        local_features = self.upsample_convs(local_features)
-        _, _, length = local_features.shape
+        if self.upsample_convs is not None:
+            local_features = self.upsample_convs(local_features)
         local_features = local_features.repeat(1, 1, self.upsample_repeat)
 
         # [batch_size, local_features_size, signal_length] →
         # [batch_size, block_hidden_size, signal_length]
-        local_features = self.project_local_features(local_features)
+        local_features = self.project_local_features_block_hidden_size(local_features)
 
         # [batch_size, block_hidden_size, signal_length] →
-        # [block_hidden_size, batch_size, signal_length]
-        local_features = local_features.transpose_(0, 1)
+        # [batch_size, block_hidden_size, 1, signal_length]
+        local_features = local_features.unsqueeze(2)
+
+        # [batch_size, block_hidden_size, 1, signal_length] →
+        # [batch_size, 1, block_hidden_size, signal_length]
+        local_features = local_features.transpose(1, 2)
+
+        # [batch_size, 1, block_hidden_size, signal_length]
+        # [batch_size, num_layers, block_hidden_size, signal_length]
+        local_features = self.project_local_features_num_layers(local_features)
+
+        # [batch_size, num_layers, block_hidden_size, signal_length] →
+        # [block_hidden_size, batch_size, num_layers, signal_length]
+        local_features = local_features.permute(2, 0, 1, 3)
 
         # Stub for global features
-        # global_features [block_hidden_size, batch_size, signal_length]
+        # global_features [block_hidden_size, batch_size, num_layers, signal_length]
         global_features = local_features.new_zeros(local_features.shape)
 
         # Interweave features; the first ``block_hidden_size`` chunk conditions the nonlinearity
         # while the last ``block_hidden_size`` chunk conditions the ``sigmoid`` gate.
-        global_features_left, global_features_right = tuple(torch.chunk(global_features, 2, dim=0))
-        local_features_left, local_features_right = tuple(torch.chunk(local_features, 2, dim=0))
+        global_left, global_right = tuple(torch.chunk(global_features, 2, dim=0))
+        local_left, local_right = tuple(torch.chunk(local_features, 2, dim=0))
 
-        # conditional_features [2 * block_hidden_size, batch_size, signal_length]
-        conditional_features = torch.cat(
-            (global_features_left, local_features_left, global_features_right,
-             local_features_right),
-            dim=0)
-
-        # [2 * block_hidden_size, batch_size, signal_length] →
-        # [2 * block_hidden_size, batch_size, 1, signal_length]
-        conditional_features = conditional_features.unsqueeze(2)
-
-        # [2 * block_hidden_size, batch_size, 1, signal_length] →
-        # [2 * block_hidden_size, batch_size, num_layers, signal_length]
-        # TODO: Seperate 1by1 convolution for each layer; rather than repeating.
-        conditional_features = conditional_features.repeat(1, 1, self.num_layers, 1)
-
-        return conditional_features
+        # return [2 * block_hidden_size, batch_size, num_layers, signal_length]
+        return torch.cat((global_left, local_left, global_right, local_right), dim=0)

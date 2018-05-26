@@ -22,6 +22,7 @@ from src.bin.signal_model._utils import load_data
 from src.optimizer import Optimizer
 from src.signal_model import SignalModel
 from src.utils import get_total_parameters
+from src.utils import plot_waveform
 from src.utils.configurable import configurable
 from src.utils.configurable import log_config
 from src.utils.experiment_context_manager import ExperimentContextManager
@@ -90,6 +91,8 @@ class Trainer():  # pragma: no cover
         self.dev_batch_size = dev_batch_size
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
+        self.train_dataset.set_receptive_field_size(self.model.receptive_field_size)
+        self.dev_dataset.set_receptive_field_size(self.model.receptive_field_size)
         self.num_workers = num_workers
         self.sample_rate = sample_rate
 
@@ -139,9 +142,6 @@ class Trainer():  # pragma: no cover
         if trial_run:
             logger.info('[%s] Trial run with one batch.', label)
 
-        # Set mode
-        torch.set_grad_enabled(train)
-        self.model.train(mode=train)
         self.tensorboard = self.train_tensorboard if train else self.dev_tensorboard
 
         # Epoch Average Loss Metrics
@@ -155,17 +155,10 @@ class Trainer():  # pragma: no cover
             trial_run=trial_run,
             num_workers=self.num_workers)
         data_iterator = tqdm(data_iterator, desc=label)
-        for (source_signal_batch, target_signal_batch, signal_lengths, frames,
-             frames_lengths) in data_iterator:
+        for batch in data_iterator:
+            draw_sample = not train and random.randint(1, len(data_iterator)) == 1
             signal_loss, num_signal_predictions = self._run_step(
-                source_signal_batch,
-                target_signal_batch,
-                signal_lengths,
-                frames,
-                frames_lengths,
-                train=train,
-                sample=not train and random.randint(1, len(data_iterator)) == 1)
-
+                batch, train=train, sample=draw_sample)
             total_signal_loss += signal_loss * num_signal_predictions
             total_signal_predictions += num_signal_predictions
 
@@ -197,34 +190,28 @@ class Trainer():  # pragma: no cover
                                                                    torch.min(signal))
         self.tensorboard.add_audio('/'.join(path), signal, step, self.sample_rate)
 
-    def _run_step(self,
-                  source_signal_batch,
-                  target_signal_batch,
-                  signal_lengths,
-                  frames,
-                  frames_lengths,
-                  train=False,
-                  sample=False):
+        # Add image of waveform as well
+        signal = signal.numpy()
+        self.tensorboard.add_image('/'.join(path), plot_waveform(signal), step)
+
+    def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
         Args:
-            source_signal_batch (torch.FloatTensor [batch_size, signal_length]): One timestep
-                behind the target signal batch.
-            target_signal_batch (torch.FloatTensor [batch_size, signal_length]): Corresponds with
-                the predicted signal batch for loss computation.
-            signal_lengths (list of int): Lengths of each signal behind padding.
-            frames (torch.FloatTensor [batch_size, num_frames, frame_channels]): Spectrogram
-                frames used to predict the signal.
-            frames_lengths (list of int): Length of each spectrogram before padding.
+            batch (dict): ``dict`` from ``src.bin.signal_model._utils.DataIterator``.
             train (bool): If ``True``, takes a optimization step.
             sample (bool): If ``True``, samples the current step.
 
         Returns:
             (torch.Tensor) Loss at every iteration
         """
-        predicted_signal = self.model(frames, gold_signal=source_signal_batch)
-        signal_loss, num_signal_predictions = self._compute_loss(target_signal_batch,
-                                                                 signal_lengths, predicted_signal)
+        # Set mode
+        torch.set_grad_enabled(train)
+        self.model.train(mode=train)
+
+        predicted_signal = self.model(batch['frames'], gold_signal=batch['source_signals'])
+        signal_loss, num_signal_predictions = self._compute_loss(
+            batch['target_signals'], batch['signal_lengths'], predicted_signal)
 
         if train:
             self.optimizer.zero_grad()
@@ -242,26 +229,24 @@ class Trainer():  # pragma: no cover
         if sample:
             batch_size = predicted_signal.shape[0]
             item = random.randint(0, batch_size - 1)
-            length = signal_lengths[item]
+            length = batch['signal_lengths'][item]
 
-            # gold_frames [batch_size, num_frames, frame_channels] → [batch_size (1), num_frames]
-            gold_frames = frames[item, :frames_lengths[item], :].unsqueeze(0)
-            # predicted_signal_no_teacher_forcing [batch_size (1), signal_length]
-            predicted_signal_no_teacher_forcing = self.model(gold_frames)
+            # spectrogram [num_frames, frame_channels]
+            spectrogram = batch['spectrograms'][item]
+            spectrogram = spectrogram.unsqueeze(0)
 
-            # TODO: Consider sampling with the entire phrase since we cannot do partial conditions
+            torch.set_grad_enabled(False)
+            self.model.train(mode=False)
+            # infered_signal [signal_length]
+            infered_signal = self.model(spectrogram.unsqueeze(0))[0]
 
             # predicted_signal [batch_size, mu + 1, signal_length] → [signal_length]
             predicted_signal = predicted_signal.max(dim=1)[1][item, :length]
-            # predicted_signal_no_teacher_forcing [batch_size (1), signal_length] → [signal_length]
-            predicted_signal_no_teacher_forcing = predicted_signal_no_teacher_forcing[0, :length]
             # gold_signal [batch_size, signal_length] → [signal_length]
-            target_signal = target_signal_batch[item, :length]
+            target_signal = batch['target_signals'][item, :length]
 
-            # TODO: Save a visualization of the wav
-            self._add_audio(['teacher_forcing', 'predicted'], predicted_signal, self.step)
-            self._add_audio(['no_teacher_forcing', 'predicted'],
-                            predicted_signal_no_teacher_forcing, self.step)
+            self._add_audio(['predicted'], predicted_signal, self.step)
+            self._add_audio(['infered'], infered_signal, self.step)
             self._add_audio(['gold'], target_signal, self.step)
 
         return signal_loss, num_signal_predictions
