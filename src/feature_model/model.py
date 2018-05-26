@@ -1,9 +1,12 @@
 from torch import nn
+from torchnlp.text_encoders import PADDING_INDEX
+
+import torch
 
 from src.feature_model.encoder import Encoder
 from src.feature_model.decoder import AutoregressiveDecoder
 
-from src.configurable import configurable
+from src.utils.configurable import configurable
 
 
 class SpectrogramModel(nn.Module):
@@ -67,19 +70,16 @@ class SpectrogramModel(nn.Module):
             representation from the Encoder.
         frame_channels (int, optional): Number of channels in each frame (sometimes refered to
             as "Mel-frequency bins" or "FFT bins" or "FFT bands")
-        max_recursion (int, optional): The maximum sequential predictions to make before quitting;
-            Used for testing and defensive design.
       """
 
     @configurable
-    def __init__(self, vocab_size, encoder_hidden_size=512, frame_channels=80, max_recursion=10000):
+    def __init__(self, vocab_size, encoder_hidden_size=512, frame_channels=80):
 
         super(SpectrogramModel, self).__init__()
 
         self.encoder = Encoder(vocab_size, lstm_hidden_size=encoder_hidden_size)
         self.decoder = AutoregressiveDecoder(
             encoder_hidden_size=encoder_hidden_size, frame_channels=frame_channels)
-        self.max_recursion = max_recursion
 
     def _get_stopped_indexes(self, predictions):
         """ Get a list of indices that predicted stop.
@@ -96,19 +96,25 @@ class SpectrogramModel(nn.Module):
         else:
             return []
 
-    def forward(self, tokens, ground_truth_frames=None):
+    def forward(self, tokens, ground_truth_frames=None, max_recursion=2000):
         """
         Args:
             tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
             ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
                 optional): During training, ground truth frames for teacher-forcing.
+            max_recursion (int, optional): The maximum sequential predictions to make before
+                quitting; Used for testing and defensive design.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels]) Predicted frames.
             frames_with_residual (torch.FloatTensor [num_frames, batch_size, frame_channels]):
                 Predicted frames with the post net residual added.
             stop_token (torch.FloatTensor [num_frames, batch_size]): Probablity of stopping.
+            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]) All attention
+                alignments, stored for visualization and debugging
         """
+        # [batch_size, num_tokens]
+        tokens_mask = tokens.detach().eq(PADDING_INDEX)
         encoded_tokens = self.encoder(tokens)
 
         # [num_tokens, batch_size, hidden_size]
@@ -116,15 +122,25 @@ class SpectrogramModel(nn.Module):
 
         if ground_truth_frames is None:  # Unrolling the decoder.
             stopped = set()
-            recursion = 0
             hidden_state = None
-            while len(stopped) != batch_size and recursion < self.max_recursion:
-                frames, frames_with_residual, stop_token, hidden_state = self.decoder(
-                    encoded_tokens, hidden_state=hidden_state)
+            alignments, frames_with_residual, frames, stop_tokens = [], [], [], []
+            while len(stopped) != batch_size and len(frames_with_residual) < max_recursion:
+                frame, frame_with_residual, stop_token, hidden_state, alignment = self.decoder(
+                    encoded_tokens, tokens_mask, hidden_state=hidden_state)
                 stopped.update(self._get_stopped_indexes(stop_token))
-                recursion += 1
-        else:
-            frames, frames_with_residual, stop_token, hidden_state = self.decoder(
-                encoded_tokens, ground_truth_frames=ground_truth_frames)
 
-        return frames, frames_with_residual, stop_token
+                # Store results
+                frames_with_residual.append(frame_with_residual.squeeze(0))
+                frames.append(frame.squeeze(0))
+                stop_tokens.append(stop_token.squeeze(0))
+                alignments.append(alignment.squeeze(0))
+
+            alignments = torch.stack(alignments, dim=0)
+            frames_with_residual = torch.stack(frames_with_residual, dim=0)
+            frames = torch.stack(frames, dim=0)
+            stop_tokens = torch.stack(stop_tokens, dim=0)
+        else:
+            frames, frames_with_residual, stop_tokens, hidden_state, alignments = self.decoder(
+                encoded_tokens, tokens_mask, ground_truth_frames=ground_truth_frames)
+
+        return frames, frames_with_residual, stop_tokens, alignments

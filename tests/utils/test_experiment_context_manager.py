@@ -2,18 +2,18 @@ import argparse
 import logging
 import mock
 import os
+import shutil
 
 import torch
 
-from src.experiment_context_manager import ExperimentContextManager
+from src.utils.experiment_context_manager import ExperimentContextManager
 
 logger = logging.getLogger(__name__)
 
 
 @mock.patch('argparse.ArgumentParser.parse_args', return_value=argparse.Namespace(message='test'))
-@mock.patch('src.experiment_context_manager.ExperimentContextManager.git_commit')
 def test_save_standard_streams(*_):
-    with ExperimentContextManager(label='test_save_standard_streams') as context:
+    with ExperimentContextManager(label='test_save_standard_streams', min_time=-1) as context:
         # Check if 'Test' gets captured
         print('Test')
         logger.info('Test Logger')
@@ -31,29 +31,15 @@ def test_save_standard_streams(*_):
     assert len(lines) == 0
 
     # Clean up files
-    os.remove(context.stdout_filename)
-    os.remove(context.stderr_filename)
-    os.rmdir(context.directory)
+    shutil.rmtree(context.directory)
 
 
 @mock.patch('argparse.ArgumentParser.parse_args', return_value=argparse.Namespace(message='test'))
-@mock.patch('src.experiment_context_manager.ExperimentContextManager.git_commit')
 def test_experiment(*_):
-    with ExperimentContextManager(label='test_experiment') as context:
+    with ExperimentContextManager(label='test_experiment', device=torch.device('cpu')) as context:
         # Check context directory was created
         assert os.path.isdir(context.directory)
+        assert os.path.isdir(context.checkpoints_directory)
 
-        # Check save and load into the directory work
-        path = context.save('test.pt', {'test': True})
-        data = context.load('test.pt')
-        assert data['test']
-
-        # Smore test
-        context.maybe_cuda(torch.LongTensor([1, 2]))
-
-        # Clean up
-        os.remove(path)
-
-    os.remove(context.stdout_filename)
-    os.remove(context.stderr_filename)
-    os.rmdir(context.directory)
+    # Automatically cleaned up
+    assert not os.path.isdir(context.directory)

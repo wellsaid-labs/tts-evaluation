@@ -1,8 +1,11 @@
 import math
+import logging
 
 from torch.optim.lr_scheduler import _LRScheduler
 
-from src.configurable import configurable
+from src.utils.configurable import configurable
+
+logger = logging.getLogger(__name__)
 
 
 class DelayedExponentialLR(_LRScheduler):
@@ -41,5 +44,5 @@ class DelayedExponentialLR(_LRScheduler):
                 base_lr * gamma**(self.last_epoch - self.epoch_start_decay)
                 for gamma, base_lr in zip(self.gammas, self.base_lrs)
             ]
-        else:
-            return [self.end_lr for _ in self.base_lrs]
+
+        return [self.end_lr for _ in self.base_lrs]

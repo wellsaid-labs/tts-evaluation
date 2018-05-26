@@ -1,6 +1,6 @@
 from torch import nn
 
-from src.configurable import configurable
+from src.utils.configurable import configurable
 
 
 class PreNet(nn.Module):
@@ -29,23 +29,21 @@ class PreNet(nn.Module):
     """
 
     @configurable
-    def __init__(self,
-                 frame_channels=80,
-                 num_layers=2,
-                 hidden_size=256,
-                 dropout=0.5,
-                 nonlinearity=nn.ReLU):
+    def __init__(self, frame_channels=80, num_layers=2, hidden_size=256, dropout=0.5):
         super(PreNet, self).__init__()
         self.layers = nn.Sequential(*tuple([
             nn.Sequential(
                 nn.Linear(
-                    in_features=hidden_size
-                    if i != 0 else frame_channels, out_features=hidden_size),
-                nonlinearity(),
-                # NOTE: ``.train()`` to ensure dropout does not turn off during inference as
-                # mentioned in the Tacotron 2 paper.
-                nn.Dropout(p=0.5).train()) for i in range(num_layers)
+                    in_features=frame_channels
+                    if i == 0 else hidden_size, out_features=hidden_size),
+                nn.ReLU(),
+                nn.Dropout(p=dropout)) for i in range(num_layers)
         ]))
+
+        # Initialize weights
+        for module in self.layers.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
 
     def forward(self, frames):
         """
@@ -57,4 +55,8 @@ class PreNet(nn.Module):
             frames (torch.FloatTensor [num_frames, batch_size, hidden_size]): Batched set of
                 spectrogram frames processed by the Pre-net.
         """
+        # NOTE: ``.train()`` to ensure dropout does not turn off during inference as mentioned in
+        # the Tacotron 2 paper.
+        for layer in self.layers:
+            layer[2].train()
         return self.layers(frames)

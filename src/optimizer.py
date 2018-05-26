@@ -2,7 +2,7 @@ import itertools
 
 import torch
 
-from src.configurable import configurable
+from src.utils.configurable import configurable
 
 
 class Optimizer(object):
@@ -27,6 +27,6 @@ class Optimizer(object):
         if self.max_grad_norm and self.max_grad_norm > 0:
             params = itertools.chain.from_iterable(
                 [group['params'] for group in self.optimizer.param_groups])
-            torch.nn.utils.clip_grad_norm(params, self.max_grad_norm)
+            torch.nn.utils.clip_grad_norm_(params, self.max_grad_norm)
 
         self.optimizer.step()

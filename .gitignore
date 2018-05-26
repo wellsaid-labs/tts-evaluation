@@ -78,9 +78,6 @@ cover/
 data/**
 .data/**
 
-# Checkpoint files
-*.pt
-
 # Test Files
 .pytest_cache
 

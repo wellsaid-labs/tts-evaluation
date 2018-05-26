@@ -5,13 +5,14 @@ import unidecode
 
 from num2words import num2words
 
-from torchnlp.utils import download_compressed_directory
+from torchnlp.download import download_file_maybe_extract
+from torchnlp.datasets import Dataset
 
 
 def lj_speech_dataset(directory='data/',
                       extracted_name='LJSpeech-1.1',
                       url='http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
-                      check_file='LJSpeech-1.1/metadata.csv',
+                      check_files=['LJSpeech-1.1/metadata.csv'],
                       text_file='metadata.csv',
                       audio_directory='wavs/',
                       verbalize=True):
@@ -51,7 +52,7 @@ def lj_speech_dataset(directory='data/',
           }
         ]
     """
-    download_compressed_directory(url, directory, check_file)
+    download_file_maybe_extract(url=url, directory=directory, check_files=check_files)
     path = os.path.join(directory, extracted_name, text_file)
 
     examples = []
@@ -84,7 +85,7 @@ def lj_speech_dataset(directory='data/',
                     os.path.join(directory, extracted_name, audio_directory, wav_filename + '.wav')
             })
 
-    return examples
+    return Dataset(examples)
 
 
 '''

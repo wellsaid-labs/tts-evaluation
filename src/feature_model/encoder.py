@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from torchnlp.text_encoders import PADDING_INDEX
 
-from src.configurable import configurable
+from src.utils.configurable import configurable
 
 
 class Encoder(nn.Module):
@@ -55,7 +55,7 @@ class Encoder(nn.Module):
                  lstm_hidden_size=512,
                  lstm_layers=1,
                  lstm_bidirectional=True,
-                 lstm_variational_dropout=0.1):
+                 lstm_dropout=0.1):
 
         super(Encoder, self).__init__()
 
@@ -84,17 +84,23 @@ class Encoder(nn.Module):
             input_size=num_convolution_filters,
             hidden_size=lstm_hidden_size,
             num_layers=lstm_layers,
-            bidirectional=lstm_bidirectional,
-            # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunatly, Zoneout in PyTorch
-            # forces us to unroll the LSTM and slow down this component x3 to x4. For right now, we
-            # will by using variational dropout.
-            dropout=0 if lstm_layers == 1 else lstm_variational_dropout,
-        )
+            bidirectional=lstm_bidirectional)
+
+        # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunatly, Zoneout or any LSTM state
+        # dropout in PyTorch forces us to unroll the LSTM and slow down this component x3 to x4. For
+        # right now, we will not be using state dropout on the LSTM. We are applying dropout onto
+        # the LSTM output instead.
+        self.lstm_dropout = nn.Dropout(p=lstm_dropout)
+
+        # Initialize weights
+        for module in self.convolution_layers.modules():
+            if isinstance(module, nn.Conv1d):
+                nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
 
     def forward(self, tokens):
         """
         Args:
-            tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
+            tokens (torch.FloatTensor [batch_size, num_tokens]): Batched set of sequences.
 
         Returns:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batched set of
@@ -119,6 +125,8 @@ class Encoder(nn.Module):
         # to permute the tensor first.
         tokens = tokens.permute(2, 0, 1)
 
-        # [num_tokens, batch_size, lstm_hidden_size * (2 if lstm_bidirectional else 1) ]
+        # [num_tokens, batch_size, lstm_hidden_size * (2 if lstm_bidirectional else 1)]
         encoded_tokens, _ = self.lstm(tokens)
+        encoded_tokens = self.lstm_dropout(encoded_tokens)
+
         return encoded_tokens

@@ -25,10 +25,13 @@ def test_encoder():
             1, encoder_params['vocab_size']))
     output = encoder(input_)
 
-    assert output.data.type() == 'torch.FloatTensor'
+    assert output.type() == 'torch.FloatTensor'
     assert output.shape == (encoder_params['num_tokens'], encoder_params['batch_size'],
                             (encoder_params['lstm_hidden_size'] / 2) *
                             (2 if encoder_params['lstm_bidirectional'] else 1))
+
+    # Smoke test backward
+    output.sum().backward()
 
 
 def test_encoder_filter_size():
@@ -46,7 +49,7 @@ def test_encoder_filter_size():
                 1, encoder_params['vocab_size']))
         output = encoder(input_)
 
-        assert output.data.type() == 'torch.FloatTensor'
+        assert output.type() == 'torch.FloatTensor'
         assert output.shape == (encoder_params['num_tokens'], encoder_params['batch_size'],
                                 (encoder_params['lstm_hidden_size'] / 2) *
                                 (2 if encoder_params['lstm_bidirectional'] else 1))

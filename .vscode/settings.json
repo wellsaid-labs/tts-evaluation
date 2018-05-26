@@ -4,7 +4,11 @@
   "editor.formatOnSave": true,
   "python.formatting.provider": "yapf",
   "editor.detectIndentation": false,
-  "python.unitTest.pyTestEnabled": false,
+  "python.unitTest.unittestArgs": [
+    "",
+    "-s=./tests",
+    "-p=test_*.py"
+  ],
   "python.linting.flake8Enabled": true,
   "python.linting.pylintEnabled": false,
   "python.formatting.yapfArgs": [
@@ -24,5 +28,6 @@
   "reflow.preferredLineLength": 100,
   "files.trimTrailingWhitespace": true,
   "git.autofetch": true,
-  "editor.minimap.enabled": false
+  "editor.minimap.enabled": false,
+  "files.insertFinalNewline": true
 }

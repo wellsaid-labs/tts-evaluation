@@ -17,14 +17,21 @@ Install most of the dependencies with the PIP package manager, like so:
 
 Follow the "Get Started" guide on [pytorch.org](pytorch.org) to install ``torch``.
 
-### WAV to Spectrogram Image
+## Research Ideas
 
-Convert ``.wav`` files to spectrograms, like so:
-
-    export PYTHONPATH=.
-    python3 src/spectrogram.py tests/_test_data/lj_speech.wav
-
-Following this command, you'll find the file ``tests/_test_data/lj_speech_spectrogram.png``
+* Following [The Best of Both Worlds: Combining Recent Advances in Neural Machine Translation
+](https://arxiv.org/abs/1804.09849v2) and [
+Regularizing and Optimizing LSTM Language Models](https://arxiv.org/pdf/1708.02182.pdf) add
+embedding dropout.
+* Following [The Best of Both Worlds: Combining Recent Advances in Neural Machine Translation
+](https://arxiv.org/abs/1804.09849v2) add multi-headed attention.
+* Following [Batch Normalization before or after ReLU?](https://www.reddit.com/r/MachineLearning/comments/67gonq/d_batch_normalization_before_or_after_relu/)
+move the BatchNorm layer following ReLU
+* Following [Deep contextualized word representations](https://arxiv.org/abs/1802.05365) consider
+incorporating ELMo and tokenizing on words.
+* Following [The Best of Both Worlds: Combining Recent Advances in Neural Machine Translation
+](https://arxiv.org/abs/1804.09849v2) and [Deep contextualized word representations](https://arxiv.org/abs/1802.05365) add
+layer norm to LSTM.
 
 ## Contributing
 

@@ -1,31 +1,97 @@
-import matplotlib
-matplotlib.use('Agg')
-
 from functools import partial
 
-import argparse
-import glob
+import functools
 import logging
 import math
-import os
 
+from tensorflow.contrib.signal.python.ops import window_ops
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_util
 from tensorflow.python.ops import math_ops
 
 import librosa
-import matplotlib.pyplot as plt
+
 import numpy as np
 import tensorflow as tf
 
-from src.configurable import configurable
+from src.utils.configurable import configurable
 
 logger = logging.getLogger(__name__)
 
 
 @configurable
-def _read_audio(filename, sample_rate=None):
+def mu_law_quantize(x, mu=255):
+    """Mu-Law companding + quantize
+    Args:
+        x (array-like): Input signal. Each value of input signal must be in
+          range of [-1, 1].
+        mu (number): Compression parameter ``μ``.
+    Returns:
+        array-like: Quantized signal (dtype=int)
+          - y ∈ [0, mu] if x ∈ [-1, 1]
+          - y ∈ [0, mu) if x ∈ [-1, 1)
+    .. note::
+        If you want to get quantized values of range [0, mu) (not [0, mu]),
+        then you need to provide input signal of range [-1, 1).
+    Examples:
+        >>> from scipy.io import wavfile
+        >>> import pysptk
+        >>> import numpy as np
+        >>> fs, x = wavfile.read(pysptk.util.example_audio_file())
+        >>> x = (x / 32768.0).astype(np.float32)
+        >>> y = mulaw_quantize(x)
+        >>> print(y.min(), y.max(), y.dtype)
+        15 246 int64
+    """
+    y = mu_law(x, mu=mu)
+    # scale [-1, 1] to [0, mu]
+    return ((y + 1) / 2 * mu).astype(np.int)
+
+
+def mu_law(x, mu=255):
+    """Mu-Law companding
+    Method described in paper [1]_.
+    .. math::
+        f(x) = sign(x) \ln (1 + \mu |x|) / \ln (1 + \mu)
+    Args:
+        x (array-like): Input signal. Each value of input signal must be in
+          range of [-1, 1].
+        mu (number): Compression parameter ``μ``.
+    Returns:
+        array-like: Compressed signal ([-1, 1])
+
+    .. [1] Brokish, Charles W., and Michele Lewis. "A-law and mu-law companding
+        implementations using the tms320c54x." SPRA163 (1997).
+    """
+    return np.sign(x) * np.log1p(mu * np.abs(x)) / np.log1p(mu)
+
+
+@configurable
+def find_silence(quantized, silence_threshold=15):
+    """ Given a Mu-Law companding quantized signal, trim the silence off the audio.
+
+    Args:
+        quantized (np.array dtype=int): Quantized signal.
+        silence_threshold (int): Threshold for silence.
+
+    Returns:
+        start (int): End of silence in the start of the signal
+        end (int): Start of silence at the end of the signal
+    """
+    for start in range(quantized.size):
+        if abs(quantized[start] - mu_law_quantize(0)) > silence_threshold:
+            break
+
+    for end in range(quantized.size - 1, 1, -1):
+        if abs(quantized[end] - mu_law_quantize(0)) > silence_threshold:
+            break
+
+    return start, end
+
+
+@configurable
+def read_audio(filename, sample_rate=None, normalize=True):
     """ Read an audio file into a mono signal.
 
     Tacotron 1 Reference:
@@ -37,21 +103,30 @@ def _read_audio(filename, sample_rate=None):
           sampling rate.
         * ``tests/test_spectrogram.py#test_librosa_tf_decode_wav`` tests that ``librosa`` and ``tf``
           decode outputs are similar.
+        * Scaling is done because resampling can push the Waveform past [-1, 1] limits.
 
     References:
         * WAV specs:
           http://www-mmsp.ece.mcgill.ca/Documents/AudioFormats/WAVE/WAVE.html
+        * Resampy the Librosa resampler.
+          https://github.com/bmcfee/resampy
+        * All Python audio resamplers:
+          https://livingthing.danmackinlay.name/python_audio.html
+        * Issue on scaling amplitude:
+          https://github.com/bmcfee/resampy/issues/61
 
     Args:
         filename (str): Name of the file to load.
         sample_rate (int or None): Target sample rate or None to keep native sample rate.
+        normalize (bool): If ``True``, rescale audio from [1, -1].
     Returns:
-        numpy.ndarray [shape=(n, 1)]: Audio time series.
+        numpy.ndarray [shape=(n,)]: Audio time series.
         int: Sample rate of the file.
     """
-    audio, sample_rate = librosa.core.load(filename, sr=sample_rate, mono=True)
-    audio = np.expand_dims(audio, axis=1)
-    return audio, sample_rate
+    signal, sample_rate = librosa.core.load(filename, sr=sample_rate, mono=True)
+    if normalize:
+        signal = signal / np.abs(signal).max()  # Normalize to [1, -1]
+    return signal, sample_rate
 
 
 def _milliseconds_to_samples(milliseconds, sample_rate):
@@ -67,29 +142,17 @@ def _milliseconds_to_samples(milliseconds, sample_rate):
     return int(round(milliseconds * (sample_rate / 1000)))
 
 
-def _get_wav_filenames_from_path(path):
-    """ Get a list of WAV files from a path.
-
-    Args:
-        path (str): Path to a directory of WAV files or WAV file.
-
-    Returns:
-        :class:`list` of :class`str`: List of WAV files.
-    """
-    if os.path.isfile(path):
-        assert '.wav' in path, "Path must be a directory of WAV files or a WAV file."
-        filenames = [path]
-    elif os.path.isdir(path):
-        filenames = [f for f in glob.iglob(os.path.join(path, '**/*.wav'), recursive=True)]
-        assert len(filenames) != 0, "Path must be a directory of WAV files or a WAV file."
-    else:
-        raise ValueError('Pass either a directory or file')
-    return filenames
-
-
 @configurable
-def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function, num_mel_bins,
-                               lower_hertz, upper_hertz, min_magnitude):
+def wav_to_log_mel_spectrogram(signal,
+                               sample_rate,
+                               frame_size=1200,
+                               frame_hop=300,
+                               window_function=functools.partial(
+                                   window_ops.hann_window, periodic=True),
+                               num_mel_bins=80,
+                               lower_hertz=125,
+                               upper_hertz=7600,
+                               min_magnitude=0.01):
     """ Transform wav file to a log mel spectrogram.
 
     Tacotron 2 Reference:
@@ -105,13 +168,6 @@ def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function,
         We use log magnitude spectrogram  with Hann windowing, 50 ms frame length, 12.5 ms frame
         shift, and 2048-point Fourier transform. We also found pre-emphasis (0.97) to be helpful.
         We use 24 kHz sampling rate for all experiments.
-
-    TODO: This function runs slowly (23 minutes on a GPU for the LJSpeech dataset) due to running
-    one signal at a time. Consider, batching Waveforms. That requires Waveforms to be padded with
-    zero on the end to remove length variability. Using the original length, we compute the expected
-    frames of the Spectrogram. Finally, we generate the Spectrogram and cut it at the appropriate
-    length. To ensure correctness of this approach, we can easily test batched vs non-batched
-    spectrograms.
 
     Reference:
         * DSP MFCC Tutorial:
@@ -130,9 +186,11 @@ def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function,
           https://www.tensorflow.org/api_guides/python/contrib.signal
 
     Args:
-        filenames (:class:`list` of :class:`str`): Names of the files to load.
-        frame_size (float): The frame size in milliseconds.
-        frame_hop (float): The frame hop in milliseconds.
+        signal (np.array [signal_length]): A batch of float32 time-domain signals in the range
+            [-1, 1].
+        sample_rate (int): Sample rate for the signal.
+        frame_size (float): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
+        frame_hop (float): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
         window_function (callable): A callable that takes a window length and a dtype keyword
             argument and returns a [window_length] Tensor of samples in the provided datatype. If
             set to None, no windowing is used.
@@ -144,21 +202,29 @@ def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function,
             singularity at zero in the mel spectrograms.
 
     Returns:
-        A ``[frames, num_mel_bins]`` ``Tensor`` of ``complex64`` STFT values.
+        log_mel_spectrograms (np.array [frames, num_mel_bins]): Log mel spectrogram.
+        right_pad (int): Number of zeros padding the end of the signal.
     """
+    signals = np.expand_dims(signal, axis=0)
+
     # A batch of float32 time-domain signal in the range [-1, 1] with shape
-    # [signal_length].
-    signals, sample_rate = _read_audio(filename)
+    # [1, signal_length].
     signals = tf.convert_to_tensor(signals)
 
-    # [signal_length, batch_size] -> [batch_size, signal_length]
-    signals = tf.transpose(signals)
+    # LEARN MORE: (Tensorflow ``pad_end``)
+    # https://github.com/tensorflow/tensorflow/blob/ed48c1dffcccf6c547e6355562f7bcca64967200/tensorflow/contrib/signal/python/ops/shape_ops.py#L133
 
-    # SOURCE (Tacotron 2):
-    # As in Tacotron, mel spectrograms are computed through a shorttime Fourier transform (STFT)
-    # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
-    frame_size = _milliseconds_to_samples(frame_size, sample_rate)
-    frame_hop = _milliseconds_to_samples(frame_hop, sample_rate)
+    # Pad the signal by up to frame_size samples based on how many samples are remaining starting
+    # from the last frame.
+    # FYI: Originally, the number of spectrogram frames was
+    # ``(signals.shape[1] - frame_size + frame_hop) // frame_hop``.
+    # Following padding the number of spectrogram frames is
+    # ``math.ceil(signals.shape[1] / frame_hop)`` a tad bit larger than the original signal.
+    num_frames = math.ceil(signals.shape[1].value / frame_hop)
+    remainder = frame_hop * (num_frames - 1) - signals.shape[1].value
+    end_pad = tf.zeros([1, frame_size + remainder])
+    signals = tf.concat([signals, end_pad], 1)
+    assert signals.shape[1].value % frame_hop == 0
 
     spectrograms = tf.contrib.signal.stft(
         signals,
@@ -166,6 +232,11 @@ def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function,
         frame_step=frame_hop,
         window_fn=window_function,
     )
+
+    assert spectrograms.shape[1].value == num_frames
+    # Return number of padding needed to pad signal such that
+    # ``spectrograms.shape[1] * num_frames == signals.shape[1]``
+    ret_pad = frame_hop + remainder
 
     # SOURCE (Tacotron 2):
     # "STFT magnitude"
@@ -192,7 +263,7 @@ def wav_to_log_mel_spectrogram(filename, frame_size, frame_hop, window_function,
     # followed by log dynamic range compression.
     log_mel_spectrograms = tf.log(mel_spectrograms)
 
-    return log_mel_spectrograms[0].numpy()
+    return log_mel_spectrograms[0].numpy(), ret_pad
 
 
 # INSPIRED BY:
@@ -255,16 +326,19 @@ def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, frame_size, sample_
 @configurable
 def log_mel_spectrogram_to_wav(log_mel_spectrogram,
                                filename,
-                               frame_size,
-                               frame_hop,
-                               window_function,
                                sample_rate,
-                               lower_hertz,
-                               upper_hertz,
-                               power,
-                               iterations=50,
+                               frame_size=1200,
+                               frame_hop=300,
+                               window_function=functools.partial(
+                                   window_ops.hann_window, periodic=True),
+                               lower_hertz=125,
+                               upper_hertz=7600,
+                               power=1.2,
+                               iterations=30,
                                log=False):
     """ Transform log mel spectrogram to wav file with the Griffin-Lim algorithm.
+
+    # TODO: Try using Mozillas/TTS Griffin lim
 
     Given a magnitude spectrogram as input, reconstruct the audio signal and return it using the
     Griffin-Lim algorithm from the paper:
@@ -300,96 +374,50 @@ def log_mel_spectrogram_to_wav(log_mel_spectrogram,
         loss_diff (float): Difference in loss used to determine convergance.
         log (bool): If bool is True, prints the RMSE as the algorithm runs.
     """
-    # Convert hertz to more relevant units like samples
-    frame_size = _milliseconds_to_samples(frame_size, sample_rate)
-    frame_hop = _milliseconds_to_samples(frame_hop, sample_rate)
-    spectrogram = _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, frame_size, sample_rate,
-                                                      lower_hertz, upper_hertz)
-    spectrograms = tf.expand_dims(spectrogram, 0)
+    assert '.wav' in filename, "Filename must be a .wav file"
 
-    inverse_stft = partial(
-        tf.contrib.signal.inverse_stft,
-        frame_length=frame_size,
-        frame_step=frame_hop,
-        window_fn=tf.contrib.signal.inverse_stft_window_fn(
-            frame_step=frame_hop, forward_window_fn=window_function))
-    stft = partial(
-        tf.contrib.signal.stft,
-        frame_length=frame_size,
-        frame_step=frame_hop,
-        window_fn=window_function)
+    # Complex operations are not defined for GPU
+    with tf.device('/cpu'):
+        # Convert hertz to more relevant units like samples
+        spectrogram = _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, frame_size,
+                                                          sample_rate, lower_hertz, upper_hertz)
+        spectrograms = tf.expand_dims(spectrogram, 0)
 
-    # SOURCE (Tacotron 1):
-    # We found that raising the predicted magnitudes by a power of 1.2 before feeding to Griffin-Lim
-    # reduces artifacts, likely due to its harmonic enhancement effect.
-    spectrograms = spectrograms**power
+        inverse_stft = partial(
+            tf.contrib.signal.inverse_stft,
+            frame_length=frame_size,
+            frame_step=frame_hop,
+            window_fn=tf.contrib.signal.inverse_stft_window_fn(
+                frame_step=frame_hop, forward_window_fn=window_function))
+        stft = partial(
+            tf.contrib.signal.stft,
+            frame_length=frame_size,
+            frame_step=frame_hop,
+            window_fn=window_function)
 
-    # Run the Griffin-Lim algorithm
-    spectrograms = tf.cast(tf.abs(spectrograms), dtype=tf.complex64)
-    time_slices = spectrograms.shape[1] - 1
-    len_samples = int(time_slices * frame_hop + frame_size)
-    waveform = tf.random_uniform((1, len_samples))
-    for i in range(iterations):
-        reconstruction_spectrogram = stft(waveform)
-        reconstruction_angle = tf.cast(tf.angle(reconstruction_spectrogram), dtype=tf.complex64)
-        # Discard magnitude part of the reconstruction and use the supplied magnitude spectrogram
-        # instead.
-        proposal_spectrogram = spectrograms * tf.exp(tf.complex(0.0, 1.0) * reconstruction_angle)
-        previous_waveform = waveform
-        waveform = inverse_stft(proposal_spectrogram)
-        if log:
-            loss = tf.reduce_sum((waveform - previous_waveform)**2)
-            loss = math.sqrt(loss / tf.size(waveform, out_type=tf.float32))
-            logger.info('Reconstruction iteration: {} RMSE: {} '.format(i, loss))
+        # SOURCE (Tacotron 1):
+        # We found that raising the predicted magnitudes by a power of 1.2 before feeding to
+        # Griffin-Lim reduces artifacts, likely due to its harmonic enhancement effect.
+        spectrograms = tf.pow(spectrograms, power)
 
-    waveform = tf.real(waveform)
-    librosa.output.write_wav(filename, waveform[0].numpy(), sr=sample_rate)
+        # Run the Griffin-Lim algorithm
+        spectrograms = tf.cast(tf.abs(spectrograms), dtype=tf.complex64)
+        time_slices = spectrograms.shape[1] - 1
+        len_samples = int(time_slices * frame_hop + frame_size)
+        waveform = tf.random_uniform((1, len_samples))
+        for i in range(iterations):
+            reconstruction_spectrogram = stft(waveform)
+            reconstruction_angle = tf.cast(tf.angle(reconstruction_spectrogram), dtype=tf.complex64)
+            # Discard magnitude part of the reconstruction and use the supplied magnitude
+            # spectrogram instead.
+            proposal_spectrogram = spectrograms * tf.exp(
+                tf.complex(0.0, 1.0) * reconstruction_angle)
+            previous_waveform = waveform
+            waveform = inverse_stft(proposal_spectrogram)
+            if log:
+                loss = tf.reduce_sum((waveform - previous_waveform)**2)
+                loss = math.sqrt(loss / tf.size(waveform, out_type=tf.float32))
+                logger.info('Reconstruction iteration: {} RMSE: {} '.format(i, loss))
 
-
-def plot_spectrogram(spectrogram, filename, title='Mel-Spectrogram'):
-    """ Save image of spectrogram to disk.
-
-    Args:
-        spectrogram (Tensor): A ``[frames, num_mel_bins]`` ``Tensor`` of ``complex64`` STFT
-            values.
-        filename (str): Name of the file to save to.
-        title (str): Title of the plot.
-
-    Returns:
-        None
-    """
-    assert '.png' in filename.lower(), "Filename saves in PNG format"
-
-    plt.figure()
-    plt.style.use('ggplot')
-    plt.imshow(np.rot90(spectrogram))
-    plt.colorbar(orientation='horizontal')
-    plt.ylabel('Mel-Channels')
-    xlabel = 'Frames'
-    plt.xlabel(xlabel)
-    plt.title(title)
-    plt.savefig(filename, format='png', bbox_inches='tight')
-
-
-def command_line_interface():
-    """ Command line interface to convert a directory of WAV files or WAV file to spectrograms.
-    """
-    from src.hparams import set_hparams
-
-    set_hparams()
-
-    parser = argparse.ArgumentParser(description='Convert WAV to a log mel spectrogram CLI.')
-    parser.add_argument('path', type=str, help='filename or directory of WAVs to convert')
-    args = parser.parse_args()
-
-    filenames = _get_wav_filenames_from_path(args.path)
-
-    for filename in filenames:
-        spectrogram = wav_to_log_mel_spectrogram(filename)
-        filename = filename.replace('.wav', '_spectrogram.png')
-        plot_spectrogram(spectrogram, filename)
-
-
-if __name__ == "__main__":  # pragma: no cover
-    tf.enable_eager_execution()
-    command_line_interface()
+        waveform = tf.real(waveform)
+        librosa.output.write_wav(filename, waveform[0].numpy(), sr=sample_rate)
