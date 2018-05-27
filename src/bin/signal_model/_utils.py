@@ -9,7 +9,6 @@ import random
 from torch.utils.data import DataLoader
 from torchnlp.utils import pad_batch
 from torch.utils import data
-from torchnlp.utils import get_tensors
 
 import torch
 import numpy as np
@@ -94,7 +93,7 @@ class SignalDataset(data.Dataset):
         assert samples % num_frames == 0
 
         # Cut it up
-        start_frame = random.randint(0, num_frames)
+        start_frame = random.randint(0, num_frames - 1)
         start_context_frame = max(start_frame - context_frames, 0)
         end_frame = min(start_frame + slice_frames, num_frames)
         frames_slice = log_mel_spectrogram[start_context_frame:end_frame]
@@ -223,7 +222,6 @@ class DataIterator(object):
         num_workers (int, optional): Number of workers for data loading.
     """
 
-    @configurable
     def __init__(self, device, dataset, batch_size, trial_run=False, num_workers=0):
         # ``drop_last`` to ensure full utilization of mutliple GPUs
         self.device = device
@@ -244,22 +242,22 @@ class DataIterator(object):
         """ Collage function to turn a list of tensors into one batch tensor.
 
         Returns: (dict) with:
-            * source_signal (torch.FloatTensor [signal_length, batch_size])
-            * target_signal (torch.FloatTensor [signal_length, batch_size])
+            * source_signal (torch.FloatTensor [batch_size, signal_length])
+            * target_signal (torch.FloatTensor [batch_size, signal_length])
             * signal_lengths (list): List of lengths for each signal.
-            * frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
+            * frames (torch.FloatTensor [batch_size, num_frames, frame_channels])
             * spectrograms (list): List of spectrograms to be used for sampling.
         """
-        source_signal, signal_lengths = pad_batch(
+        source_signals, _ = pad_batch(
             [r['source_signal_slice'] for r in batch], padding_index=mu_law_quantize(0))
-        target_signal, _ = pad_batch(
+        target_signals, target_signal_lengths = pad_batch(
             [r['target_signal_slice'] for r in batch], padding_index=mu_law_quantize(0))
         frames, _ = pad_batch([r['frames_slice'] for r in batch])
         spectrograms = [r['log_mel_spectrogram'] for r in batch]
         return {
-            'source_signals': source_signal,
-            'target_signals': target_signal,
-            'signal_lengths': signal_lengths,
+            'source_signals': source_signals,
+            'target_signals': target_signals,
+            'target_signal_lengths': target_signal_lengths,
             'frames': frames,
             'spectrograms': spectrograms
         }
@@ -269,10 +267,14 @@ class DataIterator(object):
 
     def __iter__(self):
         for batch in self.iterator:
-            yield tuple([
-                self._maybe_cuda(t, non_blocking=True) if torch.is_tensor(t) else t
-                for t in get_tensors(batch)
-            ])
+            batch['source_signals'] = self._maybe_cuda(batch['source_signals'], non_blocking=True)
+            batch['target_signals'] = self._maybe_cuda(batch['target_signals'], non_blocking=True)
+            batch['frames'] = self._maybe_cuda(batch['frames'], non_blocking=True)
+            batch['spectrograms'] = [
+                self._maybe_cuda(s, non_blocking=True) for s in batch['spectrograms']
+            ]
+
+            yield batch
 
             if self.trial_run:
                 break

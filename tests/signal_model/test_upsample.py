@@ -20,7 +20,7 @@ def test_conditional_features_upsample():
         block_hidden_size=block_hidden_size,
         num_layers=num_layers)
 
-    local_features = torch.FloatTensor(length, batch_size, channels)
+    local_features = torch.FloatTensor(batch_size, length, channels)
     upsampled = upsample(local_features)
 
     assert upsampled.shape == (2 * block_hidden_size, batch_size, num_layers, signal_length)

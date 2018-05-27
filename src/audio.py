@@ -244,6 +244,12 @@ def wav_to_log_mel_spectrogram(signal,
         shift, and 2048-point Fourier transform. We also found pre-emphasis (0.97) to be helpful.
         We use 24 kHz sampling rate for all experiments.
 
+    TODO:
+        * Consider using ``librosa`` instead, Tensorflow STFT has some bugs:
+          https://github.com/tensorflow/tensorflow/issues/16465
+          https://github.com/tensorflow/tensorflow/issues/15134
+          While librosa has solved most of the bugs concerning stft.
+
     Reference:
         * DSP MFCC Tutorial:
           http://haythamfayek.com/2016/04/21/speech-processing-for-machine-learning.html
@@ -312,6 +318,7 @@ def wav_to_log_mel_spectrogram(signal,
     # Return number of padding needed to pad signal such that
     # ``spectrograms.shape[1] * num_frames == signals.shape[1]``
     ret_pad = frame_hop + remainder
+    assert ret_pad <= frame_size
 
     # SOURCE (Tacotron 2):
     # "STFT magnitude"

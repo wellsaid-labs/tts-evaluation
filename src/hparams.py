@@ -224,7 +224,7 @@ def set_hparams():
                     # SOURCE Deep Voice: (64 block hidden size)
                     # Our highest-quality final model uses l = 40 layers, r = 64 residual channels,
                     # and s = 256 skip channels.
-                    'block_hidden_size': 128,
+                    'block_hidden_size': 64,
                     'skip_size': 256,
 
                     # SOURCE Tacotron 2: (From their ablation studies)

@@ -176,10 +176,6 @@ class WaveNet(nn.Module):
             self.has_new_weights = True
 
         # [batch_size, local_length, local_features_size] →
-        # [local_length, batch_size, local_features_size]
-        local_features = local_features.transpose(0, 1)
-
-        # [local_length, batch_size, local_features_size] →
         # [2 * block_hidden_size, batch_size, num_layers, signal_length]
         conditional_features = self.conditional_features_upsample(local_features)
 

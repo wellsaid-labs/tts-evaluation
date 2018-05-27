@@ -91,8 +91,8 @@ class Trainer():  # pragma: no cover
         self.dev_batch_size = dev_batch_size
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
-        self.train_dataset.set_receptive_field_size(self.model.receptive_field_size)
-        self.dev_dataset.set_receptive_field_size(self.model.receptive_field_size)
+        self.train_dataset.set_receptive_field_size(self.model.module.receptive_field_size)
+        self.dev_dataset.set_receptive_field_size(self.model.module.receptive_field_size)
         self.num_workers = num_workers
         self.sample_rate = sample_rate
 
@@ -105,29 +105,6 @@ class Trainer():  # pragma: no cover
         logger.info('Number of data loading workers: %d', num_workers)
         logger.info('Total Parameters: %d', get_total_parameters(self.model))
         logger.info('Model:\n%s' % self.model)
-
-    def _compute_loss(self, gold_signal, gold_signal_lengths, predicted_signal):
-        """ Compute the losses for Tacotron.
-
-        Args:
-            gold_signal (torch.ShortTensor [batch_size, signal_length])
-            gold_signal_lengths (list): Lengths of each signal in the batch.
-            predicted_signal (torch.LongTensor [batch_size, mu + 1, signal_length])
-
-        Returns:
-            (torch.Tensor) scalar loss values
-        """
-        mask = [torch.FloatTensor(length).fill_(1) for length in gold_signal_lengths]
-        mask, _ = pad_batch(mask, padding_index=0)  # [batch_size, signal_length]
-        mask = mask.to(self.device)
-
-        num_predictions = torch.sum(mask)
-
-        # signal_loss [batch_size, signal_length]
-        signal_loss = self.criterion(predicted_signal, gold_signal.long())
-        signal_loss = torch.sum(signal_loss * mask) / num_predictions
-
-        return signal_loss, num_predictions
 
     def run_epoch(self, train=False, trial_run=False, teacher_forcing=True):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
@@ -189,10 +166,33 @@ class Trainer():  # pragma: no cover
             signal) >= -1.0, "Should be [-1, 1] it is [%f, %f]" % (torch.max(signal),
                                                                    torch.min(signal))
         self.tensorboard.add_audio('/'.join(path), signal, step, self.sample_rate)
+        signal = signal.numpy()
 
         # Add image of waveform as well
-        signal = signal.numpy()
-        self.tensorboard.add_image('/'.join(path), plot_waveform(signal), step)
+        self.tensorboard.add_image('/'.join(['waveform'] + path), plot_waveform(signal), step)
+
+    def _compute_loss(self, gold_signal, gold_signal_lengths, predicted_signal):
+        """ Compute the losses for Tacotron.
+
+        Args:
+            gold_signal (torch.ShortTensor [batch_size, signal_length])
+            gold_signal_lengths (list): Lengths of each signal in the batch.
+            predicted_signal (torch.LongTensor [batch_size, mu + 1, signal_length])
+
+        Returns:
+            (torch.Tensor) scalar loss values
+        """
+        mask = [torch.FloatTensor(length).fill_(1) for length in gold_signal_lengths]
+        mask, _ = pad_batch(mask, padding_index=0)  # [batch_size, signal_length]
+        mask = mask.to(self.device)
+
+        num_predictions = torch.sum(mask)
+
+        # signal_loss [batch_size, signal_length]
+        signal_loss = self.criterion(predicted_signal, gold_signal.long())
+        signal_loss = torch.sum(signal_loss * mask) / num_predictions
+
+        return signal_loss, num_predictions
 
     def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
@@ -210,8 +210,12 @@ class Trainer():  # pragma: no cover
         self.model.train(mode=train)
 
         predicted_signal = self.model(batch['frames'], gold_signal=batch['source_signals'])
+        # Cut off context
+        # predicted_signal [batch_size, mu + 1, signal_length]
+        predicted_signal = predicted_signal[:, :, -batch['target_signals'].shape[1]:]
         signal_loss, num_signal_predictions = self._compute_loss(
-            batch['target_signals'], batch['signal_lengths'], predicted_signal)
+            batch['target_signals'], batch['target_signal_lengths'], predicted_signal)
+        assert batch['target_signals'].shape[1] > 0
 
         if train:
             self.optimizer.zero_grad()
@@ -222,6 +226,7 @@ class Trainer():  # pragma: no cover
             self.step += 1
 
         signal_loss = signal_loss.item()
+        predicted_signal = predicted_signal.detach()
 
         if train:
             self._add_scalar(['loss', 'signal', 'step'], signal_loss, self.step)
@@ -229,7 +234,8 @@ class Trainer():  # pragma: no cover
         if sample:
             batch_size = predicted_signal.shape[0]
             item = random.randint(0, batch_size - 1)
-            length = batch['signal_lengths'][item]
+            length = batch['target_signal_lengths'][item]
+            assert length > 0
 
             # spectrogram [num_frames, frame_channels]
             spectrogram = batch['spectrograms'][item]
@@ -238,15 +244,19 @@ class Trainer():  # pragma: no cover
             torch.set_grad_enabled(False)
             self.model.train(mode=False)
             # infered_signal [signal_length]
-            infered_signal = self.model(spectrogram.unsqueeze(0))[0]
+            logger.info('Running inference on spectrogram...')
+            # TODO: Remove magic number 300
+            infered_signal = self.model.module(spectrogram[:, :300])[0]
 
             # predicted_signal [batch_size, mu + 1, signal_length] → [signal_length]
             predicted_signal = predicted_signal.max(dim=1)[1][item, :length]
+            assert len(predicted_signal.shape) == 1 and predicted_signal.shape[0] > 0
             # gold_signal [batch_size, signal_length] → [signal_length]
             target_signal = batch['target_signals'][item, :length]
 
-            self._add_audio(['predicted'], predicted_signal, self.step)
-            self._add_audio(['infered'], infered_signal, self.step)
+            logger.info('Adding audio to tensorboard...')
+            self._add_audio(['teacher_forcing'], predicted_signal, self.step)
+            self._add_audio(['no_teacher_forcing'], infered_signal, self.step)
             self._add_audio(['gold'], target_signal, self.step)
 
         return signal_loss, num_signal_predictions
@@ -265,6 +275,9 @@ def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
         source (str, optional): Torch file with the signal dataset including features and signals.
         sample_rate (int, optional): Sample rate of the audio files.
     """
+    torch.backends.cudnn.enabled = True
+    torch.backends.cudnn.benchmark = False
+
     with ExperimentContextManager(label='signal_model', min_time=60 * 15) as context:
         set_hparams()
         log_config()
@@ -284,7 +297,7 @@ def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
             context.dev_tensorboard,
             sample_rate=sample_rate,
             train_batch_size=train_batch_size,
-            dev_batch_size=train_batch_size * 4,
+            dev_batch_size=train_batch_size * 3,
             num_workers=num_workers,
             **trainer_kwargs)
 

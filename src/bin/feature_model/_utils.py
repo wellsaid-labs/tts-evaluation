@@ -146,7 +146,7 @@ def _preprocess_audio(row):
 
     log_mel_spectrogram, right_pad = wav_to_log_mel_spectrogram(signal)
     log_mel_spectrogram = torch.tensor(log_mel_spectrogram)
-    stop_token = torch.FloatTensor(log_mel_spectrogram.shape[0]).zero_()
+    stop_token = log_mel_spectrogram.new_zeros((log_mel_spectrogram.shape[0],))
     stop_token[-1] = 1
 
     # Right pad so: ``log_mel_spectrogram.shape[0] % quantized_signal.shape[0] == frame_hop``

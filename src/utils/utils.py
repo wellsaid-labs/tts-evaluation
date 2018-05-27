@@ -6,7 +6,7 @@ from matplotlib import pyplot
 from matplotlib import cm as colormap
 
 import dill
-import librosa
+import librosa.display
 import numpy as np
 import torch
 
