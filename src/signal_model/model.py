@@ -42,6 +42,8 @@ class WaveNet(nn.Module):
             (e.g. 256 frames x 4 x ...).
         upsample_repeat (int): Number of times to repeat frames, another upsampling technique.
         local_features_size (int): Dimensionality of local features.
+        upsample_chunks (int): Control the memory used by ``upsample_layers`` by breaking the
+            operation up into chunks.
     """
 
     @configurable
@@ -53,7 +55,8 @@ class WaveNet(nn.Module):
                  cycle_size=6,
                  upsample_convs=[4],
                  upsample_repeat=75,
-                 local_features_size=80):
+                 local_features_size=80,
+                 upsample_chunks=3):
         super().__init__()
 
         self.cycle_size = cycle_size
@@ -76,7 +79,8 @@ class WaveNet(nn.Module):
             upsample_repeat=upsample_repeat,
             upsample_convs=upsample_convs,
             local_features_size=local_features_size,
-            num_layers=num_layers)
+            num_layers=num_layers,
+            upsample_chunks=upsample_chunks)
         self.out = nn.Sequential(
             nn.ReLU(),
             nn.Conv1d(in_channels=skip_size, out_channels=self.mu + 1, kernel_size=1, bias=False),
@@ -93,6 +97,15 @@ class WaveNet(nn.Module):
         self.receptive_field_size = get_receptive_field_size(self.layers)
         logger.info('Receptive field size in samples: %d' % self.receptive_field_size)
 
+    def queue_kernel_update(self):
+        """ Set a flag to update the kernel, incase the weights have changed.
+
+        NOTE:
+            * When using DataParallel, for example, it can be difficult to tell when the weights
+              have changed; therefore, we ask for a manual queue.
+        """
+        self.has_new_weights = True
+
     def _export(self, dtype, device):  # pragma: no cover
         """
         Args:
@@ -106,9 +119,11 @@ class WaveNet(nn.Module):
         Returns:
             kernel (NVWaveNet): NVIDIA optimize wavenet CUDA kernel.
         """
+        logger.info('Exporting signal model.')
+
         # This implementation does not use embeded ``embedding_prev``
         embedding_prev = torch.zeros(
-            (self.mu + 1, self.block_hidden_size), dtype=dtype, device=device).data
+            (self.mu + 1, self.block_hidden_size), dtype=dtype, device=device)
 
         # Compute embedding current by the identity matrix through a conv
         # embedding_curr [1, self.mu + 1, self.mu + 1]
@@ -116,18 +131,18 @@ class WaveNet(nn.Module):
         # [1, self.mu + 1, self.mu + 1]  → [1, block_hidden_size, self.mu + 1]
         embedding_curr = self.embed(embedding_curr)
         # [1, block_hidden_size, self.mu + 1]  → [self.mu + 1, block_hidden_size]
-        embedding_curr = embedding_curr.squeeze(0).transpose_(0, 1).data
+        embedding_curr = embedding_curr.squeeze(0).transpose(0, 1)
 
-        conv_out_weight = self.out[1].weight.data
-        conv_end_weight = self.out[3].weight.data
-        dilate_weights = [l.dilated_conv.weight.data for l in self.layers]
-        dilate_biases = [l.dilated_conv.bias.data for l in self.layers]
-        max_dilation = 2**(self.cycle_size - 1)
+        conv_out_weight = self.out[1].weight.detach()
+        conv_end_weight = self.out[3].weight.detach()
+        dilate_weights = [l.dilated_conv.weight.detach() for l in self.layers]
+        dilate_biases = [l.dilated_conv.bias.detach() for l in self.layers]
+        max_dilation = max(l.dilation for l in self.layers)
         # Last residual layer does not matter
-        res_weights = [l.out_conv.weight.data for l in self.layers[:-1]]
-        res_biases = [l.out_conv.bias.data for l in self.layers[:-1]]
-        skip_weights = [l.skip_conv.weight.data for l in self.layers]
-        skip_biases = [l.skip_conv.bias.data for l in self.layers]
+        res_weights = [l.out_conv.weight.detach() for l in self.layers[:-1]]
+        res_biases = [l.out_conv.bias.detach() for l in self.layers[:-1]]
+        skip_weights = [l.skip_conv.weight.detach() for l in self.layers]
+        skip_biases = [l.skip_conv.bias.detach() for l in self.layers]
         use_embed_tanh = False  # This implementation does not use embeded ``tanh``
 
         return __import__('nv_wavenet').NVWaveNet(
@@ -171,10 +186,6 @@ class WaveNet(nn.Module):
         if gold_signal is None and self.training:
             raise ValueError('Training without teacher forcing is not supported.')
 
-        if self.training:
-            # On a forward pass with signal, we assume this is
-            self.has_new_weights = True
-
         # [batch_size, local_length, local_features_size] →
         # [2 * block_hidden_size, batch_size, num_layers, signal_length]
         conditional_features = self.conditional_features_upsample(local_features)
@@ -196,30 +207,21 @@ class WaveNet(nn.Module):
                 'nv_wavenet').Impl.AUTO if implementation is None else implementation
             return self.kernel.infer(cond_input=conditional_features, implementation=implementation)
 
-        # [batch_size, signal_length] →
-        # [signal_length, batch_size]
-        gold_signal = gold_signal.transpose(0, 1)
-
-        # [signal_length, batch_size] → [signal_length, batch_size, mu + 1]
-        # Encode signal with one-hot encoding, reference:
-        # https://discuss.pytorch.org/t/convert-int-into-one-hot-format/507/25
-        gold_signal = (gold_signal.unsqueeze(2) == torch.arange(
-            self.mu + 1, dtype=gold_signal.dtype, device=gold_signal.device).reshape(
-                1, 1, self.mu + 1)).float()
-
         # Convolution operater expects input_ of the form:
         # [batch_size, channels (mu + 1), signal_length]
-        gold_signal = gold_signal.permute(1, 2, 0)
+
+        # [batch_size, signal_length] → [batch_size, mu + 1, signal_length]
+        # Encode signal with one-hot encoding, reference:
+        # https://discuss.pytorch.org/t/convert-int-into-one-hot-format/507/25
+        gold_signal = (gold_signal.unsqueeze(1) == torch.arange(
+            self.mu + 1, dtype=gold_signal.dtype, device=gold_signal.device).reshape(
+                1, self.mu + 1, 1)).float()
 
         # Using a convoluion, we compute an embedding from the one-hot encoding.
         # [batch_size, mu + 1, signal_length] → [batch_size, block_hidden_size, signal_length]
         gold_signal_features = self.embed(gold_signal)
 
         del gold_signal
-
-        # [batch_size, block_hidden_size, signal_length] →
-        # [block_hidden_size, batch_size, signal_length]
-        gold_signal_features.transpose_(0, 1)
 
         cumulative_skip = None
         for i, layer in enumerate(self.layers):

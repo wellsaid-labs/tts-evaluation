@@ -47,8 +47,10 @@ class SignalDataset(data.Dataset):
                  quantized_signal_prefix='quantized_signal',
                  extension='.npy',
                  slice_size=7000,
-                 receptive_field_size=721):
-        assert receptive_field_size >= 1  # Invariant: Must be larger than zero
+                 receptive_field_size=1):
+        # Invariant: Must be at least one. ``receptive_field_size`` includes the current timestep
+        # that must be taken into consideration at very least to predict the next timestep.
+        assert receptive_field_size >= 1
         prefixes = [log_mel_spectrogram_prefix, quantized_signal_prefix]
         self.rows = _get_filename_table(source, prefixes=prefixes, extension=extension)
         self.slice_samples = slice_size
@@ -99,14 +101,15 @@ class SignalDataset(data.Dataset):
         assert samples % num_frames == 0
 
         # Cut it up
+        # TODO: Rewrite for clarity sake
         start_frame = random.randint(0, num_frames - 1)
         start_context_frame = max(start_frame - context_frames, 0)
         start_context_sample = max(start_context_frame * samples_per_frame - 1, 0)
         end_frame = min(start_frame + slice_frames, num_frames)
-        end_sample = end_frame * samples_per_frame - 1
+        end_source_sample = end_frame * samples_per_frame - 1
 
         frames_slice = log_mel_spectrogram[start_context_frame:end_frame]
-        source_signal_slice = quantized_signal[start_context_sample:end_sample]
+        source_signal_slice = quantized_signal[start_context_sample:end_source_sample]
 
         if start_context_frame == 0:
             go_sample = quantized_signal.new_tensor([mu_law_quantize(0)])
@@ -218,7 +221,11 @@ def set_hparams():
         # a batch size of 8, a learning rate of 10−3
         'torch.optim.adam.Adam.__init__': {
             'eps': 10**-8,
-            'lr': 10**-3,
+            # NOTE: assuming a batch size of 36 with 7900 samples per element is around 284400
+            # samples while DeepVoice had a batch size of 8 with 19840  samples per element is
+            # around 158720 samples; Therefore, with a larger number of samples than DeepVoice,
+            # we increase our learning rate.
+            'lr': 2 * 10**-3,
             'weight_decay': 0
         }
     })
@@ -261,22 +268,21 @@ class DataIterator(object):
             * frames (torch.FloatTensor [batch_size, num_frames, frame_channels])
             * spectrograms (list): List of spectrograms to be used for sampling.
         """
-        source_signals, source_signal_lengths = pad_batch(
-            [r['source_signal_slice'] for r in batch], padding_index=mu_law_quantize(0))
-        target_signals, target_signal_lengths = pad_batch(
-            [r['target_signal_slice'] for r in batch], padding_index=mu_law_quantize(0))
-        frames, _ = pad_batch([r['frames_slice'] for r in batch])
+        source_signals, source_signal_lengths = pad_batch([r['source_signal_slice'] for r in batch])
+        target_signals, target_signal_lengths = pad_batch([r['target_signal_slice'] for r in batch])
+        frames, frames_lengths = pad_batch([r['frames_slice'] for r in batch])
         spectrograms = [r['log_mel_spectrogram'] for r in batch]
         length_diff = [s - t for s, t in zip(source_signal_lengths, target_signal_lengths)]
         assert length_diff.count(length_diff[0]) == len(length_diff), (
-            "BUG: Source must be a constant amount longer than target; "
+            "Source must be a constant amount longer than target; "
             "otherwise, they wont be aligned after padding.")
         return {
             'source_signals': source_signals,
             'target_signals': target_signals,
             'target_signal_lengths': target_signal_lengths,
             'frames': frames,
-            'spectrograms': spectrograms
+            'spectrograms': spectrograms,
+            'frames_lengths': frames_lengths,
         }
 
     def __len__(self):

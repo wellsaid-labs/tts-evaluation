@@ -75,7 +75,7 @@ def main(checkpoint,
 
             _, batch_predicted_frames, _, _ = model(gold_texts, ground_truth_frames=gold_frames)
             # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
-            batch_predicted_frames = batch_predicted_frames.transpose_(0, 1).cpu().numpy().astype(
+            batch_predicted_frames = batch_predicted_frames.transpose(0, 1).cpu().numpy().astype(
                 np.float32)
 
             batch_size = batch_predicted_frames.shape[0]

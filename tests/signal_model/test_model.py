@@ -22,7 +22,8 @@ def test_signal_model():
         skip_size=skip_size,
         upsample_convs=upsample_convs,
         upsample_repeat=upsample_repeat,
-        local_features_size=local_features_size)
+        local_features_size=local_features_size,
+        upsample_chunks=3)
     predicted = net(local_features, signal)
 
     assert predicted.shape == (batch_size, mu + 1, signal_length)

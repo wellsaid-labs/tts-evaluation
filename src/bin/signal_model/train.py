@@ -16,13 +16,14 @@ import tensorflow as tf
 from src.audio import inverse_mu_law_quantize
 from src.bin.signal_model._utils import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
+from src.bin.signal_model._utils import load_data
 from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
-from src.bin.signal_model._utils import load_data
 from src.optimizer import Optimizer
 from src.signal_model import SignalModel
 from src.utils import get_total_parameters
 from src.utils import plot_waveform
+from src.utils import spectrogram_to_image
 from src.utils.configurable import configurable
 from src.utils.configurable import log_config
 from src.utils.experiment_context_manager import ExperimentContextManager
@@ -70,11 +71,15 @@ class Trainer():  # pragma: no cover
         # Allow for ``class`` or a class instance
         self.model = model if isinstance(model, torch.nn.Module) else model()
         self.model.to(device)
+        self.is_data_parallel = False
         if device.type == 'cuda' and torch.cuda.device_count() > 1:
             logger.info('Training on %d GPUs', torch.cuda.device_count())
-            self.model = torch.nn.DataParallel(self.model, dim=0, output_device=device)
+            self.is_data_parallel = True
+
         if model_state_dict is not None:
-            self.model.load_state_dict(model_state_dict)
+            self.model.load_state_dict(
+                {key.replace('module.', ''): value
+                 for key, value in model_state_dict.items()})
 
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else Optimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
@@ -91,8 +96,8 @@ class Trainer():  # pragma: no cover
         self.dev_batch_size = dev_batch_size
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
-        self.train_dataset.set_receptive_field_size(self.model.module.receptive_field_size)
-        self.dev_dataset.set_receptive_field_size(self.model.module.receptive_field_size)
+        self.train_dataset.set_receptive_field_size(self.model.receptive_field_size)
+        self.dev_dataset.set_receptive_field_size(self.model.receptive_field_size)
         self.num_workers = num_workers
         self.sample_rate = sample_rate
 
@@ -142,6 +147,18 @@ class Trainer():  # pragma: no cover
         self._add_scalar(['loss', 'signal', 'epoch'], total_signal_loss / total_signal_predictions,
                          self.epoch)
 
+    def _add_image(self, path, tensor, to_image, step):
+        """ Plot data and add image to tensorboard.
+
+        Args:
+            path (list): List of tags to use as label.
+            tensor (torch.Tensor): Tensor to visualize.
+            to_image (callable): Callable that returns an image given tensor data.
+            step (int): Step value to record.
+        """
+        data = tensor.detach().cpu().numpy()
+        self.tensorboard.add_image('/'.join(path), to_image(data), step)
+
     def _add_scalar(self, path, scalar, step):
         """ Add scalar to tensorboard
 
@@ -166,10 +183,7 @@ class Trainer():  # pragma: no cover
             signal) >= -1.0, "Should be [-1, 1] it is [%f, %f]" % (torch.max(signal),
                                                                    torch.min(signal))
         self.tensorboard.add_audio('/'.join(path), signal, step, self.sample_rate)
-        signal = signal.numpy()
-
-        # Add image of waveform as well
-        self.tensorboard.add_image('/'.join(['waveform'] + path), plot_waveform(signal), step)
+        self._add_image(['waveform'] + path, signal, plot_waveform, step)
 
     def _compute_loss(self, gold_signal, gold_signal_lengths, predicted_signal):
         """ Compute the losses for Tacotron.
@@ -182,10 +196,8 @@ class Trainer():  # pragma: no cover
         Returns:
             (torch.Tensor) scalar loss values
         """
-        mask = [torch.FloatTensor(length).fill_(1) for length in gold_signal_lengths]
+        mask = [predicted_signal.new_full((length,), 1) for length in gold_signal_lengths]
         mask, _ = pad_batch(mask, padding_index=0)  # [batch_size, signal_length]
-        mask = mask.to(self.device)
-
         num_predictions = torch.sum(mask)
 
         # signal_loss [batch_size, signal_length]
@@ -194,13 +206,15 @@ class Trainer():  # pragma: no cover
 
         return signal_loss, num_predictions
 
-    def _run_step(self, batch, train=False, sample=False):
+    def _run_step(self, batch, train=False, sample=False, max_infer_frames=500):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
         Args:
             batch (dict): ``dict`` from ``src.bin.signal_model._utils.DataIterator``.
             train (bool): If ``True``, takes a optimization step.
             sample (bool): If ``True``, samples the current step.
+            max_infer_frames (int): The number of frames ``nv_wavenet`` has enough memory to
+                process to generate realistic samples.
 
         Returns:
             (torch.Tensor) Loss at every iteration
@@ -209,7 +223,16 @@ class Trainer():  # pragma: no cover
         torch.set_grad_enabled(train)
         self.model.train(mode=train)
 
-        predicted_signal = self.model(batch['frames'], gold_signal=batch['source_signals'])
+        if self.is_data_parallel:
+            predicted_signal = torch.nn.parallel.data_parallel(
+                module=self.model,
+                inputs=batch['frames'],
+                module_kwargs={'gold_signal': batch['source_signals']},
+                dim=0,
+                output_device=self.device)
+        else:
+            predicted_signal = self.model(batch['frames'], gold_signal=batch['source_signals'])
+
         # Cut off context
         predicted_signal = predicted_signal[:, :, -batch['target_signals'].shape[1]:]
         signal_loss, num_signal_predictions = self._compute_loss(
@@ -218,6 +241,7 @@ class Trainer():  # pragma: no cover
         if train:
             self.optimizer.zero_grad()
             signal_loss.backward()
+            self.model.queue_kernel_update()
             parameter_norm = self.optimizer.step()
             if parameter_norm is not None:
                 self._add_scalar(['parameter_norm', 'step'], parameter_norm, self.step)
@@ -236,23 +260,29 @@ class Trainer():  # pragma: no cover
 
             # spectrogram [num_frames, frame_channels]
             spectrogram = batch['spectrograms'][item]
-            spectrogram = spectrogram.unsqueeze(0)
+            # [num_frames, frame_channels] → [batch_size (1), num_frames, frame_channels]
+            spectrogram = spectrogram.unsqueeze(0)[:, :max_infer_frames]
 
             torch.set_grad_enabled(False)
             self.model.train(mode=False)
             # infered_signal [signal_length]
-            logger.info('Running inference on spectrogram...')
-            infered_signal = self.model.module(spectrogram)[0]
+            logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[1])
+            infered_signal = self.model(spectrogram).squeeze(0)
 
             # predicted_signal [batch_size, mu + 1, signal_length] → [signal_length]
             predicted_signal = predicted_signal.max(dim=1)[1][item, :length]
             # gold_signal [batch_size, signal_length] → [signal_length]
             target_signal = batch['target_signals'][item, :length]
+            # frames [batch_size, num_frames, channels] → [num_frames, channels]
+            frames = batch['frames'][item, :batch['frames_lengths'][item]]
 
             logger.info('Adding audio to tensorboard...')
             self._add_audio(['teacher_forcing'], predicted_signal, self.step)
             self._add_audio(['no_teacher_forcing'], infered_signal, self.step)
             self._add_audio(['gold'], target_signal, self.step)
+            self._add_image(['spectrogram'], spectrogram.squeeze(0), spectrogram_to_image,
+                            self.step)
+            self._add_image(['spectrogram_slice'], frames, spectrogram_to_image, self.step)
 
         return signal_loss, num_signal_predictions
 
@@ -292,7 +322,7 @@ def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
             context.dev_tensorboard,
             sample_rate=sample_rate,
             train_batch_size=train_batch_size,
-            dev_batch_size=train_batch_size * 4,
+            dev_batch_size=train_batch_size * 3,
             num_workers=num_workers,
             **trainer_kwargs)
 

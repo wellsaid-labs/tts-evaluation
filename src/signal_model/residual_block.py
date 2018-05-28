@@ -72,25 +72,20 @@ class ResidualBlock(nn.Module):
     def forward(self, signal_features, conditional_features):
         """
         Args:
-            signal_features (torch.FloatTensor [hidden_size, batch_size, signal_length]): Signal
+            signal_features (torch.FloatTensor [batch_size, hidden_size, signal_length]): Signal
                 features.
             conditional_features (torch.FloatTensor [2 * hidden_size, batch_size, signal_length]):
                 Local and global conditional features (e.g. speaker or spectrogram features). The
                 conditional first ``hidden_size`` chunk is used to condition the nonlinearly while
                 the last ``hidden_size`` chunk is used to condition the signmoid.
         Returns:
-            out (torch.FloatTensor [hidden_size, batch_size, signal_length]): Signal features post
+            out (torch.FloatTensor [batch_size, hidden_size, signal_length]): Signal features post
                 residual.
             skip (torch.FloatTensor [batch_size, skip_size, signal_length]): Skip features post
                 residual.
         """
-        # Convolution operater expects signal_features of the form:
-        # [batch_size, channels (hidden_size), signal_length]
-        # [hidden_size, batch_size, signal_length] → [batch_size, hidden_size, signal_length]
-        signal_features = signal_features.transpose(0, 1)
-
-        # original [batch_size, hidden_size, signal_length]
-        original = signal_features
+        # residual [batch_size, hidden_size, signal_length]
+        residual = signal_features
 
         # TODO: Investigate if it's faster to pad left or to pad equal with clipping.
 
@@ -98,20 +93,18 @@ class ResidualBlock(nn.Module):
         # [batch_size, hidden_size, signal_length + self.padding[0]]
         signal_features = functional.pad(signal_features, self.padding)
 
+        # Convolution operater expects signal_features of the form:
+        # signal_features [batch_size, channels (hidden_size), signal_length]
         # [batch_size, hidden_size, signal_length + self.padding[0]] →
         # [batch_size, 2 * hidden_size, signal_length]
         signal_features = self.dilated_conv(signal_features)
 
-        # [batch_size, 2 * hidden_size, signal_length] →
-        # [2 * hidden_size, batch_size, signal_length]
-        signal_features = signal_features.transpose_(0, 1)
-
-        # [2 * hidden_size, batch_size, signal_length]
-        signal_features = conditional_features + signal_features
-
         # [2 * hidden_size, batch_size, signal_length] →
         # [batch_size, 2 * hidden_size, signal_length]
-        signal_features = signal_features.transpose_(1, 0)
+        conditional_features = conditional_features.transpose(0, 1)
+
+        # [batch_size, 2 * hidden_size, signal_length]
+        signal_features = conditional_features + signal_features
 
         # left, right [batch_size, hidden_size, signal_length]
         left, right = tuple(torch.chunk(signal_features, 2, dim=1))
@@ -129,14 +122,9 @@ class ResidualBlock(nn.Module):
             return None, skip
 
         # [batch_size, hidden_size, signal_length] → [batch_size, hidden_size, signal_length]
-        residual = self.out_conv(signal_features)
+        signal_features = self.out_conv(signal_features)
 
-        # [batch_size, hidden_size, signal_length] + [batch_size, hidden_size, signal_length] →
         # [batch_size, hidden_size, signal_length]
-        signal_features = residual + original
-
-        # Tranpose to the same shape as ``signal_features`` originally
-        # [batch_size, hidden_size, signal_length] → [hidden_size, batch_size, signal_length]
-        signal_features = signal_features.transpose_(0, 1)
+        signal_features += residual
 
         return signal_features, skip

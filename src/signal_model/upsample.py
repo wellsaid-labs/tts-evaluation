@@ -18,6 +18,8 @@ class ConditionalFeaturesUpsample(nn.Module):
         local_features_size (int): Dimensionality of local features.
         block_hidden_size (int): Hidden size of each residual block.
         num_layers (int): Number of layers in Wavenet to condition.
+        upsample_chunks (int): Control the memory used by ``upsample_layers`` by breaking the
+            operation up into chunks.
     """
 
     @configurable
@@ -26,11 +28,13 @@ class ConditionalFeaturesUpsample(nn.Module):
                  upsample_repeat=75,
                  local_features_size=80,
                  block_hidden_size=64,
-                 num_layers=24):
+                 num_layers=24,
+                 upsample_chunks=3):
         super().__init__()
         self.block_hidden_size = block_hidden_size
         self.upsample_repeat = upsample_repeat
         self.num_layers = num_layers
+        assert self.num_layers % upsample_chunks == 0
         self.upsample_signal_length = None
         if upsample_convs is not None:
             self.upsample_signal_length = nn.Sequential(*tuple([
@@ -40,12 +44,14 @@ class ConditionalFeaturesUpsample(nn.Module):
                     kernel_size=size,
                     stride=size) for size in upsample_convs
             ]))
-        self.upsample_layers = nn.Conv1d(
-            in_channels=local_features_size,
-            out_channels=block_hidden_size * 2 * num_layers,
-            kernel_size=1)
-        torch.nn.init.xavier_uniform_(
-            self.upsample_layers.weight, gain=torch.nn.init.calculate_gain('tanh'))
+        self.upsample_layers = nn.ModuleList([
+            nn.Conv1d(
+                in_channels=local_features_size,
+                out_channels=block_hidden_size * 2 * int(num_layers / upsample_chunks),
+                kernel_size=1) for _ in range(upsample_chunks)
+        ])
+        for conv in self.upsample_layers:
+            torch.nn.init.xavier_uniform_(conv.weight, gain=torch.nn.init.calculate_gain('tanh'))
 
     def forward(self, local_features):
         """
@@ -62,7 +68,7 @@ class ConditionalFeaturesUpsample(nn.Module):
         """
         # Convolution operater expects input_ of the form:
         # [batch_size, local_features_size, signal_length (local_length)]
-        local_features = local_features.permute(0, 2, 1)
+        local_features = local_features.transpose(1, 2)
 
         # [batch_size, local_features_size, local_length] →
         # [batch_size, local_features_size, signal_length]
@@ -72,7 +78,8 @@ class ConditionalFeaturesUpsample(nn.Module):
 
         # [batch_size, local_features_size, signal_length] →
         # [batch_size, block_hidden_size * 2 * num_layers, signal_length]
-        local_features = self.upsample_layers(local_features)
+        local_features = [conv(local_features) for conv in self.upsample_layers]
+        local_features = torch.cat(local_features, dim=1)
 
         batch_size, _, signal_length = local_features.shape
 
