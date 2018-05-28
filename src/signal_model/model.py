@@ -232,5 +232,7 @@ class WaveNet(nn.Module):
             else:
                 cumulative_skip += skip
 
-        # [batch_size, skip_size, signal_length] → [batch_size, mu + 1, signal_length]
+        # Convolution operater expects input_ of the form:
+        # cumulative_skip [batch_size, channels (skip_size), signal_length] →
+        # [batch_size, mu + 1, signal_length]
         return self.out(cumulative_skip)

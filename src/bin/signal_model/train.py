@@ -211,11 +211,9 @@ class Trainer():  # pragma: no cover
 
         predicted_signal = self.model(batch['frames'], gold_signal=batch['source_signals'])
         # Cut off context
-        # predicted_signal [batch_size, mu + 1, signal_length]
         predicted_signal = predicted_signal[:, :, -batch['target_signals'].shape[1]:]
         signal_loss, num_signal_predictions = self._compute_loss(
             batch['target_signals'], batch['target_signal_lengths'], predicted_signal)
-        assert batch['target_signals'].shape[1] > 0
 
         if train:
             self.optimizer.zero_grad()
@@ -235,7 +233,6 @@ class Trainer():  # pragma: no cover
             batch_size = predicted_signal.shape[0]
             item = random.randint(0, batch_size - 1)
             length = batch['target_signal_lengths'][item]
-            assert length > 0
 
             # spectrogram [num_frames, frame_channels]
             spectrogram = batch['spectrograms'][item]
@@ -245,12 +242,10 @@ class Trainer():  # pragma: no cover
             self.model.train(mode=False)
             # infered_signal [signal_length]
             logger.info('Running inference on spectrogram...')
-            # TODO: Remove magic number 300
-            infered_signal = self.model.module(spectrogram[:, :300])[0]
+            infered_signal = self.model.module(spectrogram)[0]
 
             # predicted_signal [batch_size, mu + 1, signal_length] → [signal_length]
             predicted_signal = predicted_signal.max(dim=1)[1][item, :length]
-            assert len(predicted_signal.shape) == 1 and predicted_signal.shape[0] > 0
             # gold_signal [batch_size, signal_length] → [signal_length]
             target_signal = batch['target_signals'][item, :length]
 
@@ -297,7 +292,7 @@ def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
             context.dev_tensorboard,
             sample_rate=sample_rate,
             train_batch_size=train_batch_size,
-            dev_batch_size=train_batch_size * 3,
+            dev_batch_size=train_batch_size * 4,
             num_workers=num_workers,
             **trainer_kwargs)
 

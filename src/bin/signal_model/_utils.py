@@ -9,6 +9,7 @@ import random
 from torch.utils.data import DataLoader
 from torchnlp.utils import pad_batch
 from torch.utils import data
+from torch import nn
 
 import torch
 import numpy as np
@@ -67,7 +68,7 @@ class SignalDataset(data.Dataset):
         self.context_samples = receptive_field_size - 1
 
     def _preprocess(self, log_mel_spectrogram, quantized_signal):
-        """ Preprocess the data into training data.
+        """ Slice the data into bite sized chunks that fit onto GPU memory for training.
 
         Notes:
             * Frames batch needs to line up with the target signal. Each frame, is used to predict
@@ -75,6 +76,10 @@ class SignalDataset(data.Dataset):
               target; therefore, the source signal is one timestep behind.
             * Source signal batch is one time step behind the target batch. They have the same
               signal lengths.
+            * With a large batch size and 1s+ clips, its probable that every batch will have at
+              least one sample with full context; therefore, rather than aligning source signal
+              with the target signal later adding more computation we align them now with left
+              padding now by ensuring the context size is the same.
 
         Args:
             log_mel_spectrogram (torch.Tensor [num_frames, channels])
@@ -90,22 +95,30 @@ class SignalDataset(data.Dataset):
 
         # Invariants
         assert self.slice_samples % samples_per_frame == 0
+        # Signal model requires that there is a scaling factor between the signal and frames
         assert samples % num_frames == 0
 
         # Cut it up
         start_frame = random.randint(0, num_frames - 1)
         start_context_frame = max(start_frame - context_frames, 0)
+        start_context_sample = max(start_context_frame * samples_per_frame - 1, 0)
         end_frame = min(start_frame + slice_frames, num_frames)
+        end_sample = end_frame * samples_per_frame - 1
+
         frames_slice = log_mel_spectrogram[start_context_frame:end_frame]
-        if start_context_frame * samples_per_frame == 0:
-            # Source signal is one timestep back
-            zero_point = quantized_signal.new_full((1,), mu_law_quantize(0))
-            source_signal_slice = quantized_signal[start_context_frame * samples_per_frame:
-                                                   end_frame * samples_per_frame - 1]
-            source_signal_slice = torch.cat((zero_point, source_signal_slice), dim=0)
-        else:
-            source_signal_slice = quantized_signal[start_context_frame * samples_per_frame - 1:
-                                                   end_frame * samples_per_frame - 1]
+        source_signal_slice = quantized_signal[start_context_sample:end_sample]
+
+        if start_context_frame == 0:
+            go_sample = quantized_signal.new_tensor([mu_law_quantize(0)])
+            source_signal_slice = torch.cat((go_sample, source_signal_slice), dim=0)
+
+            # Pad to ensure the same length context for each
+            context_frame_pad = context_frames - start_frame
+            context_sample_pad = context_frame_pad * samples_per_frame
+            # frames_slice [num_frames, channels]
+            frames_slice = nn.functional.pad(frames_slice, (0, 0, context_frame_pad, 0))
+            source_signal_slice = nn.functional.pad(source_signal_slice, (context_sample_pad, 0))
+
         target_signal_slice = quantized_signal[start_frame * samples_per_frame:
                                                end_frame * samples_per_frame]
 
@@ -248,12 +261,16 @@ class DataIterator(object):
             * frames (torch.FloatTensor [batch_size, num_frames, frame_channels])
             * spectrograms (list): List of spectrograms to be used for sampling.
         """
-        source_signals, _ = pad_batch(
+        source_signals, source_signal_lengths = pad_batch(
             [r['source_signal_slice'] for r in batch], padding_index=mu_law_quantize(0))
         target_signals, target_signal_lengths = pad_batch(
             [r['target_signal_slice'] for r in batch], padding_index=mu_law_quantize(0))
         frames, _ = pad_batch([r['frames_slice'] for r in batch])
         spectrograms = [r['log_mel_spectrogram'] for r in batch]
+        length_diff = [s - t for s, t in zip(source_signal_lengths, target_signal_lengths)]
+        assert length_diff.count(length_diff[0]) == len(length_diff), (
+            "BUG: Source must be a constant amount longer than target; "
+            "otherwise, they wont be aligned after padding.")
         return {
             'source_signals': source_signals,
             'target_signals': target_signals,
