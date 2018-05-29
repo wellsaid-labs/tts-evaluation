@@ -251,7 +251,7 @@ def set_hparams():
                     # NOTE:
                     # We use 6,900 to evenly divide with ``frame_hop`` which in addition with
                     # ``receptive_field_size`` will be around 7,680 timesteps.
-                    'slice_size': 6900
+                    'slice_size': 24000
                 },
                 'train.main': {
                     'sample_rate': sample_rate

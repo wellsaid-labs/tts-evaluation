@@ -145,6 +145,7 @@ def plot_waveform(signal, sample_rate=24000):
     pyplot.ylabel('Energy')
     pyplot.xlabel('Time')
     pyplot.close()
+    pyplot.ylim(-1, 1)
     return figure_to_numpy_array(figure)
 
 

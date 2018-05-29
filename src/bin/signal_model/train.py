@@ -20,7 +20,7 @@ from src.bin.signal_model._utils import load_data
 from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
 from src.optimizer import Optimizer
-from src.signal_model import SignalModel
+from src.signal_model.wavenet import WaveNet as SignalModel
 from src.utils import get_total_parameters
 from src.utils import plot_waveform
 from src.utils import spectrogram_to_image
@@ -185,6 +185,54 @@ class Trainer():  # pragma: no cover
         self.tensorboard.add_audio('/'.join(path), signal, step, self.sample_rate)
         self._add_image(['waveform'] + path, signal, plot_waveform, step)
 
+    def _sample(self, batch, predicted_signal, max_infer_frames=500):
+        """ Samples examples from a batch and outputs them to tensorboard
+
+        Args:
+            batch (dict): ``dict`` from ``src.bin.signal_model._utils.DataIterator``.
+            predicted_signal (torch.FloatTensor [batch_size, mu + 1, signal_length])
+            max_infer_frames (int): The number of frames ``nv_wavenet`` has enough memory to
+                process to generate realistic samples.
+        """
+        batch_size = predicted_signal.shape[0]
+        item = random.randint(0, batch_size - 1)
+        length = batch['target_signal_lengths'][item]
+
+        assert batch['signals'][item].shape[0] % batch['spectrograms'][item].shape[0] == 0
+        factor = int(batch['signals'][item].shape[0] / batch['spectrograms'][item].shape[0])
+        logger.info('Scaling factor is %d', factor)
+
+        # spectrogram [num_frames, frame_channels]
+        spectrogram = batch['spectrograms'][item]
+        # [num_frames, frame_channels] → [batch_size (1), num_frames, frame_channels]
+        spectrogram = spectrogram.unsqueeze(0)[:, :max_infer_frames]
+        signal = batch['signals'][item][:max_infer_frames * factor]
+
+        torch.set_grad_enabled(False)
+        self.model.train(mode=False)
+        # infered_signal [signal_length]
+        self.model.queue_kernel_update()
+        logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[1])
+        infered_signal = self.model(spectrogram).squeeze(0)
+
+        # predicted_signal [batch_size, mu + 1, signal_length] → [signal_length]
+        predicted_signal = predicted_signal.max(dim=1)[1][item, :length]
+        # gold_signal [batch_size, signal_length] → [signal_length]
+        target_signal = batch['target_signals'][item, :length]
+        # frames [batch_size, num_frames, channels] → [num_frames, channels]
+        frames = batch['frames'][item, :batch['frames_lengths'][item]]
+
+        # TODO: Clean up paths for logging, once when we delete past experiments with these
+        # paths
+
+        logger.info('Adding audio to tensorboard...')
+        self._add_audio(['teacher_forcing'], predicted_signal, self.step)
+        self._add_audio(['no_teacher_forcing'], infered_signal, self.step)
+        self._add_audio(['no_teacher_forcing_gold'], signal, self.step)
+        self._add_audio(['gold'], target_signal, self.step)
+        self._add_image(['spectrogram'], spectrogram.squeeze(0), spectrogram_to_image, self.step)
+        self._add_image(['spectrogram_slice'], frames, spectrogram_to_image, self.step)
+
     def _compute_loss(self, gold_signal, gold_signal_lengths, predicted_signal):
         """ Compute the losses for Tacotron.
 
@@ -206,7 +254,7 @@ class Trainer():  # pragma: no cover
 
         return signal_loss, num_predictions
 
-    def _run_step(self, batch, train=False, sample=False, max_infer_frames=500):
+    def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
         Args:
@@ -253,36 +301,7 @@ class Trainer():  # pragma: no cover
             self._add_scalar(['loss', 'signal', 'step'], signal_loss, self.step)
 
         if sample:
-            batch_size = predicted_signal.shape[0]
-            item = random.randint(0, batch_size - 1)
-            length = batch['target_signal_lengths'][item]
-
-            # spectrogram [num_frames, frame_channels]
-            spectrogram = batch['spectrograms'][item]
-            # [num_frames, frame_channels] → [batch_size (1), num_frames, frame_channels]
-            spectrogram = spectrogram.unsqueeze(0)[:, :max_infer_frames]
-
-            torch.set_grad_enabled(False)
-            self.model.train(mode=False)
-            # infered_signal [signal_length]
-            self.model.queue_kernel_update()
-            logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[1])
-            infered_signal = self.model(spectrogram).squeeze(0)
-
-            # predicted_signal [batch_size, mu + 1, signal_length] → [signal_length]
-            predicted_signal = predicted_signal.max(dim=1)[1][item, :length]
-            # gold_signal [batch_size, signal_length] → [signal_length]
-            target_signal = batch['target_signals'][item, :length]
-            # frames [batch_size, num_frames, channels] → [num_frames, channels]
-            frames = batch['frames'][item, :batch['frames_lengths'][item]]
-
-            logger.info('Adding audio to tensorboard...')
-            self._add_audio(['teacher_forcing'], predicted_signal, self.step)
-            self._add_audio(['no_teacher_forcing'], infered_signal, self.step)
-            self._add_audio(['gold'], target_signal, self.step)
-            self._add_image(['spectrogram'], spectrogram.squeeze(0), spectrogram_to_image,
-                            self.step)
-            self._add_image(['spectrogram_slice'], frames, spectrogram_to_image, self.step)
+            self._sample(batch, predicted_signal)
 
         return signal_loss, num_signal_predictions
 

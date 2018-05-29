@@ -136,9 +136,11 @@ class SignalDataset(data.Dataset):
     def __getitem__(self, index):
         # Load data
         # log_mel_spectrogram [num_frames, channels]
-        log_mel_spectrogram = torch.from_numpy(np.load(self.rows[index]['log_mel_spectrogram']))
+        log_mel_spectrogram = torch.from_numpy(np.load(
+            self.rows[index]['log_mel_spectrogram'])).contiguous()
         # quantized_signal [signal_length]
-        quantized_signal = torch.from_numpy(np.load(self.rows[index]['quantized_signal']))
+        quantized_signal = torch.from_numpy(np.load(
+            self.rows[index]['quantized_signal'])).contiguous()
 
         return self._preprocess(log_mel_spectrogram, quantized_signal)
 
@@ -224,7 +226,7 @@ def set_hparams():
             # samples while DeepVoice had a batch size of 8 with 19840  samples per element is
             # around 158720 samples; Therefore, with a larger number of samples than DeepVoice,
             # we increase our learning rate.
-            'lr': 2 * 10**-3,
+            'lr': 10**-3,
             'weight_decay': 0
         }
     })
@@ -271,6 +273,7 @@ class DataIterator(object):
         target_signals, target_signal_lengths = pad_batch([r['target_signal_slice'] for r in batch])
         frames, frames_lengths = pad_batch([r['frames_slice'] for r in batch])
         spectrograms = [r['log_mel_spectrogram'] for r in batch]
+        signals = [r['quantized_signal'] for r in batch]
         length_diff = [s - t for s, t in zip(source_signal_lengths, target_signal_lengths)]
         assert length_diff.count(length_diff[0]) == len(length_diff), (
             "Source must be a constant amount longer than target; "
@@ -282,6 +285,7 @@ class DataIterator(object):
             'frames': frames,
             'spectrograms': spectrograms,
             'frames_lengths': frames_lengths,
+            'signals': signals,
         }
 
     def __len__(self):
