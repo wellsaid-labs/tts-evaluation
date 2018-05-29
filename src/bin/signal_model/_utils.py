@@ -100,30 +100,29 @@ class SignalDataset(data.Dataset):
         # Signal model requires that there is a scaling factor between the signal and frames
         assert samples % num_frames == 0
 
-        # Cut it up
-        # TODO: Rewrite for clarity sake
+        # Get a frame slice
         start_frame = random.randint(0, num_frames - 1)
         start_context_frame = max(start_frame - context_frames, 0)
-        start_context_sample = max(start_context_frame * samples_per_frame - 1, 0)
         end_frame = min(start_frame + slice_frames, num_frames)
-        end_source_sample = end_frame * samples_per_frame - 1
-
         frames_slice = log_mel_spectrogram[start_context_frame:end_frame]
-        source_signal_slice = quantized_signal[start_context_sample:end_source_sample]
 
+        # Get a source sample slice shifted back one and target sample
+        start_context_sample = start_context_frame * samples_per_frame
+        end_sample = end_frame * samples_per_frame
+        start_sample = start_frame * samples_per_frame
+        source_signal_slice = quantized_signal[max(start_context_sample - 1, 0):end_sample - 1]
+        target_signal_slice = quantized_signal[start_sample:end_sample]
+
+        # EDGE CASE: Pad context incase it's cut off and add a go sample for source
         if start_context_frame == 0:
             go_sample = quantized_signal.new_tensor([mu_law_quantize(0)])
             source_signal_slice = torch.cat((go_sample, source_signal_slice), dim=0)
 
-            # Pad to ensure the same length context for each
             context_frame_pad = context_frames - start_frame
-            context_sample_pad = context_frame_pad * samples_per_frame
-            # frames_slice [num_frames, channels]
             frames_slice = nn.functional.pad(frames_slice, (0, 0, context_frame_pad, 0))
-            source_signal_slice = nn.functional.pad(source_signal_slice, (context_sample_pad, 0))
 
-        target_signal_slice = quantized_signal[start_frame * samples_per_frame:
-                                               end_frame * samples_per_frame]
+            context_sample_pad = context_frame_pad * samples_per_frame
+            source_signal_slice = nn.functional.pad(source_signal_slice, (context_sample_pad, 0))
 
         return {
             self.log_mel_spectrogram_prefix: log_mel_spectrogram,  # [num_frames, channels]

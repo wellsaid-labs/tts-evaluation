@@ -81,6 +81,8 @@ def test_signal_dataset_preprocess_receptive_field_size_rounding(randint_mock):
         preprocessed['target_signal_slice'][:-1])
     assert preprocessed['frames_slice'].shape == ((
         slice_size + receptive_field_size_rounded) / samples_per_frame, spectrogram_channels)
+    assert preprocessed['frames_slice'][0:1].sum() == 0
+    assert preprocessed['frames_slice'][2].sum() != 0
 
 
 def test_load_data():

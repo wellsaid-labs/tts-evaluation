@@ -241,7 +241,6 @@ class Trainer():  # pragma: no cover
         if train:
             self.optimizer.zero_grad()
             signal_loss.backward()
-            self.model.queue_kernel_update()
             parameter_norm = self.optimizer.step()
             if parameter_norm is not None:
                 self._add_scalar(['parameter_norm', 'step'], parameter_norm, self.step)
@@ -266,6 +265,7 @@ class Trainer():  # pragma: no cover
             torch.set_grad_enabled(False)
             self.model.train(mode=False)
             # infered_signal [signal_length]
+            self.model.queue_kernel_update()
             logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[1])
             infered_signal = self.model(spectrogram).squeeze(0)
 
