@@ -101,9 +101,14 @@ class SignalDataset(data.Dataset):
         assert samples % num_frames == 0
 
         # Get a frame slice
-        start_frame = random.randint(0, num_frames - 1)
-        start_context_frame = max(start_frame - context_frames, 0)
+        # ``-slice_frames + 1, num_frames - 1`` to ensure there is an equal chance to that a
+        # sample will be included inside the slice.
+        # For example, with signal ``[1, 2, 3]`` and a ``slice_samples`` of 2 you'd get slices of:
+        # (1), (1, 2), (2, 3), (3).
+        # With each number represented at twice.
+        start_frame = max(random.randint(-slice_frames + 1, num_frames - 1), 0)
         end_frame = min(start_frame + slice_frames, num_frames)
+        start_context_frame = max(start_frame - context_frames, 0)
         frames_slice = log_mel_spectrogram[start_context_frame:end_frame]
 
         # Get a source sample slice shifted back one and target sample

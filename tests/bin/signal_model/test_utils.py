@@ -113,11 +113,13 @@ def test_data_iterator():
             'target_signal_slice': torch.randint(low=0, high=255, size=(100,)),
             'frames_slice': torch.FloatTensor(10, 80),
             'log_mel_spectrogram': torch.FloatTensor(30, 80),
+            'quantized_signal': torch.FloatTensor(300),
         }, {
             'source_signal_slice': torch.randint(low=0, high=255, size=(100,)),
             'target_signal_slice': torch.randint(low=0, high=255, size=(100,)),
             'frames_slice': torch.FloatTensor(10, 80),
             'log_mel_spectrogram': torch.FloatTensor(30, 80),
+            'quantized_signal': torch.FloatTensor(300),
         }]
         batch_size = 1
 

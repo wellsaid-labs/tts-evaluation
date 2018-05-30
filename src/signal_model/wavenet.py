@@ -31,8 +31,6 @@ sys.path.insert(0, 'third_party/nv-wavenet/pytorch')
 
 import torch
 
-import nv_wavenet
-
 logger = logging.getLogger(__name__)
 
 
@@ -156,6 +154,7 @@ class WaveNet(torch.nn.Module):
         forward_input = gold_signal
 
         if gold_signal is None:
+            import nv_wavenet
             wavenet = nv_wavenet.NVWaveNet(**(self.export_weights()))
             cond_input = self.get_cond_input(features)
             return wavenet.infer(cond_input, nv_wavenet.Impl.PERSISTENT)

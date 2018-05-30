@@ -190,7 +190,7 @@ def _check_configuration(dict_):
     Raises:
         (TypeError): If ``dict_`` does not refer to a configurable function.
     """
-    return _check_configuration_helper(dict_, [])
+    return _check_configuration_helper(dict_, [], [])
 
 
 def _get_main_module_name():
@@ -221,7 +221,7 @@ def _get_module_name(func):
     return keys, print_name
 
 
-def _check_configuration_helper(dict_, keys):
+def _check_configuration_helper(dict_, keys, trace):
     """ Recursive helper of ``_check_configuration``.
 
     Args:
@@ -231,7 +231,9 @@ def _check_configuration_helper(dict_, keys):
 
     if not isinstance(dict_, dict):
         # Recursive function walked up the chain and never found a @configurable
-        raise TypeError('Path %s does not contain @configurable.' % keys)
+        trace.reverse()
+        raise TypeError('Path %s does not contain @configurable.\n' +
+                        'Traceback (most recent call last):\n\t%s' % (keys, '\n\t'.join(trace)))
 
     if len(keys) >= 2:
         # CASE: Function
@@ -254,10 +256,8 @@ def _check_configuration_helper(dict_, keys):
                         raise TypeError('The module path must be absolute: %s vs %s' %
                                         (keys, absolute_keys))
                     return
-        # TODO: Provide a reasonable error if loading ``module_path`` causes TypeError due to
-        # being unable to load the module.
-        except (ImportError, AttributeError) as _:
-            pass
+        except ImportError as e:
+            trace += ['Module %s ImportError: ' % (module_path,) + str(e)]
 
     if len(keys) >= 3:
         # CASE: Class
@@ -273,21 +273,22 @@ def _check_configuration_helper(dict_, keys):
             module = import_module(module_path)
             if hasattr(module, keys[-2]):
                 class_ = getattr(module, keys[-2])
-                function = getattr(class_, keys[-1])
-                if (hasattr(function, '_configurable')):
-                    # NOTE: ``_get_module_name`` is used by configurable for identification;
-                    # therefore, enabling us to close the loop with verification.
-                    absolute_keys = _get_module_name(function)[0]
-                    if keys != absolute_keys:
-                        raise TypeError('The module path must be absolute: %s vs %s' %
-                                        (keys, absolute_keys))
-                    return
-        except (ImportError, AttributeError):
-            pass
+                if hasattr(class_, keys[-1]):
+                    function = getattr(class_, keys[-1])
+                    if (hasattr(function, '_configurable')):
+                        # NOTE: ``_get_module_name`` is used by configurable for identification;
+                        # therefore, enabling us to close the loop with verification.
+                        absolute_keys = _get_module_name(function)[0]
+                        if keys != absolute_keys:
+                            raise TypeError('The module path must be absolute: %s vs %s' %
+                                            (keys, absolute_keys))
+                        return
+        except ImportError as e:
+            trace += ['ImportError (%s): ' % (module_path,) + str(e)]
 
     for key in dict_:
         # Recusively check every key in ``dict_``
-        _check_configuration_helper(dict_[key], keys[:] + [key])
+        _check_configuration_helper(dict_[key], keys[:] + [key], trace[:])
 
 
 def add_config(dict_):

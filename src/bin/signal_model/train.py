@@ -144,6 +144,7 @@ class Trainer():  # pragma: no cover
             total_signal_loss += signal_loss * num_signal_predictions
             total_signal_predictions += num_signal_predictions
 
+        # TODO: epoch should be scaled by the number of steps somehow...
         self._add_scalar(['loss', 'signal', 'epoch'], total_signal_loss / total_signal_predictions,
                          self.epoch)
 
@@ -224,6 +225,7 @@ class Trainer():  # pragma: no cover
 
         # TODO: Clean up paths for logging, once when we delete past experiments with these
         # paths
+        # TODO: Unqiue name if sampled at the same step multiple times
 
         logger.info('Adding audio to tensorboard...')
         self._add_audio(['teacher_forcing'], predicted_signal, self.step)

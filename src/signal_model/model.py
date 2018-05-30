@@ -119,6 +119,8 @@ class WaveNet(nn.Module):
         Returns:
             kernel (NVWaveNet): NVIDIA optimize wavenet CUDA kernel.
         """
+        import nv_wavenet
+
         logger.info('Exporting signal model.')
 
         # This implementation does not use embeded ``embedding_prev``
@@ -145,7 +147,7 @@ class WaveNet(nn.Module):
         skip_biases = [l.skip_conv.bias.detach() for l in self.layers]
         use_embed_tanh = False  # This implementation does not use embeded ``tanh``
 
-        return __import__('nv_wavenet').NVWaveNet(
+        return nv_wavenet.NVWaveNet(
             embedding_prev=embedding_prev,
             embedding_curr=embedding_curr,
             conv_out_weight=conv_out_weight,
@@ -196,6 +198,8 @@ class WaveNet(nn.Module):
                 "must be partible")
 
         if gold_signal is None and not self.training:  # pragma: no cover
+            import nv_wavenet
+
             assert torch.cuda.is_available(), "Inference only works for CUDA."
 
             if self.has_new_weights:
@@ -203,8 +207,7 @@ class WaveNet(nn.Module):
                 self.kernel = self._export(conditional_features.dtype, conditional_features.device)
                 self.has_new_weights = False
 
-            implementation = __import__(
-                'nv_wavenet').Impl.AUTO if implementation is None else implementation
+            implementation = nv_wavenet.Impl.AUTO if implementation is None else implementation
             return self.kernel.infer(cond_input=conditional_features, implementation=implementation)
 
         # Convolution operater expects input_ of the form:
