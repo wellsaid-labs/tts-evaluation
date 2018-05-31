@@ -227,11 +227,11 @@ def set_hparams():
         # a batch size of 8, a learning rate of 10−3
         'torch.optim.adam.Adam.__init__': {
             'eps': 10**-8,
-            # NOTE: assuming a batch size of 36 with 7900 samples per element is around 284400
+            # NOTE: assuming a batch size of 16 with 24000 samples per element is around 384000
             # samples while DeepVoice had a batch size of 8 with 19840  samples per element is
             # around 158720 samples; Therefore, with a larger number of samples than DeepVoice,
             # we increase our learning rate.
-            'lr': 10**-3,
+            'lr': 2 * 10**-3,
             'weight_decay': 0
         }
     })

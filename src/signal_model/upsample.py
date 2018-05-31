@@ -34,7 +34,10 @@ class ConditionalFeaturesUpsample(nn.Module):
         self.block_hidden_size = block_hidden_size
         self.upsample_repeat = upsample_repeat
         self.num_layers = num_layers
-        assert self.num_layers % upsample_chunks == 0
+
+        assert self.num_layers % upsample_chunks == 0, (
+            "For simplicity, we only support whole chunking")
+
         self.upsample_signal_length = None
         if upsample_convs is not None:
             self.upsample_signal_length = nn.Sequential(*tuple([
@@ -44,6 +47,7 @@ class ConditionalFeaturesUpsample(nn.Module):
                     kernel_size=size,
                     stride=size) for size in upsample_convs
             ]))
+
         self.upsample_layers = nn.ModuleList([
             nn.Conv1d(
                 in_channels=local_features_size,
@@ -52,6 +56,33 @@ class ConditionalFeaturesUpsample(nn.Module):
         ])
         for conv in self.upsample_layers:
             torch.nn.init.xavier_uniform_(conv.weight, gain=torch.nn.init.calculate_gain('tanh'))
+
+    def _repeat(self, local_features):
+        """ Repeat similar to this 3x repeat [1, 2, 3] → [1, 1, 1, 2, 2, 2, 3, 3, 3].
+
+        Notes:
+            * Learn more:
+              https://stackoverflow.com/questions/35227224/torch-repeat-tensor-like-numpy-repeat
+
+        Args:
+            local_features (torch.FloatTensor [batch_size, local_length, local_features_size]):
+                Local features to repeat.
+
+        Returns:
+            local_features (torch.FloatTensor [batch_size, local_length,
+                local_features_size * repeat]): Local features to repeated.
+        """
+        # [batch_size, local_features_size, upsample_length] →
+        # [batch_size, local_features_size, upsample_length, 1]
+        local_features = local_features.unsqueeze(3)
+
+        # [batch_size, local_features_size, upsample_length] →
+        # [batch_size, local_features_size, upsample_length, num_repeat]
+        local_features = local_features.repeat(1, 1, 1, self.upsample_repeat)
+
+        # [batch_size, local_features_size, upsample_length, num_repeat] →
+        # [batch_size, local_features_size, upsample_length * num_repeat]
+        return local_features.view(local_features.shape[0], local_features.shape[1], -1)
 
     def forward(self, local_features):
         """
@@ -63,7 +94,7 @@ class ConditionalFeaturesUpsample(nn.Module):
                 Local features to condition signal generation (e.g. spectrogram).
 
         Returns:
-            conditional_features (torch.FloatTensor [2 * block_hidden_size, batch_size, num_layers,
+            conditional_features (torch.FloatTensor [batch_size, num_layers, block_hidden_size * 2,
                 signal_length]): Upsampled local conditional features.
         """
         # Convolution operater expects input_ of the form:
@@ -74,7 +105,7 @@ class ConditionalFeaturesUpsample(nn.Module):
         # [batch_size, local_features_size, signal_length]
         if self.upsample_signal_length is not None:
             local_features = self.upsample_signal_length(local_features)
-        local_features = local_features.repeat(1, 1, self.upsample_repeat)
+        local_features = self._repeat(local_features)
 
         # [batch_size, local_features_size, signal_length] →
         # [batch_size, block_hidden_size * 2 * num_layers, signal_length]
@@ -88,6 +119,4 @@ class ConditionalFeaturesUpsample(nn.Module):
         local_features = local_features.view(batch_size, self.num_layers,
                                              self.block_hidden_size * 2, signal_length)
 
-        # [batch_size, num_layers, block_hidden_size * 2, signal_length] →
-        # [block_hidden_size * 2, batch_size, num_layers, signal_length]
-        return local_features.permute(2, 0, 1, 3)
+        return local_features

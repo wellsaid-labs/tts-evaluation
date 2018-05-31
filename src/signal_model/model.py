@@ -63,10 +63,7 @@ class WaveNet(nn.Module):
         self.block_hidden_size = block_hidden_size
         self.mu = mu
         self.num_layers = num_layers
-        self.embed = nn.Conv1d(
-            in_channels=self.mu + 1, out_channels=block_hidden_size, kernel_size=1)
-        torch.nn.init.xavier_uniform_(
-            self.embed.weight, gain=torch.nn.init.calculate_gain('linear'))
+        self.embed = torch.nn.Embedding(num_embeddings=self.mu + 1, embedding_dim=block_hidden_size)
         self.layers = nn.ModuleList([
             ResidualBlock(
                 hidden_size=block_hidden_size,
@@ -121,45 +118,28 @@ class WaveNet(nn.Module):
         """
         import nv_wavenet
 
-        logger.info('Exporting signal model.')
+        logger.info('Exporting signal model...')
 
         # This implementation does not use embeded ``embedding_prev``
         embedding_prev = torch.zeros(
             (self.mu + 1, self.block_hidden_size), dtype=dtype, device=device)
+        kwargs = {
+            'embedding_prev': embedding_prev,
+            'embedding_curr': self.embed.weight.detach(),
+            'conv_out_weight': self.out[1].weight.detach(),
+            'conv_end_weight': self.out[3].weight.detach(),
+            'dilate_weights': [l.dilated_conv.weight.detach() for l in self.layers],
+            'dilate_biases': [l.dilated_conv.bias.detach() for l in self.layers],
+            'max_dilation': max(l.dilation for l in self.layers),
+            # Last residual layer does not matter
+            'res_weights': [l.out_conv.weight.detach() for l in self.layers[:-1]],
+            'res_biases': [l.out_conv.bias.detach() for l in self.layers[:-1]],
+            'skip_weights': [l.skip_conv.weight.detach() for l in self.layers],
+            'skip_biases': [l.skip_conv.bias.detach() for l in self.layers],
+            'use_embed_tanh': False,  # This implementation does not use embeded ``tanh``
+        }
 
-        # Compute embedding current by the identity matrix through a conv
-        # embedding_curr [1, self.mu + 1, self.mu + 1]
-        embedding_curr = torch.eye(self.mu + 1, dtype=dtype, device=device).unsqueeze(0)
-        # [1, self.mu + 1, self.mu + 1]  → [1, block_hidden_size, self.mu + 1]
-        embedding_curr = self.embed(embedding_curr)
-        # [1, block_hidden_size, self.mu + 1]  → [self.mu + 1, block_hidden_size]
-        embedding_curr = embedding_curr.squeeze(0).transpose(0, 1)
-
-        conv_out_weight = self.out[1].weight.detach()
-        conv_end_weight = self.out[3].weight.detach()
-        dilate_weights = [l.dilated_conv.weight.detach() for l in self.layers]
-        dilate_biases = [l.dilated_conv.bias.detach() for l in self.layers]
-        max_dilation = max(l.dilation for l in self.layers)
-        # Last residual layer does not matter
-        res_weights = [l.out_conv.weight.detach() for l in self.layers[:-1]]
-        res_biases = [l.out_conv.bias.detach() for l in self.layers[:-1]]
-        skip_weights = [l.skip_conv.weight.detach() for l in self.layers]
-        skip_biases = [l.skip_conv.bias.detach() for l in self.layers]
-        use_embed_tanh = False  # This implementation does not use embeded ``tanh``
-
-        return nv_wavenet.NVWaveNet(
-            embedding_prev=embedding_prev,
-            embedding_curr=embedding_curr,
-            conv_out_weight=conv_out_weight,
-            conv_end_weight=conv_end_weight,
-            dilate_weights=dilate_weights,
-            dilate_biases=dilate_biases,
-            max_dilation=max_dilation,
-            res_weights=res_weights,
-            res_biases=res_biases,
-            skip_weights=skip_weights,
-            skip_biases=skip_biases,
-            use_embed_tanh=use_embed_tanh)
+        return nv_wavenet.NVWaveNet(**kwargs)
 
     def forward(self, local_features, gold_signal=None, implementation=None):
         """
@@ -167,6 +147,8 @@ class WaveNet(nn.Module):
             * Investigate using scalars instead of one-hot embeddings, due to this comment:
               https://github.com/ibab/tensorflow-wavenet/issues/47#issuecomment-249080343
               Note, we can use the embedding weights with nv-wavenet to imitate ths.
+            * Consider using ONNX to compile the model:
+              https://discuss.pytorch.org/t/partial-onnx-export/18978
 
         Args:
             local_features (torch.FloatTensor [batch_size, local_length, local_features_size]):
@@ -189,40 +171,33 @@ class WaveNet(nn.Module):
             raise ValueError('Training without teacher forcing is not supported.')
 
         # [batch_size, local_length, local_features_size] →
-        # [2 * block_hidden_size, batch_size, num_layers, signal_length]
+        # [batch_size, num_layers, block_hidden_size * 2, signal_length]
         conditional_features = self.conditional_features_upsample(local_features)
 
         if gold_signal is not None:
             assert conditional_features.shape[3] == gold_signal.shape[1], (
                 "Upsampling parameters in tangent with signal shape and local features shape " +
-                "must be partible")
+                "must be the same length after upsampling.")
 
         if gold_signal is None and not self.training:  # pragma: no cover
+            assert torch.cuda.is_available(), "Inference only supported for CUDA."
             import nv_wavenet
-
-            assert torch.cuda.is_available(), "Inference only works for CUDA."
-
             if self.has_new_weights:
                 # Re export weights if ``self.has_new_weights``
                 self.kernel = self._export(conditional_features.dtype, conditional_features.device)
                 self.has_new_weights = False
-
-            implementation = nv_wavenet.Impl.AUTO if implementation is None else implementation
+            # [batch_size, num_layers, block_hidden_size * 2, signal_length] →
+            # [block_hidden_size * 2, batch_size, num_layers, signal_length]
+            conditional_features = conditional_features.permute(2, 0, 1, 3).detach()
+            implementation = (nv_wavenet.Impl.AUTO if implementation is None else implementation)
             return self.kernel.infer(cond_input=conditional_features, implementation=implementation)
 
-        # Convolution operater expects input_ of the form:
-        # [batch_size, channels (mu + 1), signal_length]
+        # [batch_size, signal_length] → [batch_size, signal_length, block_hidden_size]
+        gold_signal_features = self.embed(gold_signal.long())
 
-        # [batch_size, signal_length] → [batch_size, mu + 1, signal_length]
-        # Encode signal with one-hot encoding, reference:
-        # https://discuss.pytorch.org/t/convert-int-into-one-hot-format/507/25
-        gold_signal = (gold_signal.unsqueeze(1) == torch.arange(
-            self.mu + 1, dtype=gold_signal.dtype, device=gold_signal.device).reshape(
-                1, self.mu + 1, 1)).float()
-
-        # Using a convoluion, we compute an embedding from the one-hot encoding.
-        # [batch_size, mu + 1, signal_length] → [batch_size, block_hidden_size, signal_length]
-        gold_signal_features = self.embed(gold_signal)
+        # [batch_size, signal_length, block_hidden_size] →
+        # [batch_size, block_hidden_size, signal_length]
+        gold_signal_features = gold_signal_features.transpose(1, 2)
 
         del gold_signal
 
@@ -230,7 +205,7 @@ class WaveNet(nn.Module):
         for i, layer in enumerate(self.layers):
             gold_signal_features, skip = layer(
                 signal_features=gold_signal_features,
-                conditional_features=conditional_features[:, :, i, :])
+                conditional_features=conditional_features[:, i, :, :])
 
             if cumulative_skip is None:
                 cumulative_skip = skip

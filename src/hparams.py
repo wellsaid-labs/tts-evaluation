@@ -231,8 +231,9 @@ def set_hparams():
                     # Total Layers: 24 | Num Cycles: 4 |  Dilation cycle size: 6
                     # NOTE: We increase the cycle size to 8 to increase the receptive field to 766
                     # samples. Unfortunatly, we cannot increase the kernel size.
-                    'num_layers': 24,
-                    'cycle_size': 8,
+                    'num_layers': 28,
+                    'cycle_size': 7,
+                    'upsample_chunks': 4,
 
                     # SOURCE: Tacotron 2
                     # only 2 upsampling layers are used in the conditioning stack instead of 3
@@ -248,9 +249,11 @@ def set_hparams():
                     # SOURCE (Parallel WaveNet):
                     # minibatch size of 32 audio clips, each containing 7,680 timesteps
                     # (roughly 320ms).
-                    # NOTE:
-                    # We use 6,900 to evenly divide with ``frame_hop`` which in addition with
-                    # ``receptive_field_size`` will be around 7,680 timesteps.
+                    # SOURCE (DeepVoice):
+                    # We divide the utterances in our audio dataset into one second chunks with a
+                    # quarter second of context for each chunk, padding each utterance with a
+                    # quarter second of silence at the beginning. We filter out chunks that are
+                    # predominantly silence and end up with 74,348 total chunks.
                     'slice_size': 24000
                 },
                 'train.main': {

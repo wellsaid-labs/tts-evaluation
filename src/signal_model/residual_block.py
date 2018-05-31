@@ -34,6 +34,7 @@ class ResidualBlock(nn.Module):
         self.kernel_size = kernel_size
         self.dilation = dilation
         self.is_last_layer = is_last_layer
+        self.hidden_size = hidden_size
 
         self.dilated_conv = nn.Conv1d(
             in_channels=hidden_size,
@@ -74,7 +75,7 @@ class ResidualBlock(nn.Module):
         Args:
             signal_features (torch.FloatTensor [batch_size, hidden_size, signal_length]): Signal
                 features.
-            conditional_features (torch.FloatTensor [2 * hidden_size, batch_size, signal_length]):
+            conditional_features (torch.FloatTensor [batch_size, 2 * hidden_size, signal_length]):
                 Local and global conditional features (e.g. speaker or spectrogram features). The
                 conditional first ``hidden_size`` chunk is used to condition the nonlinearly while
                 the last ``hidden_size`` chunk is used to condition the signmoid.
@@ -87,8 +88,7 @@ class ResidualBlock(nn.Module):
         # residual [batch_size, hidden_size, signal_length]
         residual = signal_features
 
-        # TODO: Investigate if it's faster to pad left or to pad equal with clipping.
-
+        # NOTE: This has the same speed as the padding parameter in Conv1D, practically.
         # [batch_size, hidden_size, signal_length] →
         # [batch_size, hidden_size, signal_length + self.padding[0]]
         signal_features = functional.pad(signal_features, self.padding)
@@ -99,21 +99,13 @@ class ResidualBlock(nn.Module):
         # [batch_size, 2 * hidden_size, signal_length]
         signal_features = self.dilated_conv(signal_features)
 
-        # [2 * hidden_size, batch_size, signal_length] →
-        # [batch_size, 2 * hidden_size, signal_length]
-        conditional_features = conditional_features.transpose(0, 1)
-
         # [batch_size, 2 * hidden_size, signal_length]
         signal_features = conditional_features + signal_features
 
-        # left, right [batch_size, hidden_size, signal_length]
-        left, right = tuple(torch.chunk(signal_features, 2, dim=1))
-
-        # signal_features [batch_size, hidden_size, signal_length]
-        signal_features = functional.tanh(left) * functional.sigmoid(right)
-
-        del left
-        del right
+        # [batch_size, hidden_size, signal_length] → [batch_size, 2 * hidden_size, signal_length]
+        signal_features = (
+            functional.tanh(signal_features[:, :self.hidden_size]) * functional.sigmoid(
+                signal_features[:, self.hidden_size:]))
 
         # [batch_size, hidden_size, signal_length] → [batch_size, skip_size, signal_length]
         skip = self.skip_conv(signal_features)

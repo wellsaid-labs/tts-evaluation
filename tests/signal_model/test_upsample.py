@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 
 from src.signal_model.upsample import ConditionalFeaturesUpsample
 
@@ -24,7 +25,15 @@ def test_conditional_features_upsample():
     local_features = torch.FloatTensor(batch_size, length, channels)
     upsampled = upsample(local_features)
 
-    assert upsampled.shape == (2 * block_hidden_size, batch_size, num_layers, signal_length)
+    assert upsampled.shape == (batch_size, num_layers, 2 * block_hidden_size, signal_length)
 
     # Smoke test back prop
     upsampled.sum().backward()
+
+
+def test_conditional_features_upsample_repeat():
+    upsample = ConditionalFeaturesUpsample(upsample_repeat=2)
+    local_features = torch.tensor([1, 2, 3]).view(1, 1, 3)
+    local_features = upsample._repeat(local_features)
+    local_features = local_features.view(-1)
+    np.testing.assert_allclose(local_features, torch.tensor([1, 1, 2, 2, 3, 3]))

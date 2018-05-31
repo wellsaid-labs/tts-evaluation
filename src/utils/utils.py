@@ -144,8 +144,8 @@ def plot_waveform(signal, sample_rate=24000):
     librosa.display.waveplot(signal, sr=sample_rate)
     pyplot.ylabel('Energy')
     pyplot.xlabel('Time')
-    pyplot.close()
     pyplot.ylim(-1, 1)
+    pyplot.close()
     return figure_to_numpy_array(figure)
 
 

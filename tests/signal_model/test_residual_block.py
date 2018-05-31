@@ -9,7 +9,7 @@ def test_residual_block():
     num_samples = 69
     skip_size = 32
     input_ = torch.FloatTensor(batch_size, hidden_size, num_samples)
-    conditional = torch.FloatTensor(hidden_size * 2, batch_size, num_samples)
+    conditional = torch.FloatTensor(batch_size, hidden_size * 2, num_samples)
 
     block = ResidualBlock(hidden_size=hidden_size, skip_size=skip_size, kernel_size=2)
     out, skip = block(input_, conditional)
