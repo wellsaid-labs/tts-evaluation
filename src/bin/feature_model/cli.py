@@ -1,6 +1,3 @@
-import matplotlib
-matplotlib.use('Agg')
-
 import argparse
 import logging
 import os

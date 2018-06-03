@@ -4,6 +4,7 @@ from torch import nn
 from tensorflow.contrib.signal.python.ops import window_ops
 
 import torch
+import librosa
 
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
@@ -16,6 +17,7 @@ def set_hparams():
     torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
     nn.modules.batchnorm._BatchNorm.__init__ = configurable(
         nn.modules.batchnorm._BatchNorm.__init__)
+    librosa.effects.trim = configurable(librosa.effects.trim)
     add_config({
         # NOTE: `momentum=0.01` to match Tensorflow defaults
         'torch.nn.modules.batchnorm._BatchNorm.__init__': {
@@ -83,7 +85,17 @@ def set_hparams():
     mu = 255
 
     add_config({
+        'librosa.effects.trim': {
+            'frame_length': wav_to_log_mel_spectrogram['frame_size'],
+            'hop_length': wav_to_log_mel_spectrogram['frame_hop'],
+            # NOTE: Manually determined to be a adequate cutoff for Linda Johnson via:
+            # ``notebooks/Stripping Silence.ipynb``
+            'top_db': 50
+        },
         'src': {
+            'datasets.lj_speech.lj_speech_dataset': {
+                'resample': sample_rate,
+            },
             'lr_schedulers.DelayedExponentialLR.__init__': {
                 # SOURCE (Tacotron 2):
                 # learning rate of 10−3 exponentially decaying to 10−5 starting after 50,000
@@ -99,11 +111,8 @@ def set_hparams():
                 # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
                 'mu_law_quantize.mu': mu,
                 'inverse_mu_law_quantize.mu': mu,
-                # Silence theshold was discovered in the notebook: ``Silence Threshold.ipynb``
-                'find_silence.silence_threshold': 15,
                 'read_audio': {
-                    'sample_rate': sample_rate,
-                    'normalize': True,
+                    'sample_rate': sample_rate
                 },
                 'wav_to_log_mel_spectrogram': wav_to_log_mel_spectrogram,
                 'log_mel_spectrogram_to_wav': {

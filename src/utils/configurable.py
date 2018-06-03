@@ -368,6 +368,8 @@ def _add_arguments(keys, parameters, args, kwargs):
 
 def log_arguments():
     """ Log the parameters saved up to this point. """
+    # TODO: When logging arguments, only log the arguments that changed from config to practical
+    # TODO: Add a log to say if your overriding a config
     logger.info('Paramters:\n%s', pretty_printer.pformat(_arguments))
 
 

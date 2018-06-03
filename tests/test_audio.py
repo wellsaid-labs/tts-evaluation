@@ -77,19 +77,9 @@ def test_librosa_tf_decode_wav():
     audio_binary = tf.read_file(wav_filename)
     tf_audio, _ = audio_ops.decode_wav(audio_binary)
 
-    audio, _ = read_audio(wav_filename, sample_rate=None, normalize=False)
+    audio = read_audio(wav_filename, sample_rate=None)
 
     np.testing.assert_array_equal(tf_audio[:, 0], audio)
-
-
-def test_read_audio_normalize():
-    """ Resampling can mess with amplitude """
-    wav_filename = 'tests/_test_data/LJ044-0089.wav'
-    audio, _ = read_audio(wav_filename, sample_rate=24000, normalize=False)
-    assert np.abs(audio).max() > 1
-
-    audio, _ = read_audio(wav_filename, sample_rate=24000, normalize=True)
-    assert np.abs(audio).max() == 1
 
 
 def test_wav_to_log_mel_spectrogram_smoke():
@@ -99,12 +89,14 @@ def test_wav_to_log_mel_spectrogram_smoke():
     frame_hop = 300
     num_mel_bins = 80
     wav_filename = 'tests/_test_data/lj_speech.wav'
-    signal, sample_rate = read_audio(wav_filename)
+    sample_rate = 22050
+    signal = read_audio(wav_filename, sample_rate)
     log_mel_spectrogram, right_pad = wav_to_log_mel_spectrogram(
         signal, sample_rate, frame_size=frame_size, frame_hop=frame_hop, num_mel_bins=num_mel_bins)
 
-    assert log_mel_spectrogram.shape == (607, num_mel_bins)
-    assert signal.shape == (182015,)
+    assert log_mel_spectrogram.shape[1] == num_mel_bins
+    assert len(log_mel_spectrogram.shape) == 2
+    assert len(signal.shape) == 1
     assert int(signal.shape[0] + right_pad) / int(log_mel_spectrogram.shape[0]) == frame_hop
 
 
@@ -113,7 +105,8 @@ def test_log_mel_spectrogram_to_wav_smoke():
     """
     wav_filename = 'tests/_test_data/lj_speech.wav'
     new_wav_filename = 'tests/_test_data/lj_speech_reconstructed.wav'
-    signal, sample_rate = read_audio(wav_filename)
+    sample_rate = 22050
+    signal = read_audio(wav_filename, sample_rate)
     log_mel_spectrogram, _ = wav_to_log_mel_spectrogram(signal, sample_rate)
     log_mel_spectrogram_to_wav(log_mel_spectrogram, new_wav_filename, sample_rate, log=True)
 

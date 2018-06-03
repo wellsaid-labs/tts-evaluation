@@ -34,6 +34,10 @@ incorporating ELMo and tokenizing on words.
 layer norm to LSTM.
 * https://github.com/NVIDIA/nv-wavenet/issues/5
 * Document carefully crafted getting this running guide
+* Try to combine the signal model and the feature model into a fully differentiable component
+* Try a different loss function for softmax, because large differences matter rather than categories
+* Dockerize the requirements for nv-wavenet and resampling
+* Try giving a different embedding depending on LJ book or chapter read?
 
 ## Contributing
 

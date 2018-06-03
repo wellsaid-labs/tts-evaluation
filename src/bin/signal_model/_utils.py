@@ -1,6 +1,3 @@
-import matplotlib
-matplotlib.use('Agg')
-
 import logging
 import math
 import os

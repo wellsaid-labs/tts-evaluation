@@ -4,18 +4,24 @@ import re
 import unidecode
 
 from num2words import num2words
+from tqdm import tqdm
 
 from torchnlp.download import download_file_maybe_extract
 from torchnlp.datasets import Dataset
 
+from src.utils.configurable import configurable
 
+
+@configurable
 def lj_speech_dataset(directory='data/',
                       extracted_name='LJSpeech-1.1',
                       url='http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
                       check_files=['LJSpeech-1.1/metadata.csv'],
                       text_file='metadata.csv',
                       audio_directory='wavs/',
-                      verbalize=True):
+                      verbalize=True,
+                      resample=24000,
+                      total_rows=13100):
     """
     Load the Linda Johnson (LJ) Speech dataset.
 
@@ -23,7 +29,18 @@ def lj_speech_dataset(directory='data/',
     speaker reading passages from 7 non-fiction books. A transcription is provided for each clip.
     Clips vary in length from 1 to 10 seconds and have a total length of approximately 24 hours.
 
-    **Reference:** https://keithito.com/LJ-Speech-Dataset/
+    The SoX resampling library is choosen rather than the best python resampler because the best
+    python resampler does not have tools to deal with clipping. Clipping is when resampling
+    predicts energy levels outside of the [-1, 1] range that need to be clipped.
+
+
+    Reference:
+        * Link to dataset source:
+          https://keithito.com/LJ-Speech-Dataset/
+        * Comparison of command line resampling libraries:
+          http://www.mainly.me.uk/resampling/
+        * Comparison of python resampling libraries:
+          https://machinelearningmastery.com/resample-interpolate-time-series-data-python/
 
     Args:
         directory (str, optional): Directory to cache the dataset.
@@ -33,6 +50,9 @@ def lj_speech_dataset(directory='data/',
         text_file (str, optional): The file containing text files.
         audio_directory (str, optional): Audio directory corresponding to the text files.
         verbalize (bool, optional): Verbalize the text.
+        resample (int or None, optional): If integer is provided, uses SoX to create resampled
+            files.
+        total_rows (int, optional): Integer number of rows to be used with tqdm.
 
     Returns:
         :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
@@ -57,9 +77,19 @@ def lj_speech_dataset(directory='data/',
 
     examples = []
     with io.open(path, encoding='utf-8') as f:
-        for line in f:
+        for line in tqdm(f, total=total_rows):
             line = line.strip()
             wav_filename, text, _ = tuple(line.split('|'))
+            wav_full_path = os.path.join(directory, extracted_name, audio_directory,
+                                         wav_filename + '.wav')
+            wav_full_path = os.path.abspath(wav_full_path)
+            if resample is not None:
+                destination = wav_full_path.replace('.wav', '-%d.wav' % resample)
+                if not os.path.isfile(destination):
+                    os.system('sox %s --rate %d --guard %s ' % (wav_full_path, resample,
+                                                                destination))
+                wav_full_path = destination
+
             text = _normalize_whitespace(text)
             text = _normalize_quotations(text)
 
@@ -78,12 +108,7 @@ def lj_speech_dataset(directory='data/',
             # Messes up pound sign (£); therefore, this is after _verbalize_currency
             text = _remove_accents(text)
 
-            examples.append({
-                'text':
-                    text,
-                'wav':
-                    os.path.join(directory, extracted_name, audio_directory, wav_filename + '.wav')
-            })
+            examples.append({'text': text, 'wav': wav_full_path})
 
     return Dataset(examples)
 

@@ -143,30 +143,7 @@ def mu_law(x, mu=255):
 
 
 @configurable
-def find_silence(quantized, silence_threshold=15):
-    """ Given a Mu-Law companding quantized signal, trim the silence off the audio.
-
-    Args:
-        quantized (np.array dtype=int): Quantized signal.
-        silence_threshold (int): Threshold for silence.
-
-    Returns:
-        start (int): End of silence in the start of the signal
-        end (int): Start of silence at the end of the signal
-    """
-    for start in range(quantized.size):
-        if abs(quantized[start] - mu_law_quantize(0)) > silence_threshold:
-            break
-
-    for end in range(quantized.size - 1, 1, -1):
-        if abs(quantized[end] - mu_law_quantize(0)) > silence_threshold:
-            break
-
-    return start, end
-
-
-@configurable
-def read_audio(filename, sample_rate=None, normalize=True):
+def read_audio(filename, sample_rate=None):
     """ Read an audio file into a mono signal.
 
     Tacotron 1 Reference:
@@ -178,7 +155,6 @@ def read_audio(filename, sample_rate=None, normalize=True):
           sampling rate.
         * ``tests/test_spectrogram.py#test_librosa_tf_decode_wav`` tests that ``librosa`` and ``tf``
           decode outputs are similar.
-        * Scaling is done because resampling can push the Waveform past [-1, 1] limits.
 
     References:
         * WAV specs:
@@ -192,16 +168,17 @@ def read_audio(filename, sample_rate=None, normalize=True):
 
     Args:
         filename (str): Name of the file to load.
-        sample_rate (int or None): Target sample rate or None to keep native sample rate.
-        normalize (bool): If ``True``, rescale audio from [1, -1].
+        sample_rate (int or None): Assert this target sample rate.
     Returns:
         numpy.ndarray [shape=(n,)]: Audio time series.
-        int: Sample rate of the file.
     """
-    signal, sample_rate = librosa.core.load(filename, sr=sample_rate, mono=True)
-    if normalize:
-        signal = signal / np.abs(signal).max()  # Normalize to [1, -1]
-    return signal, sample_rate
+    signal, observed_sample_rate = librosa.core.load(filename)
+    if sample_rate is not None:
+        assert sample_rate == observed_sample_rate, (
+            "Sample rate must be set to %d before hand." % sample_rate)
+    assert len(signal.shape) == 1, "Signal must be mono."
+    assert max(signal) <= 1 and min(signal) >= -1, "Signal must be in range [-1, 1]."
+    return signal
 
 
 def _milliseconds_to_samples(milliseconds, sample_rate):

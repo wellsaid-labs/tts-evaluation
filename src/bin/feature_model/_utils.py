@@ -1,6 +1,3 @@
-import matplotlib
-matplotlib.use('Agg')
-
 import logging
 import os
 import random
@@ -15,8 +12,8 @@ from tqdm import tqdm
 
 import torch
 import numpy as np
+import librosa
 
-from src.audio import find_silence
 from src.audio import mu_law_quantize
 from src.audio import read_audio
 from src.audio import wav_to_log_mel_spectrogram
@@ -129,6 +126,10 @@ class DataIterator(object):
 def _preprocess_audio(row):
     """ Preprocess a speech dataset: computing a spectrogram, encoding text and quantizing.
 
+    Notes:
+        * We assume that silence on at the beginning and the end the text does not matter.
+
+
     Args:
         row (dict {'wav', 'text'}): Example with a corresponding wav filename and text snippet.
 
@@ -136,15 +137,13 @@ def _preprocess_audio(row):
         row (dict {'log_mel_spectrogram', 'stop_token', 'quantized_signal', 'text', 'wav'}): Updated
             row with a ``log_mel_spectrogram``, ``stop_token``, and ``quantized_signal`` features.
     """
-    signal, _ = read_audio(row['wav'])
+    signal = read_audio(row['wav'], sample_rate=row['sample_rate'])
+    signal = librosa.effects.trim(signal)[0]
     quantized_signal = mu_law_quantize(signal)
 
     # Trim silence
-    end_silence, start_silence = find_silence(quantized_signal)
-    signal = signal[end_silence:start_silence]
-    quantized_signal = quantized_signal[end_silence:start_silence]
-
-    log_mel_spectrogram, right_pad = wav_to_log_mel_spectrogram(signal)
+    log_mel_spectrogram, right_pad = wav_to_log_mel_spectrogram(
+        signal, sample_rate=row['sample_rate'])
     log_mel_spectrogram = torch.tensor(log_mel_spectrogram)
     stop_token = log_mel_spectrogram.new_zeros((log_mel_spectrogram.shape[0],))
     stop_token[-1] = 1
@@ -169,7 +168,8 @@ def load_data(
         load_signal=False,
         text_encoder=None,
         splits=(0.8, 0.2),
-        use_multiprocessing=True):
+        use_multiprocessing=True,
+        sample_rate=22050):
     """ Load the Linda Johnson (LJ) Speech dataset with spectrograms and encoded text.
 
     Notes:
@@ -185,6 +185,7 @@ def load_data(
             text.
         splits (tuple, optional): Train and dev splits to use with the dataset.
         use_multiprocessing (bool, optional): If `True`, use multiple processes to preprocess data.
+        sample_rate (int or None, optional): Sample rate to resample to.
 
     Returns:
         (list): Linda Johnson (LJ) Speech dataset with ``log_mel_spectrogram`` and ``text``
@@ -200,7 +201,7 @@ def load_data(
         if load_signal:
             train_signals, dev_signals = torch_load(signal_cache, device)
     else:  # Otherwise, preprocess dataset
-        data = lj_speech_dataset()
+        data = lj_speech_dataset(resample=sample_rate)
         random.shuffle(data)
         logger.info('Sample Data:\n%s', data[:5])
 
@@ -209,6 +210,7 @@ def load_data(
             [r['text'] for r in data]) if text_encoder is None else text_encoder
         for row in data:
             row['text'] = text_encoder.encode(row['text'])
+            row['sample_rate'] = sample_rate
 
         if use_multiprocessing:
             # Preprocess audio with multi-threading

@@ -61,7 +61,8 @@ def test_load_data(lj_speech_dataset_mock):
             signal_cache=signal_cache,
             splits=(0.5, 0.5),
             load_signal=True,
-            use_multiprocessing=False)
+            use_multiprocessing=False,
+            sample_rate=22050)
         assert os.path.isfile(cache)
         assert len(train) == 1
         assert len(dev) == 1
@@ -75,7 +76,8 @@ def test_load_data(lj_speech_dataset_mock):
             cache=cache,
             signal_cache=signal_cache,
             load_signal=True,
-            use_multiprocessing=False)
+            use_multiprocessing=False,
+            sample_rate=22050)
         lj_speech_dataset_mock.assert_called_once()
         assert len(train) == 1
         assert len(dev) == 1
