@@ -6,9 +6,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 import torch
-import tensorflow as tf
-
-tf.enable_eager_execution()
 
 from src.audio import log_mel_spectrogram_to_wav
 from src.bin.feature_model._utils import load_checkpoint

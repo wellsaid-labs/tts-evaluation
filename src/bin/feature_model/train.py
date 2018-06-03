@@ -10,7 +10,6 @@ from torchnlp.utils import pad_batch
 from tqdm import tqdm
 
 import torch
-import tensorflow as tf
 
 from src.bin.feature_model._utils import DataIterator
 from src.bin.feature_model._utils import load_checkpoint
@@ -79,7 +78,7 @@ class Trainer():  # pragma: no cover
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else Optimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.scheduler = scheduler if isinstance(scheduler, _LRScheduler) else scheduler(
-            self.optimizer.optimizer)
+            self.optimizer.optimizer, last_epoch=step)
 
         self.dev_tensorboard = dev_tensorboard
         self.train_tensorboard = train_tensorboard
@@ -298,7 +297,8 @@ class Trainer():  # pragma: no cover
                 num_stop_token_predictions)
 
 
-def main(checkpoint=None, epochs=1000, train_batch_size=32, num_workers=0):  # pragma: no cover
+def main(checkpoint=None, epochs=1000, train_batch_size=32, num_workers=0,
+         reset_optimizer=False):  # pragma: no cover
     """ Main module that trains a the feature model saving checkpoints incrementally.
 
     Args:
@@ -306,6 +306,7 @@ def main(checkpoint=None, epochs=1000, train_batch_size=32, num_workers=0):  # p
         epochs (int, optional): Number of epochs to run for.
         train_batch_size (int, optional): Maximum training batch size.
         num_workers (int, optional): Number of workers for data loading.
+        reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer and scheduler.
     """
     with ExperimentContextManager(label='feature_model', min_time=60 * 15) as context:
         set_hparams()
@@ -320,6 +321,10 @@ def main(checkpoint=None, epochs=1000, train_batch_size=32, num_workers=0):  # p
         trainer_kwargs = {}
         if checkpoint is not None:
             del checkpoint['text_encoder']
+            if reset_optimizer:
+                logger.info('Not restoring optimizer and scheduler.')
+                del checkpoint['optimizer']
+                del checkpoint['scheduler']
             trainer_kwargs = checkpoint
         trainer = Trainer(
             context.device,
@@ -354,8 +359,6 @@ def main(checkpoint=None, epochs=1000, train_batch_size=32, num_workers=0):  # p
 
 
 if __name__ == '__main__':  # pragma: no cover
-    tf.enable_eager_execution()
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c", "--checkpoint", type=str, default=None, help="Load a checkpoint from a path")
@@ -367,8 +370,16 @@ if __name__ == '__main__':  # pragma: no cover
         help="Set the maximum training batch size; this figure depends on the GPU memory")
     parser.add_argument(
         "-w", "--num_workers", type=int, default=0, help="Numer of workers used for data loading")
+    parser.add_argument(
+        "-r",
+        "--reset_optimizer",
+        action='store_true',
+        default=False,
+        help="Reset optimizer and scheduler.")
     args = parser.parse_args()
     main(
         checkpoint=args.checkpoint,
         train_batch_size=args.train_batch_size,
-        num_workers=args.num_workers)
+        num_workers=args.num_workers,
+        reset_optimizer=args.reset_optimizer,
+    )

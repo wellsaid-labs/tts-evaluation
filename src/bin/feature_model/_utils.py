@@ -37,7 +37,7 @@ def set_hparams():
         # We also apply L2 regularization with weight 10−6
         'torch.optim.adam.Adam.__init__': {
             'eps': 10**-6,
-            'lr': 5 * 10**-4,
+            'lr': 10**-3,
             'weight_decay': 10**-6,
         },
         'src.optimizer.Optimizer.__init__': {

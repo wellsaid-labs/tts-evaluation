@@ -63,7 +63,7 @@ class WaveNet(nn.Module):
         self.block_hidden_size = block_hidden_size
         self.mu = mu
         self.num_layers = num_layers
-        self.embed = torch.nn.Embedding(num_embeddings=self.mu + 1, embedding_dim=block_hidden_size)
+        self.embed = torch.nn.Conv1d(in_channels=1, out_channels=block_hidden_size, kernel_size=1)
         self.layers = nn.ModuleList([
             ResidualBlock(
                 hidden_size=block_hidden_size,
@@ -78,6 +78,8 @@ class WaveNet(nn.Module):
             local_features_size=local_features_size,
             num_layers=num_layers,
             upsample_chunks=upsample_chunks)
+        # TODO: Try using TanH as suggested here:
+        # https://github.com/ibab/tensorflow-wavenet/issues/143#issuecomment-253400332
         self.out = nn.Sequential(
             nn.ReLU(),
             nn.Conv1d(in_channels=skip_size, out_channels=self.mu + 1, kernel_size=1, bias=False),
@@ -123,9 +125,21 @@ class WaveNet(nn.Module):
         # This implementation does not use embeded ``embedding_prev``
         embedding_prev = torch.zeros(
             (self.mu + 1, self.block_hidden_size), dtype=dtype, device=device)
+
+        # Compute embedding current by the identity matrix through a conv
+        # embedding_curr [self.mu + 1]
+        embedding_curr = torch.arange(self.mu + 1, dtype=dtype, device=device)
+        embedding_curr = 2 * embedding_curr / self.mu - 1
+        # [self.mu + 1] → [1, 1, self.mu + 1]
+        embedding_curr = embedding_curr.view(1, 1, self.mu + 1)
+        # [1, 1, self.mu + 1]  → [1, block_hidden_size, self.mu + 1]
+        embedding_curr = self.embed(embedding_curr)
+        # [1, block_hidden_size, self.mu + 1]  → [self.mu + 1, block_hidden_size]
+        embedding_curr = embedding_curr.squeeze(0).transpose(0, 1)
+
         kwargs = {
             'embedding_prev': embedding_prev,
-            'embedding_curr': self.embed.weight.detach(),
+            'embedding_curr': embedding_curr.detach(),
             'conv_out_weight': self.out[1].weight.detach(),
             'conv_end_weight': self.out[3].weight.detach(),
             'dilate_weights': [l.dilated_conv.weight.detach() for l in self.layers],
@@ -144,9 +158,6 @@ class WaveNet(nn.Module):
     def forward(self, local_features, gold_signal=None, implementation=None):
         """
         TODO:
-            * Investigate using scalars instead of one-hot embeddings, due to this comment:
-              https://github.com/ibab/tensorflow-wavenet/issues/47#issuecomment-249080343
-              Note, we can use the embedding weights with nv-wavenet to imitate ths.
             * Consider using ONNX to compile the model:
               https://discuss.pytorch.org/t/partial-onnx-export/18978
 
@@ -192,12 +203,15 @@ class WaveNet(nn.Module):
             implementation = (nv_wavenet.Impl.AUTO if implementation is None else implementation)
             return self.kernel.infer(cond_input=conditional_features, implementation=implementation)
 
-        # [batch_size, signal_length] → [batch_size, signal_length, block_hidden_size]
-        gold_signal_features = self.embed(gold_signal.long())
+        # [batch_size, signal_length] → [batch_size, 1, signal_length]
+        gold_signal = gold_signal.float().unsqueeze(1)
 
-        # [batch_size, signal_length, block_hidden_size] →
-        # [batch_size, block_hidden_size, signal_length]
-        gold_signal_features = gold_signal_features.transpose(1, 2)
+        # https://github.com/ibab/tensorflow-wavenet/issues/47#issuecomment-249080343
+        # Range [0, 255] to [-1, 1]
+        gold_signal = 2 * gold_signal / self.mu - 1
+
+        # [batch_size, 1, signal_length] → [batch_size, block_hidden_size, signal_length]
+        gold_signal_features = self.embed(gold_signal.float())
 
         del gold_signal
 

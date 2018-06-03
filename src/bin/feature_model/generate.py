@@ -7,7 +7,6 @@ import os
 from tqdm import tqdm
 
 import torch
-import tensorflow as tf
 import numpy as np
 
 from src.bin.feature_model._utils import DataIterator
@@ -98,7 +97,6 @@ def main(checkpoint,
 
 
 if __name__ == '__main__':  # pragma: no cover
-    tf.enable_eager_execution()
     # LEARN MORE:
     # https://stackoverflow.com/questions/42270739/how-do-i-resolve-these-tensorflow-warnings
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'

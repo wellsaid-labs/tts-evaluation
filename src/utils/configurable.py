@@ -458,6 +458,8 @@ def configurable(func):
             raise ValueError('%s config must be a dict of arguments', print_name)
 
         parameters = list(inspect.signature(func).parameters.values())
+        assert len(args) <= len(parameters), ("Too many arguments (%d > %d) passed." %
+                                              (len(args), len(parameters)))
         args, kwargs = _merge_args(parameters, args, kwargs, config)
         _add_arguments(keys, parameters, args, kwargs)
 

@@ -8,7 +8,6 @@ from torchnlp.utils import pad_batch
 from tqdm import tqdm
 
 import torch
-import tensorflow as tf
 
 from src.audio import inverse_mu_law_quantize
 from src.bin.signal_model._utils import DataIterator
@@ -378,8 +377,6 @@ def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
 
 
 if __name__ == '__main__':  # pragma: no cover
-    tf.enable_eager_execution()
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c", "--checkpoint", type=str, default=None, help="Load a checkpoint from a path")

@@ -1,7 +1,4 @@
-import functools
-
 from torch import nn
-from tensorflow.contrib.signal.python.ops import window_ops
 
 import torch
 import librosa
@@ -65,7 +62,7 @@ def set_hparams():
         # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
         'frame_size': 1200,  # 50ms * 24,000 / 1000 == 1200
         'frame_hop': 300,  # 12.5ms * 24,000 / 1000 == 300
-        'window_function': functools.partial(window_ops.hann_window, periodic=True),
+        'window': 'hann',
         # SOURCE (Tacotron 2):
         # We transform the STFT magnitude to the mel scale using an 80 channel mel
         # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
@@ -101,8 +98,10 @@ def set_hparams():
                 # learning rate of 10−3 exponentially decaying to 10−5 starting after 50,000
                 # iterations.
                 # NOTE: Over email the authors confirmed they ended decay at 100,000 steps
-                'epoch_start_decay': 50000,
-                'epoch_end_decay': 100000,
+                # NOTE: Authors mentioned this hyperparameter is dependent on the dataset; for
+                # the LJ speech dataset, we see that dev and train loss begin to diverge at 20k.
+                'epoch_start_decay': 10000,
+                'epoch_end_decay': 60000,
                 'end_lr': 10**-5,
             },
             'audio': {
@@ -115,10 +114,10 @@ def set_hparams():
                     'sample_rate': sample_rate
                 },
                 'wav_to_log_mel_spectrogram': wav_to_log_mel_spectrogram,
-                'log_mel_spectrogram_to_wav': {
+                'griffin_lim': {
                     'frame_size': wav_to_log_mel_spectrogram['frame_size'],
                     'frame_hop': wav_to_log_mel_spectrogram['frame_hop'],
-                    'window_function': wav_to_log_mel_spectrogram['window_function'],
+                    'window': wav_to_log_mel_spectrogram['window'],
                     'lower_hertz': wav_to_log_mel_spectrogram['lower_hertz'],
                     'upper_hertz': wav_to_log_mel_spectrogram['upper_hertz'],
                     'sample_rate': sample_rate,

@@ -7,7 +7,6 @@ import time
 import shutil
 
 import numpy as np
-import tensorflow as tf
 import torch
 from tensorboardX import SummaryWriter
 
@@ -141,7 +140,6 @@ class ExperimentContextManager(object):
         random.seed(seed)
         torch.manual_seed(seed)
         np.random.seed(seed)
-        tf.set_random_seed(seed)
         if self.is_cuda:
             torch.cuda.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)

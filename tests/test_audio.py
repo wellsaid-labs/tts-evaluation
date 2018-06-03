@@ -1,13 +1,10 @@
 import os
 
 import numpy as np
-import tensorflow as tf
-
-from tensorflow.contrib.framework.python.ops import audio_ops
 
 from src.audio import read_audio
 from src.audio import wav_to_log_mel_spectrogram
-from src.audio import log_mel_spectrogram_to_wav
+from src.audio import griffin_lim
 from src.audio import mu_law_quantize
 from src.audio import mu_law
 from src.audio import inverse_mu_law
@@ -68,20 +65,6 @@ def test_mu_law_forward_backward():
             assert np.allclose(x, x_hat)
 
 
-def test_librosa_tf_decode_wav():
-    """ Librosa provides a more flexible API for decoding WAVs. To ensure consistency with TF, we
-    test the output is the same.
-    """
-    wav_filename = 'tests/_test_data/lj_speech.wav'
-
-    audio_binary = tf.read_file(wav_filename)
-    tf_audio, _ = audio_ops.decode_wav(audio_binary)
-
-    audio = read_audio(wav_filename, sample_rate=None)
-
-    np.testing.assert_array_equal(tf_audio[:, 0], audio)
-
-
 def test_wav_to_log_mel_spectrogram_smoke():
     """ Smoke test to ensure everything runs.
     """
@@ -100,7 +83,7 @@ def test_wav_to_log_mel_spectrogram_smoke():
     assert int(signal.shape[0] + right_pad) / int(log_mel_spectrogram.shape[0]) == frame_hop
 
 
-def test_log_mel_spectrogram_to_wav_smoke():
+def test_griffin_lim_smoke():
     """ Smoke test to ensure everything runs.
     """
     wav_filename = 'tests/_test_data/lj_speech.wav'
@@ -108,7 +91,7 @@ def test_log_mel_spectrogram_to_wav_smoke():
     sample_rate = 22050
     signal = read_audio(wav_filename, sample_rate)
     log_mel_spectrogram, _ = wav_to_log_mel_spectrogram(signal, sample_rate)
-    log_mel_spectrogram_to_wav(log_mel_spectrogram, new_wav_filename, sample_rate, log=True)
+    griffin_lim(log_mel_spectrogram, new_wav_filename, sample_rate)
 
     assert os.path.isfile(new_wav_filename)
 

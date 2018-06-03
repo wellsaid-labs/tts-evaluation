@@ -9,9 +9,6 @@ import torch  # noqa: F401
 import logging
 
 import pytest
-import tensorflow as tf
-
-tf.enable_eager_execution()
 
 from src.hparams import set_hparams
 

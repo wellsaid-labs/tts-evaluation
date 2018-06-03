@@ -1,19 +1,11 @@
-from functools import partial
-
+import copy
 import functools
 import logging
 import math
 
-from tensorflow.contrib.signal.python.ops import window_ops
-from tensorflow.python.framework import constant_op
-from tensorflow.python.framework import ops
-from tensorflow.python.framework import tensor_util
-from tensorflow.python.ops import math_ops
-
 import librosa
 
 import numpy as np
-import tensorflow as tf
 
 from src.utils.configurable import configurable
 
@@ -199,8 +191,7 @@ def wav_to_log_mel_spectrogram(signal,
                                sample_rate,
                                frame_size=1200,
                                frame_hop=300,
-                               window_function=functools.partial(
-                                   window_ops.hann_window, periodic=True),
+                               window='hann',
                                num_mel_bins=80,
                                lower_hertz=125,
                                upper_hertz=7600,
@@ -221,11 +212,13 @@ def wav_to_log_mel_spectrogram(signal,
         shift, and 2048-point Fourier transform. We also found pre-emphasis (0.97) to be helpful.
         We use 24 kHz sampling rate for all experiments.
 
-    TODO:
-        * Consider using ``librosa`` instead, Tensorflow STFT has some bugs:
+    Notes:
+        * One difference between the Tensorflow STFT implementation and librosa is ``n_fft`` for
+          Tensorflow STFT is rounded to the closests power of two. Before
+          applying ``int(1 + n_fft // 2)`` to determine the number of spectrogram bins.
+        * Some other differences mentioned between librosa and Tensorflow STFT:
           https://github.com/tensorflow/tensorflow/issues/16465
           https://github.com/tensorflow/tensorflow/issues/15134
-          While librosa has solved most of the bugs concerning stft.
 
     Reference:
         * DSP MFCC Tutorial:
@@ -247,11 +240,10 @@ def wav_to_log_mel_spectrogram(signal,
         signal (np.array [signal_length]): A batch of float32 time-domain signals in the range
             [-1, 1].
         sample_rate (int): Sample rate for the signal.
-        frame_size (float): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
-        frame_hop (float): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
-        window_function (callable): A callable that takes a window length and a dtype keyword
-            argument and returns a [window_length] Tensor of samples in the provided datatype. If
-            set to None, no windowing is used.
+        frame_size (int): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
+        frame_hop (int): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
+        winow (string, tuple, number, callable): Window function to be applied to each
+            frame. See the full specification for window at ``librosa.filters.get_window``.
         num_mel_bins (int): How many bands in the resulting mel spectrum.
         lower_hertz (int): Lower bound on the frequencies to be included in the mel spectrum. This
             corresponds to the lower edge of the lowest triangular band.
@@ -260,144 +252,91 @@ def wav_to_log_mel_spectrogram(signal,
             singularity at zero in the mel spectrograms.
 
     Returns:
-        log_mel_spectrograms (np.array [frames, num_mel_bins]): Log mel spectrogram.
+        log_mel_spectrograms (np.ndarray [frames, num_mel_bins]): Log mel spectrogram.
         right_pad (int): Number of zeros padding the end of the signal.
     """
-    signals = np.expand_dims(signal, axis=0)
-
-    # A batch of float32 time-domain signal in the range [-1, 1] with shape
-    # [1, signal_length].
-    signals = tf.convert_to_tensor(signals)
-
-    # LEARN MORE: (Tensorflow ``pad_end``)
-    # https://github.com/tensorflow/tensorflow/blob/ed48c1dffcccf6c547e6355562f7bcca64967200/tensorflow/contrib/signal/python/ops/shape_ops.py#L133
-
     # Pad the signal by up to frame_size samples based on how many samples are remaining starting
     # from the last frame.
     # FYI: Originally, the number of spectrogram frames was
-    # ``(signals.shape[1] - frame_size + frame_hop) // frame_hop``.
+    # ``(signal.shape[0] - frame_size + frame_hop) // frame_hop``.
     # Following padding the number of spectrogram frames is
-    # ``math.ceil(signals.shape[1] / frame_hop)`` a tad bit larger than the original signal.
-    num_frames = math.ceil(signals.shape[1].value / frame_hop)
-    remainder = frame_hop * (num_frames - 1) - signals.shape[1].value
-    end_pad = tf.zeros([1, frame_size + remainder])
-    signals = tf.concat([signals, end_pad], 1)
-    assert signals.shape[1].value % frame_hop == 0
+    # ``math.ceil(signal.shape[0] / frame_hop)`` a tad bit larger than the original signal.
+    num_frames = math.ceil(signal.shape[0] / frame_hop)
+    remainder = frame_hop * (num_frames - 1) - signal.shape[0]
+    # TODO: Consider center padding instead of left padding similar to librosa
+    signal = np.pad(signal, (0, frame_size + remainder), mode='constant')
+    assert signal.shape[0] % frame_hop == 0
 
-    spectrograms = tf.contrib.signal.stft(
-        signals,
-        frame_length=frame_size,
-        frame_step=frame_hop,
-        window_fn=window_function,
-    )
+    spectrogram = librosa.stft(
+        signal, n_fft=frame_size, hop_length=frame_hop, window=window, center=False)
 
-    assert spectrograms.shape[1].value == num_frames
+    assert spectrogram.shape[1] == num_frames
     # Return number of padding needed to pad signal such that
-    # ``spectrograms.shape[1] * num_frames == signals.shape[1]``
+    # ``spectrogram.shape[0] * num_frames == signal.shape[0]``
     ret_pad = frame_hop + remainder
     assert ret_pad <= frame_size
 
     # SOURCE (Tacotron 2):
     # "STFT magnitude"
-    magnitude_spectrograms = tf.abs(spectrograms)
+    magnitude_spectrogram = np.abs(spectrogram)
 
     # SOURCE (Tacotron 2):
     # We transform the STFT magnitude to the mel scale using an 80 channel mel filterbank
     # spanning 125 Hz to 7.6 kHz, followed by log dynamic range compression.
-    num_spectrogram_bins = magnitude_spectrograms.shape[-1].value
-    linear_to_mel_weight_matrix = tf.contrib.signal.linear_to_mel_weight_matrix(
-        num_mel_bins, num_spectrogram_bins, sample_rate, lower_hertz, upper_hertz)
-    # Warp the linear-scale, magnitude spectrograms into the mel-scale.
-    mel_spectrograms = tf.tensordot(magnitude_spectrograms, linear_to_mel_weight_matrix, 1)
-    # Note: Shape inference for `tf.tensordot` does not currently handle this case.
-    mel_spectrograms.set_shape(magnitude_spectrograms.shape[:-1].concatenate(
-        linear_to_mel_weight_matrix.shape[-1:]))
+    mel_basis = librosa.filters.mel(
+        sample_rate, frame_size, n_mels=num_mel_bins, fmin=lower_hertz, fmax=upper_hertz)
+    mel_spectrogram = np.dot(mel_basis, magnitude_spectrogram).transpose()
 
     # SOURCE (Tacotron 2):
     # Prior to log compression, the filterbank output magnitudes are clipped to a minimum value of
     # 0.01 in order to limit dynamic range in the logarithmic domain.
-    mel_spectrograms = tf.maximum(0.01, mel_spectrograms)
+    mel_spectrogram = np.maximum(0.01, mel_spectrogram)
 
     # SOURCE (Tacotron 2):
     # followed by log dynamic range compression.
-    log_mel_spectrograms = tf.log(mel_spectrograms)
+    log_mel_spectrogram = np.log(mel_spectrogram)
 
-    return log_mel_spectrograms[0].numpy(), ret_pad
-
-
-# INSPIRED BY:
-# https://github.com/tensorflow/tensorflow/blob/r1.8/tensorflow/contrib/signal/python/ops/spectral_ops.py
-def _enclosing_power_of_two(value):
-    """ Return 2**N for integer N such that 2**N >= value. """
-    value = ops.convert_to_tensor(value, name='frame_length')
-    value_static = tensor_util.constant_value(value)
-    if value_static is not None:
-        return constant_op.constant(
-            int(2**np.ceil(np.log(value_static) / np.log(2.0))), value.dtype)
-    return math_ops.cast(
-        math_ops.pow(2.0, math_ops.ceil(
-            math_ops.log(math_ops.to_float(value)) / math_ops.log(2.0))), value.dtype)
+    return log_mel_spectrogram, ret_pad
 
 
+@configurable
 def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, frame_size, sample_rate, lower_hertz,
                                         upper_hertz):
     """ Transform log mel spectrogram to spectrogram (lossy).
 
     Args:
         log_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
-        frame_size (float): The frame size in samples.
+        frame_size (int): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
         sample_rate (int): Sample rate of the ``log_mel_spectrogram``.
         lower_hertz (int): Lower bound on the frequencies to be included in the mel spectrum. This
             corresponds to the lower edge of the lowest triangular band.
         upper_hertz (int): The desired top edge of the highest frequency band.
 
     Returns:
-        A ``[frames, num_spectrogram_bins]`` ``Tensor`` of ``complex64`` STFT values.
+        (np.ndarray [frames, num_spectrogram_bins]) Spectrogram.
     """
-    log_mel_spectrogram = tf.convert_to_tensor(log_mel_spectrogram, dtype=tf.complex64)
-    log_mel_spectrograms = tf.expand_dims(log_mel_spectrogram, 0)
-
-    # Reverse the operations from ``log_mel_spectrograms`` to ``spectrograms``
-    mel_spectrograms = tf.exp(log_mel_spectrograms)  # `tf.log`` is the natural log
-    num_mel_bins = mel_spectrograms.shape[-1].value
-    # Documentation of Tensorflow mentions:
-    # "num_spectrogram_bins ... understood to be fft_size // 2 + 1"
-    # https://www.tensorflow.org/api_docs/python/tf/contrib/signal/linear_to_mel_weight_matrix
-    # "fft_unique_bins is fft_length // 2 + 1"
-    # https://www.tensorflow.org/api_docs/python/tf/contrib/signal/stft
-    # "fft_length ...  uses the smallest power of 2 enclosing frame_length."
-    num_spectrogram_bins = _enclosing_power_of_two(frame_size) // 2 + 1
-    linear_to_mel_weight_matrix = tf.contrib.signal.linear_to_mel_weight_matrix(
-        num_mel_bins, num_spectrogram_bins, sample_rate, lower_hertz, upper_hertz)
-    # ``np.linalg.pinv`` creates approximate inverse matrix of ``linear_to_mel_weight_matrix``
-    mel_to_linear_weight_matrix = tf.py_func(np.linalg.pinv, [linear_to_mel_weight_matrix],
-                                             tf.float32)
-    mel_to_linear_weight_matrix = tf.cast(mel_to_linear_weight_matrix, tf.complex64)
-    # Warp the linear-scale, magnitude spectrograms into the mel-scale.
-    spectrograms = tf.tensordot(mel_spectrograms, mel_to_linear_weight_matrix, 1)
-    # Note: Shape inference for `tf.tensordot` does not currently handle this case.
-    spectrograms.set_shape(spectrograms.shape[:-1].concatenate(
-        mel_to_linear_weight_matrix.shape[-1:]))
-    spectrograms = tf.squeeze(spectrograms, 0)
-    return spectrograms
+    mel_spectrogram = np.exp(log_mel_spectrogram)
+    num_mel_bins = mel_spectrogram.shape[1]
+    mel_basis = librosa.filters.mel(
+        sample_rate, frame_size, n_mels=num_mel_bins, fmin=lower_hertz, fmax=upper_hertz)
+    # ``np.linalg.pinv`` creates approximate inverse matrix of ``mel_basis``
+    mel_spectrogram = mel_spectrogram.transpose()
+    inverse_mel_basis = np.linalg.pinv(mel_basis)
+    return np.maximum(10**-10, np.dot(inverse_mel_basis, mel_spectrogram))
 
 
 @configurable
-def log_mel_spectrogram_to_wav(log_mel_spectrogram,
-                               filename,
-                               sample_rate,
-                               frame_size=1200,
-                               frame_hop=300,
-                               window_function=functools.partial(
-                                   window_ops.hann_window, periodic=True),
-                               lower_hertz=125,
-                               upper_hertz=7600,
-                               power=1.2,
-                               iterations=30,
-                               log=False):
+def griffin_lim(log_mel_spectrogram,
+                filename,
+                sample_rate,
+                frame_size=1200,
+                frame_hop=300,
+                window='hann',
+                lower_hertz=125,
+                upper_hertz=7600,
+                power=1.2,
+                iterations=30):
     """ Transform log mel spectrogram to wav file with the Griffin-Lim algorithm.
-
-    # TODO: Try using Mozillas/TTS Griffin lim
 
     Given a magnitude spectrogram as input, reconstruct the audio signal and return it using the
     Griffin-Lim algorithm from the paper:
@@ -421,62 +360,47 @@ def log_mel_spectrogram_to_wav(log_mel_spectrogram,
     Args:
         log_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
         filename (:class:`list` of :class:`str`): Filename of the resulting wav file.
-        frame_size (float): The frame size in milliseconds.
-        frame_hop (float): The frame hop in milliseconds.
-        window_function (callable): A callable that takes a window length and a dtype keyword
-            argument and returns a [window_length] Tensor of samples in the provided datatype. If
-            set to None, no windowing is used.
+        sample_rate (int): Sample rate of the spectrogram and the resulting wav file.
+        frame_size (int): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
+        frame_hop (int): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
+        winow (string, tuple, number, callable): Window function to be applied to each
+            frame. See the full specification for window at ``librosa.filters.get_window``.
         lower_hertz (int): Lower bound on the frequencies to be included in the mel spectrum. This
             corresponds to the lower edge of the lowest triangular band.
         upper_hertz (int): The desired top edge of the highest frequency band.
-        power (float): Amplification float used to reduce artifacts
-        loss_diff (float): Difference in loss used to determine convergance.
-        log (bool): If bool is True, prints the RMSE as the algorithm runs.
+        power (float): Amplification float used to reduce artifacts.
+        iterations (int): Number of iterations of griffin lim to run.
     """
     assert '.wav' in filename, "Filename must be a .wav file"
 
-    # Complex operations are not defined for GPU
-    with tf.device('/cpu'):
-        # Convert hertz to more relevant units like samples
-        spectrogram = _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, frame_size,
-                                                          sample_rate, lower_hertz, upper_hertz)
-        spectrograms = tf.expand_dims(spectrogram, 0)
+    spectrogram = _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, frame_size, sample_rate,
+                                                      lower_hertz, upper_hertz)
 
-        inverse_stft = partial(
-            tf.contrib.signal.inverse_stft,
-            frame_length=frame_size,
-            frame_step=frame_hop,
-            window_fn=tf.contrib.signal.inverse_stft_window_fn(
-                frame_step=frame_hop, forward_window_fn=window_function))
-        stft = partial(
-            tf.contrib.signal.stft,
-            frame_length=frame_size,
-            frame_step=frame_hop,
-            window_fn=window_function)
+    # SOURCE (Tacotron 1):
+    # We found that raising the predicted magnitudes by a power of 1.2 before feeding to
+    # Griffin-Lim reduces artifacts, likely due to its harmonic enhancement effect.
+    spectrogram = spectrogram**power
 
-        # SOURCE (Tacotron 1):
-        # We found that raising the predicted magnitudes by a power of 1.2 before feeding to
-        # Griffin-Lim reduces artifacts, likely due to its harmonic enhancement effect.
-        spectrograms = tf.pow(spectrograms, power)
+    istft = functools.partial(
+        librosa.istft, hop_length=frame_hop, win_length=frame_size, window='hann', center=False)
+    stft = functools.partial(
+        librosa.stft,
+        n_fft=frame_size,
+        hop_length=frame_hop,
+        win_length=frame_size,
+        window='hann',
+        center=False)
 
-        # Run the Griffin-Lim algorithm
-        spectrograms = tf.cast(tf.abs(spectrograms), dtype=tf.complex64)
-        time_slices = spectrograms.shape[1] - 1
-        len_samples = int(time_slices * frame_hop + frame_size)
-        waveform = tf.random_uniform((1, len_samples))
-        for i in range(iterations):
-            reconstruction_spectrogram = stft(waveform)
-            reconstruction_angle = tf.cast(tf.angle(reconstruction_spectrogram), dtype=tf.complex64)
-            # Discard magnitude part of the reconstruction and use the supplied magnitude
-            # spectrogram instead.
-            proposal_spectrogram = spectrograms * tf.exp(
-                tf.complex(0.0, 1.0) * reconstruction_angle)
-            previous_waveform = waveform
-            waveform = inverse_stft(proposal_spectrogram)
-            if log:
-                loss = tf.reduce_sum((waveform - previous_waveform)**2)
-                loss = math.sqrt(loss / tf.size(waveform, out_type=tf.float32))
-                logger.info('Reconstruction iteration: {} RMSE: {} '.format(i, loss))
+    reconstruction_spectrogram = copy.deepcopy(spectrogram)
+    for i in range(iterations):
+        waveform = istft(reconstruction_spectrogram)
+        estimate = stft(waveform)
 
-        waveform = tf.real(waveform)
-        librosa.output.write_wav(filename, waveform[0].numpy(), sr=sample_rate)
+        # Discard magnitude part of the reconstruction and use the supplied magnitude spectrogram
+        # instead.
+        phase = estimate / np.maximum(1e-8, np.abs(estimate))
+        reconstruction_spectrogram = spectrogram * phase
+
+    waveform = istft(reconstruction_spectrogram)
+    waveform = np.real(waveform)
+    librosa.output.write_wav(filename, waveform, sr=sample_rate)
