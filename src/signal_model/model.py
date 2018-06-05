@@ -10,6 +10,7 @@ import torch
 from src.signal_model.residual_block import ResidualBlock
 from src.signal_model.upsample import ConditionalFeaturesUpsample
 from src.utils.configurable import configurable
+from src.audio import mu_law_decode
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,8 @@ class WaveNet(nn.Module):
         # Compute embedding current by the identity matrix through a conv
         # embedding_curr [self.mu + 1]
         embedding_curr = torch.arange(self.mu + 1, dtype=dtype, device=device)
-        embedding_curr = 2 * embedding_curr / self.mu - 1
+        # ``self.embed`` is trained on unencoded values
+        embedding_curr = mu_law_decode(embedding_curr)
         # [self.mu + 1] → [1, 1, self.mu + 1]
         embedding_curr = embedding_curr.view(1, 1, self.mu + 1)
         # [1, 1, self.mu + 1]  → [1, block_hidden_size, self.mu + 1]
@@ -205,10 +207,6 @@ class WaveNet(nn.Module):
 
         # [batch_size, signal_length] → [batch_size, 1, signal_length]
         gold_signal = gold_signal.float().unsqueeze(1)
-
-        # https://github.com/ibab/tensorflow-wavenet/issues/47#issuecomment-249080343
-        # Range [0, 255] to [-1, 1]
-        gold_signal = 2 * gold_signal / self.mu - 1
 
         # [batch_size, 1, signal_length] → [batch_size, block_hidden_size, signal_length]
         gold_signal_features = self.embed(gold_signal.float())

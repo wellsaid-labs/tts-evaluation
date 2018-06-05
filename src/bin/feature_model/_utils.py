@@ -106,7 +106,7 @@ class DataIterator(object):
             transpose(stop_token_batch)
         ]
         if self.load_signal:
-            signal_batch = [row['encoded_signal'] for row in batch]
+            signal_batch = [row['signal'] for row in batch]
             ret.append(signal_batch)
         return ret
 
@@ -134,12 +134,11 @@ def _preprocess_audio(row):
         row (dict {'wav', 'text'}): Example with a corresponding wav filename and text snippet.
 
     Returns:
-        row (dict {'log_mel_spectrogram', 'stop_token', 'encoded_signal', 'text', 'wav'}): Updated
-            row with a ``log_mel_spectrogram``, ``stop_token``, and ``encoded_signal`` features.
+        row (dict {'log_mel_spectrogram', 'stop_token', 'signal', 'text', 'wav'}): Updated
+            row with a ``log_mel_spectrogram``, ``stop_token``, and ``signal`` features.
     """
     signal = read_audio(row['wav'], sample_rate=row['sample_rate'])
     signal = librosa.effects.trim(signal)[0]
-    encoded_signal = mu_law_encode(signal)
 
     # Trim silence
     log_mel_spectrogram, right_pad = wav_to_log_mel_spectrogram(
@@ -148,15 +147,14 @@ def _preprocess_audio(row):
     stop_token = log_mel_spectrogram.new_zeros((log_mel_spectrogram.shape[0],))
     stop_token[-1] = 1
 
-    # Right pad so: ``log_mel_spectrogram.shape[0] % encoded_signal.shape[0] == frame_hop``
+    # Right pad so: ``log_mel_spectrogram.shape[0] % signal.shape[0] == frame_hop``
     # We property is required for Wavenet.
     padding_index = mu_law_encode(0)
-    assert encoded_signal.shape == signal.shape
-    encoded_signal = np.concatenate((encoded_signal, np.full((right_pad), padding_index)))
+    signal = np.concatenate((signal, np.full((right_pad), padding_index)))
     row.update({
         'log_mel_spectrogram': log_mel_spectrogram,
         'stop_token': stop_token,
-        'encoded_signal': torch.tensor(encoded_signal)
+        'signal': torch.tensor(signal)
     })
     return row
 
@@ -224,18 +222,18 @@ def load_data(
 
         train, dev = split_dataset(data, splits)
         # Save cache
-        train_signals = [r.pop('encoded_signal') for r in train]
-        dev_signals = [r.pop('encoded_signal') for r in dev]
+        train_signals = [r.pop('signal') for r in train]
+        dev_signals = [r.pop('signal') for r in dev]
         torch_save(cache, (train, dev, text_encoder))
         torch_save(signal_cache, (train_signals, dev_signals))
 
     if load_signal:
         # Combine signals and dataset together
         for row, signal in zip(train, train_signals):
-            row['encoded_signal'] = signal
+            row['signal'] = signal
 
         for row, signal in zip(dev, dev_signals):
-            row['encoded_signal'] = signal
+            row['signal'] = signal
 
     return train, dev, text_encoder
 
