@@ -66,7 +66,7 @@ def main(checkpoint,
     for dataset, destination in [(train, destination_train), (dev, destination_dev)]:
         data_iterator = tqdm(DataIterator(device, dataset, max_batch_size, load_signal=True))
         for i, (gold_texts, gold_text_lengths, gold_frames, gold_frame_lengths, _,
-                gold_quantized_signals) in enumerate(data_iterator):
+                gold_encoded_signals) in enumerate(data_iterator):
 
             _, batch_predicted_frames, _, _ = model(gold_texts, ground_truth_frames=gold_frames)
             # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
@@ -80,8 +80,8 @@ def main(checkpoint,
                 # [batch_size, num_frames, frame_channels] → [num_frames, frame_channels]
                 predicted_frames = batch_predicted_frames[j][:gold_frame_lengths[j]]
                 # [batch_size, signal_length] → [signal_length]
-                quantized_signal = gold_quantized_signals[j].cpu().numpy().astype(np.int16)
-                assert quantized_signal.shape[0] % predicted_frames.shape[0] == 0
+                encoded_signal = gold_encoded_signals[j].cpu().numpy().astype(np.int16)
+                assert encoded_signal.shape[0] % predicted_frames.shape[0] == 0
 
                 # NOTE: ``numpy .npy (no pickle)`` is about 15 times faster than numpy with pickle
                 # ``torch.save`` does not include none-pickle options; therefore, we use numpy
@@ -91,8 +91,8 @@ def main(checkpoint,
                     predicted_frames,
                     allow_pickle=False)
                 np.save(
-                    os.path.join(destination, 'quantized_signal_%d_%d.npy' % (i, j)),
-                    quantized_signal,
+                    os.path.join(destination, 'encoded_signal_%d_%d.npy' % (i, j)),
+                    encoded_signal,
                     allow_pickle=False)
 
 

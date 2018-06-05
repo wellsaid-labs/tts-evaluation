@@ -108,8 +108,8 @@ def set_hparams():
                 # SOURCE (Wavenet):
                 # To make this more tractable, we first apply a µ-law companding transformation
                 # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
-                'mu_law_quantize.mu': mu,
-                'inverse_mu_law_quantize.mu': mu,
+                'mu_law_encode.mu': mu,
+                'mu_law_decode.mu': mu,
                 'read_audio': {
                     'sample_rate': sample_rate
                 },

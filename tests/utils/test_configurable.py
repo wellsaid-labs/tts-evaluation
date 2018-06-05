@@ -55,6 +55,12 @@ def mock_configurable(*args, **kwargs):
     return kwargs
 
 
+@configurable
+def mock_configurable_limited_args(arg, **kwargs):
+    # Mock function with configurable
+    return kwargs
+
+
 def mock(**kwargs):
     # Mock function without configurable
     return kwargs
@@ -82,8 +88,14 @@ class MockConfigurable(object):
         pass
 
 
+def test_mock_configurable_limited_args():
+    # Check if TypeError on too many args
+    with pytest.raises(TypeError):
+        mock_configurable_limited_args('abc', 'abc')
+
+
 def test_check_configuration_external_libraries():
-    # TODO: Rewrite test to not rely on internal components
+    # TODO: Rewrite test to not rely on internal components of _pytest
     # Test that check configuration can check ``configurable`` on external libraries
     _check_configuration({'_pytest': {'python_api': {'approx': {'rel': None}}}})
 

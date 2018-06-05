@@ -21,14 +21,14 @@ def test_signal_dataset_preprocess(randint_mock):
     samples_per_frame = 10
     spectrogram_channels = 80
     log_mel_spectrogram = torch.rand(10, spectrogram_channels)
-    quantized_signal = torch.rand(100)
+    encoded_signal = torch.rand(100)
     receptive_field_size = samples_per_frame
     slice_size = 30
     dataset = SignalDataset(
         source='.', slice_size=slice_size, receptive_field_size=receptive_field_size)
-    preprocessed = dataset._preprocess(log_mel_spectrogram, quantized_signal)
+    preprocessed = dataset._preprocess(log_mel_spectrogram, encoded_signal)
     assert preprocessed['log_mel_spectrogram'].shape == log_mel_spectrogram.shape
-    assert preprocessed['quantized_signal'].shape == quantized_signal.shape
+    assert preprocessed['encoded_signal'].shape == encoded_signal.shape
     assert preprocessed['source_signal_slice'].shape == (slice_size + receptive_field_size,)
     assert preprocessed['target_signal_slice'].shape == (slice_size,)
     np.testing.assert_allclose(preprocessed['source_signal_slice'][receptive_field_size + 1:],
@@ -43,14 +43,14 @@ def test_signal_dataset_preprocess_pad(randint_mock):
     samples_per_frame = 10
     spectrogram_channels = 80
     log_mel_spectrogram = torch.rand(10, spectrogram_channels)
-    quantized_signal = torch.rand(100)
+    encoded_signal = torch.rand(100)
     receptive_field_size = samples_per_frame * 2  # Requires 10 samples of padding
     slice_size = 30
     dataset = SignalDataset(
         source='.', slice_size=slice_size, receptive_field_size=receptive_field_size)
-    preprocessed = dataset._preprocess(log_mel_spectrogram, quantized_signal)
+    preprocessed = dataset._preprocess(log_mel_spectrogram, encoded_signal)
     assert preprocessed['log_mel_spectrogram'].shape == log_mel_spectrogram.shape
-    assert preprocessed['quantized_signal'].shape == quantized_signal.shape
+    assert preprocessed['encoded_signal'].shape == encoded_signal.shape
     assert preprocessed['source_signal_slice'].shape == (slice_size + receptive_field_size,)
     assert preprocessed['target_signal_slice'].shape == (slice_size,)
     np.testing.assert_allclose(preprocessed['source_signal_slice'][receptive_field_size + 1:],
@@ -65,15 +65,15 @@ def test_signal_dataset_preprocess_receptive_field_size_rounding(randint_mock):
     samples_per_frame = 10
     spectrogram_channels = 80
     log_mel_spectrogram = torch.rand(10, spectrogram_channels)
-    quantized_signal = torch.rand(100)
+    encoded_signal = torch.rand(100)
     receptive_field_size = samples_per_frame * 2 + 2  # Requires 10 samples of padding
     receptive_field_size_rounded = 30
     slice_size = 30
     dataset = SignalDataset(
         source='.', slice_size=slice_size, receptive_field_size=receptive_field_size)
-    preprocessed = dataset._preprocess(log_mel_spectrogram, quantized_signal)
+    preprocessed = dataset._preprocess(log_mel_spectrogram, encoded_signal)
     assert preprocessed['log_mel_spectrogram'].shape == log_mel_spectrogram.shape
-    assert preprocessed['quantized_signal'].shape == quantized_signal.shape
+    assert preprocessed['encoded_signal'].shape == encoded_signal.shape
     assert preprocessed['source_signal_slice'].shape == (slice_size + receptive_field_size_rounded,)
     assert preprocessed['target_signal_slice'].shape == (slice_size,)
     np.testing.assert_allclose(
@@ -90,7 +90,7 @@ def test_load_data():
         source_train='tests/_test_data/signal_dataset/train',
         source_dev='tests/_test_data/signal_dataset/dev',
         log_mel_spectrogram_prefix='log_mel_spectrogram',
-        quantized_signal_prefix='quantized_signal',
+        encoded_signal_prefix='encoded_signal',
         extension='.npy')
     assert len(train) == 1
     assert len(dev) == 1
@@ -113,13 +113,13 @@ def test_data_iterator():
             'target_signal_slice': torch.randint(low=0, high=255, size=(100,)),
             'frames_slice': torch.FloatTensor(10, 80),
             'log_mel_spectrogram': torch.FloatTensor(30, 80),
-            'quantized_signal': torch.FloatTensor(300),
+            'encoded_signal': torch.FloatTensor(300),
         }, {
             'source_signal_slice': torch.randint(low=0, high=255, size=(100,)),
             'target_signal_slice': torch.randint(low=0, high=255, size=(100,)),
             'frames_slice': torch.FloatTensor(10, 80),
             'log_mel_spectrogram': torch.FloatTensor(30, 80),
-            'quantized_signal': torch.FloatTensor(300),
+            'encoded_signal': torch.FloatTensor(300),
         }]
         batch_size = 1
 

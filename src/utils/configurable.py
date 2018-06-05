@@ -232,8 +232,8 @@ def _check_configuration_helper(dict_, keys, trace):
     if not isinstance(dict_, dict):
         # Recursive function walked up the chain and never found a @configurable
         trace.reverse()
-        raise TypeError('Path %s does not contain @configurable.\n' +
-                        'Traceback (most recent call last):\n\t%s' % (keys, '\n\t'.join(trace)))
+        raise TypeError('Path %s does not contain @configurable.\n' % (
+            keys,) + 'Traceback (most recent call last):\n\t%s' % ('\n\t'.join(trace),))
 
     if len(keys) >= 2:
         # CASE: Function
@@ -284,7 +284,7 @@ def _check_configuration_helper(dict_, keys, trace):
                                             (keys, absolute_keys))
                         return
         except ImportError as e:
-            trace += ['ImportError (%s): ' % (module_path,) + str(e)]
+            trace += ['ImportError (%s): ' % (module_path,) + repr(e)]
 
     for key in dict_:
         # Recusively check every key in ``dict_``
@@ -414,6 +414,9 @@ def _merge_args(parameters, args, kwargs, other_kwargs):
     # Delete ``other_kwargs`` that conflict with ``args``
     # Positional arguments must come before key word arguments
     for i, _ in enumerate(args):
+        if i >= len(parameters):
+            raise TypeError("Too many arguments (%d > %d) passed." % (len(args), len(parameters)))
+
         if parameters[i].kind == parameters[i].VAR_POSITIONAL:
             # Rest of the args are absorbed by VAR_POSITIONAL (e.g. ``*args``)
             break
@@ -458,8 +461,6 @@ def configurable(func):
             raise ValueError('%s config must be a dict of arguments', print_name)
 
         parameters = list(inspect.signature(func).parameters.values())
-        assert len(args) <= len(parameters), ("Too many arguments (%d > %d) passed." %
-                                              (len(args), len(parameters)))
         args, kwargs = _merge_args(parameters, args, kwargs, config)
         _add_arguments(keys, parameters, args, kwargs)
 

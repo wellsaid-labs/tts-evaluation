@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 import torch
 
-from src.audio import inverse_mu_law_quantize
+from src.audio import mu_law_decode
 from src.bin.signal_model._utils import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
@@ -173,7 +173,7 @@ class Trainer():  # pragma: no cover
             step (int): Step value to record.
         """
         signal = signal.detach().cpu()
-        signal = inverse_mu_law_quantize(signal)
+        signal = mu_law_decode(signal)
         assert torch.max(signal) <= 1.0 and torch.min(
             signal) >= -1.0, "Should be [-1, 1] it is [%f, %f]" % (torch.max(signal),
                                                                    torch.min(signal))

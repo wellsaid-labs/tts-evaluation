@@ -12,6 +12,7 @@ from src.utils import get_total_parameters
 from src.utils import plot_attention
 from src.utils import plot_spectrogram
 from src.utils import plot_stop_token
+from src.utils import plot_waveform
 from src.utils import ROOT_PATH
 from src.utils import spectrogram_to_image
 from src.utils import split_dataset
@@ -70,6 +71,12 @@ def test_spectrogram_to_image():
 def test_plot_attention():
     arr = np.random.rand(5, 6)
     figure = plot_attention(arr)
+    assert isinstance(figure, np.ndarray)
+
+
+def test_plot_waveform():
+    arr = np.random.rand(5)
+    figure = plot_waveform(arr)
     assert isinstance(figure, np.ndarray)
 
 

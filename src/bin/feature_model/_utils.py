@@ -14,7 +14,7 @@ import torch
 import numpy as np
 import librosa
 
-from src.audio import mu_law_quantize
+from src.audio import mu_law_encode
 from src.audio import read_audio
 from src.audio import wav_to_log_mel_spectrogram
 from src.datasets import lj_speech_dataset
@@ -106,7 +106,7 @@ class DataIterator(object):
             transpose(stop_token_batch)
         ]
         if self.load_signal:
-            signal_batch = [row['quantized_signal'] for row in batch]
+            signal_batch = [row['encoded_signal'] for row in batch]
             ret.append(signal_batch)
         return ret
 
@@ -134,12 +134,12 @@ def _preprocess_audio(row):
         row (dict {'wav', 'text'}): Example with a corresponding wav filename and text snippet.
 
     Returns:
-        row (dict {'log_mel_spectrogram', 'stop_token', 'quantized_signal', 'text', 'wav'}): Updated
-            row with a ``log_mel_spectrogram``, ``stop_token``, and ``quantized_signal`` features.
+        row (dict {'log_mel_spectrogram', 'stop_token', 'encoded_signal', 'text', 'wav'}): Updated
+            row with a ``log_mel_spectrogram``, ``stop_token``, and ``encoded_signal`` features.
     """
     signal = read_audio(row['wav'], sample_rate=row['sample_rate'])
     signal = librosa.effects.trim(signal)[0]
-    quantized_signal = mu_law_quantize(signal)
+    encoded_signal = mu_law_encode(signal)
 
     # Trim silence
     log_mel_spectrogram, right_pad = wav_to_log_mel_spectrogram(
@@ -148,15 +148,15 @@ def _preprocess_audio(row):
     stop_token = log_mel_spectrogram.new_zeros((log_mel_spectrogram.shape[0],))
     stop_token[-1] = 1
 
-    # Right pad so: ``log_mel_spectrogram.shape[0] % quantized_signal.shape[0] == frame_hop``
+    # Right pad so: ``log_mel_spectrogram.shape[0] % encoded_signal.shape[0] == frame_hop``
     # We property is required for Wavenet.
-    padding_index = mu_law_quantize(0)
-    assert quantized_signal.shape == signal.shape
-    quantized_signal = np.concatenate((quantized_signal, np.full((right_pad), padding_index)))
+    padding_index = mu_law_encode(0)
+    assert encoded_signal.shape == signal.shape
+    encoded_signal = np.concatenate((encoded_signal, np.full((right_pad), padding_index)))
     row.update({
         'log_mel_spectrogram': log_mel_spectrogram,
         'stop_token': stop_token,
-        'quantized_signal': torch.tensor(quantized_signal)
+        'encoded_signal': torch.tensor(encoded_signal)
     })
     return row
 
@@ -224,18 +224,18 @@ def load_data(
 
         train, dev = split_dataset(data, splits)
         # Save cache
-        train_signals = [r.pop('quantized_signal') for r in train]
-        dev_signals = [r.pop('quantized_signal') for r in dev]
+        train_signals = [r.pop('encoded_signal') for r in train]
+        dev_signals = [r.pop('encoded_signal') for r in dev]
         torch_save(cache, (train, dev, text_encoder))
         torch_save(signal_cache, (train_signals, dev_signals))
 
     if load_signal:
         # Combine signals and dataset together
         for row, signal in zip(train, train_signals):
-            row['quantized_signal'] = signal
+            row['encoded_signal'] = signal
 
         for row, signal in zip(dev, dev_signals):
-            row['quantized_signal'] = signal
+            row['encoded_signal'] = signal
 
     return train, dev, text_encoder
 
