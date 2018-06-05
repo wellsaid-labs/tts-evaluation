@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 import torch
 
-from src.audio import log_mel_spectrogram_to_wav
+from src.audio import griffin_lim
 from src.bin.feature_model._utils import load_checkpoint
 from src.bin.feature_model._utils import set_hparams as set_feature_model_auxiliary_hparams
 from src.hparams import set_hparams
@@ -55,8 +55,7 @@ def main(checkpoint):  # pragma: no cover
             os.path.join(directory, 'predicted_stop_token.png'))
 
         logger.info('Running Griffin-lim...')
-        log_mel_spectrogram_to_wav(predicted_post_frames[:, 0],
-                                   os.path.join(directory, 'predicted_audio.wav'))
+        griffin_lim(predicted_post_frames[:, 0], os.path.join(directory, 'predicted_audio.wav'))
 
         print('–' * 100)
 

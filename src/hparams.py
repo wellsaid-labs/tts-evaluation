@@ -55,7 +55,7 @@ def set_hparams():
     # We use 24 kHz sampling rate for all experiments.
     sample_rate = 24000
 
-    wav_to_log_mel_spectrogram = {
+    get_log_mel_spectrogram = {
         'sample_rate': sample_rate,
         # SOURCE (Tacotron 2):
         # mel spectrograms are computed through a shorttime Fourier transform (STFT)
@@ -63,13 +63,11 @@ def set_hparams():
         'frame_size': 1200,  # 50ms * 24,000 / 1000 == 1200
         'frame_hop': 300,  # 12.5ms * 24,000 / 1000 == 300
         'window': 'hann',
-        # SOURCE (Tacotron 2):
-        # We transform the STFT magnitude to the mel scale using an 80 channel mel
-        # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
-        # compression.
-        'num_mel_bins': frame_channels,
-        'lower_hertz': 125,
-        'upper_hertz': 7600,
+
+        # SOURCE (Tacotron 1):
+        # 2048-point Fourier transform
+        'fft_length': 2048,
+
         # SOURCE (Tacotron 2):
         # Prior to log compression, the filterbank output magnitudes are clipped to a
         # minimum value of 0.01 in order to limit dynamic range in the logarithmic
@@ -79,12 +77,12 @@ def set_hparams():
 
     # SOURCE (WaveNet):
     # where −1 < xt < 1 and µ = 255.
-    mu = 255
+    signal_channels = 256  # NOTE: signal_channels = µ + 1
 
     add_config({
         'librosa.effects.trim': {
-            'frame_length': wav_to_log_mel_spectrogram['frame_size'],
-            'hop_length': wav_to_log_mel_spectrogram['frame_hop'],
+            'frame_length': get_log_mel_spectrogram['frame_size'],
+            'hop_length': get_log_mel_spectrogram['frame_hop'],
             # NOTE: Manually determined to be a adequate cutoff for Linda Johnson via:
             # ``notebooks/Stripping Silence.ipynb``
             'top_db': 50
@@ -108,24 +106,38 @@ def set_hparams():
                 # SOURCE (Wavenet):
                 # To make this more tractable, we first apply a µ-law companding transformation
                 # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
-                'mu_law_encode.mu': mu,
-                'mu_law_decode.mu': mu,
+                'mu_law_encode.bins': signal_channels,
+                'mu_law_decode.bins': signal_channels,
                 'read_audio': {
                     'sample_rate': sample_rate
                 },
-                'wav_to_log_mel_spectrogram': wav_to_log_mel_spectrogram,
+                'get_log_mel_spectrogram': get_log_mel_spectrogram,
                 'griffin_lim': {
-                    'frame_size': wav_to_log_mel_spectrogram['frame_size'],
-                    'frame_hop': wav_to_log_mel_spectrogram['frame_hop'],
-                    'window': wav_to_log_mel_spectrogram['window'],
-                    'lower_hertz': wav_to_log_mel_spectrogram['lower_hertz'],
-                    'upper_hertz': wav_to_log_mel_spectrogram['upper_hertz'],
+                    'frame_size': get_log_mel_spectrogram['frame_size'],
+                    'frame_hop': get_log_mel_spectrogram['frame_hop'],
+                    'fft_length': get_log_mel_spectrogram['fft_length'],
+                    'window': get_log_mel_spectrogram['window'],
                     'sample_rate': sample_rate,
                     # SOURCE (Tacotron 1):
                     # We found that raising the predicted magnitudes by a power of 1.2 before
                     # feeding to Griffin-Lim reduces artifacts
                     'power': 1.20,
+                    # SOURCE (Tacotron 1):
+                    # We observed that Griffin-Lim converges after 50 iterations (in fact, about 30
+                    # iterations seems to be enough), which is reasonably fast.
+                    'iterations': 30,
                 },
+                'mel_filters': {
+                    'fft_length': get_log_mel_spectrogram['fft_length'],
+                    'sample_rate': sample_rate,
+                    # SOURCE (Tacotron 2):
+                    # We transform the STFT magnitude to the mel scale using an 80 channel mel
+                    # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
+                    # compression.
+                    'num_mel_bins': frame_channels,
+                    'lower_hertz': 125,
+                    'upper_hertz': 7600,
+                }
             },
             'feature_model': {
                 'encoder.Encoder.__init__': {
@@ -222,8 +234,8 @@ def set_hparams():
                     # ISSUE: https://github.com/NVIDIA/nv-wavenet/issues/21
                     'kernel_size': 2
                 },
-                'model.WaveNet.__init__': {
-                    'mu': mu,
+                'wave_net.WaveNet.__init__': {
+                    'signal_channels': signal_channels,
                     'local_features_size': frame_channels,
 
                     # SOURCE Parallel WaveNet: (256 block hidden size)
@@ -250,23 +262,48 @@ def set_hparams():
                     # We upsample 4x with the layers and then repeat each value 75x
                     'upsample_convs': [4],
                     'upsample_repeat': 75,
+                },
+                'wave_rnn.WaveRNN.__init__': {
+                    'signal_channels': signal_channels,
+                    'local_features_size': frame_channels,
+
+                    # SOURCE WaveRNN:
+                    # We see that the WaveRNN with 896 units achieves NLL scores comparable to those
+                    # of the largest WaveNet model, there is no significant difference in audio
+                    # fidelity according to a A/B comparison test (Table 2), and the MOS is
+                    # similarly high.
+                    'rnn_size': 896,
+
+                    # SOURCE Parallel WaveNet:
+                    # The number of hidden units in the gating layers is 512 (split into two groups
+                    # of 256 for the two parts of the activation function (1)).
+                    'conditional_size': 256,
+
+                    # SOURCE: Tacotron 2
+                    # only 2 upsampling layers are used in the conditioning stack instead of 3
+                    # layers.
+                    # SOURCE: Tacotron 2 Author Google Chat
+                    # We upsample 4x with the layers and then repeat each value 75x
+                    'upsample_convs': [4],
+                    'upsample_repeat': 75,
                 }
             },
-            'bin.signal_model': {
-                '_utils.SignalDataset.__init__': {
-                    # SOURCE (Parallel WaveNet):
-                    # minibatch size of 32 audio clips, each containing 7,680 timesteps
-                    # (roughly 320ms).
-                    # SOURCE (DeepVoice):
-                    # We divide the utterances in our audio dataset into one second chunks with a
-                    # quarter second of context for each chunk, padding each utterance with a
-                    # quarter second of silence at the beginning. We filter out chunks that are
-                    # predominantly silence and end up with 74,348 total chunks.
-                    'slice_size': 24000
+            'bin': {
+                'signal_model': {
+                    '_utils.SignalDataset.__init__': {
+                        # SOURCE (Parallel WaveNet):
+                        # minibatch size of 32 audio clips, each containing 7,680 timesteps
+                        # (roughly 320ms).
+                        # SOURCE (DeepVoice):
+                        # We divide the utterances in our audio dataset into one second chunks with
+                        # a quarter second of context for each chunk, padding each utterance with a
+                        # quarter second of silence at the beginning. We filter out chunks that are
+                        # predominantly silence and end up with 74,348 total chunks.
+                        'slice_size': 7200,  # TODO: Change back to 24000 for WaveNet
+                    },
+                    'train.Trainer.__init__.sample_rate': sample_rate,
                 },
-                'train.main': {
-                    'sample_rate': sample_rate
-                }
+                'feature_model._utils.load_data.sample_rate': sample_rate,
             },
             'utils.utils.plot_waveform.sample_rate': sample_rate,
         }

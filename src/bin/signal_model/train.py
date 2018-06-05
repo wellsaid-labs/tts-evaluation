@@ -10,13 +10,14 @@ from tqdm import tqdm
 import torch
 
 from src.audio import mu_law_decode
+from src.audio import mu_law_encode
 from src.bin.signal_model._utils import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
 from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
 from src.optimizer import Optimizer
-from src.signal_model import SignalModel
+from src import signal_model
 from src.utils import get_total_parameters
 from src.utils import plot_waveform
 from src.utils import spectrogram_to_image
@@ -46,6 +47,7 @@ class Trainer():  # pragma: no cover
         num_workers (int, optional): Number of workers for data loading.
     """
 
+    @configurable
     def __init__(self,
                  device,
                  train_dataset,
@@ -55,7 +57,7 @@ class Trainer():  # pragma: no cover
                  sample_rate,
                  train_batch_size=32,
                  dev_batch_size=128,
-                 model=SignalModel,
+                 model=signal_model.WaveNet,
                  step=0,
                  epoch=0,
                  criterion=NLLLoss,
@@ -173,7 +175,6 @@ class Trainer():  # pragma: no cover
             step (int): Step value to record.
         """
         signal = signal.detach().cpu()
-        signal = mu_law_decode(signal)
         assert torch.max(signal) <= 1.0 and torch.min(
             signal) >= -1.0, "Should be [-1, 1] it is [%f, %f]" % (torch.max(signal),
                                                                    torch.min(signal))
@@ -198,7 +199,6 @@ class Trainer():  # pragma: no cover
                 predicted signal.
         """
         if signal is not None:
-            assert signal.shape[0] % spectrogram.shape[0] == 0
             factor = int(signal.shape[0] / spectrogram.shape[0])
             signal = signal[:max_infer_frames * factor]
 
@@ -212,7 +212,6 @@ class Trainer():  # pragma: no cover
 
         logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[1])
         predicted_signal = self.model(spectrogram).squeeze(0)
-        assert predicted_signal.shape[0] == signal.shape[0]
         return predicted_signal, signal, spectrogram.squeeze(0)
 
     def _sample(self, batch, predicted_signal, max_infer_frames=300):
@@ -220,7 +219,7 @@ class Trainer():  # pragma: no cover
 
         Args:
             batch (dict): ``dict`` from ``src.bin.signal_model._utils.DataIterator``.
-            predicted_signal (torch.FloatTensor [batch_size, mu + 1, signal_length])
+            predicted_signal (torch.FloatTensor [batch_size, signal_channels, signal_length])
             max_infer_frames (int): The number of frames ``nv_wavenet`` has enough memory to
                 process to generate realistic samples.
 
@@ -229,20 +228,22 @@ class Trainer():  # pragma: no cover
         batch_size = predicted_signal.shape[0]
         item = random.randint(0, batch_size - 1)
         length = batch['target_signal_lengths'][item]
-        # predicted_signal [batch_size, mu + 1, signal_length] → [signal_length]
+        # predicted_signal [batch_size, signal_channels, signal_length] → [signal_length]
         predicted_signal = predicted_signal.max(dim=1)[1][item, :length]
         # gold_signal [batch_size, signal_length] → [signal_length]
         target_signal = batch['target_signals'][item, :length]
         self._add_audio(['slice', 'prediction_aligned'], ['slice', 'prediction_aligned_waveform'],
-                        predicted_signal, self.step)
-        self._add_audio(['slice', 'gold'], ['slice', 'gold_waveform'], target_signal, self.step)
+                        mu_law_decode(predicted_signal), self.step)
+        self._add_audio(['slice', 'gold'], ['slice', 'gold_waveform'], mu_law_decode(target_signal),
+                        self.step)
 
         # Sample from an inference
         self.model.queue_kernel_update()
-        infered_signal, gold_signal, spectrogram = self._infer(batch['spectrograms'][item],
-                                                               batch['signals'][item])
-        self._add_audio(['full', 'prediction'], ['full', 'prediction_waveform'], infered_signal,
-                        self.step)
+
+        infered_signal, gold_signal, spectrogram = self._infer(
+            spectrogram=batch['spectrograms'][item], signal=batch['signals'][item])
+        self._add_audio(['full', 'prediction'], ['full', 'prediction_waveform'],
+                        mu_law_decode(infered_signal), self.step)
         self._add_audio(['full', 'gold'], ['full', 'gold_waveform'], gold_signal, self.step)
         self._add_image(['full', 'spectrogram'], spectrogram, spectrogram_to_image, self.step)
 
@@ -252,7 +253,7 @@ class Trainer():  # pragma: no cover
         Args:
             gold_signal (torch.ShortTensor [batch_size, signal_length])
             gold_signal_lengths (list): Lengths of each signal in the batch.
-            predicted_signal (torch.LongTensor [batch_size, mu + 1, signal_length])
+            predicted_signal (torch.LongTensor [batch_size, signal_channels, signal_length])
 
         Returns:
             (torch.Tensor) scalar loss values
@@ -283,6 +284,14 @@ class Trainer():  # pragma: no cover
         # Set mode
         torch.set_grad_enabled(train)
         self.model.train(mode=train)
+
+        # NOTE: For training we do not used the quanitized signal, to match WaveNet authors
+        # implementation:
+        # https://github.com/ibab/tensorflow-wavenet/issues/47#issuecomment-249080343
+        if not train:
+            # NOTE: To evaluate, we introduce the same quantization noise that'd of been introduced
+            # during inference
+            batch['source_signals'] = mu_law_decode(mu_law_encode(batch['source_signals']))
 
         if self.is_data_parallel:
             predicted_signal = torch.nn.parallel.data_parallel(
@@ -319,9 +328,8 @@ class Trainer():  # pragma: no cover
         return signal_loss, num_signal_predictions
 
 
-@configurable
 def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
-         sample_rate=24000):  # pragma: no cover
+         model='WaveNet'):  # pragma: no cover
     """ Main module that trains a the signal model saving checkpoints incrementally.
 
     Args:
@@ -329,11 +337,12 @@ def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
         epochs (int, optional): Number of epochs to run for.
         train_batch_size (int, optional): Maximum training batch size.
         num_workers (int, optional): Number of workers for data loading.
-        source (str, optional): Torch file with the signal dataset including features and signals.
-        sample_rate (int, optional): Sample rate of the audio files.
+        model (str, optional): Model to use from ``src.signal_model`` for signal modeling.
     """
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = False
+
+    logger.info('Using model %s', model)
 
     with ExperimentContextManager(label='signal_model', min_time=60 * 15) as context:
         set_hparams()
@@ -342,9 +351,9 @@ def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
         train, dev = load_data()
 
         # Set up trainer.
-        trainer_kwargs = {}
+        trainer_kwargs = {'model': getattr(signal_model, model)}
         if checkpoint is not None:
-            trainer_kwargs = checkpoint
+            trainer_kwargs.update(checkpoint)
 
         trainer = Trainer(
             context.device,
@@ -352,7 +361,6 @@ def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
             dev,
             context.train_tensorboard,
             context.dev_tensorboard,
-            sample_rate=sample_rate,
             train_batch_size=train_batch_size,
             dev_batch_size=train_batch_size * 3,
             num_workers=num_workers,
@@ -379,17 +387,20 @@ def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
 if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-c", "--checkpoint", type=str, default=None, help="Load a checkpoint from a path")
+        '-c', '--checkpoint', type=str, default=None, help='Load a checkpoint from a path')
     parser.add_argument(
-        "-b",
-        "--train_batch_size",
+        '-b',
+        '--train_batch_size',
         type=int,
         default=2,
-        help="Set the maximum training batch size; this figure depends on the GPU memory")
+        help='Set the maximum training batch size; this figure depends on the GPU memory')
     parser.add_argument(
-        "-w", "--num_workers", type=int, default=0, help="Numer of workers used for data loading")
+        '-w', '--num_workers', type=int, default=0, help='Numer of workers used for data loading')
+    parser.add_argument(
+        '-m', '--model', type=str, default='WaveNet', choices=['WaveNet', 'WaveRNN'])
     args = parser.parse_args()
     main(
         checkpoint=args.checkpoint,
         train_batch_size=args.train_batch_size,
-        num_workers=args.num_workers)
+        num_workers=args.num_workers,
+        model=args.model)

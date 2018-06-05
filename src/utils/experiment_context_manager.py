@@ -10,8 +10,6 @@ import numpy as np
 import torch
 from tensorboardX import SummaryWriter
 
-from src.utils.configurable import log_arguments
-
 logger = logging.getLogger(__name__)
 
 
@@ -187,9 +185,6 @@ class ExperimentContextManager(object):
     def __exit__(self, type_, value, traceback):
         """ Runs after the experiment context ends.
         """
-        # Print all arguments used
-        log_arguments()
-
         # NOTE: Log before removing handlers.
         elapsed_seconds = time.time() - self._start_time
         if self.min_time is not None and elapsed_seconds < self.min_time:

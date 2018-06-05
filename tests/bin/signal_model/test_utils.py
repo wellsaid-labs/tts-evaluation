@@ -12,7 +12,7 @@ from src.bin.signal_model._utils import load_data
 from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
 from src.bin.signal_model._utils import SignalDataset
-from src.signal_model import SignalModel
+from src.signal_model import WaveNet
 from src.utils.experiment_context_manager import ExperimentContextManager
 
 
@@ -105,22 +105,25 @@ def test_load_data():
 
 def test_set_hparams():
     set_hparams()
-    model = SignalModel()
+    model = WaveNet()
     optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()))
     assert optimizer.defaults['eps'] == 10**-8
 
 
 def test_data_iterator():
     with ExperimentContextManager(label='test_data_iterator') as context:
+        source_signal_slice = torch.FloatTensor(100,)
+        target_signal_slice = mu_law_encode(source_signal_slice)[1:]
+        source_signal_slice = source_signal_slice[:-1]
         dataset = [{
-            'source_signal_slice': torch.randint(low=0, high=255, size=(100,)),
-            'target_signal_slice': torch.randint(low=0, high=255, size=(100,)),
+            'source_signal_slice': source_signal_slice,
+            'target_signal_slice': target_signal_slice,
             'frames_slice': torch.FloatTensor(10, 80),
             'log_mel_spectrogram': torch.FloatTensor(30, 80),
             'signal': torch.FloatTensor(300),
         }, {
-            'source_signal_slice': torch.randint(low=0, high=255, size=(100,)),
-            'target_signal_slice': torch.randint(low=0, high=255, size=(100,)),
+            'source_signal_slice': source_signal_slice,
+            'target_signal_slice': target_signal_slice,
             'frames_slice': torch.FloatTensor(10, 80),
             'log_mel_spectrogram': torch.FloatTensor(30, 80),
             'signal': torch.FloatTensor(300),
@@ -144,7 +147,7 @@ def test_data_iterator():
 
 def test_load_save_checkpoint():
     with ExperimentContextManager(label='test_load_save_checkpoint') as context:
-        model = SignalModel()
+        model = WaveNet()
         optimizer = Optimizer(
             torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
         filename = save_checkpoint(

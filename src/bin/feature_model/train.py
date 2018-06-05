@@ -202,6 +202,7 @@ class Trainer():  # pragma: no cover
             total_stop_token_predictions += num_stop_token_predictions
             total_frame_predictions += num_frame_predictions
 
+        # TODO: Update self.epoch to scale with steps
         self._add_scalar(['pre_frames', 'epoch'], total_pre_frames_loss / total_frame_predictions,
                          self.epoch)
         self._add_scalar(['post_frames', 'epoch'], total_post_frames_loss / total_frame_predictions,

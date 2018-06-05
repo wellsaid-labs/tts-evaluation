@@ -80,7 +80,7 @@ def main(checkpoint,
                 # [batch_size, num_frames, frame_channels] → [num_frames, frame_channels]
                 predicted_frames = batch_predicted_frames[j][:gold_frame_lengths[j]]
                 # [batch_size, signal_length] → [signal_length]
-                signal = gold_signals[j].cpu().numpy().astype(np.int16)
+                signal = gold_signals[j].cpu().numpy().astype(np.float32)
                 assert signal.shape[0] % predicted_frames.shape[0] == 0
 
                 # NOTE: ``numpy .npy (no pickle)`` is about 15 times faster than numpy with pickle

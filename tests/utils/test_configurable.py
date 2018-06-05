@@ -2,15 +2,12 @@ import pytest
 import _pytest
 import inspect
 
-from src.utils.configurable import _parse_configuration
 from src.utils.configurable import _check_configuration
-from src.utils.configurable import configurable
+from src.utils.configurable import _merge_args
+from src.utils.configurable import _parse_configuration
 from src.utils.configurable import add_config
 from src.utils.configurable import clear_config
-from src.utils.configurable import clear_arguments
-from src.utils.configurable import _get_arguments
-from src.utils.configurable import _merge_args
-from src.utils.configurable import log_arguments
+from src.utils.configurable import configurable
 
 
 def test_parse_configuration_example():
@@ -168,45 +165,11 @@ def test_add_config_and_arguments():
     add_config({'tests.utils.test_configurable.mock_configurable': kwargs})
     assert mock_configurable() == kwargs
 
-    # Check that the parameters were recorded
-    assert str(_get_arguments()['tests']['utils']['test_configurable']['mock_configurable'][
-        'xyz']) == 'xyz'
-
     # Reset
     clear_config()
-    clear_arguments()
 
     # Check reset worked
     assert mock_configurable() == {}
-
-
-def test_arguments():
-    # Check that the parameters were recorded
-    mock_configurable(abc='abc')
-    assert str(_get_arguments()['tests']['utils']['test_configurable']['mock_configurable'][
-        'abc']) == 'abc'
-
-    # Smoke test for log
-    log_arguments()
-
-    clear_arguments()
-
-
-def test_arguments_many():
-    # Check that the parameters were recorded
-    arg_kwarg = configurable(lambda a, *args, **kwargs: (a, args, kwargs))
-    arg_kwarg('abc', 'def', 'ghi', 'klm', abc='abc')
-    arg_kwarg('abc', abc='xyz')
-    arg_kwarg('abc', abc='cdf')
-    arg_kwarg('abc', abc='ghf')
-    arg_kwarg('abc', xyz='abc')
-    assert str(_get_arguments()['tests']['utils']['test_configurable']['test_arguments_many'][
-        '<locals>']['<lambda>']['abc']) == str(['xyz', 'cdf', 'ghf'])
-    assert str(_get_arguments()['tests']['utils']['test_configurable']['test_arguments_many'][
-        '<locals>']['<lambda>']['xyz']) == 'abc'
-    assert str(_get_arguments()['tests']['utils']['test_configurable']['test_arguments_many'][
-        '<locals>']['<lambda>']['args']) == str(tuple(['def', 'ghi', 'klm']))
-    clear_arguments()
 
 
 def test_merge_arg_kwarg():

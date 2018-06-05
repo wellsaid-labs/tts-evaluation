@@ -1,3 +1,4 @@
-from src.signal_model.model import WaveNet as SignalModel
+from src.signal_model.wave_net import WaveNet
+from src.signal_model.wave_rnn import WaveRNN
 
-__all__ = ['SignalModel']
+__all__ = ['WaveNet', 'WaveRNN']

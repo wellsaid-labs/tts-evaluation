@@ -14,15 +14,15 @@ import torch
 import numpy as np
 import librosa
 
-from src.audio import mu_law_encode
 from src.audio import read_audio
-from src.audio import wav_to_log_mel_spectrogram
+from src.audio import get_log_mel_spectrogram
 from src.datasets import lj_speech_dataset
 from src.utils import ROOT_PATH
 from src.utils import split_dataset
 from src.utils import torch_load
 from src.utils import torch_save
 from src.utils.configurable import add_config
+from src.utils.configurable import configurable
 
 logger = logging.getLogger(__name__)
 
@@ -141,24 +141,23 @@ def _preprocess_audio(row):
     signal = librosa.effects.trim(signal)[0]
 
     # Trim silence
-    log_mel_spectrogram, right_pad = wav_to_log_mel_spectrogram(
-        signal, sample_rate=row['sample_rate'])
-    log_mel_spectrogram = torch.tensor(log_mel_spectrogram)
+    log_mel_spectrogram, padding = get_log_mel_spectrogram(signal, sample_rate=row['sample_rate'])
+    log_mel_spectrogram = torch.from_numpy(log_mel_spectrogram)
     stop_token = log_mel_spectrogram.new_zeros((log_mel_spectrogram.shape[0],))
     stop_token[-1] = 1
 
-    # Right pad so: ``log_mel_spectrogram.shape[0] % signal.shape[0] == frame_hop``
+    # Pad so: ``log_mel_spectrogram.shape[0] % signal.shape[0] == frame_hop``
     # We property is required for Wavenet.
-    padding_index = mu_law_encode(0)
-    signal = np.concatenate((signal, np.full((right_pad), padding_index)))
+    padded_signal = np.pad(signal, padding, mode='constant', constant_values=0)
     row.update({
         'log_mel_spectrogram': log_mel_spectrogram,
         'stop_token': stop_token,
-        'signal': torch.tensor(signal)
+        'signal': torch.from_numpy(padded_signal)
     })
     return row
 
 
+@configurable
 def load_data(
         device=torch.device('cpu'),
         cache='data/cache.pt',

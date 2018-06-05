@@ -32,12 +32,18 @@ incorporating ELMo and tokenizing on words.
 * Following [The Best of Both Worlds: Combining Recent Advances in Neural Machine Translation
 ](https://arxiv.org/abs/1804.09849v2) and [Deep contextualized word representations](https://arxiv.org/abs/1802.05365) add
 layer norm to LSTM.
+* Similar to ELMo add weights for combining WaveNet layers.
+* Try doing a loss function on top of attention following this paper:
+https://arxiv.org/pdf/1705.07704.pdf
 * https://github.com/NVIDIA/nv-wavenet/issues/5
 * Document carefully crafted getting this running guide
 * Try to combine the signal model and the feature model into a fully differentiable component
 * Try a different loss function for softmax, because large differences matter rather than categories
 * Dockerize the requirements for nv-wavenet and resampling
 * Try giving a different embedding depending on LJ book or chapter read?
+* sudo sh -c "ulimit -n 65536 && exec su $LOGNAME"
+* Consider Mean Normalization as suggested here: http://haythamfayek.com/2016/04/21/speech-processing-for-machine-learning.html similar to http://cs231n.github.io/neural-networks-2/ and https://www.google.com/search?q=mean+normalization+spectrogram&oq=mean+normalization+spectrogram&aqs=chrome..69i57.4190j0j1&sourceid=chrome&ie=UTF-8
+* INSTALL SOX
 
 ## Contributing
 

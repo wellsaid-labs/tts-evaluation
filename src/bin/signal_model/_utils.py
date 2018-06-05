@@ -90,6 +90,7 @@ class SignalDataset(data.Dataset):
         Returns:
             (dict): Dictionary with slices up to ``max_samples`` appropriate size for training.
         """
+        # TODO: Do a normal distribution over slice frames to change up the size.
         samples, num_frames = signal.shape[0], log_mel_spectrogram.shape[0]
         samples_per_frame = int(samples / num_frames)
         slice_frames = int(self.slice_samples / samples_per_frame)
@@ -116,7 +117,7 @@ class SignalDataset(data.Dataset):
         end_sample = end_frame * samples_per_frame
         start_sample = start_frame * samples_per_frame
         source_signal_slice = signal[max(start_context_sample - 1, 0):end_sample - 1]
-        target_signal_slice = signal[start_sample:end_sample]
+        target_signal_slice = mu_law_encode(signal[start_sample:end_sample])
 
         # EDGE CASE: Pad context incase it's cut off and add a go sample for source
         if start_context_frame == 0:
@@ -133,7 +134,7 @@ class SignalDataset(data.Dataset):
             self.log_mel_spectrogram_prefix: log_mel_spectrogram,  # [num_frames, channels]
             self.signal_prefix: signal,  # [signal_length]
             'source_signal_slice': source_signal_slice,  # [slice_size + receptive_field_size]
-            'target_signal_slice': mu_law_encode(target_signal_slice),  # [slice_size]
+            'target_signal_slice': target_signal_slice,  # [slice_size]
             # [(slice_size + receptive_field_size) / samples_per_frame]
             'frames_slice': frames_slice,
         }
@@ -145,7 +146,6 @@ class SignalDataset(data.Dataset):
             self.rows[index]['log_mel_spectrogram'])).contiguous()
         # signal [signal_length]
         signal = torch.from_numpy(np.load(self.rows[index]['signal'])).contiguous()
-
         return self._preprocess(log_mel_spectrogram, signal)
 
 
@@ -273,6 +273,13 @@ class DataIterator(object):
             * frames (torch.FloatTensor [batch_size, num_frames, frame_channels])
             * spectrograms (list): List of spectrograms to be used for sampling.
         """
+        # Test that source signal is one timestep behind target signal
+        for row in batch:
+            assert torch.equal(
+                mu_law_encode(
+                    row['source_signal_slice'][(-row['target_signal_slice'].shape[0] + 1):]),
+                row['target_signal_slice'][:-1])
+
         source_signals, source_signal_lengths = pad_batch([r['source_signal_slice'] for r in batch])
         target_signals, target_signal_lengths = pad_batch([r['target_signal_slice'] for r in batch])
         frames, frames_lengths = pad_batch([r['frames_slice'] for r in batch])

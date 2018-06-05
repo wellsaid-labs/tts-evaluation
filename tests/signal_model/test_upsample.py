@@ -17,8 +17,8 @@ def test_conditional_features_upsample():
     upsample = ConditionalFeaturesUpsample(
         upsample_convs=upsample_convs,
         upsample_repeat=upsample_repeat,
-        local_features_size=channels,
-        block_hidden_size=block_hidden_size,
+        out_channels=block_hidden_size * 2,
+        in_channels=channels,
         num_layers=num_layers,
         upsample_chunks=5)
 

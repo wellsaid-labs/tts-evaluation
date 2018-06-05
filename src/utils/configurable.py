@@ -7,7 +7,6 @@ import logging
 import operator
 import pprint
 import sys
-import textwrap
 
 pretty_printer = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
@@ -42,60 +41,7 @@ class _KeyListDictionary(dict):
         return super().__contains__(key)
 
 
-class _ArgumentsList():
-    """ _ArgumentsList is a storage for multiple values for the same argument.
-
-    Objective:
-        * _ArgumentsList has a unique name; therefore, its easily distinguisible from a the argument
-          value ``list``.
-        * _ArgumentsList also stores a limited number of values; it's not interesting for analysis
-          to see more than 3 - 5 values for an argument.
-        * _ArgumentsList only stores the string representation of a value; to remove any pointers.
-    """
-
-    def __init__(self, *args):
-        super().__init__()
-        self.max_values = 3  # Maximum values ``_ArgumentsList`` will store
-        self.list = list(args)
-        self.list = [self.string(e) for e in self.list]
-
-    def append(self, value):
-        self.list.append(self.string(value))
-        if len(self.list) > self.max_values:
-            self.list = self.list[-self.max_values:]
-
-    def string(self, item):
-        try:
-            string = str(item)
-            return textwrap.shorten(string, width=75, placeholder="[…]")
-        except:
-            return '[_ArgumentsList: To String Error]'
-
-    def __str__(self):
-        if len(self.list) == 1:
-            return str(self.list[0])
-        return str(self.list)
-
-    def __repr__(self):
-        return str(self)
-
-
 _configuration = _KeyListDictionary()  # Global private configuration
-
-
-def _dict_update(dict_, update):
-    """ Recursive `dict` update.
-
-    Args:
-        dict_ (dict): dict onto which the merge is executed
-        update (callable): Update function to run
-    """
-    for key in dict_:
-        if isinstance(dict_[key], dict):
-            dict_[key] = _dict_update(dict_[key], update)
-        else:
-            dict_[key] = update(dict_[key])
-    return dict_
 
 
 def _dict_merge(dict_, merge_dict, overwrite=False):
@@ -107,8 +53,7 @@ def _dict_merge(dict_, merge_dict, overwrite=False):
     Args:
         dict_ (dict): dict onto which the merge is executed
         merge_dict (dict): dict merged into ``dict_``
-        overwrite (bool or lambda): If True, ``merge_dict`` may overwrite ``dict_`` values;
-            otherwise, original ``dict_`` values are kept.
+        overwrite (bool): If True, ``merge_dict`` may overwrite ``dict_`` values.
     """
     for key in merge_dict:
         if key in dict_ and isinstance(merge_dict[key], dict) and isinstance(dict_[key], dict):
@@ -116,8 +61,6 @@ def _dict_merge(dict_, merge_dict, overwrite=False):
         elif key in dict_:
             if isinstance(overwrite, bool) and overwrite:
                 dict_[key] = merge_dict[key]
-            elif callable(overwrite):
-                overwrite(dict_[key], merge_dict[key])
         elif key not in dict_:
             dict_[key] = merge_dict[key]
 
@@ -320,70 +263,6 @@ def add_config(dict_):
     _configuration = _KeyListDictionary(_configuration)
 
 
-_arguments = {}  # Store the arguments configurable modules are called with
-
-
-def _add_arguments(keys, parameters, args, kwargs):
-    """ Save the arguments (e.g. ``args`` and ``kwargs``) that a module at ``keys`` was called with.
-
-    Args:
-        keys (list of str): list of keys defining a module path
-        parameters (inspect.Parameter): module that accepts ``args`` and ``kwargs``
-        args (list of any): args accepted by ``func`` with ``parameters``
-        kwargs (dict of any): kwargs accepted by ``func`` with ``parameters``
-
-    Returns: None
-
-    Raises:
-        (TypeError): module names are formatted improperly
-        (TypeError): duplicate functions/modules/packages are defined
-
-    Example:
-        >>> # Module ``abc.abc`` was called with arguments ``{'to_print': 'xyz'}``.
-        >>> _add_arguments(['abc', 'abc'], {'to_print': 'xyz'})
-    """
-    global _arguments
-
-    named_args = kwargs.copy()
-
-    # Add ``args`` to ``named_args``.
-    for i, (arg, parameter) in enumerate(zip(list(args), parameters)):
-        if (parameter.kind == parameter.POSITIONAL_ONLY or
-                parameter.kind == parameter.POSITIONAL_OR_KEYWORD):
-            named_args[parameter.name] = arg
-        elif parameter.kind == parameter.VAR_POSITIONAL:
-            named_args[parameter.name] = args[i:]
-            break
-
-    def _to_dict(_keys, value):
-        if len(_keys) == 0:
-            return value
-        return {_keys[0]: _to_dict(_keys[1:], value)}
-
-    parsed = _to_dict(keys, named_args)
-    parsed = _dict_update(parsed, update=lambda x: _ArgumentsList(x))
-    _dict_merge(_arguments, parsed, overwrite=lambda org, new: org.append(new))
-    _arguments = _KeyListDictionary(_arguments)
-
-
-def log_arguments():
-    """ Log the parameters saved up to this point. """
-    # TODO: When logging arguments, only log the arguments that changed from config to practical
-    # TODO: Add a log to say if your overriding a config
-    logger.info('Paramters:\n%s', pretty_printer.pformat(_arguments))
-
-
-def clear_arguments():
-    """ Clear the global arguments """
-    global _arguments
-    _arguments = {}
-
-
-def _get_arguments():
-    """ For test purposes, we return ``_arguments``"""
-    return _arguments
-
-
 def log_config():
     """ Log the current global configuration. """
     logger.info('Global configuration:\n%s', pretty_printer.pformat(_configuration))
@@ -395,25 +274,26 @@ def clear_config():
     _configuration = _KeyListDictionary()
 
 
-def _merge_args(parameters, args, kwargs, other_kwargs):
+def _merge_args(parameters, args, kwargs, default_kwargs, print_name=''):
     """ Merge ``func`` ``args`` and ``kwargs`` with ``other_kwargs``
 
     The ``_merge_args`` prefers ``kwargs`` and ``args`` over ``other_kwargs``.
 
     Args:
         parameters (list of inspect.Parameter): module that accepts ``args`` and ``kwargs``
-        args (list of any): args accepted by ``func``
-        kwargs (dict of any): kwargs accepted by ``func``
-        other_kwargs (dict of any): more kwargs accepted by ``func`` to merge
+        args (list of any): Arguments accepted by ``func``.
+        kwargs (dict of any): Key-word arguments accepted by ``func``.
+        default_kwargs (dict of any): Default key-word arguments accepted by ``func`` to merge.
+        print_name (str, optional): Module name to print with warnings.
 
     Returns:
         (dict): kwargs merging ``args``, ``kwargs``, and ``other_kwargs``
     """
-    other_kwargs = other_kwargs.copy()
+    default_kwargs = default_kwargs.copy()
 
     # Delete ``other_kwargs`` that conflict with ``args``
     # Positional arguments must come before key word arguments
-    for i, _ in enumerate(args):
+    for i, arg in enumerate(args):
         if i >= len(parameters):
             raise TypeError("Too many arguments (%d > %d) passed." % (len(args), len(parameters)))
 
@@ -423,12 +303,23 @@ def _merge_args(parameters, args, kwargs, other_kwargs):
 
         if (parameters[i].kind == parameters[i].POSITIONAL_ONLY or
                 parameters[i].kind == parameters[i].POSITIONAL_OR_KEYWORD):
-            if parameters[i].name in other_kwargs:
-                del other_kwargs[parameters[i].name]
+            if parameters[i].name in default_kwargs:
+                value = default_kwargs[parameters[i].name]
+                # TODO: Test this, it's super sensative, if it does not work the code can silently
+                # fail.
+                if value != arg:
+                    logger.warn('Overwriting configured argument ``%s=%s`` in module %s with %s' %
+                                (parameters[i].name, value, print_name, arg))
+                del default_kwargs[parameters[i].name]
 
-    other_kwargs.update(kwargs)
+    for key, value in kwargs.items():
+        if key in default_kwargs and value != default_kwargs[key]:
+            logger.warn('Overwriting configured argument ``%s=%s`` in module %s with %s' %
+                        (key, default_kwargs[key], print_name, value))
 
-    return args, other_kwargs
+    default_kwargs.update(kwargs)
+
+    return args, default_kwargs
 
 
 def configurable(func):
@@ -461,8 +352,7 @@ def configurable(func):
             raise ValueError('%s config must be a dict of arguments', print_name)
 
         parameters = list(inspect.signature(func).parameters.values())
-        args, kwargs = _merge_args(parameters, args, kwargs, config)
-        _add_arguments(keys, parameters, args, kwargs)
+        args, kwargs = _merge_args(parameters, args, kwargs, config, print_name)
 
         return func(*args, **kwargs)
 
