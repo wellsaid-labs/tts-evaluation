@@ -38,6 +38,45 @@ def _as_int(x):
 
 
 @configurable
+def mu_law(signal, bins=256):
+    """ Mu-Law companding and quantize.
+
+    Method described in paper [1]_.
+    .. math::
+        f(x) = sign(x) \ln (1 + \mu |x|) / \ln (1 + \mu)
+
+    Reference:
+        * github/ibab's, a WaveNet author, mu-law pull requests:
+          https://github.com/ibab/tensorflow-wavenet/pulls?q=is%3Apr+mu+law+is%3Aclosed
+        * Mu-Law companding implementation:
+          https://github.com/r9y9/nnmnkwii/blob/e9f07a3b9dd52f0a5ccfc164ce0be04e13bba5e0/nnmnkwii/preprocessing/generic.py#L42
+
+    Args:
+        x (array-like): Input signal. Each value of input signal must be in
+          range of [-1, 1].
+        bin (number): The number of bins used to encode the signal.
+
+    Returns:
+        (array-like): Quantized signal (dtype=float) from [-1, 1]
+
+    .. [1] Brokish, Charles W., and Michele Lewis. "A-law and mu-law companding
+        implementations using the tms320c54x." SPRA163 (1997).
+    """
+    signal = _as_float(signal)
+    math_library = torch if torch.is_tensor(signal) else np
+
+    mu = bins - 1
+    mu = (
+        signal.new_tensor(mu) if torch.is_tensor(signal) else signal.dtype.type(mu)
+        if isinstance(signal, np.ndarray) else mu)
+
+    # Manual mu-law companding and mu-bits quantization
+    magnitude = math_library.log1p(mu * math_library.abs(signal)) / math_library.log1p(mu)
+    signal = math_library.sign(signal) * magnitude
+    return signal
+
+
+@configurable
 def mu_law_encode(signal, bins=256):
     """ Mu-Law companding and quantize.
 
@@ -53,17 +92,12 @@ def mu_law_encode(signal, bins=256):
     Returns:
         (array-like): Quantized signal (dtype=int)
     """
-    signal = _as_float(signal)
-    math_library = torch if torch.is_tensor(signal) else np
+    signal = mu_law(signal, bins=bins)
 
     mu = bins - 1
     mu = (
         signal.new_tensor(mu) if torch.is_tensor(signal) else signal.dtype.type(mu)
         if isinstance(signal, np.ndarray) else mu)
-
-    # Manual mu-law companding and mu-bits quantization
-    magnitude = math_library.log1p(mu * math_library.abs(signal)) / math_library.log1p(mu)
-    signal = math_library.sign(signal) * magnitude
 
     # Map signal from [-1, +1] to [0, mu-1]
     signal = (signal + 1) / 2 * mu + 0.5

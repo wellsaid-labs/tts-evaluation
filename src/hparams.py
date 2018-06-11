@@ -125,6 +125,7 @@ def set_hparams():
                 # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
                 'mu_law_encode.bins': signal_channels,
                 'mu_law_decode.bins': signal_channels,
+                'mu_law.bins': signal_channels,
                 'read_audio': {
                     'sample_rate': sample_rate
                 },

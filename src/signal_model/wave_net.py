@@ -11,6 +11,7 @@ from src.signal_model.residual_block import ResidualBlock
 from src.signal_model.upsample import ConditionalFeaturesUpsample
 from src.utils.configurable import configurable
 from src.audio import mu_law_decode
+from src.audio import mu_law
 
 logger = logging.getLogger(__name__)
 
@@ -140,9 +141,9 @@ class WaveNet(nn.Module):
 
         # Compute embedding current by the identity matrix through a conv
         # embedding_curr [self.signal_channels]
-        embedding_curr = torch.arange(self.signal_channels, dtype=dtype, device=device)
-        # ``self.embed`` is trained on unencoded values
-        embedding_curr = mu_law_decode(embedding_curr)
+        # NOTE: Iterate over the mu-law space
+        embedding_curr = torch.linspace(-1, 1, steps=self.signal_channels)
+        embedding_curr = embedding_curr.to(dtype=dtype, device=device)
         # [self.signal_channels] → [1, 1, self.signal_channels]
         embedding_curr = embedding_curr.view(1, 1, self.signal_channels)
         # [1, 1, self.signal_channels]  → [1, block_hidden_size, self.signal_channels]

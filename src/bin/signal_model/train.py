@@ -11,6 +11,7 @@ import torch
 
 from src.audio import mu_law_decode
 from src.audio import mu_law_encode
+from src.audio import mu_law
 from src.bin.signal_model._utils import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
@@ -292,6 +293,11 @@ class Trainer():  # pragma: no cover
             # NOTE: To evaluate, we introduce the same quantization noise that'd of been introduced
             # during inference
             batch['source_signals'] = mu_law_decode(mu_law_encode(batch['source_signals']))
+
+        # SOURCE (Wavenet):
+        # To make this more tractable, we first apply a µ-law companding transformation
+        # (ITU-T, 1988) to the data, and then quantize it to 256 possible values.
+        batch['source_signals'] = mu_law(batch['source_signals'])
 
         if self.is_data_parallel:
             predicted_signal = torch.nn.parallel.data_parallel(
