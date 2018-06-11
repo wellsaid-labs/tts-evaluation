@@ -104,7 +104,7 @@ def test_load_data():
 
 
 def test_set_hparams():
-    set_hparams()
+    set_hparams('WaveNet')
     model = WaveNet()
     optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()))
     assert optimizer.defaults['eps'] == 10**-8

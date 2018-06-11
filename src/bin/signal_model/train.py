@@ -345,7 +345,7 @@ def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
     logger.info('Using model %s', model)
 
     with ExperimentContextManager(label='signal_model', min_time=60 * 15) as context:
-        set_hparams()
+        set_hparams(model)
         log_config()
         checkpoint = load_checkpoint(checkpoint, context.device)
         train, dev = load_data()

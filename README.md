@@ -44,6 +44,7 @@ https://arxiv.org/pdf/1705.07704.pdf
 * sudo sh -c "ulimit -n 65536 && exec su $LOGNAME"
 * Consider Mean Normalization as suggested here: http://haythamfayek.com/2016/04/21/speech-processing-for-machine-learning.html similar to http://cs231n.github.io/neural-networks-2/ and https://www.google.com/search?q=mean+normalization+spectrogram&oq=mean+normalization+spectrogram&aqs=chrome..69i57.4190j0j1&sourceid=chrome&ie=UTF-8
 * INSTALL SOX
+* TODO: Map spectrogram with LJ Speech and save it
 
 ## Contributing
 

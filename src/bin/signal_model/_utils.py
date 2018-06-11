@@ -213,7 +213,7 @@ def load_data(source_train='data/signal_dataset/train',
     return SignalDataset(source_train, **kwargs), SignalDataset(source_dev, **kwargs)
 
 
-def set_hparams():
+def set_hparams(model):
     """ Set auxillary hyperparameters specific to the signal model. """
 
     add_config({
@@ -226,12 +226,21 @@ def set_hparams():
         # a batch size of 8, a learning rate of 10−3
         'torch.optim.adam.Adam.__init__': {
             'eps': 10**-8,
-            # NOTE: assuming a batch size of 16 with 24000 samples per element is around 384000
-            # samples while DeepVoice had a batch size of 8 with 19840  samples per element is
-            # around 158720 samples; Therefore, with a larger number of samples than DeepVoice,
-            # we increase our learning rate.
-            'lr': 2 * 10**-3,
+            'lr': 10**-3,
             'weight_decay': 0
+        },
+        'src.bin.signal_model._utils.SignalDataset.__init__': {
+            # SOURCE (Parallel WaveNet):
+            # minibatch size of 32 audio clips, each containing 7,680 timesteps
+            # (roughly 320ms).
+            # SOURCE (DeepVoice):
+            # We divide the utterances in our audio dataset into one second chunks with
+            # a quarter second of context for each chunk, padding each utterance with a
+            # quarter second of silence at the beginning. We filter out chunks that are
+            # predominantly silence and end up with 74,348 total chunks.
+            # NOTE: WaveRNN uses a smaller slice size to allow more RNNs to run in parallel;
+            # rather than less RNNs run slowely sequentially over long sequences.
+            'slice_size': 7200 if 'WaveRNN' else 24000,
         }
     })
 

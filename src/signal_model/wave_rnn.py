@@ -52,6 +52,7 @@ class WaveRNN(nn.Module):
         self.embed = torch.nn.Conv1d(in_channels=1, out_channels=conditional_size, kernel_size=1)
         torch.nn.init.xavier_uniform_(
             self.embed.weight, gain=torch.nn.init.calculate_gain('linear'))
+        # TODO: Replace Linear layers with Conv1D for speed
         self.out = nn.Sequential(
             nn.Linear(in_features=rnn_size, out_features=rnn_size),
             nn.ReLU(),

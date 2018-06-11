@@ -43,7 +43,14 @@ def test_lj_speech_dataset(mock_urlretrieve):
     mock_urlretrieve.side_effect = urlretrieve_side_effect
 
     # Check a row are parsed correctly
-    data = lj_speech_dataset(directory=lj_directory, verbalize=True, resample=None)
+    data = lj_speech_dataset(
+        directory=lj_directory,
+        verbalize=True,
+        resample=None,
+        norm=False,
+        guard=False,
+        lower_hertz=None,
+        upper_hertz=None)
     assert len(data) == 13100
     assert data[0]['text'] == (
         'Printing, in the only sense with which we are at present concerned, '

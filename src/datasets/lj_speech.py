@@ -21,7 +21,11 @@ def lj_speech_dataset(directory='data/',
                       audio_directory='wavs/',
                       verbalize=True,
                       resample=24000,
-                      total_rows=13100):
+                      total_rows=13100,
+                      norm=False,
+                      guard=True,
+                      lower_hertz=125,
+                      upper_hertz=7600):
     """
     Load the Linda Johnson (LJ) Speech dataset.
 
@@ -53,6 +57,10 @@ def lj_speech_dataset(directory='data/',
         resample (int or None, optional): If integer is provided, uses SoX to create resampled
             files.
         total_rows (int, optional): Integer number of rows to be used with tqdm.
+        norm (bool, optional): Normalize audio to 0 dBFS.
+        guard (bool, optional): Automatically invoke the gain effect to guard against clipping.
+        lower_hertz (int, optional): Apply a sinc kaiser-windowed high-pass.
+        upper_hertz (int, optional): Apply a sinc kaiser-windowed low-pass.
 
     Returns:
         :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
@@ -79,22 +87,21 @@ def lj_speech_dataset(directory='data/',
     with io.open(path, encoding='utf-8') as f:
         for line in tqdm(f, total=total_rows):
             line = line.strip()
-            wav_filename, text, _ = tuple(line.split('|'))
-            wav_full_path = os.path.join(directory, extracted_name, audio_directory,
-                                         wav_filename + '.wav')
-            wav_full_path = os.path.abspath(wav_full_path)
-            if resample is not None:
-                destination = wav_full_path.replace('.wav', '-%d.wav' % resample)
-                if not os.path.isfile(destination):
-                    os.system('sox %s --rate %d --guard %s ' % (wav_full_path, resample,
-                                                                destination))
-                wav_full_path = destination
-
+            wav, text, _ = tuple(line.split('|'))
+            wav = os.path.join(directory, extracted_name, audio_directory, wav + '.wav')
+            wav = os.path.abspath(wav)
+            wav = _process_audio(
+                wav,
+                resample=resample,
+                norm=norm,
+                guard=guard,
+                lower_hertz=lower_hertz,
+                upper_hertz=upper_hertz)
             text = _normalize_whitespace(text)
             text = _normalize_quotations(text)
 
             if verbalize:
-                text = _verbalize_special_cases(wav_filename, text)
+                text = _verbalize_special_cases(wav, text)
                 text = _expand_abbreviations(text)
                 text = _verbalize_time_of_day(text)
                 text = _verbalize_ordinals(text)
@@ -108,9 +115,39 @@ def lj_speech_dataset(directory='data/',
             # Messes up pound sign (£); therefore, this is after _verbalize_currency
             text = _remove_accents(text)
 
-            examples.append({'text': text, 'wav': wav_full_path})
+            examples.append({'text': text, 'wav': wav})
 
     return Dataset(examples)
+
+
+def _process_audio(wav, resample=24000, norm=True, guard=True, lower_hertz=125, upper_hertz=7600):
+    if resample is None and norm is False and guard is False:
+        return wav
+
+    lower_hertz = lower_hertz if lower_hertz is not None else ''
+    upper_hertz = upper_hertz if upper_hertz is not None else ''
+
+    destination = wav
+    if resample is not None:
+        destination = destination.replace('.wav', '-rate_%d.wav' % resample)
+    if norm:
+        destination = destination.replace('.wav', '-norm.wav')
+    if guard:
+        destination = destination.replace('.wav', '-guard.wav')
+    if lower_hertz or upper_hertz:
+        destination = destination.replace('.wav', '-sinc_%d_%d.wav' % (lower_hertz, upper_hertz))
+
+    if os.path.isfile(destination):
+        return destination
+
+    norm_flag = '--norm' if norm else ''
+    guard_flag = '--guard' if guard else ''
+    sinc_command = 'sinc %d-%d' % (lower_hertz, upper_hertz)
+    resample_command = 'rate %s' % (resample if resample is not None else '',)
+    commands = ' '.join([resample_command, sinc_command])
+    flags = ' '.join([norm_flag, guard_flag])
+    os.system('sox %s %s %s %s ' % (wav, flags, destination, commands))
+    return destination
 
 
 '''

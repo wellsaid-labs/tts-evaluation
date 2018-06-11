@@ -37,6 +37,8 @@
     "**/CVS": true,
     "**/.DS_Store": true,
     "*.pyc": true,
-    "**/__pycache__/**": true
+    "**/__pycache__/**": true,
+    "data/**/*.wav": true,
+    "**/*.pt": true
   }
 }

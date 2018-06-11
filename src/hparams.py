@@ -39,6 +39,7 @@ def set_hparams():
 
     # SOURCE (Tacotron 2):
     # 80 channel mel filterbank spanning
+    # TODO: Consider having more frame_channels due to the larger frequency range required
     frame_channels = 80
 
     # SOURCE (Tacotron 2):
@@ -75,6 +76,16 @@ def set_hparams():
         'min_magnitude': 0.01,
     }
 
+    # SOURCE (Tacotron 2):
+    # We transform the STFT magnitude to the mel scale using an 80 channel mel
+    # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
+    # compression.
+    # NOTE: Following running a SoX 7.6 kHz low-pass filter on a LJ dataset sample at 7.6 kHz,
+    # we found that her voice tends to use higher frequencies than 7.6 kHz. We bumped it up to 9.1
+    # kHz by looking at a melspectrogram of the sample.
+    lower_hertz = 125
+    upper_hertz = 9100
+
     # SOURCE (WaveNet):
     # where −1 < xt < 1 and µ = 255.
     signal_channels = 256  # NOTE: signal_channels = µ + 1
@@ -90,6 +101,12 @@ def set_hparams():
         'src': {
             'datasets.lj_speech.lj_speech_dataset': {
                 'resample': sample_rate,
+                'norm': False,
+                # NOTE: Guard to reduce clipping during resampling
+                'guard': True,
+                # NOTE: Highpass and lowpass filter to ensure Wav is consistent with Spectrogram.
+                'lower_hertz': lower_hertz,
+                'upper_hertz': upper_hertz,
             },
             'lr_schedulers.DelayedExponentialLR.__init__': {
                 # SOURCE (Tacotron 2):
@@ -135,8 +152,8 @@ def set_hparams():
                     # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
                     # compression.
                     'num_mel_bins': frame_channels,
-                    'lower_hertz': 125,
-                    'upper_hertz': 7600,
+                    'lower_hertz': lower_hertz,
+                    'upper_hertz': upper_hertz,
                 }
             },
             'feature_model': {
@@ -289,20 +306,7 @@ def set_hparams():
                 }
             },
             'bin': {
-                'signal_model': {
-                    '_utils.SignalDataset.__init__': {
-                        # SOURCE (Parallel WaveNet):
-                        # minibatch size of 32 audio clips, each containing 7,680 timesteps
-                        # (roughly 320ms).
-                        # SOURCE (DeepVoice):
-                        # We divide the utterances in our audio dataset into one second chunks with
-                        # a quarter second of context for each chunk, padding each utterance with a
-                        # quarter second of silence at the beginning. We filter out chunks that are
-                        # predominantly silence and end up with 74,348 total chunks.
-                        'slice_size': 7200,  # TODO: Change back to 24000 for WaveNet
-                    },
-                    'train.Trainer.__init__.sample_rate': sample_rate,
-                },
+                'signal_model.train.Trainer.__init__.sample_rate': sample_rate,
                 'feature_model._utils.load_data.sample_rate': sample_rate,
             },
             'utils.utils.plot_waveform.sample_rate': sample_rate,
