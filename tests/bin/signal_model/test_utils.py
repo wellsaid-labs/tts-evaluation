@@ -6,6 +6,8 @@ import torch
 from src.optimizer import Optimizer
 
 from src.audio import mu_law_encode
+from src.audio import mu_law
+from src.audio import mu_law_decode
 from src.bin.signal_model._utils import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
@@ -32,9 +34,8 @@ def test_signal_dataset_preprocess(randint_mock):
     assert preprocessed['signal'].shape == signal.shape
     assert preprocessed['source_signal_slice'].shape == (slice_size + receptive_field_size,)
     assert preprocessed['target_signal_slice'].shape == (slice_size,)
-    np.testing.assert_allclose(
-        mu_law_encode(preprocessed['source_signal_slice'][receptive_field_size + 1:]),
-        preprocessed['target_signal_slice'][:-1])
+    np.testing.assert_allclose(preprocessed['source_signal_slice'][receptive_field_size + 1:],
+                               mu_law(mu_law_decode(preprocessed['target_signal_slice'][:-1])))
     assert preprocessed['frames_slice'].shape == ((
         slice_size + receptive_field_size) / samples_per_frame, spectrogram_channels)
 
@@ -55,9 +56,8 @@ def test_signal_dataset_preprocess_pad(randint_mock):
     assert preprocessed['signal'].shape == signal.shape
     assert preprocessed['source_signal_slice'].shape == (slice_size + receptive_field_size,)
     assert preprocessed['target_signal_slice'].shape == (slice_size,)
-    np.testing.assert_allclose(
-        mu_law_encode(preprocessed['source_signal_slice'][receptive_field_size + 1:]),
-        preprocessed['target_signal_slice'][:-1])
+    np.testing.assert_allclose(preprocessed['source_signal_slice'][receptive_field_size + 1:],
+                               mu_law(mu_law_decode(preprocessed['target_signal_slice'][:-1])))
     assert preprocessed['frames_slice'].shape == ((
         slice_size + receptive_field_size) / samples_per_frame, spectrogram_channels)
 
@@ -80,9 +80,8 @@ def test_signal_dataset_preprocess_receptive_field_size_rounding(randint_mock):
     assert preprocessed['source_signal_slice'].shape == (slice_size + receptive_field_size_rounded,)
     assert preprocessed['target_signal_slice'].shape == (slice_size,)
     np.testing.assert_allclose(
-        mu_law_encode(preprocessed['source_signal_slice'][
-            -preprocessed['target_signal_slice'].shape[0] + 1:]),
-        preprocessed['target_signal_slice'][:-1])
+        preprocessed['source_signal_slice'][-preprocessed['target_signal_slice'].shape[0] + 1:],
+        mu_law(mu_law_decode(preprocessed['target_signal_slice'][:-1])))
     assert preprocessed['frames_slice'].shape == ((
         slice_size + receptive_field_size_rounded) / samples_per_frame, spectrogram_channels)
     assert preprocessed['frames_slice'][0:1].sum() == 0
@@ -114,6 +113,7 @@ def test_data_iterator():
     with ExperimentContextManager(label='test_data_iterator') as context:
         source_signal_slice = torch.FloatTensor(100,)
         target_signal_slice = mu_law_encode(source_signal_slice)[1:]
+        source_signal_slice = mu_law(mu_law_decode(mu_law_encode(source_signal_slice)))
         source_signal_slice = source_signal_slice[:-1]
         dataset = [{
             'source_signal_slice': source_signal_slice,

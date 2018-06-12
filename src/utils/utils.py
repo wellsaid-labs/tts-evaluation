@@ -134,43 +134,68 @@ def spectrogram_to_image(spectrogram):
 
 
 @configurable
-def plot_waveform(signal, sample_rate=24000):
+def plot_waveform(signal, sample_rate=24000, plot_to_numpy=True):
     """ Save image of spectrogram to disk.
 
     Args:
         signal (Tensor [signal_length]): Signal to plot.
         sample_rate (int): Sample rate of the associated wave.
-
-    Returns:
-        image (np.array [width, height, 3]): Spectrogram image.
-    """
-    figure = pyplot.figure()
-    librosa.display.waveplot(signal, sr=sample_rate)
-    pyplot.ylabel('Energy')
-    pyplot.xlabel('Time')
-    pyplot.ylim(-1, 1)
-    pyplot.close()
-    return figure_to_numpy_array(figure)
-
-
-def plot_spectrogram(spectrogram):
-    """ Save image of spectrogram to disk.
-
-    Args:
-        spectrogram (Tensor): A ``[frames, num_mel_bins]`` ``Tensor`` of ``complex64`` STFT
-            values.
+        plot_to_numpy (bool, optional): If ``True``, return as a numpy array; otherwise, ``None``
+            is returned.
 
     Returns:
         image (np.array [width, height, 3]): Spectrogram image.
     """
     pyplot.style.use('ggplot')
     figure = pyplot.figure()
-    pyplot.imshow(np.rot90(spectrogram))
-    pyplot.colorbar(orientation='horizontal')
-    pyplot.ylabel('Mel-Channels')
-    pyplot.xlabel('Frames')
-    pyplot.close(figure)
-    return figure_to_numpy_array(figure)
+    librosa.display.waveplot(signal, sr=sample_rate)
+    pyplot.ylabel('Energy')
+    pyplot.xlabel('Time')
+    pyplot.ylim(-1, 1)
+    if plot_to_numpy:
+        pyplot.close()
+        return figure_to_numpy_array(figure)
+
+
+@configurable
+def plot_log_mel_spectrogram(log_mel_spectrogram,
+                             sample_rate=24000,
+                             frame_hop=300,
+                             lower_hertz=125,
+                             upper_hertz=7600,
+                             plot_to_numpy=True):
+    """ Get image of log mel spectrogram.
+
+    Args:
+        log_mel_spectrogram (torch.FloatTensor [frames, num_mel_bins])
+        plot_to_numpy (bool, optional): If ``True``, return as a numpy array; otherwise, ``None``
+            is returned.
+
+    Returns:
+        image (np.array [width, height, 3]): Spectrogram image.
+    """
+    aspect = log_mel_spectrogram.shape[0] / log_mel_spectrogram.shape[1]
+    figure = pyplot.figure(figsize=(2 * aspect, 2))
+    pyplot.style.use('ggplot')
+    if torch.is_tensor(log_mel_spectrogram):
+        log_mel_spectrogram = log_mel_spectrogram.numpy()
+    log_mel_spectrogram = log_mel_spectrogram.transpose()
+    mel_spectrogram = np.exp(log_mel_spectrogram)
+    librosa.display.specshow(
+        librosa.power_to_db(mel_spectrogram, ref=np.max),
+        hop_length=frame_hop,
+        sr=sample_rate,
+        fmin=lower_hertz,
+        fmax=upper_hertz,
+        cmap='viridis',
+        y_axis='mel',
+        x_axis='time',
+    )
+    pyplot.title('Mel spectrogram')
+    pyplot.colorbar(format='%+2.0f dB')
+    if plot_to_numpy:
+        pyplot.close(figure)
+        return figure_to_numpy_array(figure)
 
 
 def torch_load(path, device=torch.device('cpu')):

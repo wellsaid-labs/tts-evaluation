@@ -22,10 +22,11 @@ def lj_speech_dataset(directory='data/',
                       verbalize=True,
                       resample=24000,
                       total_rows=13100,
-                      norm=False,
+                      norm=True,
                       guard=True,
                       lower_hertz=125,
-                      upper_hertz=7600):
+                      upper_hertz=7600,
+                      loudness=False):
     """
     Load the Linda Johnson (LJ) Speech dataset.
 
@@ -57,10 +58,13 @@ def lj_speech_dataset(directory='data/',
         resample (int or None, optional): If integer is provided, uses SoX to create resampled
             files.
         total_rows (int, optional): Integer number of rows to be used with tqdm.
-        norm (bool, optional): Normalize audio to 0 dBFS.
+        norm (bool, optional): Automatically invoke the gain effect to guard against clipping and to
+            normalise the audio.
         guard (bool, optional): Automatically invoke the gain effect to guard against clipping.
         lower_hertz (int, optional): Apply a sinc kaiser-windowed high-pass.
         upper_hertz (int, optional): Apply a sinc kaiser-windowed low-pass.
+        loudness (bool, optioanl): Normalize the subjective perception of loudness level based on
+            ISO 226.
 
     Returns:
         :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
@@ -96,7 +100,8 @@ def lj_speech_dataset(directory='data/',
                 norm=norm,
                 guard=guard,
                 lower_hertz=lower_hertz,
-                upper_hertz=upper_hertz)
+                upper_hertz=upper_hertz,
+                loudness=loudness)
             text = _normalize_whitespace(text)
             text = _normalize_quotations(text)
 
@@ -120,33 +125,45 @@ def lj_speech_dataset(directory='data/',
     return Dataset(examples)
 
 
-def _process_audio(wav, resample=24000, norm=True, guard=True, lower_hertz=125, upper_hertz=7600):
-    if resample is None and norm is False and guard is False:
-        return wav
-
-    lower_hertz = lower_hertz if lower_hertz is not None else ''
-    upper_hertz = upper_hertz if upper_hertz is not None else ''
+def _process_audio(wav,
+                   resample=24000,
+                   norm=True,
+                   guard=True,
+                   lower_hertz=125,
+                   upper_hertz=7600,
+                   loudness=False):
+    lower_hertz = str(lower_hertz) if lower_hertz is not None else ''
+    upper_hertz = str(upper_hertz) if upper_hertz is not None else ''
 
     destination = wav
     if resample is not None:
         destination = destination.replace('.wav', '-rate_%d.wav' % resample)
     if norm:
         destination = destination.replace('.wav', '-norm.wav')
+    if loudness:
+        destination = destination.replace('.wav', '-loudness.wav')
     if guard:
         destination = destination.replace('.wav', '-guard.wav')
     if lower_hertz or upper_hertz:
-        destination = destination.replace('.wav', '-sinc_%d_%d.wav' % (lower_hertz, upper_hertz))
+        destination = destination.replace('.wav', '-sinc_%s_%s.wav' % (lower_hertz, upper_hertz))
 
-    if os.path.isfile(destination):
+    if wav == destination or os.path.isfile(destination):
         return destination
 
+    # TODO: Add tests for all these parameters to ensure a sox command is sent
     norm_flag = '--norm' if norm else ''
     guard_flag = '--guard' if guard else ''
-    sinc_command = 'sinc %d-%d' % (lower_hertz, upper_hertz)
+    sinc_command = 'sinc %s-%s' % (lower_hertz, upper_hertz)
+    loudness_command = 'loudness' if loudness else ''
     resample_command = 'rate %s' % (resample if resample is not None else '',)
-    commands = ' '.join([resample_command, sinc_command])
+    commands = ' '.join([resample_command, sinc_command, loudness_command])
     flags = ' '.join([norm_flag, guard_flag])
-    os.system('sox %s %s %s %s ' % (wav, flags, destination, commands))
+    command = 'sox %s %s %s %s ' % (wav, flags, destination, commands)
+
+    os.system(command)
+
+    assert os.path.isfile(destination)
+
     return destination
 
 

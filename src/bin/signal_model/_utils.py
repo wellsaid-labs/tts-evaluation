@@ -11,6 +11,8 @@ from torch import nn
 import torch
 import numpy as np
 
+from src.audio import mu_law
+from src.audio import mu_law_decode
 from src.audio import mu_law_encode
 from src.utils import ROOT_PATH
 from src.utils import torch_load
@@ -129,6 +131,16 @@ class SignalDataset(data.Dataset):
 
             context_sample_pad = context_frame_pad * samples_per_frame
             source_signal_slice = nn.functional.pad(source_signal_slice, (context_sample_pad, 0))
+
+        # NOTE: We introduce the same quantization noise that'd of been introduced
+        # during inference; ignoring the advise of WaveNet authors:
+        # https://github.com/ibab/tensorflow-wavenet/issues/47#issuecomment-249080343
+        source_signal_slice = mu_law_decode(mu_law_encode(source_signal_slice))
+
+        # SOURCE (Wavenet):
+        # To make this more tractable, we first apply a µ-law companding transformation
+        # (ITU-T, 1988) to the data, and then quantize it to 256 possible values.
+        source_signal_slice = mu_law(source_signal_slice)
 
         return {
             self.log_mel_spectrogram_prefix: log_mel_spectrogram,  # [num_frames, channels]
@@ -285,9 +297,8 @@ class DataIterator(object):
         # Test that source signal is one timestep behind target signal
         for row in batch:
             assert torch.equal(
-                mu_law_encode(
-                    row['source_signal_slice'][(-row['target_signal_slice'].shape[0] + 1):]),
-                row['target_signal_slice'][:-1])
+                row['source_signal_slice'][(-row['target_signal_slice'].shape[0] + 1):],
+                mu_law(mu_law_decode(row['target_signal_slice'][:-1])))
 
         source_signals, source_signal_lengths = pad_batch([r['source_signal_slice'] for r in batch])
         target_signals, target_signal_lengths = pad_batch([r['target_signal_slice'] for r in batch])

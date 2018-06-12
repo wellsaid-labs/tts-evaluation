@@ -22,7 +22,7 @@ from src.optimizer import Optimizer
 from src.utils import get_total_parameters
 from src.utils import plot_attention
 from src.utils import plot_stop_token
-from src.utils import spectrogram_to_image
+from src.utils import plot_log_mel_spectrogram
 from src.utils.configurable import log_config
 from src.utils.experiment_context_manager import ExperimentContextManager
 
@@ -286,9 +286,9 @@ class Trainer():  # pragma: no cover
             item = random.randint(0, batch_size - 1)
             length = gold_frame_lengths[item]
             self._add_image(['spectrogram', 'predicted'], predicted_post_frames[:length, item],
-                            spectrogram_to_image, self.step)
+                            plot_log_mel_spectrogram, self.step)
             self._add_image(['spectrogram', 'gold'], gold_frames[:length, item],
-                            spectrogram_to_image, self.step)
+                            plot_log_mel_spectrogram, self.step)
             self._add_image(['alignment', 'predicted'], predicted_alignments[:length, item],
                             plot_attention, self.step)
             self._add_image(['stop_token', 'predicted'], predicted_stop_tokens[:length, item],

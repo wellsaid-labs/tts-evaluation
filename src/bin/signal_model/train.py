@@ -10,8 +10,6 @@ from tqdm import tqdm
 import torch
 
 from src.audio import mu_law_decode
-from src.audio import mu_law_encode
-from src.audio import mu_law
 from src.bin.signal_model._utils import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
@@ -21,7 +19,7 @@ from src.optimizer import Optimizer
 from src import signal_model
 from src.utils import get_total_parameters
 from src.utils import plot_waveform
-from src.utils import spectrogram_to_image
+from src.utils import plot_log_mel_spectrogram
 from src.utils.configurable import configurable
 from src.utils.configurable import log_config
 from src.utils.experiment_context_manager import ExperimentContextManager
@@ -76,9 +74,8 @@ class Trainer():  # pragma: no cover
             self.is_data_parallel = True
 
         if model_state_dict is not None:
-            self.model.load_state_dict(
-                {key.replace('module.', ''): value
-                 for key, value in model_state_dict.items()})
+            # TODO: Remove load_state_dict
+            self.model.load_state_dict(model_state_dict)
 
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else Optimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
@@ -246,7 +243,7 @@ class Trainer():  # pragma: no cover
         self._add_audio(['full', 'prediction'], ['full', 'prediction_waveform'],
                         mu_law_decode(infered_signal), self.step)
         self._add_audio(['full', 'gold'], ['full', 'gold_waveform'], gold_signal, self.step)
-        self._add_image(['full', 'spectrogram'], spectrogram, spectrogram_to_image, self.step)
+        self._add_image(['full', 'spectrogram'], spectrogram, plot_log_mel_spectrogram, self.step)
 
     def _compute_loss(self, gold_signal, gold_signal_lengths, predicted_signal):
         """ Compute the losses for Tacotron.
@@ -285,19 +282,6 @@ class Trainer():  # pragma: no cover
         # Set mode
         torch.set_grad_enabled(train)
         self.model.train(mode=train)
-
-        # NOTE: For training we do not used the quanitized signal, to match WaveNet authors
-        # implementation:
-        # https://github.com/ibab/tensorflow-wavenet/issues/47#issuecomment-249080343
-        if not train:
-            # NOTE: To evaluate, we introduce the same quantization noise that'd of been introduced
-            # during inference
-            batch['source_signals'] = mu_law_decode(mu_law_encode(batch['source_signals']))
-
-        # SOURCE (Wavenet):
-        # To make this more tractable, we first apply a µ-law companding transformation
-        # (ITU-T, 1988) to the data, and then quantize it to 256 possible values.
-        batch['source_signals'] = mu_law(batch['source_signals'])
 
         if self.is_data_parallel:
             predicted_signal = torch.nn.parallel.data_parallel(

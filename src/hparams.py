@@ -2,6 +2,7 @@ from torch import nn
 
 import torch
 import librosa
+import IPython
 
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
@@ -14,7 +15,6 @@ def set_hparams():
     torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
     nn.modules.batchnorm._BatchNorm.__init__ = configurable(
         nn.modules.batchnorm._BatchNorm.__init__)
-    librosa.effects.trim = configurable(librosa.effects.trim)
     add_config({
         # NOTE: `momentum=0.01` to match Tensorflow defaults
         'torch.nn.modules.batchnorm._BatchNorm.__init__': {
@@ -90,6 +90,9 @@ def set_hparams():
     # where −1 < xt < 1 and µ = 255.
     signal_channels = 256  # NOTE: signal_channels = µ + 1
 
+    librosa.effects.trim = configurable(librosa.effects.trim)
+    IPython.display.Audio.__init__ = configurable(IPython.display.Audio.__init__)
+
     add_config({
         'librosa.effects.trim': {
             'frame_length': get_log_mel_spectrogram['frame_size'],
@@ -98,10 +101,16 @@ def set_hparams():
             # ``notebooks/Stripping Silence.ipynb``
             'top_db': 50
         },
+        'IPython.lib.display.Audio.__init__.rate': sample_rate,
         'src': {
             'datasets.lj_speech.lj_speech_dataset': {
                 'resample': sample_rate,
-                'norm': False,
+                # NOTE: ``Signal Loudness Distribution`` notebook shows that LJ Speech is biased
+                # concerning the loudness and ``norm=True`` unbiases this. In addition, norm
+                # also helps smooth out the distribution in notebook ``Signal Energy Distribution``.
+                # While, ``loudness=True`` does not help.
+                'norm': True,
+                'loudness': False,
                 # NOTE: Guard to reduce clipping during resampling
                 'guard': True,
                 # NOTE: Highpass and lowpass filter to ensure Wav is consistent with Spectrogram.
@@ -126,9 +135,7 @@ def set_hparams():
                 'mu_law_encode.bins': signal_channels,
                 'mu_law_decode.bins': signal_channels,
                 'mu_law.bins': signal_channels,
-                'read_audio': {
-                    'sample_rate': sample_rate
-                },
+                'read_audio.sample_rate': sample_rate,
                 'get_log_mel_spectrogram': get_log_mel_spectrogram,
                 'griffin_lim': {
                     'frame_size': get_log_mel_spectrogram['frame_size'],
@@ -310,6 +317,14 @@ def set_hparams():
                 'signal_model.train.Trainer.__init__.sample_rate': sample_rate,
                 'feature_model._utils.load_data.sample_rate': sample_rate,
             },
-            'utils.utils.plot_waveform.sample_rate': sample_rate,
+            'utils.utils': {
+                'plot_waveform.sample_rate': sample_rate,
+                'plot_log_mel_spectrogram': {
+                    'sample_rate': sample_rate,
+                    'frame_hop': get_log_mel_spectrogram['frame_hop'],
+                    'lower_hertz': lower_hertz,
+                    'upper_hertz': upper_hertz,
+                }
+            }
         }
     })

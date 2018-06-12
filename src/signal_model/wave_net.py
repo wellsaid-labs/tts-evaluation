@@ -1,4 +1,5 @@
 import sys
+# TODO: Make this an absolute path based on file location
 sys.path.insert(0, 'third_party/nv-wavenet/pytorch')
 
 import logging
@@ -10,8 +11,6 @@ import torch
 from src.signal_model.residual_block import ResidualBlock
 from src.signal_model.upsample import ConditionalFeaturesUpsample
 from src.utils.configurable import configurable
-from src.audio import mu_law_decode
-from src.audio import mu_law
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +20,7 @@ def get_receptive_field_size(layers):
 
     Args:
         layers (ResidualBlock): Layers of residual blocks used for Wavenet.
-
+s
     Returns:
         receptive_field_size (int): Receptive field size in samples.
     """
@@ -131,6 +130,9 @@ class WaveNet(nn.Module):
         Returns:
             kernel (NVWaveNet): NVIDIA optimize wavenet CUDA kernel.
         """
+        # TODO: Try to go back to embeddings or 2d blocks, that might make it better
+        # TODO: Look at the differences between the 5/31 and the 6/03 model the 5/31 performed
+        # better...
         import nv_wavenet
 
         logger.info('Exporting signal model...')
@@ -142,7 +144,7 @@ class WaveNet(nn.Module):
         # Compute embedding current by the identity matrix through a conv
         # embedding_curr [self.signal_channels]
         # NOTE: Iterate over the mu-law space
-        embedding_curr = torch.linspace(-1, 1, steps=self.signal_channels)
+        embedding_curr = torch.linspace(-1.0, 1.0, steps=self.signal_channels)
         embedding_curr = embedding_curr.to(dtype=dtype, device=device)
         # [self.signal_channels] → [1, 1, self.signal_channels]
         embedding_curr = embedding_curr.view(1, 1, self.signal_channels)
@@ -216,6 +218,8 @@ class WaveNet(nn.Module):
             conditional_features = conditional_features.permute(2, 0, 1, 3).detach()
             implementation = (nv_wavenet.Impl.AUTO if implementation is None else implementation)
             return self.kernel.infer(cond_input=conditional_features, implementation=implementation)
+
+        assert torch.min(gold_signal) >= -1 and torch.max(gold_signal) <= 1
 
         # [batch_size, signal_length] → [batch_size, 1, signal_length]
         gold_signal = gold_signal.float().unsqueeze(1)

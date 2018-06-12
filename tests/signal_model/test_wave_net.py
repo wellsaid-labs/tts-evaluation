@@ -14,7 +14,7 @@ def test_wave_net():
     signal_length = local_length * upsample_convs[0] * upsample_convs[1] * upsample_repeat
 
     local_features = torch.FloatTensor(batch_size, local_length, local_features_size)
-    signal = torch.randint(0, signal_channels, (batch_size, signal_length), dtype=torch.long)
+    signal = torch.rand(batch_size, signal_length)
 
     net = WaveNet(
         num_layers=3,

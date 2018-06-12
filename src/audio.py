@@ -406,3 +406,6 @@ def griffin_lim(log_mel_spectrogram,
 
     waveform = np.real(waveform)
     librosa.output.write_wav(filename, waveform, sr=sample_rate)
+
+    # TODO: Compare the output of audio and the tensorflow audio
+    # TODO: Walk through my codebase and my commits to ensure that everything is wrapped up

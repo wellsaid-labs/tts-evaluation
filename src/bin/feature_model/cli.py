@@ -13,7 +13,7 @@ from src.bin.feature_model._utils import set_hparams as set_feature_model_auxili
 from src.hparams import set_hparams
 from src.utils import get_total_parameters
 from src.utils import plot_attention
-from src.utils import plot_spectrogram
+from src.utils import plot_log_mel_spectrogram
 from src.utils import plot_stop_token
 
 
@@ -45,9 +45,9 @@ def main(checkpoint):  # pragma: no cover
              text, max_recursion=10000)
 
         logger.info('Plotting graphs...')
-        plot_spectrogram(predicted_post_frames[:, 0]).savefig(
+        plot_log_mel_spectrogram(predicted_post_frames[:, 0]).savefig(
             os.path.join(directory, 'predicted_post_spectrogram.png'))
-        plot_spectrogram(predicted_pre_frames[:, 0]).savefig(
+        plot_log_mel_spectrogram(predicted_pre_frames[:, 0]).savefig(
             os.path.join(directory, 'predicted_pre_spectrogram.png'))
         plot_attention(predicted_alignments[:, 0]).savefig(
             os.path.join(directory, 'predicted_aligments.png'))

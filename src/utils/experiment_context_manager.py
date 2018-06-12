@@ -149,10 +149,6 @@ class ExperimentContextManager(object):
         # Fix a circular reference chain
         from src.hparams import set_hparams
 
-        # LEARN MORE:
-        # https://stackoverflow.com/questions/42270739/how-do-i-resolve-these-tensorflow-warnings
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
         # Create a local directory to store logs, checkpoints, etc..
         self._new_experiment_directory()
 

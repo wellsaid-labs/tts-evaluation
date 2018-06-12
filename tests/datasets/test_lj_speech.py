@@ -47,10 +47,11 @@ def test_lj_speech_dataset(mock_urlretrieve):
         directory=lj_directory,
         verbalize=True,
         resample=None,
-        norm=False,
+        norm=None,
         guard=False,
         lower_hertz=None,
-        upper_hertz=None)
+        upper_hertz=None,
+        loudness=False)
     assert len(data) == 13100
     assert data[0]['text'] == (
         'Printing, in the only sense with which we are at present concerned, '

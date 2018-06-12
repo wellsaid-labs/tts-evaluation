@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from src.utils import figure_to_numpy_array
 from src.utils import get_total_parameters
 from src.utils import plot_attention
-from src.utils import plot_spectrogram
+from src.utils import plot_log_mel_spectrogram
 from src.utils import plot_stop_token
 from src.utils import plot_waveform
 from src.utils import ROOT_PATH
@@ -56,9 +56,9 @@ def test_split_dataset():
     assert split_dataset(dataset, splits) == [[1, 2, 3], [4], [5]]
 
 
-def test_plot_spectrogram():
+def test_plot_log_mel_spectrogram():
     arr = np.random.rand(5, 6)
-    figure = plot_spectrogram(arr)
+    figure = plot_log_mel_spectrogram(arr)
     assert isinstance(figure, np.ndarray)
 
 

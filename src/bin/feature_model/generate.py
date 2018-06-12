@@ -48,7 +48,7 @@ def main(checkpoint,
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     checkpoint = load_checkpoint(checkpoint, device)
     text_encoder = None if checkpoint is None else checkpoint['text_encoder']
-    model = checkpoint['model'].to(device)
+    model = checkpoint['model']
     train, dev, text_encoder = load_data(
         text_encoder=text_encoder, load_signal=True, use_multiprocessing=use_multiprocessing)
 
@@ -97,9 +97,6 @@ def main(checkpoint,
 
 
 if __name__ == '__main__':  # pragma: no cover
-    # LEARN MORE:
-    # https://stackoverflow.com/questions/42270739/how-do-i-resolve-these-tensorflow-warnings
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c", "--checkpoint", type=str, default=None, help="load a checkpoint", required=True)
