@@ -1,6 +1,7 @@
 import pytest
 import _pytest
 import inspect
+import mock
 
 from src.utils.configurable import _check_configuration
 from src.utils.configurable import _merge_args
@@ -58,7 +59,7 @@ def mock_configurable_limited_args(arg, **kwargs):
     return kwargs
 
 
-def mock(**kwargs):
+def mock_without_configurable(**kwargs):
     # Mock function without configurable
     return kwargs
 
@@ -66,7 +67,7 @@ def mock(**kwargs):
 def test_mock_attributes():
     # Test the attributes mock is give, if it's ``@configurable``
     assert hasattr(mock_configurable, '_configurable')
-    assert not hasattr(mock, '_configurable')
+    assert not hasattr(mock_without_configurable, '_configurable')
 
 
 _pytest.python_api.approx = configurable(_pytest.python_api.approx)
@@ -92,7 +93,6 @@ def test_mock_configurable_limited_args():
 
 
 def test_check_configuration_external_libraries():
-    # TODO: Rewrite test to not rely on internal components of _pytest
     # Test that check configuration can check ``configurable`` on external libraries
     _check_configuration({'_pytest': {'python_api': {'approx': {'rel': None}}}})
 
@@ -172,30 +172,36 @@ def test_add_config_and_arguments():
     assert mock_configurable() == {}
 
 
-def test_merge_arg_kwarg():
+@mock.patch('src.utils.configurable.logger')
+def test_merge_arg_kwarg(logger_mock):
     arg_kwarg = lambda a, b='abc': (a, b)
     parameters = list(inspect.signature(arg_kwarg).parameters.values())
 
     # Prefer ``args`` over ``other_kwargs``
     merged = _merge_args(parameters, ['a', 'abc'], {}, {'b': 'xyz'})
     assert merged == (['a', 'abc'], {})
+    logger_mock.warn.assert_called_once()
+    logger_mock.reset_mock()
 
     # Prefer ``kwargs`` over ``other_kwargs``
     merged = _merge_args(parameters, ['a'], {'b': 'abc'}, {'b': 'xyz'})
     assert merged == (['a'], {'b': 'abc'})
+    logger_mock.warn.assert_called_once()
+    logger_mock.reset_mock()
 
     # Prefer ``other_kwargs`` over default argument
     merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz'})
     assert merged == (['a'], {'b': 'xyz'})
+    logger_mock.warn.assert_not_called()
 
 
-def test_merge_arg_variable():
+@mock.patch('src.utils.configurable.logger')
+def test_merge_arg_variable(logger_mock):
     """
     For arguments, order matters; therefore, unless we are able to abstract everything into a
     key word argument, we have to keep the ``args`` the same.
 
     The case where we are unable to shift everything to ``args`` is when there exists a ``*args``.
-    Because some
 
     For example (a, b) cannot be flipped with kwarg:
     >>> arg_kwarg = lambda a, b='abc': (a, b)
@@ -210,13 +216,18 @@ def test_merge_arg_variable():
     # Handling of variable ``*args``
     merged = _merge_args(parameters, ['a', 'b', 'c'], {}, {'b': 'xyz'})
     assert merged == (['a', 'b', 'c'], {'b': 'xyz'})
+    logger_mock.warn.assert_not_called()
+    logger_mock.reset_mock()
 
     # Handling of variable ``*args``
     merged = _merge_args(parameters, ['a', 'b', 'c'], {}, {'a': 'xyz'})
     assert merged == (['a', 'b', 'c'], {})
+    logger_mock.warn.assert_called_once()
+    logger_mock.reset_mock()
 
 
-def test_merge_kwarg_variable():
+@mock.patch('src.utils.configurable.logger')
+def test_merge_kwarg_variable(logger_mock):
     """
     If there exists a ``**kwargs``, then
     """
@@ -226,11 +237,17 @@ def test_merge_kwarg_variable():
     # Handling of variable ``**kwargs``
     merged = _merge_args(parameters, ['a', 'b'], {}, {'b': 'xyz'})
     assert merged == (['a', 'b'], {})
+    logger_mock.warn.assert_called_once()
+    logger_mock.reset_mock()
 
     # Handling of variable ``**kwargs``
     merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz'})
     assert merged == (['a'], {'b': 'xyz'})
+    logger_mock.warn.assert_not_called()
+    logger_mock.reset_mock()
 
     # Handling of variable ``**kwargs``
     merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz', 'c': 'abc'})
     assert merged == (['a'], {'b': 'xyz', 'c': 'abc'})
+    logger_mock.warn.assert_not_called()
+    logger_mock.reset_mock()

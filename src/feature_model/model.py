@@ -127,7 +127,6 @@ class SpectrogramModel(nn.Module):
             while len(stopped) != batch_size and len(frames_with_residual) < max_recursion:
                 frame, frame_with_residual, stop_token, hidden_state, alignment = self.decoder(
                     encoded_tokens, tokens_mask, hidden_state=hidden_state)
-                # TODO: Do something like ``output.data <= 0.5.all()`` instead of a ``set()``.
                 stopped.update(self._get_stopped_indexes(stop_token))
 
                 # Store results

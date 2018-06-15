@@ -1,6 +1,5 @@
 import sys
-# TODO: Make this an absolute path based on file location
-sys.path.insert(0, 'third_party/nv-wavenet/pytorch')
+import os
 
 import logging
 
@@ -10,7 +9,10 @@ import torch
 
 from src.signal_model.residual_block import ResidualBlock
 from src.signal_model.upsample import ConditionalFeaturesUpsample
+from src.utils import ROOT_PATH
 from src.utils.configurable import configurable
+
+sys.path.insert(0, os.path.join(ROOT_PATH, 'third_party/nv-wavenet/pytorch'))
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +86,6 @@ class WaveNet(nn.Module):
             upsample_convs=upsample_convs,
             num_layers=num_layers,
             upsample_chunks=upsample_chunks)
-        # TODO: Try using TanH as suggested here:
-        # https://github.com/ibab/tensorflow-wavenet/issues/143#issuecomment-253400332
         self.out = nn.Sequential(
             nn.ReLU(),
             nn.Conv1d(
@@ -130,9 +130,6 @@ class WaveNet(nn.Module):
         Returns:
             kernel (NVWaveNet): NVIDIA optimize wavenet CUDA kernel.
         """
-        # TODO: Try to go back to embeddings or 2d blocks, that might make it better
-        # TODO: Look at the differences between the 5/31 and the 6/03 model the 5/31 performed
-        # better...
         import nv_wavenet
 
         logger.info('Exporting signal model...')
@@ -223,9 +220,6 @@ class WaveNet(nn.Module):
 
         # [batch_size, signal_length] → [batch_size, 1, signal_length]
         gold_signal = gold_signal.float().unsqueeze(1)
-
-        # TODO: Try using ``embedding_prev`` due to IBAB finding an initial filter width to be
-        # helpful.
 
         # [batch_size, 1, signal_length] → [batch_size, block_hidden_size, signal_length]
         gold_signal_features = self.embed(gold_signal)

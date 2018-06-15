@@ -10,16 +10,16 @@ from tqdm import tqdm
 import torch
 
 from src.audio import mu_law_decode
-from src.bin.signal_model._utils import DataIterator
+from src.bin.signal_model._data_iterator import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
 from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
 from src.optimizer import Optimizer
-from src import signal_model
+from src.signal_model import WaveNet
 from src.utils import get_total_parameters
-from src.utils import plot_waveform
 from src.utils import plot_log_mel_spectrogram
+from src.utils import plot_waveform
 from src.utils.configurable import configurable
 from src.utils.configurable import log_config
 from src.utils.experiment_context_manager import ExperimentContextManager
@@ -56,14 +56,12 @@ class Trainer():  # pragma: no cover
                  sample_rate,
                  train_batch_size=32,
                  dev_batch_size=128,
-                 model=signal_model.WaveNet,
+                 model=WaveNet,
                  step=0,
                  epoch=0,
                  criterion=NLLLoss,
                  optimizer=Adam,
-                 num_workers=0,
-                 model_state_dict=None,
-                 optimizer_state_dict=None):
+                 num_workers=0):
 
         # Allow for ``class`` or a class instance
         self.model = model if isinstance(model, torch.nn.Module) else model()
@@ -72,19 +70,10 @@ class Trainer():  # pragma: no cover
         if device.type == 'cuda' and torch.cuda.device_count() > 1:
             logger.info('Training on %d GPUs', torch.cuda.device_count())
             self.is_data_parallel = True
-
-        if model_state_dict is not None:
-            # TODO: Remove load_state_dict
-            self.model.load_state_dict(model_state_dict)
-
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else Optimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
-        if optimizer_state_dict is not None:
-            self.optimizer.load_state_dict(optimizer_state_dict)
-
         self.dev_tensorboard = dev_tensorboard
         self.train_tensorboard = train_tensorboard
-        self.tensorboard = train_tensorboard  # Default tensorboard is changed per epoch.
         self.device = device
         self.step = step
         self.epoch = epoch
@@ -318,8 +307,13 @@ class Trainer():  # pragma: no cover
         return signal_loss, num_signal_predictions
 
 
-def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
-         model='WaveNet'):  # pragma: no cover
+def main(checkpoint=None,
+         epochs=1000,
+         train_batch_size=2,
+         num_workers=0,
+         dev_to_train_ratio=3,
+         min_time=60 * 15,
+         label='signal_model'):  # pragma: no cover
     """ Main module that trains a the signal model saving checkpoints incrementally.
 
     Args:
@@ -327,21 +321,25 @@ def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
         epochs (int, optional): Number of epochs to run for.
         train_batch_size (int, optional): Maximum training batch size.
         num_workers (int, optional): Number of workers for data loading.
-        model (str, optional): Model to use from ``src.signal_model`` for signal modeling.
+        dev_to_train_ratio (int, optional): Due to various memory requirements, set the ratio
+            of dev batch size to train batch size.
+        min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
+            files are deleted.
+        label (str, optional): Label applied to a experiments from this executable.
     """
     torch.backends.cudnn.enabled = True
+    # TODO: Speed test to ensure this is the fastest settings
     torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.fastest = False
 
-    logger.info('Using model %s', model)
-
-    with ExperimentContextManager(label='signal_model', min_time=60 * 15) as context:
-        set_hparams(model)
+    with ExperimentContextManager(label=label, min_time=min_time) as context:
+        set_hparams()
         log_config()
         checkpoint = load_checkpoint(checkpoint, context.device)
         train, dev = load_data()
 
         # Set up trainer.
-        trainer_kwargs = {'model': getattr(signal_model, model)}
+        trainer_kwargs = {}
         if checkpoint is not None:
             trainer_kwargs.update(checkpoint)
 
@@ -352,7 +350,7 @@ def main(checkpoint=None, epochs=1000, train_batch_size=2, num_workers=0,
             context.train_tensorboard,
             context.dev_tensorboard,
             train_batch_size=train_batch_size,
-            dev_batch_size=train_batch_size * 3,
+            dev_batch_size=train_batch_size * dev_to_train_ratio,
             num_workers=num_workers,
             **trainer_kwargs)
 
@@ -386,8 +384,6 @@ if __name__ == '__main__':  # pragma: no cover
         help='Set the maximum training batch size; this figure depends on the GPU memory')
     parser.add_argument(
         '-w', '--num_workers', type=int, default=0, help='Numer of workers used for data loading')
-    parser.add_argument(
-        '-m', '--model', type=str, default='WaveNet', choices=['WaveNet', 'WaveRNN'])
     args = parser.parse_args()
     main(
         checkpoint=args.checkpoint,

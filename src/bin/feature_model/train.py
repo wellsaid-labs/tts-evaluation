@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 import torch
 
-from src.bin.feature_model._utils import DataIterator
+from src.bin.feature_model._data_iterator import DataIterator
 from src.bin.feature_model._utils import load_checkpoint
 from src.bin.feature_model._utils import load_data
 from src.bin.feature_model._utils import save_checkpoint
@@ -21,15 +21,12 @@ from src.lr_schedulers import DelayedExponentialLR
 from src.optimizer import Optimizer
 from src.utils import get_total_parameters
 from src.utils import plot_attention
-from src.utils import plot_stop_token
 from src.utils import plot_log_mel_spectrogram
+from src.utils import plot_stop_token
 from src.utils.configurable import log_config
 from src.utils.experiment_context_manager import ExperimentContextManager
 
 logger = logging.getLogger(__name__)
-
-# TODO: Use find_lr to optimize the learning rate
-# TODO: Add the model to tensorboard graph with ``tensorboard.add_graph(model, (dummy_input, ))``
 
 
 class Trainer():  # pragma: no cover
@@ -82,7 +79,6 @@ class Trainer():  # pragma: no cover
 
         self.dev_tensorboard = dev_tensorboard
         self.train_tensorboard = train_tensorboard
-        self.tensorboard = train_tensorboard  # Default tensorboard is changed per epoch.
         self.device = device
         self.step = step
         self.epoch = epoch
@@ -104,19 +100,16 @@ class Trainer():  # pragma: no cover
         logger.info('Total Parameters: %d', get_total_parameters(self.model))
         logger.info('Model:\n%s' % self.model)
 
-    def _compute_loss(self, gold_frames, gold_frame_lengths, gold_stop_tokens, predicted_pre_frames,
-                      predicted_post_frames, predicted_stop_tokens):
+    def _compute_loss(self, batch, predicted_pre_frames, predicted_post_frames,
+                      predicted_stop_tokens):
         """ Compute the losses for Tacotron.
 
         Args:
-            gold_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Ground truth
-                frames.
-            gold_frame_lengths (list): Lengths of each spectrogram in the batch.
-            gold_stop_tokens (torch.FloatTensor [num_frames, batch_size]): Ground truth stop tokens.
+            batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
             predicted_pre_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
                 Predicted frames.
             predicted_post_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
-                Predicted frames with residual
+                Predicted frames with residual.
             predicted_stop_tokens (torch.FloatTensor [num_frames, batch_size]): Predicted stop
                 tokens.
 
@@ -130,24 +123,24 @@ class Trainer():  # pragma: no cover
                 masking into account.
         """
         # Create masks
-        mask = [torch.FloatTensor(length).fill_(1) for length in gold_frame_lengths]
+        mask = [torch.FloatTensor(length).fill_(1) for length in batch['frame_lengths']]
         mask, _ = pad_batch(mask)  # [batch_size, num_frames]
         mask = mask.to(self.device)
         stop_token_mask = mask.transpose(0, 1)  # [num_frames, batch_size]
         # [num_frames, batch_size] → [num_frames, batch_size, frame_channels]
-        frames_mask = stop_token_mask.unsqueeze(2).expand_as(gold_frames)
+        frames_mask = stop_token_mask.unsqueeze(2).expand_as(batch['frames'])
 
         num_frame_predictions = torch.sum(frames_mask)
         num_stop_token_predictions = torch.sum(stop_token_mask)
 
         # Average loss for pre frames, post frames and stop token loss
-        pre_frames_loss = self.criterion_frames(predicted_pre_frames, gold_frames)
+        pre_frames_loss = self.criterion_frames(predicted_pre_frames, batch['frames'])
         pre_frames_loss = torch.sum(pre_frames_loss * frames_mask) / num_frame_predictions
 
-        post_frames_loss = self.criterion_frames(predicted_post_frames, gold_frames)
+        post_frames_loss = self.criterion_frames(predicted_post_frames, batch['frames'])
         post_frames_loss = torch.sum(post_frames_loss * frames_mask) / num_frame_predictions
 
-        stop_token_loss = self.criterion_frames(predicted_stop_tokens, gold_stop_tokens)
+        stop_token_loss = self.criterion_frames(predicted_stop_tokens, batch['stop_token'])
         stop_token_loss = torch.sum(stop_token_loss * stop_token_mask) / num_stop_token_predictions
 
         return (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
@@ -175,9 +168,6 @@ class Trainer():  # pragma: no cover
         total_stop_token_predictions, total_frame_predictions = 0, 0
 
         # Setup iterator and metrics
-        # TODO: DataIterator uses multiprocessing processes; meaning it needs to copy the training
-        # data to set this up; therefore, this component is slow. Consider having data on the disk
-        # loaded on request.
         data_iterator = tqdm(
             DataIterator(
                 self.device,
@@ -186,13 +176,10 @@ class Trainer():  # pragma: no cover
                 trial_run=trial_run,
                 num_workers=self.num_workers),
             desc=label)
-        for (gold_texts, _, gold_frames, gold_frame_lengths, gold_stop_tokens) in data_iterator:
+        for batch in data_iterator:
             (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
              num_stop_token_predictions) = self._run_step(
-                 gold_texts,
-                 gold_frames,
-                 gold_frame_lengths,
-                 gold_stop_tokens,
+                 batch,
                  train=train,
                  sample=not train and random.randint(1, len(data_iterator)) == 1)
 
@@ -202,13 +189,12 @@ class Trainer():  # pragma: no cover
             total_stop_token_predictions += num_stop_token_predictions
             total_frame_predictions += num_frame_predictions
 
-        # TODO: Update self.epoch to scale with steps
         self._add_scalar(['pre_frames', 'epoch'], total_pre_frames_loss / total_frame_predictions,
-                         self.epoch)
+                         self.step)
         self._add_scalar(['post_frames', 'epoch'], total_post_frames_loss / total_frame_predictions,
-                         self.epoch)
+                         self.step)
         self._add_scalar(['stop_token', 'epoch'],
-                         total_stop_token_loss / total_stop_token_predictions, self.epoch)
+                         total_stop_token_loss / total_stop_token_predictions, self.step)
 
     def _add_scalar(self, path, scalar, step):
         """ Add scalar to tensorboard
@@ -233,34 +219,56 @@ class Trainer():  # pragma: no cover
         data = tensor.detach().cpu().numpy()
         self.tensorboard.add_image('/'.join(path), to_image(data), step)
 
-    def _run_step(self,
-                  gold_texts,
-                  gold_frames,
-                  gold_frame_lengths,
-                  gold_stop_tokens,
-                  train=False,
-                  sample=False):
+    def _sample(self, batch, predicted_post_frames, predicted_alignments, predicted_stop_tokens):
+        """ Samples examples from a batch and outputs them to tensorboard
+
+        Args:
+            batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
+            predicted_pre_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
+                Predicted frames.
+            predicted_post_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
+                Predicted frames with residual.
+            predicted_stop_tokens (torch.FloatTensor [num_frames, batch_size]): Predicted stop
+                tokens.
+
+        Returns: None
+        """
+        batch_size = predicted_post_frames.shape[1]
+        item = random.randint(0, batch_size - 1)
+        length = batch['frame_lengths'][item]
+        self._add_image(['spectrogram', 'predicted'], predicted_post_frames[:length, item],
+                        plot_log_mel_spectrogram, self.step)
+        self._add_image(['spectrogram', 'gold'], batch['frames'][:length, item],
+                        plot_log_mel_spectrogram, self.step)
+        self._add_image(['alignment', 'predicted'], predicted_alignments[:length, item],
+                        plot_attention, self.step)
+        self._add_image(['stop_token', 'predicted'], predicted_stop_tokens[:length, item],
+                        plot_stop_token, self.step)
+
+    def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
         Args:
-            gold_texts (torch.LongTensor [batch_size, num_tokens])
-            gold_frames (torch.LongTensor [num_frames, batch_size, frame_channels])
-            gold_stop_tokens (torch.LongTensor [num_frames, batch_size])
+            batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
             train (bool): If ``True``, takes a optimization step.
             sample (bool): If ``True``, samples the current step.
 
         Returns:
-            (torch.Tensor) Loss at every iteration
+            pre_frames_loss (torch.Tensor [scalar])
+            post_frames_loss (torch.Tensor [scalar])
+            stop_token_loss (torch.Tensor [scalar])
+            num_frame_predictions (int): Number of realized frame predictions taking masking into
+                account.
+            num_stop_token_predictions (int): Number of realized stop token predictions taking
+                masking into account.
         """
-        predicted = self.model(gold_texts, ground_truth_frames=gold_frames)
-
         (predicted_pre_frames, predicted_post_frames, predicted_stop_tokens,
-         predicted_alignments) = predicted
+         predicted_alignments) = self.model(
+             batch['text'], ground_truth_frames=batch['frames'])
 
         (pre_frames_loss, post_frames_loss, stop_token_loss,
          num_frame_predictions, num_stop_token_predictions) = self._compute_loss(
-             gold_frames, gold_frame_lengths, gold_stop_tokens, predicted_pre_frames,
-             predicted_post_frames, predicted_stop_tokens)
+             batch, predicted_pre_frames, predicted_post_frames, predicted_stop_tokens)
 
         if train:
             self.optimizer.zero_grad()
@@ -282,24 +290,20 @@ class Trainer():  # pragma: no cover
                 self._add_scalar(['learning_rate', str(i), 'step'], lr, self.step)
 
         if sample:
-            batch_size = predicted_post_frames.shape[1]
-            item = random.randint(0, batch_size - 1)
-            length = gold_frame_lengths[item]
-            self._add_image(['spectrogram', 'predicted'], predicted_post_frames[:length, item],
-                            plot_log_mel_spectrogram, self.step)
-            self._add_image(['spectrogram', 'gold'], gold_frames[:length, item],
-                            plot_log_mel_spectrogram, self.step)
-            self._add_image(['alignment', 'predicted'], predicted_alignments[:length, item],
-                            plot_attention, self.step)
-            self._add_image(['stop_token', 'predicted'], predicted_stop_tokens[:length, item],
-                            plot_stop_token, self.step)
+            self._sample(batch, predicted_post_frames, predicted_alignments, predicted_stop_tokens)
 
         return (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
                 num_stop_token_predictions)
 
 
-def main(checkpoint=None, epochs=1000, train_batch_size=32, num_workers=0,
-         reset_optimizer=False):  # pragma: no cover
+def main(checkpoint=None,
+         epochs=1000,
+         train_batch_size=32,
+         num_workers=0,
+         reset_optimizer=False,
+         dev_to_train_ratio=4,
+         min_time=60 * 15,
+         label='feature_model'):  # pragma: no cover
     """ Main module that trains a the feature model saving checkpoints incrementally.
 
     Args:
@@ -308,15 +312,23 @@ def main(checkpoint=None, epochs=1000, train_batch_size=32, num_workers=0,
         train_batch_size (int, optional): Maximum training batch size.
         num_workers (int, optional): Number of workers for data loading.
         reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer and scheduler.
+        dev_to_train_ratio (int, optional): Due to various memory requirements, set the ratio
+            of dev batch size to train batch size.
+        min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
+            files are deleted.
+        label (str, optional): Label applied to a experiments from this executable.
     """
-    with ExperimentContextManager(label='feature_model', min_time=60 * 15) as context:
+    torch.backends.cudnn.enabled = True
+    # TODO: Speed test to ensure this is the fastest settings
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.fastest = False
+
+    with ExperimentContextManager(label=label, min_time=min_time) as context:
         set_hparams()
         log_config()
-
         checkpoint = load_checkpoint(checkpoint, context.device)
         text_encoder = None if checkpoint is None else checkpoint['text_encoder']
-        # TODO: Apply ``num_workers`` to ``load_data``
-        train, dev, text_encoder = load_data(text_encoder=text_encoder, load_signal=False)
+        train, dev, text_encoder = load_data(text_encoder=text_encoder)
 
         # Set up trainer.
         trainer_kwargs = {}
@@ -335,7 +347,7 @@ def main(checkpoint=None, epochs=1000, train_batch_size=32, num_workers=0,
             context.train_tensorboard,
             context.dev_tensorboard,
             train_batch_size=train_batch_size,
-            dev_batch_size=train_batch_size * 4,
+            dev_batch_size=train_batch_size * dev_to_train_ratio,
             num_workers=num_workers,
             **trainer_kwargs)
 
@@ -362,21 +374,21 @@ def main(checkpoint=None, epochs=1000, train_batch_size=32, num_workers=0,
 if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-c", "--checkpoint", type=str, default=None, help="Load a checkpoint from a path")
+        '-c', '--checkpoint', type=str, default=None, help='Load a checkpoint from a path')
     parser.add_argument(
-        "-b",
-        "--train_batch_size",
+        '-b',
+        '--train_batch_size',
         type=int,
         default=32,
-        help="Set the maximum training batch size; this figure depends on the GPU memory")
+        help='Set the maximum training batch size; this figure depends on the GPU memory')
     parser.add_argument(
-        "-w", "--num_workers", type=int, default=0, help="Numer of workers used for data loading")
+        '-w', '--num_workers', type=int, default=0, help='Numer of workers used for data loading')
     parser.add_argument(
-        "-r",
-        "--reset_optimizer",
+        '-r',
+        '--reset_optimizer',
         action='store_true',
         default=False,
-        help="Reset optimizer and scheduler.")
+        help='Reset optimizer and scheduler.')
     args = parser.parse_args()
     main(
         checkpoint=args.checkpoint,

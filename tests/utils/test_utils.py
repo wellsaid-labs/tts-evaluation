@@ -53,7 +53,13 @@ def test_get_root_path():
 def test_split_dataset():
     dataset = [1, 2, 3, 4, 5]
     splits = (.6, .2, .2)
-    assert split_dataset(dataset, splits) == [[1, 2, 3], [4], [5]]
+    assert split_dataset(dataset, splits, deterministic_shuffle=False) == [[1, 2, 3], [4], [5]]
+
+
+def test_split_dataset_shuffle():
+    dataset = [1, 2, 3, 4, 5]
+    splits = (.6, .2, .2)
+    assert split_dataset(dataset, splits) == [[4, 2, 5], [3], [1]]
 
 
 def test_plot_log_mel_spectrogram():

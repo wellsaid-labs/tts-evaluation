@@ -10,6 +10,7 @@ from torchnlp.download import download_file_maybe_extract
 from torchnlp.datasets import Dataset
 
 from src.utils.configurable import configurable
+from src.utils import split_dataset
 
 
 @configurable
@@ -26,7 +27,9 @@ def lj_speech_dataset(directory='data/',
                       guard=True,
                       lower_hertz=125,
                       upper_hertz=7600,
-                      loudness=False):
+                      loudness=False,
+                      random_seed=123,
+                      splits=(.8, .2)):
     """
     Load the Linda Johnson (LJ) Speech dataset.
 
@@ -65,6 +68,8 @@ def lj_speech_dataset(directory='data/',
         upper_hertz (int, optional): Apply a sinc kaiser-windowed low-pass.
         loudness (bool, optioanl): Normalize the subjective perception of loudness level based on
             ISO 226.
+        random_seed (int, optional): Random seed used to determine the splits.
+        splits (tuple, optional): The number of splits and cardinality of dataset splits.
 
     Returns:
         :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
@@ -91,11 +96,12 @@ def lj_speech_dataset(directory='data/',
     with io.open(path, encoding='utf-8') as f:
         for line in tqdm(f, total=total_rows):
             line = line.strip()
-            wav, text, _ = tuple(line.split('|'))
-            wav = os.path.join(directory, extracted_name, audio_directory, wav + '.wav')
-            wav = os.path.abspath(wav)
-            wav = _process_audio(
-                wav,
+            wav_filename, text, _ = tuple(line.split('|'))
+            wav_filename = os.path.join(directory, extracted_name, audio_directory,
+                                        wav_filename + '.wav')
+            wav_filename = os.path.abspath(wav_filename)
+            wav_filename = _process_audio(
+                wav_filename,
                 resample=resample,
                 norm=norm,
                 guard=guard,
@@ -106,7 +112,7 @@ def lj_speech_dataset(directory='data/',
             text = _normalize_quotations(text)
 
             if verbalize:
-                text = _verbalize_special_cases(wav, text)
+                text = _verbalize_special_cases(wav_filename, text)
                 text = _expand_abbreviations(text)
                 text = _verbalize_time_of_day(text)
                 text = _verbalize_ordinals(text)
@@ -120,9 +126,11 @@ def lj_speech_dataset(directory='data/',
             # Messes up pound sign (£); therefore, this is after _verbalize_currency
             text = _remove_accents(text)
 
-            examples.append({'text': text, 'wav': wav})
+            examples.append({'text': text, 'wav_filename': wav_filename})
 
-    return Dataset(examples)
+    splits = split_dataset(
+        examples, splits=splits, deterministic_shuffle=True, random_seed=random_seed)
+    return tuple(Dataset(split) for split in splits)
 
 
 def _process_audio(wav,
@@ -150,7 +158,6 @@ def _process_audio(wav,
     if wav == destination or os.path.isfile(destination):
         return destination
 
-    # TODO: Add tests for all these parameters to ensure a sox command is sent
     norm_flag = '--norm' if norm else ''
     guard_flag = '--guard' if guard else ''
     sinc_command = 'sinc %s-%s' % (lower_hertz, upper_hertz)
@@ -211,17 +218,18 @@ def _match_case(source, target):
     Args:
         source (str): Reference text for the letter case.
         target (str): Target text to transfer the letter case.
+
     Returns:
         str: Target text with source the letter case.
     """
-    if source.istitle():
-        return target.title()
-
     if source.isupper():
         return target.upper()
 
     if source.islower():
         return target.lower()
+
+    if source.istitle():
+        return target.title()
 
 
 def _iterate_and_replace(regex, text, replace, group=1):

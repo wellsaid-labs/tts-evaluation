@@ -8,6 +8,7 @@ import os
 
 from matplotlib import pyplot
 from matplotlib import cm as colormap
+from torchnlp.utils import shuffle as do_deterministic_shuffle
 
 import dill
 import librosa.display
@@ -27,11 +28,13 @@ def get_total_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def split_dataset(dataset, splits):
+def split_dataset(dataset, splits, deterministic_shuffle=True, random_seed=123):
     """
     Args:
         dataset (list): Dataset to split.
         splits (tuple): Tuple of percentages determining dataset splits.
+        shuffle (bool, optional): If ``True`` determinisitically shuffle the dataset before
+            splitting.
 
     Returns:
         (list): splits of the dataset
@@ -42,6 +45,8 @@ def split_dataset(dataset, splits):
         >>> split_dataset(dataset, splits)
         [[1, 2, 3], [4], [5]]
     """
+    if deterministic_shuffle:
+        do_deterministic_shuffle(dataset, random_seed=random_seed)
     assert sum(splits) == 1, 'Splits must sum to 100%'
     splits = [round(s * len(dataset)) for s in splits]
     datasets = []
@@ -70,16 +75,19 @@ def figure_to_numpy_array(figure):
     return data.reshape(figure.canvas.get_width_height()[::-1] + (3,))
 
 
-def plot_attention(alignment):
+def plot_attention(alignment, plot_to_numpy=True):
     """ Plot alignment of attention.
 
     Args:
         alignment (numpy.array([decoder_timestep, encoder_timestep])): Attention alignment weights
             computed at every timestep of the decoder.
         title (str, optional): Title of the plot.
+        plot_to_numpy (bool, optional): If ``True``, return as a numpy array; otherwise, ``None``
+            is returned.
 
     Returns:
-        image (np.array [width, height, 3]): Attention plot image.
+        If ``plot_to_numpy=True`` returns image (np.array [width, height, 3]) otherwise returns
+            ``None``.
     """
     alignment = np.transpose(alignment)
     pyplot.style.use('ggplot')
@@ -92,28 +100,32 @@ def plot_attention(alignment):
     return figure_to_numpy_array(figure)
 
 
-def plot_stop_token(stop_token):
+def plot_stop_token(stop_token, plot_to_numpy=True):
     """ Plot probability of the stop token over time.
 
     Args:
         stop_token (numpy.array([decoder_timestep])): Stop token probablity per decoder timestep.
         title (str, optional): Title of the plot.
+        plot_to_numpy (bool, optional): If ``True``, return as a numpy array; otherwise, ``None``
+            is returned.
 
     Returns:
-        image (np.array [width, height, 3]): Stop token plot image.
+        If ``plot_to_numpy=True`` returns image (np.array [width, height, 3]) otherwise returns
+            ``None``.
     """
     pyplot.style.use('ggplot')
     figure = pyplot.figure()
     pyplot.plot(list(range(len(stop_token))), stop_token, marker='.', linestyle='solid')
     pyplot.ylabel('Probability')
     pyplot.xlabel('Timestep')
-    # LEARN MORE: https://github.com/matplotlib/matplotlib/issues/8560/
-    # ``pyplot.close`` removes the figure from it's internal state and (if there is a gui) closes
-    # the window. However it does not clear the figure and if you are still holding a reference to
-    # the ``Figure`` object (and it holds references to all of it's children) so it is not garbage
-    # collected.
-    pyplot.close(figure)
-    return figure_to_numpy_array(figure)
+    if plot_to_numpy:
+        # LEARN MORE: https://github.com/matplotlib/matplotlib/issues/8560/
+        # ``pyplot.close`` removes the figure from it's internal state and (if there is a gui)
+        # closes the window. However it does not clear the figure and if you are still holding a
+        # reference to the ``Figure`` object (and it holds references to all of it's children) so it
+        # is not garbage collected.
+        pyplot.close(figure)
+        return figure_to_numpy_array(figure)
 
 
 def spectrogram_to_image(spectrogram):
@@ -144,7 +156,8 @@ def plot_waveform(signal, sample_rate=24000, plot_to_numpy=True):
             is returned.
 
     Returns:
-        image (np.array [width, height, 3]): Spectrogram image.
+        If ``plot_to_numpy=True`` returns image (np.array [width, height, 3]) otherwise returns
+            ``None``.
     """
     pyplot.style.use('ggplot')
     figure = pyplot.figure()
@@ -172,7 +185,8 @@ def plot_log_mel_spectrogram(log_mel_spectrogram,
             is returned.
 
     Returns:
-        image (np.array [width, height, 3]): Spectrogram image.
+        If ``plot_to_numpy=True`` returns image (np.array [width, height, 3]) otherwise returns
+            ``None``.
     """
     aspect = log_mel_spectrogram.shape[0] / log_mel_spectrogram.shape[1]
     figure = pyplot.figure(figsize=(2 * aspect, 2))

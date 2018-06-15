@@ -146,9 +146,6 @@ class ExperimentContextManager(object):
     def __enter__(self):
         """ Runs before the experiment context begins.
         """
-        # Fix a circular reference chain
-        from src.hparams import set_hparams
-
         # Create a local directory to store logs, checkpoints, etc..
         self._new_experiment_directory()
 
@@ -172,9 +169,6 @@ class ExperimentContextManager(object):
         logger.info('Seed: %s', self.seed)
 
         self._tensorboard()
-
-        # Set the hyperparameters with configurable
-        set_hparams()
 
         return self
 

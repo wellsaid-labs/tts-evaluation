@@ -1,35 +1,25 @@
 import logging
 import os
-import random
 
-from torch import multiprocessing
-from torch.multiprocessing import Pool
-from torch.utils.data import DataLoader
-from torchnlp.samplers import BucketBatchSampler
 from torchnlp.text_encoders import CharacterEncoder
-from torchnlp.utils import pad_batch
-from tqdm import tqdm
 
 import torch
-import numpy as np
-import librosa
 
-from src.audio import read_audio
-from src.audio import get_log_mel_spectrogram
+from src.bin.feature_model._dataset import FeatureDataset
 from src.datasets import lj_speech_dataset
 from src.utils import ROOT_PATH
-from src.utils import split_dataset
 from src.utils import torch_load
 from src.utils import torch_save
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
+from src.hparams import set_hparams as set_base_hparams
 
 logger = logging.getLogger(__name__)
 
 
 def set_hparams():
-    """ Set auxillary hyperparameters specific to the signal model. """
-
+    """ Set hyperparameters specific to the signal model. """
+    set_base_hparams()
     add_config({
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999, eps = 10−6
@@ -37,7 +27,6 @@ def set_hparams():
         # We also apply L2 regularization with weight 10−6
         'torch.optim.adam.Adam.__init__': {
             'eps': 10**-6,
-            'lr': 10**-3,
             'weight_decay': 10**-6,
         },
         'src.optimizer.Optimizer.__init__': {
@@ -49,192 +38,25 @@ def set_hparams():
     })
 
 
-class DataIterator(object):
-    """ Get a batch iterator over the ``dataset``.
-
-    Args:
-        device (torch.device, optional): Device onto which to load data.
-        dataset (list): Dataset to iterate over.
-        batch_size (int): Size of the batch for iteration.
-        sort_key (callable): Sort key used to group similar length data used to minimize padding.
-        trial_run (bool or int): If ``True``, iterates over one batch.
-        load_signal (bool, optional): If `True`, return signal during iteration.
-        num_workers (int, optional): Number of workers for data loading.
-
-    Returns:
-        (torch.utils.data.DataLoader) Single-process or multi-process iterators over the dataset.
-        Iterator includes variables:
-            text_batch (torch.LongTensor [batch_size, num_tokens])
-            text_length_batch (list): List of lengths for each sentence.
-            frames_batch (torch.FloatTensor [num_frames, batch_size, frame_channels])
-            frame_length_batch (list): List of lengths for each spectrogram.
-            stop_token_batch (torch.FloatTensor [num_frames, batch_size])
-            signal_batch (list): List of signals.
-    """
-
-    def __init__(self,
-                 device,
-                 dataset,
-                 batch_size,
-                 sort_key=lambda r: r['log_mel_spectrogram'].shape[0],
-                 trial_run=False,
-                 load_signal=False,
-                 num_workers=0):
-        batch_sampler = BucketBatchSampler(dataset, batch_size, False, sort_key=sort_key)
-        self.device = device
-        self.iterator = DataLoader(
-            dataset,
-            batch_sampler=batch_sampler,
-            collate_fn=self._collate_fn,
-            pin_memory=True,
-            num_workers=num_workers)
-        self.trial_run = trial_run
-        self.load_signal = load_signal
-
-    def _maybe_cuda(self, tensor, **kwargs):
-        return tensor.cuda(device=self.device, **kwargs) if self.device.type == 'cuda' else tensor
-
-    def _collate_fn(self, batch):
-        """ List of tensors to a batch variable """
-        text_batch, text_length_batch = pad_batch([row['text'] for row in batch])
-        frame_batch, frame_length_batch = pad_batch([row['log_mel_spectrogram'] for row in batch])
-        stop_token_batch, _ = pad_batch([row['stop_token'] for row in batch])
-        transpose = lambda b: b.transpose_(0, 1).contiguous()
-        ret = [
-            text_batch, text_length_batch,
-            transpose(frame_batch), frame_length_batch,
-            transpose(stop_token_batch)
-        ]
-        if self.load_signal:
-            signal_batch = [row['signal'] for row in batch]
-            ret.append(signal_batch)
-        return ret
-
-    def __len__(self):
-        return 1 if self.trial_run else len(self.iterator)
-
-    def __iter__(self):
-        for batch in self.iterator:
-            yield tuple([
-                self._maybe_cuda(t, non_blocking=True) if torch.is_tensor(t) else t for t in batch
-            ])
-
-            if self.trial_run:
-                break
-
-
-def _preprocess_audio(row):
-    """ Preprocess a speech dataset: computing a spectrogram, encoding text and quantizing.
-
-    Notes:
-        * We assume that silence on at the beginning and the end the text does not matter.
-
-
-    Args:
-        row (dict {'wav', 'text'}): Example with a corresponding wav filename and text snippet.
-
-    Returns:
-        row (dict {'log_mel_spectrogram', 'stop_token', 'signal', 'text', 'wav'}): Updated
-            row with a ``log_mel_spectrogram``, ``stop_token``, and ``signal`` features.
-    """
-    signal = read_audio(row['wav'], sample_rate=row['sample_rate'])
-    signal = librosa.effects.trim(signal)[0]
-
-    # Trim silence
-    log_mel_spectrogram, padding = get_log_mel_spectrogram(signal, sample_rate=row['sample_rate'])
-    log_mel_spectrogram = torch.from_numpy(log_mel_spectrogram)
-    stop_token = log_mel_spectrogram.new_zeros((log_mel_spectrogram.shape[0],))
-    stop_token[-1] = 1
-
-    # Pad so: ``log_mel_spectrogram.shape[0] % signal.shape[0] == frame_hop``
-    # We property is required for Wavenet.
-    padded_signal = np.pad(signal, padding, mode='constant', constant_values=0)
-    row.update({
-        'log_mel_spectrogram': log_mel_spectrogram,
-        'stop_token': stop_token,
-        'signal': torch.from_numpy(padded_signal)
-    })
-    return row
-
-
 @configurable
-def load_data(
-        device=torch.device('cpu'),
-        cache='data/cache.pt',
-        signal_cache='data/cache_signals.pt',
-        load_signal=False,
-        text_encoder=None,
-        splits=(0.8, 0.2),
-        use_multiprocessing=True,
-        sample_rate=22050):
-    """ Load the Linda Johnson (LJ) Speech dataset with spectrograms and encoded text.
-
-    Notes:
-        * We use a seperate cache for signals due them being the majority of the dataset memory
-              footprint.
+def load_data(sample_rate=24000, text_encoder=None):
+    """ Load train and dev datasets as ``SignalDataset``s.
 
     Args:
-        device (torch.device, optional): Device onto which to load data.
-        cache (str, optional): Path to cache the processed dataset.
-        signal_cache (str, optional): Path to cache signal in the processed dataset.
-        load_signal (bool, optional): If `True`, load signal files.
-        text_encoder (torchnlp.TextEncoder, optional): Text encoder used to encode and decode the
+        sample_rate (int): Sample rate of the signal.
+        text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the
             text.
-        splits (tuple, optional): Train and dev splits to use with the dataset.
-        use_multiprocessing (bool, optional): If `True`, use multiple processes to preprocess data.
-        sample_rate (int or None, optional): Sample rate to resample to.
 
     Returns:
-        (list): Linda Johnson (LJ) Speech dataset with ``log_mel_spectrogram`` and ``text``
-        (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
+        train (FeatureDataset)
+        dev (FeatureDataset)
     """
-    assert len(splits) == 2
-
-    cache = os.path.join(ROOT_PATH, cache)
-    signal_cache = os.path.join(ROOT_PATH, signal_cache)
-
-    if os.path.isfile(cache) and os.path.isfile(signal_cache):  # Load cache
-        train, dev, text_encoder = torch_load(cache, device)
-        if load_signal:
-            train_signals, dev_signals = torch_load(signal_cache, device)
-    else:  # Otherwise, preprocess dataset
-        data = lj_speech_dataset(resample=sample_rate)
-        random.shuffle(data)
-        logger.info('Sample Data:\n%s', data[:5])
-
-        # Preprocess text
-        text_encoder = CharacterEncoder(
-            [r['text'] for r in data]) if text_encoder is None else text_encoder
-        for row in data:
-            row['text'] = text_encoder.encode(row['text'])
-            row['sample_rate'] = sample_rate
-
-        if use_multiprocessing:
-            # Preprocess audio with multi-threading
-            pool = Pool(processes=min(len(data), multiprocessing.cpu_count()))
-            # LEARN MORE (multiprocessing and tqdm integration):
-            # https://stackoverflow.com/questions/41920124/multiprocessing-use-tqdm-to-display-a-progress-bar
-            data = list(tqdm(pool.imap(_preprocess_audio, data), total=len(data)))
-            pool.close()
-        else:
-            data = [_preprocess_audio(r) for r in tqdm(data)]
-
-        train, dev = split_dataset(data, splits)
-        # Save cache
-        train_signals = [r.pop('signal') for r in train]
-        dev_signals = [r.pop('signal') for r in dev]
-        torch_save(cache, (train, dev, text_encoder))
-        torch_save(signal_cache, (train_signals, dev_signals))
-
-    if load_signal:
-        # Combine signals and dataset together
-        for row, signal in zip(train, train_signals):
-            row['signal'] = signal
-
-        for row, signal in zip(dev, dev_signals):
-            row['signal'] = signal
-
-    return train, dev, text_encoder
+    train, dev = lj_speech_dataset(resample=sample_rate)
+    logger.info('Sample Data:\n%s', train[:5])
+    text_encoder = CharacterEncoder(
+        [r['text'] for r in train]) if text_encoder is None else text_encoder
+    kwargs = {'sample_rate': sample_rate, 'text_encoder': text_encoder}
+    return FeatureDataset(train, **kwargs), FeatureDataset(dev, **kwargs), text_encoder
 
 
 def load_checkpoint(checkpoint=None, device=torch.device('cpu')):

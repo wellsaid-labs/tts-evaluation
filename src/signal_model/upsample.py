@@ -82,8 +82,7 @@ class ConditionalFeaturesUpsample(nn.Module):
 
     def forward(self, local_features):
         """
-        TODO:
-            * Support global conditioning
+        TODO: Support global conditioning
 
         Args:
             local_features (torch.FloatTensor [batch_size, local_length, in_channels]):

@@ -12,8 +12,7 @@ import numpy as np
 from src.bin.feature_model._utils import DataIterator
 from src.bin.feature_model._utils import load_checkpoint
 from src.bin.feature_model._utils import load_data
-from src.bin.feature_model._utils import set_hparams as set_feature_model_auxiliary_hparams
-from src.hparams import set_hparams
+from src.bin.feature_model._utils import set_hparams
 from src.utils import get_total_parameters
 
 logging.basicConfig(level=logging.INFO)
@@ -23,8 +22,8 @@ logger = logging.getLogger(__name__)
 def main(checkpoint,
          destination_train='data/signal_dataset/train',
          destination_dev='data/signal_dataset/dev',
-         use_multiprocessing=True,
-         max_batch_size=96):  # pragma: no cover
+         max_batch_size=96,
+         num_workers=1):  # pragma: no cover
     """ Main module used to generate dataset for training a signal model.
 
     Args:
@@ -33,11 +32,10 @@ def main(checkpoint,
             training.
         destination_dev (str, optional): Directory to save generated files to be used for
             development.
-        use_multiprocessing (bool, optional): If `True`, use multiple processes to preprocess data.
         max_batch_size (int, optional): Maximum batch size predicted at a time.
+        num_workers (int, optional): Number of workers for data loading.
     """
     set_hparams()
-    set_feature_model_auxiliary_hparams()
 
     if not os.path.isdir(destination_train):
         os.makedirs(destination_train)
@@ -49,8 +47,7 @@ def main(checkpoint,
     checkpoint = load_checkpoint(checkpoint, device)
     text_encoder = None if checkpoint is None else checkpoint['text_encoder']
     model = checkpoint['model']
-    train, dev, text_encoder = load_data(
-        text_encoder=text_encoder, load_signal=True, use_multiprocessing=use_multiprocessing)
+    train, dev, text_encoder = load_data(text_encoder=text_encoder, load_signal=True)
 
     logger.info('Device: %s', device)
     logger.info('Number of Train Rows: %d', len(train))
@@ -64,11 +61,17 @@ def main(checkpoint,
     model.train(mode=False)
 
     for dataset, destination in [(train, destination_train), (dev, destination_dev)]:
-        data_iterator = tqdm(DataIterator(device, dataset, max_batch_size, load_signal=True))
-        for i, (gold_texts, gold_text_lengths, gold_frames, gold_frame_lengths, _,
-                gold_signals) in enumerate(data_iterator):
+        data_iterator = tqdm(
+            DataIterator(
+                device=device,
+                dataset=dataset,
+                batch_size=max_batch_size,
+                load_signal=True,
+                num_workers=num_workers))
+        for i, batch in enumerate(data_iterator):
 
-            _, batch_predicted_frames, _, _ = model(gold_texts, ground_truth_frames=gold_frames)
+            _, batch_predicted_frames, _, _ = model(
+                batch['text'], ground_truth_frames=batch['frame'])
             # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
             batch_predicted_frames = batch_predicted_frames.transpose(0, 1).cpu().numpy().astype(
                 np.float32)
@@ -78,14 +81,15 @@ def main(checkpoint,
             # Save predictions
             for j in range(batch_size):
                 # [batch_size, num_frames, frame_channels] → [num_frames, frame_channels]
-                predicted_frames = batch_predicted_frames[j][:gold_frame_lengths[j]]
+                predicted_frames = batch_predicted_frames[j][:batch['frame_lengths'][j]]
                 # [batch_size, signal_length] → [signal_length]
-                signal = gold_signals[j].cpu().numpy().astype(np.float32)
+                signal = batch['signal'][j].cpu().numpy().astype(np.float32)
                 assert signal.shape[0] % predicted_frames.shape[0] == 0
 
                 # NOTE: ``numpy .npy (no pickle)`` is about 15 times faster than numpy with pickle
                 # ``torch.save`` does not include none-pickle options; therefore, we use numpy
                 # Performance is important here because we are saving 10,000+ files.
+                # REFERENCE: https://github.com/mverleg/array_storage_benchmark
                 np.save(
                     os.path.join(destination, 'log_mel_spectrogram_%d_%d.npy' % (i, j)),
                     predicted_frames,
@@ -99,13 +103,13 @@ def main(checkpoint,
 if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-c", "--checkpoint", type=str, default=None, help="load a checkpoint", required=True)
+        '-c',
+        '--checkpoint',
+        type=str,
+        default=None,
+        help='Load a checkpoint from a path',
+        required=True)
     parser.add_argument(
-        "-nm",
-        "--no_multiprocessing",
-        default=False,
-        action='store_true',
-        help="Sometimes multiprocessing breaks due to various reasons, this bool lets you turn " +
-        "off multiprocessing.")
+        '-w', '--num_workers', type=int, default=0, help='Numer of workers used for data loading')
     args = parser.parse_args()
-    main(checkpoint=args.checkpoint, use_multiprocessing=not args.no_multiprocessing)
+    main(checkpoint=args.checkpoint, num_workers=args.num_workers)

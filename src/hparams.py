@@ -25,6 +25,7 @@ def set_hparams():
         'torch.optim.adam.Adam.__init__': {
             'betas': (0.9, 0.999),
             'amsgrad': True,
+            'lr': 10**-3
         }
     })
 
@@ -39,7 +40,6 @@ def set_hparams():
 
     # SOURCE (Tacotron 2):
     # 80 channel mel filterbank spanning
-    # TODO: Consider having more frame_channels due to the larger frequency range required
     frame_channels = 80
 
     # SOURCE (Tacotron 2):
@@ -279,30 +279,6 @@ def set_hparams():
                     'num_layers': 28,
                     'cycle_size': 7,
                     'upsample_chunks': 4,
-
-                    # SOURCE: Tacotron 2
-                    # only 2 upsampling layers are used in the conditioning stack instead of 3
-                    # layers.
-                    # SOURCE: Tacotron 2 Author Google Chat
-                    # We upsample 4x with the layers and then repeat each value 75x
-                    'upsample_convs': [4],
-                    'upsample_repeat': 75,
-                },
-                'wave_rnn.WaveRNN.__init__': {
-                    'signal_channels': signal_channels,
-                    'local_features_size': frame_channels,
-
-                    # SOURCE WaveRNN:
-                    # We see that the WaveRNN with 896 units achieves NLL scores comparable to those
-                    # of the largest WaveNet model, there is no significant difference in audio
-                    # fidelity according to a A/B comparison test (Table 2), and the MOS is
-                    # similarly high.
-                    'rnn_size': 896,
-
-                    # SOURCE Parallel WaveNet:
-                    # The number of hidden units in the gating layers is 512 (split into two groups
-                    # of 256 for the two parts of the activation function (1)).
-                    'conditional_size': 256,
 
                     # SOURCE: Tacotron 2
                     # only 2 upsampling layers are used in the conditioning stack instead of 3

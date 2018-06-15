@@ -305,8 +305,6 @@ def _merge_args(parameters, args, kwargs, default_kwargs, print_name=''):
                 parameters[i].kind == parameters[i].POSITIONAL_OR_KEYWORD):
             if parameters[i].name in default_kwargs:
                 value = default_kwargs[parameters[i].name]
-                # TODO: Test this, it's super sensative, if it does not work the code can silently
-                # fail.
                 if value != arg:
                     logger.warn('Overwriting configured argument ``%s=%s`` in module %s with %s' %
                                 (parameters[i].name, value, print_name, arg))

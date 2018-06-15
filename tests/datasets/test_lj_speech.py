@@ -43,29 +43,85 @@ def test_lj_speech_dataset(mock_urlretrieve):
     mock_urlretrieve.side_effect = urlretrieve_side_effect
 
     # Check a row are parsed correctly
-    data = lj_speech_dataset(
+    train, dev = lj_speech_dataset(
         directory=lj_directory,
         verbalize=True,
         resample=None,
-        norm=None,
+        norm=False,
         guard=False,
         lower_hertz=None,
         upper_hertz=None,
-        loudness=False)
-    assert len(data) == 13100
-    assert data[0]['text'] == (
-        'Printing, in the only sense with which we are at present concerned, '
-        'differs from most if not from all the arts and crafts represented in '
-        'the Exhibition')
-    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ001-0001.wav' in data[0]['wav']
+        loudness=False,
+        splits=(0.8, 0.2))
+    assert len(train) == 13100 * 0.8
+    assert len(dev) == 13100 * 0.2
 
+    # Test deterministic shuffle
+    assert train[0]['text'] == (
+        'Once a warrant-holder sent down a clerk to view certain goods, and the clerk found that '
+        'these goods had already a "stop" upon them, or were pledged.')
+    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ014-0331.wav' in train[0]['wav_filename']
+    assert dev[0]['text'] == (
+        'Mister Mullay went, and a second interview was agreed upon, when a third person, '
+        'Mister Owen,')
+    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ011-0243.wav' in dev[0]['wav_filename']
+
+    # Test verbilization
     seen = 0
-    for row in data:
-        basename = os.path.basename(row['wav']).split('.')[0]
-        if basename in verbalize_test_cases:
-            seen += 1
-            assert verbalize_test_cases[basename] in row['text']
+    for data in [train, dev]:
+        for row in data:
+            basename = os.path.basename(row['wav_filename']).split('.')[0]
+            if basename in verbalize_test_cases:
+                seen += 1
+                assert verbalize_test_cases[basename] in row['text']
     assert seen == len(verbalize_test_cases)
+
+    # Clean up
+    shutil.rmtree(os.path.join(lj_directory, 'LJSpeech-1.1'))
+
+
+class EveryOther(object):
+
+    def __init__(self):
+        self.index = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return_ = self.index % 2 == 1
+        self.index += 1
+        return return_
+
+
+@mock.patch("src.datasets.lj_speech.os.path.isfile")
+@mock.patch("src.datasets.lj_speech.os.system")
+@mock.patch("urllib.request.urlretrieve")
+def test_lj_speech_dataset_audio_processing(mock_urlretrieve, mock_os_system, mock_os_isfile):
+    mock_urlretrieve.side_effect = urlretrieve_side_effect
+    mock_os_system.return_value = None
+
+    mock_os_isfile.side_effect = EveryOther()
+
+    # Check a row are parsed correctly
+    train, dev = lj_speech_dataset(
+        directory=lj_directory,
+        verbalize=False,
+        resample=24000,
+        norm=True,
+        guard=True,
+        lower_hertz=100,
+        upper_hertz=200,
+        loudness=True,
+        splits=(0.8, 0.2))
+
+    # Ensure that every argument loudness, upper_hertz, lower_hertz, guard, norm and resample
+    # is run
+    assert 'norm' in mock_os_system.call_args[0][0]
+    assert 'guard' in mock_os_system.call_args[0][0]
+    assert 'rate 24000' in mock_os_system.call_args[0][0]
+    assert 'sinc 100-200' in mock_os_system.call_args[0][0]
+    assert 'loudness' in mock_os_system.call_args[0][0]
 
     # Clean up
     shutil.rmtree(os.path.join(lj_directory, 'LJSpeech-1.1'))
