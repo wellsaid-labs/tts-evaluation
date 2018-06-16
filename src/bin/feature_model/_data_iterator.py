@@ -31,11 +31,12 @@ class DataIterator(object):
                  device,
                  dataset,
                  batch_size,
-                 sort_key=lambda r: r['log_mel_spectrogram'].shape[0],
+                 sort_key=lambda signal_length: signal_length,
                  trial_run=False,
                  load_signal=False,
                  num_workers=0):
-        batch_sampler = BucketBatchSampler(dataset, batch_size, False, sort_key=sort_key)
+        batch_sampler = BucketBatchSampler(
+            dataset.spectrogram_lengths, batch_size, False, sort_key=sort_key)
         self.device = device
         self.iterator = DataLoader(
             dataset,

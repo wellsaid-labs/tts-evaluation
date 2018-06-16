@@ -1,5 +1,4 @@
 import math
-import os
 import random
 
 from torch.utils import data
@@ -12,44 +11,7 @@ from src.audio import mu_law
 from src.audio import mu_law_decode
 from src.audio import mu_law_encode
 from src.utils.configurable import configurable
-
-
-def _get_filename_table(directory, prefixes=[], extension=''):
-    """ Get a table of filenames; such that every row has multiple filenames of different prefixes.
-
-    Notes:
-        * Filenames are aligned via string sorting.
-        * The table must be full; therefore, all filenames associated with a prefix must have an
-          equal number of files as every other prefix.
-
-    Args:
-        directory (str): Path to a directory.
-        prefixes (str): Prefixes to load.
-        extension (str): Filename extensions to load.
-
-    Returns:
-        (list of dict): List of dictionaries where prefixes are the key names.
-    """
-    rows = []
-    for prefix in prefixes:
-        # Get filenames with associated prefixes
-        filenames = []
-        for filename in os.listdir(directory):
-            if filename.endswith(extension) and prefix in filename:
-                filenames.append(os.path.join(directory, filename))
-
-        # Sorted to align with other prefixes
-        filenames = sorted(filenames)
-
-        # Add to rows
-        if len(rows) == 0:
-            rows = [{prefix: filename} for filename in filenames]
-        else:
-            assert len(filenames) == len(rows), "Each row must have an associated filename."
-            for i, filename in enumerate(filenames):
-                rows[i][prefix] = filename
-
-    return rows
+from src.utils import get_filename_table
 
 
 class SignalDataset(data.Dataset):
@@ -80,7 +42,7 @@ class SignalDataset(data.Dataset):
         # that must be taken into consideration at very least to predict the next timestep.
         assert receptive_field_size >= 1
         prefixes = [log_mel_spectrogram_prefix, signal_prefix]
-        self.rows = _get_filename_table(source, prefixes=prefixes, extension=extension)
+        self.rows = get_filename_table(source, prefixes=prefixes, extension=extension)
         self.slice_samples = slice_size
         self.set_receptive_field_size(receptive_field_size)
         self.log_mel_spectrogram_prefix = log_mel_spectrogram_prefix

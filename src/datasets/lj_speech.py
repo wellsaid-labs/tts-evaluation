@@ -81,11 +81,11 @@ def lj_speech_dataset(directory='data/',
         [
           {
             'text': 'Printing, in the only sense with which we are at present concerned,...',
-            'wav': 'data/LJSpeech-1.1/wavs/LJ001-0001.wav'
+            'wav_filename': 'data/LJSpeech-1.1/wavs/LJ001-0001.wav'
           },
           {
             'text': 'in being comparatively modern.',
-            'wav': 'data/LJSpeech-1.1/wavs/LJ001-0002.wav'
+            'wav_filename': 'data/LJSpeech-1.1/wavs/LJ001-0002.wav'
           }
         ]
     """
@@ -145,9 +145,9 @@ def _process_audio(wav,
 
     destination = wav
     if resample is not None:
-        destination = destination.replace('.wav', '-rate_%d.wav' % resample)
+        destination = destination.replace('.wav', '-rate=%d.wav' % resample)
     if norm:
-        destination = destination.replace('.wav', '-norm.wav')
+        destination = destination.replace('.wav', '-norm=-.1.wav')
     if loudness:
         destination = destination.replace('.wav', '-loudness.wav')
     if guard:
@@ -158,7 +158,9 @@ def _process_audio(wav,
     if wav == destination or os.path.isfile(destination):
         return destination
 
-    norm_flag = '--norm' if norm else ''
+    # NOTE: -.1 DB applied to prevent clipping and corresponds to 0.9884949. Mu-law encoding applied
+    # to 0.98 comes out to 255; therefore, those bits are still used.
+    norm_flag = '--norm=-.1' if norm else ''
     guard_flag = '--guard' if guard else ''
     sinc_command = 'sinc %s-%s' % (lower_hertz, upper_hertz)
     loudness_command = 'loudness' if loudness else ''

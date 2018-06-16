@@ -1,17 +1,13 @@
 import logging
 import os
 
-from torchnlp.text_encoders import CharacterEncoder
-
 import torch
 
 from src.bin.feature_model._dataset import FeatureDataset
-from src.datasets import lj_speech_dataset
 from src.utils import ROOT_PATH
 from src.utils import torch_load
 from src.utils import torch_save
 from src.utils.configurable import add_config
-from src.utils.configurable import configurable
 from src.hparams import set_hparams as set_base_hparams
 
 logger = logging.getLogger(__name__)
@@ -38,11 +34,15 @@ def set_hparams():
     })
 
 
-@configurable
-def load_data(sample_rate=24000, text_encoder=None):
+def load_data(source_train='data/.feature_dataset/train',
+              source_dev='data/.feature_dataset/dev',
+              text_encoder=None,
+              load_signal=False):
     """ Load train and dev datasets as ``SignalDataset``s.
 
     Args:
+        source_train (str): Directory with training examples.
+        source_dev (str): Directory with dev examples.
         sample_rate (int): Sample rate of the signal.
         text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the
             text.
@@ -51,12 +51,9 @@ def load_data(sample_rate=24000, text_encoder=None):
         train (FeatureDataset)
         dev (FeatureDataset)
     """
-    train, dev = lj_speech_dataset(resample=sample_rate)
-    logger.info('Sample Data:\n%s', train[:5])
-    text_encoder = CharacterEncoder(
-        [r['text'] for r in train]) if text_encoder is None else text_encoder
-    kwargs = {'sample_rate': sample_rate, 'text_encoder': text_encoder}
-    return FeatureDataset(train, **kwargs), FeatureDataset(dev, **kwargs), text_encoder
+    train = FeatureDataset(source_train, text_encoder=text_encoder, load_signal=load_signal)
+    dev = FeatureDataset(source_dev, text_encoder=train.text_encoder, load_signal=load_signal)
+    return train, dev, train.text_encoder
 
 
 def load_checkpoint(checkpoint=None, device=torch.device('cpu')):

@@ -13,8 +13,8 @@ from src.utils.configurable import add_config
 logger = logging.getLogger(__name__)
 
 
-def load_data(source_train='data/signal_dataset/train',
-              source_dev='data/signal_dataset/dev',
+def load_data(source_train='data/.signal_dataset/train',
+              source_dev='data/.signal_dataset/dev',
               log_mel_spectrogram_prefix='log_mel_spectrogram',
               signal_prefix='signal',
               extension='.npy'):

@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 def main(checkpoint,
-         destination_train='data/signal_dataset/train',
-         destination_dev='data/signal_dataset/dev',
+         destination_train='data/.signal_dataset/train',
+         destination_dev='data/.signal_dataset/dev',
          max_batch_size=96,
          num_workers=1):  # pragma: no cover
     """ Main module used to generate dataset for training a signal model.

@@ -86,3 +86,6 @@ docs/_build
 
 # Experiments
 experiments/
+
+# Sync
+**lrsyncssh.conf.lua

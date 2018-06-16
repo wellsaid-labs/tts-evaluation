@@ -1,8 +1,6 @@
-import mock
 import os
 import torch
 
-from torchnlp.datasets import Dataset
 from torch.optim.lr_scheduler import StepLR
 from src.optimizer import Optimizer
 
@@ -19,23 +17,16 @@ def test_set_hparams():
     set_hparams()
 
 
-@mock.patch('src.bin.feature_model._utils.lj_speech_dataset')
-def test_load_data(lj_speech_dataset_mock):
-    lj_speech_dataset_mock.return_value = tuple([
-        Dataset([{
-            'text': 'Printing, in the only sense with which we are at present concerned,...',
-            'wav': 'tests/_test_data/LJ001-0001.wav'
-        }]),
-        Dataset([{
-            'text': 'Printing, in the only sense with which we are at present concerned,...',
-            'wav': 'tests/_test_data/LJ001-0001.wav'
-        }])
-    ])
-    train, dev, encoder = load_data(sample_rate=22050)
+def test_load_data():
+    train, dev, text_encoder = load_data(
+        source_train='tests/_test_data/feature_dataset/train',
+        source_dev='tests/_test_data/feature_dataset/dev')
     assert len(train) == 1
     assert len(dev) == 1
-    assert train[0]['stop_token'].shape[0] == train[0]['log_mel_spectrogram'].shape[0]
-    assert train[0]['signal'].shape[0] % train[0]['log_mel_spectrogram'].shape[0] == 0
+    assert text_encoder.decode(train[0]['text']) == 'Yup!'
+
+    # Smoke test
+    dev[0]
 
 
 def test_load_save_checkpoint():

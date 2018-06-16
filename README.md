@@ -48,6 +48,10 @@ This section describes commands to run the executables required for training.
 
 #### Feature Model
 
+First things first, preprocess the audio via:
+
+    python src/bin/feature_model/preprocess.py
+
 Train the feature model like so:
 
     python src/bin/feature_model/train.py
@@ -128,7 +132,7 @@ Thanks for considering contributing!
 
 ### Contributing Guide
 
-Read our [contributing guide](https://github.com/AI2Incubator/Tacotron-2/blob/master/CONTRIBUTING.md) to learn about our development process, how to propose bugfixes and improvements, and how to build and test your changes to Tacotron-2.
+Read our [contributing guide](https://github.com/AI2Incubator/Tacotron-2/blob/master/docs/CONTRIBUTING.md) to learn about our development process, how to propose bugfixes and improvements, and how to build and test your changes to Tacotron-2.
 
 ## Authors
 

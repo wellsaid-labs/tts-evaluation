@@ -167,6 +167,7 @@ class ExperimentContextManager(object):
         logger.info('Label: %s', self.label)
         logger.info('Device: %s', self.device)
         logger.info('Seed: %s', self.seed)
+        os.system('git show --name-status')
 
         self._tensorboard()
 

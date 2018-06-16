@@ -112,7 +112,7 @@ def set_hparams():
                 'norm': True,
                 'loudness': False,
                 # NOTE: Guard to reduce clipping during resampling
-                'guard': True,
+                'guard': False,
                 # NOTE: Highpass and lowpass filter to ensure Wav is consistent with Spectrogram.
                 'lower_hertz': lower_hertz,
                 'upper_hertz': upper_hertz,
@@ -127,6 +127,9 @@ def set_hparams():
                 'epoch_start_decay': 10000,
                 'epoch_end_decay': 60000,
                 'end_lr': 10**-5,
+            },
+            'optimizer.Optimizer.__init__': {
+                'max_grad_norm': 0.0,
             },
             'audio': {
                 # SOURCE (Wavenet):
@@ -289,10 +292,7 @@ def set_hparams():
                     'upsample_repeat': 75,
                 }
             },
-            'bin': {
-                'signal_model.train.Trainer.__init__.sample_rate': sample_rate,
-                'feature_model._utils.load_data.sample_rate': sample_rate,
-            },
+            'bin.signal_model.train.Trainer.__init__.sample_rate': sample_rate,
             'utils.utils': {
                 'plot_waveform.sample_rate': sample_rate,
                 'plot_log_mel_spectrogram': {

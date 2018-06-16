@@ -167,7 +167,7 @@ def read_audio(filename, sample_rate=None):
             "Sample rate must be set to %d (!= %s) before hand for file %s" %
             (sample_rate, observed_sample_rate, filename))
     assert len(signal.shape) == 1, "Signal must be mono."
-    assert max(signal) <= 1 and min(signal) >= -1, "Signal must be in range [-1, 1]."
+    assert np.max(signal) <= 1 and np.min(signal) >= -1, "Signal must be in range [-1, 1]."
     return signal
 
 
