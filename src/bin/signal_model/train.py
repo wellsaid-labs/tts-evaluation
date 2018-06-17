@@ -10,7 +10,6 @@ from tqdm import tqdm
 import torch
 
 from src.audio import mu_law_decode
-from src.audio import mu_law_encode
 from src.bin.signal_model._data_iterator import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
@@ -19,8 +18,10 @@ from src.bin.signal_model._utils import set_hparams
 from src.optimizer import Optimizer
 from src.signal_model import WaveNet
 from src.utils import get_total_parameters
+from src.utils import parse_hparam_args
 from src.utils import plot_log_mel_spectrogram
 from src.utils import plot_waveform
+from src.utils.configurable import add_config
 from src.utils.configurable import configurable
 from src.utils.configurable import log_config
 from src.utils.experiment_context_manager import ExperimentContextManager
@@ -232,8 +233,6 @@ class Trainer():  # pragma: no cover
             spectrogram=batch['spectrograms'][item], signal=batch['signals'][item])
         self._add_audio(['full', 'prediction'], ['full', 'prediction_waveform'],
                         mu_law_decode(infered_signal), self.step)
-        # Add comparable quantization noise to the gold signal for comparison
-        gold_signal = mu_law_decode(mu_law_encode(gold_signal))
         self._add_audio(['full', 'gold'], ['full', 'gold_waveform'], gold_signal, self.step)
         self._add_image(['full', 'spectrogram'], spectrogram, plot_log_mel_spectrogram, self.step)
 
@@ -314,6 +313,8 @@ def main(checkpoint=None,
          epochs=1000,
          train_batch_size=2,
          num_workers=0,
+         reset_optimizer=False,
+         hparams={},
          dev_to_train_ratio=3,
          min_time=60 * 15,
          label='signal_model'):  # pragma: no cover
@@ -324,6 +325,8 @@ def main(checkpoint=None,
         epochs (int, optional): Number of epochs to run for.
         train_batch_size (int, optional): Maximum training batch size.
         num_workers (int, optional): Number of workers for data loading.
+        reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer and scheduler.
+        hparams (dict, optional): Hparams to override default hparams.
         dev_to_train_ratio (int, optional): Due to various memory requirements, set the ratio
             of dev batch size to train batch size.
         min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
@@ -331,12 +334,12 @@ def main(checkpoint=None,
         label (str, optional): Label applied to a experiments from this executable.
     """
     torch.backends.cudnn.enabled = True
-    # TODO: Speed test to ensure this is the fastest settings
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.fastest = False
 
     with ExperimentContextManager(label=label, min_time=min_time) as context:
         set_hparams()
+        add_config(hparams)
         log_config()
         checkpoint = load_checkpoint(checkpoint, context.device)
         train, dev = load_data()
@@ -344,6 +347,10 @@ def main(checkpoint=None,
         # Set up trainer.
         trainer_kwargs = {}
         if checkpoint is not None:
+            if reset_optimizer:
+                logger.info('Ignoring loaded optimizer and scheduler.')
+                del checkpoint['optimizer']
+                del checkpoint['scheduler']
             trainer_kwargs.update(checkpoint)
 
         trainer = Trainer(
@@ -387,8 +394,25 @@ if __name__ == '__main__':  # pragma: no cover
         help='Set the maximum training batch size; this figure depends on the GPU memory')
     parser.add_argument(
         '-w', '--num_workers', type=int, default=0, help='Numer of workers used for data loading')
-    args = parser.parse_args()
+    parser.add_argument(
+        '-r',
+        '--reset_optimizer',
+        action='store_true',
+        default=False,
+        help='Reset optimizer and scheduler.')
+    parser.add_argument(
+        '-r',
+        '--reset_optimizer',
+        action='store_true',
+        default=False,
+        help='Reset optimizer and scheduler.')
+    args, unknown_args = parser.parse_known_args()
+    # Assume other arguments correspond to hparams
+    hparams = parse_hparam_args(unknown_args)
     main(
         checkpoint=args.checkpoint,
         train_batch_size=args.train_batch_size,
-        num_workers=args.num_workers)
+        num_workers=args.num_workers,
+        reset_optimizer=args.reset_optimizer,
+        hparams=hparams,
+    )

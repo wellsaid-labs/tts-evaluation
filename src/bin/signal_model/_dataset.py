@@ -126,6 +126,7 @@ class SignalDataset(data.Dataset):
         # To make this more tractable, we first apply a µ-law companding transformation
         # (ITU-T, 1988) to the data, and then quantize it to 256 possible values.
         source_signal_slice = mu_law_decode(mu_law_encode(source_signal_slice))
+        signal = mu_law_decode(mu_law_encode(signal))
         source_signal_slice = mu_law(source_signal_slice)
 
         return {

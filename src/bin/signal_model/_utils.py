@@ -67,7 +67,7 @@ def set_hparams():
             # a quarter second of context for each chunk, padding each utterance with a
             # quarter second of silence at the beginning. We filter out chunks that are
             # predominantly silence and end up with 74,348 total chunks.
-            'slice_size': 24000,
+            'slice_size': 7800,
         }
     })
 

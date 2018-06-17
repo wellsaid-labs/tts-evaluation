@@ -16,6 +16,7 @@ from src.utils import plot_waveform
 from src.utils import ROOT_PATH
 from src.utils import spectrogram_to_image
 from src.utils import split_dataset
+from src.utils import parse_hparam_args
 
 
 class MockModel(nn.Module):
@@ -107,3 +108,8 @@ def test_figure_to_numpy_array():
     plt.close(figure)
 
     assert figure_to_numpy_array(figure).shape == (480, 640, 3)
+
+
+def test_parse_hparam_args():
+    hparam_args = ['--foo 0.01', '--bar WaveNet']
+    assert parse_hparam_args(hparam_args) == {'foo': 0.01, 'bar': 'WaveNet'}
