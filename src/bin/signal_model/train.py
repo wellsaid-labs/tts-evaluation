@@ -19,7 +19,9 @@ from src.optimizer import Optimizer
 from src.signal_model import WaveNet
 from src.utils import get_total_parameters
 from src.utils import parse_hparam_args
+from src.utils import plot_find_learning_rate
 from src.utils import plot_log_mel_spectrogram
+from src.utils import plot_loss_change
 from src.utils import plot_waveform
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
@@ -98,13 +100,12 @@ class Trainer():  # pragma: no cover
         logger.info('Total Parameters: %d', get_total_parameters(self.model))
         logger.info('Model:\n%s' % self.model)
 
-    def run_epoch(self, train=False, trial_run=False, teacher_forcing=True):
+    def run_epoch(self, train=False, trial_run=False):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
 
         Args:
             train (bool): If ``True``, the batch will store gradients.
             trial_run (bool): If True, then runs only 1 batch.
-            teacher_forcing (bool): Feed ground truth to the model.
         """
         label = 'TRAIN' if train else 'DEV'
         logger.info('[%s] Running Epoch %d, Step %d', label, self.epoch, self.step)
@@ -133,17 +134,17 @@ class Trainer():  # pragma: no cover
 
         self._add_scalar(['loss', 'epoch'], total_signal_loss / total_signal_predictions, self.step)
 
-    def _add_image(self, path, tensor, to_image, step):
+    def _add_image(self, path, to_image, step, *data):
         """ Plot data and add image to tensorboard.
 
         Args:
             path (list): List of tags to use as label.
-            tensor (torch.Tensor): Tensor to visualize.
             to_image (callable): Callable that returns an image given tensor data.
             step (int): Step value to record.
+            *tensors (torch.Tensor): Tensor to visualize.
         """
-        data = tensor.detach().cpu().numpy()
-        self.tensorboard.add_image('/'.join(path), to_image(data), step)
+        data = [row.detach().cpu().numpy() if torch.is_tensor(row) else row for row in data]
+        self.tensorboard.add_image('/'.join(path), to_image(*data), step)
 
     def _add_scalar(self, path, scalar, step):
         """ Add scalar to tensorboard
@@ -168,7 +169,7 @@ class Trainer():  # pragma: no cover
             signal) >= -1.0, "Should be [-1, 1] it is [%f, %f]" % (torch.max(signal),
                                                                    torch.min(signal))
         self.tensorboard.add_audio('/'.join(path_audio), signal, step, self.sample_rate)
-        self._add_image(path_image, signal, plot_waveform, step)
+        self._add_image(path_image, plot_waveform, step, signal)
 
     def _infer(self, spectrogram, signal=None, max_infer_frames=300):
         """ Run in inference mode without teacher forcing.
@@ -234,7 +235,7 @@ class Trainer():  # pragma: no cover
         self._add_audio(['full', 'prediction'], ['full', 'prediction_waveform'],
                         mu_law_decode(infered_signal), self.step)
         self._add_audio(['full', 'gold'], ['full', 'gold_waveform'], gold_signal, self.step)
-        self._add_image(['full', 'spectrogram'], spectrogram, plot_log_mel_spectrogram, self.step)
+        self._add_image(['full', 'spectrogram'], plot_log_mel_spectrogram, self.step, spectrogram)
 
     def _compute_loss(self, gold_signal, gold_signal_lengths, predicted_signal):
         """ Compute the losses for Tacotron.
@@ -256,6 +257,73 @@ class Trainer():  # pragma: no cover
         signal_loss = torch.sum(signal_loss * mask) / num_predictions
 
         return signal_loss, num_predictions
+
+    def _set_learning_rate(self, learning_rate):
+        """ Set the learning rate rate for ``self.optimizer``.
+
+        Args:
+            learning_rate (float, optional): New learning rate to use.
+        """
+        for group in self.optimizer.optimizer.param_groups:
+            group['lr'] = learning_rate
+
+    def find_learning_rate(self, min_learning_rate=1e-8, max_learning_rate=10.0, beta=0.98):
+        """ Method for finding the optimal learning rate range for your model and dataset.
+
+        TODO: Abstract this into a utility and add a test.
+
+        Args:
+            min_learning_rate (float, optional): The lower bound of the learning rate range for the
+                experiment.
+            max_learning_rate (float, optional): The upper bound of the learning rate range for the
+                experiment.
+            beta (float, optional): Beta used for computing the exponentially weighed average of
+                loss.
+
+        Reference:
+            * Blog post
+              jeremyjordan.me/nn-learning-rate
+            * Original paper
+              https://arxiv.org/abs/1506.01186
+            * How Do You Find A Good Learning Rate
+              https://sgugger.github.io/how-do-you-find-a-good-learning-rate.html#how-do-you-find-a-good-learning-rate
+            * Estimating an Optimal Learning Rate For a Deep Neural Network
+              https://towardsdatascience.com/estimating-optimal-learning-rate-for-a-deep-neural-network-ce32f2556ce0
+        """
+        learning_rate = min_learning_rate
+        average_loss, best_loss = 0.0, 0.0
+        losses, learning_rates = [], []
+        self._set_learning_rate(learning_rate)
+        self.tensorboard = self.train_tensorboard
+        data_iterator = DataIterator(
+            self.device, self.train_dataset, self.train_batch_size, num_workers=self.num_workers)
+        data_iterator = tqdm(data_iterator, desc='FIND LEARNING RATE')
+        # Multiplicative factor to increase learning rate
+        factor = (max_learning_rate / min_learning_rate)**(1 / (len(data_iterator) - 1))
+        for i, batch in enumerate(data_iterator):
+            signal_loss, _ = self._run_step(batch, train=True)
+            average_loss = beta * average_loss + (1 - beta) * signal_loss
+            smoothed_loss = average_loss / (1 - beta**(i + 1))
+
+            # Stop if the loss is exploding
+            if i > 0 and smoothed_loss > 4 * best_loss:
+                break
+
+            # Record the best loss
+            if smoothed_loss < best_loss or i == 0:
+                best_loss = smoothed_loss
+
+            losses.append(smoothed_loss)
+            learning_rates.append(learning_rate)
+
+            # Update the lr for the next step
+            learning_rate *= factor
+            self._set_learning_rate(learning_rate)
+
+        self._add_image(['learning_rate_vs_loss'], plot_find_learning_rate, self.step,
+                        learning_rates, losses)
+        self._add_image(['learning_rate_vs_loss_change'], plot_loss_change, self.step,
+                        learning_rates, losses)
 
     def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
@@ -315,6 +383,7 @@ def main(checkpoint=None,
          num_workers=0,
          reset_optimizer=False,
          hparams={},
+         run_find_learning_rate=False,
          dev_to_train_ratio=3,
          min_time=60 * 15,
          label='signal_model'):  # pragma: no cover
@@ -327,6 +396,8 @@ def main(checkpoint=None,
         num_workers (int, optional): Number of workers for data loading.
         reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer and scheduler.
         hparams (dict, optional): Hparams to override default hparams.
+        run_find_learning_rate (bool, optional): Plot the loss as dependent on the learning to
+            help set the learning rate for the training run.
         dev_to_train_ratio (int, optional): Due to various memory requirements, set the ratio
             of dev batch size to train batch size.
         min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
@@ -364,6 +435,11 @@ def main(checkpoint=None,
             num_workers=num_workers,
             **trainer_kwargs)
 
+        if run_find_learning_rate:
+            logger.info('Running find learning rate...')
+            trainer.find_learning_rate()
+            return
+
         # Training Loop
         for _ in range(epochs):
             is_trial_run = trainer.epoch == 0
@@ -393,13 +469,13 @@ if __name__ == '__main__':  # pragma: no cover
         default=2,
         help='Set the maximum training batch size; this figure depends on the GPU memory')
     parser.add_argument(
-        '-w', '--num_workers', type=int, default=0, help='Numer of workers used for data loading')
-    parser.add_argument(
-        '-r',
-        '--reset_optimizer',
+        '-f',
+        '--run_find_learning_rate',
         action='store_true',
         default=False,
-        help='Reset optimizer and scheduler.')
+        help='Run find learning rate algorithm to help set the optimal learning rate.')
+    parser.add_argument(
+        '-w', '--num_workers', type=int, default=0, help='Numer of workers used for data loading')
     parser.add_argument(
         '-r',
         '--reset_optimizer',
@@ -415,4 +491,5 @@ if __name__ == '__main__':  # pragma: no cover
         num_workers=args.num_workers,
         reset_optimizer=args.reset_optimizer,
         hparams=hparams,
+        run_find_learning_rate=args.run_find_learning_rate,
     )

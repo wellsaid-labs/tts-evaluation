@@ -129,6 +129,117 @@ def plot_stop_token(stop_token, plot_to_numpy=True):
         return figure_to_numpy_array(figure)
 
 
+def plot_find_learning_rate(learning_rates, losses, start=10, end=5, plot_to_numpy=True):
+    """ Plot the learning rate to change to loss.
+
+    Reference:
+        * Inspired by...
+          https://towardsdatascience.com/estimating-optimal-learning-rate-for-a-deep-neural-network-ce32f2556ce0
+
+    Args:
+        learning_rates (list of float): Learning rate (x axis).
+        losses (list of float): Corresponding loss (y axis).
+        start (int, optional): Typically, the initial values are not interesting, set this to
+            remove the first ``start`` values.
+        end (int, optional): Typically, the last values are not interesting, set this to
+            remove the last ``end`` values.
+        plot_to_numpy (bool, optional): If ``True``, return as a numpy array; otherwise, ``None``
+            is returned.
+
+    Returns:
+        If ``plot_to_numpy=True`` returns image (np.array [width, height, 3]) otherwise returns
+            ``None``.
+    """
+    losses = losses[start:-end]
+    learning_rates = learning_rates[start:-end]
+    pyplot.style.use('ggplot')
+    figure, axes = pyplot.subplots(figsize=(20, 10))
+    axes.plot(learning_rates, losses, marker='.', linestyle='solid')
+    axes.set_xlabel('Learning Rate')
+    axes.set_ylabel('Loss')
+    axes.set_xscale('log')
+    axes.grid(True, which='major', linestyle='-', linewidth=2)
+    axes.grid(True, which='minor', linestyle='-', linewidth=1)
+
+    # LEARN MORE:
+    # https://stackoverflow.com/questions/44078409/matplotlib-semi-log-plot-minor-tick-marks-are-gone-when-range-is-large
+    locator_major = matplotlib.ticker.LogLocator(base=10.0, numticks=12)
+    axes.xaxis.set_major_locator(locator_major)
+    locator_minor = matplotlib.ticker.LogLocator(
+        base=10.0, subs=np.arange(0.0, 1, 0.1), numticks=12)
+    axes.xaxis.set_minor_locator(locator_minor)
+    axes.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+    if plot_to_numpy:
+        # LEARN MORE: https://github.com/matplotlib/matplotlib/issues/8560/
+        # ``pyplot.close`` removes the figure from it's internal state and (if there is a gui)
+        # closes the window. However it does not clear the figure and if you are still holding a
+        # reference to the ``Figure`` object (and it holds references to all of it's children) so it
+        # is not garbage collected.
+        pyplot.close(figure)
+        return figure_to_numpy_array(figure)
+
+
+def plot_loss_change(learning_rates,
+                     losses,
+                     num_batches=10,
+                     start=10,
+                     end=5,
+                     y_limits=(-0.05, 0.05),
+                     plot_to_numpy=True):
+    """ Plots rate of change of the loss function.
+
+    Reference:
+        * Inspired by...
+          https://towardsdatascience.com/estimating-optimal-learning-rate-for-a-deep-neural-network-ce32f2556ce0
+
+    Args:
+        learning_rates (list of float): Learning rate (x axis).
+        losses (list of float): Corresponding loss (y axis).
+        num_batches (int, optional): Number of batches for simple moving average to smooth out the
+            curve.
+        start (int, optional): Typically, the initial values are not interesting, set this to
+            remove the first ``start`` values.
+        end (int, optional): Typically, the last values are not interesting, set this to
+            remove the last ``end`` values.
+        y_limits (list of float, optional): Limits for the y axis.
+        plot_to_numpy (bool, optional): If ``True``, return as a numpy array; otherwise, ``None``
+            is returned.
+
+    Returns:
+        If ``plot_to_numpy=True`` returns image (np.array [width, height, 3]) otherwise returns
+            ``None``.
+    """
+    derivatives = [0] * (num_batches + 1)
+    for i in range(1 + num_batches, len(learning_rates)):
+        derivative = (losses[i] - losses[i - num_batches]) / num_batches
+        derivatives.append(derivative)
+
+    derivatives = derivatives[start:-end]
+    learning_rates = learning_rates[start:-end]
+
+    pyplot.style.use('ggplot')
+    figure, axes = pyplot.subplots(figsize=(20, 10))
+    axes.set_xlabel('Learning Rate')
+    axes.set_ylabel('Loss Change')
+    axes.set_xscale('log')
+    axes.set_ylim(y_limits)
+
+    # LEARN MORE:
+    # https://stackoverflow.com/questions/44078409/matplotlib-semi-log-plot-minor-tick-marks-are-gone-when-range-is-large
+    axes.plot(learning_rates, derivatives, marker='.', linestyle='solid')
+    axes.grid(True, which='major', linestyle='-', linewidth=2)
+    axes.grid(True, which='minor', linestyle='-', linewidth=1)
+    locator_major = matplotlib.ticker.LogLocator(base=10.0, numticks=12)
+    axes.xaxis.set_major_locator(locator_major)
+    locator_minor = matplotlib.ticker.LogLocator(
+        base=10.0, subs=np.arange(0.0, 1, 0.1), numticks=12)
+    axes.xaxis.set_minor_locator(locator_minor)
+    axes.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+    if plot_to_numpy:
+        pyplot.close(figure)
+        return figure_to_numpy_array(figure)
+
+
 def spectrogram_to_image(spectrogram):
     """ Create an image array form a spectrogram.
 
@@ -205,7 +316,6 @@ def plot_log_mel_spectrogram(log_mel_spectrogram,
         y_axis='mel',
         x_axis='time',
     )
-    pyplot.title('Mel spectrogram')
     pyplot.colorbar(format='%+2.0f dB')
     if plot_to_numpy:
         pyplot.close(figure)

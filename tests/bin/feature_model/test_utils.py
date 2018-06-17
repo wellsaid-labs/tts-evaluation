@@ -45,3 +45,5 @@ def test_load_save_checkpoint():
 
         # Smoke test
         load_checkpoint(filename)
+
+        context.clean_up()

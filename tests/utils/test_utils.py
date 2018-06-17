@@ -9,14 +9,16 @@ import matplotlib.pyplot as plt
 
 from src.utils import figure_to_numpy_array
 from src.utils import get_total_parameters
+from src.utils import parse_hparam_args
 from src.utils import plot_attention
+from src.utils import plot_find_learning_rate
 from src.utils import plot_log_mel_spectrogram
+from src.utils import plot_loss_change
 from src.utils import plot_stop_token
 from src.utils import plot_waveform
 from src.utils import ROOT_PATH
 from src.utils import spectrogram_to_image
 from src.utils import split_dataset
-from src.utils import parse_hparam_args
 
 
 class MockModel(nn.Module):
@@ -66,6 +68,20 @@ def test_split_dataset_shuffle():
 def test_plot_log_mel_spectrogram():
     arr = np.random.rand(5, 6)
     figure = plot_log_mel_spectrogram(arr)
+    assert isinstance(figure, np.ndarray)
+
+
+def test_plot_find_learning_rate():
+    learning_rates = np.array([10**-3, 10**-2, 10**-1, 10])
+    losses = np.random.rand(4)
+    figure = plot_find_learning_rate(learning_rates, losses, start=0, end=0)
+    assert isinstance(figure, np.ndarray)
+
+
+def test_plot_loss_change():
+    learning_rates = np.array([10**-3, 10**-2, 10**-1, 10])
+    losses = np.random.rand(4)
+    figure = plot_loss_change(learning_rates, losses, start=0, end=0)
     assert isinstance(figure, np.ndarray)
 
 

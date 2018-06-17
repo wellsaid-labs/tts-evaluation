@@ -172,24 +172,28 @@ class ExperimentContextManager(object):
 
         return self
 
-    def __exit__(self, type_, value, traceback):
+    def clean_up(self):
+        """ Delete files associated with this context. """
+        logger.info('Deleting Experiment: %s', self.directory)
+        shutil.rmtree(self.directory)
+
+        # Remove empty directories
+        for root, directories, files in os.walk(self.root, topdown=False):
+            for directory in directories:
+                directory = os.path.join(root, directory)
+                # Only works when the directory is empty
+                try:
+                    os.rmdir(directory)
+                except OSError:
+                    pass
+
+    def __exit__(self, exception, value, traceback):
         """ Runs after the experiment context ends.
         """
         # NOTE: Log before removing handlers.
         elapsed_seconds = time.time() - self._start_time
-        if self.min_time is not None and elapsed_seconds < self.min_time:
-            logger.info('Deleting Experiment: %s', self.directory)
-            shutil.rmtree(self.directory)
-
-            # Remove empty directories
-            for root, directories, files in os.walk(self.root, topdown=False):
-                for directory in directories:
-                    directory = os.path.join(root, directory)
-                    # Only works when the directory is empty
-                    try:
-                        os.rmdir(directory)
-                    except OSError:
-                        pass
+        if self.min_time is not None and elapsed_seconds < self.min_time and exception:
+            self.clean_up()
 
         self.notify('Experiment', 'Experiment has exited after %d seconds.' % (elapsed_seconds))
 

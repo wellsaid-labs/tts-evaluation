@@ -41,5 +41,7 @@ def test_experiment(*_):
         assert os.path.isdir(context.directory)
         assert os.path.isdir(context.checkpoints_directory)
 
+        context.clean_up()
+
     # Automatically cleaned up
     assert not os.path.isdir(context.directory)

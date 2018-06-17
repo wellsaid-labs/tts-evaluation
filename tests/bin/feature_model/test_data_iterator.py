@@ -44,3 +44,5 @@ def test_data_iterator():
         except StopIteration:
             error = True
         assert error
+
+        context.clean_up()
