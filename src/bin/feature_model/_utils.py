@@ -50,7 +50,13 @@ def load_data(source_train='data/.feature_dataset/train',
     Returns:
         train (FeatureDataset)
         dev (FeatureDataset)
+        text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the
+            text.
     """
+    if not os.path.isdir(source_dev) or not os.path.isdir(source_train):
+        raise ValueError('Data files not found. '
+                         'Did you run ``src/bin/feature_model/preprocess.py``?')
+
     train = FeatureDataset(source_train, text_encoder=text_encoder, load_signal=load_signal)
     dev = FeatureDataset(source_dev, text_encoder=train.text_encoder, load_signal=load_signal)
     return train, dev, train.text_encoder

@@ -9,7 +9,7 @@ from tqdm import tqdm
 import torch
 import numpy as np
 
-from src.bin.feature_model._utils import DataIterator
+from src.bin.feature_model._data_iterator import DataIterator
 from src.bin.feature_model._utils import load_checkpoint
 from src.bin.feature_model._utils import load_data
 from src.bin.feature_model._utils import set_hparams
@@ -71,7 +71,7 @@ def main(checkpoint,
         for i, batch in enumerate(data_iterator):
 
             _, batch_predicted_frames, _, _ = model(
-                batch['text'], ground_truth_frames=batch['frame'])
+                batch['text'], ground_truth_frames=batch['frames'])
             # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
             batch_predicted_frames = batch_predicted_frames.transpose(0, 1).cpu().numpy().astype(
                 np.float32)

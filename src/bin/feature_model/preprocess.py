@@ -17,8 +17,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def main(destination_train='data/feature_dataset/train',
-         destination_dev='data/feature_dataset/dev'):  # pragma: no cover
+def main(destination_train='data/.feature_dataset/train',
+         destination_dev='data/.feature_dataset/dev'):  # pragma: no cover
     """ Main module used to preprocess the signal and spectrogram for training a feature model.
 
     Args:

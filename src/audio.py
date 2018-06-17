@@ -273,6 +273,8 @@ def get_log_mel_spectrogram(signal,
         pad (tuple): Number of zeros to pad the left and right of the signal, such that:
             ``(signal.shape[0] + pad) / frame_hop == log_mel_spectrograms.shape[0]``
     """
+    # NOTE: Check ``notebooks/Comparing Mel Spectrogram to Signal.ipynb`` for the correctness
+    # of this padding algorithm.
     # NOTE: Pad signal so that is divisable by ``frame_hop``
     remainder = frame_hop - signal.shape[0] % frame_hop
     padding = (math.ceil(remainder / 2), math.floor(remainder / 2))

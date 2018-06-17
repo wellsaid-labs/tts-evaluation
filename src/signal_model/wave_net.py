@@ -22,7 +22,7 @@ def get_receptive_field_size(layers):
 
     Args:
         layers (ResidualBlock): Layers of residual blocks used for Wavenet.
-s
+
     Returns:
         receptive_field_size (int): Receptive field size in samples.
     """

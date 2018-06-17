@@ -188,8 +188,7 @@ def plot_log_mel_spectrogram(log_mel_spectrogram,
         If ``plot_to_numpy=True`` returns image (np.array [width, height, 3]) otherwise returns
             ``None``.
     """
-    aspect = log_mel_spectrogram.shape[0] / log_mel_spectrogram.shape[1]
-    figure = pyplot.figure(figsize=(2 * aspect, 2))
+    figure = pyplot.figure()
     pyplot.style.use('ggplot')
     if torch.is_tensor(log_mel_spectrogram):
         log_mel_spectrogram = log_mel_spectrogram.numpy()

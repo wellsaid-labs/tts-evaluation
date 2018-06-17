@@ -10,6 +10,7 @@ from tqdm import tqdm
 import torch
 
 from src.audio import mu_law_decode
+from src.audio import mu_law_encode
 from src.bin.signal_model._data_iterator import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
@@ -231,6 +232,8 @@ class Trainer():  # pragma: no cover
             spectrogram=batch['spectrograms'][item], signal=batch['signals'][item])
         self._add_audio(['full', 'prediction'], ['full', 'prediction_waveform'],
                         mu_law_decode(infered_signal), self.step)
+        # Add comparable quantization noise to the gold signal for comparison
+        gold_signal = mu_law_decode(mu_law_encode(gold_signal))
         self._add_audio(['full', 'gold'], ['full', 'gold_waveform'], gold_signal, self.step)
         self._add_image(['full', 'spectrogram'], spectrogram, plot_log_mel_spectrogram, self.step)
 
@@ -388,5 +391,4 @@ if __name__ == '__main__':  # pragma: no cover
     main(
         checkpoint=args.checkpoint,
         train_batch_size=args.train_batch_size,
-        num_workers=args.num_workers,
-        model=args.model)
+        num_workers=args.num_workers)
