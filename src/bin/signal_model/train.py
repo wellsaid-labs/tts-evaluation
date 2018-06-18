@@ -19,9 +19,7 @@ from src.optimizer import Optimizer
 from src.signal_model import WaveNet
 from src.utils import get_total_parameters
 from src.utils import parse_hparam_args
-from src.utils import plot_find_learning_rate
 from src.utils import plot_log_mel_spectrogram
-from src.utils import plot_loss_change
 from src.utils import plot_waveform
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
@@ -258,85 +256,6 @@ class Trainer():  # pragma: no cover
 
         return signal_loss, num_predictions
 
-    def _set_learning_rate(self, learning_rate):
-        """ Set the learning rate rate for ``self.optimizer``.
-
-        Args:
-            learning_rate (float, optional): New learning rate to use.
-        """
-        for group in self.optimizer.optimizer.param_groups:
-            group['lr'] = learning_rate
-
-    def find_learning_rate(self,
-                           min_learning_rate=1e-8,
-                           max_learning_rate=10.0,
-                           beta=0.98,
-                           epochs=1):
-        """ Method for finding the optimal learning rate range for your model and dataset.
-
-        TODO: Abstract this into a utility and add a test.
-
-        Args:
-            min_learning_rate (float, optional): The lower bound of the learning rate range for the
-                experiment.
-            max_learning_rate (float, optional): The upper bound of the learning rate range for the
-                experiment.
-            beta (float, optional): Beta used for computing the exponentially weighed average of
-                loss.
-            epochs (int, optional): Number of epochs to compute the learning rate on.
-
-        Reference:
-            * Blog post
-              jeremyjordan.me/nn-learning-rate
-            * Original paper
-              https://arxiv.or/abs/1506.01186
-            * How Do You Find A Good Learning Rate
-              https://sgugger.github.io/how-do-you-find-a-good-learning-rate.html#how-do-you-find-a-good-learning-rate
-            * Estimating an Optimal Learning Rate For a Deep Neural Network
-              https://towardsdatascience.com/estimating-optimal-learning-rate-for-a-deep-neural-network-ce32f2556ce0
-        """
-        learning_rate = min_learning_rate
-        average_loss, best_loss = 0.0, 0.0
-        losses, learning_rates = [], []
-        self._set_learning_rate(learning_rate)
-        self.tensorboard = self.train_tensorboard
-        data_iterator = DataIterator(
-            self.device, self.train_dataset, self.train_batch_size, num_workers=self.num_workers)
-        # Multiplicative factor to increase learning rate
-        factor = (max_learning_rate / min_learning_rate)**(1 / (len(data_iterator) * epochs - 1))
-        batch_count = 0
-        for _ in range(epochs):
-            for batch in tqdm(data_iterator, desc='FIND LEARNING RATE'):
-                batch_count += 1
-                # We backprop to ensure consistent decreases in LR
-                signal_loss, _ = self._run_step(batch, train=False)
-                average_loss = beta * average_loss + (1 - beta) * signal_loss
-                smoothed_loss = average_loss / (1 - beta**(batch_count))
-
-                # Stop if the loss is exploding
-                if batch_count > 1 and smoothed_loss > 4 * best_loss:
-                    logger.info('Breaking learning rate finder, loss exploded.')
-                    break
-
-                # Record the best loss
-                if smoothed_loss < best_loss or batch_count == 1:
-                    best_loss = smoothed_loss
-
-                losses.append(smoothed_loss)
-                learning_rates.append(learning_rate)
-
-                # Update the lr for the next step
-                learning_rate *= factor
-                self._set_learning_rate(learning_rate)
-            else:  # LEARN MORE: http://psung.blogspot.com/2007/12/for-else-in-python.html
-                continue
-            break
-
-        self._add_image(['learning_rate_vs_loss'], plot_find_learning_rate, self.step,
-                        learning_rates, losses)
-        self._add_image(['learning_rate_vs_loss_change'], plot_loss_change, self.step,
-                        learning_rates, losses)
-
     def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
@@ -395,7 +314,6 @@ def main(checkpoint=None,
          num_workers=0,
          reset_optimizer=False,
          hparams={},
-         run_find_learning_rate=False,
          dev_to_train_ratio=3,
          evaluate_every_n_epochs=5,
          min_time=60 * 15,
@@ -409,8 +327,6 @@ def main(checkpoint=None,
         num_workers (int, optional): Number of workers for data loading.
         reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer and scheduler.
         hparams (dict, optional): Hparams to override default hparams.
-        run_find_learning_rate (bool, optional): Plot the loss as dependent on the learning to
-            help set the learning rate for the training run.
         dev_to_train_ratio (int, optional): Due to various memory requirements, set the ratio
             of dev batch size to train batch size.
         evaluate_every_n_epochs (int, optional): Evaluate every ``evaluate_every_n_epochs`` epochs.
@@ -448,11 +364,6 @@ def main(checkpoint=None,
             num_workers=num_workers,
             **trainer_kwargs)
 
-        if run_find_learning_rate:
-            trainer.run_epoch(train=True)
-            trainer.find_learning_rate()
-            return
-
         # Training Loop
         for _ in range(epochs):
             is_trial_run = trainer.epoch == 0
@@ -480,12 +391,6 @@ if __name__ == '__main__':  # pragma: no cover
         type=int,
         default=2,
         help='Set the maximum training batch size; this figure depends on the GPU memory')
-    parser.add_argument(
-        '-f',
-        '--run_find_learning_rate',
-        action='store_true',
-        default=False,
-        help='Run find learning rate algorithm to help set the optimal learning rate.')
     parser.add_argument(
         '-w', '--num_workers', type=int, default=0, help='Numer of workers used for data loading')
     parser.add_argument(
