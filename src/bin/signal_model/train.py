@@ -228,14 +228,14 @@ class Trainer():  # pragma: no cover
                         self.step)
 
         # Sample from an inference
-        self.model.queue_kernel_update()
-
-        infered_signal, gold_signal, spectrogram = self._infer(
-            spectrogram=batch['spectrograms'][item], signal=batch['signals'][item])
-        self._add_audio(['full', 'prediction'], ['full', 'prediction_waveform'],
-                        mu_law_decode(infered_signal), self.step)
-        self._add_audio(['full', 'gold'], ['full', 'gold_waveform'], gold_signal, self.step)
-        self._add_image(['full', 'spectrogram'], plot_log_mel_spectrogram, self.step, spectrogram)
+        if self.model.queue_kernel_update():
+            infered_signal, gold_signal, spectrogram = self._infer(
+                spectrogram=batch['spectrograms'][item], signal=batch['signals'][item])
+            self._add_audio(['full', 'prediction'], ['full', 'prediction_waveform'],
+                            mu_law_decode(infered_signal), self.step)
+            self._add_audio(['full', 'gold'], ['full', 'gold_waveform'], gold_signal, self.step)
+            self._add_image(['full', 'spectrogram'], plot_log_mel_spectrogram, self.step,
+                            spectrogram)
 
     def _compute_loss(self, gold_signal, gold_signal_lengths, predicted_signal):
         """ Compute the losses for Tacotron.
@@ -267,7 +267,11 @@ class Trainer():  # pragma: no cover
         for group in self.optimizer.optimizer.param_groups:
             group['lr'] = learning_rate
 
-    def find_learning_rate(self, min_learning_rate=1e-8, max_learning_rate=10.0, beta=0.98):
+    def find_learning_rate(self,
+                           min_learning_rate=1e-8,
+                           max_learning_rate=10.0,
+                           beta=0.98,
+                           epochs=1):
         """ Method for finding the optimal learning rate range for your model and dataset.
 
         TODO: Abstract this into a utility and add a test.
@@ -279,12 +283,13 @@ class Trainer():  # pragma: no cover
                 experiment.
             beta (float, optional): Beta used for computing the exponentially weighed average of
                 loss.
+            epochs (int, optional): Number of epochs to compute the learning rate on.
 
         Reference:
             * Blog post
               jeremyjordan.me/nn-learning-rate
             * Original paper
-              https://arxiv.org/abs/1506.01186
+              https://arxiv.or/abs/1506.01186
             * How Do You Find A Good Learning Rate
               https://sgugger.github.io/how-do-you-find-a-good-learning-rate.html#how-do-you-find-a-good-learning-rate
             * Estimating an Optimal Learning Rate For a Deep Neural Network
@@ -297,28 +302,35 @@ class Trainer():  # pragma: no cover
         self.tensorboard = self.train_tensorboard
         data_iterator = DataIterator(
             self.device, self.train_dataset, self.train_batch_size, num_workers=self.num_workers)
-        data_iterator = tqdm(data_iterator, desc='FIND LEARNING RATE')
         # Multiplicative factor to increase learning rate
-        factor = (max_learning_rate / min_learning_rate)**(1 / (len(data_iterator) - 1))
-        for i, batch in enumerate(data_iterator):
-            signal_loss, _ = self._run_step(batch, train=True)
-            average_loss = beta * average_loss + (1 - beta) * signal_loss
-            smoothed_loss = average_loss / (1 - beta**(i + 1))
+        factor = (max_learning_rate / min_learning_rate)**(1 / (len(data_iterator) * epochs - 1))
+        batch_count = 0
+        for _ in range(epochs):
+            for batch in tqdm(data_iterator, desc='FIND LEARNING RATE'):
+                batch_count += 1
+                # We backprop to ensure consistent decreases in LR
+                signal_loss, _ = self._run_step(batch, train=False)
+                average_loss = beta * average_loss + (1 - beta) * signal_loss
+                smoothed_loss = average_loss / (1 - beta**(batch_count))
 
-            # Stop if the loss is exploding
-            if i > 0 and smoothed_loss > 4 * best_loss:
-                break
+                # Stop if the loss is exploding
+                if batch_count > 1 and smoothed_loss > 4 * best_loss:
+                    logger.info('Breaking learning rate finder, loss exploded.')
+                    break
 
-            # Record the best loss
-            if smoothed_loss < best_loss or i == 0:
-                best_loss = smoothed_loss
+                # Record the best loss
+                if smoothed_loss < best_loss or batch_count == 1:
+                    best_loss = smoothed_loss
 
-            losses.append(smoothed_loss)
-            learning_rates.append(learning_rate)
+                losses.append(smoothed_loss)
+                learning_rates.append(learning_rate)
 
-            # Update the lr for the next step
-            learning_rate *= factor
-            self._set_learning_rate(learning_rate)
+                # Update the lr for the next step
+                learning_rate *= factor
+                self._set_learning_rate(learning_rate)
+            else:  # LEARN MORE: http://psung.blogspot.com/2007/12/for-else-in-python.html
+                continue
+            break
 
         self._add_image(['learning_rate_vs_loss'], plot_find_learning_rate, self.step,
                         learning_rates, losses)
@@ -385,6 +397,7 @@ def main(checkpoint=None,
          hparams={},
          run_find_learning_rate=False,
          dev_to_train_ratio=3,
+         evaluate_every_n_epochs=5,
          min_time=60 * 15,
          label='signal_model'):  # pragma: no cover
     """ Main module that trains a the signal model saving checkpoints incrementally.
@@ -400,6 +413,7 @@ def main(checkpoint=None,
             help set the learning rate for the training run.
         dev_to_train_ratio (int, optional): Due to various memory requirements, set the ratio
             of dev batch size to train batch size.
+        evaluate_every_n_epochs (int, optional): Evaluate every ``evaluate_every_n_epochs`` epochs.
         min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
             files are deleted.
         label (str, optional): Label applied to a experiments from this executable.
@@ -421,7 +435,6 @@ def main(checkpoint=None,
             if reset_optimizer:
                 logger.info('Ignoring loaded optimizer and scheduler.')
                 del checkpoint['optimizer']
-                del checkpoint['scheduler']
             trainer_kwargs.update(checkpoint)
 
         trainer = Trainer(
@@ -436,7 +449,7 @@ def main(checkpoint=None,
             **trainer_kwargs)
 
         if run_find_learning_rate:
-            logger.info('Running find learning rate...')
+            trainer.run_epoch(train=True)
             trainer.find_learning_rate()
             return
 
@@ -444,18 +457,17 @@ def main(checkpoint=None,
         for _ in range(epochs):
             is_trial_run = trainer.epoch == 0
             trainer.run_epoch(train=True, trial_run=is_trial_run)
-            checkpoint_path = save_checkpoint(
-                context.checkpoints_directory,
-                model=trainer.model,
-                optimizer=trainer.optimizer,
-                epoch=trainer.epoch,
-                step=trainer.step)
-            trainer.run_epoch(train=False, trial_run=is_trial_run)
+            if trainer.epoch % evaluate_every_n_epochs == 0:
+                save_checkpoint(
+                    context.checkpoints_directory,
+                    model=trainer.model,
+                    optimizer=trainer.optimizer,
+                    epoch=trainer.epoch,
+                    step=trainer.step)
+                trainer.run_epoch(train=False, trial_run=is_trial_run)
             trainer.epoch += 1
 
             print('–' * 100)
-
-    return checkpoint_path
 
 
 if __name__ == '__main__':  # pragma: no cover

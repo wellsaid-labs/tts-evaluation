@@ -69,6 +69,7 @@ class WaveNet(nn.Module):
         self.block_hidden_size = block_hidden_size
         self.signal_channels = signal_channels
         self.num_layers = num_layers
+        self.skip_size = skip_size
         self.embed = torch.nn.Conv1d(in_channels=1, out_channels=block_hidden_size, kernel_size=1)
         torch.nn.init.xavier_uniform_(
             self.embed.weight, gain=torch.nn.init.calculate_gain('linear'))
@@ -104,7 +105,7 @@ class WaveNet(nn.Module):
             self.out[3].weight, gain=torch.nn.init.calculate_gain('linear'))
         self.has_new_weights = True  # Whether the weights have been updated since last export
         self.kernel = None
-
+        self.is_compatible_kernel = None  # If ``True``, the kernel export works.
         self.receptive_field_size = get_receptive_field_size(self.layers)
         logger.info('Receptive field size in samples: %d' % self.receptive_field_size)
 
@@ -114,8 +115,23 @@ class WaveNet(nn.Module):
         NOTE:
             * When using DataParallel, for example, it can be difficult to tell when the weights
               have changed; therefore, we ask for a manual queue.
+
+        Returns:
+            (bool): If ``True`` kernel export is guarenteed.
         """
         self.has_new_weights = True
+
+        # First time, try exporting to set ``self.is_compatible_kernel``
+        if self.is_compatible_kernel is None:
+            try:
+                self.kernel = self._export(self.out[1].weight.dtype, self.out[1].weight.device)
+                self.has_new_weights = False
+                self.is_compatible_kernel = True
+            except:
+                logger.info('Export to kernel failed.')
+                self.is_compatible_kernel = False
+
+        return self.is_compatible_kernel
 
     def _export(self, dtype, device):  # pragma: no cover
         """

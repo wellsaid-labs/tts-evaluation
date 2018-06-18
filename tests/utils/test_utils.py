@@ -74,14 +74,14 @@ def test_plot_log_mel_spectrogram():
 def test_plot_find_learning_rate():
     learning_rates = np.array([10**-3, 10**-2, 10**-1, 10])
     losses = np.random.rand(4)
-    figure = plot_find_learning_rate(learning_rates, losses, start=0, end=0)
+    figure = plot_find_learning_rate(learning_rates, losses)
     assert isinstance(figure, np.ndarray)
 
 
 def test_plot_loss_change():
     learning_rates = np.array([10**-3, 10**-2, 10**-1, 10])
     losses = np.random.rand(4)
-    figure = plot_loss_change(learning_rates, losses, start=0, end=0)
+    figure = plot_loss_change(learning_rates, losses)
     assert isinstance(figure, np.ndarray)
 
 

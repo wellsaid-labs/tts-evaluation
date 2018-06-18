@@ -355,7 +355,7 @@ def main(checkpoint=None,
         for _ in range(epochs):
             is_trial_run = trainer.epoch == 0
             trainer.run_epoch(train=True, trial_run=is_trial_run)
-            checkpoint_path = save_checkpoint(
+            save_checkpoint(
                 context.checkpoints_directory,
                 model=trainer.model,
                 optimizer=trainer.optimizer,
@@ -367,8 +367,6 @@ def main(checkpoint=None,
             trainer.epoch += 1
 
             print('–' * 100)
-
-    return checkpoint_path
 
 
 if __name__ == '__main__':  # pragma: no cover

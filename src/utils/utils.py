@@ -129,7 +129,7 @@ def plot_stop_token(stop_token, plot_to_numpy=True):
         return figure_to_numpy_array(figure)
 
 
-def plot_find_learning_rate(learning_rates, losses, start=10, end=5, plot_to_numpy=True):
+def plot_find_learning_rate(learning_rates, losses, plot_to_numpy=True):
     """ Plot the learning rate to change to loss.
 
     Reference:
@@ -139,10 +139,6 @@ def plot_find_learning_rate(learning_rates, losses, start=10, end=5, plot_to_num
     Args:
         learning_rates (list of float): Learning rate (x axis).
         losses (list of float): Corresponding loss (y axis).
-        start (int, optional): Typically, the initial values are not interesting, set this to
-            remove the first ``start`` values.
-        end (int, optional): Typically, the last values are not interesting, set this to
-            remove the last ``end`` values.
         plot_to_numpy (bool, optional): If ``True``, return as a numpy array; otherwise, ``None``
             is returned.
 
@@ -150,16 +146,17 @@ def plot_find_learning_rate(learning_rates, losses, start=10, end=5, plot_to_num
         If ``plot_to_numpy=True`` returns image (np.array [width, height, 3]) otherwise returns
             ``None``.
     """
-    losses = losses[start:-end]
-    learning_rates = learning_rates[start:-end]
     pyplot.style.use('ggplot')
-    figure, axes = pyplot.subplots(figsize=(20, 10))
-    axes.plot(learning_rates, losses, marker='.', linestyle='solid')
+    figure, axes = pyplot.subplots(figsize=(10, 5))
+    axes.plot(learning_rates, losses, marker=',', linestyle='solid')
     axes.set_xlabel('Learning Rate')
     axes.set_ylabel('Loss')
     axes.set_xscale('log')
     axes.grid(True, which='major', linestyle='-', linewidth=2)
     axes.grid(True, which='minor', linestyle='-', linewidth=1)
+    mean = np.mean(losses)
+    std = np.std(losses) * 3
+    axes.set_ylim(mean - std, mean + std)
 
     # LEARN MORE:
     # https://stackoverflow.com/questions/44078409/matplotlib-semi-log-plot-minor-tick-marks-are-gone-when-range-is-large
@@ -179,13 +176,7 @@ def plot_find_learning_rate(learning_rates, losses, start=10, end=5, plot_to_num
         return figure_to_numpy_array(figure)
 
 
-def plot_loss_change(learning_rates,
-                     losses,
-                     num_batches=10,
-                     start=10,
-                     end=5,
-                     y_limits=(-0.05, 0.05),
-                     plot_to_numpy=True):
+def plot_loss_change(learning_rates, losses, dx=0.025, plot_to_numpy=True):
     """ Plots rate of change of the loss function.
 
     Reference:
@@ -195,13 +186,7 @@ def plot_loss_change(learning_rates,
     Args:
         learning_rates (list of float): Learning rate (x axis).
         losses (list of float): Corresponding loss (y axis).
-        num_batches (int, optional): Number of batches for simple moving average to smooth out the
-            curve.
-        start (int, optional): Typically, the initial values are not interesting, set this to
-            remove the first ``start`` values.
-        end (int, optional): Typically, the last values are not interesting, set this to
-            remove the last ``end`` values.
-        y_limits (list of float, optional): Limits for the y axis.
+        dx (int, optional): Percentage of losses to consider when computing the derivative.
         plot_to_numpy (bool, optional): If ``True``, return as a numpy array; otherwise, ``None``
             is returned.
 
@@ -209,24 +194,31 @@ def plot_loss_change(learning_rates,
         If ``plot_to_numpy=True`` returns image (np.array [width, height, 3]) otherwise returns
             ``None``.
     """
-    derivatives = [0] * (num_batches + 1)
-    for i in range(1 + num_batches, len(learning_rates)):
-        derivative = (losses[i] - losses[i - num_batches]) / num_batches
+    dx = max(int(round(len(losses) * dx)), 2)
+    derivatives = [0] * (dx + 1)
+    logger.info('Using a window of %d', dx)
+
+    for i in range(1 + dx, len(learning_rates)):
+        derivative = (losses[i] - losses[i - dx]) / dx
         derivatives.append(derivative)
 
-    derivatives = derivatives[start:-end]
-    learning_rates = learning_rates[start:-end]
+    derivatives = np.array(derivatives)
+    learning_rates = np.array(learning_rates)
 
     pyplot.style.use('ggplot')
-    figure, axes = pyplot.subplots(figsize=(20, 10))
+    figure, axes = pyplot.subplots(figsize=(10, 5))
     axes.set_xlabel('Learning Rate')
     axes.set_ylabel('Loss Change')
     axes.set_xscale('log')
-    axes.set_ylim(y_limits)
+
+    # Within 2 STD we can expect 97% of the data
+    mean = np.mean(derivatives)
+    std = np.std(derivatives) * 3
+    axes.set_ylim(mean - std, mean + std)
 
     # LEARN MORE:
     # https://stackoverflow.com/questions/44078409/matplotlib-semi-log-plot-minor-tick-marks-are-gone-when-range-is-large
-    axes.plot(learning_rates, derivatives, marker='.', linestyle='solid')
+    axes.plot(learning_rates, derivatives, marker=',', linestyle='solid')
     axes.grid(True, which='major', linestyle='-', linewidth=2)
     axes.grid(True, which='minor', linestyle='-', linewidth=1)
     locator_major = matplotlib.ticker.LogLocator(base=10.0, numticks=12)
@@ -411,8 +403,8 @@ def parse_hparam_args(hparam_args):
 
     for hparam in hparam_args:
         assert '--' in hparam, 'Hparam argument (%s) must have a double flag' % hparam
-        split = hparam.split()
-        assert len(split) == 2, 'Hparam %s must be equal to one value' % hparam
+        split = hparam.replace('=', ' ').split()
+        assert len(split) == 2, 'Hparam %s must be equal to one value' % split
         key, value = tuple(split)
         assert key[:2] == '--', 'Hparam argument (%s) must have a double flag' % hparam
         key = key[2:]  # Remove flag

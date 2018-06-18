@@ -57,6 +57,7 @@ def set_hparams():
         'torch.optim.adam.Adam.__init__': {
             'eps': 10**-8,
             'weight_decay': 0,
+            'lr': 10**-3
         },
         'src.bin.signal_model._dataset.SignalDataset.__init__': {
             # SOURCE (Parallel WaveNet):
