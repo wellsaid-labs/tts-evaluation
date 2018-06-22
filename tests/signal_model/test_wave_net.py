@@ -31,6 +31,9 @@ def test_wave_net():
     # Smoke test back prop
     predicted.sum().backward()
 
+    # Test that kernel update fails with the above parameters
+    assert not net.queue_kernel_update()
+
 
 def test_wave_net_infer():
     if not torch.cuda.is_available():

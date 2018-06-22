@@ -314,7 +314,7 @@ def get_log_mel_spectrogram(signal,
     # followed by log dynamic range compression.
     log_mel_spectrogram = np.log(mel_spectrogram)
 
-    log_mel_spectrogram = log_mel_spectrogram.astype(np.float32)
+    log_mel_spectrogram = log_mel_spectrogram.astype(np.float32)  # ``np.float64`` → ``np.float32``
 
     return log_mel_spectrogram, ret_pad
 

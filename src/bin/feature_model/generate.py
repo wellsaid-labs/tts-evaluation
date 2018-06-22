@@ -5,6 +5,8 @@ import logging
 import os
 
 from tqdm import tqdm
+from torch.nn import MSELoss
+from torchnlp.utils import pad_batch
 
 import torch
 import numpy as np
@@ -17,6 +19,33 @@ from src.utils import get_total_parameters
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _compute_loss_frame_loss(batch, predicted_post_frames, criterion_frames):  # pragma: no cover
+    """ Compute the frame loss for Tacotron.
+
+    Args:
+        batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
+        predicted_post_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
+            Predicted frames with residual.
+        criterion_frames (callable): Loss function used to score frame predictions.
+
+    Returns:
+        post_frames_loss (torch.Tensor [scalar])
+        num_frame_predictions (int): Number of realized frame predictions taking masking into
+            account.
+    """
+    mask = [torch.FloatTensor(length).fill_(1) for length in batch['frame_lengths']]
+    mask = pad_batch(mask)[0].to(predicted_post_frames.device).transpose(0, 1)
+    # [num_frames, batch_size] → [num_frames, batch_size, frame_channels]
+    mask = mask.unsqueeze(2).expand_as(batch['frames'])
+
+    num_predictions = torch.sum(mask)
+
+    loss = criterion_frames(predicted_post_frames, batch['frames'])
+    loss = torch.sum(loss * mask)
+
+    return loss.item(), num_predictions.item()
 
 
 def main(checkpoint,
@@ -49,6 +78,9 @@ def main(checkpoint,
     model = checkpoint['model']
     train, dev, text_encoder = load_data(text_encoder=text_encoder, load_signal=True)
 
+    # Check to ensure the the spectrogram loss is similar
+    criterion_frames = MSELoss(reduce=False).to(device)
+
     logger.info('Device: %s', device)
     logger.info('Number of Train Rows: %d', len(train))
     logger.info('Number of Dev Rows: %d', len(dev))
@@ -61,6 +93,8 @@ def main(checkpoint,
     model.train(mode=False)
 
     for dataset, destination in [(train, destination_train), (dev, destination_dev)]:
+        logger.info('Generating for %s', destination)
+        total_loss, total_predictions = 0.0, 0
         data_iterator = tqdm(
             DataIterator(
                 device=device,
@@ -72,10 +106,16 @@ def main(checkpoint,
 
             _, batch_predicted_frames, _, _ = model(
                 batch['text'], ground_truth_frames=batch['frames'])
+
+            # NOTE: Compute loss to ensure consistency
+            loss, num_predictions = _compute_loss_frame_loss(batch, batch_predicted_frames,
+                                                             criterion_frames)
+            total_predictions += num_predictions
+            total_loss += loss
+
             # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
             batch_predicted_frames = batch_predicted_frames.transpose(0, 1).cpu().numpy().astype(
                 np.float32)
-
             batch_size = batch_predicted_frames.shape[0]
 
             # Save predictions
@@ -98,6 +138,9 @@ def main(checkpoint,
                     os.path.join(destination, 'signal_%d_%d.npy' % (i, j)),
                     signal,
                     allow_pickle=False)
+
+        logger.info('Sanity check, post frame loss: %f [%f of %d]', total_loss / total_predictions,
+                    total_loss, total_predictions)
 
 
 if __name__ == '__main__':  # pragma: no cover

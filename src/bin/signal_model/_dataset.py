@@ -24,6 +24,7 @@ class SignalDataset(data.Dataset):
         extension (str): Filename extension to load.
         slice_size (int): Size of slices to load for training data.
         receptive_field_size (int): Context added to slice; to compute target signal.
+        add_context (bool): If ``True`` add context to slice of ``receptive_field_size``.
 
     References:
         * Parallel WaveNet https://arxiv.org/pdf/1711.10433.pdf
@@ -37,7 +38,8 @@ class SignalDataset(data.Dataset):
                  signal_prefix='signal',
                  extension='.npy',
                  slice_size=7000,
-                 receptive_field_size=1):
+                 receptive_field_size=1,
+                 add_context=True):
         # Invariant: Must be at least one. ``receptive_field_size`` includes the current timestep
         # that must be taken into consideration at very least to predict the next timestep.
         assert receptive_field_size >= 1
@@ -47,6 +49,7 @@ class SignalDataset(data.Dataset):
         self.set_receptive_field_size(receptive_field_size)
         self.log_mel_spectrogram_prefix = log_mel_spectrogram_prefix
         self.signal_prefix = signal_prefix
+        self.add_context = add_context
 
     def __len__(self):
         return len(self.rows)
@@ -57,7 +60,7 @@ class SignalDataset(data.Dataset):
             receptive_field_size (int): Context added to slice; to compute target signal.
         """
         # Remove one, because the current sample is not tallied as context
-        self.context_samples = receptive_field_size - 1
+        self.receptive_field_size = receptive_field_size
 
     def _preprocess(self, log_mel_spectrogram, signal):
         """ Slice the data into bite sized chunks that fit onto GPU memory for training.
@@ -83,10 +86,11 @@ class SignalDataset(data.Dataset):
         Returns:
             (dict): Dictionary with slices up to ``max_samples`` appropriate size for training.
         """
+        context_samples = self.receptive_field_size - 1 if self.add_context else 0
         samples, num_frames = signal.shape[0], log_mel_spectrogram.shape[0]
         samples_per_frame = int(samples / num_frames)
         slice_frames = int(self.slice_samples / samples_per_frame)
-        context_frames = int(math.ceil(self.context_samples / samples_per_frame))
+        context_frames = int(math.ceil(context_samples / samples_per_frame))
 
         # Invariants
         assert self.slice_samples % samples_per_frame == 0

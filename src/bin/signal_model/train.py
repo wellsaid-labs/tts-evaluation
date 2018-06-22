@@ -113,7 +113,7 @@ class Trainer():  # pragma: no cover
         self.tensorboard = self.train_tensorboard if train else self.dev_tensorboard
 
         # Epoch Average Loss Metrics
-        total_signal_loss, total_signal_predictions = 0, 0
+        total_signal_loss, total_signal_predictions = 0.0, 0
 
         # Setup iterator and metrics
         data_iterator = DataIterator(
@@ -402,11 +402,11 @@ if __name__ == '__main__':  # pragma: no cover
     args, unknown_args = parser.parse_known_args()
     # Assume other arguments correspond to hparams
     hparams = parse_hparam_args(unknown_args)
+    # TODO: Add an option to automatically pick the most recent checkpoint to restart;
+    # then writing a restart script should be pretty easy.
     main(
         checkpoint=args.checkpoint,
         train_batch_size=args.train_batch_size,
         num_workers=args.num_workers,
         reset_optimizer=args.reset_optimizer,
-        hparams=hparams,
-        run_find_learning_rate=args.run_find_learning_rate,
-    )
+        hparams=hparams)

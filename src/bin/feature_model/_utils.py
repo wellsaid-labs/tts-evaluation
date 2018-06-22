@@ -24,12 +24,6 @@ def set_hparams():
         'torch.optim.adam.Adam.__init__': {
             'eps': 10**-6,
             'weight_decay': 10**-6,
-        },
-        'src.optimizer.Optimizer.__init__': {
-            # NOTE: Tacotron authors did not mention using this; but this is fairly common
-            # practice. Used in both the NVIDIA/tacotron2, Rayhane-mamah/Tacotron-2, and
-            # mozilla/TTS implementations.
-            # 'max_grad_norm': 1.0
         }
     })
 

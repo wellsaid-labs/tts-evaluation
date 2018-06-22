@@ -124,9 +124,9 @@ class WaveNet(nn.Module):
         # First time, try exporting to set ``self.is_compatible_kernel``
         if self.is_compatible_kernel is None:
             try:
+                self.is_compatible_kernel = True
                 self.kernel = self._export(self.out[1].weight.dtype, self.out[1].weight.device)
                 self.has_new_weights = False
-                self.is_compatible_kernel = True
             except:
                 logger.info('Export to kernel failed.')
                 self.is_compatible_kernel = False

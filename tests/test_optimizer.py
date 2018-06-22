@@ -11,7 +11,7 @@ class TestOptimizer(unittest.TestCase):
     def test_init(self):
         params = [torch.nn.Parameter(torch.randn(2, 3, 4))]
         try:
-            Optimizer(torch.optim.Adam(params), max_grad_norm=0.0)
+            Optimizer(torch.optim.Adam(params), max_grad_norm=None)
         except:
             self.fail("__init__ failed.")
 

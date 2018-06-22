@@ -203,8 +203,7 @@ def plot_log_mel_spectrogram(log_mel_spectrogram,
         fmax=upper_hertz,
         cmap='viridis',
         y_axis='mel',
-        x_axis='time',
-    )
+        x_axis='time')
     pyplot.colorbar(format='%+2.0f dB')
     if plot_to_numpy:
         pyplot.close(figure)

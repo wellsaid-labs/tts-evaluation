@@ -129,7 +129,7 @@ def set_hparams():
                 'end_lr': 10**-5,
             },
             'optimizer.Optimizer.__init__': {
-                'max_grad_norm': 0.0,
+                'max_grad_norm': None,
             },
             'audio': {
                 # SOURCE (Wavenet):

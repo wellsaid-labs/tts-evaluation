@@ -6,6 +6,7 @@ from PIL import Image
 
 import numpy as np
 import matplotlib.pyplot as plt
+import torch
 
 from src.utils import figure_to_numpy_array
 from src.utils import get_total_parameters
@@ -64,7 +65,7 @@ def test_split_dataset_shuffle():
 
 
 def test_plot_log_mel_spectrogram():
-    arr = np.random.rand(5, 6)
+    arr = torch.rand(5, 6)
     figure = plot_log_mel_spectrogram(arr)
     assert isinstance(figure, np.ndarray)
 
@@ -111,5 +112,5 @@ def test_figure_to_numpy_array():
 
 
 def test_parse_hparam_args():
-    hparam_args = ['--foo 0.01', '--bar WaveNet']
-    assert parse_hparam_args(hparam_args) == {'foo': 0.01, 'bar': 'WaveNet'}
+    hparam_args = ['--foo 0.01', '--bar WaveNet', '--moo=1']
+    assert parse_hparam_args(hparam_args) == {'foo': 0.01, 'bar': 'WaveNet', 'moo': 1}

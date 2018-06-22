@@ -68,6 +68,7 @@ class ConditionalFeaturesUpsample(nn.Module):
             local_features (torch.FloatTensor [batch_size, local_length,
                 in_channels * repeat]): Local features to repeated.
         """
+        # TODO: Even without a speaker, we can try a speaker embedding
         # [batch_size, in_channels, upsample_length] →
         # [batch_size, in_channels, upsample_length, 1]
         local_features = local_features.unsqueeze(3)
