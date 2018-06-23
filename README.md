@@ -18,6 +18,8 @@ Pull the GitHub repository with submodules like so:
 
     git clone --recurse-submodules git@github.com:AI2Incubator/Tacotron-2.git
 
+This may not work, if so try other strategies listed [here](https://stackoverflow.com/questions/3796927/how-to-git-clone-including-submodules).
+
 ### 2. Install Python Dependencies
 
 Make sure you have Python 3.5+ with pip. Install most of the dependencies with the PIP package
