@@ -3,7 +3,7 @@
 
 <h1 align="center">WellSaid: Tacotron 2</h3>
 
-WellSaid's implementation of Google Brain's Tacotron 2. A deep neural network architecture described in this paper: [Natural TTS synthesis by conditioning Wavenet on MEL spectogram predictions](https://arxiv.org/pdf/1712.05884.pdf)
+WellSaid's implementation of Google Brain's Tacotron 2. A deep neural network architecture described in this paper: [Natural TTS Synthesis by Conditioning WaveNet on Mel Spectrogram Predictions](https://arxiv.org/pdf/1712.05884.pdf)
 
 ![PyPI - Python Version](https://img.shields.io/badge/python-3.5%2C%203.6-blue.svg)
 [![Build Status](https://travis-ci.com/AI2Incubator/Tacotron-2.svg?token=xKbC739Gn2ssU4AStE7z&branch=master)](https://travis-ci.com/AI2Incubator/Tacotron-2)

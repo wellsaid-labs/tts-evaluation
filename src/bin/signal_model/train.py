@@ -103,7 +103,7 @@ class Trainer():  # pragma: no cover
 
         Args:
             train (bool): If ``True``, the batch will store gradients.
-            trial_run (bool): If True, then runs only 1 batch.
+            trial_run (bool): If ``True``, then runs only 1 batch.
         """
         label = 'TRAIN' if train else 'DEV'
         logger.info('[%s] Running Epoch %d, Step %d', label, self.epoch, self.step)

@@ -36,7 +36,7 @@ class Trainer():  # pragma: no cover
         device (torch.device): Device to train on.
         train_dataset (iterable): Train dataset used to optimize the model.
         dev_dataset (iterable): Dev dataset used to evaluate.
-        vocab_size (int): Size of the input text vocabular used with embeddings.
+        vocab_size (int): Size of the input text vocabulary used with embeddings.
         train_tensorboard (tensorboardX.SummaryWriter): Writer for train events.
         dev_tensorboard (tensorboardX.SummaryWriter): Writer for dev events.
         train_batch_size (int, optional): Batch size used for training.
@@ -98,7 +98,7 @@ class Trainer():  # pragma: no cover
         logger.info('Dev Batch Size: %d', dev_batch_size)
         logger.info('Number of data loading workers: %d', num_workers)
         logger.info('Total Parameters: %d', get_total_parameters(self.model))
-        logger.info('Model:\n%s' % self.model)
+        logger.info('Model:\n%s', self.model)
 
     def _compute_loss(self, batch, predicted_pre_frames, predicted_post_frames,
                       predicted_stop_tokens):
@@ -151,7 +151,7 @@ class Trainer():  # pragma: no cover
 
         Args:
             train (bool): If ``True``, the batch will store gradients.
-            trial_run (bool): If True, then runs only 1 batch.
+            trial_run (bool): If ``True``, then runs only 1 batch.
         """
         label = 'TRAIN' if train else 'DEV'
         logger.info('[%s] Running Epoch %d, Step %d', label, self.epoch, self.step)
