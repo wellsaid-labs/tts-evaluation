@@ -30,7 +30,7 @@ class PreNet(nn.Module):
 
     @configurable
     def __init__(self, frame_channels=80, num_layers=2, hidden_size=256, dropout=0.5):
-        super(PreNet, self).__init__()
+        super().__init__()
         self.layers = nn.Sequential(*tuple([
             nn.Sequential(
                 nn.Linear(

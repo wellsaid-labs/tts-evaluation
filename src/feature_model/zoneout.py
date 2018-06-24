@@ -135,7 +135,7 @@ class Zoneout(torch.nn.Module):
     """
 
     def __init__(self, p=None, inplace=False, mask=None):
-        super(Zoneout, self).__init__()
+        super().__init__()
         if p is None and mask is None:
             raise ValueError("Either p or mask must be provided")
         if p is not None and mask is not None:

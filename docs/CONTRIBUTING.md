@@ -4,6 +4,37 @@ Thanks for considering contributing!
 
 ## How Can I Contribute?
 
+### Do you have an experiment to contribute?
+
+To contribute an experiment, you'll need to document your Tensorboard and code changes. First,
+submit your Tensorboard to the Google Cloud Tensorboard server, via:
+
+    EXPERIMENT=~/Tacotron-2/experiments/path/to/experiment
+    NEW_EXPERIMENT_NAME=~/Tacotron-2/experiments/path/to/experiment
+
+    gcloud compute ssh tensorboard --command='mkdir -p '"$NEW_EXPERIMENT_NAME"''
+
+    # Transfer experiment log files ``stdout.log`` and ``stderr.log``
+    gcloud compute scp --recurse $EXPERIMENT/*.log tensorboard:$NEW_EXPERIMENT_NAME
+
+    # Transfer tensorboard events ``events.out.tfevents.*``
+    gcloud compute scp --recurse $EXPERIMENT/tensorboard/ tensorboard:$NEW_EXPERIMENT_NAME/
+
+Then, submit a pull request to our [GitHub](https://github.com/AI2Incubator/Tacotron-2) documenting
+the experiment.
+
+Finally, if you are contributing a new model to Tensorboard for which you'd like a separate
+Tensorboard, create one:
+
+    # SSH into tensorboard server
+    gcloud compute ssh tensorboard
+
+    # Create a background process
+    screen
+
+    # Pick some port between 6000-6999
+    tensorboard --logdir=path/to/your/experiment --port='6000' --window_title='Your Model'
+
 ### Did you find a bug?
 
 First, do [a quick search](https://github.com/AI2Incubator/Tacotron-2/issues) to see whether your issue has already been reported.

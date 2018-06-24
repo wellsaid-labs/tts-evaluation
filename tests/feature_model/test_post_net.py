@@ -10,8 +10,7 @@ def test_post_net():
     pre_net = PostNet(frame_channels=frame_channels)
 
     # NOTE: spectrogram frames are around the range of 0 to 1
-    input_ = torch.autograd.Variable(
-        torch.FloatTensor(batch_size, frame_channels, num_frames).uniform_(0, 1))
+    input_ = torch.FloatTensor(batch_size, frame_channels, num_frames).uniform_(0, 1)
     output = pre_net(input_)
 
     assert output.type() == 'torch.FloatTensor'

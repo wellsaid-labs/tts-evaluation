@@ -75,7 +75,7 @@ class SpectrogramModel(nn.Module):
     @configurable
     def __init__(self, vocab_size, encoder_hidden_size=512, frame_channels=80):
 
-        super(SpectrogramModel, self).__init__()
+        super().__init__()
 
         self.encoder = Encoder(vocab_size, lstm_hidden_size=encoder_hidden_size)
         self.decoder = AutoregressiveDecoder(

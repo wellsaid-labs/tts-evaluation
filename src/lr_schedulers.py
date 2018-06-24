@@ -27,6 +27,11 @@ class DelayedExponentialLR(_LRScheduler):
     def __init__(self, optimizer, epoch_end_decay, end_lr, epoch_start_decay=0, last_epoch=-1):
         self.epoch_start_decay = epoch_start_decay
 
+        # Create a scheduler when ``last_epoch!= -1``
+        # https://github.com/moskomule/senet.pytorch/blob/c3fe7e6d8916c57024d13fdcf489bc5f94119180/utils.py#L76
+        for group in optimizer.param_groups:
+            group.setdefault('initial_lr', group['lr'])
+
         super().__init__(optimizer, last_epoch)
 
         self.gammas = [

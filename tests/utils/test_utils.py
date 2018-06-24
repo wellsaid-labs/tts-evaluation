@@ -6,12 +6,15 @@ from PIL import Image
 
 import numpy as np
 import matplotlib.pyplot as plt
+import torch
 
 from src.utils import figure_to_numpy_array
 from src.utils import get_total_parameters
+from src.utils import parse_hparam_args
 from src.utils import plot_attention
-from src.utils import plot_spectrogram
+from src.utils import plot_log_mel_spectrogram
 from src.utils import plot_stop_token
+from src.utils import plot_waveform
 from src.utils import ROOT_PATH
 from src.utils import spectrogram_to_image
 from src.utils import split_dataset
@@ -52,12 +55,18 @@ def test_get_root_path():
 def test_split_dataset():
     dataset = [1, 2, 3, 4, 5]
     splits = (.6, .2, .2)
-    assert split_dataset(dataset, splits) == [[1, 2, 3], [4], [5]]
+    assert split_dataset(dataset, splits, deterministic_shuffle=False) == [[1, 2, 3], [4], [5]]
 
 
-def test_plot_spectrogram():
-    arr = np.random.rand(5, 6)
-    figure = plot_spectrogram(arr)
+def test_split_dataset_shuffle():
+    dataset = [1, 2, 3, 4, 5]
+    splits = (.6, .2, .2)
+    assert split_dataset(dataset, splits) == [[4, 2, 5], [3], [1]]
+
+
+def test_plot_log_mel_spectrogram():
+    arr = torch.rand(5, 6)
+    figure = plot_log_mel_spectrogram(arr)
     assert isinstance(figure, np.ndarray)
 
 
@@ -70,6 +79,12 @@ def test_spectrogram_to_image():
 def test_plot_attention():
     arr = np.random.rand(5, 6)
     figure = plot_attention(arr)
+    assert isinstance(figure, np.ndarray)
+
+
+def test_plot_waveform():
+    arr = np.random.rand(5)
+    figure = plot_waveform(arr)
     assert isinstance(figure, np.ndarray)
 
 
@@ -94,3 +109,8 @@ def test_figure_to_numpy_array():
     plt.close(figure)
 
     assert figure_to_numpy_array(figure).shape == (480, 640, 3)
+
+
+def test_parse_hparam_args():
+    hparam_args = ['--foo 0.01', '--bar WaveNet', '--moo=1']
+    assert parse_hparam_args(hparam_args) == {'foo': 0.01, 'bar': 'WaveNet', 'moo': 1}

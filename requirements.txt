@@ -1,7 +1,7 @@
 # Math Library
 numpy
-tensorflow # NOTE: You may need to install with CUDA support seperatly with ``tensorflow-gpu``
 torch # NOTE: You may need to install with CUDA support seperatly from https://pytorch.org
+cffi # NOTE: For torch extensions
 
 # Image Library
 Pillow

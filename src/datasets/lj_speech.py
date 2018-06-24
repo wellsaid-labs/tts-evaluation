@@ -4,18 +4,32 @@ import re
 import unidecode
 
 from num2words import num2words
+from tqdm import tqdm
 
 from torchnlp.download import download_file_maybe_extract
 from torchnlp.datasets import Dataset
 
+from src.utils.configurable import configurable
+from src.utils import split_dataset
 
+
+@configurable
 def lj_speech_dataset(directory='data/',
                       extracted_name='LJSpeech-1.1',
                       url='http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
                       check_files=['LJSpeech-1.1/metadata.csv'],
                       text_file='metadata.csv',
                       audio_directory='wavs/',
-                      verbalize=True):
+                      verbalize=True,
+                      resample=24000,
+                      total_rows=13100,
+                      norm=True,
+                      guard=True,
+                      lower_hertz=125,
+                      upper_hertz=7600,
+                      loudness=False,
+                      random_seed=123,
+                      splits=(.8, .2)):
     """
     Load the Linda Johnson (LJ) Speech dataset.
 
@@ -23,7 +37,18 @@ def lj_speech_dataset(directory='data/',
     speaker reading passages from 7 non-fiction books. A transcription is provided for each clip.
     Clips vary in length from 1 to 10 seconds and have a total length of approximately 24 hours.
 
-    **Reference:** https://keithito.com/LJ-Speech-Dataset/
+    The SoX resampling library is choosen rather than the best python resampler because the best
+    python resampler does not have tools to deal with clipping. Clipping is when resampling
+    predicts energy levels outside of the [-1, 1] range that need to be clipped.
+
+
+    Reference:
+        * Link to dataset source:
+          https://keithito.com/LJ-Speech-Dataset/
+        * Comparison of command line resampling libraries:
+          http://www.mainly.me.uk/resampling/
+        * Comparison of python resampling libraries:
+          https://machinelearningmastery.com/resample-interpolate-time-series-data-python/
 
     Args:
         directory (str, optional): Directory to cache the dataset.
@@ -33,6 +58,18 @@ def lj_speech_dataset(directory='data/',
         text_file (str, optional): The file containing text files.
         audio_directory (str, optional): Audio directory corresponding to the text files.
         verbalize (bool, optional): Verbalize the text.
+        resample (int or None, optional): If integer is provided, uses SoX to create resampled
+            files.
+        total_rows (int, optional): Integer number of rows to be used with tqdm.
+        norm (bool, optional): Automatically invoke the gain effect to guard against clipping and to
+            normalise the audio.
+        guard (bool, optional): Automatically invoke the gain effect to guard against clipping.
+        lower_hertz (int, optional): Apply a sinc kaiser-windowed high-pass.
+        upper_hertz (int, optional): Apply a sinc kaiser-windowed low-pass.
+        loudness (bool, optioanl): Normalize the subjective perception of loudness level based on
+            ISO 226.
+        random_seed (int, optional): Random seed used to determine the splits.
+        splits (tuple, optional): The number of splits and cardinality of dataset splits.
 
     Returns:
         :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
@@ -44,11 +81,11 @@ def lj_speech_dataset(directory='data/',
         [
           {
             'text': 'Printing, in the only sense with which we are at present concerned,...',
-            'wav': 'data/LJSpeech-1.1/wavs/LJ001-0001.wav'
+            'wav_filename': 'data/LJSpeech-1.1/wavs/LJ001-0001.wav'
           },
           {
             'text': 'in being comparatively modern.',
-            'wav': 'data/LJSpeech-1.1/wavs/LJ001-0002.wav'
+            'wav_filename': 'data/LJSpeech-1.1/wavs/LJ001-0002.wav'
           }
         ]
     """
@@ -57,9 +94,20 @@ def lj_speech_dataset(directory='data/',
 
     examples = []
     with io.open(path, encoding='utf-8') as f:
-        for line in f:
+        for line in tqdm(f, total=total_rows):
             line = line.strip()
             wav_filename, text, _ = tuple(line.split('|'))
+            wav_filename = os.path.join(directory, extracted_name, audio_directory,
+                                        wav_filename + '.wav')
+            wav_filename = os.path.abspath(wav_filename)
+            wav_filename = _process_audio(
+                wav_filename,
+                resample=resample,
+                norm=norm,
+                guard=guard,
+                lower_hertz=lower_hertz,
+                upper_hertz=upper_hertz,
+                loudness=loudness)
             text = _normalize_whitespace(text)
             text = _normalize_quotations(text)
 
@@ -78,14 +126,54 @@ def lj_speech_dataset(directory='data/',
             # Messes up pound sign (£); therefore, this is after _verbalize_currency
             text = _remove_accents(text)
 
-            examples.append({
-                'text':
-                    text,
-                'wav':
-                    os.path.join(directory, extracted_name, audio_directory, wav_filename + '.wav')
-            })
+            examples.append({'text': text, 'wav_filename': wav_filename})
 
-    return Dataset(examples)
+    splits = split_dataset(
+        examples, splits=splits, deterministic_shuffle=True, random_seed=random_seed)
+    return tuple(Dataset(split) for split in splits)
+
+
+def _process_audio(wav,
+                   resample=24000,
+                   norm=True,
+                   guard=True,
+                   lower_hertz=125,
+                   upper_hertz=7600,
+                   loudness=False):
+    lower_hertz = str(lower_hertz) if lower_hertz is not None else ''
+    upper_hertz = str(upper_hertz) if upper_hertz is not None else ''
+
+    destination = wav
+    if resample is not None:
+        destination = destination.replace('.wav', '-rate=%d.wav' % resample)
+    if norm:
+        destination = destination.replace('.wav', '-norm=-.1.wav')
+    if loudness:
+        destination = destination.replace('.wav', '-loudness.wav')
+    if guard:
+        destination = destination.replace('.wav', '-guard.wav')
+    if lower_hertz or upper_hertz:
+        destination = destination.replace('.wav', '-sinc_%s_%s.wav' % (lower_hertz, upper_hertz))
+
+    if wav == destination or os.path.isfile(destination):
+        return destination
+
+    # NOTE: -.1 DB applied to prevent clipping and corresponds to 0.9884949. Mu-law encoding applied
+    # to 0.98 comes out to 255; therefore, those bits are still used.
+    norm_flag = '--norm=-.1' if norm else ''
+    guard_flag = '--guard' if guard else ''
+    sinc_command = 'sinc %s-%s' % (lower_hertz, upper_hertz)
+    loudness_command = 'loudness' if loudness else ''
+    resample_command = 'rate %s' % (resample if resample is not None else '',)
+    commands = ' '.join([resample_command, sinc_command, loudness_command])
+    flags = ' '.join([norm_flag, guard_flag])
+    command = 'sox %s %s %s %s ' % (wav, flags, destination, commands)
+
+    os.system(command)
+
+    assert os.path.isfile(destination)
+
+    return destination
 
 
 '''
@@ -132,17 +220,18 @@ def _match_case(source, target):
     Args:
         source (str): Reference text for the letter case.
         target (str): Target text to transfer the letter case.
+
     Returns:
         str: Target text with source the letter case.
     """
-    if source.istitle():
-        return target.title()
-
     if source.isupper():
         return target.upper()
 
     if source.islower():
         return target.lower()
+
+    if source.istitle():
+        return target.title()
 
 
 def _iterate_and_replace(regex, text, replace, group=1):

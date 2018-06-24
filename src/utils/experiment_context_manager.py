@@ -7,12 +7,8 @@ import time
 import shutil
 
 import numpy as np
-import tensorflow as tf
 import torch
 from tensorboardX import SummaryWriter
-
-from src.utils.configurable import log_config
-from src.utils.configurable import log_arguments
 
 logger = logging.getLogger(__name__)
 
@@ -142,23 +138,14 @@ class ExperimentContextManager(object):
         random.seed(seed)
         torch.manual_seed(seed)
         np.random.seed(seed)
-        tf.set_random_seed(seed)
         if self.is_cuda:
             torch.cuda.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
         self.seed = seed
 
     def __enter__(self):
         """ Runs before the experiment context begins.
         """
-        # Fix a circular reference chain
-        from src.hparams import set_hparams
-
-        # LEARN MORE:
-        # https://stackoverflow.com/questions/42270739/how-do-i-resolve-these-tensorflow-warnings
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
         # Create a local directory to store logs, checkpoints, etc..
         self._new_experiment_directory()
 
@@ -183,35 +170,30 @@ class ExperimentContextManager(object):
 
         self._tensorboard()
 
-        # Set the hyperparameters with configurable
-        set_hparams()
-
-        # Log the hyperparameter configuration
-        log_config()
-
         return self
 
-    def __exit__(self, type_, value, traceback):
+    def clean_up(self):
+        """ Delete files associated with this context. """
+        logger.info('Deleting Experiment: %s', self.directory)
+        shutil.rmtree(self.directory)
+
+        # Remove empty directories
+        for root, directories, files in os.walk(self.root, topdown=False):
+            for directory in directories:
+                directory = os.path.join(root, directory)
+                # Only works when the directory is empty
+                try:
+                    os.rmdir(directory)
+                except OSError:
+                    pass
+
+    def __exit__(self, exception, value, traceback):
         """ Runs after the experiment context ends.
         """
-        # Print all arguments used
-        log_arguments()
-
         # NOTE: Log before removing handlers.
         elapsed_seconds = time.time() - self._start_time
-        if self.min_time is not None and elapsed_seconds < self.min_time:
-            logger.info('Deleting Experiment: %s', self.directory)
-            shutil.rmtree(self.directory)
-
-            # Remove empty directories
-            for root, directories, files in os.walk(self.root, topdown=False):
-                for directory in directories:
-                    directory = os.path.join(root, directory)
-                    # Only works when the directory is empty
-                    try:
-                        os.rmdir(directory)
-                    except OSError:
-                        pass
+        if self.min_time is not None and elapsed_seconds < self.min_time and exception:
+            self.clean_up()
 
         self.notify('Experiment', 'Experiment has exited after %d seconds.' % (elapsed_seconds))
 

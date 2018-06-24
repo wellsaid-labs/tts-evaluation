@@ -1,15 +1,14 @@
 import pytest
+import _pytest
 import inspect
+import mock
 
-from src.utils.configurable import _parse_configuration
 from src.utils.configurable import _check_configuration
-from src.utils.configurable import configurable
+from src.utils.configurable import _merge_args
+from src.utils.configurable import _parse_configuration
 from src.utils.configurable import add_config
 from src.utils.configurable import clear_config
-from src.utils.configurable import clear_arguments
-from src.utils.configurable import _get_arguments
-from src.utils.configurable import _merge_args
-from src.utils.configurable import log_arguments
+from src.utils.configurable import configurable
 
 
 def test_parse_configuration_example():
@@ -54,7 +53,13 @@ def mock_configurable(*args, **kwargs):
     return kwargs
 
 
-def mock(**kwargs):
+@configurable
+def mock_configurable_limited_args(arg, **kwargs):
+    # Mock function with configurable
+    return kwargs
+
+
+def mock_without_configurable(**kwargs):
     # Mock function without configurable
     return kwargs
 
@@ -62,10 +67,10 @@ def mock(**kwargs):
 def test_mock_attributes():
     # Test the attributes mock is give, if it's ``@configurable``
     assert hasattr(mock_configurable, '_configurable')
-    assert not hasattr(mock, '_configurable')
+    assert not hasattr(mock_without_configurable, '_configurable')
 
 
-pytest.approx = configurable(pytest.approx)
+_pytest.python_api.approx = configurable(_pytest.python_api.approx)
 
 
 class Mock(object):
@@ -81,9 +86,15 @@ class MockConfigurable(object):
         pass
 
 
+def test_mock_configurable_limited_args():
+    # Check if TypeError on too many args
+    with pytest.raises(TypeError):
+        mock_configurable_limited_args('abc', 'abc')
+
+
 def test_check_configuration_external_libraries():
     # Test that check configuration can check ``configurable`` on external libraries
-    _check_configuration({'pytest': {'approx': {'rel': None}}})
+    _check_configuration({'_pytest': {'python_api': {'approx': {'rel': None}}}})
 
 
 def test_check_configuration_internal_libraries():
@@ -154,71 +165,43 @@ def test_add_config_and_arguments():
     add_config({'tests.utils.test_configurable.mock_configurable': kwargs})
     assert mock_configurable() == kwargs
 
-    # Check that the parameters were recorded
-    assert str(_get_arguments()['tests']['utils']['test_configurable']['mock_configurable'][
-        'xyz']) == 'xyz'
-
     # Reset
     clear_config()
-    clear_arguments()
 
     # Check reset worked
     assert mock_configurable() == {}
 
 
-def test_arguments():
-    # Check that the parameters were recorded
-    mock_configurable(abc='abc')
-    assert str(_get_arguments()['tests']['utils']['test_configurable']['mock_configurable'][
-        'abc']) == 'abc'
-
-    # Smoke test for log
-    log_arguments()
-
-    clear_arguments()
-
-
-def test_arguments_many():
-    # Check that the parameters were recorded
-    arg_kwarg = configurable(lambda a, *args, **kwargs: (a, args, kwargs))
-    arg_kwarg('abc', 'def', 'ghi', 'klm', abc='abc')
-    arg_kwarg('abc', abc='xyz')
-    arg_kwarg('abc', abc='cdf')
-    arg_kwarg('abc', abc='ghf')
-    arg_kwarg('abc', xyz='abc')
-    assert str(_get_arguments()['tests']['utils']['test_configurable']['test_arguments_many'][
-        '<locals>']['<lambda>']['abc']) == str(['xyz', 'cdf', 'ghf'])
-    assert str(_get_arguments()['tests']['utils']['test_configurable']['test_arguments_many'][
-        '<locals>']['<lambda>']['xyz']) == 'abc'
-    assert str(_get_arguments()['tests']['utils']['test_configurable']['test_arguments_many'][
-        '<locals>']['<lambda>']['args']) == str(tuple(['def', 'ghi', 'klm']))
-    clear_arguments()
-
-
-def test_merge_arg_kwarg():
+@mock.patch('src.utils.configurable.logger')
+def test_merge_arg_kwarg(logger_mock):
     arg_kwarg = lambda a, b='abc': (a, b)
     parameters = list(inspect.signature(arg_kwarg).parameters.values())
 
     # Prefer ``args`` over ``other_kwargs``
     merged = _merge_args(parameters, ['a', 'abc'], {}, {'b': 'xyz'})
     assert merged == (['a', 'abc'], {})
+    logger_mock.warn.assert_called_once()
+    logger_mock.reset_mock()
 
     # Prefer ``kwargs`` over ``other_kwargs``
     merged = _merge_args(parameters, ['a'], {'b': 'abc'}, {'b': 'xyz'})
     assert merged == (['a'], {'b': 'abc'})
+    logger_mock.warn.assert_called_once()
+    logger_mock.reset_mock()
 
     # Prefer ``other_kwargs`` over default argument
     merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz'})
     assert merged == (['a'], {'b': 'xyz'})
+    logger_mock.warn.assert_not_called()
 
 
-def test_merge_arg_variable():
+@mock.patch('src.utils.configurable.logger')
+def test_merge_arg_variable(logger_mock):
     """
     For arguments, order matters; therefore, unless we are able to abstract everything into a
     key word argument, we have to keep the ``args`` the same.
 
     The case where we are unable to shift everything to ``args`` is when there exists a ``*args``.
-    Because some
 
     For example (a, b) cannot be flipped with kwarg:
     >>> arg_kwarg = lambda a, b='abc': (a, b)
@@ -233,13 +216,18 @@ def test_merge_arg_variable():
     # Handling of variable ``*args``
     merged = _merge_args(parameters, ['a', 'b', 'c'], {}, {'b': 'xyz'})
     assert merged == (['a', 'b', 'c'], {'b': 'xyz'})
+    logger_mock.warn.assert_not_called()
+    logger_mock.reset_mock()
 
     # Handling of variable ``*args``
     merged = _merge_args(parameters, ['a', 'b', 'c'], {}, {'a': 'xyz'})
     assert merged == (['a', 'b', 'c'], {})
+    logger_mock.warn.assert_called_once()
+    logger_mock.reset_mock()
 
 
-def test_merge_kwarg_variable():
+@mock.patch('src.utils.configurable.logger')
+def test_merge_kwarg_variable(logger_mock):
     """
     If there exists a ``**kwargs``, then
     """
@@ -249,11 +237,17 @@ def test_merge_kwarg_variable():
     # Handling of variable ``**kwargs``
     merged = _merge_args(parameters, ['a', 'b'], {}, {'b': 'xyz'})
     assert merged == (['a', 'b'], {})
+    logger_mock.warn.assert_called_once()
+    logger_mock.reset_mock()
 
     # Handling of variable ``**kwargs``
     merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz'})
     assert merged == (['a'], {'b': 'xyz'})
+    logger_mock.warn.assert_not_called()
+    logger_mock.reset_mock()
 
     # Handling of variable ``**kwargs``
     merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz', 'c': 'abc'})
     assert merged == (['a'], {'b': 'xyz', 'c': 'abc'})
+    logger_mock.warn.assert_not_called()
+    logger_mock.reset_mock()

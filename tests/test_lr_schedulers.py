@@ -14,7 +14,7 @@ from src.lr_schedulers import DelayedExponentialLR
 class SchedulerTestNet(torch.nn.Module):
 
     def __init__(self):
-        super(SchedulerTestNet, self).__init__()
+        super().__init__()
         self.conv1 = torch.nn.Conv2d(1, 1, 1)
         self.conv2 = torch.nn.Conv2d(1, 1, 1)
 
@@ -26,15 +26,15 @@ class TestLRScheduler(TestCase):
 
     def setUp(self):
         self.net = SchedulerTestNet()
-        self.optim = SGD([{'params': self.net.conv1.parameters()}], lr=10e-3)
+        self.optim = SGD([{'params': self.net.conv1.parameters()}], lr=10**-3)
 
     def test_delayed_exponential_lr(self):
         epoch_end_decay = 60000
         epoch_start_decay = 10000
-        end_lr = 10e-5
+        end_lr = 10**-5
         epochs = 70000
         step = 10000
-        targets = [[10e-3, 10e-3, 0.003981, 0.001584, 0.00063, 0.00025, 10e-5, 10e-5]]
+        targets = [[10**-3, 10**-3, 0.003981, 0.001584, 0.00063, 0.00025, 10**-5, 10**-5]]
         scheduler = DelayedExponentialLR(
             self.optim,
             epoch_end_decay=epoch_end_decay,
@@ -50,4 +50,4 @@ class TestLRScheduler(TestCase):
                         param_group['lr'],
                         msg='LR is wrong in epoch {}: expected {}, got {}'.format(
                             epoch, target[epoch // step], param_group['lr']),
-                        delta=1e-5)
+                        delta=1**-5)
