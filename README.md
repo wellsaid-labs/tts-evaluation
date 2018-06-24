@@ -104,7 +104,7 @@ Thanks for considering contributing!
 
 ### Contributing Guide
 
-Read our [contributing guide](https://github.com/AI2Incubator/Tacotron-2/blob/master/docs/CONTRIBUTING.md) to learn about our development process, how to propose bugfixes and improvements, and how to build and test your changes to Tacotron-2.
+Read our [contributing guide](https://github.com/AI2Incubator/Tacotron-2/blob/master/docs/CONTRIBUTING.md) to learn about our development process, how to propose bug-fixes and improvements, and how to build and test your changes to Tacotron-2.
 
 ## Authors
 
