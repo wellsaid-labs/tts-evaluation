@@ -44,7 +44,7 @@ class FeatureDataset(data.Dataset):
                 with open(row[self.text_key], 'r') as file_:
                     texts.append(file_.read().strip())
             self.text_encoder = CharacterEncoder(texts)
-            logger.info('Computed text encoder.')
+            logger.info('Computed text encoder from %s', source)
         else:
             self.text_encoder = text_encoder
 
@@ -52,7 +52,7 @@ class FeatureDataset(data.Dataset):
         self.spectrogram_lengths = [
             np.load(row[self.spectrogram_key]).shape[0] for row in self.rows
         ]
-        logger.info('Computed spectrogram lengths.')
+        logger.info('Computed spectrogram lengths from %s', source)
         self.load_signal = load_signal
 
     def __len__(self):

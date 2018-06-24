@@ -15,7 +15,7 @@ submit your Tensorboard to the Google Cloud Tensorboard server, via:
     gcloud compute ssh tensorboard --command='mkdir -p '"$NEW_EXPERIMENT_NAME"''
 
     # Transfer experiment log files ``stdout.log`` and ``stderr.log``
-    gcloud compute scp --recurse $EXPERIMENT*.log tensorboard:$NEW_EXPERIMENT_NAME
+    gcloud compute scp --recurse $EXPERIMENT/*.log tensorboard:$NEW_EXPERIMENT_NAME
 
     # Transfer tensorboard events ``events.out.tfevents.*``
     gcloud compute scp --recurse $EXPERIMENT/tensorboard/ tensorboard:$NEW_EXPERIMENT_NAME/
