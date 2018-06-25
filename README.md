@@ -1,7 +1,7 @@
 
 <p align="center"><img width="35%" src="logo.png" /></p>
 
-<h1 align="center">WellSaid: Tacotron 2</h3>
+<h1 align="center">WellSaid Labs: Tacotron 2</h3>
 
 WellSaid's implementation of Google Brain's Tacotron 2. A deep neural network architecture described in this paper: [Natural TTS Synthesis by Conditioning WaveNet on Mel Spectrogram Predictions](https://arxiv.org/pdf/1712.05884.pdf)
 
