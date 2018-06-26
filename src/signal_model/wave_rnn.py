@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 from src.signal_model.upsample import ConditionalFeaturesUpsample
 from src.utils.configurable import configurable
+from src.utils import split_signal
 
 
 class WaveRNN(nn.Module):
@@ -14,6 +15,10 @@ class WaveRNN(nn.Module):
     References:
         * Efficient Neural Audio Synthesis
           https://arxiv.org/pdf/1802.08435.pdf
+
+    TODO:
+        * Add ONNX support for inference. To do so we'd need to substitue ``torch.repeat`` and
+          ``torch.stack`` because they are not supported.
 
     Args:
         hidden_size (int): GRU hidden state size.
@@ -66,6 +71,18 @@ class WaveRNN(nn.Module):
             num_layers=3,  # One layer per gate (a.i. reset, memory, and update)
             upsample_chunks=1)
 
+    def _scale(self, tensor):
+        """ Scale from [0, self.bins - 1] to [-1.0, 1.0].
+
+        Args:
+            tensor (torch.FloatTensor): Tensor between the range of [0, self.bins]
+
+        Returns:
+            tensor (torch.FloatTensor): Tensor between the range of [-1.0, 1.0]
+        """
+        assert torch.min(tensor) >= 0 and torch.max(tensor) < self.bins
+        return tensor.float() / ((self.bins - 1) / 2) - 1.0
+
     def forward(self, local_features, input_signal=None, target_coarse=None):
         """
         Args:
@@ -95,11 +112,16 @@ class WaveRNN(nn.Module):
         if input_signal is not None and target_coarse is not None:
             assert input_signal.shape[1] == target_coarse.shape[
                 1], 'Target signal and input signal must be of the same length'
-            assert torch.min(input_signal) >= -1 and torch.max(input_signal) <= 1
-            assert torch.min(target_coarse) >= -1 and torch.max(target_coarse) <= 1
             assert conditional_features.shape[1] == input_signal.shape[1], (
                 'Upsampling parameters in tangent with signal shape and local features shape ' +
                 'must be the same length after upsampling.')
+            assert len(target_coarse.shape) == 3, (
+                '``target_coarse`` must be shaped [batch_size, signal_length, 1]')
+            assert len(input_signal.shape) == 3, (
+                '``input_signal`` must be shaped [batch_size, signal_length, 2]')
+
+            input_signal = self._scale(input_signal)
+            target_coarse = self._scale(target_coarse)
             return self.train_forward(conditional_features, input_signal, target_coarse)
 
         return self.inference_forward(conditional_features)
@@ -154,7 +176,7 @@ class WaveRNN(nn.Module):
         hidden = input_signal.new_zeros(batch_size, self.hidden_size)
         predicted_hidden = []
 
-        for i in tqdm(range(signal_length)):
+        for i in range(signal_length):
             # [batch_size, self.hidden_size] → [batch_size, 3 * self.hidden_size]
             hidden_projection = self.project_hidden(hidden)
             # ... [batch_size, self.hidden_size]
@@ -201,11 +223,11 @@ class WaveRNN(nn.Module):
 
         # ... [batch_size, signal_length, self.half_hidden_size]
         conditional_coarse_update_gate, conditional_fine_update_gate = torch.split(
-            conditional_features[:, :, 0], self.half_hidden_size, dim=2)
+            conditional_features[:, :, 0, :], self.half_hidden_size, dim=2)
         conditional_coarse_reset_gate, conditional_fine_reset_gate = torch.split(
-            conditional_features[:, :, 0], self.half_hidden_size, dim=2)
+            conditional_features[:, :, 1, :], self.half_hidden_size, dim=2)
         conditional_coarse_memory, conditional_fine_memory = torch.split(
-            conditional_features[:, :, 0], self.half_hidden_size, dim=2)
+            conditional_features[:, :, 2, :], self.half_hidden_size, dim=2)
 
         # ... [self.half_hidden_size]
         bias_coarse_update_gate, bias_fine_update_gate = torch.split(self.bias_update_gate,
@@ -216,8 +238,9 @@ class WaveRNN(nn.Module):
 
         # Initial inputs
         out_coarse, out_fine = [], []
-        coarse = conditional_features.new_zeros(batch_size, 1)
-        fine = conditional_features.new_zeros(batch_size, 1)
+        coarse, fine = split_signal(conditional_features.new_zeros(batch_size))
+        coarse = coarse.unsqueeze(1)
+        fine = fine.unsqueeze(1)
         coarse_last_hidden = conditional_features.new_zeros(batch_size, self.half_hidden_size)
         fine_last_hidden = conditional_features.new_zeros(batch_size, self.half_hidden_size)
 
@@ -266,7 +289,8 @@ class WaveRNN(nn.Module):
 
             # [batch_size, bins] → [batch_size]
             coarse = coarse.max(dim=1)[1]
-            coarse = coarse.float() / ((self.bins - 1) / 2) - 1.0
+
+            coarse = self._scale(coarse)
             # [batch_size] → [batch_size, 1]
             coarse = coarse.unsqueeze(1)
 
@@ -303,7 +327,7 @@ class WaveRNN(nn.Module):
 
             # [batch_size, bins] → [batch_size]
             fine = fine.max(dim=1)[1]
-            fine = fine.float() / ((self.bins - 1) / 2) - 1.0
+            fine = self._scale(fine)
             # [batch_size] → [batch_size, 1]
             fine = fine.unsqueeze(1)
 

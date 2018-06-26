@@ -2,8 +2,6 @@ import mock
 import numpy as np
 import torch
 
-from src.audio import mu_law
-from src.audio import mu_law_decode
 from src.bin.signal_model._dataset import SignalDataset
 
 
@@ -21,10 +19,13 @@ def test_signal_dataset_preprocess(randint_mock):
     preprocessed = dataset._preprocess(log_mel_spectrogram, signal)
     assert preprocessed['log_mel_spectrogram'].shape == log_mel_spectrogram.shape
     assert preprocessed['signal'].shape == signal.shape
-    assert preprocessed['source_signal_slice'].shape == (slice_size + receptive_field_size,)
-    assert preprocessed['target_signal_slice'].shape == (slice_size,)
-    np.testing.assert_allclose(preprocessed['source_signal_slice'][receptive_field_size + 1:],
-                               mu_law(mu_law_decode(preprocessed['target_signal_slice'][:-1])))
+    assert preprocessed['source_signal_slice'].shape == (slice_size + receptive_field_size, 2)
+    assert preprocessed['target_signal_coarse_slice'].shape == (slice_size,)
+    assert preprocessed['target_signal_fine_slice'].shape == (slice_size,)
+    np.testing.assert_allclose(preprocessed['source_signal_slice'][receptive_field_size + 1:, 0],
+                               preprocessed['target_signal_coarse_slice'][:-1])
+    np.testing.assert_allclose(preprocessed['source_signal_slice'][receptive_field_size + 1:, 1],
+                               preprocessed['target_signal_fine_slice'][:-1])
     assert preprocessed['frames_slice'].shape == ((
         slice_size + receptive_field_size) / samples_per_frame, spectrogram_channels)
 
@@ -46,10 +47,10 @@ def test_signal_dataset_preprocess_no_context(randint_mock):
     preprocessed = dataset._preprocess(log_mel_spectrogram, signal)
     assert preprocessed['log_mel_spectrogram'].shape == log_mel_spectrogram.shape
     assert preprocessed['signal'].shape == signal.shape
-    assert preprocessed['source_signal_slice'].shape == (slice_size,)
-    assert preprocessed['target_signal_slice'].shape == (slice_size,)
-    np.testing.assert_allclose(preprocessed['source_signal_slice'][1:],
-                               mu_law(mu_law_decode(preprocessed['target_signal_slice'][:-1])))
+    assert preprocessed['source_signal_slice'].shape == (slice_size, 2)
+    assert preprocessed['target_signal_coarse_slice'].shape == (slice_size,)
+    np.testing.assert_allclose(preprocessed['source_signal_slice'][1:, 0],
+                               preprocessed['target_signal_coarse_slice'][:-1])
     assert preprocessed['frames_slice'].shape == (slice_size / samples_per_frame,
                                                   spectrogram_channels)
 
@@ -68,10 +69,10 @@ def test_signal_dataset_preprocess_pad(randint_mock):
     preprocessed = dataset._preprocess(log_mel_spectrogram, signal)
     assert preprocessed['log_mel_spectrogram'].shape == log_mel_spectrogram.shape
     assert preprocessed['signal'].shape == signal.shape
-    assert preprocessed['source_signal_slice'].shape == (slice_size + receptive_field_size,)
-    assert preprocessed['target_signal_slice'].shape == (slice_size,)
-    np.testing.assert_allclose(preprocessed['source_signal_slice'][receptive_field_size + 1:],
-                               mu_law(mu_law_decode(preprocessed['target_signal_slice'][:-1])))
+    assert preprocessed['source_signal_slice'].shape == (slice_size + receptive_field_size, 2)
+    assert preprocessed['target_signal_coarse_slice'].shape == (slice_size,)
+    np.testing.assert_allclose(preprocessed['source_signal_slice'][receptive_field_size + 1:, 0],
+                               preprocessed['target_signal_coarse_slice'][:-1])
     assert preprocessed['frames_slice'].shape == ((
         slice_size + receptive_field_size) / samples_per_frame, spectrogram_channels)
 
@@ -93,10 +94,10 @@ def test_signal_dataset_preprocess_pad_no_context(randint_mock):
     preprocessed = dataset._preprocess(log_mel_spectrogram, signal)
     assert preprocessed['log_mel_spectrogram'].shape == log_mel_spectrogram.shape
     assert preprocessed['signal'].shape == signal.shape
-    assert preprocessed['source_signal_slice'].shape == (slice_size,)
-    assert preprocessed['target_signal_slice'].shape == (slice_size,)
-    np.testing.assert_allclose(preprocessed['source_signal_slice'][1:],
-                               mu_law(mu_law_decode(preprocessed['target_signal_slice'][:-1])))
+    assert preprocessed['source_signal_slice'].shape == (slice_size, 2)
+    assert preprocessed['target_signal_coarse_slice'].shape == (slice_size,)
+    np.testing.assert_allclose(preprocessed['source_signal_slice'][1:, 0],
+                               preprocessed['target_signal_coarse_slice'][:-1])
     assert preprocessed['frames_slice'].shape == (slice_size / samples_per_frame,
                                                   spectrogram_channels)
 
@@ -116,11 +117,13 @@ def test_signal_dataset_preprocess_receptive_field_size_rounding(randint_mock):
     preprocessed = dataset._preprocess(log_mel_spectrogram, signal)
     assert preprocessed['log_mel_spectrogram'].shape == log_mel_spectrogram.shape
     assert preprocessed['signal'].shape == signal.shape
-    assert preprocessed['source_signal_slice'].shape == (slice_size + receptive_field_size_rounded,)
-    assert preprocessed['target_signal_slice'].shape == (slice_size,)
-    np.testing.assert_allclose(
-        preprocessed['source_signal_slice'][-preprocessed['target_signal_slice'].shape[0] + 1:],
-        mu_law(mu_law_decode(preprocessed['target_signal_slice'][:-1])))
+    assert preprocessed['source_signal_slice'].shape == (slice_size + receptive_field_size_rounded,
+                                                         2)
+    assert preprocessed['target_signal_coarse_slice'].shape == (slice_size,)
+    target_signal_coarse_slice = preprocessed['source_signal_slice'][
+        -preprocessed['target_signal_coarse_slice'].shape[0] + 1:, 0]
+    np.testing.assert_allclose(target_signal_coarse_slice,
+                               preprocessed['target_signal_coarse_slice'][:-1])
     assert preprocessed['frames_slice'].shape == ((
         slice_size + receptive_field_size_rounded) / samples_per_frame, spectrogram_channels)
     assert preprocessed['frames_slice'][0:1].sum() == 0

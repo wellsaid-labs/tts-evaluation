@@ -13,10 +13,12 @@ from src.utils.utils import figure_to_numpy_array
 from src.utils.utils import spectrogram_to_image
 from src.utils.utils import get_filename_table
 from src.utils.utils import parse_hparam_args
+from src.utils.utils import split_signal
+from src.utils.utils import combine_signal
 
 __all__ = [
     'configurable', 'experiment_context_manager', 'ROOT_PATH', 'get_total_parameters',
     'split_dataset', 'plot_attention', 'plot_stop_token', 'plot_waveform', 'torch_save',
     'torch_load', 'figure_to_numpy_array', 'plot_log_mel_spectrogram', 'spectrogram_to_image',
-    'get_filename_table', 'parse_hparam_args'
+    'get_filename_table', 'parse_hparam_args', 'split_signal', 'combine_signal'
 ]

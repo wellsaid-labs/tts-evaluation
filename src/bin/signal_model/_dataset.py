@@ -7,11 +7,9 @@ from torch import nn
 import torch
 import numpy as np
 
-from src.audio import mu_law
-from src.audio import mu_law_decode
-from src.audio import mu_law_encode
 from src.utils.configurable import configurable
 from src.utils import get_filename_table
+from src.utils import split_signal
 
 
 class SignalDataset(data.Dataset):
@@ -113,7 +111,7 @@ class SignalDataset(data.Dataset):
         end_sample = end_frame * samples_per_frame
         start_sample = start_frame * samples_per_frame
         source_signal_slice = signal[max(start_context_sample - 1, 0):end_sample - 1]
-        target_signal_slice = mu_law_encode(signal[start_sample:end_sample])
+        target_signal_slice = signal[start_sample:end_sample]
 
         # EDGE CASE: Pad context incase it's cut off and add a go sample for source
         if start_context_frame == 0:
@@ -126,19 +124,19 @@ class SignalDataset(data.Dataset):
             context_sample_pad = context_frame_pad * samples_per_frame
             source_signal_slice = nn.functional.pad(source_signal_slice, (context_sample_pad, 0))
 
-        # SOURCE (Wavenet):
-        # To make this more tractable, we first apply a µ-law companding transformation
-        # (ITU-T, 1988) to the data, and then quantize it to 256 possible values.
-        source_signal_slice = mu_law_decode(mu_law_encode(source_signal_slice))
-        signal = mu_law_decode(mu_law_encode(signal))
-        source_signal_slice = mu_law(source_signal_slice)
+        source_signal_coarse_slice, source_signal_fine_slice = split_signal(source_signal_slice)
+        # [slice_size, 2]
+        source_signal_slice = torch.stack(
+            (source_signal_coarse_slice, source_signal_fine_slice), dim=1)
+        target_signal_coarse_slice, target_signal_fine_slice = split_signal(target_signal_slice)
 
         return {
             self.log_mel_spectrogram_prefix: log_mel_spectrogram,  # [num_frames, channels]
             self.signal_prefix: signal,  # [signal_length]
-            'source_signal_slice': source_signal_slice,  # [slice_size + receptive_field_size]
-            'target_signal_slice': target_signal_slice,  # [slice_size]
-            # [(slice_size + receptive_field_size) / samples_per_frame]
+            'source_signal_slice': source_signal_slice,  # [slice_size + ~receptive_field_size, 2]
+            'target_signal_coarse_slice': target_signal_coarse_slice,  # [slice_size]
+            'target_signal_fine_slice': target_signal_fine_slice,  # [slice_size]
+            # [(slice_size + ~receptive_field_size) / samples_per_frame]
             'frames_slice': frames_slice,
         }
 

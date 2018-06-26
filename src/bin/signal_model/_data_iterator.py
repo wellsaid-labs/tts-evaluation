@@ -1,11 +1,6 @@
 from torch.utils.data import DataLoader
 from torchnlp.utils import pad_batch
 
-import torch
-
-from src.audio import mu_law
-from src.audio import mu_law_decode
-
 
 class DataIterator(object):
     """ Get a batch iterator over the ``dataset``.
@@ -38,20 +33,17 @@ class DataIterator(object):
         """ Collage function to turn a list of tensors into one batch tensor.
 
         Returns: (dict) with:
-            * source_signal (torch.FloatTensor [batch_size, signal_length])
-            * target_signal (torch.FloatTensor [batch_size, signal_length])
+            * source_signals (torch.FloatTensor [batch_size, signal_length])
+            * target_coarse_signals (torch.FloatTensor [batch_size, signal_length])
+            * target_fine_signals (torch.FloatTensor [batch_size, signal_length])
             * signal_lengths (list): List of lengths for each signal.
             * frames (torch.FloatTensor [batch_size, num_frames, frame_channels])
             * spectrograms (list): List of spectrograms to be used for sampling.
         """
-        # Test that source signal is one timestep behind target signal
-        for row in batch:
-            assert torch.equal(
-                row['source_signal_slice'][(-row['target_signal_slice'].shape[0] + 1):],
-                mu_law(mu_law_decode(row['target_signal_slice'][:-1])))
-
         source_signals, source_signal_lengths = pad_batch([r['source_signal_slice'] for r in batch])
-        target_signals, target_signal_lengths = pad_batch([r['target_signal_slice'] for r in batch])
+        target_coarse_signals, target_signal_lengths = pad_batch(
+            [r['target_signal_coarse_slice'] for r in batch])
+        target_fine_signals, _ = pad_batch([r['target_signal_fine_slice'] for r in batch])
         frames, frames_lengths = pad_batch([r['frames_slice'] for r in batch])
         spectrograms = [r['log_mel_spectrogram'] for r in batch]
         signals = [r['signal'] for r in batch]
@@ -61,7 +53,8 @@ class DataIterator(object):
             "otherwise, they wont be aligned after padding.")
         return {
             'source_signals': source_signals,
-            'target_signals': target_signals,
+            'target_coarse_signals': target_coarse_signals,
+            'target_fine_signals': target_fine_signals,
             'target_signal_lengths': target_signal_lengths,
             'frames': frames,
             'spectrograms': spectrograms,
@@ -75,7 +68,10 @@ class DataIterator(object):
     def __iter__(self):
         for batch in self.iterator:
             batch['source_signals'] = self._maybe_cuda(batch['source_signals'], non_blocking=True)
-            batch['target_signals'] = self._maybe_cuda(batch['target_signals'], non_blocking=True)
+            batch['target_coarse_signals'] = self._maybe_cuda(
+                batch['target_coarse_signals'], non_blocking=True)
+            batch['target_fine_signals'] = self._maybe_cuda(
+                batch['target_fine_signals'], non_blocking=True)
             batch['frames'] = self._maybe_cuda(batch['frames'], non_blocking=True)
             batch['spectrograms'] = [
                 self._maybe_cuda(s, non_blocking=True) for s in batch['spectrograms']

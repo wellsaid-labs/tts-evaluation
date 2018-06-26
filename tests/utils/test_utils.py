@@ -18,6 +18,8 @@ from src.utils import plot_waveform
 from src.utils import ROOT_PATH
 from src.utils import spectrogram_to_image
 from src.utils import split_dataset
+from src.utils import split_signal
+from src.utils import combine_signal
 
 
 class MockModel(nn.Module):
@@ -114,3 +116,19 @@ def test_figure_to_numpy_array():
 def test_parse_hparam_args():
     hparam_args = ['--foo 0.01', '--bar WaveNet', '--moo=1']
     assert parse_hparam_args(hparam_args) == {'foo': 0.01, 'bar': 'WaveNet', 'moo': 1}
+
+
+def test_split_signal():
+    signal = torch.FloatTensor([1.0, -1.0, 0, 2**-7, 2**-8])
+    coarse, fine = split_signal(signal, 16)
+    assert torch.equal(coarse, torch.FloatTensor([255, 0, 128, 129, 128]))
+    assert torch.equal(fine, torch.FloatTensor([255, 0, 0, 0, 2**7]))
+
+
+def test_combine_signal():
+    signal = torch.FloatTensor([1.0, -1.0, 0, 2**-7, 2**-8])
+    coarse, fine = split_signal(signal, 16)
+    new_signal = combine_signal(coarse, fine, 16)
+    # NOTE: 1.0 gets clipped to ``(2**15 - 1) / 2**15``
+    expected_signal = torch.FloatTensor([(2**15 - 1) / 2**15, -1.0, 0, 2**-7, 2**-8])
+    np.testing.assert_allclose(expected_signal.numpy(), new_signal.numpy())

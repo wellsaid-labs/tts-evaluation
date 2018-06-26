@@ -2,21 +2,21 @@ import argparse
 import logging
 import random
 
-from torch.nn import NLLLoss
+from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
 from torchnlp.utils import pad_batch
 from tqdm import tqdm
 
 import torch
 
-from src.audio import mu_law_decode
 from src.bin.signal_model._data_iterator import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
 from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
 from src.optimizer import Optimizer
-from src.signal_model import WaveNet
+from src.signal_model import WaveRNN
+from src.utils import combine_signal
 from src.utils import get_total_parameters
 from src.utils import parse_hparam_args
 from src.utils import plot_log_mel_spectrogram
@@ -58,10 +58,10 @@ class Trainer():  # pragma: no cover
                  sample_rate,
                  train_batch_size=32,
                  dev_batch_size=128,
-                 model=WaveNet,
+                 model=WaveRNN,
                  step=0,
                  epoch=0,
-                 criterion=NLLLoss,
+                 criterion=CrossEntropyLoss,
                  optimizer=Adam,
                  num_workers=0):
 
@@ -83,8 +83,6 @@ class Trainer():  # pragma: no cover
         self.dev_batch_size = dev_batch_size
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
-        self.train_dataset.set_receptive_field_size(self.model.receptive_field_size)
-        self.dev_dataset.set_receptive_field_size(self.model.receptive_field_size)
         self.num_workers = num_workers
         self.sample_rate = sample_rate
 
@@ -113,7 +111,7 @@ class Trainer():  # pragma: no cover
         self.tensorboard = self.train_tensorboard if train else self.dev_tensorboard
 
         # Epoch Average Loss Metrics
-        total_signal_loss, total_signal_predictions = 0.0, 0
+        total_coarse_loss, total_fine_loss, total_signal_predictions = 0.0, 0.0, 0
 
         # Setup iterator and metrics
         data_iterator = DataIterator(
@@ -125,12 +123,16 @@ class Trainer():  # pragma: no cover
         data_iterator = tqdm(data_iterator, desc=label)
         for batch in data_iterator:
             draw_sample = not train and random.randint(1, len(data_iterator)) == 1
-            signal_loss, num_signal_predictions = self._run_step(
+            coarse_loss, fine_loss, num_signal_predictions = self._run_step(
                 batch, train=train, sample=draw_sample)
-            total_signal_loss += signal_loss * num_signal_predictions
+            total_fine_loss += fine_loss * num_signal_predictions
+            total_coarse_loss += coarse_loss * num_signal_predictions
             total_signal_predictions += num_signal_predictions
 
-        self._add_scalar(['loss', 'epoch'], total_signal_loss / total_signal_predictions, self.step)
+        self._add_scalar(['coarse', 'loss', 'epoch'], total_coarse_loss / total_signal_predictions,
+                         self.step)
+        self._add_scalar(['fine', 'loss', 'epoch'], total_fine_loss / total_signal_predictions,
+                         self.step)
 
     def _add_image(self, path, to_image, step, *data):
         """ Plot data and add image to tensorboard.
@@ -169,26 +171,29 @@ class Trainer():  # pragma: no cover
         self.tensorboard.add_audio('/'.join(path_audio), signal, step, self.sample_rate)
         self._add_image(path_image, plot_waveform, step, signal)
 
-    def _infer(self, spectrogram, signal=None, max_infer_frames=300):
+    def _infer(self, spectrogram, coarse_signal=None, fine_signal=None, max_infer_frames=300):
         """ Run in inference mode without teacher forcing.
 
         Args:
             spectrogram (torch.FloatTensor [num_frames, frame_channels]): Spectrogram to run
                 inference on.
-            signal (torch.FloatTensor [signal_length], optional): Reference signal.
+            coarse_signal (torch.FloatTensor [signal_length], optional): Reference signal.
+            fine_signal (torch.FloatTensor [signal_length], optional): Reference signal.
             max_infer_frames (int, optioanl): Maximum number of frames to consider for memory's
                 sake.
 
         Returns:
+            predicted_signal (torch.FloatTensor [signal_length]): Predicted signal.
             predicted_signal (torch.FloatTensor [signal_length]): Predicted signal.
             gold_signal (torch.FloatTensor [signal_length]): Gold signal sliced to aligned with
                 predicted signal.
             spectrogram (torch.FloatTensor [num_frames, frame_channels]): Aligned spectrogram to
                 predicted signal.
         """
-        if signal is not None:
-            factor = int(signal.shape[0] / spectrogram.shape[0])
-            signal = signal[:max_infer_frames * factor]
+        if coarse_signal is not None and fine_signal is not None:
+            factor = int(coarse_signal.shape[0] / spectrogram.shape[0])
+            coarse_signal = coarse_signal[:max_infer_frames * factor]
+            fine_signal = fine_signal[:max_infer_frames * factor]
 
         torch.set_grad_enabled(False)
         self.model.train(mode=False)
@@ -199,62 +204,92 @@ class Trainer():  # pragma: no cover
             spectrogram = spectrogram[:, :max_infer_frames]
 
         logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[1])
-        predicted_signal = self.model(spectrogram).squeeze(0)
-        return predicted_signal, signal, spectrogram.squeeze(0)
+        predicted_coarse, predicted_fine = self.model(spectrogram)
 
-    def _sample(self, batch, predicted_signal, max_infer_frames=300):
+        # predicted_signal [signal_length, bins] → [signal_length]
+        predicted_coarse = predicted_coarse.squeeze(0).max(dim=1)[1]
+        predicted_fine = predicted_fine.squeeze(0).max(dim=1)[1]
+
+        target_signal = combine_signal(coarse_signal, fine_signal)
+        predicted_signal = combine_signal(predicted_coarse, predicted_fine)
+
+        return predicted_signal, target_signal, spectrogram.squeeze(0)
+
+    def _sample(self, batch, predicted_coarse, predicted_fine, max_infer_frames=300):
         """ Samples examples from a batch and outputs them to tensorboard
 
         Args:
             batch (dict): ``dict`` from ``src.bin.signal_model._utils.DataIterator``.
-            predicted_signal (torch.FloatTensor [batch_size, signal_channels, signal_length])
+            predicted_coarse (torch.FloatTensor [batch_size, signal_length, bins])
+            predicted_fine (torch.FloatTensor [batch_size, signal_length, bins])
             max_infer_frames (int): The number of frames ``nv_wavenet`` has enough memory to
                 process to generate realistic samples.
 
         Returns: None
         """
-        batch_size = predicted_signal.shape[0]
+        batch_size = predicted_coarse.shape[0]
         item = random.randint(0, batch_size - 1)
         length = batch['target_signal_lengths'][item]
-        # predicted_signal [batch_size, signal_channels, signal_length] → [signal_length]
-        predicted_signal = predicted_signal.max(dim=1)[1][item, :length]
+
+        # predicted_signal [batch_size, signal_length, bins] → [signal_length]
+        predicted_coarse = predicted_coarse.max(dim=2)[1][item, :length]
+        predicted_fine = predicted_fine.max(dim=2)[1][item, :length]
+
         # gold_signal [batch_size, signal_length] → [signal_length]
-        target_signal = batch['target_signals'][item, :length]
+        target_coarse_signal = batch['target_coarse_signals'][item, :length]
+        target_fine_signal = batch['target_fine_signals'][item, :length]
+
+        target_signal = combine_signal(target_coarse_signal, target_fine_signal)
+        predicted_signal = combine_signal(predicted_coarse, predicted_fine)
+
         self._add_audio(['slice', 'prediction_aligned'], ['slice', 'prediction_aligned_waveform'],
-                        mu_law_decode(predicted_signal), self.step)
-        self._add_audio(['slice', 'gold'], ['slice', 'gold_waveform'], mu_law_decode(target_signal),
-                        self.step)
+                        predicted_signal, self.step)
+        self._add_audio(['slice', 'gold'], ['slice', 'gold_waveform'], target_signal, self.step)
 
         # Sample from an inference
-        if self.model.queue_kernel_update():
-            infered_signal, gold_signal, spectrogram = self._infer(
-                spectrogram=batch['spectrograms'][item], signal=batch['signals'][item])
-            self._add_audio(['full', 'prediction'], ['full', 'prediction_waveform'],
-                            mu_law_decode(infered_signal), self.step)
-            self._add_audio(['full', 'gold'], ['full', 'gold_waveform'], gold_signal, self.step)
-            self._add_image(['full', 'spectrogram'], plot_log_mel_spectrogram, self.step,
-                            spectrogram)
+        infered_signal, gold_signal, spectrogram = self._infer(
+            spectrogram=batch['spectrograms'][item],
+            coarse_signal=batch['target_coarse_signals'][item],
+            fine_signal=batch['target_fine_signals'][item])
+        self._add_audio(['full', 'prediction'], ['full', 'prediction_waveform'], infered_signal,
+                        self.step)
+        self._add_audio(['full', 'gold'], ['full', 'gold_waveform'], gold_signal, self.step)
+        self._add_image(['full', 'spectrogram'], plot_log_mel_spectrogram, self.step, spectrogram)
 
-    def _compute_loss(self, gold_signal, gold_signal_lengths, predicted_signal):
+    def _compute_loss(self, batch, predicted_coarse, predicted_fine):
         """ Compute the losses for Tacotron.
 
         Args:
-            gold_signal (torch.ShortTensor [batch_size, signal_length])
-            gold_signal_lengths (list): Lengths of each signal in the batch.
-            predicted_signal (torch.LongTensor [batch_size, signal_channels, signal_length])
+            batch (dict): ``dict`` from ``src.bin.signal_model._utils.DataIterator``.
+            predicted_coarse (torch.LongTensor [batch_size, signal_length, bins]): Predicted
+                categorical distribution over ``bins`` categories for the ``coarse`` random
+                variable.
+            predicted_fine (torch.LongTensor [batch_size, signal_length, bins]): Predicted
+                categorical distribution over ``bins`` categories for the ``fine`` random
+                variable.
 
         Returns:
-            (torch.Tensor) scalar loss values
+            coarse_loss (torch.Tensor): Scalar loss value for signal top bits.
+            fine_loss (torch.Tensor): Scalar loss value for signal bottom bits.
+            num_predictions (int): Number of signal predictions made.
         """
-        mask = [predicted_signal.new_full((length,), 1) for length in gold_signal_lengths]
+        mask = [predicted_fine.new_full((length,), 1) for length in batch['target_signal_lengths']]
         mask, _ = pad_batch(mask, padding_index=0)  # [batch_size, signal_length]
         num_predictions = torch.sum(mask)
 
-        # signal_loss [batch_size, signal_length]
-        signal_loss = self.criterion(predicted_signal, gold_signal.long())
-        signal_loss = torch.sum(signal_loss * mask) / num_predictions
+        # [batch_size, signal_length, bins] → [batch_size, bins, signal_length]
+        predicted_fine = predicted_fine.transpose(1, 2)
+        predicted_coarse = predicted_coarse.transpose(1, 2)
 
-        return signal_loss, num_predictions
+        # coarse_loss [batch_size, signal_length]
+        coarse_loss = self.criterion(predicted_coarse, batch['target_coarse_signals'].long())
+        coarse_loss = torch.sum(coarse_loss * mask) / num_predictions
+
+        # fine_loss [batch_size, signal_length]
+        fine_loss = self.criterion(predicted_fine, batch['target_fine_signals'].long())
+        fine_loss = torch.sum(fine_loss * mask) / num_predictions
+
+        return coarse_loss, fine_loss, num_predictions
 
     def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
@@ -267,45 +302,55 @@ class Trainer():  # pragma: no cover
                 process to generate realistic samples.
 
         Returns:
-            (torch.Tensor) Loss at every iteration
+            coarse_loss (torch.Tensor): Scalar loss value for signal top bits.
+            fine_loss (torch.Tensor): Scalar loss value for signal bottom bits.
+            num_predictions (int): Number of signal predictions made.
         """
         # Set mode
         torch.set_grad_enabled(train)
         self.model.train(mode=train)
 
+        model_kwargs = {
+            'input_signal': batch['source_signals'],
+            'target_coarse': batch['target_coarse_signals'].unsqueeze(2)
+        }
         if self.is_data_parallel:
-            predicted_signal = torch.nn.parallel.data_parallel(
+            predicted_coarse, predicted_fine = torch.nn.parallel.data_parallel(
                 module=self.model,
                 inputs=batch['frames'],
-                module_kwargs={'gold_signal': batch['source_signals']},
+                module_kwargs=model_kwargs,
                 dim=0,
                 output_device=self.device)
         else:
-            predicted_signal = self.model(batch['frames'], gold_signal=batch['source_signals'])
+            predicted_coarse, predicted_fine = self.model(batch['frames'], **model_kwargs)
 
         # Cut off context
-        predicted_signal = predicted_signal[:, :, -batch['target_signals'].shape[1]:]
-        signal_loss, num_signal_predictions = self._compute_loss(
-            batch['target_signals'], batch['target_signal_lengths'], predicted_signal)
+        predicted_coarse = predicted_coarse[:, -batch['target_coarse_signals'].shape[1]:, :]
+        predicted_fine = predicted_fine[:, -batch['target_coarse_signals'].shape[1]:, :]
+        coarse_loss, fine_loss, num_predictions = self._compute_loss(batch, predicted_coarse,
+                                                                     predicted_fine)
 
         if train:
             self.optimizer.zero_grad()
-            signal_loss.backward()
+            (coarse_loss + fine_loss).backward()
             parameter_norm = self.optimizer.step()
             if parameter_norm is not None:
                 self._add_scalar(['parameter_norm', 'step'], parameter_norm, self.step)
             self.step += 1
 
-        signal_loss = signal_loss.item()
-        predicted_signal = predicted_signal.detach()
+        coarse_loss = coarse_loss.item()
+        fine_loss = fine_loss.item()
+        predicted_coarse = predicted_coarse.detach()
+        predicted_fine = predicted_fine.detach()
 
         if train:
-            self._add_scalar(['loss', 'step'], signal_loss, self.step)
+            self._add_scalar(['coarse', 'loss', 'step'], coarse_loss, self.step)
+            self._add_scalar(['fine', 'loss', 'step'], fine_loss, self.step)
 
         if sample:
-            self._sample(batch, predicted_signal)
+            self._sample(batch, predicted_coarse, predicted_fine)
 
-        return signal_loss, num_signal_predictions
+        return coarse_loss, fine_loss, num_predictions
 
 
 def main(checkpoint=None,

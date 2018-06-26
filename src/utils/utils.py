@@ -308,3 +308,47 @@ def parse_hparam_args(hparam_args):
         return_[key] = value
 
     return return_
+
+
+@configurable
+def split_signal(signal, bits=16):
+    """ Compute the coarse and fine components of the signal.
+
+    Args:
+        signal (torch.FloatTensor [signal_length]): Signal with values ranging from [-1, 1]
+        bits (int): Number of bits to encode signal in.
+
+    Returns:
+        coarse (torch.FloatTensor [signal_length]): Top bits of the signal.
+        fine (torch.FloatTensor [signal_length]): Bottom bits of the signal.
+    """
+    assert torch.min(signal) >= -1.0 and torch.max(signal) <= 1.0
+    assert (bits %
+            2 == 0), 'To support an even split between coarse and fine, use an even number of bits'
+    range_ = int((2**(bits - 1)))
+    signal = torch.round(signal * range_)
+    signal = torch.clamp(signal, -1 * range_, range_ - 1)
+    unsigned = signal + range_  # Move range minimum to 0
+    bins = int(2**(bits / 2))
+    coarse = torch.floor(unsigned / bins)
+    fine = unsigned % bins
+    return coarse, fine
+
+
+@configurable
+def combine_signal(coarse, fine, bits=16):
+    """ Compute the coarse and fine components of the signal.
+
+    Args:
+        coarse (torch.FloatTensor [signal_length]): Top bits of the signal.
+        fine (torch.FloatTensor [signal_length]): Bottom bits of the signal.
+        bits (int): Number of bits to encode signal in.
+
+    Returns:
+        signal (torch.FloatTensor [signal_length]): Signal with values ranging from [-1, 1]
+    """
+    bins = int(2**(bits / 2))
+    assert torch.min(coarse) >= 0 and torch.max(coarse) < bins
+    assert torch.min(fine) >= 0 and torch.max(fine) < bins
+    signal = coarse * bins + fine - 2**(bits - 1)
+    return signal.float() / 2**(bits - 1)

@@ -90,6 +90,11 @@ def set_hparams():
     # where −1 < xt < 1 and µ = 255.
     signal_channels = 256  # NOTE: signal_channels = µ + 1
 
+    # SOURCE: Efficient Neural Audio Synthesis
+    # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
+    # designed to efficiently predict 16-bit raw audio samples.
+    bits = 16
+
     librosa.effects.trim = configurable(librosa.effects.trim)
     IPython.display.Audio.__init__ = configurable(IPython.display.Audio.__init__)
 
@@ -297,7 +302,7 @@ def set_hparams():
                     # SOURCE: Efficient Neural Audio Synthesis
                     # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
                     # designed to efficiently predict 16-bit raw audio samples.
-                    'bits': 16,
+                    'bits': bits,
 
                     # SOURCE: Efficient Neural Audio Synthesis
                     # We see that the WaveRNN with 896 units achieves NLL scores comparable to those
@@ -321,7 +326,9 @@ def set_hparams():
                     'frame_hop': get_log_mel_spectrogram['frame_hop'],
                     'lower_hertz': lower_hertz,
                     'upper_hertz': upper_hertz,
-                }
+                },
+                'split_signal.bits': bits,
+                'combine_signal.bits': bits,
             }
         }
     })

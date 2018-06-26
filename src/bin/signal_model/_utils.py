@@ -70,7 +70,7 @@ def set_hparams():
             # predominantly silence and end up with 74,348 total chunks.
             # NOTE: Our implementation requires ``slice_size`` to be divisable by ``frame_hop``.
             'slice_size': 7800,
-            'add_context': True,
+            'add_context': False,
         }
     })
 
