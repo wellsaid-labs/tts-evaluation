@@ -88,6 +88,9 @@ def load_checkpoint(checkpoint=None, device=torch.device('cpu')):
     # Load checkpoint
     if checkpoint is not None:
         checkpoint = torch_load(os.path.join(ROOT_PATH, checkpoint), device=device)
+        if 'model' in checkpoint:
+            checkpoint['model'].apply(
+                lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
     return checkpoint
 
 

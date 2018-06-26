@@ -310,6 +310,7 @@ class Trainer():  # pragma: no cover
             'target_coarse': batch['target_coarse_signals'].unsqueeze(2)
         }
         if self.is_data_parallel:
+            # TODO: Handle this https://github.com/pytorch/pytorch/issues/7092
             predicted_coarse, predicted_fine = torch.nn.parallel.data_parallel(
                 module=self.model,
                 inputs=batch['frames'],

@@ -98,6 +98,14 @@ class WaveRNN(nn.Module):
                 categorical distribution over ``bins`` categories for the ``fine`` random
                 variable. If in training mode, then ``functional.softmax`` is not applied.
         """
+        if input_signal is not None and target_coarse is not None:
+            assert input_signal.shape[1] == target_coarse.shape[
+                1], 'Target signal and input signal must be of the same length'
+            assert len(target_coarse.shape) == 3, (
+                '``target_coarse`` must be shaped [batch_size, signal_length, 1]')
+            assert len(input_signal.shape) == 3, (
+                '``input_signal`` must be shaped [batch_size, signal_length, 2]')
+
         # [batch_size, local_length, local_features_size] →
         # [batch_size, 3, self.hidden_size, signal_length]
         conditional_features = self.conditional_features_upsample(local_features)
@@ -106,16 +114,9 @@ class WaveRNN(nn.Module):
         # [batch_size, signal_length, 3, self.hidden_size]
         conditional_features = conditional_features.permute(0, 3, 1, 2)
         if input_signal is not None and target_coarse is not None:
-            assert input_signal.shape[1] == target_coarse.shape[
-                1], 'Target signal and input signal must be of the same length'
             assert conditional_features.shape[1] == input_signal.shape[1], (
                 'Upsampling parameters in tangent with signal shape and local features shape ' +
                 'must be the same length after upsampling.')
-            assert len(target_coarse.shape) == 3, (
-                '``target_coarse`` must be shaped [batch_size, signal_length, 1]')
-            assert len(input_signal.shape) == 3, (
-                '``input_signal`` must be shaped [batch_size, signal_length, 2]')
-
             input_signal = self._scale(input_signal)
             target_coarse = self._scale(target_coarse)
             return self.train_forward(conditional_features, input_signal, target_coarse)
@@ -229,8 +230,8 @@ class WaveRNN(nn.Module):
         # Initial inputs
         out_coarse, out_fine = [], []
         coarse, fine = split_signal(conditional_features.new_zeros(batch_size))
-        coarse = coarse.unsqueeze(1)
-        fine = fine.unsqueeze(1)
+        coarse = self._scale(coarse.unsqueeze(1))
+        fine = self._scale(fine.unsqueeze(1))
         coarse_last_hidden = conditional_features.new_zeros(batch_size, self.half_hidden_size)
         fine_last_hidden = conditional_features.new_zeros(batch_size, self.half_hidden_size)
 
@@ -299,11 +300,13 @@ class WaveRNN(nn.Module):
             # TODO: Replace with Stripped GRU
             # Compute the fine gates
             reset_gate = functional.sigmoid(
-                hidden_fine_reset_gate + fine_input_reset_gate + bias_fine_reset_gate)
+                hidden_fine_reset_gate + fine_input_reset_gate + bias_fine_reset_gate +
+                conditional_fine_reset_gate[:, i])
             update_gate = functional.sigmoid(
-                hidden_fine_update_gate + fine_input_update_gate + bias_fine_update_gate)
-            next_hidden = functional.tanh(
-                reset_gate * hidden_fine_memory + fine_input_memory + bias_fine_memory)
+                hidden_fine_update_gate + fine_input_update_gate + bias_fine_update_gate +
+                conditional_fine_update_gate[:, i])
+            next_hidden = functional.tanh(reset_gate * hidden_fine_memory + fine_input_memory +
+                                          bias_fine_memory + conditional_fine_memory[:, i])
             # hidden_fine [batch_size, self.half_hidden_size]
             hidden_fine = update_gate * fine_last_hidden + (1.0 - update_gate) * next_hidden
 
