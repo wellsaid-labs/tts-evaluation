@@ -5,6 +5,7 @@ from torch.nn import functional
 from tqdm import tqdm
 
 from src.signal_model.upsample import ConditionalFeaturesUpsample
+from src.signal_model.stripped_gru import StrippedGRU
 from src.utils.configurable import configurable
 from src.utils import split_signal
 
@@ -44,8 +45,6 @@ class WaveRNN(nn.Module):
         self.hidden_size = hidden_size
         self.half_hidden_size = int(hidden_size / 2)
 
-        self.project_hidden = nn.Linear(self.hidden_size, 3 * self.hidden_size, bias=False)
-
         # Output fully connected layers
         self.get_out_coarse = nn.Sequential(
             nn.Linear(self.half_hidden_size, self.half_hidden_size), nn.ReLU(),
@@ -58,11 +57,6 @@ class WaveRNN(nn.Module):
         self.project_coarse_input = nn.Linear(2, 3 * self.half_hidden_size, bias=False)
         self.project_fine_input = nn.Linear(3, 3 * self.half_hidden_size, bias=False)
 
-        # Biases for the gates
-        self.bias_update_gate = nn.Parameter(torch.zeros(self.hidden_size))
-        self.bias_reset_gate = nn.Parameter(torch.zeros(self.hidden_size))
-        self.bias_memory = nn.Parameter(torch.zeros(self.hidden_size))
-
         self.conditional_features_upsample = ConditionalFeaturesUpsample(
             in_channels=local_features_size,
             out_channels=self.hidden_size,
@@ -70,6 +64,8 @@ class WaveRNN(nn.Module):
             upsample_convs=upsample_convs,
             num_layers=3,  # One layer per gate (a.i. reset, memory, and update)
             upsample_chunks=1)
+
+        self.stripped_gru = StrippedGRU(self.hidden_size)
 
     def _scale(self, tensor):
         """ Scale from [0, self.bins - 1] to [-1.0, 1.0].
@@ -167,32 +163,23 @@ class WaveRNN(nn.Module):
 
         # [batch_size, signal_length, 3, self.half_hidden_size] →
         # [batch_size, signal_length, 3, self.hidden_size]
-        input_ = torch.cat((coarse_input_projection, fine_input_projection), dim=3)
-        input_update_gate = input_[:, :, 0] + self.bias_update_gate + conditional_features[:, :, 0]
-        input_reset_gate = input_[:, :, 1] + self.bias_reset_gate + conditional_features[:, :, 1]
-        input_memory = input_[:, :, 2] + self.bias_memory + conditional_features[:, :, 2]
+        rnn_input = torch.cat((coarse_input_projection, fine_input_projection), dim=3)
+        rnn_input += conditional_features
+        # [batch_size, signal_length, 3, self.hidden_size] →
+        # [batch_size, signal_length, 3 * self.hidden_size]
+        rnn_input = rnn_input.view(batch_size, signal_length, 3 * self.hidden_size)
 
-        # Initial inputs
-        hidden = input_signal.new_zeros(batch_size, self.hidden_size)
-        predicted_hidden = []
+        # [batch_size, signal_length, 3 * self.hidden_size] →
+        # [signal_length, batch_size, 3 * self.hidden_size]
+        rnn_input = rnn_input.transpose(0, 1)
 
-        for i in range(signal_length):
-            # [batch_size, self.hidden_size] → [batch_size, 3 * self.hidden_size]
-            hidden_projection = self.project_hidden(hidden)
-            # ... [batch_size, self.hidden_size]
-            hidden_update_gate, hidden_reset_gate, hidden_memory = torch.split(
-                hidden_projection, self.hidden_size, dim=1)
+        # [signal_length, batch_size, 3 * self.hidden_size] →
+        # [signal_length, batch_size, self.hidden_size]
+        hidden_states, _ = self.stripped_gru(rnn_input)
 
-            # Compute gates
-            update_gate = functional.sigmoid(hidden_update_gate + input_update_gate[:, i])
-            reset_gate = functional.sigmoid(hidden_reset_gate + input_reset_gate[:, i])
-            next_hidden = functional.tanh(reset_gate * hidden_memory + input_memory[:, i])
-            # hidden [batch_size, self.hidden_size]
-            hidden = update_gate * hidden + (1.0 - update_gate) * next_hidden
-            predicted_hidden.append(hidden)
-
-        # hidden_states [batch_size, signal_length, self.hidden_size]
-        hidden_states = torch.stack(predicted_hidden, dim=1)
+        # [signal_length, batch_size, self.hidden_size] →
+        # [batch_size, signal_length, self.hidden_size]
+        hidden_states = hidden_states.transpose(0, 1)
 
         # [batch_size, signal_length, self.half_hidden_size]
         hidden_coarse, hidden_fine = torch.split(hidden_states, self.half_hidden_size, dim=2)
@@ -220,21 +207,24 @@ class WaveRNN(nn.Module):
                 variable.
         """
         batch_size, signal_length, _, _ = conditional_features.shape
+        device = conditional_features.device
 
         # ... [batch_size, signal_length, self.half_hidden_size]
-        conditional_coarse_update_gate, conditional_fine_update_gate = torch.split(
-            conditional_features[:, :, 0, :], self.half_hidden_size, dim=2)
         conditional_coarse_reset_gate, conditional_fine_reset_gate = torch.split(
+            conditional_features[:, :, 0, :], self.half_hidden_size, dim=2)
+        conditional_coarse_update_gate, conditional_fine_update_gate = torch.split(
             conditional_features[:, :, 1, :], self.half_hidden_size, dim=2)
         conditional_coarse_memory, conditional_fine_memory = torch.split(
             conditional_features[:, :, 2, :], self.half_hidden_size, dim=2)
 
         # ... [self.half_hidden_size]
-        bias_coarse_update_gate, bias_fine_update_gate = torch.split(self.bias_update_gate,
-                                                                     self.half_hidden_size)
-        bias_coarse_reset_gate, bias_fine_reset_gate = torch.split(self.bias_reset_gate,
-                                                                   self.half_hidden_size)
-        bias_coarse_memory, bias_fine_memory = torch.split(self.bias_memory, self.half_hidden_size)
+        (bias_coarse_reset_gate, bias_fine_reset_gate, bias_coarse_update_gate,
+         bias_fine_update_gate, bias_coarse_memory, bias_fine_memory) = torch.split(
+             self.stripped_gru.gru.bias_ih_l0, self.half_hidden_size)
+
+        project_hidden = nn.Linear(self.hidden_size, 3 * self.hidden_size, bias=False)
+        project_hidden.weight = self.stripped_gru.gru.weight_hh_l0
+        project_hidden = project_hidden.to(device=device)
 
         # Initial inputs
         out_coarse, out_fine = [], []
@@ -251,7 +241,7 @@ class WaveRNN(nn.Module):
             # [batch_size, 2] → [batch_size, 3 * self.half_hidden_size]
             coarse_input_projection = self.project_coarse_input(coarse_input)
             # [batch_size, self.half_hidden_size]
-            coarse_input_update_gate, coarse_input_reset_gate, coarse_input_memory = \
+            coarse_input_reset_gate, coarse_input_update_gate, coarse_input_memory = \
                 torch.split(coarse_input_projection, self.half_hidden_size, dim=1)
 
             del coarse_input_projection
@@ -259,26 +249,27 @@ class WaveRNN(nn.Module):
             # hidden [batch_size, self.hidden_size]
             hidden = torch.cat((coarse_last_hidden, fine_last_hidden), dim=1)
             # [batch_size, self.hidden_size] → [batch_size, 3 * self.hidden_size]
-            hidden = self.project_hidden(hidden)
+            hidden = project_hidden(hidden)
             # ... [batch_size, self.half_hidden_size]
-            (hidden_coarse_update_gate, hidden_fine_update_gate, hidden_coarse_reset_gate,
-             hidden_fine_reset_gate, hidden_coarse_memory, hidden_fine_memory) = torch.split(
+            (hidden_coarse_reset_gate, hidden_fine_reset_gate, hidden_coarse_update_gate,
+             hidden_fine_update_gate, hidden_coarse_memory, hidden_fine_memory) = torch.split(
                  hidden, self.half_hidden_size, dim=1)
 
+            # TODO: Replace with Stripped GRU
             # Compute the coarse gates
-            update_gate = functional.sigmoid(
-                hidden_coarse_update_gate + coarse_input_update_gate + bias_coarse_update_gate +
-                conditional_coarse_update_gate[:, i])
             reset_gate = functional.sigmoid(
                 hidden_coarse_reset_gate + coarse_input_reset_gate + bias_coarse_reset_gate +
                 conditional_coarse_reset_gate[:, i])
+            update_gate = functional.sigmoid(
+                hidden_coarse_update_gate + coarse_input_update_gate + bias_coarse_update_gate +
+                conditional_coarse_update_gate[:, i])
             next_hidden = functional.tanh(reset_gate * hidden_coarse_memory + coarse_input_memory +
                                           bias_coarse_memory + conditional_coarse_memory[:, i])
             # hidden_coarse [batch_size, self.half_hidden_size]
             hidden_coarse = (update_gate * coarse_last_hidden + (1.0 - update_gate) * next_hidden)
 
-            del update_gate, coarse_input_update_gate, hidden_coarse_update_gate
             del reset_gate, coarse_input_reset_gate, hidden_coarse_reset_gate
+            del update_gate, coarse_input_update_gate, hidden_coarse_update_gate
             del next_hidden, coarse_input_memory, hidden_coarse_memory
 
             # Compute the coarse output
@@ -299,24 +290,25 @@ class WaveRNN(nn.Module):
             # [batch_size, 3] → [batch_size, 3 * self.half_hidden_size]
             fine_input_projection = self.project_fine_input(fine_input)
             # ... [batch_size, self.half_hidden_size]
-            fine_input_update_gate, fine_input_reset_gate, fine_input_memory = \
+            fine_input_reset_gate, fine_input_update_gate, fine_input_memory = \
                 torch.split(fine_input_projection, self.half_hidden_size, dim=1)
 
             del fine_input_projection
             del coarse_input
 
+            # TODO: Replace with Stripped GRU
             # Compute the fine gates
-            update_gate = functional.sigmoid(
-                hidden_fine_update_gate + fine_input_update_gate + bias_fine_update_gate)
             reset_gate = functional.sigmoid(
                 hidden_fine_reset_gate + fine_input_reset_gate + bias_fine_reset_gate)
+            update_gate = functional.sigmoid(
+                hidden_fine_update_gate + fine_input_update_gate + bias_fine_update_gate)
             next_hidden = functional.tanh(
                 reset_gate * hidden_fine_memory + fine_input_memory + bias_fine_memory)
             # hidden_fine [batch_size, self.half_hidden_size]
             hidden_fine = update_gate * fine_last_hidden + (1.0 - update_gate) * next_hidden
 
-            del update_gate, fine_input_update_gate, hidden_fine_update_gate
             del reset_gate, fine_input_reset_gate, hidden_fine_reset_gate
+            del update_gate, fine_input_update_gate, hidden_fine_update_gate
             del next_hidden, fine_input_memory, hidden_fine_memory
 
             # Compute the fine output

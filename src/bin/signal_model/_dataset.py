@@ -10,6 +10,7 @@ import numpy as np
 from src.utils.configurable import configurable
 from src.utils import get_filename_table
 from src.utils import split_signal
+from src.utils import combine_signal
 
 
 class SignalDataset(data.Dataset):
@@ -129,6 +130,10 @@ class SignalDataset(data.Dataset):
         source_signal_slice = torch.stack(
             (source_signal_coarse_slice, source_signal_fine_slice), dim=1)
         target_signal_coarse_slice, target_signal_fine_slice = split_signal(target_signal_slice)
+
+        # Add noise to signal
+        coarse_signal, fine_signal = split_signal(signal)
+        signal = combine_signal(coarse_signal, fine_signal)
 
         return {
             self.log_mel_spectrogram_prefix: log_mel_spectrogram,  # [num_frames, channels]

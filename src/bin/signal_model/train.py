@@ -171,14 +171,13 @@ class Trainer():  # pragma: no cover
         self.tensorboard.add_audio('/'.join(path_audio), signal, step, self.sample_rate)
         self._add_image(path_image, plot_waveform, step, signal)
 
-    def _infer(self, spectrogram, coarse_signal=None, fine_signal=None, max_infer_frames=300):
+    def _infer(self, spectrogram, signal=None, max_infer_frames=300):
         """ Run in inference mode without teacher forcing.
 
         Args:
             spectrogram (torch.FloatTensor [num_frames, frame_channels]): Spectrogram to run
                 inference on.
-            coarse_signal (torch.FloatTensor [signal_length], optional): Reference signal.
-            fine_signal (torch.FloatTensor [signal_length], optional): Reference signal.
+            signal (torch.FloatTensor [signal_length], optional): Reference signal.
             max_infer_frames (int, optioanl): Maximum number of frames to consider for memory's
                 sake.
 
@@ -190,10 +189,9 @@ class Trainer():  # pragma: no cover
             spectrogram (torch.FloatTensor [num_frames, frame_channels]): Aligned spectrogram to
                 predicted signal.
         """
-        if coarse_signal is not None and fine_signal is not None:
-            factor = int(coarse_signal.shape[0] / spectrogram.shape[0])
-            coarse_signal = coarse_signal[:max_infer_frames * factor]
-            fine_signal = fine_signal[:max_infer_frames * factor]
+        if signal is not None:
+            factor = int(signal.shape[0] / spectrogram.shape[0])
+            signal = signal[:max_infer_frames * factor]
 
         torch.set_grad_enabled(False)
         self.model.train(mode=False)
@@ -210,10 +208,9 @@ class Trainer():  # pragma: no cover
         predicted_coarse = predicted_coarse.squeeze(0).max(dim=1)[1]
         predicted_fine = predicted_fine.squeeze(0).max(dim=1)[1]
 
-        target_signal = combine_signal(coarse_signal, fine_signal)
         predicted_signal = combine_signal(predicted_coarse, predicted_fine)
 
-        return predicted_signal, target_signal, spectrogram.squeeze(0)
+        return predicted_signal, signal, spectrogram.squeeze(0)
 
     def _sample(self, batch, predicted_coarse, predicted_fine, max_infer_frames=300):
         """ Samples examples from a batch and outputs them to tensorboard
@@ -248,9 +245,7 @@ class Trainer():  # pragma: no cover
 
         # Sample from an inference
         infered_signal, gold_signal, spectrogram = self._infer(
-            spectrogram=batch['spectrograms'][item],
-            coarse_signal=batch['target_coarse_signals'][item],
-            fine_signal=batch['target_fine_signals'][item])
+            spectrogram=batch['spectrograms'][item], signal=batch['signals'][item])
         self._add_audio(['full', 'prediction'], ['full', 'prediction_waveform'], infered_signal,
                         self.step)
         self._add_audio(['full', 'gold'], ['full', 'gold_waveform'], gold_signal, self.step)
