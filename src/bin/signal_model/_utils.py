@@ -9,15 +9,20 @@ from src.utils import ROOT_PATH
 from src.utils import torch_load
 from src.utils import torch_save
 from src.utils.configurable import add_config
+from src.utils.configurable import configurable
 
 logger = logging.getLogger(__name__)
 
 
-def load_data(source_train='data/.signal_dataset/train',
-              source_dev='data/.signal_dataset/dev',
+@configurable
+def load_data(generated_train='data/.signal_dataset/train',
+              generated_dev='data/.signal_dataset/dev',
+              real_train='data/.feature_dataset/train',
+              real_dev='data/.feature_dataset/dev',
               log_mel_spectrogram_prefix='log_mel_spectrogram',
               signal_prefix='signal',
-              extension='.npy'):
+              extension='.npy',
+              generated=True):
     """ Load train and dev datasets as ``SignalDataset``s.
 
     Args:
@@ -31,6 +36,11 @@ def load_data(source_train='data/.signal_dataset/train',
         train (SignalDataset)
         dev (SignalDataset)
     """
+    if generated:
+        source_train, source_dev = generated_train, generated_dev
+    else:
+        source_train, source_dev = real_train, real_dev
+
     if not os.path.isdir(source_dev) or not os.path.isdir(source_train):
         raise ValueError('Data files not found. '
                          'Did you run ``src/bin/feature_model/generate.py``?')

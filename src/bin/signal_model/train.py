@@ -122,7 +122,7 @@ class Trainer():  # pragma: no cover
             num_workers=self.num_workers)
         data_iterator = tqdm(data_iterator, desc=label)
         for batch in data_iterator:
-            draw_sample = not train and random.randint(1, len(data_iterator)) == 1
+            draw_sample = random.randint(1, len(data_iterator) * 3) == 1
             coarse_loss, fine_loss, num_signal_predictions = self._run_step(
                 batch, train=train, sample=draw_sample)
             total_fine_loss += fine_loss * num_signal_predictions
@@ -171,7 +171,7 @@ class Trainer():  # pragma: no cover
         self.tensorboard.add_audio('/'.join(path_audio), signal, step, self.sample_rate)
         self._add_image(path_image, plot_waveform, step, signal)
 
-    def _infer(self, spectrogram, signal=None, max_infer_frames=300):
+    def _infer(self, spectrogram, signal=None, max_infer_frames=100):
         """ Run in inference mode without teacher forcing.
 
         Args:
@@ -306,7 +306,7 @@ class Trainer():  # pragma: no cover
         }
         if self.is_data_parallel:
             # TODO: Handle this https://github.com/pytorch/pytorch/issues/7092
-            predicted_coarse, predicted_fine = torch.nn.parallel.data_parallel(
+            predicted_coarse, predicted_fine, _ = torch.nn.parallel.data_parallel(
                 module=self.model,
                 inputs=batch['frames'],
                 module_kwargs=model_kwargs,
@@ -351,7 +351,7 @@ def main(checkpoint=None,
          reset_optimizer=False,
          hparams={},
          dev_to_train_ratio=4,
-         evaluate_every_n_epochs=15,
+         evaluate_every_n_epochs=1,
          min_time=60 * 15,
          label='signal_model'):  # pragma: no cover
     """ Main module that trains a the signal model saving checkpoints incrementally.

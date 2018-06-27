@@ -13,11 +13,12 @@ from src.utils.experiment_context_manager import ExperimentContextManager
 
 def test_load_data():
     train, dev = load_data(
-        source_train='tests/_test_data/signal_dataset/train',
-        source_dev='tests/_test_data/signal_dataset/dev',
+        generated_train='tests/_test_data/signal_dataset/train',
+        generated_dev='tests/_test_data/signal_dataset/dev',
         log_mel_spectrogram_prefix='log_mel_spectrogram',
         signal_prefix='signal',
-        extension='.npy')
+        extension='.npy',
+        generated=True)
     assert len(train) == 1
     assert len(dev) == 1
 

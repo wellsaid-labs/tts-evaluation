@@ -35,6 +35,12 @@ class ConditionalFeaturesUpsample(nn.Module):
         assert self.num_layers % upsample_chunks == 0, (
             "For simplicity, we only support whole chunking")
 
+        self.preprocess = nn.Sequential(
+            nn.Conv1d(in_channels=in_channels, out_channels=in_channels, kernel_size=1),
+            nn.Conv1d(in_channels=in_channels, out_channels=in_channels, kernel_size=1),
+            nn.Conv1d(in_channels=in_channels, out_channels=in_channels, kernel_size=1),
+            nn.Conv1d(in_channels=in_channels, out_channels=in_channels, kernel_size=1))
+
         self.upsample_signal_length = None
         if upsample_convs is not None:
             # Similar to:
@@ -97,22 +103,26 @@ class ConditionalFeaturesUpsample(nn.Module):
         # [batch_size, in_channels, signal_length (local_length)]
         local_features = local_features.transpose(1, 2)
 
+        # [batch_size, in_channels, local_length]
         # [batch_size, in_channels, local_length] →
-        # [batch_size, in_channels, signal_length]
+        local_features = self.preprocess(local_features)
+
+        # [batch_size, in_channels, local_length] →
+        # [batch_size, out_channels, signal_length]
         local_features = local_features.unsqueeze(1)
         if self.upsample_signal_length is not None:
             local_features = self.upsample_signal_length(local_features)
         local_features = local_features.squeeze(1)
         local_features = self._repeat(local_features)
 
-        # [batch_size, in_channels, signal_length] →
+        # [batch_size, out_channels, signal_length] →
         # [batch_size, out_channels * num_layers, signal_length]
         local_features = [conv(local_features) for conv in self.upsample_layers]
         local_features = torch.cat(local_features, dim=1)
 
         batch_size, _, signal_length = local_features.shape
 
-        # [batch_size, in_channels, signal_length] →
+        # [batch_size, out_channels, signal_length] →
         # [batch_size, num_layers, out_channels, signal_length]
         local_features = local_features.view(batch_size, self.num_layers, self.out_channels,
                                              signal_length)

@@ -318,7 +318,10 @@ def set_hparams():
                     'upsample_repeat': 75,
                 }
             },
-            'bin.signal_model.train.Trainer.__init__.sample_rate': sample_rate,
+            'bin.signal_model': {
+                'train.Trainer.__init__.sample_rate': sample_rate,
+                '_utils.load_data.generated': False,
+            },
             'utils.utils': {
                 'plot_waveform.sample_rate': sample_rate,
                 'plot_log_mel_spectrogram': {

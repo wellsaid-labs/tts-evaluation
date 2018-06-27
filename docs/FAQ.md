@@ -28,3 +28,15 @@ This error can occur when installing NV-WaveNet and can be resolved with the ins
 ### nv_wavenet_util.cuh(89): error: more than one conversion function from "half"...
 
 This error can occur when installing NV-WaveNet and can be resolved with the instructions [here](https://github.com/NVIDIA/nv-wavenet/issues/5).
+
+### SystemError: unknown opcode
+
+For me, this happened when I tried to load a model checkpoint on a different python version
+than it was trained on. Specifically, I tried to load a model checkpoint created by Python3.5
+in jupyter using Python 3.6.
+
+To fix this, [this](https://stackoverflow.com/questions/9386048/ipython-reads-wrong-python-version)
+Stack Overflow was helpful for fixing iPython python version.
+
+To fix Jupyter, [this](https://github.com/jupyter/notebook/issues/2563) on GitHub was helpful.
+

@@ -261,6 +261,7 @@ def get_filename_table(directory, prefixes=[], extension=''):
         # Get filenames with associated prefixes
         filenames = []
         for filename in os.listdir(directory):
+            # TODO: Rename prefix because it does not look at directly the beginning of the filename
             if filename.endswith(extension) and prefix in filename:
                 filenames.append(os.path.join(directory, filename))
 
