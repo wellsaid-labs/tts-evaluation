@@ -1,5 +1,3 @@
-from torch.nn import functional
-
 import torch
 import numpy as np
 
@@ -23,30 +21,20 @@ def test_wave_rnn_inference_train_equivilance():
         upsample_convs=upsample_convs,
         upsample_repeat=upsample_repeat,
         local_features_size=local_features_size).eval()
-    predicted_coarse, predicted_fine = net(local_features)
-
-    # Run train with the same parameters
-    # [batch_size, signal_length, bins] → [batch_size, signal_length]
-    max_predicted_coarse = predicted_coarse.max(dim=2)[1]
-    max_predicted_fine = predicted_fine.max(dim=2)[1]
+    predicted_coarse, predicted_fine, hidden = net(local_features)
 
     # [batch_size, signal_length] → [batch_size, signal_length - 1, 2]
-    input_signal = torch.stack((max_predicted_coarse[:, :-1], max_predicted_fine[:, :-1]), dim=2)
+    input_signal = torch.stack((predicted_coarse[:, :-1], predicted_fine[:, :-1]), dim=2)
     coarse, fine = split_signal(torch.zeros(batch_size))
     # [batch_size] → [batch_size, 1, 2]
     go_signal = torch.stack((coarse, fine), dim=1).unsqueeze(1).long()
     # [batch_size, signal_length - 1, 2] → [batch_size, signal_length, 2]
     input_signal = torch.cat((go_signal, input_signal), dim=1)
 
-    other_predicted_coarse, other_predicted_fine = net(
-        local_features, input_signal=input_signal, target_coarse=max_predicted_coarse.unsqueeze(2))
-    other_predicted_coarse = functional.softmax(other_predicted_coarse, dim=2)
-    other_predicted_fine = functional.softmax(other_predicted_fine, dim=2)
+    _, _, other_hidden = net(
+        local_features, input_signal=input_signal, target_coarse=predicted_coarse.unsqueeze(2))
 
-    np.testing.assert_allclose(
-        other_predicted_coarse.detach().numpy(), predicted_coarse.detach().numpy(), atol=1e-03)
-    np.testing.assert_allclose(
-        other_predicted_fine.detach().numpy(), predicted_fine.detach().numpy(), atol=1e-02)
+    np.testing.assert_allclose(hidden.detach().numpy(), other_hidden.detach().numpy(), atol=1e-04)
 
 
 def test_wave_rnn():
@@ -68,7 +56,7 @@ def test_wave_rnn():
         upsample_convs=upsample_convs,
         upsample_repeat=upsample_repeat,
         local_features_size=local_features_size)
-    predicted_coarse, predicted_fine = net(local_features, input_signal, target_coarse)
+    predicted_coarse, predicted_fine, _ = net(local_features, input_signal, target_coarse)
 
     assert predicted_coarse.shape == (batch_size, signal_length, net.bins)
     assert predicted_fine.shape == (batch_size, signal_length, net.bins)
@@ -94,13 +82,13 @@ def test_wave_rnn_inference():
         upsample_convs=upsample_convs,
         upsample_repeat=upsample_repeat,
         local_features_size=local_features_size).eval()
-    predicted_coarse, predicted_fine = net(local_features)
+    predicted_coarse, predicted_fine, _ = net(local_features)
 
-    assert predicted_coarse.shape == (batch_size, signal_length, net.bins)
-    assert predicted_fine.shape == (batch_size, signal_length, net.bins)
+    assert predicted_coarse.shape == (batch_size, signal_length)
+    assert predicted_fine.shape == (batch_size, signal_length)
 
     # Softmax
     assert torch.min(predicted_coarse) >= 0
-    assert torch.max(predicted_coarse) <= 1
+    assert torch.max(predicted_coarse) < 256
     assert torch.min(predicted_fine) >= 0
-    assert torch.max(predicted_fine) <= 1
+    assert torch.max(predicted_fine) < 256

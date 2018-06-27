@@ -202,13 +202,8 @@ class Trainer():  # pragma: no cover
             spectrogram = spectrogram[:, :max_infer_frames]
 
         logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[1])
-        predicted_coarse, predicted_fine = self.model(spectrogram)
-
-        # predicted_signal [signal_length, bins] → [signal_length]
-        predicted_coarse = predicted_coarse.squeeze(0).max(dim=1)[1]
-        predicted_fine = predicted_fine.squeeze(0).max(dim=1)[1]
-
-        predicted_signal = combine_signal(predicted_coarse, predicted_fine)
+        predicted_coarse, predicted_fine, _ = self.model(spectrogram)
+        predicted_signal = combine_signal(predicted_coarse.squeeze(0), predicted_fine.squeeze(0))
 
         return predicted_signal, signal, spectrogram.squeeze(0)
 
@@ -318,11 +313,11 @@ class Trainer():  # pragma: no cover
                 dim=0,
                 output_device=self.device)
         else:
-            predicted_coarse, predicted_fine = self.model(batch['frames'], **model_kwargs)
+            predicted_coarse, predicted_fine, _ = self.model(batch['frames'], **model_kwargs)
 
         # Cut off context
         predicted_coarse = predicted_coarse[:, -batch['target_coarse_signals'].shape[1]:, :]
-        predicted_fine = predicted_fine[:, -batch['target_coarse_signals'].shape[1]:, :]
+        predicted_fine = predicted_fine[:, -batch['target_fine_signals'].shape[1]:, :]
         coarse_loss, fine_loss, num_predictions = self._compute_loss(batch, predicted_coarse,
                                                                      predicted_fine)
 
@@ -355,8 +350,8 @@ def main(checkpoint=None,
          num_workers=0,
          reset_optimizer=False,
          hparams={},
-         dev_to_train_ratio=3,
-         evaluate_every_n_epochs=5,
+         dev_to_train_ratio=4,
+         evaluate_every_n_epochs=15,
          min_time=60 * 15,
          label='signal_model'):  # pragma: no cover
     """ Main module that trains a the signal model saving checkpoints incrementally.

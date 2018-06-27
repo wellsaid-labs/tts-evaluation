@@ -97,12 +97,13 @@ class WaveRNN(nn.Module):
                 input signal but one timestep ahead and with only coarse values.
 
         Returns:
-            out_coarse (torch.LongTensor [batch_size, signal_length, bins]): Predicted
+            out_coarse (torch.LongTensor [batch_size, signal_length, ?bins?]): Predicted
                 categorical distribution over ``bins`` categories for the ``coarse`` random
-                variable. If in training mode, then ``softmax`` is not applied.
-            out_fine (torch.LongTensor [batch_size, signal_length, bins]): Predicted
+                variable. ? In training mode, then an extra ``bins`` dimension is included.
+            out_fine (torch.LongTensor [batch_size, signal_length, *bins]): Predicted
                 categorical distribution over ``bins`` categories for the ``fine`` random
-                variable. If in training mode, then ``softmax`` is not applied.
+                variable. ? In training mode, then an extra ``bins`` dimension is included.
+            hidden (torch.FloatTensor [batch_size, size]): Final RNN hidden state.
         """
         if input_signal is not None and target_coarse is not None:
             assert input_signal.shape[1] == target_coarse.shape[
@@ -149,6 +150,7 @@ class WaveRNN(nn.Module):
             out_fine (torch.LongTensor [batch_size, signal_length, bins]): Predicted
                 categorical distribution over ``bins`` categories for the ``fine`` random
                 variable.
+            hidden (torch.FloatTensor [batch_size, size]): Final RNN hidden state.
         """
         batch_size, signal_length, _ = input_signal.shape
 
@@ -159,7 +161,6 @@ class WaveRNN(nn.Module):
         coarse_input_projection = coarse_input_projection.view(batch_size, signal_length, 3,
                                                                self.half_size)
 
-        # TODO: Instead of cat, just run project_coarse_input on a smaller portion
         # fine_input [batch_size, signal_length, 3]
         fine_input = torch.cat([input_signal, target_coarse], dim=2)
         # [batch_size, signal_length, 3] → [batch_size, signal_length, 3 * self.half_size]
@@ -183,7 +184,7 @@ class WaveRNN(nn.Module):
 
         # [signal_length, batch_size, 3 * self.size] →
         # [signal_length, batch_size, self.size]
-        hidden_states, _ = self.stripped_gru(rnn_input)
+        hidden_states, last_hidden = self.stripped_gru(rnn_input)
 
         # [signal_length, batch_size, self.size] →
         # [batch_size, signal_length, self.size]
@@ -196,7 +197,7 @@ class WaveRNN(nn.Module):
         out_coarse = self.to_bins_coarse(hidden_coarse)
         out_fine = self.to_bins_fine(hidden_coarse)
 
-        return out_coarse, out_fine
+        return out_coarse, out_fine, last_hidden.squeeze(0)
 
     def _initial_state(self, reference, batch_size):
         """ Initial state returns the initial hidden state and go sample.
@@ -250,6 +251,7 @@ class WaveRNN(nn.Module):
             out_fine (torch.LongTensor [batch_size, signal_length, bins]): Predicted
                 categorical distribution over ``bins`` categories for the ``fine`` random
                 variable.
+            hidden (torch.FloatTensor [batch_size, size]): Final RNN hidden state.
         """
         # Some initial parameters
         batch_size, signal_length, _, _ = conditional.shape
@@ -313,13 +315,13 @@ class WaveRNN(nn.Module):
 
             # [batch_size, half_size] → [batch_size, bins]
             coarse = softmax(self.to_bins_coarse(coarse_last_hidden), dim=1)
-            out_coarse.append(coarse)
-
-            # Compute fine gates
             # SOURCE: Efficient Neural Audio Synthesis
             # Once c_t has been sampled from P(c_t)
             # [batch_size, bins] → [batch_size]
             coarse = torch.distributions.Categorical(coarse).sample()
+            out_coarse.append(coarse)
+
+            # Compute fine gates
             # [batch_size] → [batch_size, 1]
             coarse = self._scale(coarse).unsqueeze(1)
             # fine_input [batch_size, 3]
@@ -336,7 +338,7 @@ class WaveRNN(nn.Module):
             r = sigmoid(hidden_fine_r + fine_r + conditional_fine_r[:, i])
             u = sigmoid(hidden_fine_u + fine_u + conditional_fine_u[:, i])
             e = tanh(r * hidden_fine_e + fine_e + conditional_fine_e[:, i])
-            hidden_fine = u * fine_last_hidden + (1.0 - u) * e
+            fine_last_hidden = u * fine_last_hidden + (1.0 - u) * e
 
             del r, fine_r, hidden_fine_r
             del u, fine_u, hidden_fine_u
@@ -344,15 +346,16 @@ class WaveRNN(nn.Module):
 
             # Compute the fine output
             # [batch_size, half_size] → [batch_size, bins]
-            fine = softmax(self.to_bins_fine(hidden_fine), dim=1)
-            out_fine.append(fine)
+            fine = softmax(self.to_bins_fine(fine_last_hidden), dim=1)
 
             # SOURCE: Efficient Neural Audio Synthesis
             # Once ct has been sampled from P(ct), the gates are evaluated for the fine bits and
             # ft is sampled.
             # [batch_size, bins] → [batch_size]
             fine = torch.distributions.Categorical(fine).sample()
+            out_fine.append(fine)
             # [batch_size] → [batch_size, 1]
             fine = self._scale(fine).unsqueeze(1)
 
-        return torch.stack(out_coarse, dim=1), torch.stack(out_fine, dim=1)
+        hidden = torch.cat((coarse_last_hidden, fine_last_hidden), dim=1)
+        return torch.stack(out_coarse, dim=1), torch.stack(out_fine, dim=1), hidden
