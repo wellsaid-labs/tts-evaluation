@@ -69,7 +69,10 @@ def set_hparams():
             # quarter second of silence at the beginning. We filter out chunks that are
             # predominantly silence and end up with 74,348 total chunks.
             # NOTE: Our implementation requires ``slice_size`` to be divisable by ``frame_hop``.
-            'slice_size': 7800,
+            # SOURCE (Efficient Neural Audio Synthesis):
+            # The WaveRNN models are trained on sequences of 960 audio samples of 16-bit each and
+            # full back-propagationthrough-time is applied to the models.
+            'slice_size': 900,
             'add_context': False,
         }
     })

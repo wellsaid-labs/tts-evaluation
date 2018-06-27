@@ -132,8 +132,7 @@ class SignalDataset(data.Dataset):
         target_signal_coarse_slice, target_signal_fine_slice = split_signal(target_signal_slice)
 
         # Add noise to signal
-        coarse_signal, fine_signal = split_signal(signal)
-        signal = combine_signal(coarse_signal, fine_signal)
+        signal = combine_signal(*split_signal(signal))
 
         return {
             self.log_mel_spectrogram_prefix: log_mel_spectrogram,  # [num_frames, channels]

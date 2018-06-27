@@ -407,7 +407,8 @@ def main(checkpoint=None,
 
         # Training Loop
         for _ in range(epochs):
-            is_trial_run = trainer.epoch == 0
+            is_trial_run = trainer.epoch == 0 or (checkpoint is not None and
+                                                  trainer.epoch == checkpoint['epoch'])
             trainer.run_epoch(train=True, trial_run=is_trial_run)
             if trainer.epoch % evaluate_every_n_epochs == 0:
                 save_checkpoint(
