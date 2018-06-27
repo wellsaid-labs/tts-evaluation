@@ -47,13 +47,17 @@ class WaveRNN(nn.Module):
         self.size = hidden_size
         self.half_size = int(self.size / 2)
 
+        relu_gain = torch.nn.init.calculate_gain('relu')
         # Output fully connected layers
         self.to_bins_coarse = nn.Sequential(
             nn.Linear(self.half_size, self.half_size), nn.ReLU(),
             nn.Linear(self.half_size, self.bins))
+        torch.nn.init.xavier_uniform_(self.to_bins_coarse[0].weight, gain=relu_gain)
+
         self.to_bins_fine = nn.Sequential(
             nn.Linear(self.half_size, self.half_size), nn.ReLU(),
             nn.Linear(self.half_size, self.bins))
+        torch.nn.init.xavier_uniform_(self.to_bins_fine[0].weight, gain=relu_gain)
 
         # Input fully connected layers
         self.project_coarse_input = nn.Linear(2, 3 * self.half_size, bias=False)
@@ -312,8 +316,10 @@ class WaveRNN(nn.Module):
             out_coarse.append(coarse)
 
             # Compute fine gates
+            # SOURCE: Efficient Neural Audio Synthesis
+            # Once c_t has been sampled from P(c_t)
             # [batch_size, bins] → [batch_size]
-            coarse = coarse.max(dim=1)[1]
+            coarse = torch.distributions.Categorical(coarse).sample()
             # [batch_size] → [batch_size, 1]
             coarse = self._scale(coarse).unsqueeze(1)
             # fine_input [batch_size, 3]
@@ -341,8 +347,11 @@ class WaveRNN(nn.Module):
             fine = softmax(self.to_bins_fine(hidden_fine), dim=1)
             out_fine.append(fine)
 
+            # SOURCE: Efficient Neural Audio Synthesis
+            # Once ct has been sampled from P(ct), the gates are evaluated for the fine bits and
+            # ft is sampled.
             # [batch_size, bins] → [batch_size]
-            fine = fine.max(dim=1)[1]
+            fine = torch.distributions.Categorical(fine).sample()
             # [batch_size] → [batch_size, 1]
             fine = self._scale(fine).unsqueeze(1)
 

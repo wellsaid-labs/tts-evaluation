@@ -132,3 +132,9 @@ def test_combine_signal():
     # NOTE: 1.0 gets clipped to ``(2**15 - 1) / 2**15``
     expected_signal = torch.FloatTensor([(2**15 - 1) / 2**15, -1.0, 0, 2**-7, 2**-8])
     np.testing.assert_allclose(expected_signal.numpy(), new_signal.numpy())
+
+
+def test_split_combine_signal():
+    signal = torch.FloatTensor(1000).uniform_(-1.0, 1.0)
+    reconstructed_signal = combine_signal(*split_signal(signal))
+    np.testing.assert_allclose(signal.numpy(), reconstructed_signal.numpy(), atol=1e-04)
