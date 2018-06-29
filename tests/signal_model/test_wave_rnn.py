@@ -7,24 +7,30 @@ from src.utils import split_signal
 
 def test_wave_rnn_inference_train_equivilance():
     bits = 16
-    batch_size = 2
-    local_length = 10
+    batch_size = 1
+    local_length = 4
     local_features_size = 80
-    upsample_convs = [2, 3]
+    upsample_convs = [2]
     upsample_repeat = 2
-    local_features = torch.rand(batch_size, local_length, local_features_size)
+    hidden_size = 32
+    local_features = torch.randn(batch_size, local_length, local_features_size) * 0.1
+    hidden_state = torch.randn(batch_size, hidden_size)
 
     # Run inference
     net = WaveRNN(
-        hidden_size=32,
+        hidden_size=hidden_size,
         bits=bits,
         upsample_convs=upsample_convs,
         upsample_repeat=upsample_repeat,
-        local_features_size=local_features_size).eval()
-    predicted_coarse, predicted_fine, hidden = net(local_features)
+        local_features_size=local_features_size,
+        local_feature_processing_layers=None,
+        argmax=True).eval()
+    for parameter in net.parameters():
+        if parameter.requires_grad:
+            # Ensure that each parameter a reasonable value to affect the output
+            torch.nn.init.normal_(parameter, std=0.1)
 
-    assert predicted_coarse.sum() > 0  # Ensure that some predictions have some value
-    assert predicted_fine.sum() > 0  # Ensure that some predictions have some value
+    predicted_coarse, predicted_fine, hidden = net(local_features, hidden_state=hidden_state)
 
     # [batch_size, signal_length] → [batch_size, signal_length - 1, 2]
     input_signal = torch.stack((predicted_coarse[:, :-1], predicted_fine[:, :-1]), dim=2)
@@ -35,7 +41,10 @@ def test_wave_rnn_inference_train_equivilance():
     input_signal = torch.cat((go_signal, input_signal), dim=1)
 
     other_predicted_coarse, other_predicted_fine, other_hidden = net(
-        local_features, input_signal=input_signal, target_coarse=predicted_coarse.unsqueeze(2))
+        local_features,
+        input_signal=input_signal,
+        target_coarse=predicted_coarse.unsqueeze(2),
+        hidden_state=hidden_state)
 
     other_predicted_coarse = other_predicted_coarse.max(dim=2)[1]
     other_predicted_fine = other_predicted_fine.max(dim=2)[1]
@@ -43,8 +52,8 @@ def test_wave_rnn_inference_train_equivilance():
     np.testing.assert_allclose(hidden.detach().numpy(), other_hidden.detach().numpy(), atol=1e-04)
     np.testing.assert_allclose(
         predicted_coarse.detach().numpy(), other_predicted_coarse.detach().numpy(), atol=1e-04)
-    # NOTE: We do not compare fine because typically the predicted confidence for different values
-    # is uniform; therefore, max with small pertrubations picks different values.
+    np.testing.assert_allclose(
+        predicted_fine.detach().numpy(), other_predicted_fine.detach().numpy(), atol=1e-04)
 
 
 def test_wave_rnn_scale():

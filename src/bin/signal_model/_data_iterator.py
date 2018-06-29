@@ -14,8 +14,9 @@ class DataIterator(object):
     """
 
     def __init__(self, device, dataset, batch_size, trial_run=False, num_workers=0):
-        # ``drop_last`` to ensure full utilization of mutliple GPUs
+        super().__init__()
         self.device = device
+        # ``drop_last`` to ensure full utilization of mutliple GPUs
         self.iterator = DataLoader(
             dataset,
             batch_size=batch_size,
@@ -26,40 +27,38 @@ class DataIterator(object):
             drop_last=True)
         self.trial_run = trial_run
 
-    def _maybe_cuda(self, tensor, **kwargs):
-        return tensor.cuda(device=self.device, **kwargs) if self.device.type == 'cuda' else tensor
+    def _maybe_cuda(self, tensor):
+        is_cuda = self.device.type == 'cuda'
+        return tensor.cuda(device=self.device, non_blocking=True) if is_cuda else tensor
 
     def _collate_fn(self, batch):
         """ Collage function to turn a list of tensors into one batch tensor.
 
         Returns: (dict) with:
-            * source_signals (torch.FloatTensor [batch_size, signal_length])
-            * target_coarse_signals (torch.FloatTensor [batch_size, signal_length])
-            * target_fine_signals (torch.FloatTensor [batch_size, signal_length])
+            * input_signal (torch.FloatTensor [batch_size, signal_length])
+            * target_signal_coarse (torch.FloatTensor [batch_size, signal_length])
+            * target_signal_fine (torch.FloatTensor [batch_size, signal_length])
             * signal_lengths (list): List of lengths for each signal.
-            * frames (torch.FloatTensor [batch_size, num_frames, frame_channels])
-            * spectrograms (list): List of spectrograms to be used for sampling.
+            * log_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
+            * log_mel_spectrogram_lengths (list): List of lengths for each spectrogram.
         """
-        source_signals, source_signal_lengths = pad_batch([r['source_signal_slice'] for r in batch])
-        target_coarse_signals, target_signal_lengths = pad_batch(
-            [r['target_signal_coarse_slice'] for r in batch])
-        target_fine_signals, _ = pad_batch([r['target_signal_fine_slice'] for r in batch])
-        frames, frames_lengths = pad_batch([r['frames_slice'] for r in batch])
-        spectrograms = [r['log_mel_spectrogram'] for r in batch]
-        signals = [r['signal'] for r in batch]
-        length_diff = [s - t for s, t in zip(source_signal_lengths, target_signal_lengths)]
-        assert length_diff.count(length_diff[0]) == len(length_diff), (
-            "Source must be a constant amount longer than target; "
-            "otherwise, they wont be aligned after padding.")
+        input_signal, signal_lengths = pad_batch([r['slice']['input_signal'] for r in batch])
+        target_signal_coarse, _ = pad_batch([r['slice']['target_signal_coarse'] for r in batch])
+        target_signal_fine, _ = pad_batch([r['slice']['target_signal_fine'] for r in batch])
+        log_mel_spectrogram, log_mel_spectrogram_lengths = pad_batch(
+            [r['slice']['log_mel_spectrogram'] for r in batch])
+
         return {
-            'source_signals': source_signals,
-            'target_coarse_signals': target_coarse_signals,
-            'target_fine_signals': target_fine_signals,
-            'target_signal_lengths': target_signal_lengths,
-            'frames': frames,
-            'spectrograms': spectrograms,
-            'frames_lengths': frames_lengths,
-            'signals': signals,
+            'slice': {
+                'input_signal': input_signal,
+                'target_signal_coarse': target_signal_coarse,
+                'target_signal_fine': target_signal_fine,
+                'log_mel_spectrogram': log_mel_spectrogram,
+                'log_mel_spectrogram_lengths': log_mel_spectrogram_lengths,
+                'signal_lengths': signal_lengths,
+            },
+            'log_mel_spectrogram': [r['log_mel_spectrogram'] for r in batch],
+            'signal': [r['signal'] for r in batch]
         }
 
     def __len__(self):
@@ -67,14 +66,14 @@ class DataIterator(object):
 
     def __iter__(self):
         for batch in self.iterator:
-            batch['source_signals'] = self._maybe_cuda(batch['source_signals'], non_blocking=True)
-            batch['target_coarse_signals'] = self._maybe_cuda(
-                batch['target_coarse_signals'], non_blocking=True)
-            batch['target_fine_signals'] = self._maybe_cuda(
-                batch['target_fine_signals'], non_blocking=True)
-            batch['frames'] = self._maybe_cuda(batch['frames'], non_blocking=True)
-            batch['spectrograms'] = [
-                self._maybe_cuda(s, non_blocking=True) for s in batch['spectrograms']
+            slice_ = batch['slice']
+            batch['slice']['log_mel_spectrogram'] = self._maybe_cuda(slice_['log_mel_spectrogram'])
+            batch['slice']['target_signal_coarse'] = self._maybe_cuda(
+                slice_['target_signal_coarse'])
+            batch['slice']['target_signal_fine'] = self._maybe_cuda(slice_['target_signal_fine'])
+            batch['slice']['input_signal'] = self._maybe_cuda(slice_['input_signal'])
+            batch['log_mel_spectrogram'] = [
+                self._maybe_cuda(s) for s in batch['log_mel_spectrogram']
             ]
 
             yield batch

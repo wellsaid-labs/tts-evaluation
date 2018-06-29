@@ -316,11 +316,25 @@ def set_hparams():
                     # We upsample 4x with the layers and then repeat each value 75x
                     'upsample_convs': [4],
                     'upsample_repeat': 75,
+
+                    # SOURCE: Efficient Neural Audio Synthesis Author
+                    # The author suggested adding 3 - 5 convolutions on top of WaveRNN.
+                    'local_feature_processing_layers': 4,
                 }
             },
             'bin.signal_model': {
                 'train.Trainer.__init__.sample_rate': sample_rate,
                 '_utils.load_data.generated': False,
+                '_dataset.SignalDataset.__init__': {
+                    # SOURCE: Efficient Neural Audio Synthesis
+                    # The WaveRNN models are trained on sequences of 960 audio samples
+                    # NOTE: We allow for a variance in the frame size to reduce bias in the frame
+                    # size.
+                    'mean_frame_size': 900 / get_log_mel_spectrogram['frame_hop'],
+                    'std_frame_size': 0,
+                    'max_frame_size': 3000 / get_log_mel_spectrogram['frame_hop'],
+                    'min_frame_size': 300 / get_log_mel_spectrogram['frame_hop'],
+                }
             },
             'utils.utils': {
                 'plot_waveform.sample_rate': sample_rate,

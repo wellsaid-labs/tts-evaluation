@@ -7,28 +7,28 @@ from src.signal_model.stripped_gru import StrippedGRU
 
 
 def equivalent_gru(size, hidden, input_, weight_hh_l0, bias_ih_l0, bias_hh_l0):
+    """ GRU implemented manually to check the output of Stripped GRU """
     # ... [size]
-    bias_reset_gate, bias_update_gate, bias_memory = torch.split(bias_ih_l0, size)
+    bias_r, bias_u, bias_e = torch.split(bias_ih_l0, size)
 
-    project_hidden = nn.Linear(size, 3 * size, bias=False)
+    project_hidden = nn.Linear(size, 3 * size)
     project_hidden.weight = weight_hh_l0
     project_hidden.bias = bias_hh_l0
 
     # [1, batch_size, size] → [1, batch_size, 3 * size]
     projected_hidden = project_hidden(hidden)
     # ... [1, batch_size, size]
-    hidden_reset_gate, hidden_update_gate, hidden_memory = torch.split(
-        projected_hidden, size, dim=2)
-    input_reset_gate, input_update_gate, input_memory = torch.split(input_, size, dim=2)
+    hidden_r, hidden_u, hidden_e = projected_hidden.split(size, dim=2)
+    input_r, input_u, input_e = input_.split(size, dim=2)
 
-    reset_gate = torch.nn.functional.sigmoid(input_reset_gate + hidden_reset_gate + bias_reset_gate)
-    update_gate = torch.nn.functional.sigmoid(
-        input_update_gate + hidden_update_gate + bias_update_gate)
-    next_hidden = torch.nn.functional.tanh(input_memory + bias_memory + reset_gate * hidden_memory)
-    return (1.0 - update_gate) * next_hidden + update_gate * hidden
+    r = torch.nn.functional.sigmoid(input_r + hidden_r + bias_r)
+    u = torch.nn.functional.sigmoid(input_u + hidden_u + bias_u)
+    next_hidden = torch.nn.functional.tanh(input_e + bias_e + r * hidden_e)
+    return (1.0 - u) * next_hidden + u * hidden
 
 
 def test_stripped_gru():
+    """ Test a CPU GRU implementation on seq length of 1 """
     size = 10
     batch_size = 3
     seq_len = 1
@@ -36,6 +36,11 @@ def test_stripped_gru():
     hidden = torch.randn(1, batch_size, size)
 
     stripped_gru = StrippedGRU(size)
+    for parameter in stripped_gru.parameters():
+        if parameter.requires_grad:
+            # Ensure that each parameter a reasonable value to affect the output
+            torch.nn.init.normal_(parameter)
+
     _, output = stripped_gru(input_, hidden)
 
     expected_output = equivalent_gru(size, hidden, input_, stripped_gru.gru.weight_hh_l0,
@@ -45,6 +50,7 @@ def test_stripped_gru():
 
 
 def test_stripped_gru_cuda():
+    """ Test a CUDA GRU implementation on seq length of 1"""
     if not torch.cuda.is_available():
         return
 
@@ -57,6 +63,11 @@ def test_stripped_gru_cuda():
     hidden = torch.randn(1, batch_size, size).cuda()
 
     stripped_gru = StrippedGRU(size).cuda()
+    for parameter in stripped_gru.parameters():
+        if parameter.requires_grad:
+            # Ensure that each parameter a reasonable value to affect the output
+            torch.nn.init.normal_(parameter)
+
     _, output = stripped_gru(input_, hidden)
 
     expected_output = equivalent_gru(size, hidden, input_, stripped_gru.gru.weight_hh_l0,
@@ -66,6 +77,7 @@ def test_stripped_gru_cuda():
 
 
 def test_stripped_gru_cuda_sequence():
+    """ Test a CUDA GRU implementation on a longer sequence"""
     if not torch.cuda.is_available():
         return
 
@@ -78,6 +90,11 @@ def test_stripped_gru_cuda_sequence():
     hidden = torch.randn(1, batch_size, size).cuda()
 
     stripped_gru = StrippedGRU(size).cuda()
+    for parameter in stripped_gru.parameters():
+        if parameter.requires_grad:
+            # Ensure that each parameter a reasonable value to affect the output
+            torch.nn.init.normal_(parameter)
+
     # output [seq_len, batch_size, size]
     output, _ = stripped_gru(input_, hidden)
 

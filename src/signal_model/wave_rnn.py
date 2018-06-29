@@ -3,6 +3,7 @@ import torch
 from torch import nn
 from torch.nn.functional import sigmoid
 from torch.nn.functional import tanh
+from torch.nn.functional import log_softmax
 from tqdm import tqdm
 
 from src.signal_model.upsample import ConditionalFeaturesUpsample
@@ -28,7 +29,10 @@ class WaveRNN(nn.Module):
         upsample_convs (list of int): Size of convolution layers used to upsample local features
             (e.g. 256 frames x 4 x ...).
         upsample_repeat (int): Number of times to repeat frames, another upsampling technique.
+        local_feature_processing_layers (int): Number of Conv1D for processing the spectrogram.
         local_features_size (int): Dimensionality of local features.
+        argmax (bool): During inference, sample the most likely sample or randomly based on the
+            distribution.
     """
 
     @configurable
@@ -37,7 +41,9 @@ class WaveRNN(nn.Module):
                  bits=16,
                  upsample_convs=[4],
                  upsample_repeat=75,
-                 local_features_size=80):
+                 local_feature_processing_layers=5,
+                 local_features_size=80,
+                 argmax=False):
         super(WaveRNN, self).__init__()
 
         assert hidden_size % 2 == 0, "Hidden size must be even."
@@ -70,9 +76,11 @@ class WaveRNN(nn.Module):
             upsample_repeat=upsample_repeat,
             upsample_convs=upsample_convs,
             num_layers=3,
-            upsample_chunks=1)
+            upsample_chunks=1,
+            local_feature_processing_layers=local_feature_processing_layers)
 
         self.stripped_gru = StrippedGRU(self.size)
+        self.argmax = argmax
 
     def _scale(self, tensor):
         """ Scale from [0, self.bins - 1] to [-1.0, 1.0].
@@ -86,7 +94,7 @@ class WaveRNN(nn.Module):
         assert torch.min(tensor) >= 0 and torch.max(tensor) < self.bins
         return tensor.float() / ((self.bins - 1) / 2) - 1.0
 
-    def forward(self, local_features, input_signal=None, target_coarse=None):
+    def forward(self, local_features, input_signal=None, target_coarse=None, hidden_state=None):
         """
         Args:
             local_features (torch.FloatTensor [batch_size, local_length, local_features_size]):
@@ -96,6 +104,7 @@ class WaveRNN(nn.Module):
                 each between the range [-1, 1].
             target_coarse (torch.FloatTensor [batch_size, signal_length, 1], optional): Same as the
                 input signal but one timestep ahead and with only coarse values.
+            hidden_state (torch.FloatTensor [batch_size, self.size], optional): GRU hidden state.
 
         Returns:
             out_coarse (torch.LongTensor [batch_size, signal_length, ?bins?]): Predicted
@@ -130,11 +139,11 @@ class WaveRNN(nn.Module):
                 'must be the same length after upsampling.')
             input_signal = self._scale(input_signal)
             target_coarse = self._scale(target_coarse)
-            return self.train_forward(conditional, input_signal, target_coarse)
+            return self.train_forward(conditional, input_signal, target_coarse, hidden_state)
 
-        return self.inference_forward(conditional)
+        return self.inference_forward(conditional, hidden_state)
 
-    def train_forward(self, conditional, input_signal, target_coarse):
+    def train_forward(self, conditional, input_signal, target_coarse, hidden_state=None):
         """ Run WaveRNN in training mode with teacher-forcing.
 
         Args:
@@ -146,6 +155,7 @@ class WaveRNN(nn.Module):
                 each between the range [-1, 1].
             target_coarse (torch.FloatTensor [batch_size, signal_length, 1]): Same as the input
                 signal but one timestep ahead and with only coarse values.
+            hidden_state (torch.FloatTensor [batch_size, self.size], optional): GRU hidden state.
 
         Returns:
             out_coarse (torch.LongTensor [batch_size, signal_length, bins]): Predicted
@@ -178,6 +188,7 @@ class WaveRNN(nn.Module):
         # [batch_size, signal_length, 3, self.size]
         rnn_input = torch.cat((coarse_input_projection, fine_input_projection), dim=3)
         rnn_input += conditional
+
         # [batch_size, signal_length, 3, self.size] →
         # [batch_size, signal_length, 3 * self.size]
         rnn_input = rnn_input.view(batch_size, signal_length, 3 * self.size)
@@ -186,29 +197,33 @@ class WaveRNN(nn.Module):
         # [signal_length, batch_size, 3 * self.size]
         rnn_input = rnn_input.transpose(0, 1)
 
+        if hidden_state is not None:
+            hidden_state = hidden_state.unsqueeze(0)
+
         # [signal_length, batch_size, 3 * self.size] →
         # hidden_states [signal_length, batch_size, self.size]
-        hidden_states, last_hidden = self.stripped_gru(rnn_input)
+        hidden_states, last_hidden = self.stripped_gru(rnn_input, hidden_state)
 
         # [signal_length, batch_size, self.size] →
         # [batch_size, signal_length, self.size]
         hidden_states = hidden_states.transpose(0, 1)
 
+        # [batch_size, signal_length, self.size] →
         # [batch_size, signal_length, self.half_size]
-        hidden_coarse, hidden_fine = torch.split(hidden_states, self.half_size, dim=2)
+        hidden_coarse, hidden_fine = hidden_states.chunk(2, dim=2)
 
         # [batch_size, signal_length, self.half_size] → [batch_size, signal_length, bins]
         out_coarse = self.to_bins_coarse(hidden_coarse)
-        out_fine = self.to_bins_fine(hidden_coarse)
-
+        out_fine = self.to_bins_fine(hidden_fine)
         return out_coarse, out_fine, last_hidden.squeeze(0)
 
-    def _initial_state(self, reference, batch_size):
+    def _initial_state(self, reference, batch_size, hidden_state=None):
         """ Initial state returns the initial hidden state and go sample.
 
         Args:
             reference (torch.Tensor): Tensor to reference device and dtype from.
-            batch_size (int): Size of the batch
+            batch_size (int): Size of the batch.
+            hidden_state (torch.FloatTensor [batch_size, self.size], optional): GRU hidden state.
 
         Return:
             coarse (torch.FloatTensor [batch_size, 1]): Initial coarse value from [-1, 1]
@@ -222,11 +237,14 @@ class WaveRNN(nn.Module):
         coarse, fine = split_signal(reference.new_zeros(batch_size))
         coarse = self._scale(coarse.unsqueeze(1))
         fine = self._scale(fine.unsqueeze(1))
-        coarse_last_hidden = reference.new_zeros(batch_size, self.half_size)
-        fine_last_hidden = reference.new_zeros(batch_size, self.half_size)
+        if hidden_state is not None:
+            coarse_last_hidden, fine_last_hidden = hidden_state.chunk(2, dim=1)
+        else:
+            coarse_last_hidden = reference.new_zeros(batch_size, self.half_size)
+            fine_last_hidden = reference.new_zeros(batch_size, self.half_size)
         return coarse, fine, coarse_last_hidden, fine_last_hidden
 
-    def inference_forward(self, conditional):
+    def inference_forward(self, conditional, hidden_state=None, argmax=True):
         """  Run WaveRNN in inference mode.
 
         TODO:
@@ -247,6 +265,7 @@ class WaveRNN(nn.Module):
             conditional (torch.FloatTensor
                 [batch_size, signal_length, 3, self.size]): Features to condition signal
                 generation.
+            hidden_state (torch.FloatTensor [batch_size, self.size], optional): GRU hidden state.
 
         Returns:
             out_coarse (torch.LongTensor [batch_size, signal_length, bins]): Predicted
@@ -268,7 +287,7 @@ class WaveRNN(nn.Module):
         project_hidden.weight = nn.Parameter(weight_hh_l0, requires_grad=False)
         project_hidden.bias = nn.Parameter(bias_hh_l0, requires_grad=False)
 
-        # [size * 3] → ... [half_size]
+        # [size * 3] → ... [size]
         bias = self.stripped_gru.gru.bias_ih_l0.detach()
         bias_r, bias_u, bias_e = bias.chunk(3)
 
@@ -285,7 +304,7 @@ class WaveRNN(nn.Module):
         # Initial inputs
         out_coarse, out_fine = [], []
         coarse, fine, coarse_last_hidden, fine_last_hidden = self._initial_state(
-            conditional, batch_size)
+            conditional, batch_size, hidden_state)
         for i in tqdm(range(signal_length)):
             # [batch_size, size]
             hidden = torch.cat((coarse_last_hidden, fine_last_hidden), dim=1)
@@ -323,7 +342,11 @@ class WaveRNN(nn.Module):
             # SOURCE: Efficient Neural Audio Synthesis
             # Once c_t has been sampled from P(c_t)
             # [batch_size, bins] → [batch_size]
-            coarse = coarse.max(dim=1)[1]
+            if self.argmax:
+                coarse = coarse.max(dim=1)[1]
+            else:
+                posterior = log_softmax(coarse, dim=1)
+                coarse = torch.distributions.Categorical(logits=posterior).sample()
             out_coarse.append(coarse)
 
             # Compute fine gates
@@ -353,17 +376,18 @@ class WaveRNN(nn.Module):
             # Compute the fine output
             # [batch_size, half_size] → [batch_size, bins]
             fine = self.to_bins_fine(fine_last_hidden)
-
             # SOURCE: Efficient Neural Audio Synthesis
             # Once ct has been sampled from P(ct), the gates are evaluated for the fine bits and
             # ft is sampled.
             # [batch_size, bins] → [batch_size]
-            fine = fine.max(dim=1)[1]
+            if self.argmax:
+                fine = fine.max(dim=1)[1]
+            else:
+                posterior = log_softmax(fine, dim=1)
+                fine = torch.distributions.Categorical(logits=posterior).sample()
             out_fine.append(fine)
             # [batch_size] → [batch_size, 1]
             fine = self._scale(fine).unsqueeze(1)
-
-        # TODO: Try embeddings for WaveRNN instead of scalar values
 
         hidden = torch.cat((coarse_last_hidden, fine_last_hidden), dim=1)
         return torch.stack(out_coarse, dim=1), torch.stack(out_fine, dim=1), hidden

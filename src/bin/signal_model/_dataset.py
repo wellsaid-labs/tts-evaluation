@@ -1,8 +1,7 @@
-import math
+import logging
 import random
 
 from torch.utils import data
-from torch import nn
 
 import torch
 import numpy as np
@@ -11,6 +10,8 @@ from src.utils.configurable import configurable
 from src.utils import get_filename_table
 from src.utils import split_signal
 from src.utils import combine_signal
+
+logger = logging.getLogger(__name__)
 
 
 class SignalDataset(data.Dataset):
@@ -21,9 +22,10 @@ class SignalDataset(data.Dataset):
         log_mel_spectrogram_prefix (str): Prefix of log mel spectrogram files.
         signal_prefix (str): Prefix of signal files.
         extension (str): Filename extension to load.
-        slice_size (int): Size of slices to load for training data.
-        receptive_field_size (int): Context added to slice; to compute target signal.
-        add_context (bool): If ``True`` add context to slice of ``receptive_field_size``.
+        mean_frame_size (int, optional): Frame size normal distribution mean variable.
+        std_frame_size (int, optional): Frame size normal distribution std variable.
+        max_frame_size (int, optional): Frame size normal distribution max variable.
+        min_frame_size (int, optional): Frame size normal distribution min variable.
 
     References:
         * Parallel WaveNet https://arxiv.org/pdf/1711.10433.pdf
@@ -36,32 +38,31 @@ class SignalDataset(data.Dataset):
                  log_mel_spectrogram_prefix='log_mel_spectrogram',
                  signal_prefix='signal',
                  extension='.npy',
-                 slice_size=7000,
-                 receptive_field_size=1,
-                 add_context=True):
-        # Invariant: Must be at least one. ``receptive_field_size`` includes the current timestep
-        # that must be taken into consideration at very least to predict the next timestep.
-        assert receptive_field_size >= 1
+                 mean_frame_size=3,
+                 std_frame_size=1,
+                 max_frame_size=30,
+                 min_frame_size=1):
         prefixes = [log_mel_spectrogram_prefix, signal_prefix]
         self.rows = get_filename_table(source, prefixes=prefixes, extension=extension)
-        self.slice_samples = slice_size
-        self.set_receptive_field_size(receptive_field_size)
         self.log_mel_spectrogram_prefix = log_mel_spectrogram_prefix
         self.signal_prefix = signal_prefix
-        self.add_context = add_context
+        self.mean_frame_size = mean_frame_size
+        self.std_frame_size = std_frame_size
+        self.max_frame_size = max_frame_size
+        self.min_frame_size = min_frame_size
 
     def __len__(self):
         return len(self.rows)
 
-    def set_receptive_field_size(self, receptive_field_size):
+    def _get_frame_size(self):
+        """ Get a frame size from a normal distribution about ``self.mean_frame_size`` and
+        ``self.std_frame_size`` with range [``self.min_frame_size``, ``self.max_frame_size``].
         """
-        Args:
-            receptive_field_size (int): Context added to slice; to compute target signal.
-        """
-        # Remove one, because the current sample is not tallied as context
-        self.receptive_field_size = receptive_field_size
+        frame_size = np.random.normal(loc=self.mean_frame_size, scale=self.std_frame_size)
+        frame_size = np.clip(frame_size, self.min_frame_size, self.max_frame_size)
+        return int(round(float(frame_size)))
 
-    def _preprocess(self, log_mel_spectrogram, signal):
+    def _get_slice(self, log_mel_spectrogram, signal):
         """ Slice the data into bite sized chunks that fit onto GPU memory for training.
 
         Notes:
@@ -70,84 +71,66 @@ class SignalDataset(data.Dataset):
               target; therefore, the source signal is one timestep behind.
             * Source signal batch is one time step behind the target batch. They have the same
               signal lengths.
-            * With a large batch size and 1s+ clips, its probable that every batch will have at
-              least one sample with full context; therefore, rather than aligning source signal
-              with the target signal later adding more computation we align them now with left
-              padding now by ensuring the context size is the same.
-            * Following this comment from WaveNet authors:
-              https://github.com/ibab/tensorflow-wavenet/issues/47#issuecomment-249080343
-              We only encode the target signal and not the source signal.
 
         Args:
             log_mel_spectrogram (torch.Tensor [num_frames, channels])
             signal (torch.Tensor [signal_length])
 
         Returns:
-            (dict): Dictionary with slices up to ``max_samples`` appropriate size for training.
+            input_signal (torch.Tensor [signal_length, 2])
+            frames_slice (torch.Tensor [num_frames, channels])
+            target_signal_coarse (torch.Tensor [signal_length])
+            target_signal_fine (torch.Tensor [signal_length])
         """
-        context_samples = self.receptive_field_size - 1 if self.add_context else 0
         samples, num_frames = signal.shape[0], log_mel_spectrogram.shape[0]
         samples_per_frame = int(samples / num_frames)
-        slice_frames = int(self.slice_samples / samples_per_frame)
-        context_frames = int(math.ceil(context_samples / samples_per_frame))
+        frame_size = self._get_frame_size()
 
-        # Invariants
-        assert self.slice_samples % samples_per_frame == 0
         # Signal model requires that there is a scaling factor between the signal and frames
         assert samples % num_frames == 0
 
         # Get a frame slice
-        # ``-slice_frames + 1, num_frames - 1`` to ensure there is an equal chance to that a
+        # ``-frame_size + 1, num_frames - 1`` to ensure there is an equal chance to that a
         # sample will be included inside the slice.
         # For example, with signal ``[1, 2, 3]`` and a ``slice_samples`` of 2 you'd get slices of:
         # (1), (1, 2), (2, 3), (3).
         # With each number represented at twice.
-        start_frame = max(random.randint(-slice_frames + 1, num_frames - 1), 0)
-        end_frame = min(start_frame + slice_frames, num_frames)
-        start_context_frame = max(start_frame - context_frames, 0)
-        frames_slice = log_mel_spectrogram[start_context_frame:end_frame]
+        start_frame = max(random.randint(-frame_size + 1, num_frames - 1), 0)
+        end_frame = min(start_frame + frame_size, num_frames)
+        frames_slice = log_mel_spectrogram[start_frame:end_frame]
 
         # Get a source sample slice shifted back one and target sample
-        start_context_sample = start_context_frame * samples_per_frame
         end_sample = end_frame * samples_per_frame
         start_sample = start_frame * samples_per_frame
-        source_signal_slice = signal[max(start_context_sample - 1, 0):end_sample - 1]
+        source_signal_slice = signal[max(start_sample - 1, 0):end_sample - 1]
         target_signal_slice = signal[start_sample:end_sample]
 
-        # EDGE CASE: Pad context incase it's cut off and add a go sample for source
-        if start_context_frame == 0:
+        # EDGE CASE: Add a go sample for source
+        if start_sample == 0:
             go_sample = signal.new_zeros(1)
             source_signal_slice = torch.cat((go_sample, source_signal_slice), dim=0)
 
-            context_frame_pad = context_frames - start_frame
-            frames_slice = nn.functional.pad(frames_slice, (0, 0, context_frame_pad, 0))
+        source_signal_coarse, source_signal_fine = split_signal(source_signal_slice)
+        target_signal_coarse, target_signal_fine = split_signal(target_signal_slice)
 
-            context_sample_pad = context_frame_pad * samples_per_frame
-            source_signal_slice = nn.functional.pad(source_signal_slice, (context_sample_pad, 0))
-
-        source_signal_coarse_slice, source_signal_fine_slice = split_signal(source_signal_slice)
-        # [slice_size, 2]
-        source_signal_slice = torch.stack(
-            (source_signal_coarse_slice, source_signal_fine_slice), dim=1)
-        target_signal_coarse_slice, target_signal_fine_slice = split_signal(target_signal_slice)
-
-        # Add noise to signal
-        signal = combine_signal(*split_signal(signal))
+        input_signal = torch.stack((source_signal_coarse, source_signal_fine), dim=1)
 
         return {
-            self.log_mel_spectrogram_prefix: log_mel_spectrogram,  # [num_frames, channels]
-            self.signal_prefix: signal,  # [signal_length]
-            'source_signal_slice': source_signal_slice,  # [slice_size + ~receptive_field_size, 2]
-            'target_signal_coarse_slice': target_signal_coarse_slice,  # [slice_size]
-            'target_signal_fine_slice': target_signal_fine_slice,  # [slice_size]
-            # [(slice_size + ~receptive_field_size) / samples_per_frame]
-            'frames_slice': frames_slice,
+            'input_signal': input_signal,
+            'log_mel_spectrogram': frames_slice,
+            'target_signal_coarse': target_signal_coarse,
+            'target_signal_fine': target_signal_fine
         }
 
     def __getitem__(self, index):
-        # log_mel_spectrogram [num_frames, channels]
-        log_mel_spectrogram = torch.from_numpy(np.load(
-            self.rows[index]['log_mel_spectrogram'])).contiguous()
         # signal [signal_length]
-        signal = torch.from_numpy(np.load(self.rows[index]['signal'])).contiguous()
-        return self._preprocess(log_mel_spectrogram, signal)
+        signal = torch.from_numpy(np.load(self.rows[index][self.signal_prefix])).contiguous()
+        signal = combine_signal(*split_signal(signal))  # Introduce quantization noise
+
+        # log_mel_spectrogram [num_frames, channels]
+        log_mel_spectrogram = torch.from_numpy(
+            np.load(self.rows[index][self.log_mel_spectrogram_prefix])).contiguous()
+
+        slice_ = self._get_slice(log_mel_spectrogram, signal)
+
+        return {'slice': slice_, 'log_mel_spectrogram': log_mel_spectrogram, 'signal': signal}

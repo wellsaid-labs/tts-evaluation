@@ -18,6 +18,7 @@ class ConditionalFeaturesUpsample(nn.Module):
         num_layers (int): Number of layers in Wavenet to condition.
         upsample_chunks (int): Control the memory used by ``upsample_layers`` by breaking the
             operation up into chunks.
+        local_feature_processing_layers (int): Number of Conv1D for processing the spectrogram.
     """
 
     def __init__(self,
@@ -26,7 +27,8 @@ class ConditionalFeaturesUpsample(nn.Module):
                  in_channels=80,
                  out_channels=64,
                  num_layers=24,
-                 upsample_chunks=3):
+                 upsample_chunks=3,
+                 local_feature_processing_layers=4):
         super().__init__()
         self.out_channels = out_channels
         self.upsample_repeat = upsample_repeat
@@ -35,11 +37,13 @@ class ConditionalFeaturesUpsample(nn.Module):
         assert self.num_layers % upsample_chunks == 0, (
             "For simplicity, we only support whole chunking")
 
-        self.preprocess = nn.Sequential(
-            nn.Conv1d(in_channels=in_channels, out_channels=in_channels, kernel_size=1),
-            nn.Conv1d(in_channels=in_channels, out_channels=in_channels, kernel_size=1),
-            nn.Conv1d(in_channels=in_channels, out_channels=in_channels, kernel_size=1),
-            nn.Conv1d(in_channels=in_channels, out_channels=in_channels, kernel_size=1))
+        # TODO: Document
+        self.preprocess = None
+        if local_feature_processing_layers is not None:
+            self.preprocess = nn.Sequential(*[
+                nn.Conv1d(in_channels=in_channels, out_channels=in_channels, kernel_size=1)
+                for i in range(local_feature_processing_layers)
+            ])
 
         self.upsample_signal_length = None
         if upsample_convs is not None:
@@ -105,7 +109,8 @@ class ConditionalFeaturesUpsample(nn.Module):
 
         # [batch_size, in_channels, local_length]
         # [batch_size, in_channels, local_length] →
-        local_features = self.preprocess(local_features)
+        if self.preprocess is not None:
+            local_features = self.preprocess(local_features)
 
         # [batch_size, in_channels, local_length] →
         # [batch_size, out_channels, signal_length]

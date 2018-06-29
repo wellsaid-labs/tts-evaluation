@@ -343,7 +343,7 @@ def configurable(func):
         # Get the module config
         config = _configuration[keys] if keys in _configuration else {}  # Get default
         if len(config) == 0:
-            logger.info('%s no config for: %s', print_name, '.'.join(keys))
+            logger.warn('%s no config for: %s', print_name, '.'.join(keys))
 
         # Print name is used for logger
         if not isinstance(config, dict):

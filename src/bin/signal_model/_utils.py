@@ -68,22 +68,6 @@ def set_hparams():
             'eps': 10**-8,
             'weight_decay': 0,
             'lr': 10**-3
-        },
-        'src.bin.signal_model._dataset.SignalDataset.__init__': {
-            # SOURCE (Parallel WaveNet):
-            # minibatch size of 32 audio clips, each containing 7,680 timesteps
-            # (roughly 320ms).
-            # SOURCE (DeepVoice):
-            # We divide the utterances in our audio dataset into one second chunks with
-            # a quarter second of context for each chunk, padding each utterance with a
-            # quarter second of silence at the beginning. We filter out chunks that are
-            # predominantly silence and end up with 74,348 total chunks.
-            # NOTE: Our implementation requires ``slice_size`` to be divisable by ``frame_hop``.
-            # SOURCE (Efficient Neural Audio Synthesis):
-            # The WaveRNN models are trained on sequences of 960 audio samples of 16-bit each and
-            # full back-propagationthrough-time is applied to the models.
-            'slice_size': 900,
-            'add_context': False,
         }
     })
 
