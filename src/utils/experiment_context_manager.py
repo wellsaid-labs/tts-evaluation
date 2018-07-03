@@ -162,6 +162,9 @@ class ExperimentContextManager(object):
         root.addHandler(self._stream_handler)
         root.setLevel(logging.INFO)
 
+        if self.is_cuda and self.device.index is not None:
+            torch.cuda.set_device(self.device.index)
+
         logger = logging.getLogger(__name__)
         logger.info('Experiment Folder: %s' % self.directory)
         logger.info('Label: %s', self.label)

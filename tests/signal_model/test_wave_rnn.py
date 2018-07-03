@@ -2,6 +2,7 @@ import torch
 import numpy as np
 
 from src.signal_model import WaveRNN
+from src.signal_model.wave_rnn import _scale
 from src.utils import split_signal
 
 
@@ -57,10 +58,8 @@ def test_wave_rnn_inference_train_equivilance():
 
 
 def test_wave_rnn_scale():
-    bits = 16
-    net = WaveRNN(bits=bits)
     original = torch.linspace(0, 255, steps=256)
-    scaled = net._scale(original)
+    scaled = _scale(original, 256)
     assert torch.min(scaled) == -1.0
     assert torch.max(scaled) == 1.0
     reconstructed = (scaled + 1.0) * 127.5
@@ -69,7 +68,7 @@ def test_wave_rnn_scale():
 
 def test_wave_rnn_initial_state():
     bits = 16
-    net = WaveRNN(bits=bits)
+    net = WaveRNN(bits=bits)._export()
     coarse, fine, coarse_last_hidden, fine_last_hidden = net._initial_state(torch.Tensor(), 3)
     zero_signal_coarse_value = 128 / 127.5 - 1.0
     np.testing.assert_allclose(

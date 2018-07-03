@@ -1,3 +1,9 @@
+"""
+TODO:
+    * Add an option to use the same tensorboard and folder from before or to start a new thing
+    * Add an option to automatically pick the most recent checkpoint to restart; then writing a
+      restart script should be pretty easy.
+"""
 import argparse
 import logging
 import random
@@ -287,7 +293,6 @@ class Trainer():  # pragma: no cover
             'target_coarse': batch['slice']['target_signal_coarse'].unsqueeze(2)
         }
         if self.is_data_parallel:
-            # TODO: Handle this https://github.com/pytorch/pytorch/issues/7092
             predicted_coarse, predicted_fine, _ = torch.nn.parallel.data_parallel(
                 module=self.model,
                 inputs=batch['slice']['log_mel_spectrogram'],
@@ -418,8 +423,6 @@ if __name__ == '__main__':  # pragma: no cover
     args, unknown_args = parser.parse_known_args()
     # Assume other arguments correspond to hparams
     hparams = parse_hparam_args(unknown_args)
-    # TODO: Add an option to automatically pick the most recent checkpoint to restart;
-    # then writing a restart script should be pretty easy.
     main(
         checkpoint=args.checkpoint,
         train_batch_size=args.train_batch_size,
