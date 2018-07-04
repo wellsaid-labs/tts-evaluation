@@ -369,7 +369,7 @@ def main(checkpoint=None,
         trainer_kwargs = {}
         if checkpoint is not None:
             if reset_optimizer:
-                logger.info('Ignoring loaded optimizer and scheduler.')
+                logger.info('Deleting checkpoint optimizer.')
                 del checkpoint['optimizer']
             trainer_kwargs.update(checkpoint)
 

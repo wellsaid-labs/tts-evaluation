@@ -31,7 +31,6 @@ def _scale(tensor, bins=256):
 
 class _WaveRNNInference(nn.Module):
 
-    @configurable
     def __init__(self,
                  gru_input_bias,
                  gru_hidden_weight,
