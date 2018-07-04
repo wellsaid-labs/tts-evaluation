@@ -337,6 +337,7 @@ def main(checkpoint=None,
          dev_to_train_ratio=4,
          evaluate_every_n_epochs=5,
          min_time=60 * 15,
+         name=None,
          label='signal_model'):  # pragma: no cover
     """ Main module that trains a the signal model saving checkpoints incrementally.
 
@@ -352,13 +353,14 @@ def main(checkpoint=None,
         evaluate_every_n_epochs (int, optional): Evaluate every ``evaluate_every_n_epochs`` epochs.
         min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
             files are deleted.
+        name (str, optional): Experiment name.
         label (str, optional): Label applied to a experiments from this executable.
     """
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.fastest = False
 
-    with ExperimentContextManager(label=label, min_time=min_time) as context:
+    with ExperimentContextManager(label=label, min_time=min_time, name=name) as context:
         set_hparams()
         add_config(hparams)
         log_config()
@@ -406,6 +408,7 @@ if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '-c', '--checkpoint', type=str, default=None, help='Load a checkpoint from a path')
+    parser.add_argument('-n', '--name', type=str, default=None, help='Experiment name.')
     parser.add_argument(
         '-b',
         '--train_batch_size',
@@ -424,6 +427,7 @@ if __name__ == '__main__':  # pragma: no cover
     # Assume other arguments correspond to hparams
     hparams = parse_hparam_args(unknown_args)
     main(
+        name=args.name,
         checkpoint=args.checkpoint,
         train_batch_size=args.train_batch_size,
         num_workers=args.num_workers,

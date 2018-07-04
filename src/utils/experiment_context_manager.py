@@ -44,6 +44,7 @@ class ExperimentContextManager(object):
 
     Args:
         label (str, optional): Group a set of experiments with a label, typically the model name.
+        name (str, optional): Name of the experiment.
         root (str, optional): Top level directory for all experiments.
         seed (int, optional): The seed to use.
         device (torch.Device, optional): Set a device. By default, we the device is:
@@ -54,6 +55,7 @@ class ExperimentContextManager(object):
 
     def __init__(self,
                  label='other',
+                 name=None,
                  root='experiments/',
                  seed=1212212,
                  device=None,
@@ -61,6 +63,7 @@ class ExperimentContextManager(object):
         # Handle circular reference
         from src.utils import ROOT_PATH
 
+        self.name = time.strftime('%H:%M:%S', time.localtime()) if name is None else name
         self.label = label
         self.root = os.path.normpath(os.path.join(ROOT_PATH, root))
 
@@ -111,8 +114,8 @@ class ExperimentContextManager(object):
             path (str): Path to the new experiment directory
         """
         run_day = time.strftime('%m_%d', time.localtime())
-        run_time = time.strftime('%H:%M:%S', time.localtime())
-        self.directory = os.path.join(self.root, self.label, run_day, run_time)
+        name = self.name.replace(' ', '_')
+        self.directory = os.path.join(self.root, self.label, run_day, name)
         os.makedirs(self.directory)
 
         # Make checkpoints directory
