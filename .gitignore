@@ -89,3 +89,6 @@ experiments/
 
 # Sync
 **lrsyncssh.conf.lua
+
+# Settings
+.vscode/c_cpp_properties.json

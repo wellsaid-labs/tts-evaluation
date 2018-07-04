@@ -1,15 +1,18 @@
 import torch
 
 from torch import nn
+from torch.nn.functional import log_softmax
 from torch.nn.functional import sigmoid
 from torch.nn.functional import tanh
-from torch.nn.functional import log_softmax
+from torch.utils.cpp_extension import load
 from tqdm import tqdm
 
 from src.signal_model.upsample import ConditionalFeaturesUpsample
 from src.signal_model.stripped_gru import StrippedGRU
 from src.utils.configurable import configurable
 from src.utils import split_signal
+
+inference = load(name="inference", sources=["inference.cpp"])
 
 
 def _scale(tensor, bins=256):
@@ -83,6 +86,7 @@ class _WaveRNNInference(nn.Module):
         """
         # Set the split signal value at signal value zero
         coarse, fine = split_signal(reference.new_zeros(batch_size))
+        # TODO: Coarse and fine should be part of the hidden state
         coarse = _scale(coarse.unsqueeze(1), self.bins)
         fine = _scale(fine.unsqueeze(1), self.bins)
         if hidden_state is not None:
