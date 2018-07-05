@@ -78,3 +78,17 @@ Periodic sync:
 ```
 while true; do scp -r $USER@$GPU:/path/to/foo /path/to/foo; sleep 960; done
 ```
+
+### Multiple GPUs
+
+You may find that you need to run more than one experiment at a time. We've provided a tool to sync
+tensorboard events from multiple GCP servers to one server, like so:
+
+    gcloud compute ssh tensorboard --zone=us-us-west1-b
+
+    gcloud compute config-ssh # Find any new servers
+
+    python3 src/bin/sync_tensorboard.py -s vocalx.us-west1-b flowvo.us-west1-b  -p ~/Tacotron-2/experiments/signal_model
+
+Now, periodically, tensorboard files from ``vocalx.us-west1-b`` and ``flowvo.us-west1-b`` will be
+sync'd to ``~/Tacotron-2/sync/`` on GCP server ``tensorboard``.

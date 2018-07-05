@@ -9,21 +9,17 @@ Thanks for considering contributing!
 To contribute an experiment, you'll need to document your Tensorboard and code changes. First,
 submit your Tensorboard to the Google Cloud Tensorboard server, via:
 
-    EXPERIMENT=~/Tacotron-2/experiments/path/to/experiment
-    NEW_EXPERIMENT_NAME=~/Tacotron-2/experiments/path/to/experiment
+    gcloud compute ssh tensorboard --zone=us-us-west1-b
 
-    gcloud compute ssh tensorboard --command='mkdir -p '"$NEW_EXPERIMENT_NAME"''
+    # First, sync experiment to ``sync/`` then stop the process.
+    python3 src/bin/sync_tensorboard.py -s vocalx.us-west1-b -p ~/Tacotron-2/experiments/signal_model
 
-    # Transfer experiment log files ``stdout.log`` and ``stderr.log``
-    gcloud compute scp --recurse $EXPERIMENT/*.log tensorboard:$NEW_EXPERIMENT_NAME
-
-    # Transfer tensorboard events ``events.out.tfevents.*``
-    gcloud compute scp --recurse $EXPERIMENT/tensorboard/ tensorboard:$NEW_EXPERIMENT_NAME/
+    mv sync/your/experiment experiments/your/experiment
 
 Then, submit a pull request to our [GitHub](https://github.com/AI2Incubator/Tacotron-2) documenting
-the experiment.
+the experiment with a link to the experiment.
 
-Finally, if you are contributing a new model to Tensorboard for which you'd like a separate
+If you are contributing a new model to Tensorboard for which you'd like a separate
 Tensorboard, create one:
 
     # SSH into tensorboard server
@@ -34,6 +30,11 @@ Tensorboard, create one:
 
     # Pick some port between 6000-6999
     tensorboard --logdir=path/to/your/experiment --port='6000' --window_title='Your Model'
+
+Finally, if you are contributing from a new GCP server, run for ``src/bin/sync_tensorboard.py`` to
+find the server:
+
+    gcloud compute config-ssh
 
 ### Did you find a bug?
 
