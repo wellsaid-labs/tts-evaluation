@@ -24,7 +24,7 @@ def set_hparams():
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
         'torch.optim.adam.Adam.__init__': {
             'betas': (0.9, 0.999),
-            'amsgrad': True,
+            'amsgrad': False,
             'lr': 10**-3
         }
     })
@@ -80,11 +80,8 @@ def set_hparams():
     # We transform the STFT magnitude to the mel scale using an 80 channel mel
     # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
     # compression.
-    # NOTE: Following running a SoX 7.6 kHz low-pass filter on a LJ dataset sample at 7.6 kHz,
-    # we found that her voice tends to use higher frequencies than 7.6 kHz. We bumped it up to 9.1
-    # kHz by looking at a melspectrogram of the sample.
     lower_hertz = 125
-    upper_hertz = 9100
+    upper_hertz = 7600
 
     # SOURCE (WaveNet):
     # where −1 < xt < 1 and µ = 255.
@@ -117,10 +114,10 @@ def set_hparams():
                 'norm': True,
                 'loudness': False,
                 # NOTE: Guard to reduce clipping during resampling
-                'guard': False,
+                'guard': True,
                 # NOTE: Highpass and lowpass filter to ensure Wav is consistent with Spectrogram.
-                'lower_hertz': lower_hertz,
-                'upper_hertz': upper_hertz,
+                'lower_hertz': None,
+                'upper_hertz': None,
             },
             'lr_schedulers.DelayedExponentialLR.__init__': {
                 # SOURCE (Tacotron 2):
@@ -132,9 +129,6 @@ def set_hparams():
                 'epoch_start_decay': 10000,
                 'epoch_end_decay': 60000,
                 'end_lr': 10**-5,
-            },
-            'optimizer.Optimizer.__init__': {
-                'max_grad_norm': None,
             },
             'audio': {
                 # SOURCE (Wavenet):
@@ -319,7 +313,7 @@ def set_hparams():
 
                     # SOURCE: Efficient Neural Audio Synthesis Author
                     # The author suggested adding 3 - 5 convolutions on top of WaveRNN.
-                    'local_feature_processing_layers': 4,
+                    'local_feature_processing_layers': None,
                 }
             },
             'bin.signal_model': {

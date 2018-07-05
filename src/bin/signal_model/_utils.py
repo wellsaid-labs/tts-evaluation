@@ -68,6 +68,9 @@ def set_hparams():
             'eps': 10**-8,
             'weight_decay': 0,
             'lr': 10**-3
+        },
+        'src.optimizer.Optimizer.__init__': {
+            'max_grad_norm': 40.0,
         }
     })
 
@@ -91,7 +94,13 @@ def load_checkpoint(checkpoint=None, device=torch.device('cpu')):
     return checkpoint
 
 
-def save_checkpoint(directory, model=None, optimizer=None, epoch=None, step=None, filename=None):
+def save_checkpoint(directory,
+                    model=None,
+                    optimizer=None,
+                    epoch=None,
+                    step=None,
+                    filename=None,
+                    experiment_directory=None):
     """ Save a checkpoint.
 
     Args:
@@ -102,6 +111,7 @@ def save_checkpoint(directory, model=None, optimizer=None, epoch=None, step=None
         step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
         filename (str, optional): Filename to save the checkpoint too, by default the checkpoint
             is saved in ``os.path.join(context.epoch_directory, 'checkpoint.pt')``
+        experiment_directory (str, optional): Directory experiment logs are saved in.
 
     Returns:
         checkpoint (dict or None): Loaded checkpoint or None
@@ -110,11 +120,13 @@ def save_checkpoint(directory, model=None, optimizer=None, epoch=None, step=None
         name = 'step_%d.pt' % (step,) if step is not None else 'checkpoint.pt'
         filename = os.path.join(directory, name)
 
-    torch_save(filename, {
-        'model': model,
-        'optimizer': optimizer,
-        'epoch': epoch,
-        'step': step,
-    })
+    torch_save(
+        filename, {
+            'model': model,
+            'optimizer': optimizer,
+            'epoch': epoch,
+            'step': step,
+            'experiment_directory': experiment_directory,
+        })
 
     return filename

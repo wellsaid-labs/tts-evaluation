@@ -1,12 +1,8 @@
-"""
-TODO:
-    * Add an option to use the same tensorboard and folder from before or to start a new thing
-    * Add an option to automatically pick the most recent checkpoint to restart; then writing a
-      restart script should be pretty easy.
-"""
 import argparse
 import logging
 import random
+import os
+import glob
 
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
@@ -80,6 +76,7 @@ class Trainer():  # pragma: no cover
             self.is_data_parallel = True
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else Optimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
+        self.optimizer.to(device)
         self.dev_tensorboard = dev_tensorboard
         self.train_tensorboard = train_tensorboard
         self.device = device
@@ -328,21 +325,26 @@ class Trainer():  # pragma: no cover
         return coarse_loss, fine_loss, num_predictions
 
 
-def main(checkpoint=None,
-         epochs=1000,
-         train_batch_size=2,
-         num_workers=0,
-         reset_optimizer=False,
-         hparams={},
-         dev_to_train_ratio=4,
-         evaluate_every_n_epochs=5,
-         min_time=60 * 15,
-         name=None,
-         label='signal_model'):  # pragma: no cover
+def main(
+        checkpoint_path=None,
+        epochs=1000,
+        train_batch_size=2,
+        num_workers=0,
+        reset_optimizer=False,
+        hparams={},
+        dev_to_train_ratio=4,
+        evaluate_every_n_epochs=5,
+        min_time=0,  # 60 * 15,
+        name=None,
+        label='signal_model',
+        experiments_root='experiments/'):  # pragma: no cover
     """ Main module that trains a the signal model saving checkpoints incrementally.
 
+    TODO: Consider relabeling this to wave_rnn or signal_model/wave_rnn
+
     Args:
-        checkpoint (str, optional): If provided, path to a checkpoint to load.
+        checkpoint_path (str, optional): Accepts a checkpoint path to load or empty string
+            signaling to load the most recent checkpoint in ``experiments_root``.
         epochs (int, optional): Number of epochs to run for.
         train_batch_size (int, optional): Maximum training batch size.
         num_workers (int, optional): Number of workers for data loading.
@@ -355,21 +357,39 @@ def main(checkpoint=None,
             files are deleted.
         name (str, optional): Experiment name.
         label (str, optional): Label applied to a experiments from this executable.
+        experiments_root (str, optional): Top level directory for all experiments.
     """
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.fastest = False
 
-    with ExperimentContextManager(label=label, min_time=min_time, name=name) as context:
+    if checkpoint_path == '':  # Pick the most recent checkpoint
+        checkpoints = os.path.join(experiments_root, label, '**/*.pt')
+        checkpoints = list(glob.iglob(checkpoints, recursive=True))
+        if len(checkpoints) == 0:
+            logger.warn('No checkpoints found')
+            checkpoint_path = None
+        else:
+            checkpoint_path = max(list(checkpoints), key=os.path.getctime)
+
+    checkpoint = load_checkpoint(checkpoint_path)
+    directory = None if checkpoint is None else checkpoint['experiment_directory']
+
+    with ExperimentContextManager(
+            label=label, min_time=min_time, name=name, directory=directory) as context:
+
+        if checkpoint_path is not None:
+            logger.info('Loaded checkpoint %s', checkpoint_path)
+
         set_hparams()
         add_config(hparams)
         log_config()
-        checkpoint = load_checkpoint(checkpoint, context.device)
         train, dev = load_data()
 
         # Set up trainer.
         trainer_kwargs = {}
         if checkpoint is not None:
+            del checkpoint['experiment_directory']  # Not useful for kwargs
             if reset_optimizer:
                 logger.info('Deleting checkpoint optimizer.')
                 del checkpoint['optimizer']
@@ -397,7 +417,8 @@ def main(checkpoint=None,
                     model=trainer.model,
                     optimizer=trainer.optimizer,
                     epoch=trainer.epoch,
-                    step=trainer.step)
+                    step=trainer.step,
+                    experiment_directory=context.directory)
                 trainer.run_epoch(train=False, trial_run=is_trial_run)
             trainer.epoch += 1
 
@@ -407,7 +428,15 @@ def main(checkpoint=None,
 if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '-c', '--checkpoint', type=str, default=None, help='Load a checkpoint from a path')
+        '-c',
+        '--checkpoint',
+        const='',
+        type=str,
+        default=None,
+        action='store',
+        nargs='?',
+        help='Without a value, loads the most recent checkpoint;'
+        'otherwise, expects a checkpoint file path.')
     parser.add_argument('-n', '--name', type=str, default=None, help='Experiment name.')
     parser.add_argument(
         '-b',
@@ -424,11 +453,10 @@ if __name__ == '__main__':  # pragma: no cover
         default=False,
         help='Reset optimizer and scheduler.')
     args, unknown_args = parser.parse_known_args()
-    # Assume other arguments correspond to hparams
     hparams = parse_hparam_args(unknown_args)
     main(
         name=args.name,
-        checkpoint=args.checkpoint,
+        checkpoint_path=args.checkpoint,
         train_batch_size=args.train_batch_size,
         num_workers=args.num_workers,
         reset_optimizer=args.reset_optimizer,

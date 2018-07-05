@@ -43,6 +43,7 @@ class ExperimentContextManager(object):
     """ Context manager for seeding, organizing and recording experiments.
 
     Args:
+        directory (str, optional): Directory to save experiment in.
         label (str, optional): Group a set of experiments with a label, typically the model name.
         name (str, optional): Name of the experiment.
         root (str, optional): Top level directory for all experiments.
@@ -54,6 +55,7 @@ class ExperimentContextManager(object):
     """
 
     def __init__(self,
+                 directory=None,
                  label='other',
                  name=None,
                  root='experiments/',
@@ -63,6 +65,8 @@ class ExperimentContextManager(object):
         # Handle circular reference
         from src.utils import ROOT_PATH
 
+        self.directory = directory
+        self.id = str(time.time())[:10]  # NOTE: Same id tensorboard uses.
         self.name = time.strftime('%H:%M:%S', time.localtime()) if name is None else name
         self.label = label
         self.root = os.path.normpath(os.path.join(ROOT_PATH, root))
@@ -102,8 +106,8 @@ class ExperimentContextManager(object):
             stdout_filename (str): Filename used to save the stdout stream.
             stderr_filename (str): Filename used to save the stderr stream.
         """
-        self.stdout_filename = os.path.join(self.directory, stdout_filename)
-        self.stderr_filename = os.path.join(self.directory, stderr_filename)
+        self.stdout_filename = os.path.join(self.directory, '%s.%s' % (self.id, stdout_filename))
+        self.stderr_filename = os.path.join(self.directory, '%s.%s' % (self.id, stderr_filename))
         sys.stdout = _CopyStream(self.stdout_filename, sys.stdout)
         sys.stderr = _CopyStream(self.stderr_filename, sys.stderr)
 
@@ -113,21 +117,25 @@ class ExperimentContextManager(object):
         Returns:
             path (str): Path to the new experiment directory
         """
-        run_day = time.strftime('%m_%d', time.localtime())
-        name = self.name.replace(' ', '_')
-        self.directory = os.path.join(self.root, self.label, run_day, name)
-        os.makedirs(self.directory)
+        if self.directory is None:
+            run_day = time.strftime('%m_%d', time.localtime())
+            name = self.name.replace(' ', '_')
+            self.directory = os.path.join(self.root, self.label, run_day, name)
+            os.makedirs(self.directory)
+        else:
+            assert os.path.isdir(self.directory), 'Provided directory must exist.'
 
         # Make checkpoints directory
-        self.checkpoints_directory = os.path.join(self.directory, 'checkpoints')
+        self.checkpoints_directory = os.path.join(self.directory, 'checkpoints', self.id)
         os.makedirs(self.checkpoints_directory)
 
     def _tensorboard(self):
         """ Within ``self.directory`` setup tensorboard.
         """
         # Setup tensorboard
-        log_dir = os.path.join(self.directory, 'tensorboard')
-        os.makedirs(log_dir)
+        # HACK: Tensorboard has a short name to help with layout in tensorboard paths
+        log_dir = os.path.join(self.directory, 'tb')
+        os.makedirs(log_dir, exist_ok=True)
         self.dev_tensorboard = SummaryWriter(log_dir=os.path.join(log_dir, 'dev'))
         self.train_tensorboard = SummaryWriter(log_dir=os.path.join(log_dir, 'train'))
         logger.info('Started tensorboard at %s/**', log_dir)
@@ -210,5 +218,8 @@ class ExperimentContextManager(object):
         # Reset streams
         sys.stdout = sys.stdout.stream
         sys.stderr = sys.stderr.stream
+
+        self.dev_tensorboard.close()
+        self.train_tensorboard.close()
 
         logging.getLogger().removeHandler(self._stream_handler)

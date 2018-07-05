@@ -1,3 +1,7 @@
+"""
+TODO:
+    * Sync improvements in signal train model code with this train code.
+"""
 import argparse
 import logging
 import random

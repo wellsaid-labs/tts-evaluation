@@ -162,7 +162,7 @@ def _process_audio(wav,
     # to 0.98 comes out to 255; therefore, those bits are still used.
     norm_flag = '--norm=-.1' if norm else ''
     guard_flag = '--guard' if guard else ''
-    sinc_command = 'sinc %s-%s' % (lower_hertz, upper_hertz)
+    sinc_command = 'sinc %s-%s' % (lower_hertz, upper_hertz) if lower_hertz or upper_hertz else ''
     loudness_command = 'loudness' if loudness else ''
     resample_command = 'rate %s' % (resample if resample is not None else '',)
     commands = ' '.join([resample_command, sinc_command, loudness_command])

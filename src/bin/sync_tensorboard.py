@@ -12,28 +12,42 @@ import sched
 import subprocess
 import time
 
+from src.utils import ROOT_PATH
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def sync(cli_args, scheduler, destination_root='~/sync/', repeat_every=60):
+def sync(cli_args, scheduler, destination_root='sync/', repeat_every=5):
     for server in cli_args.server:
         source = server + '.' + cli_args.project
-        destination = os.path.expanduser(os.path.join(destination_root, server))
+        name = server.split('.')[0]
+        destination = os.path.abspath(
+            os.path.expanduser(os.path.join(ROOT_PATH, destination_root, name)))
+
         if not os.path.isdir(destination):
             logger.info('Making directory %s', os.path.abspath(destination))
             os.makedirs(destination)
-        sync = '%s:%s %s' % (source, cli_args.path, destination)
-        command = ' '.join(
-            ['rsync', '--archive', '--verbose', '--rsh=ssh', "--exclude='*.pt'", sync])
-        logger.info('\tRunning:\n%s', command)
-        os.system(command)
-    print('-' * 100)
+
+        # NOTE: Updates must be inplace due to this:
+        # https://github.com/tensorflow/tensorboard/issues/349
+        # NOTE: ``--rsh="ssh -o ConnectTimeout=1"`` in case a server is not responsive.
+        # NOTE: Exclude ``*.pt`` or pytorch files, typically, large checkpoint files.
+        command = [
+            'rsync', '--archive', '--verbose', '--rsh', 'ssh -o ConnectTimeout=1', '--exclude',
+            '*.pt', '--human-readable', '--compress', '--inplace',
+            '%s:%s' % (source, cli_args.path),
+            '%s' % (destination)
+        ]
+        process = subprocess.Popen(command)
+        logger.info('Running: %s', process.args)
+        process.wait()
+        print('-' * 100)
     scheduler.enter(
         delay=repeat_every,
         priority=1,
         action=sync,
-        argument=(cli_args, scheduler, destination, repeat_every))
+        argument=(cli_args, scheduler, destination_root, repeat_every))
 
 
 if __name__ == '__main__':  # pragma: no cover

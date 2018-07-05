@@ -38,3 +38,14 @@ class Optimizer(object):
             parameter_norm = torch.nn.utils.clip_grad_norm_(params, self.max_grad_norm)
         self.optimizer.step()
         return parameter_norm
+
+    def to(self, device):
+        """ Move the optimizer state to ``device``. After calling, any parameter specific state in
+        the optimizer will be located on ``device``.
+        """
+        for param_group in self.optimizer.param_groups:
+            for param in param_group['params']:
+                param_state = self.optimizer.state[param]
+                for k in param_state.keys():
+                    if torch.is_tensor(param_state[k]):
+                        param_state[k] = param_state[k].to(device)
