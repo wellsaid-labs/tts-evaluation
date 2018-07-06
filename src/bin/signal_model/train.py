@@ -44,13 +44,13 @@ class Trainer():  # pragma: no cover
         model (torch.nn.Module, optional): Model to train and evaluate.
         step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
         epoch (int, optional): Starting epoch, useful warm starts (i.e. checkpoints).
-        step_unit (str, optional): Unit to measuer steps in, either: ['batches', 'seconds'].
+        step_unit (str, optional): Unit to measuer steps in, either: ['batches', 'deciseconds'].
         criterion (callable): Loss function used to score signal predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
         num_workers (int, optional): Number of workers for data loading.
     """
 
-    STEP_UNIT_SECONDS = 'seconds'
+    STEP_UNIT_DECISECONDS = 'deciseconds'
     STEP_UNIT_BATCHES = 'batches'
 
     @configurable
@@ -66,12 +66,12 @@ class Trainer():  # pragma: no cover
                  model=WaveRNN,
                  step=0,
                  epoch=0,
-                 step_unit='seconds',
+                 step_unit='deciseconds',
                  criterion=CrossEntropyLoss,
                  optimizer=Adam,
                  num_workers=0):
         assert step_unit in [self.STEP_UNIT_BATCHES,
-                             self.STEP_UNIT_SECONDS], 'Picked invalid step unit.'
+                             self.STEP_UNIT_DECISECONDS], 'Picked invalid step unit.'
 
         # Allow for ``class`` or a class instance
         self.model = model if isinstance(model, torch.nn.Module) else model()
@@ -125,8 +125,8 @@ class Trainer():  # pragma: no cover
         # Epoch Average Loss Metrics
         total_coarse_loss, total_fine_loss, total_signal_predictions = 0.0, 0.0, 0
 
-        if self.step_unit == self.STEP_UNIT_SECONDS:
-            start = time.time()
+        if self.step_unit == self.STEP_UNIT_DECISECONDS:
+            start = time.time() * 10
 
         # Setup iterator and metrics
         data_iterator = DataIterator(
@@ -140,24 +140,25 @@ class Trainer():  # pragma: no cover
         for batch in data_iterator:
             draw_sample = not train and self.random.randint(1, len(data_iterator)) == 1
             coarse_loss, fine_loss, num_signal_predictions = self._run_step(
-                batch, train=train, sample=draw_sample)
+                batch, train=train, sample=draw_sample, epoch_start=start)
             total_fine_loss += fine_loss * num_signal_predictions
             total_coarse_loss += coarse_loss * num_signal_predictions
             total_signal_predictions += num_signal_predictions
 
-        if train and self.step_unit == self.STEP_UNIT_SECONDS:
-            self.step += int(round(time.time() - start))
+        if train and self.step_unit == self.STEP_UNIT_DECISECONDS:
+            self.step += int(round(time.time() * 10 - start))
 
         epoch_coarse_loss = total_coarse_loss / total_signal_predictions
         epoch_fine_loss = total_fine_loss / total_signal_predictions
         self.tensorboard.add_scalar('coarse/loss/epoch', epoch_coarse_loss, self.step)
         self.tensorboard.add_scalar('fine/loss/epoch', epoch_fine_loss, self.step)
 
-    def _sample_inference(self, batch, max_infer_frames=100):
+    def _sample_inference(self, batch, step, max_infer_frames=100):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.
 
         Args:
             batch (dict): ``dict`` from ``src.bin.signal_model._utils.DataIterator``.
+            step (int): Step to record sampling at.
             max_infer_frames (int, optioanl): Maximum number of frames to consider for memory's
                 sake.
 
@@ -167,11 +168,11 @@ class Trainer():  # pragma: no cover
         item = self.random.randint(0, batch_size - 1)
 
         log_mel_spectrogram = batch['log_mel_spectrogram'][item][:max_infer_frames]
-        self.tensorboard.add_log_mel_spectrogram('full/spectrogram', log_mel_spectrogram, self.step)
+        self.tensorboard.add_log_mel_spectrogram('full/spectrogram', log_mel_spectrogram, step)
 
         scale = int(batch['signal'][item].shape[0] / batch['log_mel_spectrogram'][item].shape[0])
         target_signal = batch['signal'][item][:max_infer_frames * scale]
-        self.tensorboard.add_audio('full/gold', 'full/gold_waveform', target_signal, self.step)
+        self.tensorboard.add_audio('full/gold', 'full/gold_waveform', target_signal, step)
 
         torch.set_grad_enabled(False)
         self.model.train(mode=False)
@@ -180,15 +181,16 @@ class Trainer():  # pragma: no cover
         predicted_coarse, predicted_fine, _ = self.model(log_mel_spectrogram.unsqueeze(0))
         predicted_signal = combine_signal(predicted_coarse.squeeze(0), predicted_fine.squeeze(0))
         self.tensorboard.add_audio('full/prediction', 'full/prediction_waveform', predicted_signal,
-                                   self.step)
+                                   step)
 
-    def _sample_predicted(self, batch, predicted_coarse, predicted_fine):
+    def _sample_predicted(self, batch, predicted_coarse, predicted_fine, step):
         """ Samples examples from a batch and outputs them to tensorboard.
 
         Args:
             batch (dict): ``dict`` from ``src.bin.signal_model._utils.DataIterator``.
             predicted_coarse (torch.FloatTensor [batch_size, signal_length, bins])
             predicted_fine (torch.FloatTensor [batch_size, signal_length, bins])
+            step (int): Step to record sampling at.
 
         Returns: None
         """
@@ -203,13 +205,13 @@ class Trainer():  # pragma: no cover
         predicted_fine = predicted_fine.max(dim=2)[1][item, :length]
         predicted_signal = combine_signal(predicted_coarse, predicted_fine)
         self.tensorboard.add_audio('slice/prediction_aligned', 'slice/prediction_aligned_waveform',
-                                   predicted_signal, self.step)
+                                   predicted_signal, step)
 
         # gold_signal [batch_size, signal_length] → [signal_length]
         target_signal_coarse = batch['slice']['target_signal_coarse'][item, :length]
         target_signal_fine = batch['slice']['target_signal_fine'][item, :length]
         target_signal = combine_signal(target_signal_coarse, target_signal_fine)
-        self.tensorboard.add_audio('slice/gold', 'slice/gold_waveform', target_signal, self.step)
+        self.tensorboard.add_audio('slice/gold', 'slice/gold_waveform', target_signal, step)
 
     def _compute_loss(self, batch, predicted_coarse, predicted_fine):
         """ Compute the loss.
@@ -245,13 +247,14 @@ class Trainer():  # pragma: no cover
 
         return coarse_loss, fine_loss, num_predictions
 
-    def _run_step(self, batch, train=False, sample=False):
+    def _run_step(self, batch, train=False, sample=False, epoch_start=None):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
         Args:
             batch (dict): ``dict`` from ``src.bin.signal_model._utils.DataIterator``.
             train (bool, optional): If ``True``, takes a optimization step.
             sample (bool, optional): If ``True``, draw sample from step.
+            epoch_start (float, optional): Epoch start time in deciseconds.
 
         Returns:
             coarse_loss (torch.Tensor): Scalar loss value for signal top bits.
@@ -274,26 +277,31 @@ class Trainer():  # pragma: no cover
         coarse_loss, fine_loss, num_predictions = self._compute_loss(
             batch=batch, predicted_coarse=predicted_coarse, predicted_fine=predicted_fine)
 
+        if self.step_unit == self.STEP_UNIT_DECISECONDS and train:
+            step = self.step + int(round(time.time() * 10 - epoch_start))
+        else:
+            step = self.step
+
         if train:
             self.optimizer.zero_grad()
             (coarse_loss + fine_loss).backward()
             # TODO: Consider using a normal distribution over the last epoch to set this value.
             parameter_norm = self.optimizer.step()
             if parameter_norm is not None:
-                self.tensorboard.add_scalar('parameter_norm/step', parameter_norm, self.step)
+                self.tensorboard.add_scalar('parameter_norm/step', parameter_norm, step)
 
         coarse_loss, fine_loss = coarse_loss.item(), fine_loss.item()
         predicted_coarse, predicted_fine = predicted_coarse.detach(), predicted_fine.detach()
 
         if train:
-            self.tensorboard.add_scalar('coarse/loss/step', coarse_loss, self.step)
-            self.tensorboard.add_scalar('fine/loss/step', fine_loss, self.step)
+            self.tensorboard.add_scalar('coarse/loss/step', coarse_loss, step)
+            self.tensorboard.add_scalar('fine/loss/step', fine_loss, step)
             if train and self.step_unit == self.STEP_UNIT_BATCHES:
                 self.step += 1
 
         if sample:
-            self._sample_predicted(batch, predicted_coarse, predicted_fine)
-            self._sample_inference(batch)
+            self._sample_predicted(batch, predicted_coarse, predicted_fine, step)
+            self._sample_inference(batch, step)
 
         return coarse_loss, fine_loss, num_predictions
 

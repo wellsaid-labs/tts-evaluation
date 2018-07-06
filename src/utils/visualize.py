@@ -209,7 +209,7 @@ class Tensorboard(SummaryWriter):
             signal (torch.FloatTensor [signal_length]): Signal to plot.
             step (int): Step value to record.
         """
-        self._add_image(path, step, plot_stop_token, signal)
+        self._add_image(path, step, plot_waveform, signal)
 
     def add_log_mel_spectrogram(self, path, log_mel_spectrogram, step):
         """ Add image of a log mel spectrogram to Tensorboard.
