@@ -70,7 +70,7 @@ def set_hparams():
             'lr': 10**-3
         },
         'src.optimizer.Optimizer.__init__': {
-            'max_grad_norm': 40.0,
+            'max_grad_norm': 15.0,
         }
     })
 
@@ -126,7 +126,7 @@ def save_checkpoint(directory,
             'optimizer': optimizer,
             'epoch': epoch,
             'step': step,
-            'experiment_directory': experiment_directory,
+            'experiment_directory': experiment_directory
         })
 
     return filename

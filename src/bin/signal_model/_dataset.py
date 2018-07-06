@@ -22,10 +22,8 @@ class SignalDataset(data.Dataset):
         log_mel_spectrogram_prefix (str): Prefix of log mel spectrogram files.
         signal_prefix (str): Prefix of signal files.
         extension (str): Filename extension to load.
-        mean_frame_size (int, optional): Frame size normal distribution mean variable.
-        std_frame_size (int, optional): Frame size normal distribution std variable.
-        max_frame_size (int, optional): Frame size normal distribution max variable.
-        min_frame_size (int, optional): Frame size normal distribution min variable.
+        frame_size (int, optional): Frame size to sample.
+        random (random.Random, optional): Random number generator to sample data.
 
     References:
         * Parallel WaveNet https://arxiv.org/pdf/1711.10433.pdf
@@ -38,29 +36,17 @@ class SignalDataset(data.Dataset):
                  log_mel_spectrogram_prefix='log_mel_spectrogram',
                  signal_prefix='signal',
                  extension='.npy',
-                 mean_frame_size=3,
-                 std_frame_size=1,
-                 max_frame_size=30,
-                 min_frame_size=1):
+                 frame_size=3,
+                 random=random):
         prefixes = [log_mel_spectrogram_prefix, signal_prefix]
         self.rows = get_filename_table(source, prefixes=prefixes, extension=extension)
         self.log_mel_spectrogram_prefix = log_mel_spectrogram_prefix
         self.signal_prefix = signal_prefix
-        self.mean_frame_size = mean_frame_size
-        self.std_frame_size = std_frame_size
-        self.max_frame_size = max_frame_size
-        self.min_frame_size = min_frame_size
+        self.frame_size = frame_size
+        self.random = random
 
     def __len__(self):
         return len(self.rows)
-
-    def _get_frame_size(self):
-        """ Get a frame size from a normal distribution about ``self.mean_frame_size`` and
-        ``self.std_frame_size`` with range [``self.min_frame_size``, ``self.max_frame_size``].
-        """
-        frame_size = np.random.normal(loc=self.mean_frame_size, scale=self.std_frame_size)
-        frame_size = np.clip(frame_size, self.min_frame_size, self.max_frame_size)
-        return int(round(float(frame_size)))
 
     def _get_slice(self, log_mel_spectrogram, signal):
         """ Slice the data into bite sized chunks that fit onto GPU memory for training.
@@ -84,7 +70,6 @@ class SignalDataset(data.Dataset):
         """
         samples, num_frames = signal.shape[0], log_mel_spectrogram.shape[0]
         samples_per_frame = int(samples / num_frames)
-        frame_size = self._get_frame_size()
 
         # Signal model requires that there is a scaling factor between the signal and frames
         assert samples % num_frames == 0
@@ -95,8 +80,9 @@ class SignalDataset(data.Dataset):
         # For example, with signal ``[1, 2, 3]`` and a ``slice_samples`` of 2 you'd get slices of:
         # (1), (1, 2), (2, 3), (3).
         # With each number represented at twice.
-        start_frame = max(random.randint(-frame_size + 1, num_frames - 1), 0)
-        end_frame = min(start_frame + frame_size, num_frames)
+        start_frame = max(self.random.randint(-self.frame_size + 1, num_frames - 1), 0)
+        end_frame = min(start_frame + self.frame_size, num_frames)
+        print(start_frame, end_frame)
         frames_slice = log_mel_spectrogram[start_frame:end_frame]
 
         # Get a source sample slice shifted back one and target sample

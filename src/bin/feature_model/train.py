@@ -1,6 +1,7 @@
 """
 TODO:
     * Sync improvements in signal train model code with this train code.
+    * Fix for tensorboard visualization updates.
 """
 import argparse
 import logging

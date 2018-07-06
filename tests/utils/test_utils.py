@@ -2,21 +2,13 @@ import os
 
 from torch import nn
 from torch.nn import functional
-from PIL import Image
 
 import numpy as np
-import matplotlib.pyplot as plt
 import torch
 
-from src.utils import figure_to_numpy_array
 from src.utils import get_total_parameters
 from src.utils import parse_hparam_args
-from src.utils import plot_attention
-from src.utils import plot_log_mel_spectrogram
-from src.utils import plot_stop_token
-from src.utils import plot_waveform
 from src.utils import ROOT_PATH
-from src.utils import spectrogram_to_image
 from src.utils import split_dataset
 from src.utils import split_signal
 from src.utils import combine_signal
@@ -64,53 +56,6 @@ def test_split_dataset_shuffle():
     dataset = [1, 2, 3, 4, 5]
     splits = (.6, .2, .2)
     assert split_dataset(dataset, splits) == [[4, 2, 5], [3], [1]]
-
-
-def test_plot_log_mel_spectrogram():
-    arr = torch.rand(5, 6)
-    figure = plot_log_mel_spectrogram(arr)
-    assert isinstance(figure, np.ndarray)
-
-
-def test_spectrogram_to_image():
-    arr = np.random.rand(5, 6)
-    image = spectrogram_to_image(arr)
-    assert image.shape == (6, 5, 3)
-
-
-def test_plot_attention():
-    arr = np.random.rand(5, 6)
-    figure = plot_attention(arr)
-    assert isinstance(figure, np.ndarray)
-
-
-def test_plot_waveform():
-    arr = np.random.rand(5)
-    figure = plot_waveform(arr)
-    assert isinstance(figure, np.ndarray)
-
-
-def test_plot_stop_token():
-    arr = np.random.rand(5)
-    figure = plot_stop_token(arr)
-
-    filename = 'tests/_test_data/sample_plot.png'
-    image = Image.fromarray(figure, 'RGB')
-    image.save(filename)
-
-    assert os.path.isfile(filename)
-
-    # Clean up
-    os.remove(filename)
-
-
-def test_figure_to_numpy_array():
-    y = [1, 4, 5, 6]
-    figure = plt.figure()
-    plt.plot(list(range(len(y))), y)
-    plt.close(figure)
-
-    assert figure_to_numpy_array(figure).shape == (480, 640, 3)
 
 
 def test_parse_hparam_args():

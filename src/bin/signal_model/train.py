@@ -3,6 +3,7 @@ import logging
 import random
 import os
 import glob
+import time
 
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
@@ -21,8 +22,6 @@ from src.signal_model import WaveRNN
 from src.utils import combine_signal
 from src.utils import get_total_parameters
 from src.utils import parse_hparam_args
-from src.utils import plot_log_mel_spectrogram
-from src.utils import plot_waveform
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
 from src.utils.configurable import log_config
@@ -40,15 +39,20 @@ class Trainer():  # pragma: no cover
         dev_dataset (iterable): Dev dataset used to evaluate.
         train_tensorboard (tensorboardX.SummaryWriter): Writer for train events.
         dev_tensorboard (tensorboardX.SummaryWriter): Writer for dev events.
+        sample_rate (int, optional): Sample rate of the audio data.
         train_batch_size (int, optional): Batch size used for training.
         dev_batch_size (int, optional): Batch size used for evaluation.
         model (torch.nn.Module, optional): Model to train and evaluate.
         step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
         epoch (int, optional): Starting epoch, useful warm starts (i.e. checkpoints).
+        step_unit (str, optional): Unit to measuer steps in, either: ['batches', 'seconds'].
         criterion (callable): Loss function used to score signal predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
         num_workers (int, optional): Number of workers for data loading.
     """
+
+    STEP_UNIT_SECONDS = 'seconds'
+    STEP_UNIT_BATCHES = 'batches'
 
     @configurable
     def __init__(self,
@@ -57,40 +61,46 @@ class Trainer():  # pragma: no cover
                  dev_dataset,
                  train_tensorboard,
                  dev_tensorboard,
-                 sample_rate,
+                 sample_rate=24000,
                  train_batch_size=32,
                  dev_batch_size=128,
                  model=WaveRNN,
                  step=0,
                  epoch=0,
+                 step_unit='seconds',
                  criterion=CrossEntropyLoss,
                  optimizer=Adam,
                  num_workers=0):
+        assert self.step_unit in [self.STEP_UNIT_BATCHES,
+                                  self.STEP_UNIT_SECONDS], 'Picked invalid step unit.'
 
         # Allow for ``class`` or a class instance
         self.model = model if isinstance(model, torch.nn.Module) else model()
         self.model.to(device)
-        self.is_data_parallel = False
-        if device.type == 'cuda' and torch.cuda.device_count() > 1:
-            logger.info('Training on %d GPUs', torch.cuda.device_count())
-            self.is_data_parallel = True
+
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else Optimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.optimizer.to(device)
+
+        self.criterion = criterion(reduce=False).to(self.device)
+
         self.dev_tensorboard = dev_tensorboard
         self.train_tensorboard = train_tensorboard
         self.device = device
         self.step = step
         self.epoch = epoch
+        self.step_unit = step_unit
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
         self.num_workers = num_workers
         self.sample_rate = sample_rate
+        self.random = random.Random(123)  # Ensure the same samples are sampled
 
-        self.criterion = criterion(reduce=False).to(self.device)
-
+        logger.info('Training on %d GPUs', torch.cuda.device_count())
+        logger.info('Step (%s): %d', self.step_unit, self.step)
+        logger.info('Epoch: %d', self.epoch)
         logger.info('Number of Training Rows: %d', len(self.train_dataset))
         logger.info('Number of Dev Rows: %d', len(self.dev_dataset))
         logger.info('Train Batch Size: %d', train_batch_size)
@@ -116,63 +126,33 @@ class Trainer():  # pragma: no cover
         # Epoch Average Loss Metrics
         total_coarse_loss, total_fine_loss, total_signal_predictions = 0.0, 0.0, 0
 
+        if self.step_unit == self.STEP_UNIT_SECONDS:
+            start = time.time()
+
         # Setup iterator and metrics
         data_iterator = DataIterator(
             self.device,
             self.train_dataset if train else self.dev_dataset,
             self.train_batch_size if train else self.dev_batch_size,
             trial_run=trial_run,
-            num_workers=self.num_workers)
+            num_workers=self.num_workers,
+            random=self.random)
         data_iterator = tqdm(data_iterator, desc=label)
         for batch in data_iterator:
-            draw_sample = not train and random.randint(1, len(data_iterator)) == 1
+            draw_sample = not train and self.random.randint(1, len(data_iterator)) == 1
             coarse_loss, fine_loss, num_signal_predictions = self._run_step(
                 batch, train=train, sample=draw_sample)
             total_fine_loss += fine_loss * num_signal_predictions
             total_coarse_loss += coarse_loss * num_signal_predictions
             total_signal_predictions += num_signal_predictions
 
-        self._add_scalar(['coarse', 'loss', 'epoch'], total_coarse_loss / total_signal_predictions,
-                         self.step)
-        self._add_scalar(['fine', 'loss', 'epoch'], total_fine_loss / total_signal_predictions,
-                         self.step)
+        if train and self.step_unit == self.STEP_UNIT_SECONDS:
+            self.step += int(round(time.time() - start))
 
-    def _add_image(self, path, to_image, step, *data):
-        """ Plot data and add image to tensorboard.
-
-        Args:
-            path (list): List of tags to use as label.
-            to_image (callable): Callable that returns an image given tensor data.
-            step (int): Step value to record.
-            *tensors (torch.Tensor): Tensor to visualize.
-        """
-        data = [row.detach().cpu().numpy() if torch.is_tensor(row) else row for row in data]
-        self.tensorboard.add_image('/'.join(path), to_image(*data), step)
-
-    def _add_scalar(self, path, scalar, step):
-        """ Add scalar to tensorboard
-
-        Args:
-            path (list): List of tags to use as label.
-            scalar (number): Scalar to add to tensorboard.
-        """
-        path = [s.lower() for s in path]
-        self.tensorboard.add_scalar('/'.join(path), scalar, step)
-
-    def _add_audio(self, path_audio, path_image, signal, step):
-        """ Add audio to tensorboard.
-
-        Args:
-            path (list): List of tags to use as label.
-            signal (torch.Tensor): Signal to add to tensorboard as audio.
-            step (int): Step value to record.
-        """
-        signal = signal.detach().cpu()
-        assert torch.max(signal) <= 1.0 and torch.min(
-            signal) >= -1.0, "Should be [-1, 1] it is [%f, %f]" % (torch.max(signal),
-                                                                   torch.min(signal))
-        self.tensorboard.add_audio('/'.join(path_audio), signal, step, self.sample_rate)
-        self._add_image(path_image, plot_waveform, step, signal)
+        epoch_coarse_loss = total_coarse_loss / total_signal_predictions
+        epoch_fine_loss = total_fine_loss / total_signal_predictions
+        self.tensorboard.add_scalar('coarse/loss/epoch', epoch_coarse_loss, self.step)
+        self.tensorboard.add_scalar('fine/loss/epoch', epoch_fine_loss, self.step)
 
     def _sample_inference(self, batch, max_infer_frames=100):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.
@@ -185,15 +165,14 @@ class Trainer():  # pragma: no cover
         Returns: None
         """
         batch_size = len(batch['log_mel_spectrogram'])
-        item = random.randint(0, batch_size - 1)
+        item = self.random.randint(0, batch_size - 1)
 
         log_mel_spectrogram = batch['log_mel_spectrogram'][item][:max_infer_frames]
-        self._add_image(['full', 'spectrogram'], plot_log_mel_spectrogram, self.step,
-                        log_mel_spectrogram)
+        self.tensorboard.add_log_mel_spectrogram('full/spectrogram', log_mel_spectrogram, self.step)
 
         scale = int(batch['signal'][item].shape[0] / batch['log_mel_spectrogram'][item].shape[0])
         target_signal = batch['signal'][item][:max_infer_frames * scale]
-        self._add_audio(['full', 'gold'], ['full', 'gold_waveform'], target_signal, self.step)
+        self.tensorboard.add_audio('full/gold', 'full/gold_waveform', target_signal, self.step)
 
         torch.set_grad_enabled(False)
         self.model.train(mode=False)
@@ -201,8 +180,8 @@ class Trainer():  # pragma: no cover
         logger.info('Running inference on %d spectrogram frames...', log_mel_spectrogram.shape[0])
         predicted_coarse, predicted_fine, _ = self.model(log_mel_spectrogram.unsqueeze(0))
         predicted_signal = combine_signal(predicted_coarse.squeeze(0), predicted_fine.squeeze(0))
-        self._add_audio(['full', 'prediction'], ['full', 'prediction_waveform'], predicted_signal,
-                        self.step)
+        self.tensorboard.add_audio('full/prediction', 'full/prediction_waveform', predicted_signal,
+                                   self.step)
 
     def _sample_predicted(self, batch, predicted_coarse, predicted_fine):
         """ Samples examples from a batch and outputs them to tensorboard.
@@ -216,7 +195,7 @@ class Trainer():  # pragma: no cover
         """
         # Initial values
         batch_size = predicted_coarse.shape[0]
-        item = random.randint(0, batch_size - 1)  # Random item to sample
+        item = self.random.randint(0, batch_size - 1)  # Random item to sample
         length = batch['slice']['signal_lengths'][item]
 
         # Sample argmax from a categorical distribution
@@ -224,14 +203,14 @@ class Trainer():  # pragma: no cover
         predicted_coarse = predicted_coarse.max(dim=2)[1][item, :length]
         predicted_fine = predicted_fine.max(dim=2)[1][item, :length]
         predicted_signal = combine_signal(predicted_coarse, predicted_fine)
-        self._add_audio(['slice', 'prediction_aligned'], ['slice', 'prediction_aligned_waveform'],
-                        predicted_signal, self.step)
+        self.tensorboard.add_audio('slice/prediction_aligned', 'slice/prediction_aligned_waveform',
+                                   predicted_signal, self.step)
 
         # gold_signal [batch_size, signal_length] → [signal_length]
         target_signal_coarse = batch['slice']['target_signal_coarse'][item, :length]
         target_signal_fine = batch['slice']['target_signal_fine'][item, :length]
         target_signal = combine_signal(target_signal_coarse, target_signal_fine)
-        self._add_audio(['slice', 'gold'], ['slice', 'gold_waveform'], target_signal, self.step)
+        self.tensorboard.add_audio('slice/gold', 'slice/gold_waveform', target_signal, self.step)
 
     def _compute_loss(self, batch, predicted_coarse, predicted_fine):
         """ Compute the loss.
@@ -285,20 +264,15 @@ class Trainer():  # pragma: no cover
         torch.set_grad_enabled(train)
         self.model.train(mode=train)
 
-        model_kwargs = {
-            'input_signal': batch['slice']['input_signal'],
-            'target_coarse': batch['slice']['target_signal_coarse'].unsqueeze(2)
-        }
-        if self.is_data_parallel:
-            predicted_coarse, predicted_fine, _ = torch.nn.parallel.data_parallel(
-                module=self.model,
-                inputs=batch['slice']['log_mel_spectrogram'],
-                module_kwargs=model_kwargs,
-                dim=0,
-                output_device=self.device)
-        else:
-            predicted_coarse, predicted_fine, _ = self.model(batch['slice']['log_mel_spectrogram'],
-                                                             **model_kwargs)
+        predicted_coarse, predicted_fine, _ = torch.nn.parallel.data_parallel(
+            module=self.model,
+            inputs=batch['slice']['log_mel_spectrogram'],
+            module_kwargs={
+                'input_signal': batch['slice']['input_signal'],
+                'target_coarse': batch['slice']['target_signal_coarse'].unsqueeze(2)
+            },
+            dim=0,
+            output_device=self.device)
 
         coarse_loss, fine_loss, num_predictions = self._compute_loss(
             batch=batch, predicted_coarse=predicted_coarse, predicted_fine=predicted_fine)
@@ -309,15 +283,16 @@ class Trainer():  # pragma: no cover
             # TODO: Consider using a normal distribution over the last epoch to set this value.
             parameter_norm = self.optimizer.step()
             if parameter_norm is not None:
-                self._add_scalar(['parameter_norm', 'step'], parameter_norm, self.step)
+                self.tensorboard.add_scalar('parameter_norm/step', parameter_norm, self.step)
 
         coarse_loss, fine_loss = coarse_loss.item(), fine_loss.item()
         predicted_coarse, predicted_fine = predicted_coarse.detach(), predicted_fine.detach()
 
         if train:
-            self._add_scalar(['coarse', 'loss', 'step'], coarse_loss, self.step)
-            self._add_scalar(['fine', 'loss', 'step'], fine_loss, self.step)
-            self.step += 1
+            self.tensorboard.add_scalar('coarse/loss/step', coarse_loss, self.step)
+            self.tensorboard.add_scalar('fine/loss/step', fine_loss, self.step)
+            if train and self.step_unit == self.STEP_UNIT_BATCHES:
+                self.step += 1
 
         if sample:
             self._sample_predicted(batch, predicted_coarse, predicted_fine)
@@ -326,19 +301,18 @@ class Trainer():  # pragma: no cover
         return coarse_loss, fine_loss, num_predictions
 
 
-def main(
-        checkpoint_path=None,
-        epochs=1000,
-        train_batch_size=2,
-        num_workers=0,
-        reset_optimizer=False,
-        hparams={},
-        dev_to_train_ratio=4,
-        evaluate_every_n_epochs=5,
-        min_time=0,  # 60 * 15,
-        name=None,
-        label='signal_model',
-        experiments_root='experiments/'):  # pragma: no cover
+def main(checkpoint_path=None,
+         epochs=1000,
+         train_batch_size=2,
+         num_workers=0,
+         reset_optimizer=False,
+         hparams={},
+         dev_to_train_ratio=4,
+         evaluate_every_n_epochs=5,
+         min_time=60 * 15,
+         name=None,
+         label='signal_model',
+         experiments_root='experiments/'):  # pragma: no cover
     """ Main module that trains a the signal model saving checkpoints incrementally.
 
     TODO: Consider relabeling this to wave_rnn or signal_model/wave_rnn

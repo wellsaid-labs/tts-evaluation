@@ -16,7 +16,9 @@ librosa
 
 # Visualization Library
 matplotlib
-tensorboardX
+git+https://github.com/lanpa/tensorboard-pytorch.git
+tensorflow
+tensorboard
 
 # Testing
 pytest

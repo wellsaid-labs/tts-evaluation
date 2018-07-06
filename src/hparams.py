@@ -314,6 +314,10 @@ def set_hparams():
                     # SOURCE: Efficient Neural Audio Synthesis Author
                     # The author suggested adding 3 - 5 convolutions on top of WaveRNN.
                     'local_feature_processing_layers': None,
+
+                    # It is not clear how the authors of WaveRNN sampled from the predicted coarse
+                    # and fine distribution.
+                    'argmax': False,
                 }
             },
             'bin.signal_model': {
@@ -322,24 +326,24 @@ def set_hparams():
                 '_dataset.SignalDataset.__init__': {
                     # SOURCE: Efficient Neural Audio Synthesis
                     # The WaveRNN models are trained on sequences of 960 audio samples
-                    # NOTE: We allow for a variance in the frame size to reduce bias in the frame
-                    # size.
-                    'mean_frame_size': 900 / get_log_mel_spectrogram['frame_hop'],
-                    'std_frame_size': 0,
-                    'max_frame_size': 3000 / get_log_mel_spectrogram['frame_hop'],
-                    'min_frame_size': 300 / get_log_mel_spectrogram['frame_hop'],
+                    'frame_size': int(900 / get_log_mel_spectrogram['frame_hop'])
                 }
             },
-            'utils.utils': {
-                'plot_waveform.sample_rate': sample_rate,
-                'plot_log_mel_spectrogram': {
-                    'sample_rate': sample_rate,
-                    'frame_hop': get_log_mel_spectrogram['frame_hop'],
-                    'lower_hertz': lower_hertz,
-                    'upper_hertz': upper_hertz,
+            'utils': {
+                'visualize': {
+                    'Tensorboard.add_audio.sample_rate': sample_rate,
+                    'plot_waveform.sample_rate': sample_rate,
+                    'plot_log_mel_spectrogram': {
+                        'sample_rate': sample_rate,
+                        'frame_hop': get_log_mel_spectrogram['frame_hop'],
+                        'lower_hertz': lower_hertz,
+                        'upper_hertz': upper_hertz,
+                    },
                 },
-                'split_signal.bits': bits,
-                'combine_signal.bits': bits,
+                'utils': {
+                    'split_signal.bits': bits,
+                    'combine_signal.bits': bits,
+                }
             }
         }
     })

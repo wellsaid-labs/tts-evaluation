@@ -1,3 +1,5 @@
+import random
+
 from torch.utils.data import DataLoader
 from torchnlp.utils import pad_batch
 
@@ -11,16 +13,20 @@ class DataIterator(object):
         batch_size (int): Size of the batch for iteration.
         trial_run (bool): If ``True``, the data iterator runs only one batch.
         num_workers (int, optional): Number of workers for data loading.
+        random (random.Random, optional): Random number generator to sample data.
     """
 
-    def __init__(self, device, dataset, batch_size, trial_run=False, num_workers=0):
+    def __init__(self, device, dataset, batch_size, trial_run=False, num_workers=0, random=random):
         super().__init__()
         self.device = device
+
+        random.shuffle(dataset)
+
         # ``drop_last`` to ensure full utilization of mutliple GPUs
         self.iterator = DataLoader(
             dataset,
             batch_size=batch_size,
-            shuffle=True,
+            shuffle=False,
             collate_fn=self._collate_fn,
             pin_memory=True,
             num_workers=num_workers,
