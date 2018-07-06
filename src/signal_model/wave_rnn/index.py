@@ -260,7 +260,7 @@ class WaveRNN(nn.Module):
                  bits=16,
                  upsample_convs=[4],
                  upsample_repeat=75,
-                 local_feature_processing_layers=5,
+                 local_feature_processing_layers=0,
                  local_features_size=80,
                  argmax=False):
         super(WaveRNN, self).__init__()
@@ -272,19 +272,14 @@ class WaveRNN(nn.Module):
         self.size = hidden_size
         self.half_size = int(self.size / 2)
 
-        relu_gain = torch.nn.init.calculate_gain('relu')
         # Output fully connected layers
         self.to_bins_coarse = nn.Sequential(
             nn.Linear(self.half_size, self.half_size), nn.ReLU(),
             nn.Linear(self.half_size, self.bins))
-        torch.nn.init.orthogonal_(self.to_bins_coarse[0].weight, gain=relu_gain)
 
         self.to_bins_fine = nn.Sequential(
             nn.Linear(self.half_size, self.half_size), nn.ReLU(),
             nn.Linear(self.half_size, self.bins))
-        # NOTE: Orthogonal is inspired by:
-        # https://github.com/soroushmehr/sampleRNN_ICLR2017/blob/master/lib/ops.py#L75
-        torch.nn.init.orthogonal_(self.to_bins_fine[0].weight, gain=relu_gain)
 
         # Input fully connected layers
         self.project_coarse_input = nn.Linear(2, 3 * self.half_size, bias=False)

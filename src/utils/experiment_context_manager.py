@@ -124,6 +124,7 @@ class ExperimentContextManager(object):
             run_day = time.strftime('%m_%d', time.localtime())
             name = self.name.replace(' ', '_')
             self.directory = os.path.join(self.root, self.label, run_day, name)
+            assert os.path.isdir(self.directory), 'Attempting to override an existing experiment.'
             os.makedirs(self.directory)
         else:
             assert os.path.isdir(self.directory), 'Provided directory must exist.'

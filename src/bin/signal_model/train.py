@@ -125,9 +125,6 @@ class Trainer():  # pragma: no cover
         # Epoch Average Loss Metrics
         total_coarse_loss, total_fine_loss, total_signal_predictions = 0.0, 0.0, 0
 
-        if self.step_unit == self.STEP_UNIT_DECISECONDS:
-            start = time.time() * 10
-
         # Setup iterator and metrics
         data_iterator = DataIterator(
             self.device,
@@ -137,7 +134,10 @@ class Trainer():  # pragma: no cover
             num_workers=self.num_workers,
             random=self.random)
         data_iterator = tqdm(data_iterator, desc=label)
-        for batch in data_iterator:
+        for i, batch in enumerate(data_iterator):
+            if (i == 0 and self.step_unit == self.STEP_UNIT_DECISECONDS):
+                start = time.time() * 10
+
             draw_sample = not train and self.random.randint(1, len(data_iterator)) == 1
             coarse_loss, fine_loss, num_signal_predictions = self._run_step(
                 batch, train=train, sample=draw_sample, epoch_start=start)
@@ -145,13 +145,15 @@ class Trainer():  # pragma: no cover
             total_coarse_loss += coarse_loss * num_signal_predictions
             total_signal_predictions += num_signal_predictions
 
-        if train and self.step_unit == self.STEP_UNIT_DECISECONDS:
-            self.step += int(round(time.time() * 10 - start))
+            if (i == len(data_iterator) - 1 and train and
+                    self.step_unit == self.STEP_UNIT_DECISECONDS):
+                self.step += int(round(time.time() * 10 - start))
 
         epoch_coarse_loss = total_coarse_loss / total_signal_predictions
         epoch_fine_loss = total_fine_loss / total_signal_predictions
-        self.tensorboard.add_scalar('coarse/loss/epoch', epoch_coarse_loss, self.step)
-        self.tensorboard.add_scalar('fine/loss/epoch', epoch_fine_loss, self.step)
+        if not trial_run:
+            self.tensorboard.add_scalar('coarse/loss/epoch', epoch_coarse_loss, self.step)
+            self.tensorboard.add_scalar('fine/loss/epoch', epoch_fine_loss, self.step)
 
     def _sample_inference(self, batch, step, max_infer_frames=100):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.

@@ -2,6 +2,13 @@
 TODO:
     * Sync improvements in signal train model code with this train code.
     * Fix for tensorboard visualization updates.
+    * Experiment changing the weight decay parameter as suggested by these blog posts: # noqa: E501
+        * https://arxiv.org/pdf/1711.05101.pdf
+        * https://bbabenko.github.io/weight-decay/
+        * https://openreview.net/forum?id=rk6qdGgCZ
+        * https://www.reddit.com/r/MachineLearning/comments/7d5qob/r_171105101_fixing_weight_decay_regularization_in/
+        * https://www.reddit.com/r/MachineLearning/comments/7nw67c/d_pytorch_are_adam_and_rmsprop_okay/
+        * https://www.reddit.com/r/MachineLearning/comments/8fcgik/d_weight_decay_vs_l2_regularization/
 """
 import argparse
 import logging
