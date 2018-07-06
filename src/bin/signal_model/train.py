@@ -7,7 +7,6 @@ import time
 
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
-from torchnlp.utils import pad_batch
 from tqdm import tqdm
 
 import torch
@@ -71,8 +70,8 @@ class Trainer():  # pragma: no cover
                  criterion=CrossEntropyLoss,
                  optimizer=Adam,
                  num_workers=0):
-        assert self.step_unit in [self.STEP_UNIT_BATCHES,
-                                  self.STEP_UNIT_SECONDS], 'Picked invalid step unit.'
+        assert step_unit in [self.STEP_UNIT_BATCHES,
+                             self.STEP_UNIT_SECONDS], 'Picked invalid step unit.'
 
         # Allow for ``class`` or a class instance
         self.model = model if isinstance(model, torch.nn.Module) else model()
@@ -82,7 +81,7 @@ class Trainer():  # pragma: no cover
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.optimizer.to(device)
 
-        self.criterion = criterion(reduce=False).to(self.device)
+        self.criterion = criterion(reduce=False).to(device)
 
         self.dev_tensorboard = dev_tensorboard
         self.train_tensorboard = train_tensorboard
@@ -230,7 +229,7 @@ class Trainer():  # pragma: no cover
             num_predictions (int): Number of signal predictions made.
         """
         slice_ = batch['slice']
-        num_predictions = torch.sum(slice['signal_mask'])
+        num_predictions = torch.sum(slice_['signal_mask'])
 
         # [batch_size, signal_length, bins] → [batch_size, bins, signal_length]
         predicted_fine = predicted_fine.transpose(1, 2)
@@ -238,11 +237,11 @@ class Trainer():  # pragma: no cover
 
         # coarse_loss [batch_size, signal_length]
         coarse_loss = self.criterion(predicted_coarse, slice_['target_signal_coarse'].long())
-        coarse_loss = torch.sum(coarse_loss * slice['signal_mask']) / num_predictions
+        coarse_loss = torch.sum(coarse_loss * slice_['signal_mask']) / num_predictions
 
         # fine_loss [batch_size, signal_length]
         fine_loss = self.criterion(predicted_fine, slice_['target_signal_fine'].long())
-        fine_loss = torch.sum(fine_loss * slice['signal_mask']) / num_predictions
+        fine_loss = torch.sum(fine_loss * slice_['signal_mask']) / num_predictions
 
         return coarse_loss, fine_loss, num_predictions
 

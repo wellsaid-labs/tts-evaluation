@@ -17,8 +17,8 @@ librosa
 # Visualization Library
 matplotlib
 git+https://github.com/lanpa/tensorboard-pytorch.git
-tensorflow
-tensorboard
+tensorflow==1.8.0
+tensorboard==1.8.0
 
 # Testing
 pytest

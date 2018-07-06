@@ -2,7 +2,29 @@ import random
 import torch
 
 from torch.utils.data import DataLoader
+from torch.utils.data.sampler import Sampler
 from torchnlp.utils import pad_batch
+
+
+class RandomSampler(Sampler):
+    """Samples elements randomly, without replacement.
+
+    Args:
+        data_source (Dataset): dataset to sample from.
+        random (random.Random, optional): Random number generator to sample data.
+    """
+
+    def __init__(self, data_source, random=random):
+        self.data_source = data_source
+        self.random = random
+
+    def __iter__(self):
+        indicies = list(range(len(self.data_source)))
+        self.random.shuffle(indicies)
+        return iter(indicies)
+
+    def __len__(self):
+        return len(self.data_source)
 
 
 class DataIterator(object):
@@ -21,13 +43,11 @@ class DataIterator(object):
         super().__init__()
         self.device = device
 
-        random.shuffle(dataset)
-
         # ``drop_last`` to ensure full utilization of mutliple GPUs
         self.iterator = DataLoader(
             dataset,
             batch_size=batch_size,
-            shuffle=False,
+            sampler=RandomSampler(dataset, random=random),
             collate_fn=self._collate_fn,
             pin_memory=True,
             num_workers=num_workers,

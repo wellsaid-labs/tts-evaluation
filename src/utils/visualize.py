@@ -1,6 +1,9 @@
 import logging
+import matplotlib
 import os
 import torch
+
+matplotlib.use('Agg')
 
 from matplotlib import cm as colormap
 from matplotlib import pyplot

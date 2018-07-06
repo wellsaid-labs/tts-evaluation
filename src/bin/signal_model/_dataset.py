@@ -82,7 +82,6 @@ class SignalDataset(data.Dataset):
         # With each number represented at twice.
         start_frame = max(self.random.randint(-self.frame_size + 1, num_frames - 1), 0)
         end_frame = min(start_frame + self.frame_size, num_frames)
-        print(start_frame, end_frame)
         frames_slice = log_mel_spectrogram[start_frame:end_frame]
 
         # Get a source sample slice shifted back one and target sample
