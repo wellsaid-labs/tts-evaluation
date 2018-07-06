@@ -230,9 +230,7 @@ class Trainer():  # pragma: no cover
             num_predictions (int): Number of signal predictions made.
         """
         slice_ = batch['slice']
-        mask = [predicted_fine.new_full((length,), 1) for length in slice_['signal_lengths']]
-        mask, _ = pad_batch(mask, padding_index=0)  # [batch_size, signal_length]
-        num_predictions = torch.sum(mask)
+        num_predictions = torch.sum(slice['signal_mask'])
 
         # [batch_size, signal_length, bins] → [batch_size, bins, signal_length]
         predicted_fine = predicted_fine.transpose(1, 2)
@@ -240,11 +238,11 @@ class Trainer():  # pragma: no cover
 
         # coarse_loss [batch_size, signal_length]
         coarse_loss = self.criterion(predicted_coarse, slice_['target_signal_coarse'].long())
-        coarse_loss = torch.sum(coarse_loss * mask) / num_predictions
+        coarse_loss = torch.sum(coarse_loss * slice['signal_mask']) / num_predictions
 
         # fine_loss [batch_size, signal_length]
         fine_loss = self.criterion(predicted_fine, slice_['target_signal_fine'].long())
-        fine_loss = torch.sum(fine_loss * mask) / num_predictions
+        fine_loss = torch.sum(fine_loss * slice['signal_mask']) / num_predictions
 
         return coarse_loss, fine_loss, num_predictions
 

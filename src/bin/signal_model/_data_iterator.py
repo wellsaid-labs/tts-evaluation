@@ -1,4 +1,5 @@
 import random
+import torch
 
 from torch.utils.data import DataLoader
 from torchnlp.utils import pad_batch
@@ -47,12 +48,16 @@ class DataIterator(object):
             * signal_lengths (list): List of lengths for each signal.
             * log_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
             * log_mel_spectrogram_lengths (list): List of lengths for each spectrogram.
+            * signal_mask (torch.FloatTensor [batch_size, signal_length])
         """
         input_signal, signal_lengths = pad_batch([r['slice']['input_signal'] for r in batch])
         target_signal_coarse, _ = pad_batch([r['slice']['target_signal_coarse'] for r in batch])
         target_signal_fine, _ = pad_batch([r['slice']['target_signal_fine'] for r in batch])
         log_mel_spectrogram, log_mel_spectrogram_lengths = pad_batch(
             [r['slice']['log_mel_spectrogram'] for r in batch])
+
+        signal_mask = [torch.full((length,), 1) for length in signal_lengths]
+        signal_mask, _ = pad_batch(signal_mask, padding_index=0)  # [batch_size, signal_length]
 
         return {
             'slice': {
@@ -61,6 +66,7 @@ class DataIterator(object):
                 'target_signal_fine': target_signal_fine,
                 'log_mel_spectrogram': log_mel_spectrogram,
                 'log_mel_spectrogram_lengths': log_mel_spectrogram_lengths,
+                'signal_mask': signal_mask,
                 'signal_lengths': signal_lengths,
             },
             'log_mel_spectrogram': [r['log_mel_spectrogram'] for r in batch],
@@ -78,6 +84,7 @@ class DataIterator(object):
                 slice_['target_signal_coarse'])
             batch['slice']['target_signal_fine'] = self._maybe_cuda(slice_['target_signal_fine'])
             batch['slice']['input_signal'] = self._maybe_cuda(slice_['input_signal'])
+            batch['slice']['signal_mask'] = self._maybe_cuda(slice_['signal_mask'])
             batch['log_mel_spectrogram'] = [
                 self._maybe_cuda(s) for s in batch['log_mel_spectrogram']
             ]
