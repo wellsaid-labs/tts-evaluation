@@ -6,9 +6,12 @@ import sys
 import time
 import shutil
 
+from tensorboardX import SummaryWriter
+from tensorboardX.src.event_pb2 import SessionLog
+from tensorboardX.src.event_pb2 import Event
+
 import numpy as np
 import torch
-from tensorboardX import SummaryWriter
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +64,8 @@ class ExperimentContextManager(object):
                  root='experiments/',
                  seed=1212212,
                  device=None,
-                 min_time=60 * 3):
+                 min_time=60 * 3,
+                 step=0):
         # Handle circular reference
         from src.utils import ROOT_PATH
 
@@ -79,6 +83,7 @@ class ExperimentContextManager(object):
         self.set_seed(seed)
         self.min_time = min_time
         self._start_time = time.time()
+        self.step = step
 
     def notify(self, title, text):
         """ Queue a desktop notification on a Linux or OSX machine.
@@ -137,8 +142,30 @@ class ExperimentContextManager(object):
         log_dir = os.path.join(self.directory, 'tb')
         os.makedirs(log_dir, exist_ok=True)
         self.dev_tensorboard = SummaryWriter(log_dir=os.path.join(log_dir, 'dev'))
+        # LEARN MORE:
+        # * ``SessionLog.START`` as related to purge:
+        #   https://github.com/tensorflow/tensorboard/blob/master/README.md#how-should-i-handle-tensorflow-restarts
+        # * File version as related to purge:
+        #   https://github.com/tensorflow/tensorboard/blob/8eaf24e79a2f2de7c324034e73c990af20ec5979/tensorboard/backend/event_processing/event_accumulator.py#L571
+        #   https://github.com/tensorflow/tensorboard/blob/a856e61d39d231e38d45e32e92b28be596afbb58/tensorboard/plugins/debugger/constants.py#L33
+        # * File version naming ``brain.Event:``
+        #   https://github.com/tensorflow/tensorboard/blob/8eaf24e79a2f2de7c324034e73c990af20ec5979/tensorboard/backend/event_processing/event_accumulator.py#L742
+        # * Tensorflow usage of Tensorboard SessionLog
+        #   https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/training/supervisor.py
+        # * For debugging, read Tensorboard event files via:
+        #   https://github.com/tensorflow/tensorboard/blob/634f93ab0396bf10098fbc1bfb5bccacbedbb7e4/tensorboard/backend/event_processing/event_file_loader.py
+        self.dev_tensorboard.file_writer.event_writer.add_event(
+            Event(file_version='brain.Event:2', step=self.step))
+        self.dev_tensorboard.file_writer.event_writer.add_event(
+            Event(session_log=SessionLog(status=SessionLog.START), step=self.step))
+
         self.train_tensorboard = SummaryWriter(log_dir=os.path.join(log_dir, 'train'))
-        logger.info('Started tensorboard at %s/**', log_dir)
+        self.train_tensorboard.file_writer.event_writer.add_event(
+            Event(file_version='brain.Event:2', step=self.step))
+        self.train_tensorboard.file_writer.event_writer.add_event(
+            Event(session_log=SessionLog(status=SessionLog.START), step=self.step))
+
+        logger.info('Started tensorboard at %s/** from step %d', log_dir, self.step)
 
     def set_seed(self, seed):
         """ To ensure reproducibility, by seeding ``numpy``, ``random``, ``tf`` and ``torch``.
@@ -181,6 +208,8 @@ class ExperimentContextManager(object):
         logger.info('Label: %s', self.label)
         logger.info('Device: %s', self.device)
         logger.info('Seed: %s', self.seed)
+        logger.info('Step: %d', self.step)
+        logger.info('ID: %d', self.id)
 
         self._tensorboard()
 
@@ -204,6 +233,14 @@ class ExperimentContextManager(object):
     def __exit__(self, exception, value, traceback):
         """ Runs after the experiment context ends.
         """
+        self.dev_tensorboard.file_writer.event_writer.add_event(
+            Event(session_log=SessionLog(status=SessionLog.STOP)))
+        self.train_tensorboard.file_writer.event_writer.add_event(
+            Event(session_log=SessionLog(status=SessionLog.STOP)))
+
+        self.dev_tensorboard.close()
+        self.train_tensorboard.close()
+
         # NOTE: Log before removing handlers.
         elapsed_seconds = time.time() - self._start_time
         if self.min_time is not None and elapsed_seconds < self.min_time and exception:
@@ -218,8 +255,5 @@ class ExperimentContextManager(object):
         # Reset streams
         sys.stdout = sys.stdout.stream
         sys.stderr = sys.stderr.stream
-
-        self.dev_tensorboard.close()
-        self.train_tensorboard.close()
 
         logging.getLogger().removeHandler(self._stream_handler)

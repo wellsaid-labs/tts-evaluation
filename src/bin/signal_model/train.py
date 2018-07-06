@@ -306,10 +306,10 @@ class Trainer():  # pragma: no cover
         if train:
             self.optimizer.zero_grad()
             (coarse_loss + fine_loss).backward()
+            # TODO: Consider using a normal distribution over the last epoch to set this value.
             parameter_norm = self.optimizer.step()
             if parameter_norm is not None:
                 self._add_scalar(['parameter_norm', 'step'], parameter_norm, self.step)
-            self.step += 1
 
         coarse_loss, fine_loss = coarse_loss.item(), fine_loss.item()
         predicted_coarse, predicted_fine = predicted_coarse.detach(), predicted_fine.detach()
@@ -317,6 +317,7 @@ class Trainer():  # pragma: no cover
         if train:
             self._add_scalar(['coarse', 'loss', 'step'], coarse_loss, self.step)
             self._add_scalar(['fine', 'loss', 'step'], fine_loss, self.step)
+            self.step += 1
 
         if sample:
             self._sample_predicted(batch, predicted_coarse, predicted_fine)
@@ -374,9 +375,10 @@ def main(
 
     checkpoint = load_checkpoint(checkpoint_path)
     directory = None if checkpoint is None else checkpoint['experiment_directory']
+    step = 0 if checkpoint is None else checkpoint['step']
 
     with ExperimentContextManager(
-            label=label, min_time=min_time, name=name, directory=directory) as context:
+            label=label, min_time=min_time, name=name, directory=directory, step=step) as context:
 
         if checkpoint_path is not None:
             logger.info('Loaded checkpoint %s', checkpoint_path)
