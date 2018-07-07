@@ -313,7 +313,7 @@ def set_hparams():
 
                     # SOURCE: Efficient Neural Audio Synthesis Author
                     # The author suggested adding 3 - 5 convolutions on top of WaveRNN.
-                    'local_feature_processing_layers': None,
+                    'local_feature_processing_layers': 3,
 
                     # It is not clear how the authors of WaveRNN sampled from the predicted coarse
                     # and fine distribution.
