@@ -139,6 +139,16 @@ class _WaveRNNInference(nn.Module):
         conditional_coarse_u, conditional_fine_u = torch.chunk(conditional[:, :, 1], 2, dim=2)
         conditional_coarse_e, conditional_fine_e = torch.chunk(conditional[:, :, 2], 2, dim=2)
 
+        # [batch_size, signal_length, half_size] → [batch_size, signal_length, 3 * half_size]
+        conditional_coarse = torch.cat(
+            (conditional_coarse_r, conditional_coarse_u, conditional_coarse_e), dim=2)
+        conditional_fine = torch.cat(
+            (conditional_fine_r, conditional_fine_u, conditional_fine_e), dim=2)
+
+        del conditional_coarse_r, conditional_fine_r
+        del conditional_coarse_u, conditional_fine_u
+        del conditional_coarse_e, conditional_fine_e
+
         # Initial inputs
         out_coarse, out_fine = [], []
         coarse, fine, coarse_last_hidden, fine_last_hidden = self._initial_state(
@@ -152,27 +162,36 @@ class _WaveRNNInference(nn.Module):
             (hidden_coarse_r, hidden_fine_r, hidden_coarse_u, hidden_fine_u, hidden_coarse_e,
              hidden_fine_e) = hidden_projection.chunk(
                  6, dim=1)
+            # [batch_size, half_size] → [batch_size, size]
+            hidden_coarse_ru = torch.cat((hidden_coarse_r, hidden_coarse_u), dim=1)
+            hidden_fine_ru = torch.cat((hidden_fine_r, hidden_fine_u), dim=1)
 
             del hidden_projection
+            del hidden_coarse_r, hidden_coarse_u
+            del hidden_fine_r, hidden_fine_u
 
             # coarse_input [batch_size, 2]
             coarse_input = torch.cat([coarse, fine], dim=1)
             assert torch.min(coarse_input) <= 1 and torch.max(coarse_input) >= -1
             # [batch_size, 2] → [batch_size, 3 * half_size]
             coarse_projection = self.project_coarse_input(coarse_input)
-            # [batch_size, half_size]
-            coarse_r, coarse_u, coarse_e = coarse_projection.chunk(3, dim=1)
+            coarse_projection += conditional_coarse[:, i]
+
+            # Compute the coarse gates [batch_size, half_size]
+            # [batch_size, 3 * half_size] → [batch_size, size]
+            coarse_ru = coarse_projection[:, :self.size]
+            # [batch_size, 3 * half_size] → [batch_size, half_size]
+            coarse_e = coarse_projection[:, self.size:]
 
             del coarse_projection
 
-            # Compute the coarse gates [batch_size, half_size]
-            r = sigmoid(hidden_coarse_r + coarse_r + conditional_coarse_r[:, i])
-            u = sigmoid(hidden_coarse_u + coarse_u + conditional_coarse_u[:, i])
-            e = tanh(r * hidden_coarse_e + coarse_e + conditional_coarse_e[:, i])
+            ru = sigmoid(coarse_ru + hidden_coarse_ru)
+            # [batch_size, size] → [batch_size, half_size]
+            r, u = ru.chunk(2, dim=1)
+            e = tanh(r * hidden_coarse_e + coarse_e)
             coarse_last_hidden = u * coarse_last_hidden + (1.0 - u) * e
 
-            del r, coarse_r, hidden_coarse_r
-            del u, coarse_u, hidden_coarse_u
+            del ru, coarse_ru, hidden_coarse_ru, r, u
             del e, coarse_e, hidden_coarse_e
 
             # [batch_size, half_size] → [batch_size, bins]
@@ -195,20 +214,23 @@ class _WaveRNNInference(nn.Module):
             assert torch.min(fine_input) <= 1 and torch.max(fine_input) >= -1
             # [batch_size, 3] → [batch_size, 3 * half_size]
             fine_projection = self.project_fine_input(fine_input)
-            # ... [batch_size, half_size]
-            fine_r, fine_u, fine_e = fine_projection.chunk(3, dim=1)
+            fine_projection += conditional_fine[:, i]
 
-            del fine_projection
-            del coarse_input
+            # Compute the coarse gates [batch_size, half_size]
+            # [batch_size, 3 * half_size] → [batch_size, size]
+            fine_ru = fine_projection[:, :self.size]
+            # [batch_size, 3 * half_size] → [batch_size, half_size]
+            fine_e = fine_projection[:, self.size:]
 
-            # Compute the fine gates [batch_size, half_size]
-            r = sigmoid(hidden_fine_r + fine_r + conditional_fine_r[:, i])
-            u = sigmoid(hidden_fine_u + fine_u + conditional_fine_u[:, i])
-            e = tanh(r * hidden_fine_e + fine_e + conditional_fine_e[:, i])
+            del fine_projection, coarse_input
+
+            ru = sigmoid(fine_ru + hidden_fine_ru)
+            # [batch_size, size] → [batch_size, half_size]
+            r, u = ru.chunk(2, dim=1)
+            e = tanh(r * hidden_fine_e + fine_e)
             fine_last_hidden = u * fine_last_hidden + (1.0 - u) * e
 
-            del r, fine_r, hidden_fine_r
-            del u, fine_u, hidden_fine_u
+            del ru, fine_ru, hidden_fine_ru, r, u
             del e, fine_e, hidden_fine_e
 
             # Compute the fine output
@@ -295,6 +317,21 @@ class WaveRNN(nn.Module):
             local_feature_processing_layers=local_feature_processing_layers)
 
         self.stripped_gru = StrippedGRU(self.size)
+
+        # Tensorflow and PyTorch initialize GRU bias differently. PyTorch uses glorot uniform for
+        # GRU bias. Tensorflow uses 1.0 bias for the update and reset gate, and 0.0 for the
+        # canditate gate.
+        # SOURCES:
+        # https://stackoverflow.com/questions/37350131/what-is-the-default-variable-initializer-in-tensorflow
+        # https://github.com/tensorflow/tensorflow/blob/r1.8/tensorflow/python/ops/rnn_cell_impl.py
+        # https://pytorch.org/docs/stable/_modules/torch/nn/modules/rnn.html#GRU
+        # Init reset gate and update gate biases to 1
+        torch.nn.init.constant_(self.stripped_gru.gru.bias_ih_l0[:self.size], 1)
+        torch.nn.init.constant_(self.stripped_gru.gru.bias_hh_l0[:self.size], 1)
+        # Init candidate bias to 0
+        torch.nn.init.constant_(self.stripped_gru.gru.bias_ih_l0[self.size:], 0)
+        torch.nn.init.constant_(self.stripped_gru.gru.bias_hh_l0[self.size:], 0)
+
         self.argmax = argmax
 
     def _export(self):
