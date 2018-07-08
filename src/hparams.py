@@ -24,7 +24,7 @@ def set_hparams():
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
         'torch.optim.adam.Adam.__init__': {
             'betas': (0.9, 0.999),
-            'amsgrad': False,
+            'amsgrad': True,
             'lr': 10**-3
         }
     })
