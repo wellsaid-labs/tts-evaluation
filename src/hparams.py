@@ -40,7 +40,7 @@ def set_hparams():
 
     # SOURCE (Tacotron 2):
     # 80 channel mel filterbank spanning
-    frame_channels = 80
+    frame_channels = 128
 
     # SOURCE (Tacotron 2):
     # The prediction from the previous time step is first passed through a small
@@ -80,8 +80,8 @@ def set_hparams():
     # We transform the STFT magnitude to the mel scale using an 80 channel mel
     # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
     # compression.
-    lower_hertz = 125
-    upper_hertz = 7600
+    lower_hertz = 0
+    upper_hertz = 1125
 
     # SOURCE (WaveNet):
     # where −1 < xt < 1 and µ = 255.
