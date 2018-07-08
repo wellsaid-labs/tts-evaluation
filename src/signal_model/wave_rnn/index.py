@@ -295,13 +295,16 @@ class WaveRNN(nn.Module):
         self.half_size = int(self.size / 2)
 
         # Output fully connected layers
+        gain = torch.nn.init.calculate_gain('relu')
         self.to_bins_coarse = nn.Sequential(
             nn.Linear(self.half_size, self.half_size), nn.ReLU(),
             nn.Linear(self.half_size, self.bins))
+        torch.nn.init.orthogonal_(self.to_bins_coarse[0].weight, gain=gain)
 
         self.to_bins_fine = nn.Sequential(
             nn.Linear(self.half_size, self.half_size), nn.ReLU(),
             nn.Linear(self.half_size, self.bins))
+        torch.nn.init.orthogonal_(self.to_bins_fine[0].weight, gain=gain)
 
         # Input fully connected layers
         self.project_coarse_input = nn.Linear(2, 3 * self.half_size, bias=False)
@@ -317,6 +320,16 @@ class WaveRNN(nn.Module):
             local_feature_processing_layers=local_feature_processing_layers)
 
         self.stripped_gru = StrippedGRU(self.size)
+
+        # Orthogonal initialization for each GRU gate, following guidance from:
+        # * https://smerity.com/articles/2016/orthogonal_init.html
+        # * https://gist.github.com/kaniblu/81828dfcf5cca60ae93f4d7bd19aeac5
+        # * https://web.stanford.edu/class/cs224n/lectures/lecture9.pdf
+        # * https://hjweide.github.io/orthogonal-initialization-in-convolutional-layers
+        # weight_hh_l0 [size * 3, size]
+        torch.nn.init.orthogonal_(self.stripped_gru.gru.weight_hh_l0[0:self.size])
+        torch.nn.init.orthogonal_(self.stripped_gru.gru.weight_hh_l0[self.size:-self.size])
+        torch.nn.init.orthogonal_(self.stripped_gru.gru.weight_hh_l0[-self.size:])
 
         # Tensorflow and PyTorch initialize GRU bias differently. PyTorch uses glorot uniform for
         # GRU bias. Tensorflow uses 1.0 bias for the update and reset gate, and 0.0 for the
