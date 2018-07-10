@@ -80,8 +80,10 @@ def set_hparams():
     # We transform the STFT magnitude to the mel scale using an 80 channel mel
     # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
     # compression.
-    lower_hertz = 0
-    upper_hertz = 1125
+    # SOURCE (Tacotron 2 Author):
+    # Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
+    lower_hertz = 20
+    upper_hertz = sample_rate / 2
 
     # SOURCE (WaveNet):
     # where −1 < xt < 1 and µ = 255.
