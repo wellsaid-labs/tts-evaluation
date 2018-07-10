@@ -289,8 +289,7 @@ class Trainer():  # pragma: no cover
             (coarse_loss + fine_loss).backward()
             # TODO: Consider using a normal distribution over the last epoch to set this value.
             parameter_norm = self.optimizer.step()
-            if parameter_norm is not None:
-                self.tensorboard.add_scalar('parameter_norm/step', parameter_norm, step)
+            self.tensorboard.add_scalar('parameter_norm/step', parameter_norm, step)
 
         coarse_loss, fine_loss = coarse_loss.item(), fine_loss.item()
         predicted_coarse, predicted_fine = predicted_coarse.detach(), predicted_fine.detach()
@@ -309,7 +308,7 @@ class Trainer():  # pragma: no cover
 
 
 def main(checkpoint_path=None,
-         epochs=1000,
+         epochs=10000,
          train_batch_size=2,
          num_workers=0,
          reset_optimizer=False,

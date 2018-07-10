@@ -82,6 +82,7 @@ class ExperimentContextManager(object):
         self.min_time = min_time
         self._start_time = time.time()
         self.step = step
+        self.started_from_checkpoint = self.directory is not None
 
     def notify(self, title, text):
         """ Queue a desktop notification on a Linux or OSX machine.
@@ -213,7 +214,8 @@ class ExperimentContextManager(object):
 
         # NOTE: Log before removing handlers.
         elapsed_seconds = time.time() - self._start_time
-        if self.min_time is not None and elapsed_seconds < self.min_time and exception:
+        is_short_experiment = self.min_time is not None and elapsed_seconds < self.min_time
+        if is_short_experiment and exception and not self.started_from_checkpoint:
             self.clean_up()
 
         self.notify('Experiment', 'Experiment has exited after %d seconds.' % (elapsed_seconds))

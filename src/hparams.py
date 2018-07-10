@@ -39,10 +39,6 @@ def set_hparams():
     encoder_hidden_size = 512
 
     # SOURCE (Tacotron 2):
-    # 80 channel mel filterbank spanning
-    frame_channels = 128
-
-    # SOURCE (Tacotron 2):
     # The prediction from the previous time step is first passed through a small
     # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
     pre_net_hidden_size = 256
@@ -84,6 +80,7 @@ def set_hparams():
     # Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
     lower_hertz = 20
     upper_hertz = sample_rate / 2
+    frame_channels = 128
 
     # SOURCE (WaveNet):
     # where −1 < xt < 1 and µ = 255.
