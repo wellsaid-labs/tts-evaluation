@@ -68,9 +68,6 @@ def set_hparams():
             'eps': 10**-8,
             'weight_decay': 0,
             'lr': 10**-3
-        },
-        'src.optimizer.Optimizer.__init__': {
-            'max_grad_norm': 40.0,
         }
     })
 

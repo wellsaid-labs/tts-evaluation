@@ -287,9 +287,9 @@ class Trainer():  # pragma: no cover
         if train:
             self.optimizer.zero_grad()
             (coarse_loss + fine_loss).backward()
-            # TODO: Consider using a normal distribution over the last epoch to set this value.
-            parameter_norm = self.optimizer.step()
+            parameter_norm, max_grad_norm = self.optimizer.step()
             self.tensorboard.add_scalar('parameter_norm/step', parameter_norm, step)
+            self.tensorboard.add_scalar('max_grad_norm/step', max_grad_norm, step)
 
         coarse_loss, fine_loss = coarse_loss.item(), fine_loss.item()
         predicted_coarse, predicted_fine = predicted_coarse.detach(), predicted_fine.detach()
@@ -419,15 +419,16 @@ if __name__ == '__main__':  # pragma: no cover
         nargs='?',
         help='Without a value, loads the most recent checkpoint;'
         'otherwise, expects a checkpoint file path.')
-    parser.add_argument('-n', '--name', type=str, default=None, help='Experiment name.')
+    parser.add_argument(
+        '-n', '--name', type=str, default='auto_max_grad_norm', help='Experiment name.')
     parser.add_argument(
         '-b',
         '--train_batch_size',
         type=int,
-        default=2,
+        default=64,
         help='Set the maximum training batch size; this figure depends on the GPU memory')
     parser.add_argument(
-        '-w', '--num_workers', type=int, default=0, help='Numer of workers used for data loading')
+        '-w', '--num_workers', type=int, default=12, help='Numer of workers used for data loading')
     parser.add_argument(
         '-r',
         '--reset_optimizer',

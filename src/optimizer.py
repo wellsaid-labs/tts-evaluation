@@ -44,18 +44,20 @@ class Optimizer(object):
     Args:
         optim (torch.optim.Optimizer): Optimizer object, the parameters to be optimized
             should be given when instantiating the object (e.g. ``torch.optim.SGD(params)``)
-        max_grad_norm (float, optional): Value used for gradient norm clipping, set None to disable.
+        beta (float, optional): Smoothing parameter for estimating the average gradient norm.
     """
 
     @configurable
-    def __init__(self, optim, max_grad_norm=None):
+    def __init__(self, optim, beta=0.98):
         self.optimizer = optim
-        self.max_grad_norm = max_grad_norm
 
         # Common functions
         self.zero_grad = self.optimizer.zero_grad
         self.state_dict = self.optimizer.state_dict
         self.load_state_dict = self.optimizer.load_state_dict
+        self.average_norm = 0
+        self.beta = beta
+        self.steps = 0
 
     def step(self):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
@@ -63,13 +65,16 @@ class Optimizer(object):
         Returns:
             parameter_norm (float): Total norm of the parameters if ``max_grad_norm > 0``;
                 otherwise, returns None.
+            max_grad_norm (float): Predicted max grad norm.
         """
         params = itertools.chain.from_iterable(
             [group['params'] for group in self.optimizer.param_groups])
         parameter_norm = get_parameter_norm(params)
+        self.average_norm = self.beta * self.average_norm + (1 - self.beta) * parameter_norm
+        smoothed_norm = self.average_norm / (1 - self.beta**(self.steps + 1))
+        self.steps += 1
 
-        if self.max_grad_norm is not None:
-            torch.nn.utils.clip_grad_norm_(params, self.max_grad_norm)
+        torch.nn.utils.clip_grad_norm_(params, max_norm=smoothed_norm)
 
         # Take a step if norm is finite (e.g. no ``inf`` or ``nan`` values in the gradient)
         if np.isfinite(parameter_norm):
@@ -77,7 +82,7 @@ class Optimizer(object):
         else:
             logger.warn('Gradient was not finite, skipping batch.')
 
-        return parameter_norm
+        return parameter_norm, smoothed_norm
 
     def to(self, device):
         """ Move the optimizer state to ``device``. After calling, any parameter specific state in
