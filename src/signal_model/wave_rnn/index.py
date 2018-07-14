@@ -331,19 +331,16 @@ class WaveRNN(nn.Module):
         torch.nn.init.orthogonal_(self.stripped_gru.gru.weight_hh_l0[self.size:-self.size])
         torch.nn.init.orthogonal_(self.stripped_gru.gru.weight_hh_l0[-self.size:])
 
-        # Tensorflow and PyTorch initialize GRU bias differently. PyTorch uses glorot uniform for
-        # GRU bias. Tensorflow uses 1.0 bias for the update and reset gate, and 0.0 for the
-        # canditate gate.
+        # Similar to initializing the the LSTM forget gate to remembering to prevent vanishing
+        # gradients, we initialize the GRU reset gate to one.
         # SOURCES:
-        # https://stackoverflow.com/questions/37350131/what-is-the-default-variable-initializer-in-tensorflow
-        # https://github.com/tensorflow/tensorflow/blob/r1.8/tensorflow/python/ops/rnn_cell_impl.py
-        # https://pytorch.org/docs/stable/_modules/torch/nn/modules/rnn.html#GRU
-        # Init reset gate and update gate biases to 1
-        torch.nn.init.constant_(self.stripped_gru.gru.bias_ih_l0[:self.size], 1)
-        torch.nn.init.constant_(self.stripped_gru.gru.bias_hh_l0[:self.size], 1)
-        # Init candidate bias to 0
-        torch.nn.init.constant_(self.stripped_gru.gru.bias_ih_l0[self.size:], 0)
-        torch.nn.init.constant_(self.stripped_gru.gru.bias_hh_l0[self.size:], 0)
+        # http://proceedings.mlr.press/v37/jozefowicz15.pdf
+        # Init reset gate biases to 1
+        torch.nn.init.constant_(self.stripped_gru.gru.bias_ih_l0[:self.half_size], 1)
+        torch.nn.init.constant_(self.stripped_gru.gru.bias_hh_l0[:self.half_size], 1)
+        # Init candidate bias and update gate biases to 0
+        torch.nn.init.constant_(self.stripped_gru.gru.bias_ih_l0, 0)
+        torch.nn.init.constant_(self.stripped_gru.gru.bias_hh_l0, 0)
 
         self.argmax = argmax
 
