@@ -13,9 +13,10 @@ import torch
 from src.bin.signal_model._data_iterator import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
+from src.bin.signal_model._utils import load_most_recent_checkpoint
 from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
-from src.bin.signal_model._utils import load_most_recent_checkpoint
+from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
 from src.signal_model import WaveRNN
 from src.utils import combine_signal
@@ -77,7 +78,7 @@ class Trainer():  # pragma: no cover
         self.model = model if isinstance(model, torch.nn.Module) else model()
         self.model.to(device)
 
-        self.optimizer = optimizer if isinstance(optimizer, Optimizer) else Optimizer(
+        self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.optimizer.to(device)
 

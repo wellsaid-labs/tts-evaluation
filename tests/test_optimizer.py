@@ -4,6 +4,7 @@ import torch
 import mock
 
 from src.optimizer import Optimizer
+from src.optimizer import AutoOptimizer
 
 
 class TestOptimizer(unittest.TestCase):
@@ -11,26 +12,42 @@ class TestOptimizer(unittest.TestCase):
     def test_init(self):
         params = [torch.nn.Parameter(torch.randn(2, 3, 4))]
         try:
-            Optimizer(torch.optim.Adam(params), max_grad_norm=None)
+            Optimizer(torch.optim.Adam(params))
+        except:
+            self.fail("__init__ failed.")
+
+    def test_auto_init(self):
+        params = [torch.nn.Parameter(torch.randn(2, 3, 4))]
+        try:
+            AutoOptimizer(torch.optim.Adam(params))
         except:
             self.fail("__init__ failed.")
 
     def test_to(self):
         net = torch.nn.GRU(10, 20, 2)
         adam = torch.optim.Adam(net.parameters())
-        optim = Optimizer(adam, max_grad_norm=None)
+        optim = Optimizer(adam)
         input_ = torch.randn(5, 3, 10)
         output, _ = net(input_)
         output.sum().backward()
-        optim.step()  # Set state
+        optim.step(max_grad_norm=None)  # Set state
 
         optim.to(torch.device('cpu'))
 
     @mock.patch("torch.nn.utils.clip_grad_norm_")
     def test_step_max_grad_norm(self, mock_clip_grad_norm):
         params = [torch.nn.Parameter(torch.randn(2, 3, 4))]
-        optim = Optimizer(torch.optim.Adam(params), max_grad_norm=5)
+        optim = Optimizer(torch.optim.Adam(params))
+        optim.step(max_grad_norm=5)
+        mock_clip_grad_norm.assert_called_once()
+
+    @mock.patch("torch.nn.utils.clip_grad_norm_")
+    def test_auto_step_max_grad_norm(self, mock_clip_grad_norm):
+        params = [torch.nn.Parameter(torch.randn(2, 3, 4))]
+        optim = AutoOptimizer(torch.optim.Adam(params))
+        old_max_grad_norm = optim.max_grad_norm
         optim.step()
+        assert old_max_grad_norm != optim.max_grad_norm
         mock_clip_grad_norm.assert_called_once()
 
     def test_ignore_step(self):

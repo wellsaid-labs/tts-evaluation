@@ -345,6 +345,8 @@ def set_hparams():
                     'split_signal.bits': bits,
                     'combine_signal.bits': bits,
                 }
-            }
+            },
+            # Smoothing parameter determined experimentally, this parameter is not super sensative.
+            'optimizer.AutoOptimizer.__init__.beta': 0.98,
         }
     })
