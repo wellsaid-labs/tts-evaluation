@@ -46,20 +46,17 @@ class Optimizer(object):
             should be given when instantiating the object (e.g. ``torch.optim.SGD(params)``)
         max_grad_norm_clip (float, optional): Value used for gradient norm clipping, set None to
             disable.
-        max_grad_norm_ignore (float, optional): Given gradient norm is larger than this value,
-            then the batch is ignored, set None to disable.
     """
 
     @configurable
-    def __init__(self, optim, max_grad_norm_clip=None, max_grad_norm_ignore=None):
+    def __init__(self, optim, max_grad_norm=None):
         self.optimizer = optim
-        self.max_grad_norm_clip = max_grad_norm_clip
+        self.max_grad_norm = max_grad_norm
 
         # Common functions
         self.zero_grad = self.optimizer.zero_grad
         self.state_dict = self.optimizer.state_dict
         self.load_state_dict = self.optimizer.load_state_dict
-        self.max_grad_norm_ignore = max_grad_norm_ignore
 
     def step(self):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
@@ -74,12 +71,11 @@ class Optimizer(object):
         smoothed_norm = self.average_norm / (1 - self.beta**(self.steps + 1))
         self.steps += 1
 
-        if self.max_grad_norm_clip is not None:
-            torch.nn.utils.clip_grad_norm_(params, self.max_grad_norm_clip)
+        if self.max_grad_norm is not None:
+            torch.nn.utils.clip_grad_norm_(params, self.max_grad_norm)
 
         # Take a step if norm is finite (e.g. no ``inf`` or ``nan`` values in the gradient)
-        if np.isfinite(parameter_norm) and (self.max_grad_norm_ignore is None or
-                                            parameter_norm < self.max_grad_norm_ignore):
+        if np.isfinite(parameter_norm):
             self.optimizer.step()
         else:
             logger.warn('Gradient was too large %s, skipping batch.', str(parameter_norm))

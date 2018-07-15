@@ -71,11 +71,7 @@ def set_hparams():
             'lr': 10**-3
         },
         'src.optimizer.Optimizer.__init__': {
-            'max_grad_norm_clip': 15.0,
-            # NOTE: This is rarely triggered in case of a big gradient explosion. The proper
-            # handling of a gradient explosion is to clip gradients at each time step but
-            # that is slow in PyTorch.
-            'max_grad_norm_ignore': 100.0,
+            'max_grad_norm': 15.0
         }
     })
 
