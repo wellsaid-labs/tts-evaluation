@@ -2,7 +2,6 @@ import argparse
 import logging
 import random
 import os
-import glob
 import time
 
 from torch.nn import CrossEntropyLoss
@@ -16,6 +15,7 @@ from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
 from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
+from src.bin.signal_model._utils import load_most_recent_checkpoint
 from src.optimizer import Optimizer
 from src.signal_model import WaveRNN
 from src.utils import combine_signal
@@ -287,7 +287,7 @@ class Trainer():  # pragma: no cover
         if train:
             self.optimizer.zero_grad()
             (coarse_loss + fine_loss).backward()
-            parameter_norm, max_grad_norm = self.optimizer.step()
+            parameter_norm = self.optimizer.step()
             self.tensorboard.add_scalar('parameter_norm/step', parameter_norm, step)
             self.tensorboard.add_scalar('max_grad_norm/step', max_grad_norm, step)
 
@@ -309,11 +309,8 @@ class Trainer():  # pragma: no cover
 
 def main(checkpoint_path=None,
          epochs=10000,
-         train_batch_size=2,
-         num_workers=0,
          reset_optimizer=False,
          hparams={},
-         dev_to_train_ratio=4,
          evaluate_every_n_epochs=5,
          min_time=60 * 15,
          name=None,
@@ -327,12 +324,8 @@ def main(checkpoint_path=None,
         checkpoint_path (str, optional): Accepts a checkpoint path to load or empty string
             signaling to load the most recent checkpoint in ``experiments_root``.
         epochs (int, optional): Number of epochs to run for.
-        train_batch_size (int, optional): Maximum training batch size.
-        num_workers (int, optional): Number of workers for data loading.
         reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer and scheduler.
         hparams (dict, optional): Hparams to override default hparams.
-        dev_to_train_ratio (int, optional): Due to various memory requirements, set the ratio
-            of dev batch size to train batch size.
         evaluate_every_n_epochs (int, optional): Evaluate every ``evaluate_every_n_epochs`` epochs.
         min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
             files are deleted.
@@ -344,16 +337,12 @@ def main(checkpoint_path=None,
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.fastest = False
 
-    if checkpoint_path == '':  # Pick the most recent checkpoint
+    if checkpoint_path == '':
         checkpoints = os.path.join(experiments_root, label, '**/*.pt')
-        checkpoints = list(glob.iglob(checkpoints, recursive=True))
-        if len(checkpoints) == 0:
-            logger.warn('No checkpoints found')
-            checkpoint_path = None
-        else:
-            checkpoint_path = max(list(checkpoints), key=os.path.getctime)
+        checkpoint, checkpoint_path = load_most_recent_checkpoint(checkpoints)
+    else:
+        checkpoint, checkpoint_path = load_checkpoint(checkpoint_path)
 
-    checkpoint = load_checkpoint(checkpoint_path)
     directory = None if checkpoint is None else checkpoint['experiment_directory']
     step = 0 if checkpoint is None else checkpoint['step']
 
@@ -377,16 +366,8 @@ def main(checkpoint_path=None,
                 del checkpoint['optimizer']
             trainer_kwargs.update(checkpoint)
 
-        trainer = Trainer(
-            context.device,
-            train,
-            dev,
-            context.train_tensorboard,
-            context.dev_tensorboard,
-            train_batch_size=train_batch_size,
-            dev_batch_size=train_batch_size * dev_to_train_ratio,
-            num_workers=num_workers,
-            **trainer_kwargs)
+        trainer = Trainer(context.device, train, dev, context.train_tensorboard,
+                          context.dev_tensorboard, **trainer_kwargs)
 
         # Training Loop
         for _ in range(epochs):
@@ -422,6 +403,7 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '-n', '--name', type=str, default='auto_max_grad_norm', help='Experiment name.')
     parser.add_argument(
+<<<<<<< HEAD
         '-b',
         '--train_batch_size',
         type=int,
@@ -430,6 +412,8 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '-w', '--num_workers', type=int, default=12, help='Numer of workers used for data loading')
     parser.add_argument(
+=======
+>>>>>>> 483bec7... New baseline, max grad norm, hparams, recent checkpoint, argmax split
         '-r',
         '--reset_optimizer',
         action='store_true',
@@ -440,7 +424,5 @@ if __name__ == '__main__':  # pragma: no cover
     main(
         name=args.name,
         checkpoint_path=args.checkpoint,
-        train_batch_size=args.train_batch_size,
-        num_workers=args.num_workers,
         reset_optimizer=args.reset_optimizer,
         hparams=hparams)

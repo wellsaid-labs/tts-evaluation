@@ -313,14 +313,16 @@ def set_hparams():
                     # SOURCE: Efficient Neural Audio Synthesis Author
                     # The author suggested adding 3 - 5 convolutions on top of WaveRNN.
                     'local_feature_processing_layers': None,
-
-                    # It is not clear how the authors of WaveRNN sampled from the predicted coarse
-                    # and fine distribution.
-                    'argmax': False,
                 }
             },
             'bin.signal_model': {
-                'train.Trainer.__init__.sample_rate': sample_rate,
+                'train.Trainer.__init__': {
+                    'sample_rate': sample_rate,
+                    # Optimized for 4x P100 GPU
+                    'train_batch_size': 64,
+                    'dev_batch_size': 256,
+                    'num_workers': 12,
+                },
                 '_utils.load_data.generated': False,
                 '_dataset.SignalDataset.__init__': {
                     # SOURCE: Efficient Neural Audio Synthesis

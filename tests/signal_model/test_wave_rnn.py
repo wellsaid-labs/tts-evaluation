@@ -25,7 +25,8 @@ def test_wave_rnn_inference_train_equivilance():
         upsample_repeat=upsample_repeat,
         local_features_size=local_features_size,
         local_feature_processing_layers=None,
-        argmax=True).eval()
+        argmax_coarse=True,
+        argmax_fine=True).eval()
     for parameter in net.parameters():
         if parameter.requires_grad:
             # Ensure that each parameter a reasonable value to affect the output

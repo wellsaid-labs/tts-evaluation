@@ -41,13 +41,16 @@ class _WaveRNNInference(nn.Module):
                  to_bins_fine_layer,
                  hidden_size=896,
                  bits=16,
-                 argmax=False):
+                 argmax_coarse=True,
+                 argmax_fine=False):
         super(_WaveRNNInference, self).__init__()
         assert hidden_size % 2 == 0, "Hidden size must be even."
         assert bits % 2 == 0, "Bits must be even for a double softmax"
         self.bins = int(2**(bits / 2))  # Encode ``bits`` with double softmax of ``bits / 2``
         self.size = hidden_size
         self.half_size = int(self.size / 2)
+        self.argmax_coarse = argmax_coarse
+        self.argmax_fine = argmax_fine
 
         # Output fully connected layers
         self.to_bins_coarse = to_bins_coarse_layer
@@ -56,8 +59,6 @@ class _WaveRNNInference(nn.Module):
         # Input fully connected layers
         self.project_coarse_input = project_coarse_input_layer
         self.project_fine_input = project_fine_input_layer
-
-        self.argmax = argmax
 
         # Create linear projection similar to GRU
         self.project_hidden = nn.Linear(self.size, 3 * self.size)
@@ -199,7 +200,7 @@ class _WaveRNNInference(nn.Module):
             # SOURCE: Efficient Neural Audio Synthesis
             # Once c_t has been sampled from P(c_t)
             # [batch_size, bins] → [batch_size]
-            if self.argmax:
+            if self.argmax_coarse:
                 coarse = coarse.max(dim=1)[1]
             else:
                 posterior = log_softmax(coarse, dim=1)
@@ -240,7 +241,7 @@ class _WaveRNNInference(nn.Module):
             # Once ct has been sampled from P(ct), the gates are evaluated for the fine bits and
             # ft is sampled.
             # [batch_size, bins] → [batch_size]
-            if self.argmax:
+            if self.argmax_fine:
                 fine = fine.max(dim=1)[1]
             else:
                 posterior = log_softmax(fine, dim=1)
@@ -272,8 +273,10 @@ class WaveRNN(nn.Module):
         upsample_repeat (int): Number of times to repeat frames, another upsampling technique.
         local_feature_processing_layers (int): Number of Conv1D for processing the spectrogram.
         local_features_size (int): Dimensionality of local features.
-        argmax (bool): During inference, sample the most likely sample or randomly based on the
-            distribution.
+        argmax_coarse (bool): During inference, sample the most likely coarse sample or randomly
+            based on the distribution.
+        argmax_fine (bool): During inference, sample the most likely fine sample or randomly based
+            on the distribution.
     """
 
     @configurable
@@ -284,7 +287,8 @@ class WaveRNN(nn.Module):
                  upsample_repeat=75,
                  local_feature_processing_layers=0,
                  local_features_size=80,
-                 argmax=False):
+                 argmax_coarse=True,
+                 argmax_fine=False):
         super(WaveRNN, self).__init__()
 
         assert hidden_size % 2 == 0, "Hidden size must be even."
@@ -293,6 +297,8 @@ class WaveRNN(nn.Module):
         self.bins = int(2**(bits / 2))  # Encode ``bits`` with double softmax of ``bits / 2``
         self.size = hidden_size
         self.half_size = int(self.size / 2)
+        self.argmax_coarse = argmax_coarse
+        self.argmax_fine = argmax_fine
 
         # Output fully connected layers
         gain = torch.nn.init.calculate_gain('relu')
@@ -342,8 +348,6 @@ class WaveRNN(nn.Module):
         torch.nn.init.constant_(self.stripped_gru.gru.bias_ih_l0, 0)
         torch.nn.init.constant_(self.stripped_gru.gru.bias_hh_l0, 0)
 
-        self.argmax = argmax
-
     def _export(self):
         """ Export to a kernel for inference.
 
@@ -360,7 +364,8 @@ class WaveRNN(nn.Module):
             to_bins_fine_layer=self.to_bins_fine,
             hidden_size=self.size,
             bits=self.bits,
-            argmax=self.argmax)
+            argmax_coarse=self.argmax_coarse,
+            argmax_fine=self.argmax_fine)
 
     def forward(self, local_features, input_signal=None, target_coarse=None, hidden_state=None):
         """

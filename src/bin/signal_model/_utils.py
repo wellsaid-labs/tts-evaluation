@@ -1,3 +1,4 @@
+import glob
 import logging
 import os
 
@@ -68,27 +69,63 @@ def set_hparams():
             'eps': 10**-8,
             'weight_decay': 0,
             'lr': 10**-3
+        },
+        'src.optimizer.Optimizer.__init__': {
+            'max_grad_norm_clip': 15.0,
+            # NOTE: This is rarely triggered in case of a big gradient explosion. The proper
+            # handling of a gradient explosion is to clip gradients at each time step but
+            # that is slow in PyTorch.
+            'max_grad_norm_ignore': 100.0,
         }
     })
 
 
-def load_checkpoint(checkpoint=None, device=torch.device('cpu')):
+def load_most_recent_checkpoint(pattern):
+    """ Load the most recent checkpoint from ``root``.
+
+    # TODO: Test this
+
+    Args:
+        pattern (str): Pattern to glob recursively for checkpoints.
+
+    Returns:
+        checkpoint (dict): Loaded checkpoint.
+        checkpoint_path (str or None): Path of loaded checkpoint.
+    """
+    checkpoints = list(glob.iglob(pattern, recursive=True))
+    if len(checkpoints) == 0:
+        print('No checkpoints found in %s' % pattern)
+        return None, None
+
+    checkpoints = sorted(list(checkpoints), key=os.path.getctime, reverse=True)
+    for checkpoint in checkpoints:
+        try:
+            return load_checkpoint(checkpoint)
+        except EOFError:
+            print('Failed to load checkpoint %s' % checkpoint)
+            pass
+
+
+def load_checkpoint(checkpoint_path=None, device=torch.device('cpu')):
     """ Load a checkpoint.
 
     Args:
-        checkpoint (str or None): Path to a checkpoint to load.
+        checkpoint_path (str or None): Path to a checkpoint to load.
         device (int): Device to load checkpoint onto where -1 is the CPU while 0+ is a GPU.
 
     Returns:
-        checkpoint (dict or None): Loaded checkpoint or None
+        checkpoint (dict or None): Loaded checkpoint or None.
+        checkpoint_path (str or None): Path of loaded checkpoint.
     """
-    # Load checkpoint
-    if checkpoint is not None:
-        checkpoint = torch_load(os.path.join(ROOT_PATH, checkpoint), device=device)
-        if 'model' in checkpoint:
-            checkpoint['model'].apply(
-                lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
-    return checkpoint
+    if checkpoint_path is None:
+        return None, None
+
+    checkpoint_path = os.path.join(ROOT_PATH, checkpoint_path)
+    checkpoint = torch_load(checkpoint_path, device=device)
+    if 'model' in checkpoint:
+        checkpoint['model'].apply(
+            lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
+    return checkpoint, checkpoint_path
 
 
 def save_checkpoint(directory,

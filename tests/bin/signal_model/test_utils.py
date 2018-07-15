@@ -8,8 +8,21 @@ from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
 from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
+from src.bin.signal_model._utils import load_most_recent_checkpoint
 from src.signal_model import WaveNet
 from src.utils.experiment_context_manager import ExperimentContextManager
+
+
+def test_load_most_recent_checkpoint():
+    checkpoint, path = load_most_recent_checkpoint('tests/_test_data/**/*.pt')
+    assert checkpoint == {}
+    assert 'tests/_test_data/checkpoint.pt' in path
+
+
+def test_load_most_recent_checkpoint_none():
+    checkpoint, path = load_most_recent_checkpoint('tests/_test_data/**/*.abc')
+    assert checkpoint is None
+    assert path is None
 
 
 def test_load_data():
