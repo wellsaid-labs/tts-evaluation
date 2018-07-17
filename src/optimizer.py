@@ -55,7 +55,6 @@ class Optimizer(object):
         self.state_dict = self.optimizer.state_dict
         self.load_state_dict = self.optimizer.load_state_dict
 
-    @configurable
     def step(self, max_grad_norm=None):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
 
@@ -105,10 +104,10 @@ class AutoOptimizer(Optimizer):
     def __init__(self, optim, beta=0.98):
         super().__init__(optim)
 
-        self.average_norm = 0.0
+        self.average_norm = None
         self.beta = beta
         self.steps = 0
-        self.max_grad_norm = 1.0
+        self.max_grad_norm = None
 
     def step(self):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
@@ -123,7 +122,10 @@ class AutoOptimizer(Optimizer):
         if np.isfinite(parameter_norm):
             # Update max gradient norm
             self.steps += 1
-            self.average_norm = self.beta * self.average_norm + (1 - self.beta) * parameter_norm
+            if self.average_norm is None:
+                self.average_norm = parameter_norm
+            else:
+                self.average_norm = self.beta * self.average_norm + (1 - self.beta) * parameter_norm
             self.max_grad_norm = self.average_norm / (1 - self.beta**(self.steps))
 
         return parameter_norm, self.max_grad_norm

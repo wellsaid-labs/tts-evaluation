@@ -340,7 +340,8 @@ def main(checkpoint_path=None,
 
     if checkpoint_path == '':
         checkpoints = os.path.join(experiments_root, label, '**/*.pt')
-        checkpoint, checkpoint_path = load_most_recent_checkpoint(checkpoints)
+        checkpoint, checkpoint_path = load_most_recent_checkpoint(
+            checkpoints, load_checkpoint=load_checkpoint)
     else:
         checkpoint = load_checkpoint(checkpoint_path)
 

@@ -90,7 +90,7 @@ def load_checkpoint(checkpoint_path=None, device=torch.device('cpu')):
         checkpoint_path (str or None): Path of loaded checkpoint.
     """
     if checkpoint_path is None:
-        return None, None
+        return None
 
     checkpoint_path = os.path.join(ROOT_PATH, checkpoint_path)
     checkpoint = torch_load(checkpoint_path, device=device)

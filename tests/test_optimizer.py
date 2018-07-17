@@ -44,11 +44,15 @@ class TestOptimizer(unittest.TestCase):
     @mock.patch("torch.nn.utils.clip_grad_norm_")
     def test_auto_step_max_grad_norm(self, mock_clip_grad_norm):
         params = [torch.nn.Parameter(torch.randn(2, 3, 4))]
+        params[0].grad = torch.randn(2, 3, 4)
         optim = AutoOptimizer(torch.optim.Adam(params))
+        assert optim.max_grad_norm is None
+        optim.step()
+        assert optim.max_grad_norm is not None
         old_max_grad_norm = optim.max_grad_norm
         optim.step()
-        assert old_max_grad_norm != optim.max_grad_norm
-        mock_clip_grad_norm.assert_called_once()
+        assert old_max_grad_norm != optim.max_grad_norm  # Max grad norm updates
+        mock_clip_grad_norm.assert_called_once()  # Max grad norm is only called on the second step
 
     def test_ignore_step(self):
         did_step = False

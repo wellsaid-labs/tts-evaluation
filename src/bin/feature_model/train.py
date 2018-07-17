@@ -309,8 +309,8 @@ def main(checkpoint_path=None,
         label (str, optional): Label applied to a experiments from this executable.
         experiments_root (str, optional): Top level directory for all experiments.
     """
-    torch.backends.cudnn.enabled = True
     # TODO: Speed test to ensure this is the fastest settings
+    torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.fastest = False
 
@@ -340,6 +340,7 @@ def main(checkpoint_path=None,
         trainer_kwargs = {}
         if checkpoint is not None:
             del checkpoint['text_encoder']
+            del checkpoint['experiment_directory']
             if reset_optimizer:
                 logger.info('Not restoring optimizer and scheduler.')
                 del checkpoint['optimizer']
@@ -360,7 +361,8 @@ def main(checkpoint_path=None,
                     scheduler=trainer.scheduler,
                     text_encoder=text_encoder,
                     epoch=trainer.epoch,
-                    step=trainer.step)
+                    step=trainer.step,
+                    experiment_directory=context.directory)
                 trainer.run_epoch(train=False, trial_run=is_trial_run)
             trainer.epoch += 1
 

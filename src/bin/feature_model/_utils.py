@@ -85,7 +85,8 @@ def save_checkpoint(directory,
                     text_encoder=None,
                     epoch=None,
                     step=None,
-                    filename=None):
+                    filename=None,
+                    experiment_directory=None):
     """ Save a checkpoint.
 
     Args:
@@ -99,6 +100,7 @@ def save_checkpoint(directory,
         step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
         filename (str, optional): Filename to save the checkpoint too, by default the checkpoint
             is saved in ``os.path.join(context.epoch_directory, 'checkpoint.pt')``
+        experiment_directory (str, optional): Directory experiment logs are saved in.
 
     Returns:
         checkpoint (dict or None): Loaded checkpoint or None
@@ -115,6 +117,7 @@ def save_checkpoint(directory,
             'text_encoder': text_encoder,
             'epoch': epoch,
             'step': step,
+            'experiment_directory': experiment_directory
         })
 
     return filename

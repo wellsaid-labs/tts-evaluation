@@ -197,9 +197,9 @@ class ExperimentContextManager(object):
     def clean_up(self, use_logger=True):
         """ Delete files associated with this context. """
         if use_logger:
-            logger.info('Deleting Experiment: %s', self.directory)
+            logger.info('DELETING EXPERIMENT: %s', self.directory)
         else:
-            print('Deleting Experiment: %s' % self.directory)
+            print('DELETING EXPERIMENT: %s' % self.directory)
 
         if not self.started_from_existing_directory:
             shutil.rmtree(self.directory)

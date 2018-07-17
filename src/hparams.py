@@ -94,6 +94,7 @@ def set_hparams():
     librosa.effects.trim = configurable(librosa.effects.trim)
     IPython.display.Audio.__init__ = configurable(IPython.display.Audio.__init__)
 
+    # TODO: Add option to instead of strings to use direct references.
     add_config({
         'librosa.effects.trim': {
             'frame_length': get_log_mel_spectrogram['frame_size'],
@@ -374,7 +375,10 @@ def set_hparams():
                     'combine_signal.bits': bits,
                 }
             },
-            # Smoothing parameter determined experimentally, this parameter is not super sensative.
-            'optimizer.AutoOptimizer.__init__.beta': 0.98,
+            'optimizer': {
+                # NOTE: Smoothing parameter determined experimentally, this parameter is not super
+                # sensative.
+                'AutoOptimizer.__init__.beta': 0.98
+            }
         }
     })
