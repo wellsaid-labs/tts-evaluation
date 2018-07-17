@@ -46,6 +46,7 @@ class ExperimentContextManager(object):
     Args:
         directory (str, optional): Directory to save experiment in.
         label (str, optional): Group a set of experiments with a label, typically the model name.
+            If ``directory`` is provided, this option is ignored.
         name (str, optional): Name of the experiment.
         root (str, optional): Top level directory for all experiments.
         seed (int, optional): The seed to use.
@@ -57,7 +58,7 @@ class ExperimentContextManager(object):
 
     def __init__(self,
                  directory=None,
-                 label='other',
+                 label=None,
                  name=None,
                  root='experiments/',
                  seed=1212212,
@@ -68,6 +69,7 @@ class ExperimentContextManager(object):
         from src.utils import ROOT_PATH
 
         self.directory = directory
+        self.started_from_existing_directory = self.directory is not None
         self.id = str(time.time())[:10]  # NOTE: Same id tensorboard uses.
         self.name = time.strftime('%H:%M:%S', time.localtime()) if name is None else name
         self.label = label
@@ -82,7 +84,6 @@ class ExperimentContextManager(object):
         self.min_time = min_time
         self._start_time = time.time()
         self.step = step
-        self.started_from_checkpoint = self.directory is not None
 
     def notify(self, title, text):
         """ Queue a desktop notification on a Linux or OSX machine.
@@ -181,7 +182,6 @@ class ExperimentContextManager(object):
 
         logger = logging.getLogger(__name__)
         logger.info('Experiment Folder: %s' % self.directory)
-        logger.info('Label: %s', self.label)
         logger.info('Device: %s', self.device)
         logger.info('Seed: %s', self.seed)
         logger.info('Step: %d', self.step)
@@ -194,7 +194,22 @@ class ExperimentContextManager(object):
     def clean_up(self):
         """ Delete files associated with this context. """
         logger.info('Deleting Experiment: %s', self.directory)
-        shutil.rmtree(self.directory)
+
+        if not self.started_from_existing_directory:
+            shutil.rmtree(self.directory)
+        else:
+            # Remove checkpoints
+            shutil.rmtree(self.checkpoints_directory)
+
+            # Remove tensorboard files
+            os.remove(self.dev_tensorboard.writer.file_writer.event_writer._ev_writer.
+                      _py_recordio_writer.path)
+            os.remove(self.train_tensorboard.writer.file_writer.event_writer._ev_writer.
+                      _py_recordio_writer.path)
+
+            # Remove log files
+            os.remove(self.stdout_filename)
+            os.remove(self.stderr_filename)
 
         # Remove empty directories
         for root, directories, files in os.walk(self.root, topdown=False):
@@ -212,14 +227,6 @@ class ExperimentContextManager(object):
         self.dev_tensorboard.close()
         self.train_tensorboard.close()
 
-        # NOTE: Log before removing handlers.
-        elapsed_seconds = time.time() - self._start_time
-        is_short_experiment = self.min_time is not None and elapsed_seconds < self.min_time
-        if is_short_experiment and exception and not self.started_from_checkpoint:
-            self.clean_up()
-
-        self.notify('Experiment', 'Experiment has exited after %d seconds.' % (elapsed_seconds))
-
         # Flush stdout and stderr to capture everything
         sys.stdout.flush()
         sys.stderr.flush()
@@ -229,3 +236,11 @@ class ExperimentContextManager(object):
         sys.stderr = sys.stderr.stream
 
         logging.getLogger().removeHandler(self._stream_handler)
+
+        # NOTE: Log before removing handlers.
+        elapsed_seconds = time.time() - self._start_time
+        is_short_experiment = self.min_time is not None and elapsed_seconds < self.min_time
+        if is_short_experiment and exception:
+            self.clean_up()
+
+        self.notify('Experiment', 'Experiment has exited after %d seconds.' % (elapsed_seconds))

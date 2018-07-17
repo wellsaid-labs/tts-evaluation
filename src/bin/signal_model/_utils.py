@@ -42,6 +42,9 @@ def load_data(generated_train='data/.signal_dataset/train',
     else:
         source_train, source_dev = real_train, real_dev
 
+    source_train = os.path.join(ROOT_PATH, source_train)
+    source_dev = os.path.join(ROOT_PATH, source_dev)
+
     if not os.path.isdir(source_dev) or not os.path.isdir(source_train):
         raise ValueError('Data files not found. '
                          'Did you run ``src/bin/feature_model/generate.py``?')

@@ -24,15 +24,14 @@ def test_wave_rnn_inference_train_equivilance():
         upsample_convs=upsample_convs,
         upsample_repeat=upsample_repeat,
         local_features_size=local_features_size,
-        local_feature_processing_layers=None,
-        argmax_coarse=True,
-        argmax_fine=True).eval()
+        local_feature_processing_layers=None).eval()
     for parameter in net.parameters():
         if parameter.requires_grad:
             # Ensure that each parameter a reasonable value to affect the output
             torch.nn.init.normal_(parameter, std=0.1)
 
-    predicted_coarse, predicted_fine, hidden = net(local_features, hidden_state=hidden_state)
+    predicted_coarse, predicted_fine, hidden = net(
+        local_features, hidden_state=hidden_state, argmax=True)
 
     # [batch_size, signal_length] → [batch_size, signal_length - 1, 2]
     input_signal = torch.stack((predicted_coarse[:, :-1], predicted_fine[:, :-1]), dim=2)

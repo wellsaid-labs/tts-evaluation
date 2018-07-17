@@ -3,7 +3,7 @@ import matplotlib
 import os
 import torch
 
-matplotlib.use('Agg')
+matplotlib.use('Agg', warn=False)
 
 from matplotlib import cm as colormap
 from matplotlib import pyplot
@@ -250,10 +250,18 @@ class Tensorboard(SummaryWriter):
         self.writer.add_audio(path_audio, signal, step, sample_rate)
         self.add_waveform(path_image, signal, step)
 
-    def close(self):
+    def close(self, delete=False):
         """ Flushes the event file to disk and close the file. Call this method when you do not
         need the Tensorboard anymore.
         """
         self.writer.file_writer.event_writer.add_event(
             Event(session_log=SessionLog(status=SessionLog.STOP)))
+
+        # Prevent references to file_writer from being lost
+        file_writer = self.writer.file_writer
+        all_writers = self.writer.all_writers
+
         self.writer.close()
+
+        self.writer.file_writer = file_writer
+        self.writer.all_writers = all_writers

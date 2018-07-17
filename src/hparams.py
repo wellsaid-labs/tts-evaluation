@@ -289,30 +289,46 @@ def set_hparams():
                     'upsample_convs': [4],
                     'upsample_repeat': 75,
                 },
-                'wave_rnn.WaveRNN.__init__': {
-                    'local_features_size': frame_channels,
+                'wave_rnn': {
+                    '_WaveRNNInference.forward': {
+                        # SOURCE: Generating Sequences With Recurrent Neural Networks
+                        # One problem with unbiased samples is that they tend to be difficult to
+                        # read (partly because real handwriting is difficult to read, and partly
+                        # because the network is an imperfect model). Intuitively, we would expect
+                        # the network to give higher probability to good handwriting because it
+                        # tends to be smoother and more predictable than bad handwriting. If this is
+                        # true, we should aim to output more probable elements of Pr(x|c) if we want
+                        # the samples to be easier to read.
+                        # NOTE: Temperature is a concept from reinforcement learning to bias the
+                        # softmax similar to the above idea.
+                        'temperature': 1.0,
+                        'argmax': False,
+                    },
+                    'WaveRNN.__init__': {
+                        'local_features_size': frame_channels,
 
-                    # SOURCE: Efficient Neural Audio Synthesis
-                    # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
-                    # designed to efficiently predict 16-bit raw audio samples.
-                    'bits': bits,
+                        # SOURCE: Efficient Neural Audio Synthesis
+                        # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
+                        # designed to efficiently predict 16-bit raw audio samples.
+                        'bits': bits,
 
-                    # SOURCE: Efficient Neural Audio Synthesis
-                    # We see that the WaveRNN with 896 units achieves NLL scores comparable to those
-                    # of the largest WaveNet model
-                    'hidden_size': 896,
+                        # SOURCE: Efficient Neural Audio Synthesis
+                        # We see that the WaveRNN with 896 units achieves NLL scores comparable to
+                        # those of the largest WaveNet model
+                        'hidden_size': 896,
 
-                    # SOURCE: Tacotron 2
-                    # only 2 upsampling layers are used in the conditioning stack instead of 3
-                    # layers.
-                    # SOURCE: Tacotron 2 Author Google Chat
-                    # We upsample 4x with the layers and then repeat each value 75x
-                    'upsample_convs': [4],
-                    'upsample_repeat': 75,
+                        # SOURCE: Tacotron 2
+                        # only 2 upsampling layers are used in the conditioning stack instead of 3
+                        # layers.
+                        # SOURCE: Tacotron 2 Author Google Chat
+                        # We upsample 4x with the layers and then repeat each value 75x
+                        'upsample_convs': [4],
+                        'upsample_repeat': 75,
 
-                    # SOURCE: Efficient Neural Audio Synthesis Author
-                    # The author suggested adding 3 - 5 convolutions on top of WaveRNN.
-                    'local_feature_processing_layers': None,
+                        # SOURCE: Efficient Neural Audio Synthesis Author
+                        # The author suggested adding 3 - 5 convolutions on top of WaveRNN.
+                        'local_feature_processing_layers': None,
+                    }
                 }
             },
             'bin.signal_model': {

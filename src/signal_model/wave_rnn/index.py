@@ -40,17 +40,13 @@ class _WaveRNNInference(nn.Module):
                  to_bins_coarse_layer,
                  to_bins_fine_layer,
                  hidden_size=896,
-                 bits=16,
-                 argmax_coarse=True,
-                 argmax_fine=False):
+                 bits=16):
         super(_WaveRNNInference, self).__init__()
         assert hidden_size % 2 == 0, "Hidden size must be even."
         assert bits % 2 == 0, "Bits must be even for a double softmax"
         self.bins = int(2**(bits / 2))  # Encode ``bits`` with double softmax of ``bits / 2``
         self.size = hidden_size
         self.half_size = int(self.size / 2)
-        self.argmax_coarse = argmax_coarse
-        self.argmax_fine = argmax_fine
 
         # Output fully connected layers
         self.to_bins_coarse = to_bins_coarse_layer
@@ -96,7 +92,8 @@ class _WaveRNNInference(nn.Module):
             fine_last_hidden = reference.new_zeros(batch_size, self.half_size)
         return coarse, fine, coarse_last_hidden, fine_last_hidden
 
-    def forward(self, conditional, hidden_state=None):
+    @configurable
+    def forward(self, conditional, hidden_state=None, temperature=1.0, argmax=False):
         """  Run WaveRNN in inference mode.
 
         TODO:
@@ -107,17 +104,22 @@ class _WaveRNNInference(nn.Module):
             u: ``u`` stands for update gate
             e: ``e`` stands for memory
 
-        Reference:
+        Reference: # noqa
             * PyTorch GRU Equations
               https://pytorch.org/docs/stable/nn.html?highlight=gru#torch.nn.GRU
             * Efficient Neural Audio Synthesis Equations
               https://arxiv.org/abs/1802.08435
+            * https://cs.stackexchange.com/questions/79241/what-is-temperature-in-lstm-and-neural-networks-generally
+
 
         Args:
             conditional (torch.FloatTensor
                 [batch_size, signal_length, 3, self.size]): Features to condition signal
                 generation.
             hidden_state (torch.FloatTensor [batch_size, self.size], optional): GRU hidden state.
+            temperature (float, optional): Temperature to control the variance in softmax
+                predictions.
+            argmax (bool, optional): If ``True``, during inference sample the most likely sample.
 
         Returns:
             out_coarse (torch.LongTensor [batch_size, signal_length, bins]): Predicted
@@ -200,10 +202,10 @@ class _WaveRNNInference(nn.Module):
             # SOURCE: Efficient Neural Audio Synthesis
             # Once c_t has been sampled from P(c_t)
             # [batch_size, bins] → [batch_size]
-            if self.argmax_coarse:
+            if argmax:
                 coarse = coarse.max(dim=1)[1]
             else:
-                posterior = log_softmax(coarse, dim=1)
+                posterior = log_softmax(coarse / temperature, dim=1)
                 coarse = torch.distributions.Categorical(logits=posterior).sample()
             out_coarse.append(coarse)
 
@@ -241,10 +243,10 @@ class _WaveRNNInference(nn.Module):
             # Once ct has been sampled from P(ct), the gates are evaluated for the fine bits and
             # ft is sampled.
             # [batch_size, bins] → [batch_size]
-            if self.argmax_fine:
+            if argmax:
                 fine = fine.max(dim=1)[1]
             else:
-                posterior = log_softmax(fine, dim=1)
+                posterior = log_softmax(fine / temperature, dim=1)
                 fine = torch.distributions.Categorical(logits=posterior).sample()
             out_fine.append(fine)
             # [batch_size] → [batch_size, 1]
@@ -273,10 +275,6 @@ class WaveRNN(nn.Module):
         upsample_repeat (int): Number of times to repeat frames, another upsampling technique.
         local_feature_processing_layers (int): Number of Conv1D for processing the spectrogram.
         local_features_size (int): Dimensionality of local features.
-        argmax_coarse (bool): During inference, sample the most likely coarse sample or randomly
-            based on the distribution.
-        argmax_fine (bool): During inference, sample the most likely fine sample or randomly based
-            on the distribution.
     """
 
     @configurable
@@ -286,9 +284,7 @@ class WaveRNN(nn.Module):
                  upsample_convs=[4],
                  upsample_repeat=75,
                  local_feature_processing_layers=0,
-                 local_features_size=80,
-                 argmax_coarse=True,
-                 argmax_fine=False):
+                 local_features_size=128):
         super(WaveRNN, self).__init__()
 
         assert hidden_size % 2 == 0, "Hidden size must be even."
@@ -297,8 +293,6 @@ class WaveRNN(nn.Module):
         self.bins = int(2**(bits / 2))  # Encode ``bits`` with double softmax of ``bits / 2``
         self.size = hidden_size
         self.half_size = int(self.size / 2)
-        self.argmax_coarse = argmax_coarse
-        self.argmax_fine = argmax_fine
 
         # Output fully connected layers
         gain = torch.nn.init.calculate_gain('relu')
@@ -363,11 +357,14 @@ class WaveRNN(nn.Module):
             to_bins_coarse_layer=self.to_bins_coarse,
             to_bins_fine_layer=self.to_bins_fine,
             hidden_size=self.size,
-            bits=self.bits,
-            argmax_coarse=self.argmax_coarse,
-            argmax_fine=self.argmax_fine)
+            bits=self.bits)
 
-    def forward(self, local_features, input_signal=None, target_coarse=None, hidden_state=None):
+    def forward(self,
+                local_features,
+                input_signal=None,
+                target_coarse=None,
+                hidden_state=None,
+                **kwargs):
         """
         Args:
             local_features (torch.FloatTensor [batch_size, local_length, local_features_size]):
@@ -412,10 +409,11 @@ class WaveRNN(nn.Module):
                 'must be the same length after upsampling.')
             input_signal = _scale(input_signal, self.bins)
             target_coarse = _scale(target_coarse, self.bins)
-            return self._train_forward(conditional, input_signal, target_coarse, hidden_state)
+            return self._train_forward(conditional, input_signal, target_coarse, hidden_state,
+                                       **kwargs)
 
         kernel = self._export().to(conditional.device)
-        return kernel(conditional, hidden_state)
+        return kernel(conditional, hidden_state, **kwargs)
 
     def _train_forward(self, conditional, input_signal, target_coarse, hidden_state=None):
         """ Run WaveRNN in training mode with teacher-forcing.
