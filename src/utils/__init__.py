@@ -15,10 +15,12 @@ from src.utils.visualize import plot_stop_token
 from src.utils.visualize import plot_waveform
 from src.utils.visualize import spectrogram_to_image
 from src.utils.visualize import Tensorboard
+from src.utils.utils import load_most_recent_checkpoint
 
 __all__ = [
     'configurable', 'experiment_context_manager', 'ROOT_PATH', 'get_total_parameters',
     'split_dataset', 'plot_attention', 'plot_stop_token', 'plot_waveform', 'torch_save',
     'torch_load', 'plot_log_mel_spectrogram', 'spectrogram_to_image', 'get_filename_table',
-    'parse_hparam_args', 'split_signal', 'combine_signal', 'Tensorboard'
+    'parse_hparam_args', 'split_signal', 'combine_signal', 'Tensorboard',
+    'load_most_recent_checkpoint'
 ]

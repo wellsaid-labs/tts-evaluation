@@ -5,6 +5,7 @@ from torchnlp.text_encoders import CharacterEncoder
 
 import torch
 import numpy as np
+from tqdm import tqdm
 
 from src.utils import get_filename_table
 
@@ -39,20 +40,20 @@ class FeatureDataset(data.Dataset):
 
         # Create text_encoder
         if text_encoder is None:
+            logger.info('Computing text encoder from %s', source)
             texts = []
-            for row in self.rows:
+            for row in tqdm(self.rows):
                 with open(row[self.text_key], 'r') as file_:
                     texts.append(file_.read().strip())
             self.text_encoder = CharacterEncoder(texts)
-            logger.info('Computed text encoder from %s', source)
         else:
             self.text_encoder = text_encoder
 
         # Spectrograms lengths for sorting
+        logger.info('Computing spectrogram lengths from %s', source)
         self.spectrogram_lengths = [
-            np.load(row[self.spectrogram_key]).shape[0] for row in self.rows
+            np.load(row[self.spectrogram_key]).shape[0] for row in tqdm(self.rows)
         ]
-        logger.info('Computed spectrogram lengths from %s', source)
         self.load_signal = load_signal
 
     def __len__(self):

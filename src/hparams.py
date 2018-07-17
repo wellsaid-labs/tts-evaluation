@@ -346,6 +346,18 @@ def set_hparams():
                     'frame_size': int(900 / get_log_mel_spectrogram['frame_hop'])
                 }
             },
+            'bin.feature_model': {
+                'train.Trainer.__init__': {
+                    # SOURCE: Tacotron 2
+                    # To train the feature prediction network, we apply the standard
+                    # maximum-likelihood training procedure (feeding in the correct output instead
+                    # of the predicted output on the decoder side, also referred to as
+                    # teacher-forcing) with a batch size of 64 on a single GPU.
+                    'train_batch_size': 56,
+                    'dev_batch_size': 256,
+                    'num_workers': 12,
+                }
+            },
             'utils': {
                 'visualize': {
                     'Tensorboard.add_audio.sample_rate': sample_rate,

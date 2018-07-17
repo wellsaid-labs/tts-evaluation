@@ -1,4 +1,3 @@
-import glob
 import logging
 import os
 
@@ -79,32 +78,6 @@ def set_hparams():
     })
 
 
-def load_most_recent_checkpoint(pattern):
-    """ Load the most recent checkpoint from ``root``.
-
-    # TODO: Test this
-
-    Args:
-        pattern (str): Pattern to glob recursively for checkpoints.
-
-    Returns:
-        checkpoint (dict): Loaded checkpoint.
-        checkpoint_path (str or None): Path of loaded checkpoint.
-    """
-    checkpoints = list(glob.iglob(pattern, recursive=True))
-    if len(checkpoints) == 0:
-        print('No checkpoints found in %s' % pattern)
-        return None, None
-
-    checkpoints = sorted(list(checkpoints), key=os.path.getctime, reverse=True)
-    for checkpoint in checkpoints:
-        try:
-            return load_checkpoint(checkpoint)
-        except EOFError:
-            print('Failed to load checkpoint %s' % checkpoint)
-            pass
-
-
 def load_checkpoint(checkpoint_path=None, device=torch.device('cpu')):
     """ Load a checkpoint.
 
@@ -124,7 +97,7 @@ def load_checkpoint(checkpoint_path=None, device=torch.device('cpu')):
     if 'model' in checkpoint:
         checkpoint['model'].apply(
             lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
-    return checkpoint, checkpoint_path
+    return checkpoint
 
 
 def save_checkpoint(directory,

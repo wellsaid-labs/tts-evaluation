@@ -1,3 +1,5 @@
+import torch
+
 from torch.utils.data import DataLoader
 from torchnlp.samplers import BucketBatchSampler
 from torchnlp.utils import pad_batch
@@ -19,7 +21,7 @@ class DataIterator(object):
     Returns:
         (torch.utils.data.DataLoader) Single-process or multi-process iterators over the dataset.
         Per iteration the batch returned includes:
-            text (torch.LongTensor [batch_size, num_tokens])
+            text (torch.LongTensor [num_tokens, batch_size])
             text_lengths (list): List of lengths for each sentence.
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
             frame_lengths (list): List of lengths for each spectrogram.
@@ -55,13 +57,24 @@ class DataIterator(object):
         text_batch, text_length_batch = pad_batch([row['text'] for row in batch])
         frame_batch, frame_length_batch = pad_batch([row['log_mel_spectrogram'] for row in batch])
         stop_token_batch, _ = pad_batch([row['stop_token'] for row in batch])
-        transpose = lambda b: b.transpose_(0, 1).contiguous()
+
+        transpose = lambda b: b.transpose(0, 1).contiguous()
+        frame_batch = transpose(frame_batch)
+
+        mask = [torch.FloatTensor(length).fill_(1) for length in frame_length_batch]
+        mask, _ = pad_batch(mask)  # [batch_size, num_frames]
+        stop_token_mask = transpose(mask)  # [num_frames, batch_size]
+        # [num_frames, batch_size] → [num_frames, batch_size, frame_channels]
+        frames_mask = stop_token_mask.unsqueeze(2).expand_as(frame_batch).contiguous()
+
         return {
-            'text': text_batch,
+            'text': transpose(text_batch),
             'text_lengths': text_length_batch,
-            'frames': transpose(frame_batch),
+            'frames': frame_batch,
+            'frames_mask': frames_mask,
             'frame_lengths': frame_length_batch,
             'stop_token': transpose(stop_token_batch),
+            'stop_token_mask': stop_token_mask,
             'signal': [row['signal'] for row in batch] if self.load_signal else None
         }
 
@@ -73,8 +86,11 @@ class DataIterator(object):
             batch['text'] = self._maybe_cuda(batch['text'], non_blocking=True)
             batch['frames'] = self._maybe_cuda(batch['frames'], non_blocking=True)
             batch['stop_token'] = self._maybe_cuda(batch['stop_token'], non_blocking=True)
+            batch['frames_mask'] = self._maybe_cuda(batch['frames_mask'], non_blocking=True)
+            batch['stop_token_mask'] = self._maybe_cuda(batch['stop_token_mask'], non_blocking=True)
             if batch['signal'] is not None:
                 batch['signal'] = [self._maybe_cuda(s, non_blocking=True) for s in batch['signal']]
+
             yield batch
 
             if self.trial_run:

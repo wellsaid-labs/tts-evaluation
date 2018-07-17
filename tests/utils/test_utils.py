@@ -12,6 +12,7 @@ from src.utils import ROOT_PATH
 from src.utils import split_dataset
 from src.utils import split_signal
 from src.utils import combine_signal
+from src.utils import load_most_recent_checkpoint
 
 
 class MockModel(nn.Module):
@@ -83,3 +84,15 @@ def test_split_combine_signal():
     signal = torch.FloatTensor(1000).uniform_(-1.0, 1.0)
     reconstructed_signal = combine_signal(*split_signal(signal))
     np.testing.assert_allclose(signal.numpy(), reconstructed_signal.numpy(), atol=1e-04)
+
+
+def test_load_most_recent_checkpoint():
+    checkpoint, path = load_most_recent_checkpoint('tests/_test_data/**/*.pt')
+    assert checkpoint == {}
+    assert 'tests/_test_data/checkpoint.pt' in path
+
+
+def test_load_most_recent_checkpoint_none():
+    checkpoint, path = load_most_recent_checkpoint('tests/_test_data/**/*.abc')
+    assert checkpoint is None
+    assert path is None

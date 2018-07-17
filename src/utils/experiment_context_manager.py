@@ -85,7 +85,7 @@ class ExperimentContextManager(object):
         self._start_time = time.time()
         self.step = step
 
-    def notify(self, title, text):
+    def notify(self, title, text, use_logger=True):
         """ Queue a desktop notification on a Linux or OSX machine.
 
         Args:
@@ -99,7 +99,10 @@ class ExperimentContextManager(object):
         elif system == 'Linux':
             cmd = "notify-send '{title}' '{text}'"
 
-        logger.info('Notify: %s', text)
+        if use_logger:
+            logger.info('Notify: %s', text)
+        else:
+            print('Notify: %s' % text)
 
         os.system(cmd.format(text=text, title=title))
 
@@ -191,9 +194,12 @@ class ExperimentContextManager(object):
 
         return self
 
-    def clean_up(self):
+    def clean_up(self, use_logger=True):
         """ Delete files associated with this context. """
-        logger.info('Deleting Experiment: %s', self.directory)
+        if use_logger:
+            logger.info('Deleting Experiment: %s', self.directory)
+        else:
+            print('Deleting Experiment: %s' % self.directory)
 
         if not self.started_from_existing_directory:
             shutil.rmtree(self.directory)
@@ -241,6 +247,9 @@ class ExperimentContextManager(object):
         elapsed_seconds = time.time() - self._start_time
         is_short_experiment = self.min_time is not None and elapsed_seconds < self.min_time
         if is_short_experiment and exception:
-            self.clean_up()
+            self.clean_up(use_logger=False)
 
-        self.notify('Experiment', 'Experiment has exited after %d seconds.' % (elapsed_seconds))
+        self.notify(
+            'Experiment',
+            'Experiment has exited after %d seconds.' % (elapsed_seconds),
+            use_logger=False)

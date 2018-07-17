@@ -16,8 +16,8 @@ from src.bin.signal_model._utils import load_data
 from src.bin.signal_model._utils import load_most_recent_checkpoint
 from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
-from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
+from src.optimizer import AutoOptimizer
 from src.signal_model import WaveRNN
 from src.utils import combine_signal
 from src.utils import get_total_parameters
@@ -141,7 +141,7 @@ class Trainer():  # pragma: no cover
 
             draw_sample = not train and self.random.randint(1, len(data_iterator)) == 1
             coarse_loss, fine_loss, num_signal_predictions = self._run_step(
-                batch, train=train, sample=draw_sample, epoch_start=start)
+                batch, train=train, sample=draw_sample, epoch_start_time=start)
             total_fine_loss += fine_loss * num_signal_predictions
             total_coarse_loss += coarse_loss * num_signal_predictions
             total_signal_predictions += num_signal_predictions
@@ -250,14 +250,14 @@ class Trainer():  # pragma: no cover
 
         return coarse_loss, fine_loss, num_predictions
 
-    def _run_step(self, batch, train=False, sample=False, epoch_start=None):
+    def _run_step(self, batch, train=False, sample=False, epoch_start_time=None):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
         Args:
             batch (dict): ``dict`` from ``src.bin.signal_model._utils.DataIterator``.
             train (bool, optional): If ``True``, takes a optimization step.
             sample (bool, optional): If ``True``, draw sample from step.
-            epoch_start (float, optional): Epoch start time in deciseconds.
+            epoch_start_time (float, optional): Epoch start time in deciseconds.
 
         Returns:
             coarse_loss (torch.Tensor): Scalar loss value for signal top bits.
@@ -281,14 +281,14 @@ class Trainer():  # pragma: no cover
             batch=batch, predicted_coarse=predicted_coarse, predicted_fine=predicted_fine)
 
         if self.step_unit == self.STEP_UNIT_DECISECONDS and train:
-            step = self.step + int(round(time.time() * 10 - epoch_start))
+            step = self.step + int(round(time.time() * 10 - epoch_start_time))
         else:
             step = self.step
 
         if train:
             self.optimizer.zero_grad()
             (coarse_loss + fine_loss).backward()
-            parameter_norm = self.optimizer.step()
+            parameter_norm, max_grad_norm = self.optimizer.step()
             self.tensorboard.add_scalar('parameter_norm/step', parameter_norm, step)
             self.tensorboard.add_scalar('max_grad_norm/step', max_grad_norm, step)
 
@@ -342,7 +342,7 @@ def main(checkpoint_path=None,
         checkpoints = os.path.join(experiments_root, label, '**/*.pt')
         checkpoint, checkpoint_path = load_most_recent_checkpoint(checkpoints)
     else:
-        checkpoint, checkpoint_path = load_checkpoint(checkpoint_path)
+        checkpoint = load_checkpoint(checkpoint_path)
 
     directory = None if checkpoint is None else checkpoint['experiment_directory']
     step = 0 if checkpoint is None else checkpoint['step']
@@ -404,17 +404,6 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '-n', '--name', type=str, default='auto_max_grad_norm', help='Experiment name.')
     parser.add_argument(
-<<<<<<< HEAD
-        '-b',
-        '--train_batch_size',
-        type=int,
-        default=64,
-        help='Set the maximum training batch size; this figure depends on the GPU memory')
-    parser.add_argument(
-        '-w', '--num_workers', type=int, default=12, help='Numer of workers used for data loading')
-    parser.add_argument(
-=======
->>>>>>> 483bec7... New baseline, max grad norm, hparams, recent checkpoint, argmax split
         '-r',
         '--reset_optimizer',
         action='store_true',

@@ -37,9 +37,9 @@ def load_data(source_train='data/.feature_dataset/train',
     Args:
         source_train (str): Directory with training examples.
         source_dev (str): Directory with dev examples.
-        sample_rate (int): Sample rate of the signal.
         text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the
             text.
+        load_signal (bool): If ``True`` the FeatureDataset, loads the signal.
 
     Returns:
         train (FeatureDataset)

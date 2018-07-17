@@ -3,6 +3,7 @@ import matplotlib
 matplotlib.use('Agg', warn=False)
 
 import ast
+import glob
 import logging
 import logging.config
 import os
@@ -196,3 +197,29 @@ def combine_signal(coarse, fine, bits=16):
     assert torch.min(fine) >= 0 and torch.max(fine) < bins
     signal = coarse * bins + fine - 2**(bits - 1)
     return signal.float() / 2**(bits - 1)
+
+
+def load_most_recent_checkpoint(pattern, load_checkpoint=torch_load):
+    """ Load the most recent checkpoint from ``root``.
+
+    Args:
+        pattern (str): Pattern to glob recursively for checkpoints.
+        load_checkpoint (callable): Callable to load checkpoint.
+
+    Returns:
+        (any): Return value of ``load_checkpoint`` callable or None.
+        (str): Path of loaded checkpoint or None.
+    """
+    checkpoints = list(glob.iglob(pattern, recursive=True))
+    if len(checkpoints) == 0:
+        # NOTE: Using print because this runs before logger is setup typically
+        print('No checkpoints found in %s' % pattern)
+        return None, None
+
+    checkpoints = sorted(list(checkpoints), key=os.path.getctime, reverse=True)
+    for checkpoint in checkpoints:
+        try:
+            return load_checkpoint(checkpoint), checkpoint
+        except EOFError:
+            print('Failed to load checkpoint %s' % checkpoint)
+            pass
