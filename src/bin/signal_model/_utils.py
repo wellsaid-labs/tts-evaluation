@@ -15,14 +15,14 @@ logger = logging.getLogger(__name__)
 
 
 @configurable
-def load_data(generated_train='data/.signal_dataset/train',
-              generated_dev='data/.signal_dataset/dev',
+def load_data(predicted_train='data/.signal_dataset/train',
+              predicted_dev='data/.signal_dataset/dev',
               real_train='data/.feature_dataset/train',
               real_dev='data/.feature_dataset/dev',
               log_mel_spectrogram_prefix='log_mel_spectrogram',
               signal_prefix='signal',
               extension='.npy',
-              generated=True):
+              predicted=True):
     """ Load train and dev datasets as ``SignalDataset``s.
 
     Args:
@@ -36,8 +36,8 @@ def load_data(generated_train='data/.signal_dataset/train',
         train (SignalDataset)
         dev (SignalDataset)
     """
-    if generated:
-        source_train, source_dev = generated_train, generated_dev
+    if predicted:
+        source_train, source_dev = predicted_train, predicted_dev
     else:
         source_train, source_dev = real_train, real_dev
 
