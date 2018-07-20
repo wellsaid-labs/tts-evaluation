@@ -290,7 +290,7 @@ def set_hparams():
                     'upsample_convs': [4],
                     'upsample_repeat': 75,
                 },
-                'wave_rnn': {
+                'wave_rnn.index': {
                     '_WaveRNNInference.forward': {
                         # SOURCE: Generating Sequences With Recurrent Neural Networks
                         # One problem with unbiased samples is that they tend to be difficult to

@@ -12,7 +12,8 @@ from src.signal_model.stripped_gru import StrippedGRU
 from src.utils.configurable import configurable
 from src.utils import split_signal
 
-inference = load(name="inference", sources=["inference.cpp"])
+inference = load(
+    name="inference", sources=["src/signal_model/wave_rnn/inference.cpp"], verbose=True)
 
 
 def _scale(tensor, bins=256):
@@ -35,8 +36,8 @@ class _WaveRNNInference(nn.Module):
                  gru_input_bias,
                  gru_hidden_weight,
                  gru_hidden_bias,
-                 project_coarse_input_layer,
-                 project_fine_input_layer,
+                 project_coarse_input_weights,
+                 project_fine_input_weights,
                  to_bins_coarse_layer,
                  to_bins_fine_layer,
                  hidden_size=896,
@@ -53,16 +54,25 @@ class _WaveRNNInference(nn.Module):
         self.to_bins_fine = to_bins_fine_layer
 
         # Input fully connected layers
-        self.project_coarse_input = project_coarse_input_layer
-        self.project_fine_input = project_fine_input_layer
+        self.project_coarse_input_weights = project_coarse_input_weights
+        self.project_fine_input_weights = project_fine_input_weights
 
         # Create linear projection similar to GRU
-        self.project_hidden = nn.Linear(self.size, 3 * self.size)
-        self.project_hidden.weight = nn.Parameter(gru_hidden_weight, requires_grad=False)
-        self.project_hidden.bias = nn.Parameter(gru_hidden_bias, requires_grad=False)
+        self.project_hidden_weight = self._reorder_gru_weights(gru_hidden_weight)
+        self.project_hidden_bias = self._reorder_gru_weights(gru_hidden_bias).unsqueeze(1)
 
         # [size * 3] → ... [size]
         self.bias_r, self.bias_u, self.bias_e = gru_input_bias.chunk(3)
+
+    def _reorder_gru_weights(self, weight):
+        # weight [3 * self.size, ...]
+        (hidden_coarse_r, hidden_fine_r, hidden_coarse_u, hidden_fine_u, hidden_coarse_e,
+         hidden_fine_e) = weight.chunk(
+             6, dim=0)
+        return torch.cat(
+            (hidden_coarse_r, hidden_coarse_u, hidden_coarse_e, hidden_fine_r, hidden_fine_u,
+             hidden_fine_e),
+            dim=0)
 
     def _initial_state(self, reference, batch_size, hidden_state=None):
         """ Initial state returns the initial hidden state and go sample.
@@ -73,23 +83,25 @@ class _WaveRNNInference(nn.Module):
             hidden_state (torch.FloatTensor [batch_size, self.size], optional): GRU hidden state.
 
         Return:
-            coarse (torch.FloatTensor [batch_size, 1]): Initial coarse value from [-1, 1]
-            fine (torch.FloatTensor [batch_size, 1]): Initial fine value from [-1, 1]
-            coarse_last_hidden (torch.FloatTensor [batch_size, self.half_size]): Initial RNN hidden
+            coarse (torch.FloatTensor [1, batch_size]): Initial coarse value from [-1, 1]
+            fine (torch.FloatTensor [1, batch_size]): Initial fine value from [-1, 1]
+            coarse_last_hidden (torch.FloatTensor [self.half_size, batch_size]): Initial RNN hidden
                 state.
-            fine_last_hidden (torch.FloatTensor [batch_size, self.half_size]): Initial RNN hidden
+            fine_last_hidden (torch.FloatTensor [self.half_size, batch_size]): Initial RNN hidden
                 state.
         """
         # Set the split signal value at signal value zero
         coarse, fine = split_signal(reference.new_zeros(batch_size))
         # TODO: Coarse and fine should be part of the hidden state
-        coarse = _scale(coarse.unsqueeze(1), self.bins)
-        fine = _scale(fine.unsqueeze(1), self.bins)
+        coarse = _scale(coarse.unsqueeze(0), self.bins)
+        fine = _scale(fine.unsqueeze(0), self.bins)
         if hidden_state is not None:
-            coarse_last_hidden, fine_last_hidden = hidden_state.chunk(2, dim=1)
+            # [batch_size, self.size] → [self.size, batch_size]
+            hidden_state = hidden_state.transpose(0, 1)
+            coarse_last_hidden, fine_last_hidden = hidden_state.chunk(2, dim=0)
         else:
-            coarse_last_hidden = reference.new_zeros(batch_size, self.half_size)
-            fine_last_hidden = reference.new_zeros(batch_size, self.half_size)
+            coarse_last_hidden = reference.new_zeros(self.half_size, batch_size)
+            fine_last_hidden = reference.new_zeros(self.half_size, batch_size)
         return coarse, fine, coarse_last_hidden, fine_last_hidden
 
     @configurable
@@ -138,67 +150,68 @@ class _WaveRNNInference(nn.Module):
         conditional[:, :, 2] += self.bias_e
 
         # ... [batch_size, signal_length, half_size]
-        conditional_coarse_r, conditional_fine_r = torch.chunk(conditional[:, :, 0], 2, dim=2)
-        conditional_coarse_u, conditional_fine_u = torch.chunk(conditional[:, :, 1], 2, dim=2)
-        conditional_coarse_e, conditional_fine_e = torch.chunk(conditional[:, :, 2], 2, dim=2)
+        bias_coarse_r, bias_fine_r = torch.chunk(conditional[:, :, 0], 2, dim=2)
+        bias_coarse_u, bias_fine_u = torch.chunk(conditional[:, :, 1], 2, dim=2)
+        bias_coarse_e, bias_fine_e = torch.chunk(conditional[:, :, 2], 2, dim=2)
 
         # [batch_size, signal_length, half_size] → [batch_size, signal_length, 3 * half_size]
-        conditional_coarse = torch.cat(
-            (conditional_coarse_r, conditional_coarse_u, conditional_coarse_e), dim=2)
-        conditional_fine = torch.cat(
-            (conditional_fine_r, conditional_fine_u, conditional_fine_e), dim=2)
+        bias_coarse = torch.cat((bias_coarse_r, bias_coarse_u, bias_coarse_e), dim=2)
+        bias_fine = torch.cat((bias_fine_r, bias_fine_u, bias_fine_e), dim=2)
 
-        del conditional_coarse_r, conditional_fine_r
-        del conditional_coarse_u, conditional_fine_u
-        del conditional_coarse_e, conditional_fine_e
+        bias_coarse = bias_coarse.transpose(0, 2)
+        bias_fine = bias_fine.transpose(0, 2)
+
+        del bias_coarse_r, bias_fine_r
+        del bias_coarse_u, bias_fine_u
+        del bias_coarse_e, bias_fine_e
 
         # Initial inputs
         out_coarse, out_fine = [], []
         coarse, fine, coarse_last_hidden, fine_last_hidden = self._initial_state(
             conditional, batch_size, hidden_state)
         for i in tqdm(range(signal_length)):
-            # [batch_size, size]
-            hidden = torch.cat((coarse_last_hidden, fine_last_hidden), dim=1)
-            # [batch_size, size] → [batch_size, 3 * size]
-            hidden_projection = self.project_hidden(hidden)
-            # [batch_size, 3 * size] → ... [batch_size, half_size]
-            (hidden_coarse_r, hidden_fine_r, hidden_coarse_u, hidden_fine_u, hidden_coarse_e,
-             hidden_fine_e) = hidden_projection.chunk(
-                 6, dim=1)
-            # [batch_size, half_size] → [batch_size, size]
-            hidden_coarse_ru = torch.cat((hidden_coarse_r, hidden_coarse_u), dim=1)
-            hidden_fine_ru = torch.cat((hidden_fine_r, hidden_fine_u), dim=1)
+            # [size, batch_size]
+            hidden = torch.cat((coarse_last_hidden, fine_last_hidden), dim=0)
+            # [3 * size] + [3 * size, size] * [size, batch_size] = [3 * size, batch_size]
+            hidden_projection = torch.addmm(self.project_hidden_bias, self.project_hidden_weight,
+                                            hidden)
+            # [3 * size, batch_size] → [size, batch_size]
+            hidden_coarse_ru = hidden_projection[:2 * self.half_size]
+            # [3 * size, batch_size] → [half_size, batch_size]
+            hidden_coarse_e = hidden_projection[2 * self.half_size:3 * self.half_size]
+            # [3 * size, batch_size] → [size, batch_size]
+            hidden_fine_ru = hidden_projection[3 * self.half_size:5 * self.half_size]
+            # [3 * size, batch_size] → [half_size, batch_size]
+            hidden_fine_e = hidden_projection[5 * self.half_size:]
 
             del hidden_projection
-            del hidden_coarse_r, hidden_coarse_u
-            del hidden_fine_r, hidden_fine_u
 
-            # coarse_input [batch_size, 2]
-            coarse_input = torch.cat([coarse, fine], dim=1)
-            assert torch.min(coarse_input) <= 1 and torch.max(coarse_input) >= -1
-            # [batch_size, 2] → [batch_size, 3 * half_size]
-            coarse_projection = self.project_coarse_input(coarse_input)
-            coarse_projection += conditional_coarse[:, i]
-
+            # coarse_input [2, batch_size]
+            coarse_input = torch.cat([coarse, fine], dim=0)
+            # [3 * half_size, batch_size] + [3 * half_size, 2] * [2, batch_size] →
+            # [3 * half_size, batch_size]
+            coarse_projection = torch.addmm(bias_coarse[:, i], self.project_coarse_input_weights,
+                                            coarse_input)
             # Compute the coarse gates [batch_size, half_size]
-            # [batch_size, 3 * half_size] → [batch_size, size]
-            coarse_ru = coarse_projection[:, :self.size]
-            # [batch_size, 3 * half_size] → [batch_size, half_size]
-            coarse_e = coarse_projection[:, self.size:]
+            # [3 * half_size, batch_size] → [size, batch_size]
+            coarse_ru = coarse_projection[:self.size]
+            # [3 * half_size, batch_size] → [half_size, batch_size]
+            coarse_e = coarse_projection[self.size:]
 
             del coarse_projection
 
+            # ru [size, batch_size]
             ru = sigmoid(coarse_ru + hidden_coarse_ru)
-            # [batch_size, size] → [batch_size, half_size]
-            r, u = ru.chunk(2, dim=1)
-            e = tanh(r * hidden_coarse_e + coarse_e)
-            coarse_last_hidden = u * coarse_last_hidden + (1.0 - u) * e
+            # [size, batch_size] → [half_size, batch_size]
+            r, u = ru.chunk(2, dim=0)
+            e = tanh(r * hidden_coarse_e + coarse_e)  # e [half_size, batch_size]
+            coarse_last_hidden = u * coarse_last_hidden + (1.0 - u) * e  # [half_size, batch_size]
 
             del ru, coarse_ru, hidden_coarse_ru, r, u
             del e, coarse_e, hidden_coarse_e
 
-            # [batch_size, half_size] → [batch_size, bins]
-            coarse = self.to_bins_coarse(coarse_last_hidden)
+            # [half_size, batch_size] → [batch_size, bins]
+            coarse = self.to_bins_coarse(coarse_last_hidden.transpose(0, 1))
             # SOURCE: Efficient Neural Audio Synthesis
             # Once c_t has been sampled from P(c_t)
             # [batch_size, bins] → [batch_size]
@@ -210,35 +223,34 @@ class _WaveRNNInference(nn.Module):
             out_coarse.append(coarse)
 
             # Compute fine gates
-            # [batch_size] → [batch_size, 1]
-            coarse = _scale(coarse, self.bins).unsqueeze(1)
-            # fine_input [batch_size, 3]
-            fine_input = torch.cat([coarse_input, coarse], dim=1)
-            assert torch.min(fine_input) <= 1 and torch.max(fine_input) >= -1
-            # [batch_size, 3] → [batch_size, 3 * half_size]
-            fine_projection = self.project_fine_input(fine_input)
-            fine_projection += conditional_fine[:, i]
-
+            # [batch_size] → [1, batch_size]
+            coarse = _scale(coarse, self.bins).unsqueeze(0)
+            # fine_input [3, batch_size]
+            fine_input = torch.cat([coarse_input, coarse], dim=0)
+            # [3 * half_size, batch_size] + [3 * half_size, 2] * [2, batch_size] →
+            # [3 * half_size, batch_size]
+            fine_projection = torch.addmm(bias_fine[:, i], self.project_fine_input_weights,
+                                          fine_input)
             # Compute the coarse gates [batch_size, half_size]
-            # [batch_size, 3 * half_size] → [batch_size, size]
-            fine_ru = fine_projection[:, :self.size]
-            # [batch_size, 3 * half_size] → [batch_size, half_size]
-            fine_e = fine_projection[:, self.size:]
+            # [3 * half_size, batch_size] → [size, batch_size]
+            fine_ru = fine_projection[:self.size]
+            # [3 * half_size, batch_size] → [half_size, batch_size]
+            fine_e = fine_projection[self.size:]
 
             del fine_projection, coarse_input
 
             ru = sigmoid(fine_ru + hidden_fine_ru)
-            # [batch_size, size] → [batch_size, half_size]
-            r, u = ru.chunk(2, dim=1)
-            e = tanh(r * hidden_fine_e + fine_e)
-            fine_last_hidden = u * fine_last_hidden + (1.0 - u) * e
+            # [size, batch_size] → [half_size, batch_size]
+            r, u = ru.chunk(2, dim=0)
+            e = tanh(r * hidden_fine_e + fine_e)  # e [half_size, batch_size]
+            fine_last_hidden = u * fine_last_hidden + (1.0 - u) * e  # [half_size, batch_size]
 
             del ru, fine_ru, hidden_fine_ru, r, u
             del e, fine_e, hidden_fine_e
 
             # Compute the fine output
-            # [batch_size, half_size] → [batch_size, bins]
-            fine = self.to_bins_fine(fine_last_hidden)
+            # [half_size, batch_size] → [batch_size, bins]
+            fine = self.to_bins_fine(fine_last_hidden.transpose(0, 1))
             # SOURCE: Efficient Neural Audio Synthesis
             # Once ct has been sampled from P(ct), the gates are evaluated for the fine bits and
             # ft is sampled.
@@ -250,9 +262,10 @@ class _WaveRNNInference(nn.Module):
                 fine = torch.distributions.Categorical(logits=posterior).sample()
             out_fine.append(fine)
             # [batch_size] → [batch_size, 1]
-            fine = _scale(fine, self.bins).unsqueeze(1)
+            fine = _scale(fine, self.bins).unsqueeze(0)
 
-        hidden = torch.cat((coarse_last_hidden, fine_last_hidden), dim=1)
+        # [size, batch_size] → [batch_size, size]
+        hidden = torch.cat((coarse_last_hidden, fine_last_hidden), dim=0).transpose(0, 1)
         return torch.stack(out_coarse, dim=1), torch.stack(out_fine, dim=1), hidden
 
 
@@ -352,8 +365,8 @@ class WaveRNN(nn.Module):
             gru_input_bias=self.stripped_gru.gru.bias_ih_l0,
             gru_hidden_weight=self.stripped_gru.gru.weight_hh_l0,
             gru_hidden_bias=self.stripped_gru.gru.bias_hh_l0,
-            project_coarse_input_layer=self.project_coarse_input,
-            project_fine_input_layer=self.project_fine_input,
+            project_coarse_input_weights=self.project_coarse_input.weight,
+            project_fine_input_weights=self.project_fine_input.weight,
             to_bins_coarse_layer=self.to_bins_coarse,
             to_bins_fine_layer=self.to_bins_fine,
             hidden_size=self.size,

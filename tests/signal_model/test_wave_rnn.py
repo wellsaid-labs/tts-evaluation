@@ -2,7 +2,7 @@ import torch
 import numpy as np
 
 from src.signal_model import WaveRNN
-from src.signal_model.wave_rnn import _scale
+from src.signal_model.wave_rnn.index import _scale
 from src.utils import split_signal
 
 
@@ -64,20 +64,6 @@ def test_wave_rnn_scale():
     assert torch.max(scaled) == 1.0
     reconstructed = (scaled + 1.0) * 127.5
     np.testing.assert_allclose(original.numpy(), reconstructed.numpy(), atol=1e-04)
-
-
-def test_wave_rnn_initial_state():
-    bits = 16
-    net = WaveRNN(bits=bits)._export()
-    coarse, fine, coarse_last_hidden, fine_last_hidden = net._initial_state(torch.Tensor(), 3)
-    zero_signal_coarse_value = 128 / 127.5 - 1.0
-    np.testing.assert_allclose(
-        coarse.squeeze(1).numpy(),
-        np.array([zero_signal_coarse_value, zero_signal_coarse_value, zero_signal_coarse_value]),
-        atol=1e-04)  # Zero signal value
-    assert fine.sum().item() == -3.0  # Zero signal value
-    assert coarse_last_hidden.sum().item() == 0
-    assert fine_last_hidden.sum().item() == 0
 
 
 def test_wave_rnn():

@@ -62,10 +62,10 @@ std::vector<at::Tensor> inference(
 
   auto batch_size = condition.size(0);
 
-  for (int i = 0; i < batch_size; ++i)
-  {
-    hidden_state_projection = at::addmm()
-  }
+  // for (int i = 0; i < batch_size; ++i)
+  // {
+  //   hidden_state_projection = at::addmm()
+  // }
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
