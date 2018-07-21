@@ -290,8 +290,8 @@ def set_hparams():
                     'upsample_convs': [4],
                     'upsample_repeat': 75,
                 },
-                'wave_rnn.index': {
-                    '_WaveRNNInference.forward': {
+                'wave_rnn.index.WaveRNN': {
+                    'infer': {
                         # SOURCE: Generating Sequences With Recurrent Neural Networks
                         # One problem with unbiased samples is that they tend to be difficult to
                         # read (partly because real handwriting is difficult to read, and partly
@@ -305,7 +305,7 @@ def set_hparams():
                         'temperature': 1.0,
                         'argmax': False,
                     },
-                    'WaveRNN.__init__': {
+                    '__init__': {
                         'local_features_size': frame_channels,
 
                         # SOURCE: Efficient Neural Audio Synthesis

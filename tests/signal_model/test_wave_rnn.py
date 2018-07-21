@@ -30,14 +30,19 @@ def test_wave_rnn_inference_train_equivilance():
             # Ensure that each parameter a reasonable value to affect the output
             torch.nn.init.normal_(parameter, std=0.1)
 
-    predicted_coarse, predicted_fine, hidden = net(
-        local_features, hidden_state=hidden_state, argmax=True)
+    go_coarse, go_fine = split_signal(torch.zeros(batch_size))
+    inference_hidden_state = (go_coarse.long(), go_fine.long(),
+                              hidden_state.transpose(0, 1)[:int(hidden_size / 2)],
+                              hidden_state.transpose(0, 1)[int(hidden_size / 2):])
+
+    # Argmax to ensure train and inference sample the same way
+    predicted_coarse, predicted_fine, hidden = net.infer_cpp(
+        local_features, hidden_state=inference_hidden_state, argmax=True)
 
     # [batch_size, signal_length] → [batch_size, signal_length - 1, 2]
     input_signal = torch.stack((predicted_coarse[:, :-1], predicted_fine[:, :-1]), dim=2)
-    coarse, fine = split_signal(torch.zeros(batch_size))
     # [batch_size] → [batch_size, 1, 2]
-    go_signal = torch.stack((coarse, fine), dim=1).unsqueeze(1).long()
+    go_signal = torch.stack((go_coarse, go_fine), dim=1).unsqueeze(1).long()
     # [batch_size, signal_length - 1, 2] → [batch_size, signal_length, 2]
     input_signal = torch.cat((go_signal, input_signal), dim=1)
 
@@ -49,6 +54,10 @@ def test_wave_rnn_inference_train_equivilance():
 
     other_predicted_coarse = other_predicted_coarse.max(dim=2)[1]
     other_predicted_fine = other_predicted_fine.max(dim=2)[1]
+
+    # Ensure inference hidden state is equal to train hidden state
+    _, _, coarse_hidden, fine_hidden = hidden
+    hidden = torch.cat((coarse_hidden, fine_hidden), dim=0).transpose(0, 1)
 
     np.testing.assert_allclose(hidden.detach().numpy(), other_hidden.detach().numpy(), atol=1e-04)
     np.testing.assert_allclose(
@@ -111,7 +120,36 @@ def test_wave_rnn_inference():
         upsample_convs=upsample_convs,
         upsample_repeat=upsample_repeat,
         local_features_size=local_features_size).eval()
-    predicted_coarse, predicted_fine, _ = net(local_features)
+    predicted_coarse, predicted_fine, _ = net.infer(local_features)
+
+    assert predicted_coarse.shape == (batch_size, signal_length)
+    assert predicted_fine.shape == (batch_size, signal_length)
+
+    # Softmax
+    assert torch.min(predicted_coarse) >= 0
+    assert torch.max(predicted_coarse) < 256
+    assert torch.min(predicted_fine) >= 0
+    assert torch.max(predicted_fine) < 256
+
+
+def test_wave_rnn_inference_cpp():
+    bits = 16
+    batch_size = 2
+    local_length = 16
+    local_features_size = 80
+    upsample_convs = [2, 3]
+    upsample_repeat = 2
+    signal_length = local_length * upsample_convs[0] * upsample_convs[1] * upsample_repeat
+
+    local_features = torch.FloatTensor(batch_size, local_length, local_features_size)
+
+    net = WaveRNN(
+        hidden_size=32,
+        bits=bits,
+        upsample_convs=upsample_convs,
+        upsample_repeat=upsample_repeat,
+        local_features_size=local_features_size).eval()
+    predicted_coarse, predicted_fine, _ = net.infer_cpp(local_features)
 
     assert predicted_coarse.shape == (batch_size, signal_length)
     assert predicted_fine.shape == (batch_size, signal_length)
