@@ -13,7 +13,10 @@ from src.utils.configurable import configurable
 from src.utils import split_signal
 
 inference = load(
-    name="inference", sources=["src/signal_model/wave_rnn/inference.cpp"], verbose=True)
+    name="inference",
+    sources=["src/signal_model/wave_rnn/inference.cpp"],
+    extra_cflags=['-O2'],
+    verbose=True)
 
 
 def _scale(tensor, bins=256):

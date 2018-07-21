@@ -4,7 +4,9 @@
 
 std::vector<at::Tensor> step(
     at::Tensor last_hidden_state,
-    at::Tensor input_projection,
+    at::Tensor input,
+    at::Tensor project_input_bias,
+    at::Tensor project_input_weight,
     at::Tensor hidden_projection,
     at::Tensor to_bins_one_bias,
     at::Tensor to_bins_one_weight,
@@ -16,8 +18,9 @@ std::vector<at::Tensor> step(
   /** Run one step of the Wave RNN inference algorithm.
    *
    * @param last_hidden_state [hidden_size / 2, batch_size] Last RNN state.
-   * @param input_projection [1.5 * hidden_size, batch_size] Input projected to
-   *    ``1.5 * hidden_size``.
+   * @param input [input_size, batch_size] Input to RNN.
+   * @param project_input_weight [1.5 * hidden_size, input_size] Weights to project input for RNN.
+   * @param project_input_bias [1.5 * hidden_size] Bias to project input for RNN.
    * @param hidden_projection [1.5 * hidden_size, batch_size] Hidden state projected to
    *    ``1.5 * hidden_size``.
    * @param to_bins_one_bias [hidden_size / 2] Input dense layer bias to compute
@@ -37,7 +40,11 @@ std::vector<at::Tensor> step(
   auto batch_size = hidden_projection.size(1);
   auto bins = to_bins_two_bias.size(0);
 
-  // TODO: Consider using at::_cudnn_rnn
+  // [1.5 * hidden_size, batch_size] + [1.5 * hidden_size, input_size] * [input_size, batch_size] →
+  // [1.5 * hidden_size, batch_size]
+  auto input_projection = at::addmm(project_input_bias,
+                                    project_input_weight,
+                                    input);
 
   // ru stands for reset and update gate
   // [1.5 * hidden_size, batch_size] → [hidden_size, batch_size]
@@ -180,11 +187,6 @@ std::vector<at::Tensor> inference(
     auto coarse_input_scaled = (coarse_input.toType(at::ScalarType::Float) /
                                     ((bins - 1.0) / 2.0) -
                                 1.0);
-    // [1.5 * hidden_size, batch_size] + [1.5 * hidden_size, 2] * [2, batch_size] →
-    // [1.5 * hidden_size, batch_size]
-    auto coarse_projection = at::addmm(project_coarse_bias.select(/*dim=*/1, /*index=*/i),
-                                       project_coarse_weight,
-                                       coarse_input_scaled);
 
     // [3 * hidden_size, batch_size] → [1.5 * hidden_size, batch_size]
     auto hidden_projection_coarse = at::slice(hidden_projection,
@@ -192,7 +194,10 @@ std::vector<at::Tensor> inference(
                                               /*start=*/0,
                                               /*end=*/hidden_size * 3 / 2);
     auto coarse_step = step(last_coarse_hidden_state,
-                            coarse_projection, hidden_projection_coarse,
+                            coarse_input_scaled,
+                            project_coarse_bias.select(/*dim=*/1, /*index=*/i),
+                            project_coarse_weight,
+                            hidden_projection_coarse,
                             to_bins_coarse_in_bias,
                             to_bins_coarse_in_weight,
                             to_bins_coarse_out_bias,
@@ -206,11 +211,6 @@ std::vector<at::Tensor> inference(
     // {[2, batch_size], [1, batch_size]} → [3, batch_size]
     auto fine_input = at::cat({coarse_input, at::unsqueeze(last_coarse, /*dim=*/0)}, /*dim=*/0);
     auto fine_input_scaled = fine_input.toType(at::ScalarType::Float) / ((bins - 1.0) / 2.0) - 1.0;
-    // [1.5 * hidden_size, batch_size] + [1.5 * hidden_size, 2] * [3, batch_size] →
-    // [1.5 * hidden_size, batch_size]
-    auto fine_projection = at::addmm(project_fine_bias.select(/*dim=*/1, /*index=*/i),
-                                     project_fine_weight,
-                                     fine_input_scaled);
 
     // [3 * hidden_size, batch_size] → [1.5 * hidden_size, batch_size]
     auto hidden_projection_fine = at::slice(hidden_projection,
@@ -218,7 +218,10 @@ std::vector<at::Tensor> inference(
                                             /*start=*/hidden_size * 3 / 2,
                                             /*end=*/hidden_size * 3);
     auto fine_step = step(last_fine_hidden_state,
-                          fine_projection, hidden_projection_fine,
+                          fine_input_scaled,
+                          project_fine_bias.select(/*dim=*/1, /*index=*/i),
+                          project_fine_weight,
+                          hidden_projection_fine,
                           to_bins_fine_in_bias,
                           to_bins_fine_in_weight,
                           to_bins_fine_out_bias,
