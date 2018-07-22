@@ -105,9 +105,6 @@ class DataIterator(object):
             batch['slice']['target_signal_fine'] = self._maybe_cuda(slice_['target_signal_fine'])
             batch['slice']['input_signal'] = self._maybe_cuda(slice_['input_signal'])
             batch['slice']['signal_mask'] = self._maybe_cuda(slice_['signal_mask'])
-            batch['log_mel_spectrogram'] = [
-                self._maybe_cuda(s) for s in batch['log_mel_spectrogram']
-            ]
 
             yield batch
 

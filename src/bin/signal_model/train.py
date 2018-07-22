@@ -156,7 +156,7 @@ class Trainer():  # pragma: no cover
             self.tensorboard.add_scalar('coarse/loss/epoch', epoch_coarse_loss, self.step)
             self.tensorboard.add_scalar('fine/loss/epoch', epoch_fine_loss, self.step)
 
-    def _sample_inference(self, batch, step, max_infer_frames=100):
+    def _sample_inference(self, batch, step, max_infer_frames=200):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.
 
         Args:
@@ -179,12 +179,16 @@ class Trainer():  # pragma: no cover
 
         torch.set_grad_enabled(False)
         self.model.train(mode=False)
+        # NOTE: Inference is faster on CPU because of the many small operations being run
+        self.model.to(torch.device('cpu'))
 
         logger.info('Running inference on %d spectrogram frames...', log_mel_spectrogram.shape[0])
-        predicted_coarse, predicted_fine, _ = self.model(log_mel_spectrogram.unsqueeze(0))
+        predicted_coarse, predicted_fine, _ = self.model.infer(log_mel_spectrogram.unsqueeze(0))
         predicted_signal = combine_signal(predicted_coarse.squeeze(0), predicted_fine.squeeze(0))
         self.tensorboard.add_audio('full/prediction', 'full/prediction_waveform', predicted_signal,
                                    step)
+
+        self.model.to(self.device)
 
     def _sample_predicted(self, batch, predicted_coarse, predicted_fine, step):
         """ Samples examples from a batch and outputs them to tensorboard.
