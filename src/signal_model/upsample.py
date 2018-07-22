@@ -101,6 +101,7 @@ class ConditionalFeaturesUpsample(nn.Module):
             conditional_features (torch.FloatTensor [batch_size, num_layers, out_channels,
                 signal_length]): Upsampled local conditional features.
         """
+        print(local_features.shape)
         # Convolution operater expects input_ of the form:
         # [batch_size, in_channels, signal_length (local_length)]
         local_features = local_features.transpose(1, 2)
