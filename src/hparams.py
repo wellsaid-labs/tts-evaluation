@@ -332,6 +332,7 @@ def set_hparams():
                     }
                 }
             },
+            'bin.evaluate_vocoder.main.sample_rate': sample_rate,
             'bin.signal_model': {
                 'train.Trainer.__init__': {
                     'sample_rate': sample_rate,
