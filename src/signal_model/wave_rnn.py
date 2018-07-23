@@ -88,15 +88,6 @@ class WaveRNN(nn.Module):
         torch.nn.init.orthogonal_(self.stripped_gru.gru.weight_hh_l0[0:self.size])
         torch.nn.init.orthogonal_(self.stripped_gru.gru.weight_hh_l0[self.size:-self.size])
         torch.nn.init.orthogonal_(self.stripped_gru.gru.weight_hh_l0[-self.size:])
-
-        # Similar to initializing the the LSTM forget gate to remembering to prevent vanishing
-        # gradients, we initialize the GRU reset gate to one.
-        # SOURCES:
-        # http://proceedings.mlr.press/v37/jozefowicz15.pdf
-        # Init reset gate biases to 1
-        torch.nn.init.constant_(self.stripped_gru.gru.bias_ih_l0[:self.half_size], 1)
-        torch.nn.init.constant_(self.stripped_gru.gru.bias_hh_l0[:self.half_size], 1)
-        # Init candidate bias and update gate biases to 0
         torch.nn.init.constant_(self.stripped_gru.gru.bias_ih_l0, 0)
         torch.nn.init.constant_(self.stripped_gru.gru.bias_hh_l0, 0)
 
