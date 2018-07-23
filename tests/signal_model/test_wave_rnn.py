@@ -11,17 +11,16 @@ def test_wave_rnn_infer_equals_forward():
     local_length = 4
     batch_size = 1
     local_features_size = 80
-    upsample_convs = [2]
+    upsample_learned = 2
     upsample_repeat = 2
     hidden_size = 32
 
     net = WaveRNN(
         hidden_size=hidden_size,
         bits=bits,
-        upsample_convs=upsample_convs,
+        upsample_learned=upsample_learned,
         upsample_repeat=upsample_repeat,
-        local_features_size=local_features_size,
-        local_feature_processing_layers=None).eval()
+        local_features_size=local_features_size).eval()
 
     # Ensure that each parameter a reasonable value to affect the output
     for parameter in net.parameters():
@@ -89,9 +88,9 @@ def test_wave_rnn_forward():
     batch_size = 2
     local_length = 16
     local_features_size = 80
-    upsample_convs = [2, 3]
+    upsample_learned = 6
     upsample_repeat = 2
-    signal_length = local_length * upsample_convs[0] * upsample_convs[1] * upsample_repeat
+    signal_length = local_length * upsample_learned * upsample_repeat
 
     local_features = torch.rand(batch_size, local_length, local_features_size)
     target_coarse = torch.rand(batch_size, signal_length, 1)
@@ -100,7 +99,7 @@ def test_wave_rnn_forward():
     net = WaveRNN(
         hidden_size=32,
         bits=bits,
-        upsample_convs=upsample_convs,
+        upsample_learned=upsample_learned,
         upsample_repeat=upsample_repeat,
         local_features_size=local_features_size)
     predicted_coarse, predicted_fine, _ = net.forward(local_features, input_signal, target_coarse)
@@ -117,16 +116,16 @@ def test_wave_rnn_infer():
     local_length = 16
     batch_size = 2
     local_features_size = 80
-    upsample_convs = [2, 3]
+    upsample_learned = 6
     upsample_repeat = 2
-    signal_length = local_length * upsample_convs[0] * upsample_convs[1] * upsample_repeat
+    signal_length = local_length * upsample_learned * upsample_repeat
 
     local_features = torch.FloatTensor(batch_size, local_length, local_features_size)
 
     net = WaveRNN(
         hidden_size=32,
         bits=bits,
-        upsample_convs=upsample_convs,
+        upsample_learned=upsample_learned,
         upsample_repeat=upsample_repeat,
         local_features_size=local_features_size).eval()
     predicted_coarse, predicted_fine, _ = net.infer(local_features)

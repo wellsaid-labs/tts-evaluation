@@ -220,6 +220,6 @@ def load_most_recent_checkpoint(pattern, load_checkpoint=torch_load):
     for checkpoint in checkpoints:
         try:
             return load_checkpoint(checkpoint), checkpoint
-        except EOFError:
+        except (EOFError, RuntimeError):
             print('Failed to load checkpoint %s' % checkpoint)
             pass

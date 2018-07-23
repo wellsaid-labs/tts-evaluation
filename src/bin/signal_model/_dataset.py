@@ -80,8 +80,9 @@ class SignalDataset(data.Dataset):
         # For example, with signal ``[1, 2, 3]`` and a ``slice_samples`` of 2 you'd get slices of:
         # (1), (1, 2), (2, 3), (3).
         # With each number represented at twice.
-        start_frame = max(self.random.randint(-self.frame_size + 1, num_frames - 1), 0)
+        start_frame = self.random.randint(-self.frame_size + 1, num_frames - 1)
         end_frame = min(start_frame + self.frame_size, num_frames)
+        start_frame = max(start_frame, 0)
         frames_slice = log_mel_spectrogram[start_frame:end_frame]
 
         # Get a source sample slice shifted back one and target sample

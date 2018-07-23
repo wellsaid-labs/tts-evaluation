@@ -34,10 +34,8 @@ class WaveRNN(nn.Module):
     Args:
         hidden_size (int): GRU hidden state size.
         bits (int): Number of bits  Number of categories to predict for coarse and fine variables.
-        upsample_convs (list of int): Size of convolution layers used to upsample local features
-            (e.g. 256 frames x 4 x ...).
-        upsample_repeat (int): Number of times to repeat frames, another upsampling technique.
-        local_feature_processing_layers (int): Number of Conv1D for processing the spectrogram.
+        upsample_learned (int): Number of times to repeat frames with a learned upsampling.
+        upsample_repeat (int): Number of times to repeat frames.
         local_features_size (int): Dimensionality of local features.
     """
 
@@ -45,9 +43,8 @@ class WaveRNN(nn.Module):
     def __init__(self,
                  hidden_size=896,
                  bits=16,
-                 upsample_convs=[4],
+                 upsample_learned=4,
                  upsample_repeat=75,
-                 local_feature_processing_layers=0,
                  local_features_size=128):
         super(WaveRNN, self).__init__()
 
@@ -76,12 +73,9 @@ class WaveRNN(nn.Module):
 
         self.conditional_features_upsample = ConditionalFeaturesUpsample(
             in_channels=local_features_size,
-            out_channels=self.size,
+            out_channels=self.size * 3,
             upsample_repeat=upsample_repeat,
-            upsample_convs=upsample_convs,
-            num_layers=3,
-            upsample_chunks=1,
-            local_feature_processing_layers=local_feature_processing_layers)
+            upsample_learned=upsample_learned)
 
         self.stripped_gru = StrippedGRU(self.size)
 
@@ -228,14 +222,18 @@ class WaveRNN(nn.Module):
             hidden_state (tuple): Hidden state with RNN hidden state and last coarse/fine samples.
         """
         # [batch_size, local_length, local_features_size] →
-        # [batch_size, 3, self.size, signal_length]
+        # [batch_size, 3 * self.size, signal_length]
         conditional = self.conditional_features_upsample(local_features)
 
-        # [batch_size, 3, self.size, signal_length] →
-        # [batch_size, signal_length, 3, self.size]
-        conditional = conditional.permute(0, 3, 1, 2)
+        # [batch_size, 3 * self.size, signal_length] →
+        # [batch_size, signal_length,  3 * self.size]
+        conditional = conditional.transpose(1, 2)
 
-        batch_size, signal_length, _, _ = conditional.shape
+        batch_size, signal_length, _ = conditional.shape
+
+        # [batch_size, signal_length,  3 * self.size] →
+        # [batch_size, signal_length,  3, self.size]
+        conditional = conditional.view(batch_size, signal_length, 3, self.size)
 
         # [size * 3] → bias_r, bias_u, bias_e [size]
         bias_r, bias_u, bias_e = self.stripped_gru.gru.bias_ih_l0.chunk(3)
@@ -335,12 +333,18 @@ class WaveRNN(nn.Module):
             '``input_signal`` must be shaped [batch_size, signal_length, 2]')
 
         # [batch_size, local_length, local_features_size] →
-        # [batch_size, 3, self.size, signal_length]
+        # [batch_size, 3 * self.size, signal_length]
         conditional = self.conditional_features_upsample(local_features)
 
-        # [batch_size, 3, self.size, signal_length] →
-        # [batch_size, signal_length, 3, self.size]
-        conditional = conditional.permute(0, 3, 1, 2)
+        # [batch_size, 3 * self.size, signal_length] →
+        # [batch_size, signal_length,  3 * self.size]
+        conditional = conditional.transpose(1, 2)
+
+        batch_size, signal_length, _ = conditional.shape
+
+        # [batch_size, signal_length,  3 * self.size] →
+        # [batch_size, signal_length,  3, self.size]
+        conditional = conditional.view(batch_size, signal_length, 3, self.size)
 
         assert conditional.shape[1] == input_signal.shape[1], (
             'Upsampling parameters in tangent with signal shape and local features shape ' +

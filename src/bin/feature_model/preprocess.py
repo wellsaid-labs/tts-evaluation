@@ -28,7 +28,7 @@ def process(args):
     log_mel_spectrogram, padding = get_log_mel_spectrogram(signal)
 
     # Pad so: ``log_mel_spectrogram.shape[0] % signal.shape[0] == frame_hop``
-    # We property is required for Wavenet.
+    # We property is required for the vocoder.
     padded_signal = np.pad(signal, padding, mode='constant', constant_values=0)
     np.save(
         os.path.join(destination, 'padded_signal_%d.npy' % (index,)),
