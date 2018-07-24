@@ -271,9 +271,9 @@ class Trainer():  # pragma: no cover
             loss.item() for loss in (pre_frames_loss, post_frames_loss, stop_token_loss))
 
         if train:
-            self.tensorboard.add_scalar('pre_frames/step', pre_frames_loss, self.step)
-            self.tensorboard.add_scalar('post_frames/step', post_frames_loss, self.step)
-            self.tensorboard.add_scalar('stop_token/step', stop_token_loss, self.step)
+            self.tensorboard.add_scalar('pre_frames/loss/step', pre_frames_loss, self.step)
+            self.tensorboard.add_scalar('post_frames/loss/step', post_frames_loss, self.step)
+            self.tensorboard.add_scalar('stop_token/loss/step', stop_token_loss, self.step)
             for i, lr in enumerate(self.scheduler.get_lr()):
                 tag = '/'.join(['learning_rate', str(i), 'step'])
                 self.tensorboard.add_scalar(tag, lr, self.step)
