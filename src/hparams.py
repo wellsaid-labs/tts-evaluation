@@ -292,6 +292,8 @@ def set_hparams():
                     'train_batch_size': 64,
                     'dev_batch_size': 256,
                     'num_workers': 12,
+                    'sigma': 6,
+                    'beta': 0.99,
                 },
                 '_utils.load_data.predicted': False,
                 '_dataset.SignalDataset.__init__': {
@@ -331,7 +333,7 @@ def set_hparams():
             'optimizer': {
                 # NOTE: Smoothing parameter determined experimentally, this parameter is not super
                 # sensative.
-                'AutoOptimizer.__init__.beta': 0.98
+                'AutoOptimizer.__init__.beta': 0.99
             }
         }
     })

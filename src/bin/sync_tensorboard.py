@@ -19,6 +19,14 @@ logger = logging.getLogger(__name__)
 
 
 def sync(cli_args, scheduler, destination_root='sync/', repeat_every=5):
+    """ ``rsync`` from ``cli_args.server`` to ``cli_args.path`` on local server.
+
+    Args:
+        cli_args (dict): Command line arguments.
+        scheduler (sched.scheduler): Scheduler to rerun this function.
+        destination_root (str): Directory to sync to.
+        repeat_every (int): Repeat this call every ``repeat_every`` seconds.
+    """
     for server in cli_args.server:
         source = server + '.' + cli_args.project
         name = server.split('.')[0]

@@ -5,6 +5,7 @@ import numpy as np
 import logging
 
 from src.utils.configurable import configurable
+from src.utils import ExponentiallyWeightedMovingAverage
 
 logger = logging.getLogger(__name__)
 
@@ -55,10 +56,11 @@ class Optimizer(object):
         self.state_dict = self.optimizer.state_dict
         self.load_state_dict = self.optimizer.load_state_dict
 
-    def step(self, max_grad_norm=None):
+    def step(self, tensorboard=None, max_grad_norm=None):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
 
         Args:
+            tensorboard (tensorboardX.SummaryWriter): Tensorboard for logging infinite gradient.
             max_grad_norm (float, optional): Clip gradient norm to this maximum.
 
         Returns:
@@ -69,13 +71,18 @@ class Optimizer(object):
         parameter_norm = get_parameter_norm(params)
 
         if max_grad_norm is not None:
+            if tensorboard is not None:
+                tensorboard.add_scalar('max_grad_norm/step', max_grad_norm)
             torch.nn.utils.clip_grad_norm_(params, max_norm=max_grad_norm)
 
         # Take a step if norm is finite (e.g. no ``inf`` or ``nan`` values in the gradient)
         if np.isfinite(parameter_norm):
+            if tensorboard is not None:
+                tensorboard.add_scalar('parameter_norm/step', parameter_norm)
             self.optimizer.step()
-        else:
-            logger.warn('Gradient was too large %s, skipping batch.', str(parameter_norm))
+        elif tensorboard is not None:
+            tensorboard.add_text('event/anomaly', 'Gradient was too large %s, skipping batch.',
+                                 str(parameter_norm))
 
         return parameter_norm
 
@@ -101,31 +108,26 @@ class AutoOptimizer(Optimizer):
     """
 
     @configurable
-    def __init__(self, optim, beta=0.98):
+    def __init__(self, optim, beta=0.99):
         super().__init__(optim)
-
-        self.average_norm = None
-        self.beta = beta
-        self.steps = 0
         self.max_grad_norm = None
+        self.stats = ExponentiallyWeightedMovingAverage(beta=beta)
 
-    def step(self):
+    def step(self, tensorboard=None):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
+
+        Args:
+            tensorboard (tensorboardX.SummaryWriter): Tensorboard for logging infinite gradient.
 
         Returns:
             parameter_norm (float): Total norm of the parameters if ``max_grad_norm > 0``;
                 otherwise, returns None.
             max_grad_norm (float): Predicted max grad norm.
         """
-        parameter_norm = super().step(self.max_grad_norm)
+        parameter_norm = super().step(max_grad_norm=self.max_grad_norm)
 
         if np.isfinite(parameter_norm):
-            # Update max gradient norm
-            self.steps += 1
-            if self.average_norm is None:
-                self.average_norm = parameter_norm
-            else:
-                self.average_norm = self.beta * self.average_norm + (1 - self.beta) * parameter_norm
-            self.max_grad_norm = self.average_norm / (1 - self.beta**(self.steps))
+            # Update max gradient norm to the average parameter norm
+            self.max_grad_norm, _ = self.stats.step(parameter_norm)
 
         return parameter_norm, self.max_grad_norm

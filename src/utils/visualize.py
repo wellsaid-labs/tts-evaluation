@@ -143,6 +143,7 @@ class Tensorboard(SummaryWriter):
             **kwargs: Other key word arguments used to initialize ``SummaryWriter``.
         """
         self.writer = SummaryWriter(*args, log_dir=log_dir, **kwargs)
+        self.step = None
 
         # Setup tensorboard
         os.makedirs(log_dir, exist_ok=True)
@@ -167,14 +168,34 @@ class Tensorboard(SummaryWriter):
         logger.info('Started Tensorboard at step %d with log directory ``%s/*tfevents*``', step,
                     log_dir)
 
-    def add_scalar(self, path, scalar, step):
-        """ Add scalar to tensorboard
+    def set_step(self, step):
+        """ Set a global step to be used for  tensorboard events unless step is explicitly declared.
+
+        Args:
+            step (int): Global step to set.
+        """
+        self.step = step
+
+    def add_text(self, path, text, step=None):
+        """ Add text to tensorboard.
+
+        Args:
+            path (str): List of tags to use as label.
+            text (str): Text to add to tensorboard.
+            step (int, optional): Step value to record.
+        """
+        step = self.step if step is None else step
+        self.writer.add_text(path, text, step)
+
+    def add_scalar(self, path, scalar, step=None):
+        """ Add scalar to tensorboard.
 
         Args:
             path (str): List of tags to use as label.
             scalar (number): Scalar to add to tensorboard.
-            step (int): Step value to record.
+            step (int, optional): Step value to record.
         """
+        step = self.step if step is None else step
         self.writer.add_scalar(path, scalar, step)
 
     def _add_image(self, path, step, plot, *data):
@@ -186,63 +207,65 @@ class Tensorboard(SummaryWriter):
             plot (callable): Callable that returns an ``matplotlib.figure.Figure`` given numpy data.
             *tensors (torch.Tensor): Tensor to visualize.
         """
+        step = self.step if step is None else step
         data = [row.detach().cpu().numpy() if torch.is_tensor(row) else row for row in data]
         image = figure_to_image(plot(*data))
         self.writer.add_image(path, image, step)
 
-    def add_stop_token(self, path, stop_token, step):
+    def add_stop_token(self, path, stop_token, step=None):
         """ Plot probability of the stop token over time in Tensorboard.
 
         Args:
             path (str): List of tags to use as label.
             stop_token (torch.FloatTensor([decoder_timestep])): Stop token probablity per decoder
                 timestep.
-            step (int): Step value to record.
+            step (int, optional): Step value to record.
         """
         self._add_image(path, step, plot_stop_token, stop_token)
 
-    def add_waveform(self, path, signal, step):
+    def add_waveform(self, path, signal, step=None):
         """ Add image of a waveform to Tensorboard.
 
         Args:
             path (str): List of tags to use as label.
             signal (torch.FloatTensor [signal_length]): Signal to plot.
-            step (int): Step value to record.
+            step (int, optional): Step value to record.
         """
         self._add_image(path, step, plot_waveform, signal)
 
-    def add_log_mel_spectrogram(self, path, log_mel_spectrogram, step):
+    def add_log_mel_spectrogram(self, path, log_mel_spectrogram, step=None):
         """ Add image of a log mel spectrogram to Tensorboard.
 
         Args:
             path (str): List of tags to use as label.
             log_mel_spectrogram (torch.FloatTensor [frames, num_mel_bins])
-            step (int): Step value to record.
+            step (int, optional): Step value to record.
         """
         self._add_image(path, step, plot_log_mel_spectrogram, log_mel_spectrogram)
 
-    def add_attention(self, path, alignment, step):
+    def add_attention(self, path, alignment, step=None):
         """ Add image of an attention alignment to Tensorboard.
 
         Args:
             path (str): List of tags to use as label.
             alignment (torch.FloatTensor([decoder_timestep, encoder_timestep])): Attention alignment
                 weights computed at every timestep of the decoder.
-            step (int): Step value to record.
+            step (int, optional): Step value to record.
         """
         self._add_image(path, step, plot_attention, alignment)
 
     @configurable
-    def add_audio(self, path_audio, path_image, signal, step, sample_rate=24000):
+    def add_audio(self, path_audio, path_image, signal, step=None, sample_rate=24000):
         """ Add audio to tensorboard.
 
         Args:
             path_audio (list): List of tags to use as label for the audio file.
             path_image (list): List of tags to use as label for the waveform image.
             signal (torch.Tensor): Signal to add to tensorboard as audio.
-            step (int): Step value to record.
+            step (int, optional): Step value to record.
             sample_rate (int): Sample rate of the associated wave.
         """
+        step = self.step if step is None else step
         signal = signal.detach().cpu()
         assert torch.max(signal) <= 1.0 and torch.min(
             signal) >= -1.0, "Should be [-1, 1] it is [%f, %f]" % (torch.max(signal),

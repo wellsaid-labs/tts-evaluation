@@ -9,6 +9,8 @@ from src.utils.utils import split_dataset
 from src.utils.utils import split_signal
 from src.utils.utils import torch_load
 from src.utils.utils import torch_save
+from src.utils.utils import ExponentiallyWeightedMovingAverage
+from src.utils.utils import AnomalyDetector
 from src.utils.visualize import plot_attention
 from src.utils.visualize import plot_log_mel_spectrogram
 from src.utils.visualize import plot_stop_token
@@ -22,5 +24,5 @@ __all__ = [
     'split_dataset', 'plot_attention', 'plot_stop_token', 'plot_waveform', 'torch_save',
     'torch_load', 'plot_log_mel_spectrogram', 'spectrogram_to_image', 'get_filename_table',
     'parse_hparam_args', 'split_signal', 'combine_signal', 'Tensorboard',
-    'load_most_recent_checkpoint'
+    'load_most_recent_checkpoint', 'ExponentiallyWeightedMovingAverage', 'AnomalyDetector'
 ]

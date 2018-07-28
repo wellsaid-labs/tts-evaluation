@@ -13,6 +13,7 @@ from src.utils import split_dataset
 from src.utils import split_signal
 from src.utils import combine_signal
 from src.utils import load_most_recent_checkpoint
+from src.utils import AnomalyDetector
 
 
 class MockModel(nn.Module):
@@ -35,6 +36,14 @@ class MockModel(nn.Module):
         x = functional.relu(self.fc2(x))
         x = self.fc3(x)
         return x
+
+
+def test_anomaly_detector():
+    min_steps = 10
+    anomaly_detector = AnomalyDetector(min_steps=min_steps)
+    for _ in range(min_steps):
+        assert not anomaly_detector.step(1)
+    assert anomaly_detector.step(2)
 
 
 def test_get_total_parameters():

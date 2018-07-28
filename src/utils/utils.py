@@ -6,6 +6,7 @@ import ast
 import glob
 import logging
 import logging.config
+import math
 import os
 
 from torchnlp.utils import shuffle as do_deterministic_shuffle
@@ -19,6 +20,74 @@ logger = logging.getLogger(__name__)
 
 # Repository root path
 ROOT_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..')
+
+
+class ExponentiallyWeightedMovingAverage():
+    """ Keep track of an exponentially weighted mean and standard deviation every step.
+
+    Args:
+       beta (float): Beta used to weight the exponential mean and standard deviation.
+    """
+
+    def __init__(self, beta=0.99):
+
+        self._average = 0.0
+        self._variance = 0.0
+        self.beta = beta
+        self.step_counter = 0
+
+    def step(self, value):
+        """
+        Args:
+            value (float): Next value to take into account.
+
+        Returns:
+            average (float): Moving average.
+            standard_deviation (float): Moving standard deviation.
+        """
+        self.step_counter += 1
+
+        self._average = self.beta * self._average + (1 - self.beta) * value
+        # The initial 0.0 variance and 0.0 average values introduce bias that is corrected.
+        # LEARN MORE:
+        # https://www.coursera.org/lecture/deep-neural-network/bias-correction-in-exponentially-weighted-averages-XjuhD
+        average_bias_corrected = self._average / (1 - self.beta**(self.step_counter))
+
+        self._variance = self.beta * self._variance + (1 - self.beta) * (
+            value - average_bias_corrected)**2
+        variance_bias_corrected = self._variance / (1 - self.beta**(self.step_counter))
+
+        return average_bias_corrected, math.sqrt(variance_bias_corrected)
+
+
+class AnomalyDetector(ExponentiallyWeightedMovingAverage):
+    """ Detect anomalies at every step with a moving average and standard deviation.
+
+    Args:
+       beta (float, optional): Beta used to weight the exponential mean and standard deviation.
+       sigma (float, optional): Number of standard deviations in order to classify as an anomaly.
+       eps (float, optional): Minimum difference to be considered an anomaly.
+       min_steps (int, optional): Minimum number of steps to wait before detecting anomalies.
+    """
+
+    # Below 10 samples there can be significant bias in the variance estimation causing it
+    # to be underestimated.
+    # LEARN MORE: https://en.wikipedia.org/wiki/Unbiased_estimation_of_standard_deviation
+    def __init__(self, beta=0.99, sigma=6, eps=10**-6, min_steps=10):
+        super().__init__(beta=beta)
+        self.sigma = sigma
+        self.last_standard_deviation = 0.0
+        self.last_average = 0.0
+        self.min_steps = min_steps
+        self.eps = eps
+
+    def step(self, value):
+        if (self.step_counter + 1 >= self.min_steps and abs(value - self.last_average) >
+                self.sigma * self.last_standard_deviation + self.eps):
+            return True
+
+        self.last_average, self.last_standard_deviation = super().step(value)
+        return False
 
 
 def get_total_parameters(model):
