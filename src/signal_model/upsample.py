@@ -1,5 +1,64 @@
 from torch import nn
 
+from src.utils.configurable import configurable
+
+
+class Identity(nn.Module):
+    """ Identity block returns the input. """
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, *args):
+        if len(args) == 1:
+            return args[0]
+
+        return args
+
+
+class ResidualBlock(nn.Module):
+    """ Residual block applied during upsampling.
+
+    Args:
+        in_channels (int): Number of channels in the input image.
+        out_channels (int): Number of channels produced by the convolution.
+        kernel_size (int or tuple): Size of the convolving kernel.
+        padding (int or tuple, optional): Zero-padding added to both sides of the input.
+    """
+
+    def __init__(self, in_channels, out_channels, kernel_size, padding):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.BatchNorm2d(num_features=in_channels),
+            nn.ReLU(),
+            nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                padding=padding))
+
+        self.shortcut = (
+            Identity() if in_channels == out_channels else nn.Conv2d(
+                in_channels=in_channels, out_channels=out_channels, kernel_size=1))
+
+    def forward(self, tensor):
+        """
+        Args:
+            tensor (torch.FloatTensor [batch_size, in_channels, width, height])
+
+        Returns:
+            tensor (torch.FloatTensor [batch_size, out_channels, width, height]):
+        """
+        residual = self.net(tensor)
+
+        # The Conv2D may reduce the size of the tensor; in this case, we just reduce size similarly.
+        less_width = int((tensor.shape[2] - residual.shape[2]) / 2)
+        less_height = int((tensor.shape[3] - residual.shape[3]) / 2)
+        tensor = tensor[:, :, less_width:tensor.shape[2] - less_width, less_height:
+                        tensor.shape[3] - less_height]
+
+        return self.shortcut(tensor) + residual
+
 
 class ConditionalFeaturesUpsample(nn.Module):
     """
@@ -12,21 +71,43 @@ class ConditionalFeaturesUpsample(nn.Module):
     Args:
         in_channels (int): Dimensionality of input features.
         out_channels (int): Dimensionality of outputed features.
-        upsample_learned (int): Number of times to repeat frames with a learned upsampling.
-        upsample_repeat (int): Number of times to repeat frames.
+        kernels (list of tuples): Sizes of kernels used for upsampling, every kernel has an
+            associated number of filters.
+        num_filters (list of int): Filters to be used with each kernel. The last kernel is used
+            for upsampling the length.
+        upsample_repeat (int): Number of times to repeat frames, another upsampling technique.
     """
 
-    def __init__(self, in_channels=80, out_channels=64, upsample_learned=4, upsample_repeat=75):
+    @configurable
+    def __init__(self,
+                 in_channels=80,
+                 out_channels=64,
+                 kernels=[(5, 5), (3, 3), (3, 3), (3, 3)],
+                 num_filters=[64, 64, 32, 10],
+                 upsample_repeat=30):
         super().__init__()
         self.out_channels = out_channels
         self.upsample_repeat = upsample_repeat
-        self.upsample_learned = upsample_learned
+        self.min_padding = sum([(kernel[0] - 1) for kernel in kernels])
 
-        self.upsample_length = nn.ConvTranspose2d(
-            1, 1, kernel_size=(1, upsample_learned), stride=(1, upsample_learned))
+        assert all(all(s % 2 == 1 and s < in_channels for s in kernel) for kernel in kernels), (
+            'Kernel size must be odd and must be less than ``in_channels``')
 
-        self.upsample_channels = nn.Conv1d(
-            in_channels=in_channels, out_channels=out_channels, kernel_size=1)
+        self.initial_conv = nn.Conv2d(
+            in_channels=1,
+            out_channels=num_filters[0],
+            kernel_size=kernels[0],
+            padding=tuple([int((s - 1) / 2) for s in kernels[0]]))
+
+        self.pre_net = nn.Sequential(*[
+            ResidualBlock(
+                in_channels=(num_filters[0] if i == 0 else num_filters[i - 1]),
+                out_channels=num_filters[i],
+                kernel_size=kernel,
+                padding=(0, int((kernel[1] - 1) / 2))) for i, kernel in enumerate(kernels)
+        ])
+
+        self.post_net = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
 
     def _repeat(self, local_features):
         """ Repeat similar to this 3x repeat [1, 2, 3] → [1, 1, 1, 2, 2, 2, 3, 3, 3].
@@ -60,8 +141,11 @@ class ConditionalFeaturesUpsample(nn.Module):
         TODO: Support global conditioning
 
         Args:
-            local_features (torch.FloatTensor [batch_size, local_length, in_channels]):
-                Local features to condition signal generation (e.g. spectrogram).
+            local_features (torch.FloatTensor [batch_size, local_length + padding, in_channels]):
+                Local features to condition signal generation (e.g. spectrogram). Upsample does
+                pad the convolution operations to process the spectrograms; therefore, we require
+                that a user pads ``local_features`` time domain instead with
+                ``sum([(kernel[0] - 1) for kernel in kernels])`` padding.
 
         Returns:
             conditional_features (torch.FloatTensor [batch_size, out_channels, signal_length]):
@@ -69,26 +153,38 @@ class ConditionalFeaturesUpsample(nn.Module):
         """
         batch_size, local_length, in_channels = local_features.shape
 
-        # [batch_size, local_length, in_channels] →
-        # [batch_size, in_channels, local_length]
-        local_features = local_features.transpose(1, 2)
+        assert local_features.shape[1] > self.min_padding, (
+            'Remember to pad local_features as described in the above docs.')
 
-        # [batch_size, in_channels, local_length] →
-        # [batch_size, 1, in_channels, local_length]
+        # [batch_size, local_length + padding, in_channels] →
+        # [batch_size, 1, local_length + padding, in_channels]
         local_features = local_features.unsqueeze(1)
 
-        # [batch_size, in_channels, local_length] →
-        # [batch_size, 1, in_channels, local_length * upsample_learned]
-        local_features = self.upsample_length(local_features)
+        # [batch_size, 1, local_length + padding, in_channels] →
+        # [batch_size, num_filters[0], local_length + padding - kernels[0] + 1, in_channels]
+        local_features = self.initial_conv(local_features)
 
-        # [batch_size, in_channels, local_length] →
-        # [batch_size, in_channels, local_length * upsample_learned]
-        local_features = local_features.squeeze(1)
+        # [batch_size, num_filters[0], local_length + padding - kernels[0] + 1, in_channels] →
+        # [batch_size, num_filters[-1], local_length, in_channels]
+        local_features = self.pre_net(local_features)
 
-        # [batch_size, in_channels, local_length * upsample_learned] →
-        # [batch_size, out_channels, local_length * upsample_learned]
-        local_features = self.upsample_channels(local_features)
+        # [batch_size, num_filters[-1], local_length, in_channels] →
+        # [batch_size, local_length, num_filters[-1], in_channels]
+        local_features = local_features.transpose(1, 2).contiguous()
 
-        # [batch_size, out_channels, signal_length / upsample_repeat] →
-        # [batch_size, out_channels, signal_length]
+        # [batch_size, local_length, num_filters[-1], in_channels] →
+        # [batch_size, local_length * num_filters[-1], in_channels]
+        local_features = local_features.view(batch_size, -1, in_channels)
+
+        # [batch_size, local_length * num_filters[-1], in_channels] →
+        # [batch_size, in_channels, local_length * num_filters[-1]]
+        local_features = local_features.transpose(1, 2)
+
+        # [batch_size, in_channels, local_length * num_filters[-1]] →
+        # [batch_size, out_channels, local_length * num_filters[-1]]
+        local_features = self.post_net(local_features)
+
+        # [batch_size, out_channels, local_length * num_filters[-1]] →
+        # [batch_size, out_channels,
+        #  signal_length (local_length * num_filters[-1] * upsample_repeat)]
         return self._repeat(local_features)

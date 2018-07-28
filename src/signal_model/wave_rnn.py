@@ -34,7 +34,10 @@ class WaveRNN(nn.Module):
     Args:
         hidden_size (int): GRU hidden state size.
         bits (int): Number of bits  Number of categories to predict for coarse and fine variables.
-        upsample_learned (int): Number of times to repeat frames with a learned upsampling.
+        upsample_num_filters (int): Filters to be used with each upsampling kernel. The last kernel
+            is used for upsampling the length.
+        upsample_kernels (list of tuples): Sizes of kernels used for upsampling, every kernel has an
+            associated number of filters.
         upsample_repeat (int): Number of times to repeat frames.
         local_features_size (int): Dimensionality of local features.
     """
@@ -43,8 +46,9 @@ class WaveRNN(nn.Module):
     def __init__(self,
                  hidden_size=896,
                  bits=16,
-                 upsample_learned=4,
-                 upsample_repeat=75,
+                 upsample_num_filters=[64, 64, 32, 10],
+                 upsample_kernels=[(5, 5), (3, 3), (3, 3), (3, 3)],
+                 upsample_repeat=25,
                  local_features_size=128):
         super(WaveRNN, self).__init__()
 
@@ -74,8 +78,9 @@ class WaveRNN(nn.Module):
         self.conditional_features_upsample = ConditionalFeaturesUpsample(
             in_channels=local_features_size,
             out_channels=self.size * 3,
+            num_filters=upsample_num_filters,
             upsample_repeat=upsample_repeat,
-            upsample_learned=upsample_learned)
+            kernels=upsample_kernels)
 
         self.stripped_gru = StrippedGRU(self.size)
 
@@ -213,14 +218,14 @@ class WaveRNN(nn.Module):
             hidden_state (tuple): Hidden state with RNN hidden state and last coarse/fine samples.
         """
         # [batch_size, local_length, local_features_size] →
-        # [batch_size, 3 * self.size, signal_length]
+        # [batch_size, self.size * 3, signal_length]
         conditional = self.conditional_features_upsample(local_features)
 
-        # [batch_size, 3 * self.size, signal_length] →
-        # [batch_size, signal_length,  3 * self.size]
-        conditional = conditional.transpose(1, 2)
+        batch_size, _, signal_length = conditional.shape
 
-        batch_size, signal_length, _ = conditional.shape
+        # [batch_size, self.size * 3, signal_length] →
+        # [batch_size, signal_length, self.size * 3] →
+        conditional = conditional.transpose(1, 2)
 
         # [batch_size, signal_length,  3 * self.size] →
         # [batch_size, signal_length,  3, self.size]

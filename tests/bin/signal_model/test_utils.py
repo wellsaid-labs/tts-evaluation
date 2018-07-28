@@ -27,7 +27,6 @@ def test_load_data():
     assert row['slice']['input_signal'].shape[0] == row['slice']['target_signal_coarse'].shape[0]
     assert row['slice']['target_signal_fine'].shape[0] == row['slice']['target_signal_fine'].shape[
         0]
-    assert row['slice']['input_signal'].shape[0] % row['slice']['log_mel_spectrogram'].shape[0] == 0
     assert row['signal'].shape[0] % row['log_mel_spectrogram'].shape[0] == 0
 
     # Test input signal and target signal are one timestep off

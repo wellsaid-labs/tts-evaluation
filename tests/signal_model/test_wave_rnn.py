@@ -14,11 +14,14 @@ def test_wave_rnn_infer_equals_forward():
     upsample_learned = 2
     upsample_repeat = 2
     hidden_size = 32
+    upsample_kernels = [(5, 5), (3, 3), (3, 3), (3, 3)]
+    length_padding = sum([(kernel[0] - 1) for kernel in upsample_kernels])
 
     net = WaveRNN(
         hidden_size=hidden_size,
         bits=bits,
-        upsample_learned=upsample_learned,
+        upsample_num_filters=[64, 64, 32, upsample_learned],
+        upsample_kernels=upsample_kernels,
         upsample_repeat=upsample_repeat,
         local_features_size=local_features_size).eval()
 
@@ -29,7 +32,8 @@ def test_wave_rnn_infer_equals_forward():
 
     # Inputs
     # NOTE: # Multiply by 0.1 make the gru more unstable
-    local_features = torch.randn(batch_size, local_length, local_features_size) * 0.1
+    local_features = torch.randn(batch_size, local_length + length_padding,
+                                 local_features_size) * 0.1
     hidden_state = torch.randn(hidden_size, batch_size)
     go_coarse, go_fine = split_signal(torch.zeros(batch_size))
     infer_hidden_state = (go_coarse.long(), go_fine.long(), hidden_state[:int(hidden_size / 2)],
@@ -90,16 +94,19 @@ def test_wave_rnn_forward():
     local_features_size = 80
     upsample_learned = 6
     upsample_repeat = 2
+    upsample_kernels = [(5, 5), (3, 3), (3, 3), (3, 3)]
+    length_padding = sum([(kernel[0] - 1) for kernel in upsample_kernels])
     signal_length = local_length * upsample_learned * upsample_repeat
 
-    local_features = torch.rand(batch_size, local_length, local_features_size)
+    local_features = torch.rand(batch_size, local_length + length_padding, local_features_size)
     target_coarse = torch.rand(batch_size, signal_length, 1)
     input_signal = torch.rand(batch_size, signal_length, 2)
 
     net = WaveRNN(
         hidden_size=32,
         bits=bits,
-        upsample_learned=upsample_learned,
+        upsample_num_filters=[64, 64, 32, upsample_learned],
+        upsample_kernels=upsample_kernels,
         upsample_repeat=upsample_repeat,
         local_features_size=local_features_size)
     predicted_coarse, predicted_fine, _ = net.forward(local_features, input_signal, target_coarse)
@@ -118,15 +125,19 @@ def test_wave_rnn_infer():
     local_features_size = 80
     upsample_learned = 6
     upsample_repeat = 2
+    upsample_kernels = [(5, 5), (3, 3), (3, 3), (3, 3)]
+    length_padding = sum([(kernel[0] - 1) for kernel in upsample_kernels])
     signal_length = local_length * upsample_learned * upsample_repeat
 
-    local_features = torch.FloatTensor(batch_size, local_length, local_features_size)
+    local_features = torch.FloatTensor(batch_size, local_length + length_padding,
+                                       local_features_size)
 
     net = WaveRNN(
         hidden_size=32,
         bits=bits,
-        upsample_learned=upsample_learned,
+        upsample_num_filters=[64, 64, 32, upsample_learned],
         upsample_repeat=upsample_repeat,
+        upsample_kernels=upsample_kernels,  # Local
         local_features_size=local_features_size).eval()
     predicted_coarse, predicted_fine, _ = net.infer(local_features)
 

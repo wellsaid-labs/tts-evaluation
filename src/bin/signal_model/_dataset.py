@@ -37,12 +37,14 @@ class SignalDataset(data.Dataset):
                  signal_prefix='signal',
                  extension='.npy',
                  frame_size=3,
+                 frame_pad=0,
                  random=random):
         prefixes = [log_mel_spectrogram_prefix, signal_prefix]
         self.rows = get_filename_table(source, prefixes=prefixes, extension=extension)
         self.log_mel_spectrogram_prefix = log_mel_spectrogram_prefix
         self.signal_prefix = signal_prefix
         self.frame_size = frame_size
+        self.frame_pad = frame_pad
         self.random = random
 
     def __len__(self):
@@ -83,7 +85,17 @@ class SignalDataset(data.Dataset):
         start_frame = self.random.randint(-self.frame_size + 1, num_frames - 1)
         end_frame = min(start_frame + self.frame_size, num_frames)
         start_frame = max(start_frame, 0)
-        frames_slice = log_mel_spectrogram[start_frame:end_frame]
+
+        padded_start_frame = max(start_frame - self.frame_pad, 0)
+        padded_end_frame = min(end_frame + self.frame_pad, num_frames)
+        left_zero_pad = max(-1 * (start_frame - self.frame_pad), 0)
+        right_zero_pad = max(end_frame + self.frame_pad - num_frames, 0)
+
+        if self.frame_pad == 0:
+            assert left_zero_pad == 0 and right_zero_pad == 0
+
+        frames_slice = log_mel_spectrogram[padded_start_frame:padded_end_frame]
+        frames_slice = torch.nn.functional.pad(frames_slice, (0, 0, left_zero_pad, right_zero_pad))
 
         # Get a source sample slice shifted back one and target sample
         end_sample = end_frame * samples_per_frame
