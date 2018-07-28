@@ -115,9 +115,8 @@ class Trainer():  # pragma: no cover
         logger.info('Total Parameters: %d', get_total_parameters(self.model))
         logger.info('Model:\n%s' % self.model)
 
-        self.tensorboard.set_step(self.step)
-        self.train_tensorboard.add_text('event/session', 'Starting new session.')
-        self.dev_tensorboard.add_text('event/session', 'Starting new session.')
+        self.train_tensorboard.add_text('event/session', 'Starting new session.', self.step)
+        self.dev_tensorboard.add_text('event/session', 'Starting new session.', self.step)
 
     def run_epoch(self, train=False, trial_run=False):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
@@ -160,13 +159,12 @@ class Trainer():  # pragma: no cover
             if (i == len(data_iterator) - 1 and train and
                     self.step_unit == self.STEP_UNIT_DECISECONDS):
                 self.step += int(round(time.time() * 10 - start))
-                self.tensorboard.set_step(self.step)
 
         epoch_coarse_loss = total_coarse_loss / total_signal_predictions
         epoch_fine_loss = total_fine_loss / total_signal_predictions
         if not trial_run:
-            self.tensorboard.add_scalar('coarse/loss/epoch', epoch_coarse_loss)
-            self.tensorboard.add_scalar('fine/loss/epoch', epoch_fine_loss)
+            self.tensorboard.add_scalar('coarse/loss/epoch', epoch_coarse_loss, self.step)
+            self.tensorboard.add_scalar('fine/loss/epoch', epoch_fine_loss, self.step)
 
     def _sample_inference(self, batch, max_infer_frames=200):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.
@@ -295,30 +293,34 @@ class Trainer():  # pragma: no cover
 
         if self.step_unit == self.STEP_UNIT_DECISECONDS and train:
             step = self.step + int(round(time.time() * 10 - epoch_start_time))
-            self.tensorboard.set_step(step)
-        elif self.step_unit == self.STEP_UNIT_BATCHES:
-            self.step += 1
-            self.tensorboard.set_step(self.step)
+        else:
+            if self.step_unit == self.STEP_UNIT_BATCHES and train:
+                self.step += 1
+            step = self.step
 
-        loss_item = coarse_loss.item() + fine_loss.item()
-        is_anomaly = self.anomaly_detector.step(loss_item)
-        if train and not is_anomaly:
-            self.optimizer.zero_grad()
-            (coarse_loss + fine_loss).backward()
-            self.optimizer.step(self.tensorboard)
-        elif is_anomaly:
-            self.tensorboard.add_text('event/anomaly', 'Detected a loss anomaly: %f' % loss_item)
+        if train:
+            loss_item = coarse_loss.item() + fine_loss.item()
+            is_anomaly = self.anomaly_detector.step(loss_item)
+            if is_anomaly:
+                self.tensorboard.add_text('event/anomaly',
+                                          'Detected a loss anomaly: %f' % loss_item, step)
+            else:
+                self.optimizer.zero_grad()
+                (coarse_loss + fine_loss).backward()
+                with self.tensorboard.set_step(step):
+                    self.optimizer.step(self.tensorboard)
 
         coarse_loss, fine_loss = coarse_loss.item(), fine_loss.item()
         predicted_coarse, predicted_fine = predicted_coarse.detach(), predicted_fine.detach()
 
         if train:
-            self.tensorboard.add_scalar('coarse/loss/step', coarse_loss)
-            self.tensorboard.add_scalar('fine/loss/step', fine_loss)
+            self.tensorboard.add_scalar('coarse/loss/step', coarse_loss, step)
+            self.tensorboard.add_scalar('fine/loss/step', fine_loss, step)
 
         if sample:
-            self._sample_predicted(batch, predicted_coarse, predicted_fine)
-            self._sample_inference(batch)
+            with self.tensorboard.set_step(step):
+                self._sample_predicted(batch, predicted_coarse, predicted_fine)
+                self._sample_inference(batch)
 
         return coarse_loss, fine_loss, num_predictions
 

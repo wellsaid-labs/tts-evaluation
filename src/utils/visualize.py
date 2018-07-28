@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 import logging
 import matplotlib
 import os
@@ -143,7 +145,7 @@ class Tensorboard(SummaryWriter):
             **kwargs: Other key word arguments used to initialize ``SummaryWriter``.
         """
         self.writer = SummaryWriter(*args, log_dir=log_dir, **kwargs)
-        self.step = None
+        self._step = None
 
         # Setup tensorboard
         os.makedirs(log_dir, exist_ok=True)
@@ -168,14 +170,6 @@ class Tensorboard(SummaryWriter):
         logger.info('Started Tensorboard at step %d with log directory ``%s/*tfevents*``', step,
                     log_dir)
 
-    def set_step(self, step):
-        """ Set a global step to be used for  tensorboard events unless step is explicitly declared.
-
-        Args:
-            step (int): Global step to set.
-        """
-        self.step = step
-
     def add_text(self, path, text, step=None):
         """ Add text to tensorboard.
 
@@ -184,7 +178,9 @@ class Tensorboard(SummaryWriter):
             text (str): Text to add to tensorboard.
             step (int, optional): Step value to record.
         """
-        step = self.step if step is None else step
+        step = self._step if step is None else step
+        assert step is not None
+
         self.writer.add_text(path, text, step)
 
     def add_scalar(self, path, scalar, step=None):
@@ -195,7 +191,9 @@ class Tensorboard(SummaryWriter):
             scalar (number): Scalar to add to tensorboard.
             step (int, optional): Step value to record.
         """
-        step = self.step if step is None else step
+        step = self._step if step is None else step
+        assert step is not None
+
         self.writer.add_scalar(path, scalar, step)
 
     def _add_image(self, path, step, plot, *data):
@@ -207,7 +205,9 @@ class Tensorboard(SummaryWriter):
             plot (callable): Callable that returns an ``matplotlib.figure.Figure`` given numpy data.
             *tensors (torch.Tensor): Tensor to visualize.
         """
-        step = self.step if step is None else step
+        step = self._step if step is None else step
+        assert step is not None
+
         data = [row.detach().cpu().numpy() if torch.is_tensor(row) else row for row in data]
         image = figure_to_image(plot(*data))
         self.writer.add_image(path, image, step)
@@ -265,7 +265,9 @@ class Tensorboard(SummaryWriter):
             step (int, optional): Step value to record.
             sample_rate (int): Sample rate of the associated wave.
         """
-        step = self.step if step is None else step
+        step = self._step if step is None else step
+        assert step is not None
+
         signal = signal.detach().cpu()
         assert torch.max(signal) <= 1.0 and torch.min(
             signal) >= -1.0, "Should be [-1, 1] it is [%f, %f]" % (torch.max(signal),
@@ -288,3 +290,14 @@ class Tensorboard(SummaryWriter):
 
         self.writer.file_writer = file_writer
         self.writer.all_writers = all_writers
+
+    @contextmanager
+    def set_step(self, step):
+        """ Set a global step to be used for tensorboard events unless step is explicitly declared.
+
+        Args:
+            step (int): Global step to set.
+        """
+        self._step = step
+        yield self
+        self._step = None

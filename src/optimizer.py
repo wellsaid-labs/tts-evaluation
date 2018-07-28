@@ -81,7 +81,7 @@ class Optimizer(object):
                 tensorboard.add_scalar('parameter_norm/step', parameter_norm)
             self.optimizer.step()
         elif tensorboard is not None:
-            tensorboard.add_text('event/anomaly', 'Gradient was too large %s, skipping batch.',
+            tensorboard.add_text('event/anomaly', 'Gradient was too large "%s", skipping batch.',
                                  str(parameter_norm))
 
         return parameter_norm
@@ -124,7 +124,7 @@ class AutoOptimizer(Optimizer):
                 otherwise, returns None.
             max_grad_norm (float): Predicted max grad norm.
         """
-        parameter_norm = super().step(max_grad_norm=self.max_grad_norm)
+        parameter_norm = super().step(tensorboard=tensorboard, max_grad_norm=self.max_grad_norm)
 
         if np.isfinite(parameter_norm):
             # Update max gradient norm to the average parameter norm

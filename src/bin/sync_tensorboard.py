@@ -1,6 +1,9 @@
 """
 This script syncs files from multiple servers to one server using rsync periodically.
 
+TODO: Similar to ``keep_alive.py`` have question answering script for checking which servers to keep
+alive.
+
 NOTE:
     Remember to run ``gcloud compute config-ssh`` before this becomes possible and ensure
     each instance has cloud access scope set to: ``Allow full access to all Cloud APIs``.
