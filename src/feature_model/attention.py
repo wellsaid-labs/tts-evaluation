@@ -1,7 +1,6 @@
 import torch
 
 from torch import nn
-from torch.nn import functional
 
 from src.utils.configurable import configurable
 
@@ -101,7 +100,7 @@ class LocationSensitiveAttention(nn.Module):
 
         # score [num_tokens, batch_size, hidden_size]
         # ei,j = w * tanh(W * si−1 + V * hj + U * fi,j + b)
-        score = functional.tanh(encoded_tokens + query + location_features + score_bias)
+        score = torch.tanh(encoded_tokens + query + location_features + score_bias)
 
         del location_features  # Clear memory
         del query  # Clear memory

@@ -49,7 +49,7 @@ def test_load_save_checkpoint():
         optimizer = Optimizer(
             torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
         filename = save_checkpoint(
-            context.checkpoints_directory, model=model, optimizer=optimizer, step=10)
+            directory=context.checkpoints_directory, model=model, optimizer=optimizer, step=10)
         assert os.path.isfile(filename)
 
         # Smoke test

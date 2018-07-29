@@ -10,8 +10,6 @@ import math
 import os
 
 from torchnlp.utils import shuffle as do_deterministic_shuffle
-
-import dill
 import torch
 
 from src.utils.configurable import configurable
@@ -140,7 +138,7 @@ def torch_load(path, device=torch.device('cpu')):
             return storage.cuda(device=device.index)
         return storage
 
-    return torch.load(path, map_location=remap, pickle_module=dill)
+    return torch.load(path, map_location=remap)
 
 
 def torch_save(path, data):
@@ -150,7 +148,7 @@ def torch_save(path, data):
         path (str): Filename to save to.
         data (any): Data to save into file.
     """
-    torch.save(data, path, pickle_module=dill)
+    torch.save(data, path)
     logger.info('Saved: %s' % (path,))
 
 

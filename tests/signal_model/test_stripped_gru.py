@@ -21,9 +21,9 @@ def equivalent_gru(size, hidden, input_, weight_hh_l0, bias_ih_l0, bias_hh_l0):
     hidden_r, hidden_u, hidden_e = projected_hidden.split(size, dim=2)
     input_r, input_u, input_e = input_.split(size, dim=2)
 
-    r = torch.nn.functional.sigmoid(input_r + hidden_r + bias_r)
-    u = torch.nn.functional.sigmoid(input_u + hidden_u + bias_u)
-    next_hidden = torch.nn.functional.tanh(input_e + bias_e + r * hidden_e)
+    r = torch.sigmoid(input_r + hidden_r + bias_r)
+    u = torch.sigmoid(input_u + hidden_u + bias_u)
+    next_hidden = torch.tanh(input_e + bias_e + r * hidden_e)
     return (1.0 - u) * next_hidden + u * hidden
 
 

@@ -314,7 +314,7 @@ class Trainer():  # pragma: no cover
                 self.optimizer.zero_grad()
                 (coarse_loss + fine_loss).backward()
                 with self.tensorboard.set_step(step):
-                    self.optimizer.step(self.tensorboard)
+                    self.optimizer.step(tensorboard=self.tensorboard)
 
         coarse_loss, fine_loss = coarse_loss.item(), fine_loss.item()
         predicted_coarse, predicted_fine = predicted_coarse.detach(), predicted_fine.detach()
