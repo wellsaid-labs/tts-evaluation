@@ -52,6 +52,8 @@ class Trainer():  # pragma: no cover
         num_workers (int, optional): Number of workers for data loading.
         sigma (int, optional): Number of standard deviations to use when detecting anomolies.
         beta (float, optional): Smoothing parameter to compute the average loss.
+        anomaly_detector (AnomalyDetector, optional): Anomaly detector used to skip batches that
+            result in large loss.
     """
 
     STEP_UNIT_DECISECONDS = 'deciseconds'
@@ -74,6 +76,7 @@ class Trainer():  # pragma: no cover
                  criterion=CrossEntropyLoss,
                  optimizer=Adam,
                  num_workers=0,
+                 anomaly_detector=None,
                  sigma=6,
                  beta=0.99):
         assert step_unit in [self.STEP_UNIT_BATCHES,
@@ -86,6 +89,10 @@ class Trainer():  # pragma: no cover
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.optimizer.to(device)
+
+        self.anomaly_detector = anomaly_detector if isinstance(
+            anomaly_detector, AnomalyDetector) else AnomalyDetector(
+                beta=beta, sigma=sigma)
 
         self.criterion = criterion(reduce=False).to(device)
 
@@ -102,7 +109,6 @@ class Trainer():  # pragma: no cover
         self.num_workers = num_workers
         self.sample_rate = sample_rate
         self.random = random.Random(123)  # Ensure the same samples are sampled
-        self.anomaly_detector = AnomalyDetector(beta=beta, sigma=sigma)
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step (%s): %d', self.step_unit, self.step)
@@ -400,7 +406,8 @@ def main(checkpoint_path=None,
                     optimizer=trainer.optimizer,
                     epoch=trainer.epoch,
                     step=trainer.step,
-                    experiment_directory=context.directory)
+                    experiment_directory=context.directory,
+                    anomaly_detector=trainer.anomaly_detector)
                 trainer.run_epoch(train=False, trial_run=is_trial_run)
             trainer.epoch += 1
 

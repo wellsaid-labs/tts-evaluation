@@ -100,24 +100,15 @@ def load_checkpoint(checkpoint_path=None, device=torch.device('cpu')):
     return checkpoint
 
 
-def save_checkpoint(directory,
-                    model=None,
-                    optimizer=None,
-                    epoch=None,
-                    step=None,
-                    filename=None,
-                    experiment_directory=None):
+def save_checkpoint(directory, model=None, step=None, filename=None, **kwargs):
     """ Save a checkpoint.
 
     Args:
         directory (str): Directory where to save the checkpoint.
         model (torch.nn.Module, optional): Model to train and evaluate.
-        optimizer (torch.optim.Optimizer, optional): Optimizer used for gradient descent.
-        epoch (int, optional): Starting epoch, useful warm starts (i.e. checkpoints).
         step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
         filename (str, optional): Filename to save the checkpoint too, by default the checkpoint
             is saved in ``os.path.join(context.epoch_directory, 'checkpoint.pt')``
-        experiment_directory (str, optional): Directory experiment logs are saved in.
 
     Returns:
         checkpoint (dict or None): Loaded checkpoint or None
@@ -126,13 +117,8 @@ def save_checkpoint(directory,
         name = 'step_%d.pt' % (step,) if step is not None else 'checkpoint.pt'
         filename = os.path.join(directory, name)
 
-    torch_save(
-        filename, {
-            'model': model,
-            'optimizer': optimizer,
-            'epoch': epoch,
-            'step': step,
-            'experiment_directory': experiment_directory
-        })
+    to_save = {'model': model, 'step': step}
+    to_save.update(kwargs)
+    torch_save(filename, to_save)
 
     return filename
