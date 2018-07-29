@@ -66,7 +66,8 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
     Args:
        beta (float, optional): Beta used to weight the exponential mean and standard deviation.
        sigma (float, optional): Number of standard deviations in order to classify as an anomaly.
-       eps (float, optional): Minimum difference to be considered an anomaly.
+       eps (float, optional): Minimum difference to be considered an anomaly used for numerical
+          stability.
        min_steps (int, optional): Minimum number of steps to wait before detecting anomalies.
     """
 
