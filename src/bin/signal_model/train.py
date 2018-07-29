@@ -292,7 +292,7 @@ class Trainer():  # pragma: no cover
                 'target_coarse': batch['slice']['target_signal_coarse'].unsqueeze(2)
             },
             dim=0,
-            output_device=self.device)
+            output_device=self.device.index)
 
         coarse_loss, fine_loss, num_predictions = self._compute_loss(
             batch=batch, predicted_coarse=predicted_coarse, predicted_fine=predicted_fine)
