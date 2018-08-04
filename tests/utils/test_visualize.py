@@ -25,6 +25,9 @@ def test_tensorboard():
     tensorboard.add_log_mel_spectrogram('log_mel_spectrogram', torch.rand(5, 6), 0)
     tensorboard.add_attention('attention', torch.rand(5, 6), 0)
     tensorboard.add_audio('audio', 'waveform', torch.rand(6), 0)
+    with tensorboard.set_step(0):
+        tensorboard.add_text('text', 'text', 0)
+
     tensorboard.close()
 
     assert os.path.isdir(directory)

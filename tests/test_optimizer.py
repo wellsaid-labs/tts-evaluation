@@ -7,6 +7,18 @@ from src.optimizer import Optimizer
 from src.optimizer import AutoOptimizer
 
 
+class MockTensorboard():
+
+    def __init__(self):
+        pass
+
+    def add_text(self, *args, **kwargs):
+        pass
+
+    def add_scalar(self, *args, **kwargs):
+        pass
+
+
 class TestOptimizer(unittest.TestCase):
 
     def test_init(self):
@@ -30,7 +42,7 @@ class TestOptimizer(unittest.TestCase):
         input_ = torch.randn(5, 3, 10)
         output, _ = net(input_)
         output.sum().backward()
-        optim.step(max_grad_norm=None)  # Set state
+        optim.step(max_grad_norm=None, tensorboard=MockTensorboard())  # Set state
 
         optim.to(torch.device('cpu'))
 
@@ -38,7 +50,7 @@ class TestOptimizer(unittest.TestCase):
     def test_step_max_grad_norm(self, mock_clip_grad_norm):
         params = [torch.nn.Parameter(torch.randn(2, 3, 4))]
         optim = Optimizer(torch.optim.Adam(params))
-        optim.step(max_grad_norm=5)
+        optim.step(max_grad_norm=5, tensorboard=MockTensorboard())
         mock_clip_grad_norm.assert_called_once()
 
     @mock.patch("torch.nn.utils.clip_grad_norm_")
@@ -66,7 +78,7 @@ class TestOptimizer(unittest.TestCase):
         adam = torch.optim.Adam(params)
         adam.step = _step
         optim = Optimizer(adam)
-        optim.step()
+        optim.step(tensorboard=MockTensorboard())
         assert did_step
 
         # Test ``inf``
@@ -76,6 +88,7 @@ class TestOptimizer(unittest.TestCase):
         adam = torch.optim.Adam(params)
         adam.step = _step
         optim = Optimizer(adam)
+        optim.step(tensorboard=MockTensorboard())
         assert not did_step
 
         # Test ``nan``
@@ -84,4 +97,5 @@ class TestOptimizer(unittest.TestCase):
         adam = torch.optim.Adam(params)
         adam.step = _step
         optim = Optimizer(adam)
+        optim.step(tensorboard=MockTensorboard())
         assert not did_step

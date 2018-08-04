@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_parameter_norm(parameters, norm_type=2):
-    """Compute the total 2-norm of the parameters.
+    """Compute the total norm of the parameters.
 
     The norm is computed over all gradients together, as if they were
     concatenated into a single vector.
@@ -56,29 +56,36 @@ class Optimizer(object):
         self.state_dict = self.optimizer.state_dict
         self.load_state_dict = self.optimizer.load_state_dict
 
-    def step(self, tensorboard=None, max_grad_norm=None):
+    def step(self, tensorboard=None, max_grad_norm=None, eps=10**-4):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
 
         Args:
             tensorboard (tensorboardX.SummaryWriter): Tensorboard for logging infinite gradient.
             max_grad_norm (float, optional): Clip gradient norm to this maximum.
+            eps (float, optional): Parameter used to sanity check ``parameter_norm`` equality.
 
         Returns:
             parameter_norm (float): Total norm of the parameters.
         """
-        params = itertools.chain.from_iterable(
-            [group['params'] for group in self.optimizer.param_groups])
+        params = list(
+            itertools.chain.from_iterable(
+                [group['params'] for group in self.optimizer.param_groups]))
         parameter_norm = get_parameter_norm(params)
+        parameter_norm_inf = get_parameter_norm(params, norm_type=float('inf'))
 
         if max_grad_norm is not None:
             if tensorboard is not None:
                 tensorboard.add_scalar('max_grad_norm/step', max_grad_norm)
-            torch.nn.utils.clip_grad_norm_(params, max_norm=max_grad_norm)
+            other_parameter_norm = torch.nn.utils.clip_grad_norm_(params, max_norm=max_grad_norm)
+
+            # Both callables should compute the same value
+            assert abs(parameter_norm - other_parameter_norm) < eps
 
         # Take a step if norm is finite (e.g. no ``inf`` or ``nan`` values in the gradient)
         if np.isfinite(parameter_norm):
             if tensorboard is not None:
                 tensorboard.add_scalar('parameter_norm/step', parameter_norm)
+                tensorboard.add_scalar('parameter_inf_norm/step', parameter_norm_inf)
             self.optimizer.step()
         elif tensorboard is not None:
             tensorboard.add_text('event/anomaly', 'Gradient was too large "%s", skipping batch.',

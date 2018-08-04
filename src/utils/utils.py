@@ -10,14 +10,16 @@ import math
 import os
 
 from torchnlp.utils import shuffle as do_deterministic_shuffle
+
 import torch
+import numpy as np
 
 from src.utils.configurable import configurable
 
 logger = logging.getLogger(__name__)
 
 # Repository root path
-ROOT_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..')
+ROOT_PATH = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..'))
 
 
 class ExponentiallyWeightedMovingAverage():
@@ -81,6 +83,9 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
         self.eps = eps
 
     def step(self, value):
+        if not np.isfinite(value):
+            return True
+
         if (self.step_counter + 1 >= self.min_steps and abs(value - self.last_average) >
                 self.sigma * self.last_standard_deviation + self.eps):
             return True

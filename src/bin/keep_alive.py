@@ -34,7 +34,7 @@ def get_available_instances():
     for instance in sorted(instances, key=lambda i: i['name']):
         response = ''
         while response not in ['Y', 'n']:
-            response = input('Keep alive instance "%s"? Y/n\n' % instance['name'])
+            response = input('Keep alive instance "%s"? (Y/n) ' % instance['name'])
             if response == 'Y':
                 filtered_instances.append(instance)
     logger.info('Keeping alive instances: %s', [i['name'] for i in filtered_instances])
@@ -42,7 +42,7 @@ def get_available_instances():
     return filtered_instances
 
 
-def keep_alive(instances, command, scheduler, repeat_every=60):
+def keep_alive(instances, command, scheduler, repeat_every=60, retry=3):
     """ Restart GCP instances every ``repeat_every`` seconds with ``command``.
 
     Args:
@@ -64,20 +64,26 @@ def keep_alive(instances, command, scheduler, repeat_every=60):
         logger.info('Status of the instance is: %s', status)
 
         if status == INSTANCE_STOPPED:
-            try:
-                logger.info('Restarting instance "%s" in zone %s', name, zone)
-                output = subprocess.check_output(
-                    'gcloud compute instances start %s --zone=%s' % (name, zone), shell=True)
-                logger.info('Restarting results: %s', output)
+            for i in range(retry):
+                if i > 0:
+                    logger.info('Retrying again in %d', repeat_every)
+                    time.sleep(repeat_every)
 
-                logger.info('Running command on instance: %s', command)
-                output = subprocess.check_output(
-                    'gcloud compute ssh %s --zone=%s --command="%s"' % (name, zone, command),
-                    shell=True)
-                logger.info('Command results: %s', output)
+                try:
+                    logger.info('Restarting instance "%s" in zone %s', name, zone)
+                    output = subprocess.check_output(
+                        'gcloud compute instances start %s --zone=%s' % (name, zone), shell=True)
+                    logger.info('Restarting results: %s', output)
 
-            except Exception as e:
-                logger.warn('Exception: %s', e)
+                    logger.info('Running command on instance: %s', command)
+                    output = subprocess.check_output(
+                        'gcloud compute ssh %s --zone=%s --command="%s"' % (name, zone, command),
+                        shell=True)
+                    logger.info('Command results: %s', output)
+                    break
+
+                except Exception as e:
+                    logger.warn('Exception: %s', e)
 
         print('-' * 100)
 

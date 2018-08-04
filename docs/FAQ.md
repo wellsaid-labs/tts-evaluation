@@ -21,14 +21,6 @@ or
 
     sudo sh -c "ulimit -n 65536 && exec su $LOGNAME"
 
-### /usr/bin/ld: cannot find -lz
-
-This error can occur when installing NV-WaveNet and can be resolved with the instructions [here](https://stackoverflow.com/questions/3373995/usr-bin-ld-cannot-find-lz).
-
-### nv_wavenet_util.cuh(89): error: more than one conversion function from "half"...
-
-This error can occur when installing NV-WaveNet and can be resolved with the instructions [here](https://github.com/NVIDIA/nv-wavenet/issues/5).
-
 ### SystemError: unknown opcode
 
 For me, this happened when I tried to load a model checkpoint on a different python version

@@ -1,14 +1,14 @@
-"""
-This script syncs files from multiple servers to one server using rsync periodically.
+""" This executable periodically rsyncs multiple GCP instances to a local GCP instance.
 
 NOTE:
-    Remember to run ``gcloud compute config-ssh`` before this becomes possible and ensure
-    each instance has cloud access scope set to: ``Allow full access to all Cloud APIs``.
+    Remember to run ``gcloud compute config-ssh`` before running this script and ensure
+    each instance has cloud access scope set to ``Allow full access to all Cloud APIs`` on
+    https://console.cloud.google.com/.
 
 Example:
 
-    python3 src/bin/sync_tensorboard.py --destination ~/Tacotron-2/sync/ \
-                                        --source ~/Tacotron-2/experiments/signal_model
+    python3 src/bin/sync_instances.py --destination ~/Tacotron-2/sync/ \
+                                      --source ~/Tacotron-2/experiments/signal_model
 """
 import argparse
 import json
@@ -26,8 +26,11 @@ logger = logging.getLogger(__name__)
 INSTANCE_RUNNING = 'RUNNING'
 
 
-def get_available_instances():
-    """ Get a list of preemtible instances to keep alive.
+def get_instances():
+    """ Get a list of instances sync.
+
+    Returns:
+        (list of dict): List of instances to sync with the instance details.
     """
     instances = json.loads(
         subprocess.check_output('gcloud compute instances list --format json',
@@ -46,7 +49,7 @@ def get_available_instances():
             gpu = 'GPU'
 
         while response not in ['Y', 'n']:
-            response = input('Sync "%s" %dx%s instance? Y/n\n' % (instance['name'], num_gpu, gpu))
+            response = input('Sync "%s" %dx%s instance? (Y/n) ' % (instance['name'], num_gpu, gpu))
             if response == 'Y':
                 filtered_instances.append(instance)
     logger.info('Syncing instances: %s', [i['name'] for i in filtered_instances])
@@ -54,8 +57,8 @@ def get_available_instances():
     return filtered_instances
 
 
-def sync(instances, source, destination, scheduler, repeat_every=5):
-    """ ``rsync`` from ``cli_args.server`` to ``cli_args.path`` on local server.
+def main(instances, source, destination, scheduler, repeat_every=5):
+    """ ``rsync`` ``instances`` ``source`` to ``destination`` on local instance.
 
     Args:
         instances (list of dict): Instances with the ``name``, ``zone`` and ``status`` defined.
@@ -105,7 +108,7 @@ def sync(instances, source, destination, scheduler, repeat_every=5):
     scheduler.enter(
         delay=repeat_every,
         priority=1,
-        action=sync,
+        action=main,
         argument=(instances, source, destination, scheduler, repeat_every))
 
 
@@ -116,8 +119,8 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '-d', '--destination', type=str, required=True, help='Path on local server to sync')
     args = parser.parse_args()
-    instances = get_available_instances()
+    instances = get_instances()
 
     scheduler = sched.scheduler(time.time, time.sleep)
-    sync(instances, args.source, args.destination, scheduler)
+    main(instances, args.source, args.destination, scheduler)
     scheduler.run()

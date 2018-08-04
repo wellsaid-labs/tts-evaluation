@@ -22,7 +22,7 @@ def main(checkpoint_path,
          sample_rate=24000,
          samples=25,
          device=torch.device('cpu')):  # pragma: no cover
-    """ Generate random samples of vocoder to evaluate.
+    """ Generate random samples of signal model to evaluate.
 
     Args:
         checkpoint_path (str): Checkpoint to load.
@@ -71,7 +71,7 @@ def main(checkpoint_path,
 if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '-c', '--checkpoint', type=str, required=True, help='Vocoder checkpoint to evaluate.')
+        '-c', '--checkpoint', type=str, required=True, help='Signal model checkpoint to evaluate.')
     cli_args = parser.parse_args()
 
     set_hparams()

@@ -166,8 +166,10 @@ class Trainer():  # pragma: no cover
                     self.step_unit == self.STEP_UNIT_DECISECONDS):
                 self.step += int(round(time.time() * 10 - start))
 
-        epoch_coarse_loss = total_coarse_loss / total_signal_predictions
-        epoch_fine_loss = total_fine_loss / total_signal_predictions
+        epoch_coarse_loss = (0 if total_signal_predictions == 0 else
+                             total_coarse_loss / total_signal_predictions)
+        epoch_fine_loss = (0 if total_signal_predictions == 0 else
+                           total_fine_loss / total_signal_predictions)
         if not trial_run:
             self.tensorboard.add_scalar('coarse/loss/epoch', epoch_coarse_loss, self.step)
             self.tensorboard.add_scalar('fine/loss/epoch', epoch_fine_loss, self.step)
@@ -305,11 +307,12 @@ class Trainer():  # pragma: no cover
             step = self.step
 
         if train:
-            loss_item = coarse_loss.item() + fine_loss.item()
-            is_anomaly = self.anomaly_detector.step(loss_item)
+            coarse_loss_item = coarse_loss.item()
+            is_anomaly = self.anomaly_detector.step(coarse_loss_item)
             if is_anomaly:
-                self.tensorboard.add_text('event/anomaly',
-                                          'Detected a loss anomaly: %f' % loss_item, step)
+                self.tensorboard.add_text(
+                    'event/anomaly', 'Detected a coarse loss anomaly: %f' % coarse_loss_item, step)
+                return 0.0, 0.0, 0
             else:
                 self.optimizer.zero_grad()
                 (coarse_loss + fine_loss).backward()
@@ -341,8 +344,6 @@ def main(checkpoint_path=None,
          label='signal_model',
          experiments_root='experiments/'):  # pragma: no cover
     """ Main module that trains a the signal model saving checkpoints incrementally.
-
-    TODO: Consider relabeling this to wave_rnn or signal_model/wave_rnn
 
     Args:
         checkpoint_path (str, optional): Accepts a checkpoint path to load or empty string
