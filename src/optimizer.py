@@ -49,7 +49,6 @@ class Optimizer(object):
 
     def __init__(self, optim):
         self.optimizer = optim
-        self.max_grad_norm = max_grad_norm
 
         # Common functions
         self.zero_grad = self.optimizer.zero_grad
@@ -120,18 +119,15 @@ class AutoOptimizer(Optimizer):
         self.max_grad_norm = None
         self.stats = ExponentiallyWeightedMovingAverage(beta=beta)
 
-    def step(self, tensorboard=None):
+    def step(self, **kwargs):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
-
-        Args:
-            tensorboard (tensorboardX.SummaryWriter): Tensorboard for logging infinite gradient.
 
         Returns:
             parameter_norm (float): Total norm of the parameters if ``max_grad_norm > 0``;
                 otherwise, returns None.
             max_grad_norm (float): Predicted max grad norm.
         """
-        parameter_norm = super().step(tensorboard=tensorboard, max_grad_norm=self.max_grad_norm)
+        parameter_norm = super().step(max_grad_norm=self.max_grad_norm, **kwargs)
 
         if np.isfinite(parameter_norm):
             # Update max gradient norm to the average parameter norm

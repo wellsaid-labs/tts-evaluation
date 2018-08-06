@@ -48,21 +48,27 @@ class TestOptimizer(unittest.TestCase):
 
     @mock.patch("torch.nn.utils.clip_grad_norm_")
     def test_step_max_grad_norm(self, mock_clip_grad_norm):
-        params = [torch.nn.Parameter(torch.randn(2, 3, 4))]
-        optim = Optimizer(torch.optim.Adam(params))
-        optim.step(max_grad_norm=5, tensorboard=MockTensorboard())
+        net = torch.nn.GRU(10, 20, 2)
+        adam = torch.optim.Adam(net.parameters())
+        optim = Optimizer(adam)
+        input_ = torch.randn(5, 3, 10)
+        output, _ = net(input_)
+        output.sum().backward()
+        mock_clip_grad_norm.return_value = 1.0
+        optim.step(max_grad_norm=5, tensorboard=MockTensorboard(), eps=100)
         mock_clip_grad_norm.assert_called_once()
 
     @mock.patch("torch.nn.utils.clip_grad_norm_")
     def test_auto_step_max_grad_norm(self, mock_clip_grad_norm):
+        mock_clip_grad_norm.return_value = 1.0
         params = [torch.nn.Parameter(torch.randn(2, 3, 4))]
         params[0].grad = torch.randn(2, 3, 4)
         optim = AutoOptimizer(torch.optim.Adam(params))
         assert optim.max_grad_norm is None
-        optim.step()
+        optim.step(eps=100)
         assert optim.max_grad_norm is not None
         old_max_grad_norm = optim.max_grad_norm
-        optim.step()
+        optim.step(eps=100)
         assert old_max_grad_norm != optim.max_grad_norm  # Max grad norm updates
         mock_clip_grad_norm.assert_called_once()  # Max grad norm is only called on the second step
 

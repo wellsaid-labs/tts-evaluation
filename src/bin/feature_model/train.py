@@ -107,6 +107,9 @@ class Trainer():  # pragma: no cover
         logger.info('Total Parameters: %d', get_total_parameters(self.model))
         logger.info('Model:\n%s', self.model)
 
+        self.train_tensorboard.add_text('event/session', 'Starting new session.', self.step)
+        self.dev_tensorboard.add_text('event/session', 'Starting new session.', self.step)
+
     def run_epoch(self, train=False, trial_run=False):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
 
@@ -251,8 +254,8 @@ class Trainer():  # pragma: no cover
         if train:
             self.optimizer.zero_grad()
             (pre_frames_loss + post_frames_loss + stop_token_loss).backward()
-            parameter_norm = self.optimizer.step()
-            self.tensorboard.add_scalar('parameter_norm/step', parameter_norm, self.step)
+            with self.tensorboard.set_step(self.step):
+                self.optimizer.step(tensorboard=self.tensorboard)
             self.scheduler.step()
 
         (pre_frames_loss, post_frames_loss, stop_token_loss) = tuple(

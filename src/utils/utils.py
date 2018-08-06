@@ -81,13 +81,20 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
         self.last_average = 0.0
         self.min_steps = min_steps
         self.eps = eps
+        self.anomaly_counter = 0
+
+    @property
+    def max_deviation(self):
+        return self.sigma * self.last_standard_deviation + self.eps
 
     def step(self, value):
         if not np.isfinite(value):
+            self.anomaly_counter += 1
             return True
 
-        if (self.step_counter + 1 >= self.min_steps and abs(value - self.last_average) >
-                self.sigma * self.last_standard_deviation + self.eps):
+        if (self.step_counter + 1 >= self.min_steps and
+                abs(value - self.last_average) > self.max_deviation):
+            self.anomaly_counter += 1
             return True
 
         self.last_average, self.last_standard_deviation = super().step(value)

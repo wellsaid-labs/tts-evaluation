@@ -13,15 +13,15 @@ import torch
 from src.bin.signal_model._data_iterator import DataIterator
 from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
-from src.bin.signal_model._utils import load_most_recent_checkpoint
 from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
-from src.optimizer import Optimizer
 from src.optimizer import AutoOptimizer
+from src.optimizer import Optimizer
 from src.signal_model import WaveRNN
-from src.utils import combine_signal
 from src.utils import AnomalyDetector
+from src.utils import combine_signal
 from src.utils import get_total_parameters
+from src.utils import load_most_recent_checkpoint
 from src.utils import parse_hparam_args
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
@@ -311,7 +311,9 @@ class Trainer():  # pragma: no cover
             is_anomaly = self.anomaly_detector.step(coarse_loss_item)
             if is_anomaly:
                 self.tensorboard.add_text(
-                    'event/anomaly', 'Detected a coarse loss anomaly: %f' % coarse_loss_item, step)
+                    'event/anomaly', 'Detected a coarse loss anomaly %d (%f > %f ± %f)' %
+                    (self.anomaly_detector.anomaly_counter, coarse_loss_item,
+                     self.anomaly_detector.last_average, self.anomaly_detector.max_deviation), step)
                 return 0.0, 0.0, 0
             else:
                 self.optimizer.zero_grad()
