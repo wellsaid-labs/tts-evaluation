@@ -20,7 +20,8 @@ import time
 
 from src.utils import ROOT_PATH
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format='[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 INSTANCE_RUNNING = 'RUNNING'

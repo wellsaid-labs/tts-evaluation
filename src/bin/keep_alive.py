@@ -1,12 +1,17 @@
 """
 This script runs a loop to restart preetible servers.
 
+NOTE: Within the example, we add ``shutdown now`` incase the ``python3`` process dies; therefore,
+queuing it up to be rebooted by ``keep_alive.py``.
+
 Example:
+
     python3 src/bin/keep_alive.py --command="screen -dm bash -c \
         'cd Tacotron-2/; \
         export PYTHONPATH=.; \
         ulimit -n 65536; \
-        python3 src/bin/signal_model/train.py -c;'"
+        python3 src/bin/signal_model/train.py -c; \
+        sudo shutdown now;'"
 """
 import argparse
 import json
@@ -15,7 +20,8 @@ import sched
 import subprocess
 import time
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format='[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 INSTANCE_RUNNING = 'RUNNING'
@@ -73,13 +79,13 @@ def keep_alive(instances, command, scheduler, repeat_every=60, retry=3):
                     logger.info('Restarting instance "%s" in zone %s', name, zone)
                     output = subprocess.check_output(
                         'gcloud compute instances start %s --zone=%s' % (name, zone), shell=True)
-                    logger.info('Restarting results: %s', output)
+                    logger.info('Restarting output: %s', output.decode('utf-8'))
 
                     logger.info('Running command on instance: %s', command)
                     output = subprocess.check_output(
                         'gcloud compute ssh %s --zone=%s --command="%s"' % (name, zone, command),
                         shell=True)
-                    logger.info('Command results: %s', output)
+                    logger.info('Command output: %s', output.decode('utf-8'))
                     break
 
                 except Exception as e:
