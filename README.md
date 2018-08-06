@@ -1,5 +1,5 @@
 
-<p align="center"><img width="35%" src="logo.png" /></p>
+<p align="center"><img width="15%" src="logo.png" /></p>
 
 <h1 align="center">WellSaid Labs: Text-to-speech</h3>
 
