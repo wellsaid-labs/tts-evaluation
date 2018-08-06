@@ -34,5 +34,4 @@ yapf
 
 # Utils
 tqdm # Progress bar
-dill # Serialization Library (like pickle but better)
 jupyter # Notebooks
