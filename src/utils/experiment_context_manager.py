@@ -54,6 +54,7 @@ class ExperimentContextManager(object):
             ``torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')``
         min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
             files are deleted.
+        step (int, optional): Step to record in creating tensorboard.
     """
 
     def __init__(self,
@@ -91,6 +92,7 @@ class ExperimentContextManager(object):
         Args:
             title (str): Notification title
             text (str): Notification description
+            use_logger (bool, optional): Print statements with logger or ``print``.
         """
         system = platform.system()
         cmd = ''
@@ -110,7 +112,6 @@ class ExperimentContextManager(object):
         """ Copy stdout and stderr to a ``{directory}/stdout.log`` and ``{directory}/stderr.log``.
 
         Args:
-            directory (str): Directory to save streams.
             stdout_filename (str): Filename used to save the stdout stream.
             stderr_filename (str): Filename used to save the stderr stream.
         """
@@ -195,7 +196,11 @@ class ExperimentContextManager(object):
         return self
 
     def clean_up(self, use_logger=True):
-        """ Delete files associated with this context. """
+        """ Delete files associated with this context.
+
+        Args:
+            use_logger (bool, optional): Print statements with logger or ``print``.
+        """
         if use_logger:
             logger.info('DELETING EXPERIMENT: %s', self.directory)
         else:

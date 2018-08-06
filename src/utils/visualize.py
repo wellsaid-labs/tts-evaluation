@@ -275,7 +275,7 @@ class Tensorboard(SummaryWriter):
         self.writer.add_audio(path_audio, signal, step, sample_rate)
         self.add_waveform(path_image, signal, step)
 
-    def close(self, delete=False):
+    def close(self):
         """ Flushes the event file to disk and close the file. Call this method when you do not
         need the Tensorboard anymore.
         """

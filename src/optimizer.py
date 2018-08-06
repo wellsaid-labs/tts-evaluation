@@ -21,7 +21,8 @@ def get_parameter_norm(parameters, norm_type=2):
 
     Args:
         parameters (Iterable[Tensor]): An iterable of Tensors.
-        norm_type (float or int): Type of the used p-norm. Can be ``'inf'`` for infinity norm.
+        norm_type (float or int, optional): Type of the used p-norm. Can be ``'inf'`` for infinity
+            norm.
 
     Return:
         Total norm of the parameters (viewed as a single vector).
@@ -59,7 +60,8 @@ class Optimizer(object):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
 
         Args:
-            tensorboard (tensorboardX.SummaryWriter): Tensorboard for logging infinite gradient.
+            tensorboard (tensorboardX.SummaryWriter, optional): Tensorboard for logging infinite
+                gradient.
             max_grad_norm (float, optional): Clip gradient norm to this maximum.
             eps (float, optional): Parameter used to sanity check ``parameter_norm`` equality.
 
@@ -95,6 +97,9 @@ class Optimizer(object):
     def to(self, device):
         """ Move the optimizer state to ``device``. After calling, any parameter specific state in
         the optimizer will be located on ``device``.
+
+        Args:
+            device (torch.device)
         """
         for param_group in self.optimizer.param_groups:
             for param in param_group['params']:
@@ -119,18 +124,21 @@ class AutoOptimizer(Optimizer):
         self.max_grad_norm = None
         self.stats = ExponentiallyWeightedMovingAverage(beta=beta)
 
-    def step(self, **kwargs):
+    def step(self, *args, **kwargs):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
+
+        Args:
+            *args (list, optional): Arguments to pass on to ``Optimizer.step``
+            **kwargs (dict, optional): Keyword arguments to pass on to ``Optimizer.step``
 
         Returns:
             parameter_norm (float): Total norm of the parameters if ``max_grad_norm > 0``;
                 otherwise, returns None.
-            max_grad_norm (float): Predicted max grad norm.
         """
-        parameter_norm = super().step(max_grad_norm=self.max_grad_norm, **kwargs)
+        parameter_norm = super().step(*args, max_grad_norm=self.max_grad_norm, **kwargs)
 
         if np.isfinite(parameter_norm):
             # Update max gradient norm to the average parameter norm
             self.max_grad_norm, _ = self.stats.step(parameter_norm)
 
-        return parameter_norm, self.max_grad_norm
+        return parameter_norm

@@ -128,8 +128,8 @@ class Trainer():  # pragma: no cover
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
 
         Args:
-            train (bool): If ``True``, the batch will store gradients.
-            trial_run (bool): If ``True``, then runs only 1 batch.
+            train (bool, optional): If ``True``, the batch will store gradients.
+            trial_run (bool, optional): If ``True``, then runs only 1 batch.
         """
         label = 'TRAIN' if train else 'DEV'
         logger.info('[%s] Running Epoch %d, Step %d', label, self.epoch, self.step)
@@ -311,7 +311,7 @@ class Trainer():  # pragma: no cover
             is_anomaly = self.anomaly_detector.step(coarse_loss_item)
             if is_anomaly:
                 self.tensorboard.add_text(
-                    'event/anomaly', 'Detected a coarse loss anomaly %d (%f > %f ± %f)' %
+                    'event/anomaly', 'Detected a coarse loss anomaly #%d (%f > %f ± %f)' %
                     (self.anomaly_detector.anomaly_counter, coarse_loss_item,
                      self.anomaly_detector.last_average, self.anomaly_detector.max_deviation), step)
                 return 0.0, 0.0, 0

@@ -26,11 +26,14 @@ def load_data(predicted_train='data/.signal_dataset/train',
     """ Load train and dev datasets as ``SignalDataset``s.
 
     Args:
-        source_train (str): Directory with training examples.
-        source_dev (str): Directory with dev examples.
-        log_mel_spectrogram_prefix (str): Prefix of log mel spectrogram files.
-        signal_prefix (str): Prefix of signal files.
-        extension (str): Filename extension to load.
+        predicted_train (str, optional): Directory with training examples.
+        predicted_dev (str, optional): Directory with dev examples.
+        real_train (str, optional): Directory with ground truth training examples.
+        real_dev (str, optional): Directory with ground truth dev examples.
+        log_mel_spectrogram_prefix (str, optional): Prefix of log mel spectrogram files.
+        signal_prefix (str, optional): Prefix of signal files.
+        extension (str, optional): Filename extension to load.
+        predicted (bool, optional): Load predicted examples instead of ground truth.
 
     Returns:
         train (SignalDataset)
@@ -106,6 +109,7 @@ def save_checkpoint(directory, model=None, step=None, filename=None, **kwargs):
         step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
         filename (str, optional): Filename to save the checkpoint too, by default the checkpoint
             is saved in ``os.path.join(context.epoch_directory, 'checkpoint.pt')``
+        **kwargs (dict, optional): Anything else to save in the dictionary.
 
     Returns:
         checkpoint (dict or None): Loaded checkpoint or None

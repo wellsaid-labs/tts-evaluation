@@ -85,9 +85,18 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
 
     @property
     def max_deviation(self):
+        """ Maximum value can deviate from ``last_average`` before being considered an anomaly. """
         return self.sigma * self.last_standard_deviation + self.eps
 
     def step(self, value):
+        """ Check if ``value`` is an anomaly whilst updating stats for the next step.
+
+        Args:
+            value (float)
+
+        Returns:
+            (bool): If ``value`` is an anomaly.
+        """
         if not np.isfinite(value):
             self.anomaly_counter += 1
             return True
