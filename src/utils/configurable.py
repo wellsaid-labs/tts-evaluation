@@ -306,12 +306,16 @@ def _merge_args(parameters, args, kwargs, default_kwargs, print_name=''):
             if parameters[i].name in default_kwargs:
                 value = default_kwargs[parameters[i].name]
                 if value != arg:
+                    # TODO: Do not repeat this warning and warn that this message will not be
+                    # repeated
                     logger.warn('Overwriting configured argument ``%s=%s`` in module %s with %s' %
                                 (parameters[i].name, value, print_name, arg))
                 del default_kwargs[parameters[i].name]
 
     for key, value in kwargs.items():
         if key in default_kwargs and value != default_kwargs[key]:
+            # TODO: Do not repeat this warning and warn that this message will not be
+            # repeated
             logger.warn('Overwriting configured argument ``%s=%s`` in module %s with %s' %
                         (key, default_kwargs[key], print_name, value))
 
@@ -343,7 +347,9 @@ def configurable(func):
         # Get the module config
         config = _configuration[keys] if keys in _configuration else {}  # Get default
         if len(config) == 0:
-            logger.info('%s no config for: %s', print_name, '.'.join(keys))
+            # TODO: Do not repeat this warning and warn that this message will not be
+            # repeated
+            logger.warn('%s no config for: %s', print_name, '.'.join(keys))
 
         # Print name is used for logger
         if not isinstance(config, dict):

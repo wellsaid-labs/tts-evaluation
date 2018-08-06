@@ -147,7 +147,7 @@ def _process_audio(wav,
     if resample is not None:
         destination = destination.replace('.wav', '-rate=%d.wav' % resample)
     if norm:
-        destination = destination.replace('.wav', '-norm=-.1.wav')
+        destination = destination.replace('.wav', '-norm=-.001.wav')
     if loudness:
         destination = destination.replace('.wav', '-loudness.wav')
     if guard:
@@ -158,11 +158,10 @@ def _process_audio(wav,
     if wav == destination or os.path.isfile(destination):
         return destination
 
-    # NOTE: -.1 DB applied to prevent clipping and corresponds to 0.9884949. Mu-law encoding applied
-    # to 0.98 comes out to 255; therefore, those bits are still used.
-    norm_flag = '--norm=-.1' if norm else ''
+    # NOTE: -.001 DB applied to prevent clipping.
+    norm_flag = '--norm=-.001' if norm else ''
     guard_flag = '--guard' if guard else ''
-    sinc_command = 'sinc %s-%s' % (lower_hertz, upper_hertz)
+    sinc_command = 'sinc %s-%s' % (lower_hertz, upper_hertz) if lower_hertz or upper_hertz else ''
     loudness_command = 'loudness' if loudness else ''
     resample_command = 'rate %s' % (resample if resample is not None else '',)
     commands = ' '.join([resample_command, sinc_command, loudness_command])

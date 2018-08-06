@@ -99,7 +99,7 @@ class SpectrogramModel(nn.Module):
     def forward(self, tokens, ground_truth_frames=None, max_recursion=2000):
         """
         Args:
-            tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
+            tokens (torch.LongTensor [num_tokens, batch_size]): Batched set of sequences.
             ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
                 optional): During training, ground truth frames for teacher-forcing.
             max_recursion (int, optional): The maximum sequential predictions to make before
@@ -113,6 +113,9 @@ class SpectrogramModel(nn.Module):
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]) All attention
                 alignments, stored for visualization and debugging
         """
+        # [num_tokens, batch_size]  → [batch_size, num_tokens]
+        tokens = tokens.transpose(0, 1)
+
         # [batch_size, num_tokens]
         tokens_mask = tokens.detach().eq(PADDING_INDEX)
         encoded_tokens = self.encoder(tokens)

@@ -39,10 +39,6 @@ def set_hparams():
     encoder_hidden_size = 512
 
     # SOURCE (Tacotron 2):
-    # 80 channel mel filterbank spanning
-    frame_channels = 80
-
-    # SOURCE (Tacotron 2):
     # The prediction from the previous time step is first passed through a small
     # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
     pre_net_hidden_size = 256
@@ -80,19 +76,21 @@ def set_hparams():
     # We transform the STFT magnitude to the mel scale using an 80 channel mel
     # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
     # compression.
-    # NOTE: Following running a SoX 7.6 kHz low-pass filter on a LJ dataset sample at 7.6 kHz,
-    # we found that her voice tends to use higher frequencies than 7.6 kHz. We bumped it up to 9.1
-    # kHz by looking at a melspectrogram of the sample.
-    lower_hertz = 125
-    upper_hertz = 9100
+    # SOURCE (Tacotron 2 Author):
+    # Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
+    lower_hertz = 20
+    upper_hertz = sample_rate / 2
+    frame_channels = 128
 
-    # SOURCE (WaveNet):
-    # where −1 < xt < 1 and µ = 255.
-    signal_channels = 256  # NOTE: signal_channels = µ + 1
+    # SOURCE: Efficient Neural Audio Synthesis
+    # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
+    # designed to efficiently predict 16-bit raw audio samples.
+    bits = 16
 
     librosa.effects.trim = configurable(librosa.effects.trim)
     IPython.display.Audio.__init__ = configurable(IPython.display.Audio.__init__)
 
+    # TODO: Add option to instead of strings to use direct references.
     add_config({
         'librosa.effects.trim': {
             'frame_length': get_log_mel_spectrogram['frame_size'],
@@ -112,10 +110,10 @@ def set_hparams():
                 'norm': True,
                 'loudness': False,
                 # NOTE: Guard to reduce clipping during resampling
-                'guard': False,
+                'guard': True,
                 # NOTE: Highpass and lowpass filter to ensure Wav is consistent with Spectrogram.
-                'lower_hertz': lower_hertz,
-                'upper_hertz': upper_hertz,
+                'lower_hertz': None,
+                'upper_hertz': None,
             },
             'lr_schedulers.DelayedExponentialLR.__init__': {
                 # SOURCE (Tacotron 2):
@@ -128,16 +126,10 @@ def set_hparams():
                 'epoch_end_decay': 60000,
                 'end_lr': 10**-5,
             },
-            'optimizer.Optimizer.__init__': {
-                'max_grad_norm': None,
-            },
             'audio': {
                 # SOURCE (Wavenet):
                 # To make this more tractable, we first apply a µ-law companding transformation
                 # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
-                'mu_law_encode.bins': signal_channels,
-                'mu_law_decode.bins': signal_channels,
-                'mu_law.bins': signal_channels,
                 'read_audio.sample_rate': sample_rate,
                 'get_log_mel_spectrogram': get_log_mel_spectrogram,
                 'griffin_lim': {
@@ -256,51 +248,103 @@ def set_hparams():
                 }
             },
             'signal_model': {
-                'residual_block.ResidualBlock.__init__': {
-                    # Tacotron and Parallel WaveNet use kernel size of 3 to increase their receptive
-                    # field. However, nv-Wavenet only supports a kernel size of 2.
-                    # ISSUE: https://github.com/NVIDIA/nv-wavenet/issues/21
-                    'kernel_size': 2
+                'upsample.ConditionalFeaturesUpsample.__init__': {
+                    # SOURCE: Efficient Neural Audio Synthesis Author
+                    # The author suggested adding 3 - 5 convolutions on top of WaveRNN.
+                    # SOURCE:
+                    # https://github.com/pytorch/examples/blob/master/super_resolution/model.py
+                    # Upsampling layer is inspired by super resolution
+                    'kernels': [(5, 5), (3, 3), (3, 3), (3, 3)],
                 },
-                'wave_net.WaveNet.__init__': {
-                    'signal_channels': signal_channels,
-                    'local_features_size': frame_channels,
+                'wave_rnn.WaveRNN': {
+                    'infer': {
+                        # SOURCE: Generating Sequences With Recurrent Neural Networks
+                        # One problem with unbiased samples is that they tend to be difficult to
+                        # read (partly because real handwriting is difficult to read, and partly
+                        # because the network is an imperfect model). Intuitively, we would expect
+                        # the network to give higher probability to good handwriting because it
+                        # tends to be smoother and more predictable than bad handwriting. If this is
+                        # true, we should aim to output more probable elements of Pr(x|c) if we want
+                        # the samples to be easier to read.
+                        # NOTE: Temperature is a concept from reinforcement learning to bias the
+                        # softmax similar to the above idea.
+                        'temperature': 1.0,
+                        'argmax': False,
+                    },
+                    '__init__': {
+                        'local_features_size': frame_channels,
 
-                    # SOURCE Parallel WaveNet: (256 block hidden size)
-                    # The number of hidden units in the gating layers is 512 (split into two groups
-                    # of 256 for the two parts of the activation function (1)).
-                    # SOURCE Deep Voice: (64 block hidden size)
-                    # Our highest-quality final model uses l = 40 layers, r = 64 residual channels,
-                    # and s = 256 skip channels.
-                    'block_hidden_size': 64,
-                    'skip_size': 256,
+                        # SOURCE: Efficient Neural Audio Synthesis
+                        # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
+                        # designed to efficiently predict 16-bit raw audio samples.
+                        'bits': bits,
 
-                    # SOURCE Tacotron 2: (From their ablation studies)
-                    # Total Layers: 24 | Num Cycles: 4 |  Dilation cycle size: 6
-                    # NOTE: We increase the cycle size to 8 to increase the receptive field to 766
-                    # samples. Unfortunatly, we cannot increase the kernel size.
-                    'num_layers': 28,
-                    'cycle_size': 7,
-                    'upsample_chunks': 4,
+                        # SOURCE: Efficient Neural Audio Synthesis
+                        # We see that the WaveRNN with 896 units achieves NLL scores comparable to
+                        # those of the largest WaveNet model
+                        'hidden_size': 896,
 
-                    # SOURCE: Tacotron 2
-                    # only 2 upsampling layers are used in the conditioning stack instead of 3
-                    # layers.
-                    # SOURCE: Tacotron 2 Author Google Chat
-                    # We upsample 4x with the layers and then repeat each value 75x
-                    'upsample_convs': [4],
-                    'upsample_repeat': 75,
+                        # SOURCE: Tacotron 2
+                        # only 2 upsampling layers are used in the conditioning stack instead of 3
+                        # layers.
+                        # SOURCE: Tacotron 2 Author Google Chat
+                        # We upsample 4x with the layers and then repeat each value 75x
+                        'upsample_num_filters': [64, 64, 32, 10],
+                        'upsample_repeat': 30
+                    }
+                },
+            },
+            'bin.evaluate_signal_model.main.sample_rate': sample_rate,
+            'bin.signal_model': {
+                'train.Trainer.__init__': {
+                    'sample_rate': sample_rate,
+                    # Optimized for 4x P100 GPU
+                    'train_batch_size': 64,
+                    'dev_batch_size': 256,
+                    'num_workers': 12,
+                    'sigma': 6,
+                    'beta': 0.99,
+                },
+                '_utils.load_data.predicted': False,
+                '_dataset.SignalDataset.__init__': {
+                    # SOURCE: Efficient Neural Audio Synthesis
+                    # The WaveRNN models are trained on sequences of 960 audio samples
+                    'frame_size': int(900 / get_log_mel_spectrogram['frame_hop']),
+                    'frame_pad': 5,
                 }
             },
-            'bin.signal_model.train.Trainer.__init__.sample_rate': sample_rate,
-            'utils.utils': {
-                'plot_waveform.sample_rate': sample_rate,
-                'plot_log_mel_spectrogram': {
-                    'sample_rate': sample_rate,
-                    'frame_hop': get_log_mel_spectrogram['frame_hop'],
-                    'lower_hertz': lower_hertz,
-                    'upper_hertz': upper_hertz,
+            'bin.feature_model': {
+                'train.Trainer.__init__': {
+                    # SOURCE: Tacotron 2
+                    # To train the feature prediction network, we apply the standard
+                    # maximum-likelihood training procedure (feeding in the correct output instead
+                    # of the predicted output on the decoder side, also referred to as
+                    # teacher-forcing) with a batch size of 64 on a single GPU.
+                    'train_batch_size': 56,
+                    'dev_batch_size': 256,
+                    'num_workers': 12,
                 }
+            },
+            'utils': {
+                'visualize': {
+                    'Tensorboard.add_audio.sample_rate': sample_rate,
+                    'plot_waveform.sample_rate': sample_rate,
+                    'plot_log_mel_spectrogram': {
+                        'sample_rate': sample_rate,
+                        'frame_hop': get_log_mel_spectrogram['frame_hop'],
+                        'lower_hertz': lower_hertz,
+                        'upper_hertz': upper_hertz,
+                    },
+                },
+                'utils': {
+                    'split_signal.bits': bits,
+                    'combine_signal.bits': bits,
+                }
+            },
+            'optimizer': {
+                # NOTE: Smoothing parameter determined experimentally, this parameter is not super
+                # sensative.
+                'AutoOptimizer.__init__.beta': 0.99
             }
         }
     })

@@ -31,7 +31,7 @@ class ZoneoutInplaceFunction(InplaceFunction):
                              'but got {}'.format(p))
         if mask is not None and \
                 not isinstance(mask, torch.ByteTensor) and \
-                not isinstance(mask, torch.cuda.ByteTensor):
+                not (torch.cuda.is_available() and isinstance(mask, torch.cuda.ByteTensor)):
             raise ValueError("mask must be a ByteTensor")
         ctx.p = p
         ctx.train = train
@@ -145,7 +145,7 @@ class Zoneout(torch.nn.Module):
                              "but got {}".format(p))
         if mask is not None and \
                 not isinstance(mask, torch.ByteTensor) and \
-                not isinstance(mask, torch.cuda.ByteTensor):
+                not (torch.cuda.is_available() and isinstance(mask, torch.cuda.ByteTensor)):
             raise ValueError("mask must be a ByteTensor")
         self.p = p
         self.inplace = inplace

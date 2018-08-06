@@ -37,9 +37,9 @@ def load_data(source_train='data/.feature_dataset/train',
     Args:
         source_train (str): Directory with training examples.
         source_dev (str): Directory with dev examples.
-        sample_rate (int): Sample rate of the signal.
         text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the
             text.
+        load_signal (bool): If ``True`` the FeatureDataset, loads the signal.
 
     Returns:
         train (FeatureDataset)
@@ -85,7 +85,8 @@ def save_checkpoint(directory,
                     text_encoder=None,
                     epoch=None,
                     step=None,
-                    filename=None):
+                    filename=None,
+                    experiment_directory=None):
     """ Save a checkpoint.
 
     Args:
@@ -99,6 +100,7 @@ def save_checkpoint(directory,
         step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
         filename (str, optional): Filename to save the checkpoint too, by default the checkpoint
             is saved in ``os.path.join(context.epoch_directory, 'checkpoint.pt')``
+        experiment_directory (str, optional): Directory experiment logs are saved in.
 
     Returns:
         checkpoint (dict or None): Loaded checkpoint or None
@@ -115,6 +117,7 @@ def save_checkpoint(directory,
             'text_encoder': text_encoder,
             'epoch': epoch,
             'step': step,
+            'experiment_directory': experiment_directory
         })
 
     return filename

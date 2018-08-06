@@ -1,7 +1,6 @@
 # Math Library
 numpy
 torch # NOTE: You may need to install with CUDA support seperatly from https://pytorch.org
-cffi # NOTE: For torch extensions
 
 # Image Library
 Pillow
@@ -16,7 +15,9 @@ librosa
 
 # Visualization Library
 matplotlib
-tensorboardX
+git+https://github.com/lanpa/tensorboard-pytorch.git
+tensorflow==1.8.0
+tensorboard==1.8.0
 
 # Testing
 pytest
@@ -33,5 +34,4 @@ yapf
 
 # Utils
 tqdm # Progress bar
-dill # Serialization Library (like pickle but better)
 jupyter # Notebooks

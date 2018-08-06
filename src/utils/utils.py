@@ -3,25 +3,111 @@ import matplotlib
 matplotlib.use('Agg', warn=False)
 
 import ast
+import glob
 import logging
 import logging.config
+import math
 import os
 
-from matplotlib import pyplot
-from matplotlib import cm as colormap
 from torchnlp.utils import shuffle as do_deterministic_shuffle
 
-import dill
-import librosa.display
-import numpy as np
 import torch
+import numpy as np
 
 from src.utils.configurable import configurable
 
 logger = logging.getLogger(__name__)
 
 # Repository root path
-ROOT_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..')
+ROOT_PATH = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..'))
+
+
+class ExponentiallyWeightedMovingAverage():
+    """ Keep track of an exponentially weighted mean and standard deviation every step.
+
+    Args:
+       beta (float): Beta used to weight the exponential mean and standard deviation.
+    """
+
+    def __init__(self, beta=0.99):
+
+        self._average = 0.0
+        self._variance = 0.0
+        self.beta = beta
+        self.step_counter = 0
+
+    def step(self, value):
+        """
+        Args:
+            value (float): Next value to take into account.
+
+        Returns:
+            average (float): Moving average.
+            standard_deviation (float): Moving standard deviation.
+        """
+        self.step_counter += 1
+
+        self._average = self.beta * self._average + (1 - self.beta) * value
+        # The initial 0.0 variance and 0.0 average values introduce bias that is corrected.
+        # LEARN MORE:
+        # https://www.coursera.org/lecture/deep-neural-network/bias-correction-in-exponentially-weighted-averages-XjuhD
+        average_bias_corrected = self._average / (1 - self.beta**(self.step_counter))
+
+        self._variance = self.beta * self._variance + (1 - self.beta) * (
+            value - average_bias_corrected)**2
+        variance_bias_corrected = self._variance / (1 - self.beta**(self.step_counter))
+
+        return average_bias_corrected, math.sqrt(variance_bias_corrected)
+
+
+class AnomalyDetector(ExponentiallyWeightedMovingAverage):
+    """ Detect anomalies at every step with a moving average and standard deviation.
+
+    Args:
+       beta (float, optional): Beta used to weight the exponential mean and standard deviation.
+       sigma (float, optional): Number of standard deviations in order to classify as an anomaly.
+       eps (float, optional): Minimum difference to be considered an anomaly used for numerical
+          stability.
+       min_steps (int, optional): Minimum number of steps to wait before detecting anomalies.
+    """
+
+    # Below 10 samples there can be significant bias in the variance estimation causing it
+    # to be underestimated.
+    # LEARN MORE: https://en.wikipedia.org/wiki/Unbiased_estimation_of_standard_deviation
+    def __init__(self, beta=0.99, sigma=6, eps=10**-6, min_steps=10):
+        super().__init__(beta=beta)
+        self.sigma = sigma
+        self.last_standard_deviation = 0.0
+        self.last_average = 0.0
+        self.min_steps = min_steps
+        self.eps = eps
+        self.anomaly_counter = 0
+
+    @property
+    def max_deviation(self):
+        """ Maximum value can deviate from ``last_average`` before being considered an anomaly. """
+        return self.sigma * self.last_standard_deviation + self.eps
+
+    def step(self, value):
+        """ Check if ``value`` is an anomaly whilst updating stats for the next step.
+
+        Args:
+            value (float)
+
+        Returns:
+            (bool): If ``value`` is an anomaly.
+        """
+        if not np.isfinite(value):
+            self.anomaly_counter += 1
+            return True
+
+        if (self.step_counter + 1 >= self.min_steps and
+                abs(value - self.last_average) > self.max_deviation):
+            self.anomaly_counter += 1
+            return True
+
+        self.last_average, self.last_standard_deviation = super().step(value)
+        return False
 
 
 def get_total_parameters(model):
@@ -57,159 +143,6 @@ def split_dataset(dataset, splits, deterministic_shuffle=True, random_seed=123):
     return datasets
 
 
-def figure_to_numpy_array(figure):
-    """ Turn a figure into an image array.
-
-    References:
-        * https://github.com/lanpa/tensorboard-pytorch/blob/master/examples/matplotlib_demo.py
-        * https://stackoverflow.com/questions/7821518/matplotlib-save-plot-to-numpy-array
-        * https://stackoverflow.com/questions/20051160/renderer-problems-using-matplotlib-from-within-a-script # noqa: E501
-
-    Args:
-        figure (matplotlib.figure): Figure with the plot.
-
-    Returns:
-        array (np.array [H, W, 3]): Numpy array representing the image of the figure.
-    """
-    figure.canvas.draw()
-    data = np.fromstring(figure.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-    return data.reshape(figure.canvas.get_width_height()[::-1] + (3,))
-
-
-def plot_attention(alignment, plot_to_numpy=True):
-    """ Plot alignment of attention.
-
-    Args:
-        alignment (numpy.array([decoder_timestep, encoder_timestep])): Attention alignment weights
-            computed at every timestep of the decoder.
-        title (str, optional): Title of the plot.
-        plot_to_numpy (bool, optional): If ``True``, return as a numpy array; otherwise, ``None``
-            is returned.
-
-    Returns:
-        If ``plot_to_numpy=True`` returns image (np.array [width, height, 3]) otherwise returns
-            ``None``.
-    """
-    alignment = np.transpose(alignment)
-    pyplot.style.use('ggplot')
-    figure, axis = pyplot.subplots()
-    im = axis.imshow(alignment, aspect='auto', origin='lower', interpolation='none', vmin=0, vmax=1)
-    figure.colorbar(im, ax=axis, orientation='horizontal')
-    pyplot.xlabel('Decoder timestep')
-    pyplot.ylabel('Encoder timestep')
-    pyplot.close(figure)
-    return figure_to_numpy_array(figure)
-
-
-def plot_stop_token(stop_token, plot_to_numpy=True):
-    """ Plot probability of the stop token over time.
-
-    Args:
-        stop_token (numpy.array([decoder_timestep])): Stop token probablity per decoder timestep.
-        title (str, optional): Title of the plot.
-        plot_to_numpy (bool, optional): If ``True``, return as a numpy array; otherwise, ``None``
-            is returned.
-
-    Returns:
-        If ``plot_to_numpy=True`` returns image (np.array [width, height, 3]) otherwise returns
-            ``None``.
-    """
-    pyplot.style.use('ggplot')
-    figure = pyplot.figure()
-    pyplot.plot(list(range(len(stop_token))), stop_token, marker='.', linestyle='solid')
-    pyplot.ylabel('Probability')
-    pyplot.xlabel('Timestep')
-    if plot_to_numpy:
-        # LEARN MORE: https://github.com/matplotlib/matplotlib/issues/8560/
-        # ``pyplot.close`` removes the figure from it's internal state and (if there is a gui)
-        # closes the window. However it does not clear the figure and if you are still holding a
-        # reference to the ``Figure`` object (and it holds references to all of it's children) so it
-        # is not garbage collected.
-        pyplot.close(figure)
-        return figure_to_numpy_array(figure)
-
-
-def spectrogram_to_image(spectrogram):
-    """ Create an image array form a spectrogram.
-
-    Args:
-        spectrogram (Tensor): A ``[frames, num_mel_bins]`` ``Tensor`` of ``complex64`` STFT
-            values.
-
-    Returns:
-        image (np.array [width, height, 3]): Spectrogram image.
-    """
-    spectrogram = (spectrogram - np.min(spectrogram)) / (np.max(spectrogram) - np.min(spectrogram))
-    spectrogram = np.flip(spectrogram, axis=1)  # flip against freq axis
-    spectrogram = np.uint8(colormap.viridis(spectrogram.T) * 255)
-    spectrogram = spectrogram[:, :, :-1]  # RGBA → RGB
-    return spectrogram
-
-
-@configurable
-def plot_waveform(signal, sample_rate=24000, plot_to_numpy=True):
-    """ Save image of spectrogram to disk.
-
-    Args:
-        signal (Tensor [signal_length]): Signal to plot.
-        sample_rate (int): Sample rate of the associated wave.
-        plot_to_numpy (bool, optional): If ``True``, return as a numpy array; otherwise, ``None``
-            is returned.
-
-    Returns:
-        If ``plot_to_numpy=True`` returns image (np.array [width, height, 3]) otherwise returns
-            ``None``.
-    """
-    pyplot.style.use('ggplot')
-    figure = pyplot.figure()
-    librosa.display.waveplot(signal, sr=sample_rate)
-    pyplot.ylabel('Energy')
-    pyplot.xlabel('Time')
-    pyplot.ylim(-1, 1)
-    if plot_to_numpy:
-        pyplot.close()
-        return figure_to_numpy_array(figure)
-
-
-@configurable
-def plot_log_mel_spectrogram(log_mel_spectrogram,
-                             sample_rate=24000,
-                             frame_hop=300,
-                             lower_hertz=125,
-                             upper_hertz=7600,
-                             plot_to_numpy=True):
-    """ Get image of log mel spectrogram.
-
-    Args:
-        log_mel_spectrogram (torch.FloatTensor [frames, num_mel_bins])
-        plot_to_numpy (bool, optional): If ``True``, return as a numpy array; otherwise, ``None``
-            is returned.
-
-    Returns:
-        If ``plot_to_numpy=True`` returns image (np.array [width, height, 3]) otherwise returns
-            ``None``.
-    """
-    figure = pyplot.figure()
-    pyplot.style.use('ggplot')
-    if torch.is_tensor(log_mel_spectrogram):
-        log_mel_spectrogram = log_mel_spectrogram.numpy()
-    log_mel_spectrogram = log_mel_spectrogram.transpose()
-    mel_spectrogram = np.exp(log_mel_spectrogram)
-    librosa.display.specshow(
-        librosa.power_to_db(mel_spectrogram, ref=np.max),
-        hop_length=frame_hop,
-        sr=sample_rate,
-        fmin=lower_hertz,
-        fmax=upper_hertz,
-        cmap='viridis',
-        y_axis='mel',
-        x_axis='time')
-    pyplot.colorbar(format='%+2.0f dB')
-    if plot_to_numpy:
-        pyplot.close(figure)
-        return figure_to_numpy_array(figure)
-
-
 def torch_load(path, device=torch.device('cpu')):
     """ Using ``torch.load`` and ``dill`` load an object from ``path`` onto ``self.device``.
 
@@ -226,7 +159,7 @@ def torch_load(path, device=torch.device('cpu')):
             return storage.cuda(device=device.index)
         return storage
 
-    return torch.load(path, map_location=remap, pickle_module=dill)
+    return torch.load(path, map_location=remap)
 
 
 def torch_save(path, data):
@@ -236,7 +169,7 @@ def torch_save(path, data):
         path (str): Filename to save to.
         data (any): Data to save into file.
     """
-    torch.save(data, path, pickle_module=dill)
+    torch.save(data, path)
     logger.info('Saved: %s' % (path,))
 
 
@@ -261,6 +194,7 @@ def get_filename_table(directory, prefixes=[], extension=''):
         # Get filenames with associated prefixes
         filenames = []
         for filename in os.listdir(directory):
+            # TODO: Rename prefix because it does not look at directly the beginning of the filename
             if filename.endswith(extension) and prefix in filename:
                 filenames.append(os.path.join(directory, filename))
 
@@ -308,3 +242,73 @@ def parse_hparam_args(hparam_args):
         return_[key] = value
 
     return return_
+
+
+@configurable
+def split_signal(signal, bits=16):
+    """ Compute the coarse and fine components of the signal.
+
+    Args:
+        signal (torch.FloatTensor [signal_length]): Signal with values ranging from [-1, 1]
+        bits (int): Number of bits to encode signal in.
+
+    Returns:
+        coarse (torch.FloatTensor [signal_length]): Top bits of the signal.
+        fine (torch.FloatTensor [signal_length]): Bottom bits of the signal.
+    """
+    assert torch.min(signal) >= -1.0 and torch.max(signal) <= 1.0
+    assert (bits %
+            2 == 0), 'To support an even split between coarse and fine, use an even number of bits'
+    range_ = int((2**(bits - 1)))
+    signal = torch.round(signal * range_)
+    signal = torch.clamp(signal, -1 * range_, range_ - 1)
+    unsigned = signal + range_  # Move range minimum to 0
+    bins = int(2**(bits / 2))
+    coarse = torch.floor(unsigned / bins)
+    fine = unsigned % bins
+    return coarse, fine
+
+
+@configurable
+def combine_signal(coarse, fine, bits=16):
+    """ Compute the coarse and fine components of the signal.
+
+    Args:
+        coarse (torch.FloatTensor [signal_length]): Top bits of the signal.
+        fine (torch.FloatTensor [signal_length]): Bottom bits of the signal.
+        bits (int): Number of bits to encode signal in.
+
+    Returns:
+        signal (torch.FloatTensor [signal_length]): Signal with values ranging from [-1, 1]
+    """
+    bins = int(2**(bits / 2))
+    assert torch.min(coarse) >= 0 and torch.max(coarse) < bins
+    assert torch.min(fine) >= 0 and torch.max(fine) < bins
+    signal = coarse * bins + fine - 2**(bits - 1)
+    return signal.float() / 2**(bits - 1)
+
+
+def load_most_recent_checkpoint(pattern, load_checkpoint=torch_load):
+    """ Load the most recent checkpoint from ``root``.
+
+    Args:
+        pattern (str): Pattern to glob recursively for checkpoints.
+        load_checkpoint (callable): Callable to load checkpoint.
+
+    Returns:
+        (any): Return value of ``load_checkpoint`` callable or None.
+        (str): Path of loaded checkpoint or None.
+    """
+    checkpoints = list(glob.iglob(pattern, recursive=True))
+    if len(checkpoints) == 0:
+        # NOTE: Using print because this runs before logger is setup typically
+        print('No checkpoints found in %s' % pattern)
+        return None, None
+
+    checkpoints = sorted(list(checkpoints), key=os.path.getctime, reverse=True)
+    for checkpoint in checkpoints:
+        try:
+            return load_checkpoint(checkpoint), checkpoint
+        except (EOFError, RuntimeError):
+            print('Failed to load checkpoint %s' % checkpoint)
+            pass
