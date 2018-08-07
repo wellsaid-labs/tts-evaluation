@@ -1,3 +1,7 @@
+from bisect import insort
+from bisect import bisect_left
+from math import floor
+
 import itertools
 
 import torch
@@ -5,7 +9,6 @@ import numpy as np
 import logging
 
 from src.utils.configurable import configurable
-from src.utils import ExponentiallyWeightedMovingAverage
 
 logger = logging.getLogger(__name__)
 
@@ -115,14 +118,16 @@ class AutoOptimizer(Optimizer):
     Args:
         optim (torch.optim.Optimizer): Optimizer object, the parameters to be optimized
             should be given when instantiating the object (e.g. ``torch.optim.SGD(params)``)
-        beta (float, optional): Smoothing parameter for estimating the average gradient norm.
+        window_size (int): Size of the sliding window used to compute max gradient norm.
     """
 
     @configurable
-    def __init__(self, optim, beta=0.99):
+    def __init__(self, optim, window_size):
         super().__init__(optim)
+        self.window_size = window_size
+        self.window = []
+        self.sorted_window = []
         self.max_grad_norm = None
-        self.stats = ExponentiallyWeightedMovingAverage(beta=beta)
 
     def step(self, *args, **kwargs):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
@@ -138,7 +143,18 @@ class AutoOptimizer(Optimizer):
         parameter_norm = super().step(*args, max_grad_norm=self.max_grad_norm, **kwargs)
 
         if np.isfinite(parameter_norm):
-            # Update max gradient norm to the average parameter norm
-            self.max_grad_norm, _ = self.stats.step(parameter_norm)
+            if len(self.window) == self.window_size:
+                old_value = self.window.pop(0)
+                del self.sorted_window[bisect_left(self.sorted_window, old_value)]
+
+            self.window.append(parameter_norm)
+            insort(self.sorted_window, parameter_norm)
+
+            half = len(self.sorted_window) / 2
+            if len(self.sorted_window) % 2 == 1:
+                self.max_grad_norm = self.sorted_window[int(floor(half))]
+            else:
+                half = int(half)
+                self.max_grad_norm = (self.sorted_window[half] + self.sorted_window[half - 1]) / 2
 
         return parameter_norm

@@ -31,7 +31,7 @@ class TestOptimizer(unittest.TestCase):
     def test_auto_init(self):
         params = [torch.nn.Parameter(torch.randn(2, 3, 4))]
         try:
-            AutoOptimizer(torch.optim.Adam(params))
+            AutoOptimizer(torch.optim.Adam(params), window_size=10)
         except:
             self.fail("__init__ failed.")
 
@@ -63,14 +63,21 @@ class TestOptimizer(unittest.TestCase):
         mock_clip_grad_norm.return_value = 1.0
         params = [torch.nn.Parameter(torch.randn(2, 3, 4))]
         params[0].grad = torch.randn(2, 3, 4)
-        optim = AutoOptimizer(torch.optim.Adam(params))
+        optim = AutoOptimizer(torch.optim.Adam(params), window_size=2)
         assert optim.max_grad_norm is None
         optim.step(eps=100)
         assert optim.max_grad_norm is not None
         old_max_grad_norm = optim.max_grad_norm
+        params[0].grad = torch.randn(2, 3, 4)
         optim.step(eps=100)
         assert old_max_grad_norm != optim.max_grad_norm  # Max grad norm updates
         mock_clip_grad_norm.assert_called_once()  # Max grad norm is only called on the second step
+
+        # Test sliding window stabilizes
+        optim.step(eps=100)
+        old_max_grad_norm = optim.max_grad_norm
+        optim.step(eps=100)
+        assert old_max_grad_norm == optim.max_grad_norm
 
     def test_ignore_step(self):
         did_step = False

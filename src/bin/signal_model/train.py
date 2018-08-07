@@ -1,7 +1,8 @@
 import argparse
 import logging
-import random
+import math
 import os
+import random
 import time
 
 from torch.nn import CrossEntropyLoss
@@ -86,8 +87,10 @@ class Trainer():  # pragma: no cover
         self.model = model if isinstance(model, torch.nn.Module) else model()
         self.model.to(device)
 
+        epoch_size = int(math.floor(len(train_dataset) / train_batch_size))
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
-            optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
+            optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())),
+            window_size=epoch_size)
         self.optimizer.to(device)
 
         self.anomaly_detector = anomaly_detector if isinstance(
