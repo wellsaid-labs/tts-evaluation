@@ -3,6 +3,13 @@ from torch import nn
 from src.utils.configurable import configurable
 
 
+class AlwaysDropout(nn.Dropout):
+    """ Adaptation of ``nn.Dropout`` to apply dropout during both evaluation and training. """
+
+    def forward(self, input):
+        return nn.functional.dropout(input=input, p=self.p, training=True, inplace=self.inplace)
+
+
 class PreNet(nn.Module):
     """ Pre-net processes the last frame of the spectrogram.
 
@@ -37,7 +44,7 @@ class PreNet(nn.Module):
                     in_features=frame_channels
                     if i == 0 else hidden_size, out_features=hidden_size),
                 nn.ReLU(),
-                nn.Dropout(p=dropout)) for i in range(num_layers)
+                AlwaysDropout(p=dropout)) for i in range(num_layers)
         ]))
 
         # Initialize weights
@@ -55,8 +62,4 @@ class PreNet(nn.Module):
             frames (torch.FloatTensor [num_frames, batch_size, hidden_size]): Batched set of
                 spectrogram frames processed by the Pre-net.
         """
-        # NOTE: ``.train()`` to ensure dropout does not turn off during inference as mentioned in
-        # the Tacotron 2 paper.
-        for layer in self.layers:
-            layer[2].train()
         return self.layers(frames)
