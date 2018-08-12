@@ -51,8 +51,6 @@ class Trainer():  # pragma: no cover
         criterion (callable): Loss function used to score signal predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
         num_workers (int, optional): Number of workers for data loading.
-        sigma (int, optional): Number of standard deviations to use when detecting anomolies.
-        beta (float, optional): Smoothing parameter to compute the average loss.
         anomaly_detector (AnomalyDetector, optional): Anomaly detector used to skip batches that
             result in large loss.
         min_rollback (int, optional): Minimum number of epochs to rollback in case of an anomaly.
@@ -370,7 +368,7 @@ def main(checkpoint_path=None,
         checkpoint_path (str, optional): Accepts a checkpoint path to load or empty string
             signaling to load the most recent checkpoint in ``experiments_root``.
         epochs (int, optional): Number of epochs to run for.
-        reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer and scheduler.
+        reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer.
         hparams (dict, optional): Hparams to override default hparams.
         evaluate_every_n_epochs (int, optional): Evaluate every ``evaluate_every_n_epochs`` epochs.
         min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
@@ -451,11 +449,7 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '-n', '--name', type=str, default='auto_max_grad_norm', help='Experiment name.')
     parser.add_argument(
-        '-r',
-        '--reset_optimizer',
-        action='store_true',
-        default=False,
-        help='Reset optimizer and scheduler.')
+        '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     args, unknown_args = parser.parse_known_args()
     hparams = parse_hparam_args(unknown_args)
     main(

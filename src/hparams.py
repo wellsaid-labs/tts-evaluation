@@ -115,17 +115,6 @@ def set_hparams():
                 'lower_hertz': None,
                 'upper_hertz': None,
             },
-            'lr_schedulers.DelayedExponentialLR.__init__': {
-                # SOURCE (Tacotron 2):
-                # learning rate of 10−3 exponentially decaying to 10−5 starting after 50,000
-                # iterations.
-                # NOTE: Over email the authors confirmed they ended decay at 100,000 steps
-                # NOTE: Authors mentioned this hyperparameter is dependent on the dataset; for
-                # the LJ speech dataset, we see that dev and train loss begin to diverge at 20k.
-                'epoch_start_decay': 10000,
-                'epoch_end_decay': 60000,
-                'end_lr': 10**-5,
-            },
             'audio': {
                 # SOURCE (Wavenet):
                 # To make this more tractable, we first apply a µ-law companding transformation
