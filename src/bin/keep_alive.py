@@ -7,7 +7,7 @@ queuing it up to be rebooted by ``keep_alive.py``.
 Example:
 
     python3 src/bin/keep_alive.py --command="screen -dm bash -c \
-        'cd Tacotron-2/; \
+        'cd WellSaid-Labs-Text-To-Speech/; \
         export PYTHONPATH=.; \
         ulimit -n 65536; \
         python3 src/bin/signal_model/train.py -c; \
