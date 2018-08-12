@@ -5,6 +5,7 @@ import random
 import sys
 import time
 import shutil
+import subprocess
 
 import numpy as np
 import torch
@@ -108,6 +109,26 @@ class ExperimentContextManager(object):
 
         os.system(cmd.format(text=text, title=title))
 
+    def _check_module_versions(self):
+        """ Check to that ``requirements.txt`` is in-line with ``pip freeze`` """
+        # Handle circular reference
+        from src.utils import ROOT_PATH
+
+        freeze = subprocess.check_output([sys.executable, '-m', 'pip', 'freeze'])
+        freeze = freeze.decode('utf-8').split()
+        with open(os.path.join(ROOT_PATH, 'requirements.txt'), 'r') as file_:
+            for line in file_:
+                line = line.strip()
+                if '==' in line:
+                    specification = line.split()[0]
+                    package = specification.split('==')[0]
+                    installed = [p for p in freeze if p.split('==')[0] == package]
+                    if not len(installed) == 1:
+                        raise ValueError('%s not installed' % package)
+                    if not specification == installed[0]:
+                        raise ValueError('Versions are not compatible %s =/= %s' % (specification,
+                                                                                    installed[0]))
+
     def _copy_standard_streams(self, stdout_filename='stdout.log', stderr_filename='stderr.log'):
         """ Copy stdout and stderr to a ``{directory}/stdout.log`` and ``{directory}/stderr.log``.
 
@@ -165,6 +186,8 @@ class ExperimentContextManager(object):
     def __enter__(self):
         """ Runs before the experiment context begins.
         """
+        self._check_module_versions()
+
         # Create a local directory to store logs, checkpoints, etc..
         self._new_experiment_directory()
 

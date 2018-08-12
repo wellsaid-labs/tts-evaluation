@@ -11,7 +11,7 @@ Example:
         export PYTHONPATH=.; \
         ulimit -n 65536; \
         python3 src/bin/signal_model/train.py -c; \
-        sudo shutdown now;'"
+        sudo shutdown;'"
 """
 import argparse
 import json

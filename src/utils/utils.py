@@ -74,6 +74,7 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
     # Below 10 samples there can be significant bias in the variance estimation causing it
     # to be underestimated.
     # LEARN MORE: https://en.wikipedia.org/wiki/Unbiased_estimation_of_standard_deviation
+    @configurable
     def __init__(self, beta=0.99, sigma=6, eps=10**-6, min_steps=10):
         super().__init__(beta=beta)
         self.sigma = sigma

@@ -302,8 +302,7 @@ def set_hparams():
                     'train_batch_size': 64,
                     'dev_batch_size': 256,
                     'num_workers': 12,
-                    'sigma': 6,
-                    'beta': 0.99,
+                    'min_rollback': 1,
                 },
                 '_utils.load_data.predicted': False,
                 '_dataset.SignalDataset.__init__': {
@@ -339,7 +338,17 @@ def set_hparams():
                 'utils': {
                     'split_signal.bits': bits,
                     'combine_signal.bits': bits,
+                    'AnomalyDetector.__init__': {
+                        # NOTE: Determined empirically with the notebook:
+                        # ``notebooks/Detecting Anomalies.ipynb``
+                        'sigma': 6,
+                        'beta': 0.98,
+                    }
                 }
+            },
+            'optimizer.AutoOptimizer.__init__': {
+                # NOTE: Window size smoothing parameter is not super sensative.
+                'window_size': 128
             }
         }
     })
