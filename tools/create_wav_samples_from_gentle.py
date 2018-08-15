@@ -28,7 +28,10 @@ def get_line_spacing(script_csv_path: str, transcript: str):
        byte offsets for each script entry into the transcript.
     """
     # Load the data off the filesystem
-    script_df = pandas.read_csv(script_csv_path)
+    try:
+        script_df = pandas.read_csv(script_csv_path)
+    except pandas.errors.ParserError:
+        script_df = pandas.read_csv(script_csv_path, sep='\t')
 
     # Create a np array long enough to hold one entry for each script line
     spacing = np.empty(len(script_df))
@@ -37,7 +40,10 @@ def get_line_spacing(script_csv_path: str, transcript: str):
     # word locations
     entry_offset = 0
     for entry in script_df.iterrows():
-        entry_offset = transcript.find(entry[1].Content, entry_offset)
+        entry_offset = transcript.find(entry[1].Content.strip(), entry_offset)
+        print('Found ' + str(entry[1].Index) + ' at character ' + str(entry_offset))
+        if entry_offset == -1:
+            print(' Unable to find string: [' + str(entry[1].Content) + ']')
         spacing[entry[1].Index] = entry_offset
 
     return spacing
@@ -111,13 +117,7 @@ def main(wav_path: str, script_csv_path: str, gentle_path: str, dest: str, tags:
     """"""
     timing = get_script_timing(script_csv_path, gentle_path)
 
-    # print('\n'.join(['{:.2f} {:.2f}'.format(i[0], i[1]) for i in timing]))
-
     split_wav(wav_path, timing, dest, tags)
-    # print(n, np.argmin(arr <= n), result['transcript'][n])
-    return
-
-    #split_by_json(script, wav, result['words'])
 
 
 if __name__ == "__main__":
@@ -139,6 +139,7 @@ if __name__ == "__main__":
                         default='{}')
     args = parser.parse_args()
 
+    print('Tags', args.tags)
     if args.n:
         NO_ACTION = True
 

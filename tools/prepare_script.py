@@ -11,6 +11,9 @@ def main(path: str):
     except FileNotFoundError:
         print(f'Error: \'{path}\' was not found.')
         exit(-1)
+    except pandas.errors.ParserError:
+        # If the default separator doesn't work, fall back to '\t'.
+        df = pandas.read_csv(path, sep='\t')
     contents = [x.strip() for x in df['Content']]
     print('\n'.join(contents))
 
