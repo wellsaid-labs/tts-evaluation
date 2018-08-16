@@ -11,18 +11,6 @@ import sys
 
 NO_ACTION = False
 
-def split_by_json(script: DataFrame, wav: AudioSegment, words: dict):
-    for word in words:
-        try:
-            print(word['startOffset'], word['alignedWord'], word['start'], word['end'])
-            # sample = wav[word['start'] * 1000 : word['end'] * 1000]
-            # with open(output_pre + str(word['startOffset'] + '.mp3', 'wb') as f:
-            #    word.export(f, format='mp3', tags={'start': .57 * 100, 'end': 0.94 * 100})
-        except KeyError:
-            # When words aren't found in audio, there's an incomplete
-            # entry preserved.  For now, ignore.
-            pass
-
 def get_line_spacing(script_csv_path: str, transcript: str):
     """Given a script CSV file and a transcript, return a DataFrame with the
        byte offsets for each script entry into the transcript.
