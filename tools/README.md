@@ -1,5 +1,11 @@
 # A small collection of tools
 
+## Prerequisites
+
+  * Install ffmpeg
+
+  * Install pydub from requirements.txt
+
 ## Dispatch a script and a wav file to gentle for parsing
 
   * Start gentle using either the prepackaged dmg or building from source
