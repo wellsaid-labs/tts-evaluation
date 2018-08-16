@@ -200,10 +200,10 @@ class Trainer():  # pragma: no cover
 
         Args:
             batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
-            predicted_pre_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
-                Predicted frames.
             predicted_post_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
                 Predicted frames with residual.
+            predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]):
+                Predicted alignments between text and spectrogram.
             predicted_stop_tokens (torch.FloatTensor [num_frames, batch_size]): Predicted stop
                 tokens.
 
@@ -211,16 +211,18 @@ class Trainer():  # pragma: no cover
         """
         batch_size = predicted_post_frames.shape[1]
         item = random.randint(0, batch_size - 1)
-        length = batch['frame_lengths'][item]
+        spectrogam_length = batch['frame_lengths'][item]
+        text_length = batch['text_lengths'][item]
 
-        self.tensorboard.add_log_mel_spectrogram('spectrogram/predicted',
-                                                 predicted_post_frames[:length, item], self.step)
-        self.tensorboard.add_log_mel_spectrogram('spectrogram/gold', batch['frames'][:length, item],
-                                                 self.step)
-        self.tensorboard.add_attention('alignment/predicted', predicted_alignments[:length, item],
+        self.tensorboard.add_log_mel_spectrogram(
+            'spectrogram/predicted', predicted_post_frames[:spectrogam_length, item], self.step)
+        self.tensorboard.add_log_mel_spectrogram(
+            'spectrogram/gold', batch['frames'][:spectrogam_length, item], self.step)
+        self.tensorboard.add_attention('alignment/predicted',
+                                       predicted_alignments[:spectrogam_length, item, :text_length],
                                        self.step)
         self.tensorboard.add_stop_token('stop_token/predicted',
-                                        predicted_stop_tokens[:length, item], self.step)
+                                        predicted_stop_tokens[:spectrogam_length, item], self.step)
 
     def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
