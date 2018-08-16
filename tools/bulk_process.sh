@@ -2,6 +2,7 @@
 
 PREFIX=hilary_n.01
 PORT=8765
+OUTPUT=tmp
 
 prepare()
 {
@@ -13,12 +14,15 @@ gentle()
 {
     i=$1
     python3 ./dispatch_script_to_gentle.py -w input/${PREFIX}.${i}.wav -t input/${PREFIX}.${i}.txt --port=${PORT}
+
+    # Save the JSON result file from gentle
+    cp input/${PREFIX}.${i}.txt.json ${OUTPUT}/
 }
 
 sample()
 {
     i=$1
-    python3 ./create_wav_samples_from_gentle.py input/${PREFIX}.${i}.wav input/${PREFIX}.${i}.csv input/${PREFIX}.${i}.txt.json tmp/${PREFIX}.${i}. "{\"session\": 1, \"script\": ${i}, \"talent\": \"hilary.n\"}"
+    python3 ./create_wav_samples_from_gentle.py input/${PREFIX}.${i}.wav input/${PREFIX}.${i}.csv input/${PREFIX}.${i}.txt.json ${OUTPUT}/${PREFIX}.${i}. "{\"session\": 1, \"script\": \"${i}\", \"talent\": \"hilary.n\"}"
 }
 
 full_set()
@@ -42,5 +46,7 @@ range_set()
     full_set "$(seq $from $to)"
 }
 
-# range_set 1 15
+mkdir -p ${OUTPUT}
+
+range_set 1 15
 full_set "16-21 22-27 28-33 34-39"
