@@ -16,10 +16,7 @@ def get_line_spacing(script_csv_path: str, transcript: str):
        byte offsets for each script entry into the transcript.
     """
     # Load the data off the filesystem
-    try:
-        script_df = pandas.read_csv(script_csv_path)
-    except pandas.errors.ParserError:
-        script_df = pandas.read_csv(script_csv_path, sep='\t')
+    script_df = get_script(script_csv_path)
 
     # Create a np array long enough to hold one entry for each script line
     spacing = np.empty(len(script_df))
@@ -81,8 +78,17 @@ def get_script_timing(script_csv_path: str, gentle_path: str):
 
     return timing
 
-def split_wav(wav_path: str, timing: np.ndarray, prefix: str, tags: dict):
+def get_script(script_csv_path: str):
+    try:
+        script_df = pandas.read_csv(script_csv_path)
+    except pandas.errors.ParserError:
+        script_df = pandas.read_csv(script_csv_path, sep='\t')
+    return script_df
+
+def split_wav(wav_path: str, timing: np.ndarray, prefix: str, tags: dict, script_csv_path: str):
     wav = AudioSegment.from_file(wav_path, format='wav')
+    script_df = get_script(script_csv_path)
+
     for line_id in range(timing.shape[0]):
         start_ms = timing[line_id][0]
         end_ms = timing[line_id][1]
@@ -93,6 +99,8 @@ def split_wav(wav_path: str, timing: np.ndarray, prefix: str, tags: dict):
             continue
 
         file_tags = tags.copy()
+        file_tags['line_id'] = line_id
+        file_tags['line'] = script_df.iloc(0)[line_id].Content
         file_tags['start'] = start_ms
         file_tags['end'] = end_ms
 
@@ -105,7 +113,7 @@ def main(wav_path: str, script_csv_path: str, gentle_path: str, dest: str, tags:
     """"""
     timing = get_script_timing(script_csv_path, gentle_path)
 
-    split_wav(wav_path, timing, dest, tags)
+    split_wav(wav_path, timing, dest, tags, script_csv_path)
 
 
 if __name__ == "__main__":
