@@ -1,15 +1,42 @@
+from multiprocessing import Pool
+
 import logging
 
 from torch.utils import data
 from torchnlp.text_encoders import CharacterEncoder
 
-import torch
 import numpy as np
-from tqdm import tqdm
+import torch
+import tqdm
 
 from src.utils import get_filename_table
 
 logger = logging.getLogger(__name__)
+
+
+def read_file(filename):
+    """ Return the contents of ``filename``
+
+    Args:
+        filename (str)
+
+    Returns:
+        (str) contents of filename
+    """
+    with open(filename, 'r') as file_:
+        return file_.read().strip()
+
+
+def get_spectrogram_length(filename):
+    """ Get length of spectrogram (shape [num_frames, num_channels]) from a ``.npy`` numpy file
+
+    Args:
+        filename (str): Numpy file
+
+    Returns:
+        (int) Length of spectrogram
+    """
+    return np.load(filename).shape[0]
 
 
 class FeatureDataset(data.Dataset):
@@ -41,19 +68,20 @@ class FeatureDataset(data.Dataset):
         # Create text_encoder
         if text_encoder is None:
             logger.info('Computing text encoder from %s', source)
-            texts = []
-            for row in tqdm(self.rows):
-                with open(row[self.text_key], 'r') as file_:
-                    texts.append(file_.read().strip())
+            with Pool() as pool:
+                filenames = [row[self.text_key] for row in self.rows]
+                texts = list(tqdm.tqdm(pool.imap(read_file, filenames), total=len(filenames)))
             self.text_encoder = CharacterEncoder(texts)
         else:
             self.text_encoder = text_encoder
 
         # Spectrograms lengths for sorting
         logger.info('Computing spectrogram lengths from %s', source)
-        self.spectrogram_lengths = [
-            np.load(row[self.spectrogram_key]).shape[0] for row in tqdm(self.rows)
-        ]
+        with Pool() as pool:
+            filenames = [row[self.spectrogram_key] for row in self.rows]
+            self.spectrogram_lengths = list(
+                tqdm.tqdm(pool.imap(get_spectrogram_length, filenames), total=len(filenames)))
+
         self.load_signal = load_signal
 
     def __len__(self):
