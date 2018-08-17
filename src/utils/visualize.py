@@ -120,9 +120,8 @@ def plot_log_mel_spectrogram(log_mel_spectrogram,
     if torch.is_tensor(log_mel_spectrogram):
         log_mel_spectrogram = log_mel_spectrogram.numpy()
     log_mel_spectrogram = log_mel_spectrogram.transpose()
-    mel_spectrogram = np.exp(log_mel_spectrogram)
     librosa.display.specshow(
-        librosa.power_to_db(mel_spectrogram, ref=np.max),
+        log_mel_spectrogram,
         hop_length=frame_hop,
         sr=sample_rate,
         fmin=lower_hertz,
@@ -130,7 +129,7 @@ def plot_log_mel_spectrogram(log_mel_spectrogram,
         cmap='viridis',
         y_axis='mel',
         x_axis='time')
-    pyplot.colorbar(format='%+2.0f dB')
+    pyplot.colorbar(format='%.2f')
     return figure
 
 

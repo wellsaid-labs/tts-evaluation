@@ -222,7 +222,7 @@ class Trainer():  # pragma: no cover
         gold_frames = batch['frames'][:spectrogam_length, item]
 
         predicted_residual = predicted_post_frames - predicted_pre_frames
-        predicted_gold_difference = gold_frames - predicted_post_frames
+        predicted_gold_difference = abs(gold_frames - predicted_post_frames)
 
         predicted_alignments = predicted_alignments[:spectrogam_length, item, :text_length]
         predicted_stop_tokens = predicted_stop_tokens[:spectrogam_length, item]
