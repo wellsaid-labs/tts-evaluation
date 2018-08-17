@@ -195,11 +195,14 @@ class Trainer():  # pragma: no cover
         return (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
                 num_stop_token_predictions)
 
-    def _sample(self, batch, predicted_post_frames, predicted_alignments, predicted_stop_tokens):
+    def _sample(self, batch, predicted_pre_frames, predicted_post_frames, predicted_alignments,
+                predicted_stop_tokens):
         """ Samples examples from a batch and outputs them to tensorboard
 
         Args:
             batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
+            predicted_pre_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
+                Predicted frames without residual.
             predicted_post_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
                 Predicted frames with residual.
             predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]):
@@ -214,15 +217,25 @@ class Trainer():  # pragma: no cover
         spectrogam_length = batch['frame_lengths'][item]
         text_length = batch['text_lengths'][item]
 
-        self.tensorboard.add_log_mel_spectrogram(
-            'spectrogram/predicted', predicted_post_frames[:spectrogam_length, item], self.step)
-        self.tensorboard.add_log_mel_spectrogram(
-            'spectrogram/gold', batch['frames'][:spectrogam_length, item], self.step)
-        self.tensorboard.add_attention('alignment/predicted',
-                                       predicted_alignments[:spectrogam_length, item, :text_length],
-                                       self.step)
-        self.tensorboard.add_stop_token('stop_token/predicted',
-                                        predicted_stop_tokens[:spectrogam_length, item], self.step)
+        predicted_post_frames = predicted_post_frames[:spectrogam_length, item]
+        predicted_pre_frames = predicted_pre_frames[:spectrogam_length, item]
+        gold_frames = batch['frames'][:spectrogam_length, item]
+
+        predicted_residual = predicted_post_frames - predicted_pre_frames
+        predicted_gold_difference = gold_frames - predicted_post_frames
+
+        predicted_alignments = predicted_alignments[:spectrogam_length, item, :text_length]
+        predicted_stop_tokens = predicted_stop_tokens[:spectrogam_length, item]
+
+        with self.tensorboard.set_step(self.step):
+            self.tensorboard.add_log_mel_spectrogram('spectrogram/predicted', predicted_post_frames)
+            self.tensorboard.add_log_mel_spectrogram('spectrogram/predicted_residual',
+                                                     predicted_residual)
+            self.tensorboard.add_log_mel_spectrogram('spectrogram/predicted_gold_difference',
+                                                     predicted_gold_difference)
+            self.tensorboard.add_log_mel_spectrogram('spectrogram/gold', gold_frames)
+            self.tensorboard.add_attention('alignment/predicted', predicted_alignments)
+            self.tensorboard.add_stop_token('stop_token/predicted', predicted_stop_tokens)
 
     def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
@@ -264,7 +277,8 @@ class Trainer():  # pragma: no cover
             self.step += 1
 
         if sample:
-            self._sample(batch, predicted_post_frames, predicted_alignments, predicted_stop_tokens)
+            self._sample(batch, predicted_pre_frames, predicted_post_frames, predicted_alignments,
+                         predicted_stop_tokens)
 
         return (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
                 num_stop_token_predictions)

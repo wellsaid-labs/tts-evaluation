@@ -190,6 +190,8 @@ class Trainer():  # pragma: no cover
                     self.step_unit == self.STEP_UNIT_DECISECONDS):
                 self.step += int(round(time.time() * 10 - start))
 
+        # NOTE: This is not a true epoch since each example from the training set is a 900 sample
+        # clip of a multiple second audio clip.
         epoch_coarse_loss = (0 if total_signal_predictions == 0 else
                              total_coarse_loss / total_signal_predictions)
         epoch_fine_loss = (0 if total_signal_predictions == 0 else
@@ -198,7 +200,8 @@ class Trainer():  # pragma: no cover
             self.tensorboard.add_scalar('coarse/loss/epoch', epoch_coarse_loss, self.step)
             self.tensorboard.add_scalar('fine/loss/epoch', epoch_fine_loss, self.step)
 
-        self._maybe_rollback(epoch_coarse_loss)
+        if train:
+            self._maybe_rollback(epoch_coarse_loss)
 
     def _sample_inference(self, batch, max_infer_frames=200):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.
@@ -338,6 +341,7 @@ class Trainer():  # pragma: no cover
             with self.tensorboard.set_step(step):
                 self.optimizer.step(tensorboard=self.tensorboard)
 
+        num_predictions = num_predictions.item()
         coarse_loss, fine_loss = coarse_loss.item(), fine_loss.item()
         predicted_coarse, predicted_fine = predicted_coarse.detach(), predicted_fine.detach()
 
