@@ -200,7 +200,8 @@ class Trainer():  # pragma: no cover
             self.tensorboard.add_scalar('coarse/loss/epoch', epoch_coarse_loss, self.step)
             self.tensorboard.add_scalar('fine/loss/epoch', epoch_fine_loss, self.step)
 
-        self._maybe_rollback(epoch_coarse_loss)
+        if train:
+            self._maybe_rollback(epoch_coarse_loss)
 
     def _sample_inference(self, batch, max_infer_frames=200):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.
