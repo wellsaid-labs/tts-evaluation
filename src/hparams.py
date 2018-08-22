@@ -6,12 +6,12 @@ import IPython
 
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
+from src.utils import AnomalyDetector
 
 
 def set_hparams():
     """ Using the ``configurable`` module set the hyperparameters for the source code.
     """
-
     torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
     nn.modules.batchnorm._BatchNorm.__init__ = configurable(
         nn.modules.batchnorm._BatchNorm.__init__)
@@ -86,6 +86,21 @@ def set_hparams():
     # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
     # designed to efficiently predict 16-bit raw audio samples.
     bits = 16
+
+    # SOURCE: Tacotron 2
+    # To train the feature prediction network, we apply the standard
+    # maximum-likelihood training procedure (feeding in the correct output instead
+    # of the predicted output on the decoder side, also referred to as
+    # teacher-forcing) with a batch size of 64 on a single GPU.
+    # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
+    dev_batch_size = 56
+    train_batch_size = 256
+    num_workers = 12
+
+    # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
+    torch.backends.cudnn.enabled = True
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.fastest = False
 
     librosa.effects.trim = configurable(librosa.effects.trim)
     IPython.display.Audio.__init__ = configurable(IPython.display.Audio.__init__)
@@ -303,14 +318,13 @@ def set_hparams():
             },
             'bin.feature_model': {
                 'train.Trainer.__init__': {
-                    # SOURCE: Tacotron 2
-                    # To train the feature prediction network, we apply the standard
-                    # maximum-likelihood training procedure (feeding in the correct output instead
-                    # of the predicted output on the decoder side, also referred to as
-                    # teacher-forcing) with a batch size of 64 on a single GPU.
-                    'train_batch_size': 56,
-                    'dev_batch_size': 256,
-                    'num_workers': 12,
+                    'train_batch_size': train_batch_size,
+                    'dev_batch_size': dev_batch_size,
+                    'num_workers': num_workers,
+                },
+                'generate.main': {
+                    'num_workers': num_workers,
+                    'max_batch_size': dev_batch_size,
                 }
             },
             'utils': {
@@ -332,6 +346,7 @@ def set_hparams():
                         # ``notebooks/Detecting Anomalies.ipynb``
                         'sigma': 6,
                         'beta': 0.98,
+                        'type_': AnomalyDetector.TYPE_HIGH,
                     }
                 }
             },

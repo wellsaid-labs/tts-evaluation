@@ -46,6 +46,23 @@ def test_anomaly_detector():
     assert anomaly_detector.step(2)
 
 
+def test_anomaly_detector_type_low():
+    min_steps = 10
+    anomaly_detector = AnomalyDetector(min_steps=min_steps, type_=AnomalyDetector.TYPE_LOW)
+    for _ in range(min_steps):
+        assert not anomaly_detector.step(1)
+    assert not anomaly_detector.step(2)
+
+
+def test_anomaly_detector_type_both():
+    min_steps = 10
+    anomaly_detector = AnomalyDetector(min_steps=min_steps, type_=AnomalyDetector.TYPE_BOTH)
+    for _ in range(min_steps):
+        assert not anomaly_detector.step(1)
+    assert anomaly_detector.step(2)
+    assert anomaly_detector.step(0)
+
+
 def test_get_total_parameters():
     model = MockModel()
     assert 62006 == get_total_parameters(model)

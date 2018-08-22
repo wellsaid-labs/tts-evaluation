@@ -69,13 +69,18 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
        eps (float, optional): Minimum difference to be considered an anomaly used for numerical
           stability.
        min_steps (int, optional): Minimum number of steps to wait before detecting anomalies.
+       type_ (str, optional): Detect anomalies that are too 'high', too 'low', or 'both'.
     """
+
+    TYPE_HIGH = 'high'
+    TYPE_LOW = 'low'
+    TYPE_BOTH = 'both'
 
     # Below 10 samples there can be significant bias in the variance estimation causing it
     # to be underestimated.
     # LEARN MORE: https://en.wikipedia.org/wiki/Unbiased_estimation_of_standard_deviation
     @configurable
-    def __init__(self, beta=0.99, sigma=6, eps=10**-6, min_steps=10):
+    def __init__(self, beta=0.99, sigma=6, eps=10**-6, min_steps=10, type_=TYPE_HIGH):
         super().__init__(beta=beta)
         self.sigma = sigma
         self.last_standard_deviation = 0.0
@@ -83,11 +88,38 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
         self.min_steps = min_steps
         self.eps = eps
         self.anomaly_counter = 0
+        self.type = type_
 
     @property
     def max_deviation(self):
         """ Maximum value can deviate from ``last_average`` before being considered an anomaly. """
         return self.sigma * self.last_standard_deviation + self.eps
+
+    def _is_anomaly(self, value):
+        """ Check if ``value`` is an anomaly.
+
+        Args:
+            value (float)
+
+        Returns:
+            (bool): If ``value`` is an anomaly.
+        """
+        if self.step_counter + 1 < self.min_steps:
+            return False
+
+        if not np.isfinite(value):
+            return True
+
+        if self.type == self.TYPE_HIGH and value - self.last_average > self.max_deviation:
+            return True
+
+        if self.type == self.TYPE_LOW and self.last_average - value > self.max_deviation:
+            return True
+
+        if self.type == self.TYPE_BOTH and abs(value - self.last_average) > self.max_deviation:
+            return True
+
+        return False
 
     def step(self, value):
         """ Check if ``value`` is an anomaly whilst updating stats for the next step.
@@ -98,17 +130,10 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
         Returns:
             (bool): If ``value`` is an anomaly.
         """
-        if not np.isfinite(value):
-            self.anomaly_counter += 1
-            return True
-
-        if (self.step_counter + 1 >= self.min_steps and
-                abs(value - self.last_average) > self.max_deviation):
-            self.anomaly_counter += 1
-            return True
-
-        self.last_average, self.last_standard_deviation = super().step(value)
-        return False
+        is_anomaly = self._is_anomaly(value)
+        if not is_anomaly:
+            self.last_average, self.last_standard_deviation = super().step(value)
+        return is_anomaly
 
 
 def get_total_parameters(model):

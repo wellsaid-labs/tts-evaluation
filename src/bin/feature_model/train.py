@@ -307,11 +307,6 @@ def main(checkpoint_path=None,
         label (str, optional): Label applied to a experiments from this executable.
         experiments_root (str, optional): Top level directory for all experiments.
     """
-    # TODO: Speed test to ensure this is the fastest settings
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.fastest = False
-
     if checkpoint_path == '':
         checkpoints = os.path.join(experiments_root, label, '**/*.pt')
         checkpoint, checkpoint_path = load_most_recent_checkpoint(

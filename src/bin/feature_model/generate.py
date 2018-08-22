@@ -16,6 +16,7 @@ from src.bin.feature_model._utils import load_checkpoint
 from src.bin.feature_model._utils import load_data
 from src.bin.feature_model._utils import set_hparams
 from src.utils import get_total_parameters
+from src.utils.configurable import configurable
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ def _compute_loss_frame_loss(batch, predicted_post_frames, criterion_frames):  #
     return loss.item(), num_predictions.item()
 
 
+@configurable
 def main(checkpoint,
          destination_train='data/.signal_dataset/train',
          destination_dev='data/.signal_dataset/dev',
@@ -64,8 +66,6 @@ def main(checkpoint,
         max_batch_size (int, optional): Maximum batch size predicted at a time.
         num_workers (int, optional): Number of workers for data loading.
     """
-    set_hparams()
-
     if not os.path.isdir(destination_train):
         os.makedirs(destination_train)
 
@@ -152,7 +152,8 @@ if __name__ == '__main__':  # pragma: no cover
         default=None,
         help='Load a checkpoint from a path',
         required=True)
-    parser.add_argument(
-        '-w', '--num_workers', type=int, default=0, help='Numer of workers used for data loading')
     args = parser.parse_args()
-    main(checkpoint=args.checkpoint, num_workers=args.num_workers)
+
+    set_hparams()
+
+    main(checkpoint=args.checkpoint)

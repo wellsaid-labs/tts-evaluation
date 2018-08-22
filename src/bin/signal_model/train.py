@@ -190,8 +190,18 @@ class Trainer():  # pragma: no cover
                     self.step_unit == self.STEP_UNIT_DECISECONDS):
                 self.step += int(round(time.time() * 10 - start))
 
-        # NOTE: This is not a true epoch since each example from the training set is a 900 sample
-        # clip of a multiple second audio clip.
+        # NOTE: This is not a formal epoch. For example, in the Linda Johnson dataset the average
+        # clip size is 6.57 seconds while the average example seen by the model is 900 samples
+        # or 0.375 seconds. This epoch means that we've taken a random 900 sample clip from the
+        # 13,100 clips in the Linda Johnson dataset.
+        #
+        # Walking through the math, a real epoch for the Linda Joshon dataset would be about:
+        #    Number of samples: 2066808000 = (23h * 60 * 60 + 55m * 60 + 17s) * 24000
+        #    This epoch sample size: 11790000 = 13,100 * 900
+        #    Formal epoch is 175x larger: 175 ~ 2066808000 / 11790000
+        #    Number of batches in formal epoch: 35,882 ~ 2066808000 / 64 / 900
+        #
+        # Find stats on the Linda Johnson dataset here: https://keithito.com/LJ-Speech-Dataset/
         epoch_coarse_loss = (0 if total_signal_predictions == 0 else
                              total_coarse_loss / total_signal_predictions)
         epoch_fine_loss = (0 if total_signal_predictions == 0 else
@@ -381,10 +391,6 @@ def main(checkpoint_path=None,
         label (str, optional): Label applied to a experiments from this executable.
         experiments_root (str, optional): Top level directory for all experiments.
     """
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.fastest = False
-
     if checkpoint_path == '':
         checkpoints = os.path.join(experiments_root, label, '**/*.pt')
         checkpoint, checkpoint_path = load_most_recent_checkpoint(
