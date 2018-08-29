@@ -126,8 +126,8 @@ class ExperimentContextManager(object):
                     if not len(installed) == 1:
                         raise ValueError('%s not installed' % package)
                     if not specification == installed[0]:
-                        raise ValueError('Versions are not compatible %s =/= %s' % (specification,
-                                                                                    installed[0]))
+                        raise ValueError(
+                            'Versions are not compatible %s =/= %s' % (specification, installed[0]))
 
     def _copy_standard_streams(self, stdout_filename='stdout.log', stderr_filename='stderr.log'):
         """ Copy stdout and stderr to a ``{directory}/stdout.log`` and ``{directory}/stderr.log``.

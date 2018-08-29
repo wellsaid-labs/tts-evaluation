@@ -54,8 +54,8 @@ class ResidualBlock(nn.Module):
         # The Conv2D may reduce the size of the tensor; in this case, we just reduce size similarly.
         less_width = int((tensor.shape[2] - residual.shape[2]) / 2)
         less_height = int((tensor.shape[3] - residual.shape[3]) / 2)
-        tensor = tensor[:, :, less_width:tensor.shape[2] - less_width, less_height:
-                        tensor.shape[3] - less_height]
+        tensor = tensor[:, :, less_width:tensor.shape[2] - less_width, less_height:tensor.shape[3] -
+                        less_height]
 
         return self.shortcut(tensor) + residual
 

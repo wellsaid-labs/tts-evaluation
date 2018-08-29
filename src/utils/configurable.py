@@ -175,8 +175,8 @@ def _check_configuration_helper(dict_, keys, trace):
     if not isinstance(dict_, dict):
         # Recursive function walked up the chain and never found a @configurable
         trace.reverse()
-        raise TypeError('Path %s does not contain @configurable.\n' % (
-            keys,) + 'Traceback (most recent call last):\n\t%s' % ('\n\t'.join(trace),))
+        raise TypeError('Path %s does not contain @configurable.\n' % (keys,) +
+                        'Traceback (most recent call last):\n\t%s' % ('\n\t'.join(trace),))
 
     if len(keys) >= 2:
         # CASE: Function
@@ -196,8 +196,8 @@ def _check_configuration_helper(dict_, keys, trace):
                 if (hasattr(function, '_configurable')):
                     absolute_keys = _get_module_name(function)[0]
                     if keys != absolute_keys:
-                        raise TypeError('The module path must be absolute: %s vs %s' %
-                                        (keys, absolute_keys))
+                        raise TypeError(
+                            'The module path must be absolute: %s vs %s' % (keys, absolute_keys))
                     return
         except ImportError as e:
             trace += ['Module %s ImportError: ' % (module_path,) + str(e)]

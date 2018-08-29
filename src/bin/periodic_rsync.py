@@ -62,8 +62,8 @@ def get_instances(all_=False):
                 num_gpu = instance['guestAccelerators'][0]['acceleratorCount']
 
             while response not in ['Y', 'n']:
-                response = input('Sync "%s" %dx%s instance? (Y/n) ' % (instance['name'], num_gpu,
-                                                                       gpu))
+                response = input(
+                    'Sync "%s" %dx%s instance? (Y/n) ' % (instance['name'], num_gpu, gpu))
                 if response == 'Y':
                     filtered_instances.append(instance)
 

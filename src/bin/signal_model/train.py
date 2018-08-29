@@ -137,8 +137,8 @@ class Trainer():  # pragma: no cover
             self.tensorboard.add_text(
                 'event/anomaly', 'Rolling back, detected a coarse loss anomaly #%d (%f > %f ± %f)' %
                 (self.anomaly_detector.anomaly_counter, epoch_coarse_loss,
-                 self.anomaly_detector.last_average,
-                 self.anomaly_detector.max_deviation), self.step)
+                 self.anomaly_detector.last_average, self.anomaly_detector.max_deviation),
+                self.step)
             past_model_state = self.rollback[0]
             self.model.load_state_dict(past_model_state)
 
