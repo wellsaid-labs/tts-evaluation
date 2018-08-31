@@ -6,7 +6,6 @@ from src.utils.configurable import configurable
 from src.feature_model.pre_net import PreNet
 from src.feature_model.post_net import PostNet
 from src.feature_model.attention import LocationSensitiveAttention
-from src.feature_model.zoneout import Zoneout
 
 
 class AutoregressiveDecoderHiddenState(object):
@@ -93,7 +92,7 @@ class AutoregressiveDecoder(nn.Module):
             input_size=pre_net_hidden_size + self.attention_context_size,
             hidden_size=lstm_hidden_size,
             num_layers=1)
-        self.lstm_layer_one_zoneout = Zoneout(p=lstm_dropout)
+        self.lstm_layer_one_dropout = nn.Dropout(p=lstm_dropout)
         self.lstm_hidden_size = lstm_hidden_size
         self.lstm_layer_two = nn.LSTM(
             input_size=lstm_hidden_size + self.attention_context_size,
@@ -241,16 +240,12 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             # frame [seq_len (1), batch (batch_size),
             # input_size (pre_net_hidden_size + self.attention_context_size)]  →
             # [1, batch_size, lstm_hidden_size]
-            frame, next_lstm_one_hidden_state = self.lstm_layer_one(frame, lstm_one_hidden_state)
+            frame, lstm_one_hidden_state = self.lstm_layer_one(frame, lstm_one_hidden_state)
 
-            # Apply Zoneout to the LSTM Cell State and Hidden State
-            next_lstm_one_hidden_state = list(next_lstm_one_hidden_state)
-            next_lstm_one_hidden_state[0] = self.lstm_layer_one_zoneout(
-                next_lstm_one_hidden_state[0], lstm_one_hidden_state[0])
-            next_lstm_one_hidden_state[1] = self.lstm_layer_one_zoneout(
-                next_lstm_one_hidden_state[1], lstm_one_hidden_state[1])
-            lstm_one_hidden_state = next_lstm_one_hidden_state
-            del next_lstm_one_hidden_state
+            # Apply dropout to the LSTM Cell State and Hidden State
+            lstm_one_hidden_state = list(lstm_one_hidden_state)
+            lstm_one_hidden_state[0] = self.lstm_layer_one_dropout(lstm_one_hidden_state[0])
+            lstm_one_hidden_state[1] = self.lstm_layer_one_dropout(lstm_one_hidden_state[1])
 
             # Initial attention alignment, sometimes refered to as attention weights.
             # attention_context [batch_size, self.attention_context_size]

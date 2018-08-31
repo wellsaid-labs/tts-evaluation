@@ -9,8 +9,9 @@ Thanks for considering contributing!
 To contribute an experiment, you'll need to document your Tensorboard and code changes. First,
 sync you experiment to the GCP ``tensorboard`` server as documented in ``GCP_WORKFLOW.md``.
 
-Then, submit a pull request to our [GitHub](https://github.com/AI2Incubator/Tacotron-2) documenting
-the experiment with a link to the experiment.
+Then, submit a pull request to our
+[GitHub](https://github.com/AI2Incubator/WellSaid-Labs-Text-To-Speech) documenting the experiment
+with a link to the experiment.
 
 If you are contributing a new model to Tensorboard for which you'd like a separate
 Tensorboard, create one:
@@ -26,21 +27,22 @@ Tensorboard, create one:
 
 ### Did you find a bug?
 
-First, do [a quick search](https://github.com/AI2Incubator/Tacotron-2/issues) to see whether your
-issue has already been reported. If your issue has already been reported, please comment on the
-existing issue.
+First, do [a quick search](https://github.com/AI2Incubator/WellSaid-Labs-Text-To-Speech/issues) to
+see whether your issue has already been reported. If your issue has already been reported, please
+comment on the existing issue.
 
-Otherwise, open [a new GitHub issue](https://github.com/AI2Incubator/Tacotron-2/issues).  Be sure to
-include a clear title and description.  The description should include as much relevant information
-as possible.  The description should explain how to reproduce the erroneous behavior as well as the
-behavior you expect to see.  Ideally you would include a code sample or an executable test case
-demonstrating the expected behavior.
+Otherwise, open
+[a new GitHub issue](https://github.com/AI2Incubator/WellSaid-Labs-Text-To-Speech/issues). Be sure
+to include a clear title and description. The description should include as much relevant
+information as possible. The description should explain how to reproduce the erroneous behavior as
+well as the behavior you expect to see. Ideally you would include a code sample or an executable
+test case demonstrating the expected behavior.
 
 ### Did you write a fix for a bug?
 
-Open [a new GitHub pull request](https://github.com/AI2Incubator/Tacotron-2/pulls) with the fix.
-Make sure you have a clear description of the problem and the solution, and include a link to
-relevant issues.
+Open [a new GitHub pull request](https://github.com/AI2Incubator/WellSaid-Labs-Text-To-Speech/pulls)
+with the fix. Make sure you have a clear description of the problem and the solution, and include a
+link to relevant issues.
 
 Once your pull request is created, our continuous build system will check your pull request.
 Continuous build will test that:
@@ -65,8 +67,8 @@ We use GitHub issues to track enhancement requests.  Before you create an enhanc
 
 * Check the documentation to make sure your feature does not already exist.
 
-* Do [a quick search](https://github.com/AI2Incubator/Tacotron-2/issues) to see whether your
-  enhancement has already been suggested.
+* Do [a quick search](https://github.com/AI2Incubator/WellSaid-Labs-Text-To-Speech/issues) to see
+  whether your enhancement has already been suggested.
 
 When creating your enhancement request, please:
 

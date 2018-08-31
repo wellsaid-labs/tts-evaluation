@@ -115,17 +115,6 @@ def set_hparams():
                 'lower_hertz': None,
                 'upper_hertz': None,
             },
-            'lr_schedulers.DelayedExponentialLR.__init__': {
-                # SOURCE (Tacotron 2):
-                # learning rate of 10−3 exponentially decaying to 10−5 starting after 50,000
-                # iterations.
-                # NOTE: Over email the authors confirmed they ended decay at 100,000 steps
-                # NOTE: Authors mentioned this hyperparameter is dependent on the dataset; for
-                # the LJ speech dataset, we see that dev and train loss begin to diverge at 20k.
-                'epoch_start_decay': 10000,
-                'epoch_end_decay': 60000,
-                'end_lr': 10**-5,
-            },
             'audio': {
                 # SOURCE (Wavenet):
                 # To make this more tractable, we first apply a µ-law companding transformation
@@ -302,8 +291,7 @@ def set_hparams():
                     'train_batch_size': 64,
                     'dev_batch_size': 256,
                     'num_workers': 12,
-                    'sigma': 6,
-                    'beta': 0.99,
+                    'min_rollback': 1,
                 },
                 '_utils.load_data.predicted': False,
                 '_dataset.SignalDataset.__init__': {
@@ -339,12 +327,17 @@ def set_hparams():
                 'utils': {
                     'split_signal.bits': bits,
                     'combine_signal.bits': bits,
+                    'AnomalyDetector.__init__': {
+                        # NOTE: Determined empirically with the notebook:
+                        # ``notebooks/Detecting Anomalies.ipynb``
+                        'sigma': 6,
+                        'beta': 0.98,
+                    }
                 }
             },
-            'optimizer': {
-                # NOTE: Smoothing parameter determined experimentally, this parameter is not super
-                # sensative.
-                'AutoOptimizer.__init__.beta': 0.99
+            'optimizer.AutoOptimizer.__init__': {
+                # NOTE: Window size smoothing parameter is not super sensative.
+                'window_size': 128
             }
         }
     })

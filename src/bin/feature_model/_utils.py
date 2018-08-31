@@ -72,16 +72,12 @@ def load_checkpoint(checkpoint=None, device=torch.device('cpu')):
         if 'model' in checkpoint:
             checkpoint['model'].apply(
                 lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
-        if 'scheduler' in checkpoint and 'optimizer' in checkpoint:
-            # ISSUE: https://github.com/pytorch/pytorch/issues/7255
-            checkpoint['scheduler'].optimizer = checkpoint['optimizer'].optimizer
     return checkpoint
 
 
 def save_checkpoint(directory,
                     model=None,
                     optimizer=None,
-                    scheduler=None,
                     text_encoder=None,
                     epoch=None,
                     step=None,
@@ -93,7 +89,6 @@ def save_checkpoint(directory,
         directory (str): Directory where to save the checkpoint.
         model (torch.nn.Module, optional): Model to train and evaluate.
         optimizer (torch.optim.Optimizer, optional): Optimizer used for gradient descent.
-        scheduler (torch.optim.lr_scheduler, optional): Scheduler used to adjust learning rate.
         text_encoder (torchnlp.TextEncoder, optional): Text encoder used to encode and decode the
             text.
         epoch (int, optional): Starting epoch, useful warm starts (i.e. checkpoints).
@@ -113,7 +108,6 @@ def save_checkpoint(directory,
         filename, {
             'model': model,
             'optimizer': optimizer,
-            'scheduler': scheduler,
             'text_encoder': text_encoder,
             'epoch': epoch,
             'step': step,

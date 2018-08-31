@@ -1,7 +1,9 @@
 import logging
 import os
 import shutil
+import mock
 
+import pytest
 import torch
 
 from src.utils.experiment_context_manager import ExperimentContextManager
@@ -42,6 +44,21 @@ def test_experiment():
 
     # Automatically cleaned up
     assert not os.path.isdir(context.directory)
+
+
+# Patch inspired by:
+# https://stackoverflow.com/questions/24779893/customizing-unittest-mock-mock-open-for-iteration
+def mock_open(*args, **kargs):
+    file_ = mock.mock_open(*args, **kargs)
+    file_.return_value.__iter__ = lambda self: iter(self.readline, '')
+    return file_
+
+
+@mock.patch('subprocess.check_output', return_value='torch==0.4.1'.encode())
+@mock.patch('builtins.open', new_callable=mock_open, read_data='torch==0.4.0\n')
+def test_check_module_versions(_, __):
+    with pytest.raises(ValueError):
+        ExperimentContextManager._check_module_versions(None)
 
 
 def test_clean_up():

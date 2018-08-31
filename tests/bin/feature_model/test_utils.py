@@ -1,7 +1,6 @@
 import os
 import torch
 
-from torch.optim.lr_scheduler import StepLR
 from src.optimizer import Optimizer
 
 from src.bin.feature_model._utils import load_checkpoint
@@ -34,13 +33,8 @@ def test_load_save_checkpoint():
         model = FeatureModel(10)
         optimizer = Optimizer(
             torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
-        scheduler = StepLR(optimizer.optimizer, step_size=30)
         filename = save_checkpoint(
-            context.checkpoints_directory,
-            model=model,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            step=10)
+            context.checkpoints_directory, model=model, optimizer=optimizer, step=10)
         assert os.path.isfile(filename)
 
         # Smoke test

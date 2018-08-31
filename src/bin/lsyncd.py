@@ -4,7 +4,8 @@ NOTE: This script uses ``sudo``, be prepared to type in your password.
 
 Example:
 
-    python3 src/bin/lsyncd.py --source ~/Code/Tacotron-2/ --destination /home/michaelp/Tacotron-2 \
+    python3 src/bin/lsyncd.py --source ~/Code/WellSaid-Labs-Text-To-Speech/ \
+                              --destination /home/michaelp/WellSaid-Labs-Text-To-Speech \
                               --user michaelp --instance tensorboard
 """
 import argparse

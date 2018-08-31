@@ -1,7 +1,8 @@
 import argparse
+import collections
 import logging
-import random
 import os
+import random
 import time
 
 from torch.nn import CrossEntropyLoss
@@ -50,10 +51,9 @@ class Trainer():  # pragma: no cover
         criterion (callable): Loss function used to score signal predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
         num_workers (int, optional): Number of workers for data loading.
-        sigma (int, optional): Number of standard deviations to use when detecting anomolies.
-        beta (float, optional): Smoothing parameter to compute the average loss.
         anomaly_detector (AnomalyDetector, optional): Anomaly detector used to skip batches that
             result in large loss.
+        min_rollback (int, optional): Minimum number of epochs to rollback in case of an anomaly.
     """
 
     STEP_UNIT_DECISECONDS = 'deciseconds'
@@ -77,8 +77,7 @@ class Trainer():  # pragma: no cover
                  optimizer=Adam,
                  num_workers=0,
                  anomaly_detector=None,
-                 sigma=6,
-                 beta=0.99):
+                 min_rollback=1):
         assert step_unit in [self.STEP_UNIT_BATCHES,
                              self.STEP_UNIT_DECISECONDS], 'Picked invalid step unit.'
 
@@ -91,8 +90,7 @@ class Trainer():  # pragma: no cover
         self.optimizer.to(device)
 
         self.anomaly_detector = anomaly_detector if isinstance(
-            anomaly_detector, AnomalyDetector) else AnomalyDetector(
-                beta=beta, sigma=sigma)
+            anomaly_detector, AnomalyDetector) else AnomalyDetector()
 
         self.criterion = criterion(reduce=False).to(device)
 
@@ -109,6 +107,10 @@ class Trainer():  # pragma: no cover
         self.num_workers = num_workers
         self.sample_rate = sample_rate
         self.random = random.Random(123)  # Ensure the same samples are sampled
+        # NOTE: Rollback ``maxlen=min_rollback + 2`` in case the model enters at a degenerate state
+        # at the beginning of the epoch; therefore, allowing us to rollback at least min_rollback
+        # epoch every time.
+        self.rollback = collections.deque([self.model.state_dict()], min_rollback + 2)
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step (%s): %d', self.step_unit, self.step)
@@ -123,6 +125,28 @@ class Trainer():  # pragma: no cover
 
         self.train_tensorboard.add_text('event/session', 'Starting new session.', self.step)
         self.dev_tensorboard.add_text('event/session', 'Starting new session.', self.step)
+
+    def _maybe_rollback(self, epoch_coarse_loss):
+        """ Maybe rollback the model if the loss is too high.
+
+        Args:
+            epoch_coarse_loss (float)
+        """
+        is_anomaly = self.anomaly_detector.step(epoch_coarse_loss)
+        if is_anomaly:
+            self.tensorboard.add_text(
+                'event/anomaly', 'Rolling back, detected a coarse loss anomaly #%d (%f > %f ± %f)' %
+                (self.anomaly_detector.anomaly_counter, epoch_coarse_loss,
+                 self.anomaly_detector.last_average,
+                 self.anomaly_detector.max_deviation), self.step)
+            past_model_state = self.rollback[0]
+            self.model.load_state_dict(past_model_state)
+
+            # Clear the possibly degenerative states.
+            self.rollback.clear()
+            self.rollback.append(past_model_state)
+        else:
+            self.rollback.append(self.model.state_dict())
 
     def run_epoch(self, train=False, trial_run=False):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
@@ -173,6 +197,8 @@ class Trainer():  # pragma: no cover
         if not trial_run:
             self.tensorboard.add_scalar('coarse/loss/epoch', epoch_coarse_loss, self.step)
             self.tensorboard.add_scalar('fine/loss/epoch', epoch_fine_loss, self.step)
+
+        self._maybe_rollback(epoch_coarse_loss)
 
     def _sample_inference(self, batch, max_infer_frames=200):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.
@@ -307,19 +333,10 @@ class Trainer():  # pragma: no cover
             step = self.step
 
         if train:
-            coarse_loss_item = coarse_loss.item()
-            is_anomaly = self.anomaly_detector.step(coarse_loss_item)
-            if is_anomaly:
-                self.tensorboard.add_text(
-                    'event/anomaly', 'Detected a coarse loss anomaly #%d (%f > %f ± %f)' %
-                    (self.anomaly_detector.anomaly_counter, coarse_loss_item,
-                     self.anomaly_detector.last_average, self.anomaly_detector.max_deviation), step)
-                return 0.0, 0.0, 0
-            else:
-                self.optimizer.zero_grad()
-                (coarse_loss + fine_loss).backward()
-                with self.tensorboard.set_step(step):
-                    self.optimizer.step(tensorboard=self.tensorboard)
+            self.optimizer.zero_grad()
+            (coarse_loss + fine_loss).backward()
+            with self.tensorboard.set_step(step):
+                self.optimizer.step(tensorboard=self.tensorboard)
 
         coarse_loss, fine_loss = coarse_loss.item(), fine_loss.item()
         predicted_coarse, predicted_fine = predicted_coarse.detach(), predicted_fine.detach()
@@ -351,7 +368,7 @@ def main(checkpoint_path=None,
         checkpoint_path (str, optional): Accepts a checkpoint path to load or empty string
             signaling to load the most recent checkpoint in ``experiments_root``.
         epochs (int, optional): Number of epochs to run for.
-        reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer and scheduler.
+        reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer.
         hparams (dict, optional): Hparams to override default hparams.
         evaluate_every_n_epochs (int, optional): Evaluate every ``evaluate_every_n_epochs`` epochs.
         min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
@@ -432,11 +449,7 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '-n', '--name', type=str, default='auto_max_grad_norm', help='Experiment name.')
     parser.add_argument(
-        '-r',
-        '--reset_optimizer',
-        action='store_true',
-        default=False,
-        help='Reset optimizer and scheduler.')
+        '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     args, unknown_args = parser.parse_known_args()
     hparams = parse_hparam_args(unknown_args)
     main(

@@ -6,7 +6,6 @@ import random
 from torch.nn import BCELoss
 from torch.nn import MSELoss
 from torch.optim import Adam
-from torch.optim.lr_scheduler import _LRScheduler
 from tqdm import tqdm
 
 import torch
@@ -17,7 +16,7 @@ from src.bin.feature_model._utils import load_data
 from src.bin.feature_model._utils import save_checkpoint
 from src.bin.feature_model._utils import set_hparams
 from src.feature_model import FeatureModel
-from src.lr_schedulers import DelayedExponentialLR
+from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
 from src.utils import get_total_parameters
 from src.utils import load_most_recent_checkpoint
@@ -48,7 +47,6 @@ class Trainer():  # pragma: no cover
         criterion_frames (callable): Loss function used to score frame predictions.
         criterion_stop_token (callable): Loss function used to score stop token predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
-        scheduler (torch.optim.lr_scheduler): Scheduler used to adjust learning rate.
         num_workers (int, optional): Number of workers for data loading.
     """
 
@@ -68,18 +66,15 @@ class Trainer():  # pragma: no cover
                  criterion_frames=MSELoss,
                  criterion_stop_token=BCELoss,
                  optimizer=Adam,
-                 scheduler=DelayedExponentialLR,
                  num_workers=0):
 
         # Allow for ``class`` or a class instance
         self.model = model if isinstance(model, torch.nn.Module) else model(vocab_size)
         self.model.to(device)
 
-        self.optimizer = optimizer if isinstance(optimizer, Optimizer) else Optimizer(
+        self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.optimizer.to(device)
-        self.scheduler = scheduler if isinstance(scheduler, _LRScheduler) else scheduler(
-            self.optimizer.optimizer, last_epoch=step)
 
         self.dev_tensorboard = dev_tensorboard
         self.train_tensorboard = train_tensorboard
@@ -256,7 +251,6 @@ class Trainer():  # pragma: no cover
             (pre_frames_loss + post_frames_loss + stop_token_loss).backward()
             with self.tensorboard.set_step(self.step):
                 self.optimizer.step(tensorboard=self.tensorboard)
-            self.scheduler.step()
 
         (pre_frames_loss, post_frames_loss, stop_token_loss) = tuple(
             loss.item() for loss in (pre_frames_loss, post_frames_loss, stop_token_loss))
@@ -265,9 +259,6 @@ class Trainer():  # pragma: no cover
             self.tensorboard.add_scalar('pre_frames/loss/step', pre_frames_loss, self.step)
             self.tensorboard.add_scalar('post_frames/loss/step', post_frames_loss, self.step)
             self.tensorboard.add_scalar('stop_token/loss/step', stop_token_loss, self.step)
-            for i, lr in enumerate(self.scheduler.get_lr()):
-                tag = '/'.join(['learning_rate', str(i), 'step'])
-                self.tensorboard.add_scalar(tag, lr, self.step)
             self.step += 1
 
         if sample:
@@ -291,7 +282,7 @@ def main(checkpoint_path=None,
     Args:
         checkpoint (str, optional): If provided, path to a checkpoint to load.
         epochs (int, optional): Number of epochs to run for.
-        reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer and scheduler.
+        reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer.
         hparams (dict, optional): Hparams to override default hparams.
         evaluate_every_n_epochs (int, optional): Evaluate every ``evaluate_every_n_epochs`` epochs.
         min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
@@ -333,9 +324,8 @@ def main(checkpoint_path=None,
             del checkpoint['text_encoder']
             del checkpoint['experiment_directory']
             if reset_optimizer:
-                logger.info('Not restoring optimizer and scheduler.')
+                logger.info('Not restoring optimizer.')
                 del checkpoint['optimizer']
-                del checkpoint['scheduler']
             trainer_kwargs = checkpoint
         trainer = Trainer(context.device, train, dev, text_encoder.vocab_size,
                           context.train_tensorboard, context.dev_tensorboard, **trainer_kwargs)
@@ -349,7 +339,6 @@ def main(checkpoint_path=None,
                     context.checkpoints_directory,
                     model=trainer.model,
                     optimizer=trainer.optimizer,
-                    scheduler=trainer.scheduler,
                     text_encoder=text_encoder,
                     epoch=trainer.epoch,
                     step=trainer.step,
@@ -374,11 +363,7 @@ if __name__ == '__main__':  # pragma: no cover
         'otherwise, expects a checkpoint file path.')
     parser.add_argument('-n', '--name', type=str, default=None, help='Experiment name.')
     parser.add_argument(
-        '-r',
-        '--reset_optimizer',
-        action='store_true',
-        default=False,
-        help='Reset optimizer and scheduler.')
+        '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     args, unknown_args = parser.parse_known_args()
     hparams = parse_hparam_args(unknown_args)
     main(
