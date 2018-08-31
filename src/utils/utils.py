@@ -2,6 +2,8 @@ import matplotlib
 
 matplotlib.use('Agg', warn=False)
 
+from pathlib import Path
+
 import ast
 import glob
 import logging
@@ -19,7 +21,7 @@ from src.utils.configurable import configurable
 logger = logging.getLogger(__name__)
 
 # Repository root path
-ROOT_PATH = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..'))
+ROOT_PATH = str(Path(__file__).parent.parent.parent.resolve())
 
 
 class ExponentiallyWeightedMovingAverage():

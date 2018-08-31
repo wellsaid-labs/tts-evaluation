@@ -1,10 +1,12 @@
 from functools import reduce
 from functools import wraps
+from functools import lru_cache
 from importlib import import_module
 
 import inspect
 import logging
 import operator
+import os
 import pprint
 import sys
 
@@ -136,14 +138,16 @@ def _check_configuration(dict_):
     return _check_configuration_helper(dict_, [], [])
 
 
+@lru_cache(maxsize=1)
 def _get_main_module_name():
     """ Get __main__ module name """
+    from src.utils.utils import ROOT_PATH  # Prevent circular dependecy
+
     file_name = sys.argv[0]
+    common = os.path.commonprefix([ROOT_PATH, file_name])
+    file_name = os.path.relpath(file_name, common)  # Normalized path from ROOT_PATH
     no_extension = file_name.split('.')[0]
     return no_extension.replace('/', '.')
-
-
-_main_module_name = _get_main_module_name()
 
 
 def _get_module_name(func):
@@ -158,7 +162,7 @@ def _get_module_name(func):
     """
     module_keys = inspect.getmodule(func).__name__.split('.')
     if module_keys == ['__main__']:
-        module_keys = _main_module_name.split('.')
+        module_keys = _get_main_module_name().split('.')
     keys = module_keys + func.__qualname__.split('.')
     print_name = module_keys[-1] + '.' + func.__qualname__
     return keys, print_name
@@ -187,7 +191,7 @@ def _check_configuration_helper(dict_, keys, trace):
         try:
             # Try to import a function
             module_path = '.'.join(keys[:-1])
-            if module_path == _main_module_name:
+            if module_path == _get_main_module_name():
                 module_path = '__main__'
             module = import_module(module_path)
             if hasattr(module, keys[-1]):
@@ -211,7 +215,7 @@ def _check_configuration_helper(dict_, keys, trace):
         #   function = nn.BatchNorm1d.__init__
         try:
             module_path = '.'.join(keys[:-2])
-            if module_path == _main_module_name:
+            if module_path == _get_main_module_name():
                 module_path = '__main__'
             module = import_module(module_path)
             if hasattr(module, keys[-2]):

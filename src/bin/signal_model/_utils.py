@@ -48,8 +48,7 @@ def load_data(predicted_train='data/.signal_dataset/train',
     source_dev = os.path.join(ROOT_PATH, source_dev)
 
     if not os.path.isdir(source_dev) or not os.path.isdir(source_train):
-        raise ValueError('Data files not found. '
-                         'Did you run ``src/bin/feature_model/generate.py``?')
+        raise ValueError('Data files not found. ' 'Did you run ``src.bin.feature_model.generate``?')
 
     kwargs = {
         'log_mel_spectrogram_prefix': log_mel_spectrogram_prefix,

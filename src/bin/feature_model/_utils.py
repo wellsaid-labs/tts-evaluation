@@ -49,7 +49,7 @@ def load_data(source_train='data/.feature_dataset/train',
     """
     if not os.path.isdir(source_dev) or not os.path.isdir(source_train):
         raise ValueError('Data files not found. '
-                         'Did you run ``src/bin/feature_model/preprocess.py``?')
+                         'Did you run ``src.bin.feature_model.preprocess``?')
 
     train = FeatureDataset(source_train, text_encoder=text_encoder, load_signal=load_signal)
     dev = FeatureDataset(source_dev, text_encoder=train.text_encoder, load_signal=load_signal)

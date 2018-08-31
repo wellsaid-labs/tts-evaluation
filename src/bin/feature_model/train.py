@@ -97,6 +97,7 @@ class Trainer():  # pragma: no cover
         logger.info('Number of Training Rows: %d', len(self.train_dataset))
         logger.info('Number of Dev Rows: %d', len(self.dev_dataset))
         logger.info('Vocab Size: %d', text_encoder.vocab_size)
+        logger.info('Text Vocab: %s', ', '.join(sorted(self.text_encoder.vocab)))
         logger.info('Train Batch Size: %d', train_batch_size)
         logger.info('Dev Batch Size: %d', dev_batch_size)
         logger.info('Number of data loading workers: %d', num_workers)

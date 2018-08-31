@@ -4,9 +4,9 @@ NOTE: This script uses ``sudo``, be prepared to type in your password.
 
 Example:
 
-    python3 src/bin/lsyncd.py --source ~/Code/WellSaid-Labs-Text-To-Speech/ \
-                              --destination /home/michaelp/WellSaid-Labs-Text-To-Speech \
-                              --user michaelp --instance tensorboard
+    python3 src.bin.lsyncd --source ~/Code/WellSaid-Labs-Text-To-Speech/ \
+                           --destination /home/michaelp/WellSaid-Labs-Text-To-Speech \
+                           --user michaelp --instance tensorboard
 """
 import argparse
 import json

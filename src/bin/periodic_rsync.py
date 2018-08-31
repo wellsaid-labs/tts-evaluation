@@ -7,7 +7,7 @@ NOTE:
 
 Example:
 
-    python3 src/bin/periodic_rsync.py \
+    python3 src.bin.periodic_rsync \
       --destination ~/WellSaid-Labs-Text-To-Speech/sync/ \
       --source ~/WellSaid-Labs-Text-To-Speech/experiments/signal_model
 """
