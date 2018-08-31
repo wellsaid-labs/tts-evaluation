@@ -93,8 +93,8 @@ def set_hparams():
     # of the predicted output on the decoder side, also referred to as
     # teacher-forcing) with a batch size of 64 on a single GPU.
     # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
-    dev_batch_size = 56
-    train_batch_size = 256
+    dev_batch_size = 256
+    train_batch_size = 56
     num_workers = 12
 
     # NOTE: Parameters set after experimentation on a 1 Px100 GPU.

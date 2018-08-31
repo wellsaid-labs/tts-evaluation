@@ -1,5 +1,6 @@
 from torch import nn
 from torchnlp.text_encoders import PADDING_INDEX
+from tqdm import tqdm
 
 import torch
 
@@ -129,6 +130,7 @@ class SpectrogramModel(nn.Module):
             stopped = set()
             hidden_state = None
             alignments, frames, stop_tokens = [], [], []
+            progress_bar = tqdm(leave=True, unit='frame(s)')
             while len(stopped) != batch_size and len(frames) < max_recursion:
                 frame, stop_token, hidden_state, alignment = self.decoder(
                     encoded_tokens, tokens_mask, hidden_state=hidden_state)
@@ -139,6 +141,10 @@ class SpectrogramModel(nn.Module):
                 stop_tokens.append(stop_token.squeeze(0))
                 alignments.append(alignment.squeeze(0))
 
+                progress_bar.update(1)
+                progress_bar.total = len(frames)
+
+            progress_bar.close()
             alignments = torch.stack(alignments, dim=0)
             frames = torch.stack(frames, dim=0)
             stop_tokens = torch.stack(stop_tokens, dim=0)

@@ -36,9 +36,9 @@ class Trainer():  # pragma: no cover
         device (torch.device): Device to train on.
         train_dataset (iterable): Train dataset used to optimize the model.
         dev_dataset (iterable): Dev dataset used to evaluate.
-        vocab_size (int): Size of the input text vocabulary used with embeddings.
         train_tensorboard (tensorboardX.SummaryWriter): Writer for train events.
         dev_tensorboard (tensorboardX.SummaryWriter): Writer for dev events.
+        text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
         train_batch_size (int, optional): Batch size used for training.
         dev_batch_size (int, optional): Batch size used for evaluation.
         model (torch.nn.Module, optional): Model to train and evaluate.
@@ -55,9 +55,9 @@ class Trainer():  # pragma: no cover
                  device,
                  train_dataset,
                  dev_dataset,
-                 vocab_size,
                  train_tensorboard,
                  dev_tensorboard,
+                 text_encoder,
                  train_batch_size=32,
                  dev_batch_size=128,
                  model=FeatureModel,
@@ -69,7 +69,7 @@ class Trainer():  # pragma: no cover
                  num_workers=0):
 
         # Allow for ``class`` or a class instance
-        self.model = model if isinstance(model, torch.nn.Module) else model(vocab_size)
+        self.model = model if isinstance(model, torch.nn.Module) else model(text_encoder.vocab_size)
         self.model.to(device)
 
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
@@ -86,6 +86,7 @@ class Trainer():  # pragma: no cover
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
         self.num_workers = num_workers
+        self.text_encoder = text_encoder
 
         self.criterion_frames = criterion_frames(reduce=False).to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduce=False).to(self.device)
@@ -95,7 +96,7 @@ class Trainer():  # pragma: no cover
         logger.info('Epoch: %d', self.epoch)
         logger.info('Number of Training Rows: %d', len(self.train_dataset))
         logger.info('Number of Dev Rows: %d', len(self.dev_dataset))
-        logger.info('Vocab Size: %d', vocab_size)
+        logger.info('Vocab Size: %d', text_encoder.vocab_size)
         logger.info('Train Batch Size: %d', train_batch_size)
         logger.info('Dev Batch Size: %d', dev_batch_size)
         logger.info('Number of data loading workers: %d', num_workers)
@@ -195,8 +196,48 @@ class Trainer():  # pragma: no cover
         return (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
                 num_stop_token_predictions)
 
-    def _sample(self, batch, predicted_pre_frames, predicted_post_frames, predicted_alignments,
-                predicted_stop_tokens):
+    def _sample_infered(self, batch, max_infer_frames=1000):
+        """ Run in inference mode without teacher forcing and push results to Tensorboard.
+
+        Args:
+            batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
+            max_infer_frames (int, optioanl): Maximum number of frames to consider for memory's
+                sake.
+
+        Returns: None
+        """
+        batch_size = batch['text'].shape[1]
+        item = random.randint(0, batch_size - 1)
+        spectrogam_length = batch['frame_lengths'][item]
+        text_length = batch['text_lengths'][item]
+
+        text = batch['text'][:text_length, item]
+        gold_frames = batch['frames'][:spectrogam_length, item]
+
+        torch.set_grad_enabled(False)
+        self.model.train(mode=False)
+
+        logger.info('Running inference...')
+        (predicted_pre_frames, predicted_post_frames, predicted_stop_tokens,
+         predicted_alignments) = self.model(
+             text.unsqueeze(1), max_recursion=max_infer_frames)
+
+        text = self.text_encoder.decode(text)
+        predicted_residual = predicted_post_frames - predicted_pre_frames
+
+        with self.tensorboard.set_step(self.step):
+            self.tensorboard.add_text('infered/input', text)
+            self.tensorboard.add_log_mel_spectrogram('infered/predicted_spectrogram',
+                                                     predicted_post_frames[:, 0])
+            self.tensorboard.add_log_mel_spectrogram('infered/residual_spectrogram',
+                                                     predicted_residual[:, 0])
+            self.tensorboard.add_log_mel_spectrogram('infered/gold_spectrogram', gold_frames)
+            self.tensorboard.add_attention('infered/alignment', predicted_alignments[:, 0])
+            self.tensorboard.add_stop_token('infered/stop_token', predicted_stop_tokens[:, 0])
+            self.tensorboard.add_text('infered/input', text)
+
+    def _sample_predicted(self, batch, predicted_pre_frames, predicted_post_frames,
+                          predicted_alignments, predicted_stop_tokens):
         """ Samples examples from a batch and outputs them to tensorboard
 
         Args:
@@ -217,25 +258,30 @@ class Trainer():  # pragma: no cover
         spectrogam_length = batch['frame_lengths'][item]
         text_length = batch['text_lengths'][item]
 
+        text = batch['text'][:text_length, item]
+        text = self.text_encoder.decode(text)
+
         predicted_post_frames = predicted_post_frames[:spectrogam_length, item]
         predicted_pre_frames = predicted_pre_frames[:spectrogam_length, item]
         gold_frames = batch['frames'][:spectrogam_length, item]
 
         predicted_residual = predicted_post_frames - predicted_pre_frames
-        predicted_gold_difference = abs(gold_frames - predicted_post_frames)
+        predicted_gold_delta = abs(gold_frames - predicted_post_frames)
 
         predicted_alignments = predicted_alignments[:spectrogam_length, item, :text_length]
         predicted_stop_tokens = predicted_stop_tokens[:spectrogam_length, item]
 
         with self.tensorboard.set_step(self.step):
-            self.tensorboard.add_log_mel_spectrogram('spectrogram/predicted', predicted_post_frames)
-            self.tensorboard.add_log_mel_spectrogram('spectrogram/predicted_residual',
+            self.tensorboard.add_log_mel_spectrogram('predicted/predicted_spectrogram',
+                                                     predicted_post_frames)
+            self.tensorboard.add_log_mel_spectrogram('predicted/residual_spectrogram',
                                                      predicted_residual)
-            self.tensorboard.add_log_mel_spectrogram('spectrogram/predicted_gold_difference',
-                                                     predicted_gold_difference)
-            self.tensorboard.add_log_mel_spectrogram('spectrogram/gold', gold_frames)
-            self.tensorboard.add_attention('alignment/predicted', predicted_alignments)
-            self.tensorboard.add_stop_token('stop_token/predicted', predicted_stop_tokens)
+            self.tensorboard.add_log_mel_spectrogram('predicted/delta_spectrogram',
+                                                     predicted_gold_delta)
+            self.tensorboard.add_log_mel_spectrogram('predicted/gold_spectrogram', gold_frames)
+            self.tensorboard.add_attention('predicted/alignment', predicted_alignments)
+            self.tensorboard.add_stop_token('predicted/stop_token', predicted_stop_tokens)
+            self.tensorboard.add_text('predicted/input', text)
 
     def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
@@ -277,8 +323,9 @@ class Trainer():  # pragma: no cover
             self.step += 1
 
         if sample:
-            self._sample(batch, predicted_pre_frames, predicted_post_frames, predicted_alignments,
-                         predicted_stop_tokens)
+            self._sample_predicted(batch, predicted_pre_frames, predicted_post_frames,
+                                   predicted_alignments, predicted_stop_tokens)
+            self._sample_infered(batch)
 
         return (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
                 num_stop_token_predictions)
@@ -330,16 +377,15 @@ def main(checkpoint_path=None,
         train, dev, text_encoder = load_data(text_encoder=text_encoder)
 
         # Set up trainer.
-        trainer_kwargs = {}
+        trainer_kwargs = {'text_encoder': text_encoder}
         if checkpoint is not None:
-            del checkpoint['text_encoder']
             del checkpoint['experiment_directory']
             if reset_optimizer:
                 logger.info('Not restoring optimizer.')
                 del checkpoint['optimizer']
-            trainer_kwargs = checkpoint
-        trainer = Trainer(context.device, train, dev, text_encoder.vocab_size,
-                          context.train_tensorboard, context.dev_tensorboard, **trainer_kwargs)
+            trainer_kwargs.update(checkpoint)
+        trainer = Trainer(context.device, train, dev, context.train_tensorboard,
+                          context.dev_tensorboard, **trainer_kwargs)
 
         # Training Loop
         for _ in range(epochs):
