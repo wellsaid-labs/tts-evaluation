@@ -1,6 +1,63 @@
-import torch
-
 from torch import nn
+
+from src.utils.configurable import configurable
+
+
+class Identity(nn.Module):
+    """ Identity block returns the input. """
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, *args):
+        if len(args) == 1:
+            return args[0]
+
+        return args
+
+
+class ResidualBlock(nn.Module):
+    """ Residual block applied during upsampling.
+
+    Args:
+        in_channels (int): Number of channels in the input image.
+        out_channels (int): Number of channels produced by the convolution.
+        kernel_size (int or tuple): Size of the convolving kernel.
+        padding (int or tuple, optional): Zero-padding added to both sides of the input.
+    """
+
+    def __init__(self, in_channels, out_channels, kernel_size, padding):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.BatchNorm2d(num_features=in_channels),
+            nn.ReLU(),
+            nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                padding=padding))
+
+        self.shortcut = (
+            Identity() if in_channels == out_channels else nn.Conv2d(
+                in_channels=in_channels, out_channels=out_channels, kernel_size=1))
+
+    def forward(self, tensor):
+        """
+        Args:
+            tensor (torch.FloatTensor [batch_size, in_channels, width, height])
+
+        Returns:
+            tensor (torch.FloatTensor [batch_size, out_channels, width, height]):
+        """
+        residual = self.net(tensor)
+
+        # The Conv2D may reduce the size of the tensor; in this case, we just reduce size similarly.
+        less_width = int((tensor.shape[2] - residual.shape[2]) / 2)
+        less_height = int((tensor.shape[3] - residual.shape[3]) / 2)
+        tensor = tensor[:, :, less_width:tensor.shape[2] - less_width, less_height:
+                        tensor.shape[3] - less_height]
+
+        return self.shortcut(tensor) + residual
 
 
 class ConditionalFeaturesUpsample(nn.Module):
@@ -8,50 +65,49 @@ class ConditionalFeaturesUpsample(nn.Module):
     Notes:
         * Tacotron 2 authors mention on Google Chat:  "We upsample 4x with the layers and then
           repeat each value 75x".
+        * Inspired by SOTA super resolution model:
+          https://github.com/pytorch/examples/tree/master/super_resolution
 
     Args:
-        upsample_convs (list of int): Size of convolution layers used to upsample local features
-            (e.g. 256 frames x 4 x ...).
-        upsample_repeat (int): Number of times to repeat frames, another upsampling technique.
         in_channels (int): Dimensionality of input features.
-        output_size (int): Dimensionality of outputed features.
-        num_layers (int): Number of layers in Wavenet to condition.
-        upsample_chunks (int): Control the memory used by ``upsample_layers`` by breaking the
-            operation up into chunks.
+        out_channels (int): Dimensionality of outputed features.
+        kernels (list of tuples): Sizes of kernels used for upsampling, every kernel has an
+            associated number of filters.
+        num_filters (list of int): Filters to be used with each kernel. The last kernel is used
+            for upsampling the length.
+        upsample_repeat (int): Number of times to repeat frames, another upsampling technique.
     """
 
+    @configurable
     def __init__(self,
-                 upsample_convs=[4],
-                 upsample_repeat=75,
                  in_channels=80,
                  out_channels=64,
-                 num_layers=24,
-                 upsample_chunks=3):
+                 kernels=[(5, 5), (3, 3), (3, 3), (3, 3)],
+                 num_filters=[64, 64, 32, 10],
+                 upsample_repeat=30):
         super().__init__()
         self.out_channels = out_channels
         self.upsample_repeat = upsample_repeat
-        self.num_layers = num_layers
+        self.min_padding = sum([(kernel[0] - 1) for kernel in kernels])
 
-        assert self.num_layers % upsample_chunks == 0, (
-            "For simplicity, we only support whole chunking")
+        assert all(all(s % 2 == 1 and s < in_channels for s in kernel) for kernel in kernels), (
+            'Kernel size must be odd and must be less than ``in_channels``')
 
-        self.upsample_signal_length = None
-        if upsample_convs is not None:
-            # Similar to:
-            # https://github.com/kan-bayashi/PytorchWaveNetVocoder/blob/fe99175470977d993cfae6df5e8610b6aab8ce90/src/nets/wavenet.py#L131
-            self.upsample_signal_length = nn.Sequential(*tuple([
-                nn.ConvTranspose2d(1, 1, kernel_size=(1, size), stride=(1, size))
-                for size in upsample_convs
-            ]))
+        self.initial_conv = nn.Conv2d(
+            in_channels=1,
+            out_channels=num_filters[0],
+            kernel_size=kernels[0],
+            padding=tuple([int((s - 1) / 2) for s in kernels[0]]))
 
-        self.upsample_layers = nn.ModuleList([
-            nn.Conv1d(
-                in_channels=in_channels,
-                out_channels=out_channels * int(num_layers / upsample_chunks),
-                kernel_size=1) for _ in range(upsample_chunks)
+        self.pre_net = nn.Sequential(*[
+            ResidualBlock(
+                in_channels=(num_filters[0] if i == 0 else num_filters[i - 1]),
+                out_channels=num_filters[i],
+                kernel_size=kernel,
+                padding=(0, int((kernel[1] - 1) / 2))) for i, kernel in enumerate(kernels)
         ])
-        for conv in self.upsample_layers:
-            torch.nn.init.xavier_uniform_(conv.weight, gain=torch.nn.init.calculate_gain('tanh'))
+
+        self.post_net = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
 
     def _repeat(self, local_features):
         """ Repeat similar to this 3x repeat [1, 2, 3] → [1, 1, 1, 2, 2, 2, 3, 3, 3].
@@ -61,24 +117,23 @@ class ConditionalFeaturesUpsample(nn.Module):
               https://stackoverflow.com/questions/35227224/torch-repeat-tensor-like-numpy-repeat
 
         Args:
-            local_features (torch.FloatTensor [batch_size, local_length, in_channels]):
+            local_features (torch.FloatTensor [batch_size, in_channels, local_length]):
                 Local features to repeat.
 
         Returns:
-            local_features (torch.FloatTensor [batch_size, local_length,
-                in_channels * repeat]): Local features to repeated.
+            local_features (torch.FloatTensor [batch_size, in_channels, local_length * repeat]):
+                Local features repeated.
         """
-        # TODO: Even without a speaker, we can try a speaker embedding
-        # [batch_size, in_channels, upsample_length] →
-        # [batch_size, in_channels, upsample_length, 1]
+        # [batch_size, in_channels, local_length] →
+        # [batch_size, in_channels, local_length, 1]
         local_features = local_features.unsqueeze(3)
 
-        # [batch_size, in_channels, upsample_length] →
-        # [batch_size, in_channels, upsample_length, num_repeat]
+        # [batch_size, in_channels, local_length] →
+        # [batch_size, in_channels, local_length, num_repeat]
         local_features = local_features.repeat(1, 1, 1, self.upsample_repeat)
 
-        # [batch_size, in_channels, upsample_length, num_repeat] →
-        # [batch_size, in_channels, upsample_length * num_repeat]
+        # [batch_size, in_channels, local_length, num_repeat] →
+        # [batch_size, in_channels, local_length * num_repeat]
         return local_features.view(local_features.shape[0], local_features.shape[1], -1)
 
     def forward(self, local_features):
@@ -86,35 +141,50 @@ class ConditionalFeaturesUpsample(nn.Module):
         TODO: Support global conditioning
 
         Args:
-            local_features (torch.FloatTensor [batch_size, local_length, in_channels]):
-                Local features to condition signal generation (e.g. spectrogram).
+            local_features (torch.FloatTensor [batch_size, local_length + padding, in_channels]):
+                Local features to condition signal generation (e.g. spectrogram). Upsample does
+                pad the convolution operations to process the spectrograms; therefore, we require
+                that a user pads ``local_features`` time domain instead with
+                ``sum([(kernel[0] - 1) for kernel in kernels])`` padding.
 
         Returns:
-            conditional_features (torch.FloatTensor [batch_size, num_layers, out_channels,
-                signal_length]): Upsampled local conditional features.
+            conditional_features (torch.FloatTensor [batch_size, out_channels, signal_length]):
+                Upsampled local conditional features.
         """
-        # Convolution operater expects input_ of the form:
-        # [batch_size, in_channels, signal_length (local_length)]
+        batch_size, local_length, in_channels = local_features.shape
+
+        assert local_features.shape[1] > self.min_padding, (
+            'Remember to pad local_features as described in the above docs.')
+
+        # [batch_size, local_length + padding, in_channels] →
+        # [batch_size, 1, local_length + padding, in_channels]
+        local_features = local_features.unsqueeze(1)
+
+        # [batch_size, 1, local_length + padding, in_channels] →
+        # [batch_size, num_filters[0], local_length + padding - kernels[0] + 1, in_channels]
+        local_features = self.initial_conv(local_features)
+
+        # [batch_size, num_filters[0], local_length + padding - kernels[0] + 1, in_channels] →
+        # [batch_size, num_filters[-1], local_length, in_channels]
+        local_features = self.pre_net(local_features)
+
+        # [batch_size, num_filters[-1], local_length, in_channels] →
+        # [batch_size, local_length, num_filters[-1], in_channels]
+        local_features = local_features.transpose(1, 2).contiguous()
+
+        # [batch_size, local_length, num_filters[-1], in_channels] →
+        # [batch_size, local_length * num_filters[-1], in_channels]
+        local_features = local_features.view(batch_size, -1, in_channels)
+
+        # [batch_size, local_length * num_filters[-1], in_channels] →
+        # [batch_size, in_channels, local_length * num_filters[-1]]
         local_features = local_features.transpose(1, 2)
 
-        # [batch_size, in_channels, local_length] →
-        # [batch_size, in_channels, signal_length]
-        local_features = local_features.unsqueeze(1)
-        if self.upsample_signal_length is not None:
-            local_features = self.upsample_signal_length(local_features)
-        local_features = local_features.squeeze(1)
-        local_features = self._repeat(local_features)
+        # [batch_size, in_channels, local_length * num_filters[-1]] →
+        # [batch_size, out_channels, local_length * num_filters[-1]]
+        local_features = self.post_net(local_features)
 
-        # [batch_size, in_channels, signal_length] →
-        # [batch_size, out_channels * num_layers, signal_length]
-        local_features = [conv(local_features) for conv in self.upsample_layers]
-        local_features = torch.cat(local_features, dim=1)
-
-        batch_size, _, signal_length = local_features.shape
-
-        # [batch_size, in_channels, signal_length] →
-        # [batch_size, num_layers, out_channels, signal_length]
-        local_features = local_features.view(batch_size, self.num_layers, self.out_channels,
-                                             signal_length)
-
-        return local_features
+        # [batch_size, out_channels, local_length * num_filters[-1]] →
+        # [batch_size, out_channels,
+        #  signal_length (local_length * num_filters[-1] * upsample_repeat)]
+        return self._repeat(local_features)

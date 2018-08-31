@@ -37,9 +37,9 @@ def load_data(source_train='data/.feature_dataset/train',
     Args:
         source_train (str): Directory with training examples.
         source_dev (str): Directory with dev examples.
-        sample_rate (int): Sample rate of the signal.
         text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the
             text.
+        load_signal (bool): If ``True`` the FeatureDataset, loads the signal.
 
     Returns:
         train (FeatureDataset)
@@ -72,33 +72,30 @@ def load_checkpoint(checkpoint=None, device=torch.device('cpu')):
         if 'model' in checkpoint:
             checkpoint['model'].apply(
                 lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
-        if 'scheduler' in checkpoint and 'optimizer' in checkpoint:
-            # ISSUE: https://github.com/pytorch/pytorch/issues/7255
-            checkpoint['scheduler'].optimizer = checkpoint['optimizer'].optimizer
     return checkpoint
 
 
 def save_checkpoint(directory,
                     model=None,
                     optimizer=None,
-                    scheduler=None,
                     text_encoder=None,
                     epoch=None,
                     step=None,
-                    filename=None):
+                    filename=None,
+                    experiment_directory=None):
     """ Save a checkpoint.
 
     Args:
         directory (str): Directory where to save the checkpoint.
         model (torch.nn.Module, optional): Model to train and evaluate.
         optimizer (torch.optim.Optimizer, optional): Optimizer used for gradient descent.
-        scheduler (torch.optim.lr_scheduler, optional): Scheduler used to adjust learning rate.
         text_encoder (torchnlp.TextEncoder, optional): Text encoder used to encode and decode the
             text.
         epoch (int, optional): Starting epoch, useful warm starts (i.e. checkpoints).
         step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
         filename (str, optional): Filename to save the checkpoint too, by default the checkpoint
             is saved in ``os.path.join(context.epoch_directory, 'checkpoint.pt')``
+        experiment_directory (str, optional): Directory experiment logs are saved in.
 
     Returns:
         checkpoint (dict or None): Loaded checkpoint or None
@@ -111,10 +108,10 @@ def save_checkpoint(directory,
         filename, {
             'model': model,
             'optimizer': optimizer,
-            'scheduler': scheduler,
             'text_encoder': text_encoder,
             'epoch': epoch,
             'step': step,
+            'experiment_directory': experiment_directory
         })
 
     return filename

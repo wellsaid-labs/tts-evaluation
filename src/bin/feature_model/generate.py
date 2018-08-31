@@ -1,4 +1,4 @@
-""" Generate relevant training files for the Wavenet model.
+""" Generate relevant training files for the signal model.
 """
 import argparse
 import logging

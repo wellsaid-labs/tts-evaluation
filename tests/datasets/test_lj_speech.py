@@ -56,6 +56,10 @@ def test_lj_speech_dataset(mock_urlretrieve):
     assert len(train) == 13100 * 0.8
     assert len(dev) == 13100 * 0.2
 
+    # Check sum to ensure its the same exact split
+    assert sum([len(r['text']) for r in dev]) == 258045
+    assert sum([len(r['text']) for r in train]) == 1052287
+
     # Test deterministic shuffle
     assert train[0]['text'] == (
         'Once a warrant-holder sent down a clerk to view certain goods, and the clerk found that '
