@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 INSTANCE_RUNNING = 'RUNNING'
 
 
-def get_instances(all_=False):
+def get_instances(all_=False):  # pragma: no cover
     """ Get a list of instances sync.
 
     Args:
@@ -71,7 +71,7 @@ def get_instances(all_=False):
     return filtered_instances
 
 
-def main(instances, source, destination, scheduler, repeat_every=5):
+def main(instances, source, destination, scheduler, repeat_every=5):  # pragma: no cover
     """ ``rsync`` ``instances`` ``source`` to ``destination`` on local instance.
 
     Args:

@@ -70,7 +70,7 @@ Then, the ``notebooks/Synthesize Speech from Text.ipynb`` notebook runs the syst
 
 Run unit tests with code coverage like so:
 
-    python -m pytest tests/ --cov=src --cov-report html:coverage --cov-report=term-missing
+    python -m pytest tests/ src/ --doctest-modules --cov=src --cov-report html:coverage --cov-report=term-missing
 
 Run linting like so:
 

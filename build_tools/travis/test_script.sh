@@ -19,9 +19,9 @@ fi
 
 run_tests() {
     if [[ "$RUN_SLOW" == "true" ]]; then
-        TEST_CMD="py.test tests/ -v --durations=20 --cov=src --runslow"
+        TEST_CMD="py.test --doctest-modules tests/ src/ -v --durations=20 --cov=src --runslow"
     else
-        TEST_CMD="py.test tests/ -v --durations=20 --cov=src"
+        TEST_CMD="py.test --doctest-modules tests/ src/ -v --durations=20 --cov=src"
     fi
     $TEST_CMD
 }

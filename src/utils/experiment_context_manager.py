@@ -23,7 +23,7 @@ class _CopyStream(object):
     **Reference:** https://stackoverflow.com/questions/4675728/redirect-stdout-to-a-file-in-python
 
     Example:
-        >>> sys.stdout = _CopyStream(stdout_filename, sys.stdout)
+        >>> sys.stdout = _CopyStream(stdout_filename, sys.stdout) # doctest: +SKIP
 
     Args:
         filename (str or Path): Filename to recieve stream

@@ -157,8 +157,8 @@ def split_dataset(dataset, splits, deterministic_shuffle=True, random_seed=123):
     Example:
         >>> dataset = [1, 2, 3, 4, 5]
         >>> splits = (.6, .2, .2)
-        >>> split_dataset(dataset, splits)
-        [[1, 2, 3], [4], [5]]
+        >>> split_dataset(dataset, splits, deterministic_shuffle=True, random_seed=123)
+        [[4, 2, 5], [3], [1]]
     """
     if deterministic_shuffle:
         do_deterministic_shuffle(dataset, random_seed=random_seed)

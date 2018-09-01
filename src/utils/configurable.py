@@ -80,18 +80,12 @@ def _parse_configuration(dict_):
 
     Example:
         >>> dict = {
-            'abc.abc': {
-              'cda': 'abc
-            }
-        }
+        ...   'abc.abc': {
+        ...     'cda': 'abc'
+        ...   }
+        ... }
         >>> _parse_configuration(dict)
-        {
-          'abc': {
-            'abc': {
-              'cda': 'abc
-            }
-          }
-        }
+        {'abc': {'abc': {'cda': 'abc'}}}
     """
     parsed = {}
     _parse_configuration_helper(dict_, parsed)
@@ -168,8 +162,14 @@ def _get_module_name(func):
     module_keys = inspect.getmodule(func).__name__.split('.')
     if module_keys == ['__main__']:
         module_keys = _get_main_module_name().split('.')
+    module_keys = [k for k in module_keys if k != '']
     keys = module_keys + func.__qualname__.split('.')
-    print_name = module_keys[-1] + '.' + func.__qualname__
+
+    if len(module_keys) > 0:
+        print_name = module_keys[-1] + '.' + func.__qualname__
+    else:
+        print_name = func.__qualname__
+
     return keys, print_name
 
 
@@ -256,14 +256,16 @@ def add_config(dict_):
         (TypeError): duplicate functions/modules/packages are defined
 
     Example:
-        >>> # abc.py
+        >>> import pprint
+        >>> pprint.pprint([[1, 2]])
+        [[1, 2]]
         >>>
-        >>> add_config({'abc.abc': {'to_print': 'xyz'}})
-        >>>
-        >>> def abc(to_print):
-                print(to_print)
-        >>> abc()
-        xyz
+        >>> # Configure `pprint` to use a `width` of `2`
+        >>> pprint.pprint = configurable(pprint.pprint)
+        >>> add_config({'pprint.pprint': {'width': 2}})
+        >>> pprint.pprint([[1, 2]])
+        [[1,
+          2]]
     """
     global _configuration
     parsed = _parse_configuration(dict_)
@@ -358,7 +360,7 @@ def configurable(func):
         if len(config) == 0:
             # TODO: Do not repeat this warning and warn that this message will not be
             # repeated
-            logger.warn('%s no config for: %s', print_name, '.'.join(keys))
+            logger.warn('No config for `%s` (`%s`)', print_name, '.'.join(keys))
 
         # Print name is used for logger
         if not isinstance(config, dict):

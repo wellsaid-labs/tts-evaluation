@@ -24,7 +24,7 @@ import tensorflow as tf
 tf.logging.set_verbosity(tf.logging.INFO)
 
 
-def extract_scalars(multiplexer, run, tag):
+def extract_scalars(multiplexer, run, tag):  # pragma: no cover
     """Extract tabular data from the scalars at a given run and tag.
 
     The result is a list of 3-tuples (wall_time, step, value).
@@ -34,14 +34,14 @@ def extract_scalars(multiplexer, run, tag):
             for event in tensor_events]
 
 
-def create_multiplexer(logdir):
+def create_multiplexer(logdir):  # pragma: no cover
     multiplexer = event_multiplexer.EventMultiplexer(tensor_size_guidance={'scalars': sys.maxsize})
     multiplexer.AddRunsFromDirectory(str(logdir))
     multiplexer.Reload()
     return multiplexer
 
 
-def export_scalars(multiplexer, run, tag, filepath, write_headers=True):
+def export_scalars(multiplexer, run, tag, filepath, write_headers=True):  # pragma: no cover
     if filepath.is_file():
         filepath.unlink()
 
@@ -57,12 +57,12 @@ def export_scalars(multiplexer, run, tag, filepath, write_headers=True):
 NON_ALPHABETIC = re.compile('[^A-Za-z0-9_]')
 
 
-def munge_filename(name):
+def munge_filename(name):  # pragma: no cover
     """ Remove characters that might not be safe in a filename. """
     return NON_ALPHABETIC.sub('_', name)
 
 
-def main(run, tags, output_dir='/tmp/csv_output'):
+def main(run, tags, output_dir='/tmp/csv_output'):  # pragma: no cover
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
 
@@ -77,7 +77,7 @@ def main(run, tags, output_dir='/tmp/csv_output'):
     tf.logging.info('Done')
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '-t', '--tags', nargs='+', help='Scalar tag names to extract', required=True)

@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def get_ip(instance_name):
+def get_ip(instance_name):  # pragma: no cover
     """ Get the IP address of an instance
 
     Args:
@@ -42,7 +42,7 @@ def main(source,
          instance,
          user,
          template='src/bin/lsyncd.conf.lua',
-         tmp='/tmp/lsyncd.conf.lua'):
+         tmp='/tmp/lsyncd.conf.lua'):  # pragma: no cover
     """ Starts a lsyncd session.
 
     Args:
@@ -66,7 +66,7 @@ def main(source,
     os.execvp('sudo', ['sudo', 'lsyncd', tmp])
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '-s', '--source', type=str, required=True, help='Path on local machine to sync')

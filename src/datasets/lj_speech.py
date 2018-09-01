@@ -76,9 +76,9 @@ def lj_speech_dataset(directory='data/',
         :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
 
     Example:
-        >>> from src.datasets import lj_speech_dataset
-        >>> data = lj_speech_dataset()
-        >>> data[0:2]
+        >>> from src.datasets import lj_speech_dataset # doctest: +SKIP
+        >>> data = lj_speech_dataset() # doctest: +SKIP
+        >>> data[0:2] # doctest: +SKIP
         [
           {
             'text': 'Printing, in the only sense with which we are at present concerned,...',
@@ -289,7 +289,7 @@ def _expand_abbreviations(text):
 
     Example:
         >>> _expand_abbreviations('Mr. Gurney')
-        Mister. Gurney
+        'Mister Gurney'
     """
     for regex, expansion in _abbreviations:
         text = _iterate_and_replace(regex, text, lambda s: _match_case(s, expansion), group=0)
@@ -313,7 +313,7 @@ def _normalize_whitespace(text):
 
     Example:
         >>> _normalize_whitespace('Mr.     Gurney   ')
-        Mr. Gurney
+        'Mr. Gurney'
     """
     return re.sub(_whitespace_re, ' ', text).strip()
 
@@ -329,7 +329,7 @@ def _normalize_quotations(text):
 
     Example:
         >>> _normalize_quotations('“sponge,”')
-        "sponge,"
+        '"sponge,"'
     """
     text = text.replace('“', '"')
     text = text.replace('”', '"')
@@ -349,7 +349,7 @@ def _remove_accents(text):
 
     Example:
         >>> _remove_accents('Málaga')
-        Malaga
+        'Malaga'
     """
     return unidecode.unidecode(text)
 
@@ -400,7 +400,7 @@ def _verbalize_time_of_day(text):
 
     Example:
         >>> _verbalize_time_of_day('San Antonio at 1:30 p.m.,')
-        San Antonio at one thirty p.m.,
+        'San Antonio at one thirty p.m.,'
     """
 
     def _replace(match):
@@ -427,7 +427,7 @@ def _verbalize_ordinals(text):
 
     Example:
         >>> _verbalize_ordinals('between May 1st, 1827,')
-        between May first, 1827,
+        'between May first, 1827,'
     """
 
     def _replace(match):
@@ -452,7 +452,7 @@ def _verbalize_currency(text):
 
     Example:
         >>> _verbalize_currency('inch BBL, unquote, cost $29.95.')
-        inch BBL, unquote, cost twenty-nine dollars, ninety-five cents.
+        'inch BBL, unquote, cost twenty-nine dollars, ninety-five cents.'
     """
 
     def _replace(match):
@@ -485,9 +485,9 @@ def _verbalize_serial_numbers(text):
 
     Example:
         >>> _verbalize_serial_numbers('Post Office Box 2915, Dallas, Texas')
-        Post Office Box two nine one five, Dallas, Texas
+        'Post Office Box two nine one five, Dallas, Texas'
         >>> _verbalize_serial_numbers('serial No. C2766, which was also found')
-        serial No. C two seven six six, which was also found
+        'serial No. C two seven six six, which was also found'
     """
 
     def _replace(match):
@@ -519,11 +519,11 @@ def _verbalize_year(text):
 
     Example:
         >>> _verbalize_year('Newgate down to 1818,')
-        Newgate down to eighteen eighteen,
+        'Newgate down to eighteen eighteen,'
         >>> _verbalize_year('It was about 250 B.C., when the great')
-        It was about two fifty B.C., when the great
+        'It was about two fifty B.C., when the great'
         >>> _verbalize_year('In 606, Nineveh')
-        In six oh-six, Nineveh
+        'In six oh-six, Nineveh'
     """
 
     def _replace(match):
@@ -548,8 +548,8 @@ def _verbalize_numeral(text):
         text (str): Text verbalized.
 
     Example:
-        >>> _verbalize_numeral('Exhibit No. 143 as the')
-        Exhibit No. one fourty-three as the
+        >>> _verbalize_numeral(_expand_abbreviations('Exhibit No. 143 as the'))
+        'Exhibit Number one forty-three as the'
     """
 
     def _replace(match):
@@ -573,8 +573,8 @@ def _verbalize_roman_number(text):
         text (str): Text verbalized.
 
     Example:
-        >>> _verbalize_number('William IV. was also the victim')
-        William the forth was also the victim
+        >>> _verbalize_roman_number('William IV. was also the victim')
+        'William the fourth was also the victim'
     """
 
     def _replace(match):
@@ -609,15 +609,15 @@ def _verbalize_number(text):
 
     Example:
         >>> _verbalize_number('Chapter 4. The Assassin:')
-        Chapter four. The Assassin:
+        'Chapter four. The Assassin:'
         >>> _verbalize_number('was shipped on March 20, and the')
-        was shipped on March twenty, and the
+        'was shipped on March twenty, and the'
         >>> _verbalize_number('distance of 265.3 feet was, quote')
-        distance of two hundred sixty-five point three feet was, quote
+        'distance of two hundred sixty-five point three feet was, quote'
         >>> _verbalize_number('information on some 50,000 cases')
-        information on some fifty thousand cases
+        'information on some fifty thousand cases'
         >>> _verbalize_number('PRS received items in 8,709 cases')
-        PRS received items in eight thousand, seven hundred nine cases
+        'PRS received items in eight thousand, seven hundred nine cases'
     """
 
     def _replace(match):
