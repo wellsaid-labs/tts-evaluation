@@ -31,7 +31,7 @@ def test_tensorboard():
     tensorboard.close()
 
     assert directory.is_dir()
-    shutil.rmtree(directory)
+    shutil.rmtree(str(directory))
 
 
 def test_plot_log_mel_spectrogram():

@@ -32,13 +32,13 @@ def read_audio(filename, sample_rate=None):
           https://github.com/bmcfee/resampy/issues/61
 
     Args:
-        filename (str): Name of the file to load.
+        filename (Path or str): Name of the file to load.
         sample_rate (int or None): Assert this target sample rate.
 
     Returns:
         numpy.ndarray [n,]: Audio time series.
     """
-    signal, observed_sample_rate = librosa.core.load(filename, sr=None)
+    signal, observed_sample_rate = librosa.core.load(str(filename), sr=None)
     if sample_rate is not None:
         assert sample_rate == observed_sample_rate, (
             "Sample rate must be set to %d (!= %s) before hand for file %s" %
@@ -140,7 +140,7 @@ def get_log_mel_spectrogram(signal,
         frame_size (int): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
         frame_hop (int): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
         fft_length (int): The window size used by the fourier transform.
-        winow (string, tuple, number, callable): Window function to be applied to each
+        window (str, tuple, number, callable): Window function to be applied to each
             frame. See the full specification for window at ``librosa.filters.get_window``.
         min_magnitude (float): Stabilizing minimum to avoid high dynamic ranges caused by the
             singularity at zero in the mel spectrograms.
@@ -255,7 +255,7 @@ def griffin_lim(log_mel_spectrogram,
         frame_hop (int): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
         fft_length (int): The size of the FFT to apply. If not provided, uses the smallest power of
           2 enclosing `frame_length`.
-        winow (string, tuple, number, callable): Window function to be applied to each
+        window (str, tuple, number, callable): Window function to be applied to each
             frame. See the full specification for window at ``librosa.filters.get_window``.
         power (float): Amplification float used to reduce artifacts.
         iterations (int): Number of iterations of griffin lim to run.
@@ -284,4 +284,4 @@ def griffin_lim(log_mel_spectrogram,
             proposal_spectrogram, hop_length=frame_hop, win_length=frame_size, window=window)
 
     waveform = np.real(waveform)
-    librosa.output.write_wav(filename, waveform, sr=sample_rate)
+    librosa.output.write_wav(str(filename), waveform, sr=sample_rate)

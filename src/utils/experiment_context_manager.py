@@ -166,8 +166,8 @@ class ExperimentContextManager(object):
         """
         # NOTE: ``tb`` short name to help with Tensorboard path layout in the left hand
         log_dir = self.directory / 'tb'
-        self.dev_tensorboard = Tensorboard(log_dir=str(log_dir / 'dev'), step=self.step)
-        self.train_tensorboard = Tensorboard(log_dir=str(log_dir / 'train'), step=self.step)
+        self.dev_tensorboard = Tensorboard(log_dir=log_dir / 'dev', step=self.step)
+        self.train_tensorboard = Tensorboard(log_dir=log_dir / 'train', step=self.step)
 
     def set_seed(self, seed):
         """ To ensure reproducibility, by seeding ``numpy``, ``random``, ``tf`` and ``torch``.

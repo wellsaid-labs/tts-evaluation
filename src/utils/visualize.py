@@ -139,11 +139,12 @@ class Tensorboard(SummaryWriter):
     def __init__(self, *args, log_dir=None, step=0, **kwargs):
         """
         Args:
-            log_dir (string, optional): The save location for tensorboard events.
+            log_dir (str or Path, optional): The save location for tensorboard events.
             step (int, optional): Global step tensorboard uses to assign continuity to events.
             *args: Other arguments used to initialize ``SummaryWriter``.
             **kwargs: Other key word arguments used to initialize ``SummaryWriter``.
         """
+        log_dir = str(log_dir)
         self.writer = SummaryWriter(*args, log_dir=log_dir, **kwargs)
         self._step = None
 

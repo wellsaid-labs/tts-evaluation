@@ -23,16 +23,16 @@ def test_save_standard_streams():
     assert context.stderr_filename.is_file()
 
     # Just `Test` print in stdout
-    lines = '\n'.join([l.strip() for l in open(context.stdout_filename, 'r')])
+    lines = context.stdout_filename.read_text().strip()
     assert 'Test' in lines
     assert 'Test Logger' in lines
 
     # Nothing in stderr
-    lines = [l.strip() for l in open(context.stderr_filename, 'r')]
+    lines = context.stderr_filename.read_text().strip()
     assert len(lines) == 0
 
     # Clean up files
-    shutil.rmtree(context.directory)
+    shutil.rmtree(str(context.directory))
 
 
 def test_experiment():

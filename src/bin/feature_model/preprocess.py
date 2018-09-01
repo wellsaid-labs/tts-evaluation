@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def process(args):
+def process(args):  # pragma: no cover
     index, row, destination = args
     signal = read_audio(row['wav_filename'])
 
@@ -68,5 +68,5 @@ def main(destination_train='data/.feature_dataset/train',
             list(tqdm.tqdm(pool.imap(process, args), total=len(args)))
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     main()

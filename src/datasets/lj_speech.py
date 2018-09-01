@@ -100,7 +100,6 @@ def lj_speech_dataset(directory='data/',
             line = line.strip()
             wav_filename, text, _ = tuple(line.split('|'))
             wav_filename = directory / extracted_name / audio_directory / (wav_filename + '.wav')
-            wav_filename = wav_filename.resolve()
             wav_filename = _process_audio(
                 wav_filename,
                 resample=resample,
