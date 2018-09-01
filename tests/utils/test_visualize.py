@@ -1,8 +1,8 @@
 from matplotlib import pyplot
+from pathlib import Path
 
 import matplotlib
 import numpy as np
-import os
 import shutil
 import torch
 
@@ -15,7 +15,7 @@ from src.utils import Tensorboard
 
 
 def test_tensorboard():
-    directory = 'tests/_test_data/tensorboard'
+    directory = Path('tests/_test_data/tensorboard')
 
     # Smoke tests
     tensorboard = Tensorboard(log_dir=directory)
@@ -30,7 +30,7 @@ def test_tensorboard():
 
     tensorboard.close()
 
-    assert os.path.isdir(directory)
+    assert directory.is_dir()
     shutil.rmtree(directory)
 
 

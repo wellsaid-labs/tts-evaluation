@@ -6,10 +6,10 @@ queuing it up to be rebooted by ``keep_alive.py``.
 
 Example:
 
-    python3 src.bin.keep_alive --command="screen -dm bash -c \
+    python3 -m src.bin.keep_alive --command="screen -dm bash -c \
         'cd WellSaid-Labs-Text-To-Speech/; \
         ulimit -n 65536; \
-        python3 src.bin.signal_model.train -c; \
+        python3 -m src.bin.signal_model.train -c; \
         sudo shutdown;'"
 """
 import argparse

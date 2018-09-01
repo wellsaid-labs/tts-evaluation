@@ -18,13 +18,12 @@ def read_file(filename):
     """ Return the contents of ``filename``
 
     Args:
-        filename (str)
+        filename (Path)
 
     Returns:
         (str) contents of filename
     """
-    with open(filename, 'r') as file_:
-        return file_.read().strip()
+    return filename.read_text().strip()
 
 
 def get_spectrogram_length(filename):
@@ -36,7 +35,7 @@ def get_spectrogram_length(filename):
     Returns:
         (int) Length of spectrogram
     """
-    return np.load(filename).shape[0]
+    return np.load(str(filename)).shape[0]
 
 
 class FeatureDataset(data.Dataset):
@@ -89,13 +88,19 @@ class FeatureDataset(data.Dataset):
 
     def __getitem__(self, index):
         example = self.rows[index]
-        log_mel_spectrogram = torch.from_numpy(np.load(example[self.spectrogram_key]))
-        signal = torch.from_numpy(np.load(example[self.signal_key])) if self.load_signal else None
-        with open(example[self.text_key], 'r') as file_:
-            text = file_.read().strip()
+
+        log_mel_spectrogram = torch.from_numpy(np.load(str(example[self.spectrogram_key])))
+
+        signal = None
+        if self.load_signal:
+            signal = torch.from_numpy(np.load(str(example[self.signal_key])))
+
+        text = example[self.text_key].read_text().strip()
         text = self.text_encoder.encode(text)
+
         stop_token = log_mel_spectrogram.new_zeros((log_mel_spectrogram.shape[0],))
         stop_token[-1] = 1
+
         return {
             'log_mel_spectrogram': log_mel_spectrogram,
             'signal': signal,

@@ -1,14 +1,8 @@
-import os
-
 import numpy as np
 import torch
 
-from src.optimizer import Optimizer
-from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
-from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
-from src.utils.experiment_context_manager import ExperimentContextManager
 
 
 def test_load_data():
@@ -41,18 +35,3 @@ def test_set_hparams():
     model = torch.nn.LSTM(10, 10)
     optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()))
     assert optimizer.defaults['eps'] == 10**-8
-
-
-def test_load_save_checkpoint():
-    with ExperimentContextManager(label='test_load_save_checkpoint') as context:
-        model = torch.nn.LSTM(10, 10)
-        optimizer = Optimizer(
-            torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
-        filename = save_checkpoint(
-            directory=context.checkpoints_directory, model=model, optimizer=optimizer, step=10)
-        assert os.path.isfile(filename)
-
-        # Smoke test
-        load_checkpoint(filename)
-
-        context.clean_up()

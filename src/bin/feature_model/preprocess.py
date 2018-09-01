@@ -1,5 +1,6 @@
+from pathlib import Path
+
 import logging
-import os
 import pprint
 
 from multiprocessing import Pool
@@ -30,16 +31,12 @@ def process(args):
     # Pad so: ``log_mel_spectrogram.shape[0] % signal.shape[0] == frame_hop``
     # We property is required for the vocoder.
     padded_signal = np.pad(signal, padding, mode='constant', constant_values=0)
+    np.save(str(destination / ('padded_signal_%d.npy' % index)), padded_signal, allow_pickle=False)
     np.save(
-        os.path.join(destination, 'padded_signal_%d.npy' % (index,)),
-        padded_signal,
-        allow_pickle=False)
-    np.save(
-        os.path.join(destination, 'log_mel_spectrogram_%d.npy' % (index,)),
+        str(destination / ('log_mel_spectrogram_%d.npy' % index)),
         log_mel_spectrogram,
         allow_pickle=False)
-    with open(os.path.join(destination, 'text_%d.txt' % (index,)), 'w') as file_:
-        file_.write(row['text'])
+    (destination / ('text_%d.txt' % index)).write_text(row['text'])
 
 
 def main(destination_train='data/.feature_dataset/train',
@@ -54,11 +51,14 @@ def main(destination_train='data/.feature_dataset/train',
     """
     set_hparams()
 
-    if not os.path.isdir(destination_train):
-        os.makedirs(destination_train)
+    destination_train = Path(destination_train)
+    destination_dev = Path(destination_dev)
 
-    if not os.path.isdir(destination_dev):
-        os.makedirs(destination_dev)
+    if not destination_train.is_dir():
+        destination_train.mkdir(parents=True)
+
+    if not destination_dev.is_dir():
+        destination_dev.mkdir(parents=True)
 
     train, dev = lj_speech_dataset()
     logger.info('Sample Data:\n%s', pretty_printer.pformat(train[:5]))

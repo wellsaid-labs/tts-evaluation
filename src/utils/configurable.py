@@ -1,3 +1,4 @@
+from pathlib import Path
 from functools import reduce
 from functools import wraps
 from functools import lru_cache
@@ -6,7 +7,6 @@ from importlib import import_module
 import inspect
 import logging
 import operator
-import os
 import pprint
 import sys
 
@@ -144,8 +144,13 @@ def _get_main_module_name():
     from src.utils.utils import ROOT_PATH  # Prevent circular dependecy
 
     file_name = sys.argv[0]
-    common = os.path.commonprefix([ROOT_PATH, file_name])
-    file_name = os.path.relpath(file_name, common)  # Normalized path from ROOT_PATH
+
+    try:
+        file_name = str(Path(file_name).relative_to(ROOT_PATH))
+    except ValueError:
+        # `file_name` not relative to `ROOT_PATH`
+        pass
+
     no_extension = file_name.split('.')[0]
     return no_extension.replace('/', '.')
 

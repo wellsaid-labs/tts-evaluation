@@ -32,13 +32,13 @@ echo 'Updating SSH files...'
 gcloud compute config-ssh
 
 run 'signal_model_sync_python' \
-     "python3 src.bin.periodic_rsync \
+     "python3 -m src.bin.periodic_rsync \
         --destination ~/WellSaid-Labs-Text-To-Speech/sync/signal_model/  \
         --source ~/WellSaid-Labs-Text-To-Speech/experiments/signal_model \
         --all;"
 
 run 'feature_model_sync_python' \
-     "python3 src.bin.periodic_rsync \
+     "python3 -m src.bin.periodic_rsync \
         --destination ~/WellSaid-Labs-Text-To-Speech/sync/feature_model/  \
         --source ~/WellSaid-Labs-Text-To-Speech/experiments/feature_model \
         --all;"

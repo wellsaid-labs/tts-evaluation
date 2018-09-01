@@ -1,12 +1,13 @@
-import os
-import shutil
+from pathlib import Path
 
 import mock
+import re
+import shutil
 
 from src.datasets import lj_speech_dataset
 from tests.datasets.utils import urlretrieve_side_effect
 
-lj_directory = 'tests/_test_data/'
+lj_directory = Path('tests/_test_data/')
 
 verbalize_test_cases = {
     'LJ044-0055': 'five four four Camp Street New',  # Test special case
@@ -64,24 +65,27 @@ def test_lj_speech_dataset(mock_urlretrieve):
     assert train[0]['text'] == (
         'Once a warrant-holder sent down a clerk to view certain goods, and the clerk found that '
         'these goods had already a "stop" upon them, or were pledged.')
-    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ014-0331.wav' in train[0]['wav_filename']
+    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ014-0331.wav' in str(train[0]['wav_filename'])
     assert dev[0]['text'] == (
         'Mister Mullay went, and a second interview was agreed upon, when a third person, '
         'Mister Owen,')
-    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ011-0243.wav' in dev[0]['wav_filename']
+    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ011-0243.wav' in str(dev[0]['wav_filename'])
+
+    _re_filename = re.compile('LJ[0-9]{3}-[0-9]{4}')
 
     # Test verbilization
     seen = 0
     for data in [train, dev]:
         for row in data:
-            basename = os.path.basename(row['wav_filename']).split('.')[0]
+            basename = row['wav_filename'].name[:10]
+            assert _re_filename.match(basename)
             if basename in verbalize_test_cases:
                 seen += 1
                 assert verbalize_test_cases[basename] in row['text']
     assert seen == len(verbalize_test_cases)
 
     # Clean up
-    shutil.rmtree(os.path.join(lj_directory, 'LJSpeech-1.1'))
+    shutil.rmtree(str(lj_directory / 'LJSpeech-1.1'))
 
 
 class EveryOther(object):
@@ -98,14 +102,13 @@ class EveryOther(object):
         return return_
 
 
-@mock.patch("src.datasets.lj_speech.os.path.isfile")
+@mock.patch("src.datasets.lj_speech.Path.is_file")
 @mock.patch("src.datasets.lj_speech.os.system")
 @mock.patch("urllib.request.urlretrieve")
-def test_lj_speech_dataset_audio_processing(mock_urlretrieve, mock_os_system, mock_os_isfile):
+def test_lj_speech_dataset_audio_processing(mock_urlretrieve, mock_os_system, mock_path_is_file):
     mock_urlretrieve.side_effect = urlretrieve_side_effect
     mock_os_system.return_value = None
-
-    mock_os_isfile.side_effect = EveryOther()
+    mock_path_is_file.side_effect = EveryOther()
 
     # Check a row are parsed correctly
     train, dev = lj_speech_dataset(
@@ -121,6 +124,7 @@ def test_lj_speech_dataset_audio_processing(mock_urlretrieve, mock_os_system, mo
 
     # Ensure that every argument loudness, upper_hertz, lower_hertz, guard, norm and resample
     # is run
+    print(mock_os_system.call_args[0][0])
     assert 'norm' in mock_os_system.call_args[0][0]
     assert 'guard' in mock_os_system.call_args[0][0]
     assert 'rate 24000' in mock_os_system.call_args[0][0]
@@ -128,4 +132,4 @@ def test_lj_speech_dataset_audio_processing(mock_urlretrieve, mock_os_system, mo
     assert 'loudness' in mock_os_system.call_args[0][0]
 
     # Clean up
-    shutil.rmtree(os.path.join(lj_directory, 'LJSpeech-1.1'))
+    shutil.rmtree(str(lj_directory / 'LJSpeech-1.1'))

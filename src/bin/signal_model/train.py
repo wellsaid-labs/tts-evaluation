@@ -1,7 +1,8 @@
+from pathlib import Path
+
 import argparse
 import collections
 import logging
-import os
 import random
 import time
 
@@ -12,9 +13,7 @@ from tqdm import tqdm
 import torch
 
 from src.bin.signal_model._data_iterator import DataIterator
-from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
-from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
 from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
@@ -22,8 +21,10 @@ from src.signal_model import WaveRNN
 from src.utils import AnomalyDetector
 from src.utils import combine_signal
 from src.utils import get_total_parameters
+from src.utils import load_checkpoint
 from src.utils import load_most_recent_checkpoint
 from src.utils import parse_hparam_args
+from src.utils import save_checkpoint
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
 from src.utils.configurable import log_config
@@ -392,9 +393,8 @@ def main(checkpoint_path=None,
         experiments_root (str, optional): Top level directory for all experiments.
     """
     if checkpoint_path == '':
-        checkpoints = os.path.join(experiments_root, label, '**/*.pt')
-        checkpoint, checkpoint_path = load_most_recent_checkpoint(
-            checkpoints, load_checkpoint=load_checkpoint)
+        checkpoints = str(Path(experiments_root) / label / '**/*.pt')
+        checkpoint, checkpoint_path = load_most_recent_checkpoint(checkpoints)
     else:
         checkpoint = load_checkpoint(checkpoint_path)
 

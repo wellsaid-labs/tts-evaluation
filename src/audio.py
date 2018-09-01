@@ -249,7 +249,7 @@ def griffin_lim(log_mel_spectrogram,
 
     Args:
         log_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
-        filename (:class:`list` of :class:`str`): Filename of the resulting wav file.
+        filename (Path): Filename of the resulting wav file.
         sample_rate (int): Sample rate of the spectrogram and the resulting wav file.
         frame_size (int): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
         frame_hop (int): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
@@ -260,7 +260,7 @@ def griffin_lim(log_mel_spectrogram,
         power (float): Amplification float used to reduce artifacts.
         iterations (int): Number of iterations of griffin lim to run.
     """
-    assert '.wav' in filename, "Filename must be a .wav file"
+    assert '.wav' == filename.suffix, "Filename must be a .wav file"
 
     spectrogram = _log_mel_spectrogram_to_spectrogram(
         log_mel_spectrogram=log_mel_spectrogram, sample_rate=sample_rate)

@@ -1,4 +1,5 @@
-import io
+from pathlib import Path
+
 import os
 import re
 import unidecode
@@ -25,8 +26,8 @@ def lj_speech_dataset(directory='data/',
                       total_rows=13100,
                       norm=True,
                       guard=True,
-                      lower_hertz=125,
-                      upper_hertz=7600,
+                      lower_hertz=0,
+                      upper_hertz=12000,
                       loudness=False,
                       random_seed=123,
                       splits=(.8, .2)):
@@ -89,17 +90,17 @@ def lj_speech_dataset(directory='data/',
           }
         ]
     """
-    download_file_maybe_extract(url=url, directory=directory, check_files=check_files)
-    path = os.path.join(directory, extracted_name, text_file)
+    directory = Path(directory)
+    download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
+    text_file = directory / extracted_name / text_file
 
     examples = []
-    with io.open(path, encoding='utf-8') as f:
+    with text_file.open('r', encoding='utf-8') as f:
         for line in tqdm(f, total=total_rows):
             line = line.strip()
             wav_filename, text, _ = tuple(line.split('|'))
-            wav_filename = os.path.join(directory, extracted_name, audio_directory,
-                                        wav_filename + '.wav')
-            wav_filename = os.path.abspath(wav_filename)
+            wav_filename = directory / extracted_name / audio_directory / (wav_filename + '.wav')
+            wav_filename = wav_filename.resolve()
             wav_filename = _process_audio(
                 wav_filename,
                 resample=resample,
@@ -137,25 +138,43 @@ def _process_audio(wav,
                    resample=24000,
                    norm=True,
                    guard=True,
-                   lower_hertz=125,
-                   upper_hertz=7600,
+                   lower_hertz=0,
+                   upper_hertz=12000,
                    loudness=False):
+    """ Process audio with the SoX library.
+
+    Args:
+        wav (Path): Path to a audio file.
+        resample (int or None, optional): If integer is provided, uses SoX to create resampled
+            files.
+        norm (bool, optional): Automatically invoke the gain effect to guard against clipping and to
+            normalise the audio.
+        guard (bool, optional): Automatically invoke the gain effect to guard against clipping.
+        lower_hertz (int, optional): Apply a sinc kaiser-windowed high-pass.
+        upper_hertz (int, optional): Apply a sinc kaiser-windowed low-pass.
+        loudness (bool, optioanl): Normalize the subjective perception of loudness level based on
+            ISO 226.
+
+    Returns:
+        (str): Filename of the processed file.
+    """
     lower_hertz = str(lower_hertz) if lower_hertz is not None else ''
     upper_hertz = str(upper_hertz) if upper_hertz is not None else ''
 
-    destination = wav
+    name = wav.name
     if resample is not None:
-        destination = destination.replace('.wav', '-rate=%d.wav' % resample)
+        name = name.replace('.wav', '-rate=%d.wav' % resample)
     if norm:
-        destination = destination.replace('.wav', '-norm=-.001.wav')
+        name = name.replace('.wav', '-norm=-.001.wav')
     if loudness:
-        destination = destination.replace('.wav', '-loudness.wav')
+        name = name.replace('.wav', '-loudness.wav')
     if guard:
-        destination = destination.replace('.wav', '-guard.wav')
+        name = name.replace('.wav', '-guard.wav')
     if lower_hertz or upper_hertz:
-        destination = destination.replace('.wav', '-sinc_%s_%s.wav' % (lower_hertz, upper_hertz))
+        name = name.replace('.wav', '-sinc_%s_%s.wav' % (lower_hertz, upper_hertz))
 
-    if wav == destination or os.path.isfile(destination):
+    destination = wav.parent / name
+    if name == wav.name or destination.is_file():
         return destination
 
     # NOTE: -.001 DB applied to prevent clipping.
@@ -166,11 +185,11 @@ def _process_audio(wav,
     resample_command = 'rate %s' % (resample if resample is not None else '',)
     commands = ' '.join([resample_command, sinc_command, loudness_command])
     flags = ' '.join([norm_flag, guard_flag])
-    command = 'sox %s %s %s %s ' % (wav, flags, destination, commands)
+    command = 'sox %s %s %s %s ' % (wav, flags, str(destination), commands)
 
     os.system(command)
 
-    assert os.path.isfile(destination)
+    assert destination.is_file()
 
     return destination
 
@@ -346,19 +365,22 @@ _special_cases = {
     'LJ029-0193': ('100 extra off-duty', 'one hundred extra off-duty'),
 }
 
+_re_filename = re.compile('LJ[0-9]{3}-[0-9]{4}')
+
 
 def _verbalize_special_cases(wav, text):
     """
     Uses ``_special_cases`` to verbalize wav.
 
     Args:
-        wav (str): Filename of the WAV file
+        wav (Path): Filename of the WAV file
         text (str): Text associated with WAV file
 
     Returns:
         text (str): Text with special cases verbalized.
     """
-    basename = os.path.basename(wav).split('.')[0]
+    basename = wav.name[:10]  # Extract 10 characters similar to `LJ029-0193`
+    assert _re_filename.match(basename)
     if basename in _special_cases:
         return text.replace(*_special_cases[basename])
     return text

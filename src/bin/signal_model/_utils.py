@@ -1,13 +1,9 @@
-import logging
-import os
+from pathlib import Path
 
-import torch
+import logging
 
 from src.bin.signal_model._dataset import SignalDataset
 from src.hparams import set_hparams as set_base_hparams
-from src.utils import ROOT_PATH
-from src.utils import torch_load
-from src.utils import torch_save
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
 
@@ -40,14 +36,11 @@ def load_data(predicted_train='data/.signal_dataset/train',
         dev (SignalDataset)
     """
     if predicted:
-        source_train, source_dev = predicted_train, predicted_dev
+        source_train, source_dev = Path(predicted_train), Path(predicted_dev)
     else:
-        source_train, source_dev = real_train, real_dev
+        source_train, source_dev = Path(real_train), Path(real_dev)
 
-    source_train = os.path.join(ROOT_PATH, source_train)
-    source_dev = os.path.join(ROOT_PATH, source_dev)
-
-    if not os.path.isdir(source_dev) or not os.path.isdir(source_train):
+    if not source_dev.is_dir() or not source_train.is_dir():
         raise ValueError('Data files not found. ' 'Did you run ``src.bin.feature_model.generate``?')
 
     kwargs = {
@@ -75,50 +68,3 @@ def set_hparams():
             'lr': 10**-3
         }
     })
-
-
-def load_checkpoint(checkpoint_path=None, device=torch.device('cpu')):
-    """ Load a checkpoint.
-
-    Args:
-        checkpoint_path (str or None): Path to a checkpoint to load.
-        device (int): Device to load checkpoint onto where -1 is the CPU while 0+ is a GPU.
-
-    Returns:
-        checkpoint (dict or None): Loaded checkpoint or None.
-        checkpoint_path (str or None): Path of loaded checkpoint.
-    """
-    if checkpoint_path is None:
-        return None
-
-    checkpoint_path = os.path.join(ROOT_PATH, checkpoint_path)
-    checkpoint = torch_load(checkpoint_path, device=device)
-    if 'model' in checkpoint:
-        checkpoint['model'].apply(
-            lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
-    return checkpoint
-
-
-def save_checkpoint(directory, model=None, step=None, filename=None, **kwargs):
-    """ Save a checkpoint.
-
-    Args:
-        directory (str): Directory where to save the checkpoint.
-        model (torch.nn.Module, optional): Model to train and evaluate.
-        step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
-        filename (str, optional): Filename to save the checkpoint too, by default the checkpoint
-            is saved in ``os.path.join(context.epoch_directory, 'checkpoint.pt')``
-        **kwargs (dict, optional): Anything else to save in the dictionary.
-
-    Returns:
-        checkpoint (dict or None): Loaded checkpoint or None
-    """
-    if filename is None:
-        name = 'step_%d.pt' % (step,) if step is not None else 'checkpoint.pt'
-        filename = os.path.join(directory, name)
-
-    to_save = {'model': model, 'step': step}
-    to_save.update(kwargs)
-    torch_save(filename, to_save)
-
-    return filename

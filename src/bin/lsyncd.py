@@ -4,17 +4,17 @@ NOTE: This script uses ``sudo``, be prepared to type in your password.
 
 Example:
 
-    python3 src.bin.lsyncd --source ~/Code/WellSaid-Labs-Text-To-Speech/ \
-                           --destination /home/michaelp/WellSaid-Labs-Text-To-Speech \
-                           --user michaelp --instance tensorboard
+    python3 -m src.bin.lsyncd --source ~/Code/WellSaid-Labs-Text-To-Speech/ \
+                              --destination /home/michaelp/WellSaid-Labs-Text-To-Speech \
+                              --user michaelp --instance tensorboard
 """
+from pathlib import Path
+
 import argparse
 import json
 import logging
 import os
 import subprocess
-
-from src.utils import ROOT_PATH
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -53,9 +53,7 @@ def main(source,
         template (str): Template configuration for lsyncd.
         tmp (str): Tmp filename to save configuration.
     """
-    with open(os.path.join(ROOT_PATH, template), 'r') as file_:
-        config = file_.read().strip()
-
+    config = Path(template).read_text().strip()
     config = config.replace('{source}', source)
     config = config.replace('{user}', user)
     config = config.replace('{destination}', destination)

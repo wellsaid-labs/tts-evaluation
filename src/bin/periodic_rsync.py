@@ -7,19 +7,18 @@ NOTE:
 
 Example:
 
-    python3 src.bin.periodic_rsync \
+    python3 -m src.bin.periodic_rsync \
       --destination ~/WellSaid-Labs-Text-To-Speech/sync/ \
       --source ~/WellSaid-Labs-Text-To-Speech/experiments/signal_model
 """
+from pathlib import Path
+
 import argparse
 import json
 import logging
-import os
 import sched
 import subprocess
 import time
-
-from src.utils import ROOT_PATH
 
 logging.basicConfig(
     format='[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
@@ -82,6 +81,8 @@ def main(instances, source, destination, scheduler, repeat_every=5):
         scheduler (sched.scheduler): Scheduler to rerun this function.
         repeat_every (int): Repeat this call every ``repeat_every`` seconds.
     """
+    destination = Path(destination)
+
     for instance in instances:
         # EXAMPLE:
         # https://www.googleapis.com/compute/v1/projects/mythical-runner-203817/zones/us-west1-b"
@@ -99,12 +100,11 @@ def main(instances, source, destination, scheduler, repeat_every=5):
 
         if status == INSTANCE_RUNNING:
             server = '.'.join([name, zone, project])
-            server_destination = os.path.abspath(
-                os.path.expanduser(os.path.join(ROOT_PATH, destination, name)))
+            server_destination = (destination / name).expanduser().resolve()
 
-            if not os.path.isdir(server_destination):
-                logger.info('Making directory %s', os.path.abspath(server_destination))
-                os.makedirs(server_destination)
+            if not server_destination.is_dir():
+                logger.info('Making directory %s', str(server_destination))
+                server_destination.mkdir(parents=True)
 
             # NOTE: Updates must be inplace due to this:
             # https://github.com/tensorflow/tensorboard/issues/349

@@ -1,8 +1,9 @@
 """ Generate relevant training files for the signal model.
 """
+from pathlib import Path
+
 import argparse
 import logging
-import os
 
 from tqdm import tqdm
 from torch.nn import MSELoss
@@ -12,10 +13,10 @@ import torch
 import numpy as np
 
 from src.bin.feature_model._data_iterator import DataIterator
-from src.bin.feature_model._utils import load_checkpoint
 from src.bin.feature_model._utils import load_data
 from src.bin.feature_model._utils import set_hparams
 from src.utils import get_total_parameters
+from src.utils import load_checkpoint
 from src.utils.configurable import configurable
 
 logging.basicConfig(level=logging.INFO)
@@ -66,11 +67,13 @@ def main(checkpoint,
         max_batch_size (int, optional): Maximum batch size predicted at a time.
         num_workers (int, optional): Number of workers for data loading.
     """
-    if not os.path.isdir(destination_train):
-        os.makedirs(destination_train)
+    destination_train = Path(destination_train)
+    if not destination_train.is_dir():
+        destination_train.mkdir(parents=True)
 
-    if not os.path.isdir(destination_dev):
-        os.makedirs(destination_dev)
+    destination_dev = Path(destination_dev)
+    if not destination_dev.is_dir():
+        destination_dev.mkdir(parents=True)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     checkpoint = load_checkpoint(checkpoint, device)
@@ -131,13 +134,11 @@ def main(checkpoint,
                 # Performance is important here because we are saving 10,000+ files.
                 # REFERENCE: https://github.com/mverleg/array_storage_benchmark
                 np.save(
-                    os.path.join(destination, 'log_mel_spectrogram_%d_%d.npy' % (i, j)),
+                    str(destination / ('log_mel_spectrogram_%d_%d.npy' % (i, j))),
                     predicted_frames,
                     allow_pickle=False)
                 np.save(
-                    os.path.join(destination, 'signal_%d_%d.npy' % (i, j)),
-                    signal,
-                    allow_pickle=False)
+                    str(destination / ('signal_%d_%d.npy' % (i, j))), signal, allow_pickle=False)
 
         logger.info('Sanity check, post frame loss: %f [%f of %d]', total_loss / total_predictions,
                     total_loss, total_predictions)

@@ -21,7 +21,7 @@ from src.utils.configurable import configurable
 logger = logging.getLogger(__name__)
 
 # Repository root path
-ROOT_PATH = str(Path(__file__).parent.parent.parent.resolve())
+ROOT_PATH = Path(__file__).parent.parent.parent.resolve()
 
 
 class ExponentiallyWeightedMovingAverage():
@@ -175,7 +175,7 @@ def torch_load(path, device=torch.device('cpu')):
     """ Using ``torch.load`` and ``dill`` load an object from ``path`` onto ``self.device``.
 
     Args:
-        path (str): Filename to load.
+        path (Path or str): Filename to load.
 
     Returns:
         (any): Object loaded.
@@ -187,17 +187,17 @@ def torch_load(path, device=torch.device('cpu')):
             return storage.cuda(device=device.index)
         return storage
 
-    return torch.load(path, map_location=remap)
+    return torch.load(str(path), map_location=remap)
 
 
 def torch_save(path, data):
     """ Using ``torch.save`` and ``dill`` save an object to ``path``.
 
     Args:
-        path (str): Filename to save to.
+        path (Path or str): Filename to save to.
         data (any): Data to save into file.
     """
-    torch.save(data, path)
+    torch.save(data, str(path))
     logger.info('Saved: %s' % (path,))
 
 
@@ -210,7 +210,7 @@ def get_filename_table(directory, prefixes=[], extension=''):
           equal number of files as every other prefix.
 
     Args:
-        directory (str): Path to a directory.
+        directory (Path): Path to a directory.
         prefixes (str): Prefixes to load.
         extension (str): Filename extensions to load.
 
@@ -221,10 +221,10 @@ def get_filename_table(directory, prefixes=[], extension=''):
     for prefix in prefixes:
         # Get filenames with associated prefixes
         filenames = []
-        for filename in os.listdir(directory):
+        for filename in directory.iterdir():
             # TODO: Rename prefix because it does not look at directly the beginning of the filename
-            if filename.endswith(extension) and prefix in filename:
-                filenames.append(os.path.join(directory, filename))
+            if (extension == '' or filename.suffix == extension) and prefix in filename.name:
+                filenames.append(filename)
 
         # Sorted to align with other prefixes
         filenames = sorted(filenames)
@@ -316,7 +316,51 @@ def combine_signal(coarse, fine, bits=16):
     return signal.float() / 2**(bits - 1)
 
 
-def load_most_recent_checkpoint(pattern, load_checkpoint=torch_load):
+def load_checkpoint(checkpoint_path=None, device=torch.device('cpu')):
+    """ Load a checkpoint.
+
+    Args:
+        checkpoint_path (Path or str or None): Path to a checkpoint to load.
+        device (int): Device to load checkpoint onto where -1 is the CPU while 0+ is a GPU.
+
+    Returns:
+        checkpoint (dict or None): Loaded checkpoint or None.
+    """
+    if checkpoint_path is None:
+        return None
+
+    checkpoint = torch_load(str(checkpoint_path), device=device)
+    if 'model' in checkpoint:
+        checkpoint['model'].apply(
+            lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
+    return checkpoint
+
+
+def save_checkpoint(directory, model=None, step=None, filename=None, **kwargs):
+    """ Save a checkpoint.
+
+    Args:
+        directory (str): Directory where to save the checkpoint.
+        model (torch.nn.Module, optional): Model to train and evaluate.
+        step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
+        filename (str, optional): Non-default filename to save the checkpoint too.
+        **kwargs (dict, optional): Anything else to save in the dictionary.
+
+    Returns:
+        filename (Path): Path of the saved checkpoint.
+    """
+    if filename is None:
+        name = 'step_%d.pt' % (step,) if step is not None else 'checkpoint.pt'
+        filename = Path(directory) / name
+
+    to_save = {'model': model, 'step': step}
+    to_save.update(kwargs)
+    torch_save(filename, to_save)
+
+    return filename
+
+
+def load_most_recent_checkpoint(pattern, load_checkpoint=load_checkpoint):
     """ Load the most recent checkpoint from ``root``.
 
     Args:
