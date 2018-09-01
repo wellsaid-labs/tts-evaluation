@@ -66,5 +66,11 @@ def set_hparams():
             'eps': 10**-8,
             'weight_decay': 0,
             'lr': 10**-3
-        }
+        },
+        'src.bin.signal_model.train.Trainer.__init__': {
+            # Optimized for 4x P100 GPU
+            'train_batch_size': 64,
+            'dev_batch_size': 256,
+            'num_workers': 12,
+        },
     })

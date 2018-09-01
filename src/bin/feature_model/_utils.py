@@ -12,6 +12,17 @@ logger = logging.getLogger(__name__)
 def set_hparams():
     """ Set hyperparameters specific to the signal model. """
     set_base_hparams()
+
+    # SOURCE: Tacotron 2
+    # To train the feature prediction network, we apply the standard maximum-likelihood training
+    # procedure (feeding in the correct output instead of the predicted output on the decoder side,
+    # also referred to as teacher-forcing) with a batch size of 64 on a single GPU.
+
+    # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
+    dev_batch_size = 256
+    train_batch_size = 56
+    num_workers = 12
+
     add_config({
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999, eps = 10−6
@@ -20,7 +31,18 @@ def set_hparams():
         'torch.optim.adam.Adam.__init__': {
             'eps': 10**-6,
             'weight_decay': 10**-6,
-        }
+        },
+        'src.bin.feature_model': {
+            'train.Trainer.__init__': {
+                'train_batch_size': train_batch_size,
+                'dev_batch_size': dev_batch_size,
+                'num_workers': num_workers,
+            },
+            'generate.main': {
+                'num_workers': num_workers,
+                'max_batch_size': dev_batch_size,
+            }
+        },
     })
 
 

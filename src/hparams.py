@@ -87,21 +87,6 @@ def set_hparams():
     # designed to efficiently predict 16-bit raw audio samples.
     bits = 16
 
-    # SOURCE: Tacotron 2
-    # To train the feature prediction network, we apply the standard
-    # maximum-likelihood training procedure (feeding in the correct output instead
-    # of the predicted output on the decoder side, also referred to as
-    # teacher-forcing) with a batch size of 64 on a single GPU.
-    # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
-    dev_batch_size = 256
-    train_batch_size = 56
-    num_workers = 12
-
-    # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.fastest = False
-
     librosa.effects.trim = configurable(librosa.effects.trim)
     IPython.display.Audio.__init__ = configurable(IPython.display.Audio.__init__)
 
@@ -302,10 +287,6 @@ def set_hparams():
             'bin.signal_model': {
                 'train.Trainer.__init__': {
                     'sample_rate': sample_rate,
-                    # Optimized for 4x P100 GPU
-                    'train_batch_size': 64,
-                    'dev_batch_size': 256,
-                    'num_workers': 12,
                     'min_rollback': 1,
                 },
                 '_utils.load_data.predicted': False,
@@ -314,17 +295,6 @@ def set_hparams():
                     # The WaveRNN models are trained on sequences of 960 audio samples
                     'frame_size': int(900 / get_log_mel_spectrogram['frame_hop']),
                     'frame_pad': 5,
-                }
-            },
-            'bin.feature_model': {
-                'train.Trainer.__init__': {
-                    'train_batch_size': train_batch_size,
-                    'dev_batch_size': dev_batch_size,
-                    'num_workers': num_workers,
-                },
-                'generate.main': {
-                    'num_workers': num_workers,
-                    'max_batch_size': dev_batch_size,
                 }
             },
             'utils': {
