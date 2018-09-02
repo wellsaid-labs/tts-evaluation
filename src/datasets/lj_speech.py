@@ -1,16 +1,13 @@
-import io
-import os
 import re
-import unidecode
+from pathlib import Path
 
+import unidecode
 from num2words import num2words
-from tqdm import tqdm
 
 from torchnlp.download import download_file_maybe_extract
-from torchnlp.datasets import Dataset
 
+from src.datasets.process import process_audio, read_speech_data, process_all
 from src.utils.configurable import configurable
-from src.utils import split_dataset
 
 
 @configurable
@@ -19,17 +16,16 @@ def lj_speech_dataset(directory='data/',
                       url='http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
                       check_files=['LJSpeech-1.1/metadata.csv'],
                       text_file='metadata.csv',
-                      audio_directory='wavs/',
                       verbalize=True,
                       resample=24000,
-                      total_rows=13100,
                       norm=True,
                       guard=True,
                       lower_hertz=125,
                       upper_hertz=7600,
                       loudness=False,
                       random_seed=123,
-                      splits=(.8, .2)):
+                      splits=(.8, .2),
+                      check_wavfiles=True):
     """
     Load the Linda Johnson (LJ) Speech dataset.
 
@@ -54,13 +50,11 @@ def lj_speech_dataset(directory='data/',
         directory (str, optional): Directory to cache the dataset.
         extracted_name (str, optional): Name of the extracted dataset directory.
         url (str, optional): URL of the dataset `tar.gz` file.
-        check_file (str, optional): Check this file exists if the download was successful.
+        check_files (list of str, optional): Check this file exists if the download was successful.
         text_file (str, optional): The file containing text files.
-        audio_directory (str, optional): Audio directory corresponding to the text files.
         verbalize (bool, optional): Verbalize the text.
         resample (int or None, optional): If integer is provided, uses SoX to create resampled
             files.
-        total_rows (int, optional): Integer number of rows to be used with tqdm.
         norm (bool, optional): Automatically invoke the gain effect to guard against clipping and to
             normalise the audio.
         guard (bool, optional): Automatically invoke the gain effect to guard against clipping.
@@ -70,6 +64,7 @@ def lj_speech_dataset(directory='data/',
             ISO 226.
         random_seed (int, optional): Random seed used to determine the splits.
         splits (tuple, optional): The number of splits and cardinality of dataset splits.
+        check_wavfiles: If False, skip the check for existence of wav files.
 
     Returns:
         :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
@@ -90,89 +85,39 @@ def lj_speech_dataset(directory='data/',
         ]
     """
     download_file_maybe_extract(url=url, directory=directory, check_files=check_files)
-    path = os.path.join(directory, extracted_name, text_file)
+    path = Path(directory, extracted_name, text_file)
 
-    examples = []
-    with io.open(path, encoding='utf-8') as f:
-        for line in tqdm(f, total=total_rows):
-            line = line.strip()
-            wav_filename, text, _ = tuple(line.split('|'))
-            wav_filename = os.path.join(directory, extracted_name, audio_directory,
-                                        wav_filename + '.wav')
-            wav_filename = os.path.abspath(wav_filename)
-            wav_filename = _process_audio(
-                wav_filename,
-                resample=resample,
-                norm=norm,
-                guard=guard,
-                lower_hertz=lower_hertz,
-                upper_hertz=upper_hertz,
-                loudness=loudness)
-            text = _normalize_whitespace(text)
-            text = _normalize_quotations(text)
+    def extract_fun(args):
+        text, wav_filename = args
+        text = _normalize_whitespace(text)
+        text = _normalize_quotations(text)
 
-            if verbalize:
-                text = _verbalize_special_cases(wav_filename, text)
-                text = _expand_abbreviations(text)
-                text = _verbalize_time_of_day(text)
-                text = _verbalize_ordinals(text)
-                text = _verbalize_currency(text)
-                text = _verbalize_serial_numbers(text)
-                text = _verbalize_year(text)
-                text = _verbalize_numeral(text)
-                text = _verbalize_number(text)
-                text = _verbalize_roman_number(text)
+        if verbalize:
+            text = _verbalize_special_cases(wav_filename.stem, text)
+            text = _expand_abbreviations(text)
+            text = _verbalize_time_of_day(text)
+            text = _verbalize_ordinals(text)
+            text = _verbalize_currency(text)
+            text = _verbalize_serial_numbers(text)
+            text = _verbalize_year(text)
+            text = _verbalize_numeral(text)
+            text = _verbalize_number(text)
+            text = _verbalize_roman_number(text)
 
-            # Messes up pound sign (£); therefore, this is after _verbalize_currency
-            text = _remove_accents(text)
+        # Messes up pound sign (£); therefore, this is after _verbalize_currency
+        text = _remove_accents(text)
+        processed_wav_filename = process_audio(
+            str(wav_filename),
+            resample=resample,
+            norm=norm,
+            guard=guard,
+            lower_hertz=lower_hertz,
+            upper_hertz=upper_hertz,
+            loudness=loudness)
+        return {'text': text, 'wav_filename': processed_wav_filename}
 
-            examples.append({'text': text, 'wav_filename': wav_filename})
-
-    splits = split_dataset(
-        examples, splits=splits, deterministic_shuffle=True, random_seed=random_seed)
-    return tuple(Dataset(split) for split in splits)
-
-
-def _process_audio(wav,
-                   resample=24000,
-                   norm=True,
-                   guard=True,
-                   lower_hertz=125,
-                   upper_hertz=7600,
-                   loudness=False):
-    lower_hertz = str(lower_hertz) if lower_hertz is not None else ''
-    upper_hertz = str(upper_hertz) if upper_hertz is not None else ''
-
-    destination = wav
-    if resample is not None:
-        destination = destination.replace('.wav', '-rate=%d.wav' % resample)
-    if norm:
-        destination = destination.replace('.wav', '-norm=-.001.wav')
-    if loudness:
-        destination = destination.replace('.wav', '-loudness.wav')
-    if guard:
-        destination = destination.replace('.wav', '-guard.wav')
-    if lower_hertz or upper_hertz:
-        destination = destination.replace('.wav', '-sinc_%s_%s.wav' % (lower_hertz, upper_hertz))
-
-    if wav == destination or os.path.isfile(destination):
-        return destination
-
-    # NOTE: -.001 DB applied to prevent clipping.
-    norm_flag = '--norm=-.001' if norm else ''
-    guard_flag = '--guard' if guard else ''
-    sinc_command = 'sinc %s-%s' % (lower_hertz, upper_hertz) if lower_hertz or upper_hertz else ''
-    loudness_command = 'loudness' if loudness else ''
-    resample_command = 'rate %s' % (resample if resample is not None else '',)
-    commands = ' '.join([resample_command, sinc_command, loudness_command])
-    flags = ' '.join([norm_flag, guard_flag])
-    command = 'sox %s %s %s %s ' % (wav, flags, destination, commands)
-
-    os.system(command)
-
-    assert os.path.isfile(destination)
-
-    return destination
+    data = read_speech_data(path, check_wavfiles=check_wavfiles)
+    return process_all(extract_fun, data, splits, random_seed, check_wavfiles=check_wavfiles)
 
 
 '''
@@ -352,15 +297,14 @@ def _verbalize_special_cases(wav, text):
     Uses ``_special_cases`` to verbalize wav.
 
     Args:
-        wav (str): Filename of the WAV file
+        wav (str): Filename of the WAV file (e.g. LJ044-0055)
         text (str): Text associated with WAV file
 
     Returns:
         text (str): Text with special cases verbalized.
     """
-    basename = os.path.basename(wav).split('.')[0]
-    if basename in _special_cases:
-        return text.replace(*_special_cases[basename])
+    if wav in _special_cases:
+        return text.replace(*_special_cases[wav])
     return text
 
 
