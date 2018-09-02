@@ -3,6 +3,8 @@ from pathlib import Path
 import mock
 import re
 import shutil
+import pytest
+import os
 
 from src.datasets import lj_speech_dataset
 from tests.datasets.utils import urlretrieve_side_effect
@@ -39,7 +41,16 @@ verbalize_test_cases = {
 }
 
 
+@pytest.fixture
+def cleanup():
+    yield
+    cleanup_dir = os.path.join(lj_directory, 'LJSpeech-1.1')
+    print("Clean up: removing {}".format(cleanup_dir))
+    shutil.rmtree(cleanup_dir)
+
+
 @mock.patch("urllib.request.urlretrieve")
+@pytest.mark.usefixtures("cleanup")
 def test_lj_speech_dataset(mock_urlretrieve):
     mock_urlretrieve.side_effect = urlretrieve_side_effect
 
@@ -53,7 +64,8 @@ def test_lj_speech_dataset(mock_urlretrieve):
         lower_hertz=None,
         upper_hertz=None,
         loudness=False,
-        splits=(0.8, 0.2))
+        splits=(0.8, 0.2),
+        check_wavfiles=False)
     assert len(train) == 13100 * 0.8
     assert len(dev) == 13100 * 0.2
 
@@ -84,31 +96,13 @@ def test_lj_speech_dataset(mock_urlretrieve):
                 assert verbalize_test_cases[basename] in row['text']
     assert seen == len(verbalize_test_cases)
 
-    # Clean up
-    shutil.rmtree(str(lj_directory / 'LJSpeech-1.1'))
 
-
-class EveryOther(object):
-
-    def __init__(self):
-        self.index = 0
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        return_ = self.index % 2 == 1
-        self.index += 1
-        return return_
-
-
-@mock.patch("src.datasets.lj_speech.Path.is_file")
-@mock.patch("src.datasets.lj_speech.os.system")
+@mock.patch("src.datasets.process.os.system")
 @mock.patch("urllib.request.urlretrieve")
-def test_lj_speech_dataset_audio_processing(mock_urlretrieve, mock_os_system, mock_path_is_file):
+@pytest.mark.usefixtures("cleanup")
+def test_lj_speech_dataset_audio_processing(mock_urlretrieve, mock_os_system):
     mock_urlretrieve.side_effect = urlretrieve_side_effect
     mock_os_system.return_value = None
-    mock_path_is_file.side_effect = EveryOther()
 
     # Check a row are parsed correctly
     train, dev = lj_speech_dataset(
@@ -120,16 +114,13 @@ def test_lj_speech_dataset_audio_processing(mock_urlretrieve, mock_os_system, mo
         lower_hertz=100,
         upper_hertz=200,
         loudness=True,
-        splits=(0.8, 0.2))
+        splits=(0.8, 0.2),
+        check_wavfiles=False)
 
     # Ensure that every argument loudness, upper_hertz, lower_hertz, guard, norm and resample
     # is run
-    print(mock_os_system.call_args[0][0])
     assert 'norm' in mock_os_system.call_args[0][0]
     assert 'guard' in mock_os_system.call_args[0][0]
     assert 'rate 24000' in mock_os_system.call_args[0][0]
     assert 'sinc 100-200' in mock_os_system.call_args[0][0]
     assert 'loudness' in mock_os_system.call_args[0][0]
-
-    # Clean up
-    shutil.rmtree(str(lj_directory / 'LJSpeech-1.1'))
