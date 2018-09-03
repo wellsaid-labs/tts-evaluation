@@ -1,13 +1,14 @@
-import os
-import shutil
+from pathlib import Path
 
 import mock
+import re
+import shutil
 import pytest
 
 from src.datasets import lj_speech_dataset
 from tests.datasets.utils import urlretrieve_side_effect
 
-lj_directory = 'tests/_test_data/'
+lj_directory = Path('tests/_test_data/')
 
 verbalize_test_cases = {
     'LJ044-0055': 'five four four Camp Street New',  # Test special case
@@ -42,9 +43,9 @@ verbalize_test_cases = {
 @pytest.fixture
 def cleanup():
     yield
-    cleanup_dir = os.path.join(lj_directory, 'LJSpeech-1.1')
+    cleanup_dir = lj_directory / 'LJSpeech-1.1'
     print("Clean up: removing {}".format(cleanup_dir))
-    shutil.rmtree(cleanup_dir)
+    shutil.rmtree(str(cleanup_dir))
 
 
 @mock.patch("urllib.request.urlretrieve")
@@ -75,24 +76,27 @@ def test_lj_speech_dataset(mock_urlretrieve):
     assert train[0]['text'] == (
         'Once a warrant-holder sent down a clerk to view certain goods, and the clerk found that '
         'these goods had already a "stop" upon them, or were pledged.')
-    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ014-0331.wav' in train[0]['wav_filename']
+    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ014-0331.wav' in str(train[0]['wav_filename'])
     assert dev[0]['text'] == (
         'Mister Mullay went, and a second interview was agreed upon, when a third person, '
         'Mister Owen,')
-    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ011-0243.wav' in dev[0]['wav_filename']
+    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ011-0243.wav' in str(dev[0]['wav_filename'])
+
+    _re_filename = re.compile('LJ[0-9]{3}-[0-9]{4}')
 
     # Test verbilization
     seen = 0
     for data in [train, dev]:
         for row in data:
-            basename = os.path.basename(row['wav_filename']).split('.')[0]
+            basename = row['wav_filename'].name[:10]
+            assert _re_filename.match(basename)
             if basename in verbalize_test_cases:
                 seen += 1
                 assert verbalize_test_cases[basename] in row['text']
     assert seen == len(verbalize_test_cases)
 
 
-@mock.patch("src.datasets.process.os.system")
+@mock.patch("src.datasets._process.os.system")
 @mock.patch("urllib.request.urlretrieve")
 @pytest.mark.usefixtures("cleanup")
 def test_lj_speech_dataset_audio_processing(mock_urlretrieve, mock_os_system):

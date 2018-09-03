@@ -4,7 +4,6 @@ import torch
 
 from src.utils.configurable import configurable
 from src.feature_model.pre_net import PreNet
-from src.feature_model.post_net import PostNet
 from src.feature_model.attention import LocationSensitiveAttention
 
 
@@ -42,11 +41,7 @@ class AutoregressiveDecoder(nn.Module):
         essential for learning attention. The prenet output and attention context vector are
         concatenated and passed through a stack of 2 uni-directional LSTM layers with 1024 units.
         The concatenation of the LSTM output and the attention context vector is projected through
-        a linear transform to predict the target spectrogram frame. Finally, the predicted mel
-        spectrogram is passed through a 5-layer convolutional post-net which predicts a residual to
-        add to the prediction to improve the overall reconstruction. Each post-net layer is
-        comprised of 512 filters with shape 5 × 1 with batch normalization, followed by tanh
-        activations on all but the final layer.
+        a linear transform to predict the target spectrogram frame.
 
         In parallel to spectrogram frame prediction, the concatenation of decoder LSTM output and
         the attention context is projected down to a scalar and passed through a sigmoid activation
@@ -111,7 +106,6 @@ class AutoregressiveDecoder(nn.Module):
             hidden_size=attention_hidden_size)
         self.linear_out = nn.Linear(
             in_features=lstm_hidden_size + self.attention_context_size, out_features=frame_channels)
-        self.post_net = PostNet(frame_channels=self.frame_channels)
         self.linear_stop_token = nn.Sequential(
             nn.Linear(in_features=lstm_hidden_size + self.attention_context_size, out_features=1),
             nn.Sigmoid())
@@ -188,8 +182,6 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels]) Predicted frames.
-            frames_with_residual (torch.FloatTensor [num_frames, batch_size, frame_channels]):
-                Predicted frames with the post net residual added.
             stop_token (torch.FloatTensor [num_frames, batch_size]): Probablity of stopping.
             new_hidden_state (AutoregressiveDecoderHiddenState): For sequential prediction, decoder
                 hidden state used to predict the next frame.
@@ -303,25 +295,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
         # [num_frames, batch_size, lstm_hidden_size + self.attention_context_size] →
         # [num_frames, batch_size, frame_channels]
-        frames = self.linear_out(frames)  # First predicted Mel-Spectrogram before the post-net
-
-        # Our input is expected to have shape `[num_frames, batch_size, frame_channels]`.
-        # The post net expect input of shape `[batch_size, frame_channels, num_frames]`. We thus
-        # need to permute the tensor first.
-        residual = frames.permute(1, 2, 0)
-        residual = self.post_net(residual)
-
-        # In order to add frames with the residual, we need to permute for their sizes to be
-        # compatible.
-        # [batch_size, frame_channels, num_frames] → [num_frames, batch_size, frame_channels]
-        residual = residual.permute(2, 0, 1)
-
-        # [num_frames, batch_size, frame_channels] +
-        # [num_frames, batch_size, frame_channels] →
-        # [num_frames, batch_size, frame_channels]
-        frames_with_residual = frames.add(residual)
-
-        del residual
+        frames = self.linear_out(frames)  # Predicted Mel-Spectrogram
 
         new_hidden_state = AutoregressiveDecoderHiddenState(
             last_attention_context=last_attention_context,
@@ -330,5 +304,4 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             lstm_one_hidden_state=lstm_one_hidden_state,
             lstm_two_hidden_state=lstm_two_hidden_state)
 
-        # Loss is computed on both the ``frames`` and ``frames_with_residual`` to aid convergance.
-        return frames, frames_with_residual, stop_token, new_hidden_state, alignments
+        return frames, stop_token, new_hidden_state, alignments

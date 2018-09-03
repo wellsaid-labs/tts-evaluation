@@ -4,23 +4,23 @@ NOTE: This script uses ``sudo``, be prepared to type in your password.
 
 Example:
 
-    python3 src/bin/lsyncd.py --source ~/Code/WellSaid-Labs-Text-To-Speech/ \
+    python3 -m src.bin.lsyncd --source ~/Code/WellSaid-Labs-Text-To-Speech/ \
                               --destination /home/michaelp/WellSaid-Labs-Text-To-Speech \
                               --user michaelp --instance tensorboard
 """
+from pathlib import Path
+
 import argparse
 import json
 import logging
 import os
 import subprocess
 
-from src.utils import ROOT_PATH
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def get_ip(instance_name):
+def get_ip(instance_name):  # pragma: no cover
     """ Get the IP address of an instance
 
     Args:
@@ -42,7 +42,7 @@ def main(source,
          instance,
          user,
          template='src/bin/lsyncd.conf.lua',
-         tmp='/tmp/lsyncd.conf.lua'):
+         tmp='/tmp/lsyncd.conf.lua'):  # pragma: no cover
     """ Starts a lsyncd session.
 
     Args:
@@ -53,9 +53,7 @@ def main(source,
         template (str): Template configuration for lsyncd.
         tmp (str): Tmp filename to save configuration.
     """
-    with open(os.path.join(ROOT_PATH, template), 'r') as file_:
-        config = file_.read().strip()
-
+    config = Path(template).read_text().strip()
     config = config.replace('{source}', source)
     config = config.replace('{user}', user)
     config = config.replace('{destination}', destination)
@@ -68,7 +66,7 @@ def main(source,
     os.execvp('sudo', ['sudo', 'lsyncd', tmp])
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '-s', '--source', type=str, required=True, help='Path on local machine to sync')

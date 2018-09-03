@@ -122,12 +122,12 @@ class SignalDataset(data.Dataset):
 
     def __getitem__(self, index):
         # signal [signal_length]
-        signal = torch.from_numpy(np.load(self.rows[index][self.signal_prefix])).contiguous()
+        signal = torch.from_numpy(np.load(str(self.rows[index][self.signal_prefix]))).contiguous()
         signal = combine_signal(*split_signal(signal))  # Introduce quantization noise
 
         # log_mel_spectrogram [num_frames, channels]
         log_mel_spectrogram = torch.from_numpy(
-            np.load(self.rows[index][self.log_mel_spectrogram_prefix])).contiguous()
+            np.load(str(self.rows[index][self.log_mel_spectrogram_prefix]))).contiguous()
 
         slice_ = self._get_slice(log_mel_spectrogram, signal)
 

@@ -6,11 +6,10 @@ queuing it up to be rebooted by ``keep_alive.py``.
 
 Example:
 
-    python3 src/bin/keep_alive.py --command="screen -dm bash -c \
+    python3 -m src.bin.keep_alive --command="screen -dm bash -c \
         'cd WellSaid-Labs-Text-To-Speech/; \
-        export PYTHONPATH=.; \
         ulimit -n 65536; \
-        python3 src/bin/signal_model/train.py -c; \
+        python3 -m src.bin.signal_model.train -c; \
         sudo shutdown;'"
 """
 import argparse
@@ -28,7 +27,7 @@ INSTANCE_RUNNING = 'RUNNING'
 INSTANCE_STOPPED = 'TERMINATED'
 
 
-def get_available_instances():
+def get_available_instances():  # pragma: no cover
     """ Get a list of preemtible instances to keep alive.
     """
     instances = json.loads(
@@ -48,7 +47,7 @@ def get_available_instances():
     return filtered_instances
 
 
-def keep_alive(instances, command, scheduler, repeat_every=60, retry=3):
+def keep_alive(instances, command, scheduler, repeat_every=60, retry=3):  # pragma: no cover
     """ Restart GCP instances every ``repeat_every`` seconds with ``command``.
 
     Args:

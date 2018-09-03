@@ -1,10 +1,12 @@
 from torch import nn
 from torchnlp.text_encoders import PADDING_INDEX
+from tqdm import tqdm
 
 import torch
 
-from src.feature_model.encoder import Encoder
 from src.feature_model.decoder import AutoregressiveDecoder
+from src.feature_model.encoder import Encoder
+from src.feature_model.post_net import PostNet
 
 from src.utils.configurable import configurable
 
@@ -80,6 +82,7 @@ class SpectrogramModel(nn.Module):
         self.encoder = Encoder(vocab_size, lstm_hidden_size=encoder_hidden_size)
         self.decoder = AutoregressiveDecoder(
             encoder_hidden_size=encoder_hidden_size, frame_channels=frame_channels)
+        self.post_net = PostNet(frame_channels=frame_channels)
 
     def _get_stopped_indexes(self, predictions):
         """ Get a list of indices that predicted stop.
@@ -110,8 +113,8 @@ class SpectrogramModel(nn.Module):
             frames_with_residual (torch.FloatTensor [num_frames, batch_size, frame_channels]):
                 Predicted frames with the post net residual added.
             stop_token (torch.FloatTensor [num_frames, batch_size]): Probablity of stopping.
-            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]) All attention
-                alignments, stored for visualization and debugging
+            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention
+                alignments.
         """
         # [num_tokens, batch_size]  → [batch_size, num_tokens]
         tokens = tokens.transpose(0, 1)
@@ -126,24 +129,45 @@ class SpectrogramModel(nn.Module):
         if ground_truth_frames is None:  # Unrolling the decoder.
             stopped = set()
             hidden_state = None
-            alignments, frames_with_residual, frames, stop_tokens = [], [], [], []
-            while len(stopped) != batch_size and len(frames_with_residual) < max_recursion:
-                frame, frame_with_residual, stop_token, hidden_state, alignment = self.decoder(
+            alignments, frames, stop_tokens = [], [], []
+            progress_bar = tqdm(leave=True, unit='frame(s)')
+            while len(stopped) != batch_size and len(frames) < max_recursion:
+                frame, stop_token, hidden_state, alignment = self.decoder(
                     encoded_tokens, tokens_mask, hidden_state=hidden_state)
                 stopped.update(self._get_stopped_indexes(stop_token))
 
                 # Store results
-                frames_with_residual.append(frame_with_residual.squeeze(0))
                 frames.append(frame.squeeze(0))
                 stop_tokens.append(stop_token.squeeze(0))
                 alignments.append(alignment.squeeze(0))
 
+                progress_bar.update(1)
+                progress_bar.total = len(frames)
+
+            progress_bar.close()
             alignments = torch.stack(alignments, dim=0)
-            frames_with_residual = torch.stack(frames_with_residual, dim=0)
             frames = torch.stack(frames, dim=0)
             stop_tokens = torch.stack(stop_tokens, dim=0)
         else:
-            frames, frames_with_residual, stop_tokens, hidden_state, alignments = self.decoder(
+            frames, stop_tokens, hidden_state, alignments = self.decoder(
                 encoded_tokens, tokens_mask, ground_truth_frames=ground_truth_frames)
+
+        # ``frames`` is expected to have shape `[num_frames, batch_size, frame_channels]`.
+        # The post net expect input of shape `[batch_size, frame_channels, num_frames]`. We thus
+        # need to permute the tensor first.
+        residual = frames.permute(1, 2, 0)
+        residual = self.post_net(residual)
+
+        # In order to add frames with the residual, we need to permute for their sizes to be
+        # compatible.
+        # [batch_size, frame_channels, num_frames] → [num_frames, batch_size, frame_channels]
+        residual = residual.permute(2, 0, 1)
+
+        # [num_frames, batch_size, frame_channels] +
+        # [num_frames, batch_size, frame_channels] →
+        # [num_frames, batch_size, frame_channels]
+        frames_with_residual = frames.add(residual)
+
+        del residual
 
         return frames, frames_with_residual, stop_tokens, alignments

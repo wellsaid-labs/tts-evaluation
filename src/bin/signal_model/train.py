@@ -1,7 +1,8 @@
+from pathlib import Path
+
 import argparse
 import collections
 import logging
-import os
 import random
 import time
 
@@ -12,9 +13,7 @@ from tqdm import tqdm
 import torch
 
 from src.bin.signal_model._data_iterator import DataIterator
-from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
-from src.bin.signal_model._utils import save_checkpoint
 from src.bin.signal_model._utils import set_hparams
 from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
@@ -22,8 +21,10 @@ from src.signal_model import WaveRNN
 from src.utils import AnomalyDetector
 from src.utils import combine_signal
 from src.utils import get_total_parameters
+from src.utils import load_checkpoint
 from src.utils import load_most_recent_checkpoint
 from src.utils import parse_hparam_args
+from src.utils import save_checkpoint
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
 from src.utils.configurable import log_config
@@ -137,8 +138,8 @@ class Trainer():  # pragma: no cover
             self.tensorboard.add_text(
                 'event/anomaly', 'Rolling back, detected a coarse loss anomaly #%d (%f > %f ± %f)' %
                 (self.anomaly_detector.anomaly_counter, epoch_coarse_loss,
-                 self.anomaly_detector.last_average,
-                 self.anomaly_detector.max_deviation), self.step)
+                 self.anomaly_detector.last_average, self.anomaly_detector.max_deviation),
+                self.step)
             past_model_state = self.rollback[0]
             self.model.load_state_dict(past_model_state)
 
@@ -190,6 +191,18 @@ class Trainer():  # pragma: no cover
                     self.step_unit == self.STEP_UNIT_DECISECONDS):
                 self.step += int(round(time.time() * 10 - start))
 
+        # NOTE: This is not a formal epoch. For example, in the Linda Johnson dataset the average
+        # clip size is 6.57 seconds while the average example seen by the model is 900 samples
+        # or 0.375 seconds. This epoch means that we've taken a random 900 sample clip from the
+        # 13,100 clips in the Linda Johnson dataset.
+        #
+        # Walking through the math, a real epoch for the Linda Joshon dataset would be about:
+        #    Number of samples: 2066808000 = (23h * 60 * 60 + 55m * 60 + 17s) * 24000
+        #    This epoch sample size: 11790000 = 13,100 * 900
+        #    Formal epoch is 175x larger: 175 ~ 2066808000 / 11790000
+        #    Number of batches in formal epoch: 35,882 ~ 2066808000 / 64 / 900
+        #
+        # Find stats on the Linda Johnson dataset here: https://keithito.com/LJ-Speech-Dataset/
         epoch_coarse_loss = (0 if total_signal_predictions == 0 else
                              total_coarse_loss / total_signal_predictions)
         epoch_fine_loss = (0 if total_signal_predictions == 0 else
@@ -198,7 +211,8 @@ class Trainer():  # pragma: no cover
             self.tensorboard.add_scalar('coarse/loss/epoch', epoch_coarse_loss, self.step)
             self.tensorboard.add_scalar('fine/loss/epoch', epoch_fine_loss, self.step)
 
-        self._maybe_rollback(epoch_coarse_loss)
+        if train:
+            self._maybe_rollback(epoch_coarse_loss)
 
     def _sample_inference(self, batch, max_infer_frames=200):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.
@@ -338,6 +352,7 @@ class Trainer():  # pragma: no cover
             with self.tensorboard.set_step(step):
                 self.optimizer.step(tensorboard=self.tensorboard)
 
+        num_predictions = num_predictions.item()
         coarse_loss, fine_loss = coarse_loss.item(), fine_loss.item()
         predicted_coarse, predicted_fine = predicted_coarse.detach(), predicted_fine.detach()
 
@@ -377,14 +392,9 @@ def main(checkpoint_path=None,
         label (str, optional): Label applied to a experiments from this executable.
         experiments_root (str, optional): Top level directory for all experiments.
     """
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.fastest = False
-
     if checkpoint_path == '':
-        checkpoints = os.path.join(experiments_root, label, '**/*.pt')
-        checkpoint, checkpoint_path = load_most_recent_checkpoint(
-            checkpoints, load_checkpoint=load_checkpoint)
+        checkpoints = str(Path(experiments_root) / label / '**/*.pt')
+        checkpoint, checkpoint_path = load_most_recent_checkpoint(checkpoints)
     else:
         checkpoint = load_checkpoint(checkpoint_path)
 

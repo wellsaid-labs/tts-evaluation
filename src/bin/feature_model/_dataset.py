@@ -1,15 +1,41 @@
+from multiprocessing import Pool
+
 import logging
 
 from torch.utils import data
 from torchnlp.text_encoders import CharacterEncoder
 
-import torch
 import numpy as np
-from tqdm import tqdm
+import torch
+import tqdm
 
 from src.utils import get_filename_table
 
 logger = logging.getLogger(__name__)
+
+
+def read_file(filename):
+    """ Return the contents of ``filename``
+
+    Args:
+        filename (Path)
+
+    Returns:
+        (str) contents of filename
+    """
+    return filename.read_text().strip()
+
+
+def get_spectrogram_length(filename):
+    """ Get length of spectrogram (shape [num_frames, num_channels]) from a ``.npy`` numpy file
+
+    Args:
+        filename (str): Numpy file
+
+    Returns:
+        (int) Length of spectrogram
+    """
+    return np.load(str(filename)).shape[0]
 
 
 class FeatureDataset(data.Dataset):
@@ -41,19 +67,20 @@ class FeatureDataset(data.Dataset):
         # Create text_encoder
         if text_encoder is None:
             logger.info('Computing text encoder from %s', source)
-            texts = []
-            for row in tqdm(self.rows):
-                with open(row[self.text_key], 'r') as file_:
-                    texts.append(file_.read().strip())
+            with Pool() as pool:
+                filenames = [row[self.text_key] for row in self.rows]
+                texts = list(tqdm.tqdm(pool.imap(read_file, filenames), total=len(filenames)))
             self.text_encoder = CharacterEncoder(texts)
         else:
             self.text_encoder = text_encoder
 
         # Spectrograms lengths for sorting
         logger.info('Computing spectrogram lengths from %s', source)
-        self.spectrogram_lengths = [
-            np.load(row[self.spectrogram_key]).shape[0] for row in tqdm(self.rows)
-        ]
+        with Pool() as pool:
+            filenames = [row[self.spectrogram_key] for row in self.rows]
+            self.spectrogram_lengths = list(
+                tqdm.tqdm(pool.imap(get_spectrogram_length, filenames), total=len(filenames)))
+
         self.load_signal = load_signal
 
     def __len__(self):
@@ -61,13 +88,19 @@ class FeatureDataset(data.Dataset):
 
     def __getitem__(self, index):
         example = self.rows[index]
-        log_mel_spectrogram = torch.from_numpy(np.load(example[self.spectrogram_key]))
-        signal = torch.from_numpy(np.load(example[self.signal_key])) if self.load_signal else None
-        with open(example[self.text_key], 'r') as file_:
-            text = file_.read().strip()
+
+        log_mel_spectrogram = torch.from_numpy(np.load(str(example[self.spectrogram_key])))
+
+        signal = None
+        if self.load_signal:
+            signal = torch.from_numpy(np.load(str(example[self.signal_key])))
+
+        text = example[self.text_key].read_text().strip()
         text = self.text_encoder.encode(text)
+
         stop_token = log_mel_spectrogram.new_zeros((log_mel_spectrogram.shape[0],))
         stop_token[-1] = 1
+
         return {
             'log_mel_spectrogram': log_mel_spectrogram,
             'signal': signal,

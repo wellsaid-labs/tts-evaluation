@@ -2,6 +2,8 @@ import matplotlib
 
 matplotlib.use('Agg', warn=False)
 
+from pathlib import Path
+
 import ast
 import glob
 import logging
@@ -19,7 +21,7 @@ from src.utils.configurable import configurable
 logger = logging.getLogger(__name__)
 
 # Repository root path
-ROOT_PATH = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..'))
+ROOT_PATH = Path(__file__).parent.parent.parent.resolve()
 
 
 class ExponentiallyWeightedMovingAverage():
@@ -69,13 +71,18 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
        eps (float, optional): Minimum difference to be considered an anomaly used for numerical
           stability.
        min_steps (int, optional): Minimum number of steps to wait before detecting anomalies.
+       type_ (str, optional): Detect anomalies that are too 'high', too 'low', or 'both'.
     """
+
+    TYPE_HIGH = 'high'
+    TYPE_LOW = 'low'
+    TYPE_BOTH = 'both'
 
     # Below 10 samples there can be significant bias in the variance estimation causing it
     # to be underestimated.
     # LEARN MORE: https://en.wikipedia.org/wiki/Unbiased_estimation_of_standard_deviation
     @configurable
-    def __init__(self, beta=0.99, sigma=6, eps=10**-6, min_steps=10):
+    def __init__(self, beta=0.99, sigma=6, eps=10**-6, min_steps=10, type_=TYPE_HIGH):
         super().__init__(beta=beta)
         self.sigma = sigma
         self.last_standard_deviation = 0.0
@@ -83,11 +90,38 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
         self.min_steps = min_steps
         self.eps = eps
         self.anomaly_counter = 0
+        self.type = type_
 
     @property
     def max_deviation(self):
         """ Maximum value can deviate from ``last_average`` before being considered an anomaly. """
         return self.sigma * self.last_standard_deviation + self.eps
+
+    def _is_anomaly(self, value):
+        """ Check if ``value`` is an anomaly.
+
+        Args:
+            value (float)
+
+        Returns:
+            (bool): If ``value`` is an anomaly.
+        """
+        if self.step_counter + 1 < self.min_steps:
+            return False
+
+        if not np.isfinite(value):
+            return True
+
+        if self.type == self.TYPE_HIGH and value - self.last_average > self.max_deviation:
+            return True
+
+        if self.type == self.TYPE_LOW and self.last_average - value > self.max_deviation:
+            return True
+
+        if self.type == self.TYPE_BOTH and abs(value - self.last_average) > self.max_deviation:
+            return True
+
+        return False
 
     def step(self, value):
         """ Check if ``value`` is an anomaly whilst updating stats for the next step.
@@ -98,17 +132,10 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
         Returns:
             (bool): If ``value`` is an anomaly.
         """
-        if not np.isfinite(value):
-            self.anomaly_counter += 1
-            return True
-
-        if (self.step_counter + 1 >= self.min_steps and
-                abs(value - self.last_average) > self.max_deviation):
-            self.anomaly_counter += 1
-            return True
-
-        self.last_average, self.last_standard_deviation = super().step(value)
-        return False
+        is_anomaly = self._is_anomaly(value)
+        if not is_anomaly:
+            self.last_average, self.last_standard_deviation = super().step(value)
+        return is_anomaly
 
 
 def get_total_parameters(model):
@@ -130,17 +157,18 @@ def split_dataset(dataset, splits, deterministic_shuffle=True, random_seed=123):
     Example:
         >>> dataset = [1, 2, 3, 4, 5]
         >>> splits = (.6, .2, .2)
-        >>> split_dataset(dataset, splits)
-        [[1, 2, 3], [4], [5]]
+        >>> split_dataset(dataset, splits, deterministic_shuffle=True, random_seed=123)
+        [[4, 2, 5], [3], [1]]
     """
     if deterministic_shuffle:
         do_deterministic_shuffle(dataset, random_seed=random_seed)
     assert sum(splits) == 1, 'Splits must sum to 100%'
     splits = [round(s * len(dataset)) for s in splits]
     datasets = []
-    for split in splits:
+    for split in splits[:-1]:
         datasets.append(dataset[:split])
         dataset = dataset[split:]
+    datasets.append(dataset)
     return datasets
 
 
@@ -148,7 +176,7 @@ def torch_load(path, device=torch.device('cpu')):
     """ Using ``torch.load`` and ``dill`` load an object from ``path`` onto ``self.device``.
 
     Args:
-        path (str): Filename to load.
+        path (Path or str): Filename to load.
 
     Returns:
         (any): Object loaded.
@@ -160,17 +188,17 @@ def torch_load(path, device=torch.device('cpu')):
             return storage.cuda(device=device.index)
         return storage
 
-    return torch.load(path, map_location=remap)
+    return torch.load(str(path), map_location=remap)
 
 
 def torch_save(path, data):
     """ Using ``torch.save`` and ``dill`` save an object to ``path``.
 
     Args:
-        path (str): Filename to save to.
+        path (Path or str): Filename to save to.
         data (any): Data to save into file.
     """
-    torch.save(data, path)
+    torch.save(data, str(path))
     logger.info('Saved: %s' % (path,))
 
 
@@ -183,7 +211,7 @@ def get_filename_table(directory, prefixes=[], extension=''):
           equal number of files as every other prefix.
 
     Args:
-        directory (str): Path to a directory.
+        directory (Path): Path to a directory.
         prefixes (str): Prefixes to load.
         extension (str): Filename extensions to load.
 
@@ -194,10 +222,10 @@ def get_filename_table(directory, prefixes=[], extension=''):
     for prefix in prefixes:
         # Get filenames with associated prefixes
         filenames = []
-        for filename in os.listdir(directory):
+        for filename in directory.iterdir():
             # TODO: Rename prefix because it does not look at directly the beginning of the filename
-            if filename.endswith(extension) and prefix in filename:
-                filenames.append(os.path.join(directory, filename))
+            if (extension == '' or filename.suffix == extension) and prefix in filename.name:
+                filenames.append(filename)
 
         # Sorted to align with other prefixes
         filenames = sorted(filenames)
@@ -289,7 +317,51 @@ def combine_signal(coarse, fine, bits=16):
     return signal.float() / 2**(bits - 1)
 
 
-def load_most_recent_checkpoint(pattern, load_checkpoint=torch_load):
+def load_checkpoint(checkpoint_path=None, device=torch.device('cpu')):
+    """ Load a checkpoint.
+
+    Args:
+        checkpoint_path (Path or str or None): Path to a checkpoint to load.
+        device (int): Device to load checkpoint onto where -1 is the CPU while 0+ is a GPU.
+
+    Returns:
+        checkpoint (dict or None): Loaded checkpoint or None.
+    """
+    if checkpoint_path is None:
+        return None
+
+    checkpoint = torch_load(str(checkpoint_path), device=device)
+    if 'model' in checkpoint:
+        checkpoint['model'].apply(
+            lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
+    return checkpoint
+
+
+def save_checkpoint(directory, model=None, step=None, filename=None, **kwargs):
+    """ Save a checkpoint.
+
+    Args:
+        directory (str): Directory where to save the checkpoint.
+        model (torch.nn.Module, optional): Model to train and evaluate.
+        step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
+        filename (str, optional): Non-default filename to save the checkpoint too.
+        **kwargs (dict, optional): Anything else to save in the dictionary.
+
+    Returns:
+        filename (Path): Path of the saved checkpoint.
+    """
+    if filename is None:
+        name = 'step_%d.pt' % (step,) if step is not None else 'checkpoint.pt'
+        filename = Path(directory) / name
+
+    to_save = {'model': model, 'step': step}
+    to_save.update(kwargs)
+    torch_save(filename, to_save)
+
+    return filename
+
+
+def load_most_recent_checkpoint(pattern, load_checkpoint=load_checkpoint):
     """ Load the most recent checkpoint from ``root``.
 
     Args:

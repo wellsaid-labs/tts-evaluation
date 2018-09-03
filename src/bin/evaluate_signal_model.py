@@ -1,15 +1,23 @@
+"""
+Generate random samples of signal model to evaluate.
+
+Example:
+
+    python3 -m src.bin.evaluate_signal_model --checkpoint experiments/your/checkpoint.pt
+"""
+from pathlib import Path
+
 import argparse
 import logging
-import os
 
 import librosa
 import torch
 
 from src.bin.signal_model._data_iterator import RandomSampler
-from src.bin.signal_model._utils import load_checkpoint
 from src.bin.signal_model._utils import load_data
 from src.bin.signal_model._utils import set_hparams
 from src.utils import combine_signal
+from src.utils import load_checkpoint
 from src.utils.configurable import configurable
 
 logging.basicConfig(level=logging.INFO)
@@ -31,9 +39,11 @@ def main(checkpoint_path,
         samples (int): Number of rows to evaluate.
         device (torch.device): Device on which to evaluate on.
     """
-    os.makedirs(results_path, exist_ok=False)
+    Path(results_path).mkdir(exist_ok=False, parents=True)
 
-    assert os.path.isfile(checkpoint_path)
+    checkpoint_path = Path(checkpoint_path)
+    assert checkpoint_path.is_file()
+
     checkpoint = load_checkpoint(checkpoint_path, device=device)
     logger.info('Loaded checkpoint: %s', checkpoint)
 
@@ -54,7 +64,7 @@ def main(checkpoint_path,
 
         # [signal_length]
         signal = row['signal'].numpy()
-        gold_path = os.path.join(results_path, '%d_gold.wav' % j)
+        gold_path = str(checkpoint_path.parent / ('%d_gold.wav' % j))
         librosa.output.write_wav(gold_path, signal, sr=sample_rate)
         logger.info('Saved file %s', gold_path)
 
@@ -62,7 +72,7 @@ def main(checkpoint_path,
         predicted_signal = combine_signal(predicted_coarse.squeeze(0),
                                           predicted_fine.squeeze(0)).numpy()
 
-        predicted_path = os.path.join(results_path, '%d_predicted.wav' % j)
+        predicted_path = str(checkpoint_path.parent / ('%d_predicted.wav' % j))
         librosa.output.write_wav(predicted_path, predicted_signal, sr=sample_rate)
         logger.info('Saved file %s', predicted_path)
         print('-' * 100)

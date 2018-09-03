@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import mock
 import torch
 
@@ -13,7 +15,7 @@ def test_signal_dataset_preprocess(randint_mock):
     signal = torch.rand(100)
     frame_pad = 3
     frame_size = 3
-    dataset = SignalDataset(source='.', frame_size=frame_size, frame_pad=frame_pad)
+    dataset = SignalDataset(source=Path('.'), frame_size=frame_size, frame_pad=frame_pad)
     slice_ = dataset._get_slice(log_mel_spectrogram, signal)
 
     assert slice_['log_mel_spectrogram'].shape == (frame_size + frame_pad * 2, spectrogram_channels)
