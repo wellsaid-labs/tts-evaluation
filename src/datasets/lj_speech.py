@@ -1,16 +1,15 @@
-import io
-import os
+from pathlib import Path
+
 import re
 import unidecode
 
 from num2words import num2words
-from tqdm import tqdm
-
 from torchnlp.download import download_file_maybe_extract
-from torchnlp.datasets import Dataset
 
+from src.datasets._process import process_all
+from src.datasets._process import process_audio
+from src.datasets._process import read_speech_data
 from src.utils.configurable import configurable
-from src.utils import split_dataset
 
 
 @configurable
@@ -18,18 +17,17 @@ def lj_speech_dataset(directory='data/',
                       extracted_name='LJSpeech-1.1',
                       url='http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
                       check_files=['LJSpeech-1.1/metadata.csv'],
-                      text_file='metadata.csv',
-                      audio_directory='wavs/',
+                      metadata_file='metadata.csv',
                       verbalize=True,
                       resample=24000,
-                      total_rows=13100,
                       norm=True,
                       guard=True,
-                      lower_hertz=125,
-                      upper_hertz=7600,
+                      lower_hertz=None,
+                      upper_hertz=None,
                       loudness=False,
                       random_seed=123,
-                      splits=(.8, .2)):
+                      splits=(.8, .2),
+                      check_wavfiles=True):
     """
     Load the Linda Johnson (LJ) Speech dataset.
 
@@ -51,16 +49,14 @@ def lj_speech_dataset(directory='data/',
           https://machinelearningmastery.com/resample-interpolate-time-series-data-python/
 
     Args:
-        directory (str, optional): Directory to cache the dataset.
+        directory (str or Path, optional): Directory to cache the dataset.
         extracted_name (str, optional): Name of the extracted dataset directory.
         url (str, optional): URL of the dataset `tar.gz` file.
-        check_file (str, optional): Check this file exists if the download was successful.
+        check_files (list of str, optional): Check this file exists if the download was successful.
         text_file (str, optional): The file containing text files.
-        audio_directory (str, optional): Audio directory corresponding to the text files.
         verbalize (bool, optional): Verbalize the text.
         resample (int or None, optional): If integer is provided, uses SoX to create resampled
             files.
-        total_rows (int, optional): Integer number of rows to be used with tqdm.
         norm (bool, optional): Automatically invoke the gain effect to guard against clipping and to
             normalise the audio.
         guard (bool, optional): Automatically invoke the gain effect to guard against clipping.
@@ -70,109 +66,60 @@ def lj_speech_dataset(directory='data/',
             ISO 226.
         random_seed (int, optional): Random seed used to determine the splits.
         splits (tuple, optional): The number of splits and cardinality of dataset splits.
+        check_wavfiles: If False, skip the check for existence of wav files.
 
     Returns:
         :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
 
     Example:
-        >>> from src.datasets import lj_speech_dataset
-        >>> data = lj_speech_dataset()
-        >>> data[0:2]
-        [
-          {
-            'text': 'Printing, in the only sense with which we are at present concerned,...',
-            'wav_filename': 'data/LJSpeech-1.1/wavs/LJ001-0001.wav'
-          },
-          {
-            'text': 'in being comparatively modern.',
-            'wav_filename': 'data/LJSpeech-1.1/wavs/LJ001-0002.wav'
-          }
-        ]
+        >>> import pprint # doctest: +SKIP
+        >>> from src.datasets import lj_speech_dataset # doctest: +SKIP
+        >>> train, dev = lj_speech_dataset() # doctest: +SKIP
+        >>> pprint.pprint(train[0:2], width=80) # doctest: +SKIP
+        [{'text': 'Once a warrant-holder sent down a clerk to view certain goods, and '
+          'the clerk found that these goods had already a "stop" upon them, or '
+          'were pledged.',
+          'wav_filename': PosixPath('data/LJSpeech-1.1/wavs/'
+                                    'LJ014-0331-rate=24000-norm=-.001-guard.wav')},
+        {'text': "Lord Ferrers' body was brought to Surgeons' Hall after execution in "
+                  'his own carriage and six;',
+          'wav_filename': PosixPath('data/LJSpeech-1.1/wavs/'
+                                    'LJ009-0184-rate=24000-norm=-.001-guard.wav')}]
     """
-    download_file_maybe_extract(url=url, directory=directory, check_files=check_files)
-    path = os.path.join(directory, extracted_name, text_file)
+    download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
+    path = Path(directory, extracted_name, metadata_file)
 
-    examples = []
-    with io.open(path, encoding='utf-8') as f:
-        for line in tqdm(f, total=total_rows):
-            line = line.strip()
-            wav_filename, text, _ = tuple(line.split('|'))
-            wav_filename = os.path.join(directory, extracted_name, audio_directory,
-                                        wav_filename + '.wav')
-            wav_filename = os.path.abspath(wav_filename)
-            wav_filename = _process_audio(
-                wav_filename,
-                resample=resample,
-                norm=norm,
-                guard=guard,
-                lower_hertz=lower_hertz,
-                upper_hertz=upper_hertz,
-                loudness=loudness)
-            text = _normalize_whitespace(text)
-            text = _normalize_quotations(text)
+    def extract_fun(args):
+        text, wav_filename = args
+        text = _normalize_whitespace(text)
+        text = _normalize_quotations(text)
 
-            if verbalize:
-                text = _verbalize_special_cases(wav_filename, text)
-                text = _expand_abbreviations(text)
-                text = _verbalize_time_of_day(text)
-                text = _verbalize_ordinals(text)
-                text = _verbalize_currency(text)
-                text = _verbalize_serial_numbers(text)
-                text = _verbalize_year(text)
-                text = _verbalize_numeral(text)
-                text = _verbalize_number(text)
-                text = _verbalize_roman_number(text)
+        if verbalize:
+            text = _verbalize_special_cases(wav_filename, text)
+            text = _expand_abbreviations(text)
+            text = _verbalize_time_of_day(text)
+            text = _verbalize_ordinals(text)
+            text = _verbalize_currency(text)
+            text = _verbalize_serial_numbers(text)
+            text = _verbalize_year(text)
+            text = _verbalize_numeral(text)
+            text = _verbalize_number(text)
+            text = _verbalize_roman_number(text)
 
-            # Messes up pound sign (£); therefore, this is after _verbalize_currency
-            text = _remove_accents(text)
+        # Messes up pound sign (£); therefore, this is after _verbalize_currency
+        text = _remove_accents(text)
+        processed_wav_filename = process_audio(
+            wav_filename,
+            resample=resample,
+            norm=norm,
+            guard=guard,
+            lower_hertz=lower_hertz,
+            upper_hertz=upper_hertz,
+            loudness=loudness)
+        return {'text': text, 'wav_filename': processed_wav_filename}
 
-            examples.append({'text': text, 'wav_filename': wav_filename})
-
-    splits = split_dataset(
-        examples, splits=splits, deterministic_shuffle=True, random_seed=random_seed)
-    return tuple(Dataset(split) for split in splits)
-
-
-def _process_audio(wav,
-                   resample=24000,
-                   norm=True,
-                   guard=True,
-                   lower_hertz=125,
-                   upper_hertz=7600,
-                   loudness=False):
-    lower_hertz = str(lower_hertz) if lower_hertz is not None else ''
-    upper_hertz = str(upper_hertz) if upper_hertz is not None else ''
-
-    destination = wav
-    if resample is not None:
-        destination = destination.replace('.wav', '-rate=%d.wav' % resample)
-    if norm:
-        destination = destination.replace('.wav', '-norm=-.001.wav')
-    if loudness:
-        destination = destination.replace('.wav', '-loudness.wav')
-    if guard:
-        destination = destination.replace('.wav', '-guard.wav')
-    if lower_hertz or upper_hertz:
-        destination = destination.replace('.wav', '-sinc_%s_%s.wav' % (lower_hertz, upper_hertz))
-
-    if wav == destination or os.path.isfile(destination):
-        return destination
-
-    # NOTE: -.001 DB applied to prevent clipping.
-    norm_flag = '--norm=-.001' if norm else ''
-    guard_flag = '--guard' if guard else ''
-    sinc_command = 'sinc %s-%s' % (lower_hertz, upper_hertz) if lower_hertz or upper_hertz else ''
-    loudness_command = 'loudness' if loudness else ''
-    resample_command = 'rate %s' % (resample if resample is not None else '',)
-    commands = ' '.join([resample_command, sinc_command, loudness_command])
-    flags = ' '.join([norm_flag, guard_flag])
-    command = 'sox %s %s %s %s ' % (wav, flags, destination, commands)
-
-    os.system(command)
-
-    assert os.path.isfile(destination)
-
-    return destination
+    data = read_speech_data(path, check_wavfiles=check_wavfiles)
+    return process_all(extract_fun, data, splits, random_seed, check_wavfiles=check_wavfiles)
 
 
 '''
@@ -270,7 +217,7 @@ def _expand_abbreviations(text):
 
     Example:
         >>> _expand_abbreviations('Mr. Gurney')
-        Mister. Gurney
+        'Mister Gurney'
     """
     for regex, expansion in _abbreviations:
         text = _iterate_and_replace(regex, text, lambda s: _match_case(s, expansion), group=0)
@@ -294,7 +241,7 @@ def _normalize_whitespace(text):
 
     Example:
         >>> _normalize_whitespace('Mr.     Gurney   ')
-        Mr. Gurney
+        'Mr. Gurney'
     """
     return re.sub(_whitespace_re, ' ', text).strip()
 
@@ -310,7 +257,7 @@ def _normalize_quotations(text):
 
     Example:
         >>> _normalize_quotations('“sponge,”')
-        "sponge,"
+        '"sponge,"'
     """
     text = text.replace('“', '"')
     text = text.replace('”', '"')
@@ -330,7 +277,7 @@ def _remove_accents(text):
 
     Example:
         >>> _remove_accents('Málaga')
-        Malaga
+        'Malaga'
     """
     return unidecode.unidecode(text)
 
@@ -346,19 +293,22 @@ _special_cases = {
     'LJ029-0193': ('100 extra off-duty', 'one hundred extra off-duty'),
 }
 
+_re_filename = re.compile('LJ[0-9]{3}-[0-9]{4}')
+
 
 def _verbalize_special_cases(wav, text):
     """
     Uses ``_special_cases`` to verbalize wav.
 
     Args:
-        wav (str): Filename of the WAV file
+        wav (str): Filename of the WAV file (e.g. LJ044-0055)
         text (str): Text associated with WAV file
 
     Returns:
         text (str): Text with special cases verbalized.
     """
-    basename = os.path.basename(wav).split('.')[0]
+    basename = wav.name[:10]  # Extract 10 characters similar to `LJ029-0193`
+    assert _re_filename.match(basename)
     if basename in _special_cases:
         return text.replace(*_special_cases[basename])
     return text
@@ -378,7 +328,7 @@ def _verbalize_time_of_day(text):
 
     Example:
         >>> _verbalize_time_of_day('San Antonio at 1:30 p.m.,')
-        San Antonio at one thirty p.m.,
+        'San Antonio at one thirty p.m.,'
     """
 
     def _replace(match):
@@ -405,7 +355,7 @@ def _verbalize_ordinals(text):
 
     Example:
         >>> _verbalize_ordinals('between May 1st, 1827,')
-        between May first, 1827,
+        'between May first, 1827,'
     """
 
     def _replace(match):
@@ -430,7 +380,7 @@ def _verbalize_currency(text):
 
     Example:
         >>> _verbalize_currency('inch BBL, unquote, cost $29.95.')
-        inch BBL, unquote, cost twenty-nine dollars, ninety-five cents.
+        'inch BBL, unquote, cost twenty-nine dollars, ninety-five cents.'
     """
 
     def _replace(match):
@@ -463,9 +413,9 @@ def _verbalize_serial_numbers(text):
 
     Example:
         >>> _verbalize_serial_numbers('Post Office Box 2915, Dallas, Texas')
-        Post Office Box two nine one five, Dallas, Texas
+        'Post Office Box two nine one five, Dallas, Texas'
         >>> _verbalize_serial_numbers('serial No. C2766, which was also found')
-        serial No. C two seven six six, which was also found
+        'serial No. C two seven six six, which was also found'
     """
 
     def _replace(match):
@@ -497,11 +447,11 @@ def _verbalize_year(text):
 
     Example:
         >>> _verbalize_year('Newgate down to 1818,')
-        Newgate down to eighteen eighteen,
+        'Newgate down to eighteen eighteen,'
         >>> _verbalize_year('It was about 250 B.C., when the great')
-        It was about two fifty B.C., when the great
+        'It was about two fifty B.C., when the great'
         >>> _verbalize_year('In 606, Nineveh')
-        In six oh-six, Nineveh
+        'In six oh-six, Nineveh'
     """
 
     def _replace(match):
@@ -526,8 +476,8 @@ def _verbalize_numeral(text):
         text (str): Text verbalized.
 
     Example:
-        >>> _verbalize_numeral('Exhibit No. 143 as the')
-        Exhibit No. one fourty-three as the
+        >>> _verbalize_numeral(_expand_abbreviations('Exhibit No. 143 as the'))
+        'Exhibit Number one forty-three as the'
     """
 
     def _replace(match):
@@ -551,8 +501,8 @@ def _verbalize_roman_number(text):
         text (str): Text verbalized.
 
     Example:
-        >>> _verbalize_number('William IV. was also the victim')
-        William the forth was also the victim
+        >>> _verbalize_roman_number('William IV. was also the victim')
+        'William the fourth was also the victim'
     """
 
     def _replace(match):
@@ -587,15 +537,15 @@ def _verbalize_number(text):
 
     Example:
         >>> _verbalize_number('Chapter 4. The Assassin:')
-        Chapter four. The Assassin:
+        'Chapter four. The Assassin:'
         >>> _verbalize_number('was shipped on March 20, and the')
-        was shipped on March twenty, and the
+        'was shipped on March twenty, and the'
         >>> _verbalize_number('distance of 265.3 feet was, quote')
-        distance of two hundred sixty-five point three feet was, quote
+        'distance of two hundred sixty-five point three feet was, quote'
         >>> _verbalize_number('information on some 50,000 cases')
-        information on some fifty thousand cases
+        'information on some fifty thousand cases'
         >>> _verbalize_number('PRS received items in 8,709 cases')
-        PRS received items in eight thousand, seven hundred nine cases
+        'PRS received items in eight thousand, seven hundred nine cases'
     """
 
     def _replace(match):

@@ -1,19 +1,23 @@
-import os
+import torch
 
 from torch import nn
 from torch.nn import functional
 
 import numpy as np
-import torch
 
+from src.feature_model import FeatureModel
+from src.optimizer import Optimizer
+from src.utils import AnomalyDetector
+from src.utils import combine_signal
 from src.utils import get_total_parameters
+from src.utils import load_checkpoint
+from src.utils import load_most_recent_checkpoint
 from src.utils import parse_hparam_args
 from src.utils import ROOT_PATH
+from src.utils import save_checkpoint
 from src.utils import split_dataset
 from src.utils import split_signal
-from src.utils import combine_signal
-from src.utils import load_most_recent_checkpoint
-from src.utils import AnomalyDetector
+from src.utils.experiment_context_manager import ExperimentContextManager
 
 
 class MockModel(nn.Module):
@@ -46,14 +50,30 @@ def test_anomaly_detector():
     assert anomaly_detector.step(2)
 
 
+def test_anomaly_detector_type_low():
+    min_steps = 10
+    anomaly_detector = AnomalyDetector(min_steps=min_steps, type_=AnomalyDetector.TYPE_LOW)
+    for _ in range(min_steps):
+        assert not anomaly_detector.step(1)
+    assert not anomaly_detector.step(2)
+
+
+def test_anomaly_detector_type_both():
+    min_steps = 10
+    anomaly_detector = AnomalyDetector(min_steps=min_steps, type_=AnomalyDetector.TYPE_BOTH)
+    for _ in range(min_steps):
+        assert not anomaly_detector.step(1)
+    assert anomaly_detector.step(2)
+    assert anomaly_detector.step(0)
+
+
 def test_get_total_parameters():
     model = MockModel()
     assert 62006 == get_total_parameters(model)
 
 
 def test_get_root_path():
-    root_path = ROOT_PATH
-    assert os.path.isfile(os.path.join(root_path, 'requirements.txt'))
+    assert (ROOT_PATH / 'requirements.txt').is_file()
 
 
 def test_split_dataset():
@@ -66,6 +86,12 @@ def test_split_dataset_shuffle():
     dataset = [1, 2, 3, 4, 5]
     splits = (.6, .2, .2)
     assert split_dataset(dataset, splits) == [[4, 2, 5], [3], [1]]
+
+
+def test_split_dataset_rounding():
+    dataset = [1]
+    splits = (.33, .33, .34)
+    assert split_dataset(dataset, splits) == [[], [], [1]]
 
 
 def test_parse_hparam_args():
@@ -105,3 +131,18 @@ def test_load_most_recent_checkpoint_none():
     checkpoint, path = load_most_recent_checkpoint('tests/_test_data/**/*.abc')
     assert checkpoint is None
     assert path is None
+
+
+def test_load_save_checkpoint():
+    with ExperimentContextManager(label='test_load_save_checkpoint') as context:
+        model = FeatureModel(10)
+        optimizer = Optimizer(
+            torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
+        filename = save_checkpoint(
+            context.checkpoints_directory, model=model, optimizer=optimizer, step=10)
+        assert filename.is_file()
+
+        # Smoke test
+        load_checkpoint(filename)
+
+        context.clean_up()

@@ -17,14 +17,11 @@ def test_autoregressive_decoder():
 
     hidden_state = None
     for _ in range(3):
-        frames, frames_with_residual, stop_token, hidden_state, alignment = decoder(
+        frames, stop_token, hidden_state, alignment = decoder(
             encoded_tokens=encoded_tokens, tokens_mask=tokens_mask, hidden_state=hidden_state)
 
         assert frames.type() == 'torch.FloatTensor'
         assert frames.shape == (1, batch_size, frame_channels)
-
-        assert frames_with_residual.type() == 'torch.FloatTensor'
-        assert frames_with_residual.shape == (1, batch_size, frame_channels)
 
         assert stop_token.type() == 'torch.FloatTensor'
         assert stop_token.shape == (1, batch_size)
@@ -48,16 +45,13 @@ def test_autoregressive_decoder_ground_truth():
     tokens_mask = torch.ByteTensor(batch_size, num_tokens).zero_()
     ground_truth_frames = torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1)
 
-    frames, frames_with_residual, stop_token, hidden_state, alignment = decoder(
+    frames, stop_token, hidden_state, alignment = decoder(
         encoded_tokens=encoded_tokens,
         tokens_mask=tokens_mask,
         ground_truth_frames=ground_truth_frames)
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, batch_size, frame_channels)
-
-    assert frames_with_residual.type() == 'torch.FloatTensor'
-    assert frames_with_residual.shape == (num_frames, batch_size, frame_channels)
 
     assert stop_token.type() == 'torch.FloatTensor'
     assert stop_token.shape == (num_frames, batch_size)

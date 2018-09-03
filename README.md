@@ -46,17 +46,17 @@ This section describes commands to run the executables required for training.
 
 First things first, preprocess the audio via:
 
-    python src/bin/feature_model/preprocess.py
+    python -m src.bin.feature_model.preprocess.
 
 Train the feature model like so:
 
-    python3 src/bin/feature_model/train.py -n experiment_name
+    python3 -m src.bin.feature_model.train -n experiment_name
 
 #### Signal Model
 
 Train the signal model like so:
 
-    python3 src/bin/signal_model/train.py -n experiment_name
+    python3 -m src.bin.signal_model.train -n experiment_name
 
 ## Run Text-to-Speech
 
@@ -70,7 +70,7 @@ Then, the ``notebooks/Synthesize Speech from Text.ipynb`` notebook runs the syst
 
 Run unit tests with code coverage like so:
 
-    python -m pytest tests/ --cov=src --cov-report html:coverage --cov-report=term-missing
+    python -m pytest tests/ src/ --doctest-modules --cov=src --cov-report html:coverage --cov-report=term-missing
 
 Run linting like so:
 
