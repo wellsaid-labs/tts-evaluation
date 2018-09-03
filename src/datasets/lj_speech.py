@@ -49,7 +49,7 @@ def lj_speech_dataset(directory='data/',
           https://machinelearningmastery.com/resample-interpolate-time-series-data-python/
 
     Args:
-        directory (str, optional): Directory to cache the dataset.
+        directory (str or Path, optional): Directory to cache the dataset.
         extracted_name (str, optional): Name of the extracted dataset directory.
         url (str, optional): URL of the dataset `tar.gz` file.
         check_files (list of str, optional): Check this file exists if the download was successful.
@@ -86,7 +86,7 @@ def lj_speech_dataset(directory='data/',
           'wav_filename': PosixPath('data/LJSpeech-1.1/wavs/'
                                     'LJ009-0184-rate=24000-norm=-.001-guard.wav')}]
     """
-    download_file_maybe_extract(url=url, directory=directory, check_files=check_files)
+    download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
     path = Path(directory, extracted_name, metadata_file)
 
     def extract_fun(args):

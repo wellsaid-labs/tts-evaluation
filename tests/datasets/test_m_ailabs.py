@@ -3,7 +3,6 @@ from pathlib import Path
 import mock
 import shutil
 import pytest
-import os
 
 from src.datasets import m_ailabs_speech_dataset
 from src.datasets.m_ailabs import Gender
@@ -17,9 +16,9 @@ M_AILABS_DIRECTORY = Path('tests/_test_data/M-AILABS')
 @pytest.fixture
 def cleanup():
     yield
-    cleanup_dir = os.path.join(M_AILABS_DIRECTORY, 'en_US')
+    cleanup_dir = M_AILABS_DIRECTORY / 'en_US'
     print("Clean up: removing {}".format(cleanup_dir))
-    shutil.rmtree(cleanup_dir)
+    shutil.rmtree(str(cleanup_dir))
 
 
 @mock.patch("urllib.request.urlretrieve")
@@ -75,7 +74,7 @@ def test_m_ailabs_speech_dataset_pickers(mock_urlretrieve):
         'upper_hertz': None,
         'loudness': False,
         'splits': (0.8, 0.2),
-        'check_wavfiles': True
+        'check_wavfiles': False
     }
     train, dev = m_ailabs_speech_dataset(picker=Gender.FEMALE, **kwargs)
     train, dev = m_ailabs_speech_dataset(picker=Speaker.ELLIOT_MILLER, **kwargs)

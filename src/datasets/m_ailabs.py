@@ -103,7 +103,7 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
     Use ``curl -I <URL>`` to find the redirected URL.
 
     Args:
-        directory (str, optional): Directory to cache the dataset.
+        directory (str or Path, optional): Directory to cache the dataset.
         url (str, optional): URL of the dataset ``tar.gz`` file.
         check_files (list of str, optional): Check this file exists if the download was successful.
         metadata_pattern (str, optional): Pattern for all ``metadata.csv`` files containing

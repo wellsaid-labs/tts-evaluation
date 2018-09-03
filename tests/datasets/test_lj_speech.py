@@ -4,7 +4,6 @@ import mock
 import re
 import shutil
 import pytest
-import os
 
 from src.datasets import lj_speech_dataset
 from tests.datasets.utils import urlretrieve_side_effect
@@ -44,9 +43,9 @@ verbalize_test_cases = {
 @pytest.fixture
 def cleanup():
     yield
-    cleanup_dir = os.path.join(lj_directory, 'LJSpeech-1.1')
+    cleanup_dir = lj_directory / 'LJSpeech-1.1'
     print("Clean up: removing {}".format(cleanup_dir))
-    shutil.rmtree(cleanup_dir)
+    shutil.rmtree(str(cleanup_dir))
 
 
 @mock.patch("urllib.request.urlretrieve")
