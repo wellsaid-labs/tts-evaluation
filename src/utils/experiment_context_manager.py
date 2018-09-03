@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import logging
 import os
 import platform
@@ -21,12 +23,16 @@ class _CopyStream(object):
     **Reference:** https://stackoverflow.com/questions/4675728/redirect-stdout-to-a-file-in-python
 
     Example:
-        >>> sys.stdout = _CopyStream(stdout_filename, sys.stdout)
+        >>> sys.stdout = _CopyStream(stdout_filename, sys.stdout) # doctest: +SKIP
+
+    Args:
+        filename (str or Path): Filename to recieve stream
+        stream (_io.TextIOWrapper): Stream to direct to filename
     """
 
     def __init__(self, filename, stream):
         self.stream = stream
-        self.file_ = open(filename, 'a')
+        self.file_ = open(str(filename), 'a')
 
     @property
     def closed(self):
@@ -67,15 +73,12 @@ class ExperimentContextManager(object):
                  device=None,
                  min_time=60 * 3,
                  step=0):
-        # Handle circular reference
-        from src.utils import ROOT_PATH
-
-        self.directory = directory
+        self.directory = None if directory is None else Path(directory)
         self.started_from_existing_directory = self.directory is not None
         self.id = str(time.time())[:10]  # NOTE: Same id tensorboard uses.
         self.name = time.strftime('%H:%M:%S', time.localtime()) if name is None else name
         self.label = label
-        self.root = os.path.normpath(os.path.join(ROOT_PATH, root))
+        self.root = Path(root)
 
         self.device = device
         if self.device is None:
@@ -111,12 +114,9 @@ class ExperimentContextManager(object):
 
     def _check_module_versions(self):
         """ Check to that ``requirements.txt`` is in-line with ``pip freeze`` """
-        # Handle circular reference
-        from src.utils import ROOT_PATH
-
         freeze = subprocess.check_output([sys.executable, '-m', 'pip', 'freeze'])
         freeze = freeze.decode('utf-8').split()
-        with open(os.path.join(ROOT_PATH, 'requirements.txt'), 'r') as file_:
+        with Path('requirements.txt').open() as file_:
             for line in file_:
                 line = line.strip()
                 if '==' in line:
@@ -126,8 +126,8 @@ class ExperimentContextManager(object):
                     if not len(installed) == 1:
                         raise ValueError('%s not installed' % package)
                     if not specification == installed[0]:
-                        raise ValueError('Versions are not compatible %s =/= %s' % (specification,
-                                                                                    installed[0]))
+                        raise ValueError(
+                            'Versions are not compatible %s =/= %s' % (specification, installed[0]))
 
     def _copy_standard_streams(self, stdout_filename='stdout.log', stderr_filename='stderr.log'):
         """ Copy stdout and stderr to a ``{directory}/stdout.log`` and ``{directory}/stderr.log``.
@@ -136,8 +136,8 @@ class ExperimentContextManager(object):
             stdout_filename (str): Filename used to save the stdout stream.
             stderr_filename (str): Filename used to save the stderr stream.
         """
-        self.stdout_filename = os.path.join(self.directory, '%s.%s' % (self.id, stdout_filename))
-        self.stderr_filename = os.path.join(self.directory, '%s.%s' % (self.id, stderr_filename))
+        self.stdout_filename = self.directory / ('%s.%s' % (self.id, stdout_filename))
+        self.stderr_filename = self.directory / ('%s.%s' % (self.id, stderr_filename))
         sys.stdout = _CopyStream(self.stdout_filename, sys.stdout)
         sys.stderr = _CopyStream(self.stderr_filename, sys.stderr)
 
@@ -150,24 +150,24 @@ class ExperimentContextManager(object):
         if self.directory is None:
             run_day = time.strftime('%m_%d', time.localtime())
             name = self.name.replace(' ', '_')
-            self.directory = os.path.join(self.root, self.label, run_day, name)
-            assert not os.path.isdir(
-                self.directory), 'Attempting to override an existing experiment %s' % self.directory
-            os.makedirs(self.directory)
+            self.directory = self.root / self.label / run_day / name
+            assert not self.directory.is_dir(
+            ), 'Attempting to override an existing experiment %s' % self.directory
+            self.directory.mkdir(parents=True)
         else:
-            assert os.path.isdir(self.directory), 'Provided directory must exist.'
+            assert self.directory.is_dir(), 'Provided directory must exist.'
 
         # Make checkpoints directory
-        self.checkpoints_directory = os.path.join(self.directory, 'checkpoints', self.id)
-        os.makedirs(self.checkpoints_directory)
+        self.checkpoints_directory = self.directory / 'checkpoints' / self.id
+        self.checkpoints_directory.mkdir(parents=True)
 
     def _tensorboard(self):
         """ Within ``self.directory`` setup tensorboard.
         """
         # NOTE: ``tb`` short name to help with Tensorboard path layout in the left hand
-        log_dir = os.path.join(self.directory, 'tb')
-        self.dev_tensorboard = Tensorboard(log_dir=os.path.join(log_dir, 'dev'), step=self.step)
-        self.train_tensorboard = Tensorboard(log_dir=os.path.join(log_dir, 'train'), step=self.step)
+        log_dir = self.directory / 'tb'
+        self.dev_tensorboard = Tensorboard(log_dir=log_dir / 'dev', step=self.step)
+        self.train_tensorboard = Tensorboard(log_dir=log_dir / 'train', step=self.step)
 
     def set_seed(self, seed):
         """ To ensure reproducibility, by seeding ``numpy``, ``random``, ``tf`` and ``torch``.
@@ -230,28 +230,28 @@ class ExperimentContextManager(object):
             print('DELETING EXPERIMENT: %s' % self.directory)
 
         if not self.started_from_existing_directory:
-            shutil.rmtree(self.directory)
+            shutil.rmtree(str(self.directory))
         else:
             # Remove checkpoints
-            shutil.rmtree(self.checkpoints_directory)
+            shutil.rmtree(str(self.checkpoints_directory))
 
             # Remove tensorboard files
-            os.remove(self.dev_tensorboard.writer.file_writer.event_writer._ev_writer.
-                      _py_recordio_writer.path)
-            os.remove(self.train_tensorboard.writer.file_writer.event_writer._ev_writer.
-                      _py_recordio_writer.path)
+            Path(self.dev_tensorboard.writer.file_writer.event_writer._ev_writer.
+                 _py_recordio_writer.path).unlink()
+            Path(self.train_tensorboard.writer.file_writer.event_writer._ev_writer.
+                 _py_recordio_writer.path).unlink()
 
             # Remove log files
-            os.remove(self.stdout_filename)
-            os.remove(self.stderr_filename)
+            self.stdout_filename.unlink()
+            self.stderr_filename.unlink()
 
         # Remove empty directories
-        for root, directories, files in os.walk(self.root, topdown=False):
+        for root, directories, files in os.walk(str(self.root), topdown=False):
             for directory in directories:
-                directory = os.path.join(root, directory)
+                directory = Path(root) / directory
                 # Only works when the directory is empty
                 try:
-                    os.rmdir(directory)
+                    directory.rmdir()
                 except OSError:
                     pass
 

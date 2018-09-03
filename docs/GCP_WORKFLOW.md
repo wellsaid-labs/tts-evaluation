@@ -19,7 +19,7 @@ brew install lsyncd
 Frequently, you'll want to share a files between your local machine and GCP. We allow for that via:
 
 ```
-python3 src/bin/lsyncd.py --source /path/to/WellSaid-Labs-Text-To-Speech \
+python3 -m src.bin.lsyncd --source /path/to/WellSaid-Labs-Text-To-Speech \
                           --destination /path/to/WellSaid-Labs-Text-To-Speech \
                           --user someone --instance a_gcp_instance
 ```
@@ -33,11 +33,10 @@ to keep alive GCP machines.
 
 Here's an example of using the script:
 ```
-python3 src/bin/keep_alive.py --command="screen -dm bash -c \
+python3 -m src.bin.keep_alive --command="screen -dm bash -c \
         'cd WellSaid-Labs-Text-To-Speech/; \
-        export PYTHONPATH=.; \
         ulimit -n 65536; \
-        python3 src/bin/signal_model/train.py -c;'"
+        python3 -m src.bin.signal_model.train -c;'"
 ```
 
 The ``--command`` flag runs a command on restart of the GCP server.
@@ -54,7 +53,7 @@ gcloud compute ssh tensorboard --zone=us-us-west1-b
 # Find any new servers
 gcloud compute config-ssh
 
-python3 src/bin/sync_instances.py --destination ~/WellSaid-Labs-Text-To-Speech/sync/ \
+python3 -m src.bin.sync_instances --destination ~/WellSaid-Labs-Text-To-Speech/sync/ \
                                   --source ~/WellSaid-Labs-Text-To-Speech/experiments/signal_model
 ```
 

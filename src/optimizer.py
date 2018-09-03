@@ -59,7 +59,7 @@ class Optimizer(object):
         self.state_dict = self.optimizer.state_dict
         self.load_state_dict = self.optimizer.load_state_dict
 
-    def step(self, tensorboard=None, max_grad_norm=None, eps=10**-4):
+    def step(self, tensorboard=None, max_grad_norm=None, eps=10**-3):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
 
         Args:

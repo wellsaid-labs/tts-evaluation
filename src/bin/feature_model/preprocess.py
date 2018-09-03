@@ -1,5 +1,6 @@
+from pathlib import Path
+
 import logging
-import os
 import pprint
 
 from multiprocessing import Pool
@@ -11,14 +12,14 @@ import tqdm
 from src.audio import get_log_mel_spectrogram
 from src.audio import read_audio
 from src.bin.feature_model._utils import set_hparams
-from src.datasets import lj_speech_dataset
+from src.utils.configurable import configurable
 
 pretty_printer = pprint.PrettyPrinter(indent=4)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def process(args):
+def process(args):  # pragma: no cover
     index, row, destination = args
     signal = read_audio(row['wav_filename'])
 
@@ -30,37 +31,38 @@ def process(args):
     # Pad so: ``log_mel_spectrogram.shape[0] % signal.shape[0] == frame_hop``
     # We property is required for the vocoder.
     padded_signal = np.pad(signal, padding, mode='constant', constant_values=0)
+    np.save(str(destination / ('padded_signal_%d.npy' % index)), padded_signal, allow_pickle=False)
     np.save(
-        os.path.join(destination, 'padded_signal_%d.npy' % (index,)),
-        padded_signal,
-        allow_pickle=False)
-    np.save(
-        os.path.join(destination, 'log_mel_spectrogram_%d.npy' % (index,)),
+        str(destination / ('log_mel_spectrogram_%d.npy' % index)),
         log_mel_spectrogram,
         allow_pickle=False)
-    with open(os.path.join(destination, 'text_%d.txt' % (index,)), 'w') as file_:
-        file_.write(row['text'])
+    (destination / ('text_%d.txt' % index)).write_text(row['text'])
 
 
-def main(destination_train='data/.feature_dataset/train',
+@configurable
+def main(dataset,
+         destination_train='data/.feature_dataset/train',
          destination_dev='data/.feature_dataset/dev'):  # pragma: no cover
     """ Main module used to preprocess the signal and spectrogram for training a feature model.
 
     Args:
+        dataset (callable, optional): Loads a dataset with train and dev. Each example has
+            a ``wav_filename`` and ``text`` key.
         destination_train (str, optional): Directory to save generated files to be used for
             training.
         destination_dev (str, optional): Directory to save generated files to be used for
             development.
     """
-    set_hparams()
+    destination_train = Path(destination_train)
+    destination_dev = Path(destination_dev)
 
-    if not os.path.isdir(destination_train):
-        os.makedirs(destination_train)
+    if not destination_train.is_dir():
+        destination_train.mkdir(parents=True)
 
-    if not os.path.isdir(destination_dev):
-        os.makedirs(destination_dev)
+    if not destination_dev.is_dir():
+        destination_dev.mkdir(parents=True)
 
-    train, dev = lj_speech_dataset()
+    train, dev = dataset()
     logger.info('Sample Data:\n%s', pretty_printer.pformat(train[:5]))
     for dataset, destination in [(train, destination_train), (dev, destination_dev)]:
         args = [(index, row, destination) for index, row in enumerate(dataset)]
@@ -68,5 +70,6 @@ def main(destination_train='data/.feature_dataset/train',
             list(tqdm.tqdm(pool.imap(process, args), total=len(args)))
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
+    set_hparams()
     main()

@@ -1,4 +1,5 @@
 from src.datasets.lj_speech import lj_speech_dataset
+from src.datasets.m_ailabs import m_ailabs_speech_dataset
 
 # TODO: Support more datasets
 # * English Bible Speech Dataset
@@ -11,4 +12,4 @@ from src.datasets.lj_speech import lj_speech_dataset
 # * Blizzard Dataset
 # * JSUT dataset
 
-__all__ = ['lj_speech_dataset']
+__all__ = ['lj_speech_dataset', 'm_ailabs_speech_dataset']
