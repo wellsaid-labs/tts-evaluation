@@ -63,18 +63,18 @@ class DataIterator(object):
 
         mask = [torch.FloatTensor(length).fill_(1) for length in frame_length_batch]
         mask, _ = pad_batch(mask)  # [batch_size, num_frames]
-        stop_token_mask = transpose(mask)  # [num_frames, batch_size]
+        frames_mask = transpose(mask)  # [num_frames, batch_size]
         # [num_frames, batch_size] → [num_frames, batch_size, frame_channels]
-        frames_mask = stop_token_mask.unsqueeze(2).expand_as(frame_batch).contiguous()
+        frame_values_mask = frames_mask.unsqueeze(2).expand_as(frame_batch).contiguous()
 
         return {
             'text': transpose(text_batch),
             'text_lengths': text_length_batch,
             'frames': frame_batch,
-            'frames_mask': frames_mask,
+            'frame_values_mask': frame_values_mask,
             'frame_lengths': frame_length_batch,
             'stop_token': transpose(stop_token_batch),
-            'stop_token_mask': stop_token_mask,
+            'frames_mask': frames_mask,
             'signal': [row['signal'] for row in batch] if self.load_signal else None
         }
 
@@ -86,8 +86,9 @@ class DataIterator(object):
             batch['text'] = self._maybe_cuda(batch['text'], non_blocking=True)
             batch['frames'] = self._maybe_cuda(batch['frames'], non_blocking=True)
             batch['stop_token'] = self._maybe_cuda(batch['stop_token'], non_blocking=True)
+            batch['frame_values_mask'] = self._maybe_cuda(
+                batch['frame_values_mask'], non_blocking=True)
             batch['frames_mask'] = self._maybe_cuda(batch['frames_mask'], non_blocking=True)
-            batch['stop_token_mask'] = self._maybe_cuda(batch['stop_token_mask'], non_blocking=True)
             if batch['signal'] is not None:
                 batch['signal'] = [self._maybe_cuda(s, non_blocking=True) for s in batch['signal']]
 

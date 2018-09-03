@@ -4,6 +4,8 @@ import torch
 import librosa
 import IPython
 
+from src import datasets
+from src.utils import AnomalyDetector
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
 
@@ -11,7 +13,6 @@ from src.utils.configurable import configurable
 def set_hparams():
     """ Using the ``configurable`` module set the hyperparameters for the source code.
     """
-
     torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
     nn.modules.batchnorm._BatchNorm.__init__ = configurable(
         nn.modules.batchnorm._BatchNorm.__init__)
@@ -282,35 +283,22 @@ def set_hparams():
                     }
                 },
             },
-            'bin.evaluate_signal_model.main.sample_rate': sample_rate,
-            'bin.signal_model': {
-                'train.Trainer.__init__': {
-                    'sample_rate': sample_rate,
-                    # Optimized for 4x P100 GPU
-                    'train_batch_size': 64,
-                    'dev_batch_size': 256,
-                    'num_workers': 12,
-                    'min_rollback': 1,
+            'bin': {
+                'evaluate_signal_model.main.sample_rate': sample_rate,
+                'feature_model.preprocess.main.dataset': datasets.lj_speech_dataset,
+                'signal_model': {
+                    'train.Trainer.__init__': {
+                        'sample_rate': sample_rate,
+                        'min_rollback': 1,
+                    },
+                    '_utils.load_data.predicted': False,
+                    '_dataset.SignalDataset.__init__': {
+                        # SOURCE: Efficient Neural Audio Synthesis
+                        # The WaveRNN models are trained on sequences of 960 audio samples
+                        'frame_size': int(900 / get_log_mel_spectrogram['frame_hop']),
+                        'frame_pad': 5,
+                    }
                 },
-                '_utils.load_data.predicted': False,
-                '_dataset.SignalDataset.__init__': {
-                    # SOURCE: Efficient Neural Audio Synthesis
-                    # The WaveRNN models are trained on sequences of 960 audio samples
-                    'frame_size': int(900 / get_log_mel_spectrogram['frame_hop']),
-                    'frame_pad': 5,
-                }
-            },
-            'bin.feature_model': {
-                'train.Trainer.__init__': {
-                    # SOURCE: Tacotron 2
-                    # To train the feature prediction network, we apply the standard
-                    # maximum-likelihood training procedure (feeding in the correct output instead
-                    # of the predicted output on the decoder side, also referred to as
-                    # teacher-forcing) with a batch size of 64 on a single GPU.
-                    'train_batch_size': 56,
-                    'dev_batch_size': 256,
-                    'num_workers': 12,
-                }
             },
             'utils': {
                 'visualize': {
@@ -331,6 +319,7 @@ def set_hparams():
                         # ``notebooks/Detecting Anomalies.ipynb``
                         'sigma': 6,
                         'beta': 0.98,
+                        'type_': AnomalyDetector.TYPE_HIGH,
                     }
                 }
             },

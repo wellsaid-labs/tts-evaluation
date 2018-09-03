@@ -1,5 +1,7 @@
+from pathlib import Path
 from functools import reduce
 from functools import wraps
+from functools import lru_cache
 from importlib import import_module
 
 import inspect
@@ -78,18 +80,12 @@ def _parse_configuration(dict_):
 
     Example:
         >>> dict = {
-            'abc.abc': {
-              'cda': 'abc
-            }
-        }
+        ...   'abc.abc': {
+        ...     'cda': 'abc'
+        ...   }
+        ... }
         >>> _parse_configuration(dict)
-        {
-          'abc': {
-            'abc': {
-              'cda': 'abc
-            }
-          }
-        }
+        {'abc': {'abc': {'cda': 'abc'}}}
     """
     parsed = {}
     _parse_configuration_helper(dict_, parsed)
@@ -136,14 +132,21 @@ def _check_configuration(dict_):
     return _check_configuration_helper(dict_, [], [])
 
 
+@lru_cache(maxsize=1)
 def _get_main_module_name():
     """ Get __main__ module name """
+    from src.utils.utils import ROOT_PATH  # Prevent circular dependecy
+
     file_name = sys.argv[0]
+
+    try:
+        file_name = str(Path(file_name).relative_to(ROOT_PATH))
+    except ValueError:
+        # `file_name` not relative to `ROOT_PATH`
+        pass
+
     no_extension = file_name.split('.')[0]
     return no_extension.replace('/', '.')
-
-
-_main_module_name = _get_main_module_name()
 
 
 def _get_module_name(func):
@@ -158,9 +161,15 @@ def _get_module_name(func):
     """
     module_keys = inspect.getmodule(func).__name__.split('.')
     if module_keys == ['__main__']:
-        module_keys = _main_module_name.split('.')
+        module_keys = _get_main_module_name().split('.')
+    module_keys = [k for k in module_keys if k != '']
     keys = module_keys + func.__qualname__.split('.')
-    print_name = module_keys[-1] + '.' + func.__qualname__
+
+    if len(module_keys) > 0:
+        print_name = module_keys[-1] + '.' + func.__qualname__
+    else:
+        print_name = func.__qualname__
+
     return keys, print_name
 
 
@@ -175,8 +184,8 @@ def _check_configuration_helper(dict_, keys, trace):
     if not isinstance(dict_, dict):
         # Recursive function walked up the chain and never found a @configurable
         trace.reverse()
-        raise TypeError('Path %s does not contain @configurable.\n' % (
-            keys,) + 'Traceback (most recent call last):\n\t%s' % ('\n\t'.join(trace),))
+        raise TypeError('Path %s does not contain @configurable.\n' % (keys,) +
+                        'Traceback (most recent call last):\n\t%s' % ('\n\t'.join(trace),))
 
     if len(keys) >= 2:
         # CASE: Function
@@ -187,7 +196,7 @@ def _check_configuration_helper(dict_, keys, trace):
         try:
             # Try to import a function
             module_path = '.'.join(keys[:-1])
-            if module_path == _main_module_name:
+            if module_path == _get_main_module_name():
                 module_path = '__main__'
             module = import_module(module_path)
             if hasattr(module, keys[-1]):
@@ -196,8 +205,8 @@ def _check_configuration_helper(dict_, keys, trace):
                 if (hasattr(function, '_configurable')):
                     absolute_keys = _get_module_name(function)[0]
                     if keys != absolute_keys:
-                        raise TypeError('The module path must be absolute: %s vs %s' %
-                                        (keys, absolute_keys))
+                        raise TypeError(
+                            'The module path must be absolute: %s vs %s' % (keys, absolute_keys))
                     return
         except ImportError as e:
             trace += ['Module %s ImportError: ' % (module_path,) + str(e)]
@@ -211,7 +220,7 @@ def _check_configuration_helper(dict_, keys, trace):
         #   function = nn.BatchNorm1d.__init__
         try:
             module_path = '.'.join(keys[:-2])
-            if module_path == _main_module_name:
+            if module_path == _get_main_module_name():
                 module_path = '__main__'
             module = import_module(module_path)
             if hasattr(module, keys[-2]):
@@ -247,14 +256,16 @@ def add_config(dict_):
         (TypeError): duplicate functions/modules/packages are defined
 
     Example:
-        >>> # abc.py
+        >>> import pprint
+        >>> pprint.pprint([[1, 2]])
+        [[1, 2]]
         >>>
-        >>> add_config({'abc.abc': {'to_print': 'xyz'}})
-        >>>
-        >>> def abc(to_print):
-                print(to_print)
-        >>> abc()
-        xyz
+        >>> # Configure `pprint` to use a `width` of `2`
+        >>> pprint.pprint = configurable(pprint.pprint)
+        >>> add_config({'pprint.pprint': {'width': 2}})
+        >>> pprint.pprint([[1, 2]])
+        [[1,
+          2]]
     """
     global _configuration
     parsed = _parse_configuration(dict_)
@@ -349,7 +360,7 @@ def configurable(func):
         if len(config) == 0:
             # TODO: Do not repeat this warning and warn that this message will not be
             # repeated
-            logger.warn('%s no config for: %s', print_name, '.'.join(keys))
+            logger.warn('No config for `%s` (`%s`)', print_name, '.'.join(keys))
 
         # Print name is used for logger
         if not isinstance(config, dict):

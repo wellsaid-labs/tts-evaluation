@@ -18,10 +18,9 @@ if [[ "$RUN_FLAKE8" == "true" ]]; then
 fi
 
 run_tests() {
+    TEST_CMD="py.test tests/ src/ --doctest-modules --verbose --durations=20 --cov=src"
     if [[ "$RUN_SLOW" == "true" ]]; then
-        TEST_CMD="py.test tests/ -v --durations=20 --cov=src --runslow"
-    else
-        TEST_CMD="py.test tests/ -v --durations=20 --cov=src"
+        TEST_CMD="$TEST_CMD --runslow"
     fi
     $TEST_CMD
 }

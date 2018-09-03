@@ -30,7 +30,7 @@ flake8
 mock
 
 # Auto Formatter
-yapf
+yapf==0.22.0
 
 # Utils
 tqdm # Progress bar
