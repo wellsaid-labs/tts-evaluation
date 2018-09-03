@@ -165,9 +165,10 @@ def split_dataset(dataset, splits, deterministic_shuffle=True, random_seed=123):
     assert sum(splits) == 1, 'Splits must sum to 100%'
     splits = [round(s * len(dataset)) for s in splits]
     datasets = []
-    for split in splits:
+    for split in splits[:-1]:
         datasets.append(dataset[:split])
         dataset = dataset[split:]
+    datasets.append(dataset)
     return datasets
 
 

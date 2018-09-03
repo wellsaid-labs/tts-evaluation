@@ -88,6 +88,12 @@ def test_split_dataset_shuffle():
     assert split_dataset(dataset, splits) == [[4, 2, 5], [3], [1]]
 
 
+def test_split_dataset_rounding():
+    dataset = [1]
+    splits = (.33, .33, .34)
+    assert split_dataset(dataset, splits) == [[], [], [1]]
+
+
 def test_parse_hparam_args():
     hparam_args = ['--foo 0.01', '--bar WaveNet', '--moo=1']
     assert parse_hparam_args(hparam_args) == {'foo': 0.01, 'bar': 'WaveNet', 'moo': 1}

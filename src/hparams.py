@@ -4,9 +4,10 @@ import torch
 import librosa
 import IPython
 
+from src import datasets
+from src.utils import AnomalyDetector
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
-from src.utils import AnomalyDetector
 
 
 def set_hparams():
@@ -283,19 +284,22 @@ def set_hparams():
                     }
                 },
             },
-            'bin.evaluate_signal_model.main.sample_rate': sample_rate,
-            'bin.signal_model': {
-                'train.Trainer.__init__': {
-                    'sample_rate': sample_rate,
-                    'min_rollback': 1,
+            'bin': {
+                'evaluate_signal_model.main.sample_rate': sample_rate,
+                'feature_model.preprocess.main.dataset': datasets.lj_speech_dataset,
+                'signal_model': {
+                    'train.Trainer.__init__': {
+                        'sample_rate': sample_rate,
+                        'min_rollback': 1,
+                    },
+                    '_utils.load_data.predicted': False,
+                    '_dataset.SignalDataset.__init__': {
+                        # SOURCE: Efficient Neural Audio Synthesis
+                        # The WaveRNN models are trained on sequences of 960 audio samples
+                        'frame_size': int(900 / get_log_mel_spectrogram['frame_hop']),
+                        'frame_pad': 5,
+                    }
                 },
-                '_utils.load_data.predicted': False,
-                '_dataset.SignalDataset.__init__': {
-                    # SOURCE: Efficient Neural Audio Synthesis
-                    # The WaveRNN models are trained on sequences of 960 audio samples
-                    'frame_size': int(900 / get_log_mel_spectrogram['frame_hop']),
-                    'frame_pad': 5,
-                }
             },
             'utils': {
                 'visualize': {

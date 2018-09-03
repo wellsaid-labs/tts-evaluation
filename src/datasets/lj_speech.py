@@ -6,7 +6,9 @@ import unidecode
 from num2words import num2words
 from torchnlp.download import download_file_maybe_extract
 
-from src.datasets.process import process_audio, read_speech_data, process_all
+from src.datasets._process import process_all
+from src.datasets._process import process_audio
+from src.datasets._process import read_speech_data
 from src.utils.configurable import configurable
 
 
@@ -15,13 +17,13 @@ def lj_speech_dataset(directory='data/',
                       extracted_name='LJSpeech-1.1',
                       url='http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
                       check_files=['LJSpeech-1.1/metadata.csv'],
-                      text_file='metadata.csv',
+                      metadata_file='metadata.csv',
                       verbalize=True,
                       resample=24000,
                       norm=True,
                       guard=True,
-                      lower_hertz=0,
-                      upper_hertz=12000,
+                      lower_hertz=None,
+                      upper_hertz=None,
                       loudness=False,
                       random_seed=123,
                       splits=(.8, .2),
@@ -70,22 +72,22 @@ def lj_speech_dataset(directory='data/',
         :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
 
     Example:
+        >>> import pprint # doctest: +SKIP
         >>> from src.datasets import lj_speech_dataset # doctest: +SKIP
-        >>> data = lj_speech_dataset() # doctest: +SKIP
-        >>> data[0:2] # doctest: +SKIP
-        [
-          {
-            'text': 'Printing, in the only sense with which we are at present concerned,...',
-            'wav_filename': 'data/LJSpeech-1.1/wavs/LJ001-0001.wav'
-          },
-          {
-            'text': 'in being comparatively modern.',
-            'wav_filename': 'data/LJSpeech-1.1/wavs/LJ001-0002.wav'
-          }
-        ]
+        >>> train, dev = lj_speech_dataset() # doctest: +SKIP
+        >>> pprint.pprint(train[0:2], width=80) # doctest: +SKIP
+        [{'text': 'Once a warrant-holder sent down a clerk to view certain goods, and '
+          'the clerk found that these goods had already a "stop" upon them, or '
+          'were pledged.',
+          'wav_filename': PosixPath('data/LJSpeech-1.1/wavs/'
+                                    'LJ014-0331-rate=24000-norm=-.001-guard.wav')},
+        {'text': "Lord Ferrers' body was brought to Surgeons' Hall after execution in "
+                  'his own carriage and six;',
+          'wav_filename': PosixPath('data/LJSpeech-1.1/wavs/'
+                                    'LJ009-0184-rate=24000-norm=-.001-guard.wav')}]
     """
     download_file_maybe_extract(url=url, directory=directory, check_files=check_files)
-    path = Path(directory, extracted_name, text_file)
+    path = Path(directory, extracted_name, metadata_file)
 
     def extract_fun(args):
         text, wav_filename = args

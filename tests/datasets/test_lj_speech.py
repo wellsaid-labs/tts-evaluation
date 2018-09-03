@@ -97,7 +97,7 @@ def test_lj_speech_dataset(mock_urlretrieve):
     assert seen == len(verbalize_test_cases)
 
 
-@mock.patch("src.datasets.process.os.system")
+@mock.patch("src.datasets._process.os.system")
 @mock.patch("urllib.request.urlretrieve")
 @pytest.mark.usefixtures("cleanup")
 def test_lj_speech_dataset_audio_processing(mock_urlretrieve, mock_os_system):
