@@ -127,7 +127,8 @@ class Trainer():  # pragma: no cover
 
         # Epoch Average Loss Metrics
         total_pre_frames_loss, total_post_frames_loss, total_stop_token_loss = 0.0, 0.0, 0.0
-        total_stop_token_predictions, total_frame_predictions = 0, 0
+        total_attention_norm = 0.0
+        total_frames, total_frame_predictions = 0, 0
 
         # Setup iterator and metrics
         data_iterator = DataIterator(
@@ -140,23 +141,26 @@ class Trainer():  # pragma: no cover
         for batch in data_iterator:
             draw_sample = not train and random.randint(1, len(data_iterator)) == 1
 
-            (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
-             num_stop_token_predictions) = self._run_step(
+            (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions, num_frames,
+             attention_norm) = self._run_step(
                  batch, train=train, sample=draw_sample)
 
             total_pre_frames_loss += pre_frames_loss * num_frame_predictions
             total_post_frames_loss += post_frames_loss * num_frame_predictions
-            total_stop_token_loss += stop_token_loss * num_stop_token_predictions
-            total_stop_token_predictions += num_stop_token_predictions
+            total_attention_norm += attention_norm * num_frames
+            total_stop_token_loss += stop_token_loss * num_frames
+            total_frames += num_frames
             total_frame_predictions += num_frame_predictions
 
-        epoch_stop_token_loss = total_stop_token_loss / total_stop_token_predictions
+        epoch_stop_token_loss = total_stop_token_loss / total_frames
+        epoch_attention_norm = total_attention_norm / total_frames
         epoch_pre_frame_loss = total_pre_frames_loss / total_frame_predictions
         epoch_post_frame_loss = total_post_frames_loss / total_frame_predictions
         if not trial_run:
             self.tensorboard.add_scalar('pre_frames/loss/epoch', epoch_pre_frame_loss, self.step)
             self.tensorboard.add_scalar('post_frames/loss/epoch', epoch_post_frame_loss, self.step)
             self.tensorboard.add_scalar('stop_token/loss/epoch', epoch_stop_token_loss, self.step)
+            self.tensorboard.add_scalar('attention/norm/epoch', epoch_attention_norm, self.step)
 
     def _compute_loss(self, batch, predicted_pre_frames, predicted_post_frames,
                       predicted_stop_tokens):
@@ -175,28 +179,26 @@ class Trainer():  # pragma: no cover
             pre_frames_loss (torch.Tensor [scalar])
             post_frames_loss (torch.Tensor [scalar])
             stop_token_loss (torch.Tensor [scalar])
-            num_frame_predictions (int): Number of realized frame predictions taking masking into
-                account.
-            num_stop_token_predictions (int): Number of realized stop token predictions taking
-                masking into account.
+            num_frame_predictions (int): Number of frame predictions.
+            num_frames (int): Number of frames.
         """
-        num_frame_predictions = torch.sum(batch['frames_mask'])
-        num_stop_token_predictions = torch.sum(batch['stop_token_mask'])
+        num_frame_predictions = torch.sum(batch['frame_values_mask'])
+        num_frames = torch.sum(batch['frames_mask'])
 
         # Average loss for pre frames, post frames and stop token loss
         pre_frames_loss = self.criterion_frames(predicted_pre_frames, batch['frames'])
-        pre_frames_loss = torch.sum(pre_frames_loss * batch['frames_mask']) / num_frame_predictions
+        pre_frames_loss = torch.sum(
+            pre_frames_loss * batch['frame_values_mask']) / num_frame_predictions
 
         post_frames_loss = self.criterion_frames(predicted_post_frames, batch['frames'])
         post_frames_loss = torch.sum(
-            post_frames_loss * batch['frames_mask']) / num_frame_predictions
+            post_frames_loss * batch['frame_values_mask']) / num_frame_predictions
 
         stop_token_loss = self.criterion_frames(predicted_stop_tokens, batch['stop_token'])
-        stop_token_loss = torch.sum(
-            stop_token_loss * batch['stop_token_mask']) / num_stop_token_predictions
+        stop_token_loss = torch.sum(stop_token_loss * batch['frames_mask']) / num_frames
 
         return (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
-                num_stop_token_predictions)
+                num_frames)
 
     def _sample_infered(self, batch, max_infer_frames=1000):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.
@@ -236,7 +238,6 @@ class Trainer():  # pragma: no cover
             self.tensorboard.add_log_mel_spectrogram('infered/gold_spectrogram', gold_frames)
             self.tensorboard.add_attention('infered/alignment', predicted_alignments[:, 0])
             self.tensorboard.add_stop_token('infered/stop_token', predicted_stop_tokens[:, 0])
-            self.tensorboard.add_text('infered/input', text)
 
     def _sample_predicted(self, batch, predicted_pre_frames, predicted_post_frames,
                           predicted_alignments, predicted_stop_tokens):
@@ -285,6 +286,26 @@ class Trainer():  # pragma: no cover
             self.tensorboard.add_stop_token('predicted/stop_token', predicted_stop_tokens)
             self.tensorboard.add_text('predicted/input', text)
 
+    def _compute_attention_norm(self, batch, predicted_alignments):
+        """ Computes the infinity norm of attention averaged over all alignments.
+
+        This metric is useful for tracking how "attentive" or "confident" attention.
+
+        Args:
+            batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
+            predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+
+        Returns:
+            attention_norm (torch.scalar)
+        """
+        # The infinity norm of attention averaged over all alignments.
+        # [num_frames, batch_size, num_tokens] → [num_frames, batch_size]
+        attention_norm = predicted_alignments.norm(float('inf'), dim=2)
+        # [num_frames, batch_size] → [num_frames, batch_size]
+        attention_norm = attention_norm * batch['frames_mask']
+        # [num_frames, batch_size] → scalar
+        return (attention_norm.sum() / batch['frames_mask'].sum()).item()
+
     def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
@@ -299,15 +320,17 @@ class Trainer():  # pragma: no cover
             stop_token_loss (torch.Tensor [scalar])
             num_frame_predictions (int): Number of realized frame predictions taking masking into
                 account.
-            num_stop_token_predictions (int): Number of realized stop token predictions taking
+            num_frames (int): Number of realized stop token predictions taking
                 masking into account.
+            attention_norm (float): The infinity norm of attention averaged over all alignments.
         """
         (predicted_pre_frames, predicted_post_frames, predicted_stop_tokens,
          predicted_alignments) = self.model(batch['text'], batch['frames'])
 
-        (pre_frames_loss, post_frames_loss, stop_token_loss,
-         num_frame_predictions, num_stop_token_predictions) = self._compute_loss(
+        (pre_frames_loss, post_frames_loss,
+         stop_token_loss, num_frame_predictions, num_frames) = self._compute_loss(
              batch, predicted_pre_frames, predicted_post_frames, predicted_stop_tokens)
+        attention_norm = self._compute_attention_norm(batch, predicted_alignments)
 
         if train:
             self.optimizer.zero_grad()
@@ -322,6 +345,7 @@ class Trainer():  # pragma: no cover
             self.tensorboard.add_scalar('pre_frames/loss/step', pre_frames_loss, self.step)
             self.tensorboard.add_scalar('post_frames/loss/step', post_frames_loss, self.step)
             self.tensorboard.add_scalar('stop_token/loss/step', stop_token_loss, self.step)
+            self.tensorboard.add_scalar('attention/norm/step', attention_norm, self.step)
             self.step += 1
 
         if sample:
@@ -330,7 +354,7 @@ class Trainer():  # pragma: no cover
             self._sample_infered(batch)
 
         return (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
-                num_stop_token_predictions)
+                num_frames, attention_norm)
 
 
 def main(checkpoint_path=None,

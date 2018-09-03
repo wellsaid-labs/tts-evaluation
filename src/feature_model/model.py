@@ -113,8 +113,8 @@ class SpectrogramModel(nn.Module):
             frames_with_residual (torch.FloatTensor [num_frames, batch_size, frame_channels]):
                 Predicted frames with the post net residual added.
             stop_token (torch.FloatTensor [num_frames, batch_size]): Probablity of stopping.
-            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]) All attention
-                alignments, stored for visualization and debugging
+            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention
+                alignments.
         """
         # [num_tokens, batch_size]  → [batch_size, num_tokens]
         tokens = tokens.transpose(0, 1)

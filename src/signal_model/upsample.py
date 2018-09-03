@@ -57,6 +57,7 @@ class ResidualBlock(nn.Module):
         tensor = tensor[:, :, less_width:tensor.shape[2] - less_width, less_height:tensor.shape[3] -
                         less_height]
 
+        # TODO: Consider multiplying by math.sqrt(0.5), normalizing the variance.
         return self.shortcut(tensor) + residual
 
 

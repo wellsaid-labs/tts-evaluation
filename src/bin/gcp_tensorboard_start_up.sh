@@ -31,16 +31,18 @@ run 'feature_model_sync_tensorboard' \
 echo 'Updating SSH files...'
 gcloud compute config-ssh
 
+# LEARN MORE: ``rsync`` slash on source
+# http://qdosmsq.dunbar-it.co.uk/blog/2013/02/rsync-to-slash-or-not-to-slash/
 run 'signal_model_sync_python' \
      "python3 -m src.bin.periodic_rsync \
         --destination ~/WellSaid-Labs-Text-To-Speech/sync/signal_model/  \
-        --source ~/WellSaid-Labs-Text-To-Speech/experiments/signal_model \
+        --source ~/WellSaid-Labs-Text-To-Speech/experiments/signal_model/ \
         --all;"
 
 run 'feature_model_sync_python' \
      "python3 -m src.bin.periodic_rsync \
         --destination ~/WellSaid-Labs-Text-To-Speech/sync/feature_model/  \
-        --source ~/WellSaid-Labs-Text-To-Speech/experiments/feature_model \
+        --source ~/WellSaid-Labs-Text-To-Speech/experiments/feature_model/ \
         --all;"
 
 run 'backup' \
