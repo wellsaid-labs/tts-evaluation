@@ -63,6 +63,5 @@
     "new": "cpp",
     "stdexcept": "cpp",
     "typeinfo": "cpp"
-  },
-  "python.pythonPath": "/Users/michaelp/.pyenv/versions/3.6.5/bin/python"
+  }
 }
