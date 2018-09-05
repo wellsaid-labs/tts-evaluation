@@ -20,6 +20,7 @@ from src.utils.visualize import plot_stop_token
 from src.utils.visualize import plot_waveform
 from src.utils.visualize import spectrogram_to_image
 from src.utils.visualize import Tensorboard
+from src.utils.data_loader import DataLoader
 
 __all__ = [
     'configurable', 'experiment_context_manager', 'ROOT_PATH', 'get_total_parameters',
@@ -27,5 +28,5 @@ __all__ = [
     'ExponentiallyWeightedMovingAverage', 'AnomalyDetector', 'parse_hparam_args', 'split_signal',
     'combine_signal', 'Tensorboard', 'split_dataset', 'plot_attention', 'plot_stop_token',
     'plot_waveform', 'torch_save', 'torch_load', 'plot_log_mel_spectrogram', 'spectrogram_to_image',
-    'get_filename_table'
+    'get_filename_table', 'DataLoader'
 ]

@@ -1,9 +1,10 @@
 import random
 import torch
 
-from torch.utils.data import DataLoader
 from torch.utils.data.sampler import Sampler
 from torchnlp.utils import pad_batch
+
+from src.utils import DataLoader
 
 
 class RandomSampler(Sampler):

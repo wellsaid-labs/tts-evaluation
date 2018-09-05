@@ -1,8 +1,9 @@
 import torch
 
-from torch.utils.data import DataLoader
 from torchnlp.samplers import BucketBatchSampler
 from torchnlp.utils import pad_batch
+
+from src.utils import DataLoader
 
 
 class DataIterator(object):
