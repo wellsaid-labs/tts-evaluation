@@ -100,19 +100,22 @@ def main(instances, source, destination, scheduler, repeat_every=5):  # pragma: 
 
         if status == INSTANCE_RUNNING:
             server = '.'.join([name, zone, project])
-            server_destination = (destination / name).expanduser().resolve()
+            server_destination = destination / name
 
             if not server_destination.is_dir():
                 logger.info('Making directory %s', str(server_destination))
                 server_destination.mkdir(parents=True)
+
+            server_destination = server_destination.expanduser().resolve()
 
             # NOTE: Updates must be inplace due to this:
             # https://github.com/tensorflow/tensorboard/issues/349
             # NOTE: ``--rsh="ssh -o ConnectTimeout=1"`` in case a server is not responsive.
             # NOTE: Exclude ``*.pt`` or pytorch files, typically, large checkpoint files.
             command = [
-                'rsync', '--archive', '--verbose', '--rsh', 'ssh -o ConnectTimeout=1', '--exclude',
-                '*.pt', '--human-readable', '--compress', '--inplace',
+                'rsync', '--archive', '--verbose', '--rsh',
+                'ssh -o ConnectTimeout=1 -o StrictHostKeyChecking=no', '--exclude', '*.pt',
+                '--human-readable', '--compress', '--inplace',
                 '%s:%s' % (server, source),
                 '%s' % (server_destination)
             ]
