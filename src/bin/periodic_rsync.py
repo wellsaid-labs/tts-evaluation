@@ -110,12 +110,14 @@ def main(instances, source, destination, scheduler, repeat_every=5):  # pragma: 
 
             # NOTE: Updates must be inplace due to this:
             # https://github.com/tensorflow/tensorboard/issues/349
-            # NOTE: ``--rsh="ssh -o ConnectTimeout=1"`` in case a server is not responsive.
+            # NOTE: ``--rsh="ssh -o ConnectTimeout=10"`` in case a server is not responsive.
             # NOTE: Exclude ``*.pt`` or pytorch files, typically, large checkpoint files.
+            # LEARN MORE:
+            # https://stackoverflow.com/questions/4936807/how-to-do-ssh-with-a-timeout-in-a-script
             command = [
                 'rsync', '--archive', '--verbose', '--rsh',
-                'ssh -o ConnectTimeout=1 -o StrictHostKeyChecking=no', '--exclude', '*.pt',
-                '--human-readable', '--compress', '--inplace',
+                'ssh -o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=no',
+                '--exclude', '*.pt', '--human-readable', '--compress', '--inplace',
                 '%s:%s' % (server, source),
                 '%s' % (server_destination)
             ]

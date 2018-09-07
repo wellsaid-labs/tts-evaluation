@@ -32,9 +32,7 @@ def get_available_instances():  # pragma: no cover
     """
     instances = json.loads(
         subprocess.check_output('gcloud compute instances list --format json', shell=True))
-    instances = [
-        i for i in instances if i['scheduling']['preemptible'] and i['status'] == INSTANCE_RUNNING
-    ]
+    instances = [i for i in instances if i['scheduling']['preemptible']]
     filtered_instances = []
     for instance in sorted(instances, key=lambda i: i['name']):
         response = ''
