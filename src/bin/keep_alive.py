@@ -4,6 +4,8 @@ This script runs a loop to restart preetible servers.
 NOTE: Within the example, we add ``shutdown now`` incase the ``python3`` process dies; therefore,
 queuing it up to be rebooted by ``keep_alive.py``.
 
+TODO: Create a GCP ulities package merging functionality in ``keep_alive`` and ``periodic_rsync``.
+
 Example:
 
     python3 -m src.bin.keep_alive --command="screen -dm bash -c \
@@ -32,14 +34,22 @@ def get_available_instances():  # pragma: no cover
     """
     instances = json.loads(
         subprocess.check_output('gcloud compute instances list --format json', shell=True))
-    instances = [
-        i for i in instances if i['scheduling']['preemptible'] and i['status'] == INSTANCE_RUNNING
-    ]
+    instances = [i for i in instances if i['scheduling']['preemptible']]
     filtered_instances = []
     for instance in sorted(instances, key=lambda i: i['name']):
         response = ''
+        num_gpu = 0
+        gpu = 'GPU'
+
+        if 'guestAccelerators' in instance:
+            # Example ``instance['guestAccelerators'][0]['acceleratorType']`` value:
+            # https://www.googleapis.com/compute/v1/projects/mythical-runner-203817/zones/us-west1-b/acceleratorTypes/nvidia-tesla-p100
+            gpu = instance['guestAccelerators'][0]['acceleratorType'].split('/')[-1].upper()
+            num_gpu = instance['guestAccelerators'][0]['acceleratorCount']
+
         while response not in ['Y', 'n']:
-            response = input('Keep alive instance "%s"? (Y/n) ' % instance['name'])
+            response = input('Keep alive instance "%s" (%dx%s, %s)? (Y/n) ' %
+                             (instance['name'], num_gpu, gpu, instance['status']))
             if response == 'Y':
                 filtered_instances.append(instance)
     logger.info('Keeping alive instances: %s', [i['name'] for i in filtered_instances])

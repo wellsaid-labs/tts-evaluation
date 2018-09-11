@@ -30,7 +30,7 @@ def set_hparams():
         # We also apply L2 regularization with weight 10−6
         'torch.optim.adam.Adam.__init__': {
             'eps': 10**-6,
-            'weight_decay': 10**-6,
+            'weight_decay': 10**-5,
         },
         'src.bin.feature_model': {
             'train.Trainer.__init__': {
