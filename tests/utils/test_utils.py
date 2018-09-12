@@ -1,9 +1,9 @@
-import torch
-
 from torch import nn
 from torch.nn import functional
 
 import numpy as np
+import pytest
+import torch
 
 from src.feature_model import FeatureModel
 from src.optimizer import Optimizer
@@ -17,7 +17,16 @@ from src.utils import ROOT_PATH
 from src.utils import save_checkpoint
 from src.utils import split_dataset
 from src.utils import split_signal
+from src.utils import get_weighted_standard_deviation
 from src.utils.experiment_context_manager import ExperimentContextManager
+
+
+def test_get_weighted_standard_deviation():
+    tensor = torch.Tensor([[[0.33333, 0.33333, 0.33334], [0, 0.5, 0.5]], [[0, 0.5, 0.5],
+                                                                          [0, 0.5, 0.5]]])
+    standard_deviation = get_weighted_standard_deviation(tensor, dim=2)
+    assert standard_deviation[0][0].item() == pytest.approx(1.000, abs=1e-3)
+    assert standard_deviation[0][1].item() == pytest.approx(0.7071, abs=1e-3)
 
 
 class MockModel(nn.Module):
