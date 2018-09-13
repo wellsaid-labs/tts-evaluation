@@ -18,9 +18,10 @@ from src.feature_model import FeatureModel
 from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
 from src.utils import get_total_parameters
+from src.utils import get_weighted_standard_deviation
+from src.utils import load_checkpoint
 from src.utils import load_most_recent_checkpoint
 from src.utils import parse_hparam_args
-from src.utils import load_checkpoint
 from src.utils import save_checkpoint
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
@@ -127,7 +128,7 @@ class Trainer():  # pragma: no cover
 
         # Epoch Average Loss Metrics
         total_pre_frames_loss, total_post_frames_loss, total_stop_token_loss = 0.0, 0.0, 0.0
-        total_attention_norm = 0.0
+        total_attention_norm, total_attention_standard_deviation = 0.0, 0.0
         total_frames, total_frame_predictions = 0, 0
 
         # Setup iterator and metrics
@@ -142,18 +143,20 @@ class Trainer():  # pragma: no cover
             draw_sample = not train and random.randint(1, len(data_iterator)) == 1
 
             (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions, num_frames,
-             attention_norm) = self._run_step(
+             attention_norm, attention_standard_deviation) = self._run_step(
                  batch, train=train, sample=draw_sample)
 
             total_pre_frames_loss += pre_frames_loss * num_frame_predictions
             total_post_frames_loss += post_frames_loss * num_frame_predictions
             total_attention_norm += attention_norm * num_frames
+            total_attention_standard_deviation += attention_standard_deviation * num_frames
             total_stop_token_loss += stop_token_loss * num_frames
             total_frames += num_frames
             total_frame_predictions += num_frame_predictions
 
         epoch_stop_token_loss = total_stop_token_loss / total_frames
         epoch_attention_norm = total_attention_norm / total_frames
+        epoch_attention_standard_deviation = total_attention_standard_deviation / total_frames
         epoch_pre_frame_loss = total_pre_frames_loss / total_frame_predictions
         epoch_post_frame_loss = total_post_frames_loss / total_frame_predictions
         if not trial_run:
@@ -161,6 +164,8 @@ class Trainer():  # pragma: no cover
             self.tensorboard.add_scalar('post_frames/loss/epoch', epoch_post_frame_loss, self.step)
             self.tensorboard.add_scalar('stop_token/loss/epoch', epoch_stop_token_loss, self.step)
             self.tensorboard.add_scalar('attention/norm/epoch', epoch_attention_norm, self.step)
+            self.tensorboard.add_scalar('attention/standard_deviation/epoch',
+                                        epoch_attention_standard_deviation, self.step)
 
     def _compute_loss(self, batch, predicted_pre_frames, predicted_post_frames,
                       predicted_stop_tokens):
@@ -289,7 +294,7 @@ class Trainer():  # pragma: no cover
     def _compute_attention_norm(self, batch, predicted_alignments):
         """ Computes the infinity norm of attention averaged over all alignments.
 
-        This metric is useful for tracking how "attentive" or "confident" attention.
+        This metric is useful for tracking how "attentive" or "confident" attention on one token.
 
         Args:
             batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
@@ -305,6 +310,25 @@ class Trainer():  # pragma: no cover
         attention_norm = attention_norm * batch['frames_mask']
         # [num_frames, batch_size] → scalar
         return (attention_norm.sum() / batch['frames_mask'].sum()).item()
+
+    def _compute_attention_standard_deviation(self, batch, predicted_alignments):
+        """ Computes the standard deviation of the alignment averaged over all alignments.
+
+        This metric is useful for tracking how "attentive" or "confident" attention in one area.
+
+        Args:
+            batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
+            predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+
+        Returns:
+            attention_standard_deviation (torch.scalar)
+        """
+        # [num_frames, batch_size, num_tokens] → [num_frames, batch_size]
+        attention_standard_deviation = get_weighted_standard_deviation(predicted_alignments, dim=2)
+        # [num_frames, batch_size] → [num_frames, batch_size]
+        attention_standard_deviation = attention_standard_deviation * batch['frames_mask']
+        # [num_frames, batch_size] → scalar
+        return (attention_standard_deviation.sum() / batch['frames_mask'].sum()).item()
 
     def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
@@ -331,6 +355,8 @@ class Trainer():  # pragma: no cover
          stop_token_loss, num_frame_predictions, num_frames) = self._compute_loss(
              batch, predicted_pre_frames, predicted_post_frames, predicted_stop_tokens)
         attention_norm = self._compute_attention_norm(batch, predicted_alignments)
+        attention_standard_deviation = self._compute_attention_standard_deviation(
+            batch, predicted_alignments)
 
         if train:
             self.optimizer.zero_grad()
@@ -346,6 +372,8 @@ class Trainer():  # pragma: no cover
             self.tensorboard.add_scalar('post_frames/loss/step', post_frames_loss, self.step)
             self.tensorboard.add_scalar('stop_token/loss/step', stop_token_loss, self.step)
             self.tensorboard.add_scalar('attention/norm/step', attention_norm, self.step)
+            self.tensorboard.add_scalar('attention/standard_deviation/step',
+                                        attention_standard_deviation, self.step)
             self.step += 1
 
         if sample:
@@ -354,7 +382,7 @@ class Trainer():  # pragma: no cover
             self._sample_infered(batch)
 
         return (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
-                num_frames, attention_norm)
+                num_frames, attention_norm, attention_standard_deviation)
 
 
 def main(checkpoint_path=None,
