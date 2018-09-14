@@ -3,6 +3,12 @@ from pathlib import Path
 import argparse
 import logging
 import random
+import warnings
+
+# LEARN MORE:
+# https://stackoverflow.com/questions/40845304/runtimewarning-numpy-dtype-size-changed-may-indicate-binary-incompatibility
+warnings.filterwarnings('ignore', message='numpy.dtype size changed')
+warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
 
 from torch.nn import BCELoss
 from torch.nn import MSELoss
@@ -138,7 +144,7 @@ class Trainer():  # pragma: no cover
             self.train_batch_size if train else self.dev_batch_size,
             trial_run=trial_run,
             num_workers=self.num_workers)
-        data_iterator = tqdm(data_iterator, desc=label)
+        data_iterator = tqdm(data_iterator, desc=label, smoothing=0)
         for batch in data_iterator:
             draw_sample = not train and random.randint(1, len(data_iterator)) == 1
 
