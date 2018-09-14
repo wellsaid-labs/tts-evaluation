@@ -90,8 +90,8 @@ class Trainer():  # pragma: no cover
         self.num_workers = num_workers
         self.text_encoder = text_encoder
 
-        self.criterion_frames = criterion_frames(reduce=False).to(self.device)
-        self.criterion_stop_token = criterion_stop_token(reduce=False).to(self.device)
+        self.criterion_frames = criterion_frames(reduction='none').to(self.device)
+        self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step: %d', self.step)

@@ -93,7 +93,7 @@ class Trainer():  # pragma: no cover
         self.anomaly_detector = anomaly_detector if isinstance(
             anomaly_detector, AnomalyDetector) else AnomalyDetector()
 
-        self.criterion = criterion(reduce=False).to(device)
+        self.criterion = criterion(reduction='none').to(device)
 
         self.dev_tensorboard = dev_tensorboard
         self.train_tensorboard = train_tensorboard
