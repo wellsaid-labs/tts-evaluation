@@ -160,7 +160,7 @@ class Trainer():  # pragma: no cover
             total_frames += num_frames
             total_frame_predictions += num_frame_predictions
 
-        if not trial_run:
+        if trial_run:
             return
 
         with self.tensorboard.set_step(self.step) as tb:
