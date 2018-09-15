@@ -160,19 +160,17 @@ class Trainer():  # pragma: no cover
             total_frames += num_frames
             total_frame_predictions += num_frame_predictions
 
-        epoch_stop_token_loss = total_stop_token_loss / total_frames
-        epoch_attention_norm = total_attention_norm / total_frames
-        epoch_attention_standard_deviation = total_attention_standard_deviation / total_frames
-        epoch_pre_frame_loss = total_pre_frames_loss / total_frame_predictions
-        epoch_post_frame_loss = total_post_frames_loss / total_frame_predictions
         if not trial_run:
-            with self.tensorboard.set_step(self.step) as tb:
-                tb.add_scalar('pre_frames/loss/epoch', epoch_pre_frame_loss)
-                tb.add_scalar('post_frames/loss/epoch', epoch_post_frame_loss)
-                tb.add_scalar('stop_token/loss/epoch', epoch_stop_token_loss)
-                tb.add_scalar('attention/norm/epoch', epoch_attention_norm)
-                tb.add_scalar('attention/standard_deviation/epoch',
-                              epoch_attention_standard_deviation)
+            return
+
+        with self.tensorboard.set_step(self.step) as tb:
+            tb.add_scalar('pre_frames/loss/epoch', total_pre_frames_loss / total_frame_predictions)
+            tb.add_scalar('post_frames/loss/epoch',
+                          total_post_frames_loss / total_frame_predictions)
+            tb.add_scalar('stop_token/loss/epoch', total_stop_token_loss / total_frames)
+            tb.add_scalar('attention/norm/epoch', total_attention_norm / total_frames)
+            tb.add_scalar('attention/standard_deviation/epoch',
+                          total_attention_standard_deviation / total_frames)
 
     def _compute_loss(self, batch, predicted_pre_frames, predicted_post_frames,
                       predicted_stop_tokens):
