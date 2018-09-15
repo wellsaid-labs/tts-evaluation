@@ -1,29 +1,48 @@
+""" Borrowed from https://github.com/pytorch/pytorch with a fix for
+https://github.com/pytorch/pytorch/pull/9804
+"""
 import random
 import torch
 import torch.multiprocessing as multiprocessing
 from torch._C import _set_worker_signal_handlers, _update_worker_pids, \
     _remove_worker_pids, _error_if_any_worker_fails
-from . import SequentialSampler, RandomSampler, BatchSampler
+from torch.utils.data import SequentialSampler, RandomSampler, BatchSampler
 import signal
-import functools
-from torch._six import container_abcs
 import re
 import sys
 import threading
 import traceback
 import os
-import time
-from torch._six import string_classes, int_classes, FileNotFoundError
 
 IS_WINDOWS = sys.platform == "win32"
 if IS_WINDOWS:
     import ctypes
     from ctypes.wintypes import DWORD, BOOL, HANDLE
 
+PY2 = sys.version_info[0] == 2
+PY3 = sys.version_info[0] == 3
+
 if sys.version_info[0] == 2:
     import Queue as queue
 else:
     import queue
+
+if PY2:
+    import collections
+    container_abcs = collections
+elif PY3:
+    import collections.abc
+    container_abcs = collections.abc
+
+if PY2:
+    string_classes = basestring  # noqa: F821
+else:
+    string_classes = (str, bytes)
+
+if PY2:
+    int_classes = (int, long)  # noqa: F821
+else:
+    int_classes = int
 
 
 class ExceptionWrapper(object):
@@ -62,7 +81,8 @@ if IS_WINDOWS:
                 raise ctypes.WinError(ctypes.get_last_error())
 
         def is_alive(self):
-            # Value obtained from https://msdn.microsoft.com/en-us/library/windows/desktop/ms687032.aspx
+            # Value obtained from
+            # https://msdn.microsoft.com/en-us/library/windows/desktop/ms687032.aspx
             return self.kernel32.WaitForSingleObject(self.manager_handle, 0) != 0
 else:
 
