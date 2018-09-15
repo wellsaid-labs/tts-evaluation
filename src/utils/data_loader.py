@@ -1,21 +1,19 @@
-""" Borrowed from https://github.com/pytorch/pytorch with a fix for
-https://github.com/pytorch/pytorch/pull/9804
-"""
 import random
 import torch
 import torch.multiprocessing as multiprocessing
 from torch._C import _set_worker_signal_handlers, _update_worker_pids, \
     _remove_worker_pids, _error_if_any_worker_fails
-from torch.utils.data import SequentialSampler, RandomSampler, BatchSampler
+from . import SequentialSampler, RandomSampler, BatchSampler
 import signal
-import os
+import functools
+from torch._six import container_abcs
 import re
 import sys
 import threading
 import traceback
-
-PY2 = sys.version_info[0] == 2
-PY3 = sys.version_info[0] == 3
+import os
+import time
+from torch._six import string_classes, int_classes, FileNotFoundError
 
 IS_WINDOWS = sys.platform == "win32"
 if IS_WINDOWS:
@@ -26,23 +24,6 @@ if sys.version_info[0] == 2:
     import Queue as queue
 else:
     import queue
-
-if PY2:
-    import collections
-    container_abcs = collections
-elif PY3:
-    import collections.abc
-    container_abcs = collections.abc
-
-if PY2:
-    string_classes = basestring  # noqa: F821
-else:
-    string_classes = (str, bytes)
-
-if PY2:
-    int_classes = (int, long)  # noqa: F821
-else:
-    int_classes = int
 
 
 class ExceptionWrapper(object):
@@ -81,8 +62,7 @@ if IS_WINDOWS:
                 raise ctypes.WinError(ctypes.get_last_error())
 
         def is_alive(self):
-            # Value obtained from
-            # https://msdn.microsoft.com/en-us/library/windows/desktop/ms687032.aspx
+            # Value obtained from https://msdn.microsoft.com/en-us/library/windows/desktop/ms687032.aspx
             return self.kernel32.WaitForSingleObject(self.manager_handle, 0) != 0
 else:
 
@@ -97,49 +77,53 @@ else:
 
 def _worker_loop(dataset, index_queue, data_queue, done_event, collate_fn, seed, init_fn,
                  worker_id):
-    global _use_shared_memory
-    _use_shared_memory = True
+    try:
+        global _use_shared_memory
+        _use_shared_memory = True
 
-    # Intialize C side signal handlers for SIGBUS and SIGSEGV. Python signal
-    # module's handlers are executed after Python returns from C low-level
-    # handlers, likely when the same fatal signal happened again already.
-    # https://docs.python.org/3/library/signal.html Sec. 18.8.1.1
-    _set_worker_signal_handlers()
+        # Intialize C side signal handlers for SIGBUS and SIGSEGV. Python signal
+        # module's handlers are executed after Python returns from C low-level
+        # handlers, likely when the same fatal signal happened again already.
+        # https://docs.python.org/3/library/signal.html Sec. 18.8.1.1
+        _set_worker_signal_handlers()
 
-    torch.set_num_threads(1)
-    random.seed(seed)
-    torch.manual_seed(seed)
+        torch.set_num_threads(1)
+        random.seed(seed)
+        torch.manual_seed(seed)
 
-    # Do not wait for putting thread to join when this worker exits. Otherwise,
-    # this worker may always be waiting to put and doesn't check index_queue
-    # and done_event for termination signal.
-    data_queue.cancel_join_thread()
+        # Do not wait for putting thread to join when this worker exits.
+        # Otherwise, this worker may always be waiting to put and doesn't check
+        # index_queue and done_event for termination signal.
+        data_queue.cancel_join_thread()
 
-    if init_fn is not None:
-        init_fn(worker_id)
+        if init_fn is not None:
+            init_fn(worker_id)
 
-    watchdog = ManagerWatchdog()
+        watchdog = ManagerWatchdog()
 
-    while True:
-        try:
-            r = index_queue.get(timeout=MANAGER_STATUS_CHECK_INTERVAL)
-        except queue.Empty:
-            if watchdog.is_alive() and not done_event.is_set():
-                continue
-            else:
+        while True:
+            try:
+                r = index_queue.get(timeout=MANAGER_STATUS_CHECK_INTERVAL)
+            except queue.Empty:
+                if watchdog.is_alive() and not done_event.is_set():
+                    continue
+                else:
+                    break
+            # use done_event so that we can get faster exiting signal even if there
+            # are still indices in index_queue
+            if r is None or done_event.is_set():
                 break
-        # use done_event so that we can get faster exiting signal even if there
-        # are still indices in index_queue
-        if r is None or done_event.is_set():
-            break
-        idx, batch_indices = r
-        try:
-            samples = collate_fn([dataset[i] for i in batch_indices])
-        except Exception:
-            data_queue.put((idx, ExceptionWrapper(sys.exc_info())))
-        else:
-            data_queue.put((idx, samples))
-            del samples
+            idx, batch_indices = r
+            try:
+                samples = collate_fn([dataset[i] for i in batch_indices])
+            except Exception:
+                data_queue.put((idx, ExceptionWrapper(sys.exc_info())))
+            else:
+                data_queue.put((idx, samples))
+                del samples
+    except KeyboardInterrupt:
+        # Main process will raise KeyboardInterrupt anyways.
+        pass
 
 
 def _pin_memory_loop(in_queue, out_queue, done_event, pin_memory, device_id):
