@@ -166,12 +166,13 @@ class Trainer():  # pragma: no cover
         epoch_pre_frame_loss = total_pre_frames_loss / total_frame_predictions
         epoch_post_frame_loss = total_post_frames_loss / total_frame_predictions
         if not trial_run:
-            self.tensorboard.add_scalar('pre_frames/loss/epoch', epoch_pre_frame_loss, self.step)
-            self.tensorboard.add_scalar('post_frames/loss/epoch', epoch_post_frame_loss, self.step)
-            self.tensorboard.add_scalar('stop_token/loss/epoch', epoch_stop_token_loss, self.step)
-            self.tensorboard.add_scalar('attention/norm/epoch', epoch_attention_norm, self.step)
-            self.tensorboard.add_scalar('attention/standard_deviation/epoch',
-                                        epoch_attention_standard_deviation, self.step)
+            with self.tensorboard.set_step(self.step) as tb:
+                tb.add_scalar('pre_frames/loss/epoch', epoch_pre_frame_loss)
+                tb.add_scalar('post_frames/loss/epoch', epoch_post_frame_loss)
+                tb.add_scalar('stop_token/loss/epoch', epoch_stop_token_loss)
+                tb.add_scalar('attention/norm/epoch', epoch_attention_norm)
+                tb.add_scalar('attention/standard_deviation/epoch',
+                              epoch_attention_standard_deviation)
 
     def _compute_loss(self, batch, predicted_pre_frames, predicted_post_frames,
                       predicted_stop_tokens):
@@ -240,15 +241,13 @@ class Trainer():  # pragma: no cover
         text = self.text_encoder.decode(text)
         predicted_residual = predicted_post_frames - predicted_pre_frames
 
-        with self.tensorboard.set_step(self.step):
-            self.tensorboard.add_text('infered/input', text)
-            self.tensorboard.add_log_mel_spectrogram('infered/predicted_spectrogram',
-                                                     predicted_post_frames[:, 0])
-            self.tensorboard.add_log_mel_spectrogram('infered/residual_spectrogram',
-                                                     predicted_residual[:, 0])
-            self.tensorboard.add_log_mel_spectrogram('infered/gold_spectrogram', gold_frames)
-            self.tensorboard.add_attention('infered/alignment', predicted_alignments[:, 0])
-            self.tensorboard.add_stop_token('infered/stop_token', predicted_stop_tokens[:, 0])
+        with self.tensorboard.set_step(self.step) as tb:
+            tb.add_text('infered/input', text)
+            tb.add_log_mel_spectrogram('infered/predicted_spectrogram', predicted_post_frames[:, 0])
+            tb.add_log_mel_spectrogram('infered/residual_spectrogram', predicted_residual[:, 0])
+            tb.add_log_mel_spectrogram('infered/gold_spectrogram', gold_frames)
+            tb.add_attention('infered/alignment', predicted_alignments[:, 0])
+            tb.add_stop_token('infered/stop_token', predicted_stop_tokens[:, 0])
 
     def _sample_predicted(self, batch, predicted_pre_frames, predicted_post_frames,
                           predicted_alignments, predicted_stop_tokens):
@@ -285,17 +284,14 @@ class Trainer():  # pragma: no cover
         predicted_alignments = predicted_alignments[:spectrogam_length, item, :text_length]
         predicted_stop_tokens = predicted_stop_tokens[:spectrogam_length, item]
 
-        with self.tensorboard.set_step(self.step):
-            self.tensorboard.add_log_mel_spectrogram('predicted/predicted_spectrogram',
-                                                     predicted_post_frames)
-            self.tensorboard.add_log_mel_spectrogram('predicted/residual_spectrogram',
-                                                     predicted_residual)
-            self.tensorboard.add_log_mel_spectrogram('predicted/delta_spectrogram',
-                                                     predicted_gold_delta)
-            self.tensorboard.add_log_mel_spectrogram('predicted/gold_spectrogram', gold_frames)
-            self.tensorboard.add_attention('predicted/alignment', predicted_alignments)
-            self.tensorboard.add_stop_token('predicted/stop_token', predicted_stop_tokens)
-            self.tensorboard.add_text('predicted/input', text)
+        with self.tensorboard.set_step(self.step) as tb:
+            tb.add_log_mel_spectrogram('predicted/predicted_spectrogram', predicted_post_frames)
+            tb.add_log_mel_spectrogram('predicted/residual_spectrogram', predicted_residual)
+            tb.add_log_mel_spectrogram('predicted/delta_spectrogram', predicted_gold_delta)
+            tb.add_log_mel_spectrogram('predicted/gold_spectrogram', gold_frames)
+            tb.add_attention('predicted/alignment', predicted_alignments)
+            tb.add_stop_token('predicted/stop_token', predicted_stop_tokens)
+            tb.add_text('predicted/input', text)
 
     def _compute_attention_norm(self, batch, predicted_alignments):
         """ Computes the infinity norm of attention averaged over all alignments.
@@ -374,12 +370,12 @@ class Trainer():  # pragma: no cover
             loss.item() for loss in (pre_frames_loss, post_frames_loss, stop_token_loss))
 
         if train:
-            self.tensorboard.add_scalar('pre_frames/loss/step', pre_frames_loss, self.step)
-            self.tensorboard.add_scalar('post_frames/loss/step', post_frames_loss, self.step)
-            self.tensorboard.add_scalar('stop_token/loss/step', stop_token_loss, self.step)
-            self.tensorboard.add_scalar('attention/norm/step', attention_norm, self.step)
-            self.tensorboard.add_scalar('attention/standard_deviation/step',
-                                        attention_standard_deviation, self.step)
+            with self.tensorboard.set_step(self.step) as tb:
+                tb.add_scalar('pre_frames/loss/step', pre_frames_loss)
+                tb.add_scalar('post_frames/loss/step', post_frames_loss)
+                tb.add_scalar('stop_token/loss/step', stop_token_loss)
+                tb.add_scalar('attention/norm/step', attention_norm)
+                tb.add_scalar('attention/standard_deviation/step', attention_standard_deviation)
             self.step += 1
 
         if sample:
