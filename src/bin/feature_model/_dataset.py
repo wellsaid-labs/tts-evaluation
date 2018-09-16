@@ -1,4 +1,4 @@
-from multiprocessing import Pool
+from concurrent.futures import ThreadPoolExecutor
 
 import logging
 
@@ -67,19 +67,20 @@ class FeatureDataset(data.Dataset):
         # Create text_encoder
         if text_encoder is None:
             logger.info('Computing text encoder from %s', source)
-            with Pool() as pool:
+
+            with ThreadPoolExecutor() as pool:
                 filenames = [row[self.text_key] for row in self.rows]
-                texts = list(tqdm.tqdm(pool.imap(read_file, filenames), total=len(filenames)))
+                texts = list(tqdm.tqdm(pool.map(read_file, filenames), total=len(filenames)))
             self.text_encoder = CharacterEncoder(texts)
         else:
             self.text_encoder = text_encoder
 
         # Spectrograms lengths for sorting
         logger.info('Computing spectrogram lengths from %s', source)
-        with Pool() as pool:
+        with ThreadPoolExecutor() as pool:
             filenames = [row[self.spectrogram_key] for row in self.rows]
             self.spectrogram_lengths = list(
-                tqdm.tqdm(pool.imap(get_spectrogram_length, filenames), total=len(filenames)))
+                tqdm.tqdm(pool.map(get_spectrogram_length, filenames), total=len(filenames)))
 
         self.load_signal = load_signal
 

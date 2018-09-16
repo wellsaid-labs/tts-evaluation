@@ -82,7 +82,7 @@ def main(checkpoint,
     train, dev, text_encoder = load_data(text_encoder=text_encoder, load_signal=True)
 
     # Check to ensure the the spectrogram loss is similar
-    criterion_frames = MSELoss(reduce=False).to(device)
+    criterion_frames = MSELoss(reduction='none').to(device)
 
     logger.info('Device: %s', device)
     logger.info('Number of Train Rows: %d', len(train))

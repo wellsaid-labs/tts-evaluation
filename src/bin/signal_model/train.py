@@ -5,6 +5,12 @@ import collections
 import logging
 import random
 import time
+import warnings
+
+# LEARN MORE:
+# https://stackoverflow.com/questions/40845304/runtimewarning-numpy-dtype-size-changed-may-indicate-binary-incompatibility
+warnings.filterwarnings('ignore', message='numpy.dtype size changed')
+warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
 
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
@@ -93,7 +99,7 @@ class Trainer():  # pragma: no cover
         self.anomaly_detector = anomaly_detector if isinstance(
             anomaly_detector, AnomalyDetector) else AnomalyDetector()
 
-        self.criterion = criterion(reduce=False).to(device)
+        self.criterion = criterion(reduction='none').to(device)
 
         self.dev_tensorboard = dev_tensorboard
         self.train_tensorboard = train_tensorboard
@@ -174,7 +180,7 @@ class Trainer():  # pragma: no cover
             trial_run=trial_run,
             num_workers=self.num_workers,
             random=self.random)
-        data_iterator = tqdm(data_iterator, desc=label)
+        data_iterator = tqdm(data_iterator, desc=label, smoothing=0)
         for i, batch in enumerate(data_iterator):
             if (i == 0 and self.step_unit == self.STEP_UNIT_DECISECONDS):
                 start = time.time() * 10

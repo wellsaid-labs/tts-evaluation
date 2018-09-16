@@ -83,10 +83,9 @@ class AutoregressiveDecoder(nn.Module):
         self.attention_context_size = attention_context_size
         attention_hidden_size = attention_context_size
         self.pre_net = PreNet(hidden_size=pre_net_hidden_size, frame_channels=frame_channels)
-        self.lstm_layer_one = nn.LSTM(
+        self.lstm_layer_one = nn.LSTMCell(
             input_size=pre_net_hidden_size + self.attention_context_size,
-            hidden_size=lstm_hidden_size,
-            num_layers=1)
+            hidden_size=lstm_hidden_size)
         self.lstm_layer_one_dropout = nn.Dropout(p=lstm_dropout)
         self.lstm_hidden_size = lstm_hidden_size
         self.lstm_layer_two = nn.LSTM(
@@ -132,6 +131,7 @@ class AutoregressiveDecoder(nn.Module):
                 shifted back one timestep if ``ground_truth_frames is not None``; otherwise, the
                 initial or last frame is returned.
             lstm_one_hidden_state (tuple): Hidden state for lstm.
+            lstm_two_hidden_state (tuple): Hidden state for lstm.
             last_attention_context (torch.FloatTensor [batch_size, attention_context_size]):
                 Last attention context to condition the decoder.
             cumulative_alignment (torch.FloatTensor [batch_size, num_tokens]): The last
@@ -145,9 +145,8 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         if hidden_state is None:
             # Tacotron 2 authors confirmed that initially the decoder is conditioned on a fixed zero
             # initial vectors.
-            hidden_state = tensor(1, batch_size, self.lstm_hidden_size).zero_()
-            cell_state = tensor(1, batch_size, self.lstm_hidden_size).zero_()
-            initial_lstm_one_hidden_state = (hidden_state, cell_state)
+            initial_lstm_one_hidden_state = None
+            initial_lstm_two_hidden_state = None
             initial_alignment = tensor(batch_size, num_tokens).zero_()
             initial_attention_context = tensor(batch_size, self.attention_context_size).zero_()
             initial_frames = tensor(1, batch_size, self.frame_channels).zero_()
@@ -158,15 +157,17 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             if ground_truth_frames is not None:
                 initial_frames = torch.cat([initial_frames, ground_truth_frames[0:-1]])
 
-            return (initial_frames, initial_lstm_one_hidden_state, initial_attention_context,
-                    initial_alignment)
+            return (initial_frames, initial_lstm_one_hidden_state, initial_lstm_two_hidden_state,
+                    initial_attention_context, initial_alignment)
 
         lstm_one_hidden_state = hidden_state.lstm_one_hidden_state
+        lstm_two_hidden_state = hidden_state.lstm_two_hidden_state
         cumulative_alignment = hidden_state.cumulative_alignment
         last_attention_context = hidden_state.last_attention_context
         last_frame = hidden_state.last_frame
 
-        return last_frame, lstm_one_hidden_state, last_attention_context, cumulative_alignment
+        return (last_frame, lstm_one_hidden_state, lstm_two_hidden_state, last_attention_context,
+                cumulative_alignment)
 
     def forward(self, encoded_tokens, tokens_mask, ground_truth_frames=None, hidden_state=None):
         """
@@ -198,7 +199,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         # [num_tokens, batch_size, attention_hidden_size]
         encoded_tokens = self.project_tokens(encoded_tokens)
 
-        (frames, lstm_one_hidden_state, last_attention_context,
+        (frames, lstm_one_hidden_state, lstm_two_hidden_state, last_attention_context,
          cumulative_alignment) = self._get_initial_state(
              num_tokens=num_tokens,
              batch_size=batch_size,
@@ -224,15 +225,11 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             # [batch_size, pre_net_hidden_size + self.attention_context_size]
             frame = torch.cat([frame, last_attention_context], dim=1)
 
-            # Unsqueeze to match the expected LSTM intput with 3 dimensional matrix.
-            # [batch_size, pre_net_hidden_size + self.attention_context_size] →
-            # [1, batch_size, pre_net_hidden_size + self.attention_context_size]
-            frame = frame.unsqueeze(0)
-
-            # frame [seq_len (1), batch (batch_size),
+            # frame [batch (batch_size),
             # input_size (pre_net_hidden_size + self.attention_context_size)]  →
-            # [1, batch_size, lstm_hidden_size]
-            frame, lstm_one_hidden_state = self.lstm_layer_one(frame, lstm_one_hidden_state)
+            # [batch_size, lstm_hidden_size]
+            lstm_one_hidden_state = self.lstm_layer_one(frame, lstm_one_hidden_state)
+            frame = lstm_one_hidden_state[0]
 
             # Apply dropout to the LSTM Cell State and Hidden State
             lstm_one_hidden_state = list(lstm_one_hidden_state)
@@ -244,10 +241,10 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             last_attention_context, cumulative_alignment, alignment = self.attention(
                 encoded_tokens=encoded_tokens,
                 tokens_mask=tokens_mask,
-                query=frame,
+                query=frame.unsqueeze(0),
                 cumulative_alignment=cumulative_alignment)
 
-            updated_frames.append(frame.squeeze(0))
+            updated_frames.append(frame)
             attention_contexts.append(last_attention_context)
             alignments.append(alignment.detach())
 
@@ -274,7 +271,6 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         # frames [seq_len (num_frames), batch (batch_size),
         # input_size (lstm_hidden_size + self.attention_context_size)]  →
         # [num_frames, batch_size, lstm_hidden_size]
-        lstm_two_hidden_state = None if hidden_state is None else hidden_state.lstm_two_hidden_state
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
         frames = self.lstm_layer_two_dropout(frames)
 
