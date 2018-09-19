@@ -197,8 +197,8 @@ class ExperimentContextManager(object):
         # Setup logging
         self._stream_handler = logging.StreamHandler(stream=sys.stdout)
         self._stream_handler.setLevel(logging.INFO)
-        formatter = logging.Formatter(
-            '[%(asctime)s][%(processName)s][%(name)s][%(levelname)s] %(message)s')
+        formatter = logging.Formatter('[%(asctime)s][' + str(self.device) +
+                                      '][%(name)s][%(levelname)s] %(message)s')
         self._stream_handler.setFormatter(formatter)
         root = logging.getLogger()
         root.addHandler(self._stream_handler)

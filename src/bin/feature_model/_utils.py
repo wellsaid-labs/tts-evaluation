@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def set_hparams():
-    """ Set hyperparameters specific to the signal model. """
+    """ Set hyperparameters specific to the feature model. """
     set_base_hparams()
 
     # SOURCE: Tacotron 2
