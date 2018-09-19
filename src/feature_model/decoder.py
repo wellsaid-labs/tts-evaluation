@@ -182,12 +182,12 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
                 hidden state used to predict the next frame.
 
         Returns:
-            frames (torch.FloatTensor [num_frames, batch_size, frame_channels]) Predicted frames.
+            frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Predicted frames.
             stop_token (torch.FloatTensor [num_frames, batch_size]): Probablity of stopping.
             new_hidden_state (AutoregressiveDecoderHiddenState): For sequential prediction, decoder
                 hidden state used to predict the next frame.
-            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]) All attention
-                alignments, stored for visualization and debugging
+            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention
+                alignment for every frame, stored for visualization and debugging.
         """
         assert ground_truth_frames is None or hidden_state is None, ("""Either the decoder is
 conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
@@ -221,12 +221,12 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             frame = frames.pop(0).squeeze(0)
 
             # [batch_size, pre_net_hidden_size] (concat)
-            # [batch_size, self.attention_context_size] →
-            # [batch_size, pre_net_hidden_size + self.attention_context_size]
+            # [batch_size, attention_context_size] →
+            # [batch_size, pre_net_hidden_size + attention_context_size]
             frame = torch.cat([frame, last_attention_context], dim=1)
 
             # frame [batch (batch_size),
-            # input_size (pre_net_hidden_size + self.attention_context_size)]  →
+            # input_size (pre_net_hidden_size + attention_context_size)]  →
             # [batch_size, lstm_hidden_size]
             lstm_one_hidden_state = self.lstm_layer_one(frame, lstm_one_hidden_state)
             frame = lstm_one_hidden_state[0]
@@ -237,7 +237,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             lstm_one_hidden_state[1] = self.lstm_layer_one_dropout(lstm_one_hidden_state[1])
 
             # Initial attention alignment, sometimes refered to as attention weights.
-            # attention_context [batch_size, self.attention_context_size]
+            # attention_context [batch_size, attention_context_size]
             last_attention_context, cumulative_alignment, alignment = self.attention(
                 encoded_tokens=encoded_tokens,
                 tokens_mask=tokens_mask,
@@ -260,36 +260,36 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
         del updated_frames  # Clear Memory
 
-        # [num_frames, batch_size, self.attention_context_size]
+        # [num_frames, batch_size, attention_context_size]
         attention_contexts = torch.stack(attention_contexts, dim=0)
 
         # [num_frames, batch_size, lstm_hidden_size] (concat)
-        # [num_frames, batch_size, self.attention_context_size] →
-        # [num_frames, batch_size, lstm_hidden_size + self.attention_context_size]
+        # [num_frames, batch_size, attention_context_size] →
+        # [num_frames, batch_size, lstm_hidden_size + attention_context_size]
         frames = torch.cat([frames, attention_contexts], dim=2)
 
         # frames [seq_len (num_frames), batch (batch_size),
-        # input_size (lstm_hidden_size + self.attention_context_size)]  →
+        # input_size (lstm_hidden_size + attention_context_size)]  →
         # [num_frames, batch_size, lstm_hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
         frames = self.lstm_layer_two_dropout(frames)
 
         # [num_frames, batch_size, lstm_hidden_size] (concat)
-        # [num_frames, batch_size, self.attention_context_size] →
-        # [num_frames, batch_size, lstm_hidden_size + self.attention_context_size]
+        # [num_frames, batch_size, attention_context_size] →
+        # [num_frames, batch_size, lstm_hidden_size + attention_context_size]
         frames = torch.cat([frames, attention_contexts], dim=2)
 
         del attention_contexts  # Clear Memory
 
         # Predict the stop token
-        # [num_frames, batch_size, lstm_hidden_size + self.attention_context_size] →
+        # [num_frames, batch_size, lstm_hidden_size + attention_context_size] →
         # [num_frames, batch_size, 1]
         stop_token = self.linear_stop_token(frames)
         # Remove singleton dimension
         # [num_frames, batch_size, 1] → [num_frames, batch_size]
         stop_token = stop_token.squeeze(2)
 
-        # [num_frames, batch_size, lstm_hidden_size + self.attention_context_size] →
+        # [num_frames, batch_size, lstm_hidden_size + attention_context_size] →
         # [num_frames, batch_size, frame_channels]
         frames = self.linear_out(frames)  # Predicted Mel-Spectrogram
 

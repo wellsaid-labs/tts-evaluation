@@ -1,3 +1,8 @@
+""" Train feature model.
+
+ Example:
+    $ python3 -m src.bin.feature_model.train -n baseline;
+"""
 from pathlib import Path
 
 import argparse
@@ -145,8 +150,9 @@ class Trainer():  # pragma: no cover
             trial_run=trial_run,
             num_workers=self.num_workers)
         data_iterator = tqdm(data_iterator, desc=label, smoothing=0)
-        for batch in data_iterator:
-            draw_sample = not train and random.randint(1, len(data_iterator)) == 1
+        random_batch = random.randint(0, len(data_iterator) - 1)
+        for i, batch in enumerate(data_iterator):
+            draw_sample = not train and i == random_batch
 
             (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions, num_frames,
              attention_norm, attention_standard_deviation) = self._run_step(
@@ -244,6 +250,7 @@ class Trainer():  # pragma: no cover
             tb.add_log_mel_spectrogram('infered/predicted_spectrogram', predicted_post_frames[:, 0])
             tb.add_log_mel_spectrogram('infered/residual_spectrogram', predicted_residual[:, 0])
             tb.add_log_mel_spectrogram('infered/gold_spectrogram', gold_frames)
+            tb.add_log_mel_spectrogram('infered/pre_spectrogram', predicted_pre_frames[:, 0])
             tb.add_attention('infered/alignment', predicted_alignments[:, 0])
             tb.add_stop_token('infered/stop_token', predicted_stop_tokens[:, 0])
 
@@ -287,6 +294,7 @@ class Trainer():  # pragma: no cover
             tb.add_log_mel_spectrogram('predicted/residual_spectrogram', predicted_residual)
             tb.add_log_mel_spectrogram('predicted/delta_spectrogram', predicted_gold_delta)
             tb.add_log_mel_spectrogram('predicted/gold_spectrogram', gold_frames)
+            tb.add_log_mel_spectrogram('predicted/pre_spectrogram', predicted_pre_frames[:, 0])
             tb.add_attention('predicted/alignment', predicted_alignments)
             tb.add_stop_token('predicted/stop_token', predicted_stop_tokens)
             tb.add_text('predicted/input', text)
@@ -389,7 +397,8 @@ def main(checkpoint_path=None,
          epochs=10000,
          reset_optimizer=False,
          hparams={},
-         evaluate_every_n_epochs=5,
+         evaluate_every_n_epochs=1,
+         save_checkpoint_every_n_epochs=10,
          min_time=60 * 15,
          name=None,
          label='feature_model',
@@ -401,7 +410,8 @@ def main(checkpoint_path=None,
         epochs (int, optional): Number of epochs to run for.
         reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer.
         hparams (dict, optional): Hparams to override default hparams.
-        evaluate_every_n_epochs (int, optional): Evaluate every ``evaluate_every_n_epochs`` epochs.
+        evaluate_every_n_epochs (int, optional)
+        save_checkpoint_every_n_epochs (int, optional)
         min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
             files are deleted.
         name (str, optional): Experiment name.
@@ -444,7 +454,11 @@ def main(checkpoint_path=None,
         for _ in range(epochs):
             is_trial_run = trainer.epoch == 0
             trainer.run_epoch(train=True, trial_run=is_trial_run)
+
             if trainer.epoch % evaluate_every_n_epochs == 0:
+                trainer.run_epoch(train=False, trial_run=is_trial_run)
+
+            if trainer.epoch % save_checkpoint_every_n_epochs == 0:
                 save_checkpoint(
                     context.checkpoints_directory,
                     model=trainer.model,
@@ -453,7 +467,6 @@ def main(checkpoint_path=None,
                     epoch=trainer.epoch,
                     step=trainer.step,
                     experiment_directory=context.directory)
-                trainer.run_epoch(train=False, trial_run=is_trial_run)
             trainer.epoch += 1
 
             print('–' * 100)
