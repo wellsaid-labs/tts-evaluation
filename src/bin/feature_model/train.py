@@ -294,7 +294,7 @@ class Trainer():  # pragma: no cover
             tb.add_log_mel_spectrogram('predicted/residual_spectrogram', predicted_residual)
             tb.add_log_mel_spectrogram('predicted/delta_spectrogram', predicted_gold_delta)
             tb.add_log_mel_spectrogram('predicted/gold_spectrogram', gold_frames)
-            tb.add_log_mel_spectrogram('predicted/pre_spectrogram', predicted_pre_frames[:, 0])
+            tb.add_log_mel_spectrogram('predicted/pre_spectrogram', predicted_pre_frames)
             tb.add_attention('predicted/alignment', predicted_alignments)
             tb.add_stop_token('predicted/stop_token', predicted_stop_tokens)
             tb.add_text('predicted/input', text)
