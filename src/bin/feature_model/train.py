@@ -22,6 +22,7 @@ from tqdm import tqdm
 
 import torch
 
+from src.audio import griffin_lim
 from src.bin.feature_model._data_iterator import DataIterator
 from src.bin.feature_model._utils import load_data
 from src.bin.feature_model._utils import set_hparams
@@ -245,7 +246,15 @@ class Trainer():  # pragma: no cover
         text = self.text_encoder.decode(text)
         predicted_residual = predicted_post_frames - predicted_pre_frames
 
+        attention_norm = self._compute_attention_norm(predicted_alignments)
+        attention_standard_deviation = self._compute_attention_standard_deviation(
+            predicted_alignments)
+        waveform = griffin_lim(predicted_post_frames[:, 0].cpu().numpy())
+
         with self.tensorboard.set_step(self.step) as tb:
+            tb.add_audio('infered/audio', 'infered/waveform', torch.from_numpy(waveform))
+            tb.add_scalar('attention/norm/inference', attention_norm)
+            tb.add_scalar('attention/standard_deviation/inference', attention_standard_deviation)
             tb.add_text('infered/input', text)
             tb.add_log_mel_spectrogram('infered/predicted_spectrogram', predicted_post_frames[:, 0])
             tb.add_log_mel_spectrogram('infered/residual_spectrogram', predicted_residual[:, 0])
@@ -299,14 +308,14 @@ class Trainer():  # pragma: no cover
             tb.add_stop_token('predicted/stop_token', predicted_stop_tokens)
             tb.add_text('predicted/input', text)
 
-    def _compute_attention_norm(self, batch, predicted_alignments):
+    def _compute_attention_norm(self, predicted_alignments, mask=None):
         """ Computes the infinity norm of attention averaged over all alignments.
 
         This metric is useful for tracking how "attentive" or "confident" attention on one token.
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
             predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+            mask (torch.FloatTensor [num_frames, batch_size], optional)
 
         Returns:
             attention_norm (torch.scalar)
@@ -314,29 +323,41 @@ class Trainer():  # pragma: no cover
         # The infinity norm of attention averaged over all alignments.
         # [num_frames, batch_size, num_tokens] → [num_frames, batch_size]
         attention_norm = predicted_alignments.norm(float('inf'), dim=2)
-        # [num_frames, batch_size] → [num_frames, batch_size]
-        attention_norm = attention_norm * batch['frames_mask']
-        # [num_frames, batch_size] → scalar
-        return (attention_norm.sum() / batch['frames_mask'].sum()).item()
 
-    def _compute_attention_standard_deviation(self, batch, predicted_alignments):
+        if mask is not None:
+            # [num_frames, batch_size] → [num_frames, batch_size]
+            attention_norm = attention_norm * mask
+            divisor = mask.sum()
+        else:
+            divisor = attention_norm.shape[0] * attention_norm.shape[1]
+
+        # [num_frames, batch_size] → scalar
+        return (attention_norm.sum() / divisor).item()
+
+    def _compute_attention_standard_deviation(self, predicted_alignments, mask=None):
         """ Computes the standard deviation of the alignment averaged over all alignments.
 
         This metric is useful for tracking how "attentive" or "confident" attention in one area.
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
             predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+            mask (torch.FloatTensor [num_frames, batch_size], optional)
 
         Returns:
             attention_standard_deviation (torch.scalar)
         """
         # [num_frames, batch_size, num_tokens] → [num_frames, batch_size]
         attention_standard_deviation = get_weighted_standard_deviation(predicted_alignments, dim=2)
-        # [num_frames, batch_size] → [num_frames, batch_size]
-        attention_standard_deviation = attention_standard_deviation * batch['frames_mask']
+
+        if mask is not None:
+            # [num_frames, batch_size] → [num_frames, batch_size]
+            attention_standard_deviation = attention_standard_deviation * mask
+            divisor = mask.sum()
+        else:
+            divisor = attention_standard_deviation.shape[0] * attention_standard_deviation.shape[1]
+
         # [num_frames, batch_size] → scalar
-        return (attention_standard_deviation.sum() / batch['frames_mask'].sum()).item()
+        return (attention_standard_deviation.sum() / divisor).item()
 
     def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
@@ -362,9 +383,9 @@ class Trainer():  # pragma: no cover
         (pre_frames_loss, post_frames_loss,
          stop_token_loss, num_frame_predictions, num_frames) = self._compute_loss(
              batch, predicted_pre_frames, predicted_post_frames, predicted_stop_tokens)
-        attention_norm = self._compute_attention_norm(batch, predicted_alignments)
+        attention_norm = self._compute_attention_norm(predicted_alignments, batch['frames_mask'])
         attention_standard_deviation = self._compute_attention_standard_deviation(
-            batch, predicted_alignments)
+            predicted_alignments, batch['frames_mask'])
 
         if train:
             self.optimizer.zero_grad()
@@ -452,13 +473,13 @@ def main(checkpoint_path=None,
 
         # Training Loop
         for _ in range(epochs):
-            is_trial_run = trainer.epoch == 0
+            is_trial_run = trainer.step == step
             trainer.run_epoch(train=True, trial_run=is_trial_run)
 
-            if trainer.epoch % evaluate_every_n_epochs == 0:
+            if trainer.epoch % evaluate_every_n_epochs == 0 or is_trial_run:
                 trainer.run_epoch(train=False, trial_run=is_trial_run)
 
-            if trainer.epoch % save_checkpoint_every_n_epochs == 0:
+            if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
                 save_checkpoint(
                     context.checkpoints_directory,
                     model=trainer.model,
@@ -467,7 +488,9 @@ def main(checkpoint_path=None,
                     epoch=trainer.epoch,
                     step=trainer.step,
                     experiment_directory=context.directory)
-            trainer.epoch += 1
+
+            if not is_trial_run:
+                trainer.epoch += 1
 
             print('–' * 100)
 
