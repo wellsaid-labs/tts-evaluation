@@ -197,7 +197,6 @@ def get_log_mel_spectrogram(signal,
     return log_mel_spectrogram, ret_pad
 
 
-@configurable
 def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, sample_rate):
     """ Transform log mel spectrogram to spectrogram (lossy).
 
