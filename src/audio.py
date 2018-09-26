@@ -1,8 +1,9 @@
 import logging
 import math
 
-import librosa
+from tqdm import tqdm
 
+import librosa
 import numpy as np
 
 from src.utils.configurable import configurable
@@ -196,7 +197,6 @@ def get_log_mel_spectrogram(signal,
     return log_mel_spectrogram, ret_pad
 
 
-@configurable
 def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, sample_rate):
     """ Transform log mel spectrogram to spectrogram (lossy).
 
@@ -218,7 +218,6 @@ def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, sample_rate):
 
 @configurable
 def griffin_lim(log_mel_spectrogram,
-                filename,
                 sample_rate,
                 frame_size=1200,
                 frame_hop=300,
@@ -249,7 +248,6 @@ def griffin_lim(log_mel_spectrogram,
 
     Args:
         log_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
-        filename (Path): Filename of the resulting wav file.
         sample_rate (int): Sample rate of the spectrogram and the resulting wav file.
         frame_size (int): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
         frame_hop (int): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
@@ -260,8 +258,6 @@ def griffin_lim(log_mel_spectrogram,
         power (float): Amplification float used to reduce artifacts.
         iterations (int): Number of iterations of griffin lim to run.
     """
-    assert '.wav' == filename.suffix, "Filename must be a .wav file"
-
     spectrogram = _log_mel_spectrogram_to_spectrogram(
         log_mel_spectrogram=log_mel_spectrogram, sample_rate=sample_rate)
 
@@ -273,7 +269,7 @@ def griffin_lim(log_mel_spectrogram,
 
     len_samples = int((magnitude_spectrogram.shape[1] - 1) * frame_hop)
     waveform = np.random.uniform(size=(len_samples,))
-    for i in range(iterations):
+    for i in tqdm(range(iterations)):
         reconstruction_spectrogram = librosa.stft(
             waveform, n_fft=fft_length, hop_length=frame_hop, win_length=frame_size, window=window)
         reconstruction_angle = np.angle(reconstruction_spectrogram).astype(np.complex64)
@@ -284,4 +280,6 @@ def griffin_lim(log_mel_spectrogram,
             proposal_spectrogram, hop_length=frame_hop, win_length=frame_size, window=window)
 
     waveform = np.real(waveform)
-    librosa.output.write_wav(str(filename), waveform, sr=sample_rate)
+    large_values = (waveform < -1).sum() + (waveform > 1).sum()
+    logger.warn('Griffin-lim waveform clipped %d samples.', large_values)
+    return np.clip(waveform, -1, 1)
