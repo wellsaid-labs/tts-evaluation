@@ -13,14 +13,17 @@ run () {
   fi
 }
 
-run 'wave_net_tensorboard' \
+read -p "Start tensorboards for archived experiments? (Y/n) " RESP
+if [ "$RESP" = "Y" ]; then
+  run 'wave_net_tensorboard' \
     'tensorboard --logdir=experiments/wave_net --port=6006 --window_title=WaveNet'
 
-run 'tacotron_2_tensorboard' \
-    'tensorboard --logdir=experiments/tacotron_2 --port=6007 --window_title=Tacotron-2'
+  run 'tacotron_2_tensorboard' \
+      'tensorboard --logdir=experiments/tacotron_2 --port=6007 --window_title=Tacotron-2'
 
-run 'wave_rnn_tensorboard' \
-    'tensorboard --logdir=experiments/wave_rnn --port=6009 --window_title=WaveRNN'
+  run 'wave_rnn_tensorboard' \
+      'tensorboard --logdir=experiments/wave_rnn --port=6009 --window_title=WaveRNN'
+fi
 
 run 'signal_model_sync_tensorboard' \
     "tensorboard --logdir=sync/signal_model/ --port=6008 --window_title='Signal Model Sync'"
