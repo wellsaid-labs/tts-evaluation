@@ -291,7 +291,7 @@ def set_hparams():
                         'sample_rate': sample_rate,
                         'min_rollback': 1,
                     },
-                    '_utils.load_data.predicted': False,
+                    '_utils.load_data.predicted': True,
                     '_dataset.SignalDataset.__init__': {
                         # SOURCE: Efficient Neural Audio Synthesis
                         # The WaveRNN models are trained on sequences of 960 audio samples
