@@ -9,7 +9,9 @@ TODO: Create a GCP ulities package merging functionality in ``keep_alive`` and `
 Example:
 
     python3 -m src.bin.keep_alive --command="screen -dm bash -c \
-        'cd WellSaid-Labs-Text-To-Speech/; \
+        'source ~/.bashrc;
+        source ~/.bash_profile;
+        cd WellSaid-Labs-Text-To-Speech/; \
         ulimit -n 65536; \
         python3 -m src.bin.signal_model.train -c; \
         sudo shutdown;'"
