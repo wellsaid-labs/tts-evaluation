@@ -13,6 +13,8 @@ import sys
 pretty_printer = pprint.PrettyPrinter(indent=4)
 logger = logging.getLogger(__name__)
 
+# TODO: Add 'No Config' mode preventing runtime warnings.
+
 
 class _KeyListDictionary(dict):
     """

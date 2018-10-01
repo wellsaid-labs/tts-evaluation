@@ -83,6 +83,7 @@ class Optimizer(object):
             other_parameter_norm = torch.nn.utils.clip_grad_norm_(params, max_norm=max_grad_norm)
 
             # Both callables should compute the same value
+            # TODO: Make this a relative check
             assert abs(parameter_norm - other_parameter_norm) < eps
 
         # Take a step if norm is finite (e.g. no ``inf`` or ``nan`` values in the gradient)

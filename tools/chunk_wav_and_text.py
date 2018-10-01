@@ -10,6 +10,8 @@ import librosa
 
 from src.audio import read_audio
 
+logging.basicConfig(
+    format='[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 GENTLE_SUCCESS_CASE = 'success'
@@ -198,63 +200,84 @@ def chunk_alignments(alignments, sample_rate, max_chunk_length):
         # TODO: Consider not expanding the text passed the end_text except in cases of punctutation;
         # look at other cases where alignment does not occur.
         text_spans.append((chunk[0].start_text, chunk[-1].next_start_text))
-        audio_spans.append((chunk[0].start_audio, chunk[-1].next_start_audio))
+        audio_spans.append((chunk[0].start_audio, chunk[-1].end_audio))
 
     return text_spans, audio_spans
 
 
-def main(wav_path,
-         csv_path,
+def main(wav_pattern,
+         csv_pattern,
          text_column='Content',
          wav_column='WAV Filename',
          destination='data/processed',
          wav_directory_name='wav',
+         csv_metadata_name='metadata.csv',
          sample_rate=44100,
          max_chunk_length=10):
     """ Align audio with scripts, then create and save chunks of audio and text.
 
     Args:
-        wav_path (Path): The audio file path.
-        csv_path (Path): The CSV file path containing metadata associated with audio file.
+        wav_pattern (str): The audio file glob pattern.
+        csv_pattern (str): The CSV file globl pattern containing metadata associated with audio
+            file.
         text_column (str, optional): The script column in the CSV file.
         wav_column (str, optional): Column name for the new audio filename column.
         wav_directory_name (str, optional): The directory name to store audio clips.
+        csv_metadata_name (str, optional): The filename to store metadata.
         sample_rate (int, optional): Sample rate of the audio.
         max_chunk_length (float, optional): Number of seconds for the maximum chunk audio length.
     """
-    assert wav_path.is_file(), 'Audio file must exist'
-    assert csv_path.is_file(), 'CSV file must exist'
-
     root_directory = pathlib.Path(destination)
     root_directory.mkdir(parents=True, exist_ok=True)
-    metadata_filename = root_directory / csv_path.name  # Filename to store CSV metadata
+    metadata_filename = root_directory / csv_metadata_name  # Filename to store CSV metadata
     wav_directory = root_directory / wav_directory_name  # Directory to store clips
     wav_directory.mkdir(parents=True, exist_ok=True)
 
-    audio = read_audio(str(wav_path), sample_rate)
-    df = pandas.read_csv(csv_path)
-    scripts = [x.strip() for x in df[text_column]]
-    alignments = align_wav_and_scripts(wav_path, scripts, sample_rate=sample_rate)
-
+    wav_paths = sorted(list(pathlib.Path('.').glob(wav_pattern)))
+    csv_paths = sorted(list(pathlib.Path('.').glob(csv_pattern)))
+    offset = 0
     to_write = []
-    for i, row in df.iterrows():
-        text_spans, audio_spans = chunk_alignments(
-            alignments[i], sample_rate=sample_rate, max_chunk_length=max_chunk_length)
+    for i, (wav_path, csv_path) in enumerate(zip(wav_paths, csv_paths)):
+        if i != 0:
+            print('-' * 100)
+        logger.info('Processing %s:%s', wav_path, csv_path)
 
-        for j, (text_span, audio_span) in enumerate(zip(text_spans, audio_spans)):
-            new_row = row.to_dict()
-            new_row[text_column] = row[text_column][slice(*text_span)].strip()
-            new_row[wav_column] = str(wav_directory / ('SCRIPT_%d_CHUNK_%d.wav' % (i, j)))
-            to_write.append(new_row)
-            audio_span = audio[slice(*audio_span)]
-            librosa.output.write_wav(new_row[wav_column], audio_span, sr=sample_rate)
+        logger.info('Reading audio...')
+        audio = read_audio(str(wav_path), sample_rate)
+        logger.info('Reading csv...')
+        try:
+            df = pandas.read_csv(csv_path)
+        except pandas.errors.ParserError:
+            # TODO: Remove this temporary fix and update TSV files to CSV
+            df = pandas.read_csv(csv_path, sep='\t')
+
+        scripts = [x.strip() for x in df[text_column]]
+        logger.info('Aligning...')
+        alignments = align_wav_and_scripts(wav_path, scripts, sample_rate=sample_rate)
+
+        logger.info('Chunking and writing...')
+        for j, row in df.iterrows():
+            text_spans, audio_spans = chunk_alignments(
+                alignments[j], sample_rate=sample_rate, max_chunk_length=max_chunk_length)
+
+            for k, (text_span, audio_span) in enumerate(zip(text_spans, audio_spans)):
+                new_row = row.to_dict()
+                new_row[text_column] = row[text_column][slice(*text_span)].strip()
+                new_row[wav_column] = str(
+                    wav_directory / ('SCRIPT_%d_CHUNK_%d.wav' % (offset + j, k)))
+                to_write.append(new_row)
+                audio_span = audio[slice(*audio_span)]
+                librosa.output.write_wav(new_row[wav_column], audio_span, sr=sample_rate)
+
+        offset += len(df)
+        logger.info('Now we found %d chunks', len(to_write))
 
     pandas.DataFrame(to_write).to_csv(str(metadata_filename))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Align and chunk audio file and text scripts.')
-    parser.add_argument('-w', '--wav', type=str, help='Path to WAV file to chunk.')
-    parser.add_argument('-c', '--csv', type=str, help='Path to CSV file with scripts.')
+    parser.add_argument('-w', '--wav', type=str, help='Path / Pattern to WAV file to chunk.')
+    parser.add_argument('-c', '--csv', type=str, help='Path / Pattern to CSV file with scripts.')
     args = parser.parse_args()
-    main(pathlib.Path(args.wav), pathlib.Path(args.csv))
+    main(args.wav, args.csv)
