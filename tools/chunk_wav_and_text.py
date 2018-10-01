@@ -1,6 +1,7 @@
 import argparse
 import logging
 import pathlib
+import re
 import requests
 
 from collections import namedtuple
@@ -15,6 +16,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 GENTLE_SUCCESS_CASE = 'success'
+GENTLE_OOV_WORD = '<unk>'
 """ An alignment that was determined confidently between characters and text.
 
 Args:
@@ -30,11 +32,22 @@ Alignment = namedtuple(
     ['start_audio', 'end_audio', 'start_text', 'end_text', 'next_start_text', 'next_start_audio'])
 
 
+def natural_keys(text):
+    '''
+    Sorts in human order
+    http://nedbatchelder.com/blog/200712/human_sorting.html
+    (See Toothy's implementation in the comments)
+    '''
+    return [(int(c) if c.isdigit() else c) for c in re.split('(\d+)', str(text))]
+
+
 def _request_gentle(wav_path,
                     transcript,
                     hostname='localhost',
                     port=8765,
-                    parameters=(('async', 'false'),)):
+                    parameters=(('async', 'false'),),
+                    wait_per_second_of_audio=0.25,
+                    sample_rate=24000):
     """ Align an audio file with the trascript at a word granularity.
 
     Args:
@@ -44,6 +57,9 @@ def _request_gentle(wav_path,
         port (int, optional): Port used by the gentle server.
         parameters (tuple, optional): Dictionary or bytes to be sent in the query string for the
             :class:`Request`.
+        wait_per_second_of_audio (float, optional): Give the server time of
+            ``wait_per_second_of_audio`` per second of audio it has to process.
+        sample_rate (int, optional): Sample rate of the audio.
 
     Returns:
         (dict) {
@@ -63,6 +79,7 @@ def _request_gentle(wav_path,
             ]
         }
     """
+    duration = librosa.get_duration(filename=str(wav_path), sr=sample_rate)
     url = 'http://{}:{}/transcriptions'.format(hostname, port)
     response = requests.post(
         url,
@@ -70,7 +87,8 @@ def _request_gentle(wav_path,
         files={
             'audio': wav_path.read_bytes(),
             'transcript': transcript.encode(),
-        })
+        },
+        timeout=duration * wait_per_second_of_audio)
     if response.status_code != 200:
         raise ValueError('Gentle ({}) returned bad response: {}'.format(url, response.status_code))
     response = response.json()
@@ -81,13 +99,20 @@ def _request_gentle(wav_path,
         transcript[w['startOffset']:w['endOffset']] == w['word'] for w in response['words']
     ]), 'Transcript must align with character offsets.'
     for word in response['words']:
+        normalized_word = word['word'].lower().replace('’', '\'')
         if 'alignedWord' not in word:
             logger.warn('``alignedWord`` does not exist — %s', word)
-        elif word['alignedWord'] != word['word'].lower():
+        elif word['alignedWord'] != normalized_word and word['alignedWord'] != GENTLE_OOV_WORD:
             logger.warn('``alignedWord`` does not match trascript ``word`` — %s', word)
+
     unaligned_words = sum([w['case'] != GENTLE_SUCCESS_CASE for w in response['words']])
     if unaligned_words > 0:
         logger.warn('%f%% unaligned words', (unaligned_words / len(response['words']) * 100))
+
+    oov_words = sum(
+        ['alignedWord' in w and w['alignedWord'] == GENTLE_OOV_WORD for w in response['words']])
+    if oov_words > 0:
+        logger.warn('%f%% out of vocabulary words', (oov_words / len(response['words']) * 100))
 
     return response
 
@@ -111,7 +136,7 @@ def align_wav_and_scripts(wav_path, scripts, sample_rate):
     max_sample_rate = seconds_to_samples(
         librosa.get_duration(filename=str(wav_path), sr=sample_rate))
     transcript = '\n'.join(scripts)
-    alignment = _request_gentle(wav_path, transcript)
+    alignment = _request_gentle(wav_path, transcript, sample_rate=sample_rate)
 
     # Align seperate scripts with the transcript alignment.
     aligned_words = [w for w in alignment['words'] if w['case'] == GENTLE_SUCCESS_CASE]
@@ -233,30 +258,48 @@ def main(wav_pattern,
     wav_directory = root_directory / wav_directory_name  # Directory to store clips
     wav_directory.mkdir(parents=True, exist_ok=True)
 
-    wav_paths = sorted(list(pathlib.Path('.').glob(wav_pattern)))
-    csv_paths = sorted(list(pathlib.Path('.').glob(csv_pattern)))
-    offset = 0
-    to_write = []
+    wav_paths = sorted(list(pathlib.Path('.').glob(wav_pattern)), key=natural_keys)
+    csv_paths = sorted(list(pathlib.Path('.').glob(csv_pattern)), key=natural_keys)
     for i, (wav_path, csv_path) in enumerate(zip(wav_paths, csv_paths)):
-        if i != 0:
+        is_first_script = i == 0
+        if not is_first_script:
             print('-' * 100)
+
+        script_wav_directory = (wav_directory / ('script_%d' % i))
+        if script_wav_directory.is_dir():
+            logger.info('Skipping cached files %s:%s', wav_path, csv_path)
+            continue
+
         logger.info('Processing %s:%s', wav_path, csv_path)
 
         logger.info('Reading audio...')
         audio = read_audio(str(wav_path), sample_rate)
+
         logger.info('Reading csv...')
         try:
             df = pandas.read_csv(csv_path)
         except pandas.errors.ParserError:
+            logger.warn('%s uses TSV instead of CSV', csv_path.name)
             # TODO: Remove this temporary fix and update TSV files to CSV
             df = pandas.read_csv(csv_path, sep='\t')
 
         scripts = [x.strip() for x in df[text_column]]
-        logger.info('Aligning...')
-        alignments = align_wav_and_scripts(wav_path, scripts, sample_rate=sample_rate)
 
+        logger.info('Aligning...')
+        try:
+            alignments = align_wav_and_scripts(wav_path, scripts, sample_rate=sample_rate)
+        except (requests.exceptions.RequestException, ValueError) as e:
+            logger.exception('Failed to align %s with %s', wav_path.name, csv_path.name)
+            continue
+
+        script_wav_directory.mkdir()
         logger.info('Chunking and writing...')
+        to_write = []
         for j, row in df.iterrows():
+            if len(alignments[j]) == 0:
+                logger.warn('Unable to align script %d', j)
+                continue
+
             text_spans, audio_spans = chunk_alignments(
                 alignments[j], sample_rate=sample_rate, max_chunk_length=max_chunk_length)
 
@@ -264,15 +307,14 @@ def main(wav_pattern,
                 new_row = row.to_dict()
                 new_row[text_column] = row[text_column][slice(*text_span)].strip()
                 new_row[wav_column] = str(
-                    wav_directory / ('SCRIPT_%d_CHUNK_%d.wav' % (offset + j, k)))
+                    script_wav_directory / ('script_%d_chunk_%d.wav' % (j, k)))
                 to_write.append(new_row)
                 audio_span = audio[slice(*audio_span)]
                 librosa.output.write_wav(new_row[wav_column], audio_span, sr=sample_rate)
 
-        offset += len(df)
-        logger.info('Now we found %d chunks', len(to_write))
-
-    pandas.DataFrame(to_write).to_csv(str(metadata_filename))
+        logger.info('Found %d chunks', len(to_write))
+        pandas.DataFrame(to_write).to_csv(
+            str(metadata_filename), mode='a', header=is_first_script, index=False)
 
 
 if __name__ == "__main__":
