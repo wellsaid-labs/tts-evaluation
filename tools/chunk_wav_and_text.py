@@ -98,13 +98,16 @@ def _request_gentle(wav_path,
     assert all([
         transcript[w['startOffset']:w['endOffset']] == w['word'] for w in response['words']
     ]), 'Transcript must align with character offsets.'
+
+    # Print warnings
     for word in response['words']:
         normalized_word = word['word'].lower().replace('’', '\'')
         if 'alignedWord' not in word:
             logger.warn('``alignedWord`` does not exist — %s', word)
-        elif word['alignedWord'] != normalized_word and word['alignedWord'] != GENTLE_OOV_WORD:
+        elif word['alignedWord'] != normalized_word:
             logger.warn('``alignedWord`` does not match trascript ``word`` — %s', word)
 
+    # Compute statistics
     unaligned_words = sum([w['case'] != GENTLE_SUCCESS_CASE for w in response['words']])
     if unaligned_words > 0:
         logger.warn('%f%% unaligned words', (unaligned_words / len(response['words']) * 100))
