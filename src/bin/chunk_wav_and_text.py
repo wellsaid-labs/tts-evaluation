@@ -64,6 +64,7 @@ def _review_gentle(response, transcript):
         if last_unaligned_word_index and last_unaligned_word_index + 1 == i:
             unaligned_text['endOffset'] = word['endOffset']
             unaligned_text['cases'].add(word['case'])
+            last_unaligned_word_index += 1
         else:
             if unaligned_text:
                 unaligned_text['text'] = transcript[unaligned_text['startOffset']:unaligned_text[
