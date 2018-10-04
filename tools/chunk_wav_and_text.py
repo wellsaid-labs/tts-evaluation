@@ -92,7 +92,7 @@ def _review_gentle(response, transcript):
     ]
     if len(oov_words) > 0:
         logger.warn('%f%% out of vocabulary words', (len(oov_words) / len(response['words']) * 100))
-        logger.warn('Out of vocabulary words: %s', set(oov_words))
+        logger.warn('Out of vocabulary words: %s', sorted(list(set(oov_words))))
 
 
 def _request_gentle(wav_path,
