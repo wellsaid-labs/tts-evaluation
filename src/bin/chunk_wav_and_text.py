@@ -56,21 +56,26 @@ def _review_gentle(response, transcript):
 
     # Print warnings
     unaligned_text = None
-    for word in response['words']:
-        if 'alignedWord' not in word:
-            if unaligned_text and unaligned_text['endOffset'] + 1 == word['startOffset']:
-                unaligned_text['endOffset'] = word['endOffset']
-                unaligned_text['cases'].add(word['case'])
-            else:
-                if unaligned_text:
-                    unaligned_text['phrase'] = transcript[unaligned_text['startOffset']:
-                                                          unaligned_text['endOffset']]
-                    logger.warn('Unaligned text: %s', word)
-                unaligned_text = {
-                    'startOffset': word['startOffset'],
-                    'endOffset': word['endOffset'],
-                    'cases': set(word['case'])
-                }
+    last_unaligned_word_index = None
+    for i, word in enumerate(response['words']):
+        if 'alignedWord' in word:
+            continue
+
+        if last_unaligned_word_index and last_unaligned_word_index + 1 == i:
+            unaligned_text['endOffset'] = word['endOffset']
+            unaligned_text['cases'].add(word['case'])
+        else:
+            if unaligned_text:
+                unaligned_text['text'] = transcript[unaligned_text['startOffset']:unaligned_text[
+                    'endOffset']]
+                logger.warn('Unaligned text: %s', unaligned_text)
+
+            unaligned_text = {
+                'startOffset': word['startOffset'],
+                'endOffset': word['endOffset'],
+                'cases': set([word['case']])
+            }
+            last_unaligned_word_index = i
 
     for word in response['words']:
         if 'alignedWord' not in word or word['alignedWord'] == GENTLE_OOV_WORD:
@@ -146,6 +151,7 @@ def _request_gentle(wav_path,
     if response.status_code != 200:
         raise ValueError('Gentle ({}) returned bad response: {}'.format(url, response.status_code))
 
+    # TODO: Cache the response on disk
     response = response.json()
     _review_gentle(response, transcript)
     return response
