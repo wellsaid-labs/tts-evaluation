@@ -1,0 +1,4 @@
+{
+  "extends": "jquery",
+  "max-len": 100
+}

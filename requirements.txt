@@ -35,3 +35,6 @@ yapf==0.22.0
 # Utils
 tqdm # Progress bar
 jupyter # Notebooks
+
+# Service
+Flask==1.0.2

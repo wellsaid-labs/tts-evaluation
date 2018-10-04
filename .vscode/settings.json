@@ -26,6 +26,8 @@
   "git.autofetch": true,
   "editor.minimap.enabled": false,
   "files.insertFinalNewline": true,
+  "eslint.autoFixOnSave": true,
+  "eslint.run": "onSave",
   "files.exclude": {
     "**/.git": true,
     "**/.svn": true,
