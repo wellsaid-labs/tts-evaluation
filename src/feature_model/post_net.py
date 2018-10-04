@@ -18,6 +18,8 @@ class PostNet(nn.Module):
         been decoded, we use a convolutional postprocessing network to incorporate past and future
         frames after decoding to improve the feature predictions.
 
+    NOTE: Google Tacotron 2 authors mentioned they did not add dropout to the PostNet over GChat.
+
     Args:
         num_convolution_layers (int, optional): Number of convolution layers to apply.
         num_convolution_filters (odd :clas:`int`, optional): Number of dimensions (channels)
@@ -37,7 +39,6 @@ class PostNet(nn.Module):
                  num_convolution_layers=5,
                  num_convolution_filters=512,
                  convolution_filter_size=5,
-                 convolution_dropout=0.5,
                  frame_channels=80):
         super().__init__()
 
@@ -56,8 +57,7 @@ class PostNet(nn.Module):
                     kernel_size=convolution_filter_size,
                     padding=int((convolution_filter_size - 1) / 2)),
                 nn.BatchNorm1d(num_features=num_convolution_filters),
-                nn.Tanh(),
-                nn.Dropout(p=convolution_dropout)) for i in range(num_convolution_layers - 1)
+                nn.Tanh()) for i in range(num_convolution_layers - 1)
         ]
 
         # Initialize weights
@@ -76,8 +76,7 @@ class PostNet(nn.Module):
                     out_channels=frame_channels,
                     kernel_size=convolution_filter_size,
                     padding=int((convolution_filter_size - 1) / 2)),
-                nn.BatchNorm1d(num_features=frame_channels),
-                nn.Dropout(p=convolution_dropout)))
+                nn.BatchNorm1d(num_features=frame_channels)))
         self.layers = nn.Sequential(*tuple(self.layers))
 
     def forward(self, frames):

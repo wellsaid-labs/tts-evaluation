@@ -221,7 +221,6 @@ def set_hparams():
                 },
                 'post_net.PostNet.__init__': {
                     'frame_channels': frame_channels,
-                    'convolution_dropout': convolution_dropout,
 
                     # SOURCE (Tacotron 2):
                     # Finally, the predicted mel spectrogram is passed
