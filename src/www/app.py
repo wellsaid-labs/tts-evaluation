@@ -1,19 +1,51 @@
+from pathlib import Path
+
 import os
 import random
 import requests
 import string
+import logging
+import torch
 
 from flask import Flask
 from flask import jsonify
 from flask import request
 from flask import send_file
 
-app = Flask(__name__)
+from src.audio import griffin_lim
+from src.bin.feature_model._utils import set_hparams as set_feature_model_hparams
+from src.bin.signal_model._utils import set_hparams as set_signal_model_hparams
+from src.utils import load_checkpoint
 
-API_ENDPOINT = 'https://www.voicery.com/api/generate'
-ALIASES = {'alicia': 'nicole', 'hilary': 'emily', 'liam': 'steven'}
-SAMPLES_FOLDER = 'static/samples'
+app = Flask(__name__)
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+torch.set_grad_enabled(False)
+
+SAMPLES_FOLDER = Path('static/samples')
 DEFAULT_SAMPLE_FILENAME = 'voiceover.mp3'
+
+def load_feature_model(path):
+    """ Load the feature model from a ``Path`` or ``str`` path argument """
+    set_feature_model_hparams()
+    checkpoint = load_checkpoint(path, torch.device('cuda'))
+    logger.info('Loaded feature model at step %d', checkpoint['step'])
+    return checkpoint['text_encoder'], checkpoint['model'].eval()
+
+def load_signal_model(path):
+    """ Load the signal model from a ``Path`` or ``str`` path argument """
+    set_signal_model_hparams()
+    checkpoint = load_checkpoint(path, torch.device('cpu'))
+    logger.info('Loaded signal model at step %d', checkpoint['step'])
+    return checkpoint['model'].eval()
+
+EXPERIMENT_ROOT = Path('/home/michaelp/WellSaid-Labs-Text-To-Speech/experiments/')
+FEATURE_MODEL, TEXT_ENCODER = load_feature_model(EXPERIMENT_ROOT /
+                'feature_model/09_16/post_net_no_dropout/' /
+                'checkpoints/1538001059/step_289899.pt')
+SIGNAL_MODEL = load_signal_model(EXPERIMENT_ROOT /
+                'signal_model/09_28/feature_model_post_net_no_dropout/' /
+                'checkpoints/1538601423/step_2217350.pt')
 
 # ERROR HANDLERS
 # INSPIRED BY: http://flask.pocoo.org/docs/1.0/patterns/apierrors/
@@ -72,29 +104,21 @@ def synthesize():
     style = request_data['style'].lower()
     text = request_data['text'].lower()
 
-    speaker = ALIASES[speaker]
+    if TEXT_ENCODER.decode(TEXT_ENCODER.encode(text)) != text:
+        raise ValueError('Text has improper characters.')
 
-    try:
-        # TODO: make identifier truly unique (hash of current time)
-        unique_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-        filename = '{}{}.mp3'.format('generated_audio_', unique_id)
-        file_path = os.path.join(SAMPLES_FOLDER, filename)
+    encoded = TEXT_ENCODER.encode(text)
+    encoded = encoded.unsqueeze(1).to(torch.device('cuda'))
+    # predicted_frames [num_frames, batch_size, frame_channels]
+    predicted_frames = feature_model(tokens=encoded)[1]
+    waveform = griffin_lim(predicted_frames[:, 0].cpu().numpy())
 
-        response = requests.post(
-            API_ENDPOINT, data={
-                'text': text,
-                'speaker': speaker,
-                'style': style
-            })
-        response.encoding = 'audio/mp3'
+    # TODO: Fix this unique_id, it could cause a duplicate
+    unique_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+    filename = SAMPLES_FOLDER / '{}{}.mp3'.format('generated_audio_', unique_id)
+    librosa.output.write_wav(str(filename), waveform)
 
-        with open(file_path, 'wb') as file_:
-            file_.write(response.content)
-
-        return jsonify({'filename': filename})
-    except Exception as e:
-        error_name = type(e).__name__
-        raise ValueError('An %s occured!' % error_name)
+    return jsonify({'filename': str(filename)})
 
 
 if __name__ == "__main__":
