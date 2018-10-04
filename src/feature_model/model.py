@@ -84,7 +84,7 @@ class SpectrogramModel(nn.Module):
             encoder_hidden_size=encoder_hidden_size, frame_channels=frame_channels)
         self.post_net = PostNet(frame_channels=frame_channels)
 
-    def _get_stopped_indexes(self, predictions):
+    def _get_stopped_indexes(self, predictions, stop_threshold):
         """ Get a list of indices that predicted stop.
 
         Args:
@@ -93,13 +93,13 @@ class SpectrogramModel(nn.Module):
         Returns:
             (list) Indices that predicted stop.
         """
-        stopped = predictions.data.view(-1).ge(0.5).nonzero()
+        stopped = predictions.data.view(-1).ge(stop_threshold).nonzero()
         if stopped.dim() > 1:
             return stopped.squeeze(1).tolist()
         else:
             return []
 
-    def forward(self, tokens, ground_truth_frames=None, max_recursion=2000):
+    def forward(self, tokens, ground_truth_frames=None, max_recursion=2000, stop_threshold=0.5):
         """
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size]): Batched set of sequences.
@@ -134,7 +134,7 @@ class SpectrogramModel(nn.Module):
             while len(stopped) != batch_size and len(frames) < max_recursion:
                 frame, stop_token, hidden_state, alignment = self.decoder(
                     encoded_tokens, tokens_mask, hidden_state=hidden_state)
-                stopped.update(self._get_stopped_indexes(stop_token))
+                stopped.update(self._get_stopped_indexes(stop_token, stop_threshold=stop_threshold))
 
                 # Store results
                 frames.append(frame.squeeze(0))
