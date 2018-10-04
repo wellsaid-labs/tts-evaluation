@@ -3,7 +3,7 @@ from pathlib import Path
 import logging
 import pprint
 
-from multiprocessing import Pool
+from torch.multiprocessing import Pool
 
 import numpy as np
 import librosa

@@ -3,6 +3,7 @@ import matplotlib
 matplotlib.use('Agg', warn=False)
 
 from pathlib import Path
+from math import isclose
 
 import ast
 import glob
@@ -22,6 +23,43 @@ logger = logging.getLogger(__name__)
 
 # Repository root path
 ROOT_PATH = Path(__file__).parent.parent.parent.resolve()
+
+
+def get_weighted_standard_deviation(tensor, dim=0):
+    """ Computed the weighted standard deviation.
+
+    We assume the weights are normalized between zero and one summing up to one on ``dim``.
+
+    Learn more:
+        - https://en.wikipedia.org/wiki/Weighted_arithmetic_mean
+        - https://mathoverflow.net/questions/11803/unbiased-estimate-of-the-variance-of-a-weighted-mean # noqa: E501
+
+    Args:
+        tensor (torch.FloatTensor): Some tensor along which to compute the standard deviation.
+        dim (int): Dimension of ``tensor`` along which to compute the standard deviation.
+
+    Returns:
+        tensor (torch.FloatTensor): Returns the weighted standard deviation of each row of the input
+            tensor in the given dimension ``dim``.
+    """
+    # Expects normalized weightes total of 0, 1 to ensure correct variance decisions
+    assert all([isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()])
+
+    # Create position matrix where the index is the position and the value is the weight
+    indicies = torch.arange(0, tensor.shape[dim], dtype=tensor.dtype, device=tensor.device)
+    shape = [1] * len(tensor.shape)
+    shape[dim] = tensor.shape[dim]
+    indicies = indicies.view(*shape).expand_as(tensor).float()
+
+    weighted_mean = (indicies * tensor).sum(dim=dim) / tensor.sum(dim=dim)
+    biased_weighted_variance = (
+        (indicies - weighted_mean.unsqueeze(dim=dim))**2 * tensor).sum(dim=dim)
+
+    # Correct the bias
+    bias = 1 - (tensor**2).sum(dim=dim)
+    weighted_variance = biased_weighted_variance / bias
+
+    return weighted_variance**0.5
 
 
 class ExponentiallyWeightedMovingAverage():
@@ -55,6 +93,10 @@ class ExponentiallyWeightedMovingAverage():
         # https://www.coursera.org/lecture/deep-neural-network/bias-correction-in-exponentially-weighted-averages-XjuhD
         average_bias_corrected = self._average / (1 - self.beta**(self.step_counter))
 
+        # TODO: Double check the math we might not be debiasing this correctly assuming
+        # "Reliability weights"
+        # LEARN MORE:
+        # http://people.ds.cam.ac.uk/fanf2/hermes/doc/antiforgery/stats.pdf
         self._variance = self.beta * self._variance + (1 - self.beta) * (
             value - average_bias_corrected)**2
         variance_bias_corrected = self._variance / (1 - self.beta**(self.step_counter))
@@ -133,7 +175,9 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
             (bool): If ``value`` is an anomaly.
         """
         is_anomaly = self._is_anomaly(value)
-        if not is_anomaly:
+        if is_anomaly:
+            self.anomaly_counter += 1
+        else:
             self.last_average, self.last_standard_deviation = super().step(value)
         return is_anomaly
 
