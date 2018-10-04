@@ -41,6 +41,60 @@ def natural_keys(text):
     return [(int(c) if c.isdigit() else c) for c in re.split('(\d+)', str(text))]
 
 
+def _review_gentle(response, transcript):
+    """ Log warnings, check invariants, and compute statistics for the script user.
+
+    Args:
+        response (dict): Response of Gentle
+        transcript (str): Transcript sent to Gentle.
+    """
+    # Check various invariants
+    assert response['transcript'] == transcript, 'Failed transcript invariant.'
+    assert all([
+        transcript[w['startOffset']:w['endOffset']] == w['word'] for w in response['words']
+    ]), 'Transcript must align with character offsets.'
+
+    # Print warnings
+    unaligned_text = None
+    for word in response['words']:
+        if 'alignedWord' not in word:
+            if unaligned_text and unaligned_text['endOffset'] + 1 == word['startOffset']:
+                unaligned_text['endOffset'] = word['endOffset']
+                unaligned_text['cases'].add(word['case'])
+            else:
+                if unaligned_text:
+                    unaligned_text['phrase'] = transcript[unaligned_text['startOffset']:
+                                                          unaligned_text['endOffset']]
+                    logger.warn('Unaligned text: %s', word)
+                unaligned_text = {
+                    'startOffset': word['startOffset'],
+                    'endOffset': word['endOffset'],
+                    'cases': set(word['case'])
+                }
+
+    for word in response['words']:
+        if 'alignedWord' not in word or word['alignedWord'] == GENTLE_OOV_WORD:
+            continue
+
+        normalized_word = word['word'].lower().replace('’', '\'')
+        if word['alignedWord'] != normalized_word:
+            logger.warn('``alignedWord`` does not match transcript ``word``: %s', word)
+
+    # Compute statistics
+    unaligned_words = sum([w['case'] != GENTLE_SUCCESS_CASE for w in response['words']])
+    if unaligned_words > 0:
+        logger.warn('%f%% unaligned words', (unaligned_words / len(response['words']) * 100))
+
+    oov_words = [
+        w['word']
+        for w in response['words']
+        if 'alignedWord' in w and w['alignedWord'] == GENTLE_OOV_WORD
+    ]
+    if len(oov_words) > 0:
+        logger.warn('%f%% out of vocabulary words', (len(oov_words) / len(response['words']) * 100))
+        logger.warn('Out of vocabulary words: %s', set(oov_words))
+
+
 def _request_gentle(wav_path,
                     transcript,
                     hostname='localhost',
@@ -91,32 +145,9 @@ def _request_gentle(wav_path,
         timeout=duration * wait_per_second_of_audio)
     if response.status_code != 200:
         raise ValueError('Gentle ({}) returned bad response: {}'.format(url, response.status_code))
+
     response = response.json()
-
-    # Check various invariants
-    assert response['transcript'] == transcript, 'Failed transcript invariant.'
-    assert all([
-        transcript[w['startOffset']:w['endOffset']] == w['word'] for w in response['words']
-    ]), 'Transcript must align with character offsets.'
-
-    # Print warnings
-    for word in response['words']:
-        normalized_word = word['word'].lower().replace('’', '\'')
-        if 'alignedWord' not in word:
-            logger.warn('``alignedWord`` does not exist — %s', word)
-        elif word['alignedWord'] != normalized_word:
-            logger.warn('``alignedWord`` does not match trascript ``word`` — %s', word)
-
-    # Compute statistics
-    unaligned_words = sum([w['case'] != GENTLE_SUCCESS_CASE for w in response['words']])
-    if unaligned_words > 0:
-        logger.warn('%f%% unaligned words', (unaligned_words / len(response['words']) * 100))
-
-    oov_words = sum(
-        ['alignedWord' in w and w['alignedWord'] == GENTLE_OOV_WORD for w in response['words']])
-    if oov_words > 0:
-        logger.warn('%f%% out of vocabulary words', (oov_words / len(response['words']) * 100))
-
+    _review_gentle(response, transcript)
     return response
 
 
@@ -279,13 +310,7 @@ def main(wav_pattern,
         audio = read_audio(str(wav_path), sample_rate)
 
         logger.info('Reading csv...')
-        try:
-            df = pandas.read_csv(csv_path)
-        except pandas.errors.ParserError:
-            logger.warn('%s uses TSV instead of CSV', csv_path.name)
-            # TODO: Remove this temporary fix and update TSV files to CSV
-            df = pandas.read_csv(csv_path, sep='\t')
-
+        df = pandas.read_csv(csv_path)
         scripts = [x.strip() for x in df[text_column]]
 
         logger.info('Aligning...')
