@@ -121,7 +121,7 @@ def _request_gentle(wav_path,
                     hostname='localhost',
                     port=8765,
                     parameters=(('async', 'false'),),
-                    wait_per_second_of_audio=0.25,
+                    wait_per_second_of_audio=0.5,
                     sample_rate=24000):
     """ Align an audio file with the trascript at a word granularity.
 
