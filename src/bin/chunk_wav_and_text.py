@@ -5,6 +5,7 @@ import re
 import requests
 
 from collections import namedtuple
+from collections import Counter
 
 import pandas
 import librosa
@@ -52,15 +53,16 @@ def _review_gentle(response, transcript):
     assert response['transcript'] == transcript, 'Failed transcript invariant.'
     assert all([
         transcript[w['startOffset']:w['endOffset']] == w['word'] for w in response['words']
-    ]), 'Transcript must align with character offsets.'
+    ]), 'Transcript must align with word character offsets.'
 
     # Print warnings
     unaligned_text = None
     last_unaligned_word_index = None
     for i, word in enumerate(response['words']):
-        if 'alignedWord' in word:
+        if 'alignedWord' in word and word['case'] == GENTLE_SUCCESS_CASE:
             continue
 
+        # Group up unaligned words into text snippets for a cleaner log
         if last_unaligned_word_index and last_unaligned_word_index + 1 == i:
             unaligned_text['endOffset'] = word['endOffset']
             unaligned_text['cases'].add(word['case'])
@@ -78,6 +80,13 @@ def _review_gentle(response, transcript):
             }
             last_unaligned_word_index = i
 
+    # Print any remaining unaligned text
+    if unaligned_text:
+        unaligned_text['text'] = transcript[unaligned_text['startOffset']:unaligned_text[
+            'endOffset']]
+        logger.warn('Unaligned text: %s', unaligned_text)
+
+    # Warn if aligned words do not match with transcript
     for word in response['words']:
         if 'alignedWord' not in word or word['alignedWord'] == GENTLE_OOV_WORD:
             continue
@@ -87,9 +96,15 @@ def _review_gentle(response, transcript):
             logger.warn('``alignedWord`` does not match transcript ``word``: %s', word)
 
     # Compute statistics
-    unaligned_words = sum([w['case'] != GENTLE_SUCCESS_CASE for w in response['words']])
-    if unaligned_words > 0:
-        logger.warn('%f%% unaligned words', (unaligned_words / len(response['words']) * 100))
+    cases_counter = Counter([w['case'] for w in response['words']])
+    if len(cases_counter) > 1 or cases_counter[GENTLE_SUCCESS_CASE] == 0:
+        for case in cases_counter:
+            if case == GENTLE_SUCCESS_CASE:
+                continue
+
+            percentage = cases_counter[case] / sum(cases_counter.values()) * 100
+            logger.warn('%f%% (%d of %d) of words have case: %s', percentage, cases_counter[case],
+                        sum(cases_counter.values()), case)
 
     oov_words = [
         w['word']
