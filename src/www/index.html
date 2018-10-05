@@ -67,47 +67,16 @@
 
           <div class="speaker-row speaker-row-selected">
             <div class="speaker-avatar">
-              <img class="avatar" src="static/images/avatar_liam.png">
-            </div>
-            <div class="speaker-details">
-              <h3>Liam</h3>
-              <p>Crisp voice of a 36-year-old American male</p>
-              <span>
-                <a class="demo-link" id="demo-liam">Play Sample</a>
-              </span>
-            </div>
-          </div>
-
-          <!--
-          <div class="speaker-row">
-            <div class="speaker-avatar">
               <img class="avatar" src="static/images/avatar_alicia.png">
             </div>
             <div class="speaker-details">
-              <h3>Alicia</h3>
-              <p>Familiar voice of a 27-year-old American female</p>
+              <h3>Linda</h3>
+              <p>Narration voice of a 31-year-old American female</p>
               <span>
-                <a class="demo-link" id="demo-alicia">Play Sample</a>
+                <a class="demo-link" id="demo-linda">Play Sample</a>
               </span>
             </div>
           </div>
-
-
-          <div class="speaker-row">
-            <div class="speaker-avatar">
-              <img class="avatar" src="static/images/avatar_hilary.png">
-            </div>
-            <div class="speaker-details">
-              <h3>Hilary</h3>
-              <p>Warm voice of a 31-year-old Australian female</p>
-              <span>
-                <a class="demo-link" id="demo-hilary">Play Sample</a>
-              </span>
-            </div>
-          </div>
-
-          -->
-
 
         </div>
 
@@ -119,12 +88,19 @@
             <p id="character-counter">0/300</p>
           </div>
 
+          <div class="text-editor-error"></div>
           <div class="text-editor-footer">
             <div class="listen-and-style">
-              <div class="style-menu-container"></div>
+              <div class="switch">
+                <label>
+                  <input type="checkbox">
+                  <span class="slider round"></span>
+                </label>
+                <p>Generate High Quality Audio</p>
+              </div>
+              <!-- TODO: Use the border radius as a progress bar for various things -->
               <button class="btn-enabled" id="listen-button">Listen</button>
             </div>
-            <div class="error"></div>
           </div>
 
         </div>

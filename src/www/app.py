@@ -1,8 +1,12 @@
+"""
+Example:
+
+      $ export PYTHONPATH=.
+      $ python3 -m src.www.app
+"""
 from pathlib import Path
 
-import os
 import random
-import requests
 import string
 import logging
 import torch
@@ -105,7 +109,6 @@ def get_sample(filename):
 def synthesize():
     request_data = request.get_json()
     speaker = request_data['speaker'].lower()
-    style = request_data['style'].lower()
     text = request_data['text'].lower()
 
     if TEXT_ENCODER.decode(TEXT_ENCODER.encode(text)) != text:

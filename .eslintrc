@@ -1,4 +1,12 @@
 {
   "extends": "jquery",
-  "max-len": 100
+  "rules": {
+    "max-len": ["error", {
+      "code": 100
+    }]
+  },
+  "env": {
+    "browser": true,
+    "jquery": true
+  }
 }
