@@ -327,11 +327,11 @@ def main(wav_pattern,
             continue
 
         logger.info('Processing %s:%s', wav_path, csv_path)
+        assert wav_path.suffix == '.wav', 'Please select only WAV files'
+        assert csv_path.suffix == '.csv', 'Please select only CSV files'
 
-        logger.info('Reading audio...')
+        logger.info('Reading audio and csv...')
         audio = read_audio(str(wav_path), sample_rate)
-
-        logger.info('Reading csv...')
         df = pandas.read_csv(csv_path)
         scripts = [x.strip() for x in df[text_column]]
 
