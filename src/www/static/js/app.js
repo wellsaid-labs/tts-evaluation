@@ -27,7 +27,7 @@ $( document ).ready( function() {
     $( "#play-button" ).addClass( "pause" );
 
     // Update download link
-    $( "#download-link" ).attr( "href", "../samples/" + filename + "?attachment=True" );
+    $( "#download-link" ).attr( "href", "../static/samples/" + filename + "?attachment=True" );
   }
 
   function closeModal() {
@@ -44,7 +44,7 @@ $( document ).ready( function() {
   } );
 
   function disableListenButton() {
-    $listenButtonProgressBar.css( "width", "0%" );
+    $listenButtonProgressBar.css( "width", "100%" );
     $listenButton.prop( "disabled", true );
     $listenButton.children( "p" ).text( "Listen" );
     $listenButton
@@ -53,6 +53,9 @@ $( document ).ready( function() {
   }
 
   function enableListenButton() {
+    $listenButtonProgressBar.css( "display", "None" );
+    $listenButtonProgressBar.css( "width", "0%" );
+    $listenButtonProgressBar.css( "display", "block" );
     $listenButton.prop( "disabled", false );
     $listenButton.children( "p" ).text( "Listen" );
     $listenButton
@@ -220,14 +223,14 @@ $( document ).ready( function() {
   }
 
   function displayMessage( message ) {
-    var $errorMessage = $( ".error" );
+    var $errorMessage = $( ".text-editor-error" );
     $errorMessage.hide();
     $errorMessage.html( "<p>" + message + "</p>" );
     $errorMessage.show();
   }
 
   function clearMessage() {
-    $( ".error" ).html( "" );
+    $( ".text-editor-error" ).html( "" );
   }
 
 
@@ -311,10 +314,13 @@ $( document ).ready( function() {
         clearInterval( listenButtonProgressInterval );
       },
       error: function() {
+        clearInterval( listenButtonProgressInterval );
 
         // TODO: add error details in message shown to user
         $mainTextArea.prop( "disabled", false );
-        displayMessage( "Something went wrong! Please try again." );
+        displayMessage( "Something went wrong, sorry :( Sometimes this demo fails with numerical " +
+          "characters and none-standard characters. If all else fails, try refreshing and " +
+          "emailing <a href='michaelp@allenai.org'>michaelp@allenai.org</a>." );
         enableListenButton();
       },
       dataType: "json"

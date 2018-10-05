@@ -102,6 +102,7 @@ button {
 }
 
 button:hover {
+  cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
@@ -527,6 +528,11 @@ nav img {
 .text-editor-error p {
   color: #FF3366;
   text-align: left;
+}
+
+.text-editor-error a {
+  color: #FF3366;
+  text-transform: none;
 }
 
 /* Modal (Footer) */

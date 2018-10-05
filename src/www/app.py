@@ -88,7 +88,7 @@ def handle_generic_exception(error):
 # FILE ROUTES
 
 
-@app.route('/', methods=['POST', 'GET'])
+@app.route('/demo', methods=['POST', 'GET'])
 def index(filename=None):
     return send_file('index.html')
 
@@ -105,7 +105,6 @@ def get_sample(filename):
         attachment_filename=attachment_filename)
 
 
-# TODO: We do not need multiple GPUs since WaveRNN works best on CPU
 @app.route('/synthesize', methods=['POST'])
 def synthesize():
     request_data = request.get_json()
@@ -115,7 +114,7 @@ def synthesize():
     logger.info('Got request %s', request_data)
 
     if TEXT_ENCODER.decode(TEXT_ENCODER.encode(text)) != text:
-        raise ValueError('Text has improper characters.')
+        raise GenericException('Text has improper characters.')
 
     with torch.set_grad_enabled(False):
         encoded = TEXT_ENCODER.encode(text)
@@ -147,4 +146,4 @@ def synthesize():
 
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=8000, processes=4, threaded=False)
+    app.run(host='0.0.0.0', port=80, processes=8, threaded=False)
