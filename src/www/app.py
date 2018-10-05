@@ -6,10 +6,9 @@ Example:
 """
 from pathlib import Path
 
-import random
-import string
 import logging
 import torch
+import uuid
 
 from flask import Flask
 from flask import jsonify
@@ -21,6 +20,7 @@ import librosa
 from src.audio import griffin_lim
 from src.bin.feature_model._utils import set_hparams as set_feature_model_hparams
 from src.bin.signal_model._utils import set_hparams as set_signal_model_hparams
+from src.utils import combine_signal
 from src.utils import load_checkpoint
 
 app = Flask(__name__)
@@ -34,7 +34,7 @@ DEFAULT_SAMPLE_FILENAME = 'voiceover.wav'
 def load_feature_model(path):
     """ Load the feature model from a ``Path`` or ``str`` path argument """
     set_feature_model_hparams()
-    checkpoint = load_checkpoint(path, torch.device('cuda'))
+    checkpoint = load_checkpoint(path, torch.device('cpu'))
     logger.info('Loaded feature model at step %d', checkpoint['step'])
     return checkpoint['model'].eval(), checkpoint['text_encoder']
 
@@ -105,24 +105,41 @@ def get_sample(filename):
         attachment_filename=attachment_filename)
 
 
+# TODO: We do not need multiple GPUs since WaveRNN works best on CPU
 @app.route('/synthesize', methods=['POST'])
 def synthesize():
     request_data = request.get_json()
-    speaker = request_data['speaker'].lower()
+    # TODO: Add the ability to pick from multiple speakers
     text = request_data['text'].lower()
+    is_high_fidelity = request_data['isHighFidelity']
+    logger.info('Got request %s', request_data)
 
     if TEXT_ENCODER.decode(TEXT_ENCODER.encode(text)) != text:
         raise ValueError('Text has improper characters.')
 
     with torch.set_grad_enabled(False):
         encoded = TEXT_ENCODER.encode(text)
-        encoded = encoded.unsqueeze(1).to(torch.device('cuda'))
+        encoded = encoded.unsqueeze(1)
         # predicted_frames [num_frames, batch_size, frame_channels]
         predicted_frames = FEATURE_MODEL(tokens=encoded)[1]
-        waveform = griffin_lim(predicted_frames[:, 0].cpu().numpy())
+
+        if is_high_fidelity:
+            # [num_frames, batch_size, frame_channels] → [num_frames, frame_channels]
+            predicted_frames = predicted_frames.squeeze(1)
+            # TODO: The padding should be handled by the model
+            padded_predicted_frames = torch.nn.functional.pad(predicted_frames, (0, 0, 5, 5))
+            padded_predicted_frames = padded_predicted_frames.unsqueeze(0)
+            # [batch_size, signal_length]
+            predicted_coarse, predicted_fine, _ = SIGNAL_MODEL.infer(padded_predicted_frames)
+
+            predicted_coarse = predicted_coarse.squeeze(0)
+            predicted_fine = predicted_fine.squeeze(0)
+            waveform = combine_signal(predicted_coarse, predicted_fine).numpy()
+        else:
+            waveform = griffin_lim(predicted_frames[:, 0].numpy())
 
     # TODO: Fix this unique_id, it could cause a duplicate
-    unique_id = ''.join(random.sample(string.ascii_uppercase + string.digits, k=10))
+    unique_id = str(uuid.uuid4())
     filename = SAMPLES_FOLDER / '{}{}.wav'.format('generated_audio_', unique_id)
     librosa.output.write_wav(str(filename), waveform)
 
@@ -130,4 +147,4 @@ def synthesize():
 
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    app.run(host='0.0.0.0', port=8000, processes=4, threaded=False)

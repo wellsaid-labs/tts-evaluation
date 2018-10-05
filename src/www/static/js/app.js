@@ -44,8 +44,9 @@ $( document ).ready( function() {
   } );
 
   function disableListenButton() {
+    $listenButtonProgressBar.css( "width", "0%" );
     $listenButton.prop( "disabled", true );
-    $listenButton.text( "Listen" );
+    $listenButton.children( "p" ).text( "Listen" );
     $listenButton
       .removeClass( "btn-enabled" )
       .addClass( "btn-disabled" );
@@ -53,7 +54,7 @@ $( document ).ready( function() {
 
   function enableListenButton() {
     $listenButton.prop( "disabled", false );
-    $listenButton.text( "Listen" );
+    $listenButton.children( "p" ).text( "Listen" );
     $listenButton
       .removeClass( "btn-disabled" )
       .addClass( "btn-enabled" );
@@ -236,11 +237,27 @@ $( document ).ready( function() {
       enableListenButton();
     } else {
       $listenButton.prop( "disabled", true );
-      $listenButton.text( "Loading" );
+      $listenButton.children( "p" ).text( "Loading" );
       $listenButton
         .removeClass( "btn-enabled" )
         .addClass( "btn-disabled" );
     }
+  }
+
+  var listenButtonProgressInterval;
+  var $listenButtonProgressBar = $( "#listen-button .btn-progress-bar" );
+
+
+  function listenButtonProgress( totalTime ) {
+    var width = 0;
+
+    listenButtonProgressInterval = setInterval( function() {
+      width += 1;
+      $listenButtonProgressBar.css( "width", width + "%" );
+      if ( width >= 95 ) {
+        clearInterval( listenButtonProgressInterval );
+      }
+    }, totalTime / 100 );
   }
 
   $listenButton.on( "click", function() {
@@ -250,7 +267,7 @@ $( document ).ready( function() {
 
     var text = $mainTextArea.val();
     var speaker = $( ".speaker-row-selected" ).find( "h3" ).text();
-    var isHighFidelity = $( ".text-editor-footer switch input" ).is( ":checked" );
+    var isHighFidelity = $( ".text-editor-footer .switch input" ).is( ":checked" );
     var requestData = {
       text: text,
       speaker: speaker,
@@ -267,6 +284,17 @@ $( document ).ready( function() {
 
     toggleListenButtonLoading();
 
+    // TODO: Parameterize this and document
+    var estimatedTime = 0;
+    if ( isHighFidelity ) {
+      var estimatedSampleLength = text.length * 6 * 12.5;
+      estimatedTime = ( 24000 / 1100 ) * estimatedSampleLength;
+    } else {
+      estimatedTime = 3000;
+    }
+
+    listenButtonProgress( estimatedTime );
+
     $.ajax( {
       type: "POST",
       contentType: "application/json; charset=utf-8",
@@ -280,6 +308,7 @@ $( document ).ready( function() {
         } else {
           displayMessage( "Unable to retrieve audio file. Please try again!" );
         }
+        clearInterval( listenButtonProgressInterval );
       },
       error: function() {
 
