@@ -59,6 +59,34 @@ def get_available_instances():  # pragma: no cover
     return filtered_instances
 
 
+def is_halted(name, zone, command='find . -type f -not -name \'.*\' -cmin -5 2>/dev/null'):
+    """ Check if instance halted by executing a command
+
+    Args:
+        name (str): Instance name.
+        zone (str): Instance zone.
+        command (str): Command returns some output if the instance is running by default checks if
+            any none-private files have been updated in the last 5 minutes.
+
+    Returns
+        (bool)
+    """
+    logger.info('Checking if instance halted execution...')
+    logger.info('Running command on instance: %s', command)
+    try:
+        output = subprocess.check_output(
+            'gcloud compute ssh %s --zone=%s --command="%s"' % (name, zone, command), shell=True)
+        output = output.decode('utf-8')
+    except subprocess.CalledProcessError as e:
+        output = e.output.decode('utf-8')
+    output = output.strip()
+    logger.info('Command output: %s', output)
+    if len(output) == 0:
+        return True
+    else:
+        return False
+
+
 def keep_alive(instances, command, scheduler, repeat_every=60, retry=3):  # pragma: no cover
     """ Restart GCP instances every ``repeat_every`` seconds with ``command``.
 
@@ -101,6 +129,11 @@ def keep_alive(instances, command, scheduler, repeat_every=60, retry=3):  # prag
 
                 except Exception as e:
                     logger.warn('Exception: %s', e)
+        elif is_halted(name, zone):
+            logger.info('Stopping instance "%s" in zone %s', name, zone)
+            output = subprocess.check_output(
+                'gcloud compute instances stop %s --zone=%s' % (name, zone), shell=True)
+            logger.info('Stoppping output: %s', output.decode('utf-8'))
 
         print('-' * 100)
 
