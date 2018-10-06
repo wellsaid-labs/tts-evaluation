@@ -59,7 +59,7 @@ def get_available_instances():  # pragma: no cover
     return filtered_instances
 
 
-def is_halted(name, zone, command='find . -type f -not -name \'.*\' -cmin -5 2>/dev/null'):
+def is_halted(name, zone, command='find . -type f -not -name \'.*\' -cmin -10 2>/dev/null'):
     """ Check if instance halted by executing a command
 
     Args:
@@ -86,7 +86,8 @@ def is_halted(name, zone, command='find . -type f -not -name \'.*\' -cmin -5 2>/
         return False
 
 
-def keep_alive(instances, command, scheduler, repeat_every=60, retry=3):  # pragma: no cover
+def keep_alive(instances, command, scheduler, repeat_every=60 * 5, retry_timeout=60,
+               retry=3):  # pragma: no cover
     """ Restart GCP instances every ``repeat_every`` seconds with ``command``.
 
     Args:
@@ -94,6 +95,8 @@ def keep_alive(instances, command, scheduler, repeat_every=60, retry=3):  # prag
         command (str): Command to run at the start of the instance.
         scheduler (sched.scheduler): Scheduler to rerun this function.
         repeat_every (int): Repeat this call every ``repeat_every`` seconds.
+        retry_timeout (int): Timeout between retries.
+        retry (int): Number of retries incase failure.
     """
     for instance in instances:
         name = instance['name']
@@ -111,7 +114,7 @@ def keep_alive(instances, command, scheduler, repeat_every=60, retry=3):  # prag
             for i in range(retry):
                 if i > 0:
                     logger.info('Retrying again in %d', repeat_every)
-                    time.sleep(repeat_every)
+                    time.sleep(retry_timeout)
 
                 try:
                     logger.info('Restarting instance "%s" in zone %s', name, zone)
