@@ -71,8 +71,7 @@ def is_halted(name, zone, command='find . -type f -not -name \'.*\' -cmin -5 2>/
     Returns
         (bool)
     """
-    logger.info('Checking if instance halted execution...')
-    logger.info('Running command on instance: %s', command)
+    logger.info('Checking if instance halted execution with command: %s', command)
     try:
         output = subprocess.check_output(
             'gcloud compute ssh %s --zone=%s --command="%s"' % (name, zone, command), shell=True)
@@ -80,7 +79,7 @@ def is_halted(name, zone, command='find . -type f -not -name \'.*\' -cmin -5 2>/
     except subprocess.CalledProcessError as e:
         output = e.output.decode('utf-8')
     output = output.strip()
-    logger.info('Command output: %s', output)
+    logger.info('Command output:\n%s', output)
     if len(output) == 0:
         return True
     else:
@@ -118,22 +117,22 @@ def keep_alive(instances, command, scheduler, repeat_every=60, retry=3):  # prag
                     logger.info('Restarting instance "%s" in zone %s', name, zone)
                     output = subprocess.check_output(
                         'gcloud compute instances start %s --zone=%s' % (name, zone), shell=True)
-                    logger.info('Restarting output: %s', output.decode('utf-8'))
+                    logger.info('Restarting instance output:\n%s', output.decode('utf-8'))
 
                     logger.info('Running command on instance: %s', command)
                     output = subprocess.check_output(
                         'gcloud compute ssh %s --zone=%s --command="%s"' % (name, zone, command),
                         shell=True)
-                    logger.info('Command output: %s', output.decode('utf-8'))
+                    logger.info('Command output:\n%s', output.decode('utf-8'))
                     break
 
                 except Exception as e:
                     logger.warn('Exception: %s', e)
-        elif is_halted(name, zone):
+        elif status == INSTANCE_RUNNING and is_halted(name, zone):
             logger.info('Stopping instance "%s" in zone %s', name, zone)
             output = subprocess.check_output(
                 'gcloud compute instances stop %s --zone=%s' % (name, zone), shell=True)
-            logger.info('Stoppping output: %s', output.decode('utf-8'))
+            logger.info('Stoppping instance output:\n%s', output.decode('utf-8'))
 
         print('-' * 100)
 
