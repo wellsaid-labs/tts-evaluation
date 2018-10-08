@@ -4,6 +4,7 @@ Example:
       $ export PYTHONPATH=.
       $ python3 -m src.www.app
 """
+from functools import partial
 from pathlib import Path
 
 import logging
@@ -53,10 +54,29 @@ FEATURE_MODEL, TEXT_ENCODER = load_feature_model(
     'checkpoints/1538001059/step_289899.pt')
 SIGNAL_MODEL = load_signal_model(
     EXPERIMENT_ROOT / 'signal_model/09_28/feature_model_post_net_no_dropout/' /
-    'checkpoints/1538601423/step_2217350.pt')
+    'checkpoints/1539017646/step_4443269.pt')
 
 # ERROR HANDLERS
 # INSPIRED BY: http://flask.pocoo.org/docs/1.0/patterns/apierrors/
+
+
+def _get_stopped_indexes(self, predictions, stop_threshold=0.25):
+    """ Get a list of indices that predicted stop.
+
+    Args:
+        stop_token (torch.FloatTensor [1, batch_size]): Probablity of stopping.
+
+    Returns:
+        (list) Indices that predicted stop.
+    """
+    stopped = predictions.data.view(-1).ge(stop_threshold).nonzero()
+    if stopped.dim() > 1:
+        return stopped.squeeze(1).tolist()
+    else:
+        return []
+
+
+FEATURE_MODEL._get_stopped_indexes = partial(_get_stopped_indexes, FEATURE_MODEL)
 
 
 class GenericException(Exception):
