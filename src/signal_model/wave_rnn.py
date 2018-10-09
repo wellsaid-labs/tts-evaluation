@@ -184,7 +184,7 @@ class WaveRNN(nn.Module):
         return last_hidden_state, sample
 
     @configurable
-    def infer(self, local_features, argmax=False, temperature=1.0, hidden_state=None):
+    def infer(self, local_features, argmax=False, temperature=1.0, hidden_state=None, pad=True):
         """  Run WaveRNN in inference mode.
 
         Variables:
@@ -207,6 +207,8 @@ class WaveRNN(nn.Module):
                 predictions.
             hidden_state (tuple, optional): Initial hidden state with RNN hidden state and last
                 coarse/fine samples.
+            pad (bool, optional): Pad the spectrogram with zeros on the ends, assuming that the
+                spectrogram has no context on the ends.
 
         Returns:
             out_coarse (torch.LongTensor [batch_size, signal_length]): Predicted
@@ -219,7 +221,7 @@ class WaveRNN(nn.Module):
         """
         # [batch_size, local_length, local_features_size] →
         # [batch_size, self.size * 3, signal_length]
-        conditional = self.conditional_features_upsample(local_features)
+        conditional = self.conditional_features_upsample(local_features, pad=pad)
 
         batch_size, _, signal_length = conditional.shape
 
@@ -300,7 +302,7 @@ class WaveRNN(nn.Module):
         hidden_state = (coarse, fine, coarse_last_hidden, fine_last_hidden)
         return out_coarse, out_fine, hidden_state
 
-    def forward(self, local_features, input_signal, target_coarse, hidden_state=None):
+    def forward(self, local_features, input_signal, target_coarse, hidden_state=None, pad=False):
         """
         Args:
             local_features (torch.FloatTensor [batch_size, local_length, local_features_size]):
@@ -311,6 +313,8 @@ class WaveRNN(nn.Module):
             target_coarse (torch.FloatTensor [batch_size, signal_length, 1], optional): Same as the
                 input signal but one timestep ahead and with only coarse values.
             hidden_state (torch.FloatTensor [batch_size, size], optional): Initial GRU hidden state.
+            pad (bool, optional): Pad the spectrogram with zeros on the ends, assuming that the
+                spectrogram has no context on the ends.
 
         Returns:
             out_coarse (torch.LongTensor [batch_size, signal_length, bins]): Predicted
@@ -330,7 +334,7 @@ class WaveRNN(nn.Module):
 
         # [batch_size, local_length, local_features_size] →
         # [batch_size, 3 * self.size, signal_length]
-        conditional = self.conditional_features_upsample(local_features)
+        conditional = self.conditional_features_upsample(local_features, pad=pad)
 
         # [batch_size, 3 * self.size, signal_length] →
         # [batch_size, signal_length,  3 * self.size]
