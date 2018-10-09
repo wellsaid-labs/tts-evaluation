@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import csv
 import re
 import unidecode
 
@@ -18,6 +19,7 @@ def lj_speech_dataset(directory='data/',
                       url='http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
                       check_files=['LJSpeech-1.1/metadata.csv'],
                       metadata_file='metadata.csv',
+                      quoting=csv.QUOTE_NONE,
                       verbalize=True,
                       resample=24000,
                       norm=True,
@@ -53,7 +55,8 @@ def lj_speech_dataset(directory='data/',
         extracted_name (str, optional): Name of the extracted dataset directory.
         url (str, optional): URL of the dataset `tar.gz` file.
         check_files (list of str, optional): Check this file exists if the download was successful.
-        text_file (str, optional): The file containing text files.
+        metadata_file (str, optional): The file containing audio metadata.
+        quoting (int, optional): Control field quoting behavior per csv.QUOTE_* constants.
         verbalize (bool, optional): Verbalize the text.
         resample (int or None, optional): If integer is provided, uses SoX to create resampled
             files.
@@ -118,7 +121,7 @@ def lj_speech_dataset(directory='data/',
             loudness=loudness)
         return {'text': text, 'wav_filename': processed_wav_filename}
 
-    data = read_speech_data(path, check_wavfiles=check_wavfiles)
+    data = read_speech_data(path, check_wavfiles=check_wavfiles, quoting=quoting)
     return process_all(extract_fun, data, splits, random_seed, check_wavfiles=check_wavfiles)
 
 

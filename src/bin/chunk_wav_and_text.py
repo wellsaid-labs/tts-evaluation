@@ -288,10 +288,10 @@ def chunk_alignments(alignments, sample_rate, max_chunk_length):
 
 def main(wav_pattern,
          csv_pattern,
+         destination,
          text_column='Content',
          wav_column='WAV Filename',
-         destination='data/processed',
-         wav_directory_name='wav',
+         wav_directory_name='wavs',
          csv_metadata_name='metadata.csv',
          sample_rate=44100,
          max_chunk_length=10):
@@ -301,6 +301,7 @@ def main(wav_pattern,
         wav_pattern (str): The audio file glob pattern.
         csv_pattern (str): The CSV file globl pattern containing metadata associated with audio
             file.
+        destination (str): Directory to save the processed data.
         text_column (str, optional): The script column in the CSV file.
         wav_column (str, optional): Column name for the new audio filename column.
         wav_directory_name (str, optional): The directory name to store audio clips.
@@ -356,11 +357,12 @@ def main(wav_pattern,
             for k, (text_span, audio_span) in enumerate(zip(text_spans, audio_spans)):
                 new_row = row.to_dict()
                 new_row[text_column] = row[text_column][slice(*text_span)].strip()
-                new_row[wav_column] = str(
-                    script_wav_directory / ('script_%d_chunk_%d.wav' % (j, k)))
+                audio_filename = script_wav_directory / ('script_%d_chunk_%d.wav' % (j, k))
+                new_row[wav_column] = str(audio_filename.relative_to(wav_directory))
+                del new_row['Index']  # Delete the default pandas Index column
                 to_write.append(new_row)
                 audio_span = audio[slice(*audio_span)]
-                librosa.output.write_wav(new_row[wav_column], audio_span, sr=sample_rate)
+                librosa.output.write_wav(str(audio_filename), audio_span, sr=sample_rate)
 
         logger.info('Found %d chunks', len(to_write))
         pandas.DataFrame(to_write).to_csv(
@@ -371,5 +373,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Align and chunk audio file and text scripts.')
     parser.add_argument('-w', '--wav', type=str, help='Path / Pattern to WAV file to chunk.')
     parser.add_argument('-c', '--csv', type=str, help='Path / Pattern to CSV file with scripts.')
+    parser.add_argument('-d', '--destination', type=str, help='Path to save processed files.')
     args = parser.parse_args()
-    main(args.wav, args.csv)
+    main(args.wav, args.csv, args.destination)
