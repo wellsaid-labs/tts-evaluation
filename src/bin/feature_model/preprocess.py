@@ -2,8 +2,9 @@ from pathlib import Path
 
 import logging
 import pprint
+import sys
 
-from multiprocessing import Pool
+from torch.multiprocessing import Pool
 
 import numpy as np
 import librosa
@@ -12,7 +13,9 @@ import tqdm
 from src.audio import get_log_mel_spectrogram
 from src.audio import read_audio
 from src.bin.feature_model._utils import set_hparams
+from src.utils import CopyStream
 from src.utils.configurable import configurable
+from src.utils.configurable import log_config
 
 pretty_printer = pprint.PrettyPrinter(indent=4)
 logging.basicConfig(level=logging.INFO)
@@ -41,8 +44,10 @@ def process(args):  # pragma: no cover
 
 @configurable
 def main(dataset,
-         destination_train='data/.feature_dataset/train',
-         destination_dev='data/.feature_dataset/dev'):  # pragma: no cover
+         destination='data/.feature_dataset/',
+         destination_train='train',
+         destination_dev='dev',
+         destination_stdout='stdout.log'):  # pragma: no cover
     """ Main module used to preprocess the signal and spectrogram for training a feature model.
 
     Args:
@@ -53,14 +58,18 @@ def main(dataset,
         destination_dev (str, optional): Directory to save generated files to be used for
             development.
     """
-    destination_train = Path(destination_train)
-    destination_dev = Path(destination_dev)
+    destination = Path(destination)
+    destination_train = destination / destination_train
+    destination_train.mkdir(parents=True, exist_ok=True)
 
-    if not destination_train.is_dir():
-        destination_train.mkdir(parents=True)
+    destination_dev = destination / destination_dev
+    destination_dev.mkdir(parents=True, exist_ok=True)
 
-    if not destination_dev.is_dir():
-        destination_dev.mkdir(parents=True)
+    sys.stdout = CopyStream(destination / destination_stdout, sys.stdout)
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+    logger = logging.getLogger(__name__)
+
+    log_config()
 
     train, dev = dataset()
     logger.info('Sample Data:\n%s', pretty_printer.pformat(train[:5]))

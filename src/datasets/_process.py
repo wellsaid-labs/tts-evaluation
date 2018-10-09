@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from multiprocessing import cpu_count
+from torch.multiprocessing import cpu_count
 
 import logging
 import os

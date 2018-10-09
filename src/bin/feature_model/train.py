@@ -1,8 +1,19 @@
+""" Train feature model.
+
+ Example:
+    $ python3 -m src.bin.feature_model.train -n baseline;
+"""
 from pathlib import Path
 
 import argparse
 import logging
 import random
+import warnings
+
+# LEARN MORE:
+# https://stackoverflow.com/questions/40845304/runtimewarning-numpy-dtype-size-changed-may-indicate-binary-incompatibility
+warnings.filterwarnings('ignore', message='numpy.dtype size changed')
+warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
 
 from torch.nn import BCELoss
 from torch.nn import MSELoss
@@ -11,6 +22,7 @@ from tqdm import tqdm
 
 import torch
 
+from src.audio import griffin_lim
 from src.bin.feature_model._data_iterator import DataIterator
 from src.bin.feature_model._utils import load_data
 from src.bin.feature_model._utils import set_hparams
@@ -18,9 +30,10 @@ from src.feature_model import FeatureModel
 from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
 from src.utils import get_total_parameters
+from src.utils import get_weighted_standard_deviation
+from src.utils import load_checkpoint
 from src.utils import load_most_recent_checkpoint
 from src.utils import parse_hparam_args
-from src.utils import load_checkpoint
 from src.utils import save_checkpoint
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
@@ -89,8 +102,8 @@ class Trainer():  # pragma: no cover
         self.num_workers = num_workers
         self.text_encoder = text_encoder
 
-        self.criterion_frames = criterion_frames(reduce=False).to(self.device)
-        self.criterion_stop_token = criterion_stop_token(reduce=False).to(self.device)
+        self.criterion_frames = criterion_frames(reduction='none').to(self.device)
+        self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step: %d', self.step)
@@ -127,7 +140,7 @@ class Trainer():  # pragma: no cover
 
         # Epoch Average Loss Metrics
         total_pre_frames_loss, total_post_frames_loss, total_stop_token_loss = 0.0, 0.0, 0.0
-        total_attention_norm = 0.0
+        total_attention_norm, total_attention_standard_deviation = 0.0, 0.0
         total_frames, total_frame_predictions = 0, 0
 
         # Setup iterator and metrics
@@ -137,30 +150,34 @@ class Trainer():  # pragma: no cover
             self.train_batch_size if train else self.dev_batch_size,
             trial_run=trial_run,
             num_workers=self.num_workers)
-        data_iterator = tqdm(data_iterator, desc=label)
-        for batch in data_iterator:
-            draw_sample = not train and random.randint(1, len(data_iterator)) == 1
+        data_iterator = tqdm(data_iterator, desc=label, smoothing=0)
+        random_batch = random.randint(0, len(data_iterator) - 1)
+        for i, batch in enumerate(data_iterator):
+            draw_sample = not train and i == random_batch
 
             (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions, num_frames,
-             attention_norm) = self._run_step(
+             attention_norm, attention_standard_deviation) = self._run_step(
                  batch, train=train, sample=draw_sample)
 
             total_pre_frames_loss += pre_frames_loss * num_frame_predictions
             total_post_frames_loss += post_frames_loss * num_frame_predictions
             total_attention_norm += attention_norm * num_frames
+            total_attention_standard_deviation += attention_standard_deviation * num_frames
             total_stop_token_loss += stop_token_loss * num_frames
             total_frames += num_frames
             total_frame_predictions += num_frame_predictions
 
-        epoch_stop_token_loss = total_stop_token_loss / total_frames
-        epoch_attention_norm = total_attention_norm / total_frames
-        epoch_pre_frame_loss = total_pre_frames_loss / total_frame_predictions
-        epoch_post_frame_loss = total_post_frames_loss / total_frame_predictions
-        if not trial_run:
-            self.tensorboard.add_scalar('pre_frames/loss/epoch', epoch_pre_frame_loss, self.step)
-            self.tensorboard.add_scalar('post_frames/loss/epoch', epoch_post_frame_loss, self.step)
-            self.tensorboard.add_scalar('stop_token/loss/epoch', epoch_stop_token_loss, self.step)
-            self.tensorboard.add_scalar('attention/norm/epoch', epoch_attention_norm, self.step)
+        if trial_run:
+            return
+
+        with self.tensorboard.set_step(self.step) as tb:
+            tb.add_scalar('pre_frames/loss/epoch', total_pre_frames_loss / total_frame_predictions)
+            tb.add_scalar('post_frames/loss/epoch',
+                          total_post_frames_loss / total_frame_predictions)
+            tb.add_scalar('stop_token/loss/epoch', total_stop_token_loss / total_frames)
+            tb.add_scalar('attention/norm/epoch', total_attention_norm / total_frames)
+            tb.add_scalar('attention/standard_deviation/epoch',
+                          total_attention_standard_deviation / total_frames)
 
     def _compute_loss(self, batch, predicted_pre_frames, predicted_post_frames,
                       predicted_stop_tokens):
@@ -229,15 +246,22 @@ class Trainer():  # pragma: no cover
         text = self.text_encoder.decode(text)
         predicted_residual = predicted_post_frames - predicted_pre_frames
 
-        with self.tensorboard.set_step(self.step):
-            self.tensorboard.add_text('infered/input', text)
-            self.tensorboard.add_log_mel_spectrogram('infered/predicted_spectrogram',
-                                                     predicted_post_frames[:, 0])
-            self.tensorboard.add_log_mel_spectrogram('infered/residual_spectrogram',
-                                                     predicted_residual[:, 0])
-            self.tensorboard.add_log_mel_spectrogram('infered/gold_spectrogram', gold_frames)
-            self.tensorboard.add_attention('infered/alignment', predicted_alignments[:, 0])
-            self.tensorboard.add_stop_token('infered/stop_token', predicted_stop_tokens[:, 0])
+        attention_norm = self._compute_attention_norm(predicted_alignments)
+        attention_standard_deviation = self._compute_attention_standard_deviation(
+            predicted_alignments)
+        waveform = griffin_lim(predicted_post_frames[:, 0].cpu().numpy())
+
+        with self.tensorboard.set_step(self.step) as tb:
+            tb.add_audio('infered/audio', 'infered/waveform', torch.from_numpy(waveform))
+            tb.add_scalar('attention/norm/inference', attention_norm)
+            tb.add_scalar('attention/standard_deviation/inference', attention_standard_deviation)
+            tb.add_text('infered/input', text)
+            tb.add_log_mel_spectrogram('infered/predicted_spectrogram', predicted_post_frames[:, 0])
+            tb.add_log_mel_spectrogram('infered/residual_spectrogram', predicted_residual[:, 0])
+            tb.add_log_mel_spectrogram('infered/gold_spectrogram', gold_frames)
+            tb.add_log_mel_spectrogram('infered/pre_spectrogram', predicted_pre_frames[:, 0])
+            tb.add_attention('infered/alignment', predicted_alignments[:, 0])
+            tb.add_stop_token('infered/stop_token', predicted_stop_tokens[:, 0])
 
     def _sample_predicted(self, batch, predicted_pre_frames, predicted_post_frames,
                           predicted_alignments, predicted_stop_tokens):
@@ -274,26 +298,24 @@ class Trainer():  # pragma: no cover
         predicted_alignments = predicted_alignments[:spectrogam_length, item, :text_length]
         predicted_stop_tokens = predicted_stop_tokens[:spectrogam_length, item]
 
-        with self.tensorboard.set_step(self.step):
-            self.tensorboard.add_log_mel_spectrogram('predicted/predicted_spectrogram',
-                                                     predicted_post_frames)
-            self.tensorboard.add_log_mel_spectrogram('predicted/residual_spectrogram',
-                                                     predicted_residual)
-            self.tensorboard.add_log_mel_spectrogram('predicted/delta_spectrogram',
-                                                     predicted_gold_delta)
-            self.tensorboard.add_log_mel_spectrogram('predicted/gold_spectrogram', gold_frames)
-            self.tensorboard.add_attention('predicted/alignment', predicted_alignments)
-            self.tensorboard.add_stop_token('predicted/stop_token', predicted_stop_tokens)
-            self.tensorboard.add_text('predicted/input', text)
+        with self.tensorboard.set_step(self.step) as tb:
+            tb.add_log_mel_spectrogram('predicted/predicted_spectrogram', predicted_post_frames)
+            tb.add_log_mel_spectrogram('predicted/residual_spectrogram', predicted_residual)
+            tb.add_log_mel_spectrogram('predicted/delta_spectrogram', predicted_gold_delta)
+            tb.add_log_mel_spectrogram('predicted/gold_spectrogram', gold_frames)
+            tb.add_log_mel_spectrogram('predicted/pre_spectrogram', predicted_pre_frames)
+            tb.add_attention('predicted/alignment', predicted_alignments)
+            tb.add_stop_token('predicted/stop_token', predicted_stop_tokens)
+            tb.add_text('predicted/input', text)
 
-    def _compute_attention_norm(self, batch, predicted_alignments):
+    def _compute_attention_norm(self, predicted_alignments, mask=None):
         """ Computes the infinity norm of attention averaged over all alignments.
 
-        This metric is useful for tracking how "attentive" or "confident" attention.
+        This metric is useful for tracking how "attentive" or "confident" attention on one token.
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
             predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+            mask (torch.FloatTensor [num_frames, batch_size], optional)
 
         Returns:
             attention_norm (torch.scalar)
@@ -301,10 +323,41 @@ class Trainer():  # pragma: no cover
         # The infinity norm of attention averaged over all alignments.
         # [num_frames, batch_size, num_tokens] → [num_frames, batch_size]
         attention_norm = predicted_alignments.norm(float('inf'), dim=2)
-        # [num_frames, batch_size] → [num_frames, batch_size]
-        attention_norm = attention_norm * batch['frames_mask']
+
+        if mask is not None:
+            # [num_frames, batch_size] → [num_frames, batch_size]
+            attention_norm = attention_norm * mask
+            divisor = mask.sum()
+        else:
+            divisor = attention_norm.shape[0] * attention_norm.shape[1]
+
         # [num_frames, batch_size] → scalar
-        return (attention_norm.sum() / batch['frames_mask'].sum()).item()
+        return (attention_norm.sum() / divisor).item()
+
+    def _compute_attention_standard_deviation(self, predicted_alignments, mask=None):
+        """ Computes the standard deviation of the alignment averaged over all alignments.
+
+        This metric is useful for tracking how "attentive" or "confident" attention in one area.
+
+        Args:
+            predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+            mask (torch.FloatTensor [num_frames, batch_size], optional)
+
+        Returns:
+            attention_standard_deviation (torch.scalar)
+        """
+        # [num_frames, batch_size, num_tokens] → [num_frames, batch_size]
+        attention_standard_deviation = get_weighted_standard_deviation(predicted_alignments, dim=2)
+
+        if mask is not None:
+            # [num_frames, batch_size] → [num_frames, batch_size]
+            attention_standard_deviation = attention_standard_deviation * mask
+            divisor = mask.sum()
+        else:
+            divisor = attention_standard_deviation.shape[0] * attention_standard_deviation.shape[1]
+
+        # [num_frames, batch_size] → scalar
+        return (attention_standard_deviation.sum() / divisor).item()
 
     def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
@@ -330,7 +383,9 @@ class Trainer():  # pragma: no cover
         (pre_frames_loss, post_frames_loss,
          stop_token_loss, num_frame_predictions, num_frames) = self._compute_loss(
              batch, predicted_pre_frames, predicted_post_frames, predicted_stop_tokens)
-        attention_norm = self._compute_attention_norm(batch, predicted_alignments)
+        attention_norm = self._compute_attention_norm(predicted_alignments, batch['frames_mask'])
+        attention_standard_deviation = self._compute_attention_standard_deviation(
+            predicted_alignments, batch['frames_mask'])
 
         if train:
             self.optimizer.zero_grad()
@@ -342,10 +397,12 @@ class Trainer():  # pragma: no cover
             loss.item() for loss in (pre_frames_loss, post_frames_loss, stop_token_loss))
 
         if train:
-            self.tensorboard.add_scalar('pre_frames/loss/step', pre_frames_loss, self.step)
-            self.tensorboard.add_scalar('post_frames/loss/step', post_frames_loss, self.step)
-            self.tensorboard.add_scalar('stop_token/loss/step', stop_token_loss, self.step)
-            self.tensorboard.add_scalar('attention/norm/step', attention_norm, self.step)
+            with self.tensorboard.set_step(self.step) as tb:
+                tb.add_scalar('pre_frames/loss/step', pre_frames_loss)
+                tb.add_scalar('post_frames/loss/step', post_frames_loss)
+                tb.add_scalar('stop_token/loss/step', stop_token_loss)
+                tb.add_scalar('attention/norm/step', attention_norm)
+                tb.add_scalar('attention/standard_deviation/step', attention_standard_deviation)
             self.step += 1
 
         if sample:
@@ -354,7 +411,7 @@ class Trainer():  # pragma: no cover
             self._sample_infered(batch)
 
         return (pre_frames_loss, post_frames_loss, stop_token_loss, num_frame_predictions,
-                num_frames, attention_norm)
+                num_frames, attention_norm, attention_standard_deviation)
 
 
 def main(checkpoint_path=None,
@@ -362,6 +419,7 @@ def main(checkpoint_path=None,
          reset_optimizer=False,
          hparams={},
          evaluate_every_n_epochs=1,
+         save_checkpoint_every_n_epochs=10,
          min_time=60 * 15,
          name=None,
          label='feature_model',
@@ -373,7 +431,8 @@ def main(checkpoint_path=None,
         epochs (int, optional): Number of epochs to run for.
         reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer.
         hparams (dict, optional): Hparams to override default hparams.
-        evaluate_every_n_epochs (int, optional): Evaluate every ``evaluate_every_n_epochs`` epochs.
+        evaluate_every_n_epochs (int, optional)
+        save_checkpoint_every_n_epochs (int, optional)
         min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
             files are deleted.
         name (str, optional): Experiment name.
@@ -414,9 +473,13 @@ def main(checkpoint_path=None,
 
         # Training Loop
         for _ in range(epochs):
-            is_trial_run = trainer.epoch == 0
+            is_trial_run = trainer.step == step
             trainer.run_epoch(train=True, trial_run=is_trial_run)
-            if trainer.epoch % evaluate_every_n_epochs == 0:
+
+            if trainer.epoch % evaluate_every_n_epochs == 0 or is_trial_run:
+                trainer.run_epoch(train=False, trial_run=is_trial_run)
+
+            if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
                 save_checkpoint(
                     context.checkpoints_directory,
                     model=trainer.model,
@@ -425,8 +488,9 @@ def main(checkpoint_path=None,
                     epoch=trainer.epoch,
                     step=trainer.step,
                     experiment_directory=context.directory)
-                trainer.run_epoch(train=False, trial_run=is_trial_run)
-            trainer.epoch += 1
+
+            if not is_trial_run:
+                trainer.epoch += 1
 
             print('–' * 100)
 
