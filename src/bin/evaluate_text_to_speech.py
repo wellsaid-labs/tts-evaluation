@@ -37,7 +37,7 @@ def main(feature_model_checkpoint_path,
          results_path='results/',
          samples=25,
          device=torch.device('cpu'),
-         batch_size=2,
+         batch_size=8,
          max_recursion=1000):  # pragma: no cover
     """ Generate random samples of text to speech model to evaluate.
 
@@ -94,9 +94,10 @@ def main(feature_model_checkpoint_path,
         logger.info('Running the signal model...')
         predicted_spectrogram = predicted_spectrogram.transpose(0, 1)
         predicted_coarse, predicted_fine, _ = signal_model.infer(predicted_spectrogram, pad=True)
-        waveform_spectrogram_ratio = predicted_coarse.shape[1] / predicted_spectrogram.shape[0]
-        assert (int(waveform_spectrogram_ratio) == waveform_spectrogram_ratio
-               ), 'Waveform spectrogram ratio invariant'  # noqa E124
+        waveform_spectrogram_ratio = predicted_coarse.shape[1] / predicted_spectrogram.shape[1]
+        assert (
+            int(waveform_spectrogram_ratio) == waveform_spectrogram_ratio
+        ), 'Waveform spectrogram ratio invariant %f' % waveform_spectrogram_ratio  # noqa E124
 
         for i in range(len(chunk)):
             waveform = combine_signal(predicted_coarse[i], predicted_fine[i])
