@@ -1,8 +1,10 @@
 import argparse
+import json
 import logging
 import pathlib
 import re
 import requests
+import sys
 
 from collections import namedtuple
 from collections import Counter
@@ -11,10 +13,7 @@ import pandas
 import librosa
 
 from src.audio import read_audio
-
-logging.basicConfig(
-    format='[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
-logger = logging.getLogger(__name__)
+from src.utils import CopyStream
 
 GENTLE_SUCCESS_CASE = 'success'
 GENTLE_OOV_WORD = '<unk>'
@@ -118,6 +117,7 @@ def _review_gentle(response, transcript):
 
 def _request_gentle(wav_path,
                     transcript,
+                    gentle_cache_directory,
                     hostname='localhost',
                     port=8765,
                     parameters=(('async', 'false'),),
@@ -128,6 +128,7 @@ def _request_gentle(wav_path,
     Args:
         wav_path (Path): The audio file path.
         transcript (str): The text spoken in the audio.
+        gentle_cache_directory (Path): Directory used to cache Gentle requests.
         hostname (str, optional): Hostname used by the gentle server.
         port (int, optional): Port used by the gentle server.
         parameters (tuple, optional): Dictionary or bytes to be sent in the query string for the
@@ -149,11 +150,18 @@ def _request_gentle(wav_path,
                     startOffset (int): The trascript character index of the first letter of word.
                     endOffset (int): The trascript character index plus one of the last letter of
                         word.
-                    phones (list): This field is not relevant for this repository.
                 }, ...
             ]
         }
     """
+    assert gentle_cache_directory.is_dir()
+    gentle_cache_filename = (gentle_cache_directory / wav_path.name).with_suffix('.json')
+    if gentle_cache_filename.is_file():
+        logger.info('Using cached gentle alignment %s', str(gentle_cache_filename))
+        response = json.loads(gentle_cache_filename.read_text())
+        _review_gentle(response, transcript)
+        return response
+
     duration = librosa.get_duration(filename=str(wav_path), sr=sample_rate)
     url = 'http://{}:{}/transcriptions'.format(hostname, port)
     response = requests.post(
@@ -167,13 +175,21 @@ def _request_gentle(wav_path,
     if response.status_code != 200:
         raise ValueError('Gentle ({}) returned bad response: {}'.format(url, response.status_code))
 
-    # TODO: Cache the response on disk
     response = response.json()
+
+    # Delete `phones` from the json object
+    words = []
+    for word in response['words']:
+        word.pop('phones', None)
+        words.append(word)
+    response['words'] = words
+
     _review_gentle(response, transcript)
+    gentle_cache_filename.write_text(json.dumps(response, sort_keys=True, indent=2))
     return response
 
 
-def align_wav_and_scripts(wav_path, scripts, sample_rate):
+def align_wav_and_scripts(wav_path, scripts, gentle_cache_directory, sample_rate):
     """ Align an audio file with the scripts spoken in the audio.
 
     Notes:
@@ -184,6 +200,7 @@ def align_wav_and_scripts(wav_path, scripts, sample_rate):
         wav_path (Path): The audio file path.
         scripts (list of str): The scripts spoken in the audio.
         sample_rate (int): Sample rate of the audio.
+        gentle_cache_directory (Path): Directory used to cache Gentle requests.
 
     Returns:
         (list of Alignment): For every script, a list of found alignments.
@@ -192,7 +209,9 @@ def align_wav_and_scripts(wav_path, scripts, sample_rate):
     max_sample_rate = seconds_to_samples(
         librosa.get_duration(filename=str(wav_path), sr=sample_rate))
     transcript = '\n'.join(scripts)
-    alignment = _request_gentle(wav_path, transcript, sample_rate=sample_rate)
+    logger.info('Characters in transcript %s', sorted(list(set(transcript))))
+    alignment = _request_gentle(
+        wav_path, transcript, gentle_cache_directory, sample_rate=sample_rate)
 
     # Align seperate scripts with the transcript alignment.
     aligned_words = [w for w in alignment['words'] if w['case'] == GENTLE_SUCCESS_CASE]
@@ -229,7 +248,7 @@ def align_wav_and_scripts(wav_path, scripts, sample_rate):
     return all_scripts_alignments
 
 
-def chunk_alignments(alignments, sample_rate, max_chunk_length):
+def chunk_alignments(alignments, script, sample_rate, max_chunk_length):
     """ Chunk audio and text to be less than ``max_chunk_length``.
 
     Notes:
@@ -240,6 +259,7 @@ def chunk_alignments(alignments, sample_rate, max_chunk_length):
 
     Args:
         alignments (list of Alignment): List of alignments between text and audio.
+        script (str): Transcript alignments refer too.
         sample_rate (int): Sample rate of the audio.
         max_chunk_length (float): Number of seconds for the maximum chunk audio length.
 
@@ -247,6 +267,7 @@ def chunk_alignments(alignments, sample_rate, max_chunk_length):
         text_spans (list of tuple(int, int)): List of spans of text as measured in characters.
         audio_spans (list of tuple(int, int)): List of spans of audio as measured in samples.
     """
+    # TODO: Write tests for this to deal with unaligned cases...
     # Compute the average samples of silence per character
     average_silence = (
         lambda a: (a[1].next_start_audio - a[1].end_audio) / (a[1].next_start_text - a[1].end_text))
@@ -293,6 +314,8 @@ def main(wav_pattern,
          wav_column='WAV Filename',
          wav_directory_name='wavs',
          csv_metadata_name='metadata.csv',
+         gentle_cache_name='.gentle',
+         log_stdout='stdout.log',
          sample_rate=44100,
          max_chunk_length=10):
     """ Align audio with scripts, then create and save chunks of audio and text.
@@ -301,32 +324,38 @@ def main(wav_pattern,
         wav_pattern (str): The audio file glob pattern.
         csv_pattern (str): The CSV file globl pattern containing metadata associated with audio
             file.
-        destination (str): Directory to save the processed data.
+        destination (Path): Directory to save the processed data.
         text_column (str, optional): The script column in the CSV file.
         wav_column (str, optional): Column name for the new audio filename column.
         wav_directory_name (str, optional): The directory name to store audio clips.
-        csv_metadata_name (str, optional): The filename to store metadata.
+        csv_metadata_name (str, optional): The filename for metadata.
+        gentle_cache_name (str, optional): The directory name for Gentle files.
+        log_stdout (str): The filename for stdout logs.
         sample_rate (int, optional): Sample rate of the audio.
         max_chunk_length (float, optional): Number of seconds for the maximum chunk audio length.
     """
-    root_directory = pathlib.Path(destination)
-    root_directory.mkdir(parents=True, exist_ok=True)
-    metadata_filename = root_directory / csv_metadata_name  # Filename to store CSV metadata
-    wav_directory = root_directory / wav_directory_name  # Directory to store clips
+    metadata_filename = destination / csv_metadata_name  # Filename to store CSV metadata
+    wav_directory = destination / wav_directory_name  # Directory to store clips
+    gentle_cache_directory = destination / gentle_cache_name
     wav_directory.mkdir(parents=True, exist_ok=True)
+    gentle_cache_directory.mkdir(exist_ok=True)
 
     wav_paths = sorted(list(pathlib.Path('.').glob(wav_pattern)), key=natural_keys)
     csv_paths = sorted(list(pathlib.Path('.').glob(csv_pattern)), key=natural_keys)
+
+    if len(csv_paths) == 0 and len(wav_paths) == 0:
+        logger.warn('Found no CSV or WAV files.')
+        return
+    elif len(csv_paths) != len(wav_paths):
+        logger.warn('CSV and WAV files are not aligned.')
+        return
+    else:
+        logger.info('Processing %d files', len(csv_paths))
+
     for i, (wav_path, csv_path) in enumerate(zip(wav_paths, csv_paths)):
-        is_first_script = i == 0
-        if not is_first_script:
-            print('-' * 100)
-
-        script_wav_directory = (wav_directory / ('script_%d' % i))
-        if script_wav_directory.is_dir():
-            logger.info('Skipping cached files %s:%s', wav_path, csv_path)
-            continue
-
+        print('-' * 100)
+        script_wav_directory = wav_directory / wav_path.stem
+        script_wav_directory.mkdir(exist_ok=True)
         logger.info('Processing %s:%s', wav_path, csv_path)
         assert wav_path.suffix == '.wav', 'Please select only WAV files'
         assert csv_path.suffix == '.csv', 'Please select only CSV files'
@@ -338,12 +367,12 @@ def main(wav_pattern,
 
         logger.info('Aligning...')
         try:
-            alignments = align_wav_and_scripts(wav_path, scripts, sample_rate=sample_rate)
+            alignments = align_wav_and_scripts(
+                wav_path, scripts, gentle_cache_directory, sample_rate=sample_rate)
         except (requests.exceptions.RequestException, ValueError) as e:
             logger.exception('Failed to align %s with %s', wav_path.name, csv_path.name)
             continue
 
-        script_wav_directory.mkdir()
         logger.info('Chunking and writing...')
         to_write = []
         for j, row in df.iterrows():
@@ -352,7 +381,10 @@ def main(wav_pattern,
                 continue
 
             text_spans, audio_spans = chunk_alignments(
-                alignments[j], sample_rate=sample_rate, max_chunk_length=max_chunk_length)
+                alignments[j],
+                row[text_column],
+                sample_rate=sample_rate,
+                max_chunk_length=max_chunk_length)
 
             for k, (text_span, audio_span) in enumerate(zip(text_spans, audio_spans)):
                 new_row = row.to_dict()
@@ -366,7 +398,7 @@ def main(wav_pattern,
 
         logger.info('Found %d chunks', len(to_write))
         pandas.DataFrame(to_write).to_csv(
-            str(metadata_filename), mode='a', header=is_first_script, index=False)
+            str(metadata_filename), mode='a', header=i == 0, index=False)
 
 
 if __name__ == "__main__":
@@ -375,4 +407,15 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--csv', type=str, help='Path / Pattern to CSV file with scripts.')
     parser.add_argument('-d', '--destination', type=str, help='Path to save processed files.')
     args = parser.parse_args()
+
+    args.destination = destination = pathlib.Path(args.destination)
+
+    sys.stdout = CopyStream(args.destination / 'stdout.log', sys.stdout)
+    logging.basicConfig(
+        format='[%(asctime)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        level=logging.INFO,
+        stream=sys.stdout)
+    logger = logging.getLogger(__name__)
+
     main(args.wav, args.csv, args.destination)
