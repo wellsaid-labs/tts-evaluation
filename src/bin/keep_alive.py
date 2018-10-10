@@ -59,7 +59,35 @@ def get_available_instances():  # pragma: no cover
     return filtered_instances
 
 
-def keep_alive(instances, command, scheduler, repeat_every=60, retry=3):  # pragma: no cover
+def is_halted(name, zone, command='find . -type f -not -name \'.*\' -cmin -10 2>/dev/null'):
+    """ Check if instance halted by executing a command
+
+    Args:
+        name (str): Instance name.
+        zone (str): Instance zone.
+        command (str): Command returns some output if the instance is running by default checks if
+            any none-private files have been updated in the last 5 minutes.
+
+    Returns
+        (bool)
+    """
+    logger.info('Checking if instance halted execution with command: %s', command)
+    try:
+        output = subprocess.check_output(
+            'gcloud compute ssh %s --zone=%s --command="%s"' % (name, zone, command), shell=True)
+        output = output.decode('utf-8')
+    except subprocess.CalledProcessError as e:
+        output = e.output.decode('utf-8')
+    output = output.strip()
+    logger.info('Command output:\n%s', output)
+    if len(output) == 0:
+        return True
+    else:
+        return False
+
+
+def keep_alive(instances, command, scheduler, repeat_every=60 * 5, retry_timeout=60,
+               retry=3):  # pragma: no cover
     """ Restart GCP instances every ``repeat_every`` seconds with ``command``.
 
     Args:
@@ -67,6 +95,8 @@ def keep_alive(instances, command, scheduler, repeat_every=60, retry=3):  # prag
         command (str): Command to run at the start of the instance.
         scheduler (sched.scheduler): Scheduler to rerun this function.
         repeat_every (int): Repeat this call every ``repeat_every`` seconds.
+        retry_timeout (int): Timeout between retries.
+        retry (int): Number of retries incase failure.
     """
     for instance in instances:
         name = instance['name']
@@ -84,23 +114,28 @@ def keep_alive(instances, command, scheduler, repeat_every=60, retry=3):  # prag
             for i in range(retry):
                 if i > 0:
                     logger.info('Retrying again in %d', repeat_every)
-                    time.sleep(repeat_every)
+                    time.sleep(retry_timeout)
 
                 try:
                     logger.info('Restarting instance "%s" in zone %s', name, zone)
                     output = subprocess.check_output(
                         'gcloud compute instances start %s --zone=%s' % (name, zone), shell=True)
-                    logger.info('Restarting output: %s', output.decode('utf-8'))
+                    logger.info('Restarting instance output:\n%s', output.decode('utf-8'))
 
                     logger.info('Running command on instance: %s', command)
                     output = subprocess.check_output(
                         'gcloud compute ssh %s --zone=%s --command="%s"' % (name, zone, command),
                         shell=True)
-                    logger.info('Command output: %s', output.decode('utf-8'))
+                    logger.info('Command output:\n%s', output.decode('utf-8'))
                     break
 
                 except Exception as e:
-                    logger.warn('Exception: %s', e)
+                    logger.warning('Exception: %s', e)
+        elif status == INSTANCE_RUNNING and is_halted(name, zone):
+            logger.info('Stopping instance "%s" in zone %s', name, zone)
+            output = subprocess.check_output(
+                'gcloud compute instances stop %s --zone=%s' % (name, zone), shell=True)
+            logger.info('Stoppping instance output:\n%s', output.decode('utf-8'))
 
         print('-' * 100)
 

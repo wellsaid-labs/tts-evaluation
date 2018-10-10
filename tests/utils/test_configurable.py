@@ -180,19 +180,19 @@ def test_merge_arg_kwarg(logger_mock):
     # Prefer ``args`` over ``other_kwargs``
     merged = _merge_args(parameters, ['a', 'abc'], {}, {'b': 'xyz'})
     assert merged == (['a', 'abc'], {})
-    logger_mock.warn.assert_called_once()
+    logger_mock.warning.assert_called_once()
     logger_mock.reset_mock()
 
     # Prefer ``kwargs`` over ``other_kwargs``
     merged = _merge_args(parameters, ['a'], {'b': 'abc'}, {'b': 'xyz'})
     assert merged == (['a'], {'b': 'abc'})
-    logger_mock.warn.assert_called_once()
+    logger_mock.warning.assert_called_once()
     logger_mock.reset_mock()
 
     # Prefer ``other_kwargs`` over default argument
     merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz'})
     assert merged == (['a'], {'b': 'xyz'})
-    logger_mock.warn.assert_not_called()
+    logger_mock.warning.assert_not_called()
 
 
 @mock.patch('src.utils.configurable.logger')
@@ -216,13 +216,13 @@ def test_merge_arg_variable(logger_mock):
     # Handling of variable ``*args``
     merged = _merge_args(parameters, ['a', 'b', 'c'], {}, {'b': 'xyz'})
     assert merged == (['a', 'b', 'c'], {'b': 'xyz'})
-    logger_mock.warn.assert_not_called()
+    logger_mock.warning.assert_not_called()
     logger_mock.reset_mock()
 
     # Handling of variable ``*args``
     merged = _merge_args(parameters, ['a', 'b', 'c'], {}, {'a': 'xyz'})
     assert merged == (['a', 'b', 'c'], {})
-    logger_mock.warn.assert_called_once()
+    logger_mock.warning.assert_called_once()
     logger_mock.reset_mock()
 
 
@@ -237,17 +237,17 @@ def test_merge_kwarg_variable(logger_mock):
     # Handling of variable ``**kwargs``
     merged = _merge_args(parameters, ['a', 'b'], {}, {'b': 'xyz'})
     assert merged == (['a', 'b'], {})
-    logger_mock.warn.assert_called_once()
+    logger_mock.warning.assert_called_once()
     logger_mock.reset_mock()
 
     # Handling of variable ``**kwargs``
     merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz'})
     assert merged == (['a'], {'b': 'xyz'})
-    logger_mock.warn.assert_not_called()
+    logger_mock.warning.assert_not_called()
     logger_mock.reset_mock()
 
     # Handling of variable ``**kwargs``
     merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz', 'c': 'abc'})
     assert merged == (['a'], {'b': 'xyz', 'c': 'abc'})
-    logger_mock.warn.assert_not_called()
+    logger_mock.warning.assert_not_called()
     logger_mock.reset_mock()

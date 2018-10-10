@@ -20,7 +20,8 @@ def test_feature_model():
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
 
-    frames, frames_with_residual, stop_token, alignment = model(input_, max_recursion=num_frames)
+    frames, frames_with_residual, stop_token, alignment, lengths = model.infer(
+        input_, max_recursion=num_frames)
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, batch_size, frame_channels)
@@ -33,6 +34,11 @@ def test_feature_model():
 
     assert alignment.type() == 'torch.FloatTensor'
     assert alignment.shape == (num_frames, batch_size, num_tokens)
+
+    assert len(lengths) == batch_size
+    for length in lengths:
+        assert length > 0
+        assert length <= num_frames
 
     # Smoke test backward
     frames_with_residual.sum().backward()
@@ -52,7 +58,7 @@ def test_feature_model_ground_truth():
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     ground_truth_frames = torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1)
     frames, frames_with_residual, stop_token, alignment = model(
-        input_, ground_truth_frames=ground_truth_frames, max_recursion=10)
+        input_, ground_truth_frames=ground_truth_frames)
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, batch_size, frame_channels)

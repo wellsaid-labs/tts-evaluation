@@ -18,7 +18,12 @@ from src.utils import save_checkpoint
 from src.utils import split_dataset
 from src.utils import split_signal
 from src.utils import get_weighted_standard_deviation
+from src.utils import chunks
 from src.utils.experiment_context_manager import ExperimentContextManager
+
+
+def test_chunks():
+    assert list(chunks([1, 2, 3], 2)) == [[1, 2], [3]]
 
 
 def test_get_weighted_standard_deviation():

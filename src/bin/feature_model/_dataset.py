@@ -75,14 +75,21 @@ class FeatureDataset(data.Dataset):
         else:
             self.text_encoder = text_encoder
 
-        # Spectrograms lengths for sorting
-        logger.info('Computing spectrogram lengths from %s', source)
-        with ThreadPoolExecutor() as pool:
-            filenames = [row[self.spectrogram_key] for row in self.rows]
-            self.spectrogram_lengths = list(
-                tqdm.tqdm(pool.map(get_spectrogram_length, filenames), total=len(filenames)))
-
+        self._spectrogram_lengths = None
         self.load_signal = load_signal
+        self.source = source
+
+    @property
+    def spectrogram_lengths(self):
+        if self._spectrogram_lengths is None:
+            # Spectrograms lengths for sorting
+            logger.info('Computing spectrogram lengths from %s', self.source)
+            with ThreadPoolExecutor() as pool:
+                filenames = [row[self.spectrogram_key] for row in self.rows]
+                self._spectrogram_lengths = list(
+                    tqdm.tqdm(pool.map(get_spectrogram_length, filenames), total=len(filenames)))
+
+        return self._spectrogram_lengths
 
     def __len__(self):
         return len(self.rows)

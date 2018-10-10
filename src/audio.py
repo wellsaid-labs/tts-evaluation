@@ -281,5 +281,5 @@ def griffin_lim(log_mel_spectrogram,
 
     waveform = np.real(waveform)
     large_values = (waveform < -1).sum() + (waveform > 1).sum()
-    logger.warn('Griffin-lim waveform clipped %d samples.', large_values)
+    logger.warning('Griffin-lim waveform clipped %d samples.', large_values)
     return np.clip(waveform, -1, 1)

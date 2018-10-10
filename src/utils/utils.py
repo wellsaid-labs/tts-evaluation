@@ -25,6 +25,59 @@ logger = logging.getLogger(__name__)
 ROOT_PATH = Path(__file__).parent.parent.parent.resolve()
 
 
+class CopyStream(object):
+    """ Wrapper that copies a stream to a file without affecting the stream.
+
+    **Reference:** https://stackoverflow.com/questions/4675728/redirect-stdout-to-a-file-in-python
+
+    Example Print:
+        >>> import sys
+        >>> stdout_filename = 'stdout.log'
+        >>> sys.stdout = CopyStream(stdout_filename, sys.stdout)
+        >>> print('This log is saved in %s' % stdout_filename)
+        This log is saved in stdout.log
+        >>>
+        >>> os.remove(stdout_filename)
+
+    Example Logger:
+        >>> import sys
+        >>> import logging
+        >>> stdout_filename = 'stdout.log'
+        >>> sys.stdout = CopyStream(stdout_filename, sys.stdout)
+        >>> logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+        >>> logger = logging.getLogger(__name__)
+        >>> logger.info('This log is saved in %s', stdout_filename)
+        >>>
+        >>> os.remove(stdout_filename)
+
+    Args:
+        filename (str or Path): Filename to recieve stream
+        stream (_io.TextIOWrapper): Stream to direct to filename
+    """
+
+    def __init__(self, filename, stream):
+        self.stream = stream
+        self.file_ = open(str(filename), 'a')
+
+    @property
+    def closed(self):
+        return self.file_.closed and self.stream.closed
+
+    def __getattr__(self, attr):
+        # Run the functions ``flush``, ``close``, and ``write`` for both ``self.stream`` and
+        # ``self.file``.
+        if attr in ['flush', 'close', 'write']:
+            return lambda *args, **kwargs: (getattr(self.file_, attr)(*args, **kwargs) and
+                                            getattr(self.stream, attr)(*args, **kwargs))
+        return getattr(self.stream, attr)
+
+
+def chunks(list_, n):
+    """ Yield successive n-sized chunks from list. """
+    for i in range(0, len(list_), n):
+        yield list_[i:i + n]
+
+
 def get_weighted_standard_deviation(tensor, dim=0):
     """ Computed the weighted standard deviation.
 
