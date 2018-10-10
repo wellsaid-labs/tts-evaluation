@@ -23,6 +23,12 @@ pip install pip --upgrade
 pip install setuptools --upgrade
 pip install wheel --upgrade
 
+# Log for debugging
+which python
+which pip
+python --version
+pip --version
+
 # Install requirements via pip
 pip install -r requirements.txt --quiet --upgrade
 
