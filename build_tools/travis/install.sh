@@ -19,8 +19,9 @@ fi
 
 # LEARN MORE:
 # https://stackoverflow.com/questions/14296531/what-does-error-option-single-version-externally-managed-not-recognized-ind
-pip install -U setuptools
-pip install -U wheel
+pip install pip --upgrade
+pip install setuptools --upgrade
+pip install wheel --upgrade
 
 # Install requirements via pip
 pip install -r requirements.txt --quiet --upgrade
