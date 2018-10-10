@@ -1184,6 +1184,7 @@ class TestDataLoader(TestCase):
         return pname in output
 
     @skipIfRocm
+    @unittest.skipIf(True, "Faulty test that occasionally fails depending on the environment.")
     def test_proper_exit(self):
         r'''There might be ConnectionResetError or leaked semaphore warning
         (due to dirty process exit), but they are all safe to ignore'''
