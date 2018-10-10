@@ -30,7 +30,7 @@ python --version
 pip --version
 
 # Install requirements via pip
-pip install -r requirements.txt --verbose --upgrade
+pip install -r requirements.txt --upgrade --progress-bar=off
 
 # Install PyTorch Dependancies
 if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then
