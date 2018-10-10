@@ -72,6 +72,12 @@ class CopyStream(object):
         return getattr(self.stream, attr)
 
 
+def chunks(list_, n):
+    """ Yield successive n-sized chunks from list. """
+    for i in range(0, len(list_), n):
+        yield list_[i:i + n]
+
+
 def get_weighted_standard_deviation(tensor, dim=0):
     """ Computed the weighted standard deviation.
 

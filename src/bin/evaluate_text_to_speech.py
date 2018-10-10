@@ -21,15 +21,10 @@ from src.bin.feature_model._utils import load_data
 from src.bin.signal_model._utils import set_hparams
 from src.utils import combine_signal
 from src.utils import load_checkpoint
+from src.utils import chunks
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-def chunks(l, n):
-    """Yield successive n-sized chunks from l."""
-    for i in range(0, len(l), n):
-        yield l[i:i + n]
 
 
 def main(feature_model_checkpoint_path,
