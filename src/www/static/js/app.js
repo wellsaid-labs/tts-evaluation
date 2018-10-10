@@ -43,6 +43,8 @@ $( document ).ready( function() {
     closeModal();
   } );
 
+  $( ".switch" ).on( "click", enableListenButton );
+
   function disableListenButton() {
     $listenButtonProgressBar.css( "width", "100%" );
     $listenButton.prop( "disabled", true );
@@ -272,7 +274,7 @@ $( document ).ready( function() {
     var speaker = $( ".speaker-row-selected" ).find( "h3" ).text();
     var isHighFidelity = $( ".text-editor-footer .switch input" ).is( ":checked" );
     var requestData = {
-      text: text,
+      text: text.trim(),
       speaker: speaker,
       isHighFidelity: isHighFidelity
     };
@@ -287,13 +289,30 @@ $( document ).ready( function() {
 
     toggleListenButtonLoading();
 
+
+    // Estimate of 300 frames a second with 6 frames per character
+    var estimatedSpectrogramModelProcessing = text.length * 6 / 300;
+
+    // Add an extra second for any other operations.
+    var estimatedLag = 1000;
+
     // TODO: Parameterize this and document
-    var estimatedTime = 0;
+    var estimatedTime = estimatedLag + estimatedSpectrogramModelProcessing;
     if ( isHighFidelity ) {
+
+      // 6 frames per character with 12.5ms for each frame
       var estimatedSampleLength = text.length * 6 * 12.5;
-      estimatedTime = ( 24000 / 1100 ) * estimatedSampleLength;
+
+      // Assumes the vocoder generates at 1100 samples per second
+      var estimatedVocoderProcessing = ( 24000 / 1100 ) * estimatedSampleLength;
+      estimatedTime += ( estimatedVocoderProcessing +
+        estimatedSpectrogramModelProcessing +
+        estimatedLag );
     } else {
-      estimatedTime = 3000;
+      var estimatedGriffinLimProcessing = 2500;
+      estimatedTime = ( estimatedGriffinLimProcessing +
+        estimatedSpectrogramModelProcessing +
+        estimatedLag );
     }
 
     listenButtonProgress( estimatedTime );

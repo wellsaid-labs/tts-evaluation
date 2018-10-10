@@ -1,13 +1,16 @@
-"""
+""" Run a webservice with the feature and signal models
+
 Example:
 
-      $ export PYTHONPATH=.
-      $ python3 -m src.www.app
+      $ export PYTHONPATH=.;
+      $ sudo python3 -m src.www.app; # ``sudo`` is required to run on port 80 as a webservice
 """
-from functools import partial
 from pathlib import Path
 
+import argparse
 import logging
+import os
+import re
 import torch
 import uuid
 
@@ -27,9 +30,7 @@ from src.utils import load_checkpoint
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
-
-SAMPLES_FOLDER = Path('src/www/static/samples')
-DEFAULT_SAMPLE_FILENAME = 'voiceover.wav'
+samples_folder = Path(os.getcwd()) / 'src/www/static/samples'
 
 
 def load_feature_model(path):
@@ -48,35 +49,8 @@ def load_signal_model(path):
     return checkpoint['model'].eval()
 
 
-EXPERIMENT_ROOT = Path('/home/michaelp/WellSaid-Labs-Text-To-Speech/experiments/')
-FEATURE_MODEL, TEXT_ENCODER = load_feature_model(
-    EXPERIMENT_ROOT / 'feature_model/09_16/post_net_no_dropout/' /
-    'checkpoints/1538001059/step_289899.pt')
-SIGNAL_MODEL = load_signal_model(
-    EXPERIMENT_ROOT / 'signal_model/09_28/feature_model_post_net_no_dropout/' /
-    'checkpoints/1539017646/step_4443269.pt')
-
 # ERROR HANDLERS
 # INSPIRED BY: http://flask.pocoo.org/docs/1.0/patterns/apierrors/
-
-
-def _get_stopped_indexes(self, predictions, stop_threshold=0.25):
-    """ Get a list of indices that predicted stop.
-
-    Args:
-        stop_token (torch.FloatTensor [1, batch_size]): Probablity of stopping.
-
-    Returns:
-        (list) Indices that predicted stop.
-    """
-    stopped = predictions.data.view(-1).ge(stop_threshold).nonzero()
-    if stopped.dim() > 1:
-        return stopped.squeeze(1).tolist()
-    else:
-        return []
-
-
-FEATURE_MODEL._get_stopped_indexes = partial(_get_stopped_indexes, FEATURE_MODEL)
 
 
 class GenericException(Exception):
@@ -108,18 +82,27 @@ def handle_generic_exception(error):
 # FILE ROUTES
 
 
-@app.route('/demo', methods=['POST', 'GET'])
-def index(filename=None):
+@app.route('/demo')
+def index():
     return send_file('index.html')
 
 
-@app.route('/samples/<filename>', methods=['GET'])
-def get_sample(filename):
+@app.route('/samples/<filename>')
+def get_sample(filename, default_sample_filename='voiceover.wav'):
+    """ Returns the ``filename`` audio.
+
+    Args:
+        filename (str)
+        default_sample_filename (str)
+    """
+    # Ensure that a adversary has provided a valid filename
+    assert re.match("^[A-Za-z0-9_-]*$", filename)
     as_attachment = request.args.get('attachment', None)
-    attachment_filename = DEFAULT_SAMPLE_FILENAME if as_attachment else None
-    path_to_file = SAMPLES_FOLDER / filename
+    attachment_filename = default_sample_filename if as_attachment else None
+    path_to_file = samples_folder / filename
+    assert path_to_file.is_file(), 'Unable to find %s file' % str(path_to_file)
     return send_file(
-        path_to_file,
+        str(path_to_file),
         conditional=True,
         as_attachment=as_attachment,
         attachment_filename=attachment_filename)
@@ -127,29 +110,27 @@ def get_sample(filename):
 
 @app.route('/synthesize', methods=['POST'])
 def synthesize():
+    """ Synthesize the requested text as speech. """
     request_data = request.get_json()
     # TODO: Add the ability to pick from multiple speakers
     text = request_data['text'].lower()
     is_high_fidelity = request_data['isHighFidelity']
     logger.info('Got request %s', request_data)
 
-    if TEXT_ENCODER.decode(TEXT_ENCODER.encode(text)) != text:
+    if text_encoder.decode(text_encoder.encode(text)) != text:
         raise GenericException('Text has improper characters.')
 
     with torch.set_grad_enabled(False):
-        encoded = TEXT_ENCODER.encode(text)
+        encoded = text_encoder.encode(text)
         encoded = encoded.unsqueeze(1)
         # predicted_frames [num_frames, batch_size, frame_channels]
-        predicted_frames = FEATURE_MODEL(tokens=encoded)[1]
+        predicted_frames = feature_model.infer(tokens=encoded)[1]
 
         if is_high_fidelity:
-            # [num_frames, batch_size, frame_channels] → [num_frames, frame_channels]
-            predicted_frames = predicted_frames.squeeze(1)
-            # TODO: The padding should be handled by the model
-            padded_predicted_frames = torch.nn.functional.pad(predicted_frames, (0, 0, 5, 5))
-            padded_predicted_frames = padded_predicted_frames.unsqueeze(0)
+            # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
+            predicted_frames = predicted_frames.transpose(0, 1)
             # [batch_size, signal_length]
-            predicted_coarse, predicted_fine, _ = SIGNAL_MODEL.infer(padded_predicted_frames)
+            predicted_coarse, predicted_fine, _ = signal_model.infer(predicted_frames)
 
             predicted_coarse = predicted_coarse.squeeze(0)
             predicted_fine = predicted_fine.squeeze(0)
@@ -159,11 +140,19 @@ def synthesize():
 
     # TODO: Fix this unique_id, it could cause a duplicate
     unique_id = str(uuid.uuid4())
-    filename = SAMPLES_FOLDER / '{}{}.wav'.format('generated_audio_', unique_id)
+    filename = samples_folder / '{}{}.wav'.format('generated_audio_', unique_id)
     librosa.output.write_wav(str(filename), waveform)
 
     return jsonify({'filename': str(filename.name)})
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '-s', '--signal_model', type=str, required=True, help='Signal model checkpoint to serve.')
+    parser.add_argument(
+        '-f', '--feature_model', type=str, required=True, help='Feature model checkpoint to serve.')
+    cli_args = parser.parse_args()
+    feature_model, text_encoder = load_feature_model(cli_args.feature_model)
+    signal_model = load_signal_model(cli_args.signal_model)
     app.run(host='0.0.0.0', port=80, processes=8, threaded=False)
