@@ -43,7 +43,7 @@ def test_wave_rnn_infer_equals_forward():
     # Run inference
     # NOTE: argmax to ensure forward and infer sample the deterministically
     infer_predicted_coarse, infer_predicted_fine, infer_hidden_state = net.infer(
-        local_features, hidden_state=infer_hidden_state, argmax=True)
+        local_features, hidden_state=infer_hidden_state, argmax=True, pad=False)
 
     # [batch_size, signal_length] → [batch_size, signal_length - 1, 2]
     forward_input_signal = torch.stack(
@@ -126,11 +126,9 @@ def test_wave_rnn_infer():
     upsample_learned = 6
     upsample_repeat = 2
     upsample_kernels = [(5, 5), (3, 3), (3, 3), (3, 3)]
-    length_padding = sum([(kernel[0] - 1) for kernel in upsample_kernels])
     signal_length = local_length * upsample_learned * upsample_repeat
 
-    local_features = torch.FloatTensor(batch_size, local_length + length_padding,
-                                       local_features_size)
+    local_features = torch.FloatTensor(batch_size, local_length, local_features_size)
 
     net = WaveRNN(
         hidden_size=32,
@@ -139,7 +137,7 @@ def test_wave_rnn_infer():
         upsample_repeat=upsample_repeat,
         upsample_kernels=upsample_kernels,  # Local
         local_features_size=local_features_size).eval()
-    predicted_coarse, predicted_fine, _ = net.infer(local_features)
+    predicted_coarse, predicted_fine, _ = net.infer(local_features, pad=True)
 
     assert predicted_coarse.shape == (batch_size, signal_length)
     assert predicted_fine.shape == (batch_size, signal_length)

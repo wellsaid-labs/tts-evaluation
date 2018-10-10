@@ -3,6 +3,7 @@ import matplotlib
 matplotlib.use('Agg', warn=False)
 
 from pathlib import Path
+from math import isclose
 
 import ast
 import glob
@@ -22,6 +23,96 @@ logger = logging.getLogger(__name__)
 
 # Repository root path
 ROOT_PATH = Path(__file__).parent.parent.parent.resolve()
+
+
+class CopyStream(object):
+    """ Wrapper that copies a stream to a file without affecting the stream.
+
+    **Reference:** https://stackoverflow.com/questions/4675728/redirect-stdout-to-a-file-in-python
+
+    Example Print:
+        >>> import sys
+        >>> stdout_filename = 'stdout.log'
+        >>> sys.stdout = CopyStream(stdout_filename, sys.stdout)
+        >>> print('This log is saved in %s' % stdout_filename)
+        This log is saved in stdout.log
+        >>>
+        >>> os.remove(stdout_filename)
+
+    Example Logger:
+        >>> import sys
+        >>> import logging
+        >>> stdout_filename = 'stdout.log'
+        >>> sys.stdout = CopyStream(stdout_filename, sys.stdout)
+        >>> logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+        >>> logger = logging.getLogger(__name__)
+        >>> logger.info('This log is saved in %s', stdout_filename)
+        >>>
+        >>> os.remove(stdout_filename)
+
+    Args:
+        filename (str or Path): Filename to recieve stream
+        stream (_io.TextIOWrapper): Stream to direct to filename
+    """
+
+    def __init__(self, filename, stream):
+        self.stream = stream
+        self.file_ = open(str(filename), 'a')
+
+    @property
+    def closed(self):
+        return self.file_.closed and self.stream.closed
+
+    def __getattr__(self, attr):
+        # Run the functions ``flush``, ``close``, and ``write`` for both ``self.stream`` and
+        # ``self.file``.
+        if attr in ['flush', 'close', 'write']:
+            return lambda *args, **kwargs: (getattr(self.file_, attr)(*args, **kwargs) and
+                                            getattr(self.stream, attr)(*args, **kwargs))
+        return getattr(self.stream, attr)
+
+
+def chunks(list_, n):
+    """ Yield successive n-sized chunks from list. """
+    for i in range(0, len(list_), n):
+        yield list_[i:i + n]
+
+
+def get_weighted_standard_deviation(tensor, dim=0):
+    """ Computed the weighted standard deviation.
+
+    We assume the weights are normalized between zero and one summing up to one on ``dim``.
+
+    Learn more:
+        - https://en.wikipedia.org/wiki/Weighted_arithmetic_mean
+        - https://mathoverflow.net/questions/11803/unbiased-estimate-of-the-variance-of-a-weighted-mean # noqa: E501
+
+    Args:
+        tensor (torch.FloatTensor): Some tensor along which to compute the standard deviation.
+        dim (int): Dimension of ``tensor`` along which to compute the standard deviation.
+
+    Returns:
+        tensor (torch.FloatTensor): Returns the weighted standard deviation of each row of the input
+            tensor in the given dimension ``dim``.
+    """
+    # Expects normalized weightes total of 0, 1 to ensure correct variance decisions
+    assert all([isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()])
+
+    # Create position matrix where the index is the position and the value is the weight
+    indicies = torch.arange(0, tensor.shape[dim], dtype=tensor.dtype, device=tensor.device)
+    shape = [1] * len(tensor.shape)
+    shape[dim] = tensor.shape[dim]
+    indicies = indicies.view(*shape).expand_as(tensor).float()
+
+    weighted_mean = (indicies * tensor).sum(dim=dim) / tensor.sum(dim=dim)
+    biased_weighted_variance = (
+        (indicies - weighted_mean.unsqueeze(dim=dim))**2 * tensor).sum(dim=dim)
+
+    # Correct the bias
+    bias = 1 - (tensor**2).sum(dim=dim)
+    weighted_variance = biased_weighted_variance / bias
+
+    return weighted_variance**0.5
 
 
 class ExponentiallyWeightedMovingAverage():
@@ -55,6 +146,10 @@ class ExponentiallyWeightedMovingAverage():
         # https://www.coursera.org/lecture/deep-neural-network/bias-correction-in-exponentially-weighted-averages-XjuhD
         average_bias_corrected = self._average / (1 - self.beta**(self.step_counter))
 
+        # TODO: Double check the math we might not be debiasing this correctly assuming
+        # "Reliability weights"
+        # LEARN MORE:
+        # http://people.ds.cam.ac.uk/fanf2/hermes/doc/antiforgery/stats.pdf
         self._variance = self.beta * self._variance + (1 - self.beta) * (
             value - average_bias_corrected)**2
         variance_bias_corrected = self._variance / (1 - self.beta**(self.step_counter))
@@ -133,7 +228,9 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
             (bool): If ``value`` is an anomaly.
         """
         is_anomaly = self._is_anomaly(value)
-        if not is_anomaly:
+        if is_anomaly:
+            self.anomaly_counter += 1
+        else:
             self.last_average, self.last_standard_deviation = super().step(value)
         return is_anomaly
 

@@ -1,8 +1,9 @@
 import torch
 
-from torch.utils.data import DataLoader
 from torchnlp.samplers import BucketBatchSampler
 from torchnlp.utils import pad_batch
+
+from src.utils import DataLoader
 
 
 class DataIterator(object):
@@ -12,8 +13,6 @@ class DataIterator(object):
         device (torch.device, optional): Device onto which to load data.
         dataset (list): Dataset to iterate over.
         batch_size (int): Iteration batch size.
-        sort_key (callable): Sort key used to group similar length data in order to minimize
-            padding; therefore, using less memory and speeding up training.
         trial_run (bool or int): If ``True``, iterates over one batch.
         load_signal (bool, optional): If ``True``, return signal during iteration.
         num_workers (int, optional): Number of workers for data loading.
@@ -33,12 +32,15 @@ class DataIterator(object):
                  device,
                  dataset,
                  batch_size,
-                 sort_key=lambda signal_length: signal_length,
                  trial_run=False,
                  load_signal=False,
                  num_workers=0):
         batch_sampler = BucketBatchSampler(
-            dataset.spectrogram_lengths, batch_size, False, sort_key=sort_key)
+            dataset.spectrogram_lengths,
+            batch_size,
+            False,
+            sort_key=lambda length: length,
+            biggest_batches_first=lambda length: length)
         self.device = device
         self.iterator = DataLoader(
             dataset,

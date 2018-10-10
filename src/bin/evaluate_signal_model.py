@@ -25,21 +25,18 @@ logger = logging.getLogger(__name__)
 
 
 @configurable
-def main(checkpoint_path,
-         results_path='results/',
-         sample_rate=24000,
-         samples=25,
+def main(checkpoint_path, results_path='results/', samples=25,
          device=torch.device('cpu')):  # pragma: no cover
     """ Generate random samples of signal model to evaluate.
 
     Args:
         checkpoint_path (str): Checkpoint to load.
         results_path (str): Path to store results.
-        sample_rate (int): Sample rate of audio evaluated.
         samples (int): Number of rows to evaluate.
         device (torch.device): Device on which to evaluate on.
     """
-    Path(results_path).mkdir(exist_ok=False, parents=True)
+    results_path = Path(results_path)
+    results_path.mkdir(exist_ok=False, parents=True)
 
     checkpoint_path = Path(checkpoint_path)
     assert checkpoint_path.is_file()
@@ -52,6 +49,7 @@ def main(checkpoint_path,
     torch.set_grad_enabled(False)
     model = checkpoint['model'].eval().to(device)
 
+    # TODO: Sample a batch and run this all at once.
     for i, j in enumerate(RandomSampler(dev)):
         if i >= samples:
             break
@@ -64,16 +62,16 @@ def main(checkpoint_path,
 
         # [signal_length]
         signal = row['signal'].numpy()
-        gold_path = str(checkpoint_path.parent / ('%d_gold.wav' % j))
-        librosa.output.write_wav(gold_path, signal, sr=sample_rate)
+        gold_path = str(results_path / ('%d_gold.wav' % j))
+        librosa.output.write_wav(gold_path, signal)
         logger.info('Saved file %s', gold_path)
 
         predicted_coarse, predicted_fine, _ = model.infer(log_mel_spectrogram)
         predicted_signal = combine_signal(predicted_coarse.squeeze(0),
                                           predicted_fine.squeeze(0)).numpy()
 
-        predicted_path = str(checkpoint_path.parent / ('%d_predicted.wav' % j))
-        librosa.output.write_wav(predicted_path, predicted_signal, sr=sample_rate)
+        predicted_path = str(results_path / ('%d_predicted.wav' % j))
+        librosa.output.write_wav(predicted_path, predicted_signal)
         logger.info('Saved file %s', predicted_path)
         print('-' * 100)
 

@@ -93,6 +93,7 @@ class ConditionalFeaturesUpsample(nn.Module):
 
         assert all(all(s % 2 == 1 and s < in_channels for s in kernel) for kernel in kernels), (
             'Kernel size must be odd and must be less than ``in_channels``')
+        assert self.min_padding % 2 == 0, 'Padding invariant violated.'
 
         self.initial_conv = nn.Conv2d(
             in_channels=1,
@@ -137,7 +138,7 @@ class ConditionalFeaturesUpsample(nn.Module):
         # [batch_size, in_channels, local_length * num_repeat]
         return local_features.view(local_features.shape[0], local_features.shape[1], -1)
 
-    def forward(self, local_features):
+    def forward(self, local_features, pad=False):
         """
         TODO: Support global conditioning
 
@@ -147,6 +148,8 @@ class ConditionalFeaturesUpsample(nn.Module):
                 pad the convolution operations to process the spectrograms; therefore, we require
                 that a user pads ``local_features`` time domain instead with
                 ``sum([(kernel[0] - 1) for kernel in kernels])`` padding.
+            pad (bool, optional): Pad the spectrogram with zeros on the ends, assuming that the
+                spectrogram has no context on the ends.
 
         Returns:
             conditional_features (torch.FloatTensor [batch_size, out_channels, signal_length]):
@@ -154,6 +157,9 @@ class ConditionalFeaturesUpsample(nn.Module):
         """
         batch_size, local_length, in_channels = local_features.shape
 
+        if pad:
+            local_features = nn.functional.pad(
+                local_features, (0, 0, int(self.min_padding / 2), int(self.min_padding / 2)))
         assert local_features.shape[1] > self.min_padding, (
             'Remember to pad local_features as described in the above docs.')
 
