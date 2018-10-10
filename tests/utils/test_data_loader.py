@@ -183,7 +183,7 @@ def to_gpu(obj, type_map={}):
 
 
 def get_function_arglist(func):
-    return inspect.getargspec(func).args
+    return inspect.getfullargspec(func).args
 
 
 def set_rng_seed(seed):
@@ -863,7 +863,7 @@ def _test_segfault():
     _ = next(iter(dataloader))
 
 
-class TestProperExitDataset(object):
+class _TestProperExitDataset(object):
 
     def __init__(self, size, error_event):
         self.size = size
@@ -886,7 +886,7 @@ def _test_proper_exit(use_workers, pin_memory, exit_method, hold_iter_reference,
     if exit_method == 'worker_error' or exit_method == 'worker_kill':
         assert use_workers is True
 
-    ds = TestProperExitDataset(16, setup_event if exit_method == 'worker_error' else None)
+    ds = _TestProperExitDataset(16, setup_event if exit_method == 'worker_error' else None)
 
     loader = DataLoader(
         ds, batch_size=2, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
@@ -1198,7 +1198,7 @@ class TestDataLoader(TestCase):
             r"""Wait for all process specified in pids to exit in given timeout."""
             exit_status = [False for _ in pids]
             start_time = time.time()
-            pname = 'python'
+            pname = 'python3'
             while True:
                 for i in range(len(pids)):
                     pid = pids[i]
