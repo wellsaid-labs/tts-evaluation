@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def set_hparams():
-    """ Set hyperparameters specific to the signal model. """
+    """ Set hyperparameters specific to the feature model. """
     set_base_hparams()
 
     # SOURCE: Tacotron 2
@@ -30,7 +30,7 @@ def set_hparams():
         # We also apply L2 regularization with weight 10−6
         'torch.optim.adam.Adam.__init__': {
             'eps': 10**-6,
-            'weight_decay': 10**-6,
+            'weight_decay': 10**-5,
         },
         'src.bin.feature_model': {
             'train.Trainer.__init__': {

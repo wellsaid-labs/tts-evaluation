@@ -32,3 +32,10 @@ Stack Overflow was helpful for fixing iPython python version.
 
 To fix Jupyter, [this](https://github.com/jupyter/notebook/issues/2563) on GitHub was helpful.
 
+### Could not install packages due to an EnvironmentError: [Errno 13] Permission denied
+
+With pip ``--user`` installations, this error can occur because the root owns the ``.local``
+directory that pip is attempting to install to. This can be solved by changing the folder's
+ownership:
+
+    sudo chown -R $(whoami) /home/michaelp/.local/

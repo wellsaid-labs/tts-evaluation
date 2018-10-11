@@ -13,38 +13,9 @@ import numpy as np
 import torch
 
 from src.utils.visualize import Tensorboard
+from src.utils.utils import CopyStream
 
 logger = logging.getLogger(__name__)
-
-
-class _CopyStream(object):
-    """ Wrapper that copies a stream to a file without affecting the stream.
-
-    **Reference:** https://stackoverflow.com/questions/4675728/redirect-stdout-to-a-file-in-python
-
-    Example:
-        >>> sys.stdout = _CopyStream(stdout_filename, sys.stdout) # doctest: +SKIP
-
-    Args:
-        filename (str or Path): Filename to recieve stream
-        stream (_io.TextIOWrapper): Stream to direct to filename
-    """
-
-    def __init__(self, filename, stream):
-        self.stream = stream
-        self.file_ = open(str(filename), 'a')
-
-    @property
-    def closed(self):
-        return self.file_.closed and self.stream.closed
-
-    def __getattr__(self, attr):
-        # Run the functions ``flush``, ``close``, and ``write`` for both ``self.stream`` and
-        # ``self.file``.
-        if attr in ['flush', 'close', 'write']:
-            return lambda *args, **kwargs: (getattr(self.file_, attr)(*args, **kwargs) and
-                                            getattr(self.stream, attr)(*args, **kwargs))
-        return getattr(self.stream, attr)
 
 
 class ExperimentContextManager(object):
@@ -138,8 +109,8 @@ class ExperimentContextManager(object):
         """
         self.stdout_filename = self.directory / ('%s.%s' % (self.id, stdout_filename))
         self.stderr_filename = self.directory / ('%s.%s' % (self.id, stderr_filename))
-        sys.stdout = _CopyStream(self.stdout_filename, sys.stdout)
-        sys.stderr = _CopyStream(self.stderr_filename, sys.stderr)
+        sys.stdout = CopyStream(self.stdout_filename, sys.stdout)
+        sys.stderr = CopyStream(self.stderr_filename, sys.stderr)
 
     def _new_experiment_directory(self):
         """ Create a experiment directory with checkpoints.
@@ -197,8 +168,8 @@ class ExperimentContextManager(object):
         # Setup logging
         self._stream_handler = logging.StreamHandler(stream=sys.stdout)
         self._stream_handler.setLevel(logging.INFO)
-        formatter = logging.Formatter(
-            '[%(asctime)s][%(processName)s][%(name)s][%(levelname)s] %(message)s')
+        formatter = logging.Formatter('[%(asctime)s][' + str(self.device) +
+                                      '][%(name)s][%(levelname)s] %(message)s')
         self._stream_handler.setFormatter(formatter)
         root = logging.getLogger()
         root.addHandler(self._stream_handler)

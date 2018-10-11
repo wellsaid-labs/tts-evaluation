@@ -14,6 +14,12 @@ brew install rsync
 brew install lsyncd
 ```
 
+## Prerequisite: install (optional)
+
+To switch python versions, install ``pyenv`` on a GCP machine. First, install
+the ``pyenv`` requirements listed [here](https://github.com/pyenv/pyenv/wiki/Common-build-problems).
+Finally, install ``pyenv`` with the scripts [here](https://github.com/pyenv/pyenv-installer).
+
 ## Synchronize files
 
 Frequently, you'll want to share a files between your local machine and GCP. We allow for that via:

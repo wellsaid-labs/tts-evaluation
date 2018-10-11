@@ -4,6 +4,7 @@ from pathlib import Path
 
 import argparse
 import logging
+import sys
 
 from tqdm import tqdm
 from torch.nn import MSELoss
@@ -17,10 +18,9 @@ from src.bin.feature_model._utils import load_data
 from src.bin.feature_model._utils import set_hparams
 from src.utils import get_total_parameters
 from src.utils import load_checkpoint
+from src.utils import CopyStream
 from src.utils.configurable import configurable
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from src.utils.configurable import log_config
 
 
 def _compute_loss_frame_loss(batch, predicted_post_frames, criterion_frames):  # pragma: no cover
@@ -52,14 +52,18 @@ def _compute_loss_frame_loss(batch, predicted_post_frames, criterion_frames):  #
 
 @configurable
 def main(checkpoint,
-         destination_train='data/.signal_dataset/train',
-         destination_dev='data/.signal_dataset/dev',
+         destination='data/.signal_dataset/',
+         destination_train='train',
+         destination_dev='dev',
+         destination_stdout='stdout.log',
          max_batch_size=96,
          num_workers=1):  # pragma: no cover
     """ Main module used to generate dataset for training a signal model.
 
     Args:
         checkpoint (str): Checkpoint to load used to generate.
+        destination (str, optional): Directory to save generated files to be used for
+            training.
         destination_train (str, optional): Directory to save generated files to be used for
             training.
         destination_dev (str, optional): Directory to save generated files to be used for
@@ -67,22 +71,27 @@ def main(checkpoint,
         max_batch_size (int, optional): Maximum batch size predicted at a time.
         num_workers (int, optional): Number of workers for data loading.
     """
-    destination_train = Path(destination_train)
-    if not destination_train.is_dir():
-        destination_train.mkdir(parents=True)
+    destination = Path(destination)
+    destination_train = destination / destination_train
+    destination_train.mkdir(parents=True, exist_ok=True)
 
-    destination_dev = Path(destination_dev)
-    if not destination_dev.is_dir():
-        destination_dev.mkdir(parents=True)
+    destination_dev = destination / destination_dev
+    destination_dev.mkdir(parents=True, exist_ok=True)
+
+    sys.stdout = CopyStream(destination / destination_stdout, sys.stdout)
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+    logger = logging.getLogger(__name__)
+
+    log_config()
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     checkpoint = load_checkpoint(checkpoint, device)
-    text_encoder = None if checkpoint is None else checkpoint['text_encoder']
+    text_encoder = checkpoint['text_encoder']
     model = checkpoint['model']
     train, dev, text_encoder = load_data(text_encoder=text_encoder, load_signal=True)
 
     # Check to ensure the the spectrogram loss is similar
-    criterion_frames = MSELoss(reduce=False).to(device)
+    criterion_frames = MSELoss(reduction='none').to(device)
 
     logger.info('Device: %s', device)
     logger.info('Number of Train Rows: %d', len(train))
