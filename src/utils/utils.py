@@ -55,6 +55,7 @@ def duplicate_stream(from_, to):
         """ Clean up called during exit or by user. """
         libc.fflush(None)
         from_.flush()  # Ensure ``from_``` flushes before tee is closed
+        tee.stdin.close()  # Flush and close
         os.dup2(original_fileno, from_.fileno())
         os.close(original_fileno)
         tee.kill()
