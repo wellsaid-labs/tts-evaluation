@@ -13,7 +13,7 @@ import numpy as np
 import torch
 
 from src.utils.visualize import Tensorboard
-from src.utils.utils import CopyStream
+from src.utils.utils import duplicate_stream
 
 logger = logging.getLogger(__name__)
 
@@ -109,8 +109,8 @@ class ExperimentContextManager(object):
         """
         self.stdout_filename = self.directory / ('%s.%s' % (self.id, stdout_filename))
         self.stderr_filename = self.directory / ('%s.%s' % (self.id, stderr_filename))
-        sys.stdout = CopyStream(self.stdout_filename, sys.stdout)
-        sys.stderr = CopyStream(self.stderr_filename, sys.stderr)
+        self.stop_duplicate_stream_stdout = duplicate_stream(sys.stdout, self.stdout_filename)
+        self.stop_duplicate_stream_stderr = duplicate_stream(sys.stderr, self.stderr_filename)
 
     def _new_experiment_directory(self):
         """ Create a experiment directory with checkpoints.
@@ -166,14 +166,9 @@ class ExperimentContextManager(object):
         self._copy_standard_streams()
 
         # Setup logging
-        self._stream_handler = logging.StreamHandler(stream=sys.stdout)
-        self._stream_handler.setLevel(logging.INFO)
-        formatter = logging.Formatter('[%(asctime)s][' + str(self.device) +
-                                      '][%(name)s][%(levelname)s] %(message)s')
-        self._stream_handler.setFormatter(formatter)
-        root = logging.getLogger()
-        root.addHandler(self._stream_handler)
-        root.setLevel(logging.INFO)
+        logging.basicConfig(
+            level=logging.INFO,
+            format='[%(asctime)s][' + str(self.device) + '][%(name)s][%(levelname)s] %(message)s')
 
         if self.is_cuda and self.device.index is not None:
             torch.cuda.set_device(self.device.index)
@@ -232,15 +227,9 @@ class ExperimentContextManager(object):
         self.dev_tensorboard.close()
         self.train_tensorboard.close()
 
-        # Flush stdout and stderr to capture everything
-        sys.stdout.flush()
-        sys.stderr.flush()
-
         # Reset streams
-        sys.stdout = sys.stdout.stream
-        sys.stderr = sys.stderr.stream
-
-        logging.getLogger().removeHandler(self._stream_handler)
+        self.stop_duplicate_stream_stderr()
+        self.stop_duplicate_stream_stdout()
 
         # NOTE: Log before removing handlers.
         elapsed_seconds = time.time() - self._start_time

@@ -13,7 +13,7 @@ import tqdm
 from src.audio import get_log_mel_spectrogram
 from src.audio import read_audio
 from src.bin.feature_model._utils import set_hparams
-from src.utils import CopyStream
+from src.utils import duplicate_stream
 from src.utils.configurable import configurable
 from src.utils.configurable import log_config
 
@@ -47,7 +47,8 @@ def main(dataset,
          destination='data/.feature_dataset/',
          destination_train='train',
          destination_dev='dev',
-         destination_stdout='stdout.log'):  # pragma: no cover
+         destination_stdout='stdout.log',
+         destination_stderr='stderr.log'):  # pragma: no cover
     """ Main module used to preprocess the signal and spectrogram for training a feature model.
 
     Args:
@@ -57,6 +58,8 @@ def main(dataset,
             training.
         destination_dev (str, optional): Directory to save generated files to be used for
             development.
+        destination_stdout (str, optional): Filename to save stderr logs in.
+        destination_stderr (str, optional): Filename to save stdout logs in.
     """
     destination = Path(destination)
     destination_train = destination / destination_train
@@ -65,9 +68,8 @@ def main(dataset,
     destination_dev = destination / destination_dev
     destination_dev.mkdir(parents=True, exist_ok=True)
 
-    sys.stdout = CopyStream(destination / destination_stdout, sys.stdout)
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-    logger = logging.getLogger(__name__)
+    duplicate_stream(sys.stdout, destination / destination_stdout)
+    duplicate_stream(sys.stderr, destination / destination_stderr)
 
     log_config()
 
