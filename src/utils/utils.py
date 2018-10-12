@@ -35,6 +35,7 @@ def duplicate_stream(from_, to):
     Learn more:
         - https://eli.thegreenplace.net/2015/redirecting-all-kinds-of-stdout-in-python/
         - https://stackoverflow.com/questions/17942874/stdout-redirection-with-ctypes
+        - https://gist.github.com/denilsonsa/9c8f5c44bf2038fd000f
 
     Args:
         from_ (file object)
