@@ -112,7 +112,7 @@ def process_audio(wav,
     resample_command = 'rate %s' % (resample if resample is not None else '',)
     commands = ' '.join([resample_command, sinc_command, loudness_command])
     flags = ' '.join([norm_flag, guard_flag])
-    command = 'sox %s %s %s %s ' % (wav, flags, str(destination), commands)
+    command = 'sox "%s" %s "%s" %s ' % (wav, flags, destination, commands)
 
     os.system(command)
     return destination
