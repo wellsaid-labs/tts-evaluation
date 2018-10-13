@@ -4,16 +4,20 @@ import logging
 import os
 import shutil
 import mock
+import sys
 
 import pytest
 import torch
 
 from src.utils.experiment_context_manager import ExperimentContextManager
 
-logger = logging.getLogger(__name__)
-
 
 def test_save_standard_streams():
+    logger = logging.getLogger(__name__)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    logger.addHandler(handler)
+
     with ExperimentContextManager(label='test_save_standard_streams', min_time=-1) as context:
         # Check if 'Test' gets captured
         print('Test')
@@ -23,13 +27,14 @@ def test_save_standard_streams():
     assert context.stderr_filename.is_file()
 
     # Just `Test` print in stdout
-    lines = context.stdout_filename.read_text().strip()
+    lines = set(context.stdout_filename.read_text().strip().split('\n'))
     assert 'Test' in lines
     assert 'Test Logger' in lines
 
     # Nothing in stderr
-    lines = context.stderr_filename.read_text().strip()
-    assert len(lines) == 0
+    lines = set(context.stderr_filename.read_text().strip().split('\n'))
+    assert 'Test Logger' not in lines
+    assert 'Test' not in lines
 
     # Clean up files
     shutil.rmtree(str(context.directory))

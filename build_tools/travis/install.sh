@@ -17,13 +17,21 @@ if [ -d $HOME/.cache/pip ]; then
     ls $HOME/.cache/pip
 fi
 
+python --version
+
+# LEARN MORE:
+# https://stackoverflow.com/questions/14296531/what-does-error-option-single-version-externally-managed-not-recognized-ind
+python -m pip install pip --upgrade
+python -m pip install setuptools --upgrade
+python -m pip install wheel --upgrade
+
 # Install requirements via pip
-pip install -r requirements.txt --quiet --upgrade
+python -m pip install -r requirements.txt --upgrade --progress-bar=off
 
 # Install PyTorch Dependancies
 if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then
-    pip install http://download.pytorch.org/whl/cpu/torch-0.4.1-cp36-cp36m-linux_x86_64.whl
+    python -m pip install http://download.pytorch.org/whl/cpu/torch-0.4.1-cp36-cp36m-linux_x86_64.whl
 fi
 if [[ $TRAVIS_PYTHON_VERSION == '3.5' ]]; then
-    pip install http://download.pytorch.org/whl/cpu/torch-0.4.1-cp35-cp35m-linux_x86_64.whl
+    python -m pip install http://download.pytorch.org/whl/cpu/torch-0.4.1-cp35-cp35m-linux_x86_64.whl
 fi

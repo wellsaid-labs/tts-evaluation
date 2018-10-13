@@ -1,3 +1,10 @@
+from pathlib import Path
+
+import ctypes
+import logging
+import os
+import sys
+
 from torch import nn
 from torch.nn import functional
 
@@ -18,7 +25,39 @@ from src.utils import save_checkpoint
 from src.utils import split_dataset
 from src.utils import split_signal
 from src.utils import get_weighted_standard_deviation
+from src.utils import chunks
+from src.utils import duplicate_stream
 from src.utils.experiment_context_manager import ExperimentContextManager
+
+
+def test_duplicate_stream(capsys):
+    libc = ctypes.CDLL(None)
+
+    log_path = Path('tests/_test_data/stdout.log')
+
+    with capsys.disabled():  # Disable capsys because it messes with sys.stdout
+        logger = logging.getLogger(__name__)
+        handler = logging.StreamHandler(sys.stdout)
+        logger.addHandler(handler)
+        stop = duplicate_stream(sys.stdout, log_path)
+
+        print('1')
+        logger.info('2')
+        libc.puts(b'3')
+        os.system('echo 4')
+
+        # Flush and close
+        stop()
+        logger.removeHandler(handler)
+
+    output = log_path.read_text()
+    assert set(output.split()) == set(['1', '2', '3', '4'])
+
+    log_path.unlink()
+
+
+def test_chunks():
+    assert list(chunks([1, 2, 3], 2)) == [[1, 2], [3]]
 
 
 def test_get_weighted_standard_deviation():

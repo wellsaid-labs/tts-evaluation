@@ -130,7 +130,7 @@ def keep_alive(instances, command, scheduler, repeat_every=60 * 5, retry_timeout
                     break
 
                 except Exception as e:
-                    logger.warn('Exception: %s', e)
+                    logger.warning('Exception: %s', e)
         elif status == INSTANCE_RUNNING and is_halted(name, zone):
             logger.info('Stopping instance "%s" in zone %s', name, zone)
             output = subprocess.check_output(

@@ -6,11 +6,14 @@ from pathlib import Path
 from math import isclose
 
 import ast
+import atexit
+import ctypes
 import glob
 import logging
 import logging.config
 import math
 import os
+import subprocess
 
 from torchnlp.utils import shuffle as do_deterministic_shuffle
 
@@ -20,56 +23,58 @@ import numpy as np
 from src.utils.configurable import configurable
 
 logger = logging.getLogger(__name__)
+libc = ctypes.CDLL(None)
 
 # Repository root path
 ROOT_PATH = Path(__file__).parent.parent.parent.resolve()
 
 
-class CopyStream(object):
-    """ Wrapper that copies a stream to a file without affecting the stream.
+def duplicate_stream(from_, to):
+    """ Writes any messages to file object ``from_`` in file object ``to`` as well.
 
-    **Reference:** https://stackoverflow.com/questions/4675728/redirect-stdout-to-a-file-in-python
-
-    Example Print:
-        >>> import sys
-        >>> stdout_filename = 'stdout.log'
-        >>> sys.stdout = CopyStream(stdout_filename, sys.stdout)
-        >>> print('This log is saved in %s' % stdout_filename)
-        This log is saved in stdout.log
-        >>>
-        >>> os.remove(stdout_filename)
-
-    Example Logger:
-        >>> import sys
-        >>> import logging
-        >>> stdout_filename = 'stdout.log'
-        >>> sys.stdout = CopyStream(stdout_filename, sys.stdout)
-        >>> logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-        >>> logger = logging.getLogger(__name__)
-        >>> logger.info('This log is saved in %s', stdout_filename)
-        >>>
-        >>> os.remove(stdout_filename)
+    Learn more:
+        - https://eli.thegreenplace.net/2015/redirecting-all-kinds-of-stdout-in-python/
+        - https://stackoverflow.com/questions/17942874/stdout-redirection-with-ctypes
+        - https://gist.github.com/denilsonsa/9c8f5c44bf2038fd000f
 
     Args:
-        filename (str or Path): Filename to recieve stream
-        stream (_io.TextIOWrapper): Stream to direct to filename
+        from_ (file object)
+        to (str or Path): Filename to write in.
+
+    Returns:
+        (callable): Stop the duplication.
     """
+    from_.flush()
+    libc.fflush(None)
 
-    def __init__(self, filename, stream):
-        self.stream = stream
-        self.file_ = open(str(filename), 'a')
+    # Keep a file descriptor open to the original file object
+    original_fileno = os.dup(from_.fileno())
+    tee = subprocess.Popen(['tee', '-a', str(to)], stdin=subprocess.PIPE)
+    os.dup2(tee.stdin.fileno(), from_.fileno())
 
-    @property
-    def closed(self):
-        return self.file_.closed and self.stream.closed
+    def _clean_up():
+        """ Clean up called during exit or by user. """
+        libc.fflush(None)
+        from_.flush()  # Ensure ``from_``` flushes before tee is closed
+        tee.stdin.close()  # Flush and close
+        os.dup2(original_fileno, from_.fileno())
+        os.close(original_fileno)
+        tee.kill()
+        tee.wait()
 
-    def __getattr__(self, attr):
-        # Run the functions ``flush``, ``close``, and ``write`` for both ``self.stream`` and
-        # ``self.file``.
-        if attr in ['flush', 'close', 'write']:
-            return lambda *args, **kwargs: (getattr(self.file_, attr)(*args, **kwargs) and
-                                            getattr(self.stream, attr)(*args, **kwargs))
-        return getattr(self.stream, attr)
+    def stop():
+        """ Stop duplication early before the program exits. """
+        atexit.unregister(_clean_up)
+        _clean_up()
+
+    atexit.register(_clean_up)
+    return stop
+
+
+def chunks(list_, n):
+    """ Yield successive n-sized chunks from list. """
+    for i in range(0, len(list_), n):
+        yield list_[i:i + n]
 
 
 def get_weighted_standard_deviation(tensor, dim=0):
