@@ -1,3 +1,7 @@
+""" Script for chunking a transcript with the associated audio file.
+
+NOTE: Instead of testing this script via unit tests, we check various invariants with asserts.
+"""
 from pathlib import Path
 
 import argparse
@@ -37,14 +41,22 @@ class Alignment():
         start_text (int): Start of text in characters.
         end_text (int): End of text in characters.
         next_alignment (Alignment or None): Next alignement.
+        last_alignment (Alignment or None): Last alignement.
     """
 
-    def __init__(self, start_audio, end_audio, start_text, end_text, next_alignment=None):
+    def __init__(self,
+                 start_audio,
+                 end_audio,
+                 start_text,
+                 end_text,
+                 next_alignment=None,
+                 last_alignment=None):
         self.start_audio = start_audio
         self.end_audio = end_audio
         self.start_text = start_text
         self.end_text = end_text
         self.next_alignment = next_alignment
+        self.last_alignment = next_alignment
 
 
 class Nonalignment():
@@ -220,7 +232,11 @@ def _request_gentle(wav_path,
     return response
 
 
-def align_wav_and_scripts(wav_path, scripts, gentle_cache_directory, sample_rate):
+def align_wav_and_scripts(wav_path,
+                          scripts,
+                          gentle_cache_directory,
+                          sample_rate,
+                          min_spoken_word_timing=0.045):
     """ Align an audio file with the scripts spoken in the audio.
 
     Notes:
@@ -232,6 +248,9 @@ def align_wav_and_scripts(wav_path, scripts, gentle_cache_directory, sample_rate
         scripts (list of str): The scripts spoken in the audio.
         sample_rate (int): Sample rate of the audio.
         gentle_cache_directory (Path): Directory used to cache Gentle requests.
+        min_spoken_word_timing (float, optional): When Gentle messes up alignment, the
+            timing of the characters per second is a strong signal. This sets a minimum for the
+            number of characters per second that can be said for it to be a valid alignment.
 
     Returns:
         (list of Alignment): For every script, a list of found alignments.
@@ -241,6 +260,7 @@ def align_wav_and_scripts(wav_path, scripts, gentle_cache_directory, sample_rate
     logger.info('Characters in transcript %s', sorted(list(set(transcript))))
     alignment = _request_gentle(
         wav_path, transcript, gentle_cache_directory, sample_rate=sample_rate)
+    get_spoken_word_timing = lambda w: (w['end'] - w['start']) / (w['endOffset'] - w['startOffset'])
 
     # Align seperate scripts with the transcript alignment.
     aligned_words = alignment['words']
@@ -254,7 +274,7 @@ def align_wav_and_scripts(wav_path, scripts, gentle_cache_directory, sample_rate
             # NOTE: ``GENTLE_OOV_WORD`` is considered a nonalignment because Gentle frequently
             # messes up aligning those words
             if (aligned_word['case'] != GENTLE_SUCCESS_CASE or
-                    aligned_word['alignedWord'] == GENTLE_OOV_WORD):
+                    get_spoken_word_timing(aligned_word) < min_spoken_word_timing):
                 scripts_alignments.append(
                     Nonalignment(
                         start_text=aligned_word['startOffset'] - transcript_start_offset,
@@ -271,23 +291,35 @@ def align_wav_and_scripts(wav_path, scripts, gentle_cache_directory, sample_rate
         for i in range(len(scripts_alignments) - 1):
             scripts_alignments[i].next_alignment = scripts_alignments[i + 1]
 
-        all_scripts_alignments.append(scripts_alignments)
+        for i in range(1, len(scripts_alignments)):
+            scripts_alignments[i].last_alignment = scripts_alignments[i - 1]
+
+        if len(scripts_alignments) == 0:
+            logger.warning('Unable to align script %s', wav_path)
+        else:
+            all_scripts_alignments.append(scripts_alignments)
 
         transcript_start_offset += len(script) + 1  # Add plus one for ``\n``
 
-    assert len(all_scripts_alignments) == len(
-        scripts), 'Alignment was not able to provide alignment for all scripts.'
-    assert len(aligned_words) == 0, 'Not all words were aligned with a script.'
+    assert len(all_scripts_alignments) == len(scripts), 'Unable to align all scripts.'
+    assert len(aligned_words) == 0, 'Unable to line up aligned words with scripts.'
     return all_scripts_alignments
 
 
 def _review_chunk_alignments(script, chunks, spans):
-    """ Check some invariants of ``chunk_alignments`` """
+    """ Check some invariants and log warnings for ``chunk_alignments``
+
+    NOTE:
+        - Refer to ``chunk_alignments`` to better understand arguments.
+
+    Returns:
+        (int): Number of characters in the script aligned.
+        (int): Number of characters in the script.
+    """
     for chunk in chunks:
         assert isinstance(chunk[0], Alignment)
         assert isinstance(chunk[-1], Alignment)
 
-    # Check some invariants
     for i in range(len(spans) - 1):
         assert spans[i]['text'][1] <= spans[i + 1]['text'][0]
         assert spans[i]['audio'][1] <= spans[i + 1]['audio'][0]
@@ -296,14 +328,15 @@ def _review_chunk_alignments(script, chunks, spans):
     if num_unaligned_characters != 0:
         to_print = [TERMINAL_COLOR_RED] + list(script) + [TERMINAL_COLOR_RESET]
         for span in reversed(spans):  # Inserting messes up the index of later items
-            to_print.insert(span['text'][0] + 1, TERMINAL_COLOR_RESET)
             to_print.insert(span['text'][1] + 1, TERMINAL_COLOR_RED)
+            to_print.insert(span['text'][0] + 1, TERMINAL_COLOR_RESET)
         logger.warning('Unable to align %f%% (%d of %d) of script, see here - \n%s',
                        num_unaligned_characters / len(script) * 100, num_unaligned_characters,
                        len(script), ''.join(to_print))
 
+    return num_unaligned_characters, len(script)
 
-# TODO: Consider deliminating based on natural punctuation stop points.
+
 def average_silence_delimiter(alignment):
     """ Compute the average samples of silence per character
 
@@ -322,11 +355,7 @@ def average_silence_delimiter(alignment):
         alignment.next_alignment.start_text - alignment.end_text)
 
 
-def chunk_alignments(alignments,
-                     script,
-                     sample_rate,
-                     max_chunk_length,
-                     delimiter=average_silence_delimiter):
+def chunk_alignments(alignments, script, max_chunk_length, delimiter=average_silence_delimiter):
     """ Chunk audio and text to be less than ``max_chunk_length``.
 
     Notes:
@@ -342,12 +371,13 @@ def chunk_alignments(alignments,
           silence.
         - Write a more efficient algorithm that doesn't recompute the silences and
           chunks every iteration.
+        - Consider deliminating on POS phrases instead of silence; therefore, not biasing
+          the model towards smaller silences.
 
     Args:
         alignments (list of Alignment): List of alignments between text and audio.
         script (str): Transcript alignments refer too.
-        sample_rate (int): Sample rate of the audio.
-        max_chunk_length (float): Number of seconds for the maximum chunk audio length.
+        max_chunk_length (float): Number of samples for the maximum chunk audio length.
         delimiter (callable, optional): Given an alignment returns -1 or a positive floating point
             number. A larger number is more likely to be used to split a sequence.
 
@@ -356,84 +386,82 @@ def chunk_alignments(alignments,
           text (tuple(int, int)): Span of text as measured in characters.
           audio (tuple(int, int)): Span of audio as measured in samples.
         }
+        (int): Number of characters in the script aligned.
+        (int): Number of characters in the script.
     """
-
-    get_chunk_length = lambda chunk: chunk[-1].end_audio - chunk[0].start_audio
-
     chunks = []
     # NOTE: We cannot end / start on a Nonalignment; therefore, we cut them off.
-    largest_chunk = alignments
-    while len(largest_chunk) > 0 and isinstance(largest_chunk[0], Nonalignment):
-        largest_chunk = largest_chunk[1:]
-    while len(largest_chunk) > 0 and isinstance(largest_chunk[-1], Nonalignment):
-        largest_chunk = largest_chunk[:-1]
-    if len(largest_chunk) == 0:
-        return []
+    max_chunk = alignments
+    while len(max_chunk) > 0 and isinstance(max_chunk[0], Nonalignment):
+        max_chunk = max_chunk[1:]
+    while len(max_chunk) > 0 and isinstance(max_chunk[-1], Nonalignment):
+        max_chunk = max_chunk[:-1]
+    if len(max_chunk) == 0:
+        return [], (len(script), len(script))
 
-    # Chunk the largest chunk until the largest chunk is smaller than
-    # ``max_chunk_length * sample_rate```
-    largest_chunk_length = get_chunk_length(largest_chunk)
-    while len(largest_chunk) > 1 and largest_chunk_length > max_chunk_length * sample_rate:
-        largest_silence_index, _ = max(
-            enumerate(largest_chunk[:-1]), key=lambda args: delimiter(args[1]))
+    # Chunk the max chunk until the max chunk is smaller than ``max_chunk_length``
+    get_chunk_length = lambda chunk: chunk[-1].end_audio - chunk[0].start_audio
+    max_chunk_length = get_chunk_length(max_chunk)
+    while len(max_chunk) > 1 and max_chunk_length > max_chunk_length:
+        max_silence_index, _ = max(enumerate(max_chunk[:-1]), key=lambda a: delimiter(a[1]))
 
-        if delimiter(largest_chunk[largest_silence_index]) != -1:
-            chunks.append(largest_chunk[:largest_silence_index + 1])
-            chunks.append(largest_chunk[largest_silence_index + 1:])
-        else:  # NOTE: If ``delimiter`` suggests no cuts, then we ignore ``largest_chunk```
-            logger.warning('Unable to cut %s',
-                           script[largest_chunk[0].start_text:largest_chunk[-1].end_text])
+        if delimiter(max_chunk[max_silence_index]) != -1:
+            chunks.append(max_chunk[:max_silence_index + 1])
+            chunks.append(max_chunk[max_silence_index + 1:])
+        else:  # NOTE: If ``delimiter`` suggests no cuts, then we ignore ``max_chunk```
+            max_chunk_text = script[max_chunk[0].start_text:max_chunk[-1].end_text]
+            logger.warning('Unable to cut %s', max_chunk_text)
 
-        largest_chunk_index, _ = max(enumerate(chunks), key=lambda args: get_chunk_length(args[1]))
-        largest_chunk = chunks.pop(largest_chunk_index)
-        largest_chunk_length = get_chunk_length(largest_chunk)
+        max_chunk_index, _ = max(enumerate(chunks), key=lambda a: get_chunk_length(a[1]))
+        max_chunk = chunks.pop(max_chunk_index)
+        max_chunk_length = get_chunk_length(max_chunk)
 
-    chunks.append(largest_chunk)
+    chunks.append(max_chunk)
 
     # Format the output as text spans and the corresponding audio spans.
     chunks = sorted(chunks, key=lambda c: c[0].start_text)
     spans = []
     for chunk in chunks:
-        end_text_span = len(script) if chunk[-1].next_alignment is None else chunk[
-            -1].next_alignment.start_text
+        next_alignment = chunk[-1].next_alignment
+        end_text_span = len(script) if next_alignment is None else next_alignment.start_text
+
+        # TODO: Support looking backwards to fetch punctuation like open parentheses and open
+        # quotes.
         spans.append({
             'text': (chunk[0].start_text, end_text_span),
             'audio': (chunk[0].start_audio, chunk[-1].end_audio)
         })
 
-    _review_chunk_alignments(script, chunks, spans)
-
-    return spans
+    return spans, _review_chunk_alignments(script, chunks, spans)
 
 
-def main(wav_pattern,
-         csv_pattern,
-         destination,
-         text_column='Content',
-         wav_column='WAV Filename',
-         wav_directory_name='wavs',
-         csv_metadata_name='metadata.csv',
-         gentle_cache_name='.gentle',
-         stdout_name='stdout.log',
-         stderr_name='stderr.log',
-         sample_rate=44100,
-         max_chunk_length=10):
-    """ Align audio with scripts, then create and save chunks of audio and text.
+def setup_io(wav_pattern,
+             csv_pattern,
+             destination,
+             wav_directory_name='wavs',
+             csv_metadata_name='metadata.csv',
+             gentle_cache_name='.gentle',
+             stdout_name='stdout.log',
+             stderr_name='stderr.log'):
+    """ Perform basic IO operations to setup this script
 
     Args:
         wav_pattern (str): The audio file glob pattern.
         csv_pattern (str): The CSV file globl pattern containing metadata associated with audio
             file.
         destination (str): Directory to save the processed data.
-        text_column (str, optional): The script column in the CSV file.
-        wav_column (str, optional): Column name for the new audio filename column.
         wav_directory_name (str, optional): The directory name to store audio clips.
         csv_metadata_name (str, optional): The filename for metadata.
         gentle_cache_name (str, optional): The directory name for Gentle files.
         stdout_name (str): The filename for stdout logs.
         stderr_name (str): The filename for stderr logs.
-        sample_rate (int, optional): Sample rate of the audio.
-        max_chunk_length (float, optional): Number of seconds for the maximum chunk audio length.
+
+    Returns:
+        wav_paths (list of Path): WAV files to process.
+        csv_paths (list of Path): CSV files to process.
+        wav_directory (Path): The directory in which to store audio clips.
+        gentle_cache_directory (Path): The directory in which to cache gentle requests.
+        metadata_filename (Path): The filename to write CSV metadata to.
     """
     destination = Path(destination)
     metadata_filename = destination / csv_metadata_name  # Filename to store CSV metadata
@@ -448,6 +476,11 @@ def main(wav_pattern,
     wav_paths = sorted(list(Path('.').glob(wav_pattern)), key=natural_keys)
     csv_paths = sorted(list(Path('.').glob(csv_pattern)), key=natural_keys)
 
+    assert all(
+        [wav_path.suffix == '.wav' for wav_path in wav_paths]), 'Please select only WAV files'
+    assert all(
+        [csv_path.suffix == '.csv' for csv_path in csv_paths]), 'Please select only CSV files'
+
     if len(csv_paths) == 0 and len(wav_paths) == 0:
         logger.warning('Found no CSV or WAV files.')
         return
@@ -457,18 +490,43 @@ def main(wav_pattern,
     else:
         logger.info('Processing %d files', len(csv_paths))
 
+    return wav_paths, csv_paths, wav_directory, gentle_cache_directory, metadata_filename
+
+
+def main(wav_pattern,
+         csv_pattern,
+         destination,
+         text_column='Content',
+         wav_column='WAV Filename',
+         sample_rate=44100,
+         max_chunk_length=10):
+    """ Align audio with scripts, then create and save chunks of audio and text.
+
+    Args:
+        wav_pattern (str): The audio file glob pattern.
+        csv_pattern (str): The CSV file globl pattern containing metadata associated with audio
+            file.
+        destination (str): Directory to save the processed data.
+        text_column (str, optional): The script column in the CSV file.
+        wav_column (str, optional): Column name for the new audio filename column.
+        sample_rate (int, optional): Sample rate of the audio.
+        max_chunk_length (float, optional): Number of seconds for the maximum chunk audio length.
+    """
+    (wav_paths, csv_paths, wav_directory, gentle_cache_directory, metadata_filename) = setup_io(
+        wav_pattern, csv_pattern, destination)
+
+    total_unaligned_characters = 0
+    total_characters = 0
     for i, (wav_path, csv_path) in enumerate(zip(wav_paths, csv_paths)):
         print('-' * 100)
         script_wav_directory = wav_directory / wav_path.stem
         script_wav_directory.mkdir(exist_ok=True)
         logger.info('Processing %s:%s', wav_path, csv_path)
-        assert wav_path.suffix == '.wav', 'Please select only WAV files'
-        assert csv_path.suffix == '.csv', 'Please select only CSV files'
 
         logger.info('Reading audio and csv...')
         audio = read_audio(str(wav_path), sample_rate)
-        df = pandas.read_csv(csv_path)
-        scripts = [x.strip() for x in df[text_column]]
+        data_frame = pandas.read_csv(csv_path)
+        scripts = [x.strip() for x in data_frame[text_column]]
 
         logger.info('Aligning...')
         try:
@@ -480,30 +538,30 @@ def main(wav_pattern,
 
         logger.info('Chunking and writing...')
         to_write = []
-        for j, row in df.iterrows():
-            if len(alignments[j]) == 0:
-                logger.warning('Unable to align script %d', j)
-                continue
-
-            chunks = chunk_alignments(
-                alignments[j],
-                row[text_column],
-                sample_rate=sample_rate,
-                max_chunk_length=max_chunk_length)
+        for ((j, row), alignment) in zip(data_frame.iterrows(), alignments):
+            chunks, (num_unaligned_characters, len_script) = chunk_alignments(
+                alignment, row[text_column], max_chunk_length * sample_rate)
+            total_unaligned_characters += num_unaligned_characters
+            total_characters += len_script
 
             for k, chunk in enumerate(chunks):
                 new_row = row.to_dict()
+
                 new_row[text_column] = row[text_column][slice(*chunk['text'])].strip()
                 audio_filename = script_wav_directory / ('script_%d_chunk_%d.wav' % (j, k))
                 new_row[wav_column] = str(audio_filename.relative_to(wav_directory))
                 del new_row['Index']  # Delete the default pandas Index column
                 to_write.append(new_row)
+
                 audio_span = audio[slice(*chunk['audio'])]
                 librosa.output.write_wav(str(audio_filename), audio_span, sr=sample_rate)
 
         logger.info('Found %d chunks', len(to_write))
         pandas.DataFrame(to_write).to_csv(
             str(metadata_filename), mode='a', header=i == 0, index=False)
+    logger.warn('Found %f%% [%d of %d] unaligned characters',
+                total_unaligned_characters / total_characters * 100, total_unaligned_characters,
+                total_characters)
 
 
 if __name__ == "__main__":
