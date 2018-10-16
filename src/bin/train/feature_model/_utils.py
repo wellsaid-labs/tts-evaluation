@@ -2,7 +2,7 @@ from pathlib import Path
 
 import logging
 
-from src.bin.feature_model._dataset import FeatureDataset
+from src.bin.train.feature_model._dataset import FeatureDataset
 from src.utils.configurable import add_config
 from src.hparams import set_hparams as set_base_hparams
 
@@ -32,7 +32,7 @@ def set_hparams():
             'eps': 10**-6,
             'weight_decay': 10**-5,
         },
-        'src.bin.feature_model': {
+        'src.bin.train.feature_model': {
             'train.Trainer.__init__': {
                 'train_batch_size': train_batch_size,
                 'dev_batch_size': dev_batch_size,
@@ -70,7 +70,7 @@ def load_data(source_train='data/.feature_dataset/train',
 
     if not source_dev.is_dir() or not source_train.is_dir():
         raise ValueError('Data files not found. '
-                         'Did you run ``src.bin.feature_model.preprocess``?')
+                         'Did you run ``src.bin.train.feature_model.preprocess``?')
 
     train = FeatureDataset(source_train, text_encoder=text_encoder, load_signal=load_signal)
     dev = FeatureDataset(source_dev, text_encoder=train.text_encoder, load_signal=load_signal)

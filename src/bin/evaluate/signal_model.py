@@ -3,7 +3,7 @@ Generate random samples of signal model to evaluate.
 
 Example:
 
-    python3 -m src.bin.evaluate_signal_model --checkpoint experiments/your/checkpoint.pt
+    python3 -m src.bin.evaluate.signal_model --checkpoint experiments/your/checkpoint.pt
 """
 from pathlib import Path
 
@@ -13,9 +13,9 @@ import logging
 import librosa
 import torch
 
-from src.bin.signal_model._data_iterator import RandomSampler
-from src.bin.signal_model._utils import load_data
-from src.bin.signal_model._utils import set_hparams
+from src.bin.train.signal_model._data_iterator import RandomSampler
+from src.bin.train.signal_model._utils import load_data
+from src.bin.train.signal_model._utils import set_hparams
 from src.utils import combine_signal
 from src.utils import load_checkpoint
 from src.utils.configurable import configurable

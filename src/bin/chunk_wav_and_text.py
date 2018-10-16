@@ -10,6 +10,7 @@ import logging
 import re
 import requests
 import sys
+import unidecode
 
 from collections import Counter
 
@@ -23,6 +24,7 @@ GENTLE_SUCCESS_CASE = 'success'
 GENTLE_OOV_WORD = '<unk>'
 TERMINAL_COLOR_RESET = '\033[0m'
 TERMINAL_COLOR_RED = '\033[91m'
+TERMINAL_COLOR_BLUE = '\033[94m'
 TERMINAL_COLOR_PURPLE = '\033[95m'
 
 logging.basicConfig(
@@ -56,7 +58,7 @@ class Alignment():
         self.start_text = start_text
         self.end_text = end_text
         self.next_alignment = next_alignment
-        self.last_alignment = next_alignment
+        self.last_alignment = last_alignment
 
 
 class Nonalignment():
@@ -66,12 +68,14 @@ class Nonalignment():
         start_text (int): Start of text in characters.
         end_text (int): End of text in characters.
         next_alignment (Alignment or None): Next alignement.
+        last_alignment (Alignment or None): Last alignement.
     """
 
-    def __init__(self, start_text, end_text, next_alignment=None):
+    def __init__(self, start_text, end_text, next_alignment=None, last_alignment=None):
         self.start_text = start_text
         self.end_text = end_text
         self.next_alignment = next_alignment
+        self.last_alignment = last_alignment
 
 
 def natural_keys(text):
@@ -83,7 +87,7 @@ def natural_keys(text):
     return [(int(c) if c.isdigit() else c) for c in re.split('(\d+)', str(text))]
 
 
-def _review_gentle(response, transcript):
+def _review_gentle(response, transcript):  # pragma: no cover
     """ Log warnings, check invariants, and compute statistics for the script user.
 
     Args:
@@ -165,7 +169,7 @@ def _request_gentle(wav_path,
                     port=8765,
                     parameters=(('async', 'false'),),
                     wait_per_second_of_audio=0.5,
-                    sample_rate=24000):
+                    sample_rate=24000):  # pragma: no cover
     """ Align an audio file with the trascript at a word granularity.
 
     Args:
@@ -236,7 +240,7 @@ def align_wav_and_scripts(wav_path,
                           scripts,
                           gentle_cache_directory,
                           sample_rate,
-                          min_spoken_word_timing=0.045):
+                          min_spoken_word_timing=0.06):
     """ Align an audio file with the scripts spoken in the audio.
 
     Notes:
@@ -274,6 +278,7 @@ def align_wav_and_scripts(wav_path,
             # NOTE: ``GENTLE_OOV_WORD`` is considered a nonalignment because Gentle frequently
             # messes up aligning those words
             if (aligned_word['case'] != GENTLE_SUCCESS_CASE or
+                    aligned_word['alignedWord'] == GENTLE_OOV_WORD or
                     get_spoken_word_timing(aligned_word) < min_spoken_word_timing):
                 scripts_alignments.append(
                     Nonalignment(
@@ -313,28 +318,169 @@ def _review_chunk_alignments(script, chunks, spans):
         - Refer to ``chunk_alignments`` to better understand arguments.
 
     Returns:
-        (int): Number of characters in the script aligned.
-        (int): Number of characters in the script.
+        unaligned_substrings (list of str): List of substrings that were not aligned in a span.
     """
-    for chunk in chunks:
-        assert isinstance(chunk[0], Alignment)
-        assert isinstance(chunk[-1], Alignment)
-
     for i in range(len(spans) - 1):
-        assert spans[i]['text'][1] <= spans[i + 1]['text'][0]
-        assert spans[i]['audio'][1] <= spans[i + 1]['audio'][0]
+        if spans[i]['text'][1] > spans[i + 1]['text'][0]:
+            raise ValueError('Text must be monotonically increasing.')
+        if spans[i]['audio'][1] > spans[i + 1]['audio'][0]:
+            raise ValueError('Audio must be monotonically increasing.')
 
     num_unaligned_characters = len(script) - sum([s['text'][1] - s['text'][0] for s in spans])
+    unaligned_substrings = []
     if num_unaligned_characters != 0:
-        to_print = [TERMINAL_COLOR_RED] + list(script) + [TERMINAL_COLOR_RESET]
-        for span in reversed(spans):  # Inserting messes up the index of later items
-            to_print.insert(span['text'][1] + 1, TERMINAL_COLOR_RED)
-            to_print.insert(span['text'][0] + 1, TERMINAL_COLOR_RESET)
+        start_snippet = 0
+        for span in spans:
+            if start_snippet != span['text'][0]:
+                unaligned_substrings.append(script[start_snippet:span['text'][0]])
+            start_snippet = span['text'][1]
+        if start_snippet != len(script):
+            unaligned_substrings.append(script[start_snippet:len(script)])
+
+        # NOTE: Insert largest to smallest index.
+        to_print = list(script) + [TERMINAL_COLOR_RESET]
+        for span in reversed(spans):
+            to_print.insert(
+                span['text'][1],
+                '%s»%s%s' % (TERMINAL_COLOR_BLUE, TERMINAL_COLOR_RESET, TERMINAL_COLOR_RED))
+            to_print.insert(
+                span['text'][0],
+                '%s%s«%s' % (TERMINAL_COLOR_RESET, TERMINAL_COLOR_BLUE, TERMINAL_COLOR_RESET))
+        to_print = [TERMINAL_COLOR_RED] + to_print
+
+        # NOTE: Errors will only appear on the beginning or end of the script. The chunking
+        # algorithm does not cut on words that won't align.
         logger.warning('Unable to align %f%% (%d of %d) of script, see here - \n%s',
                        num_unaligned_characters / len(script) * 100, num_unaligned_characters,
                        len(script), ''.join(to_print))
 
-    return num_unaligned_characters, len(script)
+    assert sum(
+        [len(s) for s in unaligned_substrings]) == num_unaligned_characters, 'Variable invariant'
+    return unaligned_substrings
+
+
+def _find(string, substring):
+    """ Find all instances of substring in string
+
+    Args:
+        string (str)
+        substring (str)
+
+    Returns
+        (list of int) Start index of all substring instances in string.
+
+    Example:
+
+        >>> _find('Hihihhi', 'hi') == [2, 5]
+        True
+    """
+    found = []
+    for i in range(len(string) - len(substring) + 1):
+        if string[i:i + len(substring)] == substring:
+            found.append(i)
+    return found
+
+
+def _cut_text(text,
+              inclusive_stop_tokens=[',', '.', '\n', ')', '-', '/', '?', ';', ':', '>', '."', ".'"],
+              exclusive_stop_tokens=[' "', '(', '<', " '"]):
+    """ Cut text half at a ``stop_token`` using heuristics.
+
+    Args:
+        text (str): Text to split using punctuation.
+        inclusive_stop_tokens (list of str): Stop tokens to deliminate the end of one phrase and
+            the start of another. These stop tokens are included in the former phrase.
+        exclusive_stop_tokens (list of str): Similar to above except, these stop tokens are included
+            in the latter phrase.
+
+    Returns:
+        (int or None): Recommended index to cut text if no stop_token is found.
+
+    Examples:
+
+        >>> _cut_text('test." Test', inclusive_stop_tokens=['."', '.']) == len('test."')
+        True
+        >>> _cut_text('test. " Test', inclusive_stop_tokens=['."', '.']) == len('test.')
+        True
+        >>> _cut_text('test.." Test', inclusive_stop_tokens=['."', '.']) == len('test.."')
+        True
+        >>> _cut_text('test Test', inclusive_stop_tokens=['."', '.']) is None
+        True
+    """
+    possible_cuts = []
+    for i, stop_tokens in enumerate([inclusive_stop_tokens, exclusive_stop_tokens]):
+        for stop_token in stop_tokens:
+            indicies = _find(text, stop_token)
+            indicies = [{
+                'index': j,
+                'stop_token': stop_token,
+                'is_inclusive': i == 0
+            } for j in indicies]
+            possible_cuts += indicies
+
+    # Pick the last and longest stop token of the first sequence of stop tokens
+    possible_cuts = sorted(possible_cuts, key=lambda d: (d['index'], -len(d['stop_token'])))
+    while (len(possible_cuts) > 1 and possible_cuts[1]['index'] - possible_cuts[0]['index'] == 1 and
+           possible_cuts[0]['is_inclusive']):
+        possible_cuts = possible_cuts[1:]
+
+    if len(possible_cuts) == 0:
+        return None
+    else:
+        if possible_cuts[0]['is_inclusive']:
+            return possible_cuts[0]['index'] + len(possible_cuts[0]['stop_token'])
+        else:
+            return possible_cuts[0]['index']
+
+
+def _chunks_to_spans(script, chunks):
+    """ Convert chunked alignments to high level text and audio spans.
+
+    Args:
+        script (text)
+        chunks (list of Alignment and Nonalignment)
+
+    Returns:
+        spans (list of dict {
+          text (tuple(int, int)): Span of text as measured in characters.
+          audio (tuple(int, int)): Span of audio as measured in samples.
+        }
+    """
+    chunks = sorted(chunks, key=lambda c: c[0].start_text)
+    spans = []
+    if len(chunks) == 0:
+        return []
+
+    for chunk in chunks:
+        if not isinstance(chunk[0], Alignment):
+            raise ValueError('Without a starting Alignment, we cannot determine the audio start.')
+
+        if not isinstance(chunk[-1], Alignment):
+            raise ValueError('Without a ending Alignment, we cannot determine the audio end.')
+
+        if chunk[0].last_alignment is None:
+            start_text_span = 0
+        else:
+            last_end_text = chunk[0].last_alignment.end_text
+            start_text = chunk[0].start_text
+            cut_index = _cut_text(script[last_end_text:start_text])
+            start_text_span = start_text if cut_index is None else cut_index + last_end_text
+
+        if chunk[-1].next_alignment is None:
+            end_text_span = len(script)
+        else:
+            next_start_text = chunk[-1].next_alignment.start_text
+            end_text = chunk[-1].end_text
+            cut_index = _cut_text(script[end_text:next_start_text])
+            end_text_span = next_start_text if cut_index is None else cut_index + end_text
+
+        spans.append({
+            'text': (start_text_span, end_text_span),
+            'audio': (chunk[0].start_audio, chunk[-1].end_audio)
+        })
+
+        start_text_span = end_text_span
+    return spans
 
 
 def average_silence_delimiter(alignment):
@@ -346,6 +492,12 @@ def average_silence_delimiter(alignment):
     Returns:
         (float): -1 if
     """
+    if alignment.next_alignment is None:
+        raise ValueError('No silence proceeds ``alignment``.')
+
+    if alignment.next_alignment.start_text <= alignment.end_text:
+        raise ValueError('Aligment and next alignment have to be disjointed and in sequence.')
+
     if isinstance(alignment, Nonalignment) or isinstance(alignment.next_alignment, Nonalignment):
         # NOTE: We want to start / end with Alignment chunks; therefore, we cannot cut at
         # at Nonalignment.
@@ -377,7 +529,7 @@ def chunk_alignments(alignments, script, max_chunk_length, delimiter=average_sil
     Args:
         alignments (list of Alignment): List of alignments between text and audio.
         script (str): Transcript alignments refer too.
-        max_chunk_length (float): Number of samples for the maximum chunk audio length.
+        max_chunk_length (int): Number of samples for the maximum chunk audio length.
         delimiter (callable, optional): Given an alignment returns -1 or a positive floating point
             number. A larger number is more likely to be used to split a sequence.
 
@@ -386,8 +538,7 @@ def chunk_alignments(alignments, script, max_chunk_length, delimiter=average_sil
           text (tuple(int, int)): Span of text as measured in characters.
           audio (tuple(int, int)): Span of audio as measured in samples.
         }
-        (int): Number of characters in the script aligned.
-        (int): Number of characters in the script.
+        (list of str): List of substrings that were not aligned in a span.
     """
     chunks = []
     # NOTE: We cannot end / start on a Nonalignment; therefore, we cut them off.
@@ -401,8 +552,8 @@ def chunk_alignments(alignments, script, max_chunk_length, delimiter=average_sil
 
     # Chunk the max chunk until the max chunk is smaller than ``max_chunk_length``
     get_chunk_length = lambda chunk: chunk[-1].end_audio - chunk[0].start_audio
-    max_chunk_length = get_chunk_length(max_chunk)
-    while len(max_chunk) > 1 and max_chunk_length > max_chunk_length:
+    while (max_chunk is not None and len(max_chunk) > 1 and
+           get_chunk_length(max_chunk) > max_chunk_length):
         max_silence_index, _ = max(enumerate(max_chunk[:-1]), key=lambda a: delimiter(a[1]))
 
         if delimiter(max_chunk[max_silence_index]) != -1:
@@ -410,28 +561,19 @@ def chunk_alignments(alignments, script, max_chunk_length, delimiter=average_sil
             chunks.append(max_chunk[max_silence_index + 1:])
         else:  # NOTE: If ``delimiter`` suggests no cuts, then we ignore ``max_chunk```
             max_chunk_text = script[max_chunk[0].start_text:max_chunk[-1].end_text]
-            logger.warning('Unable to cut %s', max_chunk_text)
+            logger.warning('Unable to cut:\n%s%s%s', TERMINAL_COLOR_RED, max_chunk_text,
+                           TERMINAL_COLOR_RESET)
 
-        max_chunk_index, _ = max(enumerate(chunks), key=lambda a: get_chunk_length(a[1]))
-        max_chunk = chunks.pop(max_chunk_index)
-        max_chunk_length = get_chunk_length(max_chunk)
+        max_chunk = None  # NOTE: ``max_chunk``` as been processed.
 
-    chunks.append(max_chunk)
+        if len(chunks) > 0:
+            max_chunk_index, _ = max(enumerate(chunks), key=lambda a: get_chunk_length(a[1]))
+            max_chunk = chunks.pop(max_chunk_index)
 
-    # Format the output as text spans and the corresponding audio spans.
-    chunks = sorted(chunks, key=lambda c: c[0].start_text)
-    spans = []
-    for chunk in chunks:
-        next_alignment = chunk[-1].next_alignment
-        end_text_span = len(script) if next_alignment is None else next_alignment.start_text
+    if max_chunk is not None:
+        chunks.append(max_chunk)
 
-        # TODO: Support looking backwards to fetch punctuation like open parentheses and open
-        # quotes.
-        spans.append({
-            'text': (chunk[0].start_text, end_text_span),
-            'audio': (chunk[0].start_audio, chunk[-1].end_audio)
-        })
-
+    spans = _chunks_to_spans(script, chunks)
     return spans, _review_chunk_alignments(script, chunks, spans)
 
 
@@ -442,7 +584,7 @@ def setup_io(wav_pattern,
              csv_metadata_name='metadata.csv',
              gentle_cache_name='.gentle',
              stdout_name='stdout.log',
-             stderr_name='stderr.log'):
+             stderr_name='stderr.log'):  # pragma: no cover
     """ Perform basic IO operations to setup this script
 
     Args:
@@ -493,13 +635,31 @@ def setup_io(wav_pattern,
     return wav_paths, csv_paths, wav_directory, gentle_cache_directory, metadata_filename
 
 
+def normalize_text(text):  # pragma: no cover
+    """ Normalize the text such that the text matches up closely to the audio.
+
+    Args:
+        text (str)
+
+    Returns
+        text (str)
+    """
+    text = text.strip()
+    text = text.replace('€', 'euro')
+    text = text.replace('\t', '  ')
+    text = text.replace('®', '')
+    # Remove HTML tags
+    text = re.sub('<.*?>', '', text)
+    return unidecode.unidecode(text)
+
+
 def main(wav_pattern,
          csv_pattern,
          destination,
          text_column='Content',
          wav_column='WAV Filename',
          sample_rate=44100,
-         max_chunk_length=10):
+         max_chunk_length=10):  # pragma: no cover
     """ Align audio with scripts, then create and save chunks of audio and text.
 
     Args:
@@ -515,7 +675,9 @@ def main(wav_pattern,
     (wav_paths, csv_paths, wav_directory, gentle_cache_directory, metadata_filename) = setup_io(
         wav_pattern, csv_pattern, destination)
 
-    total_unaligned_characters = 0
+    total_aligned_scripts = 0
+    all_unaligned_substrings = []
+    total_scripts = 0
     total_characters = 0
     for i, (wav_path, csv_path) in enumerate(zip(wav_paths, csv_paths)):
         print('-' * 100)
@@ -526,7 +688,9 @@ def main(wav_pattern,
         logger.info('Reading audio and csv...')
         audio = read_audio(str(wav_path), sample_rate)
         data_frame = pandas.read_csv(csv_path)
-        scripts = [x.strip() for x in data_frame[text_column]]
+        scripts = [normalize_text(x) for x in data_frame[text_column]]
+        total_scripts += len(scripts)
+        total_characters += sum([len(s) for s in scripts])
 
         logger.info('Aligning...')
         try:
@@ -538,16 +702,20 @@ def main(wav_pattern,
 
         logger.info('Chunking and writing...')
         to_write = []
-        for ((j, row), alignment) in zip(data_frame.iterrows(), alignments):
-            chunks, (num_unaligned_characters, len_script) = chunk_alignments(
-                alignment, row[text_column], max_chunk_length * sample_rate)
-            total_unaligned_characters += num_unaligned_characters
-            total_characters += len_script
+        for j, row in data_frame.iterrows():
+            script = scripts[j]
+            alignment = alignments[j]
+
+            chunks, unaligned_substrings = chunk_alignments(alignment, script,
+                                                            max_chunk_length * sample_rate)
+            if len(unaligned_substrings) == 0:
+                total_aligned_scripts += 1
+            all_unaligned_substrings += unaligned_substrings
 
             for k, chunk in enumerate(chunks):
                 new_row = row.to_dict()
 
-                new_row[text_column] = row[text_column][slice(*chunk['text'])].strip()
+                new_row[text_column] = script[slice(*chunk['text'])].strip()
                 audio_filename = script_wav_directory / ('script_%d_chunk_%d.wav' % (j, k))
                 new_row[wav_column] = str(audio_filename.relative_to(wav_directory))
                 del new_row['Index']  # Delete the default pandas Index column
@@ -559,12 +727,19 @@ def main(wav_pattern,
         logger.info('Found %d chunks', len(to_write))
         pandas.DataFrame(to_write).to_csv(
             str(metadata_filename), mode='a', header=i == 0, index=False)
+    print('=' * 100)
+    all_unaligned_substrings = list(map(str, all_unaligned_substrings))
+    total_unaligned_characters = sum([len(s) for s in all_unaligned_substrings])
+    logger.warn('Number of unaligned scripts %f%% [%d of %d]',
+                (1 - total_aligned_scripts / total_scripts) * 100,
+                total_scripts - total_aligned_scripts, total_scripts)
     logger.warn('Found %f%% [%d of %d] unaligned characters',
                 total_unaligned_characters / total_characters * 100, total_unaligned_characters,
                 total_characters)
+    logger.warn('All unaligned substrings:\n%s', sorted(all_unaligned_substrings, key=len))
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     parser = argparse.ArgumentParser(description='Align and chunk audio file and text scripts.')
     parser.add_argument('-w', '--wav', type=str, help='Path / Pattern to WAV file to chunk.')
     parser.add_argument('-c', '--csv', type=str, help='Path / Pattern to CSV file with scripts.')

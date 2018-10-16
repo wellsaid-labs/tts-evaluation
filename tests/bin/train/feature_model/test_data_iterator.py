@@ -1,6 +1,6 @@
 import torch
 
-from src.bin.feature_model._data_iterator import DataIterator
+from src.bin.train.feature_model._data_iterator import DataIterator
 from src.utils.experiment_context_manager import ExperimentContextManager
 
 

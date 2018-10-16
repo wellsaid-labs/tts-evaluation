@@ -1,5 +1,5 @@
-from src.bin.feature_model._utils import load_data
-from src.bin.feature_model._utils import set_hparams
+from src.bin.train.feature_model._utils import load_data
+from src.bin.train.feature_model._utils import set_hparams
 
 
 def test_set_hparams():

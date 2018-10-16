@@ -1,7 +1,7 @@
 """ Train feature model.
 
  Example:
-    $ python3 -m src.bin.feature_model.train -n baseline;
+    $ python3 -m src.bin.train.feature_model.train -n baseline;
 """
 from pathlib import Path
 
@@ -23,9 +23,9 @@ from tqdm import tqdm
 import torch
 
 from src.audio import griffin_lim
-from src.bin.feature_model._data_iterator import DataIterator
-from src.bin.feature_model._utils import load_data
-from src.bin.feature_model._utils import set_hparams
+from src.bin.train.feature_model._data_iterator import DataIterator
+from src.bin.train.feature_model._utils import load_data
+from src.bin.train.feature_model._utils import set_hparams
 from src.feature_model import FeatureModel
 from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
@@ -184,7 +184,7 @@ class Trainer():  # pragma: no cover
         """ Compute the losses for Tacotron.
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
+            batch (dict): ``dict`` from ``src.bin.train.feature_model._utils.DataIterator``.
             predicted_pre_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
                 Predicted frames.
             predicted_post_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
@@ -221,7 +221,7 @@ class Trainer():  # pragma: no cover
         """ Run in inference mode without teacher forcing and push results to Tensorboard.
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
+            batch (dict): ``dict`` from ``src.bin.train.feature_model._utils.DataIterator``.
             max_infer_frames (int, optioanl): Maximum number of frames to consider for memory's
                 sake.
 
@@ -268,7 +268,7 @@ class Trainer():  # pragma: no cover
         """ Samples examples from a batch and outputs them to tensorboard
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
+            batch (dict): ``dict`` from ``src.bin.train.feature_model._utils.DataIterator``.
             predicted_pre_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
                 Predicted frames without residual.
             predicted_post_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
@@ -363,7 +363,7 @@ class Trainer():  # pragma: no cover
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
+            batch (dict): ``dict`` from ``src.bin.train.feature_model._utils.DataIterator``.
             train (bool): If ``True``, takes a optimization step.
             sample (bool): If ``True``, samples the current step.
 

@@ -3,7 +3,7 @@ Generate random samples of text to speech model to evaluate.
 
 Example:
 
-    python3 -m src.bin.evaluate_text_to_speech -f experiments/your/checkpoint.pt \
+    python3 -m src.bin.evaluate.text_to_speech -f experiments/your/checkpoint.pt \
                                                -s experiments/your/checkpoint.pt
 """
 from pathlib import Path
@@ -18,8 +18,8 @@ from torchnlp.utils import pad_batch
 import librosa
 import torch
 
-from src.bin.feature_model._utils import load_data
-from src.bin.signal_model._utils import set_hparams
+from src.bin.train.feature_model._utils import load_data
+from src.bin.train.signal_model._utils import set_hparams
 from src.utils import chunks
 from src.utils import combine_signal
 from src.utils import load_checkpoint

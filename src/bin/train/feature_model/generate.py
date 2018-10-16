@@ -13,9 +13,9 @@ from torchnlp.utils import pad_batch
 import torch
 import numpy as np
 
-from src.bin.feature_model._data_iterator import DataIterator
-from src.bin.feature_model._utils import load_data
-from src.bin.feature_model._utils import set_hparams
+from src.bin.train.feature_model._data_iterator import DataIterator
+from src.bin.train.feature_model._utils import load_data
+from src.bin.train.feature_model._utils import set_hparams
 from src.utils import get_total_parameters
 from src.utils import load_checkpoint
 from src.utils import duplicate_stream
@@ -30,7 +30,7 @@ def _compute_loss_frame_loss(batch, predicted_post_frames, criterion_frames):  #
     """ Compute the frame loss for Tacotron.
 
     Args:
-        batch (dict): ``dict`` from ``src.bin.feature_model._utils.DataIterator``.
+        batch (dict): ``dict`` from ``src.bin.train.feature_model._utils.DataIterator``.
         predicted_post_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]):
             Predicted frames with residual.
         criterion_frames (callable): Loss function used to score frame predictions.
