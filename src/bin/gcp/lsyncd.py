@@ -41,7 +41,7 @@ def main(source,
          destination,
          instance,
          user,
-         template='src/bin/lsyncd.conf.lua',
+         template='src/bin/gcp/lsyncd.conf.lua',
          tmp='/tmp/lsyncd.conf.lua'):  # pragma: no cover
     """ Starts a lsyncd session.
 
