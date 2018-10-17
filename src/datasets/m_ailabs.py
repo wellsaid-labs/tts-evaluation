@@ -29,6 +29,8 @@ from collections import namedtuple
 from enum import Enum
 from pathlib import Path
 
+import csv
+
 from torchnlp.download import download_file_maybe_extract
 
 from src.datasets._process import process_all
@@ -189,7 +191,11 @@ def _path2book(metadata_path, directory=DOWNLOAD_DIRECTORY):
     return Book(Gender(gender), Speaker(speaker_name), book_title)
 
 
-def _book2speech_data(book, text_column=2, directory=DOWNLOAD_DIRECTORY, check_wavfiles=True):
+def _book2speech_data(book,
+                      text_column=2,
+                      directory=DOWNLOAD_DIRECTORY,
+                      check_wavfiles=True,
+                      quoting=csv.QUOTE_NONE):
     """ Given a book, yield pairs of (text, wav_filename) for that book.
 
     For now, use the cleaned text (text_column=2).
@@ -198,11 +204,15 @@ def _book2speech_data(book, text_column=2, directory=DOWNLOAD_DIRECTORY, check_w
         book (Book)
         text_column (int): 0-indexed column to extract text from. The format expected is:
             (filename, text, preprocessed text)
+        directory (Path or str)
+        check_wavfiles (bool)
+        quoting (int, optional): Control field quoting behavior per csv.QUOTE_* constants.
     """
     yield from read_speech_data(
         _book2path(book, directory=directory),
         text_column=text_column,
-        check_wavfiles=check_wavfiles)
+        check_wavfiles=check_wavfiles,
+        quoting=quoting)
 
 
 def _speaker2speech_data(speaker, directory=DOWNLOAD_DIRECTORY, check_wavfiles=True):

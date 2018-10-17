@@ -12,7 +12,7 @@ import tqdm
 
 from src.audio import get_log_mel_spectrogram
 from src.audio import read_audio
-from src.bin.feature_model._utils import set_hparams
+from src.bin.train.feature_model._utils import set_hparams
 from src.utils import duplicate_stream
 from src.utils.configurable import configurable
 from src.utils.configurable import log_config

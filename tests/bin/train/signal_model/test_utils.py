@@ -1,8 +1,8 @@
 import numpy as np
 import torch
 
-from src.bin.signal_model._utils import load_data
-from src.bin.signal_model._utils import set_hparams
+from src.bin.train.signal_model._utils import load_data
+from src.bin.train.signal_model._utils import set_hparams
 
 
 def test_load_data():

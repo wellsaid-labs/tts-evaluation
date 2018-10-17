@@ -3,10 +3,10 @@ from pathlib import Path
 import mock
 import torch
 
-from src.bin.signal_model._dataset import SignalDataset
+from src.bin.train.signal_model._dataset import SignalDataset
 
 
-@mock.patch('src.bin.signal_model._dataset.random.randint')
+@mock.patch('src.bin.train.signal_model._dataset.random.randint')
 def test_signal_dataset_preprocess(randint_mock):
     randint_mock.return_value = 5
     samples_per_frame = 10

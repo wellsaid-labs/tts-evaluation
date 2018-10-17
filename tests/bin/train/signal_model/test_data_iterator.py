@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from src.bin.signal_model._data_iterator import DataIterator
+from src.bin.train.signal_model._data_iterator import DataIterator
 from src.utils.experiment_context_manager import ExperimentContextManager
 
 
