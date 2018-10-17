@@ -9,27 +9,30 @@ from src.utils.configurable import configurable
 
 
 @configurable
-def hillary_dataset(directory='data/',
-                    extracted_name='Hillary',
-                    url='',
-                    check_files=['Hillary/metadata.csv'],
-                    metadata_file='metadata.csv',
-                    text_column='Content',
-                    audio_column='WAV Filename',
-                    delimiter=',',
-                    header=True,
-                    resample=24000,
-                    norm=False,
-                    guard=False,
-                    random_seed=123,
-                    splits=(.8, .2),
-                    check_wavfiles=True):
+def hillary_dataset(
+        directory='data/',
+        extracted_name='Hillary',
+        url='https://drive.google.com/uc?export=download&id=10rOAnbV_wslhvTvRnxNMc9aqWmk1NtYK',
+        url_filename='Hillary.tar.gz',
+        check_files=['Hillary/metadata.csv'],
+        metadata_file='metadata.csv',
+        text_column='Content',
+        audio_column='WAV Filename',
+        delimiter=',',
+        header=True,
+        resample=24000,
+        norm=False,
+        guard=False,
+        random_seed=123,
+        splits=(.8, .2),
+        check_wavfiles=True):
     """ Load the Hillary Speech dataset by WellSaid.
 
     Args:
         directory (str or Path, optional): Directory to cache the dataset.
         extracted_name (str, optional): Name of the extracted dataset directory.
         url (str, optional): URL of the dataset `tar.gz` file.
+        url_filename (str, optional): Filename of the downloaded file.
         check_files (list of str, optional): Check this file exists if the download was successful.
         metadata_file (str, optional): The file containing audio metadata.
         text_column (str or int, optional): Column name or index with the audio transcript.
@@ -53,16 +56,15 @@ def hillary_dataset(directory='data/',
         >>> from src.datasets import hillary_dataset # doctest: +SKIP
         >>> train, dev = hillary_dataset() # doctest: +SKIP
         >>> pprint.pprint(train[0:2], width=80) # doctest: +SKIP
-        [{'text': 'to such famous landmarks as St. Stephen’s Green, University '
-          'College, and the Martello Tower in the nearby suburb of Sandycove.',
-          'wav_filename': PosixPath('data/Hillary/wavs/script_21/'
-                                    'script_79_chunk_6-rate=24000.wav')},
-        {'text': "They're extreme explorers, astronauts of an inner space called blue "
-                  'holes.',
-          'wav_filename': PosixPath('data/Hillary/wavs/script_28/'
-                                    'script_108_chunk_4-rate=24000.wav')}]
+        [{'text': 'associated with the performance of "social" and "mechanical" tasks.',
+          'wav_filename': PosixPath('data/Hillary/wavs/Scripts 16-21/'
+                                    'script_86_chunk_15-rate=24000.wav')},
+         {'text': 'Take an in-depth look at the American Red Cross history,',
+          'wav_filename': PosixPath('data/Hillary/wavs/Scripts 34-39/'
+                                    'script_58_chunk_3-rate=24000.wav')}]
     """
-    download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
+    download_file_maybe_extract(
+        url=url, directory=str(directory), check_files=check_files, filename=url_filename)
     path = Path(directory, extracted_name, metadata_file)
 
     def extract_fun(args):
