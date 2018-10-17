@@ -36,6 +36,9 @@ def duplicate_stream(from_, to):
         - https://eli.thegreenplace.net/2015/redirecting-all-kinds-of-stdout-in-python/
         - https://stackoverflow.com/questions/17942874/stdout-redirection-with-ctypes
         - https://gist.github.com/denilsonsa/9c8f5c44bf2038fd000f
+        - https://github.com/IDSIA/sacred/blob/master/sacred/stdout_capturing.py
+        - http://stackoverflow.com/a/651718/1388435
+        - http://stackoverflow.com/a/22434262/1388435
 
     Args:
         from_ (file object)
@@ -54,13 +57,19 @@ def duplicate_stream(from_, to):
 
     def _clean_up():
         """ Clean up called during exit or by user. """
+        # (High Level) Ensure ``from_`` flushes before tee is closed
+        from_.flush()
+        # (Low Level) Ensure any low level buffers are flushed
         libc.fflush(None)
-        from_.flush()  # Ensure ``from_``` flushes before tee is closed
-        tee.stdin.close()  # Flush and close
-        os.dup2(original_fileno, from_.fileno())
-        os.close(original_fileno)
+
+        # Tee Flush / close / kill
+        tee.stdin.close()
         tee.kill()
         tee.wait()
+
+        # Reset ``from_``
+        os.dup2(original_fileno, from_.fileno())
+        os.close(original_fileno)
 
     def stop():
         """ Stop duplication early before the program exits. """

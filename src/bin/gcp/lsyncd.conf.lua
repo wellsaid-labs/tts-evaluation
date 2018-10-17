@@ -18,6 +18,8 @@ sync {
       verbose = true,
   },
   exclude = {
+      "notebooks/QA Speech Datasets/",
+      "notebooks/Speech Dataset Script Generation/",
       "data/**",
       "experiments/**",
       "build/**",
