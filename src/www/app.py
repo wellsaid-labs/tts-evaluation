@@ -22,8 +22,8 @@ from flask import send_file
 import librosa
 
 from src.audio import griffin_lim
-from src.bin.feature_model._utils import set_hparams as set_feature_model_hparams
-from src.bin.signal_model._utils import set_hparams as set_signal_model_hparams
+from src.bin.train.feature_model._utils import set_hparams as set_feature_model_hparams
+from src.bin.train.signal_model._utils import set_hparams as set_signal_model_hparams
 from src.utils import combine_signal
 from src.utils import load_checkpoint
 

@@ -1,7 +1,7 @@
 """ Train feature model.
 
  Example:
-    $ python3 -m src.bin.train.feature_model.train -n baseline;
+    $ python3 -m src.bin.train.feature_model -n baseline;
 """
 from pathlib import Path
 

@@ -42,7 +42,7 @@ Here's an example of using the script:
 python3 -m src.bin.gcp.keep_alive --command="screen -dm bash -c \
         'cd WellSaid-Labs-Text-To-Speech/; \
         ulimit -n 65536; \
-        python3 -m src.bin.train.signal_model.train -c;'"
+        python3 -m src.bin.train.signal_model -c;'"
 ```
 
 The ``--command`` flag runs a command on restart of the GCP server.

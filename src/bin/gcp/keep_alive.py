@@ -13,7 +13,7 @@ Example:
         source ~/.bash_profile;
         cd WellSaid-Labs-Text-To-Speech/; \
         ulimit -n 65536; \
-        python3 -m src.bin.train.signal_model.train -c; \
+        python3 -m src.bin.train.signal_model -c; \
         sudo shutdown;'"
 """
 import argparse

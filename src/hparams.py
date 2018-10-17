@@ -291,7 +291,7 @@ def set_hparams():
                 'evaluate.signal_model.main.sample_rate': sample_rate,
                 'train.feature_model.preprocess.main.dataset': datasets.lj_speech_dataset,
                 'train.signal_model': {
-                    'train.Trainer.__init__': {
+                    '__main__.Trainer.__init__': {
                         'sample_rate': sample_rate,
                         'min_rollback': 1,
                     },
