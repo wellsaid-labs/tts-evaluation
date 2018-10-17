@@ -33,7 +33,7 @@ def set_hparams():
             'weight_decay': 10**-5,
         },
         'src.bin.train.feature_model': {
-            'train.Trainer.__init__': {
+            '__main__.Trainer.__init__': {
                 'train_batch_size': train_batch_size,
                 'dev_batch_size': dev_batch_size,
                 'num_workers': num_workers,

@@ -92,3 +92,7 @@ experiments/
 
 # Settings
 .vscode/c_cpp_properties.json
+
+# WWW
+generated
+*generated_audio_*.mp3

@@ -46,17 +46,21 @@ This section describes commands to run the executables required for training.
 
 First things first, preprocess the audio via:
 
-    python -m src.bin.feature_model.preprocess.
+    python -m src.bin.train.feature_model.preprocess
 
 Train the feature model like so:
 
-    python3 -m src.bin.feature_model.train -n experiment_name
+    python3 -m src.bin.train.feature_model -n experiment_name
+
+Generate training data for the signal model like so:
+
+    python3 -m src.bin.train.feature_model.generate -c your_checkpoint
 
 #### Signal Model
 
 Train the signal model like so:
 
-    python3 -m src.bin.signal_model.train -n experiment_name
+    python3 -m src.bin.train.signal_model -n experiment_name
 
 ## Run Text-to-Speech
 
