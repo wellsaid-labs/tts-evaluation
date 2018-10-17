@@ -2,7 +2,7 @@ from pathlib import Path
 
 import logging
 
-from src.bin.signal_model._dataset import SignalDataset
+from src.bin.train.signal_model._dataset import SignalDataset
 from src.hparams import set_hparams as set_base_hparams
 from src.utils.configurable import add_config
 from src.utils.configurable import configurable
@@ -41,7 +41,8 @@ def load_data(predicted_train='data/.signal_dataset/train',
         source_train, source_dev = Path(real_train), Path(real_dev)
 
     if not source_dev.is_dir() or not source_train.is_dir():
-        raise ValueError('Data files not found. ' 'Did you run ``src.bin.feature_model.generate``?')
+        raise ValueError('Data files not found. '
+                         'Did you run ``src.bin.train.feature_model.generate``?')
 
     kwargs = {
         'log_mel_spectrogram_prefix': log_mel_spectrogram_prefix,
@@ -67,7 +68,7 @@ def set_hparams():
             'weight_decay': 0,
             'lr': 10**-3
         },
-        'src.bin.signal_model.train.Trainer.__init__': {
+        'src.bin.train.signal_model.train.Trainer.__init__': {
             # Optimized for 4x P100 GPU
             'train_batch_size': 64,
             'dev_batch_size': 256,

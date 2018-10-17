@@ -288,9 +288,9 @@ def set_hparams():
                 },
             },
             'bin': {
-                'evaluate_signal_model.main.sample_rate': sample_rate,
-                'feature_model.preprocess.main.dataset': datasets.lj_speech_dataset,
-                'signal_model': {
+                'evaluate.signal_model.main.sample_rate': sample_rate,
+                'train.feature_model.preprocess.main.dataset': datasets.lj_speech_dataset,
+                'train.signal_model': {
                     'train.Trainer.__init__': {
                         'sample_rate': sample_rate,
                         'min_rollback': 1,

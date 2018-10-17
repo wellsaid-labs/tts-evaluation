@@ -18,9 +18,9 @@ from tqdm import tqdm
 
 import torch
 
-from src.bin.signal_model._data_iterator import DataIterator
-from src.bin.signal_model._utils import load_data
-from src.bin.signal_model._utils import set_hparams
+from src.bin.train.signal_model._data_iterator import DataIterator
+from src.bin.train.signal_model._utils import load_data
+from src.bin.train.signal_model._utils import set_hparams
 from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
 from src.signal_model import WaveRNN
@@ -224,7 +224,7 @@ class Trainer():  # pragma: no cover
         """ Run in inference mode without teacher forcing and push results to Tensorboard.
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.signal_model._utils.DataIterator``.
+            batch (dict): ``dict`` from ``src.bin.train.signal_model._utils.DataIterator``.
             max_infer_frames (int, optioanl): Maximum number of frames to consider for memory's
                 sake.
 
@@ -256,7 +256,7 @@ class Trainer():  # pragma: no cover
         """ Samples examples from a batch and outputs them to tensorboard.
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.signal_model._utils.DataIterator``.
+            batch (dict): ``dict`` from ``src.bin.train.signal_model._utils.DataIterator``.
             predicted_coarse (torch.FloatTensor [batch_size, signal_length, bins])
             predicted_fine (torch.FloatTensor [batch_size, signal_length, bins])
 
@@ -285,7 +285,7 @@ class Trainer():  # pragma: no cover
         """ Compute the loss.
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.signal_model._utils.DataIterator``.
+            batch (dict): ``dict`` from ``src.bin.train.signal_model._utils.DataIterator``.
             predicted_coarse (torch.LongTensor [batch_size, signal_length, bins]): Predicted
                 categorical distribution over ``bins`` categories for the ``coarse`` random
                 variable.
@@ -319,7 +319,7 @@ class Trainer():  # pragma: no cover
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.signal_model._utils.DataIterator``.
+            batch (dict): ``dict`` from ``src.bin.train.signal_model._utils.DataIterator``.
             train (bool, optional): If ``True``, takes a optimization step.
             sample (bool, optional): If ``True``, draw sample from step.
             epoch_start_time (float, optional): Epoch start time in deciseconds.
