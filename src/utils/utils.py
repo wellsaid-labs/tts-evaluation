@@ -7,13 +7,13 @@ from math import isclose
 
 import ast
 import atexit
-import ctypes
 import glob
 import logging
 import logging.config
 import math
 import os
 import subprocess
+import time
 
 from torchnlp.utils import shuffle as do_deterministic_shuffle
 
@@ -23,7 +23,6 @@ import numpy as np
 from src.utils.configurable import configurable
 
 logger = logging.getLogger(__name__)
-libc = ctypes.CDLL(None)
 
 # Repository root path
 ROOT_PATH = Path(__file__).parent.parent.parent.resolve()
@@ -31,6 +30,10 @@ ROOT_PATH = Path(__file__).parent.parent.parent.resolve()
 
 def duplicate_stream(from_, to):
     """ Writes any messages to file object ``from_`` in file object ``to`` as well.
+
+    Note:
+        With the various references below, we were unable to add C support. Find more details
+        here: https://travis-ci.com/AI2Incubator/WellSaid-Labs-Text-To-Speech/jobs/152504931
 
     Learn more:
         - https://eli.thegreenplace.net/2015/redirecting-all-kinds-of-stdout-in-python/
@@ -48,23 +51,21 @@ def duplicate_stream(from_, to):
         (callable): Stop the duplication.
     """
     from_.flush()
-    libc.fflush(None)
 
     # Keep a file descriptor open to the original file object
     original_fileno = os.dup(from_.fileno())
-    tee = subprocess.Popen(['tee', '-a', str(to)], stdin=subprocess.PIPE)
+    tee = subprocess.Popen(['tee', str(to)], stdin=subprocess.PIPE)
+    time.sleep(0.01)  # HACK: ``tee`` needs time to open
     os.dup2(tee.stdin.fileno(), from_.fileno())
 
     def _clean_up():
         """ Clean up called during exit or by user. """
         # (High Level) Ensure ``from_`` flushes before tee is closed
         from_.flush()
-        # (Low Level) Ensure any low level buffers are flushed
-        libc.fflush(None)
 
-        # Tee Flush / close / kill
+        # Tee Flush / close / terminate
         tee.stdin.close()
-        tee.kill()
+        tee.terminate()
         tee.wait()
 
         # Reset ``from_``
