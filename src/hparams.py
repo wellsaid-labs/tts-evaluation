@@ -10,32 +10,170 @@ from src.utils.configurable import add_config
 from src.utils.configurable import configurable
 
 
-def set_hparams():
-    """ Using the ``configurable`` module set the hyperparameters for the source code.
-    """
-    torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
-    nn.modules.batchnorm._BatchNorm.__init__ = configurable(
-        nn.modules.batchnorm._BatchNorm.__init__)
+def _set_anomaly_detection():
     add_config({
-        # NOTE: `momentum=0.01` to match Tensorflow defaults
-        'torch.nn.modules.batchnorm._BatchNorm.__init__': {
-            'momentum': 0.01,
-        },
-        # SOURCE (Tacotron 2):
-        # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
-        'torch.optim.adam.Adam.__init__': {
-            'betas': (0.9, 0.999),
-            'amsgrad': True,
-            'lr': 10**-3
+        'src.bin.train.signal_model.__main__.Trainer.__init__.min_rollback': 1,
+        'src.utils.utils.AnomalyDetector.__init__': {
+            # NOTE: Determined empirically with the notebook:
+            # ``notebooks/Detecting Anomalies.ipynb``
+            'sigma': 6,
+            'beta': 0.98,
+            'type_': AnomalyDetector.TYPE_HIGH,
         }
     })
 
-    # SOURCE (Tacotron 2):
-    # The convolutional layers in the network are regularized using dropout [25] with probability
-    # 0.5, and LSTM layers are regularized using zoneout [26] with probability 0.1
-    convolution_dropout = 0.5
-    lstm_dropout = 0.1
 
+def _set_audio_processing():
+    # SOURCE (Tacotron 1):
+    # We use 24 kHz sampling rate for all experiments.
+    sample_rate = 24000
+
+    # SOURCE (Tacotron 2):
+    # mel spectrograms are computed through a shorttime Fourier transform (STFT)
+    # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
+    frame_size = int(50 * sample_rate / 1000)  # NOTE: Frame size in samples
+    frame_hop = int(12.5 * sample_rate / 1000)
+    window = 'hann'
+
+    fft_length = 2048
+
+    # SOURCE (Tacotron 2):
+    # Prior to log compression, the filterbank output magnitudes are clipped to a
+    # minimum value of 0.01 in order to limit dynamic range in the logarithmic
+    # domain.
+    min_magnitude = 0.01
+
+    # SOURCE (Tacotron 2):
+    # We transform the STFT magnitude to the mel scale using an 80 channel mel
+    # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
+    # compression.
+    # SOURCE (Tacotron 2 Author):
+    # Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
+    frame_channels = 128
+    hertz_bounds = {
+        'lower_hertz': None,
+        'upper_hertz': None
+    }
+
+    librosa.effects.trim = configurable(librosa.effects.trim)
+    librosa.output.write_wav = configurable(librosa.output.write_wav)
+    IPython.display.Audio.__init__ = configurable(IPython.display.Audio.__init__)
+
+    add_config({
+        'librosa.effects.trim': {
+            'frame_length': frame_size,
+            'hop_length': frame_hop,
+            # NOTE: Manually determined to be a adequate cutoff for Linda Johnson via:
+            # ``notebooks/Stripping Silence.ipynb``
+            'top_db': 50
+        },
+        'librosa.output.write_wav.sr': sample_rate,
+        'IPython.lib.display.Audio.__init__.rate': sample_rate,
+        'src.datasets.lj_speech.lj_speech_dataset': {
+            'resample': sample_rate,
+            # NOTE: ``Signal Loudness Distribution`` notebook shows that LJ Speech is biased
+            # concerning the loudness and ``norm=True`` unbiases this. In addition, norm
+            # also helps smooth out the distribution in notebook ``Signal Energy Distribution``.
+            # While, ``loudness=True`` does not help.
+            'norm': True,
+            'loudness': False,
+            # NOTE: Guard to reduce clipping during resampling
+            'guard': True,
+            # NOTE: Highpass and lowpass filter to ensure Wav is consistent with Spectrogram.
+            **hertz_bounds,
+        },
+        'src.datasets.hillary.hillary_dataset.resample': sample_rate,
+        'src.audio': {
+            # SOURCE (Wavenet):
+            # To make this more tractable, we first apply a µ-law companding transformation
+            # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
+            'read_audio.sample_rate': sample_rate,
+            'get_log_mel_spectrogram': {
+                'sample_rate': sample_rate,
+                'frame_size': frame_size,
+                'frame_hop': frame_hop,
+                'window': window,
+                'fft_length': fft_length,
+                'min_magnitude': min_magnitude,
+            },
+            'griffin_lim': {
+                'frame_size': frame_size,
+                'frame_hop': frame_hop,
+                'fft_length': fft_length,
+                'window': window,
+                'sample_rate': sample_rate,
+                # SOURCE (Tacotron 1):
+                # We found that raising the predicted magnitudes by a power of 1.2 before
+                # feeding to Griffin-Lim reduces artifacts
+                'power': 1.20,
+                # SOURCE (Tacotron 1):
+                # We observed that Griffin-Lim converges after 50 iterations (in fact, about 30
+                # iterations seems to be enough), which is reasonably fast.
+                'iterations': 30,
+            },
+            'mel_filters': {
+                'fft_length': fft_length,
+                'sample_rate': sample_rate,
+                # SOURCE (Tacotron 2):
+                # We transform the STFT magnitude to the mel scale using an 80 channel mel
+                # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
+                # compression.
+                'num_mel_bins': frame_channels,
+                **hertz_bounds
+            }
+        },
+        'src.utils.visualize': {
+            'Tensorboard.add_audio.sample_rate': sample_rate,
+            'plot_waveform.sample_rate': sample_rate,
+            'plot_log_mel_spectrogram': {
+                'sample_rate': sample_rate,
+                'frame_hop': frame_hop,
+                **hertz_bounds
+            },
+        }
+    })
+
+    return frame_channels, frame_hop
+
+
+def _set_io():
+    """ Set IO hyperparameters. """
+    signal_model_data_directory = 'data/.signal_dataset/'
+    feature_model_data_directory = 'data/.feature_dataset/'
+    train_directory = 'train'
+    dev_directory = 'dev'
+
+    add_config({
+        'src.bin.train': {
+            'feature_model': {
+                'preprocess.main': {
+                    'dataset': datasets.lj_speech_dataset,
+                    'destination': feature_model_data_directory,
+                    'destination_train': train_directory,
+                    'destination_dev': dev_directory,
+                },
+                '_utils.load_data': {
+                    'source': feature_model_data_directory,
+                    'source_train': train_directory,
+                    'source_dev': dev_directory,
+                },
+                'generate.main': {
+                    'destination': feature_model_data_directory,
+                    'destination_train': train_directory,
+                    'destination_dev': dev_directory,
+                }
+            },
+            'signal_model._utils.load_data': {
+                'predicted_source': signal_model_data_directory,
+                'real_source': feature_model_data_directory,
+                'source_train': train_directory,
+                'source_dev': dev_directory,
+            }
+        }
+    })
+
+
+def _set_model_size(frame_channels):
     # Hidden size of the feature representation generated by encoder.
     encoder_hidden_size = 512
 
@@ -49,115 +187,15 @@ def set_hparams():
     # features to 128-dimensional hidden representations.
     attention_hidden_size = 128
 
-    # SOURCE (Tacotron 1):
-    # We use 24 kHz sampling rate for all experiments.
-    sample_rate = 24000
-
-    get_log_mel_spectrogram = {
-        'sample_rate': sample_rate,
-        # SOURCE (Tacotron 2):
-        # mel spectrograms are computed through a shorttime Fourier transform (STFT)
-        # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
-        'frame_size': 1200,  # 50ms * 24,000 / 1000 == 1200
-        'frame_hop': 300,  # 12.5ms * 24,000 / 1000 == 300
-        'window': 'hann',
-
-        # SOURCE (Tacotron 1):
-        # 2048-point Fourier transform
-        'fft_length': 2048,
-
-        # SOURCE (Tacotron 2):
-        # Prior to log compression, the filterbank output magnitudes are clipped to a
-        # minimum value of 0.01 in order to limit dynamic range in the logarithmic
-        # domain.
-        'min_magnitude': 0.01,
-    }
-
-    # SOURCE (Tacotron 2):
-    # We transform the STFT magnitude to the mel scale using an 80 channel mel
-    # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
-    # compression.
-    # SOURCE (Tacotron 2 Author):
-    # Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
-    lower_hertz = 20
-    upper_hertz = sample_rate / 2
-    frame_channels = 128
-
     # SOURCE: Efficient Neural Audio Synthesis
     # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
     # designed to efficiently predict 16-bit raw audio samples.
     bits = 16
 
-    librosa.effects.trim = configurable(librosa.effects.trim)
-    librosa.output.write_wav = configurable(librosa.output.write_wav)
-    IPython.display.Audio.__init__ = configurable(IPython.display.Audio.__init__)
-
-    # TODO: Add option to instead of strings to use direct references.
     add_config({
-        'librosa.effects.trim': {
-            'frame_length': get_log_mel_spectrogram['frame_size'],
-            'hop_length': get_log_mel_spectrogram['frame_hop'],
-            # NOTE: Manually determined to be a adequate cutoff for Linda Johnson via:
-            # ``notebooks/Stripping Silence.ipynb``
-            'top_db': 50
-        },
-        'librosa.output.write_wav': {
-            'sr': sample_rate,
-        },
-        'IPython.lib.display.Audio.__init__.rate': sample_rate,
         'src': {
-            'datasets.lj_speech.lj_speech_dataset': {
-                'resample': sample_rate,
-                # NOTE: ``Signal Loudness Distribution`` notebook shows that LJ Speech is biased
-                # concerning the loudness and ``norm=True`` unbiases this. In addition, norm
-                # also helps smooth out the distribution in notebook ``Signal Energy Distribution``.
-                # While, ``loudness=True`` does not help.
-                'norm': True,
-                'loudness': False,
-                # NOTE: Guard to reduce clipping during resampling
-                'guard': True,
-                # NOTE: Highpass and lowpass filter to ensure Wav is consistent with Spectrogram.
-                'lower_hertz': None,
-                'upper_hertz': None,
-            },
-            'audio': {
-                # SOURCE (Wavenet):
-                # To make this more tractable, we first apply a µ-law companding transformation
-                # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
-                'read_audio.sample_rate': sample_rate,
-                'get_log_mel_spectrogram': get_log_mel_spectrogram,
-                'griffin_lim': {
-                    'frame_size': get_log_mel_spectrogram['frame_size'],
-                    'frame_hop': get_log_mel_spectrogram['frame_hop'],
-                    'fft_length': get_log_mel_spectrogram['fft_length'],
-                    'window': get_log_mel_spectrogram['window'],
-                    'sample_rate': sample_rate,
-                    # SOURCE (Tacotron 1):
-                    # We found that raising the predicted magnitudes by a power of 1.2 before
-                    # feeding to Griffin-Lim reduces artifacts
-                    'power': 1.20,
-                    # SOURCE (Tacotron 1):
-                    # We observed that Griffin-Lim converges after 50 iterations (in fact, about 30
-                    # iterations seems to be enough), which is reasonably fast.
-                    'iterations': 30,
-                },
-                'mel_filters': {
-                    'fft_length': get_log_mel_spectrogram['fft_length'],
-                    'sample_rate': sample_rate,
-                    # SOURCE (Tacotron 2):
-                    # We transform the STFT magnitude to the mel scale using an 80 channel mel
-                    # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
-                    # compression.
-                    'num_mel_bins': frame_channels,
-                    'lower_hertz': lower_hertz,
-                    'upper_hertz': upper_hertz,
-                }
-            },
             'feature_model': {
                 'encoder.Encoder.__init__': {
-                    'lstm_dropout': lstm_dropout,
-                    'convolution_dropout': convolution_dropout,
-
                     # SOURCE (Tacotron 2):
                     # Input characters are represented using a learned 512-dimensional character
                     # embedding
@@ -196,7 +234,6 @@ def set_hparams():
                     'frame_channels': frame_channels,
                     'pre_net_hidden_size': pre_net_hidden_size,
                     'encoder_hidden_size': encoder_hidden_size,
-                    'lstm_dropout': lstm_dropout,
                     'attention_context_size': attention_hidden_size,
 
                     # SOURCE (Tacotron 2):
@@ -212,16 +249,9 @@ def set_hparams():
                     # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
                     'num_layers': 2,
                     'hidden_size': pre_net_hidden_size,
-
-                    # SOURCE (Tacotron 2):
-                    # In order to introduce output variation at inference time, dropout with
-                    # probability 0.5 is applied only to layers in the pre-net of the
-                    # autoregressive decoder.
-                    'dropout': 0.5,
                 },
                 'post_net.PostNet.__init__': {
                     'frame_channels': frame_channels,
-                    'convolution_dropout': convolution_dropout,
 
                     # SOURCE (Tacotron 2):
                     # Finally, the predicted mel spectrogram is passed
@@ -251,20 +281,6 @@ def set_hparams():
                     'kernels': [(5, 5), (3, 3), (3, 3), (3, 3)],
                 },
                 'wave_rnn.WaveRNN': {
-                    'infer': {
-                        # SOURCE: Generating Sequences With Recurrent Neural Networks
-                        # One problem with unbiased samples is that they tend to be difficult to
-                        # read (partly because real handwriting is difficult to read, and partly
-                        # because the network is an imperfect model). Intuitively, we would expect
-                        # the network to give higher probability to good handwriting because it
-                        # tends to be smoother and more predictable than bad handwriting. If this is
-                        # true, we should aim to output more probable elements of Pr(x|c) if we want
-                        # the samples to be easier to read.
-                        # NOTE: Temperature is a concept from reinforcement learning to bias the
-                        # softmax similar to the above idea.
-                        'temperature': 1.0,
-                        'argmax': False,
-                    },
                     '__init__': {
                         'local_features_size': frame_channels,
 
@@ -287,46 +303,96 @@ def set_hparams():
                         'upsample_repeat': 30
                     }
                 },
-            },
-            'bin': {
-                'evaluate.signal_model.main.sample_rate': sample_rate,
-                'train.feature_model.preprocess.main.dataset': datasets.lj_speech_dataset,
-                'train.signal_model': {
-                    '__main__.Trainer.__init__': {
-                        'sample_rate': sample_rate,
-                        'min_rollback': 1,
-                    },
-                    '_utils.load_data.predicted': True,
-                    '_dataset.SignalDataset.__init__': {
-                        # SOURCE: Efficient Neural Audio Synthesis
-                        # The WaveRNN models are trained on sequences of 960 audio samples
-                        'frame_size': int(900 / get_log_mel_spectrogram['frame_hop']),
-                        'frame_pad': 5,
-                    }
+            }
+        }
+    })
+
+    return bits
+
+
+def set_hparams():
+    """ Using the ``configurable`` module set the hyperparameters for the source code.
+    """
+    _set_io()
+    frame_channels, frame_hop = _set_audio_processing()
+    _set_anomaly_detection()
+    bits = _set_model_size(frame_channels)
+
+    torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
+    nn.modules.batchnorm._BatchNorm.__init__ = configurable(
+        nn.modules.batchnorm._BatchNorm.__init__)
+    add_config({
+        # NOTE: `momentum=0.01` to match Tensorflow defaults
+        'torch.nn.modules.batchnorm._BatchNorm.__init__': {
+            'momentum': 0.01,
+        },
+        # SOURCE (Tacotron 2):
+        # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
+        'torch.optim.adam.Adam.__init__': {
+            'betas': (0.9, 0.999),
+            'amsgrad': True,
+            'lr': 10**-3
+        }
+    })
+
+    # SOURCE (Tacotron 2):
+    # The convolutional layers in the network are regularized using dropout [25] with probability
+    # 0.5, and LSTM layers are regularized using zoneout [26] with probability 0.1
+    convolution_dropout = 0.5
+    lstm_dropout = 0.1
+
+    # TODO: Add option to instead of strings to use direct references.
+    add_config({
+        'src': {
+            'feature_model': {
+                'encoder.Encoder.__init__': {
+                    'lstm_dropout': lstm_dropout,
+                    'convolution_dropout': convolution_dropout,
+                },
+                'decoder.AutoregressiveDecoder.__init__': {
+                    'lstm_dropout': lstm_dropout,
+                },
+                'pre_net.PreNet.__init__': {
+                    # SOURCE (Tacotron 2):
+                    # In order to introduce output variation at inference time, dropout with
+                    # probability 0.5 is applied only to layers in the pre-net of the
+                    # autoregressive decoder.
+                    'dropout': 0.5,
+                },
+                'post_net.PostNet.__init__': {
+                    'convolution_dropout': convolution_dropout,
                 },
             },
-            'utils': {
-                'visualize': {
-                    'Tensorboard.add_audio.sample_rate': sample_rate,
-                    'plot_waveform.sample_rate': sample_rate,
-                    'plot_log_mel_spectrogram': {
-                        'sample_rate': sample_rate,
-                        'frame_hop': get_log_mel_spectrogram['frame_hop'],
-                        'lower_hertz': lower_hertz,
-                        'upper_hertz': upper_hertz,
+            'signal_model': {
+                'wave_rnn.WaveRNN': {
+                    'infer': {
+                        # SOURCE: Generating Sequences With Recurrent Neural Networks
+                        # One problem with unbiased samples is that they tend to be difficult to
+                        # read (partly because real handwriting is difficult to read, and partly
+                        # because the network is an imperfect model). Intuitively, we would expect
+                        # the network to give higher probability to good handwriting because it
+                        # tends to be smoother and more predictable than bad handwriting. If this is
+                        # true, we should aim to output more probable elements of Pr(x|c) if we want
+                        # the samples to be easier to read.
+                        # NOTE: Temperature is a concept from reinforcement learning to bias the
+                        # softmax similar to the above idea.
+                        'temperature': 1.0,
+                        'argmax': False,
                     },
                 },
-                'utils': {
-                    'split_signal.bits': bits,
-                    'combine_signal.bits': bits,
-                    'AnomalyDetector.__init__': {
-                        # NOTE: Determined empirically with the notebook:
-                        # ``notebooks/Detecting Anomalies.ipynb``
-                        'sigma': 6,
-                        'beta': 0.98,
-                        'type_': AnomalyDetector.TYPE_HIGH,
-                    }
+            },
+            'bin.train.signal_model': {
+                '_utils.load_data.predicted': True,
+                '_dataset.SignalDataset.__init__': {
+                    # SOURCE: Efficient Neural Audio Synthesis
+                    # The WaveRNN models are trained on sequences of 960 audio samples
+                    'frame_size': int(900 / frame_hop),
+                    'frame_pad': 5,
                 }
+            },
+            'utils.utils': {
+                'split_signal.bits': bits,
+                'combine_signal.bits': bits,
             },
             'optimizer.AutoOptimizer.__init__': {
                 # NOTE: Window size smoothing parameter is not super sensative.

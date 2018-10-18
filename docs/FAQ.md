@@ -39,3 +39,9 @@ directory that pip is attempting to install to. This can be solved by changing t
 ownership:
 
     sudo chown -R $(whoami) /home/michaelp/.local/
+
+
+### audioread.NoBackendError
+
+This error happened during the opening of a file with ``librosa``,
+[this thread](https://github.com/librosa/librosa/issues/219) provided me my solution .

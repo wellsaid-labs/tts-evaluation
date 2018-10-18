@@ -11,10 +11,10 @@ logger = logging.getLogger(__name__)
 
 
 @configurable
-def load_data(predicted_train='data/.signal_dataset/train',
-              predicted_dev='data/.signal_dataset/dev',
-              real_train='data/.feature_dataset/train',
-              real_dev='data/.feature_dataset/dev',
+def load_data(predicted_source='data/.signal_dataset',
+              real_source='data/.feature_dataset',
+              source_train='train',
+              source_dev='dev',
               log_mel_spectrogram_prefix='log_mel_spectrogram',
               signal_prefix='signal',
               extension='.npy',
@@ -22,10 +22,10 @@ def load_data(predicted_train='data/.signal_dataset/train',
     """ Load train and dev datasets as ``SignalDataset``s.
 
     Args:
-        predicted_train (str, optional): Directory with training examples.
-        predicted_dev (str, optional): Directory with dev examples.
-        real_train (str, optional): Directory with ground truth training examples.
-        real_dev (str, optional): Directory with ground truth dev examples.
+        predicted_source (str): Directory with all predicted examples.
+        real_source (str): Directory with all real examples.
+        source_train (str): Directory name with training examples.
+        source_dev (str): Directory name with dev examples.
         log_mel_spectrogram_prefix (str, optional): Prefix of log mel spectrogram files.
         signal_prefix (str, optional): Prefix of signal files.
         extension (str, optional): Filename extension to load.
@@ -36,9 +36,12 @@ def load_data(predicted_train='data/.signal_dataset/train',
         dev (SignalDataset)
     """
     if predicted:
-        source_train, source_dev = Path(predicted_train), Path(predicted_dev)
+        source = Path(predicted_source)
     else:
-        source_train, source_dev = Path(real_train), Path(real_dev)
+        source = Path(real_source)
+
+    source_dev = source / source_dev
+    source_train = source / source_train
 
     if not source_dev.is_dir() or not source_train.is_dir():
         raise ValueError('Data files not found. '

@@ -73,6 +73,7 @@ def mel_filters(sample_rate, fft_length=2048, num_mel_bins=80, lower_hertz=125, 
     # minimum mentioned in their paper for the dynamic range is too high. NVIDIA/tacotron2 includes
     # norm and had to set their minimum to 10**-5 to compensate.
     # NOTE: ``htk=True`` because normalization of the mel filterbank is from Slaney's algorithm.
+    lower_hertz = 0.0 if lower_hertz is None else lower_hertz
     return librosa.filters.mel(
         sample_rate,
         fft_length,

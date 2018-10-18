@@ -3,8 +3,9 @@ from pathlib import Path
 import logging
 
 from src.bin.train.feature_model._dataset import FeatureDataset
-from src.utils.configurable import add_config
 from src.hparams import set_hparams as set_base_hparams
+from src.utils.configurable import add_config
+from src.utils.configurable import configurable
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +47,18 @@ def set_hparams():
     })
 
 
-def load_data(source_train='data/.feature_dataset/train',
-              source_dev='data/.feature_dataset/dev',
+@configurable
+def load_data(source='data/.feature_dataset/',
+              source_train='train',
+              source_dev='dev',
               text_encoder=None,
               load_signal=False):
     """ Load train and dev datasets as ``SignalDataset``s.
 
     Args:
-        source_train (str): Directory with training examples.
-        source_dev (str): Directory with dev examples.
+        source (str): Directory with all examples.
+        source_train (str): Directory name with training examples.
+        source_dev (str): Directory name with dev examples.
         text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the
             text.
         load_signal (bool): If ``True`` the FeatureDataset, loads the signal.
@@ -65,8 +69,9 @@ def load_data(source_train='data/.feature_dataset/train',
         text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the
             text.
     """
-    source_dev = Path(source_dev)
-    source_train = Path(source_train)
+    source = Path(source)
+    source_dev = source / source_dev
+    source_train = source / source_train
 
     if not source_dev.is_dir() or not source_train.is_dir():
         raise ValueError('Data files not found. '

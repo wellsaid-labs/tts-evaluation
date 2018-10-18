@@ -48,7 +48,6 @@ class Trainer():  # pragma: no cover
         dev_dataset (iterable): Dev dataset used to evaluate.
         train_tensorboard (tensorboardX.SummaryWriter): Writer for train events.
         dev_tensorboard (tensorboardX.SummaryWriter): Writer for dev events.
-        sample_rate (int, optional): Sample rate of the audio data.
         train_batch_size (int, optional): Batch size used for training.
         dev_batch_size (int, optional): Batch size used for evaluation.
         model (torch.nn.Module, optional): Model to train and evaluate.
@@ -73,7 +72,6 @@ class Trainer():  # pragma: no cover
                  dev_dataset,
                  train_tensorboard,
                  dev_tensorboard,
-                 sample_rate=24000,
                  train_batch_size=32,
                  dev_batch_size=128,
                  model=WaveRNN,
@@ -112,7 +110,6 @@ class Trainer():  # pragma: no cover
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
         self.num_workers = num_workers
-        self.sample_rate = sample_rate
         self.random = random.Random(123)  # Ensure the same samples are sampled
         # NOTE: Rollback ``maxlen=min_rollback + 2`` in case the model enters at a degenerate state
         # at the beginning of the epoch; therefore, allowing us to rollback at least min_rollback
