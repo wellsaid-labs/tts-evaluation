@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import ctypes
 import logging
 import os
 import sys
@@ -29,31 +28,37 @@ from src.utils import chunks
 from src.utils import duplicate_stream
 from src.utils.experiment_context_manager import ExperimentContextManager
 
+stdout_log = Path('tests/_test_data/stdout.log')
 
+
+@pytest.fixture
+def unlink_stdout_log():
+    yield
+    if stdout_log.is_file():
+        stdout_log.unlink()
+
+
+@pytest.mark.usefixtures('unlink_stdout_log')
 def test_duplicate_stream(capsys):
-    libc = ctypes.CDLL(None)
-
-    log_path = Path('tests/_test_data/stdout.log')
+    assert not stdout_log.is_file()  # Ensure everything is clean up
 
     with capsys.disabled():  # Disable capsys because it messes with sys.stdout
         logger = logging.getLogger(__name__)
         handler = logging.StreamHandler(sys.stdout)
         logger.addHandler(handler)
-        stop = duplicate_stream(sys.stdout, log_path)
+        stop = duplicate_stream(sys.stdout, stdout_log)
 
         print('1')
         logger.info('2')
-        libc.puts(b'3')
-        os.system('echo 4')
+        os.system('echo 3')
 
         # Flush and close
         stop()
         logger.removeHandler(handler)
 
-    output = log_path.read_text()
-    assert set(output.split()) == set(['1', '2', '3', '4'])
-
-    log_path.unlink()
+    assert stdout_log.is_file()
+    output = stdout_log.read_text()
+    assert set(output.split()) == set(['1', '2', '3'])
 
 
 def test_chunks():
