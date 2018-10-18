@@ -239,8 +239,8 @@ class Trainer():  # pragma: no cover
         self.model.train(mode=False)
 
         logger.info('Running inference...')
-        (predicted_pre_frames, predicted_post_frames, predicted_stop_tokens,
-         predicted_alignments) = self.model(
+        (predicted_pre_frames, predicted_post_frames, predicted_stop_tokens, predicted_alignments,
+         _) = self.model.infer(
              text.unsqueeze(1), max_recursion=max_infer_frames)
 
         text = self.text_encoder.decode(text)

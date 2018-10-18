@@ -20,6 +20,7 @@ sync {
   exclude = {
       "notebooks/QA Speech Datasets/",
       "notebooks/Speech Dataset Script Generation/",
+      "notebooks/.ipynb_checkpoints/",
       "data/**",
       "experiments/**",
       "build/**",
