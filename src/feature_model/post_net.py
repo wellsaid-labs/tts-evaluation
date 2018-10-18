@@ -39,6 +39,7 @@ class PostNet(nn.Module):
                  num_convolution_layers=5,
                  num_convolution_filters=512,
                  convolution_filter_size=5,
+                 convolution_dropout=0.5,
                  frame_channels=80):
         super().__init__()
 
@@ -57,7 +58,8 @@ class PostNet(nn.Module):
                     kernel_size=convolution_filter_size,
                     padding=int((convolution_filter_size - 1) / 2)),
                 nn.BatchNorm1d(num_features=num_convolution_filters),
-                nn.Tanh()) for i in range(num_convolution_layers - 1)
+                nn.Tanh(),
+                nn.Dropout(p=convolution_dropout)) for i in range(num_convolution_layers - 1)
         ]
 
         # Initialize weights
@@ -76,7 +78,8 @@ class PostNet(nn.Module):
                     out_channels=frame_channels,
                     kernel_size=convolution_filter_size,
                     padding=int((convolution_filter_size - 1) / 2)),
-                nn.BatchNorm1d(num_features=frame_channels)))
+                nn.BatchNorm1d(num_features=frame_channels),
+                nn.Dropout(p=convolution_dropout)))
         self.layers = nn.Sequential(*tuple(self.layers))
 
     def forward(self, frames):
