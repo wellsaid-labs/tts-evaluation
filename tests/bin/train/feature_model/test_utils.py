@@ -8,9 +8,7 @@ def test_set_hparams():
 
 
 def test_load_data():
-    train, dev, text_encoder = load_data(
-        source_train='tests/_test_data/feature_dataset/train',
-        source_dev='tests/_test_data/feature_dataset/dev')
+    train, dev, text_encoder = load_data(source='tests/_test_data/feature_dataset')
     assert len(train) == 1
     assert len(dev) == 1
     assert text_encoder.decode(train[0]['text']) == 'Yup!'

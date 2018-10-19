@@ -7,9 +7,10 @@ import unidecode
 from num2words import num2words
 from torchnlp.download import download_file_maybe_extract
 
+import pandas
+
 from src.datasets._process import process_all
 from src.datasets._process import process_audio
-from src.datasets._process import read_speech_data
 from src.utils.configurable import configurable
 
 
@@ -20,16 +21,15 @@ def lj_speech_dataset(directory='data/',
                       check_files=['LJSpeech-1.1/metadata.csv'],
                       metadata_file='metadata.csv',
                       quoting=csv.QUOTE_NONE,
+                      delimiter='|',
+                      header=None,
+                      audio_column=0,
+                      audio_filename_template='wavs/{}.wav',
+                      text_column=1,
                       verbalize=True,
-                      resample=24000,
-                      norm=True,
-                      guard=True,
-                      lower_hertz=None,
-                      upper_hertz=None,
-                      loudness=False,
                       random_seed=123,
                       splits=(.8, .2),
-                      check_wavfiles=True):
+                      **kwargs):
     """
     Load the Linda Johnson (LJ) Speech dataset.
 
@@ -56,20 +56,18 @@ def lj_speech_dataset(directory='data/',
         url (str, optional): URL of the dataset `tar.gz` file.
         check_files (list of str, optional): Check this file exists if the download was successful.
         metadata_file (str, optional): The file containing audio metadata.
-        quoting (int, optional): Control field quoting behavior per csv.QUOTE_* constants.
+        quoting (int, optional): Control field quoting behavior per csv.QUOTE_* constants for the
+            metadata file.
+        delimiter (str, optional): Delimiter for the metadata file.
+        header (bool, optional): If True, ``metadata_file`` has a header to parse.
+        audio_column (int, optional): Column name or index with the audio filename.
+        audio_filename_template (str, optional): Given the audio column, this template determines
+            the filename.
+        text_column (int, optional): Column name or index with the audio transcript.
         verbalize (bool, optional): Verbalize the text.
-        resample (int or None, optional): If integer is provided, uses SoX to create resampled
-            files.
-        norm (bool, optional): Automatically invoke the gain effect to guard against clipping and to
-            normalise the audio.
-        guard (bool, optional): Automatically invoke the gain effect to guard against clipping.
-        lower_hertz (int, optional): Apply a sinc kaiser-windowed high-pass.
-        upper_hertz (int, optional): Apply a sinc kaiser-windowed low-pass.
-        loudness (bool, optioanl): Normalize the subjective perception of loudness level based on
-            ISO 226.
         random_seed (int, optional): Random seed used to determine the splits.
         splits (tuple, optional): The number of splits and cardinality of dataset splits.
-        check_wavfiles: If False, skip the check for existence of wav files.
+        **kwargs: Arguments passed to process dataset audio.
 
     Returns:
         :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
@@ -82,23 +80,25 @@ def lj_speech_dataset(directory='data/',
         [{'text': 'Once a warrant-holder sent down a clerk to view certain goods, and '
           'the clerk found that these goods had already a "stop" upon them, or '
           'were pledged.',
-          'wav_filename': PosixPath('data/LJSpeech-1.1/wavs/'
+          'audio_filename': PosixPath('data/LJSpeech-1.1/wavs/'
                                     'LJ014-0331-rate=24000-norm=-.001-guard.wav')},
         {'text': "Lord Ferrers' body was brought to Surgeons' Hall after execution in "
                   'his own carriage and six;',
-          'wav_filename': PosixPath('data/LJSpeech-1.1/wavs/'
+          'audio_filename': PosixPath('data/LJSpeech-1.1/wavs/'
                                     'LJ009-0184-rate=24000-norm=-.001-guard.wav')}]
     """
     download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
-    path = Path(directory, extracted_name, metadata_file)
+    metadata_path = Path(directory, extracted_name, metadata_file)
 
-    def extract_fun(args):
-        text, wav_filename = args
+    def extract_fun(row):
+        text = row[text_column].strip()
+        audio_filename = Path(directory, extracted_name,
+                              audio_filename_template.format(row[audio_column]))
         text = _normalize_whitespace(text)
         text = _normalize_quotations(text)
 
         if verbalize:
-            text = _verbalize_special_cases(wav_filename, text)
+            text = _verbalize_special_cases(audio_filename, text)
             text = _expand_abbreviations(text)
             text = _verbalize_time_of_day(text)
             text = _verbalize_ordinals(text)
@@ -111,18 +111,12 @@ def lj_speech_dataset(directory='data/',
 
         # Messes up pound sign (£); therefore, this is after _verbalize_currency
         text = _remove_accents(text)
-        processed_wav_filename = process_audio(
-            wav_filename,
-            resample=resample,
-            norm=norm,
-            guard=guard,
-            lower_hertz=lower_hertz,
-            upper_hertz=upper_hertz,
-            loudness=loudness)
-        return {'text': text, 'wav_filename': processed_wav_filename}
+        processed_audio_filename = process_audio(audio_filename, **kwargs)
+        return {'text': text, 'audio_filename': processed_audio_filename}
 
-    data = read_speech_data(path, check_wavfiles=check_wavfiles, quoting=quoting)
-    return process_all(extract_fun, data, splits, random_seed, check_wavfiles=check_wavfiles)
+    data_frame = pandas.read_csv(
+        metadata_path, delimiter=delimiter, header=header, quoting=quoting).itertuples(index=False)
+    return process_all(extract_fun, data_frame, splits, random_seed)
 
 
 '''

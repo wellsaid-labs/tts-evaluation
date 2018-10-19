@@ -1,10 +1,11 @@
 from pathlib import Path
 
+import pandas
+
 from torchnlp.download import download_file_maybe_extract
 
 from src.datasets._process import process_all
 from src.datasets._process import process_audio
-from src.datasets._process import read_speech_data
 from src.utils.configurable import configurable
 
 
@@ -18,14 +19,13 @@ def hillary_dataset(
         metadata_file='metadata.csv',
         text_column='Content',
         audio_column='WAV Filename',
+        source_column='Source',
+        title_column='Title',
         delimiter=',',
-        header=True,
-        resample=24000,
-        norm=False,
-        guard=False,
+        audio_directory='wavs',
         random_seed=123,
         splits=(.8, .2),
-        check_wavfiles=True):
+        **kwargs):
     """ Load the Hillary Speech dataset by WellSaid.
 
     Args:
@@ -35,18 +35,15 @@ def hillary_dataset(
         url_filename (str, optional): Filename of the downloaded file.
         check_files (list of str, optional): Check this file exists if the download was successful.
         metadata_file (str, optional): The file containing audio metadata.
-        text_column (str or int, optional): Column name or index with the audio transcript.
-        audio_column (str or int, optional): Column name or index with the audio filename.
+        text_column (str, optional): Column name or index with the audio transcript.
+        audio_column (str, optional): Column name or index with the audio filename.
+        source_column (str, optional): Column name or index with the source of the original script.
+        title_column (str, optional): Column name or index with the title of the original script.
         delimiter (str, optional): Delimiter for the metadata file.
-        header (bool, optional): If True, ``metadata_file`` has a header to parse.
-        resample (int or None, optional): If integer is provided, uses SoX to create resampled
-            files.
-        norm (bool, optional): Automatically invoke the gain effect to guard against clipping and to
-            normalise the audio.
-        guard (bool, optional): Automatically invoke the gain effect to guard against clipping.
+        audio_directory (str, optional): Name of the directory harboring audio files.
         random_seed (int, optional): Random seed used to determine the splits.
         splits (tuple, optional): The number of splits and cardinality of dataset splits.
-        check_wavfiles: If False, skip the check for existence of wav files.
+        **kwargs: Arguments passed to process dataset audio.
 
     Returns:
         :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
@@ -57,27 +54,27 @@ def hillary_dataset(
         >>> train, dev = hillary_dataset() # doctest: +SKIP
         >>> pprint.pprint(train[0:2], width=80) # doctest: +SKIP
         [{'text': 'associated with the performance of "social" and "mechanical" tasks.',
-          'wav_filename': PosixPath('data/Hillary/wavs/Scripts 16-21/'
+          'audio_filename': PosixPath('data/Hillary/wavs/Scripts 16-21/'
                                     'script_86_chunk_15-rate=24000.wav')},
          {'text': 'Take an in-depth look at the American Red Cross history,',
-          'wav_filename': PosixPath('data/Hillary/wavs/Scripts 34-39/'
+          'audio_filename': PosixPath('data/Hillary/wavs/Scripts 34-39/'
                                     'script_58_chunk_3-rate=24000.wav')}]
     """
     download_file_maybe_extract(
         url=url, directory=str(directory), check_files=check_files, filename=url_filename)
-    path = Path(directory, extracted_name, metadata_file)
+    metadata_path = Path(directory, extracted_name, metadata_file)
 
-    def extract_fun(args):
-        text, wav_filename = args
-        processed_wav_filename = process_audio(
-            wav_filename, resample=resample, norm=norm, guard=guard)
-        return {'text': text, 'wav_filename': processed_wav_filename}
+    def extract_fun(row):
+        row = row[1]
+        audio_filename = Path(directory, extracted_name, audio_directory, getattr(
+            row, audio_column))
+        processed_audio_filename = process_audio(audio_filename, **kwargs)
+        return {
+            'text': getattr(row, text_column).strip(),
+            'audio_filename': processed_audio_filename,
+            'script_title': getattr(row, title_column),
+            'script_source': getattr(row, source_column)
+        }
 
-    data = read_speech_data(
-        path,
-        check_wavfiles=check_wavfiles,
-        text_column=text_column,
-        audio_column=audio_column,
-        delimiter=delimiter,
-        header=header)
-    return process_all(extract_fun, data, splits, random_seed, check_wavfiles=check_wavfiles)
+    data_frame = pandas.read_csv(metadata_path, delimiter=delimiter).iterrows()
+    return process_all(extract_fun, data_frame, splits, random_seed)

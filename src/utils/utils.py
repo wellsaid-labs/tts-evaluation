@@ -254,8 +254,8 @@ def split_dataset(dataset, splits, deterministic_shuffle=True, random_seed=123):
     Args:
         dataset (list): Dataset to split.
         splits (tuple): Tuple of percentages determining dataset splits.
-        shuffle (bool, optional): If ``True`` determinisitically shuffle the dataset before
-            splitting.
+        deterministic_shuffle (bool, optional): If ``True`` determinisitically shuffle the dataset
+            before splitting.
 
     Returns:
         (list): splits of the dataset

@@ -30,14 +30,18 @@ from enum import Enum
 from pathlib import Path
 
 import csv
+import logging
+import os
 
 from torchnlp.download import download_file_maybe_extract
 
+import pandas
+
 from src.datasets._process import process_all
 from src.datasets._process import process_audio
-from src.datasets._process import read_speech_data
 from src.utils.configurable import configurable
 
+logger = logging.getLogger(__name__)
 Book = namedtuple('Book', 'gender speaker_name book_title')
 
 
@@ -89,16 +93,15 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
                             url='http://data.m-ailabs.bayern/data/Training/stt_tts/en_US.tgz',
                             check_files=['en_US/by_book/info.txt'],
                             metadata_pattern='**/metadata.csv',
+                            audio_column=0,
+                            audio_filename_template='wavs/{}.wav',
+                            text_column=2,
+                            metadata_path_column='metadata_path',
                             picker=None,
-                            resample=24000,
-                            norm=False,
-                            guard=True,
-                            lower_hertz=None,
-                            upper_hertz=None,
-                            loudness=False,
                             random_seed=123,
                             splits=(.8, .2),
-                            check_wavfiles=True):
+                            check_wavfiles=True,
+                            **kwargs):
     """
     Download, extract, and process the M-AILABS en_US dataset, which is 7.5GB compressed.
     The original URL is ``http://www.m-ailabs.bayern/?ddownload=411``.
@@ -110,20 +113,18 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
         check_files (list of str, optional): Check this file exists if the download was successful.
         metadata_pattern (str, optional): Pattern for all ``metadata.csv`` files containing
             (filename, text) information.
+        audio_column (int, optional): Column name or index with the audio filename.
+        audio_filename_template (str, optional): Given the audio column, this template determines
+            the filename.
+        text_column (int, optional): Column name or index with the audio transcript.
+        metadata_path_column (str, optional): Column name to store the metadata path.
         picker (None or Book or Speaker or Gender): Argument that dictates which dataset subset to
             pick.
-        resample (int or None, optional): If integer is provided, uses SoX to create resampled
-            files.
-        norm (bool, optional): Automatically invoke the gain effect to guard against clipping and to
-            normalise the audio.
-        guard (bool, optional): Automatically invoke the gain effect to guard against clipping.
-        lower_hertz (int, optional): Apply a sinc kaiser-windowed high-pass.
-        upper_hertz (int, optional): Apply a sinc kaiser-windowed low-pass.
-        loudness (bool, optioanl): Normalize the subjective perception of loudness level based on
-            ISO 226.
         random_seed (int, optional): Random seed used to determine the splits.
         splits (tuple, optional): The number of splits and cardinality of dataset splits.
-        check_wavfiles: If False, skip the check for existence of wav files.
+        check_wavfiles (bool, optional): If False, skip the check for existence of wav files.
+        **kwargs: Arguments passed to process dataset audio.
+
 
      Returns:
           :class:`torchnlp.datasets.Dataset`: M-AILABS en_us dataset with audio filenames and text
@@ -137,10 +138,10 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
         [{'text': 'and more natural education stopping at home, and helping her '
           'mother, and learning to read a chapter in the New Testament every '
           'night by her side,',
-          'wav_filename': PosixPath('data/M-AILABS/en_US/by_book/female/mary_ann/northandsouth/'
+          'audio_filename': PosixPath('data/M-AILABS/en_US/by_book/female/mary_ann/northandsouth/'
                                     'wavs/northandsouth_46_f000119-rate=24000-guard.wav')},
         {'text': 'The chief shook his head, saying: No boat come.',
-          'wav_filename': PosixPath('data/M-AILABS/en_US/by_book/female/judy_bieber/'
+          'audio_filename': PosixPath('data/M-AILABS/en_US/by_book/female/judy_bieber/'
                                     'the_master_key/wavs/'
                                     'the_master_key_05_f000038-rate=24000-guard.wav')}]
     """
@@ -152,20 +153,18 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
     title_key = lambda x: x.book_title
     assert sorted(actual_books, key=title_key) == sorted(_allbooks, key=title_key)
 
-    def extract_fun(args):
-        text, wav_filename = args
-        processed_wav_filename = process_audio(
-            wav_filename,
-            resample=resample,
-            norm=norm,
-            guard=guard,
-            lower_hertz=lower_hertz,
-            upper_hertz=upper_hertz,
-            loudness=loudness)
-        return {'text': text, 'wav_filename': processed_wav_filename}
+    def extract_fun(row):
+        text = row[text_column].strip()
+        metadata_path = getattr(row, metadata_path_column)
+        audio_filename = Path(metadata_path.parent,
+                              audio_filename_template.format(row[audio_column]))
 
-    data = _read_mailabs_data(picker, directory=directory, check_wavfiles=check_wavfiles)
-    return process_all(extract_fun, data, splits, random_seed, check_wavfiles=check_wavfiles)
+        processed_audio_filename = process_audio(audio_filename, **kwargs)
+        return {'text': text, 'audio_filename': processed_audio_filename}
+
+    data = _read_mailabs_data(
+        picker, directory=directory, metadata_path_column=metadata_path_column)
+    return process_all(extract_fun, data, splits, random_seed)
 
 
 def _book2path(book, directory=DOWNLOAD_DIRECTORY):
@@ -192,51 +191,58 @@ def _path2book(metadata_path, directory=DOWNLOAD_DIRECTORY):
 
 
 def _book2speech_data(book,
-                      text_column=2,
                       directory=DOWNLOAD_DIRECTORY,
-                      check_wavfiles=True,
-                      quoting=csv.QUOTE_NONE):
-    """ Given a book, yield pairs of (text, wav_filename) for that book.
-
-    For now, use the cleaned text (text_column=2).
+                      quoting=csv.QUOTE_NONE,
+                      delimiter='|',
+                      header=None,
+                      metadata_path_column='metadata_path',
+                      index=False):
+    """ Given a book, yield pairs of (text, audio_filename) for that book.
 
     Args:
         book (Book)
-        text_column (int): 0-indexed column to extract text from. The format expected is:
-            (filename, text, preprocessed text)
-        directory (Path or str)
-        check_wavfiles (bool)
-        quoting (int, optional): Control field quoting behavior per csv.QUOTE_* constants.
+        directory (Path or str): Directory that M-AILABS was downloaded.
+        quoting (int, optional): Control field quoting behavior per csv.QUOTE_* constants for
+            the metadata file.
+        delimiter (str, optional): Delimiter for the metadata file.
+        header (bool, optional): If True, ``metadata_file`` has a header to parse.
+        metadata_path_column (str, optional): Column name to store the metadata_path.
+        index (bool, optional): If True, return the index as the first element of the tuple in
+            ``pandas.DataFrame.itertuples``.
     """
-    yield from read_speech_data(
-        _book2path(book, directory=directory),
-        text_column=text_column,
-        check_wavfiles=check_wavfiles,
-        quoting=quoting)
+    metadata_path = _book2path(book, directory=directory)
+    if os.stat(str(metadata_path)).st_size == 0:
+        logger.warn('%s is empty, skipping for now', str(metadata_path))
+        yield from []
+    else:
+        data_frame = pandas.read_csv(
+            metadata_path, delimiter=delimiter, header=header, quoting=quoting)
+        data_frame['metadata_path'] = metadata_path
+        yield from data_frame.itertuples(index=index)
 
 
-def _speaker2speech_data(speaker, directory=DOWNLOAD_DIRECTORY, check_wavfiles=True):
+def _speaker2speech_data(speaker, **kwargs):
     """
-    Given an speaker, yield pairs of (text, wav_filename) for that speaker.
+    Given an speaker, yield pairs of (text, audio_filename) for that speaker.
     """
     for book in _allbooks:
         if book.speaker_name == speaker:
-            yield from _book2speech_data(book, directory=directory, check_wavfiles=check_wavfiles)
+            yield from _book2speech_data(book, **kwargs)
 
 
-def _gender2speech_data(gender, directory=DOWNLOAD_DIRECTORY, check_wavfiles=True):
+def _gender2speech_data(gender, **kwargs):
     """
-    Given a gender (male or female), yield pairs of (text, wav_filename) for all books read
+    Given a gender (male or female), yield pairs of (text, audio_filename) for all books read
     by speakers of that gender.
     """
     for book in _allbooks:
         if book.gender == gender:
-            yield from _book2speech_data(book, directory=directory, check_wavfiles=check_wavfiles)
+            yield from _book2speech_data(book, **kwargs)
 
 
-def _read_mailabs_data(picker=None, directory=DOWNLOAD_DIRECTORY, check_wavfiles=True):
+def _read_mailabs_data(picker=None, **kwargs):
     """
-    Yield pairs of (text, wav_filename) from the MAILABS dataset.
+    Yield pairs of (text, audio_filename) from the MAILABS dataset.
     Args:
         picker (None or Book or Speaker or Gender): Argument that dictates which dataset subset to
             pick.
@@ -249,13 +255,13 @@ def _read_mailabs_data(picker=None, directory=DOWNLOAD_DIRECTORY, check_wavfiles
     """
     if picker is None:
         for book in _allbooks:
-            yield from _book2speech_data(book, directory=directory, check_wavfiles=check_wavfiles)
+            yield from _book2speech_data(book, **kwargs)
     elif isinstance(picker, Book):
-        yield from _book2speech_data(picker, directory=directory, check_wavfiles=check_wavfiles)
+        yield from _book2speech_data(picker, **kwargs)
     elif isinstance(picker, Speaker):
-        yield from _speaker2speech_data(picker, directory=directory, check_wavfiles=check_wavfiles)
+        yield from _speaker2speech_data(picker, **kwargs)
     elif isinstance(picker, Gender):
-        yield from _gender2speech_data(picker, directory=directory, check_wavfiles=check_wavfiles)
+        yield from _gender2speech_data(picker, **kwargs)
     else:
         raise ValueError(
             "Input {}, if not None, should be of type Book, Speaker, or Gender".format(picker))

@@ -76,13 +76,11 @@ def _set_audio_processing():
             # also helps smooth out the distribution in notebook ``Signal Energy Distribution``.
             # While, ``loudness=True`` does not help.
             'norm': True,
-            'loudness': False,
             # NOTE: Guard to reduce clipping during resampling
             'guard': True,
-            # NOTE: Highpass and lowpass filter to ensure Wav is consistent with Spectrogram.
-            **hertz_bounds,
         },
         'src.datasets.hillary.hillary_dataset.resample': sample_rate,
+        'src.datasets.m_ailabs.m_ailabs_speech_dataset.resample': sample_rate,
         'src.audio': {
             # SOURCE (Wavenet):
             # To make this more tractable, we first apply a µ-law companding transformation

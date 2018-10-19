@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def process(args):  # pragma: no cover
     index, row, destination = args
-    signal = read_audio(row['wav_filename'])
+    signal = read_audio(row['audio_filename'])
 
     # Trim silence
     signal = librosa.effects.trim(signal)[0]
@@ -53,7 +53,7 @@ def main(dataset,
 
     Args:
         dataset (callable, optional): Loads a dataset with train and dev. Each example has
-            a ``wav_filename`` and ``text`` key.
+            a ``audio_filename`` and ``text`` key.
         destination_train (str, optional): Directory to save generated files to be used for
             training.
         destination_dev (str, optional): Directory to save generated files to be used for

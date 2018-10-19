@@ -63,8 +63,7 @@ def test_lj_speech_dataset(mock_urlretrieve):
         lower_hertz=None,
         upper_hertz=None,
         loudness=False,
-        splits=(0.8, 0.2),
-        check_wavfiles=False)
+        splits=(0.8, 0.2))
     assert len(train) == 13100 * 0.8
     assert len(dev) == 13100 * 0.2
 
@@ -76,11 +75,11 @@ def test_lj_speech_dataset(mock_urlretrieve):
     assert train[0]['text'] == (
         'Once a warrant-holder sent down a clerk to view certain goods, and the clerk found that '
         'these goods had already a "stop" upon them, or were pledged.')
-    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ014-0331.wav' in str(train[0]['wav_filename'])
+    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ014-0331.wav' in str(train[0]['audio_filename'])
     assert dev[0]['text'] == (
         'Mister Mullay went, and a second interview was agreed upon, when a third person, '
         'Mister Owen,')
-    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ011-0243.wav' in str(dev[0]['wav_filename'])
+    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ011-0243.wav' in str(dev[0]['audio_filename'])
 
     _re_filename = re.compile('LJ[0-9]{3}-[0-9]{4}')
 
@@ -88,7 +87,7 @@ def test_lj_speech_dataset(mock_urlretrieve):
     seen = 0
     for data in [train, dev]:
         for row in data:
-            basename = row['wav_filename'].name[:10]
+            basename = row['audio_filename'].name[:10]
             assert _re_filename.match(basename)
             if basename in verbalize_test_cases:
                 seen += 1
@@ -113,8 +112,7 @@ def test_lj_speech_dataset_audio_processing(mock_urlretrieve, mock_os_system):
         lower_hertz=100,
         upper_hertz=200,
         loudness=True,
-        splits=(0.8, 0.2),
-        check_wavfiles=False)
+        splits=(0.8, 0.2))
 
     # Ensure that every argument loudness, upper_hertz, lower_hertz, guard, norm and resample
     # is run

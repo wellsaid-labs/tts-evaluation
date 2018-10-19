@@ -49,14 +49,14 @@ def test_m_ailabs_speech_dataset(mock_urlretrieve):
                                 'uttering at the same time a glad cry.')
     assert ('tests/_test_data/M-AILABS/en_US/by_book/female/judy_bieber/'
             'dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_15_f000101.wav') in str(
-                train[0]['wav_filename'])
+                train[0]['audio_filename'])
     assert dev[0]['text'] == (
         'This, said the man, taking up a box and handling it gently, contains twelve '
         'dozen rustles enough to last any lady a year. Will you buy it, my dear? he asked, '
         'addressing Dorothy.')
     assert ('tests/_test_data/M-AILABS/en_US/by_book/female/judy_bieber/'
             'dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_10_f000048.wav') in str(
-                dev[0]['wav_filename'])
+                dev[0]['audio_filename'])
 
 
 @mock.patch("urllib.request.urlretrieve")

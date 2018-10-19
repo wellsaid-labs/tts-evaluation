@@ -25,12 +25,7 @@ def test_hillary_dataset(mock_download_file_from_drive):
 
     # Check a row are parsed correctly
     train, dev = hillary_dataset(
-        directory=data_directory,
-        resample=None,
-        norm=False,
-        guard=False,
-        splits=(0.8, 0.2),
-        check_wavfiles=False)
+        directory=data_directory, resample=None, norm=False, guard=False, splits=(0.8, 0.2))
     assert len(train) == 94
     assert len(dev) == 24
 
@@ -44,12 +39,7 @@ def test_hillary_dataset_audio_processing(mock_download_file_from_drive, mock_os
 
     # Check a row are parsed correctly
     train, dev = hillary_dataset(
-        directory=data_directory,
-        resample=24000,
-        norm=True,
-        guard=True,
-        splits=(0.8, 0.2),
-        check_wavfiles=False)
+        directory=data_directory, resample=24000, norm=True, guard=True, splits=(0.8, 0.2))
 
     # Ensure that every argument loudness, upper_hertz, lower_hertz, guard, norm and resample
     # is run

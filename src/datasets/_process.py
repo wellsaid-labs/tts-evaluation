@@ -3,7 +3,6 @@ from torch.multiprocessing import cpu_count
 
 import logging
 import os
-import pandas
 
 from torchnlp.datasets import Dataset
 from tqdm import tqdm
@@ -11,54 +10,6 @@ from tqdm import tqdm
 from src.utils import split_dataset
 
 logger = logging.getLogger(__name__)
-
-
-def read_speech_data(metadata_path,
-                     audio_directory='wavs',
-                     audio_column=0,
-                     text_column=1,
-                     check_wavfiles=True,
-                     delimiter='|',
-                     audio_extension='.wav',
-                     header=False,
-                     **kwargs):
-    """ Given the path to a ``metadata.csv`` file, yield pairs of (text, audio_filename).
-
-    Args:
-        metadata_path (Path): pathlib.Path is the location of the metadata.csv file.
-        audio_directory (str, optional): str is the name of the directory containing the wav files.
-        audio_column (int, optional): 0-indexed column to extract audio filename from.
-        text_column (int, optional): 0-indexed column to extract text from.
-        check_wavfiles (bool, optional): If False, skip the check for existence of wav files.
-        delimiter (str, optional): Delimiter of columns.
-        audio_extension (str, optional): Extension of audio to append if there is not filename
-            extension.
-        header (bool, optional): Does ``metadata_path`` have a header or not?
-        **kwargs: Additional arguments passed to ``pandas.read_csv``
-
-    Returns:
-        A generator yielding pairs of (text, audio_filename), where audio_filename is a Path object.
-    """
-    if os.stat(str(metadata_path)).st_size == 0:
-        logger.warn('%s is empty, skipping for now', str(metadata_path))
-        return
-
-    data_frame = pandas.read_csv(
-        metadata_path, delimiter=delimiter, header='infer' if header else None, **kwargs)
-    missing = 0
-    for _, row in data_frame.iterrows():
-        audio_filename = metadata_path.parent / audio_directory / row[audio_column]
-        if audio_filename.suffix == '':
-            audio_filename = audio_filename.with_suffix(audio_extension)
-        if audio_filename.exists() or not check_wavfiles:
-            yield row[text_column].strip(), audio_filename
-        else:
-            logger.warning('%s is missing', audio_filename)
-            missing += 1
-
-    if check_wavfiles and missing > 0:
-        logger.warning('%s wav file(s) are missing in %s', missing,
-                       str(metadata_path.parent / audio_directory))
 
 
 def process_audio(wav,
@@ -118,7 +69,7 @@ def process_audio(wav,
     return destination
 
 
-def process_all(extract_fun, data, splits, random_seed, check_wavfiles=True):
+def process_all(extract_fun, data, splits, random_seed, deterministic_shuffle=True):
     """
     Given a generator yielding a pair of ``(text, audio_filename)``, run the ``extract_fun``
     function which processes text and audio, then split the resulting data.
@@ -127,9 +78,10 @@ def process_all(extract_fun, data, splits, random_seed, check_wavfiles=True):
         extract_fun (callable): The extract function of type
             :class:`Callable[Tuple[str, str], dict]`.
         data (callable): The generator yielding (text, audio_filename) pairs.
-        random_seed (int): Random seed used to determine the splits.
         splits (tuple): The number of splits and cardinality of dataset splits.
-        check_wavfiles (bool): If `False`, skip the check for existence of wav files.
+        random_seed (int): Random seed used to determine the splits.
+        deterministic_shuffle (bool, optional): If ``True`` determinisitically shuffle the dataset
+            before splitting.
 
     Returns:
         A tuple of train/dev :class:`torchnlp.datasets.Dataset`.
@@ -139,5 +91,8 @@ def process_all(extract_fun, data, splits, random_seed, check_wavfiles=True):
         examples = list(tqdm(e.map(extract_fun, data), total=len(data)))
 
     splits = split_dataset(
-        examples, splits=splits, deterministic_shuffle=True, random_seed=random_seed)
+        examples,
+        splits=splits,
+        deterministic_shuffle=deterministic_shuffle,
+        random_seed=random_seed)
     return tuple(Dataset(split) for split in splits)

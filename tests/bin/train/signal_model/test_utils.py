@@ -7,8 +7,7 @@ from src.bin.train.signal_model._utils import set_hparams
 
 def test_load_data():
     train, dev = load_data(
-        predicted_train='tests/_test_data/signal_dataset/train',
-        predicted_dev='tests/_test_data/signal_dataset/dev',
+        predicted_source='tests/_test_data/signal_dataset/',
         log_mel_spectrogram_prefix='log_mel_spectrogram',
         signal_prefix='signal',
         extension='.npy',
