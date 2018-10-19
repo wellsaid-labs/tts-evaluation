@@ -41,10 +41,9 @@ h3 {
 h4 {
   font-family: 'Assistant', sans-serif;
   color: #38EF7D;
-  font-size: 1em;
-  font-weight: 700;
+  font-size: 1.25em;
+  font-weight: 400;
   line-height: 1.25em;
-  text-transform: uppercase;
   margin-bottom: 16px;
 }
 
@@ -173,10 +172,10 @@ cta:hover {
 header {
   box-sizing: border-box;
   display: flex;
-  padding: 36px 32px 36px 24px;
+  padding: 36px 24px 36px 24px;
   justify-content: space-between;
   align-items: center;
-  background: #11998E;
+  background: #111;
   min-height: 34px;
   min-width: 1318px;
   flex-grow: 1;
@@ -232,14 +231,14 @@ nav img {
 }
 
 .left-menu-column {
-  background-color: #E8EDF7;
+  background-color: #111111;
   display: flex;
   height: 100%;
   min-width: 96px;
 }
 
 .left-menu-item-selected {
-  background-color: white;
+  background-color: #222222;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -259,6 +258,7 @@ nav img {
   flex-direction: column;
   flex-wrap: nowrap;
   max-width: 1366px;
+  background-color: #222222;
 }
 
 .body-header-container {
@@ -271,8 +271,8 @@ nav img {
 }
 
 .body-header-container h3 {
-  color: #333333;
-  font-family: "Frank Ruhl Libre";
+  color: #ffffff;
+  font-family: 'Assistant', sans-serif;
   font-size: 24px;
   font-weight: 300;
   margin: 0px;
@@ -309,14 +309,14 @@ nav img {
 }
 
 .speaker-row h3 {
-  color: #333333;
-  font-family: "Frank Ruhl Libre";
+  color: #ffffff;
+  font-family: 'Assistant', sans-serif;
   font-size: 16px;
   padding: 0px;
 }
 
 .speaker-row p {
-  color: #777777;
+  color: #999999;
   font-family: 'Assistant', sans-serif;
   font-size: 12px;
   line-height: 16px;
@@ -342,7 +342,7 @@ nav img {
 
 .speaker-row:hover {
   opacity: 1;
-  box-shadow: 0 0 4px 0 rgba(0, 0, 0, 0.2);
+  box-shadow: 0 0 4px 0 rgba(0, 0, 0, 0.4);
 }
 
 .speaker-row-selected {
@@ -389,14 +389,15 @@ nav img {
   position: relative;
 }
 
-
 .text-editor-container textarea {
   box-sizing: border-box;
-  border: 1px solid #D9E1F1;
+  border: 1px solid #333333;
   border-radius: 4px;
-  background-color: #F6F7FA;
+  background-color: #222222;
   font-family: 'Assistant', sans-serif;
-  font-size: 26px;
+  font-weight: 300;
+  font-size: 3em;
+  color: #fff;
   height: 320px;
   margin: 1px;
   outline: none;
@@ -406,11 +407,11 @@ nav img {
 }
 
 .text-editor-container textarea::-webkit-input-placeholder {
-  color: #C7D1E2;
+  color: #999;
 }
 
 .text-editor-container textarea::-moz-placeholder {
-  color: #C7D1E2;
+  color: #666;
 }
 
 #character-counter {
@@ -419,7 +420,7 @@ nav img {
   left: 24px;
   font-family: 'Assistant', sans-serif;
   font-size: 16px;
-  color: #C7D1E2;
+  color: #333333;
   margin: 0px;
 }
 
@@ -485,7 +486,7 @@ nav img {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #ccc;
+  background-color: #333333;
   -webkit-transition: .4s;
   transition: .4s;
 }
@@ -497,7 +498,7 @@ nav img {
   width: 26px;
   left: 4px;
   bottom: 4px;
-  background-color: white;
+  background-color: #fff;
   -webkit-transition: .4s;
   transition: .4s;
 }
@@ -536,7 +537,6 @@ nav img {
 }
 
 /* Modal (Footer) */
-
 .modal {
   display: block;
   /* Hidden by default */
@@ -602,7 +602,7 @@ nav img {
 .speaker-details-modal h3 {
   padding: 0px;
   font-size: 16px;
-  color: #fff;
+  color: #222222;
 }
 
 .speaker-details-modal p {
@@ -611,7 +611,6 @@ nav img {
 }
 
 /* Audio Player */
-
 .audio-player {
   align-items: center;
   width: 507px;
@@ -716,7 +715,6 @@ progress::-moz-progress-bar {
 }
 
 /* Close Button */
-
 .close {
   font-family: 'Assistant', sans-serif;
   position: fixed;
@@ -735,7 +733,6 @@ progress::-moz-progress-bar {
 }
 
 /* Add Animation To Modal */
-
 @-webkit-keyframes slideIn {
   from {
     bottom: -300px;
