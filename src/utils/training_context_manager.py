@@ -17,64 +17,57 @@ from src.utils.utils import duplicate_stream
 
 logger = logging.getLogger(__name__)
 
-# The reason to have a context manager is to because it implies a start and stop for an experiment
-# which is nice because it can set seeds, check modules, set various other things
-# Other structures we could have are we could factor those out and have a seperate setup_experiment
-# but that isn't too helpfull... We could instead call the object Experiment
-# We could generally have a
-# Another structure is a training context manager? Its not nessecarly an experiment its just
-# a training run that we need to manage certain things for...
-# What becomes a bit icky then is that we have a training class that is unable to manage it's
-# own prereqs? how come?
-# Then we need a just
 
-
-class TrainingContextManager(object):
-    """ Context manager for seeding, organizing and recording training runs.
+class ExperimentContextManager(object):
+    """ Context manager for seeding, organizing and recording experiments.
 
     Args:
-        root_directory (str): The directory to store the run.
+        directory (str, optional): Directory to save experiment in.
+        label (str, optional): Group a set of experiments with a label, typically the model name.
+            If ``directory`` is provided, this option is ignored.
+        name (str, optional): Name of the experiment.
+        root (str, optional): Top level directory for all experiments.
         seed (int, optional): The seed to use.
-        device (torch.Device, optional): Set a default device. By default, we the device is:
-            ``torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')``.
-        min_time (int, optional): If an run is less than ``min_time`` in seconds, then it's
+        device (torch.Device, optional): Set a device. By default, we the device is:
+            ``torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')``
+        min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
             files are deleted.
-        tensorboard_step (int, optional): Tensorboards initialization step.
+        step (int, optional): Step to record in creating tensorboard.
     """
 
     def __init__(self,
-                 root_directory,
+                 directory=None,
+                 label=None,
+                 name=None,
+                 root='experiments/',
                  seed=1212212,
                  device=None,
-                 min_time=60 * 15,
-                 tensorboard_step=0):
-        self.root_directory = Path(root_directory)
-        if self.tensorboard_step == 0 and self.root_directory.is_dir():
-            raise ValueError('Directory path is already in use %s' % str(self.root_directory))
+                 min_time=60 * 3,
+                 step=0):
+        self.directory = None if directory is None else Path(directory)
+        self.started_from_existing_directory = self.directory is not None
+        self.id = str(time.time())[:10]  # NOTE: Same id tensorboard uses.
+        self.name = time.strftime('%H:%M:%S', time.localtime()) if name is None else name
+        self.label = label
+        self.root = Path(root)
 
-        # NOTE: Same id tensorboard uses. Unfortunatly, this may be off since Tensorboard
-        # fetches it's own id.
-        # NOTE: ``self.id`` is used to distinguis this run if started from a checkpoint in the
-        # same root_directory
-        self.id = str(time.time())[:10]
-
+        self.device = device
         if self.device is None:
             self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-        else:
-            self.device = device
 
         self.is_cuda = self.device.type == 'cuda'
+        self.set_seed(seed)
         self.min_time = min_time
-        self.start_time = time.time()
-        self.tensorboard_step = tensorboard_step
-        self.seed = seed
+        self._start_time = time.time()
+        self.step = step
 
-    def _notify(self, title, text):
+    def notify(self, title, text, use_logger=True):
         """ Queue a desktop notification on a Linux or OSX machine.
 
         Args:
             title (str): Notification title
             text (str): Notification description
+            use_logger (bool, optional): Print statements with logger or ``print``.
         """
         system = platform.system()
         cmd = ''
@@ -83,7 +76,11 @@ class TrainingContextManager(object):
         elif system == 'Linux':
             cmd = "notify-send '{title}' '{text}'"
 
-        logger.info('Notify: %s', text)
+        if use_logger:
+            logger.info('Notify: %s', text)
+        else:
+            print('Notify: %s' % text)
+
         os.system(cmd.format(text=text, title=title))
 
     def _check_module_versions(self):
@@ -110,8 +107,8 @@ class TrainingContextManager(object):
             stdout_filename (str): Filename used to save the stdout stream.
             stderr_filename (str): Filename used to save the stderr stream.
         """
-        self.stdout_filename = self.root_directory / ('%s.%s' % (self.id, stdout_filename))
-        self.stderr_filename = self.root_directory / ('%s.%s' % (self.id, stderr_filename))
+        self.stdout_filename = self.directory / ('%s.%s' % (self.id, stdout_filename))
+        self.stderr_filename = self.directory / ('%s.%s' % (self.id, stderr_filename))
         self.stop_duplicate_stream_stdout = duplicate_stream(sys.stdout, self.stdout_filename)
         self.stop_duplicate_stream_stderr = duplicate_stream(sys.stderr, self.stderr_filename)
 
@@ -121,6 +118,19 @@ class TrainingContextManager(object):
         Returns:
             path (str): Path to the new experiment directory
         """
+        if self.directory is None:
+            run_day = time.strftime('%m_%d', time.localtime())
+            name = self.name.replace(' ', '_')
+            self.directory = self.root / self.label / run_day / name
+            assert not self.directory.is_dir(
+            ), 'Attempting to override an existing experiment %s' % self.directory
+            self.directory.mkdir(parents=True)
+        else:
+            assert self.directory.is_dir(), 'Provided directory must exist.'
+
+        # Make checkpoints directory
+        self.checkpoints_directory = self.directory / 'checkpoints' / self.id
+        self.checkpoints_directory.mkdir(parents=True)
 
     def _tensorboard(self):
         """ Within ``self.directory`` setup tensorboard.
@@ -130,7 +140,7 @@ class TrainingContextManager(object):
         self.dev_tensorboard = Tensorboard(log_dir=log_dir / 'dev', step=self.step)
         self.train_tensorboard = Tensorboard(log_dir=log_dir / 'train', step=self.step)
 
-    def _set_seed(self, seed):
+    def set_seed(self, seed):
         """ To ensure reproducibility, by seeding ``numpy``, ``random``, ``tf`` and ``torch``.
 
         Args:
@@ -147,15 +157,18 @@ class TrainingContextManager(object):
     def __enter__(self):
         """ Runs before the experiment context begins.
         """
-        # NOTE: Set first incase there are any random operations afterwards.
-        self.set_seed(self.seed)
+        self._check_module_versions()
 
-        self.root_directory.mkdir(parents=True, exist_ok=True)
-        self.checkpoints_directory = self.root_directory / 'checkpoints' / self.id
-        self.checkpoints_directory.mkdir(parents=True)
+        # Create a local directory to store logs, checkpoints, etc..
+        self._new_experiment_directory()
+
+        # Copy ``stdout`` and ``stderr`` to experiments folder
+        self._copy_standard_streams()
 
         # Setup logging
-        self._copy_standard_streams()
+        logging.basicConfig(
+            level=logging.INFO,
+            format='[%(asctime)s][' + str(self.device) + '][%(name)s][%(levelname)s] %(message)s')
 
         if self.is_cuda and self.device.index is not None:
             torch.cuda.set_device(self.device.index)
@@ -167,28 +180,36 @@ class TrainingContextManager(object):
         logger.info('Step: %d', self.step)
         logger.info('ID: %s', self.id)
 
-        self._check_module_versions()
         self._tensorboard()
 
         return self
 
-    def clean_up(self):
+    def clean_up(self, use_logger=True):
         """ Delete files associated with this context.
+
+        Args:
+            use_logger (bool, optional): Print statements with logger or ``print``.
         """
-        logger.info('DELETING EXPERIMENT: %s', self.directory)
+        if use_logger:
+            logger.info('DELETING EXPERIMENT: %s', self.directory)
+        else:
+            print('DELETING EXPERIMENT: %s' % self.directory)
 
-        # Remove checkpoints
-        shutil.rmtree(str(self.checkpoints_directory))
+        if not self.started_from_existing_directory:
+            shutil.rmtree(str(self.directory))
+        else:
+            # Remove checkpoints
+            shutil.rmtree(str(self.checkpoints_directory))
 
-        # Remove tensorboard files
-        get_tensorboard_log = (
-            lambda t: t.writer.file_writer.event_writer._ev_writer._py_recordio_writer.path)
-        Path(get_tensorboard_log(self.dev_tensorboard)).unlink()
-        Path(get_tensorboard_log(self.train_tensorboard)).unlink()
+            # Remove tensorboard files
+            Path(self.dev_tensorboard.writer.file_writer.event_writer._ev_writer.
+                 _py_recordio_writer.path).unlink()
+            Path(self.train_tensorboard.writer.file_writer.event_writer._ev_writer.
+                 _py_recordio_writer.path).unlink()
 
-        # Remove log files
-        self.stdout_filename.unlink()
-        self.stderr_filename.unlink()
+            # Remove log files
+            self.stdout_filename.unlink()
+            self.stderr_filename.unlink()
 
         # Remove empty directories
         for root, directories, files in os.walk(str(self.root), topdown=False):
@@ -214,6 +235,9 @@ class TrainingContextManager(object):
         elapsed_seconds = time.time() - self._start_time
         is_short_experiment = self.min_time is not None and elapsed_seconds < self.min_time
         if is_short_experiment and exception:
-            self.clean_up()
+            self.clean_up(use_logger=False)
 
-        self.notify('Experiment', 'Experiment has exited after %d seconds.' % (elapsed_seconds))
+        self.notify(
+            'Experiment',
+            'Experiment has exited after %d seconds.' % (elapsed_seconds),
+            use_logger=False)
