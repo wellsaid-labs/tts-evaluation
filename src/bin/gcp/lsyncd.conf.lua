@@ -26,7 +26,6 @@ sync {
       "build/**",
       "__pycache__**",
       ".git**",
-      "*.pt",
       "htmlcov/**",
       "coverage/**",
       "docs/**",
