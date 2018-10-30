@@ -31,12 +31,7 @@ class TrainingContextManager(object):
         tensorboard_step (int, optional): Tensorboards initialization step.
     """
 
-    def __init__(self,
-                 root_directory,
-                 seed=1212212,
-                 device=None,
-                 min_time=60 * 15,
-                 tensorboard_step=0):
+    def __init__(self, root_directory, seed=123, device=None, min_time=60 * 15, tensorboard_step=0):
         self.root_directory = Path(root_directory)
         self.tensorboard_step = tensorboard_step
         if self.tensorboard_step == 0 and self.root_directory.is_dir():

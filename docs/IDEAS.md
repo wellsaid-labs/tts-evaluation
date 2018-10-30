@@ -82,5 +82,5 @@ Another possible implementation is to feedback a batch of predictions following 
   * [A Word of Caution on Scheduled Sampling for Training RNNs](http://www.inference.vc/scheduled-sampling-for-rnns-scoring-rule-interpretation/)
   * [Tacotron: Towards End-to-End Speech Synthesis](https://arxiv.org/abs/1703.10135)
 * End-to-end neural models tend to work better. There is no fundamental reason that the signal
-and feature model cannot combined in an end-to-end differentiable model. It'd be interesting
-to try combining both the feature and signal model into an end-to-end differentiable model.
+and spectrogram model cannot combined in an end-to-end differentiable model. It'd be interesting
+to try combining both the spectrogram and signal model into an end-to-end differentiable model.

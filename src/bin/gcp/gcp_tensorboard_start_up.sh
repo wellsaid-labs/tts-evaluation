@@ -28,8 +28,8 @@ fi
 run 'signal_model_sync_tensorboard' \
     "tensorboard --logdir=sync/signal_model/ --port=6008 --window_title='Signal Model Sync'"
 
-run 'feature_model_sync_tensorboard' \
-    "tensorboard --logdir=sync/feature_model/ --port=6010 --window_title='Feature Model Sync'"
+run 'spectrogram_model_sync_tensorboard' \
+    "tensorboard --logdir=sync/spectrogram_model/ --port=6010 --window_title='Spectrogram Model Sync'"
 
 echo 'Updating SSH files...'
 gcloud compute config-ssh
@@ -37,18 +37,18 @@ gcloud compute config-ssh
 # LEARN MORE: ``rsync`` slash on source
 # http://qdosmsq.dunbar-it.co.uk/blog/2013/02/rsync-to-slash-or-not-to-slash/
 run 'signal_model_sync_python' \
-     "python3 -m src.bin.periodic_rsync \
-        --destination ~/WellSaid-Labs-Text-To-Speech/sync/signal_model/  \
-        --source ~/WellSaid-Labs-Text-To-Speech/experiments/signal_model/ \
+     "python3 -m src.bin.gcp.periodic_rsync \
+        --destination ~/WellSaidLabs/sync/signal_model/  \
+        --source ~/WellSaidLabs/experiments/signal_model/ \
         --all;"
 
-run 'feature_model_sync_python' \
-     "python3 -m src.bin.periodic_rsync \
-        --destination ~/WellSaid-Labs-Text-To-Speech/sync/feature_model/  \
-        --source ~/WellSaid-Labs-Text-To-Speech/experiments/feature_model/ \
+run 'spectrogram_model_sync_python' \
+     "python3 -m src.bin.gcp.periodic_rsync \
+        --destination ~/WellSaidLabs/sync/spectrogram_model/  \
+        --source ~/WellSaidLabs/experiments/spectrogram_model/ \
         --all;"
 
 run 'backup' \
-    "cd ..; watch -n 60 rsync -av WellSaid-Labs-Text-To-Speech/experiments/ backup/"
+    "cd ..; watch -n 60 rsync -av WellSaidLabs/experiments/ backup/"
 
 echo 'Done!'

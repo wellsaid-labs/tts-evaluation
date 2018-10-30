@@ -25,8 +25,8 @@ Finally, install ``pyenv`` with the scripts [here](https://github.com/pyenv/pyen
 Frequently, you'll want to share a files between your local machine and GCP. We allow for that via:
 
 ```
-python3 -m src.bin.gcp.lsyncd --source /path/to/WellSaid-Labs-Text-To-Speech \
-                          --destination /path/to/WellSaid-Labs-Text-To-Speech \
+python3 -m src.bin.gcp.lsyncd --source /path/to/WellSaidLabs \
+                          --destination /path/to/WellSaidLabs \
                           --user someone --instance a_gcp_instance
 ```
 
@@ -40,7 +40,7 @@ to keep alive GCP machines.
 Here's an example of using the script:
 ```
 python3 -m src.bin.gcp.keep_alive --command="screen -dm bash -c \
-        'cd WellSaid-Labs-Text-To-Speech/; \
+        'cd WellSaidLabs/; \
         ulimit -n 65536; \
         python3 -m src.bin.train.signal_model -c;'"
 ```
@@ -59,8 +59,8 @@ gcloud compute ssh tensorboard --zone=us-us-west1-b
 # Find any new servers
 gcloud compute config-ssh
 
-python3 -m src.bin.gcp.periodic_rsync --destination ~/WellSaid-Labs-Text-To-Speech/sync/ \
-                                  --source ~/WellSaid-Labs-Text-To-Speech/experiments/signal_model
+python3 -m src.bin.gcp.periodic_rsync --destination ~/WellSaidLabs/sync/ \
+                                  --source ~/WellSaidLabs/experiments/signal_model
 ```
 
 Now, GCP instance ``tensorboard`` will periodically pull events from other GCP instances.

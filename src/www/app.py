@@ -1,4 +1,4 @@
-""" Run a webservice with the feature and signal models
+""" Run a webservice with the spectrogram and signal models
 
 Example:
 

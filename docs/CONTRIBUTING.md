@@ -10,7 +10,7 @@ To contribute an experiment, you'll need to document your Tensorboard and code c
 sync you experiment to the GCP ``tensorboard`` server as documented in ``GCP_WORKFLOW.md``.
 
 Then, submit a pull request to our
-[GitHub](https://github.com/AI2Incubator/WellSaid-Labs-Text-To-Speech) documenting the experiment
+[GitHub](https://github.com/AI2Incubator/WellSaidLabs) documenting the experiment
 with a link to the experiment.
 
 If you are contributing a new model to Tensorboard for which you'd like a separate
@@ -27,12 +27,12 @@ Tensorboard, create one:
 
 ### Did you find a bug?
 
-First, do [a quick search](https://github.com/AI2Incubator/WellSaid-Labs-Text-To-Speech/issues) to
+First, do [a quick search](https://github.com/AI2Incubator/WellSaidLabs/issues) to
 see whether your issue has already been reported. If your issue has already been reported, please
 comment on the existing issue.
 
 Otherwise, open
-[a new GitHub issue](https://github.com/AI2Incubator/WellSaid-Labs-Text-To-Speech/issues). Be sure
+[a new GitHub issue](https://github.com/AI2Incubator/WellSaidLabs/issues). Be sure
 to include a clear title and description. The description should include as much relevant
 information as possible. The description should explain how to reproduce the erroneous behavior as
 well as the behavior you expect to see. Ideally you would include a code sample or an executable
@@ -40,7 +40,7 @@ test case demonstrating the expected behavior.
 
 ### Did you write a fix for a bug?
 
-Open [a new GitHub pull request](https://github.com/AI2Incubator/WellSaid-Labs-Text-To-Speech/pulls)
+Open [a new GitHub pull request](https://github.com/AI2Incubator/WellSaidLabs/pulls)
 with the fix. Make sure you have a clear description of the problem and the solution, and include a
 link to relevant issues.
 
@@ -67,7 +67,7 @@ We use GitHub issues to track enhancement requests.  Before you create an enhanc
 
 * Check the documentation to make sure your feature does not already exist.
 
-* Do [a quick search](https://github.com/AI2Incubator/WellSaid-Labs-Text-To-Speech/issues) to see
+* Do [a quick search](https://github.com/AI2Incubator/WellSaidLabs/issues) to see
   whether your enhancement has already been suggested.
 
 When creating your enhancement request, please:

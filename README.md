@@ -8,7 +8,7 @@ architecture described in these papers:
 [Natural TTS Synthesis by Conditioning WaveNet on Mel Spectrogram Predictions](https://arxiv.org/pdf/1712.05884.pdf) and [Efficient Neural Audio Synthesis](https://arxiv.org/abs/1802.08435).
 
 ![PyPI - Python Version](https://img.shields.io/badge/python-3.5%2C%203.6-blue.svg)
-[![Build Status](https://travis-ci.com/AI2Incubator/WellSaid-Labs-Text-To-Speech.svg?token=xKbC739Gn2ssU4AStE7z&branch=master)](https://travis-ci.com/AI2Incubator/WellSaid-Labs-Text-To-Speech)
+[![Build Status](https://travis-ci.com/AI2Incubator/WellSaidLabs.svg?token=xKbC739Gn2ssU4AStE7z&branch=master)](https://travis-ci.com/AI2Incubator/WellSaidLabs)
 
 ## Installation
 
@@ -42,19 +42,19 @@ To work with GCP, we recommend installing the dependencies listed in ``docs/GCP_
 
 This section describes commands to run the executables required for training.
 
-#### Feature Model
+#### Spectrogram Model
 
 First things first, preprocess the audio via:
 
-    python -m src.bin.train.feature_model.preprocess
+    python -m src.bin.train.spectrogram_model.preprocess
 
-Train the feature model like so:
+Train the spectrogram model like so:
 
-    python3 -m src.bin.train.feature_model -n experiment_name
+    python3 -m src.bin.train.spectrogram_model -n experiment_name
 
 Generate training data for the signal model like so:
 
-    python3 -m src.bin.train.feature_model.generate -c your_checkpoint
+    python3 -m src.bin.train.spectrogram_model.generate -c your_checkpoint
 
 #### Signal Model
 
@@ -87,9 +87,9 @@ Thanks for considering contributing!
 ### Contributing Guide
 
 Read our
-[contributing guide](https://github.com/AI2Incubator/WellSaid-Labs-Text-To-Speech/blob/master/docs/CONTRIBUTING.md)
+[contributing guide](https://github.com/AI2Incubator/WellSaidLabs/blob/master/docs/CONTRIBUTING.md)
 to learn about our development process, how to propose bug-fixes and improvements, and how to build
-and test your changes to WellSaid-Labs-Text-To-Speech.
+and test your changes to WellSaidLabs.
 
 ## Authors
 
