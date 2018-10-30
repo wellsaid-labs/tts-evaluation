@@ -22,32 +22,17 @@ from flask import send_file
 import librosa
 
 from src.audio import griffin_lim
-from src.bin.train.feature_model._utils import set_hparams as set_feature_model_hparams
-from src.bin.train.signal_model.utils import set_hparams as set_signal_model_hparams
+from src.hparams import set_hparams
+from src.hparams import log_config
 from src.utils import combine_signal
-from src.utils import load_checkpoint
+from src.utils import Checkpoint
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 samples_folder = Path(os.getcwd()) / 'src/www/static/samples'
-
-
-def load_feature_model(path):
-    """ Load the feature model from a ``Path`` or ``str`` path argument """
-    set_feature_model_hparams()
-    checkpoint = load_checkpoint(path, torch.device('cpu'))
-    logger.info('Loaded feature model at step %d', checkpoint['step'])
-    return checkpoint['model'].eval(), checkpoint['text_encoder']
-
-
-def load_signal_model(path):
-    """ Load the signal model from a ``Path`` or ``str`` path argument """
-    set_signal_model_hparams()
-    checkpoint = load_checkpoint(path, torch.device('cpu'))
-    logger.info('Loaded signal model at step %d', checkpoint['step'])
-    return checkpoint['model'].eval()
-
+spectrogram_model_checkpoint = None
+signal_model_checkpoint = None
 
 # ERROR HANDLERS
 # INSPIRED BY: http://flask.pocoo.org/docs/1.0/patterns/apierrors/
@@ -79,9 +64,6 @@ def handle_generic_exception(error):
     return response
 
 
-# FILE ROUTES
-
-
 @app.route('/demo')
 def index():
     return send_file('index.html')
@@ -91,12 +73,14 @@ def index():
 def get_sample(filename, default_sample_filename='voiceover.wav'):
     """ Returns the ``filename`` audio.
 
+    TODO: Test this functionality
+
     Args:
         filename (str)
         default_sample_filename (str)
     """
     # Ensure that a adversary has provided a valid filename
-    assert re.match("^[A-Za-z0-9_-]*$", filename)
+    assert re.match('^[A-Za-z0-9_-]*$', filename)
     as_attachment = request.args.get('attachment', None)
     attachment_filename = default_sample_filename if as_attachment else None
     path_to_file = samples_folder / filename
@@ -108,26 +92,25 @@ def get_sample(filename, default_sample_filename='voiceover.wav'):
         attachment_filename=attachment_filename)
 
 
-@app.route('/synthesize', methods=['POST'])
-def synthesize():
-    """ Synthesize the requested text as speech. """
-    request_data = request.get_json()
-    # TODO: Add the ability to pick from multiple speakers
-    text = request_data['text'].lower()
-    is_high_fidelity = request_data['isHighFidelity']
-    logger.info('Got request %s', request_data)
+def _synthesize(text, is_high_fidelity):
+    """ Synthesize audio given ``text``, returning the audio filename.
+    """
+    log_config()
+    text_encoder = spectrogram_model_checkpoint.text_encoder
+    encoded_text = text_encoder.encode(text)
 
-    if text_encoder.decode(text_encoder.encode(text)) != text:
+    if text_encoder.decode(encoded_text) != text:
         raise GenericException('Text has improper characters.')
 
     with torch.no_grad():
-        encoded = text_encoder.encode(text)
         # predicted_frames [num_frames, batch_size, frame_channels]
-        predicted_frames = feature_model.infer(tokens=encoded)[1]
+        predicted_frames = spectrogram_model_checkpoint.model.infer(tokens=encoded_text)[1]
+
         if is_high_fidelity:
             # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
             predicted_frames = predicted_frames.transpose(0, 1)
-            predicted_coarse, predicted_fine, _ = signal_model.infer(predicted_frames)
+            predicted_coarse, predicted_fine, _ = signal_model_checkpoint.model.infer(
+                predicted_frames)
             waveform = combine_signal(predicted_coarse, predicted_fine).numpy()
         else:
             waveform = griffin_lim(predicted_frames[:, 0].numpy())
@@ -137,16 +120,38 @@ def synthesize():
     filename = samples_folder / '{}{}.wav'.format('generated_audio_', unique_id)
     librosa.output.write_wav(str(filename), waveform)
 
+    return filename
+
+
+@app.route('/synthesize', methods=['POST'])
+def synthesize():
+    """ Synthesize the requested text as speech.
+
+    TODO: Add the ability to pick from multiple speakers
+    """
+    request_data = request.get_json()
+    logger.info('Got request %s', request_data)
+    filename = _synthesize(
+        text=request_data['text'], is_high_fidelity=request_data['isHighFidelity'])
     return jsonify({'filename': str(filename.name)})
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '-s', '--signal_model', type=str, required=True, help='Signal model checkpoint to serve.')
+        '--signal_model', type=str, required=True, help='Signal model checkpoint to serve.')
     parser.add_argument(
-        '-f', '--feature_model', type=str, required=True, help='Feature model checkpoint to serve.')
+        '--spectrogram_model',
+        type=str,
+        required=True,
+        help='Spectrogram model checkpoint to serve.')
     cli_args = parser.parse_args()
-    feature_model, text_encoder = load_feature_model(cli_args.feature_model)
-    signal_model = load_signal_model(cli_args.signal_model)
+
+    # Global memory
+    set_hparams()
+    spectrogram_model_checkpoint = Checkpoint.from_path(cli_args.spectrogram_model)
+    spectrogram_model_checkpoint.model.eval()
+    signal_model_checkpoint = Checkpoint.from_path(cli_args.signal_model)
+    signal_model_checkpoint.model.eval()
+
     app.run(host='0.0.0.0', port=80, processes=8, threaded=False)

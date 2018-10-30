@@ -195,6 +195,7 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
                                         'the_master_key_05_f000038),24000)).npy'),
           'text': 'The chief shook his head, saying: No boat come.'}]
     """
+    directory = Path(directory)
     download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
 
     # Making sure that the download succeeds by checking against defined books in _allbooks
