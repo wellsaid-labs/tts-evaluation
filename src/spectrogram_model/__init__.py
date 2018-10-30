@@ -1,3 +1,3 @@
-from src.feature_model.model import SpectrogramModel as FeatureModel
+from src.spectrogram_model.model import SpectrogramModel
 
-__all__ = ['FeatureModel']
+__all__ = ['SpectrogramModel']

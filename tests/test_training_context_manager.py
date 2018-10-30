@@ -1,15 +1,16 @@
 from pathlib import Path
+from unittest import mock
 
 import logging
 import os
 import shutil
-import mock
 import sys
 
 import pytest
 import torch
 
-from src.utils.experiment_context_manager import ExperimentContextManager
+from src.training_context_manager import TrainingContextManager
+from src.utils import ROOT_PATH
 
 
 def test_save_standard_streams():
@@ -18,7 +19,9 @@ def test_save_standard_streams():
     handler.setLevel(logging.INFO)
     logger.addHandler(handler)
 
-    with ExperimentContextManager(label='test_save_standard_streams', min_time=-1) as context:
+    with TrainingContextManager(
+            root_directory=ROOT_PATH / 'experiments' / 'test_save_standard_streams',
+            min_time=-1) as context:
         # Check if 'Test' gets captured
         print('Test')
         logger.info('Test Logger')
@@ -37,19 +40,21 @@ def test_save_standard_streams():
     assert 'Test' not in lines
 
     # Clean up files
-    shutil.rmtree(str(context.directory))
+    shutil.rmtree(str(context.root_directory))
 
 
 def test_experiment():
-    with ExperimentContextManager(label='test_experiment', device=torch.device('cpu')) as context:
+    with TrainingContextManager(
+            root_directory=ROOT_PATH / 'experiments' / 'test_experiment',
+            device=torch.device('cpu')) as context:
         # Check context directory was created
-        assert context.directory.is_dir()
+        assert context.root_directory.is_dir()
         assert context.checkpoints_directory.is_dir()
 
         context.clean_up()
 
     # Automatically cleaned up
-    assert not context.directory.is_dir()
+    assert not context.root_directory.is_dir()
 
 
 # Patch inspired by:
@@ -64,18 +69,17 @@ def mock_open(*args, **kargs):
 @mock.patch('builtins.open', new_callable=mock_open, read_data='torch==0.4.0\n')
 def test_check_module_versions(_, __):
     with pytest.raises(ValueError):
-        ExperimentContextManager._check_module_versions(None)
+        TrainingContextManager._check_module_versions(None)
 
 
 def test_clean_up():
     directory = Path('experiments') / 'test_clean_up'
-    directory.mkdir(parents=True)
 
-    file_ = directory / 'abc.txt'
-    file_.write_text('')
+    with TrainingContextManager(root_directory=directory) as context:
+        file_ = directory / 'abc.txt'
+        file_.write_text('')
 
-    with ExperimentContextManager(directory=directory) as context:
-        # Confirm more than files were added
+        # Confirm more than one file was added
         assert sum([len(files) for _, _, files in os.walk(str(directory))]) > 1
 
         context.clean_up()

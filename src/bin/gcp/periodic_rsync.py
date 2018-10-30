@@ -8,8 +8,8 @@ NOTE:
 Example:
 
     python3 -m src.bin.periodic_rsync \
-      --destination ~/WellSaid-Labs-Text-To-Speech/sync/ \
-      --source ~/WellSaid-Labs-Text-To-Speech/experiments/signal_model
+      --destination ~/WellSaidLabs/sync/ \
+      --source ~/WellSaidLabs/experiments/signal_model
 """
 from pathlib import Path
 
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 INSTANCE_RUNNING = 'RUNNING'
 
 
-def get_instances(all_=False):  # pragma: no cover
+def get_instances(all_=False):
     """ Get a list of instances sync.
 
     Args:
@@ -71,7 +71,7 @@ def get_instances(all_=False):  # pragma: no cover
     return filtered_instances
 
 
-def main(instances, source, destination, scheduler, repeat_every=5):  # pragma: no cover
+def main(instances, source, destination, scheduler, repeat_every=5):
     """ ``rsync`` ``instances`` ``source`` to ``destination`` on local instance.
 
     Args:

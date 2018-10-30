@@ -12,20 +12,34 @@ import logging
 import logging.config
 import math
 import os
+import random
 import subprocess
+import sys
 import time
 
-from torchnlp.utils import shuffle as do_deterministic_shuffle
+from torch.utils.data.sampler import Sampler
 
 import torch
 import numpy as np
 
-from src.utils.configurable import configurable
+from src.hparams import configurable
 
 logger = logging.getLogger(__name__)
 
 # Repository root path
-ROOT_PATH = Path(__file__).parent.parent.parent.resolve()
+ROOT_PATH = Path(__file__).parent.parent.resolve()
+
+
+def set_basic_logging_config(device=None):
+    """ Set up basic logging handlers. """
+    if device is None:
+        device_str = ''
+    else:
+        device_str = '[%s]' % device
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='[%(asctime)s]' + device_str + '[%(name)s][%(levelname)s] %(message)s')
 
 
 def duplicate_stream(from_, to):
@@ -33,7 +47,7 @@ def duplicate_stream(from_, to):
 
     Note:
         With the various references below, we were unable to add C support. Find more details
-        here: https://travis-ci.com/AI2Incubator/WellSaid-Labs-Text-To-Speech/jobs/152504931
+        here: https://travis-ci.com/AI2Incubator/WellSaidLabs/jobs/152504931
 
     Learn more:
         - https://eli.thegreenplace.net/2015/redirecting-all-kinds-of-stdout-in-python/
@@ -81,14 +95,28 @@ def duplicate_stream(from_, to):
     return stop
 
 
+def record_stream(directory, stdout_log_filename='stdout.log', stderr_log_filename='stderr.log'):
+    """ Record output ``sys.stdout`` and ``sys.stderr`` to log files
+
+    Args:
+        directory (Path or str): Directory to save log files in.
+        stdout_log_filename (str, optional)
+        stderr_log_filename (str, optional)
+    """
+    directory = Path(directory)
+
+    duplicate_stream(sys.stdout, directory / stdout_log_filename)
+    duplicate_stream(sys.stderr, directory / stderr_log_filename)
+
+
 def chunks(list_, n):
     """ Yield successive n-sized chunks from list. """
     for i in range(0, len(list_), n):
         yield list_[i:i + n]
 
 
-def get_weighted_standard_deviation(tensor, dim=0):
-    """ Computed the weighted standard deviation.
+def get_weighted_standard_deviation(tensor, dim=0, mask=None):
+    """ Computed the average weighted standard deviation.
 
     We assume the weights are normalized between zero and one summing up to one on ``dim``.
 
@@ -99,10 +127,11 @@ def get_weighted_standard_deviation(tensor, dim=0):
     Args:
         tensor (torch.FloatTensor): Some tensor along which to compute the standard deviation.
         dim (int): Dimension of ``tensor`` along which to compute the standard deviation.
+        mask (torch.FloatTensor, optional)
 
     Returns:
-        tensor (torch.FloatTensor): Returns the weighted standard deviation of each row of the input
-            tensor in the given dimension ``dim``.
+        (float): Returns the average weighted standard deviation of each row of the input tensor in
+            the given dimension ``dim``.
     """
     # Expects normalized weightes total of 0, 1 to ensure correct variance decisions
     assert all([isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()])
@@ -120,8 +149,37 @@ def get_weighted_standard_deviation(tensor, dim=0):
     # Correct the bias
     bias = 1 - (tensor**2).sum(dim=dim)
     weighted_variance = biased_weighted_variance / bias
+    weighted_standard_deviation = weighted_variance**0.5
 
-    return weighted_variance**0.5
+    if mask is not None:
+        weighted_standard_deviation = weighted_standard_deviation * mask
+        divisor = mask.sum()
+    else:
+        divisor = weighted_standard_deviation.numel()
+
+    return (weighted_standard_deviation.sum() / divisor).item()
+
+
+def get_masked_average_norm(tensor, dim=0, mask=None, norm=2):
+    """
+    Args:
+        tensor (torch.FloatTensor)
+        dim (int)
+        mask (torch.FloatTensor, optional)
+        norm (float, optional): The exponent value in the norm formulation.
+
+    Returns:
+        (float): The norm over ``dim``, reduced to a scalar average.
+    """
+    norm = tensor.norm(norm, dim=dim)
+
+    if mask is not None:
+        norm = norm * mask
+        divisor = mask.sum()
+    else:
+        divisor = tensor.numel()
+
+    return (norm.sum() / divisor).item()
 
 
 class ExponentiallyWeightedMovingAverage():
@@ -249,35 +307,6 @@ def get_total_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def split_dataset(dataset, splits, deterministic_shuffle=True, random_seed=123):
-    """
-    Args:
-        dataset (list): Dataset to split.
-        splits (tuple): Tuple of percentages determining dataset splits.
-        deterministic_shuffle (bool, optional): If ``True`` determinisitically shuffle the dataset
-            before splitting.
-
-    Returns:
-        (list): splits of the dataset
-
-    Example:
-        >>> dataset = [1, 2, 3, 4, 5]
-        >>> splits = (.6, .2, .2)
-        >>> split_dataset(dataset, splits, deterministic_shuffle=True, random_seed=123)
-        [[4, 2, 5], [3], [1]]
-    """
-    if deterministic_shuffle:
-        do_deterministic_shuffle(dataset, random_seed=random_seed)
-    assert sum(splits) == 1, 'Splits must sum to 100%'
-    splits = [round(s * len(dataset)) for s in splits]
-    datasets = []
-    for split in splits[:-1]:
-        datasets.append(dataset[:split])
-        dataset = dataset[split:]
-    datasets.append(dataset)
-    return datasets
-
-
 def torch_load(path, device=torch.device('cpu')):
     """ Using ``torch.load`` and ``dill`` load an object from ``path`` onto ``self.device``.
 
@@ -306,45 +335,6 @@ def torch_save(path, data):
     """
     torch.save(data, str(path))
     logger.info('Saved: %s' % (path,))
-
-
-def get_filename_table(directory, prefixes=[], extension=''):
-    """ Get a table of filenames; such that every row has multiple filenames of different prefixes.
-
-    Notes:
-        * Filenames are aligned via string sorting.
-        * The table must be full; therefore, all filenames associated with a prefix must have an
-          equal number of files as every other prefix.
-
-    Args:
-        directory (Path): Path to a directory.
-        prefixes (str): Prefixes to load.
-        extension (str): Filename extensions to load.
-
-    Returns:
-        (list of dict): List of dictionaries where prefixes are the key names.
-    """
-    rows = []
-    for prefix in prefixes:
-        # Get filenames with associated prefixes
-        filenames = []
-        for filename in directory.iterdir():
-            # TODO: Rename prefix because it does not look at directly the beginning of the filename
-            if (extension == '' or filename.suffix == extension) and prefix in filename.name:
-                filenames.append(filename)
-
-        # Sorted to align with other prefixes
-        filenames = sorted(filenames)
-
-        # Add to rows
-        if len(rows) == 0:
-            rows = [{prefix: filename} for filename in filenames]
-        else:
-            assert len(filenames) == len(rows), "Each row must have an associated filename."
-            for i, filename in enumerate(filenames):
-                rows[i][prefix] = filename
-
-    return rows
 
 
 def parse_hparam_args(hparam_args):
@@ -388,8 +378,8 @@ def split_signal(signal, bits=16):
         bits (int): Number of bits to encode signal in.
 
     Returns:
-        coarse (torch.FloatTensor [signal_length]): Top bits of the signal.
-        fine (torch.FloatTensor [signal_length]): Bottom bits of the signal.
+        coarse (torch.LongTensor [signal_length]): Top bits of the signal.
+        fine (torch.LongTensor [signal_length]): Bottom bits of the signal.
     """
     assert torch.min(signal) >= -1.0 and torch.max(signal) <= 1.0
     assert (bits %
@@ -401,7 +391,7 @@ def split_signal(signal, bits=16):
     bins = int(2**(bits / 2))
     coarse = torch.floor(unsigned / bins)
     fine = unsigned % bins
-    return coarse, fine
+    return coarse.long(), fine.long()
 
 
 @configurable
@@ -409,85 +399,112 @@ def combine_signal(coarse, fine, bits=16):
     """ Compute the coarse and fine components of the signal.
 
     Args:
-        coarse (torch.FloatTensor [signal_length]): Top bits of the signal.
-        fine (torch.FloatTensor [signal_length]): Bottom bits of the signal.
+        coarse (torch.LongTensor [signal_length]): Top bits of the signal.
+        fine (torch.LongTensor [signal_length]): Bottom bits of the signal.
         bits (int): Number of bits to encode signal in.
 
     Returns:
         signal (torch.FloatTensor [signal_length]): Signal with values ranging from [-1, 1]
     """
+    assert len(coarse.shape) == 1 and len(fine.shape) == 1
     bins = int(2**(bits / 2))
     assert torch.min(coarse) >= 0 and torch.max(coarse) < bins
     assert torch.min(fine) >= 0 and torch.max(fine) < bins
-    signal = coarse * bins + fine - 2**(bits - 1)
-    return signal.float() / 2**(bits - 1)
+    signal = coarse.float() * bins + fine.float() - 2**(bits - 1)
+    return signal / 2**(bits - 1)
 
 
-def load_checkpoint(checkpoint_path=None, device=torch.device('cpu')):
-    """ Load a checkpoint.
+class Checkpoint():
+    """ Model checkpoint object
 
     Args:
-        checkpoint_path (Path or str or None): Path to a checkpoint to load.
-        device (int): Device to load checkpoint onto where -1 is the CPU while 0+ is a GPU.
-
-    Returns:
-        checkpoint (dict or None): Loaded checkpoint or None.
+        directory (Path or str): Directory where to save the checkpoint.
+        model (torch.nn.Module): Model to train and evaluate.
+        step (int): Starting step, useful warm starts (i.e. checkpoints).
+        **kwargs (dict, optional): Any other checkpoint attributes.
     """
-    if checkpoint_path is None:
+
+    def __init__(self, directory, model, step, **kwargs):
+        self.directory = Path(directory)
+        self.model = model
+        self.step = step
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    @classmethod
+    def from_path(class_, path, device=torch.device('cpu')):
+        """ Load a checkpoint from path.
+
+        Args:
+            path (Path or str or None): Path to a checkpoint to load.
+            device (torch.device, optional): Device to load checkpoint onto.
+
+        Returns:
+            checkpoint (Checkpoint or None): Loaded checkpoint or None.
+        """
+        if path is None:
+            return None
+
+        instance = torch_load(str(path), device=device)
+        instance.model.apply(
+            lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
+        setattr(instance, 'path', path)
+        logger.info('Loaded checkpoint at step %d from %s with model:\n%s', instance.step,
+                    instance.path, instance.model)
+        return instance
+
+    @classmethod
+    def most_recent(class_, pattern, **kwargs):
+        """ Load the most recent checkpoint from ``root``.
+
+        Args:
+            pattern (str): Pattern to glob recursively for checkpoints.
+            **kwargs (dict, optional): Any additional parameters to pass to ``class.from_path``
+
+        Returns:
+            (Checkpoint or None): The most recent checkpoint found or None if none is found.
+        """
+        checkpoints = list(glob.iglob(str(pattern), recursive=True))
+        if len(checkpoints) == 0:
+            logger.warning('No checkpoints found in %s' % pattern)
+            return None
+
+        checkpoints = sorted(list(checkpoints), key=os.path.getctime, reverse=True)
+        for path in checkpoints:
+            try:
+                return class_.from_path(path, **kwargs)
+            except (EOFError, RuntimeError):
+                logger.warning('Failed to load checkpoint %s' % path)
+                pass
+
         return None
 
-    checkpoint = torch_load(str(checkpoint_path), device=device)
-    if 'model' in checkpoint:
-        checkpoint['model'].apply(
-            lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
-    return checkpoint
+    def save(self):
+        """ Save a checkpoint. """
+        name = 'step_{}.pt'.format(self.step)
+        filename = Path(self.directory) / name
+        self.path = filename
+        torch_save(filename, self)
+        return self.path
 
 
-def save_checkpoint(directory, model=None, step=None, filename=None, **kwargs):
-    """ Save a checkpoint.
-
-    Args:
-        directory (str): Directory where to save the checkpoint.
-        model (torch.nn.Module, optional): Model to train and evaluate.
-        step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
-        filename (str, optional): Non-default filename to save the checkpoint too.
-        **kwargs (dict, optional): Anything else to save in the dictionary.
-
-    Returns:
-        filename (Path): Path of the saved checkpoint.
-    """
-    if filename is None:
-        name = 'step_%d.pt' % (step,) if step is not None else 'checkpoint.pt'
-        filename = Path(directory) / name
-
-    to_save = {'model': model, 'step': step}
-    to_save.update(kwargs)
-    torch_save(filename, to_save)
-
-    return filename
-
-
-def load_most_recent_checkpoint(pattern, load_checkpoint=load_checkpoint):
-    """ Load the most recent checkpoint from ``root``.
+class RandomSampler(Sampler):
+    """ Samples elements randomly, without replacement.
 
     Args:
-        pattern (str): Pattern to glob recursively for checkpoints.
-        load_checkpoint (callable): Callable to load checkpoint.
-
-    Returns:
-        (any): Return value of ``load_checkpoint`` callable or None.
-        (str): Path of loaded checkpoint or None.
+        data (list): Data to sample from.
+        random (random.Random, optional): Random number generator to sample data.
     """
-    checkpoints = list(glob.iglob(pattern, recursive=True))
-    if len(checkpoints) == 0:
-        # NOTE: Using print because this runs before logger is setup typically
-        print('No checkpoints found in %s' % pattern)
-        return None, None
 
-    checkpoints = sorted(list(checkpoints), key=os.path.getctime, reverse=True)
-    for checkpoint in checkpoints:
-        try:
-            return load_checkpoint(checkpoint), checkpoint
-        except (EOFError, RuntimeError):
-            print('Failed to load checkpoint %s' % checkpoint)
-            pass
+    def __init__(self, data, random=random):
+        self.data = data
+        self.random = random
+
+    def __iter__(self):
+        indicies = list(range(len(self.data)))
+        self.random.shuffle(indicies)
+        return iter(indicies)
+
+    def __len__(self):
+        return len(self.data)

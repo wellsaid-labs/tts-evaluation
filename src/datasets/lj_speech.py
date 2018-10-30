@@ -1,3 +1,4 @@
+from functools import partial
 from pathlib import Path
 
 import csv
@@ -5,13 +6,87 @@ import re
 import unidecode
 
 from num2words import num2words
+from torchnlp.datasets import Dataset
 from torchnlp.download import download_file_maybe_extract
 
 import pandas
 
-from src.datasets._process import process_all
-from src.datasets._process import process_audio
-from src.utils.configurable import configurable
+from src.datasets.constants import Speaker
+from src.datasets.process import compute_spectrogram
+from src.datasets.process import normalize_audio
+from src.datasets.process import process_with_processes
+from src.datasets.process import split_dataset
+from src.utils import Checkpoint
+from src.hparams import configurable
+
+
+def _processing_func(row,
+                     directory,
+                     extracted_name,
+                     spectrogram_model_checkpoint_path,
+                     kwargs,
+                     metadata_audio_column=0,
+                     metadata_audio_path_template='wavs/{}.wav',
+                     metadata_text_column=1,
+                     verbalize=True):  # pragma: no cover
+    """
+    Note:
+        - ``# pragma: no cover`` is used because this functionality is run with multiprocessing
+          that is not compatible with the coverage module.
+
+    Args:
+        directory (str or Path, optional): Directory to cache the dataset.
+        extracted_name (str, optional): Name of the extracted dataset directory.
+        spectrogram_model_checkpoint_path (str or None, optional): Spectrogram model to predict a
+            ground truth aligned spectrogram.
+        kwargs: Arguments passed to ``normalize_audio`` to preprocess the dataset audio.
+        metadata_audio_column (int, optional): Column name or index with the audio filename.
+        metadata_audio_path_template (str, optional): Given the audio column, this template
+            determines the filename.
+        metadata_text_column (int, optional): Column name or index with the audio transcript.
+        verbalize (bool, optional): Verbalize the text.
+
+    Returns:
+        {
+            text (str)
+            audio_path (Path)
+            spectrogram_path (Path)
+            predicted_spectrogram_path (Path)
+            speaker (src.datasets.Speaker)
+        }
+    """
+    spectrogram_model_checkpoint = Checkpoint.from_path(spectrogram_model_checkpoint_path)
+    text = row[metadata_text_column].strip()
+    audio_path = Path(directory, extracted_name,
+                      metadata_audio_path_template.format(row[metadata_audio_column]))
+    text = _normalize_whitespace(text)
+    text = _normalize_quotations(text)
+
+    if verbalize:
+        text = _verbalize_special_cases(audio_path, text)
+        text = _expand_abbreviations(text)
+        text = _verbalize_time_of_day(text)
+        text = _verbalize_ordinals(text)
+        text = _verbalize_currency(text)
+        text = _verbalize_serial_numbers(text)
+        text = _verbalize_year(text)
+        text = _verbalize_numeral(text)
+        text = _verbalize_number(text)
+        text = _verbalize_roman_number(text)
+
+    # NOTE: Messes up pound sign (£); therefore, this is after ``_verbalize_currency``
+    text = _remove_accents(text)
+    audio_path = normalize_audio(audio_path, **kwargs)
+    audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
+        audio_path, text, spectrogram_model_checkpoint)
+
+    return {
+        'text': text,
+        'audio_path': audio_path,
+        'spectrogram_path': spectrogram_path,
+        'predicted_spectrogram_path': predicted_spectrogram_path,
+        'speaker': Speaker.LINDA_JOHNSON
+    }
 
 
 @configurable
@@ -19,19 +94,14 @@ def lj_speech_dataset(directory='data/',
                       extracted_name='LJSpeech-1.1',
                       url='http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
                       check_files=['LJSpeech-1.1/metadata.csv'],
-                      metadata_file='metadata.csv',
-                      quoting=csv.QUOTE_NONE,
-                      delimiter='|',
-                      header=None,
-                      audio_column=0,
-                      audio_filename_template='wavs/{}.wav',
-                      text_column=1,
-                      verbalize=True,
-                      random_seed=123,
+                      metadata_filename='metadata.csv',
+                      metadata_quoting=csv.QUOTE_NONE,
+                      metadata_delimiter='|',
+                      metadata_header=None,
                       splits=(.8, .2),
+                      spectrogram_model_checkpoint_path=None,
                       **kwargs):
-    """
-    Load the Linda Johnson (LJ) Speech dataset.
+    """ Load the Linda Johnson (LJ) Speech dataset.
 
     This is a public domain speech dataset consisting of 13,100 short audio clips of a single
     speaker reading passages from 7 non-fiction books. A transcription is provided for each clip.
@@ -55,68 +125,61 @@ def lj_speech_dataset(directory='data/',
         extracted_name (str, optional): Name of the extracted dataset directory.
         url (str, optional): URL of the dataset `tar.gz` file.
         check_files (list of str, optional): Check this file exists if the download was successful.
-        metadata_file (str, optional): The file containing audio metadata.
-        quoting (int, optional): Control field quoting behavior per csv.QUOTE_* constants for the
-            metadata file.
-        delimiter (str, optional): Delimiter for the metadata file.
-        header (bool, optional): If True, ``metadata_file`` has a header to parse.
-        audio_column (int, optional): Column name or index with the audio filename.
-        audio_filename_template (str, optional): Given the audio column, this template determines
-            the filename.
-        text_column (int, optional): Column name or index with the audio transcript.
-        verbalize (bool, optional): Verbalize the text.
-        random_seed (int, optional): Random seed used to determine the splits.
+        metadata_filename (str, optional): The file containing audio metadata.
+        metadata_quoting (int, optional): Control field quoting behavior per csv.QUOTE_* constants
+            for the metadata file.
+        metadata_delimiter (str, optional): Delimiter for the metadata file.
+        metadata_header (bool, optional): If True, ``metadata_file`` has a header to parse.
         splits (tuple, optional): The number of splits and cardinality of dataset splits.
-        **kwargs: Arguments passed to process dataset audio.
+        spectrogram_model_checkpoint_path (str or None, optional): Spectrogram model to predict a
+            ground truth aligned spectrogram.
+        **kwargs: Arguments passed to ``normalize_audio`` to preprocess the dataset audio.
 
     Returns:
         :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
 
     Example:
         >>> import pprint # doctest: +SKIP
+        >>> from src.hparams import set_hparams # doctest: +SKIP
         >>> from src.datasets import lj_speech_dataset # doctest: +SKIP
+        >>> set_hparams() # doctest: +SKIP
         >>> train, dev = lj_speech_dataset() # doctest: +SKIP
         >>> pprint.pprint(train[0:2], width=80) # doctest: +SKIP
-        [{'text': 'Once a warrant-holder sent down a clerk to view certain goods, and '
-          'the clerk found that these goods had already a "stop" upon them, or '
-          'were pledged.',
-          'audio_filename': PosixPath('data/LJSpeech-1.1/wavs/'
-                                    'LJ014-0331-rate=24000-norm=-.001-guard.wav')},
-        {'text': "Lord Ferrers' body was brought to Surgeons' Hall after execution in "
-                  'his own carriage and six;',
-          'audio_filename': PosixPath('data/LJSpeech-1.1/wavs/'
-                                    'LJ009-0184-rate=24000-norm=-.001-guard.wav')}]
+        [{'audio_path': PosixPath('data/LJSpeech-1.1/wavs/pad(rate(guard(norm('
+                                  'LJ014-0331,-.001)),24000)).npy'),
+          'predicted_spectrogram_path': None,
+          'speaker': <src.datasets.constants.Speaker object at 0x1052da7b8>,
+          'spectrogram_path': PosixPath('data/LJSpeech-1.1/wavs/spectrogram(rate(guard(norm('
+                                        'LJ014-0331,-.001)),24000)).npy'),
+          'text': 'Once a warrant-holder sent down a clerk to view certain goods, and '
+                  'the clerk found that these goods had already a "stop" upon them, or '
+                  'were pledged.'},
+        {'audio_path': PosixPath('data/LJSpeech-1.1/wavs/pad(rate(guard(norm('
+                                 'LJ009-0184,-.001)),24000)).npy'),
+          'predicted_spectrogram_path': None,
+          'speaker': <src.datasets.constants.Speaker object at 0x105054e10>,
+          'spectrogram_path': PosixPath('data/LJSpeech-1.1/wavs/spectrogram(rate(guard(norm('
+                                        'LJ009-0184,-.001)),24000)).npy'),
+          'text': "Lord Ferrers' body was brought to Surgeons' Hall after execution in "
+                  'his own carriage and six;'}]
     """
     download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
-    metadata_path = Path(directory, extracted_name, metadata_file)
-
-    def extract_fun(row):
-        text = row[text_column].strip()
-        audio_filename = Path(directory, extracted_name,
-                              audio_filename_template.format(row[audio_column]))
-        text = _normalize_whitespace(text)
-        text = _normalize_quotations(text)
-
-        if verbalize:
-            text = _verbalize_special_cases(audio_filename, text)
-            text = _expand_abbreviations(text)
-            text = _verbalize_time_of_day(text)
-            text = _verbalize_ordinals(text)
-            text = _verbalize_currency(text)
-            text = _verbalize_serial_numbers(text)
-            text = _verbalize_year(text)
-            text = _verbalize_numeral(text)
-            text = _verbalize_number(text)
-            text = _verbalize_roman_number(text)
-
-        # Messes up pound sign (£); therefore, this is after _verbalize_currency
-        text = _remove_accents(text)
-        processed_audio_filename = process_audio(audio_filename, **kwargs)
-        return {'text': text, 'audio_filename': processed_audio_filename}
-
-    data_frame = pandas.read_csv(
-        metadata_path, delimiter=delimiter, header=header, quoting=quoting).itertuples(index=False)
-    return process_all(extract_fun, data_frame, splits, random_seed)
+    metadata_path = Path(directory, extracted_name, metadata_filename)
+    data = [row.to_dict() for _, row in pandas.read_csv(
+        metadata_path,
+        delimiter=metadata_delimiter,
+        header=metadata_header,
+        quoting=metadata_quoting).iterrows()]
+    data = process_with_processes(
+        data,
+        partial(
+            _processing_func,
+            directory=directory,
+            extracted_name=extracted_name,
+            spectrogram_model_checkpoint_path=spectrogram_model_checkpoint_path,
+            kwargs=kwargs))
+    splits = split_dataset(data, splits=splits)
+    return tuple(Dataset(split) for split in splits)
 
 
 '''

@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from torchnlp.text_encoders import PADDING_INDEX
 
-from src.utils.configurable import configurable
+from src.hparams import configurable
 
 
 class Encoder(nn.Module):

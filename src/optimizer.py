@@ -3,12 +3,13 @@ from bisect import bisect_left
 from math import floor
 
 import itertools
+import math
 
-import torch
-import numpy as np
 import logging
+import numpy as np
+import torch
 
-from src.utils.configurable import configurable
+from src.hparams import configurable
 
 logger = logging.getLogger(__name__)
 
@@ -59,14 +60,15 @@ class Optimizer(object):
         self.state_dict = self.optimizer.state_dict
         self.load_state_dict = self.optimizer.load_state_dict
 
-    def step(self, tensorboard=None, max_grad_norm=None, eps=10**-3):
+    def step(self, tensorboard=None, max_grad_norm=None, rel_tol=10**-3):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
 
         Args:
             tensorboard (tensorboardX.SummaryWriter, optional): Tensorboard for logging infinite
                 gradient.
             max_grad_norm (float, optional): Clip gradient norm to this maximum.
-            eps (float, optional): Parameter used to sanity check ``parameter_norm`` equality.
+            rel_tol (float, optional): ``math.isclose`` parameter used to sanity check
+                ``parameter_norm`` equality.
 
         Returns:
             parameter_norm (float): Total norm of the parameters.
@@ -83,8 +85,7 @@ class Optimizer(object):
             other_parameter_norm = torch.nn.utils.clip_grad_norm_(params, max_norm=max_grad_norm)
 
             # Both callables should compute the same value
-            # TODO: Make this a relative check
-            assert abs(parameter_norm - other_parameter_norm) < eps
+            assert math.isclose(parameter_norm, other_parameter_norm, rel_tol=rel_tol)
 
         # Take a step if norm is finite (e.g. no ``inf`` or ``nan`` values in the gradient)
         if np.isfinite(parameter_norm):

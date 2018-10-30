@@ -1,6 +1,6 @@
 import torch
 
-from src.feature_model.encoder import Encoder
+from src.spectrogram_model.encoder import Encoder
 
 encoder_params = {
     'batch_size': 4,

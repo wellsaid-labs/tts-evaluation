@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from src.signal_model.upsample import ConditionalFeaturesUpsample
 from src.signal_model.stripped_gru import StrippedGRU
-from src.utils.configurable import configurable
+from src.hparams import configurable
 from src.utils import split_signal
 
 
@@ -200,8 +200,9 @@ class WaveRNN(nn.Module):
             * https://cs.stackexchange.com/questions/79241/what-is-temperature-in-lstm-and-neural-networks-generally
 
         Args:
-            local_features (torch.FloatTensor [batch_size, local_length, local_features_size]):
-                Local feature to condition signal generation (e.g. spectrogram).
+            local_features (torch.FloatTensor [batch_size, local_length, local_features_size] or
+                [local_length, local_features_size]): Local feature to condition signal generation
+                (e.g. spectrogram).
             argmax (bool, optional): If ``True``, during inference sample the most likely sample.
             temperature (float, optional): Temperature to control the variance in softmax
                 predictions.
@@ -211,14 +212,19 @@ class WaveRNN(nn.Module):
                 spectrogram has no context on the ends.
 
         Returns:
-            out_coarse (torch.LongTensor [batch_size, signal_length]): Predicted
+            out_coarse (torch.LongTensor [batch_size, signal_length] or [signal_length]): Predicted
                 categorical distribution over ``bins`` categories for the ``coarse`` random
                 variable.
-            out_fine (torch.LongTensor [batch_size, signal_length]): Predicted
+            out_fine (torch.LongTensor [batch_size, signal_length] or [signal_length]): Predicted
                 categorical distribution over ``bins`` categories for the ``fine`` random
                 variable.
             hidden_state (tuple): Hidden state with RNN hidden state and last coarse/fine samples.
         """
+        is_unbatched = len(local_features.shape) == 2
+        if is_unbatched:
+            # [local_length, local_features_size]  → [batch_size, local_length, local_features_size]
+            local_features = local_features.unsqueeze(0)
+
         # [batch_size, local_length, local_features_size] →
         # [batch_size, self.size * 3, signal_length]
         conditional = self.conditional_features_upsample(local_features, pad=pad)
@@ -300,10 +306,18 @@ class WaveRNN(nn.Module):
         out_coarse = torch.stack(out_coarse, dim=1)
         out_fine = torch.stack(out_fine, dim=1)
         hidden_state = (coarse, fine, coarse_last_hidden, fine_last_hidden)
+
+        if is_unbatched:
+            # NOTE: Hidden state remains batched.
+            return out_coarse.squeeze(0), out_fine.squeeze(0), hidden_state
+
         return out_coarse, out_fine, hidden_state
 
     def forward(self, local_features, input_signal, target_coarse, hidden_state=None, pad=False):
         """
+        Note:
+            - Forward does not support unbatched mode, yet unlike other model
+
         Args:
             local_features (torch.FloatTensor [batch_size, local_length, local_features_size]):
                 Local feature to condition signal generation (e.g. spectrogram).

@@ -1,7 +1,7 @@
 import torch
 import pytest
 
-from src.feature_model.attention import LocationSensitiveAttention
+from src.spectrogram_model.attention import LocationSensitiveAttention
 
 
 def test_location_sensative_attention():

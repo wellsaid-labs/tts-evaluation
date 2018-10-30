@@ -1,16 +1,7 @@
-from pathlib import Path
-
-import argparse
 import collections
 import logging
 import random
 import time
-import warnings
-
-# LEARN MORE:
-# https://stackoverflow.com/questions/40845304/runtimewarning-numpy-dtype-size-changed-may-indicate-binary-incompatibility
-warnings.filterwarnings('ignore', message='numpy.dtype size changed')
-warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
 
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
@@ -18,28 +9,19 @@ from tqdm import tqdm
 
 import torch
 
-from src.bin.train.signal_model._data_iterator import DataIterator
-from src.bin.train.signal_model._utils import load_data
-from src.bin.train.signal_model._utils import set_hparams
+from src.bin.train.signal_model.data_iterator import DataBatchIterator
+from src.hparams import configurable
 from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
 from src.signal_model import WaveRNN
 from src.utils import AnomalyDetector
 from src.utils import combine_signal
 from src.utils import get_total_parameters
-from src.utils import load_checkpoint
-from src.utils import load_most_recent_checkpoint
-from src.utils import parse_hparam_args
-from src.utils import save_checkpoint
-from src.utils.configurable import add_config
-from src.utils.configurable import configurable
-from src.utils.configurable import log_config
-from src.utils.experiment_context_manager import ExperimentContextManager
 
 logger = logging.getLogger(__name__)
 
 
-class Trainer():  # pragma: no cover
+class Trainer():
     """ Trainer that manages Tacotron training (i.e. running epochs, tensorboard, logging).
 
     Args:
@@ -170,7 +152,7 @@ class Trainer():  # pragma: no cover
         total_coarse_loss, total_fine_loss, total_signal_predictions = 0.0, 0.0, 0
 
         # Setup iterator and metrics
-        data_iterator = DataIterator(
+        data_iterator = DataBatchIterator(
             self.device,
             self.train_dataset if train else self.dev_dataset,
             self.train_batch_size if train else self.dev_batch_size,
@@ -217,43 +199,44 @@ class Trainer():  # pragma: no cover
         if train:
             self._maybe_rollback(epoch_coarse_loss)
 
-    def _sample_inference(self, batch, max_infer_frames=200):
+    def _sample_infered(self, batch, max_infer_frames=200):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.train.signal_model._utils.DataIterator``.
+            batch (dict): ``dict`` from ``src.bin.train.signal_model.utils.DataIterator``.
             max_infer_frames (int, optioanl): Maximum number of frames to consider for memory's
                 sake.
 
         Returns: None
         """
-        batch_size = len(batch['log_mel_spectrogram'])
+        batch_size = len(batch['spectrogram'])
         item = self.random.randint(0, batch_size - 1)
 
-        log_mel_spectrogram = batch['log_mel_spectrogram'][item][:max_infer_frames]
-        self.tensorboard.add_log_mel_spectrogram('full/spectrogram', log_mel_spectrogram)
+        spectrogram = batch['spectrogram'][item][:max_infer_frames]
+        self.tensorboard.add_spectrogram('full/spectrogram', spectrogram)
 
-        scale = int(batch['signal'][item].shape[0] / batch['log_mel_spectrogram'][item].shape[0])
+        scale = int(batch['signal'][item].shape[0] / batch['spectrogram'][item].shape[0])
         target_signal = batch['signal'][item][:max_infer_frames * scale]
         self.tensorboard.add_audio('full/gold', 'full/gold_waveform', target_signal)
 
-        torch.set_grad_enabled(False)
-        self.model.train(mode=False)
-        # NOTE: Inference is faster on CPU because of the many small operations being run
-        self.model.to(torch.device('cpu'))
+        with torch.no_grad():
+            self.model.train(mode=False)
+            # NOTE: Inference is faster on CPU because of the many small operations being run
+            self.model.to(torch.device('cpu'))
 
-        logger.info('Running inference on %d spectrogram frames...', log_mel_spectrogram.shape[0])
-        predicted_coarse, predicted_fine, _ = self.model.infer(log_mel_spectrogram.unsqueeze(0))
-        predicted_signal = combine_signal(predicted_coarse.squeeze(0), predicted_fine.squeeze(0))
-        self.tensorboard.add_audio('full/prediction', 'full/prediction_waveform', predicted_signal)
+            logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[0])
+            predicted_coarse, predicted_fine, _ = self.model.infer(spectrogram)
+            predicted_signal = combine_signal(predicted_coarse, predicted_fine)
+            self.tensorboard.add_audio('full/prediction', 'full/prediction_waveform',
+                                       predicted_signal)
 
-        self.model.to(self.device)
+            self.model.to(self.device)
 
     def _sample_predicted(self, batch, predicted_coarse, predicted_fine):
         """ Samples examples from a batch and outputs them to tensorboard.
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.train.signal_model._utils.DataIterator``.
+            batch (dict): ``dict`` from ``src.bin.train.signal_model.utils.DataIterator``.
             predicted_coarse (torch.FloatTensor [batch_size, signal_length, bins])
             predicted_fine (torch.FloatTensor [batch_size, signal_length, bins])
 
@@ -272,7 +255,7 @@ class Trainer():  # pragma: no cover
         self.tensorboard.add_audio('slice/prediction_aligned', 'slice/prediction_aligned_waveform',
                                    predicted_signal)
 
-        # gold_signal [batch_size, signal_length] → [signal_length]
+        # target_signal_* [batch_size, signal_length] → [signal_length]
         target_signal_coarse = batch['slice']['target_signal_coarse'][item, :length]
         target_signal_fine = batch['slice']['target_signal_fine'][item, :length]
         target_signal = combine_signal(target_signal_coarse, target_signal_fine)
@@ -282,7 +265,7 @@ class Trainer():  # pragma: no cover
         """ Compute the loss.
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.train.signal_model._utils.DataIterator``.
+            batch (dict): ``dict`` from ``src.bin.train.signal_model.utils.DataIterator``.
             predicted_coarse (torch.LongTensor [batch_size, signal_length, bins]): Predicted
                 categorical distribution over ``bins`` categories for the ``coarse`` random
                 variable.
@@ -303,11 +286,11 @@ class Trainer():  # pragma: no cover
         predicted_coarse = predicted_coarse.transpose(1, 2)
 
         # coarse_loss [batch_size, signal_length]
-        coarse_loss = self.criterion(predicted_coarse, slice_['target_signal_coarse'].long())
+        coarse_loss = self.criterion(predicted_coarse, slice_['target_signal_coarse'])
         coarse_loss = torch.sum(coarse_loss * slice_['signal_mask']) / num_predictions
 
         # fine_loss [batch_size, signal_length]
-        fine_loss = self.criterion(predicted_fine, slice_['target_signal_fine'].long())
+        fine_loss = self.criterion(predicted_fine, slice_['target_signal_fine'])
         fine_loss = torch.sum(fine_loss * slice_['signal_mask']) / num_predictions
 
         return coarse_loss, fine_loss, num_predictions
@@ -316,7 +299,7 @@ class Trainer():  # pragma: no cover
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
         Args:
-            batch (dict): ``dict`` from ``src.bin.train.signal_model._utils.DataIterator``.
+            batch (dict): ``dict`` from ``src.bin.train.signal_model.utils.DataIterator``.
             train (bool, optional): If ``True``, takes a optimization step.
             sample (bool, optional): If ``True``, draw sample from step.
             epoch_start_time (float, optional): Epoch start time in deciseconds.
@@ -331,7 +314,7 @@ class Trainer():  # pragma: no cover
 
         predicted_coarse, predicted_fine, _ = torch.nn.parallel.data_parallel(
             module=self.model,
-            inputs=batch['slice']['log_mel_spectrogram'],
+            inputs=batch['slice']['spectrogram'],
             module_kwargs={
                 'input_signal': batch['slice']['input_signal'],
                 'target_coarse': batch['slice']['target_signal_coarse'].unsqueeze(2)
@@ -366,107 +349,6 @@ class Trainer():  # pragma: no cover
         if sample:
             with self.tensorboard.set_step(step):
                 self._sample_predicted(batch, predicted_coarse, predicted_fine)
-                self._sample_inference(batch)
+                self._sample_infered(batch)
 
         return coarse_loss, fine_loss, num_predictions
-
-
-def main(checkpoint_path=None,
-         epochs=10000,
-         reset_optimizer=False,
-         hparams={},
-         evaluate_every_n_epochs=15,
-         min_time=60 * 15,
-         name=None,
-         label='signal_model',
-         experiments_root='experiments/'):  # pragma: no cover
-    """ Main module that trains a the signal model saving checkpoints incrementally.
-
-    Args:
-        checkpoint_path (str, optional): Accepts a checkpoint path to load or empty string
-            signaling to load the most recent checkpoint in ``experiments_root``.
-        epochs (int, optional): Number of epochs to run for.
-        reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer.
-        hparams (dict, optional): Hparams to override default hparams.
-        evaluate_every_n_epochs (int, optional): Evaluate every ``evaluate_every_n_epochs`` epochs.
-        min_time (int, optional): If an experiment is less than ``min_time`` in seconds, then it's
-            files are deleted.
-        name (str, optional): Experiment name.
-        label (str, optional): Label applied to a experiments from this executable.
-        experiments_root (str, optional): Top level directory for all experiments.
-    """
-    if checkpoint_path == '':
-        checkpoints = str(Path(experiments_root) / label / '**/*.pt')
-        checkpoint, checkpoint_path = load_most_recent_checkpoint(checkpoints)
-    else:
-        checkpoint = load_checkpoint(checkpoint_path)
-
-    directory = None if checkpoint is None else checkpoint['experiment_directory']
-    step = 0 if checkpoint is None else checkpoint['step']
-
-    with ExperimentContextManager(
-            label=label, min_time=min_time, name=name, directory=directory, step=step) as context:
-
-        if checkpoint_path is not None:
-            logger.info('Loaded checkpoint %s', checkpoint_path)
-
-        set_hparams()
-        add_config(hparams)
-        log_config()
-        train, dev = load_data()
-
-        # Set up trainer.
-        trainer_kwargs = {}
-        if checkpoint is not None:
-            del checkpoint['experiment_directory']  # Not useful for kwargs
-            if reset_optimizer:
-                logger.info('Deleting checkpoint optimizer.')
-                del checkpoint['optimizer']
-            trainer_kwargs.update(checkpoint)
-
-        trainer = Trainer(context.device, train, dev, context.train_tensorboard,
-                          context.dev_tensorboard, **trainer_kwargs)
-
-        # Training Loop
-        for _ in range(epochs):
-            is_trial_run = trainer.epoch == 0 or (checkpoint is not None and
-                                                  trainer.epoch == checkpoint['epoch'])
-            trainer.run_epoch(train=True, trial_run=is_trial_run)
-            if trainer.epoch % evaluate_every_n_epochs == 0:
-                save_checkpoint(
-                    context.checkpoints_directory,
-                    model=trainer.model,
-                    optimizer=trainer.optimizer,
-                    epoch=trainer.epoch,
-                    step=trainer.step,
-                    experiment_directory=context.directory,
-                    anomaly_detector=trainer.anomaly_detector)
-                trainer.run_epoch(train=False, trial_run=is_trial_run)
-            trainer.epoch += 1
-
-            print('–' * 100)
-
-
-if __name__ == '__main__':  # pragma: no cover
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '-c',
-        '--checkpoint',
-        const='',
-        type=str,
-        default=None,
-        action='store',
-        nargs='?',
-        help='Without a value, loads the most recent checkpoint;'
-        'otherwise, expects a checkpoint file path.')
-    parser.add_argument(
-        '-n', '--name', type=str, default='auto_max_grad_norm', help='Experiment name.')
-    parser.add_argument(
-        '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
-    args, unknown_args = parser.parse_known_args()
-    hparams = parse_hparam_args(unknown_args)
-    main(
-        name=args.name,
-        checkpoint_path=args.checkpoint,
-        reset_optimizer=args.reset_optimizer,
-        hparams=hparams)

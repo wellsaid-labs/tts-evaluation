@@ -1,19 +1,19 @@
 from torch import nn
 
-import torch
-import librosa
 import IPython
+import librosa
+import torch
 
 from src import datasets
+from src.hparams import add_config
+from src.hparams import configurable
 from src.utils import AnomalyDetector
-from src.utils.configurable import add_config
-from src.utils.configurable import configurable
 
 
 def _set_anomaly_detection():
     add_config({
-        'src.bin.train.signal_model.__main__.Trainer.__init__.min_rollback': 1,
-        'src.utils.utils.AnomalyDetector.__init__': {
+        'src.bin.train.signal_model.trainer.Trainer.__init__.min_rollback': 1,
+        'src.utils.AnomalyDetector.__init__': {
             # NOTE: Determined empirically with the notebook:
             # ``notebooks/Detecting Anomalies.ipynb``
             'sigma': 6,
@@ -79,7 +79,7 @@ def _set_audio_processing():
             # NOTE: Guard to reduce clipping during resampling
             'guard': True,
         },
-        'src.datasets.hillary.hillary_dataset.resample': sample_rate,
+        'src.datasets.hilary.hilary_dataset.resample': sample_rate,
         'src.datasets.m_ailabs.m_ailabs_speech_dataset.resample': sample_rate,
         'src.audio': {
             # SOURCE (Wavenet):
@@ -120,55 +120,19 @@ def _set_audio_processing():
                 **hertz_bounds
             }
         },
-        'src.utils.visualize': {
+        'src.visualize': {
             'Tensorboard.add_audio.sample_rate': sample_rate,
             'plot_waveform.sample_rate': sample_rate,
-            'plot_log_mel_spectrogram': {
+            'plot_spectrogram': {
                 'sample_rate': sample_rate,
                 'frame_hop': frame_hop,
+                'y_axis': 'mel',
                 **hertz_bounds
             },
         }
     })
 
     return frame_channels, frame_hop
-
-
-def _set_io():
-    """ Set IO hyperparameters. """
-    signal_model_data_directory = 'data/.signal_dataset/'
-    feature_model_data_directory = 'data/.feature_dataset/'
-    train_directory = 'train'
-    dev_directory = 'dev'
-
-    add_config({
-        'src.bin.train': {
-            'feature_model': {
-                'preprocess.main': {
-                    'dataset': datasets.lj_speech_dataset,
-                    'destination': feature_model_data_directory,
-                    'destination_train': train_directory,
-                    'destination_dev': dev_directory,
-                },
-                '_utils.load_data': {
-                    'source': feature_model_data_directory,
-                    'source_train': train_directory,
-                    'source_dev': dev_directory,
-                },
-                'generate.main': {
-                    'destination': feature_model_data_directory,
-                    'destination_train': train_directory,
-                    'destination_dev': dev_directory,
-                }
-            },
-            'signal_model._utils.load_data': {
-                'predicted_source': signal_model_data_directory,
-                'real_source': feature_model_data_directory,
-                'source_train': train_directory,
-                'source_dev': dev_directory,
-            }
-        }
-    })
 
 
 def _set_model_size(frame_channels):
@@ -192,7 +156,7 @@ def _set_model_size(frame_channels):
 
     add_config({
         'src': {
-            'feature_model': {
+            'spectrogram_model': {
                 'encoder.Encoder.__init__': {
                     # SOURCE (Tacotron 2):
                     # Input characters are represented using a learned 512-dimensional character
@@ -311,7 +275,6 @@ def _set_model_size(frame_channels):
 def set_hparams():
     """ Using the ``configurable`` module set the hyperparameters for the source code.
     """
-    _set_io()
     frame_channels, frame_hop = _set_audio_processing()
     _set_anomaly_detection()
     bits = _set_model_size(frame_channels)
@@ -321,9 +284,7 @@ def set_hparams():
         nn.modules.batchnorm._BatchNorm.__init__)
     add_config({
         # NOTE: `momentum=0.01` to match Tensorflow defaults
-        'torch.nn.modules.batchnorm._BatchNorm.__init__': {
-            'momentum': 0.01,
-        },
+        'torch.nn.modules.batchnorm._BatchNorm.__init__.momentum': 0.01,
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
         'torch.optim.adam.Adam.__init__': {
@@ -339,27 +300,24 @@ def set_hparams():
     convolution_dropout = 0.5
     lstm_dropout = 0.1
 
+    dataset = datasets.lj_speech_dataset
+    spectrogram_path_key = 'predicted_spectrogram_path'
+
     # TODO: Add option to instead of strings to use direct references.
     add_config({
         'src': {
-            'feature_model': {
+            'spectrogram_model': {
                 'encoder.Encoder.__init__': {
                     'lstm_dropout': lstm_dropout,
                     'convolution_dropout': convolution_dropout,
                 },
-                'decoder.AutoregressiveDecoder.__init__': {
-                    'lstm_dropout': lstm_dropout,
-                },
-                'pre_net.PreNet.__init__': {
-                    # SOURCE (Tacotron 2):
-                    # In order to introduce output variation at inference time, dropout with
-                    # probability 0.5 is applied only to layers in the pre-net of the
-                    # autoregressive decoder.
-                    'dropout': 0.5,
-                },
-                'post_net.PostNet.__init__': {
-                    'convolution_dropout': convolution_dropout,
-                },
+                'decoder.AutoregressiveDecoder.__init__.lstm_dropout': lstm_dropout,
+                # SOURCE (Tacotron 2):
+                # In order to introduce output variation at inference time, dropout with
+                # probability 0.5 is applied only to layers in the pre-net of the
+                # autoregressive decoder.
+                'pre_net.PreNet.__init__.dropout': 0.5,
+                'post_net.PostNet.__init__.convolution_dropout': convolution_dropout,
             },
             'signal_model': {
                 'wave_rnn.WaveRNN': {
@@ -379,22 +337,52 @@ def set_hparams():
                     },
                 },
             },
-            'bin.train.signal_model': {
-                '_utils.load_data.predicted': True,
-                '_dataset.SignalDataset.__init__': {
-                    # SOURCE: Efficient Neural Audio Synthesis
-                    # The WaveRNN models are trained on sequences of 960 audio samples
-                    'frame_size': int(900 / frame_hop),
-                    'frame_pad': 5,
+            'bin.evaluate': {
+                'text_to_speech.main.dataset': dataset,
+                'signal_model.main': {
+                    'dataset': dataset,
+                    'spectrogram_path_key': spectrogram_path_key
                 }
             },
-            'utils.utils': {
+            'bin.train': {
+                'spectrogram_model': {
+                    '__main__._get_dataset.dataset': dataset,
+                    'trainer.Trainer.__init__': {
+                        # SOURCE: Tacotron 2
+                        # To train the feature prediction network, we apply the standard
+                        # maximum-likelihood training procedure (feeding in the correct output
+                        # instead of the predicted output on the decoder side, also referred to as
+                        # teacher-forcing) with a batch size of 64 on a single GPU.
+                        # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
+                        'train_batch_size': 56,
+                        'dev_batch_size': 256,
+                    },
+                },
+                'signal_model': {
+                    '__main__._get_dataset.dataset': dataset,
+                    'trainer.Trainer.__init__': {
+                        # SOURCE (Tacotron 2):
+                        # We train with a batch size of 128 distributed across 32 GPUs with
+                        # synchronous updates, using the Adam optimizer with β1 = 0.9, β2 = 0.999, 
+                        # eps = 10−8 and a fixed learning rate of 10−4
+                        # NOTE: Parameters set after experimentation on a 4 Px100 GPU.
+                        'train_batch_size': 64,
+                        'dev_batch_size': 256,
+                    },
+                    'data_iterator.DataLoader.__init__': {
+                        'spectrogram_path_key': spectrogram_path_key,
+                        # SOURCE: Efficient Neural Audio Synthesis
+                        # The WaveRNN models are trained on sequences of 960 audio samples
+                        'slice_size': int(900 / frame_hop),
+                        'slice_pad': 5,
+                    },
+                }
+            },
+            'utils': {
                 'split_signal.bits': bits,
                 'combine_signal.bits': bits,
             },
-            'optimizer.AutoOptimizer.__init__': {
-                # NOTE: Window size smoothing parameter is not super sensative.
-                'window_size': 128
-            }
+            # NOTE: Window size smoothing parameter is not super sensative.
+            'optimizer.AutoOptimizer.__init__.window_size': 128,
         }
     })

@@ -4,11 +4,11 @@ from tqdm import tqdm
 
 import torch
 
-from src.feature_model.decoder import AutoregressiveDecoder
-from src.feature_model.encoder import Encoder
-from src.feature_model.post_net import PostNet
+from src.spectrogram_model.decoder import AutoregressiveDecoder
+from src.spectrogram_model.encoder import Encoder
+from src.spectrogram_model.post_net import PostNet
 
-from src.utils.configurable import configurable
+from src.hparams import configurable
 
 
 class SpectrogramModel(nn.Module):
@@ -89,6 +89,7 @@ class SpectrogramModel(nn.Module):
 
         Args:
             stop_token (torch.FloatTensor [1, batch_size]): Probablity of stopping.
+            stop_threshold (float): The threshold probability for deciding to stop.
 
         Returns:
             (list) Indices that predicted stop.
@@ -131,11 +132,11 @@ class SpectrogramModel(nn.Module):
     def infer(self, tokens, max_recursion=2000, stop_threshold=0.5):
         """
         Args:
-            tokens (torch.LongTensor [num_tokens, batch_size]): Batched set of sequences.
-            ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
-                optional): During training, ground truth frames for teacher-forcing.
+            tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens]): Batched set of
+                sequences.
             max_recursion (int, optional): The maximum sequential predictions to make before
                 quitting; Used for testing and defensive design.
+            stop_threshold (float, optional): The threshold probability for deciding to stop.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels]) Predicted frames.
@@ -144,8 +145,14 @@ class SpectrogramModel(nn.Module):
             stop_token (torch.FloatTensor [num_frames, batch_size]): Probablity of stopping.
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention
                 alignments.
-            lengths (list of int): Lengths of predicted spectrograms.
+            lengths (list of int or None): Lengths of predicted spectrograms. None is returned
+                in a unbatched execution of the function.
         """
+        is_unbatched = len(tokens.shape) == 1
+        if is_unbatched:
+            # [num_tokens] → [num_tokens, batch_size(1)]
+            tokens = tokens.unsqueeze(1)
+
         # [num_tokens, batch_size]  → [batch_size, num_tokens]
         tokens = tokens.transpose(0, 1)
 
@@ -185,26 +192,42 @@ class SpectrogramModel(nn.Module):
         alignments = torch.stack(alignments, dim=0)
         frames = torch.stack(frames, dim=0)
         stop_tokens = torch.stack(stop_tokens, dim=0)
+        frames_with_residual = self._add_residual(frames)
 
-        return frames, self._add_residual(frames), stop_tokens, alignments, lengths
+        if is_unbatched:
+            return (frames.squeeze(1), frames_with_residual.squeeze(1), stop_tokens.squeeze(1),
+                    alignments.squeeze(1), None)
+
+        return frames, frames_with_residual, stop_tokens, alignments, lengths
 
     def forward(self, tokens, ground_truth_frames):
         """
         Args:
-            tokens (torch.LongTensor [num_tokens, batch_size]): Batched set of sequences.
-            ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): During
-                training, ground truth frames for teacher-forcing.
+            tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens]): Batched set of
+                sequences.
+            ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or
+                [num_frames, frame_channels]): During training, ground truth frames for
+                teacher-forcing.
             max_recursion (int, optional): The maximum sequential predictions to make before
                 quitting; Used for testing and defensive design.
 
         Returns:
-            frames (torch.FloatTensor [num_frames, batch_size, frame_channels]) Predicted frames.
-            frames_with_residual (torch.FloatTensor [num_frames, batch_size, frame_channels]):
-                Predicted frames with the post net residual added.
-            stop_token (torch.FloatTensor [num_frames, batch_size]): Probablity of stopping.
-            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention
-                alignments.
+            frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or [num_frames,
+                frame_channels]) Predicted frames.
+            frames_with_residual (torch.FloatTensor [num_frames, batch_size, frame_channels]
+                or [num_frames, frame_channels]): Predicted frames with the post net residual added.
+            stop_token (torch.FloatTensor [num_frames, batch_size] or [num_frames]): Probablity of
+                stopping.
+            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens] or [num_frames,
+                num_tokens]): Attention alignments.
         """
+        is_unbatched = len(tokens.shape) == 1 and len(ground_truth_frames.shape) == 2
+        if is_unbatched:
+            # [num_tokens] → [num_tokens, batch_size(1)]
+            tokens = tokens.unsqueeze(1)
+            # [num_frames, frame_channels] → [num_frames, batch_size(1), frame_channels]
+            ground_truth_frames = ground_truth_frames.unsqueeze(1)
+
         # [num_tokens, batch_size]  → [batch_size, num_tokens]
         tokens = tokens.transpose(0, 1)
 
@@ -215,4 +238,10 @@ class SpectrogramModel(nn.Module):
         frames, stop_tokens, hidden_state, alignments = self.decoder(
             encoded_tokens, tokens_mask, ground_truth_frames=ground_truth_frames)
 
-        return frames, self._add_residual(frames), stop_tokens, alignments
+        frames_with_residual = self._add_residual(frames)
+
+        if is_unbatched:
+            return (frames.squeeze(1), frames_with_residual.squeeze(1), stop_tokens.squeeze(1),
+                    alignments.squeeze(1))
+
+        return frames, frames_with_residual, stop_tokens, alignments

@@ -6,12 +6,12 @@ import numpy as np
 import shutil
 import torch
 
-from src.utils import plot_attention
-from src.utils import plot_log_mel_spectrogram
-from src.utils import plot_stop_token
-from src.utils import plot_waveform
-from src.utils import spectrogram_to_image
-from src.utils import Tensorboard
+from src.visualize import plot_attention
+from src.visualize import plot_spectrogram
+from src.visualize import plot_stop_token
+from src.visualize import plot_waveform
+from src.visualize import spectrogram_to_image
+from src.visualize import Tensorboard
 
 
 def test_tensorboard():
@@ -22,7 +22,7 @@ def test_tensorboard():
     tensorboard.add_scalar('scalar', 0, 0)
     tensorboard.add_stop_token('stop_token', torch.rand(6), 0)
     tensorboard.add_waveform('waveform', torch.rand(6), 0)
-    tensorboard.add_log_mel_spectrogram('log_mel_spectrogram', torch.rand(5, 6), 0)
+    tensorboard.add_spectrogram('log_mel_spectrogram', torch.rand(5, 6), 0)
     tensorboard.add_attention('attention', torch.rand(5, 6), 0)
     tensorboard.add_audio('audio', 'waveform', torch.rand(6), 0)
     with tensorboard.set_step(0):
@@ -34,9 +34,9 @@ def test_tensorboard():
     shutil.rmtree(str(directory))
 
 
-def test_plot_log_mel_spectrogram():
+def test_plot_spectrogram():
     arr = torch.rand(5, 6)
-    figure = plot_log_mel_spectrogram(arr)
+    figure = plot_spectrogram(arr)
     assert isinstance(figure, matplotlib.figure.Figure)
     pyplot.close(figure)
 

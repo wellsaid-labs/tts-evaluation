@@ -1,6 +1,6 @@
 from torch import nn
 
-from src.utils.configurable import configurable
+from src.hparams import configurable
 
 
 class AlwaysDropout(nn.Dropout):

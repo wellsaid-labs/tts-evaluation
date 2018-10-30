@@ -138,7 +138,7 @@ def _check_configuration(dict_):
 @lru_cache(maxsize=1)
 def _get_main_module_name():
     """ Get __main__ module name """
-    from src.utils.utils import ROOT_PATH  # Prevent circular dependecy
+    from src.utils import ROOT_PATH  # Prevent circular dependecy
 
     file_name = sys.argv[0]
 

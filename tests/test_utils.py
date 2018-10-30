@@ -11,22 +11,18 @@ import numpy as np
 import pytest
 import torch
 
-from src.feature_model import FeatureModel
+from src.spectrogram_model import SpectrogramModel
 from src.optimizer import Optimizer
 from src.utils import AnomalyDetector
 from src.utils import combine_signal
 from src.utils import get_total_parameters
-from src.utils import load_checkpoint
-from src.utils import load_most_recent_checkpoint
+from src.utils import Checkpoint
 from src.utils import parse_hparam_args
 from src.utils import ROOT_PATH
-from src.utils import save_checkpoint
-from src.utils import split_dataset
 from src.utils import split_signal
 from src.utils import get_weighted_standard_deviation
 from src.utils import chunks
 from src.utils import duplicate_stream
-from src.utils.experiment_context_manager import ExperimentContextManager
 
 stdout_log = Path('tests/_test_data/stdout.log')
 
@@ -69,8 +65,15 @@ def test_get_weighted_standard_deviation():
     tensor = torch.Tensor([[[0.33333, 0.33333, 0.33334], [0, 0.5, 0.5]], [[0, 0.5, 0.5],
                                                                           [0, 0.5, 0.5]]])
     standard_deviation = get_weighted_standard_deviation(tensor, dim=2)
-    assert standard_deviation[0][0].item() == pytest.approx(1.000, abs=1e-3)
-    assert standard_deviation[0][1].item() == pytest.approx(0.7071, abs=1e-3)
+    assert standard_deviation == pytest.approx(0.7803307175636292)
+
+
+def test_get_weighted_standard_deviation_masked():
+    tensor = torch.Tensor([[[0.33333, 0.33333, 0.33334], [0, 0.5, 0.5]], [[0, 0.5, 0.5],
+                                                                          [0, 0.5, 0.5]]])
+    mask = torch.Tensor([[1, 0], [0, 0]])
+    standard_deviation = get_weighted_standard_deviation(tensor, dim=2, mask=mask)
+    assert standard_deviation == pytest.approx(1.0, rel=1.0e-04)
 
 
 class MockModel(nn.Module):
@@ -129,24 +132,6 @@ def test_get_root_path():
     assert (ROOT_PATH / 'requirements.txt').is_file()
 
 
-def test_split_dataset():
-    dataset = [1, 2, 3, 4, 5]
-    splits = (.6, .2, .2)
-    assert split_dataset(dataset, splits, deterministic_shuffle=False) == [[1, 2, 3], [4], [5]]
-
-
-def test_split_dataset_shuffle():
-    dataset = [1, 2, 3, 4, 5]
-    splits = (.6, .2, .2)
-    assert split_dataset(dataset, splits) == [[4, 2, 5], [3], [1]]
-
-
-def test_split_dataset_rounding():
-    dataset = [1]
-    splits = (.33, .33, .34)
-    assert split_dataset(dataset, splits) == [[], [], [1]]
-
-
 def test_parse_hparam_args():
     hparam_args = ['--foo 0.01', '--bar WaveNet', '--moo=1']
     assert parse_hparam_args(hparam_args) == {'foo': 0.01, 'bar': 'WaveNet', 'moo': 1}
@@ -155,8 +140,8 @@ def test_parse_hparam_args():
 def test_split_signal():
     signal = torch.FloatTensor([1.0, -1.0, 0, 2**-7, 2**-8])
     coarse, fine = split_signal(signal, 16)
-    assert torch.equal(coarse, torch.FloatTensor([255, 0, 128, 129, 128]))
-    assert torch.equal(fine, torch.FloatTensor([255, 0, 0, 0, 2**7]))
+    assert torch.equal(coarse, torch.LongTensor([255, 0, 128, 129, 128]))
+    assert torch.equal(fine, torch.LongTensor([255, 0, 0, 0, 2**7]))
 
 
 def test_combine_signal():
@@ -175,27 +160,26 @@ def test_split_combine_signal():
 
 
 def test_load_most_recent_checkpoint():
-    checkpoint, path = load_most_recent_checkpoint('tests/_test_data/**/*.pt')
-    assert checkpoint == {}
-    assert 'tests/_test_data/checkpoint.pt' in path
+    checkpoint = Checkpoint.most_recent('tests/_test_data/**/*.pt')
+    assert isinstance(checkpoint, Checkpoint)
+    assert 'tests/_test_data/checkpoint.pt' in checkpoint.path
 
 
 def test_load_most_recent_checkpoint_none():
-    checkpoint, path = load_most_recent_checkpoint('tests/_test_data/**/*.abc')
+    checkpoint = Checkpoint.most_recent('tests/_test_data/**/*.abc')
     assert checkpoint is None
-    assert path is None
 
 
 def test_load_save_checkpoint():
-    with ExperimentContextManager(label='test_load_save_checkpoint') as context:
-        model = FeatureModel(10)
-        optimizer = Optimizer(
-            torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
-        filename = save_checkpoint(
-            context.checkpoints_directory, model=model, optimizer=optimizer, step=10)
-        assert filename.is_file()
+    model = SpectrogramModel(10)
+    optimizer = Optimizer(
+        torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
+    checkpoint = Checkpoint('tests/_test_data/', model=model, step=10, optimizer=optimizer)
+    filename = checkpoint.save()
+    assert filename.is_file()
 
-        # Smoke test
-        load_checkpoint(filename)
+    # Smoke test
+    Checkpoint.from_path(filename)
 
-        context.clean_up()
+    # Clean up
+    filename.unlink()

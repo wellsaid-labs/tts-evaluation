@@ -1,12 +1,15 @@
 from pathlib import Path
 
-import mock
+from unittest import mock
 import re
 import shutil
 import pytest
 
 from src.datasets import lj_speech_dataset
+from src.utils import Checkpoint
+
 from tests.datasets.utils import urlretrieve_side_effect
+from tests.datasets.utils import compute_spectrogram_side_effect
 
 lj_directory = Path('tests/_test_data/')
 
@@ -48,15 +51,18 @@ def cleanup():
     shutil.rmtree(str(cleanup_dir))
 
 
+@mock.patch("src.utils.Checkpoint.from_path")
+@mock.patch("src.datasets.lj_speech.compute_spectrogram")
 @mock.patch("urllib.request.urlretrieve")
 @pytest.mark.usefixtures("cleanup")
-def test_lj_speech_dataset(mock_urlretrieve):
+def test_lj_speech_dataset(mock_urlretrieve, mock_compute_spectrogram, mock_from_path):
     mock_urlretrieve.side_effect = urlretrieve_side_effect
+    mock_compute_spectrogram.side_effect = compute_spectrogram_side_effect
+    mock_from_path.return_value = Checkpoint('.', lambda x: x, 0)
 
     # Check a row are parsed correctly
     train, dev = lj_speech_dataset(
         directory=lj_directory,
-        verbalize=True,
         resample=None,
         norm=False,
         guard=False,
@@ -75,11 +81,11 @@ def test_lj_speech_dataset(mock_urlretrieve):
     assert train[0]['text'] == (
         'Once a warrant-holder sent down a clerk to view certain goods, and the clerk found that '
         'these goods had already a "stop" upon them, or were pledged.')
-    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ014-0331.wav' in str(train[0]['audio_filename'])
+    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ014-0331.wav' in str(train[0]['audio_path'])
     assert dev[0]['text'] == (
         'Mister Mullay went, and a second interview was agreed upon, when a third person, '
         'Mister Owen,')
-    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ011-0243.wav' in str(dev[0]['audio_filename'])
+    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ011-0243.wav' in str(dev[0]['audio_path'])
 
     _re_filename = re.compile('LJ[0-9]{3}-[0-9]{4}')
 
@@ -87,37 +93,9 @@ def test_lj_speech_dataset(mock_urlretrieve):
     seen = 0
     for data in [train, dev]:
         for row in data:
-            basename = row['audio_filename'].name[:10]
+            basename = row['audio_path'].name[:10]
             assert _re_filename.match(basename)
             if basename in verbalize_test_cases:
                 seen += 1
                 assert verbalize_test_cases[basename] in row['text']
     assert seen == len(verbalize_test_cases)
-
-
-@mock.patch("src.datasets._process.os.system")
-@mock.patch("urllib.request.urlretrieve")
-@pytest.mark.usefixtures("cleanup")
-def test_lj_speech_dataset_audio_processing(mock_urlretrieve, mock_os_system):
-    mock_urlretrieve.side_effect = urlretrieve_side_effect
-    mock_os_system.return_value = None
-
-    # Check a row are parsed correctly
-    train, dev = lj_speech_dataset(
-        directory=lj_directory,
-        verbalize=False,
-        resample=24000,
-        norm=True,
-        guard=True,
-        lower_hertz=100,
-        upper_hertz=200,
-        loudness=True,
-        splits=(0.8, 0.2))
-
-    # Ensure that every argument loudness, upper_hertz, lower_hertz, guard, norm and resample
-    # is run
-    assert 'norm' in mock_os_system.call_args[0][0]
-    assert 'guard' in mock_os_system.call_args[0][0]
-    assert 'rate 24000' in mock_os_system.call_args[0][0]
-    assert 'sinc 100-200' in mock_os_system.call_args[0][0]
-    assert 'loudness' in mock_os_system.call_args[0][0]

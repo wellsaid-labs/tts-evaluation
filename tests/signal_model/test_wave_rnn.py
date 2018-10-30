@@ -147,3 +147,27 @@ def test_wave_rnn_infer():
     assert torch.max(predicted_coarse) < 256
     assert torch.min(predicted_fine) >= 0
     assert torch.max(predicted_fine) < 256
+
+
+def test_wave_rnn_infer_unbatched():
+    bits = 16
+    local_length = 16
+    local_features_size = 80
+    upsample_learned = 6
+    upsample_repeat = 2
+    upsample_kernels = [(5, 5), (3, 3), (3, 3), (3, 3)]
+    signal_length = local_length * upsample_learned * upsample_repeat
+
+    local_features = torch.FloatTensor(local_length, local_features_size)
+
+    net = WaveRNN(
+        hidden_size=32,
+        bits=bits,
+        upsample_num_filters=[64, 64, 32, upsample_learned],
+        upsample_repeat=upsample_repeat,
+        upsample_kernels=upsample_kernels,  # Local
+        local_features_size=local_features_size).eval()
+    predicted_coarse, predicted_fine, _ = net.infer(local_features, pad=True)
+
+    assert predicted_coarse.shape == (signal_length,)
+    assert predicted_fine.shape == (signal_length,)

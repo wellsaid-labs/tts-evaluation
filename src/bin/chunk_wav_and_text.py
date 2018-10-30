@@ -87,7 +87,7 @@ def natural_keys(text):
     return [(int(c) if c.isdigit() else c) for c in re.split('(\d+)', str(text))]
 
 
-def _review_gentle(response, transcript):  # pragma: no cover
+def _review_gentle(response, transcript):
     """ Log warnings, check invariants, and compute statistics for the script user.
 
     Args:
@@ -169,7 +169,7 @@ def _request_gentle(wav_path,
                     port=8765,
                     parameters=(('async', 'false'),),
                     wait_per_second_of_audio=0.5,
-                    sample_rate=24000):  # pragma: no cover
+                    sample_rate=24000):
     """ Align an audio file with the trascript at a word granularity.
 
     Args:
@@ -584,7 +584,7 @@ def setup_io(wav_pattern,
              csv_metadata_name='metadata.csv',
              gentle_cache_name='.gentle',
              stdout_name='stdout.log',
-             stderr_name='stderr.log'):  # pragma: no cover
+             stderr_name='stderr.log'):
     """ Perform basic IO operations to setup this script
 
     Args:
@@ -635,7 +635,7 @@ def setup_io(wav_pattern,
     return wav_paths, csv_paths, wav_directory, gentle_cache_directory, metadata_filename
 
 
-def normalize_text(text):  # pragma: no cover
+def normalize_text(text):
     """ Normalize the text such that the text matches up closely to the audio.
 
     Args:
@@ -659,7 +659,7 @@ def main(wav_pattern,
          text_column='Content',
          wav_column='WAV Filename',
          sample_rate=44100,
-         max_chunk_length=10):  # pragma: no cover
+         max_chunk_length=10):
     """ Align audio with scripts, then create and save chunks of audio and text.
 
     Args:
@@ -716,13 +716,13 @@ def main(wav_pattern,
                 new_row = row.to_dict()
 
                 new_row[text_column] = script[slice(*chunk['text'])].strip()
-                audio_filename = script_wav_directory / ('script_%d_chunk_%d.wav' % (j, k))
-                new_row[wav_column] = str(audio_filename.relative_to(wav_directory))
+                audio_path = script_wav_directory / ('script_%d_chunk_%d.wav' % (j, k))
+                new_row[wav_column] = str(audio_path.relative_to(wav_directory))
                 del new_row['Index']  # Delete the default pandas Index column
                 to_write.append(new_row)
 
                 audio_span = audio[slice(*chunk['audio'])]
-                librosa.output.write_wav(str(audio_filename), audio_span, sr=sample_rate)
+                librosa.output.write_wav(str(audio_path), audio_span, sr=sample_rate)
 
         logger.info('Found %d chunks', len(to_write))
         pandas.DataFrame(to_write).to_csv(
@@ -730,13 +730,13 @@ def main(wav_pattern,
     print('=' * 100)
     all_unaligned_substrings = list(map(str, all_unaligned_substrings))
     total_unaligned_characters = sum([len(s) for s in all_unaligned_substrings])
-    logger.warn('Number of unaligned scripts %f%% [%d of %d]',
-                (1 - total_aligned_scripts / total_scripts) * 100,
-                total_scripts - total_aligned_scripts, total_scripts)
-    logger.warn('Found %f%% [%d of %d] unaligned characters',
-                total_unaligned_characters / total_characters * 100, total_unaligned_characters,
-                total_characters)
-    logger.warn('All unaligned substrings:\n%s', sorted(all_unaligned_substrings, key=len))
+    logger.warning('Number of unaligned scripts %f%% [%d of %d]',
+                   (1 - total_aligned_scripts / total_scripts) * 100,
+                   total_scripts - total_aligned_scripts, total_scripts)
+    logger.warning('Found %f%% [%d of %d] unaligned characters',
+                   total_unaligned_characters / total_characters * 100, total_unaligned_characters,
+                   total_characters)
+    logger.warning('All unaligned substrings:\n%s', sorted(all_unaligned_substrings, key=len))
 
 
 if __name__ == "__main__":  # pragma: no cover

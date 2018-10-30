@@ -2,9 +2,9 @@ from torch import nn
 
 import torch
 
-from src.utils.configurable import configurable
-from src.feature_model.pre_net import PreNet
-from src.feature_model.attention import LocationSensitiveAttention
+from src.hparams import configurable
+from src.spectrogram_model.pre_net import PreNet
+from src.spectrogram_model.attention import LocationSensitiveAttention
 
 
 class AutoregressiveDecoderHiddenState(object):

@@ -23,7 +23,7 @@ import librosa
 
 from src.audio import griffin_lim
 from src.bin.train.feature_model._utils import set_hparams as set_feature_model_hparams
-from src.bin.train.signal_model._utils import set_hparams as set_signal_model_hparams
+from src.bin.train.signal_model.utils import set_hparams as set_signal_model_hparams
 from src.utils import combine_signal
 from src.utils import load_checkpoint
 
@@ -120,20 +120,14 @@ def synthesize():
     if text_encoder.decode(text_encoder.encode(text)) != text:
         raise GenericException('Text has improper characters.')
 
-    with torch.set_grad_enabled(False):
+    with torch.no_grad():
         encoded = text_encoder.encode(text)
-        encoded = encoded.unsqueeze(1)
         # predicted_frames [num_frames, batch_size, frame_channels]
         predicted_frames = feature_model.infer(tokens=encoded)[1]
-
         if is_high_fidelity:
             # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
             predicted_frames = predicted_frames.transpose(0, 1)
-            # [batch_size, signal_length]
             predicted_coarse, predicted_fine, _ = signal_model.infer(predicted_frames)
-
-            predicted_coarse = predicted_coarse.squeeze(0)
-            predicted_fine = predicted_fine.squeeze(0)
             waveform = combine_signal(predicted_coarse, predicted_fine).numpy()
         else:
             waveform = griffin_lim(predicted_frames[:, 0].numpy())

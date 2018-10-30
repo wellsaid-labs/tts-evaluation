@@ -17,7 +17,7 @@ from tensorboardX.utils import figure_to_image
 import librosa.display
 import numpy as np
 
-from src.utils.configurable import configurable
+from src.hparams import configurable
 
 logger = logging.getLogger(__name__)
 
@@ -97,15 +97,16 @@ def plot_waveform(signal, sample_rate=24000):
 
 
 @configurable
-def plot_log_mel_spectrogram(log_mel_spectrogram,
-                             sample_rate=24000,
-                             frame_hop=300,
-                             lower_hertz=125,
-                             upper_hertz=7600):
+def plot_spectrogram(spectrogram,
+                     sample_rate=24000,
+                     frame_hop=300,
+                     lower_hertz=125,
+                     upper_hertz=7600,
+                     y_axis='mel'):
     """ Get image of log mel spectrogram.
 
     Args:
-        log_mel_spectrogram (torch.FloatTensor [frames, num_mel_bins])
+        spectrogram (torch.FloatTensor [frames, num_mel_bins])
         sample_rate (int): Sample rate for the signal.
         frame_hop (int): The frame hop in samples.
         lower_hertz (int): Lower bound on the frequencies to be included in the mel spectrum. This
@@ -115,20 +116,20 @@ def plot_log_mel_spectrogram(log_mel_spectrogram,
     Returns:
         (matplotlib.figure.Figure): Matplotlib figure representing the plot.
     """
-    assert len(log_mel_spectrogram.shape) == 2, 'Log mel spectrogram must be 2D.'
+    assert len(spectrogram.shape) == 2, 'Log mel spectrogram must be 2D.'
     figure = pyplot.figure()
     pyplot.style.use('ggplot')
-    if torch.is_tensor(log_mel_spectrogram):
-        log_mel_spectrogram = log_mel_spectrogram.numpy()
-    log_mel_spectrogram = log_mel_spectrogram.transpose()
+    if torch.is_tensor(spectrogram):
+        spectrogram = spectrogram.numpy()
+    spectrogram = spectrogram.transpose()
     librosa.display.specshow(
-        log_mel_spectrogram,
+        spectrogram,
         hop_length=frame_hop,
         sr=sample_rate,
         fmin=lower_hertz,
         fmax=upper_hertz,
         cmap='viridis',
-        y_axis='mel',
+        y_axis=y_axis,
         x_axis='time')
     pyplot.colorbar(format='%.2f')
     return figure
@@ -234,15 +235,15 @@ class Tensorboard(SummaryWriter):
         """
         self._add_image(path, step, plot_waveform, signal)
 
-    def add_log_mel_spectrogram(self, path, log_mel_spectrogram, step=None):
+    def add_spectrogram(self, path, spectrogram, step=None):
         """ Add image of a log mel spectrogram to Tensorboard.
 
         Args:
             path (str): List of tags to use as label.
-            log_mel_spectrogram (torch.FloatTensor [frames, num_mel_bins])
+            spectrogram (torch.FloatTensor [frames, num_mel_bins])
             step (int, optional): Step value to record.
         """
-        self._add_image(path, step, plot_log_mel_spectrogram, log_mel_spectrogram)
+        self._add_image(path, step, plot_spectrogram, spectrogram)
 
     def add_attention(self, path, alignment, step=None):
         """ Add image of an attention alignment to Tensorboard.

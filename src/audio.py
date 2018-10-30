@@ -6,7 +6,7 @@ from tqdm import tqdm
 import librosa
 import numpy as np
 
-from src.utils.configurable import configurable
+from src.hparams import configurable
 
 logger = logging.getLogger(__name__)
 
@@ -282,5 +282,6 @@ def griffin_lim(log_mel_spectrogram,
 
     waveform = np.real(waveform)
     large_values = (waveform < -1).sum() + (waveform > 1).sum()
-    logger.warning('Griffin-lim waveform clipped %d samples.', large_values)
+    if large_values > 0:
+        logger.warning('Griffin-lim waveform clipped %d samples.', large_values)
     return np.clip(waveform, -1, 1)

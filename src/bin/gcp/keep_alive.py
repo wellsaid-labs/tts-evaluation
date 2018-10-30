@@ -11,7 +11,7 @@ Example:
     python3 -m src.bin.gcp.keep_alive --command="screen -dm bash -c \
         'source ~/.bashrc;
         source ~/.bash_profile;
-        cd WellSaid-Labs-Text-To-Speech/; \
+        cd WellSaidLabs/; \
         ulimit -n 65536; \
         python3 -m src.bin.train.signal_model -c; \
         sudo shutdown;'"
@@ -31,7 +31,7 @@ INSTANCE_RUNNING = 'RUNNING'
 INSTANCE_STOPPED = 'TERMINATED'
 
 
-def get_available_instances():  # pragma: no cover
+def get_available_instances():
     """ Get a list of preemtible instances to keep alive.
     """
     instances = json.loads(
@@ -86,8 +86,7 @@ def is_halted(name, zone, command='find . -type f -not -name \'.*\' -cmin -10 2>
         return False
 
 
-def keep_alive(instances, command, scheduler, repeat_every=60 * 5, retry_timeout=60,
-               retry=3):  # pragma: no cover
+def keep_alive(instances, command, scheduler, repeat_every=60 * 5, retry_timeout=60, retry=3):
     """ Restart GCP instances every ``repeat_every`` seconds with ``command``.
 
     Args:

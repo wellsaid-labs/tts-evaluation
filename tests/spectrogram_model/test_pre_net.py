@@ -1,6 +1,6 @@
 import torch
 
-from src.feature_model.pre_net import PreNet
+from src.spectrogram_model.pre_net import PreNet
 
 
 def test_pre_net():

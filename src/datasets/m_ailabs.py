@@ -26,58 +26,46 @@ and flexibility to select data for a specific gender, speaker, or book.
 There are several missing audio files. During processing warnings are given for these files.
 """
 from collections import namedtuple
-from enum import Enum
+from functools import partial
 from pathlib import Path
 
 import csv
 import logging
 import os
 
+from torchnlp.datasets import Dataset
 from torchnlp.download import download_file_maybe_extract
 
 import pandas
 
-from src.datasets._process import process_all
-from src.datasets._process import process_audio
-from src.utils.configurable import configurable
+from src.datasets.constants import Gender
+from src.datasets.constants import Speaker
+from src.datasets.process import compute_spectrogram
+from src.datasets.process import normalize_audio
+from src.datasets.process import process_with_processes
+from src.datasets.process import split_dataset
+from src.utils import Checkpoint
+from src.hparams import configurable
 
 logger = logging.getLogger(__name__)
-Book = namedtuple('Book', 'gender speaker_name book_title')
+Book = namedtuple('Book', 'speaker title')
 
+THE_SEA_FAIRIES = Book(Speaker.JUDY_BIEBER, 'the_sea_fairies')
+THE_MASTER_KEY = Book(Speaker.JUDY_BIEBER, 'the_master_key')
+RINKITINK_IN_OZ = Book(Speaker.JUDY_BIEBER, 'rinkitink_in_oz')
+DOROTHY_AND_WIZARD_OZ = Book(Speaker.JUDY_BIEBER, 'dorothy_and_wizard_oz')
+SKY_ISLAND = Book(Speaker.JUDY_BIEBER, 'sky_island')
+OZMA_OF_OZ = Book(Speaker.JUDY_BIEBER, 'ozma_of_oz')
+EMERALD_CITY_OF_OZ = Book(Speaker.JUDY_BIEBER, 'emerald_city_of_oz')
 
-class Gender(Enum):
-    FEMALE = 'female'
-    MALE = 'male'
+MIDNIGHT_PASSENGER = Book(Speaker.MARY_ANN, 'midnight_passenger')
+NORTH_AND_SOUTH = Book(Speaker.MARY_ANN, 'northandsouth')
 
-    def __str__(self):
-        return self.value
-
-
-class Speaker(Enum):
-    JUDY_BIEBER = 'judy_bieber'
-    MARY_ANN = 'mary_ann'
-    ELLIOT_MILLER = 'elliot_miller'
-
-    def __str__(self):
-        return self.value
-
-
-THE_SEA_FAIRIES = Book(Gender.FEMALE, Speaker.JUDY_BIEBER, 'the_sea_fairies')
-THE_MASTER_KEY = Book(Gender.FEMALE, Speaker.JUDY_BIEBER, 'the_master_key')
-RINKITINK_IN_OZ = Book(Gender.FEMALE, Speaker.JUDY_BIEBER, 'rinkitink_in_oz')
-DOROTHY_AND_WIZARD_OZ = Book(Gender.FEMALE, Speaker.JUDY_BIEBER, 'dorothy_and_wizard_oz')
-SKY_ISLAND = Book(Gender.FEMALE, Speaker.JUDY_BIEBER, 'sky_island')
-OZMA_OF_OZ = Book(Gender.FEMALE, Speaker.JUDY_BIEBER, 'ozma_of_oz')
-EMERALD_CITY_OF_OZ = Book(Gender.FEMALE, Speaker.JUDY_BIEBER, 'emerald_city_of_oz')
-
-MIDNIGHT_PASSENGER = Book(Gender.FEMALE, Speaker.MARY_ANN, 'midnight_passenger')
-NORTH_AND_SOUTH = Book(Gender.FEMALE, Speaker.MARY_ANN, 'northandsouth')
-
-PIRATES_OF_ERSATZ = Book(Gender.MALE, Speaker.ELLIOT_MILLER, 'pirates_of_ersatz')
-POISONED_PEN = Book(Gender.MALE, Speaker.ELLIOT_MILLER, 'poisoned_pen')
-SILENT_BULLET = Book(Gender.MALE, Speaker.ELLIOT_MILLER, 'silent_bullet')
-HUNTERS_SPACE = Book(Gender.MALE, Speaker.ELLIOT_MILLER, 'hunters_space')
-PINK_FAIRY_BOOK = Book(Gender.MALE, Speaker.ELLIOT_MILLER, 'pink_fairy_book')
+PIRATES_OF_ERSATZ = Book(Speaker.ELLIOT_MILLER, 'pirates_of_ersatz')
+POISONED_PEN = Book(Speaker.ELLIOT_MILLER, 'poisoned_pen')
+SILENT_BULLET = Book(Speaker.ELLIOT_MILLER, 'silent_bullet')
+HUNTERS_SPACE = Book(Speaker.ELLIOT_MILLER, 'hunters_space')
+PINK_FAIRY_BOOK = Book(Speaker.ELLIOT_MILLER, 'pink_fairy_book')
 
 _allbooks = [
     THE_SEA_FAIRIES, THE_MASTER_KEY, RINKITINK_IN_OZ, DOROTHY_AND_WIZARD_OZ, SKY_ISLAND, OZMA_OF_OZ,
@@ -88,21 +76,75 @@ _allbooks = [
 DOWNLOAD_DIRECTORY = Path('data/M-AILABS')
 
 
+def _processing_func(row,
+                     directory,
+                     spectrogram_model_checkpoint_path,
+                     metadata_path_column,
+                     kwargs,
+                     metadata_audio_column=0,
+                     metadata_audio_path_template='wavs/{}.wav',
+                     metadata_text_column=2):  # pragma: no cover
+    """
+    Note:
+        - ``# pragma: no cover`` is used because this functionality is run with multiprocessing
+          that is not compatible with the coverage module.
+
+    Args:
+        directory (str or Path, optional): Directory to cache the dataset.
+        spectrogram_model_checkpoint_path (str or None, optional): Spectrogram model to predict a
+            ground truth aligned spectrogram.
+        metadata_path_column (str, optional): Column name to store the metadata path.
+        kwargs: Arguments passed to process dataset audio.
+        metadata_audio_column (int, optional): Column name or index with the audio filename.
+        metadata_audio_path_template (str, optional): Given the audio column, this template
+            determines the filename.
+        metadata_text_column (int, optional): Column name or index with the audio transcript.
+
+    Returns:
+        {
+            text (str)
+            audio_path (Path)
+            spectrogram_path (Path)
+            predicted_spectrogram_path (Path)
+            speaker (src.datasets.Speaker)
+        }
+    """
+    spectrogram_model_checkpoint = Checkpoint.from_path(spectrogram_model_checkpoint_path)
+    text = row[metadata_text_column].strip()
+    metadata_path = row[metadata_path_column]
+    audio_path = Path(metadata_path.parent,
+                      metadata_audio_path_template.format(row[metadata_audio_column]))
+
+    if not audio_path.is_file():
+        logger.warning('Not found audio file, skipping: %s', audio_path)
+        return None
+
+    audio_path = normalize_audio(audio_path, **kwargs)
+    audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
+        audio_path, text, spectrogram_model_checkpoint)
+    book = _path2book(metadata_path, directory=directory)
+    return {
+        'text': text,
+        'audio_path': audio_path,
+        'spectrogram_path': spectrogram_path,
+        'predicted_spectrogram_path': predicted_spectrogram_path,
+        'speaker': book.speaker
+    }
+
+
 @configurable
 def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
                             url='http://data.m-ailabs.bayern/data/Training/stt_tts/en_US.tgz',
                             check_files=['en_US/by_book/info.txt'],
                             metadata_pattern='**/metadata.csv',
-                            audio_column=0,
-                            audio_filename_template='wavs/{}.wav',
-                            text_column=2,
                             metadata_path_column='metadata_path',
                             picker=None,
-                            random_seed=123,
                             splits=(.8, .2),
                             check_wavfiles=True,
+                            spectrogram_model_checkpoint_path=None,
                             **kwargs):
-    """
+    """ Load the M-AILABS en_US dataset.
+
     Download, extract, and process the M-AILABS en_US dataset, which is 7.5GB compressed.
     The original URL is ``http://www.m-ailabs.bayern/?ddownload=411``.
     Use ``curl -I <URL>`` to find the redirected URL.
@@ -113,18 +155,14 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
         check_files (list of str, optional): Check this file exists if the download was successful.
         metadata_pattern (str, optional): Pattern for all ``metadata.csv`` files containing
             (filename, text) information.
-        audio_column (int, optional): Column name or index with the audio filename.
-        audio_filename_template (str, optional): Given the audio column, this template determines
-            the filename.
-        text_column (int, optional): Column name or index with the audio transcript.
         metadata_path_column (str, optional): Column name to store the metadata path.
         picker (None or Book or Speaker or Gender): Argument that dictates which dataset subset to
             pick.
-        random_seed (int, optional): Random seed used to determine the splits.
         splits (tuple, optional): The number of splits and cardinality of dataset splits.
         check_wavfiles (bool, optional): If False, skip the check for existence of wav files.
+        spectrogram_model_checkpoint_path (str or None, optional): Spectrogram model to predict a
+            ground truth aligned spectrogram.
         **kwargs: Arguments passed to process dataset audio.
-
 
      Returns:
           :class:`torchnlp.datasets.Dataset`: M-AILABS en_us dataset with audio filenames and text
@@ -132,39 +170,50 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
 
     Example:
         >>> import pprint # doctest: +SKIP
+        >>> from src.hparams import set_hparams # doctest: +SKIP
         >>> from src.datasets import m_ailabs_speech_dataset # doctest: +SKIP
+        >>> set_hparams() # doctest: +SKIP
         >>> train, dev = m_ailabs_speech_dataset() # doctest: +SKIP
         >>> pprint.pprint(train[0:2], width=80) # doctest: +SKIP
-        [{'text': 'and more natural education stopping at home, and helping her '
-          'mother, and learning to read a chapter in the New Testament every '
-          'night by her side,',
-          'audio_filename': PosixPath('data/M-AILABS/en_US/by_book/female/mary_ann/northandsouth/'
-                                    'wavs/northandsouth_46_f000119-rate=24000-guard.wav')},
-        {'text': 'The chief shook his head, saying: No boat come.',
-          'audio_filename': PosixPath('data/M-AILABS/en_US/by_book/female/judy_bieber/'
-                                    'the_master_key/wavs/'
-                                    'the_master_key_05_f000038-rate=24000-guard.wav')}]
+        [{'audio_path': PosixPath('data/M-AILABS/en_US/by_book/female/mary_ann/northandsouth/'
+                                  'wavs/pad(rate(guard(northandsouth_46_f000119),24000)).npy'),
+          'predicted_spectrogram_path': None,
+          'speaker': <src.datasets.constants.Speaker object at 0x127032518>,
+          'spectrogram_path': PosixPath('data/M-AILABS/en_US/by_book/female/mary_ann/'
+                                        'northandsouth/wavs/spectrogram(rate(guard('
+                                        'northandsouth_46_f000119),24000)).npy'),
+          'text': 'and more natural education stopping at home, and helping her '
+                  'mother, and learning to read a chapter in the New Testament every '
+                  'night by her side,'},
+         {'audio_path': PosixPath('data/M-AILABS/en_US/by_book/female/judy_bieber/'
+                                 'the_master_key/wavs/spectrogram(rate(guard('
+                                 'the_master_key_05_f000038),24000)).npy'),
+          'predicted_spectrogram_path': None,
+          'speaker': <src.datasets.constants.Speaker object at 0x1241fe358>,
+          'spectrogram_path': PosixPath('data/M-AILABS/en_US/by_book/female/judy_bieber/'
+                                        'the_master_key/wavs/pad(rate(guard('
+                                        'the_master_key_05_f000038),24000)).npy'),
+          'text': 'The chief shook his head, saying: No boat come.'}]
     """
     download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
 
     # Making sure that the download succeeds by checking against defined books in _allbooks
     metadata_paths = list(directory.glob('**/metadata.csv'))
     actual_books = [_path2book(path, directory=directory) for path in metadata_paths]
-    title_key = lambda x: x.book_title
-    assert sorted(actual_books, key=title_key) == sorted(_allbooks, key=title_key)
-
-    def extract_fun(row):
-        text = row[text_column].strip()
-        metadata_path = getattr(row, metadata_path_column)
-        audio_filename = Path(metadata_path.parent,
-                              audio_filename_template.format(row[audio_column]))
-
-        processed_audio_filename = process_audio(audio_filename, **kwargs)
-        return {'text': text, 'audio_filename': processed_audio_filename}
-
+    assert sorted(actual_books, key=lambda x: x.title) == sorted(_allbooks, key=lambda x: x.title)
     data = _read_mailabs_data(
         picker, directory=directory, metadata_path_column=metadata_path_column)
-    return process_all(extract_fun, data, splits, random_seed)
+    data = process_with_processes(
+        data,
+        partial(
+            _processing_func,
+            directory=directory,
+            spectrogram_model_checkpoint_path=spectrogram_model_checkpoint_path,
+            metadata_path_column=metadata_path_column,
+            kwargs=kwargs))
+    data = list(filter(None.__ne__, data))
+    splits = split_dataset(data, splits=splits)
+    return tuple(Dataset(split) for split in splits)
 
 
 def _book2path(book, directory=DOWNLOAD_DIRECTORY):
@@ -174,7 +223,9 @@ def _book2path(book, directory=DOWNLOAD_DIRECTORY):
         >>> _book2path(SKY_ISLAND)
         PosixPath('data/M-AILABS/en_US/by_book/female/judy_bieber/sky_island/metadata.csv')
     """
-    return directory / 'en_US/by_book' / '/'.join(map(str, book)) / 'metadata.csv'
+    name = book.speaker.name.lower().replace(' ', '_')
+    gender = book.speaker.gender.name.lower()
+    return directory / 'en_US/by_book' / gender / name / book.title / 'metadata.csv'
 
 
 def _path2book(metadata_path, directory=DOWNLOAD_DIRECTORY):
@@ -182,12 +233,13 @@ def _path2book(metadata_path, directory=DOWNLOAD_DIRECTORY):
 
     Examples:
         >>> _path2book(Path('data/M-AILABS/en_US/by_book/female/judy_bieber/sky_island/metadata.csv')) # noqa: E501
-        Book(gender=<Gender.FEMALE: 'female'>, speaker_name=<Speaker.JUDY_BIEBER: 'judy_bieber'>, book_title='sky_island')
+        Book(speaker=Speaker(name='Judy Bieber', gender=FEMALE, index=0), title='sky_island')
     """
     metadata_path = metadata_path.relative_to(directory)
     # EXAMPLE: metadata_path=en_US/by_book/female/judy_bieber/dorothy_and_wizard_oz/metadata.csv
-    gender, speaker_name, book_title = metadata_path.parts[2:5]
-    return Book(Gender(gender), Speaker(speaker_name), book_title)
+    speaker_gender, speaker_name, book_title = metadata_path.parts[2:5]
+    speaker = getattr(Speaker, speaker_name.upper())
+    return Book(speaker, book_title)
 
 
 def _book2speech_data(book,
@@ -197,7 +249,7 @@ def _book2speech_data(book,
                       header=None,
                       metadata_path_column='metadata_path',
                       index=False):
-    """ Given a book, yield pairs of (text, audio_filename) for that book.
+    """ Given a book, yield pairs of (text, audio_path) for that book.
 
     Args:
         book (Book)
@@ -212,37 +264,37 @@ def _book2speech_data(book,
     """
     metadata_path = _book2path(book, directory=directory)
     if os.stat(str(metadata_path)).st_size == 0:
-        logger.warn('%s is empty, skipping for now', str(metadata_path))
+        logger.warning('%s is empty, skipping for now', str(metadata_path))
         yield from []
     else:
         data_frame = pandas.read_csv(
             metadata_path, delimiter=delimiter, header=header, quoting=quoting)
         data_frame['metadata_path'] = metadata_path
-        yield from data_frame.itertuples(index=index)
+        yield from (row.to_dict() for _, row in data_frame.iterrows())
 
 
 def _speaker2speech_data(speaker, **kwargs):
     """
-    Given an speaker, yield pairs of (text, audio_filename) for that speaker.
+    Given an speaker, yield pairs of (text, audio_path) for that speaker.
     """
     for book in _allbooks:
-        if book.speaker_name == speaker:
+        if book.speaker == speaker:
             yield from _book2speech_data(book, **kwargs)
 
 
 def _gender2speech_data(gender, **kwargs):
     """
-    Given a gender (male or female), yield pairs of (text, audio_filename) for all books read
+    Given a gender (male or female), yield pairs of (text, audio_path) for all books read
     by speakers of that gender.
     """
     for book in _allbooks:
-        if book.gender == gender:
+        if book.speaker.gender == gender:
             yield from _book2speech_data(book, **kwargs)
 
 
 def _read_mailabs_data(picker=None, **kwargs):
     """
-    Yield pairs of (text, audio_filename) from the MAILABS dataset.
+    Yield pairs of (text, audio_path) from the MAILABS dataset.
     Args:
         picker (None or Book or Speaker or Gender): Argument that dictates which dataset subset to
             pick.
@@ -250,7 +302,7 @@ def _read_mailabs_data(picker=None, **kwargs):
     Examples:
         _read_mailabs_data()
         _read_mailabs_data(SKY_ISLAND)
-        _read_mailabs_data(Speaker.JUDY_BIEBER)
+        _read_mailabs_data(JUDY_BIEBER)
         _read_mailabs_data(Gender.MALE)
     """
     if picker is None:

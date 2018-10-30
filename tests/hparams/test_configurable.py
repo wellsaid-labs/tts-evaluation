@@ -1,14 +1,14 @@
 import pytest
 import _pytest
 import inspect
-import mock
+from unittest import mock
 
-from src.utils.configurable import _check_configuration
-from src.utils.configurable import _merge_args
-from src.utils.configurable import _parse_configuration
-from src.utils.configurable import add_config
-from src.utils.configurable import clear_config
-from src.utils.configurable import configurable
+from src.hparams.configurable_ import _check_configuration
+from src.hparams.configurable_ import _merge_args
+from src.hparams.configurable_ import _parse_configuration
+from src.hparams.configurable_ import add_config
+from src.hparams.configurable_ import clear_config
+from src.hparams.configurable_ import configurable
 
 
 def test_parse_configuration_example():
@@ -101,7 +101,7 @@ def test_check_configuration_internal_libraries():
     # Test that check configuration can check ``configurable`` on internal libraries
     _check_configuration({
         'tests': {
-            'utils': {
+            'hparams': {
                 'test_configurable': {
                     'mock_configurable': {
                         'kwarg': None
@@ -115,7 +115,17 @@ def test_check_configuration_internal_libraries():
 def test_check_configuration_error_internal_libraries():
     # Test that check configuration fails on internal libraries
     with pytest.raises(TypeError):
-        _check_configuration({'tests': {'utils': {'test_configurable': {'mock': {'kwarg': None}}}}})
+        _check_configuration({
+            'tests': {
+                'hparams': {
+                    'test_configurable': {
+                        'mock': {
+                            'kwarg': None
+                        }
+                    }
+                }
+            }
+        })
 
 
 def test_check_configuration_error_external_libraries():
@@ -128,7 +138,7 @@ def test_check_configuration_class():
     # Test that check configuration works for classes
     _check_configuration({
         'tests': {
-            'utils': {
+            'hparams': {
                 'test_configurable': {
                     'MockConfigurable': {
                         '__init__': {
@@ -146,7 +156,7 @@ def test_check_configuration_error_class():
     with pytest.raises(TypeError):
         _check_configuration({
             'tests': {
-                'utils': {
+                'hparams': {
                     'test_configurable': {
                         'Mock': {
                             '__init__': {
@@ -162,7 +172,7 @@ def test_check_configuration_error_class():
 def test_add_config_and_arguments():
     # Check that a function can be configured
     kwargs = {'xyz': 'xyz'}
-    add_config({'tests.utils.test_configurable.mock_configurable': kwargs})
+    add_config({'tests.hparams.test_configurable.mock_configurable': kwargs})
     assert mock_configurable() == kwargs
 
     # Reset
@@ -172,7 +182,7 @@ def test_add_config_and_arguments():
     assert mock_configurable() == {}
 
 
-@mock.patch('src.utils.configurable.logger')
+@mock.patch('src.hparams.configurable_.logger')
 def test_merge_arg_kwarg(logger_mock):
     arg_kwarg = lambda a, b='abc': (a, b)
     parameters = list(inspect.signature(arg_kwarg).parameters.values())
@@ -195,7 +205,7 @@ def test_merge_arg_kwarg(logger_mock):
     logger_mock.warning.assert_not_called()
 
 
-@mock.patch('src.utils.configurable.logger')
+@mock.patch('src.hparams.configurable_.logger')
 def test_merge_arg_variable(logger_mock):
     """
     For arguments, order matters; therefore, unless we are able to abstract everything into a
@@ -226,7 +236,7 @@ def test_merge_arg_variable(logger_mock):
     logger_mock.reset_mock()
 
 
-@mock.patch('src.utils.configurable.logger')
+@mock.patch('src.hparams.configurable_.logger')
 def test_merge_kwarg_variable(logger_mock):
     """
     If there exists a ``**kwargs``, then

@@ -1,6 +1,6 @@
 import torch
 
-from src.feature_model.post_net import PostNet
+from src.spectrogram_model.post_net import PostNet
 
 
 def test_post_net():

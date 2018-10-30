@@ -96,3 +96,6 @@ experiments/
 # WWW
 generated
 *generated_audio_*.mp3
+
+# Various tmp files
+tmp/

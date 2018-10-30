@@ -16,33 +16,37 @@ import sys
 from torchnlp.utils import pad_batch
 
 import librosa
+import numpy
 import torch
 
-from src.bin.train.feature_model._utils import load_data
-from src.bin.train.signal_model._utils import set_hparams
+from src import datasets
+from src.hparams import configurable
+from src.hparams import log_config
+from src.hparams import set_hparams
+from src.utils import Checkpoint
 from src.utils import chunks
 from src.utils import combine_signal
-from src.utils import load_checkpoint
 from src.utils import duplicate_stream
-from src.utils.configurable import log_config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def main(feature_model_checkpoint_path,
+@configurable
+def main(spectrogram_model_checkpoint_path,
          signal_model_checkpoint_path,
+         dataset=datasets.lj_speech_dataset,
          destination='results/',
          destination_stdout='stdout.log',
          destination_stderr='stderr.log',
          samples=25,
          device=torch.device('cpu'),
          batch_size=8,
-         max_recursion=1000):  # pragma: no cover
+         max_recursion=1000):
     """ Generate random samples of text to speech model to evaluate.
 
     Args:
-        feature_model_checkpoint_path (str): Feature model checkpoint to load.
+        spectrogram_model_checkpoint_path (str): Spectrogram model checkpoint to load.
         signal_model_checkpoint_path (str): Signal model checkpoint to load.
         destination (str): Path to store results.
         destination_stdout (str): Filename of the stdout log.
@@ -51,7 +55,7 @@ def main(feature_model_checkpoint_path,
         samples (int): Number of rows to evaluate.
         device (torch.device): Device on which to evaluate on.
         batch_size (int)
-        max_recursion (int): The maximum sequential predictions to make with the feature model.
+        max_recursion (int): The maximum sequential predictions to make with the spectrogram model.
     """
     destination = Path(destination)
     destination.mkdir(exist_ok=False)
@@ -60,39 +64,41 @@ def main(feature_model_checkpoint_path,
 
     log_config()
 
-    feature_model_checkpoint_path = Path(feature_model_checkpoint_path)
+    spectrogram_model_checkpoint_path = Path(spectrogram_model_checkpoint_path)
     signal_model_checkpoint_path = Path(signal_model_checkpoint_path)
-    assert feature_model_checkpoint_path.is_file()
+    assert spectrogram_model_checkpoint_path.is_file()
     assert signal_model_checkpoint_path.is_file()
 
-    feature_model_checkpoint = load_checkpoint(feature_model_checkpoint_path, device=device)
-    signal_model_checkpoint = load_checkpoint(signal_model_checkpoint_path, device=device)
-    logger.info('Loaded checkpoint: %s', feature_model_checkpoint)
+    spectrogram_model_checkpoint = Checkpoint.from_path(
+        spectrogram_model_checkpoint_path, device=device)
+    signal_model_checkpoint = Checkpoint.from_path(signal_model_checkpoint_path, device=device)
+    logger.info('Loaded checkpoint: %s', spectrogram_model_checkpoint)
     logger.info('Loaded checkpoint: %s', signal_model_checkpoint)
 
     torch.set_grad_enabled(False)
 
-    text_encoder = feature_model_checkpoint['text_encoder']
-    feature_model = feature_model_checkpoint['model'].eval().to(device)
-    signal_model = signal_model_checkpoint['model'].eval().to(device)
+    text_encoder = spectrogram_model_checkpoint.text_encoder
+    spectrogram_model = spectrogram_model_checkpoint.model.eval().to(device)
+    signal_model = signal_model_checkpoint.model.eval().to(device)
 
-    _, dev, text_encoder = load_data(text_encoder=text_encoder, load_signal=True)
+    train, dev = dataset()
 
     logger.info('Device: %s', device)
     logger.info('Number of Dev Rows: %d', len(dev))
     logger.info('Vocab Size: %d', text_encoder.vocab_size)
-    logger.info('Feature Model:\n%s' % feature_model)
+    logger.info('Spectrogram Model:\n%s' % spectrogram_model)
     logger.info('Signal Model:\n%s' % signal_model)
 
     sample = random.sample(list(range(len(dev))), samples)
     for chunk in chunks(sample, batch_size):
         batch = [dev[i] for i in chunk]
         logger.info('Batch size %d', len(batch))
-        text_batch, text_length_batch = pad_batch([row['text'] for row in batch])
+        text_batch, text_length_batch = pad_batch(
+            [text_encoder.encode(row['text']) for row in batch])
         text_batch = text_batch.transpose(0, 1).contiguous()
 
-        logger.info('Running the feature model...')
-        _, predicted_spectrogram, _, _, lengths = feature_model.infer(
+        logger.info('Running the spectrogram model...')
+        _, predicted_spectrogram, _, _, lengths = spectrogram_model.infer(
             text_batch, max_recursion=max_recursion)
 
         logger.info('Running the signal model...')
@@ -108,7 +114,7 @@ def main(feature_model_checkpoint_path,
             waveform = waveform[:int(lengths[i] * waveform_spectrogram_ratio)]
 
             gold_path = str(destination / ('%d_gold.wav' % chunk[i]))
-            librosa.output.write_wav(gold_path, batch[i]['signal'].numpy())
+            librosa.output.write_wav(gold_path, numpy.load(batch[i]['audio_path']))
             logger.info('Saved file %s', gold_path)
 
             predicted_path = str(destination / ('%d_predicted.wav' % chunk[i]))
@@ -120,19 +126,14 @@ def main(feature_model_checkpoint_path,
 if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '-s',
-        '--signal_model',
-        type=str,
-        required=True,
-        help='Signal model checkpoint to evaluate.')
+        '--signal_model', type=str, required=True, help='Signal model checkpoint to evaluate.')
     parser.add_argument(
-        '-f',
-        '--feature_model',
+        '--spectrogram_model',
         type=str,
         required=True,
-        help='Feature model checkpoint to evaluate.')
+        help='Spectrogram model checkpoint to evaluate.')
     cli_args = parser.parse_args()
     set_hparams()
     main(
-        feature_model_checkpoint_path=cli_args.feature_model,
+        spectrogram_model_checkpoint_path=cli_args.spectrogram_model,
         signal_model_checkpoint_path=cli_args.signal_model)

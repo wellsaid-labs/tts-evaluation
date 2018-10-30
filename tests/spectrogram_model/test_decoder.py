@@ -1,7 +1,7 @@
 import torch
 
-from src.feature_model.decoder import AutoregressiveDecoder
-from src.feature_model.decoder import AutoregressiveDecoderHiddenState
+from src.spectrogram_model.decoder import AutoregressiveDecoder
+from src.spectrogram_model.decoder import AutoregressiveDecoderHiddenState
 
 
 def test_autoregressive_decoder():
