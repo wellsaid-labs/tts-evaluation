@@ -49,7 +49,7 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
 
 
 def main(run_name,
-         run_root='experiments/signal_model/',
+         run_root=Path('experiments/signal_model/'),
          checkpoint_path=None,
          spectrogram_model_checkpoint_path=None,
          reset_optimizer=False,
@@ -76,11 +76,12 @@ def main(run_name,
         Checkpoint.most_recent(run_root / '**/*.pt')
         if checkpoint_path == '' else Checkpoint.from_path(checkpoint_path))
 
-    step = 0
-    directory = Path(run_root) / str(time.strftime('%m_%d', time.localtime())) / run_name
     if checkpoint is not None:
         step = checkpoint.step
         directory = checkpoint.directory.parent
+    else:
+        step = 0
+        directory = run_root / str(time.strftime('%m_%d', time.localtime())) / run_name
 
     with TrainingContextManager(root_directory=directory, tensorboard_step=step) as context:
         trainer_kwargs = {}

@@ -52,7 +52,7 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
 
 
 def main(run_name,
-         run_root='experiments/spectrogram_model/',
+         run_root=Path('experiments/spectrogram_model/'),
          checkpoint_path=None,
          reset_optimizer=False,
          hparams={},
@@ -78,11 +78,12 @@ def main(run_name,
         Checkpoint.most_recent(run_root / '**/*.pt')
         if checkpoint_path == '' else Checkpoint.from_path(checkpoint_path))
 
-    step = 0
-    directory = Path(run_root) / str(time.strftime('%m_%d', time.localtime())) / run_name
     if checkpoint is not None:
         step = checkpoint.step
         directory = checkpoint.directory.parent
+    else:
+        step = 0
+        directory = run_root / str(time.strftime('%m_%d', time.localtime())) / run_name
 
     with TrainingContextManager(root_directory=directory, tensorboard_step=step) as context:
         log_config()
@@ -97,12 +98,12 @@ def main(run_name,
             if reset_optimizer:
                 logger.info('Ignoring checkpoint optimizer.')
                 checkpoint.optimizer = None
-            trainer_kwargs = {
+            trainer_kwargs.update({
                 'model': checkpoint.model,
                 'optimizer': checkpoint.optimizer,
                 'epoch': checkpoint.epoch,
                 'step': checkpoint.step
-            }
+            })
 
         trainer = Trainer(context.device, train, dev, context.train_tensorboard,
                           context.dev_tensorboard, **trainer_kwargs)
