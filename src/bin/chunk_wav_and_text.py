@@ -84,7 +84,7 @@ def natural_keys(text):
     http://nedbatchelder.com/blog/200712/human_sorting.html
     (See Toothy's implementation in the comments)
     '''
-    return [(int(c) if c.isdigit() else c) for c in re.split('(\d+)', str(text))]
+    return [(int(c) if c.isdigit() else c) for c in re.split(r'(\d+)', str(text))]
 
 
 def _review_gentle(response, transcript):
@@ -696,7 +696,7 @@ def main(wav_pattern,
         try:
             alignments = align_wav_and_scripts(
                 wav_path, scripts, gentle_cache_directory, sample_rate=sample_rate)
-        except (requests.exceptions.RequestException, ValueError) as e:
+        except (requests.exceptions.RequestException, ValueError):
             logger.exception('Failed to align %s with %s', wav_path.name, csv_path.name)
             continue
 
