@@ -80,7 +80,7 @@ def main(run_name,
 
     if checkpoint is not None:
         step = checkpoint.step
-        directory = checkpoint.directory.parent
+        directory = checkpoint.directory.parent.parent
     else:
         step = 0
         directory = run_root / str(time.strftime('%m_%d', time.localtime())) / run_name
