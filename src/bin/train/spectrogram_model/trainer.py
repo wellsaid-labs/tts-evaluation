@@ -1,3 +1,5 @@
+from functools import partial
+
 import logging
 import random
 
@@ -17,20 +19,26 @@ from src.utils import get_masked_average_norm
 from src.utils import get_total_parameters
 from src.utils import get_weighted_standard_deviation
 from src.hparams import configurable
+from src.visualize import CometML
+from src.visualize import plot_attention
+from src.visualize import plot_spectrogram
+from src.visualize import plot_stop_token
+from src.hparams import get_config
+from src.utils import dict_collapse
 
 logger = logging.getLogger(__name__)
 
 
 class Trainer():
-    """ Trainer that manages Tacotron training (i.e. running epochs, tensorboard, logging).
+    """ Trainer that manages Tacotron training (i.e. running epochs, logging, etc.).
 
     Args:
         device (torch.device): Device to train on.
         train_dataset (iterable): Train dataset used to optimize the model.
         dev_dataset (iterable): Dev dataset used to evaluate.
-        train_tensorboard (tensorboardX.SummaryWriter): Writer for train events.
-        dev_tensorboard (tensorboardX.SummaryWriter): Writer for dev events.
         text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
+        comet_ml_project_name (str): Project name, used for grouping experiments.
+        comet_ml_experiment_key (str, optioanl): Previous experiment key to restart visualization.
         train_batch_size (int, optional): Batch size used for training.
         dev_batch_size (int, optional): Batch size used for evaluation.
         model (torch.nn.Module, optional): Model to train and evaluate.
@@ -47,9 +55,9 @@ class Trainer():
                  device,
                  train_dataset,
                  dev_dataset,
-                 train_tensorboard,
-                 dev_tensorboard,
                  text_encoder,
+                 comet_ml_project_name,
+                 comet_ml_experiment_key=None,
                  train_batch_size=32,
                  dev_batch_size=128,
                  model=SpectrogramModel,
@@ -67,8 +75,8 @@ class Trainer():
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.optimizer.to(device)
 
-        self.dev_tensorboard = dev_tensorboard
-        self.train_tensorboard = train_tensorboard
+        self.comet_ml = CometML(
+            project_name=comet_ml_project_name, experiment_key=comet_ml_experiment_key)
         self.device = device
         self.step = step
         self.epoch = epoch
@@ -81,20 +89,25 @@ class Trainer():
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
 
+        self.comet_ml.set_step(step)
+        self.comet_ml.log_current_epoch(epoch)
+        self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])
+        self.comet_ml.log_multiple_params(dict_collapse(get_config()))
+        self.comet_ml.log_multiple_params({
+            'num_parameter': get_total_parameters(self.model),
+            'num_gpu': torch.cuda.device_count(),
+            'num_training_row': len(self.train_dataset),
+            'num_dev_row': len(self.dev_dataset),
+            'vocab_size': text_encoder.vocab_size,
+            'vocab': sorted(self.text_encoder.vocab),
+        })
+
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step: %d', self.step)
         logger.info('Epoch: %d', self.epoch)
-        logger.info('Number of Training Rows: %d', len(self.train_dataset))
-        logger.info('Number of Dev Rows: %d', len(self.dev_dataset))
-        logger.info('Vocab Size: %d', text_encoder.vocab_size)
-        logger.info('Text Vocab: %s', ', '.join(sorted(self.text_encoder.vocab)))
         logger.info('Train Batch Size: %d', train_batch_size)
         logger.info('Dev Batch Size: %d', dev_batch_size)
-        logger.info('Total Parameters: %d', get_total_parameters(self.model))
         logger.info('Model:\n%s', self.model)
-
-        self.train_tensorboard.add_text('event/session', 'Starting new session.', self.step)
-        self.dev_tensorboard.add_text('event/session', 'Starting new session.', self.step)
 
     def run_epoch(self, train=False, trial_run=False):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
@@ -111,7 +124,8 @@ class Trainer():
         # Set mode
         torch.set_grad_enabled(train)
         self.model.train(mode=train)
-        self.tensorboard = self.train_tensorboard if train else self.dev_tensorboard
+        self.comet_ml.context = label.lower()
+        self.comet_ml.log_current_epoch(self.epoch)
 
         # Epoch Average Loss Metrics
         total_pre_spectrogram_loss, total_post_spectrogram_loss = 0.0, 0.0
@@ -143,19 +157,21 @@ class Trainer():
             total_frames += num_frames
             total_spectrogram_values += num_spectrogram_values
 
+        self.comet_ml.log_epoch_end(self.epoch)
+
+        if not trial_run and train:
+            self.epoch += 1
+
         if trial_run:
             return
 
-        with self.tensorboard.set_step(self.step) as tb:
-            # TODO: Update the tensorboard losses
-            tb.add_scalar('pre_frames/loss/epoch',
-                          total_pre_spectrogram_loss / total_spectrogram_values)
-            tb.add_scalar('post_frames/loss/epoch',
-                          total_post_spectrogram_loss / total_spectrogram_values)
-            tb.add_scalar('stop_token/loss/epoch', total_stop_token_loss / total_frames)
-            tb.add_scalar('attention/norm/epoch', total_attention_norm / total_frames)
-            tb.add_scalar('attention/standard_deviation/epoch',
-                          total_attention_standard_deviation / total_frames)
+        self.comet_ml.log_multiple_metrics({
+            'epoch/pre_spectrogram_loss': total_pre_spectrogram_loss / total_spectrogram_values,
+            'epoch/post_spectrogram_loss': total_post_spectrogram_loss / total_spectrogram_values,
+            'epoch/stop_token_loss': total_stop_token_loss / total_frames,
+            'epoch/attention_norm': total_attention_norm / total_frames,
+            'epoch/attention_std': total_attention_standard_deviation / total_frames,
+        })
 
     def _compute_loss(self, batch, predicted_pre_spectrogram, predicted_post_spectrogram,
                       predicted_stop_tokens):
@@ -196,7 +212,7 @@ class Trainer():
                 num_spectrogram_values, num_frames)
 
     def _sample_infered(self, batch, max_infer_frames=1000):
-        """ Run in inference mode without teacher forcing and push results to Tensorboard.
+        """ Run in inference mode without teacher forcing and visualizing results.
 
         Args:
             batch (dict): ``dict`` from ``DataBatchIterator``.
@@ -231,21 +247,22 @@ class Trainer():
         logger.info('Running Griffin-Lim....')
         waveform = griffin_lim(predicted_post_spectrogram.cpu().numpy())
 
-        with self.tensorboard.set_step(self.step) as tb:
-            tb.add_audio('infered/audio', 'infered/waveform', torch.from_numpy(waveform))
-            tb.add_scalar('attention/norm/inference', attention_norm)
-            tb.add_scalar('attention/standard_deviation/inference', attention_standard_deviation)
-            tb.add_text('infered/input', text)
-            tb.add_spectrogram('infered/predicted_spectrogram', predicted_post_spectrogram)
-            tb.add_spectrogram('infered/residual_spectrogram', predicted_residual)
-            tb.add_spectrogram('infered/gold_spectrogram', gold_spectrogram)
-            tb.add_spectrogram('infered/pre_spectrogram', predicted_pre_spectrogram)
-            tb.add_attention('infered/alignment', predicted_alignments)
-            tb.add_stop_token('infered/stop_token', predicted_stop_tokens)
+        self.comet_ml.log_multiple_metrics({
+            'infered/attention_norm': attention_norm,
+            'infered/attention_std': attention_standard_deviation,
+        })
+        self.comet_ml.log_text_and_audio('infered', text, torch.from_numpy(waveform))
+        log_figure = partial(self.comet_ml.log_figure, overwrite=True)
+        log_figure('infered/final_spectrogram', plot_spectrogram(predicted_post_spectrogram))
+        log_figure('infered/residual_spectrogram', plot_spectrogram(predicted_residual))
+        log_figure('infered/gold_spectrogram', plot_spectrogram(gold_spectrogram))
+        log_figure('infered/pre_spectrogram', plot_spectrogram(predicted_pre_spectrogram))
+        log_figure('infered/alignment', plot_attention(predicted_alignments))
+        log_figure('infered/stop_token', plot_stop_token(predicted_stop_tokens))
 
     def _sample_predicted(self, batch, predicted_pre_spectrogram, predicted_post_spectrogram,
                           predicted_alignments, predicted_stop_tokens):
-        """ Samples examples from a batch and outputs them to tensorboard
+        """ Samples examples from a batch and visualize them.
 
         Args:
             batch (dict): ``dict`` from ``DataBatchIterator``.
@@ -274,15 +291,14 @@ class Trainer():
         predicted_alignments = predicted_alignments[:spectrogam_length, item, :text_length]
         predicted_stop_tokens = predicted_stop_tokens[:spectrogam_length, item]
 
-        with self.tensorboard.set_step(self.step) as tb:
-            tb.add_spectrogram('predicted/predicted_spectrogram', predicted_post_spectrogram)
-            tb.add_spectrogram('predicted/residual_spectrogram', predicted_residual)
-            tb.add_spectrogram('predicted/delta_spectrogram', predicted_gold_delta)
-            tb.add_spectrogram('predicted/gold_spectrogram', gold_spectrogram)
-            tb.add_spectrogram('predicted/pre_spectrogram', predicted_pre_spectrogram)
-            tb.add_attention('predicted/alignment', predicted_alignments)
-            tb.add_stop_token('predicted/stop_token', predicted_stop_tokens)
-            tb.add_text('predicted/input', text)
+        log_figure = partial(self.comet_ml.log_figure, overwrite=True)
+        log_figure('predicted/final_spectrogram', plot_spectrogram(predicted_post_spectrogram))
+        log_figure('predicted/residual_spectrogram', plot_spectrogram(predicted_residual))
+        log_figure('predicted/delta_spectrogram', plot_spectrogram(predicted_gold_delta))
+        log_figure('predicted/gold_spectrogram', plot_spectrogram(gold_spectrogram))
+        log_figure('predicted/pre_spectrogram', plot_spectrogram(predicted_pre_spectrogram))
+        log_figure('predicted/alignment', plot_attention(predicted_alignments))
+        log_figure('predicted/stop_token', plot_stop_token(predicted_stop_tokens))
 
     def _run_step(self, batch, train=False, sample=False):
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
@@ -312,8 +328,7 @@ class Trainer():
         if train:
             self.optimizer.zero_grad()
             (pre_spectrogram_loss + post_spectrogram_loss + stop_token_loss).backward()
-            with self.tensorboard.set_step(self.step):
-                self.optimizer.step(tensorboard=self.tensorboard)
+            self.optimizer.step(remote_visualizer=self.comet_ml)
 
         (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss) = tuple(
             loss.item() for loss in (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss))
@@ -326,13 +341,15 @@ class Trainer():
             predicted_alignments.detach(), dim=2, mask=batch['spectrogram_mask'])
 
         if train:
-            with self.tensorboard.set_step(self.step) as tb:
-                tb.add_scalar('pre_frames/loss/step', pre_spectrogram_loss)
-                tb.add_scalar('post_frames/loss/step', post_spectrogram_loss)
-                tb.add_scalar('stop_token/loss/step', stop_token_loss)
-                tb.add_scalar('attention/norm/step', attention_norm)
-                tb.add_scalar('attention/standard_deviation/step', attention_standard_deviation)
+            self.comet_ml.log_multiple_metrics({
+                'step/pre_spectrogram_loss': pre_spectrogram_loss,
+                'step/post_spectrogram_loss': post_spectrogram_loss,
+                'step/stop_token_loss': stop_token_loss,
+                'step/attention_norm': attention_norm,
+                'step/attention_std': attention_standard_deviation,
+            })
             self.step += 1
+            self.comet_ml.set_step(self.step)
 
         if sample:
             self._sample_predicted(batch, predicted_pre_spectrogram, predicted_post_spectrogram,

@@ -12,7 +12,6 @@ import subprocess
 import numpy as np
 import torch
 
-from src.visualize import Tensorboard
 from src.utils import duplicate_stream
 
 logger = logging.getLogger(__name__)
@@ -28,17 +27,14 @@ class TrainingContextManager(object):
             ``torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')``.
         min_time (int, optional): If an run is less than ``min_time`` in seconds, then it's
             files are deleted.
-        tensorboard_step (int, optional): Tensorboards initialization step.
+        step (int, optional): The step training is started at.
     """
 
-    def __init__(self, root_directory, seed=123, device=None, min_time=60 * 15, tensorboard_step=0):
+    def __init__(self, root_directory, seed=123, device=None, min_time=60 * 15, step=0):
         self.root_directory = Path(root_directory)
-        self.tensorboard_step = tensorboard_step
-        if self.tensorboard_step == 0 and self.root_directory.is_dir():
+        if step == 0 and self.root_directory.is_dir():
             raise ValueError('Directory path is already in use %s' % str(self.root_directory))
 
-        # NOTE: Same id tensorboard uses. Unfortunatly, this may be off since Tensorboard
-        # fetches it's own id.
         # NOTE: ``self.id`` is used to distinguish this run if started from a checkpoint in the
         # same ``root_directory```
         self.id = str(time.time())[:10]
@@ -99,14 +95,6 @@ class TrainingContextManager(object):
         self.stop_duplicate_stream_stdout = duplicate_stream(sys.stdout, self.stdout_filename)
         self.stop_duplicate_stream_stderr = duplicate_stream(sys.stderr, self.stderr_filename)
 
-    def _tensorboard(self):
-        """ Within ``self.root_directory`` setup tensorboard.
-        """
-        # NOTE: ``tb`` short name to help with Tensorboard path layout in the left hand
-        log_dir = self.root_directory / 'tb'
-        self.dev_tensorboard = Tensorboard(log_dir=log_dir / 'dev', step=self.tensorboard_step)
-        self.train_tensorboard = Tensorboard(log_dir=log_dir / 'train', step=self.tensorboard_step)
-
     def _set_seed(self, seed):
         """ To ensure reproducibility, by seeding ``numpy``, ``random``, ``tf`` and ``torch``.
 
@@ -141,11 +129,9 @@ class TrainingContextManager(object):
         logger.info('Experiment Folder: %s' % self.root_directory)
         logger.info('Device: %s', self.device)
         logger.info('Seed: %s', self.seed)
-        logger.info('Tensorboard Step: %d', self.tensorboard_step)
         logger.info('ID: %s', self.id)
 
         self._check_module_versions()
-        self._tensorboard()
 
         return self
 
@@ -156,12 +142,6 @@ class TrainingContextManager(object):
 
         # Remove checkpoints
         shutil.rmtree(str(self.checkpoints_directory))
-
-        # Remove tensorboard files
-        get_tensorboard_log = (
-            lambda t: t.writer.file_writer.event_writer._ev_writer._py_recordio_writer.path)
-        Path(get_tensorboard_log(self.dev_tensorboard)).unlink()
-        Path(get_tensorboard_log(self.train_tensorboard)).unlink()
 
         # Remove log files
         self.stdout_filename.unlink()
@@ -186,9 +166,6 @@ class TrainingContextManager(object):
     def __exit__(self, exception, value, traceback):
         """ Runs after the experiment context ends.
         """
-        self.dev_tensorboard.close()
-        self.train_tensorboard.close()
-
         # Reset streams
         self.stop_duplicate_stream_stderr()
         self.stop_duplicate_stream_stdout()

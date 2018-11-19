@@ -99,3 +99,6 @@ generated
 
 # Various tmp files
 tmp/
+
+# Sensative files
+.env

@@ -6,24 +6,8 @@ Thanks for considering contributing!
 
 ### Do you have an experiment to contribute?
 
-To contribute an experiment, you'll need to document your Tensorboard and code changes. First,
-sync you experiment to the GCP ``tensorboard`` server as documented in ``GCP_WORKFLOW.md``.
-
-Then, submit a pull request to our
-[GitHub](https://github.com/AI2Incubator/WellSaidLabs) documenting the experiment
-with a link to the experiment.
-
-If you are contributing a new model to Tensorboard for which you'd like a separate
-Tensorboard, create one:
-
-    # SSH into tensorboard server
-    gcloud compute ssh tensorboard
-
-    # Create a background process
-    screen
-
-    # Pick some port between 6000-6999
-    tensorboard --logdir=path/to/your/experiment --port='6000' --window_title='Your Model'
+To contribute an experiment, run the associated executables. Remember to document your
+experimental results in comet.ml.
 
 ### Did you find a bug?
 

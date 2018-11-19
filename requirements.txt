@@ -15,9 +15,7 @@ librosa
 
 # Visualization Library
 matplotlib
-git+https://github.com/lanpa/tensorboard-pytorch.git@391a4aea3103bc9def18b630422cc103f9140569
-tensorflow==1.8.0
-tensorboard==1.8.0
+comet_ml
 
 # Testing
 pytest
@@ -32,6 +30,7 @@ yapf==0.22.0
 # Utils
 tqdm # Progress bar
 jupyter # Notebooks
+python-dotenv # Environment variables
 
 # Service
 Flask==1.0.2

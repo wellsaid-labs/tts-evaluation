@@ -3,6 +3,9 @@
 import matplotlib
 matplotlib.use('Agg')
 
+# NOTE: Comet needs to be imported before torch
+import comet_ml  # noqa: F401
+
 # Fix this weird error: https://github.com/pytorch/pytorch/issues/2083
 import torch  # noqa: F401
 

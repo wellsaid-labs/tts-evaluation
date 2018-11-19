@@ -7,16 +7,13 @@ from src.optimizer import Optimizer
 from src.optimizer import AutoOptimizer
 
 
-class MockTensorboard():
+class MockCometML():
 
     def __init__(self):
         pass
 
-    def add_text(self, *args, **kwargs):
-        pass
-
-    def add_scalar(self, *args, **kwargs):
-        pass
+    def __getattr__(self, attr):
+        return lambda *args, **kwargs: self
 
 
 class TestOptimizer(unittest.TestCase):
@@ -42,7 +39,7 @@ class TestOptimizer(unittest.TestCase):
         input_ = torch.randn(5, 3, 10)
         output, _ = net(input_)
         output.sum().backward()
-        optim.step(max_grad_norm=None, tensorboard=MockTensorboard())  # Set state
+        optim.step(max_grad_norm=None, remote_visualizer=MockCometML())  # Set state
 
         optim.to(torch.device('cpu'))
 
@@ -55,7 +52,7 @@ class TestOptimizer(unittest.TestCase):
         output, _ = net(input_)
         output.sum().backward()
         mock_clip_grad_norm.return_value = 1.0
-        optim.step(max_grad_norm=5, tensorboard=MockTensorboard(), rel_tol=1)
+        optim.step(max_grad_norm=5, remote_visualizer=MockCometML(), rel_tol=1)
         mock_clip_grad_norm.assert_called_once()
 
     @mock.patch("torch.nn.utils.clip_grad_norm_")
@@ -91,7 +88,7 @@ class TestOptimizer(unittest.TestCase):
         adam = torch.optim.Adam(params)
         adam.step = _step
         optim = Optimizer(adam)
-        optim.step(tensorboard=MockTensorboard())
+        optim.step(remote_visualizer=MockCometML())
         assert did_step
 
         # Test ``inf``
@@ -101,7 +98,7 @@ class TestOptimizer(unittest.TestCase):
         adam = torch.optim.Adam(params)
         adam.step = _step
         optim = Optimizer(adam)
-        optim.step(tensorboard=MockTensorboard())
+        optim.step(remote_visualizer=MockCometML())
         assert not did_step
 
         # Test ``nan``
@@ -110,5 +107,5 @@ class TestOptimizer(unittest.TestCase):
         adam = torch.optim.Adam(params)
         adam.step = _step
         optim = Optimizer(adam)
-        optim.step(tensorboard=MockTensorboard())
+        optim.step(remote_visualizer=MockCometML())
         assert not did_step

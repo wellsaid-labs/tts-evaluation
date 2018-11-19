@@ -282,6 +282,19 @@ def log_config():
     logger.info('Global configuration:\n%s', pretty_printer.pformat(_configuration))
 
 
+def get_config():
+    """ Get the current global configuration.
+
+    NOTE: It'd be an antipattern to use this functionality to set or get the configured parameters.
+    MOTIVATION: This functionality is intended for releasing the current configuration for logging.
+
+    Returns:
+        (dict): The current dictionary.
+
+    """
+    return _configuration
+
+
 def clear_config():
     """ Clear the global configuration """
     global _configuration

@@ -4,9 +4,9 @@ NOTE: This script uses ``sudo``, be prepared to type in your password.
 
 Example:
 
-    python3 -m src.bin.lsyncd --source ~/Code/WellSaidLabs/ \
+    python3 -m src.bin.gcp.lsyncd --source ~/Code/WellSaidLabs/ \
                               --destination /home/michaelp/WellSaidLabs \
-                              --user michaelp --instance tensorboard
+                              --user michaelp --instance wellsaid
 """
 from pathlib import Path
 

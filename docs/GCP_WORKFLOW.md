@@ -47,24 +47,6 @@ python3 -m src.bin.gcp.keep_alive --command="screen -dm bash -c \
 
 The ``--command`` flag runs a command on restart of the GCP server.
 
-## Synchronize tensorboard
-
-When running multiple experiments, we provide a tool to synchronize multiple tensorboard events
-to one GCP instance. Use it like so:
-
-```
-# Light GCP instance for running tensorboard
-gcloud compute ssh tensorboard --zone=us-us-west1-b
-
-# Find any new servers
-gcloud compute config-ssh
-
-python3 -m src.bin.gcp.periodic_rsync --destination ~/WellSaidLabs/sync/ \
-                                  --source ~/WellSaidLabs/experiments/signal_model
-```
-
-Now, GCP instance ``tensorboard`` will periodically pull events from other GCP instances.
-
 ## Download
 
 Following running experiments, you may want to download files off of a GCP instance, consider

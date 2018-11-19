@@ -30,6 +30,29 @@ logger = logging.getLogger(__name__)
 ROOT_PATH = Path(__file__).parent.parent.resolve()
 
 
+def dict_collapse(dict_, keys=[], delimitator='.'):
+    """ Recursive `dict` collapse.
+
+    Collapses a multi-level `dict` into a single level dict by merging the strings with a
+    delimitator.
+
+    Args:
+        dict_ (dict)
+        keys (list, optional): Base keys.
+        delimitator (str, optional): Delimitator used to join keys.
+
+    Returns:
+        (dict): Collapsed `dict`.
+    """
+    ret_ = {}
+    for key in dict_:
+        if isinstance(dict_[key], dict):
+            ret_.update(dict_collapse(dict_[key], keys + [key]))
+        else:
+            ret_[delimitator.join(keys + [key])] = dict_[key]
+    return ret_
+
+
 def set_basic_logging_config(device=None):
     """ Set up basic logging handlers. """
     if device is None:
@@ -39,7 +62,8 @@ def set_basic_logging_config(device=None):
 
     logging.basicConfig(
         level=logging.INFO,
-        format='[%(asctime)s]' + device_str + '[%(name)s][%(levelname)s] %(message)s')
+        format='\033[90m[%(asctime)s]' + device_str +
+        '[%(name)s][%(levelname)s]\033[0m %(message)s')
 
 
 def duplicate_stream(from_, to):

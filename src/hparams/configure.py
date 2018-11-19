@@ -4,13 +4,13 @@ import IPython
 import librosa
 import torch
 
-from src import datasets
 from src.hparams import add_config
 from src.hparams import configurable
-from src.utils import AnomalyDetector
 
 
 def _set_anomaly_detection():
+    # NOTE: Prevent circular dependency
+    from src.utils import AnomalyDetector
     add_config({
         'src.bin.train.signal_model.trainer.Trainer.__init__.min_rollback': 1,
         'src.utils.AnomalyDetector.__init__': {
@@ -121,7 +121,6 @@ def _set_audio_processing():
             }
         },
         'src.visualize': {
-            'Tensorboard.add_audio.sample_rate': sample_rate,
             'plot_waveform.sample_rate': sample_rate,
             'plot_spectrogram': {
                 'sample_rate': sample_rate,
@@ -300,6 +299,8 @@ def set_hparams():
     convolution_dropout = 0.5
     lstm_dropout = 0.1
 
+    # NOTE: Prevent circular dependency
+    from src import datasets
     dataset = datasets.lj_speech_dataset
     spectrogram_path_key = 'predicted_spectrogram_path'
 

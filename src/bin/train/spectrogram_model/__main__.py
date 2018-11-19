@@ -15,13 +15,15 @@ import warnings
 warnings.filterwarnings('ignore', message='numpy.dtype size changed')
 warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
 
+# NOTE: Needs to be imported before torch
+import comet_ml  # noqa
+
 from torchnlp.text_encoders import CharacterEncoder
 
 from src import datasets
 from src.bin.train.spectrogram_model.trainer import Trainer
 from src.hparams import add_config
 from src.hparams import configurable
-from src.hparams import log_config
 from src.hparams import set_hparams
 from src.training_context_manager import TrainingContextManager
 from src.utils import Checkpoint
@@ -51,8 +53,9 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
     return dataset
 
 
-def main(run_name,
+def main(run_one_liner,
          run_root=Path('experiments/spectrogram_model/'),
+         comet_ml_project_name='spectrogram_model',
          checkpoint_path=None,
          reset_optimizer=False,
          hparams={},
@@ -61,8 +64,9 @@ def main(run_name,
     """ Main module that trains a the spectrogram model saving checkpoints incrementally.
 
     Args:
-        run_name (str): Variable used in experiment directory path ``{run_root}/MM_DD/{run_name}/``.
+        run_one_liner (str): One liner describing the experiment.
         run_root (str, optional): Directory to save experiments.
+        comet_ml_project_name (str, optional): Project name to use with comet.ml.
         checkpoint_path (str, optional): Accepts a checkpoint path to load or empty string
             signaling to load the most recent checkpoint in ``run_root``.
         reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer.
@@ -83,16 +87,19 @@ def main(run_name,
         directory = checkpoint.directory.parent.parent
     else:
         step = 0
-        directory = run_root / str(time.strftime('%m_%d', time.localtime())) / run_name
+        directory = run_root / str(time.strftime('%b_%d/%H:%M:%S', time.localtime()))
 
-    with TrainingContextManager(root_directory=directory, tensorboard_step=step) as context:
-        log_config()
+    with TrainingContextManager(root_directory=directory, step=step) as context:
+        logger.info('Using directory %s', directory)
         train, dev = _get_dataset()()
         text_encoder = CharacterEncoder(
             train['text']) if checkpoint is None else checkpoint.text_encoder
 
         # Load checkpointed values
-        trainer_kwargs = {'text_encoder': text_encoder}
+        trainer_kwargs = {
+            'text_encoder': text_encoder,
+            'comet_ml_project_name': comet_ml_project_name
+        }
         if checkpoint is not None:
             logger.info('Loaded checkpoint %s', checkpoint.path)
             if reset_optimizer:
@@ -102,11 +109,12 @@ def main(run_name,
                 'model': checkpoint.model,
                 'optimizer': checkpoint.optimizer,
                 'epoch': checkpoint.epoch,
-                'step': checkpoint.step
+                'step': checkpoint.step,
+                'comet_ml_experiment_key': checkpoint.comet_ml_experiment_key,
             })
 
-        trainer = Trainer(context.device, train, dev, context.train_tensorboard,
-                          context.dev_tensorboard, **trainer_kwargs)
+        trainer = Trainer(context.device, train, dev, **trainer_kwargs)
+        trainer.comet_ml.log_other('one_liner', run_one_liner)
 
         # Training Loop
         while True:
@@ -123,10 +131,8 @@ def main(run_name,
                     optimizer=trainer.optimizer,
                     text_encoder=text_encoder,
                     epoch=trainer.epoch,
-                    step=trainer.step).save()
-
-            if not is_trial_run:
-                trainer.epoch += 1
+                    step=trainer.step,
+                    comet_ml_experiment_key=trainer.comet_ml.get_key()).save()
 
             print('–' * 100)
 
@@ -143,13 +149,14 @@ if __name__ == '__main__':  # pragma: no cover
         nargs='?',
         help='Without a value, loads the most recent checkpoint;'
         'otherwise, expects a checkpoint file path.')
-    parser.add_argument('-n', '--name', type=str, default=None, help='Experiment name.')
+    parser.add_argument(
+        '-l', '--one_liner', type=str, default=None, help='One liner describing the experiment')
     parser.add_argument(
         '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     args, unknown_args = parser.parse_known_args()
     hparams = parse_hparam_args(unknown_args)
     main(
-        run_name=args.name,
+        run_one_liner=args.one_liner,
         checkpoint_path=args.checkpoint,
         reset_optimizer=args.reset_optimizer,
         hparams=hparams)
