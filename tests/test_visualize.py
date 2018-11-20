@@ -13,7 +13,7 @@ from src.visualize import CometML
 
 def test_comet_ml():
     # Smoke tests
-    visualizer = CometML('', disabled=True)
+    visualizer = CometML('', disabled=True, api_key='')
     visualizer.set_step(0)
     visualizer.log_text_and_audio('audio', 'test input', torch.rand(100))
     visualizer.log_audio('audio', torch.rand(100))

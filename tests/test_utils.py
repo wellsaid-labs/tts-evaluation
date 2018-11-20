@@ -11,7 +11,6 @@ import numpy as np
 import pytest
 import torch
 
-from src.spectrogram_model import SpectrogramModel
 from src.optimizer import Optimizer
 from src.utils import AnomalyDetector
 from src.utils import combine_signal
@@ -23,6 +22,7 @@ from src.utils import split_signal
 from src.utils import get_weighted_standard_deviation
 from src.utils import chunks
 from src.utils import duplicate_stream
+from src.utils import get_masked_average_norm
 
 stdout_log = Path('tests/_test_data/stdout.log')
 
@@ -59,6 +59,18 @@ def test_duplicate_stream(capsys):
 
 def test_chunks():
     assert list(chunks([1, 2, 3], 2)) == [[1, 2], [3]]
+
+
+def test_get_masked_average_norm():
+    tensor = torch.Tensor([0.5, 0.2, 0.3])
+    expanded = tensor.unsqueeze(1).expand(3, 4)
+    assert get_masked_average_norm(tensor) == get_masked_average_norm(expanded)
+
+
+def test_get_masked_average_norm_masked():
+    tensor = torch.Tensor([0.5, 0.2, 0.3])
+    mask = torch.Tensor([1])
+    assert get_masked_average_norm(tensor) == get_masked_average_norm(tensor, mask=mask)
 
 
 def test_get_weighted_standard_deviation():
@@ -171,7 +183,7 @@ def test_load_most_recent_checkpoint_none():
 
 
 def test_load_save_checkpoint():
-    model = SpectrogramModel(10)
+    model = nn.LSTM(10, 10)
     optimizer = Optimizer(
         torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
     checkpoint = Checkpoint('tests/_test_data/', model=model, step=10, optimizer=optimizer)

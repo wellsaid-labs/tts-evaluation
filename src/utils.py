@@ -189,7 +189,7 @@ def get_masked_average_norm(tensor, dim=0, mask=None, norm=2):
     Args:
         tensor (torch.FloatTensor)
         dim (int)
-        mask (torch.FloatTensor, optional)
+        mask (torch.FloatTensor, optional): Tensor minus the norm dimension.
         norm (float, optional): The exponent value in the norm formulation.
 
     Returns:
@@ -201,7 +201,7 @@ def get_masked_average_norm(tensor, dim=0, mask=None, norm=2):
         norm = norm * mask
         divisor = mask.sum()
     else:
-        divisor = tensor.numel()
+        divisor = norm.numel()
 
     return (norm.sum() / divisor).item()
 
