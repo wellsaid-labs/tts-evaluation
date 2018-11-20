@@ -1,11 +1,9 @@
 
 <p align="center"><img width="15%" src="logo.png" /></p>
 
-<h1 align="center">WellSaid Labs: Text-to-speech</h3>
+<h1 align="center">WellSaid Labs</h3>
 
-WellSaid's implementation of Google Brain's Tacotron 2 and DeepMind's WaveRNN. A deep neural network
-architecture described in these papers:
-[Natural TTS Synthesis by Conditioning WaveNet on Mel Spectrogram Predictions](https://arxiv.org/pdf/1712.05884.pdf) and [Efficient Neural Audio Synthesis](https://arxiv.org/abs/1802.08435).
+WellSaid Lab's core product featuring our TrueVoice deep neural network architecture.
 
 ![PyPI - Python Version](https://img.shields.io/badge/python-3.5%2C%203.6-blue.svg)
 [![Build Status](https://travis-ci.com/AI2Incubator/WellSaid-Labs-Text-To-Speech.svg?token=xKbC739Gn2ssU4AStE7z&branch=master)](https://travis-ci.com/AI2Incubator/WellSaid-Labs-Text-To-Speech)
