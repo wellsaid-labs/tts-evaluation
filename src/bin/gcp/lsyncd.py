@@ -59,10 +59,8 @@ def main(source,
     config = config.replace('{destination}', destination)
     config = config.replace('{ip}', get_ip(instance))
     config = config.replace('{home}', os.environ['HOME'])
-
-    with open(tmp, 'w+') as file_:
-        file_.write(config)
-
+    tmp = Path(tmp)
+    tmp.write_text(config)
     os.execvp('sudo', ['sudo', 'lsyncd', tmp])
 
 
