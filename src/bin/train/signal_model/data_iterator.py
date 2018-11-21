@@ -25,7 +25,6 @@ class DataLoader(data.Dataset):
         audio_path_key (str, optional): Given a ``dict`` example, this is the key for the
             audio path.
         spectrogram_path_key (str, optional)
-        other_keys (str, optional)
         slice_size (int, optional): In spectrogram frames, size of slice.
         slice_pad (int, optional): Pad the spectrogram slice with ``frame_pad`` frames on each side.
         random (random.Random, optional): Random number generator to sample data.
@@ -40,14 +39,12 @@ class DataLoader(data.Dataset):
                  data,
                  audio_path_key='audio_path',
                  spectrogram_path_key='predicted_spectrogram_path',
-                 other_keys=['speaker'],
                  slice_size=3,
                  slice_pad=0,
                  random=random):
         self.data = data
         self.audio_path_key = audio_path_key
         self.spectrogram_path_key = spectrogram_path_key
-        self.other_keys = other_keys
         self.slice_size = slice_size
         self.slice_pad = slice_pad
         self.random = random

@@ -70,12 +70,13 @@ def normalize_audio(audio_path,
     return dest_path
 
 
-def _predict_spectrogram(checkpoint, text, real_spectrogram):
-    """ Predicte a ground truth aligned spectrogram.
+def _predict_spectrogram(checkpoint, text, speaker, real_spectrogram):
+    """ Predict a ground truth aligned spectrogram.
 
     Args:
         checkpoint (Checkpoint): Checkpoint for the spectrogram model.
         text (str)
+        speaker (src.datasets.Speaker)
         real_spectrogram (numpy.float32 [num_frames, frame_channels])
 
     Returns:
@@ -88,19 +89,21 @@ def _predict_spectrogram(checkpoint, text, real_spectrogram):
 
         # [num_tokens]
         encoded_text = checkpoint.text_encoder.encode(text)
+        encoded_speaker = checkpoint.speaker_encoder.encode(speaker)
 
         # [num_frames, frame_channels]
         predicted_spectrogram = checkpoint.model(
-            encoded_text, ground_truth_frames=real_spectrogram)[1]
+            encoded_text, encoded_speaker, ground_truth_frames=real_spectrogram)[1]
     return predicted_spectrogram
 
 
-def compute_spectrogram(audio_path, text=None, spectrogram_model_checkpoint=None):
+def compute_spectrogram(audio_path, text=None, speaker=None, spectrogram_model_checkpoint=None):
     """ Computes the spectrogram and saves to cache returning the cache filename.
 
     Args:
         audio_path (Path): Path to a audio file.
         text (str, optional): Text used to compute a predicted spectrogram.
+        speaker (src.datasets.Speaker, optional): Speaker used to compute a predicted spectrogram.
         spectrogram_model_checkpoint (Checkpoint, optional): Spectrogram model checkpoint to
             compute a predicted spectrogram in addition to the real spectrogram.
 
@@ -109,7 +112,8 @@ def compute_spectrogram(audio_path, text=None, spectrogram_model_checkpoint=None
         (Path): Filename of cache'd spectrogram aligned audio file.
         (Path or None): Filename of cache'd predicted spectrogram audio file.
     """
-    include_predicted = (text is not None and spectrogram_model_checkpoint is not None)
+    include_predicted = (
+        text is not None and speaker is not None and spectrogram_model_checkpoint is not None)
 
     dest_padded_audio = audio_path.parent / 'pad({}).npy'.format(audio_path.stem, audio_path.suffix)
     dest_spectrogram = audio_path.parent / 'spectrogram({}).npy'.format(audio_path.stem)
@@ -140,7 +144,7 @@ def compute_spectrogram(audio_path, text=None, spectrogram_model_checkpoint=None
         numpy.save(str(dest_spectrogram), log_mel_spectrogram, allow_pickle=False)
 
     if include_predicted:
-        predicted_spectrogram = _predict_spectrogram(spectrogram_model_checkpoint, text,
+        predicted_spectrogram = _predict_spectrogram(spectrogram_model_checkpoint, text, speaker,
                                                      log_mel_spectrogram)
         numpy.save(str(dest_predicted_spectrogram), predicted_spectrogram, allow_pickle=False)
 

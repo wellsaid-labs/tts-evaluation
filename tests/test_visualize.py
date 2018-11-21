@@ -9,14 +9,14 @@ from src.visualize import plot_stop_token
 from src.visualize import plot_waveform
 from src.visualize import spectrogram_to_image
 from src.visualize import CometML
+from src.datasets import Speaker
 
 
 def test_comet_ml():
     # Smoke tests
     visualizer = CometML('', disabled=True, api_key='')
     visualizer.set_step(0)
-    visualizer.log_text_and_audio('audio', 'test input', torch.rand(100))
-    visualizer.log_audio('audio', torch.rand(100))
+    visualizer.log_text_and_audio('audio', 'test input', Speaker.LINDA_JOHNSON, torch.rand(100))
 
 
 def test_plot_spectrogram():

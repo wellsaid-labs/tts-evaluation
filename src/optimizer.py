@@ -94,7 +94,7 @@ class Optimizer(object):
                 remote_visualizer.log_metric('step/grad_norm/infinity', parameter_norm_inf)
             self.optimizer.step()
         elif remote_visualizer is not None:
-            logger.warn('Gradient was too large "%s", skipping batch.', str(parameter_norm))
+            logger.warning('Gradient was too large "%s", skipping batch.', str(parameter_norm))
 
         return parameter_norm
 

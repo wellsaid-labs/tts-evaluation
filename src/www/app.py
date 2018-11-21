@@ -26,6 +26,7 @@ from src.hparams import set_hparams
 from src.hparams import log_config
 from src.utils import combine_signal
 from src.utils import Checkpoint
+from src.datasets import Speaker
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
@@ -92,19 +93,25 @@ def get_sample(filename, default_sample_filename='voiceover.wav'):
         attachment_filename=attachment_filename)
 
 
-def _synthesize(text, is_high_fidelity):
+def _synthesize(text, speaker, is_high_fidelity):
     """ Synthesize audio given ``text``, returning the audio filename.
     """
     log_config()
+
     text_encoder = spectrogram_model_checkpoint.text_encoder
     encoded_text = text_encoder.encode(text)
+
+    speaker = getattr(Speaker, str(speaker))  # Get speaker by ID or name
+    speaker_encoder = spectrogram_model_checkpoint.speaker_encoder
+    encoded_speaker = speaker_encoder.encode(speaker)
 
     if text_encoder.decode(encoded_text) != text:
         raise GenericException('Text has improper characters.')
 
     with torch.no_grad():
         # predicted_frames [num_frames, batch_size, frame_channels]
-        predicted_frames = spectrogram_model_checkpoint.model.infer(tokens=encoded_text)[1]
+        predicted_frames = spectrogram_model_checkpoint.model.infer(
+            tokens=encoded_text, speaker=encoded_speaker)[1]
 
         if is_high_fidelity:
             # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
@@ -127,12 +134,14 @@ def _synthesize(text, is_high_fidelity):
 def synthesize():
     """ Synthesize the requested text as speech.
 
-    TODO: Add the ability to pick from multiple speakers
+    TODO: Add the ability to pick from multiple speakers in the JS
     """
     request_data = request.get_json()
     logger.info('Got request %s', request_data)
     filename = _synthesize(
-        text=request_data['text'], is_high_fidelity=request_data['isHighFidelity'])
+        text=request_data['text'],
+        speaker=request_data['speaker'],
+        is_high_fidelity=request_data['isHighFidelity'])
     return jsonify({'filename': str(filename.name)})
 
 

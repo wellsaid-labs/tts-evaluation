@@ -68,20 +68,18 @@ class SpectrogramModel(nn.Module):
 
       Args:
         vocab_size (int): Maximum size of the vocabulary used to encode ``tokens``.
-        encoder_hidden_size (int, optional): The hidden size of the final hidden feature
-            representation from the Encoder.
+        num_speakers (int)
         frame_channels (int, optional): Number of channels in each frame (sometimes refered to
             as "Mel-frequency bins" or "FFT bins" or "FFT bands")
       """
 
     @configurable
-    def __init__(self, vocab_size, encoder_hidden_size=512, frame_channels=80):
+    def __init__(self, vocab_size, num_speakers, frame_channels=80):
 
         super().__init__()
 
-        self.encoder = Encoder(vocab_size, lstm_hidden_size=encoder_hidden_size)
-        self.decoder = AutoregressiveDecoder(
-            encoder_hidden_size=encoder_hidden_size, frame_channels=frame_channels)
+        self.encoder = Encoder(vocab_size, num_speakers)
+        self.decoder = AutoregressiveDecoder(frame_channels=frame_channels)
         self.post_net = PostNet(frame_channels=frame_channels)
 
     def _get_stopped_indexes(self, predictions, stop_threshold):
@@ -129,11 +127,12 @@ class SpectrogramModel(nn.Module):
 
         return frames_with_residual
 
-    def infer(self, tokens, max_recursion=2000, stop_threshold=0.5):
+    def infer(self, tokens, speaker, max_recursion=2000, stop_threshold=0.5):
         """
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens]): Batched set of
                 sequences.
+            speaker (torch.LongTensor [batch_size]): Batched speaker encoding.
             max_recursion (int, optional): The maximum sequential predictions to make before
                 quitting; Used for testing and defensive design.
             stop_threshold (float, optional): The threshold probability for deciding to stop.
@@ -158,7 +157,7 @@ class SpectrogramModel(nn.Module):
 
         # [batch_size, num_tokens]
         tokens_mask = tokens.detach().eq(PADDING_INDEX)
-        encoded_tokens = self.encoder(tokens)
+        encoded_tokens = self.encoder(tokens, speaker)
 
         # [num_tokens, batch_size, hidden_size]
         _, batch_size, _ = encoded_tokens.shape
@@ -200,11 +199,12 @@ class SpectrogramModel(nn.Module):
 
         return frames, frames_with_residual, stop_tokens, alignments, lengths
 
-    def forward(self, tokens, ground_truth_frames):
+    def forward(self, tokens, speaker, ground_truth_frames):
         """
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens]): Batched set of
                 sequences.
+            speaker (torch.LongTensor [batch_size]): Batched speaker encoding.
             ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or
                 [num_frames, frame_channels]): During training, ground truth frames for
                 teacher-forcing.
@@ -233,7 +233,7 @@ class SpectrogramModel(nn.Module):
 
         # [batch_size, num_tokens]
         tokens_mask = tokens.detach().eq(PADDING_INDEX)
-        encoded_tokens = self.encoder(tokens)
+        encoded_tokens = self.encoder(tokens, speaker)
 
         frames, stop_tokens, hidden_state, alignments = self.decoder(
             encoded_tokens, tokens_mask, ground_truth_frames=ground_truth_frames)

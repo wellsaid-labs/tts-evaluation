@@ -12,7 +12,6 @@ from src.bin.train.signal_model.data_iterator import DataLoader
 def test_data_loader(randint_mock, mock_load):
     audio_path_key = 'audio_path'
     spectrogram_path_key = 'predicted_spectrogram_path'
-    other_keys = ['speaker']
     randint_mock.return_value = 5
     samples_per_frame = 10
     spectrogram_channels = 80
@@ -25,11 +24,9 @@ def test_data_loader(randint_mock, mock_load):
         [{
             audio_path_key: 'audio.npy',
             spectrogram_path_key: 'spectrogram.npy',
-            other_keys[0]: None
         }],
         audio_path_key=audio_path_key,
         spectrogram_path_key=spectrogram_path_key,
-        other_keys=other_keys,
         slice_size=slice_size,
         slice_pad=slice_pad)
     assert len(data_loader) == 1

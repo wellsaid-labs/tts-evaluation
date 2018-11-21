@@ -3,6 +3,7 @@ from unittest import mock
 import pathlib
 
 from torchnlp.text_encoders import CharacterEncoder
+from torchnlp.text_encoders import IdentityEncoder
 
 import numpy
 
@@ -11,6 +12,7 @@ from src.datasets.process import compute_spectrogram
 from src.datasets.process import normalize_audio
 from src.datasets.process import process_with_processes
 from src.datasets.process import split_dataset
+from src.datasets import Speaker
 from src.spectrogram_model import SpectrogramModel
 from src.utils import Checkpoint
 
@@ -59,12 +61,14 @@ def test_normalize_audio_not_normalized(mock_os_system):
 @mock.patch("src.datasets.process.numpy.save")
 def test_compute_spectrogram(mock_save):
     text_encoder = CharacterEncoder(['this is a test'])
+    speaker_encoder = IdentityEncoder([Speaker.LINDA_JOHNSON])
     text = 'this is a test'
     checkpoint = Checkpoint(
         directory='run/09_10/norm',
-        model=SpectrogramModel(text_encoder.vocab_size),
+        model=SpectrogramModel(text_encoder.vocab_size, speaker_encoder.vocab_size),
         step=0,
-        text_encoder=text_encoder)
+        text_encoder=text_encoder,
+        speaker_encoder=speaker_encoder)
     checkpoint.path = pathlib.Path('run/09_10/norm/step_123.pt')
     audio_path = pathlib.Path('tests/_test_data/lj_speech_24000.wav')
     expected_dest_spectrogram = 'tests/_test_data/spectrogram(lj_speech_24000).npy'
@@ -73,7 +77,7 @@ def test_compute_spectrogram(mock_save):
                                            '(lj_speech_24000,run_09_10_norm_step_123_pt).npy')
     mock_save.return_value = None
     dest_padded_audio, dest_spectrogram, dest_predicted_spectrogram = compute_spectrogram(
-        audio_path, text, checkpoint)
+        audio_path, text, Speaker.LINDA_JOHNSON, checkpoint)
     assert pathlib.Path(expected_dest_spectrogram) == dest_spectrogram
     assert pathlib.Path(expected_dest_padded_audio) == dest_padded_audio
     assert pathlib.Path(expected_dest_predicted_spectrogram) == dest_predicted_spectrogram
@@ -81,15 +85,19 @@ def test_compute_spectrogram(mock_save):
 
 def test__predict_spectrogram():
     text_encoder = CharacterEncoder(['this is a test'])
+    speaker_encoder = IdentityEncoder([Speaker.LINDA_JOHNSON])
     frame_channels = 80
     num_frames = 10
     checkpoint = Checkpoint(
         directory='.',
-        model=SpectrogramModel(text_encoder.vocab_size, frame_channels=frame_channels),
+        model=SpectrogramModel(
+            text_encoder.vocab_size, speaker_encoder.vocab_size, frame_channels=frame_channels),
         step=0,
+        speaker_encoder=speaker_encoder,
         text_encoder=text_encoder)
     real_spectrogram = numpy.zeros((num_frames, frame_channels), dtype=numpy.float32)
-    predicted_spectrogram = _predict_spectrogram(checkpoint, 'this is a test', real_spectrogram)
+    predicted_spectrogram = _predict_spectrogram(checkpoint, 'this is a test',
+                                                 Speaker.LINDA_JOHNSON, real_spectrogram)
     assert predicted_spectrogram.shape == (num_frames, frame_channels)
 
 

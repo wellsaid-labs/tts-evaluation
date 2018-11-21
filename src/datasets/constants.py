@@ -14,16 +14,19 @@ class _LengthMetaClass(type):
 
 class Speaker(object, metaclass=_LengthMetaClass):
 
-    def __init__(self, name, gender, index):
+    def __init__(self, name, gender, id):
         self.name = name
         self.gender = gender
-        self.index = index
+        self.id = id
 
     def __int__(self):
-        return self.index
+        return self.id
 
     def __eq__(self, other):
-        return self.name == other.name and self.gender == other.gender
+        return self.id == other.id
+
+    def __hash__(self):
+        return self.id
 
     @classmethod
     def class_length(class_):
@@ -31,8 +34,8 @@ class Speaker(object, metaclass=_LengthMetaClass):
         return len(speakers)
 
     def __repr__(self):
-        return '%s(name=\'%s\', gender=%s, index=%d)' % (self.__class__.__name__, self.name,
-                                                         self.gender.name, self.index)
+        return '%s(name=\'%s\', gender=%s, id=%d)' % (self.__class__.__name__, self.name,
+                                                      self.gender.name, self.id)
 
 
 _speaker_args = {
@@ -42,5 +45,7 @@ _speaker_args = {
     'HILARY_NORIEGA': ('Hilary Noriega', Gender.FEMALE),
     'LINDA_JOHNSON': ('Linda Johnson', Gender.FEMALE)
 }
-for index, (key, args) in enumerate(_speaker_args.items()):
-    setattr(Speaker, key, Speaker(*args, index=index))
+for id, (key, args) in enumerate(_speaker_args.items()):
+    speaker = Speaker(*args, id=id)
+    setattr(Speaker, key, speaker)
+    setattr(Speaker, str(id), speaker)

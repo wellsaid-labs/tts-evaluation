@@ -32,7 +32,9 @@ class Encoder(nn.Module):
 
     Args:
         vocab_size (int): Maximum size of the vocabulary used to encode ``tokens``.
-        embedding_dim (int, optional): Size of the embedding dimensions.
+        num_speakers (int)
+        token_embedding_dim (int, optional): Size of the token embedding dimensions.
+        speaker_embedding_dim (int, optional): Size of the speaker embedding dimensions.
         num_convolution_layers (int, optional): Number of convolution layers to apply.
         num_convolution_filters (odd :clas:`int`, optional): Number of dimensions (channels)
             produced by the convolution.
@@ -47,7 +49,9 @@ class Encoder(nn.Module):
     @configurable
     def __init__(self,
                  vocab_size,
-                 embedding_dim=512,
+                 num_speakers,
+                 token_embedding_dim=512,
+                 speaker_embedding_dim=256,
                  num_convolution_layers=3,
                  num_convolution_filters=512,
                  convolution_filter_size=5,
@@ -63,11 +67,12 @@ class Encoder(nn.Module):
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, ('`convolution_filter_size` must be odd')
 
-        self.embed = nn.Embedding(vocab_size, embedding_dim, padding_idx=PADDING_INDEX)
+        self.embed_token = nn.Embedding(vocab_size, token_embedding_dim, padding_idx=PADDING_INDEX)
+        self.embed_speaker = nn.Embedding(num_speakers, speaker_embedding_dim)
         self.convolution_layers = nn.Sequential(*tuple([
             nn.Sequential(
                 nn.Conv1d(
-                    in_channels=num_convolution_filters if i != 0 else embedding_dim,
+                    in_channels=num_convolution_filters if i != 0 else token_embedding_dim,
                     out_channels=num_convolution_filters,
                     kernel_size=convolution_filter_size,
                     padding=int((convolution_filter_size - 1) / 2)),
@@ -97,23 +102,28 @@ class Encoder(nn.Module):
             if isinstance(module, nn.Conv1d):
                 nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
 
-    def forward(self, tokens):
+    def forward(self, tokens, speaker):
         """
         Args:
-            tokens (torch.FloatTensor [batch_size, num_tokens]): Batched set of sequences.
+            tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
+            speaker (torch.LongTensor [batch_size]): Batched speaker encoding.
 
         Returns:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batched set of
                 encoded sequences where:
-                ``hidden_size = (lstm_hidden_size / 2) * (2 if lstm_bidirectional else 1)``
+                ``hidden_size = speaker_embedding_dim +
+                                (lstm_hidden_size / 2) * (2 if lstm_bidirectional else 1)``
         """
-        # [batch_size, num_tokens] → [batch_size, num_tokens, embedding_dim]
-        tokens = self.embed(tokens)
+        # [batch_size, num_tokens] → [batch_size, num_tokens, token_embedding_dim]
+        tokens = self.embed_token(tokens)
 
-        # Our input is expected to have shape `[batch_size, num_tokens, embedding_dim]`.  The
+        # [batch_size] → [batch_size, speaker_embedding_dim]
+        speaker = self.embed_speaker(speaker)
+
+        # Our input is expected to have shape `[batch_size, num_tokens, token_embedding_dim]`.  The
         # convolution layers expect input of shape
-        # `[batch_size, in_channels (embedding_dim), sequence_length (num_tokens)]`. We thus need to
-        # transpose the tensor first.
+        # `[batch_size, in_channels (token_embedding_dim), sequence_length (num_tokens)]`. We thus
+        # need to transpose the tensor first.
         tokens = torch.transpose(tokens, 1, 2)
 
         # [batch_size, num_convolution_filters, num_tokens]
@@ -129,4 +139,12 @@ class Encoder(nn.Module):
         encoded_tokens, _ = self.lstm(tokens)
         encoded_tokens = self.lstm_dropout(encoded_tokens)
 
-        return encoded_tokens
+        # [batch_size, speaker_embedding_dim] → [1, batch_size, speaker_embedding_dim]
+        speaker = speaker.unsqueeze(0)
+
+        # [1, batch_size, speaker_embedding_dim] → [num_tokens, batch_size, speaker_embedding_dim]
+        speaker = speaker.expand(encoded_tokens.size()[0], -1, -1)
+
+        # [num_tokens, batch_size,
+        #  speaker_embedding_dim + lstm_hidden_size * (2 if lstm_bidirectional else 1)]
+        return torch.cat((encoded_tokens, speaker), dim=2)

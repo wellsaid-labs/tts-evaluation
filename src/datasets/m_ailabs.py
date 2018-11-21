@@ -112,6 +112,7 @@ def _processing_func(row,
     spectrogram_model_checkpoint = Checkpoint.from_path(spectrogram_model_checkpoint_path)
     text = row[metadata_text_column].strip()
     metadata_path = row[metadata_path_column]
+    book = _path2book(metadata_path, directory=directory)
     audio_path = Path(metadata_path.parent,
                       metadata_audio_path_template.format(row[metadata_audio_column]))
 
@@ -121,8 +122,7 @@ def _processing_func(row,
 
     audio_path = normalize_audio(audio_path, **kwargs)
     audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
-        audio_path, text, spectrogram_model_checkpoint)
-    book = _path2book(metadata_path, directory=directory)
+        audio_path, text, book.speaker, spectrogram_model_checkpoint)
     return {
         'text': text,
         'audio_path': audio_path,
@@ -234,7 +234,7 @@ def _path2book(metadata_path, directory=DOWNLOAD_DIRECTORY):
 
     Examples:
         >>> _path2book(Path('data/M-AILABS/en_US/by_book/female/judy_bieber/sky_island/metadata.csv')) # noqa: E501
-        Book(speaker=Speaker(name='Judy Bieber', gender=FEMALE, index=0), title='sky_island')
+        Book(speaker=Speaker(name='Judy Bieber', gender=FEMALE, id=0), title='sky_island')
     """
     metadata_path = metadata_path.relative_to(directory)
     # EXAMPLE: metadata_path=en_US/by_book/female/judy_bieber/dorothy_and_wizard_oz/metadata.csv

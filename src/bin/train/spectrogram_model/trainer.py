@@ -37,6 +37,7 @@ class Trainer():
         train_dataset (iterable): Train dataset used to optimize the model.
         dev_dataset (iterable): Dev dataset used to evaluate.
         text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
+        speaker_encoder (torchnlp.TextEncoder): Text encoder used to encode the speaker label.
         comet_ml_project_name (str): Project name, used for grouping experiments.
         comet_ml_experiment_key (str, optioanl): Previous experiment key to restart visualization.
         train_batch_size (int, optional): Batch size used for training.
@@ -56,6 +57,7 @@ class Trainer():
                  train_dataset,
                  dev_dataset,
                  text_encoder,
+                 speaker_encoder,
                  comet_ml_project_name,
                  comet_ml_experiment_key=None,
                  train_batch_size=32,
@@ -68,7 +70,8 @@ class Trainer():
                  optimizer=Adam):
 
         # Allow for ``class`` or a class instance
-        self.model = model if isinstance(model, torch.nn.Module) else model(text_encoder.vocab_size)
+        self.model = model if isinstance(model, torch.nn.Module) else model(
+            text_encoder.vocab_size, speaker_encoder.vocab_size)
         self.model.to(device)
 
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
@@ -85,6 +88,7 @@ class Trainer():
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
         self.text_encoder = text_encoder
+        self.speaker_encoder = speaker_encoder
 
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
@@ -98,8 +102,10 @@ class Trainer():
             'num_gpu': torch.cuda.device_count(),
             'num_training_row': len(self.train_dataset),
             'num_dev_row': len(self.dev_dataset),
-            'vocab_size': text_encoder.vocab_size,
+            'vocab_size': self.text_encoder.vocab_size,
             'vocab': sorted(self.text_encoder.vocab),
+            'num_speakers': self.speaker_encoder.vocab_size,
+            'speakers': sorted([str(v) for v in self.speaker_encoder.vocab]),
         })
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
@@ -137,6 +143,7 @@ class Trainer():
         data_iterator = DataBatchIterator(
             self.train_dataset if train else self.dev_dataset,
             self.text_encoder,
+            self.speaker_encoder,
             self.train_batch_size if train else self.dev_batch_size,
             self.device,
             trial_run=trial_run)
@@ -227,6 +234,7 @@ class Trainer():
         text_length = batch['text_lengths'][item]
 
         text = batch['text'][:text_length, item]
+        speaker = batch['speaker'][item].unsqueeze(0)  # 0-d to 1-d tensor
         gold_spectrogram = batch['spectrogram'][:spectrogam_length, item]
 
         with torch.no_grad():
@@ -234,9 +242,10 @@ class Trainer():
 
             logger.info('Running inference...')
             (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
-             predicted_alignments, _) = self.model.infer(text, max_infer_frames)
+             predicted_alignments, _) = self.model.infer(text, speaker, max_infer_frames)
 
         text = self.text_encoder.decode(text)
+        speaker = self.speaker_encoder.decode(speaker)
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
 
         # [num_frames, num_tokens] → scalar
@@ -251,7 +260,7 @@ class Trainer():
             'infered/attention_norm': attention_norm,
             'infered/attention_std': attention_standard_deviation,
         })
-        self.comet_ml.log_text_and_audio('infered', text, torch.from_numpy(waveform))
+        self.comet_ml.log_text_and_audio('infered', text, speaker, torch.from_numpy(waveform))
         log_figure = partial(self.comet_ml.log_figure, overwrite=True)
         log_figure('infered/final_spectrogram', plot_spectrogram(predicted_post_spectrogram))
         log_figure('infered/residual_spectrogram', plot_spectrogram(predicted_residual))
@@ -277,9 +286,6 @@ class Trainer():
         item = random.randint(0, batch_size - 1)
         spectrogam_length = batch['spectrogram_lengths'][item]
         text_length = batch['text_lengths'][item]
-
-        text = batch['text'][:text_length, item]
-        text = self.text_encoder.decode(text)
 
         predicted_post_spectrogram = predicted_post_spectrogram[:spectrogam_length, item]
         predicted_pre_spectrogram = predicted_pre_spectrogram[:spectrogam_length, item]
@@ -319,7 +325,7 @@ class Trainer():
             attention_norm (float): The infinity norm of attention averaged over all alignments.
         """
         (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
-         predicted_alignments) = self.model(batch['text'], batch['spectrogram'])
+         predicted_alignments) = self.model(batch['text'], batch['speaker'], batch['spectrogram'])
 
         (pre_spectrogram_loss, post_spectrogram_loss,
          stop_token_loss, num_frame_predictions, num_frames) = self._compute_loss(

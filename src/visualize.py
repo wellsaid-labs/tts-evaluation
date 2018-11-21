@@ -225,7 +225,7 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
     else:
         _remote_visualizer = ExistingExperiment(previous_experiment=experiment_key, **kwargs)
 
-    def log_text_and_audio(self, tag, text, audio, step=None):
+    def log_text_and_audio(self, tag, text, speaker, audio, step=None):
         """ Add text and audio to remote visualizer in one entry.
 
         TODO: Consider logging the Waveform as well
@@ -233,6 +233,7 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
         Args:
             tag (str): Tag for this event.
             text (str)
+            speaker (src.dataset.Speaker)
             audio (torch.Tensor)
             step (int, optional)
         """
@@ -243,32 +244,13 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
             <p><b>Step:</b> {step}</p>
             <p><b>Tag:</b> {tag}</p>
             <p><b>Text:</b> {text}</p>
+            <p><b>Speaker:</b> {speaker}</p>
             <p><b>Audio:</b></p>
             <audio controls="" src="data:audio/wav;base64,{base64_audio}"></audio>
         </section>
-        """.format(step=step, tag=tag, text=text, base64_audio=_encode_audio(audio)))
+        """.format(
+            step=step, tag=tag, text=text, speaker=str(speaker), base64_audio=_encode_audio(audio)))
 
     _remote_visualizer.log_text_and_audio = log_text_and_audio.__get__(_remote_visualizer)
 
-    def log_audio(self, tag, audio, step=None):
-        """
-        TODO: Consider logging the Waveform as well
-
-        Args:
-            tag (str): Tag for this event.
-            audio (torch.Tensor)
-            step (int, optional)
-        """
-        step = self.curr_step if step is None else step
-        assert step is not None
-        _remote_visualizer.log_html(_BASE_TEMPLATE % """
-        <section>
-            <p><b>Step:</b> {step}</p>
-            <p><b>Tag:</b> {tag}</p>
-            <p><b>Audio:</b></p>
-            <audio controls="" src="data:audio/wav;base64,{base64_audio}"></audio>
-        </section>
-        """.format(step=step, tag=tag, base64_audio=_encode_audio(audio)))
-
-    _remote_visualizer.log_audio = log_audio.__get__(_remote_visualizer)
     return _remote_visualizer

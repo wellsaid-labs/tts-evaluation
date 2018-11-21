@@ -28,7 +28,8 @@ def _processing_func(row,
                      metadata_audio_column=0,
                      metadata_audio_path_template='wavs/{}.wav',
                      metadata_text_column=1,
-                     verbalize=True):  # pragma: no cover
+                     verbalize=True,
+                     speaker=Speaker.LINDA_JOHNSON):  # pragma: no cover
     """
     Note:
         - ``# pragma: no cover`` is used because this functionality is run with multiprocessing
@@ -45,6 +46,7 @@ def _processing_func(row,
             determines the filename.
         metadata_text_column (int, optional): Column name or index with the audio transcript.
         verbalize (bool, optional): Verbalize the text.
+        speaker (src.datasets.Speaker, optional)
 
     Returns:
         {
@@ -78,14 +80,14 @@ def _processing_func(row,
     text = _remove_accents(text)
     audio_path = normalize_audio(audio_path, **kwargs)
     audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
-        audio_path, text, spectrogram_model_checkpoint)
+        audio_path, text, speaker, spectrogram_model_checkpoint)
 
     return {
         'text': text,
         'audio_path': audio_path,
         'spectrogram_path': spectrogram_path,
         'predicted_spectrogram_path': predicted_spectrogram_path,
-        'speaker': Speaker.LINDA_JOHNSON
+        'speaker': speaker,
     }
 
 

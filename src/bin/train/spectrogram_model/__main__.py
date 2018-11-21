@@ -19,6 +19,7 @@ warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
 import comet_ml  # noqa
 
 from torchnlp.text_encoders import CharacterEncoder
+from torchnlp.text_encoders import IdentityEncoder
 
 from src import datasets
 from src.bin.train.spectrogram_model.trainer import Trainer
@@ -94,10 +95,13 @@ def main(run_one_liner,
         train, dev = _get_dataset()()
         text_encoder = CharacterEncoder(
             train['text']) if checkpoint is None else checkpoint.text_encoder
+        speaker_encoder = IdentityEncoder(
+            train['speaker']) if checkpoint is None else checkpoint.speaker_encoder
 
         # Load checkpointed values
         trainer_kwargs = {
             'text_encoder': text_encoder,
+            'speaker_encoder': speaker_encoder,
             'comet_ml_project_name': comet_ml_project_name
         }
         if checkpoint is not None:
@@ -130,6 +134,7 @@ def main(run_one_liner,
                     model=trainer.model,
                     optimizer=trainer.optimizer,
                     text_encoder=text_encoder,
+                    speaker_encoder=speaker_encoder,
                     epoch=trainer.epoch,
                     step=trainer.step,
                     comet_ml_experiment_key=trainer.comet_ml.get_key()).save()

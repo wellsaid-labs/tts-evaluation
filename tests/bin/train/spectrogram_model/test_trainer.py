@@ -4,11 +4,13 @@ from contextlib import ExitStack
 from unittest import mock
 
 from torchnlp.text_encoders import CharacterEncoder
+from torchnlp.text_encoders import IdentityEncoder
 
 import pytest
 import torch
 
 from src.bin.train.spectrogram_model.trainer import Trainer
+from src.datasets import Speaker
 
 
 class MockCometML():
@@ -35,6 +37,7 @@ def get_trainer():
         dev_dataset=[],
         comet_ml_project_name='',
         text_encoder=CharacterEncoder(['text encoder']),
+        speaker_encoder=IdentityEncoder([Speaker.LINDA_JOHNSON]),
         train_batch_size=1,
         dev_batch_size=1)
 
@@ -74,6 +77,7 @@ def test__sample_infered(comet_ml_mock):
     batch_size = 2
     batch = {
         'text': torch.LongTensor(8, batch_size).fill_(1),
+        'speaker': torch.LongTensor(batch_size).fill_(0),
         'spectrogram': torch.FloatTensor(8, batch_size, 16).fill_(1),
         'text_lengths': [4, 8],
         'spectrogram_lengths': [4, 8]
@@ -90,6 +94,7 @@ def test__sample_predicted(comet_ml_mock):
     num_tokens = 8
     batch = {
         'text': torch.LongTensor(num_tokens, batch_size).fill_(1),
+        'speaker': torch.LongTensor(batch_size).fill_(0),
         'spectrogram': torch.FloatTensor(num_frames, batch_size, 16).fill_(1),
         'text_lengths': [4, num_tokens],
         'spectrogram_lengths': [4, num_frames]
@@ -113,6 +118,8 @@ def test_run_epoch(comet_ml_mock):
     batch = {
         'text':
             torch.LongTensor(num_tokens, batch_size).fill_(1),
+        'speaker':
+            torch.LongTensor(batch_size).fill_(0),
         'text_lengths': [4, num_tokens],
         'spectrogram':
             torch.FloatTensor(num_frames, batch_size, frame_channels).fill_(1),

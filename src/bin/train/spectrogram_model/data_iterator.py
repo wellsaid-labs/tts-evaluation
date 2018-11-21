@@ -33,23 +33,25 @@ class DataLoader(data.Dataset):
     Args:
         data (iteratable of dict)
         text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
-        text_key (str, optional): For each example in the data, this is the same of the text key.
+        speaker_key (str, optional): For each example in the data, the key to get the speaker.
+        text_key (str, optional): For each example in the data, the key to get the text.
         spectrogram_path_key (str, optional)
-        other_keys (str, optional)
     """
 
     def __init__(self,
                  data,
                  text_encoder,
+                 speaker_encoder,
+                 speaker_key='speaker',
                  text_key='text',
-                 spectrogram_path_key='spectrogram_path',
-                 other_keys=['speaker']):
+                 spectrogram_path_key='spectrogram_path'):
         self.data = data
         self.text_encoder = text_encoder
+        self.speaker_encoder = speaker_encoder
         self._spectrogram_lengths = None  # Cache for self.spectrogram_lengths
         self.text_key = text_key
         self.spectrogram_path_key = spectrogram_path_key
-        self.other_keys = other_keys
+        self.speaker_key = speaker_key
 
     @property
     def spectrogram_lengths(self):
@@ -74,18 +76,17 @@ class DataLoader(data.Dataset):
         text = example[self.text_key].strip()
         text = self.text_encoder.encode(text)
 
+        speaker = self.speaker_encoder.encode(example[self.speaker_key])
+
         stop_token = spectrogram.new_zeros((spectrogram.shape[0],))
         stop_token[-1] = 1
 
-        return_value = {
+        return {
             'spectrogram': spectrogram,
             'stop_token': stop_token,
             'text': text,
+            'speaker': speaker,
         }
-        for key in self.other_keys:
-            return_value[key] = example[key]
-
-        return return_value
 
 
 class DataBatchIterator(object):
@@ -94,6 +95,7 @@ class DataBatchIterator(object):
     Args:
         data (iterable): Data to iterate over.
         text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
+        speaker_encoder (torchnlp.TextEncoder): Text encoder used to encode the speaker label.
         batch_size (int): Iteration batch size.
         device (torch.device, optional): Device onto which to load data.
         trial_run (bool or int): If ``True``, iterates over one batch.
@@ -109,17 +111,19 @@ class DataBatchIterator(object):
             spectrogram_expanded_mask (torch.FloatTensor [num_frames, batch_size, frame_channels])
             spectrogram_mask (torch.FloatTensor [num_frames, batch_size])
             stop_token (torch.FloatTensor [num_frames, batch_size])
+            speaker (torch.LongTensor [batch_size])
     """
 
     def __init__(self,
                  data,
                  text_encoder,
+                 speaker_encoder,
                  batch_size,
                  device,
                  trial_run=False,
                  num_workers=cpu_count()):
         logger.info('Launching with %d workers', num_workers)
-        data = DataLoader(data, text_encoder=text_encoder)
+        data = DataLoader(data, text_encoder=text_encoder, speaker_encoder=speaker_encoder)
         batch_sampler = BucketBatchSampler(
             data.spectrogram_lengths,
             batch_size,
@@ -141,6 +145,7 @@ class DataBatchIterator(object):
     def _collate_fn(self, batch):
         """ List of tensors to a batch variable """
         text, text_lengths = pad_batch([row['text'] for row in batch])
+        speaker = torch.cat([row['speaker'] for row in batch], dim=0)
         spectrogram, spectrogram_lengths = pad_batch([row['spectrogram'] for row in batch])
         stop_token, _ = pad_batch([row['stop_token'] for row in batch])
 
@@ -164,6 +169,7 @@ class DataBatchIterator(object):
             'spectrogram_expanded_mask': spectrogram_expanded_mask,
             'spectrogram_mask': spectrogram_mask,
             'stop_token': stop_token,
+            'speaker': speaker,
         }
 
     def __len__(self):
@@ -172,7 +178,8 @@ class DataBatchIterator(object):
     def __iter__(self):
         for batch in self.iterator:
             maybe_cuda_keys = [
-                'text', 'spectrogram', 'spectrogram_expanded_mask', 'spectrogram_mask', 'stop_token'
+                'text', 'spectrogram', 'spectrogram_expanded_mask', 'spectrogram_mask',
+                'stop_token', 'speaker'
             ]
             for key in maybe_cuda_keys:
                 batch[key] = self._maybe_cuda(batch[key], non_blocking=True)

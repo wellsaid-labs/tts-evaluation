@@ -24,7 +24,8 @@ def _processing_func(row,
                      metadata_audio_column='WAV Filename',
                      metadata_source_column='Source',
                      metadata_title_column='Title',
-                     audio_directory='wavs'):  # pragma: no cover
+                     audio_directory='wavs',
+                     speaker=Speaker.HILARY_NORIEGA):  # pragma: no cover
     """
     Note:
         - ``# pragma: no cover`` is used because this functionality is run with multiprocessing
@@ -43,6 +44,8 @@ def _processing_func(row,
         metadata_title_column (str, optional): Column name or index with the title of the original
             script.
         audio_directory (str, optional): Name of the directory harboring audio files.
+        speaker (src.datasets.Speaker, optional)
+
 
     Returns:
         {
@@ -60,7 +63,7 @@ def _processing_func(row,
     audio_path = normalize_audio(audio_path, **kwargs)
     spectrogram_model_checkpoint = Checkpoint.from_path(spectrogram_model_checkpoint_path)
     audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
-        audio_path, text, spectrogram_model_checkpoint)
+        audio_path, text, speaker, spectrogram_model_checkpoint)
 
     return {
         'text': text,
@@ -69,7 +72,7 @@ def _processing_func(row,
         'script_source': row[metadata_source_column],
         'spectrogram_path': spectrogram_path,
         'predicted_spectrogram_path': predicted_spectrogram_path,
-        'speaker': Speaker.HILARY_NORIEGA
+        'speaker': speaker
     }
 
 
