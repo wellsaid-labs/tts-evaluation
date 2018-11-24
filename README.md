@@ -7,7 +7,7 @@ WellSaid's implementation of Google Brain's Tacotron 2 and DeepMind's WaveRNN. A
 architecture described in these papers:
 [Natural TTS Synthesis by Conditioning WaveNet on Mel Spectrogram Predictions](https://arxiv.org/pdf/1712.05884.pdf) and [Efficient Neural Audio Synthesis](https://arxiv.org/abs/1802.08435).
 
-![PyPI - Python Version](https://img.shields.io/badge/python-3.5%2C%203.6-blue.svg)
+![PyPI - Python Version](https://img.shields.io/badge/python-3.6-blue.svg)
 [![Build Status](https://travis-ci.com/AI2Incubator/WellSaidLabs.svg?token=xKbC739Gn2ssU4AStE7z&branch=master)](https://travis-ci.com/AI2Incubator/WellSaidLabs)
 
 ## Installation
@@ -16,7 +16,7 @@ This section discusses various dependencies that need to be installed for this r
 
 ### 1. Install Python Dependencies
 
-Make sure you have Python 3.5+ with pip. Install most of the dependencies with the PIP package
+Make sure you have Python 3.6.6 with pip. Install most of the dependencies with the PIP package
 manager like so:
 
     python3 -m pip install -r requirements.txt

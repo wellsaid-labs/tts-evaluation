@@ -32,6 +32,3 @@ python -m pip install -r requirements.txt --upgrade --progress-bar=off
 if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then
     python -m pip install http://download.pytorch.org/whl/cpu/torch-0.4.1-cp36-cp36m-linux_x86_64.whl
 fi
-if [[ $TRAVIS_PYTHON_VERSION == '3.5' ]]; then
-    python -m pip install http://download.pytorch.org/whl/cpu/torch-0.4.1-cp35-cp35m-linux_x86_64.whl
-fi

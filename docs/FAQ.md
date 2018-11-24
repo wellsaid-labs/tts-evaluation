@@ -24,7 +24,7 @@ or
 ### SystemError: unknown opcode
 
 For me, this happened when I tried to load a model checkpoint on a different python version
-than it was trained on. Specifically, I tried to load a model checkpoint created by Python3.5
+than it was trained on. Specifically, I tried to load a model checkpoint created by Python 3.5
 in jupyter using Python 3.6.
 
 To fix this, [this](https://stackoverflow.com/questions/9386048/ipython-reads-wrong-python-version)

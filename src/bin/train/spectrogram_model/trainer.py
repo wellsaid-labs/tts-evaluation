@@ -200,9 +200,10 @@ class Trainer():
             self._visualize(batch, predictions, sample=not train and i == random_batch)
 
             self.accumulated_metrics.log_step_end(
-                lambda k, v: self.comet_ml.log_metric('step/' + k, v))
-            self.step += 1
-            self.comet_ml.set_step(self.step)
+                lambda k, v: self.comet_ml.log_metric('step/' + k, v) if train else None)
+            if train:
+                self.step += 1
+                self.comet_ml.set_step(self.step)
 
         # Log epoch metrics
         if not trial_run:

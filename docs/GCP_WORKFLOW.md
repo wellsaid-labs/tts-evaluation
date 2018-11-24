@@ -20,8 +20,7 @@ To switch python versions, install ``pyenv`` on a GCP machine. First, install th
 requirements listed [here](https://github.com/pyenv/pyenv/wiki/Common-build-problems). Finally,
 install ``pyenv`` with the scripts [here](https://github.com/pyenv/pyenv-installer).
 
-Note that distributed PyTorch is only verified to work on Python 3.6.6 and does not work on Python
-3.5.2.
+Note that distributed PyTorch is only verified to work on Python 3.6.6.
 
 ## Synchronize files
 
