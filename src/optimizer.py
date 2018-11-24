@@ -60,11 +60,11 @@ class Optimizer(object):
         self.state_dict = self.optimizer.state_dict
         self.load_state_dict = self.optimizer.load_state_dict
 
-    def step(self, remote_visualizer=None, max_grad_norm=None, rel_tol=10**-3):
+    def step(self, comet_ml=None, max_grad_norm=None, rel_tol=10**-3):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
 
         Args:
-            remote_visualizer (comet_ml.Experiment, optional): Remote visualizer for logging
+            comet_ml (comet_ml.Experiment, optional): Remote visualizer for logging
                 infinite gradient.
             max_grad_norm (float, optional): Clip gradient norm to this maximum.
             rel_tol (float, optional): ``math.isclose`` parameter used to sanity check
@@ -80,8 +80,8 @@ class Optimizer(object):
         parameter_norm_inf = get_parameter_norm(params, norm_type=float('inf'))
 
         if max_grad_norm is not None:
-            if remote_visualizer is not None:
-                remote_visualizer.log_metric('step/grad_norm/clip_max', max_grad_norm)
+            if comet_ml is not None:
+                comet_ml.log_metric('step/grad_norm/clip_max', max_grad_norm)
             other_parameter_norm = torch.nn.utils.clip_grad_norm_(params, max_norm=max_grad_norm)
 
             # Both callables should compute the same value
@@ -89,11 +89,11 @@ class Optimizer(object):
 
         # Take a step if norm is finite (e.g. no ``inf`` or ``nan`` values in the gradient)
         if np.isfinite(parameter_norm):
-            if remote_visualizer is not None:
-                remote_visualizer.log_metric('step/grad_norm/two', parameter_norm)
-                remote_visualizer.log_metric('step/grad_norm/infinity', parameter_norm_inf)
+            if comet_ml is not None:
+                comet_ml.log_metric('step/grad_norm/two', parameter_norm)
+                comet_ml.log_metric('step/grad_norm/infinity', parameter_norm_inf)
             self.optimizer.step()
-        elif remote_visualizer is not None:
+        elif comet_ml is not None:
             logger.warning('Gradient was too large "%s", skipping batch.', str(parameter_norm))
 
         return parameter_norm

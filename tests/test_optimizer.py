@@ -23,14 +23,14 @@ class TestOptimizer(unittest.TestCase):
         try:
             Optimizer(torch.optim.Adam(params))
         except:
-            self.fail("__init__ failed.")
+            self.fail('__init__ failed.')
 
     def test_auto_init(self):
         params = [torch.nn.Parameter(torch.randn(2, 3, 4))]
         try:
             AutoOptimizer(torch.optim.Adam(params), window_size=10)
         except:
-            self.fail("__init__ failed.")
+            self.fail('__init__ failed.')
 
     def test_to(self):
         net = torch.nn.GRU(10, 20, 2)
@@ -39,11 +39,11 @@ class TestOptimizer(unittest.TestCase):
         input_ = torch.randn(5, 3, 10)
         output, _ = net(input_)
         output.sum().backward()
-        optim.step(max_grad_norm=None, remote_visualizer=MockCometML())  # Set state
+        optim.step(max_grad_norm=None, comet_ml=MockCometML())  # Set state
 
         optim.to(torch.device('cpu'))
 
-    @mock.patch("torch.nn.utils.clip_grad_norm_")
+    @mock.patch('torch.nn.utils.clip_grad_norm_')
     def test_step_max_grad_norm(self, mock_clip_grad_norm):
         net = torch.nn.GRU(10, 20, 2)
         adam = torch.optim.Adam(net.parameters())
@@ -52,10 +52,10 @@ class TestOptimizer(unittest.TestCase):
         output, _ = net(input_)
         output.sum().backward()
         mock_clip_grad_norm.return_value = 1.0
-        optim.step(max_grad_norm=5, remote_visualizer=MockCometML(), rel_tol=1)
+        optim.step(max_grad_norm=5, comet_ml=MockCometML(), rel_tol=1)
         mock_clip_grad_norm.assert_called_once()
 
-    @mock.patch("torch.nn.utils.clip_grad_norm_")
+    @mock.patch('torch.nn.utils.clip_grad_norm_')
     def test_auto_step_max_grad_norm(self, mock_clip_grad_norm):
         mock_clip_grad_norm.return_value = 1.0
         params = [torch.nn.Parameter(torch.randn(2, 3, 4))]
@@ -88,7 +88,7 @@ class TestOptimizer(unittest.TestCase):
         adam = torch.optim.Adam(params)
         adam.step = _step
         optim = Optimizer(adam)
-        optim.step(remote_visualizer=MockCometML())
+        optim.step(comet_ml=MockCometML())
         assert did_step
 
         # Test ``inf``
@@ -98,7 +98,7 @@ class TestOptimizer(unittest.TestCase):
         adam = torch.optim.Adam(params)
         adam.step = _step
         optim = Optimizer(adam)
-        optim.step(remote_visualizer=MockCometML())
+        optim.step(comet_ml=MockCometML())
         assert not did_step
 
         # Test ``nan``
@@ -107,5 +107,5 @@ class TestOptimizer(unittest.TestCase):
         adam = torch.optim.Adam(params)
         adam.step = _step
         optim = Optimizer(adam)
-        optim.step(remote_visualizer=MockCometML())
+        optim.step(comet_ml=MockCometML())
         assert not did_step

@@ -34,7 +34,7 @@ def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_compute_spectrogram, moc
     mock_is_file.return_value = True
     mock_urlretrieve.side_effect = urlretrieve_side_effect
     mock_compute_spectrogram.side_effect = compute_spectrogram_side_effect
-    mock_from_path.return_value = Checkpoint('.', lambda x: x, 0)
+    mock_from_path.return_value = Checkpoint(directory='.', model=lambda x: x, step=0)
 
     # Check a row are parsed correctly
     train, dev = m_ailabs_speech_dataset(
@@ -77,7 +77,7 @@ def test_m_ailabs_speech_dataset_pickers(mock_urlretrieve, mock_compute_spectrog
                                          mock_from_path):
     mock_urlretrieve.side_effect = urlretrieve_side_effect
     mock_compute_spectrogram.side_effect = compute_spectrogram_side_effect
-    mock_from_path.return_value = Checkpoint('.', lambda x: x, 0)
+    mock_from_path.return_value = Checkpoint(directory='.', model=lambda x: x, step=0)
 
     # Smoke test pickers
     kwargs = {

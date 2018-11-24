@@ -12,6 +12,8 @@ import numpy as np
 import torch
 import tqdm
 
+import src.distributed
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,6 +38,7 @@ class DataLoader(data.Dataset):
         speaker_key (str, optional): For each example in the data, the key to get the speaker.
         text_key (str, optional): For each example in the data, the key to get the text.
         spectrogram_path_key (str, optional)
+        use_tqdm (bool, optional): Use TQDM to track progress.
     """
 
     def __init__(self,
@@ -44,7 +47,8 @@ class DataLoader(data.Dataset):
                  speaker_encoder,
                  speaker_key='speaker',
                  text_key='text',
-                 spectrogram_path_key='spectrogram_path'):
+                 spectrogram_path_key='spectrogram_path',
+                 use_tqdm=False):
         self.data = data
         self.text_encoder = text_encoder
         self.speaker_encoder = speaker_encoder
@@ -52,6 +56,7 @@ class DataLoader(data.Dataset):
         self.text_key = text_key
         self.spectrogram_path_key = spectrogram_path_key
         self.speaker_key = speaker_key
+        self.use_tqdm = use_tqdm
 
     @property
     def spectrogram_lengths(self):
@@ -60,8 +65,10 @@ class DataLoader(data.Dataset):
             logger.info('Computing spectrogram lengths...')
             with ThreadPoolExecutor() as pool:
                 filenames = [row[self.spectrogram_path_key] for row in self.data]
-                self._spectrogram_lengths = list(
-                    tqdm.tqdm(pool.map(get_spectrogram_length, filenames), total=len(filenames)))
+                iterator = pool.map(get_spectrogram_length, filenames)
+                if self.use_tqdm:
+                    iterator = tqdm.tqdm(iterator, total=len(filenames))
+                self._spectrogram_lengths = list(iterator)
 
         return self._spectrogram_lengths
 
@@ -87,6 +94,10 @@ class DataLoader(data.Dataset):
             'text': text,
             'speaker': speaker,
         }
+
+
+def _identity(x):
+    return x
 
 
 class DataBatchIterator(object):
@@ -124,12 +135,21 @@ class DataBatchIterator(object):
                  num_workers=cpu_count()):
         logger.info('Launching with %d workers', num_workers)
         data = DataLoader(data, text_encoder=text_encoder, speaker_encoder=speaker_encoder)
-        batch_sampler = BucketBatchSampler(
-            data.spectrogram_lengths,
-            batch_size,
-            drop_last=False,
-            sort_key=lambda x: x,
-            biggest_batches_first=lambda x: x)
+        batch_sampler = None
+        if not torch.distributed.is_initialized() or src.distributed.is_master():
+            batch_sampler = BucketBatchSampler(
+                data.spectrogram_lengths,
+                batch_size,
+                drop_last=True,
+                sort_key=_identity,
+                biggest_batches_first=_identity)
+
+        if torch.distributed.is_initialized():
+            # Given there are multiple processes, we change the data loaded per process.
+            num_workers = int(num_workers / torch.distributed.get_world_size())
+            batch_sampler = src.distributed.distribute_batch_sampler(batch_sampler, batch_size,
+                                                                     device)
+
         self.device = device
         self.iterator = DataBatchLoader(
             data,

@@ -7,6 +7,8 @@ import torch
 from src.hparams import add_config
 from src.hparams import configurable
 
+# TODO: Add trainer ``optim`` to hparams
+
 
 def _set_anomaly_detection():
     # NOTE: Prevent circular dependency

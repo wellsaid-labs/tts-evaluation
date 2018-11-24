@@ -186,7 +186,28 @@ def test_load_save_checkpoint():
     model = nn.LSTM(10, 10)
     optimizer = Optimizer(
         torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
-    checkpoint = Checkpoint('tests/_test_data/', model=model, step=10, optimizer=optimizer)
+    checkpoint = Checkpoint(
+        directory='tests/_test_data/', model=model, step=10, optimizer=optimizer)
+    filename = checkpoint.save()
+    assert filename.is_file()
+
+    # Smoke test
+    Checkpoint.from_path(filename)
+
+    # Clean up
+    filename.unlink()
+
+
+def test_load_save_checkpoint_state_dict():
+    model = nn.LSTM(10, 10)
+    optimizer_state_dict = Optimizer(
+        torch.optim.Adam(
+            params=filter(lambda p: p.requires_grad, model.parameters()))).state_dict()
+    checkpoint = Checkpoint(
+        directory='tests/_test_data/',
+        model_state_dict=model.state_dict(),
+        step=10,
+        optimizer_state_dict=optimizer_state_dict)
     filename = checkpoint.save()
     assert filename.is_file()
 

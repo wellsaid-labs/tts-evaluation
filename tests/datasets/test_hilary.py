@@ -28,7 +28,7 @@ def cleanup():
 def test_hilary_dataset(mock_download_file_from_drive, mock_compute_spectrogram, mock_from_path):
     mock_download_file_from_drive.side_effect = _download_file_from_drive_side_effect
     mock_compute_spectrogram.side_effect = compute_spectrogram_side_effect
-    mock_from_path.return_value = Checkpoint('.', lambda x: x, 0)
+    mock_from_path.return_value = Checkpoint(directory='.', model=lambda x: x, step=0)
 
     # Check a row are parsed correctly
     train, dev = hilary_dataset(

@@ -14,6 +14,8 @@ import torch
 
 from src.utils import duplicate_stream
 
+import src.distributed
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,12 +34,16 @@ class TrainingContextManager(object):
 
     def __init__(self, root_directory, seed=123, device=None, min_time=60 * 15, step=0):
         self.root_directory = Path(root_directory)
-        if step == 0 and self.root_directory.is_dir():
-            raise ValueError('Directory path is already in use %s' % str(self.root_directory))
-
         # NOTE: ``self.id`` is used to distinguish this run if started from a checkpoint in the
         # same ``root_directory```
         self.id = str(time.time())[:10]
+        if torch.distributed.is_initialized():
+            self.id = src.distributed.broadcast_string(self.id, device)
+            if step == 0 and self.root_directory.is_dir() and src.distributed.is_master():
+                raise ValueError('Directory path is already in use %s' % str(self.root_directory))
+        else:  # CASE: Not distributed
+            if step == 0 and self.root_directory.is_dir():
+                raise ValueError('Directory path is already in use %s' % str(self.root_directory))
 
         if device is None:
             self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -90,8 +96,10 @@ class TrainingContextManager(object):
             stdout_filename (str): Filename used to save the stdout stream.
             stderr_filename (str): Filename used to save the stderr stream.
         """
-        self.stdout_filename = self.root_directory / ('%s.%s' % (self.id, stdout_filename))
-        self.stderr_filename = self.root_directory / ('%s.%s' % (self.id, stderr_filename))
+        self.stdout_filename = self.root_directory / ('%s.%s.%s' %
+                                                      (self.id, self.device.index, stdout_filename))
+        self.stderr_filename = self.root_directory / ('%s.%s.%s' %
+                                                      (self.id, self.device.index, stderr_filename))
         self.stop_duplicate_stream_stdout = duplicate_stream(sys.stdout, self.stdout_filename)
         self.stop_duplicate_stream_stderr = duplicate_stream(sys.stderr, self.stderr_filename)
 
@@ -114,16 +122,22 @@ class TrainingContextManager(object):
         """
         # NOTE: Set first incase there are any random operations afterwards.
         self._set_seed(self.seed)
-
-        self.root_directory.mkdir(parents=True, exist_ok=True)
         self.checkpoints_directory = self.root_directory / 'checkpoints' / self.id
-        self.checkpoints_directory.mkdir(parents=True)
+
+        if not torch.distributed.is_initialized() or src.distributed.is_master():
+            self.root_directory.mkdir(parents=True, exist_ok=True)
+            self.checkpoints_directory.mkdir(parents=True)
+
+        # Must run before using distributed tensors
+        if self.is_cuda and self.device.index is not None:
+            torch.cuda.set_device(self.device.index)
+
+        # Sync processes before using stdout and ``self.root_directory.mkdir`` ran.
+        if torch.distributed.is_initialized():
+            src.distributed.sync()
 
         # Setup logging
         self._copy_standard_streams()
-
-        if self.is_cuda and self.device.index is not None:
-            torch.cuda.set_device(self.device.index)
 
         logger = logging.getLogger(__name__)
         logger.info('Experiment Folder: %s' % self.root_directory)
@@ -138,6 +152,9 @@ class TrainingContextManager(object):
     def clean_up(self):
         """ Delete files associated with this context.
         """
+        if torch.distributed.is_initialized() and not src.distributed.is_master():
+            return
+
         logger.info('DELETING EXPERIMENT: %s', self.root_directory)
 
         # Remove checkpoints

@@ -58,7 +58,7 @@ def cleanup():
 def test_lj_speech_dataset(mock_urlretrieve, mock_compute_spectrogram, mock_from_path):
     mock_urlretrieve.side_effect = urlretrieve_side_effect
     mock_compute_spectrogram.side_effect = compute_spectrogram_side_effect
-    mock_from_path.return_value = Checkpoint('.', lambda x: x, 0)
+    mock_from_path.return_value = Checkpoint(directory='.', model=lambda x: x, step=0)
 
     # Check a row are parsed correctly
     train, dev = lj_speech_dataset(

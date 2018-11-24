@@ -1,6 +1,8 @@
 # NOTE: Must import `comet_ml` before `torch`
 import comet_ml  # noqa
 
+from collections import defaultdict
+
 import logging
 import matplotlib
 import os
@@ -20,6 +22,8 @@ import librosa.display
 import numpy as np
 
 from src.hparams import configurable
+
+import src.distributed
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +193,7 @@ def _encode_audio(audio):
         audio (torch.Tensor): Audio in the form of a tensor
         **kwargs: Other arguments for `write_wav`
 
-    Returns
+    Returns:
         (str): The encoded audio.
     """
     assert torch.max(audio) <= 1.0 and torch.min(
@@ -199,6 +203,99 @@ def _encode_audio(audio):
     librosa.output.write_wav(in_memory_file, audio, sr=24000)
     audio = base64.b64encode(in_memory_file.read()).decode('utf-8')
     return audio
+
+
+class AccumulatedMetrics():
+
+    def __init__(self):
+        self._reset()
+
+    def _reset(self):
+        self.metrics = {
+            'epoch_total': defaultdict(float),
+            'epoch_count': defaultdict(float),
+            'step_total': defaultdict(float),
+            'step_count': defaultdict(float)
+        }
+
+    def add_metric(self, name, value, accumulation=1):
+        """ Add metric as part of the current step.
+
+        Args:
+            name (str)
+            value (number)
+            accumulation (int): Count such that the average value is ``value / count``.
+        """
+        if torch.is_tensor(value):
+            value = value.item()
+
+        self.metrics['step_total'][name] += value
+        self.metrics['step_count'][name] += accumulation
+
+    def add_multiple_metrics(self, dict_, accumulation=1):
+        """ Add multiple metrics as part of the current step.
+
+        Args:
+            dict_ (dict): Metrics in the form of key value pairs.
+            accumulation (int): Count such that the average value is ``value / count``.
+        """
+        for metric, value in dict_.items():
+            self.add_metric(metric, value, accumulation)
+
+    def log_step_end(self, log_metric):
+        """ Log all metrics that have been accumulated since the last ``log_step_end``.
+
+        Note that in the distributed case, only the master node gets the accurate metric.
+
+        Args:
+            log_metric (callable(key, value)): Callable to log a metric.
+        """
+        # Accumulate metrics between multiple processes.
+        if torch.distributed.is_initialized():
+            metrics_total_items = sorted(self.metrics['step_total'].items(), key=lambda t: t[0])
+            metrics_total_values = [value for _, value in metrics_total_items]
+
+            metrics_count_items = sorted(self.metrics['step_count'].items(), key=lambda t: t[0])
+            metrics_count_values = [value for _, value in metrics_count_items]
+
+            packed = torch.tensor(metrics_total_values + metrics_count_values)
+            torch.distributed.reduce(packed, dst=src.distributed.get_master_rank())
+            packed = packed.tolist()
+
+            for (key, _), value in zip(metrics_total_items, packed[:len(metrics_total_items)]):
+                self.metrics['step_total'][key] = value
+
+            for (key, _), value in zip(metrics_count_items, packed[len(metrics_total_items):]):
+                self.metrics['step_count'][key] = value
+
+        # Log step metrics
+        for (total_key, total_value), (count_key, count_value) in zip(
+                self.metrics['step_total'].items(), self.metrics['step_count'].items()):
+
+            assert total_key == count_key, 'AccumulatedMetrics invariant failed.'
+            log_metric(total_key, total_value / count_value)
+
+            self.metrics['epoch_total'][total_key] += total_value
+            self.metrics['epoch_count'][total_key] += count_value
+
+        # Reset step metrics
+        self.metrics['step_total'] = defaultdict(float)
+        self.metrics['step_count'] = defaultdict(float)
+
+    def log_epoch_end(self, log_metric):
+        """ Log all metrics that have been accumulated since the last ``log_epoch_end``.
+
+        Args:
+            log_metric (callable(key, value)): Callable to log a metric.
+        """
+        # Log epoch metrics
+        for (total_key, total_value), (count_key, count_value) in zip(
+                self.metrics['epoch_total'].items(), self.metrics['epoch_count'].items()):
+
+            assert total_key == count_key, 'AccumulatedMetrics invariant failed.'
+            log_metric(total_key, total_value / count_value)
+
+        self._reset()
 
 
 def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **kwargs):
@@ -221,9 +318,9 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
 
     kwargs.update({'project_name': project_name, 'api_key': api_key, 'workspace': workspace})
     if experiment_key is None:
-        _remote_visualizer = Experiment(**kwargs)
+        experiment = Experiment(**kwargs)
     else:
-        _remote_visualizer = ExistingExperiment(previous_experiment=experiment_key, **kwargs)
+        experiment = ExistingExperiment(previous_experiment=experiment_key, **kwargs)
 
     def log_text_and_audio(self, tag, text, speaker, audio, step=None):
         """ Add text and audio to remote visualizer in one entry.
@@ -239,7 +336,7 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
         """
         step = self.curr_step if step is None else step
         assert step is not None
-        _remote_visualizer.log_html(_BASE_TEMPLATE % """
+        experiment.log_html(_BASE_TEMPLATE % """
         <section>
             <p><b>Step:</b> {step}</p>
             <p><b>Tag:</b> {tag}</p>
@@ -251,6 +348,19 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
         """.format(
             step=step, tag=tag, text=text, speaker=str(speaker), base64_audio=_encode_audio(audio)))
 
-    _remote_visualizer.log_text_and_audio = log_text_and_audio.__get__(_remote_visualizer)
+    experiment.log_text_and_audio = log_text_and_audio.__get__(experiment)
 
-    return _remote_visualizer
+    def log_multiple_figures(self, dict_, **kwargs):
+        """ Convience function to log multiple figures """
+        for key, value in dict_.items():
+            self.log_figure(key, value, **kwargs)
+
+    experiment.log_multiple_figures = log_multiple_figures.__get__(experiment)
+
+    def set_context(self, context):
+        """ Set the context (i.e. train, dev, test) for further logs. """
+        self.context = context
+
+    experiment.set_context = set_context.__get__(experiment)
+
+    return experiment

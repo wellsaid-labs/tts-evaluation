@@ -135,6 +135,7 @@ def synthesize():
     """ Synthesize the requested text as speech.
 
     TODO: Add the ability to pick from multiple speakers in the JS
+    TODO: Fix the 60 second timeout issue
     """
     request_data = request.get_json()
     logger.info('Got request %s', request_data)

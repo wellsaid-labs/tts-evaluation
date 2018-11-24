@@ -7,8 +7,10 @@ TODO: Support more datasets:
   - Synthetic Wave Dataset with SoX e.g. [sine, square, triangle, sawtooth, trapezium, exp, brow]
   - VCTK Dataset
   - Voice Conversion Challenge (VCC) 2016 dataset
-  - Blizzard Dataset
+  - Blizzard dataset
   - JSUT dataset
+  - Common Voice dataset
+    https://toolbox.google.com/datasetsearch/search?query=text%20speech&docid=sGZ%2FjOYUalNI7AzSAAAAAA%3D%3D
 """
 from src.datasets.lj_speech import lj_speech_dataset
 from src.datasets.m_ailabs import m_ailabs_speech_dataset

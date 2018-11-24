@@ -181,12 +181,13 @@ def split_dataset(dataset, splits, random_seed=123):
     return datasets
 
 
-def process_with_processes(data, processing_func):
+def process_with_processes(data, processing_func, use_tqdm=False):
     """ Process ``data`` with ``processing_func`` using threads and ``tqdm``.
 
     Args:
         data (iterable)
         processing_func (callable)
+        use_tqdm (bool): Attach a progress bar to processing.
 
     Returns:
         processed (list)
@@ -194,5 +195,8 @@ def process_with_processes(data, processing_func):
     logger.info('Processing dataset...')
     data = list(data)
     with Pool() as pool:
-        processed = list(tqdm(pool.imap(processing_func, data), total=len(data)))
+        iterator = pool.imap(processing_func, data)
+        if use_tqdm:
+            iterator = tqdm(iterator, total=len(data))
+        processed = list(iterator)
     return processed

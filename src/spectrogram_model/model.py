@@ -127,7 +127,7 @@ class SpectrogramModel(nn.Module):
 
         return frames_with_residual
 
-    def infer(self, tokens, speaker, max_recursion=2000, stop_threshold=0.5):
+    def infer(self, tokens, speaker, max_recursion=2000, stop_threshold=0.5, use_tqdm=False):
         """
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens]): Batched set of
@@ -136,6 +136,7 @@ class SpectrogramModel(nn.Module):
             max_recursion (int, optional): The maximum sequential predictions to make before
                 quitting; Used for testing and defensive design.
             stop_threshold (float, optional): The threshold probability for deciding to stop.
+            use_tqdm (bool, optional): If ``True`` attach a progress bar to iterator.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels]) Predicted frames.
@@ -166,7 +167,8 @@ class SpectrogramModel(nn.Module):
         hidden_state = None
         alignments, frames, stop_tokens = [], [], []
         lengths = [max_recursion] * batch_size
-        progress_bar = tqdm(leave=True, unit='frame(s)')
+        if use_tqdm:
+            progress_bar = tqdm(leave=True, unit='frame(s)')
         while len(stopped) != batch_size and len(frames) < max_recursion:
             frame, stop_token, hidden_state, alignment = self.decoder(
                 encoded_tokens, tokens_mask, hidden_state=hidden_state)
@@ -181,13 +183,15 @@ class SpectrogramModel(nn.Module):
             stop_tokens.append(stop_token.squeeze(0))
             alignments.append(alignment.squeeze(0))
 
-            progress_bar.update(1)
-            progress_bar.total = len(frames)
+            if use_tqdm:
+                progress_bar.update(1)
+                progress_bar.total = len(frames)
 
             for stop_index in to_stop:
                 lengths[stop_index] = len(frames)
 
-        progress_bar.close()
+        if use_tqdm:
+            progress_bar.close()
         alignments = torch.stack(alignments, dim=0)
         frames = torch.stack(frames, dim=0)
         stop_tokens = torch.stack(stop_tokens, dim=0)

@@ -2,8 +2,8 @@ import matplotlib
 
 matplotlib.use('Agg', warn=False)
 
-from pathlib import Path
 from math import isclose
+from pathlib import Path
 
 import ast
 import atexit
@@ -448,13 +448,17 @@ class Checkpoint():
         **kwargs (dict, optional): Any other checkpoint attributes.
     """
 
-    def __init__(self, directory, model, step, **kwargs):
+    def __init__(self, directory, step, model=None, model_state_dict=None, **kwargs):
         self.directory = Path(directory)
-        self.model = model
         self.step = step
+        self.model = model
+        self.model_state_dict = model_state_dict
 
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    def flatten_parameters(self, model):
+        model.apply(lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
 
     @classmethod
     def from_path(class_, path, device=torch.device('cpu')):
@@ -471,11 +475,13 @@ class Checkpoint():
             return None
 
         instance = torch_load(str(path), device=device)
-        instance.model.apply(
-            lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
         setattr(instance, 'path', path)
-        logger.info('Loaded checkpoint at step %d from %s with model:\n%s', instance.step,
-                    instance.path, instance.model)
+        if hasattr(instance, 'model') and instance.model is not None:
+            instance.flatten_parameters(instance.model)
+            logger.info('Loaded checkpoint model:\n%s', instance.model)
+        elif hasattr(instance, 'model_state_dict') and instance.model_state_dict is not None:
+            logger.info('Loaded checkpoint model state dict:\n%s', instance.model_state_dict.keys())
+        logger.info('Loaded checkpoint at step %d from %s', instance.step, instance.path)
         return instance
 
     @classmethod

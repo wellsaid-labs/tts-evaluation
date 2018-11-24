@@ -57,54 +57,18 @@ def test__compute_loss(comet_ml_mock):
         'spectrogram': torch.FloatTensor([[1, 1], [1, 1], [3, 3]]),
         'stop_token': torch.FloatTensor([0, 1, 1])
     }
-    predicted_pre_frames = torch.FloatTensor([[1, 1], [1, 1], [1, 1]])
-    predicted_post_frames = torch.FloatTensor([[0.5, 0.5], [0.5, 0.5], [1, 1]])
+    predicted_pre_spectrogram = torch.FloatTensor([[1, 1], [1, 1], [1, 1]])
+    predicted_post_spectrogram = torch.FloatTensor([[0.5, 0.5], [0.5, 0.5], [1, 1]])
     predicted_stop_tokens = torch.FloatTensor([0, 0.5, 0.5])
-    (pre_frames_loss, post_frames_loss,
-     stop_token_loss, num_frame_predictions, num_frames) = trainer._compute_loss(
-         batch, predicted_pre_frames, predicted_post_frames, predicted_stop_tokens)
-    assert pre_frames_loss.item() == pytest.approx(0.0)
-    assert post_frames_loss.item() == pytest.approx(1.0 / 4)
+    predictions = (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
+                   None)
+    (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss, num_spectrogram_values,
+     num_frames) = trainer._do_loss_and_maybe_backwards(batch, predictions, False)
+    assert pre_spectrogram_loss.item() == pytest.approx(0.0)
+    assert post_spectrogram_loss.item() == pytest.approx(1.0 / 4)
     assert stop_token_loss.item() == pytest.approx(0.6931471824645996 / 2)
-    assert num_frame_predictions == 4
+    assert num_spectrogram_values == 4
     assert num_frames == 2
-
-
-@mock.patch('src.bin.train.spectrogram_model.trainer.CometML')
-def test__sample_infered(comet_ml_mock):
-    comet_ml_mock.return_value = MockCometML()
-    trainer = get_trainer()
-    batch_size = 2
-    batch = {
-        'text': torch.LongTensor(8, batch_size).fill_(1),
-        'speaker': torch.LongTensor(batch_size).fill_(0),
-        'spectrogram': torch.FloatTensor(8, batch_size, 16).fill_(1),
-        'text_lengths': [4, 8],
-        'spectrogram_lengths': [4, 8]
-    }
-    trainer._sample_infered(batch, max_infer_frames=2)
-
-
-@mock.patch('src.bin.train.spectrogram_model.trainer.CometML')
-def test__sample_predicted(comet_ml_mock):
-    comet_ml_mock.return_value = MockCometML()
-    trainer = get_trainer()
-    batch_size = 2
-    num_frames = 8
-    num_tokens = 8
-    batch = {
-        'text': torch.LongTensor(num_tokens, batch_size).fill_(1),
-        'speaker': torch.LongTensor(batch_size).fill_(0),
-        'spectrogram': torch.FloatTensor(num_frames, batch_size, 16).fill_(1),
-        'text_lengths': [4, num_tokens],
-        'spectrogram_lengths': [4, num_frames]
-    }
-    predicted_pre_spectrogram = torch.FloatTensor(num_frames, batch_size, 16)
-    predicted_post_spectrogram = torch.FloatTensor(num_frames, batch_size, 16)
-    predicted_stop_tokens = torch.FloatTensor(num_frames, batch_size)
-    predicted_alignments = torch.FloatTensor(num_frames, batch_size, num_tokens)
-    trainer._sample_predicted(batch, predicted_pre_spectrogram, predicted_post_spectrogram,
-                              predicted_alignments, predicted_stop_tokens)
 
 
 @mock.patch('src.bin.train.spectrogram_model.trainer.CometML')

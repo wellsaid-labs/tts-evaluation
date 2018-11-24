@@ -184,7 +184,13 @@ class WaveRNN(nn.Module):
         return last_hidden_state, sample
 
     @configurable
-    def infer(self, local_features, argmax=False, temperature=1.0, hidden_state=None, pad=True):
+    def infer(self,
+              local_features,
+              argmax=False,
+              temperature=1.0,
+              hidden_state=None,
+              pad=True,
+              use_tqdm=False):
         """  Run WaveRNN in inference mode.
 
         Variables:
@@ -210,6 +216,7 @@ class WaveRNN(nn.Module):
                 coarse/fine samples.
             pad (bool, optional): Pad the spectrogram with zeros on the ends, assuming that the
                 spectrogram has no context on the ends.
+            use_tqdm (bool, optional): If ``True``, attach a progress bar during iteration.
 
         Returns:
             out_coarse (torch.LongTensor [batch_size, signal_length] or [signal_length]): Predicted
@@ -267,7 +274,10 @@ class WaveRNN(nn.Module):
         out_coarse, out_fine = [], []
         coarse, fine, coarse_last_hidden, fine_last_hidden = self._infer_initial_state(
             conditional, batch_size, hidden_state)
-        for i in tqdm(range(signal_length)):
+        iterator = range(signal_length)
+        if use_tqdm:
+            iterator = tqdm(iterator)
+        for i in iterator:
             # [size, batch_size]
             hidden = torch.cat((coarse_last_hidden, fine_last_hidden), dim=0)
             # [3 * size] + [3 * size, size] * [size, batch_size] = [3 * size, batch_size]

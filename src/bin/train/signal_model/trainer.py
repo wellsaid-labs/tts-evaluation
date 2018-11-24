@@ -42,6 +42,7 @@ class Trainer():
         anomaly_detector (AnomalyDetector, optional): Anomaly detector used to skip batches that
             result in large loss.
         min_rollback (int, optional): Minimum number of epochs to rollback in case of an anomaly.
+        use_tqdm (bool, optional): Use TQDM to track epoch progress.
     """
 
     STEP_UNIT_DECISECONDS = 'deciseconds'
@@ -64,7 +65,8 @@ class Trainer():
                  optimizer=Adam,
                  num_workers=0,
                  anomaly_detector=None,
-                 min_rollback=1):
+                 min_rollback=1,
+                 use_tqdm=False):
         assert step_unit in [self.STEP_UNIT_BATCHES,
                              self.STEP_UNIT_DECISECONDS], 'Picked invalid step unit.'
 
@@ -92,6 +94,7 @@ class Trainer():
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
         self.num_workers = num_workers
+        self.use_tqdm = use_tqdm
         self.random = random.Random(123)  # Ensure the same samples are sampled
         # NOTE: Rollback ``maxlen=min_rollback + 2`` in case the model enters at a degenerate state
         # at the beginning of the epoch; therefore, allowing us to rollback at least min_rollback
@@ -159,7 +162,8 @@ class Trainer():
             trial_run=trial_run,
             num_workers=self.num_workers,
             random=self.random)
-        data_iterator = tqdm(data_iterator, desc=label, smoothing=0)
+        if self.use_tqdm:
+            data_iterator = tqdm(data_iterator, desc=label, smoothing=0)
         for i, batch in enumerate(data_iterator):
             if (i == 0 and self.step_unit == self.STEP_UNIT_DECISECONDS):
                 start = time.time() * 10

@@ -34,7 +34,7 @@ def read_audio(filename, sample_rate=None):
 
     Args:
         filename (Path or str): Name of the file to load.
-        sample_rate (int or None): Assert this target sample rate.
+        sample_rate (int or None, optional): Assert this target sample rate.
 
     Returns:
         numpy.ndarray [n,]: Audio time series.
@@ -59,12 +59,12 @@ def mel_filters(sample_rate, fft_length=2048, num_mel_bins=80, lower_hertz=125, 
 
     Args:
         sample_rate (int): The sample rate of the signal.
-        fft_length (int): The size of the FFT to apply. If not provided, uses the smallest power of
-          2 enclosing `frame_length`.
-        num_mel_bins (int): Number of Mel bands to generate.
-        lower_hertz (int): Lower bound on the frequencies to be included in the mel spectrum. This
-            corresponds to the lower edge of the lowest triangular band.
-        upper_hertz (int): The desired top edge of the highest frequency band.
+        fft_length (int, optional): The size of the FFT to apply. If not provided, uses the smallest
+            power of 2 enclosing `frame_length`.
+        num_mel_bins (int, optional): Number of Mel bands to generate.
+        lower_hertz (int, optional): Lower bound on the frequencies to be included in the mel
+            spectrum. This corresponds to the lower edge of the lowest triangular band.
+        upper_hertz (int, optional): The desired top edge of the highest frequency band.
 
     Returns:
         (np.ndarray [num_mel_bins, 1 + fft_length / 2): Mel transform matrix.
@@ -139,13 +139,13 @@ def get_log_mel_spectrogram(signal,
         signal (np.array [signal_length]): A batch of float32 time-domain signals in the range
             [-1, 1].
         sample_rate (int): Sample rate for the signal.
-        frame_size (int): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
-        frame_hop (int): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
-        fft_length (int): The window size used by the fourier transform.
-        window (str, tuple, number, callable): Window function to be applied to each
+        frame_size (int, optional): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
+        frame_hop (int, optional): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
+        fft_length (int, optional): The window size used by the fourier transform.
+        window ((str, tuple, number, callable), optional): Window function to be applied to each
             frame. See the full specification for window at ``librosa.filters.get_window``.
-        min_magnitude (float): Stabilizing minimum to avoid high dynamic ranges caused by the
-            singularity at zero in the mel spectrograms.
+        min_magnitude (float, optional): Stabilizing minimum to avoid high dynamic ranges caused by
+            the singularity at zero in the mel spectrograms.
 
     Returns:
         log_mel_spectrograms (np.ndarray [frames, num_mel_bins]): Log mel spectrogram.
@@ -225,7 +225,8 @@ def griffin_lim(log_mel_spectrogram,
                 fft_length=2048,
                 window='hann',
                 power=1.2,
-                iterations=30):
+                iterations=30,
+                use_tqdm=False):
     """ Transform log mel spectrogram to wav file with the Griffin-Lim algorithm.
 
     Given a magnitude spectrogram as input, reconstruct the audio signal and return it using the
@@ -250,15 +251,17 @@ def griffin_lim(log_mel_spectrogram,
     Args:
         log_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
         sample_rate (int): Sample rate of the spectrogram and the resulting wav file.
-        frame_size (int): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
-        frame_hop (int): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
-        fft_length (int): The size of the FFT to apply. If not provided, uses the smallest power of
-          2 enclosing `frame_length`.
-        window (str, tuple, number, callable): Window function to be applied to each
+        frame_size (int, optional): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
+        frame_hop (int, optional): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
+        fft_length (int, optional): The size of the FFT to apply. If not provided, uses the smallest
+            power of 2 enclosing `frame_length`.
+        window ((str, tuple, number, callable), optional): Window function to be applied to each
             frame. See the full specification for window at ``librosa.filters.get_window``.
-        power (float): Amplification float used to reduce artifacts.
-        iterations (int): Number of iterations of griffin lim to run.
+        power (float, optional): Amplification float used to reduce artifacts.
+        iterations (int, optional): Number of iterations of griffin lim to run.
+        use_tqdm (bool, optional): If `True` attach a progress bar during iteration.
     """
+    logger.info('Running Griffin-Lim....')
     spectrogram = _log_mel_spectrogram_to_spectrogram(
         log_mel_spectrogram=log_mel_spectrogram, sample_rate=sample_rate)
 
@@ -270,7 +273,10 @@ def griffin_lim(log_mel_spectrogram,
 
     len_samples = int((magnitude_spectrogram.shape[1] - 1) * frame_hop)
     waveform = np.random.uniform(size=(len_samples,))
-    for i in tqdm(range(iterations)):
+    iterator = range(iterations)
+    if use_tqdm:
+        iterator = tqdm(iterator)
+    for i in iterator:
         reconstruction_spectrogram = librosa.stft(
             waveform, n_fft=fft_length, hop_length=frame_hop, win_length=frame_size, window=window)
         reconstruction_angle = np.angle(reconstruction_spectrogram).astype(np.complex64)

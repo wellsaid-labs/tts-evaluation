@@ -3,17 +3,28 @@ This script runs a loop to restart preetible servers.
 
 NOTE: Within the example, we add ``shutdown now`` incase the ``python3`` process dies; therefore,
 queuing it up to be rebooted by ``keep_alive.py``.
+NOTE: We source ``~/.bash_profile`` to setup pyenv.
 
-TODO: Create a GCP ulities package merging functionality in ``keep_alive`` and ``periodic_rsync``.
+TODO: Create a GCP utilities package merging functionality in ``keep_alive`` and ``periodic_rsync``.
 
 Example:
 
     python3 -m src.bin.gcp.keep_alive --command="screen -dm bash -c \
-        'source ~/.bashrc;
-        source ~/.bash_profile;
+        'source ~/.bashrc; \
+        source ~/.bash_profile; \
         cd WellSaidLabs/; \
         ulimit -n 65536; \
         python3 -m src.bin.train.signal_model -c; \
+        sudo shutdown;'"
+
+Distributed Example:
+
+    python3 -m src.bin.gcp.keep_alive --command="screen -dm bash -c \
+        'source ~/.bashrc; \
+        source ~/.bash_profile; \
+        cd WellSaidLabs/; \
+        ulimit -n 65536; \
+        python3 -m third_party.launch src.bin.train.spectrogram_model -c; \
         sudo shutdown;'"
 """
 import argparse
