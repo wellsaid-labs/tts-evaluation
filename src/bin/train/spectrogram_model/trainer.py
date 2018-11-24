@@ -199,6 +199,11 @@ class Trainer():
             predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
             self._visualize(batch, predictions, sample=not train and i == random_batch)
 
+            self.accumulated_metrics.log_step_end(
+                lambda k, v: self.comet_ml.log_metric('step/' + k, v))
+            self.step += 1
+            self.comet_ml.set_step(self.step)
+
         # Log epoch metrics
         if not trial_run:
             self.comet_ml.log_epoch_end(self.epoch)
@@ -269,9 +274,8 @@ class Trainer():
         kwargs = {'tensor': predictions[-1], 'dim': 2, 'mask': batch['spectrogram_mask']}
         self.accumulated_metrics.add_multiple_metrics({
             'attention_norm': get_masked_average_norm(norm=float('inf'), **kwargs),
-            'attention_standard_deviation': get_weighted_standard_deviation(**kwargs),
+            'attention_std': get_weighted_standard_deviation(**kwargs),
         }, kwargs['mask'].sum())
-        self.accumulated_metrics.log_step_end(lambda k, v: self.comet_ml.log_metric('step/' + k, v))
 
     def _visualize_infered(self, batch, max_infer_frames=1000):
         """ Run in inference mode without teacher forcing and visualizing results.
@@ -293,7 +297,7 @@ class Trainer():
 
         text = batch['text'][:text_length, item]
         # HACK: 0-d to 1-d tensor for this issue https://github.com/PetrochukM/PyTorch-NLP/issues/55
-        speaker = batch['speaker'][item].unsqueeze(0)
+        speaker = batch['speaker'][0][item].unsqueeze(0)
         gold_spectrogram = batch['spectrogram'][:spectrogam_length, item]
 
         with torch.no_grad():

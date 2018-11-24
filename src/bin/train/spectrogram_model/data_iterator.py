@@ -122,7 +122,7 @@ class DataBatchIterator(object):
             spectrogram_expanded_mask (torch.FloatTensor [num_frames, batch_size, frame_channels])
             spectrogram_mask (torch.FloatTensor [num_frames, batch_size])
             stop_token (torch.FloatTensor [num_frames, batch_size])
-            speaker (torch.LongTensor [batch_size])
+            speaker (torch.LongTensor [1, batch_size])
     """
 
     def __init__(self,
@@ -133,7 +133,6 @@ class DataBatchIterator(object):
                  device,
                  trial_run=False,
                  num_workers=cpu_count()):
-        logger.info('Launching with %d workers', num_workers)
         data = DataLoader(data, text_encoder=text_encoder, speaker_encoder=speaker_encoder)
         batch_sampler = None
         if not torch.distributed.is_initialized() or src.distributed.is_master():
@@ -150,6 +149,7 @@ class DataBatchIterator(object):
             batch_sampler = src.distributed.distribute_batch_sampler(batch_sampler, batch_size,
                                                                      device)
 
+        logger.info('Launching with %d workers', num_workers)
         self.device = device
         self.iterator = DataBatchLoader(
             data,
@@ -165,7 +165,7 @@ class DataBatchIterator(object):
     def _collate_fn(self, batch):
         """ List of tensors to a batch variable """
         text, text_lengths = pad_batch([row['text'] for row in batch])
-        speaker = torch.cat([row['speaker'] for row in batch], dim=0)
+        speaker = torch.cat([row['speaker'] for row in batch], dim=0).unsqueeze(0)
         spectrogram, spectrogram_lengths = pad_batch([row['spectrogram'] for row in batch])
         stop_token, _ = pad_batch([row['stop_token'] for row in batch])
 

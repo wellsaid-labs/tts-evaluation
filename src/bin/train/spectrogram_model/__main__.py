@@ -1,10 +1,10 @@
 """ Train spectrogram model.
 
 Example:
-    $ python3 -m src.bin.train.spectrogram_model -n baseline;
+    $ python3 -m src.bin.train.spectrogram_model -l="Linda baseline";
 
 Distributed Example:
-    $ python3 -m third_party.launch src.bin.train.spectrogram_model -n baseline;
+    $ python3 -m third_party.launch src.bin.train.spectrogram_model -l="Linda distributed baseline";
     $ pkill -9 python3; nvidia-smi;
 
 NOTE: The distributed example does clean up Python processes well; therefore, we kill all
@@ -97,6 +97,7 @@ def main(run_one_liner,
     if distributed_rank is not None:
         torch.distributed.init_process_group(backend=distributed_backend)
         device = torch.device('cuda', distributed_rank)
+        torch.cuda.set_device(device.index)  # Must run before using distributed tensors
 
     set_basic_logging_config(device)
     _set_hparams()
@@ -112,8 +113,8 @@ def main(run_one_liner,
     else:
         step = 0
         directory = run_root / str(time.strftime('%b_%d/%H:%M:%S', time.localtime()))
-        if torch.distributed.is_intialized():
-            directory = src.distributed.broadcast_string(directory)
+        if torch.distributed.is_initialized():
+            directory = Path(src.distributed.broadcast_string(str(directory)))
 
     with TrainingContextManager(root_directory=directory, step=step, device=device) as context:
         logger.info('Using directory %s', directory)
@@ -164,7 +165,7 @@ def main(run_one_liner,
                     step=trainer.step,
                     comet_ml_experiment_key=trainer.comet_ml.get_key()).save()
 
-            print('–' * 100)
+            logger.info('-' * 100)
 
 
 if __name__ == '__main__':  # pragma: no cover

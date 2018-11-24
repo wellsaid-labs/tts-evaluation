@@ -1,4 +1,10 @@
+import logging
+import os
+import random
+
 import torch
+
+logger = logging.getLogger(__name__)
 
 
 def get_master_rank():
@@ -15,15 +21,19 @@ def is_master():
 
 def sync():
     """ This collective blocks processes until the whole group enters this function. """
-    torch.distributed.all_reduce(torch.cuda.LongTensor([0]))
+    # Note that there are optimizations implemented in ``torch.distributed.all_reduce`` intended
+    # to prevent synchronization. For example, it does not wait for a zero value.
+    random_ = random.Random(os.getpid()).randint(1, 64)
+    random_ = torch.cuda.LongTensor(1).fill_(random_)
+    torch.distributed.all_reduce(random_)
 
 
-def broadcast_string(string, device):
+def broadcast_string(string, type_=torch.cuda):
     """ Broadcast from master a string to other processes.
 
     Args:
         string (str)
-        device (torch.device)
+        type_ (any): Default tensor type to use.
 
     Returns:
         (str): String sent by master.
@@ -32,24 +42,24 @@ def broadcast_string(string, device):
     string = [ord(c) for c in string]  # Convert string into an integer representation
 
     if is_master():
-        len_string = torch.tensor(len(string))
+        len_string = type_.LongTensor([len(string)])
     else:
-        len_string = torch.LongTensor(1)
+        len_string = type_.LongTensor(1)
 
-    torch.distributed.broadcast(len_string.to(device), src=get_master_rank())
+    torch.distributed.broadcast(len_string, src=get_master_rank())
     len_string = int(len_string)
 
     if is_master():
-        string = torch.tensor(string)
+        string = type_.LongTensor(string)
     else:
-        string = torch.LongTensor(len_string)
+        string = type_.LongTensor(len_string)
 
-    torch.distributed.broadcast(string.to(device), src=get_master_rank())
+    torch.distributed.broadcast(string, src=get_master_rank())
     string = string.cpu().tolist()
     return ''.join([chr(c) for c in string])
 
 
-def distribute_batch_sampler(batch_sampler, batch_size, device):
+def distribute_batch_sampler(batch_sampler, batch_size, device, type_=torch.cuda):
     """ Split the batch sampler iterable between processes.
 
     NOTE: For the purposes of step speed, this function does not compute the batches iteratively.
@@ -60,6 +70,7 @@ def distribute_batch_sampler(batch_sampler, batch_size, device):
             for workers and iterable for master.
         batch_size (int): Note that batch size must be divisable by world size.
         device (torch.device)
+        type_ (any): Default tensor type to use.
 
     Returns:
         (iterable): Batched dataset indicies reserved for this device. Each process has now
@@ -70,26 +81,27 @@ def distribute_batch_sampler(batch_sampler, batch_size, device):
     if is_master():
         batches = list(batch_sampler)
         # batches [num_batches, batch_size]
-        batches = torch.tensor(batches)  # Compatible with ``torch.distributed.broadcast``
+        batches = type_.LongTensor(batches)  # Compatible with ``torch.distributed.broadcast``
 
         # Batch sample invariants
         assert batches.shape[1] == batch_size
         assert len(batches.shape) == 2
 
         num_batches = batches.shape[0]
-        num_batches = torch.tensor(num_batches).to(device)
+        num_batches = type_.LongTensor([num_batches])
     else:
-        num_batches = torch.LongTensor(1).to(device)
+        num_batches = type_.LongTensor(1)
 
     torch.distributed.broadcast(num_batches, src=get_master_rank())
+
     num_batches = int(num_batches)
     data_size = (num_batches, world_size, int(batch_size / world_size))
     if is_master():
         # Split data per process
-        batches = torch.tensor(batches).view(*data_size).to(device)
+        batches = batches.view(*data_size)
         torch.distributed.broadcast(batches, src=get_master_rank())
     else:
-        batches = torch.LongTensor(*data_size).to(device)
+        batches = type_.LongTensor(*data_size)
         torch.distributed.broadcast(batches, src=get_master_rank())
 
     # LEARN MORE: https://github.com/pytorch/pytorch/issues/11734

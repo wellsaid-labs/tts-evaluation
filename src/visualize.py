@@ -206,8 +206,13 @@ def _encode_audio(audio):
 
 
 class AccumulatedMetrics():
+    """
+    Args:
+        type_: Default torch tensor type.
+    """
 
-    def __init__(self):
+    def __init__(self, type_=torch.cuda):
+        self.type_ = type_
         self._reset()
 
     def _reset(self):
@@ -258,7 +263,7 @@ class AccumulatedMetrics():
             metrics_count_items = sorted(self.metrics['step_count'].items(), key=lambda t: t[0])
             metrics_count_values = [value for _, value in metrics_count_items]
 
-            packed = torch.tensor(metrics_total_values + metrics_count_values)
+            packed = self.type_.FloatTensor(metrics_total_values + metrics_count_values)
             torch.distributed.reduce(packed, dst=src.distributed.get_master_rank())
             packed = packed.tolist()
 

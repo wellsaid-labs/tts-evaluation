@@ -4,15 +4,15 @@ from pathlib import Path
 import pandas
 
 from torchnlp.datasets import Dataset
-from torchnlp.download import download_file_maybe_extract
 
 from src.datasets.constants import Speaker
 from src.datasets.process import compute_spectrogram
+from src.datasets.process import download_file_maybe_extract
 from src.datasets.process import normalize_audio
-from src.datasets.process import process_with_processes
+from src.datasets.process import process_in_parallel
 from src.datasets.process import split_dataset
-from src.utils import Checkpoint
 from src.hparams import configurable
+from src.utils import Checkpoint
 
 
 def _processing_func(row,
@@ -140,7 +140,7 @@ def hilary_dataset(
         row.to_dict()
         for _, row in pandas.read_csv(metadata_path, delimiter=metadata_delimiter).iterrows()
     ]
-    data = process_with_processes(
+    data = process_in_parallel(
         data,
         partial(
             _processing_func,

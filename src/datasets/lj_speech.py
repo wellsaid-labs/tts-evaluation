@@ -7,17 +7,17 @@ import unidecode
 
 from num2words import num2words
 from torchnlp.datasets import Dataset
-from torchnlp.download import download_file_maybe_extract
 
 import pandas
 
 from src.datasets.constants import Speaker
 from src.datasets.process import compute_spectrogram
+from src.datasets.process import download_file_maybe_extract
 from src.datasets.process import normalize_audio
-from src.datasets.process import process_with_processes
+from src.datasets.process import process_in_parallel
 from src.datasets.process import split_dataset
-from src.utils import Checkpoint
 from src.hparams import configurable
+from src.utils import Checkpoint
 
 
 def _processing_func(row,
@@ -172,7 +172,7 @@ def lj_speech_dataset(directory='data/',
         delimiter=metadata_delimiter,
         header=metadata_header,
         quoting=metadata_quoting).iterrows()]
-    data = process_with_processes(
+    data = process_in_parallel(
         data,
         partial(
             _processing_func,

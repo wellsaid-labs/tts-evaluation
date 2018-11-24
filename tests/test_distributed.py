@@ -20,7 +20,7 @@ def test_distribute_batch_sampler_master(_, __, ___):
     batch_sampler = [[1, 2, 3, 4], [5, 6, 7, 8]]
     batch_size = 4
     updated_batch_sampler = distribute_batch_sampler(batch_sampler, batch_size,
-                                                     torch.device('cpu:0'))
+                                                     torch.device('cpu:0'), torch)
     assert updated_batch_sampler == [[1, 2], [5, 6]]
 
 
@@ -43,7 +43,7 @@ def test_distribute_batch_sampler_worker(mock_get_world_size, __, mock_broadcast
             tensor.copy_(batch_sampler)  # batches
 
     mock_broadcast.side_effect = mock_broadcast_side_effect
-    updated_batch_sampler = distribute_batch_sampler(batch_sampler, batch_size, device)
+    updated_batch_sampler = distribute_batch_sampler(batch_sampler, batch_size, device, torch)
     assert updated_batch_sampler == [[1, 2], [5, 6]]
 
 
@@ -51,8 +51,7 @@ def test_distribute_batch_sampler_worker(mock_get_world_size, __, mock_broadcast
 @mock.patch('torch.distributed.broadcast', return_value=None)
 def test_broadcast_string(_, __):
     string = "this is a test !@#()(!@#/.'"
-    device = torch.device('cpu:0')
-    assert string == broadcast_string(string, device)
+    assert string == broadcast_string(string, torch)
 
 
 @mock.patch('src.distributed.is_master', return_value=False)
@@ -63,8 +62,6 @@ def test_broadcast_string_worker(mock_broadcast, __):
     string_tensor = [ord(c) for c in string]
     string_tensor = torch.tensor(string_tensor)
 
-    device = torch.device('cpu:0')
-
     def mock_broadcast_side_effect(tensor, src):
         if tensor.shape[0] == 1:
             tensor.fill_(len(string))  # num_batches
@@ -73,4 +70,4 @@ def test_broadcast_string_worker(mock_broadcast, __):
 
     mock_broadcast.side_effect = mock_broadcast_side_effect
 
-    assert string == broadcast_string(string, device)
+    assert string == broadcast_string(string, torch)

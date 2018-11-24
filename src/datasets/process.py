@@ -9,11 +9,27 @@ from tqdm import tqdm
 import librosa
 import numpy
 import torch
+import torchnlp.download
 
 from src.audio import get_log_mel_spectrogram
 from src.audio import read_audio
 
+import src.distributed
+
 logger = logging.getLogger(__name__)
+
+
+def download_file_maybe_extract(*args, **kwargs):
+    """
+    Alias to ``torchnlp.download.download_file_maybe_extract`` that considers the distributed
+    environment.
+    """
+    if not torch.distributed.is_initialized() or src.distributed.is_master():
+        torchnlp.download.download_file_maybe_extract(*args, **kwargs)
+
+    # Ensure data is downloaded before both worker and master proceed.
+    if torch.distributed.is_initialized():
+        src.distributed.sync()
 
 
 def normalize_audio(audio_path,
@@ -55,6 +71,11 @@ def normalize_audio(audio_path,
 
     dest_path = audio_path.parent / '{}{}'.format(stem, audio_path.suffix)
     if stem == audio_path.stem or dest_path.is_file():
+        return dest_path
+
+    # Allow only the master node to save to disk while the worker nodes optimistically assume
+    # the file already exists.
+    if torch.distributed.is_initialized() and not src.distributed.is_master():
         return dest_path
 
     norm_flag = '--norm=-.001' if norm else ''
@@ -119,6 +140,7 @@ def compute_spectrogram(audio_path, text=None, speaker=None, spectrogram_model_c
     dest_spectrogram = audio_path.parent / 'spectrogram({}).npy'.format(audio_path.stem)
     dest_predicted_spectrogram = None
 
+    # Create a reasonable ``dest_predicted_spectrogram`` filepath
     if include_predicted:
         spectrogram_model_name = str(spectrogram_model_checkpoint.path).replace('/', '_').replace(
             '.', '_')
@@ -130,9 +152,14 @@ def compute_spectrogram(audio_path, text=None, speaker=None, spectrogram_model_c
             dest_predicted_spectrogram is None or dest_predicted_spectrogram.is_file()):
         return dest_padded_audio, dest_spectrogram, dest_predicted_spectrogram
 
+    # Allow only the master node to save to disk while the worker nodes optimistically assume
+    # the file already exists.
+    if torch.distributed.is_initialized() and not src.distributed.is_master():
+        return dest_padded_audio, dest_spectrogram, dest_predicted_spectrogram
+
     if dest_spectrogram.is_file() and dest_padded_audio.is_file():
         log_mel_spectrogram = numpy.load(str(dest_spectrogram))
-    else:
+    else:  # Compute and save to disk the spectrogram and audio
         signal = read_audio(audio_path)
         signal = librosa.effects.trim(signal)[0]
         log_mel_spectrogram, padding = get_log_mel_spectrogram(signal)
@@ -143,7 +170,7 @@ def compute_spectrogram(audio_path, text=None, speaker=None, spectrogram_model_c
         numpy.save(str(dest_padded_audio), padded_signal, allow_pickle=False)
         numpy.save(str(dest_spectrogram), log_mel_spectrogram, allow_pickle=False)
 
-    if include_predicted:
+    if include_predicted:  # Compute and save to disk the spectrogram
         predicted_spectrogram = _predict_spectrogram(spectrogram_model_checkpoint, text, speaker,
                                                      log_mel_spectrogram)
         numpy.save(str(dest_predicted_spectrogram), predicted_spectrogram, allow_pickle=False)
@@ -181,7 +208,7 @@ def split_dataset(dataset, splits, random_seed=123):
     return datasets
 
 
-def process_with_processes(data, processing_func, use_tqdm=False):
+def process_in_parallel(data, processing_func, use_tqdm=False):
     """ Process ``data`` with ``processing_func`` using threads and ``tqdm``.
 
     Args:
@@ -194,9 +221,24 @@ def process_with_processes(data, processing_func, use_tqdm=False):
     """
     logger.info('Processing dataset...')
     data = list(data)
-    with Pool() as pool:
+
+    use_pool = not torch.distributed.is_initialized() or src.distributed.is_master()
+    if use_pool:
+        pool = Pool()
         iterator = pool.imap(processing_func, data)
-        if use_tqdm:
-            iterator = tqdm(iterator, total=len(data))
-        processed = list(iterator)
+    else:  # PyTorch workers should not expect to do serious work
+        iterator = (processing_func(row) for row in data)
+
+    if use_tqdm:
+        iterator = tqdm(iterator, total=len(data))
+    processed = list(iterator)
+
+    if use_pool:  # Ensure pool work is finished
+        pool.close()
+        pool.join()
+
+    # Ensure data is processed before both worker and master proceed.
+    if torch.distributed.is_initialized():
+        src.distributed.sync()
+
     return processed

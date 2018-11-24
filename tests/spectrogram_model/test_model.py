@@ -18,7 +18,7 @@ def test_spectrogram_model():
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
-    speaker = torch.LongTensor(batch_size).fill_(0)
+    speaker = torch.LongTensor(1, batch_size).fill_(0)
 
     frames, frames_with_residual, stop_token, alignment, lengths = model.infer(
         input_, speaker, max_recursion=num_frames)
@@ -58,7 +58,7 @@ def test_spectrogram_model_unbatched():
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens).random_(1, vocab_size)
-    speaker = torch.LongTensor(1).fill_(0)
+    speaker = torch.LongTensor(1, 1).fill_(0)
 
     frames, frames_with_residual, stop_token, alignment, _ = model.infer(
         input_, speaker, max_recursion=num_frames)
@@ -87,7 +87,7 @@ def test_spectrogram_model_ground_truth():
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
-    speaker = torch.LongTensor(batch_size).fill_(0)
+    speaker = torch.LongTensor(1, batch_size).fill_(0)
     ground_truth_frames = torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1)
     frames, frames_with_residual, stop_token, alignment = model(
         input_, speaker, ground_truth_frames=ground_truth_frames)
@@ -115,7 +115,7 @@ def test_spectrogram_model_ground_truth_unbatched():
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens).random_(1, vocab_size)
-    speaker = torch.LongTensor(1).fill_(0)
+    speaker = torch.LongTensor(1, 1).fill_(0)
     ground_truth_frames = torch.FloatTensor(num_frames, frame_channels).uniform_(0, 1)
     frames, frames_with_residual, stop_token, alignment = model(
         input_, speaker, ground_truth_frames=ground_truth_frames)

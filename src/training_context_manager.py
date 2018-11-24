@@ -38,7 +38,7 @@ class TrainingContextManager(object):
         # same ``root_directory```
         self.id = str(time.time())[:10]
         if torch.distributed.is_initialized():
-            self.id = src.distributed.broadcast_string(self.id, device)
+            self.id = src.distributed.broadcast_string(self.id)
             if step == 0 and self.root_directory.is_dir() and src.distributed.is_master():
                 raise ValueError('Directory path is already in use %s' % str(self.root_directory))
         else:  # CASE: Not distributed
@@ -144,6 +144,8 @@ class TrainingContextManager(object):
         logger.info('Device: %s', self.device)
         logger.info('Seed: %s', self.seed)
         logger.info('ID: %s', self.id)
+        if torch.distributed.is_initialized():
+            logger.info('World Size: %d' % torch.distributed.get_world_size())
 
         self._check_module_versions()
 

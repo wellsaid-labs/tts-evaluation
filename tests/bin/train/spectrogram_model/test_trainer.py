@@ -83,7 +83,7 @@ def test_run_epoch(comet_ml_mock):
         'text':
             torch.LongTensor(num_tokens, batch_size).fill_(1),
         'speaker':
-            torch.LongTensor(batch_size).fill_(0),
+            torch.LongTensor(1, batch_size).fill_(0),
         'text_lengths': [4, num_tokens],
         'spectrogram':
             torch.FloatTensor(num_frames, batch_size, frame_channels).fill_(1),

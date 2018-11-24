@@ -10,7 +10,7 @@ import numpy
 from src.datasets.process import _predict_spectrogram
 from src.datasets.process import compute_spectrogram
 from src.datasets.process import normalize_audio
-from src.datasets.process import process_with_processes
+from src.datasets.process import process_in_parallel
 from src.datasets.process import split_dataset
 from src.datasets import Speaker
 from src.spectrogram_model import SpectrogramModel
@@ -123,8 +123,8 @@ def mock_func(a):
     return a**2
 
 
-def test_process_with_processes():
+def test_process_in_parallel():
     expected = [1, 4, 9]
 
-    processed = process_with_processes([1, 2, 3], mock_func)
+    processed = process_in_parallel([1, 2, 3], mock_func)
     assert expected == processed

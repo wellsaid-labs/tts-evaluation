@@ -132,7 +132,7 @@ class SpectrogramModel(nn.Module):
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens]): Batched set of
                 sequences.
-            speaker (torch.LongTensor [batch_size]): Batched speaker encoding.
+            speaker (torch.LongTensor [1, batch_size]): Batched speaker encoding.
             max_recursion (int, optional): The maximum sequential predictions to make before
                 quitting; Used for testing and defensive design.
             stop_threshold (float, optional): The threshold probability for deciding to stop.
@@ -158,7 +158,7 @@ class SpectrogramModel(nn.Module):
 
         # [batch_size, num_tokens]
         tokens_mask = tokens.detach().eq(PADDING_INDEX)
-        encoded_tokens = self.encoder(tokens, speaker)
+        encoded_tokens = self.encoder(tokens, speaker.squeeze(0))
 
         # [num_tokens, batch_size, hidden_size]
         _, batch_size, _ = encoded_tokens.shape
@@ -208,7 +208,7 @@ class SpectrogramModel(nn.Module):
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens]): Batched set of
                 sequences.
-            speaker (torch.LongTensor [batch_size]): Batched speaker encoding.
+            speaker (torch.LongTensor [1, batch_size]): Batched speaker encoding.
             ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or
                 [num_frames, frame_channels]): During training, ground truth frames for
                 teacher-forcing.
@@ -237,7 +237,7 @@ class SpectrogramModel(nn.Module):
 
         # [batch_size, num_tokens]
         tokens_mask = tokens.detach().eq(PADDING_INDEX)
-        encoded_tokens = self.encoder(tokens, speaker)
+        encoded_tokens = self.encoder(tokens, speaker.squeeze(0))
 
         frames, stop_tokens, hidden_state, alignments = self.decoder(
             encoded_tokens, tokens_mask, ground_truth_frames=ground_truth_frames)

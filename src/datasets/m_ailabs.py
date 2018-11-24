@@ -34,18 +34,18 @@ import logging
 import os
 
 from torchnlp.datasets import Dataset
-from torchnlp.download import download_file_maybe_extract
 
 import pandas
 
 from src.datasets.constants import Gender
 from src.datasets.constants import Speaker
 from src.datasets.process import compute_spectrogram
+from src.datasets.process import download_file_maybe_extract
 from src.datasets.process import normalize_audio
-from src.datasets.process import process_with_processes
+from src.datasets.process import process_in_parallel
 from src.datasets.process import split_dataset
-from src.utils import Checkpoint
 from src.hparams import configurable
+from src.utils import Checkpoint
 
 logger = logging.getLogger(__name__)
 Book = namedtuple('Book', 'speaker title')
@@ -204,7 +204,7 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
     assert sorted(actual_books, key=lambda x: x.title) == sorted(_allbooks, key=lambda x: x.title)
     data = _read_mailabs_data(
         picker, directory=directory, metadata_path_column=metadata_path_column)
-    data = process_with_processes(
+    data = process_in_parallel(
         data,
         partial(
             _processing_func,
