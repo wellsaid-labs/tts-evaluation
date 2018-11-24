@@ -271,8 +271,9 @@ class Trainer():
             self._visualize_predicted(batch, predictions)
             self._visualize_infered(batch)
 
+        predicted_alignments = predictions[-1]
         # [num_frames, batch_size, num_tokens] → scalar
-        kwargs = {'tensor': predictions[-1], 'dim': 2, 'mask': batch['spectrogram_mask']}
+        kwargs = {'tensor': predicted_alignments, 'dim': 2, 'mask': batch['spectrogram_mask']}
         self.accumulated_metrics.add_multiple_metrics({
             'attention_norm': get_masked_average_norm(norm=float('inf'), **kwargs),
             'attention_std': get_weighted_standard_deviation(**kwargs),

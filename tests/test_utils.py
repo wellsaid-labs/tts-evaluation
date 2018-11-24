@@ -68,9 +68,11 @@ def test_get_masked_average_norm():
 
 
 def test_get_masked_average_norm_masked():
-    tensor = torch.Tensor([0.5, 0.2, 0.3])
-    mask = torch.Tensor([1])
-    assert get_masked_average_norm(tensor) == get_masked_average_norm(tensor, mask=mask)
+    tensor = torch.randn(3, 4, 5)
+    mask = torch.FloatTensor(3, 5).fill_(1)
+    assert get_masked_average_norm(
+        tensor, dim=1) == get_masked_average_norm(
+            tensor, mask=mask, dim=1)
 
 
 def test_get_weighted_standard_deviation():

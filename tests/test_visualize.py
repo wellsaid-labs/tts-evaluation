@@ -18,11 +18,11 @@ from src.visualize import spectrogram_to_image
 @mock.patch('torch.distributed.reduce', return_value=None)
 def test_accumulated_metrics(_, __):
     metrics = AccumulatedMetrics(type_=torch)
-    metrics.add_multiple_metrics({'test': torch.tensor([1])}, 2)
-    metrics.add_multiple_metrics({'test': torch.tensor([.5])}, 1)
+    metrics.add_multiple_metrics({'test': torch.tensor([.25])}, 2)
+    metrics.add_multiple_metrics({'test': torch.tensor([.5])}, 3)
 
     def callable_(key, value):
-        assert key == 'test' and value == 0.5
+        assert key == 'test' and value == 0.4
 
     metrics.log_step_end(callable_)
     metrics.log_epoch_end(callable_)

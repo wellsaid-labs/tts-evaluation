@@ -223,29 +223,29 @@ class AccumulatedMetrics():
             'step_count': defaultdict(float)
         }
 
-    def add_metric(self, name, value, accumulation=1):
+    def add_metric(self, name, value, count=1):
         """ Add metric as part of the current step.
 
         Args:
             name (str)
             value (number)
-            accumulation (int): Count such that the average value is ``value / count``.
+            count (int): Number of times to add value / frequency of value.
         """
         if torch.is_tensor(value):
             value = value.item()
 
-        self.metrics['step_total'][name] += value
-        self.metrics['step_count'][name] += accumulation
+        self.metrics['step_total'][name] += value * count
+        self.metrics['step_count'][name] += count
 
-    def add_multiple_metrics(self, dict_, accumulation=1):
+    def add_multiple_metrics(self, dict_, count=1):
         """ Add multiple metrics as part of the current step.
 
         Args:
             dict_ (dict): Metrics in the form of key value pairs.
-            accumulation (int): Count such that the average value is ``value / count``.
+            count (int): Number of times to add value / frequency of value.
         """
         for metric, value in dict_.items():
-            self.add_metric(metric, value, accumulation)
+            self.add_metric(metric, value, count)
 
     def log_step_end(self, log_metric):
         """ Log all metrics that have been accumulated since the last ``log_step_end``.
