@@ -81,17 +81,19 @@ class SpectrogramModel(nn.Module):
         self.encoder = Encoder(vocab_size, num_speakers)
         self.decoder = AutoregressiveDecoder(frame_channels=frame_channels)
         self.post_net = PostNet(frame_channels=frame_channels)
+        self.stop_sigmoid = nn.Sigmoid()
 
     def _get_stopped_indexes(self, predictions, stop_threshold):
         """ Get a list of indices that predicted stop.
 
         Args:
-            stop_token (torch.FloatTensor [1, batch_size]): Probablity of stopping.
+            stop_token (torch.FloatTensor [1, batch_size]): Score for stopping
             stop_threshold (float): The threshold probability for deciding to stop.
 
         Returns:
             (list) Indices that predicted stop.
         """
+        predictions = self.stop_sigmoid(predictions)
         stopped = predictions.data.view(-1).ge(stop_threshold).nonzero()
         if stopped.dim() > 1:
             return stopped.squeeze(1).tolist()

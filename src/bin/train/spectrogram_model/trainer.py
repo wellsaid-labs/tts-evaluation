@@ -2,7 +2,7 @@ import logging
 import random
 import socket
 
-from torch.nn import BCELoss
+from torch.nn import BCEWithLogitsLoss
 from torch.nn import MSELoss
 from torch.optim import Adam
 from tqdm import tqdm
@@ -107,7 +107,7 @@ class Trainer():
                  step=0,
                  epoch=0,
                  criterion_spectrogram=MSELoss,
-                 criterion_stop_token=BCELoss,
+                 criterion_stop_token=BCEWithLogitsLoss,
                  optimizer=Adam,
                  use_tqdm=False):
 
@@ -158,6 +158,7 @@ class Trainer():
             'num_speakers': self.speaker_encoder.vocab_size,
             'speakers': sorted([str(v) for v in self.speaker_encoder.vocab]),
         })
+        # NOTE: Remove after: https://github.com/comet-ml/issue-tracking/issues/154
         self.comet_ml.log_other('hostname', socket.gethostname())
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
@@ -211,6 +212,8 @@ class Trainer():
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
+                # NOTE: Remove after: https://github.com/comet-ml/issue-tracking/issues/164
+                self.comet_ml.log_metric('step', self.step)
 
         # Log epoch metrics
         if not trial_run:

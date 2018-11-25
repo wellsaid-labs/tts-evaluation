@@ -105,9 +105,8 @@ class AutoregressiveDecoder(nn.Module):
             hidden_size=attention_hidden_size)
         self.linear_out = nn.Linear(
             in_features=lstm_hidden_size + self.attention_context_size, out_features=frame_channels)
-        self.linear_stop_token = nn.Sequential(
-            nn.Linear(in_features=lstm_hidden_size + self.attention_context_size, out_features=1),
-            nn.Sigmoid())
+        self.linear_stop_token = nn.Linear(
+            in_features=lstm_hidden_size + self.attention_context_size, out_features=1)
 
     def _get_initial_state(self,
                            batch_size,
@@ -183,7 +182,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Predicted frames.
-            stop_token (torch.FloatTensor [num_frames, batch_size]): Probablity of stopping.
+            stop_token (torch.FloatTensor [num_frames, batch_size]): Score for stopping.
             new_hidden_state (AutoregressiveDecoderHiddenState): For sequential prediction, decoder
                 hidden state used to predict the next frame.
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention
