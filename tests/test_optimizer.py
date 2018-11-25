@@ -52,7 +52,10 @@ class TestOptimizer(unittest.TestCase):
         output, _ = net(input_)
         output.sum().backward()
         mock_clip_grad_norm.return_value = 1.0
-        optim.step(max_grad_norm=5, comet_ml=MockCometML(), rel_tol=1)
+        optim.step(
+            max_grad_norm=5,
+            comet_ml=MockCometML(),
+        )
         mock_clip_grad_norm.assert_called_once()
 
     @mock.patch('torch.nn.utils.clip_grad_norm_')
@@ -62,18 +65,18 @@ class TestOptimizer(unittest.TestCase):
         params[0].grad = torch.randn(2, 3, 4)
         optim = AutoOptimizer(torch.optim.Adam(params), window_size=2)
         assert optim.max_grad_norm is None
-        optim.step(rel_tol=1)
+        optim.step()
         assert optim.max_grad_norm is not None
         old_max_grad_norm = optim.max_grad_norm
         params[0].grad = torch.randn(2, 3, 4)
-        optim.step(rel_tol=1)
+        optim.step()
         assert old_max_grad_norm != optim.max_grad_norm  # Max grad norm updates
         mock_clip_grad_norm.assert_called_once()  # Max grad norm is only called on the second step
 
         # Test sliding window stabilizes
-        optim.step(rel_tol=1)
+        optim.step()
         old_max_grad_norm = optim.max_grad_norm
-        optim.step(rel_tol=1)
+        optim.step()
         assert old_max_grad_norm == optim.max_grad_norm
 
     def test_ignore_step(self):

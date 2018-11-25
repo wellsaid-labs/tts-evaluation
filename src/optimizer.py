@@ -31,15 +31,17 @@ def get_parameter_norm(parameters, norm_type=2):
     Return:
         Total norm of the parameters (viewed as a single vector).
     """
+    if isinstance(parameters, torch.Tensor):
+        parameters = [parameters]
     parameters = list(filter(lambda p: p.grad is not None, parameters))
     norm_type = float(norm_type)
-    if norm_type == float('inf'):
+    if norm_type == math.inf:
         total_norm = max(p.grad.data.abs().max() for p in parameters)
     else:
         total_norm = 0
         for p in parameters:
-            param_norm = p.grad.data.norm(norm_type).item()
-            total_norm += param_norm**norm_type
+            param_norm = p.grad.data.norm(norm_type)
+            total_norm += param_norm.item()**norm_type
         total_norm = total_norm**(1. / norm_type)
     return total_norm
 
@@ -60,15 +62,13 @@ class Optimizer(object):
         self.state_dict = self.optimizer.state_dict
         self.load_state_dict = self.optimizer.load_state_dict
 
-    def step(self, comet_ml=None, max_grad_norm=None, rel_tol=10**-3):
+    def step(self, comet_ml=None, max_grad_norm=None):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
 
         Args:
             comet_ml (comet_ml.Experiment, optional): Remote visualizer for logging
                 infinite gradient.
             max_grad_norm (float, optional): Clip gradient norm to this maximum.
-            rel_tol (float, optional): ``math.isclose`` parameter used to sanity check
-                ``parameter_norm`` equality.
 
         Returns:
             parameter_norm (float): Total norm of the parameters.
@@ -77,15 +77,12 @@ class Optimizer(object):
             itertools.chain.from_iterable(
                 [group['params'] for group in self.optimizer.param_groups]))
         parameter_norm = get_parameter_norm(params)
-        parameter_norm_inf = get_parameter_norm(params, norm_type=float('inf'))
+        parameter_norm_inf = get_parameter_norm(params, norm_type=math.inf)
 
         if max_grad_norm is not None:
             if comet_ml is not None:
                 comet_ml.log_metric('step/grad_norm/clip_max', max_grad_norm)
-            other_parameter_norm = torch.nn.utils.clip_grad_norm_(params, max_norm=max_grad_norm)
-
-            # Both callables should compute the same value
-            assert math.isclose(parameter_norm, other_parameter_norm, rel_tol=rel_tol)
+            torch.nn.utils.clip_grad_norm_(params, max_norm=max_grad_norm)
 
         # Take a step if norm is finite (e.g. no ``inf`` or ``nan`` values in the gradient)
         if np.isfinite(parameter_norm):

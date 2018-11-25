@@ -42,8 +42,8 @@ def get_trainer():
         dev_batch_size=1)
 
     # Make sure that stop-token is not predicted; therefore, reaching ``max_recursion``
-    torch.nn.init.constant_(trainer.model.decoder.linear_stop_token[0].weight, float('-inf'))
-    torch.nn.init.constant_(trainer.model.decoder.linear_stop_token[0].bias, float('-inf'))
+    torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.weight, float('-inf'))
+    torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.bias, float('-inf'))
     return trainer
 
 
@@ -66,7 +66,7 @@ def test__compute_loss(comet_ml_mock):
      num_frames) = trainer._do_loss_and_maybe_backwards(batch, predictions, False)
     assert pre_spectrogram_loss.item() == pytest.approx(0.0)
     assert post_spectrogram_loss.item() == pytest.approx(1.0 / 4)
-    assert stop_token_loss.item() == pytest.approx(0.6931471824645996 / 2)
+    assert stop_token_loss.item() == pytest.approx(0.5836120843887329)
     assert num_spectrogram_values == 4
     assert num_frames == 2
 
