@@ -156,7 +156,9 @@ def main(run_one_liner,
             if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
                 SpectrogramModelCheckpoint(
                     directory=context.checkpoints_directory,
-                    model_state_dict=trainer.model.state_dict(),
+                    model_state_dict=trainer.model.module.state_dict()
+                    if isinstance(trainer.model, torch.nn.parallel.DistributedDataParallel) else
+                    trainer.model.state_dict(),
                     optimizer_state_dict=trainer.optimizer.state_dict(),
                     text_encoder=trainer_kwargs['text_encoder'],
                     speaker_encoder=trainer_kwargs['speaker_encoder'],

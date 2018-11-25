@@ -53,6 +53,9 @@ class SpectrogramModelCheckpoint(Checkpoint):
     def from_path(class_, path, device=torch.device('cpu'), model=SpectrogramModel, optimizer=Adam):
         """ Overriding the ``from_path`` to load the ``model`` from ``model_state_dict`` """
         instance = super(SpectrogramModelCheckpoint, class_).from_path(path, device)
+        if instance is None:
+            return instance
+
         setattr(instance, 'model',
                 model(instance.text_encoder.vocab_size, instance.speaker_encoder.vocab_size))
         instance.model.load_state_dict(instance.model_state_dict)

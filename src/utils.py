@@ -505,7 +505,7 @@ class Checkpoint():
             try:
                 return class_.from_path(path, **kwargs)
             except (EOFError, RuntimeError):
-                logger.warning('Failed to load checkpoint %s' % path)
+                logger.exception('Failed to load checkpoint %s' % path)
                 pass
 
         return None
