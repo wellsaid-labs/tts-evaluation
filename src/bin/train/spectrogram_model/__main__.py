@@ -39,7 +39,6 @@ from src.hparams import add_config
 from src.hparams import configurable
 from src.hparams import set_hparams
 from src.training_context_manager import TrainingContextManager
-from src.utils import Checkpoint
 from src.utils import parse_hparam_args
 from src.utils import set_basic_logging_config
 
@@ -104,8 +103,8 @@ def main(run_one_liner,
     add_config(hparams)
 
     checkpoint = (
-        Checkpoint.most_recent(run_root / '**/*.pt')
-        if checkpoint_path == '' else Checkpoint.from_path(checkpoint_path))
+        SpectrogramModelCheckpoint.most_recent(run_root / '**/*.pt')
+        if checkpoint_path == '' else SpectrogramModelCheckpoint.from_path(checkpoint_path))
 
     if checkpoint is not None:
         step = checkpoint.step
