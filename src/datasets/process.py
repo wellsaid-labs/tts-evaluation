@@ -160,6 +160,7 @@ def compute_spectrogram(audio_path, text=None, speaker=None, spectrogram_model_c
     if dest_spectrogram.is_file() and dest_padded_audio.is_file():
         log_mel_spectrogram = numpy.load(str(dest_spectrogram))
     else:  # Compute and save to disk the spectrogram and audio
+        assert audio_path.is_file(), 'Audio path must be a file %s' % audio_path
         signal = read_audio(audio_path)
         signal = librosa.effects.trim(signal)[0]
         log_mel_spectrogram, padding = get_log_mel_spectrogram(signal)

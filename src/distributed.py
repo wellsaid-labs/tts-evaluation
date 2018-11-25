@@ -23,7 +23,6 @@ def sync():
     # to prevent synchronization. For example, it does not wait for a zero value.
     # Unless
     tensor = torch.cuda.LongTensor([5])
-    logger.info('Synchronizing, %d', tensor.item())
     torch.distributed.all_reduce(tensor)
     logger.info('Synchronized, %d', tensor.item())
 

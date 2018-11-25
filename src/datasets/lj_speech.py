@@ -2,6 +2,7 @@ from functools import partial
 from pathlib import Path
 
 import csv
+import logging
 import re
 import unidecode
 
@@ -18,6 +19,8 @@ from src.datasets.process import process_in_parallel
 from src.datasets.process import split_dataset
 from src.hparams import configurable
 from src.utils import Checkpoint
+
+logger = logging.getLogger(__name__)
 
 
 def _processing_func(row,
@@ -165,6 +168,7 @@ def lj_speech_dataset(directory='data/',
           'text': "Lord Ferrers' body was brought to Surgeons' Hall after execution in "
                   'his own carriage and six;'}]
     """
+    logger.info('Loading LJ speech dataset')
     download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
     metadata_path = Path(directory, extracted_name, metadata_filename)
     data = [row.to_dict() for _, row in pandas.read_csv(

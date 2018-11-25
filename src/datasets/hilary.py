@@ -1,6 +1,8 @@
 from functools import partial
 from pathlib import Path
 
+import logging
+
 import pandas
 
 from torchnlp.datasets import Dataset
@@ -13,6 +15,8 @@ from src.datasets.process import process_in_parallel
 from src.datasets.process import split_dataset
 from src.hparams import configurable
 from src.utils import Checkpoint
+
+logger = logging.getLogger(__name__)
 
 
 def _processing_func(row,
@@ -132,6 +136,7 @@ def hilary_dataset(
                                         'guard(script_58_chunk_3),24000)).npy'),
           'text': 'Take an in-depth look at the American Red Cross history,'}]
     """
+    logger.info('Loading Hilary speech dataset')
     download_file_maybe_extract(
         url=url, directory=str(directory), check_files=check_files, filename=url_filename)
     metadata_path = Path(directory, extracted_name, metadata_file)
