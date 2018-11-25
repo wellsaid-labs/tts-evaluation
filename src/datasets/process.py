@@ -208,7 +208,7 @@ def split_dataset(dataset, splits, random_seed=123):
     return datasets
 
 
-def process_in_parallel(data, processing_func, use_tqdm=False):
+def process_in_parallel(data, processing_func, use_tqdm=True):
     """ Process ``data`` with ``processing_func`` using threads and ``tqdm``.
 
     Args:

@@ -1,5 +1,6 @@
 import logging
 import random
+import socket
 
 from torch.nn import BCELoss
 from torch.nn import MSELoss
@@ -152,6 +153,7 @@ class Trainer():
             'num_speakers': self.speaker_encoder.vocab_size,
             'speakers': sorted([str(v) for v in self.speaker_encoder.vocab]),
         })
+        self.comet_ml.log_other('hostname', socket.gethostname())
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step: %d', self.step)

@@ -1,6 +1,4 @@
 import logging
-import os
-import random
 
 import torch
 
@@ -23,9 +21,11 @@ def sync():
     """ This collective blocks processes until the whole group enters this function. """
     # Note that there are optimizations implemented in ``torch.distributed.all_reduce`` intended
     # to prevent synchronization. For example, it does not wait for a zero value.
-    random_ = random.Random(os.getpid()).randint(1, 64)
-    random_ = torch.cuda.LongTensor(1).fill_(random_)
-    torch.distributed.all_reduce(random_)
+    # Unless
+    tensor = torch.cuda.LongTensor([5])
+    logger.info('Synchronizing, %d', tensor.item())
+    torch.distributed.all_reduce(tensor)
+    logger.info('Synchronized, %d', tensor.item())
 
 
 def broadcast_string(string, type_=torch.cuda):
