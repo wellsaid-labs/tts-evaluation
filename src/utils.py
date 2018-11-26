@@ -167,19 +167,18 @@ def get_weighted_standard_deviation(tensor, dim=0, mask=None):
     indicies = indicies.view(*shape).expand_as(tensor).float()
 
     weighted_mean = (indicies * tensor).sum(dim=dim) / tensor.sum(dim=dim)
-    biased_weighted_variance = (
-        (indicies - weighted_mean.unsqueeze(dim=dim))**2 * tensor).sum(dim=dim)
-
-    # Correct the bias
-    bias = 1 - (tensor**2).sum(dim=dim)
-    weighted_variance = biased_weighted_variance / bias
+    weighted_variance = ((indicies - weighted_mean.unsqueeze(dim=dim))**2 * tensor).sum(dim=dim)
     weighted_standard_deviation = weighted_variance**0.5
+
+    assert not torch.isnan(weighted_standard_deviation.min()), 'NaN detected.'
 
     if mask is not None:
         weighted_standard_deviation = weighted_standard_deviation * mask
         divisor = mask.sum()
     else:
         divisor = weighted_standard_deviation.numel()
+
+    assert divisor > 0, 'Divisor must be larger than zero.'
 
     return (weighted_standard_deviation.sum() / divisor).item()
 
@@ -202,6 +201,8 @@ def get_masked_average_norm(tensor, dim=0, mask=None, norm=2):
         divisor = mask.sum()
     else:
         divisor = norm.numel()
+
+    assert divisor > 0, 'Divisor must be larger than zero.'
 
     return (norm.sum() / divisor).item()
 

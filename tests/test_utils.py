@@ -75,11 +75,25 @@ def test_get_masked_average_norm_masked():
             tensor, mask=mask, dim=1)
 
 
+def test_get_weighted_standard_deviation_constant():
+    tensor = torch.Tensor([0, 1, 0])
+    standard_deviation = get_weighted_standard_deviation(tensor, dim=0)
+    # Standard deviation for a constant
+    assert standard_deviation == 0.0
+
+
+def test_get_weighted_standard_deviation_bias():
+    tensor = torch.Tensor([.25, .25, .25, .25])
+    standard_deviation = get_weighted_standard_deviation(tensor, dim=0)
+    # Population standard deviation for 1,2,3,4
+    assert standard_deviation == pytest.approx(1.1180339887499)
+
+
 def test_get_weighted_standard_deviation():
     tensor = torch.Tensor([[[0.33333, 0.33333, 0.33334], [0, 0.5, 0.5]], [[0, 0.5, 0.5],
                                                                           [0, 0.5, 0.5]]])
     standard_deviation = get_weighted_standard_deviation(tensor, dim=2)
-    assert standard_deviation == pytest.approx(0.7803307175636292)
+    assert standard_deviation == pytest.approx(0.5791246294975281)
 
 
 def test_get_weighted_standard_deviation_masked():
@@ -87,7 +101,8 @@ def test_get_weighted_standard_deviation_masked():
                                                                           [0, 0.5, 0.5]]])
     mask = torch.Tensor([[1, 0], [0, 0]])
     standard_deviation = get_weighted_standard_deviation(tensor, dim=2, mask=mask)
-    assert standard_deviation == pytest.approx(1.0, rel=1.0e-04)
+    # Population standard deviation for 1,2,3
+    assert standard_deviation == pytest.approx(0.81649658093, rel=1.0e-04)
 
 
 class MockModel(nn.Module):

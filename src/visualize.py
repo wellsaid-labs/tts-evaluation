@@ -234,6 +234,8 @@ class AccumulatedMetrics():
         if torch.is_tensor(value):
             value = value.item()
 
+        assert count > 0, '%s count must be a positive number' % name
+
         self.metrics['step_total'][name] += value * count
         self.metrics['step_count'][name] += count
 
@@ -278,6 +280,7 @@ class AccumulatedMetrics():
                 self.metrics['step_total'].items(), self.metrics['step_count'].items()):
 
             assert total_key == count_key, 'AccumulatedMetrics invariant failed.'
+            assert count_value > 0, 'AccumulatedMetrics invariant failed (%s, %f, %f)'
             log_metric(total_key, total_value / count_value)
 
             self.metrics['epoch_total'][total_key] += total_value
@@ -298,6 +301,7 @@ class AccumulatedMetrics():
                 self.metrics['epoch_total'].items(), self.metrics['epoch_count'].items()):
 
             assert total_key == count_key, 'AccumulatedMetrics invariant failed.'
+            assert count_value > 0, 'AccumulatedMetrics invariant failed (%s, %f, %f)'
             log_metric(total_key, total_value / count_value)
 
         self._reset()
