@@ -1,3 +1,5 @@
+import math
+
 import torch
 
 from torch import nn
@@ -124,7 +126,7 @@ class LocationSensitiveAttention(nn.Module):
         score = score.squeeze(2)
 
         # Mask encoded tokens padding
-        score.data.masked_fill_(tokens_mask, float('-inf'))
+        score.data.masked_fill_(tokens_mask, -math.inf)
 
         # [batch_size, num_tokens] → [batch_size, num_tokens]
         alignment = self.softmax(score)

@@ -1,7 +1,9 @@
+from unittest import mock
+
+import math
 import unittest
 
 import torch
-from unittest import mock
 
 from src.optimizer import Optimizer
 from src.optimizer import AutoOptimizer
@@ -97,7 +99,7 @@ class TestOptimizer(unittest.TestCase):
         # Test ``inf``
         did_step = False
         params = [torch.nn.Parameter(torch.randn(1))]
-        params[0].grad = torch.tensor([float('inf')])
+        params[0].grad = torch.tensor([math.inf])
         adam = torch.optim.Adam(params)
         adam.step = _step
         optim = Optimizer(adam)

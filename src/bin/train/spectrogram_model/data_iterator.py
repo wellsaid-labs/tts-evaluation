@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 
 import logging
 
@@ -17,6 +18,7 @@ import src.distributed
 logger = logging.getLogger(__name__)
 
 
+@lru_cache(maxsize=None)
 def get_spectrogram_length(filename):
     """ Get length of spectrogram (shape [num_frames, num_channels]) from a ``.npy`` numpy file
 
@@ -87,6 +89,10 @@ class DataLoader(data.Dataset):
 
         stop_token = spectrogram.new_zeros((spectrogram.shape[0],))
         stop_token[-1] = 1
+
+        # Check invariants
+        assert text.shape[0] > 0
+        assert spectrogram.shape[0] > 0
 
         return {
             'spectrogram': spectrogram,

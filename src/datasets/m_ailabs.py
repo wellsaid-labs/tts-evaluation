@@ -120,6 +120,10 @@ def _processing_func(row,
         logger.warning('Not found audio file, skipping: %s', audio_path)
         return None
 
+    if len(text) == 0:
+        logger.warning('Text is absent, skipping: %s', audio_path)
+        return None
+
     audio_path = normalize_audio(audio_path, **kwargs)
     audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
         audio_path, text, book.speaker, spectrogram_model_checkpoint)

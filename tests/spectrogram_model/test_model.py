@@ -1,3 +1,5 @@
+import math
+
 import torch
 
 from src.spectrogram_model import SpectrogramModel
@@ -13,8 +15,8 @@ def test_spectrogram_model():
     model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels)
 
     # Make sure that stop-token is not predicted; therefore, reaching ``max_recursion``
-    torch.nn.init.constant_(model.decoder.linear_stop_token.weight, float('-inf'))
-    torch.nn.init.constant_(model.decoder.linear_stop_token.bias, float('-inf'))
+    torch.nn.init.constant_(model.decoder.linear_stop_token.weight, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token.bias, -math.inf)
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
@@ -53,8 +55,8 @@ def test_spectrogram_model_unbatched():
     model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels)
 
     # Make sure that stop-token is not predicted; therefore, reaching ``max_recursion``
-    torch.nn.init.constant_(model.decoder.linear_stop_token.weight, float('-inf'))
-    torch.nn.init.constant_(model.decoder.linear_stop_token.bias, float('-inf'))
+    torch.nn.init.constant_(model.decoder.linear_stop_token.weight, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token.bias, -math.inf)
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens).random_(1, vocab_size)

@@ -1,4 +1,5 @@
 import logging
+import math
 import random
 import socket
 
@@ -285,7 +286,7 @@ class Trainer():
         # [num_frames, batch_size, num_tokens] → scalar
         kwargs = {'tensor': predicted_alignments, 'dim': 2, 'mask': batch['spectrogram_mask']}
         self.accumulated_metrics.add_multiple_metrics({
-            'attention_norm': get_masked_average_norm(norm=float('inf'), **kwargs),
+            'attention_norm': get_masked_average_norm(norm=math.inf, **kwargs),
             'attention_std': get_weighted_standard_deviation(**kwargs),
         }, kwargs['mask'].sum())
 
@@ -323,7 +324,7 @@ class Trainer():
         speaker = self.speaker_encoder.decode(speaker)
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
         # [num_frames, num_tokens] → scalar
-        attention_norm = get_masked_average_norm(predicted_alignments, dim=1, norm=float('inf'))
+        attention_norm = get_masked_average_norm(predicted_alignments, dim=1, norm=math.inf)
         # [num_frames, num_tokens] → scalar
         attention_standard_deviation = get_weighted_standard_deviation(predicted_alignments, dim=1)
         waveform = griffin_lim(predicted_post_spectrogram.cpu().numpy())

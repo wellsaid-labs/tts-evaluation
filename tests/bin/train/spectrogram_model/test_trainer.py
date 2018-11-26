@@ -1,6 +1,7 @@
+import math
+
 from contextlib import contextmanager
 from contextlib import ExitStack
-
 from unittest import mock
 
 from torchnlp.text_encoders import CharacterEncoder
@@ -42,8 +43,8 @@ def get_trainer():
         dev_batch_size=1)
 
     # Make sure that stop-token is not predicted; therefore, reaching ``max_recursion``
-    torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.weight, float('-inf'))
-    torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.bias, float('-inf'))
+    torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.weight, -math.inf)
+    torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.bias, -math.inf)
     return trainer
 
 
