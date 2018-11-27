@@ -5,14 +5,14 @@ from src.spectrogram_model.decoder import AutoregressiveDecoderHiddenState
 
 
 def test_autoregressive_decoder():
-    encoder_hidden_size = 32
+    attention_hidden_size = 32
     batch_size = 5
     num_tokens = 6
     frame_channels = 20
     decoder = AutoregressiveDecoder(
-        encoder_hidden_size=encoder_hidden_size, frame_channels=frame_channels)
+        frame_channels=frame_channels, attention_hidden_size=attention_hidden_size)
 
-    encoded_tokens = torch.FloatTensor(num_tokens, batch_size, encoder_hidden_size).uniform_(0, 1)
+    encoded_tokens = torch.FloatTensor(num_tokens, batch_size, attention_hidden_size).uniform_(0, 1)
     tokens_mask = torch.ByteTensor(batch_size, num_tokens).zero_()
 
     hidden_state = None
@@ -33,15 +33,15 @@ def test_autoregressive_decoder():
 
 
 def test_autoregressive_decoder_ground_truth():
-    encoder_hidden_size = 32
+    attention_hidden_size = 32
     batch_size = 5
     num_tokens = 6
     frame_channels = 20
     num_frames = 10
     decoder = AutoregressiveDecoder(
-        encoder_hidden_size=encoder_hidden_size, frame_channels=frame_channels)
+        attention_hidden_size=attention_hidden_size, frame_channels=frame_channels)
 
-    encoded_tokens = torch.FloatTensor(num_tokens, batch_size, encoder_hidden_size).uniform_(0, 1)
+    encoded_tokens = torch.FloatTensor(num_tokens, batch_size, attention_hidden_size).uniform_(0, 1)
     tokens_mask = torch.ByteTensor(batch_size, num_tokens).zero_()
     ground_truth_frames = torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1)
 

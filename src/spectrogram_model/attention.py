@@ -40,9 +40,9 @@ class LocationSensitiveAttention(nn.Module):
           https://arxiv.org/pdf/1506.07503.pdf
 
     Args:
-        encoder_hidden_size (int): Hidden size of the encoder used; for reference.
+        hidden_size (int): The hidden size of the attention module dictating context, query,
+            and location features size.
         query_hidden_size (int): The hidden size of the query to expect.
-        alignment_hidden_size (int): The hidden size of the alignment to project to.
         num_convolution_filters (odd :clas:`int`, optional): Number of dimensions (channels)
             produced by the convolution.
         convolution_filter_size (int, optional): Size of the convolving kernel.
@@ -50,9 +50,8 @@ class LocationSensitiveAttention(nn.Module):
 
     @configurable
     def __init__(self,
-                 encoder_hidden_size=512,
-                 query_hidden_size=1024,
                  hidden_size=128,
+                 query_hidden_size=1024,
                  num_convolution_filters=32,
                  convolution_filter_size=31):
 
@@ -138,8 +137,8 @@ class LocationSensitiveAttention(nn.Module):
     def forward(self, encoded_tokens, tokens_mask, query, cumulative_alignment=None):
         """
         Args:
-            encoded_tokens (torch.FloatTensor [num_tokens, batch_size, attention_hidden_size]):
-                Batched set of encoded sequences.
+            encoded_tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batched set of
+                encoded sequences.
             tokens_mask (torch.FloatTensor [batch_size, num_tokens]): Binary mask where one's
                 represent padding in ``encoded_tokens``.
             query (torch.FloatTensor [1, batch_size, query_hidden_size]): Query vector used to score
@@ -191,7 +190,7 @@ class LocationSensitiveAttention(nn.Module):
         context = torch.bmm(alignment.unsqueeze(1), encoded_tokens)
 
         # Squeeze extra single dimension
-        # [batch_size, 1, encoder_hidden_size] → [batch_size, encoder_hidden_size]
+        # [batch_size, 1, hidden_size] → [batch_size, hidden_size]
         context = context.squeeze(1)
 
         # [batch_size, num_tokens] + [batch_size, num_tokens] → [batch_size, num_tokens]

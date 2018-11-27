@@ -114,7 +114,7 @@ def main(spectrogram_model_checkpoint_path,
             waveform = waveform[:int(lengths[i] * waveform_spectrogram_ratio)]
 
             gold_path = str(destination / ('%d_gold.wav' % chunk[i]))
-            librosa.output.write_wav(gold_path, numpy.load(batch[i]['audio_path']))
+            librosa.output.write_wav(gold_path, numpy.load(batch[i]['aligned_audio_path']))
             logger.info('Saved file %s', gold_path)
 
             predicted_path = str(destination / ('%d_predicted.wav' % chunk[i]))

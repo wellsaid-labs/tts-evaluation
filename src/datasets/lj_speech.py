@@ -82,12 +82,13 @@ def _processing_func(row,
     # NOTE: Messes up pound sign (£); therefore, this is after ``_verbalize_currency``
     text = _remove_accents(text)
     audio_path = normalize_audio(audio_path, **kwargs)
-    audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
+    aligned_audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
         audio_path, text, speaker, spectrogram_model_checkpoint)
 
     return {
         'text': text,
         'audio_path': audio_path,
+        'aligned_audio_path': aligned_audio_path,
         'spectrogram_path': spectrogram_path,
         'predicted_spectrogram_path': predicted_spectrogram_path,
         'speaker': speaker,
@@ -150,21 +151,25 @@ def lj_speech_dataset(directory='data/',
         >>> set_hparams() # doctest: +SKIP
         >>> train, dev = lj_speech_dataset() # doctest: +SKIP
         >>> pprint.pprint(train[0:2], width=80) # doctest: +SKIP
-        [{'audio_path': PosixPath('data/LJSpeech-1.1/wavs/pad(rate(guard(norm('
-                                  'LJ014-0331,-.001)),24000)).npy'),
+        [{'aligned_audio_path': PosixPath('data/LJSpeech-1.1/wavs/'
+                                          'pad(rate(guard(norm(LJ014-0331,-.001)),24000)).npy'),
+          'audio_path': PosixPath('data/LJSpeech-1.1/wavs/'
+                                  'rate(guard(norm(LJ014-0331,-.001)),24000).wav'),
           'predicted_spectrogram_path': None,
-          'speaker': <src.datasets.constants.Speaker object at 0x1052da7b8>,
-          'spectrogram_path': PosixPath('data/LJSpeech-1.1/wavs/spectrogram(rate(guard(norm('
-                                        'LJ014-0331,-.001)),24000)).npy'),
+          'speaker': Speaker(name='Linda Johnson', gender=FEMALE, id=4),
+          'spectrogram_path': PosixPath('data/LJSpeech-1.1/wavs/spectrogram('
+                                        'rate(guard(norm(LJ014-0331,-.001)),24000)).npy'),
           'text': 'Once a warrant-holder sent down a clerk to view certain goods, and '
                   'the clerk found that these goods had already a "stop" upon them, or '
                   'were pledged.'},
-        {'audio_path': PosixPath('data/LJSpeech-1.1/wavs/pad(rate(guard(norm('
-                                 'LJ009-0184,-.001)),24000)).npy'),
+        {'aligned_audio_path': PosixPath('data/LJSpeech-1.1/wavs/'
+                                         'pad(rate(guard(norm(LJ009-0184,-.001)),24000)).npy'),
+          'audio_path': PosixPath('data/LJSpeech-1.1/wavs/'
+                                  'rate(guard(norm(LJ009-0184,-.001)),24000).wav'),
           'predicted_spectrogram_path': None,
-          'speaker': <src.datasets.constants.Speaker object at 0x105054e10>,
-          'spectrogram_path': PosixPath('data/LJSpeech-1.1/wavs/spectrogram(rate(guard(norm('
-                                        'LJ009-0184,-.001)),24000)).npy'),
+          'speaker': Speaker(name='Linda Johnson', gender=FEMALE, id=4),
+          'spectrogram_path': PosixPath('data/LJSpeech-1.1/wavs/spectrogram('
+                                        'rate(guard(norm(LJ009-0184,-.001)),24000)).npy'),
           'text': "Lord Ferrers' body was brought to Surgeons' Hall after execution in "
                   'his own carriage and six;'}]
     """

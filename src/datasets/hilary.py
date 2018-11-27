@@ -66,12 +66,13 @@ def _processing_func(row,
     audio_path = Path(directory, extracted_name, audio_directory, row[metadata_audio_column])
     audio_path = normalize_audio(audio_path, **kwargs)
     spectrogram_model_checkpoint = Checkpoint.from_path(spectrogram_model_checkpoint_path)
-    audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
+    aligned_audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
         audio_path, text, speaker, spectrogram_model_checkpoint)
 
     return {
         'text': text,
         'audio_path': audio_path,
+        'aligned_audio_path': aligned_audio_path,
         'script_title': row[metadata_title_column],
         'script_source': row[metadata_source_column],
         'spectrogram_path': spectrogram_path,
@@ -117,23 +118,28 @@ def hilary_dataset(
         >>> set_hparams() # doctest: +SKIP
         >>> train, dev = hilary_dataset() # doctest: +SKIP
         >>> pprint.pprint(train[0:2], width=80) # doctest: +SKIP
-        [{'audio_path': PosixPath('data/Hilary/wavs/Scripts 16-21/spectrogram(rate('
-                                  'guard(script_86_chunk_15),24000)).npy'),
+        [{'aligned_audio_path': PosixPath('data/Hilary/wavs/Scripts 16-21/'
+                                          'pad(rate(guard(script_86_chunk_15),24000)).npy'),
+          'audio_path': PosixPath('data/Hilary/wavs/Scripts 16-21/'
+                                  'rate(guard(script_86_chunk_15),24000).wav'),
           'predicted_spectrogram_path': None,
           'script_source': 'Wikipedia',
           'script_title': 'Empathy: Neurological basis',
-          'speaker': <src.datasets.constants.Speaker object at 0x11f54a470>,
-          'spectrogram_path': PosixPath('data/Hilary/wavs/Scripts 16-21/pad(rate(guard('
-                                        'script_86_chunk_15),24000)).npy'),
-          'text': 'associated with the performance of "social" and "mechanical" tasks.'},
-        {'audio_path': PosixPath('data/Hilary/wavs/Scripts 34-39/pad(rate('
-                                  'guard(script_58_chunk_3),24000)).npy'),
+          'speaker': Speaker(name='Hilary Noriega', gender=FEMALE, id=3),
+          'spectrogram_path': PosixPath('data/Hilary/wavs/Scripts 16-21/'
+                                        'spectrogram(rate(guard(script_86_chunk_15),24000)).npy'),
+          'text': 'associated with the performance of "social" and "mechanical" '
+                  'tasks.'},
+        {'aligned_audio_path': PosixPath('data/Hilary/wavs/Scripts 34-39/'
+                                         'pad(rate(guard(script_58_chunk_3),24000)).npy'),
+          'audio_path': PosixPath('data/Hilary/wavs/Scripts 34-39/'
+                                  'rate(guard(script_58_chunk_3),24000).wav'),
           'predicted_spectrogram_path': None,
           'script_source': 'Edge Studio',
           'script_title': 'Red Cross',
-          'speaker': <src.datasets.constants.Speaker object at 0x11f91af28>,
-          'spectrogram_path': PosixPath('data/Hilary/wavs/Scripts 34-39/spectrogram(rate('
-                                        'guard(script_58_chunk_3),24000)).npy'),
+          'speaker': Speaker(name='Hilary Noriega', gender=FEMALE, id=3),
+          'spectrogram_path': PosixPath('data/Hilary/wavs/Scripts 34-39/'
+                                        'spectrogram(rate(guard(script_58_chunk_3),24000)).npy'),
           'text': 'Take an in-depth look at the American Red Cross history,'}]
     """
     logger.info('Loading Hilary speech dataset')

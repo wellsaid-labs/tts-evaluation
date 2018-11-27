@@ -5,18 +5,15 @@ from src.spectrogram_model.attention import LocationSensitiveAttention
 
 
 def test_location_sensative_attention():
-    encoder_hidden_size = 8
     query_hidden_size = 16
     attention_hidden_size = 8
     batch_size = 5
     num_tokens = 6
     attention = LocationSensitiveAttention(
-        encoder_hidden_size=encoder_hidden_size,
-        query_hidden_size=query_hidden_size,
-        hidden_size=attention_hidden_size)
+        query_hidden_size=query_hidden_size, hidden_size=attention_hidden_size)
     tokens_mask = torch.ByteTensor(batch_size, num_tokens).zero_()
     tokens_mask[:, -1].fill_(1)
-    encoded_tokens = torch.FloatTensor(num_tokens, batch_size, encoder_hidden_size).uniform_(0, 1)
+    encoded_tokens = torch.FloatTensor(num_tokens, batch_size, attention_hidden_size).uniform_(0, 1)
     query = torch.FloatTensor(batch_size, query_hidden_size).uniform_(0, 1)
 
     cumulative_alignment = None

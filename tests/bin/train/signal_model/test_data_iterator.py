@@ -10,7 +10,7 @@ from src.bin.train.signal_model.data_iterator import DataLoader
 @mock.patch('src.bin.train.spectrogram_model.data_iterator.np.load')
 @mock.patch('src.bin.train.signal_model.data_iterator.random.randint')
 def test_data_loader(randint_mock, mock_load):
-    audio_path_key = 'audio_path'
+    audio_path_key = 'aligned_audio_path'
     spectrogram_path_key = 'predicted_spectrogram_path'
     randint_mock.return_value = 5
     samples_per_frame = 10

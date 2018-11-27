@@ -1,6 +1,3 @@
-# NOTE: Must import `comet_ml` before `torch`
-import comet_ml  # noqa
-
 from collections import defaultdict
 
 import logging
@@ -13,8 +10,6 @@ import base64
 matplotlib.use('Agg', warn=False)
 
 from dotenv import load_dotenv
-from comet_ml import Experiment
-from comet_ml import ExistingExperiment
 from matplotlib import cm as colormap
 from matplotlib import pyplot
 
@@ -321,6 +316,11 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
     Returns:
         (Experiment or ExistingExperiment): Object for visualization with comet.
     """
+    # NOTE: To prevent inadvertently triggering the ``comet_ml``
+    # ``SyntaxError: Please import comet before importing any torch modules``, we only import
+    # ``comet_ml`` if this module is executed.
+    from comet_ml import Experiment
+    from comet_ml import ExistingExperiment
     load_dotenv()
     api_key = os.getenv('COMET_ML_API_KEY') if api_key is None else api_key
     workspace = os.getenv('COMET_ML_WORKSPACE') if workspace is None else workspace

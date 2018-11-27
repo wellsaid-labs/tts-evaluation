@@ -68,7 +68,7 @@ def main(checkpoint_path,
         spectrogram = spectrogram.unsqueeze(0).to(device)
 
         # [signal_length]
-        signal = numpy.load(row['audio_path'])
+        signal = numpy.load(row['aligned_audio_path'])
         gold_path = str(results_path / ('%d_gold.wav' % j))
         librosa.output.write_wav(gold_path, signal)
         logger.info('Saved file %s', gold_path)

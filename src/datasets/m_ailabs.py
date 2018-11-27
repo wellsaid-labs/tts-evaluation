@@ -125,11 +125,12 @@ def _processing_func(row,
         return None
 
     audio_path = normalize_audio(audio_path, **kwargs)
-    audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
+    aligned_audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
         audio_path, text, book.speaker, spectrogram_model_checkpoint)
     return {
         'text': text,
         'audio_path': audio_path,
+        'aligned_audio_path': aligned_audio_path,
         'spectrogram_path': spectrogram_path,
         'predicted_spectrogram_path': predicted_spectrogram_path,
         'speaker': book.speaker
@@ -179,24 +180,29 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
         >>> set_hparams() # doctest: +SKIP
         >>> train, dev = m_ailabs_speech_dataset() # doctest: +SKIP
         >>> pprint.pprint(train[0:2], width=80) # doctest: +SKIP
-        [{'audio_path': PosixPath('data/M-AILABS/en_US/by_book/female/mary_ann/northandsouth/'
-                                  'wavs/pad(rate(guard(northandsouth_46_f000119),24000)).npy'),
+        [{'aligned_audio_path': PosixPath('data/M-AILABS/en_US/by_book/female/mary_ann/'
+                                          'northandsouth/wavs/'
+                                          'pad(rate(guard(northandsouth_46_f000119),24000)).npy'),
+          'audio_path': PosixPath('data/M-AILABS/en_US/by_book/female/mary_ann/northandsouth/wavs'
+                                  '/rate(guard(northandsouth_46_f000119),24000).wav'),
           'predicted_spectrogram_path': None,
-          'speaker': <src.datasets.constants.Speaker object at 0x127032518>,
+          'speaker': Speaker(name='Mary Ann', gender=FEMALE, id=1),
           'spectrogram_path': PosixPath('data/M-AILABS/en_US/by_book/female/mary_ann/'
-                                        'northandsouth/wavs/spectrogram(rate(guard('
-                                        'northandsouth_46_f000119),24000)).npy'),
+                                        'northandsouth/wavs/spectrogram('
+                                        'rate(guard(northandsouth_46_f000119),24000)).npy'),
           'text': 'and more natural education stopping at home, and helping her '
                   'mother, and learning to read a chapter in the New Testament every '
                   'night by her side,'},
-         {'audio_path': PosixPath('data/M-AILABS/en_US/by_book/female/judy_bieber/'
-                                 'the_master_key/wavs/spectrogram(rate(guard('
-                                 'the_master_key_05_f000038),24000)).npy'),
+        {'aligned_audio_path': PosixPath('data/M-AILABS/en_US/by_book/female/judy_bieber/'
+                                         'the_master_key/wavs/pad('
+                                         'rate(guard(the_master_key_05_f000038),24000)).npy'),
+          'audio_path': PosixPath('data/M-AILABS/en_US/by_book/female/judy_bieber/the_master_key/'
+                                  'wavs/rate(guard(the_master_key_05_f000038),24000).wav'),
           'predicted_spectrogram_path': None,
-          'speaker': <src.datasets.constants.Speaker object at 0x1241fe358>,
+          'speaker': Speaker(name='Judy Bieber', gender=FEMALE, id=0),
           'spectrogram_path': PosixPath('data/M-AILABS/en_US/by_book/female/judy_bieber/'
-                                        'the_master_key/wavs/pad(rate(guard('
-                                        'the_master_key_05_f000038),24000)).npy'),
+                                        'the_master_key/wavs/spectrogram('
+                                        'rate(guard(the_master_key_05_f000038),24000)).npy'),
           'text': 'The chief shook his head, saying: No boat come.'}]
     """
     logger.info('Loading M-AILABS speech dataset')

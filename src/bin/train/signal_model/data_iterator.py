@@ -37,7 +37,7 @@ class DataLoader(data.Dataset):
     @configurable
     def __init__(self,
                  data,
-                 audio_path_key='audio_path',
+                 audio_path_key='aligned_audio_path',
                  spectrogram_path_key='predicted_spectrogram_path',
                  slice_size=3,
                  slice_pad=0,

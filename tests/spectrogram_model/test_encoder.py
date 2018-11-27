@@ -11,6 +11,7 @@ encoder_params = {
     'token_embedding_dim': 32,
     'speaker_embedding_dim': 16,
     'lstm_bidirectional': True,
+    'out_dim': 8,
 }
 
 
@@ -18,6 +19,7 @@ def test_encoder():
     encoder = Encoder(
         encoder_params['vocab_size'],
         encoder_params['num_speakers'],
+        out_dim=encoder_params['out_dim'],
         lstm_hidden_size=encoder_params['lstm_hidden_size'],
         lstm_bidirectional=encoder_params['lstm_bidirectional'],
         speaker_embedding_dim=encoder_params['speaker_embedding_dim'],
@@ -30,9 +32,32 @@ def test_encoder():
     output = encoder(input_, speaker)
 
     assert output.type() == 'torch.FloatTensor'
-    output_dim = (encoder_params['lstm_hidden_size'] / 2) * (
-        2 if encoder_params['lstm_bidirectional'] else 1) + encoder_params['speaker_embedding_dim']
-    assert output.shape == (encoder_params['num_tokens'], encoder_params['batch_size'], output_dim)
+    assert output.shape == (encoder_params['num_tokens'], encoder_params['batch_size'],
+                            encoder_params['out_dim'])
+
+    # Smoke test backward
+    output.sum().backward()
+
+
+def test_encoder_one_speaker():
+    encoder = Encoder(
+        encoder_params['vocab_size'],
+        1,
+        out_dim=encoder_params['out_dim'],
+        lstm_hidden_size=encoder_params['lstm_hidden_size'],
+        lstm_bidirectional=encoder_params['lstm_bidirectional'],
+        speaker_embedding_dim=encoder_params['speaker_embedding_dim'],
+        token_embedding_dim=encoder_params['token_embedding_dim'])
+
+    # NOTE: 1-index to avoid using 0 typically associated with padding
+    input_ = torch.LongTensor(encoder_params['batch_size'], encoder_params['num_tokens']).random_(
+        1, encoder_params['vocab_size'])
+    speaker = torch.LongTensor(encoder_params['batch_size']).fill_(0)
+    output = encoder(input_, speaker)
+
+    assert output.type() == 'torch.FloatTensor'
+    assert output.shape == (encoder_params['num_tokens'], encoder_params['batch_size'],
+                            encoder_params['out_dim'])
 
     # Smoke test backward
     output.sum().backward()
@@ -43,6 +68,7 @@ def test_encoder_filter_size():
         encoder = Encoder(
             encoder_params['vocab_size'],
             encoder_params['num_speakers'],
+            out_dim=encoder_params['out_dim'],
             lstm_hidden_size=encoder_params['lstm_hidden_size'],
             lstm_bidirectional=encoder_params['lstm_bidirectional'],
             speaker_embedding_dim=encoder_params['speaker_embedding_dim'],
@@ -58,6 +84,4 @@ def test_encoder_filter_size():
 
         assert output.type() == 'torch.FloatTensor'
         assert output.shape == (encoder_params['num_tokens'], encoder_params['batch_size'],
-                                (encoder_params['lstm_hidden_size'] / 2) *
-                                (2 if encoder_params['lstm_bidirectional'] else 1) +
-                                encoder_params['speaker_embedding_dim'])
+                                encoder_params['out_dim'])
