@@ -149,6 +149,7 @@ class Trainer():
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])
         self.comet_ml.log_multiple_params(dict_collapse(get_config()))
+        self.comet_ml.set_model_graph(str(self.model))
         self.comet_ml.log_multiple_params({
             'num_parameter': get_total_parameters(self.model),
             'num_gpu': torch.cuda.device_count(),

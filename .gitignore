@@ -102,3 +102,6 @@ tmp/
 
 # Sensative files
 .env
+
+# Git patches
+*.patch
