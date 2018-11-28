@@ -159,6 +159,7 @@ class Trainer():
             'num_speakers': self.speaker_encoder.vocab_size,
             'speakers': sorted([str(v) for v in self.speaker_encoder.vocab]),
         })
+        self.comet_ml.log_other('is_distributed', torch.distributed.is_initialized())
         # NOTE: Remove after: https://github.com/comet-ml/issue-tracking/issues/154
         self.comet_ml.log_other('hostname', socket.gethostname())
 
