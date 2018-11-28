@@ -154,17 +154,18 @@ def main(run_one_liner,
                 trainer.run_epoch(train=False, trial_run=is_trial_run)
 
             if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
-                SpectrogramModelCheckpoint(
-                    directory=context.checkpoints_directory,
-                    model_state_dict=trainer.model.module.state_dict()
-                    if isinstance(trainer.model, torch.nn.parallel.DistributedDataParallel) else
-                    trainer.model.state_dict(),
-                    optimizer_state_dict=trainer.optimizer.state_dict(),
-                    text_encoder=trainer_kwargs['text_encoder'],
-                    speaker_encoder=trainer_kwargs['speaker_encoder'],
-                    epoch=trainer.epoch,
-                    step=trainer.step,
-                    comet_ml_experiment_key=trainer.comet_ml.get_key()).save()
+                if not torch.distributed.is_initialized() or src.distributed.is_master():
+                    SpectrogramModelCheckpoint(
+                        directory=context.checkpoints_directory,
+                        model_state_dict=trainer.model.module.state_dict()
+                        if isinstance(trainer.model, torch.nn.parallel.DistributedDataParallel) else
+                        trainer.model.state_dict(),
+                        optimizer_state_dict=trainer.optimizer.state_dict(),
+                        text_encoder=trainer_kwargs['text_encoder'],
+                        speaker_encoder=trainer_kwargs['speaker_encoder'],
+                        epoch=trainer.epoch,
+                        step=trainer.step,
+                        comet_ml_experiment_key=trainer.comet_ml.get_key()).save()
 
             logger.info('-' * 100)
 
