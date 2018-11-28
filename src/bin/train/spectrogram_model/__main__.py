@@ -69,7 +69,7 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
 
 def main(run_one_liner,
          run_root=Path('experiments/spectrogram_model/'),
-         comet_ml_project_name='spectrogram_model',
+         comet_ml_project_name='spectrogram-model-baselines',
          checkpoint_path=None,
          reset_optimizer=False,
          hparams={},
