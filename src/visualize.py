@@ -372,16 +372,23 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
         self.context = context
 
     experiment.set_context = set_context.__get__(experiment)
-    original_put_messge_in_q = experiment.streamer.put_messge_in_q
 
-    def put_messge_in_q(self, message, *args, **kwargs):
-        # NOTE: Prevent recursive call
-        if not (message is not None and hasattr(message, 'log_other') and
-                message.log_other is not None and message.log_other['key'] == 'last_event_time'):
-            experiment.log_other('last_event_time_1', int(round(time.time() / 60)))
+    if hasattr(experiment, 'streamer') and experiment.streamer is not None:
+        original_put_messge_in_q = experiment.streamer.put_messge_in_q
 
-        return original_put_messge_in_q(message, *args, **kwargs)
+        def put_messge_in_q(self, message, *args, **kwargs):
+            # NOTE: Prevent recursive call
+            key = 'last_event_time'
+            value = int(round(time.time() / 60))
+            if experiment.alive:
+                log_other_message = experiment._create_message()
+                log_other_message.context = None
+                log_other_message.set_log_other(key, value)
+                original_put_messge_in_q(log_other_message)
+            experiment.others[key] = value
 
-    experiment.streamer.put_messge_in_q = put_messge_in_q.__get__(experiment.streamer)
+            return original_put_messge_in_q(message, *args, **kwargs)
+
+        experiment.streamer.put_messge_in_q = put_messge_in_q.__get__(experiment.streamer)
 
     return experiment

@@ -103,5 +103,6 @@ tmp/
 # Sensative files
 .env
 
-# Git patches
+# Git patches used by comet.ml reproduce
 *.patch
+*.zip
