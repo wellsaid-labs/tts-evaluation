@@ -35,6 +35,21 @@ samples_folder = Path(os.getcwd()) / 'src/www/static/samples'
 spectrogram_model_checkpoint = None
 signal_model_checkpoint = None
 
+# NOTE: We allow wsgi.py to set these arguments
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    '--signal_model', type=str, required=True, help='Signal model checkpoint to serve.')
+parser.add_argument(
+    '--spectrogram_model', type=str, required=True, help='Spectrogram model checkpoint to serve.')
+cli_args = parser.parse_args()
+
+# Global memory
+set_hparams()
+spectrogram_model_checkpoint = Checkpoint.from_path(cli_args.spectrogram_model)
+spectrogram_model_checkpoint.model.eval()
+signal_model_checkpoint = Checkpoint.from_path(cli_args.signal_model)
+signal_model_checkpoint.model.eval()
+
 # ERROR HANDLERS
 # INSPIRED BY: http://flask.pocoo.org/docs/1.0/patterns/apierrors/
 
@@ -65,9 +80,14 @@ def handle_generic_exception(error):
     return response
 
 
-@app.route('/demo')
-def index():
+@app.route('/')
+def home():
     return send_file('index.html')
+
+
+@app.route('/demo')
+def demo():
+    return send_file('demo.html')
 
 
 @app.route('/samples/<filename>')
@@ -147,21 +167,6 @@ def synthesize():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '--signal_model', type=str, required=True, help='Signal model checkpoint to serve.')
-    parser.add_argument(
-        '--spectrogram_model',
-        type=str,
-        required=True,
-        help='Spectrogram model checkpoint to serve.')
-    cli_args = parser.parse_args()
+    from torch import multiprocessing
 
-    # Global memory
-    set_hparams()
-    spectrogram_model_checkpoint = Checkpoint.from_path(cli_args.spectrogram_model)
-    spectrogram_model_checkpoint.model.eval()
-    signal_model_checkpoint = Checkpoint.from_path(cli_args.signal_model)
-    signal_model_checkpoint.model.eval()
-
-    app.run(host='0.0.0.0', port=80, processes=8, threaded=False)
+    app.run(host='0.0.0.0', port=8000, processes=multiprocessing.cpu_count(), threaded=False)
