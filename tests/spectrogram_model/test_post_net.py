@@ -15,3 +15,5 @@ def test_post_net():
 
     assert output.type() == 'torch.FloatTensor'
     assert output.shape == (batch_size, frame_channels, num_frames)
+
+    output.sum().backward()

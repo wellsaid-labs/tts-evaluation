@@ -43,7 +43,7 @@ class PreNet(nn.Module):
                 nn.Linear(
                     in_features=frame_channels
                     if i == 0 else hidden_size, out_features=hidden_size),
-                nn.ReLU(),
+                nn.ReLU(inplace=True),
                 AlwaysDropout(p=dropout)) for i in range(num_layers)
         ]))
 

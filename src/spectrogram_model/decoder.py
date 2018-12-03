@@ -86,7 +86,7 @@ class AutoregressiveDecoder(nn.Module):
             input_size=lstm_hidden_size + self.attention_hidden_size,
             hidden_size=lstm_hidden_size,
             num_layers=1)
-        # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunatly, Zoneout or any LSTM state
+        # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunately, Zoneout or any LSTM state
         # dropout in PyTorch forces us to unroll the LSTM and slow down this component x3 to x4. For
         # right now, we will not be using state dropout on the LSTM. We are applying dropout onto
         # the LSTM output instead.

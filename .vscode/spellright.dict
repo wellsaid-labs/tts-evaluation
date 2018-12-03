@@ -5,3 +5,5 @@ linting
 Jupyter
 pytorch
 lsyncd
+relu
+tanh

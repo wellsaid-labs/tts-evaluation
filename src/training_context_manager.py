@@ -32,7 +32,7 @@ class TrainingContextManager(object):
         step (int, optional): The step training is started at.
     """
 
-    def __init__(self, root_directory, seed=123, device=None, min_time=60 * 15, step=0):
+    def __init__(self, root_directory, seed=1212212, device=None, min_time=60 * 15, step=0):
         self.root_directory = Path(root_directory)
         # NOTE: ``self.id`` is used to distinguish this run if started from a checkpoint in the
         # same ``root_directory```

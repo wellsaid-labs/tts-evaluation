@@ -16,3 +16,5 @@ def test_pre_net():
 
     assert output.type() == 'torch.FloatTensor'
     assert output.shape == (num_frames, batch_size, hidden_size)
+
+    output.sum().backward()

@@ -65,5 +65,13 @@
     "new": "cpp",
     "stdexcept": "cpp",
     "typeinfo": "cpp"
-  }
+  },
+  "spellright.language": [
+    "en"
+  ],
+  "spellright.documentTypes": [
+    "markdown",
+    "latex",
+    "plaintext"
+  ]
 }

@@ -77,6 +77,8 @@ def test_spectrogram_model_unbatched():
     assert alignment.type() == 'torch.FloatTensor'
     assert alignment.shape == (num_frames, num_tokens)
 
+    frames_with_residual.sum().backward()
+
 
 def test_spectrogram_model_ground_truth():
     batch_size = 5
@@ -106,6 +108,8 @@ def test_spectrogram_model_ground_truth():
     assert alignment.type() == 'torch.FloatTensor'
     assert alignment.shape == (num_frames, batch_size, num_tokens)
 
+    frames_with_residual.sum().backward()
+
 
 def test_spectrogram_model_ground_truth_unbatched():
     num_tokens = 6
@@ -133,3 +137,5 @@ def test_spectrogram_model_ground_truth_unbatched():
 
     assert alignment.type() == 'torch.FloatTensor'
     assert alignment.shape == (num_frames, num_tokens)
+
+    frames_with_residual.sum().backward()

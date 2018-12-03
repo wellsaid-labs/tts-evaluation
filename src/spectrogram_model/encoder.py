@@ -87,8 +87,9 @@ class Encoder(nn.Module):
                     kernel_size=convolution_filter_size,
                     padding=int((convolution_filter_size - 1) / 2)),
                 nn.BatchNorm1d(num_features=num_convolution_filters),
-                nn.ReLU(),
-                nn.Dropout(p=convolution_dropout)) for i in range(num_convolution_layers)
+                nn.ReLU(inplace=True),
+                nn.Dropout(p=convolution_dropout))
+            for i in range(num_convolution_layers)
         ]))
 
         if lstm_bidirectional:
@@ -100,7 +101,7 @@ class Encoder(nn.Module):
             num_layers=lstm_layers,
             bidirectional=lstm_bidirectional)
 
-        # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunatly, Zoneout or any LSTM state
+        # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunately, Zoneout or any LSTM state
         # dropout in PyTorch forces us to unroll the LSTM and slow down this component x3 to x4. For
         # right now, we will not be using state dropout on the LSTM. We are applying dropout onto
         # the LSTM output instead.
