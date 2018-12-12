@@ -163,6 +163,8 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
     # Process data
     data = _read_mailabs_data(
         picker=picker, directory=directory, metadata_path_column=metadata_path_column)
+
+    logger.info('Normalizing text and audio...')
     data = _process_in_parallel(
         data,
         partial(

@@ -55,7 +55,7 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
     return dataset
 
 
-def main(run_one_liner,
+def main(run_name,
          run_tags=[],
          run_root=Path('experiments/signal_model/'),
          comet_ml_project_name='signal-model-baselines',
@@ -68,7 +68,7 @@ def main(run_one_liner,
     """ Main module that trains a the signal model saving checkpoints incrementally.
 
     Args:
-        run_one_liner (str): One liner describing the experiment.
+        run_name (str): Name describing the experiment.
         run_tags (list of str): Tags describing the experiment.
         run_root (str, optional): Directory to save experiments.
         comet_ml_project_name (str, optional): Project name to use with comet.ml.
@@ -96,8 +96,8 @@ def main(run_one_liner,
         directory = run_root / str(time.strftime('%b_%d/%H:%M:%S', time.localtime())).lower()
 
     with TrainingContextManager(root_directory=directory, step=step) as context:
-        logger.info('Using directory %s', directory)
-        logger.info('One liner: %s', run_one_liner)
+        logger.info('Directory: %s', directory)
+        logger.info('Name: %s', run_name)
         logger.info('Tags: %s', run_tags)
         trainer_kwargs = {
             'comet_ml_project_name': comet_ml_project_name,
@@ -116,16 +116,18 @@ def main(run_one_liner,
                 'epoch': checkpoint.epoch,
                 'step': checkpoint.step,
                 'comet_ml_experiment_key': checkpoint.comet_ml_experiment_key,
-                'anomaly_detector': checkpoint.anomaly_detector
+                'anomaly_detector': checkpoint.anomaly_detector,
+                'spectrogram_model_checkpoint_path': checkpoint.spectrogram_model_checkpoint_path
             })
 
         train, dev = _get_dataset()()
         trainer = Trainer(context.device, train, dev, **trainer_kwargs)
-        trainer.comet_ml.log_other('one_liner', run_one_liner)
+        trainer.comet_ml.set_name(run_name)
+        trainer.comet_ml.add_tags(run_tags)
         trainer.comet_ml.log_other('directory', directory)
 
         # Training Loop
-        with True:
+        while True:
             is_trial_run = trainer.step == step
             trainer.run_epoch(train=True, trial_run=is_trial_run)
 
@@ -140,7 +142,8 @@ def main(run_one_liner,
                     epoch=trainer.epoch,
                     step=trainer.step,
                     anomaly_detector=trainer.anomaly_detector,
-                    comet_ml_experiment_key=trainer.comet_ml.get_key()).save()
+                    comet_ml_experiment_key=trainer.comet_ml.get_key(),
+                    spectrogram_model_checkpoint_path=spectrogram_model_checkpoint_path).save()
 
             logger.info('-' * 100)
 
@@ -164,15 +167,15 @@ if __name__ == '__main__':  # pragma: no cover
         default=None,
         help=('Spectrogram model checkpoint path used to predicted spectrogram from '
               'text as input to the signal model.'))
-    parser.add_argument('-t', '--tags', nargs='+', help='List of tags for the experiment.')
+    parser.add_argument('-t', '--tags', action='append', help='List of tags for the experiment.')
     parser.add_argument(
-        '-l', '--one_liner', type=str, default=None, help='One liner describing the experiment')
+        '-n', '--name', type=str, default=None, help='Name describing the experiment')
     parser.add_argument(
         '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     args, unknown_args = parser.parse_known_args()
     hparams = parse_hparam_args(unknown_args)
     main(
-        run_one_liner=args.one_liner,
+        run_name=args.name,
         run_tags=args.tags,
         checkpoint_path=args.checkpoint,
         spectrogram_model_checkpoint_path=args.spectrogram_model_checkpoint,

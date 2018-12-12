@@ -138,6 +138,7 @@ def lj_speech_dataset(directory='data/',
             header=metadata_header,
             quoting=metadata_quoting).iterrows()
     ]
+    logger.info('Normalizing text and audio...')
     data = _process_in_parallel(
         data,
         partial(_processing_row, directory=directory, extracted_name=extracted_name, kwargs=kwargs))

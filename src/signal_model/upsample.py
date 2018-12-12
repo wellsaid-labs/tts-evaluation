@@ -29,7 +29,7 @@ class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, padding):
         super().__init__()
         self.net = nn.Sequential(
-            nn.BatchNorm2d(num_features=in_channels), nn.ReLU(),
+            nn.BatchNorm2d(num_features=in_channels), nn.ReLU(inplace=True),
             nn.Conv2d(
                 in_channels=in_channels,
                 out_channels=out_channels,

@@ -236,7 +236,7 @@ def test_parse_hparam_args():
 def test_load_most_recent_checkpoint():
     checkpoint = Checkpoint.most_recent('tests/_test_data/**/*.pt')
     assert isinstance(checkpoint, Checkpoint)
-    assert 'tests/_test_data/checkpoint.pt' in checkpoint.path
+    assert 'tests/_test_data/checkpoint.pt' in str(checkpoint.path)
 
 
 def test_load_most_recent_checkpoint_none():

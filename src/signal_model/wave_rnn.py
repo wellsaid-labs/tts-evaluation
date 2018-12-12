@@ -62,12 +62,12 @@ class WaveRNN(nn.Module):
         # Output fully connected layers
         gain = torch.nn.init.calculate_gain('relu')
         self.to_bins_coarse = nn.Sequential(
-            nn.Linear(self.half_size, self.half_size), nn.ReLU(),
+            nn.Linear(self.half_size, self.half_size), nn.ReLU(inplace=True),
             nn.Linear(self.half_size, self.bins))
         torch.nn.init.orthogonal_(self.to_bins_coarse[0].weight, gain=gain)
 
         self.to_bins_fine = nn.Sequential(
-            nn.Linear(self.half_size, self.half_size), nn.ReLU(),
+            nn.Linear(self.half_size, self.half_size), nn.ReLU(inplace=True),
             nn.Linear(self.half_size, self.bins))
         torch.nn.init.orthogonal_(self.to_bins_fine[0].weight, gain=gain)
 

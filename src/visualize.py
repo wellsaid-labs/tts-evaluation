@@ -396,12 +396,12 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
 
     experiment.log_audio = log_audio.__get__(experiment)
 
-    def log_multiple_figures(self, dict_, **kwargs):
+    def log_figures(self, dict_, **kwargs):
         """ Convience function to log multiple figures """
         for key, value in dict_.items():
             self.log_figure(key, value, **kwargs)
 
-    experiment.log_multiple_figures = log_multiple_figures.__get__(experiment)
+    experiment.log_figures = log_figures.__get__(experiment)
 
     def set_context(self, context):
         """ Set the context (i.e. train, dev, test) for further logs. """

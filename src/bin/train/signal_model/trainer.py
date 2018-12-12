@@ -141,9 +141,9 @@ class Trainer():
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])
-        self.comet_ml.log_multiple_params(dict_collapse(get_config()))
+        self.comet_ml.log_parameters(dict_collapse(get_config()))
         self.comet_ml.set_model_graph(str(self.model))
-        self.comet_ml.log_multiple_params({
+        self.comet_ml.log_parameters({
             'num_parameter': get_total_parameters(self.model),
             'num_gpu': torch.cuda.device_count(),
             'num_training_row': len(self.train_dataset),
@@ -204,11 +204,12 @@ class Trainer():
         # Setup iterator and metrics
         dataset = self.train_dataset if train else self.dev_dataset
         data_loader = DataLoader(
-            self.device,
-            dataset,
-            self.train_batch_size if train else self.dev_batch_size,
+            data=dataset,
+            batch_size=self.train_batch_size if train else self.dev_batch_size,
+            device=self.device,
             trial_run=trial_run,
-            random=self.random)
+            random=self.random,
+            use_predicted=self.use_predicted)
         if self.use_tqdm:
             data_loader = tqdm(data_loader, desc=label, smoothing=0)
 
@@ -249,7 +250,8 @@ class Trainer():
             self.comet_ml.log_epoch_end(self.epoch)
             if train:
                 self.epoch += 1
-                self._maybe_rollback(self.accumulated_metrics.get_epoch_metric('coarse_loss'))
+                self._maybe_rollback(
+                    self.accumulated_metrics.get_epoch_metric('coarse_loss').item())
             self.accumulated_metrics.log_epoch_end(
                 lambda k, v: self.comet_ml.log_metric('epoch/' + k, v))
 

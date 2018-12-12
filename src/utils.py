@@ -18,9 +18,9 @@ import subprocess
 import sys
 import time
 
+from third_party.data_loader import DataLoader
 from torch.multiprocessing import cpu_count
 from torch.utils import data
-from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.sampler import Sampler
 from torchnlp.utils import pad_batch
 
@@ -403,7 +403,6 @@ def parse_hparam_args(hparam_args):
 
 class Checkpoint():
     """ Model checkpoint object
-
     Args:
         directory (Path or str): Directory where to save the checkpoint.
         model (torch.nn.Module): Model to train and evaluate.
@@ -411,10 +410,11 @@ class Checkpoint():
         **kwargs (dict, optional): Any other checkpoint attributes.
     """
 
-    def __init__(self, directory, step, model=None, **kwargs):
+    def __init__(self, directory, step, model=None, model_state_dict=None, **kwargs):
         self.directory = Path(directory)
         self.step = step
         self.model = model
+        self.model_state_dict = model_state_dict
 
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -425,11 +425,9 @@ class Checkpoint():
     @classmethod
     def from_path(class_, path, device=torch.device('cpu')):
         """ Load a checkpoint from path.
-
         Args:
             path (Path or str or None): Path to a checkpoint to load.
             device (torch.device, optional): Device to load checkpoint onto.
-
         Returns:
             checkpoint (Checkpoint or None): Loaded checkpoint or None.
         """
@@ -437,10 +435,14 @@ class Checkpoint():
             return None
 
         instance = load(str(path), device=device)
-        setattr(instance, 'path', path)
-        instance.flatten_parameters(instance.model)
-        logger.info('Loaded checkpoint at step %d from %s with model:\n%s', instance.step,
-                    instance.path, instance.model)
+        # DEPRECATED: model_state_dict
+        setattr(instance, 'path', Path(path))
+        if hasattr(instance, 'model') and instance.model is not None:
+            instance.flatten_parameters(instance.model)
+            logger.info('Loaded checkpoint model:\n%s', instance.model)
+        elif hasattr(instance, 'model_state_dict') and instance.model_state_dict is not None:
+            logger.info('Loaded checkpoint model state dict:\n%s', instance.model_state_dict.keys())
+        logger.info('Loaded checkpoint at step %d from %s', instance.step, instance.path)
         return instance
 
     @classmethod
@@ -635,7 +637,7 @@ class DataLoader(DataLoader):
                  num_workers=cpu_count(),
                  trial_run=False,
                  **kwargs):
-        super().__init__(_DataLoaderDataset(dataset, load_fn), **kwargs)
+        super().__init__(dataset=_DataLoaderDataset(dataset, load_fn), **kwargs)
         logger.info('Launching with %d workers', num_workers)
         self.post_processing_fn = post_processing_fn
         self.trial_run = trial_run
@@ -682,7 +684,7 @@ class OnDiskTensor():
             tensor (np.array or torch.tensor)
         """
         if torch.is_tensor(tensor):
-            tensor = tensor.numpy()
+            tensor = tensor.cpu().numpy()
 
         # This storage was picked using this benchmark:
         # https://github.com/mverleg/array_storage_benchmark

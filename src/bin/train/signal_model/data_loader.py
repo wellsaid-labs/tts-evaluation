@@ -47,8 +47,6 @@ def _get_slice(spectrogram, signal, slice_size=3, slice_pad=0, random=random):
     )
     """
     samples, num_frames = signal.shape[0], spectrogram.shape[0]
-    print(samples, num_frames)
-    print(slice_pad, slice_size)
     samples_per_frame = int(samples / num_frames)
 
     # Signal model requires that there is a scaling factor between the signal and frames
@@ -93,7 +91,6 @@ def _get_slice(spectrogram, signal, slice_size=3, slice_pad=0, random=random):
 
     input_signal = torch.stack((source_signal_coarse, source_signal_fine), dim=1)
     signal_length = target_signal_coarse.shape[0]
-    print(signal_length)
     signal_mask = torch.full((signal_length,), 1)
 
     return SignalModelTrainingRow(

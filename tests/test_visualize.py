@@ -45,7 +45,7 @@ def test_comet_ml():
     visualizer.log_text_and_audio('audio', 'test input', Speaker.LINDA_JOHNSON, torch.rand(100))
     figure = pyplot.figure()
     pyplot.close(figure)
-    visualizer.log_multiple_figures({'figure': figure}, overwrite=True)
+    visualizer.log_figures({'figure': figure}, overwrite=True)
     visualizer.set_context('train')
     assert visualizer.context == 'train'
 

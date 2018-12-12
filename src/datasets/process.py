@@ -83,7 +83,6 @@ def _process_in_parallel(data, processing_func, use_tqdm=True):
     Returns:
         processed (list)
     """
-    logger.info('Processing dataset...')
     data = list(data)
 
     use_pool = not src.distributed.in_use() or src.distributed.is_master()
@@ -203,11 +202,12 @@ def _predict_spectrogram(data, checkpoint_path, device, batch_size, on_disk=True
         (iterable of SpectrogramTextSpeechRow)
     """
     checkpoint = Checkpoint.from_path(checkpoint_path)
+    model_name = str(checkpoint.path.resolve().relative_to(ROOT_PATH))
+    model_name = model_name.replace('/', '_').replace('.', '_')
 
-    return_ = []  # Data to be used with
+    return_ = []
     is_cached = True
     for row in data:
-        model_name = str(checkpoint.path.relative_to(ROOT_PATH)).replace('/', '_').replace('.', '_')
         destination = 'predicted_spectrogram({},{}).npy'.format(row.audio_path.stem, model_name)
         on_disk_tensor = OnDiskTensor(row.audio_path.parent / destination)
         return_.append(row._replace(predicted_spectrogram=on_disk_tensor))
@@ -230,10 +230,11 @@ def _predict_spectrogram(data, checkpoint_path, device, batch_size, on_disk=True
                 # predicted_spectrogram [num_frames, batch_size, frame_channels]
                 _, predicted_spectrogram, _, _ = checkpoint.model(batch.text[0], batch.speaker[0],
                                                                   batch.spectrogram[0])
-                # split [num_frames, frame_channels]
-                for split, on_disk_tensor in zip(
-                        predicted_spectrogram.split(1, dim=1), batch.predicted_spectrogram):
-                    on_disk_tensor.from_tensor(split)
+                splits = predicted_spectrogram.split(1, dim=1)
+                iterator = zip(splits, batch.spectrogram[1], batch.predicted_spectrogram)
+                for tensor, length, on_disk_tensor in iterator:
+                    # split [num_frames, 1, frame_channels]
+                    on_disk_tensor.from_tensor(tensor[:length, 0])
 
     if on_disk:
         return return_
@@ -305,8 +306,10 @@ def compute_spectrograms(data, on_disk=True, checkpoint_path=None, batch_size=No
         (iterable of SpectrogramTextSpeechRow): Iterable of text speech rows along with spectrogram
             data.
     """
+    logger.info('Computing spectrograms...')
     data = _process_in_parallel(data, partial(_compute_spectrogram, on_disk=on_disk))
     if checkpoint_path is not None:
+        logger.info('Predicting spectrograms...')
         data = _predict_spectrogram(data, checkpoint_path, device, batch_size, on_disk=on_disk)
 
     # Ensure data is processed before both worker and master proceed.

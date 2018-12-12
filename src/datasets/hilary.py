@@ -101,6 +101,7 @@ def hilary_dataset(
         row.to_dict()
         for _, row in pandas.read_csv(metadata_path, delimiter=metadata_delimiter).iterrows()
     ]
+    logger.info('Normalizing text and audio...')
     data = _process_in_parallel(
         data,
         partial(

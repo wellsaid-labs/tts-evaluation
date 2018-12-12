@@ -66,7 +66,7 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
     return dataset
 
 
-def main(run_one_liner,
+def main(run_name,
          run_tags=[],
          run_root=Path('experiments/spectrogram_model/'),
          comet_ml_project_name='spectrogram-model-baselines',
@@ -80,7 +80,7 @@ def main(run_one_liner,
     """ Main module that trains a the spectrogram model saving checkpoints incrementally.
 
     Args:
-        run_one_liner (str): One liner describing the experiment.
+        run_name (str): Name describing the experiment.
         run_root (str, optional): Directory to save experiments.
         comet_ml_project_name (str, optional): Project name to use with comet.ml.
         checkpoint_path (str, optional): Accepts a checkpoint path to load or empty string
@@ -116,9 +116,9 @@ def main(run_one_liner,
             directory = Path(src.distributed.broadcast_string(str(directory)))
 
     with TrainingContextManager(root_directory=directory, step=step, device=device) as context:
-        logger.info('One liner: %s', run_one_liner)
+        logger.info('Directory: %s', directory)
+        logger.info('Name: %s', run_name)
         logger.info('Tags: %s', run_tags)
-        logger.info('Using directory %s', directory)
         train, dev = _get_dataset()()
 
         # Load checkpointed values
@@ -139,7 +139,8 @@ def main(run_one_liner,
             })
 
         trainer = Trainer(context.device, train, dev, **trainer_kwargs)
-        trainer.comet_ml.log_other('one_liner', run_one_liner)
+        trainer.comet_ml.set_name(run_name)
+        trainer.comet_ml.add_tags(run_tags)
         trainer.comet_ml.log_other('directory', directory)
 
         # Training Loop
@@ -178,8 +179,8 @@ if __name__ == '__main__':  # pragma: no cover
         help='Without a value, loads the most recent checkpoint;'
         'otherwise, expects a checkpoint file path.')
     parser.add_argument(
-        '-l', '--one_liner', type=str, default=None, help='One liner describing the experiment')
-    parser.add_argument('-t', '--tags', nargs='+', help='List of tags for the experiment.')
+        '-n', '--name', type=str, default=None, help='Name describing the experiment')
+    parser.add_argument('-t', '--tags', action='append', help='List of tags for the experiment.')
     parser.add_argument(
         '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     # LEARN MORE: https://pytorch.org/docs/stable/distributed.html
@@ -203,7 +204,7 @@ if __name__ == '__main__':  # pragma: no cover
             pass
 
     main(
-        run_one_liner=args.one_liner,
+        run_name=args.name,
         run_tags=args.tags,
         checkpoint_path=args.checkpoint,
         reset_optimizer=args.reset_optimizer,

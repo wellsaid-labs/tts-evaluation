@@ -20,6 +20,7 @@ from src.hparams import get_config
 from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
 from src.spectrogram_model import SpectrogramModel
+from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import evaluate
 from src.utils import get_masked_average_norm
@@ -34,6 +35,44 @@ from src.visualize import plot_stop_token
 import src.distributed
 
 logger = logging.getLogger(__name__)
+
+
+class SpectrogramModelCheckpoint(Checkpoint):
+    """ DEPRECATED: Checkpoint specific to a spectrogram model.
+
+    TODO: This is not needed with PyTorch 1.0 (https://github.com/pytorch/pytorch/issues/11683)
+    TODO: Remove after converting checkpoints.
+    """
+
+    def __init__(self, directory, model_state_dict, optimizer_state_dict, text_encoder,
+                 speaker_encoder, step, **kwargs):
+        super(SpectrogramModelCheckpoint, self).__init__(
+            directory=directory,
+            step=step,
+            model_state_dict=model_state_dict,
+            text_encoder=text_encoder,
+            speaker_encoder=speaker_encoder,
+            optimizer_state_dict=optimizer_state_dict,
+            **kwargs)
+
+    @classmethod
+    def from_path(class_, path, device=torch.device('cpu'), model=SpectrogramModel, optimizer=Adam):
+        """ Overriding the ``from_path`` to load the ``model`` from ``model_state_dict`` """
+        instance = super(SpectrogramModelCheckpoint, class_).from_path(path, device)
+        if instance is None:
+            return instance
+
+        setattr(instance, 'model',
+                model(instance.text_encoder.vocab_size, instance.speaker_encoder.vocab_size))
+        instance.model.load_state_dict(instance.model_state_dict)
+        instance.flatten_parameters(instance.model)
+        logger.info('Loaded checkpoint model:\n%s', instance.model)
+        instance.model.to(device)
+        optimizer = AutoOptimizer(
+            optimizer(params=filter(lambda p: p.requires_grad, instance.model.parameters())))
+        setattr(instance, 'optimizer', optimizer)
+        instance.optimizer.load_state_dict(instance.optimizer_state_dict)
+        return instance
 
 
 class Trainer():
@@ -119,9 +158,9 @@ class Trainer():
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])
-        self.comet_ml.log_multiple_params(dict_collapse(get_config()))
+        self.comet_ml.log_parameters(dict_collapse(get_config()))
         self.comet_ml.set_model_graph(str(self.model))
-        self.comet_ml.log_multiple_params({
+        self.comet_ml.log_parameters({
             'num_parameter': get_total_parameters(self.model),
             'num_gpu': torch.cuda.device_count(),
             'num_training_row': len(self.train_dataset),
@@ -163,9 +202,9 @@ class Trainer():
 
         # Setup iterator and metrics
         data_loader = DataLoader(
-            self.train_dataset if train else self.dev_dataset,
-            self.train_batch_size if train else self.dev_batch_size,
-            self.device,
+            data=self.train_dataset if train else self.dev_dataset,
+            batch_size=self.train_batch_size if train else self.dev_batch_size,
+            device=self.device,
             text_encoder=self.text_encoder,
             speaker_encoder=self.speaker_encoder,
             trial_run=trial_run)
@@ -302,11 +341,11 @@ class Trainer():
         waveform = griffin_lim(predicted_post_spectrogram.cpu().numpy())
 
         self.comet_ml.log_text_and_audio('infered', text, speaker, waveform)
-        self.comet_ml.log_multiple_metrics({
+        self.comet_ml.log_metrics({
             'infered/attention_norm': attention_norm,
             'infered/attention_std': attention_standard_deviation,
         })
-        self.comet_ml.log_multiple_figures({
+        self.comet_ml.log_figures({
             'infered/final_spectrogram': plot_spectrogram(predicted_post_spectrogram),
             'infered/residual_spectrogram': plot_spectrogram(predicted_residual),
             'infered/gold_spectrogram': plot_spectrogram(gold_spectrogram),
@@ -339,7 +378,7 @@ class Trainer():
         predicted_alignments = predicted_alignments[:spectrogam_length, item, :text_length]
         predicted_stop_tokens = predicted_stop_tokens[:spectrogam_length, item]
 
-        self.comet_ml.log_multiple_figures({
+        self.comet_ml.log_figures({
             'predicted/final_spectrogram': plot_spectrogram(predicted_post_spectrogram),
             'predicted/residual_spectrogram': plot_spectrogram(predicted_residual),
             'predicted/delta_spectrogram': plot_spectrogram(predicted_delta),
