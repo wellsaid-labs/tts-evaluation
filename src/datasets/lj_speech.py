@@ -7,32 +7,29 @@ import re
 import unidecode
 
 from num2words import num2words
-from torchnlp.datasets import Dataset
 
 import pandas
 
 from src.datasets.constants import Speaker
-from src.datasets.process import compute_spectrogram
-from src.datasets.process import download_file_maybe_extract
-from src.datasets.process import normalize_audio
-from src.datasets.process import process_in_parallel
-from src.datasets.process import split_dataset
+from src.datasets.constants import TextSpeechRow
+from src.datasets.process import _download_file_maybe_extract
+from src.datasets.process import _normalize_audio_and_cache
+from src.datasets.process import _process_in_parallel
+from src.datasets.process import _split_dataset
 from src.hparams import configurable
-from src.utils import Checkpoint
 
 logger = logging.getLogger(__name__)
 
 
-def _processing_func(row,
-                     directory,
-                     extracted_name,
-                     spectrogram_model_checkpoint_path,
-                     kwargs,
-                     metadata_audio_column=0,
-                     metadata_audio_path_template='wavs/{}.wav',
-                     metadata_text_column=1,
-                     verbalize=True,
-                     speaker=Speaker.LINDA_JOHNSON):  # pragma: no cover
+def _processing_row(row,
+                    directory,
+                    extracted_name,
+                    kwargs,
+                    metadata_audio_column=0,
+                    metadata_audio_path_template='wavs/{}.wav',
+                    metadata_text_column=1,
+                    verbalize=True,
+                    speaker=Speaker.LINDA_JOHNSON):
     """
     Note:
         - ``# pragma: no cover`` is used because this functionality is run with multiprocessing
@@ -41,9 +38,7 @@ def _processing_func(row,
     Args:
         directory (str or Path, optional): Directory to cache the dataset.
         extracted_name (str, optional): Name of the extracted dataset directory.
-        spectrogram_model_checkpoint_path (str or None, optional): Spectrogram model to predict a
-            ground truth aligned spectrogram.
-        kwargs: Arguments passed to ``normalize_audio`` to preprocess the dataset audio.
+        kwargs: Arguments passed to ``normalize_audio_and_cache`` to preprocess the dataset audio.
         metadata_audio_column (int, optional): Column name or index with the audio filename.
         metadata_audio_path_template (str, optional): Given the audio column, this template
             determines the filename.
@@ -52,15 +47,8 @@ def _processing_func(row,
         speaker (src.datasets.Speaker, optional)
 
     Returns:
-        {
-            text (str)
-            audio_path (Path)
-            spectrogram_path (Path)
-            predicted_spectrogram_path (Path)
-            speaker (src.datasets.Speaker)
-        }
+        (TextSpeechRow) Processed row.
     """
-    spectrogram_model_checkpoint = Checkpoint.from_path(spectrogram_model_checkpoint_path)
     text = row[metadata_text_column].strip()
     audio_path = Path(directory, extracted_name,
                       metadata_audio_path_template.format(row[metadata_audio_column]))
@@ -81,18 +69,8 @@ def _processing_func(row,
 
     # NOTE: Messes up pound sign (£); therefore, this is after ``_verbalize_currency``
     text = _remove_accents(text)
-    audio_path = normalize_audio(audio_path, **kwargs)
-    aligned_audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
-        audio_path, text, speaker, spectrogram_model_checkpoint)
-
-    return {
-        'text': text,
-        'audio_path': audio_path,
-        'aligned_audio_path': aligned_audio_path,
-        'spectrogram_path': spectrogram_path,
-        'predicted_spectrogram_path': predicted_spectrogram_path,
-        'speaker': speaker,
-    }
+    audio_path = _normalize_audio_and_cache(audio_path, **kwargs)
+    return TextSpeechRow(text=text, audio_path=audio_path, speaker=speaker, metadata=None)
 
 
 @configurable
@@ -139,58 +117,31 @@ def lj_speech_dataset(directory='data/',
         splits (tuple, optional): The number of splits and cardinality of dataset splits.
         spectrogram_model_checkpoint_path (str or None, optional): Spectrogram model to predict a
             ground truth aligned spectrogram.
-        **kwargs: Arguments passed to ``normalize_audio`` to preprocess the dataset audio.
+        **kwargs: Arguments passed to ``normalize_audio_and_cache`` to preprocess the dataset audio.
 
     Returns:
         :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
 
     Example:
-        >>> import pprint # doctest: +SKIP
         >>> from src.hparams import set_hparams # doctest: +SKIP
         >>> from src.datasets import lj_speech_dataset # doctest: +SKIP
         >>> set_hparams() # doctest: +SKIP
         >>> train, dev = lj_speech_dataset() # doctest: +SKIP
-        >>> pprint.pprint(train[0:2], width=80) # doctest: +SKIP
-        [{'aligned_audio_path': PosixPath('data/LJSpeech-1.1/wavs/'
-                                          'pad(rate(guard(norm(LJ014-0331,-.001)),24000)).npy'),
-          'audio_path': PosixPath('data/LJSpeech-1.1/wavs/'
-                                  'rate(guard(norm(LJ014-0331,-.001)),24000).wav'),
-          'predicted_spectrogram_path': None,
-          'speaker': Speaker(name='Linda Johnson', gender=FEMALE, id=4),
-          'spectrogram_path': PosixPath('data/LJSpeech-1.1/wavs/spectrogram('
-                                        'rate(guard(norm(LJ014-0331,-.001)),24000)).npy'),
-          'text': 'Once a warrant-holder sent down a clerk to view certain goods, and '
-                  'the clerk found that these goods had already a "stop" upon them, or '
-                  'were pledged.'},
-        {'aligned_audio_path': PosixPath('data/LJSpeech-1.1/wavs/'
-                                         'pad(rate(guard(norm(LJ009-0184,-.001)),24000)).npy'),
-          'audio_path': PosixPath('data/LJSpeech-1.1/wavs/'
-                                  'rate(guard(norm(LJ009-0184,-.001)),24000).wav'),
-          'predicted_spectrogram_path': None,
-          'speaker': Speaker(name='Linda Johnson', gender=FEMALE, id=4),
-          'spectrogram_path': PosixPath('data/LJSpeech-1.1/wavs/spectrogram('
-                                        'rate(guard(norm(LJ009-0184,-.001)),24000)).npy'),
-          'text': "Lord Ferrers' body was brought to Surgeons' Hall after execution in "
-                  'his own carriage and six;'}]
     """
     logger.info('Loading LJ speech dataset')
-    download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
+    _download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
     metadata_path = Path(directory, extracted_name, metadata_filename)
-    data = [row.to_dict() for _, row in pandas.read_csv(
-        metadata_path,
-        delimiter=metadata_delimiter,
-        header=metadata_header,
-        quoting=metadata_quoting).iterrows()]
-    data = process_in_parallel(
+    data = [
+        row.to_dict() for _, row in pandas.read_csv(
+            metadata_path,
+            delimiter=metadata_delimiter,
+            header=metadata_header,
+            quoting=metadata_quoting).iterrows()
+    ]
+    data = _process_in_parallel(
         data,
-        partial(
-            _processing_func,
-            directory=directory,
-            extracted_name=extracted_name,
-            spectrogram_model_checkpoint_path=spectrogram_model_checkpoint_path,
-            kwargs=kwargs))
-    splits = split_dataset(data, splits=splits)
-    return tuple(Dataset(split) for split in splits)
+        partial(_processing_row, directory=directory, extracted_name=extracted_name, kwargs=kwargs))
+    return _split_dataset(data, splits=splits)
 
 
 '''

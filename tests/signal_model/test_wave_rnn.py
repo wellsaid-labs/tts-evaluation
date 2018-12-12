@@ -3,7 +3,7 @@ import numpy as np
 
 from src.signal_model import WaveRNN
 from src.signal_model.wave_rnn import _scale
-from src.utils import split_signal
+from src.audio import split_signal
 
 
 def test_wave_rnn_infer_equals_forward():
@@ -46,8 +46,8 @@ def test_wave_rnn_infer_equals_forward():
         local_features, hidden_state=infer_hidden_state, argmax=True, pad=False)
 
     # [batch_size, signal_length] → [batch_size, signal_length - 1, 2]
-    forward_input_signal = torch.stack(
-        (infer_predicted_coarse, infer_predicted_fine), dim=2)[:, :-1]
+    forward_input_signal = torch.stack((infer_predicted_coarse, infer_predicted_fine),
+                                       dim=2)[:, :-1]
     # [batch_size] → [batch_size, 1, 2]
     go_signal = torch.stack((go_coarse, go_fine), dim=1).unsqueeze(1).long()
     # [batch_size, signal_length - 1, 2] → [batch_size, signal_length, 2]
@@ -128,7 +128,8 @@ def test_wave_rnn_infer():
     upsample_kernels = [(5, 5), (3, 3), (3, 3), (3, 3)]
     signal_length = local_length * upsample_learned * upsample_repeat
 
-    local_features = torch.FloatTensor(batch_size, local_length, local_features_size)
+    # TODO: With out ``fill_(1)`` there are strange runtime errors, investigate
+    local_features = torch.FloatTensor(batch_size, local_length, local_features_size).fill_(1)
 
     net = WaveRNN(
         hidden_size=32,
@@ -158,14 +159,15 @@ def test_wave_rnn_infer_unbatched():
     upsample_kernels = [(5, 5), (3, 3), (3, 3), (3, 3)]
     signal_length = local_length * upsample_learned * upsample_repeat
 
-    local_features = torch.FloatTensor(local_length, local_features_size)
+    # TODO: With out ``fill_(1)`` there are strange runtime errors, investigate
+    local_features = torch.FloatTensor(local_length, local_features_size).fill_(1)
 
     net = WaveRNN(
         hidden_size=32,
         bits=bits,
         upsample_num_filters=[64, 64, 32, upsample_learned],
         upsample_repeat=upsample_repeat,
-        upsample_kernels=upsample_kernels,  # Local
+        upsample_kernels=upsample_kernels,
         local_features_size=local_features_size).eval()
     predicted_coarse, predicted_fine, _ = net.infer(local_features, pad=True)
 

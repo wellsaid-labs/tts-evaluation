@@ -27,18 +27,16 @@ warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
 import comet_ml  # noqa
 
 from torch import multiprocessing
-from torchnlp.text_encoders import CharacterEncoder
-from torchnlp.text_encoders import IdentityEncoder
 
 import torch
 
 from src import datasets
 from src.bin.train.spectrogram_model.trainer import Trainer
-from src.bin.train.spectrogram_model.trainer import SpectrogramModelCheckpoint
 from src.hparams import add_config
 from src.hparams import configurable
 from src.hparams import set_hparams
 from src.training_context_manager import TrainingContextManager
+from src.utils import Checkpoint
 from src.utils import parse_hparam_args
 from src.utils import set_basic_logging_config
 
@@ -58,6 +56,7 @@ def _set_hparams():
         'torch.optim.adam.Adam.__init__': {
             'eps': 10**-6,
             'weight_decay': 10**-5,
+            'lr': 10**-3
         }
     })
 
@@ -68,6 +67,7 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
 
 
 def main(run_one_liner,
+         run_tags=[],
          run_root=Path('experiments/spectrogram_model/'),
          comet_ml_project_name='spectrogram-model-baselines',
          checkpoint_path=None,
@@ -92,7 +92,7 @@ def main(run_one_liner,
         distributed_rank (int, optional): Index of the GPU device to use in distributed system.
         distributed_backend (str, optional): Name of the backend to use.
     """
-    device = None
+    device = torch.device('cuda')
     if distributed_rank is not None:
         torch.distributed.init_process_group(backend=distributed_backend)
         device = torch.device('cuda', distributed_rank)
@@ -103,47 +103,44 @@ def main(run_one_liner,
     add_config(hparams)
 
     checkpoint = (
-        SpectrogramModelCheckpoint.most_recent(run_root / '**/*.pt')
-        if checkpoint_path == '' else SpectrogramModelCheckpoint.from_path(checkpoint_path))
+        Checkpoint.most_recent(run_root / '**/*.pt', device=device)
+        if checkpoint_path == '' else Checkpoint.from_path(checkpoint_path, device=device))
 
     if checkpoint is not None:
         step = checkpoint.step
         directory = checkpoint.directory.parent.parent
     else:
         step = 0
-        directory = run_root / str(time.strftime('%b_%d/%H:%M:%S', time.localtime()))
-        if torch.distributed.is_initialized():
+        directory = run_root / str(time.strftime('%b_%d/%H:%M:%S', time.localtime())).lower()
+        if src.distributed.in_use():
             directory = Path(src.distributed.broadcast_string(str(directory)))
 
     with TrainingContextManager(root_directory=directory, step=step, device=device) as context:
+        logger.info('One liner: %s', run_one_liner)
+        logger.info('Tags: %s', run_tags)
         logger.info('Using directory %s', directory)
         train, dev = _get_dataset()()
 
         # Load checkpointed values
-        trainer_kwargs = {
-            'comet_ml_project_name': comet_ml_project_name,
-        }
+        trainer_kwargs = {'comet_ml_project_name': comet_ml_project_name}
         if checkpoint is not None:
             if reset_optimizer:
                 logger.info('Ignoring checkpoint optimizer.')
+                checkpoint.optimizer = None
             logger.info('Loaded checkpoint %s', checkpoint.path)
             trainer_kwargs.update({
                 'model': checkpoint.model,
-                'optimizer': None if reset_optimizer else checkpoint.optimizer,
+                'optimizer': checkpoint.optimizer,
                 'epoch': checkpoint.epoch,
                 'step': checkpoint.step,
                 'comet_ml_experiment_key': checkpoint.comet_ml_experiment_key,
                 'text_encoder': checkpoint.text_encoder,
                 'speaker_encoder': checkpoint.speaker_encoder
             })
-        else:
-            trainer_kwargs.update({
-                'text_encoder': CharacterEncoder(train['text']),
-                'speaker_encoder': IdentityEncoder(train['speaker']),
-            })
 
         trainer = Trainer(context.device, train, dev, **trainer_kwargs)
         trainer.comet_ml.log_other('one_liner', run_one_liner)
+        trainer.comet_ml.log_other('directory', directory)
 
         # Training Loop
         while True:
@@ -154,15 +151,13 @@ def main(run_one_liner,
                 trainer.run_epoch(train=False, trial_run=is_trial_run)
 
             if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
-                if not torch.distributed.is_initialized() or src.distributed.is_master():
-                    SpectrogramModelCheckpoint(
+                if not src.distributed.in_use() or src.distributed.is_master():
+                    Checkpoint(
                         directory=context.checkpoints_directory,
-                        model_state_dict=trainer.model.module.state_dict()
-                        if isinstance(trainer.model, torch.nn.parallel.DistributedDataParallel) else
-                        trainer.model.state_dict(),
-                        optimizer_state_dict=trainer.optimizer.state_dict(),
-                        text_encoder=trainer_kwargs['text_encoder'],
-                        speaker_encoder=trainer_kwargs['speaker_encoder'],
+                        model=(trainer.model.module if src.distributed.in_use() else trainer.model),
+                        optimizer=trainer.optimizer,
+                        text_encoder=trainer.text_encoder,
+                        speaker_encoder=trainer.speaker_encoder,
                         epoch=trainer.epoch,
                         step=trainer.step,
                         comet_ml_experiment_key=trainer.comet_ml.get_key()).save()
@@ -184,6 +179,7 @@ if __name__ == '__main__':  # pragma: no cover
         'otherwise, expects a checkpoint file path.')
     parser.add_argument(
         '-l', '--one_liner', type=str, default=None, help='One liner describing the experiment')
+    parser.add_argument('-t', '--tags', nargs='+', help='List of tags for the experiment.')
     parser.add_argument(
         '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     # LEARN MORE: https://pytorch.org/docs/stable/distributed.html
@@ -208,6 +204,7 @@ if __name__ == '__main__':  # pragma: no cover
 
     main(
         run_one_liner=args.one_liner,
+        run_tags=args.tags,
         checkpoint_path=args.checkpoint,
         reset_optimizer=args.reset_optimizer,
         hparams=hparams,

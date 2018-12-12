@@ -1,3 +1,8 @@
+""" Train the signal model.
+
+Example:
+    $ python3 -m src.bin.train.signal_model -l="Linda baseline";
+"""
 from pathlib import Path
 
 import argparse
@@ -17,7 +22,6 @@ from src import datasets
 from src.bin.train.signal_model.trainer import Trainer
 from src.hparams import add_config
 from src.hparams import configurable
-from src.hparams import log_config
 from src.hparams import set_hparams
 from src.training_context_manager import TrainingContextManager
 from src.utils import Checkpoint
@@ -51,18 +55,23 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
     return dataset
 
 
-def main(run_name,
+def main(run_one_liner,
+         run_tags=[],
          run_root=Path('experiments/signal_model/'),
+         comet_ml_project_name='signal-model-baselines',
          checkpoint_path=None,
          spectrogram_model_checkpoint_path=None,
          reset_optimizer=False,
          hparams={},
-         evaluate_every_n_epochs=15):
+         evaluate_every_n_epochs=30,
+         save_checkpoint_every_n_epochs=15):
     """ Main module that trains a the signal model saving checkpoints incrementally.
 
     Args:
-        run_name (str): Variable used in experiment directory path ``{run_root}/MM_DD/{run_name}/``.
+        run_one_liner (str): One liner describing the experiment.
+        run_tags (list of str): Tags describing the experiment.
         run_root (str, optional): Directory to save experiments.
+        comet_ml_project_name (str, optional): Project name to use with comet.ml.
         checkpoint_path (str, optional): Accepts a checkpoint path to load or empty string
             signaling to load the most recent checkpoint in ``run_root``.
         spectrogram_model_checkpoint_path (str, optional): Checkpoint used to generate spectrogram
@@ -84,10 +93,16 @@ def main(run_name,
         directory = checkpoint.directory.parent.parent
     else:
         step = 0
-        directory = run_root / str(time.strftime('%m_%d', time.localtime())) / run_name
+        directory = run_root / str(time.strftime('%b_%d/%H:%M:%S', time.localtime())).lower()
 
-    with TrainingContextManager(root_directory=directory, tensorboard_step=step) as context:
-        trainer_kwargs = {}
+    with TrainingContextManager(root_directory=directory, step=step) as context:
+        logger.info('Using directory %s', directory)
+        logger.info('One liner: %s', run_one_liner)
+        logger.info('Tags: %s', run_tags)
+        trainer_kwargs = {
+            'comet_ml_project_name': comet_ml_project_name,
+            'spectrogram_model_checkpoint_path': spectrogram_model_checkpoint_path
+        }
         if checkpoint is not None:
             logger.info('Loaded checkpoint %s', checkpoint.path)
 
@@ -95,37 +110,39 @@ def main(run_name,
                 logger.info('Ignoring checkpoint optimizer.')
                 checkpoint.optimizer = None
 
-            trainer_kwargs = {
+            trainer_kwargs.update({
                 'model': checkpoint.model,
                 'optimizer': checkpoint.optimizer,
                 'epoch': checkpoint.epoch,
                 'step': checkpoint.step,
+                'comet_ml_experiment_key': checkpoint.comet_ml_experiment_key,
                 'anomaly_detector': checkpoint.anomaly_detector
-            }
+            })
 
-        log_config()
-        train, dev = _get_dataset()(
-            spectrogram_model_checkpoint_path=spectrogram_model_checkpoint_path)
-        trainer = Trainer(context.device, train, dev, context.train_tensorboard,
-                          context.dev_tensorboard, **trainer_kwargs)
+        train, dev = _get_dataset()()
+        trainer = Trainer(context.device, train, dev, **trainer_kwargs)
+        trainer.comet_ml.log_other('one_liner', run_one_liner)
+        trainer.comet_ml.log_other('directory', directory)
 
         # Training Loop
         with True:
-            is_trial_run = trainer.epoch == 0 or (checkpoint is not None and
-                                                  trainer.epoch == checkpoint['epoch'])
+            is_trial_run = trainer.step == step
             trainer.run_epoch(train=True, trial_run=is_trial_run)
-            if trainer.epoch % evaluate_every_n_epochs == 0:
+
+            if trainer.epoch % evaluate_every_n_epochs == 0 or is_trial_run:
+                trainer.run_epoch(train=False, trial_run=is_trial_run)
+
+            if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
                 Checkpoint(
                     directory=context.checkpoints_directory,
                     model=trainer.model,
                     optimizer=trainer.optimizer,
                     epoch=trainer.epoch,
                     step=trainer.step,
-                    anomaly_detector=trainer.anomaly_detector).save()
-                trainer.run_epoch(train=False, trial_run=is_trial_run)
-            trainer.epoch += 1
+                    anomaly_detector=trainer.anomaly_detector,
+                    comet_ml_experiment_key=trainer.comet_ml.get_key()).save()
 
-            print('–' * 100)
+            logger.info('-' * 100)
 
 
 if __name__ == '__main__':  # pragma: no cover
@@ -147,14 +164,16 @@ if __name__ == '__main__':  # pragma: no cover
         default=None,
         help=('Spectrogram model checkpoint path used to predicted spectrogram from '
               'text as input to the signal model.'))
+    parser.add_argument('-t', '--tags', nargs='+', help='List of tags for the experiment.')
     parser.add_argument(
-        '-n', '--name', type=str, default='auto_max_grad_norm', help='Experiment name.')
+        '-l', '--one_liner', type=str, default=None, help='One liner describing the experiment')
     parser.add_argument(
         '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     args, unknown_args = parser.parse_known_args()
     hparams = parse_hparam_args(unknown_args)
     main(
-        run_name=args.name,
+        run_one_liner=args.one_liner,
+        run_tags=args.tags,
         checkpoint_path=args.checkpoint,
         spectrogram_model_checkpoint_path=args.spectrogram_model_checkpoint,
         reset_optimizer=args.reset_optimizer,

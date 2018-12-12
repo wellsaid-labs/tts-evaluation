@@ -6,19 +6,22 @@ import socket
 from torch.nn import BCEWithLogitsLoss
 from torch.nn import MSELoss
 from torch.optim import Adam
+from torchnlp.text_encoders import CharacterEncoder
+from torchnlp.text_encoders import IdentityEncoder
 from tqdm import tqdm
 
 import torch
 
 from src.audio import griffin_lim
-from src.bin.train.spectrogram_model.data_iterator import DataBatchIterator
+from src.bin.train.spectrogram_model.data_loader import DataLoader
+from src.datasets import compute_spectrograms
 from src.hparams import configurable
 from src.hparams import get_config
 from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
 from src.spectrogram_model import SpectrogramModel
-from src.utils import Checkpoint
 from src.utils import dict_collapse
+from src.utils import evaluate
 from src.utils import get_masked_average_norm
 from src.utils import get_total_parameters
 from src.utils import get_weighted_standard_deviation
@@ -33,54 +36,17 @@ import src.distributed
 logger = logging.getLogger(__name__)
 
 
-class SpectrogramModelCheckpoint(Checkpoint):
-    """ Checkpoint specific to a spectrogram model.
-
-    TODO: This is not needed with PyTorch 1.0 (https://github.com/pytorch/pytorch/issues/11683)
-    """
-
-    def __init__(self, directory, model_state_dict, optimizer_state_dict, text_encoder,
-                 speaker_encoder, step, **kwargs):
-        super(SpectrogramModelCheckpoint, self).__init__(
-            directory=directory,
-            step=step,
-            model_state_dict=model_state_dict,
-            text_encoder=text_encoder,
-            speaker_encoder=speaker_encoder,
-            optimizer_state_dict=optimizer_state_dict,
-            **kwargs)
-
-    @classmethod
-    def from_path(class_, path, device=torch.device('cpu'), model=SpectrogramModel, optimizer=Adam):
-        """ Overriding the ``from_path`` to load the ``model`` from ``model_state_dict`` """
-        instance = super(SpectrogramModelCheckpoint, class_).from_path(path, device)
-        if instance is None:
-            return instance
-
-        setattr(instance, 'model',
-                model(instance.text_encoder.vocab_size, instance.speaker_encoder.vocab_size))
-        instance.model.load_state_dict(instance.model_state_dict)
-        instance.flatten_parameters(instance.model)
-        logger.info('Loaded checkpoint model:\n%s', instance.model)
-        instance.model.to(device)
-        optimizer = AutoOptimizer(
-            optimizer(params=filter(lambda p: p.requires_grad, instance.model.parameters())))
-        setattr(instance, 'optimizer', optimizer)
-        instance.optimizer.load_state_dict(instance.optimizer_state_dict)
-        return instance
-
-
 class Trainer():
     """ Trainer that manages Tacotron training (i.e. running epochs, logging, etc.).
 
     Args:
         device (torch.device): Device to train on.
-        train_dataset (iterable): Train dataset used to optimize the model.
-        dev_dataset (iterable): Dev dataset used to evaluate.
-        text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
-        speaker_encoder (torchnlp.TextEncoder): Text encoder used to encode the speaker label.
+        train_dataset (iterable of TextSpeechRow): Train dataset used to optimize the model.
+        dev_dataset (iterable of TextSpeechRow): Dev dataset used to evaluate.
         comet_ml_project_name (str): Project name, used for grouping experiments.
         comet_ml_experiment_key (str, optioanl): Previous experiment key to restart visualization.
+        text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
+        speaker_encoder (torchnlp.TextEncoder): Text encoder used to encode the speaker label.
         train_batch_size (int, optional): Batch size used for training.
         dev_batch_size (int, optional): Batch size used for evaluation.
         model (torch.nn.Module, optional): Model to train and evaluate.
@@ -98,10 +64,10 @@ class Trainer():
                  device,
                  train_dataset,
                  dev_dataset,
-                 text_encoder,
-                 speaker_encoder,
                  comet_ml_project_name,
                  comet_ml_experiment_key=None,
+                 text_encoder=None,
+                 speaker_encoder=None,
                  train_batch_size=32,
                  dev_batch_size=128,
                  model=SpectrogramModel,
@@ -116,7 +82,7 @@ class Trainer():
         self.model = model if isinstance(model, torch.nn.Module) else model(
             text_encoder.vocab_size, speaker_encoder.vocab_size)
         self.model.to(device)
-        if torch.distributed.is_initialized():
+        if src.distributed.in_use():
             self.model = torch.nn.parallel.DistributedDataParallel(
                 self.model, device_ids=[device.index], output_device=device.index, dim=1)
 
@@ -127,7 +93,7 @@ class Trainer():
         self.comet_ml = CometML(
             project_name=comet_ml_project_name,
             experiment_key=comet_ml_experiment_key,
-            disabled=torch.distributed.is_initialized() and not src.distributed.is_master())
+            disabled=src.distributed.in_use() and not src.distributed.is_master())
 
         self.accumulated_metrics = AccumulatedMetrics()
 
@@ -136,11 +102,16 @@ class Trainer():
         self.epoch = epoch
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
-        self.train_dataset = train_dataset
-        self.dev_dataset = dev_dataset
-        self.text_encoder = text_encoder
-        self.speaker_encoder = speaker_encoder
+        self.train_dataset = compute_spectrograms(train_dataset)
+        self.dev_dataset = compute_spectrograms(dev_dataset)
         self.use_tqdm = use_tqdm
+
+        self.text_encoder = (
+            CharacterEncoder([r.text for r in self.train_dataset])
+            if text_encoder is None else text_encoder)
+        self.speaker_encoder = (
+            IdentityEncoder([r.speaker for r in self.train_dataset])
+            if speaker_encoder is None else speaker_encoder)
 
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
@@ -160,7 +131,7 @@ class Trainer():
             'num_speakers': self.speaker_encoder.vocab_size,
             'speakers': sorted([str(v) for v in self.speaker_encoder.vocab]),
         })
-        self.comet_ml.log_other('is_distributed', torch.distributed.is_initialized())
+        self.comet_ml.log_other('is_distributed', src.distributed.in_use())
         # NOTE: Remove after: https://github.com/comet-ml/issue-tracking/issues/154
         self.comet_ml.log_other('hostname', socket.gethostname())
 
@@ -185,29 +156,29 @@ class Trainer():
             logger.info('[%s] Trial run with one batch.', label)
 
         # Set mode(s)
-        torch.set_grad_enabled(train)
         self.model.train(mode=train)
         self.comet_ml.set_context(label.lower())
         if not trial_run:
             self.comet_ml.log_current_epoch(self.epoch)
 
         # Setup iterator and metrics
-        data_iterator = DataBatchIterator(
+        data_loader = DataLoader(
             self.train_dataset if train else self.dev_dataset,
-            self.text_encoder,
-            self.speaker_encoder,
             self.train_batch_size if train else self.dev_batch_size,
             self.device,
+            text_encoder=self.text_encoder,
+            speaker_encoder=self.speaker_encoder,
             trial_run=trial_run)
         if self.use_tqdm:
-            data_iterator = tqdm(data_iterator, desc=label, smoothing=0)
+            data_loader = tqdm(data_loader, desc=label, smoothing=0)
 
         # Run epoch
-        random_batch = random.randint(0, len(data_iterator) - 1)
-        for i, batch in enumerate(data_iterator):
-            predictions = self.model(batch['text'], batch['speaker'], batch['spectrogram'])
-            self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
-            predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
+        random_batch = random.randint(0, len(data_loader) - 1)
+        for i, batch in enumerate(data_loader):
+            with torch.set_grad_enabled(train):
+                predictions = self.model(batch.text[0], batch.speaker[0], batch.spectrogram[0])
+                self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
+                predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
             self._visualize(batch, predictions, sample=not train and i == random_batch)
 
             self.accumulated_metrics.log_step_end(
@@ -215,8 +186,6 @@ class Trainer():
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
-                # NOTE: Remove after: https://github.com/comet-ml/issue-tracking/issues/164
-                self.comet_ml.log_metric('step', self.step)
 
         # Log epoch metrics
         if not trial_run:
@@ -230,30 +199,28 @@ class Trainer():
         """ Compute the losses and maybe do backwards.
 
         Args:
-            batch (dict): ``dict`` from ``DataBatchIterator``.
+            batch (SpectrogramModelTrainingRow)
             predictions (any): Return value from ``self.model.forwards``.
             do_backwards (bool): If ``True`` backward propogate the loss.
         """
         (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
          _) = predictions
-        spectrogram_expanded_mask = batch['spectrogram_expanded_mask']
-        spectrogram_mask = batch['spectrogram_mask']
-        spectrogram = batch['spectrogram']
+        spectrogram = batch.spectrogram[0]
 
-        num_spectrogram_values = torch.sum(spectrogram_expanded_mask)
-        num_frames = torch.sum(spectrogram_mask)
+        num_spectrogram_values = torch.sum(batch.spectrogram_expanded_mask[0])
+        num_frames = torch.sum(batch.spectrogram_mask[0])
 
         # Average loss for pre spectrogram, post spectrogram and stop token loss
         pre_spectrogram_loss = self.criterion_spectrogram(predicted_pre_spectrogram, spectrogram)
-        pre_spectrogram_loss = (pre_spectrogram_loss * spectrogram_expanded_mask).sum()
+        pre_spectrogram_loss = (pre_spectrogram_loss * batch.spectrogram_expanded_mask[0]).sum()
         pre_spectrogram_loss /= num_spectrogram_values
 
         post_spectrogram_loss = self.criterion_spectrogram(predicted_post_spectrogram, spectrogram)
-        post_spectrogram_loss = (post_spectrogram_loss * spectrogram_expanded_mask).sum()
+        post_spectrogram_loss = (post_spectrogram_loss * batch.spectrogram_expanded_mask[0]).sum()
         post_spectrogram_loss /= num_spectrogram_values
 
-        stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, batch['stop_token'])
-        stop_token_loss = (stop_token_loss * spectrogram_mask).sum() / num_frames
+        stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, batch.stop_token[0])
+        stop_token_loss = (stop_token_loss * batch.spectrogram_mask[0]).sum() / num_frames
 
         if do_backwards:
             self.optimizer.zero_grad()
@@ -276,7 +243,7 @@ class Trainer():
         """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
 
         Args:
-            batch (dict): ``dict`` from ``DataBatchIterator``.
+            batch (SpectrogramModelTrainingRow)
             predictions (any): Return value from ``self.model.forwards``.
             sample (bool): If ``True``, samples the current step.
         """
@@ -286,7 +253,7 @@ class Trainer():
 
         predicted_alignments = predictions[-1]
         # [num_frames, batch_size, num_tokens] → scalar
-        kwargs = {'tensor': predicted_alignments, 'dim': 2, 'mask': batch['spectrogram_mask']}
+        kwargs = {'tensor': predicted_alignments, 'dim': 2, 'mask': batch.spectrogram_mask[0]}
         self.accumulated_metrics.add_multiple_metrics({
             'attention_norm': get_masked_average_norm(norm=math.inf, **kwargs),
             'attention_std': get_weighted_standard_deviation(**kwargs),
@@ -295,34 +262,37 @@ class Trainer():
     def _visualize_infered(self, batch, max_infer_frames=1000):
         """ Run in inference mode without teacher forcing and visualizing results.
 
-        TODO: Multiple inferences with comet.ml for every GPU is okay
-
         Args:
-            batch (dict): ``dict`` from ``DataBatchIterator``.
+            batch (SpectrogramModelTrainingRow)
             max_infer_frames (int, optioanl): Maximum number of frames to consider for memory's
                 sake.
         """
-        if torch.distributed.is_initialized() and not src.distributed.is_master():
+        if src.distributed.in_use() and not src.distributed.is_master():
             return
 
-        batch_size = batch['text'].shape[1]
+        # batch.text[0] [num_tokens, batch_size] → batch_size
+        batch_size = batch.text[0].shape[1]
         item = random.randint(0, batch_size - 1)
-        spectrogam_length = batch['spectrogram_lengths'][item]
-        text_length = batch['text_lengths'][item]
+        spectrogam_length = batch.spectrogram[1][item]
+        text_length = batch.text[1][item]
 
-        text = batch['text'][:text_length, item]
-        # HACK: 0-d to 1-d tensor for this issue https://github.com/PetrochukM/PyTorch-NLP/issues/55
-        speaker = batch['speaker'][0][item].unsqueeze(0)
-        gold_spectrogram = batch['spectrogram'][:spectrogam_length, item]
+        # batch.text[0] [num_tokens, batch_size] → [text_length]
+        text = batch.text[0][:text_length, item]
+        # batch.speaker[0] [1, batch_size] → scalar
+        speaker = batch.speaker[0][0, item]
+        # batch.spectrogram[0] [num_frames, batch_size, frame_channels] →
+        # [spectrogam_length, frame_channels]
+        gold_spectrogram = batch.spectrogram[0][:spectrogam_length, item]
 
-        with torch.no_grad():
+        with evaluate(self.model):
             logger.info('Running inference...')
-            model = self.model.module if torch.distributed.is_initialized() else self.model
-            model.train(mode=False)
+            model = self.model.module if src.distributed.in_use() else self.model
             (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
              predicted_alignments, _) = model.infer(text, speaker, max_infer_frames)
 
+        # [text_length] → str
         text = self.text_encoder.decode(text)
+        # scalar → Speaker
         speaker = self.speaker_encoder.decode(speaker)
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
         # [num_frames, num_tokens] → scalar
@@ -331,7 +301,7 @@ class Trainer():
         attention_standard_deviation = get_weighted_standard_deviation(predicted_alignments, dim=1)
         waveform = griffin_lim(predicted_post_spectrogram.cpu().numpy())
 
-        self.comet_ml.log_text_and_audio('infered', text, speaker, torch.from_numpy(waveform))
+        self.comet_ml.log_text_and_audio('infered', text, speaker, waveform)
         self.comet_ml.log_multiple_metrics({
             'infered/attention_norm': attention_norm,
             'infered/attention_std': attention_standard_deviation,
@@ -349,19 +319,19 @@ class Trainer():
         """ Visualize examples from a batch and visualize them.
 
         Args:
-            batch (dict): ``dict`` from ``DataBatchIterator``.
+            batch (SpectrogramModelTrainingRow)
             predictions (any): Return value from ``self.model.forwards``.
         """
         (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
          predicted_alignments) = predictions
         batch_size = predicted_post_spectrogram.shape[1]
         item = random.randint(0, batch_size - 1)
-        spectrogam_length = batch['spectrogram_lengths'][item]
-        text_length = batch['text_lengths'][item]
+        spectrogam_length = batch.spectrogram[1][item]
+        text_length = batch.text[1][item]
 
         predicted_post_spectrogram = predicted_post_spectrogram[:spectrogam_length, item]
         predicted_pre_spectrogram = predicted_pre_spectrogram[:spectrogam_length, item]
-        gold_spectrogram = batch['spectrogram'][:spectrogam_length, item]
+        gold_spectrogram = batch.spectrogram[0][:spectrogam_length, item]
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
         predicted_delta = abs(gold_spectrogram - predicted_post_spectrogram)

@@ -1,6 +1,6 @@
 # Math Library
 numpy
-torch==0.4.1 # NOTE: You may need to install with CUDA support seperatly from https://pytorch.org
+torch==1.0.0 # NOTE: You may need to install with CUDA support seperatly from https://pytorch.org
 
 # Image Library
 Pillow
@@ -25,7 +25,7 @@ pytest-cov
 flake8
 
 # Auto Formatter
-yapf==0.22.0
+yapf==0.25.0
 
 # Utils
 tqdm # Progress bar

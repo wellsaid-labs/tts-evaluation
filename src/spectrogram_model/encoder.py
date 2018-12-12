@@ -86,9 +86,8 @@ class Encoder(nn.Module):
                     out_channels=num_convolution_filters,
                     kernel_size=convolution_filter_size,
                     padding=int((convolution_filter_size - 1) / 2)),
-                nn.BatchNorm1d(num_features=num_convolution_filters),
-                nn.ReLU(inplace=True),
-                nn.Dropout(p=convolution_dropout))
+                nn.BatchNorm1d(num_features=num_convolution_filters), nn.ReLU(
+                    inplace=True), nn.Dropout(p=convolution_dropout))
             for i in range(num_convolution_layers)
         ]))
 

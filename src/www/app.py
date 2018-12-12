@@ -5,13 +5,12 @@ Example:
       $ export PYTHONPATH=.;
       $ sudo python3 -m src.www.app; # ``sudo`` is required to run on port 80 as a webservice
 """
+from functools import lru_cache
 from pathlib import Path
 
-import argparse
 import logging
 import os
 import re
-import torch
 import uuid
 
 from flask import Flask
@@ -21,34 +20,46 @@ from flask import send_file
 
 import librosa
 
+from src.audio import combine_signal
 from src.audio import griffin_lim
-from src.hparams import set_hparams
-from src.hparams import log_config
-from src.utils import combine_signal
-from src.utils import Checkpoint
 from src.datasets import Speaker
+from src.hparams import log_config
+from src.hparams import set_hparams
+from src.utils import Checkpoint
+from src.utils import evaluate
 
-app = Flask(__name__)
+# GLOBAL MEMORY
+set_hparams()
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+app = Flask(__name__)
+
 samples_folder = Path(os.getcwd()) / 'src/www/static/samples'
-spectrogram_model_checkpoint = None
-signal_model_checkpoint = None
 
-# NOTE: We allow wsgi.py to set these arguments
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    '--signal_model', type=str, required=True, help='Signal model checkpoint to serve.')
-parser.add_argument(
-    '--spectrogram_model', type=str, required=True, help='Spectrogram model checkpoint to serve.')
-cli_args = parser.parse_args()
 
-# Global memory
-set_hparams()
-spectrogram_model_checkpoint = Checkpoint.from_path(cli_args.spectrogram_model)
-spectrogram_model_checkpoint.model.eval()
-signal_model_checkpoint = Checkpoint.from_path(cli_args.signal_model)
-signal_model_checkpoint.model.eval()
+@lru_cache()
+def get_spectrogram_model_checkpoint():
+    spectrogram_model_checkpoint_path = ('experiments/feature_model/09_24/'
+                                         'normalized__encoder_norm/checkpoints/'
+                                         '1537985655/step_91097.pt')
+    return Checkpoint.from_path(spectrogram_model_checkpoint_path)
+
+
+@lru_cache()
+def get_signal_model_checkpoint():
+    signal_model_checkpoint_path = ('experiments/signal_model/09_28/'
+                                    'feature_model_normalized__encoder_norm/'
+                                    'checkpoints/1539187496/step_9015794.pt')
+    return Checkpoint.from_path(signal_model_checkpoint_path)
+
+
+def cache_models():
+    """ Cache spectrogram and signal models """
+    get_spectrogram_model_checkpoint()
+    get_signal_model_checkpoint()
+
 
 # ERROR HANDLERS
 # INSPIRED BY: http://flask.pocoo.org/docs/1.0/patterns/apierrors/
@@ -117,18 +128,19 @@ def _synthesize(text, speaker, is_high_fidelity):
     """ Synthesize audio given ``text``, returning the audio filename.
     """
     log_config()
+    spectrogram_model_checkpoint = get_spectrogram_model_checkpoint()
+    signal_model_checkpoint = get_signal_model_checkpoint()
 
     text_encoder = spectrogram_model_checkpoint.text_encoder
     encoded_text = text_encoder.encode(text)
 
-    speaker = getattr(Speaker, str(speaker))  # Get speaker by ID or name
-    speaker_encoder = spectrogram_model_checkpoint.speaker_encoder
-    encoded_speaker = speaker_encoder.encode(speaker)
-
     if text_encoder.decode(encoded_text) != text:
         raise GenericException('Text has improper characters.')
 
-    with torch.no_grad():
+    speaker = getattr(Speaker, str(speaker))  # Get speaker by ID or name
+    encoded_speaker = spectrogram_model_checkpoint.speaker_encoder.encode(speaker)
+
+    with evaluate(spectrogram_model_checkpoint.model, signal_model_checkpoint.model):
         # predicted_frames [num_frames, batch_size, frame_channels]
         predicted_frames = spectrogram_model_checkpoint.model.infer(
             tokens=encoded_text, speaker=encoded_speaker)[1]

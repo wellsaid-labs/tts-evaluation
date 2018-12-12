@@ -5,8 +5,6 @@ NOTE: Within the example, we add ``shutdown now`` incase the ``python3`` process
 queuing it up to be rebooted by ``keep_alive.py``.
 NOTE: We source ``~/.bash_profile`` to setup pyenv.
 
-TODO: Create a GCP utilities package merging functionality in ``keep_alive`` and ``periodic_rsync``.
-
 Example:
 
     python3 -m src.bin.gcp.keep_alive --command="screen -dm bash -c \

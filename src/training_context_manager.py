@@ -13,6 +13,7 @@ import numpy as np
 import torch
 
 from src.utils import duplicate_stream
+from src.utils import ROOT_PATH
 
 import src.distributed
 
@@ -37,7 +38,7 @@ class TrainingContextManager(object):
         # NOTE: ``self.id`` is used to distinguish this run if started from a checkpoint in the
         # same ``root_directory```
         self.id = str(time.time())[:10]
-        if torch.distributed.is_initialized():
+        if src.distributed.in_use():
             self.id = src.distributed.broadcast_string(self.id)
             if step == 0 and self.root_directory.is_dir() and src.distributed.is_master():
                 raise ValueError('Directory path is already in use %s' % str(self.root_directory))
@@ -76,18 +77,19 @@ class TrainingContextManager(object):
         """ Check to that ``requirements.txt`` is in-line with ``pip freeze`` """
         freeze = subprocess.check_output([sys.executable, '-m', 'pip', 'freeze'])
         freeze = freeze.decode('utf-8').split()
-        with Path('requirements.txt').open() as file_:
-            for line in file_:
-                line = line.strip()
-                if '==' in line:
-                    specification = line.split()[0]
-                    package = specification.split('==')[0]
-                    installed = [p for p in freeze if p.split('==')[0] == package]
-                    if not len(installed) == 1:
-                        raise ValueError('%s not installed' % package)
-                    if not specification == installed[0]:
-                        raise ValueError(
-                            'Versions are not compatible %s =/= %s' % (specification, installed[0]))
+        requirements = Path(ROOT_PATH / 'requirements.txt').read_text()
+        for line in requirements.split():
+            line = line.strip()
+            if '==' in line:
+                specification = line.split()[0]
+                package = specification.split('==')[0]
+                installed = [p for p in freeze if p.split('==')[0] == package]
+                if not len(installed) == 1:
+                    raise ValueError('%s not installed' % package)
+                if not specification == installed[0]:
+                    # NOTE: ValueError could cause ``Illegal seek`` while running PyTest.
+                    raise ValueError(
+                        'Versions are not compatible %s =/= %s' % (specification, installed[0]))
 
     def _copy_standard_streams(self, stdout_filename='stdout.log', stderr_filename='stderr.log'):
         """ Copy stdout and stderr to a ``{directory}/stdout.log`` and ``{directory}/stderr.log``.
@@ -124,7 +126,7 @@ class TrainingContextManager(object):
         self._set_seed(self.seed)
         self.checkpoints_directory = self.root_directory / 'checkpoints' / self.id
 
-        if not torch.distributed.is_initialized() or src.distributed.is_master():
+        if not src.distributed.in_use() or src.distributed.is_master():
             self.root_directory.mkdir(parents=True, exist_ok=True)
             self.checkpoints_directory.mkdir(parents=True)
 
@@ -133,8 +135,8 @@ class TrainingContextManager(object):
             torch.cuda.set_device(self.device.index)
 
         # Sync processes before using stdout and ``self.root_directory.mkdir`` ran.
-        if torch.distributed.is_initialized():
-            src.distributed.sync()
+        if src.distributed.in_use():
+            torch.distributed.barrier()
 
         # Setup logging
         self._copy_standard_streams()
@@ -144,7 +146,7 @@ class TrainingContextManager(object):
         logger.info('Device: %s', self.device)
         logger.info('Seed: %s', self.seed)
         logger.info('ID: %s', self.id)
-        if torch.distributed.is_initialized():
+        if src.distributed.in_use():
             logger.info('World Size: %d' % torch.distributed.get_world_size())
 
         self._check_module_versions()
@@ -154,7 +156,7 @@ class TrainingContextManager(object):
     def clean_up(self):
         """ Delete files associated with this context.
         """
-        if torch.distributed.is_initialized() and not src.distributed.is_master():
+        if src.distributed.in_use() and not src.distributed.is_master():
             return
 
         logger.info('DELETING EXPERIMENT: %s', self.root_directory)

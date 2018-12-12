@@ -129,12 +129,47 @@ class SpectrogramModel(nn.Module):
 
         return frames_with_residual
 
+    def _preprocess(self, tokens, speaker, ground_truth_frames=None):
+        """
+        Args:
+            tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens])
+            speaker (torch.LongTensor [1, batch_size] or [batch_size] or [])
+            ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or
+                [num_frames, frame_channels] or None)
+
+        Returns:
+            tokens (torch.LongTensor [num_tokens, batch_size])
+            speaker (torch.LongTensor [batch_size])
+            ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or None)
+        """
+        if len(tokens.shape) == 1:
+            # [num_tokens] → [num_tokens, batch_size(1)]
+            tokens = tokens.unsqueeze(1)
+
+        if ground_truth_frames is not None and len(ground_truth_frames.shape) == 2:
+            # [num_frames, frame_channels] → [num_frames, batch_size(1), frame_channels]
+            ground_truth_frames = ground_truth_frames.unsqueeze(1)
+
+        if len(speaker.shape) == 0:
+            # [] → [batch_size(1)]
+            speaker = speaker.unsqueeze(0)
+
+        if len(speaker.shape) == 2:
+            # [1, batch_size] → [batch_size]
+            speaker = speaker.squeeze(1)
+
+        if ground_truth_frames is not None:
+            return tokens, speaker, ground_truth_frames
+        else:
+            return tokens, speaker
+
     def infer(self, tokens, speaker, max_recursion=2000, stop_threshold=0.5, use_tqdm=False):
         """
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens]): Batched set of
                 sequences.
-            speaker (torch.LongTensor [1, batch_size]): Batched speaker encoding.
+            speaker (torch.LongTensor [1, batch_size] or [batch_size] or []): Batched speaker
+                encoding.
             max_recursion (int, optional): The maximum sequential predictions to make before
                 quitting; Used for testing and defensive design.
             stop_threshold (float, optional): The threshold probability for deciding to stop.
@@ -151,16 +186,14 @@ class SpectrogramModel(nn.Module):
                 in a unbatched execution of the function.
         """
         is_unbatched = len(tokens.shape) == 1
-        if is_unbatched:
-            # [num_tokens] → [num_tokens, batch_size(1)]
-            tokens = tokens.unsqueeze(1)
+        tokens, speaker = self._preprocess(tokens, speaker)
 
         # [num_tokens, batch_size]  → [batch_size, num_tokens]
         tokens = tokens.transpose(0, 1)
 
         # [batch_size, num_tokens]
         tokens_mask = tokens.detach().eq(PADDING_INDEX)
-        encoded_tokens = self.encoder(tokens, speaker.squeeze(0))
+        encoded_tokens = self.encoder(tokens, speaker)
 
         # [num_tokens, batch_size, hidden_size]
         _, batch_size, _ = encoded_tokens.shape
@@ -210,7 +243,8 @@ class SpectrogramModel(nn.Module):
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens]): Batched set of
                 sequences.
-            speaker (torch.LongTensor [1, batch_size]): Batched speaker encoding.
+            speaker (torch.LongTensor [1, batch_size] or [batch_size] or []): Batched speaker
+                encoding.
             ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or
                 [num_frames, frame_channels]): During training, ground truth frames for
                 teacher-forcing.
@@ -227,12 +261,9 @@ class SpectrogramModel(nn.Module):
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens] or [num_frames,
                 num_tokens]): Attention alignments.
         """
-        is_unbatched = len(tokens.shape) == 1 and len(ground_truth_frames.shape) == 2
-        if is_unbatched:
-            # [num_tokens] → [num_tokens, batch_size(1)]
-            tokens = tokens.unsqueeze(1)
-            # [num_frames, frame_channels] → [num_frames, batch_size(1), frame_channels]
-            ground_truth_frames = ground_truth_frames.unsqueeze(1)
+        is_unbatched = len(tokens.shape) == 1
+        tokens, speaker, ground_truth_frames = self._preprocess(tokens, speaker,
+                                                                ground_truth_frames)
 
         # [num_tokens, batch_size]  → [batch_size, num_tokens]
         tokens = tokens.transpose(0, 1)

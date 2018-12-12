@@ -1,10 +1,13 @@
 from pathlib import Path
 
 import numpy as np
+import torch
 
-from src.audio import read_audio
+from src.audio import combine_signal
 from src.audio import get_log_mel_spectrogram
 from src.audio import griffin_lim
+from src.audio import read_audio
+from src.audio import split_signal
 
 
 def test_log_mel_spectrogram_smoke():
@@ -33,3 +36,31 @@ def test_griffin_lim_smoke():
     log_mel_spectrogram, _ = get_log_mel_spectrogram(signal, sample_rate)
     waveform = griffin_lim(log_mel_spectrogram, sample_rate)
     assert len(waveform) > 0
+
+
+def test_split_signal():
+    signal = torch.FloatTensor([1.0, -1.0, 0, 2**-7, 2**-8])
+    coarse, fine = split_signal(signal, 16)
+    assert torch.equal(coarse, torch.LongTensor([255, 0, 128, 129, 128]))
+    assert torch.equal(fine, torch.LongTensor([255, 0, 0, 0, 2**7]))
+
+
+def test_combine_signal():
+    signal = torch.FloatTensor([1.0, -1.0, 0, 2**-7, 2**-8])
+    coarse, fine = split_signal(signal, 16)
+    new_signal = combine_signal(coarse, fine, 16)
+    # NOTE: 1.0 gets clipped to ``(2**15 - 1) / 2**15``
+    expected_signal = torch.FloatTensor([(2**15 - 1) / 2**15, -1.0, 0, 2**-7, 2**-8])
+    np.testing.assert_allclose(expected_signal.numpy(), new_signal.numpy())
+
+
+def test_split_combine_signal():
+    signal = torch.FloatTensor(1000).uniform_(-1.0, 1.0)
+    reconstructed_signal = combine_signal(*split_signal(signal))
+    np.testing.assert_allclose(signal.numpy(), reconstructed_signal.numpy(), atol=1e-04)
+
+
+def test_split_combine_signal_multiple_dim():
+    signal = torch.FloatTensor(1000, 1000).uniform_(-1.0, 1.0)
+    reconstructed_signal = combine_signal(*split_signal(signal))
+    np.testing.assert_allclose(signal.numpy(), reconstructed_signal.numpy(), atol=1e-04)

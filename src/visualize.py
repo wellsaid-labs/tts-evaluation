@@ -192,10 +192,12 @@ def _encode_audio(audio):
     Returns:
         (str): The encoded audio.
     """
-    assert torch.max(audio) <= 1.0 and torch.min(
-        audio) >= -1.0, "Should be [-1, 1] it is [%f, %f]" % (torch.max(audio), torch.min(audio))
+    if torch.is_tensor(audio):
+        audio = audio.detach().cpu().numpy()
+
+    assert np.max(audio) <= 1.0 and np.min(audio) >= -1.0, "Should be [-1, 1] it is [%f, %f]" % (
+        np.max(audio), np.min(audio))
     in_memory_file = io.BytesIO()
-    audio = audio.detach().cpu().numpy()
     librosa.output.write_wav(in_memory_file, audio, sr=24000)
     audio = base64.b64encode(in_memory_file.read()).decode('utf-8')
     return audio
@@ -230,7 +232,7 @@ class AccumulatedMetrics():
         if torch.is_tensor(value):
             value = value.item()
 
-        assert count > 0, '%s count must be a positive number' % name
+        assert count > 0, '%s count, %f, must be a positive number' % (name, count)
 
         self.metrics['step_total'][name] += value * count
         self.metrics['step_count'][name] += count
@@ -254,7 +256,7 @@ class AccumulatedMetrics():
             log_metric (callable(key, value)): Callable to log a metric.
         """
         # Accumulate metrics between multiple processes.
-        if torch.distributed.is_initialized():
+        if src.distributed.in_use():
             metrics_total_items = sorted(self.metrics['step_total'].items(), key=lambda t: t[0])
             metrics_total_values = [value for _, value in metrics_total_items]
 
@@ -285,6 +287,11 @@ class AccumulatedMetrics():
         # Reset step metrics
         self.metrics['step_total'] = defaultdict(float)
         self.metrics['step_count'] = defaultdict(float)
+
+    def get_epoch_metric(self, metric):
+        """ Get the current epoch value for a metric.
+        """
+        return self.metrics['epoch_total'][metric] / self.metrics['epoch_count'][metric]
 
     def log_epoch_end(self, log_metric):
         """ Log all metrics that have been accumulated since the last ``log_epoch_end``.
@@ -360,6 +367,35 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
 
     experiment.log_text_and_audio = log_text_and_audio.__get__(experiment)
 
+    def log_audio(self, tag, gold_audio, predicted_audio, step=None):
+        """ Add audio to remote visualizer in one entry.
+
+        TODO: Consider logging the Waveform as well
+
+        Args:
+            tag (str): Tag for this event.
+            audio (torch.Tensor)
+            step (int, optional)
+        """
+        step = self.curr_step if step is None else step
+        assert step is not None
+        experiment.log_html(_BASE_TEMPLATE % """
+        <section>
+            <p><b>Step:</b> {step}</p>
+            <p><b>Tag:</b> {tag}</p>
+            <p><b>Gold Audio:</b></p>
+            <audio controls="" src="data:audio/wav;base64,{gold_audio}"></audio>
+            <p><b>Predicted Audio:</b></p>
+            <audio controls="" src="data:audio/wav;base64,{predicted_audio}"></audio>
+        </section>
+        """.format(
+            step=step,
+            tag=tag,
+            gold_audio=_encode_audio(gold_audio),
+            predicted_audio=_encode_audio(predicted_audio)))
+
+    experiment.log_audio = log_audio.__get__(experiment)
+
     def log_multiple_figures(self, dict_, **kwargs):
         """ Convience function to log multiple figures """
         for key, value in dict_.items():
@@ -373,8 +409,21 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
 
     experiment.set_context = set_context.__get__(experiment)
 
+    # NOTE: Remove after: https://github.com/comet-ml/issue-tracking/issues/164
+    last_set_step = experiment.set_step
+
+    def set_step(self, step, *args, **kwargs):
+        # Monkey patch ``set_step`` called by ``log_metric``
+        self.set_step = lambda *args, **kwargs: None
+        self.log_metric('step', step, step=step)
+        self.set_step = set_step.__get__(experiment)
+        return last_set_step(step, *args, **kwargs)
+
+    experiment.set_step = set_step.__get__(experiment)
+
+    # NOTE: Remove after: https://github.com/comet-ml/issue-tracking/issues/170
     if hasattr(experiment, 'streamer') and experiment.streamer is not None:
-        original_put_messge_in_q = experiment.streamer.put_messge_in_q
+        last_put_messge_in_q = experiment.streamer.put_messge_in_q
 
         def put_messge_in_q(self, message, *args, **kwargs):
             # NOTE: Prevent recursive call
@@ -384,10 +433,10 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
                 log_other_message = experiment._create_message()
                 log_other_message.context = None
                 log_other_message.set_log_other(key, value)
-                original_put_messge_in_q(log_other_message)
+                last_put_messge_in_q(log_other_message)
             experiment.others[key] = value
 
-            return original_put_messge_in_q(message, *args, **kwargs)
+            return last_put_messge_in_q(message, *args, **kwargs)
 
         experiment.streamer.put_messge_in_q = put_messge_in_q.__get__(experiment.streamer)
 

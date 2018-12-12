@@ -52,10 +52,12 @@ def _set_audio_processing():
     # SOURCE (Tacotron 2 Author):
     # Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
     frame_channels = 128
-    hertz_bounds = {
-        'lower_hertz': None,
-        'upper_hertz': None
-    }
+    hertz_bounds = {'lower_hertz': None, 'upper_hertz': None}
+
+    # SOURCE: Efficient Neural Audio Synthesis
+    # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
+    # designed to efficiently predict 16-bit raw audio samples.
+    bits = 16
 
     librosa.effects.trim = configurable(librosa.effects.trim)
     librosa.output.write_wav = configurable(librosa.output.write_wav)
@@ -120,7 +122,9 @@ def _set_audio_processing():
                 # compression.
                 'num_mel_bins': frame_channels,
                 **hertz_bounds
-            }
+            },
+            'split_signal.bits': bits,
+            'combine_signal.bits': bits,
         },
         'src.visualize': {
             'plot_waveform.sample_rate': sample_rate,
@@ -133,10 +137,10 @@ def _set_audio_processing():
         }
     })
 
-    return frame_channels, frame_hop
+    return frame_channels, frame_hop, bits
 
 
-def _set_model_size(frame_channels):
+def _set_model_size(frame_channels, bits):
 
     # SOURCE (Tacotron 2):
     # The prediction from the previous time step is first passed through a small
@@ -147,11 +151,6 @@ def _set_model_size(frame_channels):
     # Attention probabilities are computed after projecting inputs and location
     # features to 128-dimensional hidden representations.
     attention_hidden_size = 128
-
-    # SOURCE: Efficient Neural Audio Synthesis
-    # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
-    # designed to efficiently predict 16-bit raw audio samples.
-    bits = 16
 
     add_config({
         'src': {
@@ -274,15 +273,13 @@ def _set_model_size(frame_channels):
         }
     })
 
-    return bits
-
 
 def set_hparams():
     """ Using the ``configurable`` module set the hyperparameters for the source code.
     """
-    frame_channels, frame_hop = _set_audio_processing()
+    frame_channels, frame_hop, bits = _set_audio_processing()
     _set_anomaly_detection()
-    bits = _set_model_size(frame_channels)
+    _set_model_size(frame_channels, bits)
 
     torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
     nn.modules.batchnorm._BatchNorm.__init__ = configurable(
@@ -308,7 +305,12 @@ def set_hparams():
     # NOTE: Prevent circular dependency
     from src import datasets
     dataset = datasets.lj_speech_dataset
-    spectrogram_path_key = 'predicted_spectrogram_path'
+
+    # SOURCE (Tacotron 2):
+    # Finally, the predicted mel spectrogram is passed
+    is_signal_model_trained_from_predicted_spectrogram = True
+
+    spectrogram_model_dev_batch_size = 256
 
     # TODO: Add option to instead of strings to use direct references.
     add_config({
@@ -344,13 +346,8 @@ def set_hparams():
                     },
                 },
             },
-            'bin.evaluate': {
-                'text_to_speech.main.dataset': dataset,
-                'signal_model.main': {
-                    'dataset': dataset,
-                    'spectrogram_path_key': spectrogram_path_key
-                }
-            },
+            'bin.evaluate.main.dataset': dataset,
+            'datasets.process.compute_spectrograms.batch_size': spectrogram_model_dev_batch_size,
             'bin.train': {
                 'spectrogram_model': {
                     '__main__._get_dataset.dataset': dataset,
@@ -362,7 +359,7 @@ def set_hparams():
                         # teacher-forcing) with a batch size of 64 on a single GPU.
                         # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
                         'train_batch_size': 64,
-                        'dev_batch_size': 256,
+                        'dev_batch_size': spectrogram_model_dev_batch_size,
                     },
                 },
                 'signal_model': {
@@ -375,19 +372,15 @@ def set_hparams():
                         # NOTE: Parameters set after experimentation on a 4 Px100 GPU.
                         'train_batch_size': 64,
                         'dev_batch_size': 256,
+                        'use_predicted': is_signal_model_trained_from_predicted_spectrogram,
                     },
-                    'data_iterator.DataLoader.__init__': {
-                        'spectrogram_path_key': spectrogram_path_key,
+                    'data_loader._get_slice': {
                         # SOURCE: Efficient Neural Audio Synthesis
                         # The WaveRNN models are trained on sequences of 960 audio samples
                         'slice_size': int(900 / frame_hop),
                         'slice_pad': 5,
                     },
                 }
-            },
-            'utils': {
-                'split_signal.bits': bits,
-                'combine_signal.bits': bits,
             },
             # NOTE: Window size smoothing parameter is not super sensative.
             'optimizer.AutoOptimizer.__init__.window_size': 128,

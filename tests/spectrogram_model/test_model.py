@@ -42,9 +42,6 @@ def test_spectrogram_model():
         assert length > 0
         assert length <= num_frames
 
-    # Smoke test backward
-    frames_with_residual.sum().backward()
-
 
 def test_spectrogram_model_unbatched():
     num_tokens = 6
@@ -52,7 +49,7 @@ def test_spectrogram_model_unbatched():
     vocab_size = 20
     num_frames = 3
     num_speakers = 3
-    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels)
+    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels).eval()
 
     # Make sure that stop-token is not predicted; therefore, reaching ``max_recursion``
     torch.nn.init.constant_(model.decoder.linear_stop_token.weight, -math.inf)
@@ -76,8 +73,6 @@ def test_spectrogram_model_unbatched():
 
     assert alignment.type() == 'torch.FloatTensor'
     assert alignment.shape == (num_frames, num_tokens)
-
-    frames_with_residual.sum().backward()
 
 
 def test_spectrogram_model_ground_truth():

@@ -17,5 +17,11 @@ from src.datasets.m_ailabs import m_ailabs_speech_dataset
 from src.datasets.hilary import hilary_dataset
 from src.datasets.constants import Speaker
 from src.datasets.constants import Gender
+from src.datasets.constants import TextSpeechRow
+from src.datasets.constants import SpectrogramTextSpeechRow
+from src.datasets.process import compute_spectrograms
 
-__all__ = ['Speaker', 'Gender', 'lj_speech_dataset', 'm_ailabs_speech_dataset', 'hilary_dataset']
+__all__ = [
+    'Speaker', 'Gender', 'lj_speech_dataset', 'm_ailabs_speech_dataset', 'hilary_dataset',
+    'TextSpeechRow', 'SpectrogramTextSpeechRow', 'compute_spectrograms'
+]

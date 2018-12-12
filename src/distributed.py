@@ -5,6 +5,11 @@ import torch
 logger = logging.getLogger(__name__)
 
 
+def in_use():
+    """ Return if distributed is mode in use. """
+    return torch.distributed.is_available() and torch.distributed.is_initialized()
+
+
 def get_master_rank():
     """ Returns the rank of the default master processs. The master process is the process that
     does one off tasks like saving checkpoints.
@@ -15,16 +20,6 @@ def get_master_rank():
 def is_master():
     """ Returns ``True`` if master process of distributed program """
     return torch.distributed.get_rank() == get_master_rank()
-
-
-def sync():
-    """ This collective blocks processes until the whole group enters this function. """
-    # Note that there are optimizations implemented in ``torch.distributed.all_reduce`` intended
-    # to prevent synchronization. For example, it does not wait for a zero value.
-    tensor = torch.cuda.LongTensor([5])
-    torch.distributed.all_reduce(tensor)
-    if torch.distributed.get_world_size() * 5 != tensor.item():
-        logger.info('Synchronization failed')
 
 
 def broadcast_string(string, type_=torch.cuda):

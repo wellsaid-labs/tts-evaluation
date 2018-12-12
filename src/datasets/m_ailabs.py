@@ -33,19 +33,16 @@ import csv
 import logging
 import os
 
-from torchnlp.datasets import Dataset
-
 import pandas
 
 from src.datasets.constants import Gender
 from src.datasets.constants import Speaker
-from src.datasets.process import compute_spectrogram
-from src.datasets.process import download_file_maybe_extract
-from src.datasets.process import normalize_audio
-from src.datasets.process import process_in_parallel
-from src.datasets.process import split_dataset
+from src.datasets.constants import TextSpeechRow
+from src.datasets.process import _download_file_maybe_extract
+from src.datasets.process import _normalize_audio_and_cache
+from src.datasets.process import _process_in_parallel
+from src.datasets.process import _split_dataset
 from src.hparams import configurable
-from src.utils import Checkpoint
 
 logger = logging.getLogger(__name__)
 Book = namedtuple('Book', 'speaker title')
@@ -76,14 +73,13 @@ _allbooks = [
 DOWNLOAD_DIRECTORY = Path('data/M-AILABS')
 
 
-def _processing_func(row,
-                     directory,
-                     spectrogram_model_checkpoint_path,
-                     metadata_path_column,
-                     kwargs,
-                     metadata_audio_column=0,
-                     metadata_audio_path_template='wavs/{}.wav',
-                     metadata_text_column=2):  # pragma: no cover
+def _processing_row(row,
+                    directory,
+                    kwargs,
+                    metadata_path_column,
+                    metadata_audio_column=0,
+                    metadata_audio_path_template='wavs/{}.wav',
+                    metadata_text_column=2):
     """
     Note:
         - ``# pragma: no cover`` is used because this functionality is run with multiprocessing
@@ -91,8 +87,6 @@ def _processing_func(row,
 
     Args:
         directory (str or Path, optional): Directory to cache the dataset.
-        spectrogram_model_checkpoint_path (str or None, optional): Spectrogram model to predict a
-            ground truth aligned spectrogram.
         metadata_path_column (str, optional): Column name to store the metadata path.
         kwargs: Arguments passed to process dataset audio.
         metadata_audio_column (int, optional): Column name or index with the audio filename.
@@ -101,15 +95,8 @@ def _processing_func(row,
         metadata_text_column (int, optional): Column name or index with the audio transcript.
 
     Returns:
-        {
-            text (str)
-            audio_path (Path)
-            spectrogram_path (Path)
-            predicted_spectrogram_path (Path)
-            speaker (src.datasets.Speaker)
-        }
+        (TextSpeechRow) Processed row.
     """
-    spectrogram_model_checkpoint = Checkpoint.from_path(spectrogram_model_checkpoint_path)
     text = row[metadata_text_column].strip()
     metadata_path = row[metadata_path_column]
     book = _path2book(metadata_path, directory=directory)
@@ -124,17 +111,8 @@ def _processing_func(row,
         logger.warning('Text is absent, skipping: %s', audio_path)
         return None
 
-    audio_path = normalize_audio(audio_path, **kwargs)
-    aligned_audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
-        audio_path, text, book.speaker, spectrogram_model_checkpoint)
-    return {
-        'text': text,
-        'audio_path': audio_path,
-        'aligned_audio_path': aligned_audio_path,
-        'spectrogram_path': spectrogram_path,
-        'predicted_spectrogram_path': predicted_spectrogram_path,
-        'speaker': book.speaker
-    }
+    audio_path = _normalize_audio_and_cache(audio_path, **kwargs)
+    return TextSpeechRow(text=text, audio_path=audio_path, speaker=book.speaker, metadata=None)
 
 
 @configurable
@@ -145,8 +123,6 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
                             metadata_path_column='metadata_path',
                             picker=None,
                             splits=(.8, .2),
-                            check_wavfiles=True,
-                            spectrogram_model_checkpoint_path=None,
                             **kwargs):
     """ Load the M-AILABS en_US dataset.
 
@@ -164,68 +140,38 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
         picker (None or Book or Speaker or Gender): Argument that dictates which dataset subset to
             pick.
         splits (tuple, optional): The number of splits and cardinality of dataset splits.
-        check_wavfiles (bool, optional): If False, skip the check for existence of wav files.
-        spectrogram_model_checkpoint_path (str or None, optional): Spectrogram model to predict a
-            ground truth aligned spectrogram.
-        **kwargs: Arguments passed to process dataset audio.
 
      Returns:
           :class:`torchnlp.datasets.Dataset`: M-AILABS en_us dataset with audio filenames and text
           annotations.
 
     Example:
-        >>> import pprint # doctest: +SKIP
         >>> from src.hparams import set_hparams # doctest: +SKIP
         >>> from src.datasets import m_ailabs_speech_dataset # doctest: +SKIP
         >>> set_hparams() # doctest: +SKIP
         >>> train, dev = m_ailabs_speech_dataset() # doctest: +SKIP
-        >>> pprint.pprint(train[0:2], width=80) # doctest: +SKIP
-        [{'aligned_audio_path': PosixPath('data/M-AILABS/en_US/by_book/female/mary_ann/'
-                                          'northandsouth/wavs/'
-                                          'pad(rate(guard(northandsouth_46_f000119),24000)).npy'),
-          'audio_path': PosixPath('data/M-AILABS/en_US/by_book/female/mary_ann/northandsouth/wavs'
-                                  '/rate(guard(northandsouth_46_f000119),24000).wav'),
-          'predicted_spectrogram_path': None,
-          'speaker': Speaker(name='Mary Ann', gender=FEMALE, id=1),
-          'spectrogram_path': PosixPath('data/M-AILABS/en_US/by_book/female/mary_ann/'
-                                        'northandsouth/wavs/spectrogram('
-                                        'rate(guard(northandsouth_46_f000119),24000)).npy'),
-          'text': 'and more natural education stopping at home, and helping her '
-                  'mother, and learning to read a chapter in the New Testament every '
-                  'night by her side,'},
-        {'aligned_audio_path': PosixPath('data/M-AILABS/en_US/by_book/female/judy_bieber/'
-                                         'the_master_key/wavs/pad('
-                                         'rate(guard(the_master_key_05_f000038),24000)).npy'),
-          'audio_path': PosixPath('data/M-AILABS/en_US/by_book/female/judy_bieber/the_master_key/'
-                                  'wavs/rate(guard(the_master_key_05_f000038),24000).wav'),
-          'predicted_spectrogram_path': None,
-          'speaker': Speaker(name='Judy Bieber', gender=FEMALE, id=0),
-          'spectrogram_path': PosixPath('data/M-AILABS/en_US/by_book/female/judy_bieber/'
-                                        'the_master_key/wavs/spectrogram('
-                                        'rate(guard(the_master_key_05_f000038),24000)).npy'),
-          'text': 'The chief shook his head, saying: No boat come.'}]
     """
     logger.info('Loading M-AILABS speech dataset')
     directory = Path(directory)
-    download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
+    _download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
 
     # Making sure that the download succeeds by checking against defined books in _allbooks
     metadata_paths = list(directory.glob('**/metadata.csv'))
     actual_books = [_path2book(path, directory=directory) for path in metadata_paths]
     assert sorted(actual_books, key=lambda x: x.title) == sorted(_allbooks, key=lambda x: x.title)
+
+    # Process data
     data = _read_mailabs_data(
-        picker, directory=directory, metadata_path_column=metadata_path_column)
-    data = process_in_parallel(
+        picker=picker, directory=directory, metadata_path_column=metadata_path_column)
+    data = _process_in_parallel(
         data,
         partial(
-            _processing_func,
+            _processing_row,
             directory=directory,
-            spectrogram_model_checkpoint_path=spectrogram_model_checkpoint_path,
             metadata_path_column=metadata_path_column,
             kwargs=kwargs))
     data = list(filter(None.__ne__, data))
-    splits = split_dataset(data, splits=splits)
-    return tuple(Dataset(split) for split in splits)
+    return _split_dataset(data, splits=splits)
 
 
 def _book2path(book, directory=DOWNLOAD_DIRECTORY):

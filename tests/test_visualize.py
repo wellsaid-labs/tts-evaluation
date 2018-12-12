@@ -14,9 +14,10 @@ from src.visualize import plot_waveform
 from src.visualize import spectrogram_to_image
 
 
-@mock.patch('torch.distributed.is_initialized', return_value=True)
-@mock.patch('torch.distributed.reduce', return_value=None)
-def test_accumulated_metrics(_, __):
+@mock.patch('torch.distributed')
+def test_accumulated_metrics(mock_distributed):
+    mock_distributed.reduce.return_value = None
+    mock_distributed.is_initialized.return_value = True
     metrics = AccumulatedMetrics(type_=torch)
     metrics.add_multiple_metrics({'test': torch.tensor([.25])}, 2)
     metrics.add_multiple_metrics({'test': torch.tensor([.5])}, 3)

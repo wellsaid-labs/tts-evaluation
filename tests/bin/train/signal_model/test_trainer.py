@@ -1,142 +1,116 @@
-from contextlib import contextmanager
 from contextlib import ExitStack
 
 from unittest import mock
 
-import pytest
 import torch
 
+from src.bin.train.signal_model.data_loader import SignalModelTrainingRow
 from src.bin.train.signal_model.trainer import Trainer
 from src.utils import AnomalyDetector
 
-
-class MockTensorboard():
-
-    def __init__(*args, **kwargs):
-        pass
-
-    @contextmanager
-    def set_step(self, *args, **kwargs):
-        yield self
-
-    def __getattr__(self, attr):
-        return lambda *args, **kwargs: self
+from tests.bin.train.utils import MockCometML
+from tests.bin.train.utils import get_example_spectrogram_text_speech_rows
 
 
-@pytest.fixture
-def trainer_fixture():
-    trainer = Trainer(
+@mock.patch('src.bin.train.signal_model.trainer.CometML')
+@mock.patch('src.bin.train.signal_model.trainer.compute_spectrograms')
+def get_trainer(compute_spectrograms_mock, comet_ml_mock):
+    comet_ml_mock.return_value = MockCometML()
+    compute_spectrograms_mock.return_value = get_example_spectrogram_text_speech_rows()
+    return Trainer(
         device=torch.device('cpu'),
-        train_dataset=[],
-        dev_dataset=[],
-        train_tensorboard=MockTensorboard(),
-        dev_tensorboard=MockTensorboard(),
+        train_dataset=get_example_spectrogram_text_speech_rows(),
+        dev_dataset=get_example_spectrogram_text_speech_rows(),
+        comet_ml_project_name='',
         train_batch_size=1,
         dev_batch_size=1)
 
-    trainer.tensorboard = trainer.train_tensorboard
-    return trainer
 
-
-def test__compute_loss(trainer_fixture):
-    batch = {
-        'slice': {
-            'signal_mask': torch.FloatTensor([[1, 1, 0]]),
-            'target_signal_coarse': torch.LongTensor([[0, 0, 1]]),
-            'target_signal_fine': torch.LongTensor([[1, 1, 1]])
-        }
-    }
+def test__do_loss_and_maybe_backwards():
+    trainer = get_trainer()
+    batch = SignalModelTrainingRow(
+        input_signal=None,
+        input_spectrogram=None,
+        target_signal_coarse=(torch.LongTensor([[0, 0, 1]]), [3]),
+        target_signal_fine=(torch.LongTensor([[1, 1, 1]]), [3]),
+        signal_mask=(torch.FloatTensor([[1, 1, 0]]), [3]))
     predicted_coarse = torch.FloatTensor([[[1, 0], [1, 0], [1, 0]]])
     predicted_fine = torch.FloatTensor([[[1, 0], [1, 0], [1, 0]]])
 
-    (coarse_loss, fine_loss, num_predictions) = trainer_fixture._compute_loss(
-        batch, predicted_coarse, predicted_fine)
-    assert coarse_loss.item() == 0.31326162815093994
+    (coarse_loss, fine_loss, num_predictions) = trainer._do_loss_and_maybe_backwards(
+        batch, (predicted_coarse, predicted_fine, None), False)
+    assert coarse_loss.item() == 0.31326165795326233
     assert fine_loss.item() == 1.31326162815094
     assert num_predictions == 2
 
 
-def test__sample_infered(trainer_fixture):
-    batch_size = 2
-    batch = {
-        'signal': torch.LongTensor(batch_size, 16),
-        'spectrogram': torch.FloatTensor(batch_size, 16, 8)
-    }
-    trainer_fixture.model = mock.Mock()
-    trainer_fixture.model.infer.return_value = (torch.LongTensor(16).zero_(),
-                                                torch.LongTensor(16).zero_(), None)
-    trainer_fixture._sample_infered(batch)
-    trainer_fixture.model.infer.assert_called()
-
-
-def test__sample_predicted(trainer_fixture):
-    batch_size = 2
-    max_signal_length = 8
-    bins = 4
-    batch = {
-        'slice': {
-            'signal_lengths': [4, max_signal_length],
-            'target_signal_coarse': torch.LongTensor(batch_size, max_signal_length).zero_(),
-            'target_signal_fine': torch.LongTensor(batch_size, max_signal_length).zero_(),
-        }
-    }
-    predicted_coarse = torch.FloatTensor(batch_size, max_signal_length, bins)
-    predicted_fine = torch.FloatTensor(batch_size, max_signal_length, bins)
-    trainer_fixture._sample_predicted(batch, predicted_coarse, predicted_fine)
-
-
-def test__maybe_rollback(trainer_fixture):
+def test__maybe_rollback():
+    trainer = get_trainer()
     min_steps = 10
     anomaly_detector = AnomalyDetector(min_steps=min_steps, type_=AnomalyDetector.TYPE_BOTH)
-    trainer_fixture.anomaly_detector = anomaly_detector
+    trainer.anomaly_detector = anomaly_detector
     for i in range(min_steps):
-        trainer_fixture._maybe_rollback(1)
-        assert len(trainer_fixture.rollback) == min(i + 2, trainer_fixture.rollback.maxlen)
-    trainer_fixture._maybe_rollback(2)
-    assert len(trainer_fixture.rollback) == 1
-    trainer_fixture._maybe_rollback(0)
-    assert len(trainer_fixture.rollback) == 1
+        trainer._maybe_rollback(1)
+        assert len(trainer.rollback) == min(i + 2, trainer.rollback.maxlen)
+    trainer._maybe_rollback(2)
+    assert len(trainer.rollback) == 1
+    trainer._maybe_rollback(0)
+    assert len(trainer.rollback) == 1
 
 
-def test_run_epoch(trainer_fixture):
+def _get_example_batched_training_row(batch_size=2,
+                                      signal_length=16,
+                                      num_frames=4,
+                                      frame_channels=8,
+                                      bits=16):
+    """ Get an example training row. """
+    signal_lengths = [signal_length] * batch_size
+    bins = int(2**(bits / 2))
+    return SignalModelTrainingRow(
+        input_signal=(torch.rand(batch_size, signal_length), signal_lengths),
+        input_spectrogram=(torch.rand(batch_size, num_frames, frame_channels),
+                           [num_frames] * batch_size),
+        target_signal_coarse=(torch.randint(bins, (batch_size, signal_length), dtype=torch.long),
+                              signal_lengths),
+        target_signal_fine=(torch.randint(bins, (batch_size, signal_length), dtype=torch.long),
+                            signal_lengths),
+        signal_mask=(torch.FloatTensor(batch_size, signal_length).fill_(1), signal_lengths))
+
+
+def test_run_epoch():
     batch_size = 2
     signal_length = 16
-    num_frames = 4
-    frame_channels = 8
     bins = 2
-    batch = {
-        'slice': {
-            'input_signal': torch.FloatTensor(batch_size, signal_length),
-            'target_signal_coarse': torch.LongTensor(batch_size, signal_length).zero_(),
-            'target_signal_fine': torch.LongTensor(batch_size, signal_length).zero_(),
-            'spectrogram': torch.FloatTensor(batch_size, num_frames, frame_channels),
-            'spectrogram_lengths': [4, frame_channels],
-            'signal_mask': torch.FloatTensor(batch_size, signal_length),
-            'signal_lengths': [8, signal_length],
-        },
-        'spectrogram': [
-            torch.FloatTensor(batch_size, 4, frame_channels),
-            torch.FloatTensor(batch_size, num_frames, frame_channels)
-        ],
-        'signal': [torch.FloatTensor(batch_size, 8),
-                   torch.FloatTensor(batch_size, signal_length)]
-    }
-    with ExitStack() as stack:
-        MockDataBatchIterator, mock_data_parallel, mock_infer = tuple([
-            stack.enter_context(mock.patch(arg)) for arg in [
-                'src.bin.train.signal_model.trainer.DataBatchIterator',
-                'src.bin.train.signal_model.trainer.torch.nn.parallel.data_parallel',
-                'src.bin.train.signal_model.trainer.WaveRNN.infer'
-            ]
-        ])
-        MockDataBatchIterator.return_value = [batch, batch]
-        mock_data_parallel.return_value = (torch.FloatTensor(batch_size, signal_length, bins),
-                                           torch.FloatTensor(batch_size, signal_length, bins), None)
-        mock_infer.return_value = (torch.LongTensor(signal_length).zero_(),
-                                   torch.LongTensor(signal_length).zero_(), None)
+    trainer = get_trainer()
+    loaded_data = [
+        _get_example_batched_training_row(batch_size=batch_size, signal_length=signal_length),
+        _get_example_batched_training_row(batch_size=batch_size, signal_length=signal_length)
+    ]
+    forward_pass_return = (torch.FloatTensor(batch_size, signal_length, bins),
+                           torch.FloatTensor(batch_size, signal_length, bins), None)
+    infer_pass_return = (torch.LongTensor(signal_length).zero_(),
+                         torch.LongTensor(signal_length).zero_(), None)
 
-        trainer_fixture.run_epoch(train=False)
-        trainer_fixture.run_epoch(train=False, trial_run=True)
+    with ExitStack() as stack:
+        (MockDataLoader, mock_data_parallel, mock_infer, mock_backward, mock_optimizer_step,
+         mock_auto_optimizer_step) = tuple([
+             stack.enter_context(mock.patch(arg)) for arg in [
+                 'src.bin.train.signal_model.trainer.DataLoader',
+                 'src.bin.train.signal_model.trainer.torch.nn.parallel.data_parallel',
+                 'src.bin.train.signal_model.trainer.WaveRNN.infer', 'torch.Tensor.backward',
+                 'src.optimizer.Optimizer.step', 'src.optimizer.AutoOptimizer.step'
+             ]
+         ])
+        MockDataLoader.return_value = loaded_data
+        mock_data_parallel.return_value = forward_pass_return
+        mock_infer.return_value = infer_pass_return
+        mock_backward.return_value = None
+        mock_optimizer_step.return_value = None
+        mock_auto_optimizer_step.return_value = None
+
+        trainer.run_epoch(train=False)
+        trainer.run_epoch(train=False, trial_run=True)
+        trainer.run_epoch(train=True)
+
         mock_infer.assert_called()
         mock_data_parallel.assert_called()
-        torch.set_grad_enabled(True)  # Reset

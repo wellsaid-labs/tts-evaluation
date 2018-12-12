@@ -2,6 +2,7 @@ import matplotlib
 
 matplotlib.use('Agg', warn=False)
 
+from contextlib import contextmanager
 from math import isclose
 from pathlib import Path
 
@@ -17,7 +18,11 @@ import subprocess
 import sys
 import time
 
+from torch.multiprocessing import cpu_count
+from torch.utils import data
+from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.sampler import Sampler
+from torchnlp.utils import pad_batch
 
 import torch
 import numpy as np
@@ -332,7 +337,7 @@ def get_total_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def torch_load(path, device=torch.device('cpu')):
+def load(path, device=torch.device('cpu')):
     """ Using ``torch.load`` and ``dill`` load an object from ``path`` onto ``self.device``.
 
     Args:
@@ -343,6 +348,8 @@ def torch_load(path, device=torch.device('cpu')):
     """
     logger.info('Loading: %s' % (path,))
 
+    assert Path(path).is_file(), 'Path (%s) must point to a file' % str(path)
+
     def remap(storage, loc):
         if 'cuda' in loc and device.type == 'cuda':
             return storage.cuda(device=device.index)
@@ -351,7 +358,7 @@ def torch_load(path, device=torch.device('cpu')):
     return torch.load(str(path), map_location=remap)
 
 
-def torch_save(path, data):
+def save(path, data):
     """ Using ``torch.save`` and ``dill`` save an object to ``path``.
 
     Args:
@@ -394,51 +401,6 @@ def parse_hparam_args(hparam_args):
     return return_
 
 
-@configurable
-def split_signal(signal, bits=16):
-    """ Compute the coarse and fine components of the signal.
-
-    Args:
-        signal (torch.FloatTensor [signal_length]): Signal with values ranging from [-1, 1]
-        bits (int): Number of bits to encode signal in.
-
-    Returns:
-        coarse (torch.LongTensor [signal_length]): Top bits of the signal.
-        fine (torch.LongTensor [signal_length]): Bottom bits of the signal.
-    """
-    assert torch.min(signal) >= -1.0 and torch.max(signal) <= 1.0
-    assert (bits %
-            2 == 0), 'To support an even split between coarse and fine, use an even number of bits'
-    range_ = int((2**(bits - 1)))
-    signal = torch.round(signal * range_)
-    signal = torch.clamp(signal, -1 * range_, range_ - 1)
-    unsigned = signal + range_  # Move range minimum to 0
-    bins = int(2**(bits / 2))
-    coarse = torch.floor(unsigned / bins)
-    fine = unsigned % bins
-    return coarse.long(), fine.long()
-
-
-@configurable
-def combine_signal(coarse, fine, bits=16):
-    """ Compute the coarse and fine components of the signal.
-
-    Args:
-        coarse (torch.LongTensor [signal_length]): Top bits of the signal.
-        fine (torch.LongTensor [signal_length]): Bottom bits of the signal.
-        bits (int): Number of bits to encode signal in.
-
-    Returns:
-        signal (torch.FloatTensor [signal_length]): Signal with values ranging from [-1, 1]
-    """
-    assert len(coarse.shape) == 1 and len(fine.shape) == 1
-    bins = int(2**(bits / 2))
-    assert torch.min(coarse) >= 0 and torch.max(coarse) < bins
-    assert torch.min(fine) >= 0 and torch.max(fine) < bins
-    signal = coarse.float() * bins + fine.float() - 2**(bits - 1)
-    return signal / 2**(bits - 1)
-
-
 class Checkpoint():
     """ Model checkpoint object
 
@@ -449,11 +411,10 @@ class Checkpoint():
         **kwargs (dict, optional): Any other checkpoint attributes.
     """
 
-    def __init__(self, directory, step, model=None, model_state_dict=None, **kwargs):
+    def __init__(self, directory, step, model=None, **kwargs):
         self.directory = Path(directory)
         self.step = step
         self.model = model
-        self.model_state_dict = model_state_dict
 
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -475,14 +436,11 @@ class Checkpoint():
         if path is None:
             return None
 
-        instance = torch_load(str(path), device=device)
+        instance = load(str(path), device=device)
         setattr(instance, 'path', path)
-        if hasattr(instance, 'model') and instance.model is not None:
-            instance.flatten_parameters(instance.model)
-            logger.info('Loaded checkpoint model:\n%s', instance.model)
-        elif hasattr(instance, 'model_state_dict') and instance.model_state_dict is not None:
-            logger.info('Loaded checkpoint model state dict:\n%s', instance.model_state_dict.keys())
-        logger.info('Loaded checkpoint at step %d from %s', instance.step, instance.path)
+        instance.flatten_parameters(instance.model)
+        logger.info('Loaded checkpoint at step %d from %s with model:\n%s', instance.step,
+                    instance.path, instance.model)
         return instance
 
     @classmethod
@@ -516,7 +474,7 @@ class Checkpoint():
         name = 'step_{}.pt'.format(self.step)
         filename = Path(self.directory) / name
         self.path = filename
-        torch_save(filename, self)
+        save(filename, self)
         return self.path
 
 
@@ -539,3 +497,194 @@ class RandomSampler(Sampler):
 
     def __len__(self):
         return len(self.data)
+
+
+@contextmanager
+def evaluate(*modules, device=None):
+    """ Temporarily switch to evaluation mode for a ``torch.nn.Module``.
+
+    Args:
+        *modules (torch.nn.Module)
+        device (torch.device)
+
+    Returns: None
+    """
+    assert all(isinstance(m, torch.nn.Module) for m in modules), 'Every argument must be a module.'
+
+    modules_metadata = []
+    for module in modules:
+        # torch.nn.Module.to changes the parameters and buffers of a module
+        module_devices = [t.device for t in module.parameters()]
+        if hasattr(module, 'buffers'):
+            module_devices += [t.device for t in module.buffers()]
+        module_devices = list(set(module_devices))
+        # For switching devices, the implementation only supports modules on a single device.
+        assert len(module_devices) <= 1
+        module_device = module_devices[0] if len(module_devices) == 1 else None
+
+        modules_metadata.append({'is_train': module.training, 'last_device': module_device})
+        module.train(mode=False)
+        if device is not None:
+            module.to(device)
+
+    with torch.autograd.no_grad():
+        yield
+
+    for module, metadata in zip(modules, modules_metadata):
+        module.train(mode=metadata['is_train'])
+        if metadata['last_device'] is not None:
+            module.to(metadata['last_device'])
+
+
+def collate_sequences(batch, **kwargs):
+    """ Collate a list of tensors representing sequences using ``pad_batch``.
+
+    TODO: Contribute this to PyTorch-NLP as a generic sequence collate function.
+    NOTE:
+        * For a none-tensors, the batch is returned.
+        * ``pad_batch`` returns lengths ``list of int`` along with the collated batch.
+
+    Args:
+        batch (list of k): List of rows of type ``k``
+        **kwargs (any): Key word arguments for ``stack_and_pad``.
+
+    Returns:
+        k: Collated batch of type ``k``.
+    """
+    if torch.is_tensor(batch[0]):
+        return pad_batch(batch, **kwargs)
+    if isinstance(batch[0], dict):
+        return {key: collate_sequences([d[key] for d in batch], **kwargs) for key in batch[0]}
+    elif hasattr(batch[0], '_asdict') and isinstance(batch[0], tuple):  # Handle ``namedtuple``
+        return batch[0].__class__(**collate_sequences([b._asdict() for b in batch], **kwargs))
+    elif isinstance(batch[0], list):
+        # Handle list of lists such each list has some column to be batched, similar to:
+        # [['a', 'b'], ['a', 'b']] → [['a', 'a'], ['b', 'b']]
+        transposed = zip(*batch)
+        return [collate_sequences(samples, **kwargs) for samples in transposed]
+    else:
+        return batch
+
+
+def tensors_to(tensors, **kwargs):
+    """ Move a generic data structure of tensors to another device
+
+    TODO: Contribute this to PyTorch-NLP as a generic ``to`` function.
+
+    Args:
+        tensors (tensor, dict, list, namedtuple or tuple): Data structure with tensor values to
+            move.
+
+    Returns:
+        Same type as inputed with all tensor values moved in accordance to ``kwargs``.
+    """
+    if torch.is_tensor(tensors):
+        return tensors.to(**kwargs)
+    elif isinstance(tensors, dict):
+        return {k: tensors_to(v, **kwargs) for k, v in tensors.items()}
+    elif hasattr(tensors, '_asdict') and isinstance(tensors, tuple):  # Handle ``namedtuple``
+        return tensors.__class__(**tensors_to(tensors._asdict(), **kwargs))
+    elif isinstance(tensors, list):
+        return [tensors_to(t, **kwargs) for t in tensors]
+    elif isinstance(tensors, tuple):
+        return tuple([tensors_to(t, **kwargs) for t in tensors])
+    else:
+        return tensors
+
+
+def identity(x):
+    return x
+
+
+class _DataLoaderDataset(data.Dataset):
+    """ Dataset that allows for a callable upon loading a single example.
+
+    Args:
+        dataset (torch.utils.data. Dataset): Dataset from which to load the data.
+        load_fn (callable): Function to run
+    """
+
+    def __init__(self, dataset, load_fn):
+        self.dataset = dataset
+        self.load_fn = load_fn
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, index):
+        return self.load_fn(self.dataset[index])
+
+
+class DataLoader(DataLoader):
+    """ PyTorch DataLoader that supports a ``load_fn``.
+
+    Args:
+        dataset (torch.utils.data. Dataset): Dataset from which to load the data.
+        load_fn (callable, optional): Callable run to load a single row of the dataset.
+        post_process_fn (callable, optional): Callable run directly before the batch is returned.
+        num_workers (int, optional): Number ofsubprocesses to use for data loading. 0 means that the
+            data will be loaded in the main process.
+        trial_run (bool, optional):
+        **kwargs: Other key word arguments to be passed to ``torch.utils.data.DataLoader``
+    """
+
+    def __init__(self,
+                 dataset,
+                 load_fn=identity,
+                 post_processing_fn=identity,
+                 num_workers=cpu_count(),
+                 trial_run=False,
+                 **kwargs):
+        super().__init__(_DataLoaderDataset(dataset, load_fn), **kwargs)
+        logger.info('Launching with %d workers', num_workers)
+        self.post_processing_fn = post_processing_fn
+        self.trial_run = trial_run
+
+    def __len__(self):
+        return 1 if self.trial_run else super().__len__()
+
+    def __iter__(self):
+        for batch in super().__iter__():
+            yield self.post_processing_fn(batch)
+            if self.trial_run:
+                break
+
+
+class OnDiskTensor():
+    """ Tensor that resides on disk.
+
+    Args:
+        path (str or Path)
+    """
+
+    def __init__(self, path):
+        self.path = Path(path)
+
+    def to_tensor(self):
+        """ Convert to a in-memory ``torch.tensor``. """
+        loaded = np.load(str(self.path))
+        return torch.from_numpy(loaded).contiguous()
+
+    def does_exist(self):
+        """ If ``True``, the tensor exists on disk. """
+        return self.path.is_file()
+
+    def unlink(self):
+        """ Remove the file this tensor was pointed to """
+        self.path.unlink()
+        return self
+
+    def from_tensor(self, tensor):
+        """ Make a ``OnDiskTensor`` from a tensor
+
+        Args:
+            path (str or Path)
+            tensor (np.array or torch.tensor)
+        """
+        if torch.is_tensor(tensor):
+            tensor = tensor.numpy()
+
+        # This storage was picked using this benchmark:
+        # https://github.com/mverleg/array_storage_benchmark
+        np.save(str(self.path), tensor, allow_pickle=False)
+        return self

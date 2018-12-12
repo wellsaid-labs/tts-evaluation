@@ -8,30 +8,32 @@ from src.distributed import get_master_rank
 from src.distributed import is_master
 
 
-@mock.patch('torch.distributed.get_rank', return_value=get_master_rank())
-def test_is_master(_):
+@mock.patch('torch.distributed')
+def test_is_master(mock_distributed):
+    mock_distributed.get_rank.return_value = get_master_rank()
     assert is_master()
 
 
-@mock.patch('torch.distributed.broadcast', return_value=None)
 @mock.patch('src.distributed.is_master', return_value=True)
-@mock.patch('torch.distributed.get_world_size', return_value=2)
-def test_distribute_batch_sampler_master(_, __, ___):
+@mock.patch('torch.distributed')
+def test_distribute_batch_sampler_master(mock_distributed, _):
+    world_size = 2
     batch_sampler = [[1, 2, 3, 4], [5, 6, 7, 8]]
     batch_size = 4
+    mock_distributed.get_world_size.return_value = world_size
+    mock_distributed.broadcast.return_value = None
     updated_batch_sampler = distribute_batch_sampler(batch_sampler, batch_size,
                                                      torch.device('cpu:0'), torch)
     assert updated_batch_sampler == [[1, 2], [5, 6]]
 
 
-@mock.patch('torch.distributed.broadcast')
 @mock.patch('src.distributed.is_master', return_value=False)
-@mock.patch('torch.distributed.get_world_size', return_value=2)
-def test_distribute_batch_sampler_worker(mock_get_world_size, __, mock_broadcast):
+@mock.patch('torch.distributed')
+def test_distribute_batch_sampler_worker(mock_distributed, _):
     world_size = 2
     batch_size = 4
     device = torch.device('cpu:0')
-    mock_get_world_size.return_value = world_size
+    mock_distributed.get_world_size.return_value = world_size
     batch_sampler = [[1, 2, 3, 4], [5, 6, 7, 8]]
     batch_sampler = torch.tensor(batch_sampler).view(
         len(batch_sampler), int(batch_size / world_size), world_size)
@@ -42,21 +44,22 @@ def test_distribute_batch_sampler_worker(mock_get_world_size, __, mock_broadcast
         if len(tensor.shape) == 3:
             tensor.copy_(batch_sampler)  # batches
 
-    mock_broadcast.side_effect = mock_broadcast_side_effect
+    mock_distributed.broadcast.side_effect = mock_broadcast_side_effect
     updated_batch_sampler = distribute_batch_sampler(batch_sampler, batch_size, device, torch)
     assert updated_batch_sampler == [[1, 2], [5, 6]]
 
 
 @mock.patch('src.distributed.is_master', return_value=True)
-@mock.patch('torch.distributed.broadcast', return_value=None)
-def test_broadcast_string(_, __):
+@mock.patch('torch.distributed')
+def test_broadcast_string(mock_distributed, __):
+    mock_distributed.broadcast.return_value = None
     string = "this is a test !@#()(!@#/.'"
     assert string == broadcast_string(string, torch)
 
 
 @mock.patch('src.distributed.is_master', return_value=False)
-@mock.patch('torch.distributed.broadcast')
-def test_broadcast_string_worker(mock_broadcast, __):
+@mock.patch('torch.distributed')
+def test_broadcast_string_worker(mock_distributed, __):
     string = "this is a test !@#()(!@#/.'"
     string_tensor = list(string)
     string_tensor = [ord(c) for c in string]
@@ -68,6 +71,6 @@ def test_broadcast_string_worker(mock_broadcast, __):
         else:
             tensor.copy_(string_tensor)  # batches
 
-    mock_broadcast.side_effect = mock_broadcast_side_effect
+    mock_distributed.broadcast.side_effect = mock_broadcast_side_effect
 
     assert string == broadcast_string(string, torch)

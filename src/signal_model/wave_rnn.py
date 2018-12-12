@@ -4,10 +4,10 @@ from torch import nn
 from torch.nn.functional import log_softmax
 from tqdm import tqdm
 
-from src.signal_model.upsample import ConditionalFeaturesUpsample
-from src.signal_model.stripped_gru import StrippedGRU
+from src.audio import split_signal
 from src.hparams import configurable
-from src.utils import split_signal
+from src.signal_model.stripped_gru import StrippedGRU
+from src.signal_model.upsample import ConditionalFeaturesUpsample
 
 
 def _scale(tensor, bins=256):
@@ -108,10 +108,9 @@ class WaveRNN(nn.Module):
         (hidden_coarse_r, hidden_fine_r, hidden_coarse_u, hidden_fine_u, hidden_coarse_e,
          hidden_fine_e) = weight.chunk(
              6, dim=0)
-        return torch.cat(
-            (hidden_coarse_r, hidden_coarse_u, hidden_coarse_e, hidden_fine_r, hidden_fine_u,
-             hidden_fine_e),
-            dim=0)
+        return torch.cat((hidden_coarse_r, hidden_coarse_u, hidden_coarse_e, hidden_fine_r,
+                          hidden_fine_u, hidden_fine_e),
+                         dim=0)
 
     def _infer_initial_state(self, reference, batch_size, hidden_state=None):
         """ Initial state returns the initial hidden state and go sample.

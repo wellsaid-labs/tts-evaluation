@@ -1,8 +1,9 @@
-from torch.multiprocessing import Pool
+from functools import partial
 
 import logging
 import os
 
+from torch.multiprocessing import Pool
 from torchnlp.utils import shuffle as do_deterministic_shuffle
 from tqdm import tqdm
 
@@ -13,32 +14,107 @@ import torchnlp.download
 
 from src.audio import get_log_mel_spectrogram
 from src.audio import read_audio
+from src.datasets.constants import SpectrogramTextSpeechRow
+from src.hparams import configurable
+from src.utils import Checkpoint
+from src.utils import collate_sequences
+from src.utils import DataLoader
+from src.utils import evaluate
+from src.utils import OnDiskTensor
+from src.utils import ROOT_PATH
+from src.utils import tensors_to
 
 import src.distributed
 
 logger = logging.getLogger(__name__)
 
 
-def download_file_maybe_extract(*args, **kwargs):
+def _download_file_maybe_extract(*args, **kwargs):
     """
     Alias to ``torchnlp.download.download_file_maybe_extract`` that considers the distributed
     environment.
     """
-    if not torch.distributed.is_initialized() or src.distributed.is_master():
+    if not src.distributed.in_use() or src.distributed.is_master():
         torchnlp.download.download_file_maybe_extract(*args, **kwargs)
 
     # Ensure data is downloaded before both worker and master proceed.
-    if torch.distributed.is_initialized():
-        src.distributed.sync()
+    if src.distributed.in_use():
+        torch.distributed.barrier()
 
 
-def normalize_audio(audio_path,
-                    resample=24000,
-                    norm=False,
-                    guard=True,
-                    lower_hertz=None,
-                    upper_hertz=None,
-                    loudness=False):
+def _split_dataset(dataset, splits, random_seed=123):
+    """
+    Args:
+        dataset (list): Dataset to split.
+        splits (tuple): Tuple of percentages determining dataset splits.
+        random_seed (int, optional): Shuffle deterministically provided some random seed always
+            returning the same split given the same dataset.
+
+    Returns:
+        (list): splits of the dataset
+
+    Example:
+        >>> dataset = [1, 2, 3, 4, 5]
+        >>> splits = (.6, .2, .2)
+        >>> _split_dataset(dataset, splits, random_seed=123)
+        [[4, 2, 5], [3], [1]]
+    """
+    if random_seed is not None:
+        do_deterministic_shuffle(dataset, random_seed=random_seed)
+
+    assert sum(splits) == 1, 'Splits must sum to 100%'
+    splits = [round(s * len(dataset)) for s in splits]
+    datasets = []
+    for split in splits[:-1]:
+        datasets.append(dataset[:split])
+        dataset = dataset[split:]
+    datasets.append(dataset)
+    return datasets
+
+
+def _process_in_parallel(data, processing_func, use_tqdm=True):
+    """ Process ``data`` with ``processing_func`` using threads and ``tqdm``.
+
+    Args:
+        data (iterable)
+        processing_func (callable)
+        use_tqdm (bool): Attach a progress bar to processing.
+
+    Returns:
+        processed (list)
+    """
+    logger.info('Processing dataset...')
+    data = list(data)
+
+    use_pool = not src.distributed.in_use() or src.distributed.is_master()
+    if use_pool:
+        pool = Pool()
+        iterator = pool.imap(processing_func, data)
+    else:  # PyTorch workers should not expect to do serious work
+        iterator = (processing_func(row) for row in data)
+
+    if use_tqdm:
+        iterator = tqdm(iterator, total=len(data))
+    processed = list(iterator)
+
+    if use_pool:  # Ensure pool work is finished
+        pool.close()
+        pool.join()
+
+    # Ensure data is processed before both worker and master proceed.
+    if src.distributed.in_use():
+        torch.distributed.barrier()
+
+    return processed
+
+
+def _normalize_audio_and_cache(audio_path,
+                               resample=24000,
+                               norm=False,
+                               guard=True,
+                               lower_hertz=None,
+                               upper_hertz=None,
+                               loudness=False):
     """ Normalize audio with the SoX library and cache processed audio.
 
     Args:
@@ -75,7 +151,7 @@ def normalize_audio(audio_path,
 
     # Allow only the master node to save to disk while the worker nodes optimistically assume
     # the file already exists.
-    if torch.distributed.is_initialized() and not src.distributed.is_master():
+    if src.distributed.in_use() and not src.distributed.is_master():
         return dest_path
 
     norm_flag = '--norm=-.001' if norm else ''
@@ -91,75 +167,106 @@ def normalize_audio(audio_path,
     return dest_path
 
 
-def _predict_spectrogram(checkpoint, text, speaker, real_spectrogram):
-    """ Predict a ground truth aligned spectrogram.
+def _load_fn(row, text_encoder, speaker_encoder):
+    """ Load function for loading a single row.
 
     Args:
-        checkpoint (Checkpoint): Checkpoint for the spectrogram model.
-        text (str)
-        speaker (src.datasets.Speaker)
-        real_spectrogram (numpy.float32 [num_frames, frame_channels])
+        row (SpectrogramTextSpeechRow)
+        text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
+        speaker_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the speaker.
 
     Returns:
-        (torch.FloatTensor [num_frames, frame_channels]): Predicted spectrogram.
+        (SpectrogramTextSpeechRow)
     """
-    with torch.no_grad():
-        checkpoint.model.train(mode=False)
-
-        real_spectrogram = torch.from_numpy(real_spectrogram)
-
-        # [num_tokens]
-        encoded_text = checkpoint.text_encoder.encode(text)
-        encoded_speaker = checkpoint.speaker_encoder.encode(speaker)
-
-        # [num_frames, frame_channels]
-        predicted_spectrogram = checkpoint.model(
-            encoded_text, encoded_speaker, ground_truth_frames=real_spectrogram)[1]
-    return predicted_spectrogram
+    return row._replace(
+        text=text_encoder.encode(row.text),
+        speaker=speaker_encoder.encode(row.speaker),
+        spectrogram=(row.spectrogram.to_tensor()
+                     if isinstance(row.spectrogram, OnDiskTensor) else row.spectrogram),
+        spectrogram_audio=(row.spectrogram_audio.to_tensor() if isinstance(
+            row.spectrogram_audio, OnDiskTensor) else row.spectrogram_audio))
 
 
-def compute_spectrogram(audio_path, text=None, speaker=None, spectrogram_model_checkpoint=None):
-    """ Computes the spectrogram and saves to cache returning the cache filename.
+def _predict_spectrogram(data, checkpoint_path, device, batch_size, on_disk=True, use_tqdm=True):
+    """ Predict a ground truth aligned spectrogram and maybe caches.
 
     Args:
-        audio_path (Path): Path to a audio file.
-        text (str, optional): Text used to compute a predicted spectrogram.
-        speaker (src.datasets.Speaker, optional): Speaker used to compute a predicted spectrogram.
-        spectrogram_model_checkpoint (Checkpoint, optional): Spectrogram model checkpoint to
-            compute a predicted spectrogram in addition to the real spectrogram.
+        data (iterable of SpectrogramTextSpeechRow)
+        checkpoint_path (src or Path): Path to checkpoint for the spectrogram model.
+        device (torch.device): Device to run prediction on.
+        batch_size (int)
+        on_disk (bool, optional): Save the tensor to disk, returning a ``OnDiskTensor`` instead of
+            ``torch.Tensor``.
+        use_tqdm (bool): Write a progress bar to console.
 
     Returns:
-        (Path): Filename of cache'd spectrogram file.
-        (Path): Filename of cache'd spectrogram aligned audio file.
-        (Path or None): Filename of cache'd predicted spectrogram audio file.
+        (iterable of SpectrogramTextSpeechRow)
     """
-    include_predicted = (
-        text is not None and speaker is not None and spectrogram_model_checkpoint is not None)
+    checkpoint = Checkpoint.from_path(checkpoint_path)
 
+    return_ = []  # Data to be used with
+    is_cached = True
+    for row in data:
+        model_name = str(checkpoint.path.relative_to(ROOT_PATH)).replace('/', '_').replace('.', '_')
+        destination = 'predicted_spectrogram({},{}).npy'.format(row.audio_path.stem, model_name)
+        on_disk_tensor = OnDiskTensor(row.audio_path.parent / destination)
+        return_.append(row._replace(predicted_spectrogram=on_disk_tensor))
+        is_cached = is_cached and on_disk_tensor.does_exist()
+
+    if not is_cached and (not src.distributed.in_use() or src.distributed.is_master()):
+        text_encoder = checkpoint.text_encoder
+        speaker_encoder = checkpoint.speaker_encoder
+        loader = DataLoader(
+            return_,
+            batch_size=batch_size,
+            load_fn=partial(_load_fn, text_encoder=text_encoder, speaker_encoder=speaker_encoder),
+            post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
+            collate_fn=partial(collate_sequences, dim=1),
+            pin_memory=True)
+        if use_tqdm:
+            loader = tqdm(loader)
+        with evaluate(checkpoint.model, device=device):
+            for batch in loader:
+                # predicted_spectrogram [num_frames, batch_size, frame_channels]
+                _, predicted_spectrogram, _, _ = checkpoint.model(batch.text[0], batch.speaker[0],
+                                                                  batch.spectrogram[0])
+                # split [num_frames, frame_channels]
+                for split, on_disk_tensor in zip(
+                        predicted_spectrogram.split(1, dim=1), batch.predicted_spectrogram):
+                    on_disk_tensor.from_tensor(split)
+
+    if on_disk:
+        return return_
+
+    # NOTE: This should be quick because the saved tensor should still be in memory
+    return [r._replace(predicted_spectrogram=r.predicted_spectrogram.to_tensor()) for r in return_]
+
+
+def _compute_spectrogram(row, on_disk=True):
+    """ Computes the spectrogram and maybe caches.
+
+    Args:
+        row (TextSpeechRow): Row of text and speech aligned data.
+        on_disk (bool, optional): Save the tensor to disk, returning a ``OnDiskTensor`` instead of
+            ``torch.Tensor``.
+
+    Returns:
+        (SpectrogramTextSpeechRow): Row of text and speech aligned data with spectrogram data.
+    """
+    audio_path = row.audio_path
     dest_padded_audio = audio_path.parent / 'pad({}).npy'.format(audio_path.stem, audio_path.suffix)
     dest_spectrogram = audio_path.parent / 'spectrogram({}).npy'.format(audio_path.stem)
-    dest_predicted_spectrogram = None
+    return_ = SpectrogramTextSpeechRow(
+        **row._asdict(),
+        spectrogram_audio=OnDiskTensor(dest_padded_audio),
+        spectrogram=OnDiskTensor(dest_spectrogram),
+        predicted_spectrogram=None)
 
-    # Create a reasonable ``dest_predicted_spectrogram`` filepath
-    if include_predicted:
-        spectrogram_model_name = str(spectrogram_model_checkpoint.path).replace('/', '_').replace(
-            '.', '_')
-        dest_predicted_spectrogram = 'predicted_spectrogram({},{}).npy'.format(
-            audio_path.stem, spectrogram_model_name)
-        dest_predicted_spectrogram = audio_path.parent / dest_predicted_spectrogram
-
-    if dest_spectrogram.is_file() and dest_padded_audio.is_file() and (
-            dest_predicted_spectrogram is None or dest_predicted_spectrogram.is_file()):
-        return dest_padded_audio, dest_spectrogram, dest_predicted_spectrogram
-
-    # Allow only the master node to save to disk while the worker nodes optimistically assume
-    # the file already exists.
-    if torch.distributed.is_initialized() and not src.distributed.is_master():
-        return dest_padded_audio, dest_spectrogram, dest_predicted_spectrogram
-
-    if dest_spectrogram.is_file() and dest_padded_audio.is_file():
-        log_mel_spectrogram = numpy.load(str(dest_spectrogram))
-    else:  # Compute and save to disk the spectrogram and audio
+    # For the distributed case, allow only the master node to save to disk while the worker nodes
+    # optimistically assume the file already exists.
+    is_cached = dest_spectrogram.is_file() and dest_padded_audio.is_file()
+    if (not is_cached and (not src.distributed.in_use() or src.distributed.is_master())):
+        # Compute and save to disk the spectrogram and audio
         assert audio_path.is_file(), 'Audio path must be a file %s' % audio_path
         signal = read_audio(audio_path)
         signal = librosa.effects.trim(signal)[0]
@@ -168,78 +275,42 @@ def compute_spectrogram(audio_path, text=None, speaker=None, spectrogram_model_c
         # Pad so: ``log_mel_spectrogram.shape[0] % signal.shape[0] == frame_hop``
         # This property is required for the vocoder.
         padded_signal = numpy.pad(signal, padding, mode='constant', constant_values=0)
-        numpy.save(str(dest_padded_audio), padded_signal, allow_pickle=False)
-        numpy.save(str(dest_spectrogram), log_mel_spectrogram, allow_pickle=False)
 
-    if include_predicted:  # Compute and save to disk the spectrogram
-        predicted_spectrogram = _predict_spectrogram(spectrogram_model_checkpoint, text, speaker,
-                                                     log_mel_spectrogram)
-        numpy.save(str(dest_predicted_spectrogram), predicted_spectrogram, allow_pickle=False)
+        return_.spectrogram_audio.from_tensor(padded_signal)
+        return_.spectrogram.from_tensor(log_mel_spectrogram)
 
-    return dest_padded_audio, dest_spectrogram, dest_predicted_spectrogram
+    if not on_disk:
+        # NOTE: This should be quick because the saved tensor should still be in memory
+        return_ = return_._replace(
+            spectrogram_audio=return_.spectrogram_audio.to_tensor(),
+            spectrogram=return_.spectrogram.to_tensor())
 
-
-def split_dataset(dataset, splits, random_seed=123):
-    """
-    Args:
-        dataset (list): Dataset to split.
-        splits (tuple): Tuple of percentages determining dataset splits.
-        random_seed (int, optional): Shuffle deterministically provided some random seed always
-            returning the same split given the same dataset.
-
-    Returns:
-        (list): splits of the dataset
-
-    Example:
-        >>> dataset = [1, 2, 3, 4, 5]
-        >>> splits = (.6, .2, .2)
-        >>> split_dataset(dataset, splits, random_seed=123)
-        [[4, 2, 5], [3], [1]]
-    """
-    if random_seed is not None:
-        do_deterministic_shuffle(dataset, random_seed=random_seed)
-
-    assert sum(splits) == 1, 'Splits must sum to 100%'
-    splits = [round(s * len(dataset)) for s in splits]
-    datasets = []
-    for split in splits[:-1]:
-        datasets.append(dataset[:split])
-        dataset = dataset[split:]
-    datasets.append(dataset)
-    return datasets
+    return return_
 
 
-def process_in_parallel(data, processing_func, use_tqdm=True):
-    """ Process ``data`` with ``processing_func`` using threads and ``tqdm``.
+@configurable
+def compute_spectrograms(data, on_disk=True, checkpoint_path=None, batch_size=None, device=None):
+    """ Given rows of text speech rows, computes related spectrograms both real and predicted.
 
     Args:
-        data (iterable)
-        processing_func (callable)
-        use_tqdm (bool): Attach a progress bar to processing.
+        data (iterables of TextSpeechRow)
+        on_disk (bool, optional): Save the tensor to disk, returning a ``OnDiskTensor`` instead of
+            ``torch.Tensor``.
+        checkpoint_path (str or None, optional): Spectrogram model to predict a ground truth aligned
+            spectrogram.
+        batch_size (int or None, optional): Batch size used when predicting spectrograms.
+        device (torch.device or None, optional): Device to predict spectrograms on.
 
     Returns:
-        processed (list)
+        (iterable of SpectrogramTextSpeechRow): Iterable of text speech rows along with spectrogram
+            data.
     """
-    logger.info('Processing dataset...')
-    data = list(data)
-
-    use_pool = not torch.distributed.is_initialized() or src.distributed.is_master()
-    if use_pool:
-        pool = Pool()
-        iterator = pool.imap(processing_func, data)
-    else:  # PyTorch workers should not expect to do serious work
-        iterator = (processing_func(row) for row in data)
-
-    if use_tqdm:
-        iterator = tqdm(iterator, total=len(data))
-    processed = list(iterator)
-
-    if use_pool:  # Ensure pool work is finished
-        pool.close()
-        pool.join()
+    data = _process_in_parallel(data, partial(_compute_spectrogram, on_disk=on_disk))
+    if checkpoint_path is not None:
+        data = _predict_spectrogram(data, checkpoint_path, device, batch_size, on_disk=on_disk)
 
     # Ensure data is processed before both worker and master proceed.
-    if torch.distributed.is_initialized():
-        src.distributed.sync()
+    if src.distributed.in_use():
+        torch.distributed.barrier()
 
-    return processed
+    return data

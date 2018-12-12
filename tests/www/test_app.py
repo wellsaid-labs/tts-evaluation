@@ -5,19 +5,30 @@ from torchnlp.text_encoders import IdentityEncoder
 
 import torch
 
-from src.www.app import _synthesize
 from src.datasets import Speaker
+from src.www.app import _synthesize
 
 
-@mock.patch('src.www.app.spectrogram_model_checkpoint')
-@mock.patch('src.www.app.signal_model_checkpoint')
-def test_synthesize(mock_signal_model_checkpoint, mock_spectrogram_model_checkpoint):
-    mock_signal_model_checkpoint.model.infer.return_value = (torch.LongTensor(3).zero_(),
-                                                             torch.LongTensor(3).zero_(), None)
-    mock_spectrogram_model_checkpoint.model.infer.return_value = (None, torch.FloatTensor(3, 4, 5),
-                                                                  None, None, None)
+class MockModel(torch.nn.Module):
+
+    def __init__(self, infer):
+        super().__init__()
+        self.infer = infer
+
+
+@mock.patch('src.www.app.get_spectrogram_model_checkpoint')
+@mock.patch('src.www.app.get_signal_model_checkpoint')
+def test_synthesize(mock_get_signal_model_checkpoint, mock_get_spectrogram_model_checkpoint):
+    mock_signal_model_checkpoint = mock.Mock()
+    mock_spectrogram_model_checkpoint = mock.Mock()
+    mock_spectrogram_model_checkpoint.model = MockModel(
+        lambda *args, **kwargs: (None, torch.FloatTensor(3, 4, 5), None, None, None))
+    mock_signal_model_checkpoint.model = MockModel(
+        lambda *args, **kwargs: (torch.LongTensor(3).zero_(), torch.LongTensor(3).zero_(), None))
     mock_spectrogram_model_checkpoint.text_encoder = CharacterEncoder(['This is a test.'])
     mock_spectrogram_model_checkpoint.speaker_encoder = IdentityEncoder([Speaker.LINDA_JOHNSON])
+    mock_get_signal_model_checkpoint.return_value = mock_signal_model_checkpoint
+    mock_get_spectrogram_model_checkpoint.return_value = mock_spectrogram_model_checkpoint
 
     text = 'This is a test.'
     speaker = '1'

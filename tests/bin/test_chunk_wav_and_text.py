@@ -96,7 +96,8 @@ def test_align_wav_and_scripts(_request_gentle_mock):
     _request_gentle_mock.return_value = {
         'transcript':
             'Script 1. Script 2.',
-        'words': [{
+        'words': [
+          {  # noqa: E126
             'alignedWord': 'script',
             'word': 'Script',
             'case': GENTLE_SUCCESS_CASE,
@@ -104,46 +105,53 @@ def test_align_wav_and_scripts(_request_gentle_mock):
             'end': len('Script'),
             'startOffset': 0,
             'endOffset': len('Script'),
-        }, {
-            'word': '1',
-            'case': GENTLE_NOT_FOUND_IN_AUDIO_CASE,
-            'start': len('Script '),
-            'end': len('Script 1'),
-            'startOffset': len('Script '),
-            'endOffset': len('Script 1'),
-        }, {
-            'alignedWord': 'script',
-            'word': 'Script',
-            'case': GENTLE_SUCCESS_CASE,
-            'start': len('Script 1. '),
-            'end': len('Script 1. Script'),
-            'startOffset': len('Script 1. '),
-            'endOffset': len('Script 1. Script'),
-        }, {
-            'word': '2',
-            'case': GENTLE_NOT_FOUND_IN_AUDIO_CASE,
-            'start': len('Script 1. Script '),
-            'end': len('Script 1. Script 2'),
-            'startOffset': len('Script 1. Script '),
-            'endOffset': len('Script 1. Script 2'),
-        }]
+        },
+                  {
+                      'word': '1',
+                      'case': GENTLE_NOT_FOUND_IN_AUDIO_CASE,
+                      'start': len('Script '),
+                      'end': len('Script 1'),
+                      'startOffset': len('Script '),
+                      'endOffset': len('Script 1'),
+                  },
+                  {
+                      'alignedWord': 'script',
+                      'word': 'Script',
+                      'case': GENTLE_SUCCESS_CASE,
+                      'start': len('Script 1. '),
+                      'end': len('Script 1. Script'),
+                      'startOffset': len('Script 1. '),
+                      'endOffset': len('Script 1. Script'),
+                  },
+                  {
+                      'word': '2',
+                      'case': GENTLE_NOT_FOUND_IN_AUDIO_CASE,
+                      'start': len('Script 1. Script '),
+                      'end': len('Script 1. Script 2'),
+                      'startOffset': len('Script 1. Script '),
+                      'endOffset': len('Script 1. Script 2'),
+                  }
+                  ]
     }
     wav_path = pathlib.Path('.')
     gentle_cache_directory = pathlib.Path('.')
     sample_rate = 44100
     scripts = ['Script 1.', 'Script 2.']
     output = align_wav_and_scripts(wav_path, scripts, gentle_cache_directory, sample_rate)
-    expected_output = [[
-        Alignment(start_text=0, end_text=len('Script'), start_audio=0, end_audio=len('Script')),
-        Nonalignment(start_text=len('Script '), end_text=len('Script 1'))
-    ], [
-        Alignment(
-            start_text=0,
-            end_text=len('Script'),
-            start_audio=len('Script 1. '),
-            end_audio=len('Script 1. Script')),
-        Nonalignment(start_text=len('Script '), end_text=len('Script 2'))
-    ]]
+    expected_output = [
+        [  # noqa: E126
+            Alignment(start_text=0, end_text=len('Script'), start_audio=0, end_audio=len('Script')),
+            Nonalignment(start_text=len('Script '), end_text=len('Script 1'))
+        ],
+        [
+            Alignment(
+                start_text=0,
+                end_text=len('Script'),
+                start_audio=len('Script 1. '),
+                end_audio=len('Script 1. Script')),
+            Nonalignment(start_text=len('Script '), end_text=len('Script 2'))
+        ]
+    ]
     for script_alignments, expected_script_alignments in zip(output, expected_output):
         for alignment, expected_alignment in zip(script_alignments, expected_script_alignments):
             assert alignment.start_text == expected_alignment.start_text

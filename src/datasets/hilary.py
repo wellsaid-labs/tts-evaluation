@@ -5,31 +5,27 @@ import logging
 
 import pandas
 
-from torchnlp.datasets import Dataset
-
 from src.datasets.constants import Speaker
-from src.datasets.process import compute_spectrogram
-from src.datasets.process import download_file_maybe_extract
-from src.datasets.process import normalize_audio
-from src.datasets.process import process_in_parallel
-from src.datasets.process import split_dataset
+from src.datasets.constants import TextSpeechRow
+from src.datasets.process import _download_file_maybe_extract
+from src.datasets.process import _normalize_audio_and_cache
+from src.datasets.process import _process_in_parallel
+from src.datasets.process import _split_dataset
 from src.hparams import configurable
-from src.utils import Checkpoint
 
 logger = logging.getLogger(__name__)
 
 
-def _processing_func(row,
-                     directory,
-                     extracted_name,
-                     spectrogram_model_checkpoint_path,
-                     kwargs,
-                     metadata_text_column='Content',
-                     metadata_audio_column='WAV Filename',
-                     metadata_source_column='Source',
-                     metadata_title_column='Title',
-                     audio_directory='wavs',
-                     speaker=Speaker.HILARY_NORIEGA):  # pragma: no cover
+def _processing_row(row,
+                    directory,
+                    extracted_name,
+                    kwargs,
+                    metadata_text_column='Content',
+                    metadata_audio_column='WAV Filename',
+                    metadata_source_column='Source',
+                    metadata_title_column='Title',
+                    audio_directory='wavs',
+                    speaker=Speaker.HILARY_NORIEGA):  # pragma: no cover
     """
     Note:
         - ``# pragma: no cover`` is used because this functionality is run with multiprocessing
@@ -38,8 +34,6 @@ def _processing_func(row,
     Args:
         directory (str or Path, optional): Directory to cache the dataset.
         extracted_name (str, optional): Name of the extracted dataset directory.
-        spectrogram_model_checkpoint_path (str or None, optional): Spectrogram model to predict a
-            ground truth aligned spectrogram.
         kwargs: Arguments passed to process dataset audio.
         metadata_text_column (str, optional): Column name or index with the audio transcript.
         metadata_audio_column (str, optional): Column name or index with the audio filename.
@@ -50,35 +44,20 @@ def _processing_func(row,
         audio_directory (str, optional): Name of the directory harboring audio files.
         speaker (src.datasets.Speaker, optional)
 
-
     Returns:
-        {
-            text (str)
-            script_title (str): The title of the script this text snippet is from.
-            script_source (str): The source of the script this text snippet is from.
-            audio_path (Path)
-            spectrogram_path (Path)
-            predicted_spectrogram_path (Path)
-            speaker (src.datasets.Speaker)
-        }
+        (TextSpeechRow) Processed row.
     """
     text = row[metadata_text_column].strip()
     audio_path = Path(directory, extracted_name, audio_directory, row[metadata_audio_column])
-    audio_path = normalize_audio(audio_path, **kwargs)
-    spectrogram_model_checkpoint = Checkpoint.from_path(spectrogram_model_checkpoint_path)
-    aligned_audio_path, spectrogram_path, predicted_spectrogram_path = compute_spectrogram(
-        audio_path, text, speaker, spectrogram_model_checkpoint)
-
-    return {
-        'text': text,
-        'audio_path': audio_path,
-        'aligned_audio_path': aligned_audio_path,
-        'script_title': row[metadata_title_column],
-        'script_source': row[metadata_source_column],
-        'spectrogram_path': spectrogram_path,
-        'predicted_spectrogram_path': predicted_spectrogram_path,
-        'speaker': speaker
-    }
+    audio_path = _normalize_audio_and_cache(audio_path, **kwargs)
+    return TextSpeechRow(
+        text=text,
+        audio_path=audio_path,
+        speaker=speaker,
+        metadata={
+            'script_title': row[metadata_title_column],
+            'script_source': row[metadata_source_column],
+        })
 
 
 @configurable
@@ -91,7 +70,6 @@ def hilary_dataset(
         metadata_file='metadata.csv',
         metadata_delimiter=',',
         splits=(.8, .2),
-        spectrogram_model_checkpoint_path=None,
         **kwargs):
     """ Load the Hilary Speech dataset by WellSaid.
 
@@ -104,61 +82,31 @@ def hilary_dataset(
         metadata_file (str, optional): The file containing audio metadata.
         metadata_delimiter (str, optional): Delimiter for the metadata file.
         splits (tuple, optional): The number of splits and cardinality of dataset splits.
-        spectrogram_model_checkpoint_path (str or None, optional): Spectrogram model to predict a
-            ground truth aligned spectrogram.
         **kwargs: Arguments passed to process dataset audio.
 
     Returns:
         :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
 
     Example:
-        >>> import pprint # doctest: +SKIP
         >>> from src.hparams import set_hparams # doctest: +SKIP
         >>> from src.datasets import hilary_dataset # doctest: +SKIP
         >>> set_hparams() # doctest: +SKIP
         >>> train, dev = hilary_dataset() # doctest: +SKIP
-        >>> pprint.pprint(train[0:2], width=80) # doctest: +SKIP
-        [{'aligned_audio_path': PosixPath('data/Hilary/wavs/Scripts 16-21/'
-                                          'pad(rate(guard(script_86_chunk_15),24000)).npy'),
-          'audio_path': PosixPath('data/Hilary/wavs/Scripts 16-21/'
-                                  'rate(guard(script_86_chunk_15),24000).wav'),
-          'predicted_spectrogram_path': None,
-          'script_source': 'Wikipedia',
-          'script_title': 'Empathy: Neurological basis',
-          'speaker': Speaker(name='Hilary Noriega', gender=FEMALE, id=3),
-          'spectrogram_path': PosixPath('data/Hilary/wavs/Scripts 16-21/'
-                                        'spectrogram(rate(guard(script_86_chunk_15),24000)).npy'),
-          'text': 'associated with the performance of "social" and "mechanical" '
-                  'tasks.'},
-        {'aligned_audio_path': PosixPath('data/Hilary/wavs/Scripts 34-39/'
-                                         'pad(rate(guard(script_58_chunk_3),24000)).npy'),
-          'audio_path': PosixPath('data/Hilary/wavs/Scripts 34-39/'
-                                  'rate(guard(script_58_chunk_3),24000).wav'),
-          'predicted_spectrogram_path': None,
-          'script_source': 'Edge Studio',
-          'script_title': 'Red Cross',
-          'speaker': Speaker(name='Hilary Noriega', gender=FEMALE, id=3),
-          'spectrogram_path': PosixPath('data/Hilary/wavs/Scripts 34-39/'
-                                        'spectrogram(rate(guard(script_58_chunk_3),24000)).npy'),
-          'text': 'Take an in-depth look at the American Red Cross history,'}]
     """
     logger.info('Loading Hilary speech dataset')
-    download_file_maybe_extract(
+    _download_file_maybe_extract(
         url=url, directory=str(directory), check_files=check_files, filename=url_filename)
     metadata_path = Path(directory, extracted_name, metadata_file)
-
     data = [
         row.to_dict()
         for _, row in pandas.read_csv(metadata_path, delimiter=metadata_delimiter).iterrows()
     ]
-    data = process_in_parallel(
+    data = _process_in_parallel(
         data,
         partial(
-            _processing_func,
+            _processing_row,
             directory=directory,
             extracted_name=extracted_name,
-            spectrogram_model_checkpoint_path=spectrogram_model_checkpoint_path,
             kwargs=kwargs,
         ))
-    splits = split_dataset(data, splits=splits)
-    return tuple(Dataset(split) for split in splits)
+    return _split_dataset(data, splits=splits)
