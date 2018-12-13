@@ -250,7 +250,6 @@ class Trainer():
         """
         (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
          predicted_alignments) = predictions
-        print(predictions)
         spectrogram = batch.spectrogram[0]
         spectrogram_mask = batch.spectrogram_mask[0]
 

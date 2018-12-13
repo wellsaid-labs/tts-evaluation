@@ -154,9 +154,9 @@ class SpectrogramModel(nn.Module):
             # [] → [batch_size(1)]
             speaker = speaker.unsqueeze(0)
 
-        if len(speaker.shape) == 2:
+        if len(speaker.shape) == 2 and speaker.shape[0] == 1:
             # [1, batch_size] → [batch_size]
-            speaker = speaker.squeeze(1)
+            speaker = speaker.squeeze(0)
 
         if ground_truth_frames is not None:
             return tokens, speaker, ground_truth_frames

@@ -186,7 +186,13 @@ def _load_fn(row, text_encoder, speaker_encoder):
             row.spectrogram_audio, OnDiskTensor) else row.spectrogram_audio))
 
 
-def _predict_spectrogram(data, checkpoint_path, device, batch_size, on_disk=True, use_tqdm=True):
+def _predict_spectrogram(data,
+                         checkpoint_path,
+                         device,
+                         batch_size,
+                         aligned=True,
+                         on_disk=True,
+                         use_tqdm=True):
     """ Predict a ground truth aligned spectrogram and maybe caches.
 
     Args:
@@ -194,6 +200,7 @@ def _predict_spectrogram(data, checkpoint_path, device, batch_size, on_disk=True
         checkpoint_path (src or Path): Path to checkpoint for the spectrogram model.
         device (torch.device): Device to run prediction on.
         batch_size (int)
+        aligned (bool): If ``True``, predict a ground truth aligned spectrogram.
         on_disk (bool, optional): Save the tensor to disk, returning a ``OnDiskTensor`` instead of
             ``torch.Tensor``.
         use_tqdm (bool): Write a progress bar to console.
@@ -208,7 +215,8 @@ def _predict_spectrogram(data, checkpoint_path, device, batch_size, on_disk=True
     return_ = []
     is_cached = True
     for row in data:
-        destination = 'predicted_spectrogram({},{}).npy'.format(row.audio_path.stem, model_name)
+        destination = 'predicted_spectrogram({},{},{}).npy'.format(row.audio_path.stem, model_name,
+                                                                   'aligned=%s' % aligned)
         on_disk_tensor = OnDiskTensor(row.audio_path.parent / destination)
         return_.append(row._replace(predicted_spectrogram=on_disk_tensor))
         is_cached = is_cached and on_disk_tensor.does_exist()
@@ -228,10 +236,16 @@ def _predict_spectrogram(data, checkpoint_path, device, batch_size, on_disk=True
         with evaluate(checkpoint.model, device=device):
             for batch in loader:
                 # predicted_spectrogram [num_frames, batch_size, frame_channels]
-                _, predicted_spectrogram, _, _ = checkpoint.model(batch.text[0], batch.speaker[0],
-                                                                  batch.spectrogram[0])
+                if aligned:
+                    _, predicted_spectrogram, _, _ = checkpoint.model(
+                        batch.text[0], batch.speaker[0], batch.spectrogram[0])
+                    lengths = batch.spectrogram[1]
+                else:
+                    _, predicted_spectrogram, _, _, lengths = checkpoint.model.infer(
+                        batch.text[0], batch.speaker[0])
+
                 splits = predicted_spectrogram.split(1, dim=1)
-                iterator = zip(splits, batch.spectrogram[1], batch.predicted_spectrogram)
+                iterator = zip(splits, lengths, batch.predicted_spectrogram)
                 for tensor, length, on_disk_tensor in iterator:
                     # split [num_frames, 1, frame_channels]
                     on_disk_tensor.from_tensor(tensor[:length, 0])
@@ -290,7 +304,7 @@ def _compute_spectrogram(row, on_disk=True):
 
 
 @configurable
-def compute_spectrograms(data, on_disk=True, checkpoint_path=None, batch_size=None, device=None):
+def compute_spectrograms(data, on_disk=True, checkpoint_path=None, **kwargs):
     """ Given rows of text speech rows, computes related spectrograms both real and predicted.
 
     Args:
@@ -299,8 +313,7 @@ def compute_spectrograms(data, on_disk=True, checkpoint_path=None, batch_size=No
             ``torch.Tensor``.
         checkpoint_path (str or None, optional): Spectrogram model to predict a ground truth aligned
             spectrogram.
-        batch_size (int or None, optional): Batch size used when predicting spectrograms.
-        device (torch.device or None, optional): Device to predict spectrograms on.
+        **kwargs: Additional arguments passed to ``_predict_spectrogram``.
 
     Returns:
         (iterable of SpectrogramTextSpeechRow): Iterable of text speech rows along with spectrogram
@@ -310,7 +323,7 @@ def compute_spectrograms(data, on_disk=True, checkpoint_path=None, batch_size=No
     data = _process_in_parallel(data, partial(_compute_spectrogram, on_disk=on_disk))
     if checkpoint_path is not None:
         logger.info('Predicting spectrograms...')
-        data = _predict_spectrogram(data, checkpoint_path, device, batch_size, on_disk=on_disk)
+        data = _predict_spectrogram(data, checkpoint_path, on_disk=on_disk, **kwargs)
 
     # Ensure data is processed before both worker and master proceed.
     if src.distributed.in_use():

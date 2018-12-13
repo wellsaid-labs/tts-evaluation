@@ -25,7 +25,7 @@ from src.utils import ROOT_PATH
 @mock.patch('src.datasets.process._process_in_parallel', return_value=[])
 @mock.patch('src.datasets.process._predict_spectrogram', return_value=[])
 def test_compute_spectrograms(_, __):
-    assert compute_spectrograms([], True, '', 5, torch.device('cpu')) == []
+    assert compute_spectrograms([], True, '', batch_size=5, device=torch.device('cpu')) == []
 
 
 @mock.patch('src.datasets.process.os.system')
@@ -98,8 +98,9 @@ def test__predict_spectrogram(mock_from_path, mock_load, mock_save):
     frame_channels = 80
     num_frames = 10
     audio_path = pathlib.Path('tests/_test_data/lj_speech_24000.wav')
-    expected_path_predicted_spectrogram = ('tests/_test_data/predicted_spectrogram'
-                                           '(lj_speech_24000,run_09_10_norm_step_123_pt).npy')
+    expected_path_predicted_spectrogram = (
+        'tests/_test_data/predicted_spectrogram'
+        '(lj_speech_24000,run_09_10_norm_step_123_pt,aligned=True).npy')
     mock_from_path.return_value = Checkpoint(
         path=ROOT_PATH / 'run/09_10/norm/step_123.pt',
         directory='.',
