@@ -85,7 +85,7 @@ def hilary_dataset(
         **kwargs: Arguments passed to process dataset audio.
 
     Returns:
-        :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
+        list: Dataset with audio filenames and text annotations.
 
     Example:
         >>> from src.hparams import set_hparams # doctest: +SKIP

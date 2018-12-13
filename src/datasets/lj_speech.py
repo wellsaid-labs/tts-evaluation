@@ -120,7 +120,7 @@ def lj_speech_dataset(directory='data/',
         **kwargs: Arguments passed to ``normalize_audio_and_cache`` to preprocess the dataset audio.
 
     Returns:
-        :class:`torchnlp.datasets.Dataset`: Dataset with audio filenames and text annotations.
+        list: Dataset with audio filenames and text annotations.
 
     Example:
         >>> from src.hparams import set_hparams # doctest: +SKIP

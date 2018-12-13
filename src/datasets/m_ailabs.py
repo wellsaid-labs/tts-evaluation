@@ -142,8 +142,7 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
         splits (tuple, optional): The number of splits and cardinality of dataset splits.
 
      Returns:
-          :class:`torchnlp.datasets.Dataset`: M-AILABS en_us dataset with audio filenames and text
-          annotations.
+          list: M-AILABS en_us dataset with audio filenames and text annotations.
 
     Example:
         >>> from src.hparams import set_hparams # doctest: +SKIP
