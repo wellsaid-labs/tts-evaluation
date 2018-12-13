@@ -1,5 +1,4 @@
 from contextlib import ExitStack
-
 from unittest import mock
 
 import torch

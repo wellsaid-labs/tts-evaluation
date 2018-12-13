@@ -201,8 +201,9 @@ class Trainer():
             self.comet_ml.log_current_epoch(self.epoch)
 
         # Setup iterator and metrics
+        dataset = self.train_dataset if train else self.dev_dataset
         data_loader = DataLoader(
-            data=self.train_dataset if train else self.dev_dataset,
+            data=dataset,
             batch_size=self.train_batch_size if train else self.dev_batch_size,
             device=self.device,
             text_encoder=self.text_encoder,
@@ -218,13 +219,18 @@ class Trainer():
                 predictions = self.model(batch.text[0], batch.speaker[0], batch.spectrogram[0])
                 self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
-            self._visualize(batch, predictions, sample=not train and i == random_batch)
+
+            if not train and i == random_batch:
+                self._visualize_predicted(batch, predictions)
 
             self.accumulated_metrics.log_step_end(
                 lambda k, v: self.comet_ml.log_metric('step/' + k, v) if train else None)
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
+
+        if not train:
+            self._visualize_infered(random.sample(dataset, 1)[0])
 
         # Log epoch metrics
         if not trial_run:
@@ -243,11 +249,13 @@ class Trainer():
             do_backwards (bool): If ``True`` backward propogate the loss.
         """
         (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
-         _) = predictions
+         predicted_alignments) = predictions
+        print(predictions)
         spectrogram = batch.spectrogram[0]
+        spectrogram_mask = batch.spectrogram_mask[0]
 
         num_spectrogram_values = torch.sum(batch.spectrogram_expanded_mask[0])
-        num_frames = torch.sum(batch.spectrogram_mask[0])
+        num_frames = torch.sum(spectrogram_mask)
 
         # Average loss for pre spectrogram, post spectrogram and stop token loss
         pre_spectrogram_loss = self.criterion_spectrogram(predicted_pre_spectrogram, spectrogram)
@@ -259,7 +267,7 @@ class Trainer():
         post_spectrogram_loss /= num_spectrogram_values
 
         stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, batch.stop_token[0])
-        stop_token_loss = (stop_token_loss * batch.spectrogram_mask[0]).sum() / num_frames
+        stop_token_loss = (stop_token_loss * spectrogram_mask).sum() / num_frames
 
         if do_backwards:
             self.optimizer.zero_grad()
@@ -274,54 +282,28 @@ class Trainer():
         self.accumulated_metrics.add_multiple_metrics({
             'stop_token_loss': stop_token_loss
         }, num_frames)
-
-        return (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss,
-                num_spectrogram_values, num_frames)
-
-    def _visualize(self, batch, predictions, sample):
-        """ Computes a batch with ``self.model``, optionally taking a step along the gradient.
-
-        Args:
-            batch (SpectrogramModelTrainingRow)
-            predictions (any): Return value from ``self.model.forwards``.
-            sample (bool): If ``True``, samples the current step.
-        """
-        if sample:
-            self._visualize_predicted(batch, predictions)
-            self._visualize_infered(batch)
-
-        predicted_alignments = predictions[-1]
-        # [num_frames, batch_size, num_tokens] → scalar
-        kwargs = {'tensor': predicted_alignments, 'dim': 2, 'mask': batch.spectrogram_mask[0]}
+        kwargs = {'tensor': predicted_alignments.detach(), 'dim': 2, 'mask': spectrogram_mask}
         self.accumulated_metrics.add_multiple_metrics({
             'attention_norm': get_masked_average_norm(norm=math.inf, **kwargs),
             'attention_std': get_weighted_standard_deviation(**kwargs),
         }, kwargs['mask'].sum())
 
-    def _visualize_infered(self, batch, max_infer_frames=1000):
+        return (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss,
+                num_spectrogram_values, num_frames)
+
+    def _visualize_infered(self, example, max_infer_frames=1000):
         """ Run in inference mode without teacher forcing and visualizing results.
 
         Args:
-            batch (SpectrogramModelTrainingRow)
+            batch (SpectrogramTextSpeechRow)
             max_infer_frames (int, optioanl): Maximum number of frames to consider for memory's
                 sake.
         """
         if src.distributed.in_use() and not src.distributed.is_master():
             return
 
-        # batch.text[0] [num_tokens, batch_size] → batch_size
-        batch_size = batch.text[0].shape[1]
-        item = random.randint(0, batch_size - 1)
-        spectrogam_length = batch.spectrogram[1][item]
-        text_length = batch.text[1][item]
-
-        # batch.text[0] [num_tokens, batch_size] → [text_length]
-        text = batch.text[0][:text_length, item]
-        # batch.speaker[0] [1, batch_size] → scalar
-        speaker = batch.speaker[0][0, item]
-        # batch.spectrogram[0] [num_frames, batch_size, frame_channels] →
-        # [spectrogam_length, frame_channels]
-        gold_spectrogram = batch.spectrogram[0][:spectrogam_length, item]
+        text = self.text_encoder.encode(example.text)
+        speaker = self.speaker_encoder.encode(example.speaker)
 
         with evaluate(self.model):
             logger.info('Running inference...')
@@ -329,18 +311,18 @@ class Trainer():
             (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
              predicted_alignments, _) = model.infer(text, speaker, max_infer_frames)
 
-        # [text_length] → str
-        text = self.text_encoder.decode(text)
-        # scalar → Speaker
-        speaker = self.speaker_encoder.decode(speaker)
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
         # [num_frames, num_tokens] → scalar
         attention_norm = get_masked_average_norm(predicted_alignments, dim=1, norm=math.inf)
         # [num_frames, num_tokens] → scalar
         attention_standard_deviation = get_weighted_standard_deviation(predicted_alignments, dim=1)
-        waveform = griffin_lim(predicted_post_spectrogram.cpu().numpy())
 
-        self.comet_ml.log_text_and_audio('infered', text, speaker, waveform)
+        self.comet_ml.log_audio(
+            tag='infered',
+            text=example.text,
+            speaker=example.speaker,
+            predicted_audio=griffin_lim(predicted_post_spectrogram.cpu().numpy()),
+            gold_audio=example.spectrogram_audio.to_tensor())
         self.comet_ml.log_metrics({
             'infered/attention_norm': attention_norm,
             'infered/attention_std': attention_standard_deviation,
@@ -348,7 +330,7 @@ class Trainer():
         self.comet_ml.log_figures({
             'infered/final_spectrogram': plot_spectrogram(predicted_post_spectrogram),
             'infered/residual_spectrogram': plot_spectrogram(predicted_residual),
-            'infered/gold_spectrogram': plot_spectrogram(gold_spectrogram),
+            'infered/gold_spectrogram': plot_spectrogram(example.spectrogram.to_tensor()),
             'infered/pre_spectrogram': plot_spectrogram(predicted_pre_spectrogram),
             'infered/alignment': plot_attention(predicted_alignments),
             'infered/stop_token': plot_stop_token(predicted_stop_tokens),

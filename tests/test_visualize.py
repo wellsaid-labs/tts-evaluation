@@ -42,7 +42,12 @@ def test_comet_ml():
     # Smoke tests
     visualizer = CometML('', disabled=True, api_key='')
     visualizer.set_step(0)
-    visualizer.log_text_and_audio('audio', 'test input', Speaker.LINDA_JOHNSON, torch.rand(100))
+    visualizer.log_audio(
+        tag='audio',
+        text='test input',
+        speaker=Speaker.LINDA_JOHNSON,
+        predicted_audio=torch.rand(100),
+        gold_audio=torch.rand(100))
     figure = pyplot.figure()
     pyplot.close(figure)
     visualizer.log_figures({'figure': figure}, overwrite=True)

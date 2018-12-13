@@ -13,21 +13,24 @@ from src.bin.train.spectrogram_model.trainer import Trainer
 from src.bin.train.spectrogram_model.data_loader import SpectrogramModelTrainingRow
 from src.datasets import Speaker
 
+from tests.bin.train.utils import get_example_spectrogram_text_speech_rows
 from tests.bin.train.utils import MockCometML
 
 
 @mock.patch('src.bin.train.spectrogram_model.trainer.CometML')
-def get_trainer(comet_ml_mock):
+@mock.patch('src.bin.train.spectrogram_model.trainer.compute_spectrograms')
+def get_trainer(compute_spectrograms_mock, comet_ml_mock):
+    comet_ml_mock.return_value = MockCometML()
+    compute_spectrograms_mock.return_value = get_example_spectrogram_text_speech_rows()
     trainer = Trainer(
         device=torch.device('cpu'),
-        train_dataset=[],
-        dev_dataset=[],
+        train_dataset=get_example_spectrogram_text_speech_rows(),
+        dev_dataset=get_example_spectrogram_text_speech_rows(),
         comet_ml_project_name='',
         text_encoder=CharacterEncoder(['text encoder']),
         speaker_encoder=IdentityEncoder([Speaker.LINDA_JOHNSON]),
         train_batch_size=1,
         dev_batch_size=1)
-    comet_ml_mock.return_value = MockCometML()
 
     # Make sure that stop-token is not predicted; therefore, reaching ``max_recursion``
     torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.weight, -math.inf)
@@ -48,9 +51,11 @@ def test__do_loss_and_maybe_backwards():
     predicted_pre_spectrogram = torch.FloatTensor([[1, 1], [1, 1], [1, 1]])
     predicted_post_spectrogram = torch.FloatTensor([[0.5, 0.5], [0.5, 0.5], [1, 1]])
     predicted_stop_tokens = torch.FloatTensor([0, 0.5, 0.5])
+    predicted_alignments = torch.FloatTensor(3, 1, 5).fill_(0.0)
+    predicted_alignments[:, 0, 0].fill_(1.0)
 
     predictions = (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
-                   None)
+                   predicted_alignments)
     (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss, num_spectrogram_values,
      num_frames) = trainer._do_loss_and_maybe_backwards(batch, predictions, False)
 

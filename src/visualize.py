@@ -339,7 +339,13 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
     else:
         experiment = ExistingExperiment(previous_experiment=experiment_key, **kwargs)
 
-    def log_text_and_audio(self, tag, text, speaker, audio, step=None):
+    def log_audio(self,
+                  tag=None,
+                  text=None,
+                  speaker=None,
+                  gold_audio=None,
+                  predicted_audio=None,
+                  step=None):
         """ Add text and audio to remote visualizer in one entry.
 
         TODO: Consider logging the Waveform as well
@@ -348,51 +354,31 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
             tag (str): Tag for this event.
             text (str)
             speaker (src.dataset.Speaker)
-            audio (torch.Tensor)
+            gold_audio (torch.Tensor)
+            predicted_audio (torch.Tensor)
             step (int, optional)
         """
         step = self.curr_step if step is None else step
         assert step is not None
-        experiment.log_html(_BASE_TEMPLATE % """
-        <section>
-            <p><b>Step:</b> {step}</p>
-            <p><b>Tag:</b> {tag}</p>
-            <p><b>Text:</b> {text}</p>
-            <p><b>Speaker:</b> {speaker}</p>
-            <p><b>Audio:</b></p>
-            <audio controls="" src="data:audio/wav;base64,{base64_audio}"></audio>
-        </section>
-        """.format(
-            step=step, tag=tag, text=text, speaker=str(speaker), base64_audio=_encode_audio(audio)))
-
-    experiment.log_text_and_audio = log_text_and_audio.__get__(experiment)
-
-    def log_audio(self, tag, gold_audio, predicted_audio, step=None):
-        """ Add audio to remote visualizer in one entry.
-
-        TODO: Consider logging the Waveform as well
-
-        Args:
-            tag (str): Tag for this event.
-            audio (torch.Tensor)
-            step (int, optional)
-        """
-        step = self.curr_step if step is None else step
-        assert step is not None
-        experiment.log_html(_BASE_TEMPLATE % """
-        <section>
-            <p><b>Step:</b> {step}</p>
-            <p><b>Tag:</b> {tag}</p>
+        items = ['<p><b>Step:</b> {}</p>'.format(step)]
+        if tag is not None:
+            items.append('<p><b>Tag:</b> {}</p>'.format(tag))
+        if text is not None:
+            items.append('<p><b>Text:</b> {}</p>'.format(text))
+        if speaker is not None:
+            items.append('<p><b>Speaker:</b> {}</p>'.format(str(speaker)))
+        if gold_audio is not None:
+            items.append("""
             <p><b>Gold Audio:</b></p>
-            <audio controls="" src="data:audio/wav;base64,{gold_audio}"></audio>
+            <audio controls="" src="data:audio/wav;base64,{}" />
+            """.format(_encode_audio(gold_audio)))
+        if predicted_audio is not None:
+            items.append("""
             <p><b>Predicted Audio:</b></p>
-            <audio controls="" src="data:audio/wav;base64,{predicted_audio}"></audio>
-        </section>
-        """.format(
-            step=step,
-            tag=tag,
-            gold_audio=_encode_audio(gold_audio),
-            predicted_audio=_encode_audio(predicted_audio)))
+            <audio controls="" src="data:audio/wav;base64,{}" />
+            """.format(_encode_audio(predicted_audio)))
+
+        experiment.log_html(_BASE_TEMPLATE % '\n'.join(items))
 
     experiment.log_audio = log_audio.__get__(experiment)
 

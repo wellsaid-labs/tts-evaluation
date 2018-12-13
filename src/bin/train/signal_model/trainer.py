@@ -315,7 +315,12 @@ class Trainer():
             predicted_coarse, predicted_fine, _ = self.model.infer(spectrogram)
             predicted_signal = combine_signal(predicted_coarse, predicted_fine)
 
-        self.comet_ml.log_audio('infered', target_signal, predicted_signal)
+        self.comet_ml.log_audio(
+            tag='infered',
+            text=example.text,
+            speaker=str(example.speaker),
+            gold_audio=target_signal,
+            predicted_audio=predicted_signal)
         self.comet_ml.log_figure('infered/spectrogram', plot_spectrogram(spectrogram))
 
     def _visualize_predicted(self, batch, predictions):
@@ -343,4 +348,5 @@ class Trainer():
         target_signal_fine = batch.target_signal_fine[0][item, :length]
         target_signal = combine_signal(target_signal_coarse, target_signal_fine)
 
-        self.comet_ml.log_audio('predicted', target_signal, predicted_signal)
+        self.comet_ml.log_audio(
+            tag='predicted', gold_audio=target_signal, predicted_audio=predicted_signal)
