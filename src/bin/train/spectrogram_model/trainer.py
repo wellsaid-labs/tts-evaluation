@@ -117,9 +117,19 @@ class Trainer():
                  optimizer=Adam,
                  use_tqdm=False):
 
+        self.train_dataset = compute_spectrograms(train_dataset)
+        self.dev_dataset = compute_spectrograms(dev_dataset)
+
+        self.text_encoder = (
+            CharacterEncoder([r.text for r in self.train_dataset])
+            if text_encoder is None else text_encoder)
+        self.speaker_encoder = (
+            IdentityEncoder([r.speaker for r in self.train_dataset])
+            if speaker_encoder is None else speaker_encoder)
+
         # Allow for ``class`` or a class instance
         self.model = model if isinstance(model, torch.nn.Module) else model(
-            text_encoder.vocab_size, speaker_encoder.vocab_size)
+            self.text_encoder.vocab_size, self.speaker_encoder.vocab_size)
         self.model.to(device)
         if src.distributed.in_use():
             self.model = torch.nn.parallel.DistributedDataParallel(
@@ -136,16 +146,7 @@ class Trainer():
         self.epoch = epoch
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
-        self.train_dataset = compute_spectrograms(train_dataset)
-        self.dev_dataset = compute_spectrograms(dev_dataset)
         self.use_tqdm = use_tqdm
-
-        self.text_encoder = (
-            CharacterEncoder([r.text for r in self.train_dataset])
-            if text_encoder is None else text_encoder)
-        self.speaker_encoder = (
-            IdentityEncoder([r.speaker for r in self.train_dataset])
-            if speaker_encoder is None else speaker_encoder)
 
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
@@ -300,10 +301,10 @@ class Trainer():
         if src.distributed.in_use() and not src.distributed.is_master():
             return
 
-        text = self.text_encoder.encode(example.text)
-        speaker = self.speaker_encoder.encode(example.speaker)
+        text = self.text_encoder.encode(example.text).to(self.device)
+        speaker = self.speaker_encoder.encode(example.speaker).to(self.device)
 
-        with evaluate(self.model):
+        with evaluate(self.model, device=self.device):
             logger.info('Running inference...')
             model = self.model.module if src.distributed.in_use() else self.model
             (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
