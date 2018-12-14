@@ -224,6 +224,7 @@ def _predict_spectrogram(data,
     if not is_cached and (not src.distributed.in_use() or src.distributed.is_master()):
         text_encoder = checkpoint.text_encoder
         speaker_encoder = checkpoint.speaker_encoder
+        return_ = sorted(return_, key=lambda r: len(r.text))
         loader = DataLoader(
             return_,
             batch_size=batch_size,

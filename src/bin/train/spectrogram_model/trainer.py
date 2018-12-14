@@ -129,11 +129,6 @@ class Trainer():
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.optimizer.to(device)
 
-        self.comet_ml = CometML(
-            project_name=comet_ml_project_name,
-            experiment_key=comet_ml_experiment_key,
-            disabled=src.distributed.in_use() and not src.distributed.is_master())
-
         self.accumulated_metrics = AccumulatedMetrics()
 
         self.device = device
@@ -155,6 +150,10 @@ class Trainer():
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
 
+        self.comet_ml = CometML(
+            project_name=comet_ml_project_name,
+            experiment_key=comet_ml_experiment_key,
+            disabled=src.distributed.in_use() and not src.distributed.is_master())
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])

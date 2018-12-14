@@ -538,6 +538,10 @@ def evaluate(*modules, device=None):
             module.to(metadata['last_device'])
 
 
+def is_namedtuple(object_):
+    return hasattr(object_, '_asdict') and isinstance(object_, tuple)
+
+
 def collate_sequences(batch, **kwargs):
     """ Collate a list of tensors representing sequences using ``pad_batch``.
 
@@ -553,13 +557,14 @@ def collate_sequences(batch, **kwargs):
     Returns:
         k: Collated batch of type ``k``.
     """
-    if torch.is_tensor(batch[0]):
+    if all([torch.is_tensor(b) for b in batch]):
         return pad_batch(batch, **kwargs)
-    if isinstance(batch[0], dict):
+    if (all([isinstance(b, dict) for b in batch]) and
+            all([b.keys() == batch[0].keys() for b in batch])):
         return {key: collate_sequences([d[key] for d in batch], **kwargs) for key in batch[0]}
-    elif hasattr(batch[0], '_asdict') and isinstance(batch[0], tuple):  # Handle ``namedtuple``
+    elif all([is_namedtuple(b) for b in batch]):  # Handle ``namedtuple``
         return batch[0].__class__(**collate_sequences([b._asdict() for b in batch], **kwargs))
-    elif isinstance(batch[0], list):
+    elif all([isinstance(b, list) for b in batch]):
         # Handle list of lists such each list has some column to be batched, similar to:
         # [['a', 'b'], ['a', 'b']] → [['a', 'a'], ['b', 'b']]
         transposed = zip(*batch)

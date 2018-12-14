@@ -368,17 +368,15 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
         if speaker is not None:
             items.append('<p><b>Speaker:</b> {}</p>'.format(str(speaker)))
         if gold_audio is not None:
-            items.append("""
-            <p><b>Gold Audio:</b></p>
-            <audio controls="" src="data:audio/wav;base64,{}" />
-            """.format(_encode_audio(gold_audio)))
+            items.append('<p><b>Gold Audio:</b></p>')
+            items.append('<audio controls="" src="data:audio/wav;base64,{}"></audio>'.format(
+                _encode_audio(gold_audio)))
         if predicted_audio is not None:
-            items.append("""
-            <p><b>Predicted Audio:</b></p>
-            <audio controls="" src="data:audio/wav;base64,{}" />
-            """.format(_encode_audio(predicted_audio)))
+            items.append('<p><b>Predicted Audio:</b></p>')
+            items.append('<audio controls="" src="data:audio/wav;base64,{}"></audio>'.format(
+                _encode_audio(predicted_audio)))
 
-        experiment.log_html(_BASE_TEMPLATE % '\n'.join(items))
+        experiment.log_html(_BASE_TEMPLATE % '<section>{}</section>'.format('\n'.join(items)))
 
     experiment.log_audio = log_audio.__get__(experiment)
 

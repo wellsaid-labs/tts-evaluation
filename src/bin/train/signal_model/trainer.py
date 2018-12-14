@@ -114,8 +114,6 @@ class Trainer():
             anomaly_detector, AnomalyDetector) else AnomalyDetector()
 
         self.criterion = criterion(reduction='none').to(device)
-        self.comet_ml = CometML(
-            project_name=comet_ml_project_name, experiment_key=comet_ml_experiment_key)
         self.accumulated_metrics = AccumulatedMetrics()
 
         self.device = device
@@ -138,6 +136,8 @@ class Trainer():
         # epoch every time.
         self.rollback = collections.deque([self.model.state_dict()], min_rollback + 2)
 
+        self.comet_ml = CometML(
+            project_name=comet_ml_project_name, experiment_key=comet_ml_experiment_key)
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])
