@@ -130,7 +130,8 @@ class DataLoader(DataLoader):
     Args:
         data (iterable of SpectrogramTextSpeechRow): Data to iterate over.
         batch_size (int): Iteration batch size.
-        device (torch.device, optional): Device onto which to load data.
+        device (torch.device): Device onto which to load data.
+        use_tqdm (bool): If ``True`` display progress via TQDM.
         trial_run (bool or int): If ``True``, iterates over one batch.
         random (random.Random, optional): Random number generator to sample data.
         **kwargs (any): Other arguments to the data loader ``_load_fn``
@@ -149,7 +150,7 @@ class DataLoader(DataLoader):
         )
     """
 
-    def __init__(self, data, batch_size, device, trial_run=False, random=random, **kwargs):
+    def __init__(self, data, batch_size, device, use_tqdm, trial_run, random=random, **kwargs):
 
         # ``drop_last`` to ensure full utilization of mutliple GPUs
         super().__init__(
@@ -161,4 +162,5 @@ class DataLoader(DataLoader):
             pin_memory=True,
             post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
             sampler=RandomSampler(data, random=random),
-            trial_run=trial_run)
+            trial_run=trial_run,
+            use_tqdm=use_tqdm)

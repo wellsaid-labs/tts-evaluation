@@ -59,7 +59,8 @@ class DataLoader(DataLoader):
     Args:
         data (iterable): Data to iterate over.
         batch_size (int): Iteration batch size.
-        device (torch.device, optional): Device onto which to load data.
+        device (torch.device): Device onto which to load data.
+        use_tqdm (bool): If ``True`` display progress via TQDM.
         trial_run (bool or int): If ``True``, iterates over one batch.
         num_workers (int, optional): Number of workers for data loading.
         **kwargs (any): Other arguments to the data loader ``_load_fn``
@@ -79,7 +80,13 @@ class DataLoader(DataLoader):
         )
     """
 
-    def __init__(self, data, batch_size, device, trial_run=False, num_workers=cpu_count(),
+    def __init__(self,
+                 data,
+                 batch_size,
+                 device,
+                 use_tqdm,
+                 trial_run=False,
+                 num_workers=cpu_count(),
                  **kwargs):
         batch_sampler = None
         if not src.distributed.in_use() or src.distributed.is_master():
