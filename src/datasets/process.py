@@ -247,7 +247,8 @@ def _predict_spectrogram(data,
                     predicted = checkpoint.model(text, speaker, spectrogram)[1]
                     # mask [num_frames, batch_size]
                     mask = lengths_to_mask(lengths, device=predicted.device, padding_index=0, dim=1)
-                    loss = mse_loss(predicted * mask.unsqueeze(2), spectrogram, reduction='sum')
+                    mask = mask.unsqueeze(2).expand_as(predicted)
+                    loss = mse_loss(predicted * mask, spectrogram, reduction='sum')
                     num_elements += mask.sum()
                     total_loss += loss
                 else:

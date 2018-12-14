@@ -33,7 +33,14 @@ def test_data_loader():
     slice_pad = 0
     device = torch.device('cpu')
     loader = DataLoader(
-        data, batch_size, device, use_predicted=False, slice_size=slice_size, slice_pad=slice_pad)
+        data,
+        batch_size,
+        device,
+        use_predicted=False,
+        slice_size=slice_size,
+        slice_pad=slice_pad,
+        use_tqdm=False,
+        trial_run=False)
     assert len(loader) == 1
     item = next(iter(loader))
     assert item.signal_mask[0].sum() <= slice_size * batch_size * samples_per_frame

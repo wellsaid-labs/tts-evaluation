@@ -22,6 +22,7 @@ def test_data_loader():
         torch.device('cpu'),
         text_encoder=text_encoder,
         speaker_encoder=speaker_encoder,
+        use_tqdm=True,
     )
     assert len(iterator) == 1
     item = next(iter(iterator))
