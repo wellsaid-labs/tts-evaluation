@@ -242,9 +242,6 @@ class Trainer():
                     self.step += 1
                     self.comet_ml.set_step(self.step)
 
-        if not train:
-            self._visualize_infered(random.sample(dataset, 1)[0])
-
         # Log epoch metrics
         if not trial_run:
             self.comet_ml.log_epoch_end(self.epoch)
@@ -291,14 +288,12 @@ class Trainer():
 
         return coarse_loss, fine_loss, num_predictions
 
-    def _visualize_infered(self, example):
+    def visualize_infered(self):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.
-
-        Args:
-            example (SpectrogramTextSpeechRow)
 
         Returns: None
         """
+        example = random.sample(self.dev_dataset, 1)[0]
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
         # [num_frames, frame_channels]
         spectrogram = spectrogram.to_tensor() if isinstance(spectrogram,

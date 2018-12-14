@@ -63,7 +63,8 @@ def main(run_name,
          spectrogram_model_checkpoint_path=None,
          reset_optimizer=False,
          hparams={},
-         evaluate_every_n_epochs=30,
+         evaluate_every_n_epochs=3,
+         generate_every_n_epochs=30,
          save_checkpoint_every_n_epochs=15):
     """ Main module that trains a the signal model saving checkpoints incrementally.
 
@@ -79,6 +80,10 @@ def main(run_name,
         reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer.
         hparams (dict, optional): Hparams to override default hparams.
         evaluate_every_n_epochs (int, optional): Evaluate every ``evaluate_every_n_epochs`` epochs.
+        generate_every_n_epochs (int, optional): Generate an audio sample every
+            ``generate_every_n_epochs`` epochs.
+        save_checkpoint_every_n_epochs (int, optional): Save a checkpoint every
+            ``save_checkpoint_every_n_epochs`` epochs.
     """
     set_basic_logging_config()
     _set_hparams()
@@ -133,6 +138,9 @@ def main(run_name,
 
             if trainer.epoch % evaluate_every_n_epochs == 0 or is_trial_run:
                 trainer.run_epoch(train=False, trial_run=is_trial_run)
+
+            if trainer.epoch % generate_every_n_epochs == 0 or is_trial_run:
+                trainer.visualize_infered()
 
             if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
                 Checkpoint(
