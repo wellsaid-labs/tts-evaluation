@@ -19,7 +19,6 @@ from src.hparams import get_config
 from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
 from src.spectrogram_model import SpectrogramModel
-from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import evaluate
 from src.utils import get_masked_average_norm
@@ -34,44 +33,6 @@ from src.visualize import plot_stop_token
 import src.distributed
 
 logger = logging.getLogger(__name__)
-
-
-class SpectrogramModelCheckpoint(Checkpoint):
-    """ DEPRECATED: Checkpoint specific to a spectrogram model.
-
-    TODO: This is not needed with PyTorch 1.0 (https://github.com/pytorch/pytorch/issues/11683)
-    TODO: Remove after converting checkpoints.
-    """
-
-    def __init__(self, directory, model_state_dict, optimizer_state_dict, text_encoder,
-                 speaker_encoder, step, **kwargs):
-        super(SpectrogramModelCheckpoint, self).__init__(
-            directory=directory,
-            step=step,
-            model_state_dict=model_state_dict,
-            text_encoder=text_encoder,
-            speaker_encoder=speaker_encoder,
-            optimizer_state_dict=optimizer_state_dict,
-            **kwargs)
-
-    @classmethod
-    def from_path(class_, path, device=torch.device('cpu'), model=SpectrogramModel, optimizer=Adam):
-        """ Overriding the ``from_path`` to load the ``model`` from ``model_state_dict`` """
-        instance = super(SpectrogramModelCheckpoint, class_).from_path(path, device)
-        if instance is None:
-            return instance
-
-        setattr(instance, 'model',
-                model(instance.text_encoder.vocab_size, instance.speaker_encoder.vocab_size))
-        instance.model.load_state_dict(instance.model_state_dict)
-        instance.flatten_parameters(instance.model)
-        logger.info('Loaded checkpoint model:\n%s', instance.model)
-        instance.model.to(device)
-        optimizer = AutoOptimizer(
-            optimizer(params=filter(lambda p: p.requires_grad, instance.model.parameters())))
-        setattr(instance, 'optimizer', optimizer)
-        instance.optimizer.load_state_dict(instance.optimizer_state_dict)
-        return instance
 
 
 class Trainer():
