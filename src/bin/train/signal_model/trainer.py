@@ -22,7 +22,6 @@ import time
 
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
-from tqdm import tqdm
 
 import torch
 
@@ -209,9 +208,8 @@ class Trainer():
             device=self.device,
             trial_run=trial_run,
             random=self.random,
-            use_predicted=self.use_predicted)
-        if self.use_tqdm:
-            data_loader = tqdm(data_loader, desc=label, smoothing=0)
+            use_predicted=self.use_predicted,
+            use_tqdm=self.use_tqdm)
 
         # Run epoch
         random_batch = random.randint(0, len(data_loader) - 1)

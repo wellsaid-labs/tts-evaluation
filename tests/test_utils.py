@@ -27,12 +27,33 @@ from src.utils import collate_sequences
 from src.utils import tensors_to
 from src.utils import identity
 from src.utils import DataLoader
+from src.utils import lengths_to_mask
+from src.utils import sort_by_spectrogram_length
+
+from tests.utils import get_example_spectrogram_text_speech_rows
+
+
+def test_lengths_to_mask():
+    assert lengths_to_mask([1, 2, 3]).sum() == 6
+    assert lengths_to_mask([1, 2, 3])[0].sum() == 1
+    assert lengths_to_mask([1, 2, 3])[0][0].item() == 1
+
+
+def test_sort_by_spectrogram_length():
+    rows = get_example_spectrogram_text_speech_rows(num_frames=[100, 50])
+    rows = sort_by_spectrogram_length(rows)
+    assert rows[0].spectrogram.to_tensor().shape[0] == 50
+    assert rows[1].spectrogram.to_tensor().shape[0] == 100
 
 
 def test_data_loader():
     dataset = [1]
     for batch in DataLoader(
-            dataset, trial_run=True, post_processing_fn=lambda x: x + 1, load_fn=lambda x: x + 1):
+            dataset,
+            trial_run=True,
+            post_processing_fn=lambda x: x + 1,
+            load_fn=lambda x: x + 1,
+            use_tqdm=True):
         assert len(batch) == 1
         assert batch[0] == 3
 

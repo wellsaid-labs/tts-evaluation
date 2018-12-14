@@ -8,7 +8,6 @@ from torch.nn import MSELoss
 from torch.optim import Adam
 from torchnlp.text_encoders import CharacterEncoder
 from torchnlp.text_encoders import IdentityEncoder
-from tqdm import tqdm
 
 import torch
 
@@ -208,9 +207,8 @@ class Trainer():
             device=self.device,
             text_encoder=self.text_encoder,
             speaker_encoder=self.speaker_encoder,
-            trial_run=trial_run)
-        if self.use_tqdm:
-            data_loader = tqdm(data_loader, desc=label, smoothing=0)
+            trial_run=trial_run,
+            use_tqdm=self.use_tqdm)
 
         # Run epoch
         random_batch = random.randint(0, len(data_loader) - 1)

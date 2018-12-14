@@ -2,7 +2,9 @@ import matplotlib
 
 matplotlib.use('Agg', warn=False)
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from functools import lru_cache
 from math import isclose
 from pathlib import Path
 
@@ -23,6 +25,7 @@ from torch.multiprocessing import cpu_count
 from torch.utils import data
 from torch.utils.data.sampler import Sampler
 from torchnlp.utils import pad_batch
+from tqdm import tqdm
 
 import torch
 import numpy as np
@@ -545,6 +548,7 @@ def is_namedtuple(object_):
 def collate_sequences(batch, **kwargs):
     """ Collate a list of tensors representing sequences using ``pad_batch``.
 
+    TODO: Have ``pad_batch`` automatically create a mask or be able to create one.
     TODO: Contribute this to PyTorch-NLP as a generic sequence collate function.
     NOTE:
         * For a none-tensors, the batch is returned.
@@ -599,6 +603,29 @@ def tensors_to(tensors, **kwargs):
         return tensors
 
 
+def lengths_to_mask(lengths, dtype=None, device=None, **kwargs):
+    """ Given a list of lengths, create a batch mask.
+
+    Example:
+        >>> from src.utils import lengths_to_mask
+        >>> lengths_to_mask([1, 2, 3]).long()
+        tensor([[1, 0, 0],
+                [1, 1, 0],
+                [1, 1, 1]])
+
+    Args:
+        lengths (list of int)
+        dtype (torch.dtype, optional): The desired data type of returned tensor.
+        device (torch.device, optional): The desired device of returned tensor.
+        **kwargs: Auxiliary arguments passed to ``pad_batch``.
+
+    Returns:
+        torch.Tensor
+    """
+    tensors = [torch.full((l,), 1, dtype=dtype, device=device) for l in lengths]
+    return pad_batch(tensors, **kwargs)[0]
+
+
 def identity(x):
     return x
 
@@ -641,17 +668,24 @@ class DataLoader(DataLoader):
                  post_processing_fn=identity,
                  num_workers=cpu_count(),
                  trial_run=False,
+                 use_tqdm=False,
                  **kwargs):
-        super().__init__(dataset=_DataLoaderDataset(dataset, load_fn), **kwargs)
+        super().__init__(
+            dataset=_DataLoaderDataset(dataset, load_fn), num_workers=num_workers, **kwargs)
         logger.info('Launching with %d workers', num_workers)
         self.post_processing_fn = post_processing_fn
         self.trial_run = trial_run
+        self.use_tqdm = use_tqdm
 
     def __len__(self):
         return 1 if self.trial_run else super().__len__()
 
     def __iter__(self):
-        for batch in super().__iter__():
+        iterator = super().__iter__()
+        if self.use_tqdm:
+            iterator = tqdm(iterator, total=len(self))
+
+        for batch in iterator:
             yield self.post_processing_fn(batch)
             if self.trial_run:
                 break
@@ -695,3 +729,51 @@ class OnDiskTensor():
         # https://github.com/mverleg/array_storage_benchmark
         np.save(str(self.path), tensor, allow_pickle=False)
         return self
+
+
+@lru_cache(maxsize=None)
+def _get_spectrogram_length(spectrogram):
+    """ Get length of spectrogram (shape [num_frames, num_channels]).
+
+    Args:
+        spectrogram (OnDiskTensor)
+
+    Returns:
+        (int) Length of spectrogram
+    """
+    spectrogram = spectrogram.to_tensor() if isinstance(spectrogram, OnDiskTensor) else spectrogram
+    return spectrogram.shape[0]
+
+
+def get_spectrogram_lengths(data, use_tqdm=False):
+    """ Get the spectrograms lengths for every data row.
+
+    Args:
+        data (iterable of SpectrogramTextSpeechRow)
+        use_tqdm (bool)
+
+    Returns:
+        (list of int): Spectrogram length for every data point.
+    """
+    logger.info('Computing spectrogram lengths...')
+    with ThreadPoolExecutor() as pool:
+        iterator = pool.map(_get_spectrogram_length, [r.spectrogram for r in data])
+        if use_tqdm:
+            iterator = tqdm(iterator, total=len(data))
+        lengths = list(iterator)
+    return lengths
+
+
+def sort_by_spectrogram_length(data, **kwargs):
+    """ Sort ``SpectrogramTextSpeechRow`` rows by spectrogram lengths.
+
+    Args:
+        data (iterable of SpectrogramTextSpeechRow)
+        **kwargs: Further key word arguments passed to ``get_spectrogram_lengths``
+
+    Returns:
+        (iterable of SpectrogramTextSpeechRow)
+    """
+    lengths = get_spectrogram_lengths(data, **kwargs)
+    _, return_ = zip(*sorted(zip(lengths, data), key=lambda r: r[0]))
+    return return_

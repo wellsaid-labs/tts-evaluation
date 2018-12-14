@@ -7,8 +7,8 @@ from src.bin.train.signal_model.data_loader import SignalModelTrainingRow
 from src.bin.train.signal_model.trainer import Trainer
 from src.utils import AnomalyDetector
 
-from tests.bin.train.utils import MockCometML
-from tests.bin.train.utils import get_example_spectrogram_text_speech_rows
+from tests.utils import MockCometML
+from tests.utils import get_example_spectrogram_text_speech_rows
 
 
 @mock.patch('src.bin.train.signal_model.trainer.CometML')
@@ -76,6 +76,19 @@ def _get_example_batched_training_row(batch_size=2,
         signal_mask=(torch.FloatTensor(batch_size, signal_length).fill_(1), signal_lengths))
 
 
+def test_visualize_infered():
+    signal_length = 16
+    trainer = get_trainer()
+    infer_pass_return = (torch.LongTensor(signal_length).zero_(),
+                         torch.LongTensor(signal_length).zero_(), None)
+
+    with mock.patch('src.bin.train.signal_model.trainer.WaveRNN.infer') as mock_infer:
+        mock_infer.return_value = infer_pass_return
+        trainer.visualize_infered()
+
+        mock_infer.assert_called()
+
+
 def test_run_epoch():
     batch_size = 2
     signal_length = 16
@@ -87,22 +100,18 @@ def test_run_epoch():
     ]
     forward_pass_return = (torch.FloatTensor(batch_size, signal_length, bins),
                            torch.FloatTensor(batch_size, signal_length, bins), None)
-    infer_pass_return = (torch.LongTensor(signal_length).zero_(),
-                         torch.LongTensor(signal_length).zero_(), None)
-
     with ExitStack() as stack:
-        (MockDataLoader, mock_data_parallel, mock_infer, mock_backward, mock_optimizer_step,
+        (MockDataLoader, mock_data_parallel, mock_backward, mock_optimizer_step,
          mock_auto_optimizer_step) = tuple([
              stack.enter_context(mock.patch(arg)) for arg in [
                  'src.bin.train.signal_model.trainer.DataLoader',
                  'src.bin.train.signal_model.trainer.torch.nn.parallel.data_parallel',
-                 'src.bin.train.signal_model.trainer.WaveRNN.infer', 'torch.Tensor.backward',
+                 'torch.Tensor.backward',
                  'src.optimizer.Optimizer.step', 'src.optimizer.AutoOptimizer.step'
              ]
          ])
         MockDataLoader.return_value = loaded_data
         mock_data_parallel.return_value = forward_pass_return
-        mock_infer.return_value = infer_pass_return
         mock_backward.return_value = None
         mock_optimizer_step.return_value = None
         mock_auto_optimizer_step.return_value = None
@@ -111,5 +120,4 @@ def test_run_epoch():
         trainer.run_epoch(train=False, trial_run=True)
         trainer.run_epoch(train=True)
 
-        mock_infer.assert_called()
         mock_data_parallel.assert_called()

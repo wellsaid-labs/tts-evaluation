@@ -4,6 +4,7 @@ import logging
 import os
 
 from torch.multiprocessing import Pool
+from torch.nn.functional import mse_loss
 from torchnlp.utils import shuffle as do_deterministic_shuffle
 from tqdm import tqdm
 
@@ -20,8 +21,10 @@ from src.utils import Checkpoint
 from src.utils import collate_sequences
 from src.utils import DataLoader
 from src.utils import evaluate
+from src.utils import lengths_to_mask
 from src.utils import OnDiskTensor
 from src.utils import ROOT_PATH
+from src.utils import sort_by_spectrogram_length
 from src.utils import tensors_to
 
 import src.distributed
@@ -193,7 +196,7 @@ def _predict_spectrogram(data,
                          aligned=True,
                          on_disk=True,
                          use_tqdm=True):
-    """ Predict a ground truth aligned spectrogram and maybe caches.
+    """ Predict spectrograms from a list of ``SpectrogramTextSpeechRow`` rows and maybe cache.
 
     Args:
         data (iterable of SpectrogramTextSpeechRow)
@@ -213,43 +216,51 @@ def _predict_spectrogram(data,
     model_name = model_name.replace('/', '_').replace('.', '_')
 
     return_ = []
-    is_cached = True
     for row in data:
-        destination = 'predicted_spectrogram({},{},{}).npy'.format(row.audio_path.stem, model_name,
-                                                                   'aligned=%s' % aligned)
+        destination = 'predicted_spectrogram({},{},aligned={}).npy'.format(
+            row.audio_path.stem, model_name, aligned)
         on_disk_tensor = OnDiskTensor(row.audio_path.parent / destination)
         return_.append(row._replace(predicted_spectrogram=on_disk_tensor))
-        is_cached = is_cached and on_disk_tensor.does_exist()
 
+    is_cached = all([r.predicted_spectrogram.does_exist() for r in return_])
     if not is_cached and (not src.distributed.in_use() or src.distributed.is_master()):
+        return_ = sort_by_spectrogram_length(return_) if aligned else sorted(
+            return_, key=lambda r: len(r.text))
         text_encoder = checkpoint.text_encoder
         speaker_encoder = checkpoint.speaker_encoder
-        return_ = sorted(return_, key=lambda r: len(r.text))
         loader = DataLoader(
             return_,
             batch_size=batch_size,
             load_fn=partial(_load_fn, text_encoder=text_encoder, speaker_encoder=speaker_encoder),
             post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
             collate_fn=partial(collate_sequences, dim=1),
-            pin_memory=True)
-        if use_tqdm:
-            loader = tqdm(loader)
+            pin_memory=True,
+            use_tqdm=use_tqdm)
         with evaluate(checkpoint.model, device=device):
+            total_loss, num_elements = 0.0, 0
             for batch in loader:
                 # predicted_spectrogram [num_frames, batch_size, frame_channels]
+                spectrogram, lengths = batch.spectrogram
+                text, speaker = batch.text[0], batch.speaker[0]
                 if aligned:
-                    _, predicted_spectrogram, _, _ = checkpoint.model(
-                        batch.text[0], batch.speaker[0], batch.spectrogram[0])
-                    lengths = batch.spectrogram[1]
+                    spectrogram, lengths = batch.spectrogram
+                    predicted = checkpoint.model(text, speaker, spectrogram)[1]
+                    # mask [num_frames, batch_size]
+                    mask = lengths_to_mask(lengths, device=predicted.device, padding_index=0, dim=1)
+                    loss = mse_loss(predicted * mask.unsqueeze(2), spectrogram, reduction='sum')
+                    num_elements += mask.sum()
+                    total_loss += loss
                 else:
-                    _, predicted_spectrogram, _, _, lengths = checkpoint.model.infer(
-                        batch.text[0], batch.speaker[0])
+                    _, predicted, _, _, lengths = checkpoint.model.infer(text, speaker)
 
-                splits = predicted_spectrogram.split(1, dim=1)
+                splits = predicted.split(1, dim=1)
                 iterator = zip(splits, lengths, batch.predicted_spectrogram)
                 for tensor, length, on_disk_tensor in iterator:
                     # split [num_frames, 1, frame_channels]
                     on_disk_tensor.from_tensor(tensor[:length, 0])
+
+            if aligned:
+                logger.info('Sanity check, prediction loss is: %f' % (total_loss / num_elements))
 
     if on_disk:
         return return_

@@ -5,7 +5,7 @@ import torch
 from src.bin.train.signal_model.data_loader import _get_slice
 from src.bin.train.signal_model.data_loader import DataLoader
 
-from tests.bin.train.utils import get_example_spectrogram_text_speech_rows
+from tests.utils import get_example_spectrogram_text_speech_rows
 
 
 @mock.patch('src.bin.train.signal_model.data_loader.random.randint')

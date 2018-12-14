@@ -13,8 +13,8 @@ from src.bin.train.spectrogram_model.trainer import Trainer
 from src.bin.train.spectrogram_model.data_loader import SpectrogramModelTrainingRow
 from src.datasets import Speaker
 
-from tests.bin.train.utils import get_example_spectrogram_text_speech_rows
-from tests.bin.train.utils import MockCometML
+from tests.utils import get_example_spectrogram_text_speech_rows
+from tests.utils import MockCometML
 
 
 @mock.patch('src.bin.train.spectrogram_model.trainer.CometML')

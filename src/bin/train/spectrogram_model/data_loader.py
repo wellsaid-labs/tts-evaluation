@@ -1,6 +1,4 @@
 from collections import namedtuple
-from concurrent.futures import ThreadPoolExecutor
-from functools import lru_cache
 from functools import partial
 
 import logging
@@ -9,50 +7,17 @@ from torch.multiprocessing import cpu_count
 from torchnlp.samplers import BucketBatchSampler
 
 import torch
-import tqdm
 
-from src.utils import OnDiskTensor
 from src.utils import collate_sequences
 from src.utils import DataLoader
+from src.utils import get_spectrogram_lengths
 from src.utils import identity
+from src.utils import OnDiskTensor
 from src.utils import tensors_to
 
 import src.distributed
 
 logger = logging.getLogger(__name__)
-
-
-@lru_cache(maxsize=None)
-def _get_spectrogram_length(spectrogram):
-    """ Get length of spectrogram (shape [num_frames, num_channels]).
-
-    Args:
-        spectrogram (OnDiskTensor)
-
-    Returns:
-        (int) Length of spectrogram
-    """
-    spectrogram = spectrogram.to_tensor() if isinstance(spectrogram, OnDiskTensor) else spectrogram
-    return spectrogram.shape[0]
-
-
-def _get_spectrogram_lengths(data, use_tqdm=False):
-    """ Get the spectrograms lengths for every data row.
-
-    Args:
-        data (iterable of SpectrogramTextSpeechRow)
-        use_tqdm (bool)
-
-    Returns:
-        (list of int): Spectrogram length for every data point.
-    """
-    logger.info('Computing spectrogram lengths...')
-    with ThreadPoolExecutor() as pool:
-        iterator = pool.map(_get_spectrogram_length, [r.spectrogram for r in data])
-        if use_tqdm:
-            iterator = tqdm.tqdm(iterator, total=len(data))
-        return list(iterator)
-
 
 SpectrogramModelTrainingRow = namedtuple('SpectrogramModelTrainingRow', [
     'text', 'speaker', 'spectrogram', 'stop_token', 'spectrogram_mask', 'spectrogram_expanded_mask'
@@ -119,7 +84,7 @@ class DataLoader(DataLoader):
         batch_sampler = None
         if not src.distributed.in_use() or src.distributed.is_master():
             batch_sampler = BucketBatchSampler(
-                _get_spectrogram_lengths(data),
+                get_spectrogram_lengths(data),
                 batch_size,
                 drop_last=True,
                 sort_key=identity,

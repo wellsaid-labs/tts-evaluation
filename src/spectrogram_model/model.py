@@ -1,3 +1,5 @@
+import logging
+
 from torch import nn
 from torchnlp.text_encoders import PADDING_INDEX
 from tqdm import tqdm
@@ -9,6 +11,8 @@ from src.spectrogram_model.encoder import Encoder
 from src.spectrogram_model.post_net import PostNet
 
 from src.hparams import configurable
+
+logger = logging.getLogger(__name__)
 
 
 class SpectrogramModel(nn.Module):
@@ -227,6 +231,10 @@ class SpectrogramModel(nn.Module):
 
         if use_tqdm:
             progress_bar.close()
+
+        if len(frames) == max_recursion:
+            logger.warning('Reached maximum number of frames: %d', len(frames))
+
         alignments = torch.stack(alignments, dim=0)
         frames = torch.stack(frames, dim=0)
         stop_tokens = torch.stack(stop_tokens, dim=0)
