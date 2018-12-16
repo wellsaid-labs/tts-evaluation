@@ -7,22 +7,26 @@ NOTE: We source ``~/.bash_profile`` to setup pyenv.
 
 Example:
 
-    python3 -m src.bin.gcp.keep_alive --command="screen -dm bash -c \
-        'source ~/.bashrc; \
-        source ~/.bash_profile; \
-        cd WellSaidLabs/; \
-        ulimit -n 65536; \
-        python3 -m src.bin.train.signal_model -c; \
-        sudo shutdown;'"
+    python3 -m src.bin.gcp.keep_alive \
+        --instance voclip \
+        --command="screen -dm bash -c \
+              'source ~/.bashrc; \
+              source ~/.bash_profile; \
+              cd WellSaidLabs/; \
+              ulimit -n 65536; \
+              python3 -m src.bin.train.signal_model -c; \
+              sudo shutdown;'"
 
 Distributed Example:
 
-    python3 -m src.bin.gcp.keep_alive --command="screen -dm bash -c \
-        'source ~/.bashrc; \
-        source ~/.bash_profile; \
-        cd WellSaidLabs/; \
-        python3 -m third_party.launch src.bin.train.spectrogram_model -c; \
-        sudo shutdown;'"
+    python3 -m src.bin.gcp.keep_alive \
+        --instance voclip \
+        --command="screen -dm bash -c \
+                      'source ~/.bashrc; \
+                      source ~/.bash_profile; \
+                      cd WellSaidLabs/; \
+                      python3 -m third_party.launch src.bin.train.spectrogram_model -c; \
+                      sudo shutdown;'"
 """
 import argparse
 import json
@@ -39,12 +43,21 @@ INSTANCE_RUNNING = 'RUNNING'
 INSTANCE_STOPPED = 'TERMINATED'
 
 
-def get_available_instances():
+def get_available_instances(names=None):
     """ Get a list of preemtible instances to keep alive.
+
+    Args:
+        names (None or list of str): Names of instances to keep alive.
+
+    Returns
+        (list of dict): List of instances to keep alive.
     """
     instances = json.loads(
         subprocess.check_output('gcloud compute instances list --format json', shell=True))
     instances = [i for i in instances if i['scheduling']['preemptible']]
+    if names is not None:
+        return [i for i in instances if i['name'] in set(names)]
+
     filtered_instances = []
     for instance in sorted(instances, key=lambda i: i['name']):
         response = ''
@@ -62,8 +75,6 @@ def get_available_instances():
                              (instance['name'], num_gpu, gpu, instance['status']))
             if response == 'Y':
                 filtered_instances.append(instance)
-    logger.info('Keeping alive instances: %s', [i['name'] for i in filtered_instances])
-    print('-' * 100)
     return filtered_instances
 
 
@@ -126,10 +137,13 @@ def keep_alive(instances, command, scheduler, repeat_every=60 * 5, retry_timeout
 
 if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--command', type=str, required=True, help='GCP project name.')
     parser.add_argument(
-        '--command', type=str, default=None, required=True, help='GCP project name.')
+        '-i', '--instance', default=None, action='append', help='Instance to keep alive.')
     args = parser.parse_args()
-    instances = get_available_instances()
+    instances = get_available_instances(args.instance)
+    logger.info('Keeping alive instances: %s', [i['name'] for i in instances])
+    logger.info('-' * 100)
     scheduler = sched.scheduler(time.time, time.sleep)
     keep_alive(instances, args.command, scheduler)
     scheduler.run()

@@ -151,7 +151,8 @@ def main(run_name,
                     step=trainer.step,
                     anomaly_detector=trainer.anomaly_detector,
                     comet_ml_experiment_key=trainer.comet_ml.get_key(),
-                    spectrogram_model_checkpoint_path=spectrogram_model_checkpoint_path).save()
+                    spectrogram_model_checkpoint_path=trainer
+                    .spectrogram_model_checkpoint_path).save()
 
             logger.info('-' * 100)
 

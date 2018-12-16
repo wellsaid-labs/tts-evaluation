@@ -12,6 +12,10 @@ import torch
 from src.training_context_manager import TrainingContextManager
 from src.utils import ROOT_PATH
 
+# TODO: Add a fixture to delete any files created similar too:
+# https://stackoverflow.com/questions/51737334/pytest-deleting-files-created-by-the-tested-function
+# Furthermore, then deleting empty directories from which the files were already deleted.
+
 
 def test_save_standard_streams():
     logger = logging.getLogger(__name__)

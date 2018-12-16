@@ -12,12 +12,13 @@ Walking through the math, a real epoch for the Linda Joshon dataset would be abo
 
 Find stats on the Linda Johnson dataset here: https://keithito.com/LJ-Speech-Dataset/
 """
+from collections import deque
+from collections import namedtuple
 from functools import partial
+from socket import gethostname
 
-import collections
 import logging
 import random
-import socket
 import time
 
 from torch.nn import CrossEntropyLoss
@@ -46,6 +47,15 @@ from src.visualize import plot_spectrogram
 import src.distributed
 
 logger = logging.getLogger(__name__)
+
+# TODO: Remove default parameters that are configured; otherwise, it's confusing as to which
+# values are used. Make a default ``configured_parameter`` object to set as a default for configured
+# parameters. This object throws an error if it's used in any shape or form.
+# Also, the configurable, can check for that parameter. Or the parameter can check to ensure it's
+# actually configured.
+
+TrainerState = namedtuple('TrainerState',
+                          ['step', 'epoch', 'optimizer_state_dict', 'model_state_dict'])
 
 
 class Trainer():
@@ -121,6 +131,7 @@ class Trainer():
         self.step_unit = step_unit
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
+        self.spectrogram_model_checkpoint_path = spectrogram_model_checkpoint_path
         compute_spectrograms_partial = partial(
             compute_spectrograms,
             checkpoint_path=spectrogram_model_checkpoint_path,
@@ -130,10 +141,9 @@ class Trainer():
         self.use_tqdm = use_tqdm
         self.use_predicted = use_predicted
         self.random = random.Random(123)  # Ensure the same samples are sampled
-        # NOTE: Rollback ``maxlen=min_rollback + 2`` in case the model enters at a degenerate state
-        # at the beginning of the epoch; therefore, allowing us to rollback at least min_rollback
-        # epoch every time.
-        self.rollback = collections.deque([self.model.state_dict()], min_rollback + 2)
+        # NOTE: Rollback ``maxlen=min_rollback + 1`` to store the current state of the model with
+        # the additional rollbacks.
+        self.rollback = deque([self._get_state()], maxlen=min_rollback + 1)
 
         self.comet_ml = CometML(
             project_name=comet_ml_project_name, experiment_key=comet_ml_experiment_key)
@@ -150,7 +160,7 @@ class Trainer():
         })
         self.comet_ml.log_other('is_distributed', src.distributed.in_use())
         # NOTE: Remove after: https://github.com/comet-ml/issue-tracking/issues/154
-        self.comet_ml.log_other('hostname', socket.gethostname())
+        self.comet_ml.log_other('hostname', gethostname())
         self.comet_ml.log_other('spectrogram_model_checkpoint_path',
                                 spectrogram_model_checkpoint_path)
 
@@ -161,6 +171,19 @@ class Trainer():
         logger.info('Dev Batch Size: %d', dev_batch_size)
         logger.info('Model:\n%s' % self.model)
 
+    def _get_state(self):
+        return TrainerState(
+            step=self.step,
+            epoch=self.epoch,
+            optimizer_state_dict=self.optimizer.state_dict(),
+            model_state_dict=self.model.state_dict())
+
+    def _set_state(self, state):
+        self.model.load_state_dict(state.model_state_dict)
+        self.optimizer.load_state_dict(state.optimizer_state_dict)
+        self.step = state.step
+        self.epoch = state.epoch
+
     def _maybe_rollback(self, epoch_coarse_loss):
         """ Maybe rollback the model if the loss is too high.
 
@@ -169,18 +192,19 @@ class Trainer():
         """
         is_anomaly = self.anomaly_detector.step(epoch_coarse_loss)
         if is_anomaly:
-            logger.warning(
-                'Rolling back, detected a coarse loss anomaly #%d (%f > %f ± %f)',
-                (self.anomaly_detector.anomaly_counter, epoch_coarse_loss,
-                 self.anomaly_detector.last_average, self.anomaly_detector.max_deviation))
-            past_model_state = self.rollback[0]
-            self.model.load_state_dict(past_model_state)
+            logger.warning('Rolling back, detected a coarse loss anomaly #%d (%f > %f ± %f)',
+                           self.anomaly_detector.anomaly_counter, epoch_coarse_loss,
+                           self.anomaly_detector.last_average, self.anomaly_detector.max_deviation)
+            state = self.rollback[0]
+            logger.info('Rolling back from step %d to %d and from epoch %d to %d', self.step,
+                        state.step, self.epoch, state.epoch)
+            self._set_state(state)
 
             # Clear the possibly degenerative states.
             self.rollback.clear()
-            self.rollback.append(past_model_state)
+            self.rollback.append(state)
         else:
-            self.rollback.append(self.model.state_dict())
+            self.rollback.append(self._get_state())
 
     def run_epoch(self, train=False, trial_run=False):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.

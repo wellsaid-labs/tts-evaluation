@@ -14,7 +14,7 @@ def _set_anomaly_detection():
     # NOTE: Prevent circular dependency
     from src.utils import AnomalyDetector
     add_config({
-        'src.bin.train.signal_model.trainer.Trainer.__init__.min_rollback': 1,
+        'src.bin.train.signal_model.trainer.Trainer.__init__.min_rollback': 2,
         'src.utils.AnomalyDetector.__init__': {
             # NOTE: Determined empirically with the notebook:
             # ``notebooks/Detecting Anomalies.ipynb``
@@ -311,6 +311,7 @@ def set_hparams():
     is_signal_model_trained_from_predicted_spectrogram = True
 
     spectrogram_model_dev_batch_size = 256
+    signal_model_train_batch_size = 64
 
     # TODO: Add option to instead of strings to use direct references.
     add_config({
@@ -370,7 +371,7 @@ def set_hparams():
                         # synchronous updates, using the Adam optimizer with β1 = 0.9, β2 = 0.999, 
                         # eps = 10−8 and a fixed learning rate of 10−4
                         # NOTE: Parameters set after experimentation on a 4 Px100 GPU.
-                        'train_batch_size': 64,
+                        'train_batch_size': signal_model_train_batch_size,
                         'dev_batch_size': 256,
                         'use_predicted': is_signal_model_trained_from_predicted_spectrogram,
                     },
@@ -379,6 +380,10 @@ def set_hparams():
                         # The WaveRNN models are trained on sequences of 960 audio samples
                         'slice_size': int(900 / frame_hop),
                         'slice_pad': 5,
+                    },
+                    'benchmark.signal_model_batch_size': {
+                        'batch_size': signal_model_train_batch_size,
+                        'spectrogram_frame_channels': frame_channels,
                     },
                 }
             },
