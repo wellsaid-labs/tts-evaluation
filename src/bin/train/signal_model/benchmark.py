@@ -64,7 +64,7 @@ def signal_model_batch_size(batch_size,
             slices.append(_get_slice(spectrogram, signal))
 
         batch = collate_sequences(slices)
-        batch = tensors_to(batch, device=device, non_blocking=True)
+        batch = tensors_to(batch, device=device)
         net = WaveRNN(local_features_size=spectrogram_frame_channels).to(device)
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = True
@@ -72,12 +72,15 @@ def signal_model_batch_size(batch_size,
         # Run model
         times = []
         for _ in tqdm(range(num_runs)):
+            # Use ``synchronize`` to ensure some async CUDA operations are finished
+            torch.cuda.synchronize()
             start = time.time()
             predicted_coarse, predicted_fine, _ = net.forward(
                 local_features=batch.input_spectrogram[0],
                 input_signal=batch.input_signal[0],
                 target_coarse=batch.target_signal_coarse[0].unsqueeze(2))
             (predicted_coarse + predicted_fine).sum().backward()
+            torch.cuda.synchronize()
             end = time.time()
             times.append((end - start) * 1000)  # From seconds to milliseconds
 

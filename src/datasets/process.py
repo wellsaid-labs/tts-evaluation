@@ -1,4 +1,5 @@
 from functools import partial
+from math import inf
 
 import logging
 import os
@@ -21,11 +22,14 @@ from src.utils import Checkpoint
 from src.utils import collate_sequences
 from src.utils import DataLoader
 from src.utils import evaluate
+from src.utils import get_average_norm
+from src.utils import get_weighted_stdev
 from src.utils import lengths_to_mask
 from src.utils import OnDiskTensor
 from src.utils import ROOT_PATH
 from src.utils import sort_by_spectrogram_length
 from src.utils import tensors_to
+from src.visualize import AccumulatedMetrics
 
 import src.distributed
 
@@ -224,8 +228,7 @@ def _predict_spectrogram(data,
 
     is_cached = all([r.predicted_spectrogram.does_exist() for r in return_])
     if not is_cached and (not src.distributed.in_use() or src.distributed.is_master()):
-        return_ = sort_by_spectrogram_length(return_) if aligned else sorted(
-            return_, key=lambda r: len(r.text))
+        return_ = sort_by_spectrogram_length(return_)
         text_encoder = checkpoint.text_encoder
         speaker_encoder = checkpoint.speaker_encoder
         loader = DataLoader(
@@ -237,31 +240,35 @@ def _predict_spectrogram(data,
             pin_memory=True,
             use_tqdm=use_tqdm)
         with evaluate(checkpoint.model, device=device):
-            total_loss, num_elements = 0.0, 0
+            metrics = AccumulatedMetrics()
             for batch in loader:
-                # predicted_spectrogram [num_frames, batch_size, frame_channels]
-                spectrogram, lengths = batch.spectrogram
+                # Predict spectrogram
                 text, speaker = batch.text[0], batch.speaker[0]
+                spectrogram, lengths = batch.spectrogram
                 if aligned:
-                    spectrogram, lengths = batch.spectrogram
-                    predicted = checkpoint.model(text, speaker, spectrogram)[1]
-                    # mask [num_frames, batch_size]
-                    mask = lengths_to_mask(lengths, device=predicted.device, padding_index=0, dim=1)
+                    _, predicted, _, alignments = checkpoint.model(text, speaker, spectrogram)
+                else:
+                    _, predicted, _, alignments, lengths = checkpoint.model.infer(text, speaker)
+
+                # Compute some metrics for logging
+                mask = lengths_to_mask(lengths, device=predicted.device, padding_index=0, dim=1)
+                metrics.add_multiple_metrics({
+                    'attention_norm': get_average_norm(alignments, norm=inf, dim=2, mask=mask),
+                    'attention_std': get_weighted_stdev(alignments, dim=2, mask=mask),
+                }, mask.sum())
+                if aligned:
                     mask = mask.unsqueeze(2).expand_as(predicted)
                     loss = mse_loss(predicted * mask, spectrogram, reduction='sum')
-                    num_elements += mask.sum()
-                    total_loss += loss
-                else:
-                    _, predicted, _, _, lengths = checkpoint.model.infer(text, speaker)
+                    metrics.add_metric('loss', loss, mask.sum())
 
+                # Save to disk
                 splits = predicted.split(1, dim=1)
                 iterator = zip(splits, lengths, batch.predicted_spectrogram)
                 for tensor, length, on_disk_tensor in iterator:
                     # split [num_frames, 1, frame_channels]
                     on_disk_tensor.from_tensor(tensor[:length, 0])
 
-            if aligned:
-                logger.info('Sanity check, prediction loss is: %f' % (total_loss / num_elements))
+            metrics.log_epoch_end(lambda k, v: logger.info('Prediction metric (%s): %s', k, v))
 
     if on_disk:
         return return_

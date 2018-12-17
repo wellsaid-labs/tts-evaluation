@@ -5,6 +5,8 @@ import io
 import logging
 import matplotlib
 import os
+import socket
+import subprocess
 import time
 
 matplotlib.use('Agg', warn=False)
@@ -273,7 +275,7 @@ class AccumulatedMetrics():
             for (key, _), value in zip(metrics_count_items, packed[len(metrics_total_items):]):
                 self.metrics['step_count'][key] = value
 
-        # Log step metrics
+        # Log step metrics and update epoch metrics.
         for (total_key, total_value), (count_key, count_value) in zip(
                 self.metrics['step_total'].items(), self.metrics['step_count'].items()):
 
@@ -299,6 +301,8 @@ class AccumulatedMetrics():
         Args:
             log_metric (callable(key, value)): Callable to log a metric.
         """
+        self.log_step_end(lambda *args, **kwargs: None)
+
         # Log epoch metrics
         for (total_key, total_value), (count_key, count_value) in zip(
                 self.metrics['epoch_total'].items(), self.metrics['epoch_count'].items()):
@@ -338,6 +342,14 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
         experiment = Experiment(**kwargs)
     else:
         experiment = ExistingExperiment(previous_experiment=experiment_key, **kwargs)
+
+    experiment.log_other('is_distributed', src.distributed.in_use())
+    # NOTE: Remove after: https://github.com/comet-ml/issue-tracking/issues/154
+    experiment.log_other('hostname', socket.gethostname())
+    experiment.log_other(
+        'last_git_commit',
+        subprocess.check_output('git log -1 --format=%cd', shell=True).decode().strip())
+    experiment.log_parameter('num_gpu', torch.cuda.device_count())
 
     def log_audio(self,
                   tag=None,

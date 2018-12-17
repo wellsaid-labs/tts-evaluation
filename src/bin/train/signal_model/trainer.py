@@ -14,8 +14,8 @@ Find stats on the Linda Johnson dataset here: https://keithito.com/LJ-Speech-Dat
 """
 from collections import deque
 from collections import namedtuple
+from copy import deepcopy
 from functools import partial
-from socket import gethostname
 
 import logging
 import random
@@ -43,8 +43,6 @@ from src.utils import OnDiskTensor
 from src.visualize import AccumulatedMetrics
 from src.visualize import CometML
 from src.visualize import plot_spectrogram
-
-import src.distributed
 
 logger = logging.getLogger(__name__)
 
@@ -154,13 +152,9 @@ class Trainer():
         self.comet_ml.set_model_graph(str(self.model))
         self.comet_ml.log_parameters({
             'num_parameter': get_total_parameters(self.model),
-            'num_gpu': torch.cuda.device_count(),
             'num_training_row': len(self.train_dataset),
             'num_dev_row': len(self.dev_dataset),
         })
-        self.comet_ml.log_other('is_distributed', src.distributed.in_use())
-        # NOTE: Remove after: https://github.com/comet-ml/issue-tracking/issues/154
-        self.comet_ml.log_other('hostname', gethostname())
         self.comet_ml.log_other('spectrogram_model_checkpoint_path',
                                 spectrogram_model_checkpoint_path)
 
@@ -172,11 +166,13 @@ class Trainer():
         logger.info('Model:\n%s' % self.model)
 
     def _get_state(self):
+        # TODO: Add a test to ensure that _get_state does not change after run_epoch or something
+        # NOTE: In PyTorch, unless we ``deepcopy``, ``state_dict`` continues to update.
         return TrainerState(
             step=self.step,
             epoch=self.epoch,
-            optimizer_state_dict=self.optimizer.state_dict(),
-            model_state_dict=self.model.state_dict())
+            optimizer_state_dict=deepcopy(self.optimizer.state_dict()),
+            model_state_dict=deepcopy(self.model.state_dict()))
 
     def _set_state(self, state):
         self.model.load_state_dict(state.model_state_dict)
@@ -236,7 +232,6 @@ class Trainer():
             use_tqdm=self.use_tqdm)
 
         # Run epoch
-        random_batch = random.randint(0, len(data_loader) - 1)
         start_time = time.time()
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
@@ -249,9 +244,6 @@ class Trainer():
                     })
                 self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
-
-            if not train and i == random_batch:
-                self._visualize_predicted(batch, predictions)
 
             self.accumulated_metrics.log_step_end(
                 lambda k, v: self.comet_ml.log_metric('step/' + k, v) if train else None)
@@ -339,31 +331,3 @@ class Trainer():
             gold_audio=target_signal,
             predicted_audio=predicted_signal)
         self.comet_ml.log_figure('infered/spectrogram', plot_spectrogram(spectrogram))
-
-    def _visualize_predicted(self, batch, predictions):
-        """ Visualize examples from a batch and visualize them.
-
-        Args:
-            batch (SignalModelTrainingRow)
-            predictions (any): Return value from ``self.model.forwards``.
-        """
-        (predicted_coarse, predicted_fine, _) = predictions
-
-        # Initial values
-        batch_size = predicted_coarse.shape[0]
-        item = self.random.randint(0, batch_size - 1)  # Random item to sample
-        length = batch.input_signal[1][item]
-
-        # Sample argmax from a categorical distribution
-        # predicted_signal [batch_size, signal_length, bins] → [signal_length]
-        predicted_coarse = predicted_coarse.max(dim=2)[1][item, :length]
-        predicted_fine = predicted_fine.max(dim=2)[1][item, :length]
-        predicted_signal = combine_signal(predicted_coarse, predicted_fine)
-
-        # target_signal_* [batch_size, signal_length] → [signal_length]
-        target_signal_coarse = batch.target_signal_coarse[0][item, :length]
-        target_signal_fine = batch.target_signal_fine[0][item, :length]
-        target_signal = combine_signal(target_signal_coarse, target_signal_fine)
-
-        self.comet_ml.log_audio(
-            tag='predicted', gold_audio=target_signal, predicted_audio=predicted_signal)

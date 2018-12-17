@@ -147,8 +147,8 @@ def chunks(list_, n):
         yield list_[i:i + n]
 
 
-def get_weighted_standard_deviation(tensor, dim=0, mask=None):
-    """ Computed the average weighted standard deviation.
+def get_weighted_stdev(tensor, dim=0, mask=None):
+    """ Computed the average weighted standard deviation accross some dimesnion.
 
     We assume the weights are normalized between zero and one summing up to one on ``dim``.
 
@@ -191,8 +191,9 @@ def get_weighted_standard_deviation(tensor, dim=0, mask=None):
     return (weighted_standard_deviation.sum() / divisor).item()
 
 
-def get_masked_average_norm(tensor, dim=0, mask=None, norm=2):
-    """
+def get_average_norm(tensor, dim=0, mask=None, norm=2):
+    """ The average norm accross some ``dim``.
+
     Args:
         tensor (torch.FloatTensor)
         dim (int)

@@ -18,10 +18,10 @@ from src.utils import get_total_parameters
 from src.utils import Checkpoint
 from src.utils import parse_hparam_args
 from src.utils import ROOT_PATH
-from src.utils import get_weighted_standard_deviation
+from src.utils import get_weighted_stdev
 from src.utils import chunks
 from src.utils import duplicate_stream
-from src.utils import get_masked_average_norm
+from src.utils import get_average_norm
 from src.utils import evaluate
 from src.utils import collate_sequences
 from src.utils import tensors_to
@@ -149,46 +149,44 @@ def test_chunks():
     assert list(chunks([1, 2, 3], 2)) == [[1, 2], [3]]
 
 
-def test_get_masked_average_norm():
+def test_get_average_norm():
     tensor = torch.Tensor([0.5, 0.2, 0.3])
     expanded = tensor.unsqueeze(1).expand(3, 4)
-    assert get_masked_average_norm(tensor) == get_masked_average_norm(expanded)
+    assert get_average_norm(tensor) == get_average_norm(expanded)
 
 
-def test_get_masked_average_norm_masked():
+def test_get_average_norm_masked():
     tensor = torch.randn(3, 4, 5)
     mask = torch.FloatTensor(3, 5).fill_(1)
-    assert get_masked_average_norm(
-        tensor, dim=1) == get_masked_average_norm(
-            tensor, mask=mask, dim=1)
+    assert get_average_norm(tensor, dim=1) == get_average_norm(tensor, mask=mask, dim=1)
 
 
-def test_get_weighted_standard_deviation_constant():
+def test_get_weighted_stdev_constant():
     tensor = torch.Tensor([0, 1, 0])
-    standard_deviation = get_weighted_standard_deviation(tensor, dim=0)
+    standard_deviation = get_weighted_stdev(tensor, dim=0)
     # Standard deviation for a constant
     assert standard_deviation == 0.0
 
 
-def test_get_weighted_standard_deviation_bias():
+def test_get_weighted_stdev_bias():
     tensor = torch.Tensor([.25, .25, .25, .25])
-    standard_deviation = get_weighted_standard_deviation(tensor, dim=0)
+    standard_deviation = get_weighted_stdev(tensor, dim=0)
     # Population standard deviation for 1,2,3,4
     assert standard_deviation == pytest.approx(1.1180339887499)
 
 
-def test_get_weighted_standard_deviation():
+def test_get_weighted_stdev():
     tensor = torch.Tensor([[[0.33333, 0.33333, 0.33334], [0, 0.5, 0.5]],
                            [[0, 0.5, 0.5], [0, 0.5, 0.5]]])
-    standard_deviation = get_weighted_standard_deviation(tensor, dim=2)
+    standard_deviation = get_weighted_stdev(tensor, dim=2)
     assert standard_deviation == pytest.approx(0.5791246294975281)
 
 
-def test_get_weighted_standard_deviation_masked():
+def test_get_weighted_stdev_masked():
     tensor = torch.Tensor([[[0.33333, 0.33333, 0.33334], [0, 0.5, 0.5]],
                            [[0, 0.5, 0.5], [0, 0.5, 0.5]]])
     mask = torch.Tensor([[1, 0], [0, 0]])
-    standard_deviation = get_weighted_standard_deviation(tensor, dim=2, mask=mask)
+    standard_deviation = get_weighted_stdev(tensor, dim=2, mask=mask)
     # Population standard deviation for 1,2,3
     assert standard_deviation == pytest.approx(0.81649658093, rel=1.0e-04)
 

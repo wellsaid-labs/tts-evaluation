@@ -1,7 +1,6 @@
 import logging
 import math
 import random
-import socket
 
 from torch.nn import BCEWithLogitsLoss
 from torch.nn import MSELoss
@@ -21,9 +20,9 @@ from src.optimizer import Optimizer
 from src.spectrogram_model import SpectrogramModel
 from src.utils import dict_collapse
 from src.utils import evaluate
-from src.utils import get_masked_average_norm
+from src.utils import get_average_norm
 from src.utils import get_total_parameters
-from src.utils import get_weighted_standard_deviation
+from src.utils import get_weighted_stdev
 from src.visualize import AccumulatedMetrics
 from src.visualize import CometML
 from src.visualize import plot_attention
@@ -122,7 +121,6 @@ class Trainer():
         self.comet_ml.set_model_graph(str(self.model))
         self.comet_ml.log_parameters({
             'num_parameter': get_total_parameters(self.model),
-            'num_gpu': torch.cuda.device_count(),
             'num_training_row': len(self.train_dataset),
             'num_dev_row': len(self.dev_dataset),
             'vocab_size': self.text_encoder.vocab_size,
@@ -130,9 +128,6 @@ class Trainer():
             'num_speakers': self.speaker_encoder.vocab_size,
             'speakers': sorted([str(v) for v in self.speaker_encoder.vocab]),
         })
-        self.comet_ml.log_other('is_distributed', src.distributed.in_use())
-        # NOTE: Remove after: https://github.com/comet-ml/issue-tracking/issues/154
-        self.comet_ml.log_other('hostname', socket.gethostname())
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step: %d', self.step)
@@ -242,8 +237,8 @@ class Trainer():
         }, num_frames)
         kwargs = {'tensor': predicted_alignments.detach(), 'dim': 2, 'mask': spectrogram_mask}
         self.accumulated_metrics.add_multiple_metrics({
-            'attention_norm': get_masked_average_norm(norm=math.inf, **kwargs),
-            'attention_std': get_weighted_standard_deviation(**kwargs),
+            'attention_norm': get_average_norm(norm=math.inf, **kwargs),
+            'attention_std': get_weighted_stdev(**kwargs),
         }, kwargs['mask'].sum())
 
         return (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss,
@@ -271,9 +266,9 @@ class Trainer():
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
         # [num_frames, num_tokens] → scalar
-        attention_norm = get_masked_average_norm(predicted_alignments, dim=1, norm=math.inf)
+        attention_norm = get_average_norm(predicted_alignments, dim=1, norm=math.inf)
         # [num_frames, num_tokens] → scalar
-        attention_standard_deviation = get_weighted_standard_deviation(predicted_alignments, dim=1)
+        attention_standard_deviation = get_weighted_stdev(predicted_alignments, dim=1)
 
         self.comet_ml.log_audio(
             tag='infered',

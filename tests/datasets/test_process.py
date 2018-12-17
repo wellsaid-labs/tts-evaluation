@@ -113,8 +113,8 @@ def test__predict_spectrogram(mock_from_path, mock_load, mock_save):
         text='this is a test',
         audio_path=audio_path,
         speaker=Speaker.LINDA_JOHNSON,
-        spectrogram=torch.FloatTensor(num_frames, frame_channels),
-        spectrogram_audio=torch.FloatTensor(num_frames * 10),
+        spectrogram=torch.rand(num_frames, frame_channels),
+        spectrogram_audio=torch.rand(num_frames * 10),
         predicted_spectrogram=None,
         metadata=None)
     mock_save.return_value = None

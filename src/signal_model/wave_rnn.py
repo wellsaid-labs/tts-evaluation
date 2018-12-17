@@ -330,10 +330,10 @@ class WaveRNN(nn.Module):
         Args:
             local_features (torch.FloatTensor [batch_size, local_length, local_features_size]):
                 Local feature to condition signal generation (e.g. spectrogram).
-            input_signal (torch.FloatTensor [batch_size, signal_length, 2], optional): Course
+            input_signal (torch.FloatTensor [batch_size, signal_length, 2]): Course
                 ``signal[:, :, 0]`` and fines values ``signal[:, :, 1]`` used for teacher forcing
                 each between the range [-1, 1].
-            target_coarse (torch.FloatTensor [batch_size, signal_length, 1], optional): Same as the
+            target_coarse (torch.FloatTensor [batch_size, signal_length, 1]): Same as the
                 input signal but one timestep ahead and with only coarse values.
             hidden_state (torch.FloatTensor [batch_size, size], optional): Initial GRU hidden state.
             pad (bool, optional): Pad the spectrogram with zeros on the ends, assuming that the
