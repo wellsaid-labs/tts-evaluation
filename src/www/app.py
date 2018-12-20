@@ -142,7 +142,7 @@ def _synthesize(text, speaker, is_high_fidelity):
 
     with evaluate(spectrogram_model_checkpoint.model, signal_model_checkpoint.model):
         # predicted_frames [num_frames, batch_size, frame_channels]
-        predicted_frames = spectrogram_model_checkpoint.model.infer(
+        predicted_frames = spectrogram_model_checkpoint.model(
             tokens=encoded_text, speaker=encoded_speaker)[1]
 
         if is_high_fidelity:

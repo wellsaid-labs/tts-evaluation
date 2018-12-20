@@ -26,6 +26,7 @@ sync {
       "__pycache__**",
       "htmlcov/**",
       "coverage/**",
+      "*.wav",
       "*.py*.py" -- Odd temporary files
   }
 }

@@ -251,7 +251,7 @@ def _predict_spectrogram(data,
                 if aligned:
                     _, predicted, _, alignments = checkpoint.model(text, speaker, spectrogram)
                 else:
-                    _, predicted, _, alignments, lengths = checkpoint.model.infer(text, speaker)
+                    _, predicted, _, alignments, lengths = checkpoint.model(text, speaker)
 
                 # Compute some metrics for logging
                 mask = lengths_to_mask(lengths, device=predicted.device).transpose(0, 1)

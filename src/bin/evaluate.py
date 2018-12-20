@@ -23,6 +23,7 @@ from src import datasets
 from src.audio import combine_signal
 from src.audio import griffin_lim
 from src.datasets import compute_spectrograms
+from src.datasets import Speaker
 from src.hparams import configurable
 from src.hparams import log_config
 from src.hparams import set_hparams
@@ -48,11 +49,12 @@ def _save(destination, index, example, predicted_waveform):
             the waveform.
         predicted_waveform (np.ndarray): 1D signal.
     """
-    gold_path = str(destination / ('%d_gold.wav' % index))
+    speaker_name = example.speaker.name.lower().replace(' ', '_')
+    gold_path = str(destination / ('%d_%s_gold.wav' % (index, speaker_name)))
     librosa.output.write_wav(gold_path, example.spectrogram_audio.numpy())
     logger.info('Saved file %s', gold_path)
 
-    predicted_path = str(destination / ('%d_predicted.wav' % index))
+    predicted_path = str(destination / ('%d_%s_predicted.wav' % (index, speaker_name)))
     librosa.output.write_wav(predicted_path, predicted_waveform)
     logger.info('Saved file %s', predicted_path)
 
@@ -69,6 +71,7 @@ def main(signal_model_checkpoint_path=None,
          destination='results/',
          num_samples=32,
          aligned=False,
+         speaker=Speaker.HILARY_NORIEGA,
          spectrogram_model_batch_size=1,
          signal_model_batch_size=1,
          signal_model_device=torch.device('cpu')):
@@ -87,6 +90,7 @@ def main(signal_model_checkpoint_path=None,
         destination (str, optional): Path to store results.
         num_samples (int, optional): Number of rows to evaluate.
         aligned (bool, optional): If ``True``, predict a ground truth aligned spectrogram.
+        speaker (Speaker, optional): Filter the data for a particular speaker.
         spectrogram_model_batch_size (int, optional)
         signal_model_batch_size (int, optional): The batch size for the signal model. This is lower
             than during training because we are no longer using small slices.
@@ -101,6 +105,9 @@ def main(signal_model_checkpoint_path=None,
 
     # Sample and batch the validation data
     _, dev = dataset()
+
+    if speaker is not None:
+        dev = [r for r in dev if r.speaker == speaker]
 
     indicies = list(RandomSampler(dev))
     if num_samples is not None:
