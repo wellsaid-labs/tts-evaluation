@@ -91,7 +91,7 @@ def _get_slice(spectrogram, signal, slice_size=3, slice_pad=0, random=random):
 
     input_signal = torch.stack((source_signal_coarse, source_signal_fine), dim=1)
     signal_length = target_signal_coarse.shape[0]
-    signal_mask = torch.full((signal_length,), 1)
+    signal_mask = torch.full((signal_length,), 1).byte()
 
     return SignalModelTrainingRow(
         input_signal=input_signal,

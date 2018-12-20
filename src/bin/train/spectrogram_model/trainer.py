@@ -23,6 +23,7 @@ from src.utils import evaluate
 from src.utils import get_average_norm
 from src.utils import get_total_parameters
 from src.utils import get_weighted_stdev
+from src.utils import lengths_to_mask
 from src.visualize import AccumulatedMetrics
 from src.visualize import CometML
 from src.visualize import plot_attention
@@ -137,14 +138,24 @@ class Trainer():
         logger.info('Model:\n%s', self.model)
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
-    def run_epoch(self, train=False, trial_run=False):
+    def run_epoch(self, train=False, trial_run=False, infer=False):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
 
         Args:
             train (bool): If ``True``, the batch will store gradients.
             trial_run (bool): If ``True``, then runs only 1 batch.
+            infer (bool): If ``True``, this computes attention metrics on the dev set.
         """
-        label = 'TRAIN' if train else 'DEV'
+        if infer and train:
+            raise ValueError('Train and infer are mutually exclusive.')
+
+        if train:
+            label = 'TRAIN'
+        elif not train and infer:
+            label = 'INFER_DEV'
+        elif not train:
+            label = 'ALIGNED_DEV'
+
         logger.info('[%s] Running Epoch %d, Step %d', label, self.epoch, self.step)
         if trial_run:
             logger.info('[%s] Trial run with one batch.', label)
@@ -170,11 +181,16 @@ class Trainer():
         random_batch = random.randint(0, len(data_loader) - 1)
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
-                predictions = self.model(batch.text[0], batch.speaker[0], batch.spectrogram[0])
-                self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
+                if infer:
+                    predictions = self.model(batch.text[0], batch.speaker[0])
+                else:
+                    predictions = self.model(batch.text[0], batch.speaker[0], batch.spectrogram[0])
+                    self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
+                spectrogram_lengths = predictions[-1] if infer else batch.spectrogram[1]
+                self._add_attention_metrics(predictions[3], spectrogram_lengths)
 
-            if not train and i == random_batch:
+            if not train and not infer and i == random_batch:
                 self._visualize_predicted(batch, predictions)
 
             self.accumulated_metrics.log_step_end(
@@ -182,9 +198,6 @@ class Trainer():
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
-
-        if not train:
-            self._visualize_infered(random.sample(dataset, 1)[0])
 
         # Log epoch metrics
         if not trial_run:
@@ -205,22 +218,17 @@ class Trainer():
         (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
          predicted_alignments) = predictions
         spectrogram = batch.spectrogram[0]
-        spectrogram_mask = batch.spectrogram_mask[0]
 
-        num_spectrogram_values = torch.sum(batch.spectrogram_expanded_mask[0])
-        num_frames = torch.sum(spectrogram_mask)
-
-        # Average loss for pre spectrogram, post spectrogram and stop token loss
+        expanded_mask = batch.spectrogram_expanded_mask[0]
         pre_spectrogram_loss = self.criterion_spectrogram(predicted_pre_spectrogram, spectrogram)
-        pre_spectrogram_loss = (pre_spectrogram_loss * batch.spectrogram_expanded_mask[0]).sum()
-        pre_spectrogram_loss /= num_spectrogram_values
+        pre_spectrogram_loss = pre_spectrogram_loss.masked_select(expanded_mask).mean()
 
         post_spectrogram_loss = self.criterion_spectrogram(predicted_post_spectrogram, spectrogram)
-        post_spectrogram_loss = (post_spectrogram_loss * batch.spectrogram_expanded_mask[0]).sum()
-        post_spectrogram_loss /= num_spectrogram_values
+        post_spectrogram_loss = post_spectrogram_loss.masked_select(expanded_mask).mean()
 
+        mask = batch.spectrogram_mask[0]
         stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, batch.stop_token[0])
-        stop_token_loss = (stop_token_loss * spectrogram_mask).sum() / num_frames
+        stop_token_loss = stop_token_loss.masked_select(mask).mean()
 
         if do_backwards:
             self.optimizer.zero_grad()
@@ -231,55 +239,50 @@ class Trainer():
         self.accumulated_metrics.add_multiple_metrics({
             'pre_spectrogram_loss': pre_spectrogram_loss,
             'post_spectrogram_loss': post_spectrogram_loss,
-        }, num_spectrogram_values)
+        }, expanded_mask.sum())
         self.accumulated_metrics.add_multiple_metrics({
             'stop_token_loss': stop_token_loss
-        }, num_frames)
-        kwargs = {'tensor': predicted_alignments.detach(), 'dim': 2, 'mask': spectrogram_mask}
+        }, mask.sum())
+
+        return (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss, expanded_mask.sum(),
+                mask.sum())
+
+    def _add_attention_metrics(self, predicted_alignments, lengths):
+        """ Compute and report attention metrics """
+        # predicted_alignments [num_frames, batch_size, num_tokens]
+        mask = lengths_to_mask(lengths, device=predicted_alignments.device).transpose(0, 1)
+        kwargs = {'tensor': predicted_alignments.detach(), 'dim': 2, 'mask': mask}
         self.accumulated_metrics.add_multiple_metrics({
             'attention_norm': get_average_norm(norm=math.inf, **kwargs),
             'attention_std': get_weighted_stdev(**kwargs),
         }, kwargs['mask'].sum())
 
-        return (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss,
-                num_spectrogram_values, num_frames)
-
-    def _visualize_infered(self, example, max_infer_frames=1000):
+    def visualize_infered(self):
         """ Run in inference mode without teacher forcing and visualizing results.
-
-        Args:
-            batch (SpectrogramTextSpeechRow)
-            max_infer_frames (int, optioanl): Maximum number of frames to consider for memory's
-                sake.
         """
         if src.distributed.in_use() and not src.distributed.is_master():
             return
 
+        example = random.sample(self.dev_dataset, 1)[0]
+
         text = self.text_encoder.encode(example.text).to(self.device)
         speaker = self.speaker_encoder.encode(example.speaker).to(self.device)
+        model = self.model.module if src.distributed.in_use() else self.model
 
-        with evaluate(self.model, device=self.device):
+        with evaluate(model, device=self.device):
             logger.info('Running inference...')
-            model = self.model.module if src.distributed.in_use() else self.model
             (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
-             predicted_alignments, _) = model.infer(text, speaker, max_infer_frames)
+             predicted_alignments, predicted_lengths) = model(text, speaker)
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
-        # [num_frames, num_tokens] → scalar
-        attention_norm = get_average_norm(predicted_alignments, dim=1, norm=math.inf)
-        # [num_frames, num_tokens] → scalar
-        attention_standard_deviation = get_weighted_stdev(predicted_alignments, dim=1)
 
+        self._add_attention_metrics(predicted_alignments, predicted_lengths)
         self.comet_ml.log_audio(
             tag='infered',
             text=example.text,
             speaker=example.speaker,
             predicted_audio=griffin_lim(predicted_post_spectrogram.cpu().numpy()),
             gold_audio=example.spectrogram_audio.to_tensor())
-        self.comet_ml.log_metrics({
-            'infered/attention_norm': attention_norm,
-            'infered/attention_std': attention_standard_deviation,
-        })
         self.comet_ml.log_figures({
             'infered/final_spectrogram': plot_spectrogram(predicted_post_spectrogram),
             'infered/residual_spectrogram': plot_spectrogram(predicted_residual),

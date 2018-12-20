@@ -32,7 +32,7 @@ def test__do_loss_and_maybe_backwards():
         input_spectrogram=None,
         target_signal_coarse=(torch.LongTensor([[0, 0, 1]]), [3]),
         target_signal_fine=(torch.LongTensor([[1, 1, 1]]), [3]),
-        signal_mask=(torch.FloatTensor([[1, 1, 0]]), [3]))
+        signal_mask=(torch.ByteTensor([[1, 1, 0]]), [3]))
     predicted_coarse = torch.FloatTensor([[[1, 0], [1, 0], [1, 0]]])
     predicted_fine = torch.FloatTensor([[[1, 0], [1, 0], [1, 0]]])
 
@@ -73,7 +73,7 @@ def _get_example_batched_training_row(batch_size=2,
                               signal_lengths),
         target_signal_fine=(torch.randint(bins, (batch_size, signal_length), dtype=torch.long),
                             signal_lengths),
-        signal_mask=(torch.FloatTensor(batch_size, signal_length).fill_(1), signal_lengths))
+        signal_mask=(torch.ByteTensor(batch_size, signal_length).fill_(1), signal_lengths))
 
 
 def test_visualize_infered():

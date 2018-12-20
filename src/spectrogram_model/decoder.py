@@ -103,7 +103,8 @@ class AutoregressiveDecoder(nn.Module):
                            num_tokens,
                            is_cuda,
                            hidden_state=None,
-                           ground_truth_frames=None):
+                           ground_truth_frames=None,
+                           **kwargs):
         """ Get an initial LSTM hidden state.
 
         Args:
@@ -129,16 +130,15 @@ class AutoregressiveDecoder(nn.Module):
         assert ground_truth_frames is None or hidden_state is None, ("""Either the decoder is
 conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
-        tensor = torch.cuda.FloatTensor if is_cuda else torch.FloatTensor
-
         if hidden_state is None:
             # Tacotron 2 authors confirmed that initially the decoder is conditioned on a fixed zero
             # initial vectors.
             initial_lstm_one_hidden_state = None
             initial_lstm_two_hidden_state = None
-            initial_alignment = tensor(batch_size, num_tokens).zero_()
-            initial_attention_context = tensor(batch_size, self.attention_hidden_size).zero_()
-            initial_frames = tensor(1, batch_size, self.frame_channels).zero_()
+            initial_alignment = torch.zeros(batch_size, num_tokens, **kwargs)
+            initial_attention_context = torch.zeros(batch_size, self.attention_hidden_size,
+                                                    **kwargs)
+            initial_frames = torch.zeros(1, batch_size, self.frame_channels, **kwargs)
 
             # Tacotron 2 authors use teacher-forcing on the ground truth during training.
             # To use the ``initial_frame`` we concat it onto the beginning; furthermore, it does not
@@ -190,7 +190,8 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
              batch_size=batch_size,
              is_cuda=is_cuda,
              ground_truth_frames=ground_truth_frames,
-             hidden_state=hidden_state)
+             hidden_state=hidden_state,
+             device=encoded_tokens.device)
 
         # [num_frames, batch_size, frame_channels] →
         # [num_frames, batch_size, pre_net_hidden_size]
@@ -254,7 +255,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         frames = torch.cat([frames, attention_contexts], dim=2)
 
         # frames [seq_len (num_frames), batch (batch_size),
-        # input_size (lstm_hidden_size + attention_hidden_size)]  →
+        # input_size (lstm_hidden_size + attention_hidden_size)] →
         # [num_frames, batch_size, lstm_hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
         frames = self.lstm_layer_two_dropout(frames)

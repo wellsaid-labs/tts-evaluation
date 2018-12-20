@@ -181,14 +181,9 @@ def get_weighted_stdev(tensor, dim=0, mask=None):
     assert not torch.isnan(weighted_standard_deviation.min()), 'NaN detected.'
 
     if mask is not None:
-        weighted_standard_deviation = weighted_standard_deviation * mask
-        divisor = mask.sum()
-    else:
-        divisor = weighted_standard_deviation.numel()
+        weighted_standard_deviation = weighted_standard_deviation.masked_select(mask)
 
-    assert divisor > 0, 'Divisor must be larger than zero.'
-
-    return (weighted_standard_deviation.sum() / divisor).item()
+    return weighted_standard_deviation.mean().item()
 
 
 def get_average_norm(tensor, dim=0, mask=None, norm=2):
@@ -206,14 +201,9 @@ def get_average_norm(tensor, dim=0, mask=None, norm=2):
     norm = tensor.norm(norm, dim=dim)
 
     if mask is not None:
-        norm = norm * mask
-        divisor = mask.sum()
-    else:
-        divisor = norm.numel()
+        norm = norm.masked_select(mask)
 
-    assert divisor > 0, 'Divisor must be larger than zero.'
-
-    return (norm.sum() / divisor).item()
+    return norm.mean().item()
 
 
 class ExponentiallyWeightedMovingAverage():
@@ -437,6 +427,7 @@ class Checkpoint():
         if path is None:
             return None
 
+        torch.nn.Module.dump_patches = True  # NOTE: Dump code that's changed since the checkpoint.
         instance = load(str(path), device=device)
         setattr(instance, 'path', Path(path))
         instance.flatten_parameters(instance.model)
@@ -599,27 +590,39 @@ def tensors_to(tensors, **kwargs):
         return tensors
 
 
-def lengths_to_mask(lengths, dtype=None, device=None, **kwargs):
+def lengths_to_mask(*lengths, **kwargs):
     """ Given a list of lengths, create a batch mask.
 
     Example:
         >>> from src.utils import lengths_to_mask
-        >>> lengths_to_mask([1, 2, 3]).long()
+        >>> lengths_to_mask([1, 2, 3])
         tensor([[1, 0, 0],
                 [1, 1, 0],
-                [1, 1, 1]])
+                [1, 1, 1]], dtype=torch.uint8)
+        >>> lengths_to_mask([1, 2, 2], [1, 2, 2])
+        tensor([[[1, 0],
+                 [0, 0]],
+        <BLANKLINE>
+                [[1, 1],
+                 [1, 1]],
+        <BLANKLINE>
+                [[1, 1],
+                 [1, 1]]], dtype=torch.uint8)
 
     Args:
         lengths (list of int)
-        dtype (torch.dtype, optional): The desired data type of returned tensor.
-        device (torch.device, optional): The desired device of returned tensor.
-        **kwargs: Auxiliary arguments passed to ``pad_batch``.
+        **kwargs: Auxiliary arguments passed to ``torch.zeros``.
 
     Returns:
         torch.Tensor
     """
-    tensors = [torch.full((l,), 1, dtype=dtype, device=device) for l in lengths]
-    return pad_batch(tensors, **kwargs)[0]
+    assert all(len(l) == len(lengths[0]) for l in lengths)
+    batch_size = len(lengths[0])
+    other_dimensions = tuple([max(l) for l in lengths])
+    mask = torch.zeros(batch_size, *other_dimensions, **kwargs).byte()
+    for i, length in enumerate(zip(*tuple(lengths))):
+        mask[i][[slice(l) for l in length]].fill_(1)
+    return mask
 
 
 def identity(x):

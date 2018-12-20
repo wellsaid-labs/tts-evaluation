@@ -46,8 +46,8 @@ def test__do_loss_and_maybe_backwards():
         speaker=None,
         spectrogram=(torch.FloatTensor([[1, 1], [1, 1], [3, 3]]), [3]),
         stop_token=(torch.FloatTensor([0, 1, 1]), [3]),
-        spectrogram_mask=(torch.FloatTensor([1, 1, 0]), [3]),
-        spectrogram_expanded_mask=(torch.FloatTensor([[1, 1], [1, 1], [0, 0]]), [3]))
+        spectrogram_mask=(torch.ByteTensor([1, 1, 0]), [3]),
+        spectrogram_expanded_mask=(torch.ByteTensor([[1, 1], [1, 1], [0, 0]]), [3]))
     predicted_pre_spectrogram = torch.FloatTensor([[1, 1], [1, 1], [1, 1]])
     predicted_post_spectrogram = torch.FloatTensor([[0.5, 0.5], [0.5, 0.5], [1, 1]])
     predicted_stop_tokens = torch.FloatTensor([0, 0.5, 0.5])
@@ -83,41 +83,45 @@ def test_run_epoch():
                      [1] * batch_size),
             spectrogram=(torch.rand(num_frames, batch_size, frame_channels), frame_lengths),
             stop_token=(torch.rand(num_frames, batch_size), frame_lengths),
-            spectrogram_mask=(torch.ones(num_frames, batch_size, dtype=torch.float), frame_lengths),
+            spectrogram_mask=(torch.ones(num_frames, batch_size, dtype=torch.float).byte(),
+                              frame_lengths),
             spectrogram_expanded_mask=(torch.ones(
-                num_frames, batch_size, frame_channels, dtype=torch.float), frame_lengths))
+                num_frames, batch_size, frame_channels, dtype=torch.float).byte(), frame_lengths))
     ]
     forward_pass_return = (torch.FloatTensor(num_frames, batch_size, frame_channels).fill_(1),
                            torch.FloatTensor(num_frames, batch_size, frame_channels).fill_(1),
                            torch.FloatTensor(num_frames, batch_size).fill_(1),
                            torch.FloatTensor(num_frames, batch_size,
                                              num_tokens).fill_(1.0 / num_tokens))
-    infer_pass_return = (torch.FloatTensor(num_frames, frame_channels).fill_(2),
-                         torch.FloatTensor(num_frames, frame_channels).fill_(1),
-                         torch.FloatTensor(num_frames).fill_(1),
-                         torch.FloatTensor(num_frames, num_tokens).fill_(1.0 / num_tokens),
-                         [[num_frames]])
+    infer_pass_return = (torch.FloatTensor(num_frames, batch_size, frame_channels).fill_(1),
+                         torch.FloatTensor(num_frames, batch_size, frame_channels).fill_(1),
+                         torch.FloatTensor(num_frames, batch_size).fill_(1),
+                         torch.FloatTensor(num_frames, batch_size,
+                                           num_tokens).fill_(1.0 / num_tokens),
+                         frame_lengths)
     with ExitStack() as stack:
-        (MockDataLoader, mock_call, mock_infer, mock_backward, mock_optimizer_step,
+        (MockDataLoader, mock_aligned, mock_infer, mock_backward, mock_optimizer_step,
          mock_auto_optimizer_step) = tuple([
              stack.enter_context(mock.patch(arg)) for arg in [
                  'src.bin.train.spectrogram_model.trainer.DataLoader',
-                 'src.bin.train.spectrogram_model.trainer.SpectrogramModel.__call__',
-                 'src.bin.train.spectrogram_model.trainer.SpectrogramModel.infer',
+                 'src.bin.train.spectrogram_model.trainer.SpectrogramModel._aligned',
+                 'src.bin.train.spectrogram_model.trainer.SpectrogramModel._infer',
                  'torch.Tensor.backward', 'src.optimizer.Optimizer.step',
                  'src.optimizer.AutoOptimizer.step'
              ]
          ])
         MockDataLoader.return_value = loaded_data
-        mock_call.return_value = forward_pass_return
+        mock_aligned.return_value = forward_pass_return
         mock_infer.return_value = infer_pass_return
         mock_backward.return_value = None
         mock_optimizer_step.return_value = None
         mock_auto_optimizer_step.return_value = None
 
+        # TODO: Fix, we cannot call infer with DistributedDataParallel
         trainer.run_epoch(train=False)
         trainer.run_epoch(train=False, trial_run=True)
         trainer.run_epoch(train=True)
+        trainer.run_epoch(train=False, infer=True)
 
-        mock_call.assert_called()
+        mock_aligned.assert_called()
         mock_infer.assert_called()

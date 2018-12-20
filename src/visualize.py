@@ -234,6 +234,9 @@ class AccumulatedMetrics():
         if torch.is_tensor(value):
             value = value.item()
 
+        if torch.is_tensor(count):
+            count = count.item()
+
         assert count > 0, '%s count, %f, must be a positive number' % (name, count)
 
         self.metrics['step_total'][name] += value * count

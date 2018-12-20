@@ -192,6 +192,9 @@ class WaveRNN(nn.Module):
               use_tqdm=False):
         """  Run WaveRNN in inference mode.
 
+        TODO: Make this API consistent with the spectrogram model, such that there is only
+        a forward function.
+
         Variables:
             r: ``r`` stands for reset gate
             u: ``u`` stands for update gate

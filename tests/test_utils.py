@@ -157,7 +157,7 @@ def test_get_average_norm():
 
 def test_get_average_norm_masked():
     tensor = torch.randn(3, 4, 5)
-    mask = torch.FloatTensor(3, 5).fill_(1)
+    mask = torch.ones(3, 5).byte()
     assert get_average_norm(tensor, dim=1) == get_average_norm(tensor, mask=mask, dim=1)
 
 
@@ -185,7 +185,7 @@ def test_get_weighted_stdev():
 def test_get_weighted_stdev_masked():
     tensor = torch.Tensor([[[0.33333, 0.33333, 0.33334], [0, 0.5, 0.5]],
                            [[0, 0.5, 0.5], [0, 0.5, 0.5]]])
-    mask = torch.Tensor([[1, 0], [0, 0]])
+    mask = torch.ByteTensor([[1, 0], [0, 0]])
     standard_deviation = get_weighted_stdev(tensor, dim=2, mask=mask)
     # Population standard deviation for 1,2,3
     assert standard_deviation == pytest.approx(0.81649658093, rel=1.0e-04)

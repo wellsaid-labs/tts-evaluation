@@ -73,8 +73,9 @@ def main(run_name,
          checkpoint_path=None,
          reset_optimizer=False,
          hparams={},
-         evaluate_every_n_epochs=1,
-         save_checkpoint_every_n_epochs=10,
+         evaluate_aligned_every_n_epochs=1,
+         evaluate_infered_every_n_epochs=5,
+         save_checkpoint_every_n_epochs=5,
          distributed_rank=None,
          distributed_backend='nccl'):
     """ Main module that trains a the spectrogram model saving checkpoints incrementally.
@@ -87,7 +88,8 @@ def main(run_name,
             signaling to load the most recent checkpoint in ``run_root``.
         reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer.
         hparams (dict, optional): Hparams to override default hparams.
-        evaluate_every_n_epochs (int, optional)
+        evaluate_aligned_every_n_epochs (int, optional)
+        evaluate_infered_every_n_epochs (int, optional)
         save_checkpoint_every_n_epochs (int, optional)
         distributed_rank (int, optional): Index of the GPU device to use in distributed system.
         distributed_backend (str, optional): Name of the backend to use.
@@ -148,8 +150,12 @@ def main(run_name,
             is_trial_run = trainer.step == step
             trainer.run_epoch(train=True, trial_run=is_trial_run)
 
-            if trainer.epoch % evaluate_every_n_epochs == 0 or is_trial_run:
+            if trainer.epoch % evaluate_aligned_every_n_epochs == 0 or is_trial_run:
                 trainer.run_epoch(train=False, trial_run=is_trial_run)
+
+            if trainer.epoch % evaluate_infered_every_n_epochs == 0 or is_trial_run:
+                trainer.run_epoch(train=False, infer=True, trial_run=is_trial_run)
+                trainer.visualize_infered()
 
             if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
                 if not src.distributed.in_use() or src.distributed.is_master():

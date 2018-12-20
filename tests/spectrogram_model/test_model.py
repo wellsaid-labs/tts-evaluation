@@ -1,8 +1,46 @@
 import math
 
 import torch
+import numpy
 
 from src.spectrogram_model import SpectrogramModel
+
+
+def test_spectrogram_model_batch_size_sensativity():
+    batch_size = 5
+    num_tokens = 6
+    frame_channels = 20
+    vocab_size = 20
+    num_frames = 3
+    num_speakers = 7
+    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels).eval()
+    model.decoder.pre_net.layers[0][2].p = 0  # Remove random dropout from AlwaysDropout
+    model.decoder.pre_net.layers[1][2].p = 0  # Remove random dropout from AlwaysDropout
+
+    # NOTE: 1-index to avoid using 0 typically associated with padding
+    input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
+    speaker = torch.LongTensor(1, batch_size).fill_(0)
+
+    # frames [num_frames, batch_size, frame_channels]
+    # frames_with_residual [num_frames, batch_size, frame_channels]
+    # stop_token [num_frames, batch_size]
+    # alignment [num_frames, batch_size, num_tokens]
+    (batched_frames, batched_frames_with_residual, batched_stop_token, batched_alignment,
+     batched_lengths) = model(
+         input_, speaker, max_recursion=num_frames)
+
+    frames, frames_with_residual, stop_token, alignment, lengths = model(
+        input_[:, :1], speaker[:, :1], max_recursion=num_frames)
+
+    numpy.testing.assert_almost_equal(frames.detach().numpy(),
+                                      batched_frames[:, :1].detach().numpy())
+    numpy.testing.assert_almost_equal(frames_with_residual.detach().numpy(),
+                                      batched_frames_with_residual[:, :1].detach().numpy())
+    numpy.testing.assert_almost_equal(stop_token.detach().numpy(),
+                                      batched_stop_token[:, :1].detach().numpy())
+    numpy.testing.assert_almost_equal(alignment.detach().numpy(),
+                                      batched_alignment[:, :1].detach().numpy())
+    numpy.testing.assert_almost_equal(lengths, lengths[:1])
 
 
 def test_spectrogram_model():
@@ -22,7 +60,7 @@ def test_spectrogram_model():
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     speaker = torch.LongTensor(1, batch_size).fill_(0)
 
-    frames, frames_with_residual, stop_token, alignment, lengths = model.infer(
+    frames, frames_with_residual, stop_token, alignment, lengths = model(
         input_, speaker, max_recursion=num_frames)
 
     assert frames.type() == 'torch.FloatTensor'
@@ -59,7 +97,7 @@ def test_spectrogram_model_unbatched():
     input_ = torch.LongTensor(num_tokens).random_(1, vocab_size)
     speaker = torch.LongTensor(1, 1).fill_(0)
 
-    frames, frames_with_residual, stop_token, alignment, _ = model.infer(
+    frames, frames_with_residual, stop_token, alignment, _ = model(
         input_, speaker, max_recursion=num_frames)
 
     assert frames.type() == 'torch.FloatTensor'

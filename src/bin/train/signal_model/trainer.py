@@ -261,8 +261,7 @@ class Trainer():
             self.comet_ml.log_epoch_end(self.epoch)
             if train:
                 self.epoch += 1
-                self._maybe_rollback(
-                    self.accumulated_metrics.get_epoch_metric('coarse_loss').item())
+                self._maybe_rollback(self.accumulated_metrics.get_epoch_metric('coarse_loss'))
             self.accumulated_metrics.log_epoch_end(
                 lambda k, v: self.comet_ml.log_metric('epoch/' + k, v))
 
@@ -275,7 +274,6 @@ class Trainer():
             do_backwards (bool): If ``True`` backward propogate the loss.
         """
         (predicted_coarse, predicted_fine, _) = predictions
-        num_predictions = torch.sum(batch.signal_mask[0])
 
         # [batch_size, signal_length, bins] → [batch_size, bins, signal_length]
         predicted_fine = predicted_fine.transpose(1, 2)
@@ -283,11 +281,11 @@ class Trainer():
 
         # coarse_loss [batch_size, signal_length]
         coarse_loss = self.criterion(predicted_coarse, batch.target_signal_coarse[0])
-        coarse_loss = torch.sum(coarse_loss * batch.signal_mask[0]) / num_predictions
+        coarse_loss = coarse_loss.masked_select(batch.signal_mask[0]).mean()
 
         # fine_loss [batch_size, signal_length]
         fine_loss = self.criterion(predicted_fine, batch.target_signal_fine[0])
-        fine_loss = torch.sum(fine_loss * batch.signal_mask[0]) / num_predictions
+        fine_loss = fine_loss.masked_select(batch.signal_mask[0]).mean()
 
         if do_backwards:
             self.optimizer.zero_grad()
@@ -298,9 +296,9 @@ class Trainer():
         self.accumulated_metrics.add_multiple_metrics({
             'coarse_loss': coarse_loss,
             'fine_loss': fine_loss
-        }, num_predictions)
+        }, batch.signal_mask[0].sum())
 
-        return coarse_loss, fine_loss, num_predictions
+        return coarse_loss, fine_loss, batch.signal_mask[0].sum()
 
     def visualize_infered(self):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.

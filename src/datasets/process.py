@@ -35,6 +35,9 @@ import src.distributed
 
 logger = logging.getLogger(__name__)
 
+# LEARN MORE: https://github.com/pytorch/pytorch/issues/973
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 
 def _download_file_maybe_extract(*args, **kwargs):
     """
@@ -215,7 +218,7 @@ def _predict_spectrogram(data,
     Returns:
         (iterable of SpectrogramTextSpeechRow)
     """
-    checkpoint = Checkpoint.from_path(checkpoint_path)
+    checkpoint = Checkpoint.from_path(checkpoint_path, device=device)
     model_name = str(checkpoint.path.resolve().relative_to(ROOT_PATH))
     model_name = model_name.replace('/', '_').replace('.', '_')
 
@@ -251,15 +254,15 @@ def _predict_spectrogram(data,
                     _, predicted, _, alignments, lengths = checkpoint.model.infer(text, speaker)
 
                 # Compute some metrics for logging
-                mask = lengths_to_mask(lengths, device=predicted.device, padding_index=0, dim=1)
+                mask = lengths_to_mask(lengths, device=predicted.device).transpose(0, 1)
                 metrics.add_multiple_metrics({
                     'attention_norm': get_average_norm(alignments, norm=inf, dim=2, mask=mask),
                     'attention_std': get_weighted_stdev(alignments, dim=2, mask=mask),
                 }, mask.sum())
                 if aligned:
                     mask = mask.unsqueeze(2).expand_as(predicted)
-                    loss = mse_loss(predicted * mask, spectrogram, reduction='sum')
-                    metrics.add_metric('loss', loss, mask.sum())
+                    loss = mse_loss(predicted, spectrogram, reduction='none')
+                    metrics.add_metric('loss', loss.masked_select(mask).mean(), mask.sum())
 
                 # Save to disk
                 splits = predicted.split(1, dim=1)

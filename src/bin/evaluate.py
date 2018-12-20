@@ -67,26 +67,31 @@ def main(signal_model_checkpoint_path=None,
          spectrogram_model_checkpoint_path=None,
          dataset=datasets.lj_speech_dataset,
          destination='results/',
-         num_samples=25,
+         num_samples=32,
          aligned=False,
-         signal_model_batch_size=4,
+         spectrogram_model_batch_size=1,
+         signal_model_batch_size=1,
          signal_model_device=torch.device('cpu')):
     """ Generate random samples of signal model to evaluate.
 
-    NOTE: On CUDA, we run out of memory quickly and it's slow to iterate. While on CPU, this
-    is not a problem for the signal model.
+    NOTE: We use a batch size of 1 during evaluation to get similar results as the deployed product.
+    Padding needed to batch together sequences, affects both the signal model and the spectrogram
+    model.
 
     Args:
-        signal_model_checkpoint_path (str): Checkpoint used to predict a raw waveform given a
-            spectrogram.
+        signal_model_checkpoint_path (str, optional): Checkpoint used to predict a raw waveform
+            given a spectrogram.
         spectrogram_model_checkpoint_path (str, optional): Checkpoint used to generate spectrogram
             from text as input to the signal model.
         dataset (callable, optional): Callable that returns an iterable of ``dict``.
-        destination (str): Path to store results.
-        num_samples (int): Number of rows to evaluate.
-        aligned (bool): If ``True``, predict a ground truth aligned spectrogram.
-        signal_model_batch_size (int): The batch size for the signal model. This is lower
+        destination (str, optional): Path to store results.
+        num_samples (int, optional): Number of rows to evaluate.
+        aligned (bool, optional): If ``True``, predict a ground truth aligned spectrogram.
+        spectrogram_model_batch_size (int, optional)
+        signal_model_batch_size (int, optional): The batch size for the signal model. This is lower
             than during training because we are no longer using small slices.
+        signal_model_device (torch.device, optional): Device used for signal model inference, note
+            that on CPU the signal model tends to run faster and does not run out of memory.
     """
     destination = Path(destination)
     destination.mkdir(exist_ok=False, parents=True)
@@ -96,14 +101,18 @@ def main(signal_model_checkpoint_path=None,
 
     # Sample and batch the validation data
     _, dev = dataset()
-    use_predicted = spectrogram_model_checkpoint_path is not None
-    indicies = list(RandomSampler(dev))[:num_samples]
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    examples = compute_spectrograms([dev[i] for i in indicies],
-                                    checkpoint_path=spectrogram_model_checkpoint_path,
-                                    device=device,
-                                    on_disk=False,
-                                    aligned=aligned)
+
+    indicies = list(RandomSampler(dev))
+    if num_samples is not None:
+        indicies = indicies[:num_samples]
+
+    examples = compute_spectrograms(
+        [dev[i] for i in indicies],
+        checkpoint_path=spectrogram_model_checkpoint_path,
+        device=(torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')),
+        on_disk=False,
+        aligned=aligned,
+        batch_size=spectrogram_model_batch_size)
 
     if signal_model_checkpoint_path is None:
         for i, example in zip(indicies, examples):
@@ -112,6 +121,7 @@ def main(signal_model_checkpoint_path=None,
     else:
         signal_model_checkpoint = Checkpoint.from_path(
             Path(signal_model_checkpoint_path), device=signal_model_device)
+        use_predicted = spectrogram_model_checkpoint_path is not None
 
         # NOTE: Sort by spectrogram lengths to batch similar sized outputs together
         _get_length_partial = partial(_get_spectrogram_length, use_predicted=use_predicted)
