@@ -152,9 +152,9 @@ class Trainer():
         if train:
             label = 'TRAIN'
         elif not train and infer:
-            label = 'INFER_DEV'
+            label = 'DEV[INFER]'
         elif not train:
-            label = 'ALIGNED_DEV'
+            label = 'DEV'
 
         logger.info('[%s] Running Epoch %d, Step %d', label, self.epoch, self.step)
         if trial_run:
