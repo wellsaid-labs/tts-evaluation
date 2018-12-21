@@ -1,6 +1,6 @@
 import torch
-import torch.nn as nn
 
+from torch import nn
 from torchnlp.text_encoders import PADDING_INDEX
 from torchnlp.text_encoders.reserved_tokens import RESERVED_ITOS
 
@@ -9,6 +9,8 @@ from src.hparams import configurable
 
 class Encoder(nn.Module):
     """ Encodes sequence as a hidden feature representation.
+
+    TODO: Submit PR to torchnlp to remove manditory reserved tokens
 
     SOURCE (Tacotron 2):
         The encoder converts a character sequence into a hidden feature representation. Input
@@ -71,7 +73,6 @@ class Encoder(nn.Module):
         assert convolution_filter_size % 2 == 1, ('`convolution_filter_size` must be odd')
 
         self.embed_token = nn.Embedding(vocab_size, token_embedding_dim, padding_idx=PADDING_INDEX)
-        # TODO: Submit PR to torchnlp to remove manditory reserved tokens
         self.embed_speaker = None
         if num_speakers - len(RESERVED_ITOS) > 1:
             self.embed_speaker = nn.Embedding(num_speakers, speaker_embedding_dim)

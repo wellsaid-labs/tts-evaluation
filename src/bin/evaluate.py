@@ -73,8 +73,7 @@ def main(signal_model_checkpoint_path=None,
          aligned=False,
          speaker=Speaker.HILARY_NORIEGA,
          spectrogram_model_batch_size=1,
-         signal_model_batch_size=1,
-         signal_model_device=torch.device('cpu')):
+         signal_model_batch_size=1):
     """ Generate random samples of signal model to evaluate.
 
     NOTE: We use a batch size of 1 during evaluation to get similar results as the deployed product.
@@ -100,6 +99,7 @@ def main(signal_model_checkpoint_path=None,
     destination = Path(destination)
     destination.mkdir(exist_ok=False, parents=True)
     record_stream(destination)
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     log_config()
 
@@ -113,13 +113,12 @@ def main(signal_model_checkpoint_path=None,
     if num_samples is not None:
         indicies = indicies[:num_samples]
 
-    examples = compute_spectrograms(
-        [dev[i] for i in indicies],
-        checkpoint_path=spectrogram_model_checkpoint_path,
-        device=(torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')),
-        on_disk=False,
-        aligned=aligned,
-        batch_size=spectrogram_model_batch_size)
+    examples = compute_spectrograms([dev[i] for i in indicies],
+                                    checkpoint_path=spectrogram_model_checkpoint_path,
+                                    device=device,
+                                    on_disk=False,
+                                    aligned=aligned,
+                                    batch_size=spectrogram_model_batch_size)
 
     if signal_model_checkpoint_path is None:
         for i, example in zip(indicies, examples):
@@ -127,7 +126,8 @@ def main(signal_model_checkpoint_path=None,
             _save(destination, i, example, waveform)
     else:
         signal_model_checkpoint = Checkpoint.from_path(
-            Path(signal_model_checkpoint_path), device=signal_model_device)
+            Path(signal_model_checkpoint_path), device=device)
+        signal_model_inferrer = signal_model_checkpoint.model.to_inferrer(device=device)
         use_predicted = spectrogram_model_checkpoint_path is not None
 
         # NOTE: Sort by spectrogram lengths to batch similar sized outputs together
@@ -137,13 +137,13 @@ def main(signal_model_checkpoint_path=None,
         for chunk in chunks(list(zip(examples, indicies)), signal_model_batch_size):
             examples_chunk, indicies_chunk = zip(*chunk)
             batch = collate_sequences(examples_chunk, padding_index=0)
-            batch = tensors_to(batch, device=signal_model_device, non_blocking=True)
+            batch = tensors_to(batch, device=device, non_blocking=True)
             spectrogram = (batch.predicted_spectrogram if use_predicted else batch.spectrogram)
 
             logger.info('Predicting signal...')
-            with evaluate(signal_model_checkpoint.model):
+            with evaluate(signal_model_inferrer):
                 # [batch_size, local_length, local_features_size] → [batch_size, signal_length]
-                predicted_coarse, predicted_fine, _ = signal_model_checkpoint.model.infer(
+                predicted_coarse, predicted_fine, _ = signal_model_inferrer(
                     spectrogram[0], use_tqdm=True)
                 predicted_signal = combine_signal(predicted_coarse, predicted_fine).numpy()
 

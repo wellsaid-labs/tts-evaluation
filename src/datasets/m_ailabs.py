@@ -130,6 +130,9 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
     The original URL is ``http://www.m-ailabs.bayern/?ddownload=411``.
     Use ``curl -I <URL>`` to find the redirected URL.
 
+    NOTE: A cursory analysis 100 clips from the M-AILABS dataset was that it was 10% of the clips
+    would end to early. The text was verbalized accurately, during the analysis.
+
     Args:
         directory (str or Path, optional): Directory to cache the dataset.
         url (str, optional): URL of the dataset ``tar.gz`` file.

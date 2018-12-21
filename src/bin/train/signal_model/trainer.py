@@ -316,10 +316,10 @@ class Trainer():
         # Introduce quantization noise
         target_signal = combine_signal(*split_signal(target_signal))
 
-        # NOTE: Inference is faster on CPU because of the many small operations being run
-        with evaluate(self.model, device=torch.device('cpu')):
+        inferrer = self.model.to_inferrer(self.device)
+        with evaluate(inferrer):
             logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[0])
-            predicted_coarse, predicted_fine, _ = self.model.infer(spectrogram)
+            predicted_coarse, predicted_fine, _ = inferrer(spectrogram)
             predicted_signal = combine_signal(predicted_coarse, predicted_fine)
 
         self.comet_ml.log_audio(

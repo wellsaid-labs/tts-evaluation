@@ -2,7 +2,6 @@ import torch
 import numpy as np
 
 from src.signal_model import WaveRNN
-from src.signal_model.wave_rnn import _scale
 from src.audio import split_signal
 
 
@@ -42,11 +41,12 @@ def test_wave_rnn_infer_equals_forward():
 
     # Run inference
     # NOTE: argmax to ensure forward and infer sample the deterministically
-    infer_predicted_coarse, infer_predicted_fine, infer_hidden_state = net.infer(
-        local_features, hidden_state=infer_hidden_state, argmax=True, pad=False)
+
+    infer_predicted_coarse, infer_predicted_fine, infer_hidden_state = net.to_inferrer(argmax=True)(
+        local_features, hidden_state=infer_hidden_state, pad=False)
 
     # [batch_size, signal_length] → [batch_size, signal_length - 1, 2]
-    forward_input_signal = torch.stack((infer_predicted_coarse, infer_predicted_fine),
+    forward_input_signal = torch.stack((infer_predicted_coarse.long(), infer_predicted_fine.long()),
                                        dim=2)[:, :-1]
     # [batch_size] → [batch_size, 1, 2]
     go_signal = torch.stack((go_coarse, go_fine), dim=1).unsqueeze(1).long()
@@ -76,15 +76,6 @@ def test_wave_rnn_infer_equals_forward():
     forward_predicted_fine = forward_predicted_fine.max(dim=2)[1]
     np.testing.assert_allclose(
         infer_predicted_fine.detach().numpy(), forward_predicted_fine.detach().numpy(), atol=1e-04)
-
-
-def test_wave_rnn_scale():
-    original = torch.linspace(0, 255, steps=256)
-    scaled = _scale(original, 256)
-    assert torch.min(scaled) == -1.0
-    assert torch.max(scaled) == 1.0
-    reconstructed = (scaled + 1.0) * 127.5
-    np.testing.assert_allclose(original.numpy(), reconstructed.numpy(), atol=1e-04)
 
 
 def test_wave_rnn_forward():
@@ -118,7 +109,7 @@ def test_wave_rnn_forward():
     (predicted_coarse + predicted_fine).sum().backward()
 
 
-def test_wave_rnn_infer():
+def test_wave_rnn_inferrer():
     bits = 16
     local_length = 16
     batch_size = 2
@@ -138,7 +129,7 @@ def test_wave_rnn_infer():
         upsample_repeat=upsample_repeat,
         upsample_kernels=upsample_kernels,  # Local
         local_features_size=local_features_size).eval()
-    predicted_coarse, predicted_fine, _ = net.infer(local_features, pad=True)
+    predicted_coarse, predicted_fine, _ = net.to_inferrer()(local_features, pad=True)
 
     assert predicted_coarse.shape == (batch_size, signal_length)
     assert predicted_fine.shape == (batch_size, signal_length)
@@ -169,7 +160,7 @@ def test_wave_rnn_infer_unbatched():
         upsample_repeat=upsample_repeat,
         upsample_kernels=upsample_kernels,
         local_features_size=local_features_size).eval()
-    predicted_coarse, predicted_fine, _ = net.infer(local_features, pad=True)
+    predicted_coarse, predicted_fine, _ = net.to_inferrer()(local_features, pad=True)
 
     assert predicted_coarse.shape == (signal_length,)
     assert predicted_fine.shape == (signal_length,)

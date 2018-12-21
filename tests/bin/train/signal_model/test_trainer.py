@@ -82,11 +82,11 @@ def test_visualize_infered():
     infer_pass_return = (torch.LongTensor(signal_length).zero_(),
                          torch.LongTensor(signal_length).zero_(), None)
 
-    with mock.patch('src.bin.train.signal_model.trainer.WaveRNN.infer') as mock_infer:
-        mock_infer.return_value = infer_pass_return
+    with mock.patch('src.signal_model.wave_rnn._WaveRNNInferrer.forward') as mock_forward:
+        mock_forward.return_value = infer_pass_return
         trainer.visualize_infered()
 
-        mock_infer.assert_called()
+        mock_forward.assert_called()
 
 
 def test_run_epoch():

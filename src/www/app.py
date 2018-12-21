@@ -48,17 +48,17 @@ def get_spectrogram_model_checkpoint():
 
 
 @lru_cache()
-def get_signal_model_checkpoint():
+def get_signal_model():
     signal_model_checkpoint_path = ('experiments/signal_model/09_28/'
                                     'feature_model_normalized__encoder_norm/'
                                     'checkpoints/1539187496/step_9015794.pt')
-    return Checkpoint.from_path(signal_model_checkpoint_path)
+    return Checkpoint.from_path(signal_model_checkpoint_path).model.to_inferrer()
 
 
 def cache_models():
     """ Cache spectrogram and signal models """
     get_spectrogram_model_checkpoint()
-    get_signal_model_checkpoint()
+    get_signal_model()
 
 
 # ERROR HANDLERS
@@ -129,7 +129,7 @@ def _synthesize(text, speaker, is_high_fidelity):
     """
     log_config()
     spectrogram_model_checkpoint = get_spectrogram_model_checkpoint()
-    signal_model_checkpoint = get_signal_model_checkpoint()
+    signal_model = get_signal_model()
 
     text_encoder = spectrogram_model_checkpoint.text_encoder
     encoded_text = text_encoder.encode(text)
@@ -140,7 +140,7 @@ def _synthesize(text, speaker, is_high_fidelity):
     speaker = getattr(Speaker, str(speaker))  # Get speaker by ID or name
     encoded_speaker = spectrogram_model_checkpoint.speaker_encoder.encode(speaker)
 
-    with evaluate(spectrogram_model_checkpoint.model, signal_model_checkpoint.model):
+    with evaluate(spectrogram_model_checkpoint.model, signal_model):
         # predicted_frames [num_frames, batch_size, frame_channels]
         predicted_frames = spectrogram_model_checkpoint.model(
             tokens=encoded_text, speaker=encoded_speaker)[1]
@@ -148,8 +148,7 @@ def _synthesize(text, speaker, is_high_fidelity):
         if is_high_fidelity:
             # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
             predicted_frames = predicted_frames.transpose(0, 1)
-            predicted_coarse, predicted_fine, _ = signal_model_checkpoint.model.infer(
-                predicted_frames)
+            predicted_coarse, predicted_fine, _ = signal_model(predicted_frames)
             waveform = combine_signal(predicted_coarse, predicted_fine).numpy()
         else:
             waveform = griffin_lim(predicted_frames[:, 0].numpy())

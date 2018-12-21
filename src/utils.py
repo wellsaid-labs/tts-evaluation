@@ -512,7 +512,8 @@ def evaluate(*modules, device=None):
         module_devices = list(set(module_devices))
         # For switching devices, the implementation only supports modules on a single device.
         assert len(module_devices) <= 1
-        module_device = module_devices[0] if len(module_devices) == 1 else None
+        module_device = module_devices[0] if len(
+            module_devices) == 1 and device is not None else None
 
         modules_metadata.append({'is_train': module.training, 'last_device': module_device})
         module.train(mode=False)

@@ -311,7 +311,6 @@ def set_hparams():
     is_signal_model_trained_from_predicted_spectrogram = True
 
     spectrogram_model_dev_batch_size = 256
-    signal_model_train_batch_size = 64
 
     # TODO: Add option to instead of strings to use direct references.
     add_config({
@@ -328,24 +327,6 @@ def set_hparams():
                 # autoregressive decoder.
                 'pre_net.PreNet.__init__.dropout': 0.5,
                 'post_net.PostNet.__init__.convolution_dropout': convolution_dropout,
-            },
-            'signal_model': {
-                'wave_rnn.WaveRNN': {
-                    'infer': {
-                        # SOURCE: Generating Sequences With Recurrent Neural Networks
-                        # One problem with unbiased samples is that they tend to be difficult to
-                        # read (partly because real handwriting is difficult to read, and partly
-                        # because the network is an imperfect model). Intuitively, we would expect
-                        # the network to give higher probability to good handwriting because it
-                        # tends to be smoother and more predictable than bad handwriting. If this is
-                        # true, we should aim to output more probable elements of Pr(x|c) if we want
-                        # the samples to be easier to read.
-                        # NOTE: Temperature is a concept from reinforcement learning to bias the
-                        # softmax similar to the above idea.
-                        'temperature': 1.0,
-                        'argmax': False,
-                    },
-                },
             },
             'bin.evaluate.main.dataset': dataset,
             'datasets.process.compute_spectrograms.batch_size': spectrogram_model_dev_batch_size,
@@ -371,7 +352,7 @@ def set_hparams():
                         # synchronous updates, using the Adam optimizer with β1 = 0.9, β2 = 0.999, 
                         # eps = 10−8 and a fixed learning rate of 10−4
                         # NOTE: Parameters set after experimentation on a 4 Px100 GPU.
-                        'train_batch_size': signal_model_train_batch_size,
+                        'train_batch_size': 64,
                         'dev_batch_size': 256,
                         'use_predicted': is_signal_model_trained_from_predicted_spectrogram,
                     },
@@ -380,10 +361,6 @@ def set_hparams():
                         # The WaveRNN models are trained on sequences of 960 audio samples
                         'slice_size': int(900 / frame_hop),
                         'slice_pad': 5,
-                    },
-                    'benchmark.signal_model_batch_size': {
-                        'batch_size': signal_model_train_batch_size,
-                        'spectrogram_frame_channels': frame_channels,
                     },
                 }
             },
