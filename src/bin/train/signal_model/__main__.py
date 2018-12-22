@@ -140,7 +140,7 @@ def main(run_name,
                 trainer.run_epoch(train=False, trial_run=is_trial_run)
 
             if trainer.epoch % generate_every_n_epochs == 0 or is_trial_run:
-                trainer.visualize_infered()
+                trainer.visualize_inferred()
 
             if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
                 Checkpoint(

@@ -86,6 +86,10 @@ class Trainer():
     STEP_UNIT_DECISECONDS = 'deciseconds'
     STEP_UNIT_BATCHES = 'batches'
 
+    TRAIN_LABEL = 'train'
+    DEV_INFERRED_LABEL = 'dev_inferred'
+    DEV_LABEL = 'dev'
+
     @configurable
     def __init__(self,
                  device,
@@ -209,14 +213,14 @@ class Trainer():
             train (bool, optional): If ``True``, the batch will store gradients.
             trial_run (bool, optional): If ``True``, then runs only 1 batch.
         """
-        label = 'TRAIN' if train else 'DEV'
-        logger.info('[%s] Running Epoch %d, Step %d', label, self.epoch, self.step)
+        label = self.TRAIN_LABEL if train else self.DEV_LABEL
+        logger.info('[%s] Running Epoch %d, Step %d', label.upper(), self.epoch, self.step)
         if trial_run:
-            logger.info('[%s] Trial run with one batch.', label)
+            logger.info('[%s] Trial run with one batch.', label.upper())
 
         # Set mode(s)
         self.model.train(mode=train)
-        self.comet_ml.set_context(label.lower())
+        self.comet_ml.set_context(label)
         if not trial_run:
             self.comet_ml.log_current_epoch(self.epoch)
 
@@ -300,11 +304,12 @@ class Trainer():
 
         return coarse_loss, fine_loss, batch.signal_mask[0].sum()
 
-    def visualize_infered(self):
+    def visualize_inferred(self):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.
 
         Returns: None
         """
+        self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
         example = random.sample(self.dev_dataset, 1)[0]
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
         # [num_frames, frame_channels]
@@ -323,9 +328,9 @@ class Trainer():
             predicted_signal = combine_signal(predicted_coarse, predicted_fine)
 
         self.comet_ml.log_audio(
-            tag='infered',
+            tag=self.DEV_INFERRED_LABEL,
             text=example.text,
             speaker=str(example.speaker),
             gold_audio=target_signal,
             predicted_audio=predicted_signal)
-        self.comet_ml.log_figure('infered/spectrogram', plot_spectrogram(spectrogram))
+        self.comet_ml.log_figure('spectrogram', plot_spectrogram(spectrogram))

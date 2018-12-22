@@ -76,7 +76,7 @@ def _get_example_batched_training_row(batch_size=2,
         signal_mask=(torch.ByteTensor(batch_size, signal_length).fill_(1), signal_lengths))
 
 
-def test_visualize_infered():
+def test_visualize_inferred():
     signal_length = 16
     trainer = get_trainer()
     infer_pass_return = (torch.LongTensor(signal_length).zero_(),
@@ -84,7 +84,7 @@ def test_visualize_infered():
 
     with mock.patch('src.signal_model.wave_rnn._WaveRNNInferrer.forward') as mock_forward:
         mock_forward.return_value = infer_pass_return
-        trainer.visualize_infered()
+        trainer.visualize_inferred()
 
         mock_forward.assert_called()
 

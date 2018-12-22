@@ -1,6 +1,9 @@
+from datetime import timedelta
+
 import logging
 import math
 import random
+import time
 
 from torch.nn import BCEWithLogitsLoss
 from torch.nn import MSELoss
@@ -57,6 +60,10 @@ class Trainer():
         optimizer (torch.optim.Optimizer, optional): Optimizer used for gradient descent.
         use_tqdm (bool, optional): Use TQDM to track epoch progress.
     """
+
+    TRAIN_LABEL = 'train'
+    DEV_INFERRED_LABEL = 'dev_inferred'
+    DEV_LABEL = 'dev'
 
     @configurable
     def __init__(self,
@@ -149,20 +156,21 @@ class Trainer():
         if infer and train:
             raise ValueError('Train and infer are mutually exclusive.')
 
+        start = time.time()
         if train:
-            label = 'TRAIN'
+            label = self.TRAIN_LABEL
         elif not train and infer:
-            label = 'DEV[INFER]'
+            label = self.DEV_INFERRED_LABEL
         elif not train:
-            label = 'DEV'
+            label = self.DEV_LABEL
 
-        logger.info('[%s] Running Epoch %d, Step %d', label, self.epoch, self.step)
+        logger.info('[%s] Running Epoch %d, Step %d', label.upper(), self.epoch, self.step)
         if trial_run:
-            logger.info('[%s] Trial run with one batch.', label)
+            logger.info('[%s] Trial run with one batch.', label.upper())
 
         # Set mode(s)
         self.model.train(mode=train)
-        self.comet_ml.set_context(label.lower())
+        self.comet_ml.set_context(label)
         if not trial_run:
             self.comet_ml.log_current_epoch(self.epoch)
 
@@ -198,6 +206,8 @@ class Trainer():
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
+
+        logger.info('Time elapsed: %s', str(timedelta(seconds=time.time() - start)))
 
         # Log epoch metrics
         if not trial_run:
@@ -257,7 +267,7 @@ class Trainer():
             'attention_std': get_weighted_stdev(**kwargs),
         }, kwargs['mask'].sum())
 
-    def visualize_infered(self):
+    def visualize_inferred(self):
         """ Run in inference mode without teacher forcing and visualizing results.
         """
         if src.distributed.in_use() and not src.distributed.is_master():
@@ -276,20 +286,24 @@ class Trainer():
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
 
-        self._add_attention_metrics(predicted_alignments, predicted_lengths)
+        self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
         self.comet_ml.log_audio(
-            tag='infered',
+            tag=self.DEV_INFERRED_LABEL,
             text=example.text,
             speaker=example.speaker,
             predicted_audio=griffin_lim(predicted_post_spectrogram.cpu().numpy()),
             gold_audio=example.spectrogram_audio.to_tensor())
+        self.comet_ml.log_metrics({  # [num_frames, num_tokens] → scalar
+            'single/attention_norm': get_average_norm(predicted_alignments, dim=1, norm=math.inf),
+            'single/attention_std': get_weighted_stdev(predicted_alignments, dim=1),
+        })
         self.comet_ml.log_figures({
-            'infered/final_spectrogram': plot_spectrogram(predicted_post_spectrogram),
-            'infered/residual_spectrogram': plot_spectrogram(predicted_residual),
-            'infered/gold_spectrogram': plot_spectrogram(example.spectrogram.to_tensor()),
-            'infered/pre_spectrogram': plot_spectrogram(predicted_pre_spectrogram),
-            'infered/alignment': plot_attention(predicted_alignments),
-            'infered/stop_token': plot_stop_token(predicted_stop_tokens),
+            'final_spectrogram': plot_spectrogram(predicted_post_spectrogram),
+            'residual_spectrogram': plot_spectrogram(predicted_residual),
+            'gold_spectrogram': plot_spectrogram(example.spectrogram.to_tensor()),
+            'pre_spectrogram': plot_spectrogram(predicted_pre_spectrogram),
+            'alignment': plot_attention(predicted_alignments),
+            'stop_token': plot_stop_token(predicted_stop_tokens),
         })
 
     def _visualize_predicted(self, batch, predictions):
@@ -316,12 +330,16 @@ class Trainer():
         predicted_alignments = predicted_alignments[:spectrogam_length, item, :text_length]
         predicted_stop_tokens = predicted_stop_tokens[:spectrogam_length, item]
 
+        self.comet_ml.log_metrics({  # [num_frames, num_tokens] → scalar
+            'single/attention_norm': get_average_norm(predicted_alignments, dim=1, norm=math.inf),
+            'single/attention_std': get_weighted_stdev(predicted_alignments, dim=1),
+        })
         self.comet_ml.log_figures({
-            'predicted/final_spectrogram': plot_spectrogram(predicted_post_spectrogram),
-            'predicted/residual_spectrogram': plot_spectrogram(predicted_residual),
-            'predicted/delta_spectrogram': plot_spectrogram(predicted_delta),
-            'predicted/gold_spectrogram': plot_spectrogram(gold_spectrogram),
-            'predicted/pre_spectrogram': plot_spectrogram(predicted_pre_spectrogram),
-            'predicted/alignment': plot_attention(predicted_alignments),
-            'predicted/stop_token': plot_stop_token(predicted_stop_tokens),
+            'final_spectrogram': plot_spectrogram(predicted_post_spectrogram),
+            'residual_spectrogram': plot_spectrogram(predicted_residual),
+            'delta_spectrogram': plot_spectrogram(predicted_delta),
+            'gold_spectrogram': plot_spectrogram(gold_spectrogram),
+            'pre_spectrogram': plot_spectrogram(predicted_pre_spectrogram),
+            'alignment': plot_attention(predicted_alignments),
+            'stop_token': plot_stop_token(predicted_stop_tokens),
         })

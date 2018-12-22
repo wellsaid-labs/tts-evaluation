@@ -74,7 +74,7 @@ def main(run_name,
          reset_optimizer=False,
          hparams={},
          evaluate_aligned_every_n_epochs=1,
-         evaluate_infered_every_n_epochs=5,
+         evaluate_inferred_every_n_epochs=5,
          save_checkpoint_every_n_epochs=5,
          distributed_rank=None,
          distributed_backend='nccl'):
@@ -89,7 +89,7 @@ def main(run_name,
         reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer.
         hparams (dict, optional): Hparams to override default hparams.
         evaluate_aligned_every_n_epochs (int, optional)
-        evaluate_infered_every_n_epochs (int, optional)
+        evaluate_inferred_every_n_epochs (int, optional)
         save_checkpoint_every_n_epochs (int, optional)
         distributed_rank (int, optional): Index of the GPU device to use in distributed system.
         distributed_backend (str, optional): Name of the backend to use.
@@ -153,9 +153,9 @@ def main(run_name,
             if trainer.epoch % evaluate_aligned_every_n_epochs == 0 or is_trial_run:
                 trainer.run_epoch(train=False, trial_run=is_trial_run)
 
-            if trainer.epoch % evaluate_infered_every_n_epochs == 0 or is_trial_run:
+            if trainer.epoch % evaluate_inferred_every_n_epochs == 0 or is_trial_run:
                 trainer.run_epoch(train=False, infer=True, trial_run=is_trial_run)
-                trainer.visualize_infered()
+                trainer.visualize_inferred()
 
             if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
                 if not src.distributed.in_use() or src.distributed.is_master():
