@@ -354,21 +354,12 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
         subprocess.check_output('git log -1 --format=%cd', shell=True).decode().strip())
     experiment.log_parameter('num_gpu', torch.cuda.device_count())
 
-    def log_audio(self,
-                  tag=None,
-                  text=None,
-                  speaker=None,
-                  gold_audio=None,
-                  predicted_audio=None,
-                  step=None):
+    def log_audio(self, gold_audio=None, predicted_audio=None, step=None, **kwargs):
         """ Add text and audio to remote visualizer in one entry.
 
         TODO: Consider logging the Waveform as well
 
         Args:
-            tag (str): Tag for this event.
-            text (str)
-            speaker (src.dataset.Speaker)
             gold_audio (torch.Tensor)
             predicted_audio (torch.Tensor)
             step (int, optional)
@@ -376,12 +367,8 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
         step = self.curr_step if step is None else step
         assert step is not None
         items = ['<p><b>Step:</b> {}</p>'.format(step)]
-        if tag is not None:
-            items.append('<p><b>Tag:</b> {}</p>'.format(tag))
-        if text is not None:
-            items.append('<p><b>Text:</b> {}</p>'.format(text))
-        if speaker is not None:
-            items.append('<p><b>Speaker:</b> {}</p>'.format(str(speaker)))
+        for key, value in kwargs.items():
+            items.append('<p><b>{}:</b> {}</p>'.format(key.title(), value))
         if gold_audio is not None:
             items.append('<p><b>Gold Audio:</b></p>')
             items.append('<audio controls="" src="data:audio/wav;base64,{}"></audio>'.format(
