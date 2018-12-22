@@ -1,9 +1,6 @@
-from datetime import timedelta
-
 import logging
 import math
 import random
-import time
 
 from torch.nn import BCEWithLogitsLoss
 from torch.nn import MSELoss
@@ -27,6 +24,7 @@ from src.utils import get_average_norm
 from src.utils import get_total_parameters
 from src.utils import get_weighted_stdev
 from src.utils import lengths_to_mask
+from src.utils import log_runtime
 from src.visualize import AccumulatedMetrics
 from src.visualize import CometML
 from src.visualize import plot_attention
@@ -145,6 +143,7 @@ class Trainer():
         logger.info('Model:\n%s', self.model)
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
+    @log_runtime
     def run_epoch(self, train=False, trial_run=False, infer=False):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
 
@@ -156,7 +155,6 @@ class Trainer():
         if infer and train:
             raise ValueError('Train and infer are mutually exclusive.')
 
-        start = time.time()
         if train:
             label = self.TRAIN_LABEL
         elif not train and infer:
@@ -206,8 +204,6 @@ class Trainer():
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
-
-        logger.info('Time elapsed: %s', str(timedelta(seconds=time.time() - start)))
 
         # Log epoch metrics
         if not trial_run:

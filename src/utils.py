@@ -5,6 +5,7 @@ matplotlib.use('Agg', warn=False)
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import lru_cache
+from functools import wraps
 from math import isclose
 from pathlib import Path
 
@@ -701,6 +702,14 @@ class OnDiskTensor():
     def __init__(self, path):
         self.path = Path(path)
 
+    def __hash__(self):
+        return hash(self.path)
+
+    def __eq__(self, other):
+        if isinstance(other, OnDiskTensor):
+            return self.path == other.path
+        return NotImplemented
+
     def to_tensor(self):
         """ Convert to a in-memory ``torch.tensor``. """
         loaded = np.load(str(self.path))
@@ -745,6 +754,49 @@ def _get_spectrogram_length(spectrogram):
     return spectrogram.shape[0]
 
 
+def seconds_to_string(seconds):
+    """ Rewrite seconds as a string.
+
+    Example:
+        >>> seconds_to_string(123)
+        '2m 3s'
+
+    Args:
+        seconds (int)
+
+    Returns
+        str
+    """
+    seconds = abs(int(seconds))
+    days, seconds = divmod(seconds, 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    if days > 0:
+        return '%dd %dh %dm %ds' % (days, hours, minutes, seconds)
+    elif hours > 0:
+        return '%dh %dm %ds' % (hours, minutes, seconds)
+    elif minutes > 0:
+        return '%dm %ds' % (minutes, seconds)
+    else:
+        return '%ds' % (seconds)
+
+
+def log_runtime(function):
+    """ Decorator for measuring the execution time of a function.
+    """
+
+    @wraps(function)
+    def decorator(*args, **kwargs):
+        start = time.time()
+        result = function(*args, **kwargs)
+        elapsed = seconds_to_string(time.time() - start)
+        logger.info('`%s` ran for %s', function.__qualname__, elapsed)
+        return result
+
+    return decorator
+
+
+@log_runtime
 def get_spectrogram_lengths(data, use_tqdm=False):
     """ Get the spectrograms lengths for every data row.
 
