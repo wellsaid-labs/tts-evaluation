@@ -103,7 +103,7 @@ class AutoregressiveDecoder(nn.Module):
                            num_tokens,
                            is_cuda,
                            hidden_state=None,
-                           ground_truth_frames=None,
+                           target_frames=None,
                            **kwargs):
         """ Get an initial LSTM hidden state.
 
@@ -111,14 +111,14 @@ class AutoregressiveDecoder(nn.Module):
             batch_size (int): Batch size for the forward pass; used to shape initital tensor.
             num_tokens (int): Number of tokens for the forward pass; used to shape initital tensor.
             is_cuda (bool): If True, move the tensors to CUDA memory.
-            ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
+            target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
                 optional): Ground truth frames for teacher-forcing.
             hidden_state (AutoregressiveDecoderHiddenState): For sequential prediction, decoder
                 hidden state used to predict the next frame.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Ground truth frames
-                shifted back one timestep if ``ground_truth_frames is not None``; otherwise, the
+                shifted back one timestep if ``target_frames is not None``; otherwise, the
                 initial or last frame is returned.
             lstm_one_hidden_state (tuple): Hidden state for lstm.
             lstm_two_hidden_state (tuple): Hidden state for lstm.
@@ -127,8 +127,8 @@ class AutoregressiveDecoder(nn.Module):
             cumulative_alignment (torch.FloatTensor [batch_size, num_tokens]): The last
                 predicted attention alignment.
         """
-        assert ground_truth_frames is None or hidden_state is None, ("""Either the decoder is
-conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
+        assert target_frames is None or hidden_state is None, ("""Either the decoder is
+conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
 
         if hidden_state is None:
             # Tacotron 2 authors confirmed that initially the decoder is conditioned on a fixed zero
@@ -142,9 +142,9 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
 
             # Tacotron 2 authors use teacher-forcing on the ground truth during training.
             # To use the ``initial_frame`` we concat it onto the beginning; furthermore, it does not
-            # need to use the very last frame of the ``ground_truth_frames`` so we remove it.
-            if ground_truth_frames is not None:
-                initial_frames = torch.cat([initial_frames, ground_truth_frames[0:-1]])
+            # need to use the very last frame of the ``target_frames`` so we remove it.
+            if target_frames is not None:
+                initial_frames = torch.cat([initial_frames, target_frames[0:-1]])
 
             return (initial_frames, initial_lstm_one_hidden_state, initial_lstm_two_hidden_state,
                     initial_attention_context, initial_alignment)
@@ -158,14 +158,14 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
         return (last_frame, lstm_one_hidden_state, lstm_two_hidden_state, last_attention_context,
                 cumulative_alignment)
 
-    def forward(self, encoded_tokens, tokens_mask, ground_truth_frames=None, hidden_state=None):
+    def forward(self, encoded_tokens, tokens_mask, target_frames=None, hidden_state=None):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, attention_hidden_size]):
                 Batched set of encoded sequences.
             tokens_mask (torch.FloatTensor [batch_size, num_tokens]): Binary mask where one's
                 represent padding in ``encoded_tokens``.
-            ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
+            target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
                 optional): During training, ground truth frames for teacher-forcing.
             hidden_state (AutoregressiveDecoderHiddenState): For sequential prediction, decoder
                 hidden state used to predict the next frame.
@@ -178,8 +178,8 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention
                 alignment for every frame, stored for visualization and debugging.
         """
-        assert ground_truth_frames is None or hidden_state is None, ("""Either the decoder is
-conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
+        assert target_frames is None or hidden_state is None, ("""Either the decoder is
+conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
 
         num_tokens, batch_size, _ = encoded_tokens.shape
         is_cuda = encoded_tokens.is_cuda
@@ -189,7 +189,7 @@ conditioned on ``ground_truth_frames`` or the ``hidden_state`` but not both.""")
              num_tokens=num_tokens,
              batch_size=batch_size,
              is_cuda=is_cuda,
-             ground_truth_frames=ground_truth_frames,
+             target_frames=target_frames,
              hidden_state=hidden_state,
              device=encoded_tokens.device)
 

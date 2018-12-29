@@ -133,12 +133,12 @@ class SpectrogramModel(nn.Module):
 
         return frames_with_residual
 
-    def _aligned(self, encoded_tokens, tokens_mask, ground_truth_frames=None):
+    def _aligned(self, encoded_tokens, tokens_mask, target_frames=None):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
             tokens_mask (torch.FloatTensor [batch_size, num_tokens])
-            ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
+            target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
@@ -147,7 +147,7 @@ class SpectrogramModel(nn.Module):
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
         """
         frames, stop_tokens, hidden_state, alignments = self.decoder(
-            encoded_tokens, tokens_mask, ground_truth_frames=ground_truth_frames)
+            encoded_tokens, tokens_mask, target_frames=target_frames)
         frames_with_residual = self._add_residual(frames)
         return frames, frames_with_residual, stop_tokens, alignments
 
@@ -217,14 +217,14 @@ class SpectrogramModel(nn.Module):
 
         return frames, frames_with_residual, stop_tokens, alignments, lengths
 
-    def forward(self, tokens, speaker, ground_truth_frames=None, **kwargs):
+    def forward(self, tokens, speaker, target_frames=None, **kwargs):
         """
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens]): Batched set
                 of sequences.
             speaker (torch.LongTensor [1, batch_size] or [batch_size] or []): Batched
                 speaker encoding.
-            ground_truth_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or
+            target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or
                 [num_frames, frame_channels]): Ground truth frames to do aligned prediction.
             **kwargs: Other key word arugments passed to ``_infer`` or ``_aligned``.
 
@@ -247,9 +247,9 @@ class SpectrogramModel(nn.Module):
             tokens = tokens.unsqueeze(1)
 
         # Normalize input shape
-        if ground_truth_frames is not None and len(ground_truth_frames.shape) == 2:
+        if target_frames is not None and len(target_frames.shape) == 2:
             # [num_frames, frame_channels] → [num_frames, batch_size(1), frame_channels]
-            ground_truth_frames = ground_truth_frames.unsqueeze(1)
+            target_frames = target_frames.unsqueeze(1)
 
         if len(speaker.shape) == 0:  # Normalize input shape
             # [] → [batch_size(1)]
@@ -268,10 +268,10 @@ class SpectrogramModel(nn.Module):
         # [batch_size, num_tokens] → [num_tokens, batch_size, encoder_hidden_size]
         encoded_tokens = self.encoder(tokens, speaker)
 
-        if ground_truth_frames is None:
+        if target_frames is None:
             return_ = self._infer(encoded_tokens, tokens_mask, **kwargs)
         else:
-            return_ = self._aligned(encoded_tokens, tokens_mask, ground_truth_frames, **kwargs)
+            return_ = self._aligned(encoded_tokens, tokens_mask, target_frames, **kwargs)
 
         # Remove the batch dimension from the outputs.
         if is_unbatched:

@@ -262,6 +262,9 @@ def griffin_lim(log_mel_spectrogram,
         iterations (int, optional): Number of iterations of griffin lim to run.
         use_tqdm (bool, optional): If `True` attach a progress bar during iteration.
     """
+    if log_mel_spectrogram.shape[0] == 0:
+        return np.array([])
+
     logger.info('Running Griffin-Lim....')
     spectrogram = _log_mel_spectrogram_to_spectrogram(
         log_mel_spectrogram=log_mel_spectrogram, sample_rate=sample_rate)

@@ -67,9 +67,9 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
 
 
 def main(run_name,
+         comet_ml_project_name,
          run_tags=[],
          run_root=Path('experiments/spectrogram_model/'),
-         comet_ml_project_name='spectrogram-model-baselines',
          checkpoint_path=None,
          reset_optimizer=False,
          hparams={},
@@ -82,8 +82,9 @@ def main(run_name,
 
     Args:
         run_name (str): Name describing the experiment.
-        run_root (str, optional): Directory to save experiments.
         comet_ml_project_name (str, optional): Project name to use with comet.ml.
+        run_tags (list of str, optional): Comet.ml experiment tags.
+        run_root (str, optional): Directory to save experiments.
         checkpoint_path (str, optional): Accepts a checkpoint path to load or empty string
             signaling to load the most recent checkpoint in ``run_root``.
         reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer.
@@ -186,7 +187,14 @@ if __name__ == '__main__':  # pragma: no cover
         'otherwise, expects a checkpoint file path.')
     parser.add_argument(
         '-n', '--name', type=str, default=None, help='Name describing the experiment')
-    parser.add_argument('-t', '--tags', action='append', help='List of tags for the experiment.')
+    parser.add_argument(
+        '-p',
+        '--project_name',
+        type=str,
+        required=True,
+        help='Comet.ML project for the experiment to use.')
+    parser.add_argument(
+        '-t', '--tags', default=[], action='append', help='List of tags for the experiment.')
     parser.add_argument(
         '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     # LEARN MORE: https://pytorch.org/docs/stable/distributed.html
@@ -212,6 +220,7 @@ if __name__ == '__main__':  # pragma: no cover
     main(
         run_name=args.name,
         run_tags=args.tags,
+        comet_ml_project_name=args.project_name,
         checkpoint_path=args.checkpoint,
         reset_optimizer=args.reset_optimizer,
         hparams=hparams,

@@ -56,9 +56,9 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
 
 
 def main(run_name,
+         comet_ml_project_name,
          run_tags=[],
          run_root=Path('experiments/signal_model/'),
-         comet_ml_project_name='signal-model-baselines',
          checkpoint_path=None,
          spectrogram_model_checkpoint_path=None,
          reset_optimizer=False,
@@ -70,9 +70,9 @@ def main(run_name,
 
     Args:
         run_name (str): Name describing the experiment.
-        run_tags (list of str): Tags describing the experiment.
-        run_root (str, optional): Directory to save experiments.
         comet_ml_project_name (str, optional): Project name to use with comet.ml.
+        run_tags (list of str, optional): Tags describing the experiment.
+        run_root (str, optional): Directory to save experiments.
         checkpoint_path (str, optional): Accepts a checkpoint path to load or empty string
             signaling to load the most recent checkpoint in ``run_root``.
         spectrogram_model_checkpoint_path (str, optional): Checkpoint used to generate spectrogram
@@ -176,16 +176,24 @@ if __name__ == '__main__':  # pragma: no cover
         default=None,
         help=('Spectrogram model checkpoint path used to predicted spectrogram from '
               'text as input to the signal model.'))
-    parser.add_argument('-t', '--tags', action='append', help='List of tags for the experiment.')
+    parser.add_argument(
+        '-t', '--tags', default=[], action='append', help='List of tags for the experiment.')
     parser.add_argument(
         '-n', '--name', type=str, default=None, help='Name describing the experiment')
     parser.add_argument(
         '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
+    parser.add_argument(
+        '-p',
+        '--project_name',
+        type=str,
+        required=True,
+        help='Comet.ML project for the experiment to use.')
     args, unknown_args = parser.parse_known_args()
     hparams = parse_hparam_args(unknown_args)
     main(
         run_name=args.name,
         run_tags=args.tags,
+        comet_ml_project_name=args.project_name,
         checkpoint_path=args.checkpoint,
         spectrogram_model_checkpoint_path=args.spectrogram_model_checkpoint,
         reset_optimizer=args.reset_optimizer,
