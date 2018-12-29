@@ -20,6 +20,7 @@ def test_spectrogram_model_batch_size_sensativity():
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     speaker = torch.LongTensor(1, batch_size).fill_(0)
+    batched_num_tokens = torch.full((batch_size,), num_tokens)
 
     # frames [num_frames, batch_size, frame_channels]
     # frames_with_residual [num_frames, batch_size, frame_channels]
@@ -27,7 +28,7 @@ def test_spectrogram_model_batch_size_sensativity():
     # alignment [num_frames, batch_size, num_tokens]
     (batched_frames, batched_frames_with_residual, batched_stop_token, batched_alignment,
      batched_lengths) = model(
-         input_, speaker, max_recursion=num_frames)
+         input_, speaker, num_tokens=batched_num_tokens, max_recursion=num_frames)
 
     frames, frames_with_residual, stop_token, alignment, lengths = model(
         input_[:, :1], speaker[:, :1], max_recursion=num_frames)
@@ -59,9 +60,10 @@ def test_spectrogram_model():
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     speaker = torch.LongTensor(1, batch_size).fill_(0)
+    batched_num_tokens = torch.full((batch_size,), num_tokens)
 
     frames, frames_with_residual, stop_token, alignment, lengths = model(
-        input_, speaker, max_recursion=num_frames)
+        input_, speaker, num_tokens=batched_num_tokens, max_recursion=num_frames)
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, batch_size, frame_channels)
@@ -71,6 +73,9 @@ def test_spectrogram_model():
 
     assert stop_token.type() == 'torch.FloatTensor'
     assert stop_token.shape == (num_frames, batch_size)
+
+    print(alignment)
+    print(alignment.shape)
 
     assert alignment.type() == 'torch.FloatTensor'
     assert alignment.shape == (num_frames, batch_size, num_tokens)
@@ -126,8 +131,9 @@ def test_spectrogram_model_target():
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     speaker = torch.LongTensor(1, batch_size).fill_(0)
     target_frames = torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1)
+    batched_num_tokens = torch.full((batch_size,), num_tokens)
     frames, frames_with_residual, stop_token, alignment = model(
-        input_, speaker, target_frames=target_frames)
+        input_, speaker, num_tokens=batched_num_tokens, target_frames=target_frames)
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, batch_size, frame_channels)

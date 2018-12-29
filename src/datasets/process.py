@@ -246,10 +246,11 @@ def _predict_spectrogram(data,
             metrics = AccumulatedMetrics()
             for batch in loader:
                 # Predict spectrogram
-                text, speaker = batch.text[0], batch.speaker[0]
+                text, text_lengths, speaker = batch.text[0], batch.text[1], batch.speaker[0]
                 spectrogram, lengths = batch.spectrogram
                 if aligned:
-                    _, predicted, _, alignments = checkpoint.model(text, speaker, spectrogram)
+                    _, predicted, _, alignments = checkpoint.model(text, speaker, text_lengths,
+                                                                   spectrogram)
                 else:
                     _, predicted, _, alignments, lengths = checkpoint.model(text, speaker)
 

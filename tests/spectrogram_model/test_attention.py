@@ -11,8 +11,8 @@ def test_location_sensative_attention():
     num_tokens = 6
     attention = LocationSensitiveAttention(
         query_hidden_size=query_hidden_size, hidden_size=attention_hidden_size)
-    tokens_mask = torch.ByteTensor(batch_size, num_tokens).zero_()
-    tokens_mask[:, -1].fill_(1)
+    tokens_mask = torch.ones(batch_size, num_tokens).byte()
+    tokens_mask[:, -1].fill_(0)
     encoded_tokens = torch.FloatTensor(num_tokens, batch_size, attention_hidden_size).uniform_(0, 1)
     query = torch.FloatTensor(batch_size, query_hidden_size).uniform_(0, 1)
 

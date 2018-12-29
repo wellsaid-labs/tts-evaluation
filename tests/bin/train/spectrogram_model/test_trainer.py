@@ -74,13 +74,13 @@ def test_run_epoch():
     frame_channels = 16
     text_vocab_size = 10
     speaker_vocab_size = 4
-    frame_lengths = [num_frames] * batch_size
+    frame_lengths = torch.full((batch_size,), num_frames)
     loaded_data = [
         SpectrogramModelTrainingRow(
             text=(torch.randint(text_vocab_size, (num_tokens, batch_size), dtype=torch.long),
-                  [num_tokens] * batch_size),
+                  torch.full((batch_size,), num_tokens)),
             speaker=(torch.randint(speaker_vocab_size, (1, batch_size), dtype=torch.long),
-                     [1] * batch_size),
+                     torch.full((batch_size,), 1)),
             spectrogram=(torch.rand(num_frames, batch_size, frame_channels), frame_lengths),
             stop_token=(torch.rand(num_frames, batch_size), frame_lengths),
             spectrogram_mask=(torch.ones(num_frames, batch_size, dtype=torch.float).byte(),

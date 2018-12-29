@@ -1,16 +1,15 @@
 import logging
 
 from torch import nn
-from torchnlp.text_encoders import PADDING_INDEX
 from tqdm import tqdm
 
 import torch
 
+from src.hparams import configurable
 from src.spectrogram_model.decoder import AutoregressiveDecoder
 from src.spectrogram_model.encoder import Encoder
 from src.spectrogram_model.post_net import PostNet
-
-from src.hparams import configurable
+from src.utils import lengths_to_mask
 
 logger = logging.getLogger(__name__)
 
@@ -217,13 +216,65 @@ class SpectrogramModel(nn.Module):
 
         return frames, frames_with_residual, stop_tokens, alignments, lengths
 
-    def forward(self, tokens, speaker, target_frames=None, **kwargs):
+    def _normalize_shape(self, tokens, speaker, num_tokens, target_frames):
+        """ Normalize the shape of the forward inputs.
+
+        Args:
+            tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens])
+            speaker (torch.LongTensor [1, batch_size] or [batch_size] or [])
+            num_tokens (torch.LongTensor [1, batch_size] or [batch_size] or [] or None)
+            target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or
+                [num_frames, frame_channels] or None)
+
+        Returns:
+            tokens (torch.LongTensor [batch_size, num_tokens])
+            speaker (torch.LongTensor [batch_size])
+            num_tokens (torch.LongTensor [batch_size])
+            target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or None)
+        """
+        if len(tokens.shape) == 1:
+            # [num_tokens] → [num_tokens, batch_size(1)]
+            tokens = tokens.unsqueeze(1)
+
+        if target_frames is not None and len(target_frames.shape) == 2:
+            # [num_frames, frame_channels] → [num_frames, batch_size(1), frame_channels]
+            target_frames = target_frames.unsqueeze(1)
+
+        if len(speaker.shape) == 0:
+            # [] → [batch_size(1)]
+            speaker = speaker.unsqueeze(0)
+
+        if len(speaker.shape) == 2 and speaker.shape[0] == 1:
+            # [1, batch_size] → [batch_size]
+            speaker = speaker.squeeze(0)
+
+        if num_tokens is not None:
+            if len(num_tokens.shape) == 0:
+                # [] → [batch_size(1)]
+                num_tokens = num_tokens.unsqueeze(0)
+
+            if len(num_tokens.shape) == 2 and num_tokens.shape[0] == 1:
+                # [1, batch_size] → [batch_size]
+                num_tokens = num_tokens.squeeze(0)
+
+        if tokens.shape[1] == 1:
+            num_tokens = torch.full((1,), tokens.shape[0], device=tokens.device)
+
+        assert num_tokens is not None, 'Must provide `num_tokens` unless batch size is 1'
+
+        # [num_tokens, batch_size] → [batch_size, num_tokens]
+        tokens = tokens.transpose(0, 1)
+        return tokens, speaker, num_tokens, target_frames
+
+    def forward(self, tokens, speaker, num_tokens=None, target_frames=None, **kwargs):
         """
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens]): Batched set
                 of sequences.
             speaker (torch.LongTensor [1, batch_size] or [batch_size] or []): Batched
                 speaker encoding.
+            num_tokens (torch.LongTensor [batch_size] or [] or None): The num of tokens in
+                each sequence.
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or
                 [num_frames, frame_channels]): Ground truth frames to do aligned prediction.
             **kwargs: Other key word arugments passed to ``_infer`` or ``_aligned``.
@@ -242,28 +293,11 @@ class SpectrogramModel(nn.Module):
         """
         is_unbatched = len(tokens.shape) == 1
 
-        if len(tokens.shape) == 1:  # Normalize input shape
-            # [num_tokens] → [num_tokens, batch_size(1)]
-            tokens = tokens.unsqueeze(1)
-
-        # Normalize input shape
-        if target_frames is not None and len(target_frames.shape) == 2:
-            # [num_frames, frame_channels] → [num_frames, batch_size(1), frame_channels]
-            target_frames = target_frames.unsqueeze(1)
-
-        if len(speaker.shape) == 0:  # Normalize input shape
-            # [] → [batch_size(1)]
-            speaker = speaker.unsqueeze(0)
-
-        if len(speaker.shape) == 2 and speaker.shape[0] == 1:  # Normalize input shape
-            # [1, batch_size] → [batch_size]
-            speaker = speaker.squeeze(0)
-
-        # [num_tokens, batch_size] → [batch_size, num_tokens]
-        tokens = tokens.transpose(0, 1)
+        tokens, speaker, num_tokens, target_frames = self._normalize_shape(
+            tokens, speaker, num_tokens, target_frames)
 
         # [batch_size, num_tokens]
-        tokens_mask = tokens.detach().eq(PADDING_INDEX)
+        tokens_mask = lengths_to_mask(num_tokens, device=tokens.device)
 
         # [batch_size, num_tokens] → [num_tokens, batch_size, encoder_hidden_size]
         encoded_tokens = self.encoder(tokens, speaker)

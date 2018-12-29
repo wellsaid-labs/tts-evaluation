@@ -188,9 +188,10 @@ class Trainer():
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
                 if infer:
-                    predictions = self.model(batch.text[0], batch.speaker[0])
+                    predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1])
                 else:
-                    predictions = self.model(batch.text[0], batch.speaker[0], batch.spectrogram[0])
+                    predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1],
+                                             batch.spectrogram[0])
                     self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
                 spectrogram_lengths = predictions[-1] if infer else batch.spectrogram[1]
@@ -313,8 +314,8 @@ class Trainer():
          predicted_alignments) = predictions
         batch_size = predicted_post_spectrogram.shape[1]
         item = random.randint(0, batch_size - 1)
-        spectrogam_length = batch.spectrogram[1][item]
-        text_length = batch.text[1][item]
+        spectrogam_length = int(batch.spectrogram[1][item].item())
+        text_length = int(batch.text[1][item].item())
 
         predicted_post_spectrogram = predicted_post_spectrogram[:spectrogam_length, item]
         predicted_pre_spectrogram = predicted_pre_spectrogram[:spectrogam_length, item]

@@ -37,6 +37,8 @@ def test_lengths_to_mask():
     assert lengths_to_mask([1, 2, 3]).sum() == 6
     assert lengths_to_mask([1, 2, 3])[0].sum() == 1
     assert lengths_to_mask([1, 2, 3])[0][0].item() == 1
+    assert lengths_to_mask(torch.tensor([1, 2, 3]))[0][0].item() == 1
+    assert lengths_to_mask(torch.tensor([1.0, 2.0, 3.0]))[0][0].item() == 1
 
 
 def test_sort_by_spectrogram_length():

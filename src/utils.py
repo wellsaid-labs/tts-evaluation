@@ -25,7 +25,8 @@ from third_party.data_loader import DataLoader
 from torch.multiprocessing import cpu_count
 from torch.utils import data
 from torch.utils.data.sampler import Sampler
-from torchnlp.utils import pad_batch
+from torchnlp.text_encoders import PADDING_INDEX
+from torchnlp.utils import pad_tensor
 from tqdm import tqdm
 
 import torch
@@ -534,6 +535,24 @@ def is_namedtuple(object_):
     return hasattr(object_, '_asdict') and isinstance(object_, tuple)
 
 
+def pad_batch(batch, padding_index=PADDING_INDEX, dim=0):
+    """ Pad a :class:`list` of ``tensors`` (``batch``) with ``padding_index``.
+
+    Args:
+        batch (:class:`list` of :class:`torch.Tensor`): Batch of tensors to pad.
+        padding_index (int, optional): Index to pad tensors with.
+        dim (int, optional): Dimension on to which to concatenate the batch of tensors.
+
+    Returns
+        torch.Tensor, torch.Tensor: Padded tensors and original lengths of tensors.
+    """
+    lengths = [tensor.shape[0] for tensor in batch]
+    max_len = max(lengths)
+    padded = [pad_tensor(tensor, max_len, padding_index) for tensor in batch]
+    padded = torch.stack(padded, dim=dim).contiguous()
+    return padded, torch.tensor(lengths)
+
+
 def collate_sequences(batch, **kwargs):
     """ Collate a list of tensors representing sequences using ``pad_batch``.
 
@@ -618,12 +637,13 @@ def lengths_to_mask(*lengths, **kwargs):
     Returns:
         torch.Tensor
     """
+    lengths = [l.tolist() if torch.is_tensor(l) else l for l in lengths]
     assert all(len(l) == len(lengths[0]) for l in lengths)
     batch_size = len(lengths[0])
-    other_dimensions = tuple([max(l) for l in lengths])
+    other_dimensions = tuple([int(max(l)) for l in lengths])
     mask = torch.zeros(batch_size, *other_dimensions, **kwargs).byte()
     for i, length in enumerate(zip(*tuple(lengths))):
-        mask[i][[slice(l) for l in length]].fill_(1)
+        mask[i][[slice(int(l)) for l in length]].fill_(1)
     return mask
 
 
