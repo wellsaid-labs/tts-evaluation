@@ -247,15 +247,16 @@ def _predict_spectrogram(data,
             for batch in loader:
                 # Predict spectrogram
                 text, text_lengths, speaker = batch.text[0], batch.text[1], batch.speaker[0]
-                spectrogram, lengths = batch.spectrogram
+                spectrogram, spectrogram_lengths = batch.spectrogram
                 if aligned:
                     _, predicted, _, alignments = checkpoint.model(text, speaker, text_lengths,
                                                                    spectrogram)
                 else:
-                    _, predicted, _, alignments, lengths = checkpoint.model(text, speaker)
+                    _, predicted, _, alignments, spectrogram_lengths = checkpoint.model(
+                        text, speaker)
 
                 # Compute some metrics for logging
-                mask = lengths_to_mask(lengths, device=predicted.device).transpose(0, 1)
+                mask = lengths_to_mask(spectrogram_lengths, device=predicted.device).transpose(0, 1)
                 metrics.add_multiple_metrics({
                     'attention_norm': get_average_norm(alignments, norm=inf, dim=2, mask=mask),
                     'attention_std': get_weighted_stdev(alignments, dim=2, mask=mask),
@@ -267,7 +268,7 @@ def _predict_spectrogram(data,
 
                 # Save to disk
                 splits = predicted.split(1, dim=1)
-                iterator = zip(splits, lengths, batch.predicted_spectrogram)
+                iterator = zip(splits, spectrogram_lengths, batch.predicted_spectrogram)
                 for tensor, length, on_disk_tensor in iterator:
                     # split [num_frames, 1, frame_channels]
                     on_disk_tensor.from_tensor(tensor[:length, 0])

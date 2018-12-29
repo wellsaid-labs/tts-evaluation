@@ -41,7 +41,7 @@ def test_spectrogram_model_batch_size_sensativity():
                                       batched_stop_token[:, :1].detach().numpy())
     numpy.testing.assert_almost_equal(alignment.detach().numpy(),
                                       batched_alignment[:, :1].detach().numpy())
-    numpy.testing.assert_almost_equal(lengths, lengths[:1])
+    numpy.testing.assert_almost_equal(lengths.numpy(), lengths[:1].numpy())
 
 
 def test_spectrogram_model():

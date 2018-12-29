@@ -91,4 +91,6 @@ class PostNet(nn.Module):
             residual (torch.FloatTensor [batch_size, frame_channels, num_frames]): Residual to add
                 to the frames to improve the overall reconstruction.
         """
-        return self.layers(frames)
+        for layer in self.layers:
+            frames = layer(frames)
+        return frames

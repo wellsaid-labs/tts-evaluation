@@ -641,10 +641,10 @@ def lengths_to_mask(*lengths, **kwargs):
     assert all(len(l) == len(lengths[0]) for l in lengths)
     batch_size = len(lengths[0])
     other_dimensions = tuple([int(max(l)) for l in lengths])
-    mask = torch.zeros(batch_size, *other_dimensions, **kwargs).byte()
+    mask = torch.zeros(batch_size, *other_dimensions, **kwargs)
     for i, length in enumerate(zip(*tuple(lengths))):
         mask[i][[slice(int(l)) for l in length]].fill_(1)
-    return mask
+    return mask.byte()
 
 
 def identity(x):
