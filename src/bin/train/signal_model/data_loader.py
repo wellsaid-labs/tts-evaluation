@@ -139,14 +139,16 @@ class DataLoader(DataLoader):
     Returns:
         Single-process or multi-process iterators over the dataset. Per iteration the batch returned
         includes: SpectrogramModelTrainingRow (
-            input_signal (tuple(torch.FloatTensor [batch_size, signal_length], list of int))
+            input_signal (tuple(torch.FloatTensor [batch_size, signal_length],
+                                torch.LongTensor [batch_size]))
             input_spectrogram (tuple(torch.FloatTensor [batch_size, num_frames, frame_channels]),
-                                list of int))
+                                     torch.LongTensor [batch_size]))
             target_signal_coarse (tuple(torch.LongTensor [batch_size, signal_length],
-                                        list of int))
+                                        torch.LongTensor [batch_size]))
             target_signal_fine (tuple(torch.LongTensor [batch_size, signal_length]),
-                                        list of int))
-            signal_mask (tuple(torch.FloatTensor [batch_size, signal_length], list of int))
+                                      torch.LongTensor [batch_size]))
+            signal_mask (tuple(torch.FloatTensor [batch_size, signal_length],
+                               torch.LongTensor [batch_size]))
         )
     """
 

@@ -8,32 +8,56 @@ import sys
 
 from torch import nn
 from torch.nn import functional
+from torchnlp.text_encoders import PADDING_INDEX
 
 import pytest
 import torch
 
 from src.optimizer import Optimizer
 from src.utils import AnomalyDetector
-from src.utils import get_total_parameters
 from src.utils import Checkpoint
+from src.utils import chunks
+from src.utils import collate_sequences
+from src.utils import DataLoader
+from src.utils import duplicate_stream
+from src.utils import evaluate
+from src.utils import get_average_norm
+from src.utils import get_total_parameters
+from src.utils import get_weighted_stdev
+from src.utils import identity
+from src.utils import lengths_to_mask
+from src.utils import pad_batch
 from src.utils import parse_hparam_args
 from src.utils import ROOT_PATH
-from src.utils import get_weighted_stdev
-from src.utils import chunks
-from src.utils import duplicate_stream
-from src.utils import get_average_norm
-from src.utils import evaluate
-from src.utils import collate_sequences
-from src.utils import tensors_to
-from src.utils import identity
-from src.utils import DataLoader
-from src.utils import lengths_to_mask
 from src.utils import sort_by_spectrogram_length
+from src.utils import tensors_to
 
 from tests.utils import get_example_spectrogram_text_speech_rows
 
 
+def test_pad_batch():
+    batch = [torch.LongTensor([1, 2, 3]), torch.LongTensor([1, 2]), torch.LongTensor([1])]
+    padded, lengths = pad_batch(batch, PADDING_INDEX)
+    print(lengths.shape)
+    padded = [r.tolist() for r in padded]
+    assert padded == [[1, 2, 3], [1, 2, PADDING_INDEX], [1, PADDING_INDEX, PADDING_INDEX]]
+    assert lengths.tolist() == [3, 2, 1]
+
+
+def test_pad_batch_dim():
+    batch_size = 3
+    batch = [torch.LongTensor([1, 2, 3, 4]), torch.LongTensor([1, 2, 3]), torch.LongTensor([1, 2])]
+    padded, lengths = pad_batch(batch, PADDING_INDEX, dim=1)
+    assert padded.shape == (4, batch_size)
+    assert lengths.shape == (1, batch_size)
+    assert lengths.tolist() == [[4, 3, 2]]
+    assert padded.tolist() == [[1, 1, 1], [2, 2, 2], [3, 3, PADDING_INDEX],
+                               [4, PADDING_INDEX, PADDING_INDEX]]
+
+
 def test_lengths_to_mask():
+    assert lengths_to_mask([3]).sum() == 3
+    assert lengths_to_mask(torch.tensor(3)).sum() == 3
     assert lengths_to_mask([1, 2, 3]).sum() == 6
     assert lengths_to_mask([1, 2, 3])[0].sum() == 1
     assert lengths_to_mask([1, 2, 3])[0][0].item() == 1

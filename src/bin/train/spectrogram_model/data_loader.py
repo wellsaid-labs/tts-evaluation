@@ -68,15 +68,19 @@ class DataLoader(DataLoader):
     Returns:
         Single-process or multi-process iterators over the dataset. Per iteration the batch returned
         includes: SpectrogramModelTrainingRow (
-            text (tuple(torch.LongTensor [num_tokens, batch_size], list of int))
+            text (tuple(torch.LongTensor [num_tokens, batch_size],
+                        torch.LongTensor [1, batch_size]))
             spectrogram (tuple(torch.FloatTensor [num_frames, batch_size, frame_channels],
-                              list of int))
-            stop_token (tuple(torch.FloatTensor [num_frames, batch_size], list of int))
-            speaker (tuple(torch.LongTensor [1, batch_size], list of int))
+                               torch.LongTensor [1, batch_size]))
+            stop_token (tuple(torch.FloatTensor [num_frames, batch_size],
+                              torch.LongTensor [1, batch_size]))
+            speaker (tuple(torch.LongTensor [1, batch_size],
+                           torch.LongTensor [1, batch_size]))
             spectrogram_expanded_mask (tuple(torch.FloatTensor [num_frames, batch_size,
                                                                 frame_channels],
-                                             list of int))
-            spectrogram_mask (tuple(torch.FloatTensor [num_frames, batch_size], list of int))
+                                             torch.LongTensor [1, batch_size]))
+            spectrogram_mask (tuple(torch.FloatTensor [num_frames, batch_size],
+                                    torch.LongTensor [1, batch_size]))
         )
     """
 

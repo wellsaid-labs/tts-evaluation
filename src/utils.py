@@ -549,8 +549,11 @@ def pad_batch(batch, padding_index=PADDING_INDEX, dim=0):
     lengths = [tensor.shape[0] for tensor in batch]
     max_len = max(lengths)
     padded = [pad_tensor(tensor, max_len, padding_index) for tensor in batch]
+    lengths = torch.tensor(lengths)
     padded = torch.stack(padded, dim=dim).contiguous()
-    return padded, torch.tensor(lengths)
+    for _ in range(dim):
+        lengths = lengths.unsqueeze(0)
+    return padded, lengths
 
 
 def collate_sequences(batch, **kwargs):
@@ -631,13 +634,17 @@ def lengths_to_mask(*lengths, **kwargs):
                  [1, 1]]], dtype=torch.uint8)
 
     Args:
-        lengths (list of int)
+        lengths (list of int or torch.Tensor)
         **kwargs: Auxiliary arguments passed to ``torch.zeros``.
 
     Returns:
         torch.Tensor
     """
-    lengths = [l.tolist() if torch.is_tensor(l) else l for l in lengths]
+    # Squeeze to deal with random additional dimensions
+    lengths = [l.squeeze().tolist() if torch.is_tensor(l) else l for l in lengths]
+
+    # For cases where length is a scalar, we need to convert it to a list.
+    lengths = [l if isinstance(l, list) else [l] for l in lengths]
     assert all(len(l) == len(lengths[0]) for l in lengths)
     batch_size = len(lengths[0])
     other_dimensions = tuple([int(max(l)) for l in lengths])

@@ -80,17 +80,16 @@ class Encoder(nn.Module):
         else:
             self.project = nn.Linear(lstm_hidden_size, out_dim)
 
-        self.convolution_layers = nn.Sequential(*tuple([
+        self.convolution_layers = nn.ModuleList([
             nn.Sequential(
                 nn.Conv1d(
                     in_channels=num_convolution_filters if i != 0 else token_embedding_dim,
                     out_channels=num_convolution_filters,
                     kernel_size=convolution_filter_size,
                     padding=int((convolution_filter_size - 1) / 2)),
-                nn.BatchNorm1d(num_features=num_convolution_filters), nn.ReLU(
-                    inplace=True), nn.Dropout(p=convolution_dropout))
-            for i in range(num_convolution_layers)
-        ]))
+                nn.BatchNorm1d(num_features=num_convolution_filters), nn.ReLU(inplace=True),
+                nn.Dropout(p=convolution_dropout)) for i in range(num_convolution_layers)
+        ])
 
         if lstm_bidirectional:
             assert lstm_hidden_size % 2 == 0, '`lstm_hidden_size` must be divisable by 2'
@@ -129,10 +128,11 @@ class Encoder(nn.Module):
         # convolution layers expect input of shape
         # `[batch_size, in_channels (token_embedding_dim), sequence_length (num_tokens)]`. We thus
         # need to transpose the tensor first.
-        tokens = torch.transpose(tokens, 1, 2)
+        tokens = tokens.transpose(1, 2)
 
         # [batch_size, num_convolution_filters, num_tokens]
-        tokens = self.convolution_layers(tokens)
+        for conv in self.convolution_layers:
+            tokens = conv(tokens)
 
         # Our input is expected to have shape `[batch_size, num_convolution_filters, num_tokens]`.
         # The lstm layers expect input of shape
