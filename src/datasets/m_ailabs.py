@@ -117,7 +117,7 @@ def _processing_row(row,
 
 @configurable
 def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
-                            url='http://data.m-ailabs.bayern/data/Training/stt_tts/en_US.tgz',
+                            url='http://www.caito.de/data/Training/stt_tts/en_US.tgz',
                             check_files=['en_US/by_book/info.txt'],
                             metadata_pattern='**/metadata.csv',
                             metadata_path_column='metadata_path',
@@ -126,8 +126,8 @@ def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
                             **kwargs):
     """ Load the M-AILABS en_US dataset.
 
-    Download, extract, and process the M-AILABS en_US dataset, which is 7.5GB compressed.
-    The original URL is ``http://www.m-ailabs.bayern/?ddownload=411``.
+    Download, extract, and process the M-AILABS en_US dataset, which is 8GB compressed.
+    The original URL is ``http://www.caito.de/2019/01/the-m-ailabs-speech-dataset/``.
     Use ``curl -I <URL>`` to find the redirected URL.
 
     NOTE: A cursory analysis 100 clips from the M-AILABS dataset was that it was 10% of the clips
