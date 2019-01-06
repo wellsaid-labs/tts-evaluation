@@ -74,9 +74,6 @@ def test_spectrogram_model():
     assert stop_token.type() == 'torch.FloatTensor'
     assert stop_token.shape == (num_frames, batch_size)
 
-    print(alignment)
-    print(alignment.shape)
-
     assert alignment.type() == 'torch.FloatTensor'
     assert alignment.shape == (num_frames, batch_size, num_tokens)
 

@@ -268,6 +268,7 @@ def _predict_spectrogram(data,
 
                 # Save to disk
                 splits = predicted.split(1, dim=1)
+                spectrogram_lengths = spectrogram_lengths.squeeze(0).tolist()
                 iterator = zip(splits, spectrogram_lengths, batch.predicted_spectrogram)
                 for tensor, length, on_disk_tensor in iterator:
                     # split [num_frames, 1, frame_channels]

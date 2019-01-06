@@ -38,7 +38,6 @@ from tests.utils import get_example_spectrogram_text_speech_rows
 def test_pad_batch():
     batch = [torch.LongTensor([1, 2, 3]), torch.LongTensor([1, 2]), torch.LongTensor([1])]
     padded, lengths = pad_batch(batch, PADDING_INDEX)
-    print(lengths.shape)
     padded = [r.tolist() for r in padded]
     assert padded == [[1, 2, 3], [1, 2, PADDING_INDEX], [1, PADDING_INDEX, PADDING_INDEX]]
     assert lengths.tolist() == [3, 2, 1]

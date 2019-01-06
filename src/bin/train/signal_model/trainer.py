@@ -195,6 +195,7 @@ class Trainer():
             logger.warning('Rolling back, detected a coarse loss anomaly #%d (%f > %f ± %f)',
                            self.anomaly_detector.anomaly_counter, epoch_coarse_loss,
                            self.anomaly_detector.last_average, self.anomaly_detector.max_deviation)
+            self.comet_ml.log_metric('num_rollback', self.anomaly_detector.anomaly_counter)
             state = self.rollback[0]
             logger.info('Rolling back from step %d to %d and from epoch %d to %d', self.step,
                         state.step, self.epoch, state.epoch)
@@ -321,6 +322,7 @@ class Trainer():
         # Introduce quantization noise
         target_signal = combine_signal(*split_signal(target_signal))
 
+        spectrogram = spectrogram.to(self.device)
         inferrer = self.model.to_inferrer(self.device)
         with evaluate(inferrer):
             logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[0])

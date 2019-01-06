@@ -279,7 +279,7 @@ class Trainer():
         with evaluate(model, device=self.device):
             logger.info('Running inference...')
             (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
-             predicted_alignments, predicted_lengths) = model(text, speaker)
+             predicted_alignments, _) = model(text, speaker)
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
 
@@ -314,8 +314,8 @@ class Trainer():
          predicted_alignments) = predictions
         batch_size = predicted_post_spectrogram.shape[1]
         item = random.randint(0, batch_size - 1)
-        spectrogam_length = int(batch.spectrogram[1][item].item())
-        text_length = int(batch.text[1][item].item())
+        spectrogam_length = int(batch.spectrogram[1][0, item].item())
+        text_length = int(batch.text[1][0, item].item())
 
         predicted_post_spectrogram = predicted_post_spectrogram[:spectrogam_length, item]
         predicted_pre_spectrogram = predicted_pre_spectrogram[:spectrogam_length, item]
