@@ -1,7 +1,5 @@
 from torch import nn
 
-from src.hparams import configurable
-
 
 class Identity(nn.Module):
     """ Identity block returns the input. """
@@ -77,7 +75,6 @@ class ConditionalFeaturesUpsample(nn.Module):
         upsample_repeat (int): Number of times to repeat frames, another upsampling technique.
     """
 
-    @configurable
     def __init__(self, in_channels, out_channels, num_filters, upsample_repeat, kernels):
         super().__init__()
         self.out_channels = out_channels
