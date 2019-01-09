@@ -22,8 +22,7 @@ SignalModelTrainingRow = namedtuple('SignalModelTrainingRow', [
 ])
 
 
-@configurable
-def _get_slice(spectrogram, signal, slice_size=3, slice_pad=0, random=random):
+def _get_slice(spectrogram, signal, slice_size, slice_pad, random=random):
     """ Slice the data into bite sized chunks that fit onto GPU memory for training.
 
     Notes:
@@ -34,8 +33,8 @@ def _get_slice(spectrogram, signal, slice_size=3, slice_pad=0, random=random):
     Args:
         spectrogram (torch.Tensor [num_frames, channels])
         signal (torch.Tensor [signal_length])
-        slice_size (int, optional): In spectrogram frames, size of slice.
-        slice_pad (int, optional): Pad the spectrogram slice with ``frame_pad`` frames on each side.
+        slice_size (int): In spectrogram frames, size of slice.
+        slice_pad (int): Pad the spectrogram slice with ``frame_pad`` frames on each side.
         random (random.Random, optional): Random number generator to sample data.
 
     Returns: (SignalModelTrainingRow) (
@@ -152,6 +151,7 @@ class DataLoader(DataLoader):
         )
     """
 
+    @configurable
     def __init__(self, data, batch_size, device, use_tqdm, trial_run, random=random, **kwargs):
 
         # ``drop_last`` to ensure full utilization of mutliple GPUs

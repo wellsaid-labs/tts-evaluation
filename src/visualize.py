@@ -5,7 +5,6 @@ import io
 import logging
 import matplotlib
 import os
-import socket
 import subprocess
 import time
 
@@ -20,6 +19,7 @@ import numpy as np
 import torch
 
 from src.hparams import configurable
+from src.hparams import ConfiguredArg
 
 import src.distributed
 
@@ -93,7 +93,7 @@ def spectrogram_to_image(spectrogram):
 
 
 @configurable
-def plot_waveform(signal, sample_rate=24000):
+def plot_waveform(signal, sample_rate=ConfiguredArg()):
     """ Save image of spectrogram to disk.
 
     Args:
@@ -118,11 +118,11 @@ def plot_waveform(signal, sample_rate=24000):
 
 @configurable
 def plot_spectrogram(spectrogram,
-                     sample_rate=24000,
-                     frame_hop=300,
-                     lower_hertz=125,
-                     upper_hertz=7600,
-                     y_axis='mel'):
+                     sample_rate=ConfiguredArg(),
+                     frame_hop=ConfiguredArg(),
+                     lower_hertz=ConfiguredArg(),
+                     upper_hertz=ConfiguredArg(),
+                     y_axis=ConfiguredArg()):
     """ Get image of log mel spectrogram.
 
     Args:
@@ -213,9 +213,9 @@ class AccumulatedMetrics():
 
     def __init__(self, type_=torch.cuda):
         self.type_ = type_
-        self._reset()
+        self.reset()
 
-    def _reset(self):
+    def reset(self):
         self.metrics = {
             'epoch_total': defaultdict(float),
             'epoch_count': defaultdict(float),
@@ -242,7 +242,7 @@ class AccumulatedMetrics():
         self.metrics['step_total'][name] += value * count
         self.metrics['step_count'][name] += count
 
-    def add_multiple_metrics(self, dict_, count=1):
+    def add_metrics(self, dict_, count=1):
         """ Add multiple metrics as part of the current step.
 
         Args:
@@ -314,8 +314,6 @@ class AccumulatedMetrics():
             assert count_value > 0, 'AccumulatedMetrics invariant failed (%s, %f, %f)'
             log_metric(total_key, total_value / count_value)
 
-        self._reset()
-
 
 def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **kwargs):
     """
@@ -340,19 +338,48 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
     api_key = os.getenv('COMET_ML_API_KEY') if api_key is None else api_key
     workspace = os.getenv('COMET_ML_WORKSPACE') if workspace is None else workspace
 
-    kwargs.update({'project_name': project_name, 'api_key': api_key, 'workspace': workspace})
+    kwargs.update({
+        'project_name': project_name,
+        'api_key': api_key,
+        'workspace': workspace,
+        'log_git_patch': False
+    })
     if experiment_key is None:
         experiment = Experiment(**kwargs)
     else:
         experiment = ExistingExperiment(previous_experiment=experiment_key, **kwargs)
 
+    # NOTE: Unlike the usage of this function in ``Experiment``, we do not catch an exception
+    # thrown by this function; therefore, exiting the program if git patch fails to upload.
+    experiment._upload_git_patch()
     experiment.log_other('is_distributed', src.distributed.in_use())
-    # NOTE: Remove after: https://github.com/comet-ml/issue-tracking/issues/154
-    experiment.log_other('hostname', socket.gethostname())
     experiment.log_other(
         'last_git_commit',
         subprocess.check_output('git log -1 --format=%cd', shell=True).decode().strip())
     experiment.log_parameter('num_gpu', torch.cuda.device_count())
+
+    start_epoch_time = None
+    start_epoch_step = None
+
+    other_log_current_epoch = experiment.log_current_epoch
+
+    def log_current_epoch(self, *args, **kwargs):
+        nonlocal start_epoch_time
+        nonlocal start_epoch_step
+        start_epoch_step = self.curr_step
+        start_epoch_time = time.time()
+        return other_log_current_epoch(*args, **kwargs)
+
+    experiment.log_current_epoch = log_current_epoch.__get__(experiment)
+
+    other_log_epoch_end = experiment.log_epoch_end
+
+    def log_epoch_end(self, *args, **kwargs):
+        self.log_metric('epoch/steps_per_second',
+                        (self.curr_step - start_epoch_step) / (time.time() - start_epoch_time))
+        return other_log_epoch_end(*args, **kwargs)
+
+    experiment.log_epoch_end = log_epoch_end.__get__(experiment)
 
     def log_audio(self, gold_audio=None, predicted_audio=None, step=None, **kwargs):
         """ Add text and audio to remote visualizer in one entry.
@@ -394,36 +421,5 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
         self.context = context
 
     experiment.set_context = set_context.__get__(experiment)
-
-    # NOTE: Remove after: https://github.com/comet-ml/issue-tracking/issues/164
-    last_set_step = experiment.set_step
-
-    def set_step(self, step, *args, **kwargs):
-        # Monkey patch ``set_step`` called by ``log_metric``
-        self.set_step = lambda *args, **kwargs: None
-        self.log_metric('step', step, step=step)
-        self.set_step = set_step.__get__(experiment)
-        return last_set_step(step, *args, **kwargs)
-
-    experiment.set_step = set_step.__get__(experiment)
-
-    # NOTE: Remove after: https://github.com/comet-ml/issue-tracking/issues/170
-    if hasattr(experiment, 'streamer') and experiment.streamer is not None:
-        last_put_messge_in_q = experiment.streamer.put_messge_in_q
-
-        def put_messge_in_q(self, message, *args, **kwargs):
-            # NOTE: Prevent recursive call
-            key = 'last_event_time'
-            value = int(round(time.time() / 60))
-            if experiment.alive:
-                log_other_message = experiment._create_message()
-                log_other_message.context = None
-                log_other_message.set_log_other(key, value)
-                last_put_messge_in_q(log_other_message)
-            experiment.others[key] = value
-
-            return last_put_messge_in_q(message, *args, **kwargs)
-
-        experiment.streamer.put_messge_in_q = put_messge_in_q.__get__(experiment.streamer)
 
     return experiment

@@ -3,8 +3,9 @@ from torch import nn
 import torch
 
 from src.hparams import configurable
-from src.spectrogram_model.pre_net import PreNet
+from src.hparams import ConfiguredArg
 from src.spectrogram_model.attention import LocationSensitiveAttention
+from src.spectrogram_model.pre_net import PreNet
 
 
 class AutoregressiveDecoderHiddenState(object):
@@ -56,22 +57,22 @@ class AutoregressiveDecoder(nn.Module):
           https://arxiv.org/pdf/1712.05884.pdf
 
     Args:
-        frame_channels (int, optional): Number of channels in each frame (sometimes refered to
+        frame_channels (int): Number of channels in each frame (sometimes refered to
             as "Mel-frequency bins" or "FFT bins" or "FFT bands")
-        pre_net_hidden_size (int, optional): Hidden size of the pre-net to use.
-        lstm_hidden_size (int, optional): Hidden size of both LSTM layers to use.
-        lstm_variational_dropout (float, optional): If non-zero, introduces a Dropout layer on the
+        pre_net_hidden_size (int): Hidden size of the pre-net to use.
+        lstm_hidden_size (int): Hidden size of both LSTM layers to use.
+        lstm_variational_dropout (float): If non-zero, introduces a Dropout layer on the
             outputs of each LSTM layer except the last layer, with dropout probability equal to
             dropout.
     """
 
     @configurable
     def __init__(self,
-                 frame_channels=80,
-                 pre_net_hidden_size=256,
-                 lstm_hidden_size=1024,
-                 lstm_dropout=0.1,
-                 attention_hidden_size=128):
+                 frame_channels,
+                 pre_net_hidden_size=ConfiguredArg(),
+                 lstm_hidden_size=ConfiguredArg(),
+                 lstm_dropout=ConfiguredArg(),
+                 attention_hidden_size=ConfiguredArg()):
 
         super().__init__()
         self.attention_hidden_size = attention_hidden_size

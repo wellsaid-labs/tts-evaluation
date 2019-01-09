@@ -33,6 +33,7 @@ import torch
 import numpy as np
 
 from src.hparams import configurable
+from src.hparams import ConfiguredArg
 
 logger = logging.getLogger(__name__)
 
@@ -254,12 +255,12 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
     """ Detect anomalies at every step with a moving average and standard deviation.
 
     Args:
-       beta (float, optional): Beta used to weight the exponential mean and standard deviation.
-       sigma (float, optional): Number of standard deviations in order to classify as an anomaly.
+       beta (float): Beta used to weight the exponential mean and standard deviation.
+       sigma (float): Number of standard deviations in order to classify as an anomaly.
+       type_ (str): Detect anomalies that are too 'high', too 'low', or 'both'.
        eps (float, optional): Minimum difference to be considered an anomaly used for numerical
           stability.
        min_steps (int, optional): Minimum number of steps to wait before detecting anomalies.
-       type_ (str, optional): Detect anomalies that are too 'high', too 'low', or 'both'.
     """
 
     TYPE_HIGH = 'high'
@@ -270,7 +271,12 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
     # to be underestimated.
     # LEARN MORE: https://en.wikipedia.org/wiki/Unbiased_estimation_of_standard_deviation
     @configurable
-    def __init__(self, beta=0.99, sigma=6, eps=10**-6, min_steps=10, type_=TYPE_HIGH):
+    def __init__(self,
+                 beta=ConfiguredArg(),
+                 sigma=ConfiguredArg(),
+                 type_=ConfiguredArg(),
+                 eps=10**-6,
+                 min_steps=10):
         super().__init__(beta=beta)
         self.sigma = sigma
         self.last_standard_deviation = 0.0

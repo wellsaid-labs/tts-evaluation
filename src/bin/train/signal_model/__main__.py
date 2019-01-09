@@ -56,7 +56,7 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
 
 
 def main(run_name,
-         comet_ml_project_name,
+         comet_ml_project_name=None,
          run_tags=[],
          run_root=Path('experiments/signal_model/'),
          checkpoint_path=None,
@@ -115,6 +115,10 @@ def main(run_name,
                 logger.info('Ignoring checkpoint optimizer.')
                 checkpoint.optimizer = None
 
+            # For backwards compatibility
+            comet_ml_project_name = getattr(checkpoint, 'comet_ml_project_name',
+                                            comet_ml_project_name)
+
             trainer_kwargs.update({
                 'model': checkpoint.model,
                 'optimizer': checkpoint.optimizer,
@@ -122,7 +126,8 @@ def main(run_name,
                 'step': checkpoint.step,
                 'comet_ml_experiment_key': checkpoint.comet_ml_experiment_key,
                 'anomaly_detector': checkpoint.anomaly_detector,
-                'spectrogram_model_checkpoint_path': checkpoint.spectrogram_model_checkpoint_path
+                'spectrogram_model_checkpoint_path': checkpoint.spectrogram_model_checkpoint_path,
+                'comet_ml_project_name': comet_ml_project_name,
             })
 
         train, dev = _get_dataset()()
@@ -144,6 +149,7 @@ def main(run_name,
 
             if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
                 Checkpoint(
+                    comet_ml_project_name=comet_ml_project_name,
                     directory=context.checkpoints_directory,
                     model=trainer.model,
                     optimizer=trainer.optimizer,

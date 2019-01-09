@@ -187,8 +187,8 @@ def _check_configuration_helper(dict_, keys, trace):
     if not isinstance(dict_, dict):
         # Recursive function walked up the chain and never found a @configurable
         trace.reverse()
-        raise TypeError('Path %s does not contain @configurable.\n' % (keys,) +
-                        'Traceback (most recent call last):\n\t%s' % ('\n\t'.join(trace),))
+        raise TypeError('Failed to find `configurable` decorator along path %s.\n' % (keys,) +
+                        'Attempts (most recent call last):\n\t%s' % ('\n\t'.join(trace),))
 
     if len(keys) >= 2:
         # CASE: Function
@@ -202,7 +202,7 @@ def _check_configuration_helper(dict_, keys, trace):
             if module_path == _get_main_module_name():
                 module_path = '__main__'
             module = import_module(module_path)
-            if hasattr(module, keys[-1]):
+            try:
                 function = getattr(module, keys[-1])
                 # TODO: Inspect and check if the required parameters exist
                 if (hasattr(function, '_configurable')):
@@ -211,8 +211,13 @@ def _check_configuration_helper(dict_, keys, trace):
                         raise TypeError(
                             'The module path must be absolute: %s vs %s' % (keys, absolute_keys))
                     return
-        except ImportError as e:
-            trace += ['Module %s ImportError: ' % (module_path,) + str(e)]
+                else:
+                    trace.append(
+                        'Function `%s` is not decorated with `configurable`.' % '.'.join(keys))
+            except AttributeError:
+                trace.append('Function `%s` not found in `%s`.' % (keys[-1], module_path))
+        except ImportError:
+            trace.append('Failed to run `import %s`.' % module_path)
 
     if len(keys) >= 3:
         # CASE: Class
@@ -226,9 +231,9 @@ def _check_configuration_helper(dict_, keys, trace):
             if module_path == _get_main_module_name():
                 module_path = '__main__'
             module = import_module(module_path)
-            if hasattr(module, keys[-2]):
+            try:
                 class_ = getattr(module, keys[-2])
-                if hasattr(class_, keys[-1]):
+                try:
                     function = getattr(class_, keys[-1])
                     if (hasattr(function, '_configurable')):
                         # NOTE: ``_get_module_name`` is used by configurable for identification;
@@ -238,8 +243,15 @@ def _check_configuration_helper(dict_, keys, trace):
                             raise TypeError('The module path must be absolute: %s vs %s' %
                                             (keys, absolute_keys))
                         return
-        except ImportError as e:
-            trace += ['ImportError (%s): ' % (module_path,) + repr(e)]
+                    else:
+                        trace.append(
+                            'Function `%s` is not decorated with `configurable`.' % '.'.join(keys))
+                except AttributeError:
+                    trace.append('Function %s not found in class `%s`.' % (keys[-1], keys[-2]))
+            except AttributeError:
+                trace.append('Class `%s` not found in `%s`.' % (keys[-2], module_path))
+        except ImportError:
+            trace.append('Failed to run `import %s`.' % module_path)
 
     for key in dict_:
         # Recusively check every key in ``dict_``
@@ -301,7 +313,7 @@ def clear_config():
     _configuration = _KeyListDictionary()
 
 
-def _merge_args(parameters, args, kwargs, default_kwargs, print_name=''):
+def _merge_args(parameters, args, kwargs, default_kwargs, print_name='', is_first_run=False):
     """ Merge ``func`` ``args`` and ``kwargs`` with ``other_kwargs``
 
     The ``_merge_args`` prefers ``kwargs`` and ``args`` over ``other_kwargs``.
@@ -332,23 +344,90 @@ def _merge_args(parameters, args, kwargs, default_kwargs, print_name=''):
                 parameters[i].kind == parameters[i].POSITIONAL_OR_KEYWORD):
             if parameters[i].name in default_kwargs:
                 value = default_kwargs[parameters[i].name]
-                if value != arg:
-                    # TODO: Do not repeat this warning and warn that this message will not be
-                    # repeated
-                    logger.warning('Overwriting configured argument ``%s=%s`` in module %s with %s'
-                                   % (parameters[i].name, value, print_name, arg))
+                if is_first_run and value != arg:
+                    logger.warning(
+                        ('Overwriting configured argument ``%s=%s`` in module %s with %s.'
+                         'This warning will not be repeated.') % (parameters[i].name, value,
+                                                                  print_name, arg))
                 del default_kwargs[parameters[i].name]
 
-    for key, value in kwargs.items():
-        if key in default_kwargs and value != default_kwargs[key]:
-            # TODO: Do not repeat this warning and warn that this message will not be
-            # repeated
-            logger.warning('Overwriting configured argument ``%s=%s`` in module %s with %s' %
-                           (key, default_kwargs[key], print_name, value))
+    if is_first_run:
+        for key, value in kwargs.items():
+            if key in default_kwargs and value != default_kwargs[key]:
+                logger.warning(('Overwriting configured argument ``%s=%s`` in module %s with %s'
+                                'This warning will not be repeated.') % (key, default_kwargs[key],
+                                                                         print_name, value))
 
     default_kwargs.update(kwargs)
 
     return args, default_kwargs
+
+
+class ConfiguredArg():
+    """ Place-holder object to indicate that a parameter is to be configured. This also,
+    ensures that this parameter does have an associated configuration.
+
+    TODO: Given this object is used as a default argument, on its instantiation check if the module
+    is ``configurable``. We've found that inspecting the instantiation of a default argument does
+    not give much information about the module.
+
+    TODO: If we locate the module this was instantiated in, then we can return the correct value
+    and avoid decorators all together. This will require some work with AST; unfortunatly.
+    """
+
+    def __init__(self):
+        lineno = inspect.stack()[1].lineno  # Ge the caller line number
+        filename = inspect.stack()[1].filename
+        self.error_message = 'The parameter at %s:%s must be overwritten' % (filename, lineno)
+
+    def _raise(self):
+        raise ValueError(self.error_message)
+
+    def __getattribute__(self, name):
+        if name in ['error_message', '_raise']:
+            return super().__getattribute__(name)
+        self._raise()
+
+    def __str__(self):
+        self._raise()
+
+    def __repr__(self):
+        self._raise()
+
+    def __eq__(self, _):
+        self._raise()
+
+    def __contains__(self, _):
+        self._raise()
+
+    def __hash__(self):
+        self._raise()
+
+    def __len__(self):
+        self._raise()
+
+    def __call__(self, *args, **kwargs):
+        self._raise()
+
+
+def _check_configured_args(func, global_config):
+    """ Check that ``ConfiguredArg`` parameters have a global configuration.
+    """
+    # Get the module name
+    _, print_name = _get_module_name(func)
+
+    # Check that ``ConfiguredArg`` is configured.
+    signature = inspect.signature(func)
+    local_config = set(
+        k for k, v in signature.parameters.items()
+        if v.default is not inspect.Parameter.empty and isinstance(v.default, ConfiguredArg))
+
+    # Get the module config
+    global_config = set(global_config.keys())
+    not_globally_configured = local_config.difference(global_config)
+    if len(not_globally_configured) > 0:
+        raise ValueError(
+            '`%s` parameters are not configured: %s' % (print_name, not_globally_configured))
 
 
 def configurable(func):
@@ -363,28 +442,30 @@ def configurable(func):
     Returns:
         (callable): Decorated function
     """
+    # Get the module name
+    keys, print_name = _get_module_name(func)
+    is_first_run = True
 
     @wraps(func)
     def decorator(*args, **kwargs):
         global _configuration
-
-        # Get the module name
-        keys, print_name = _get_module_name(func)
+        nonlocal is_first_run
 
         # Get the module config
         config = _configuration[keys] if keys in _configuration else {}  # Get default
-        if len(config) == 0:
-            # TODO: Do not repeat this warning and warn that this message will not be
-            # repeated
-            logger.warning('No config for `%s` (`%s`)', print_name, '.'.join(keys))
+        if is_first_run:
+            if len(config) == 0:
+                logger.warning('No config for `%s` (`%s`). This warning will not be repeated.',
+                               print_name, '.'.join(keys))
 
-        # Print name is used for logger
-        if not isinstance(config, dict):
-            raise ValueError('%s config must be a dict of arguments', print_name)
+            _check_configured_args(func, config)
+
+        assert isinstance(config, dict), 'Invariant failed for %s config' % print_name
 
         parameters = list(inspect.signature(func).parameters.values())
-        args, kwargs = _merge_args(parameters, args, kwargs, config, print_name)
+        args, kwargs = _merge_args(parameters, args, kwargs, config, print_name, is_first_run)
 
+        is_first_run = False
         return func(*args, **kwargs)
 
     # Add a flag to the func; enabling us to check if a function has the configurable decorator.

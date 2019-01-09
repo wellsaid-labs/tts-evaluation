@@ -9,6 +9,7 @@ import torch
 
 from src.audio import split_signal
 from src.hparams import configurable
+from src.hparams import ConfiguredArg
 from src.signal_model.stripped_gru import StrippedGRU
 from src.signal_model.upsample import ConditionalFeaturesUpsample
 
@@ -342,12 +343,12 @@ class WaveRNN(nn.Module):
 
     @configurable
     def __init__(self,
-                 hidden_size=896,
-                 bits=16,
-                 upsample_num_filters=[64, 64, 32, 10],
-                 upsample_kernels=[(5, 5), (3, 3), (3, 3), (3, 3)],
-                 upsample_repeat=25,
-                 local_features_size=128):
+                 hidden_size=ConfiguredArg(),
+                 bits=ConfiguredArg(),
+                 upsample_num_filters=ConfiguredArg(),
+                 upsample_kernels=ConfiguredArg(),
+                 upsample_repeat=ConfiguredArg(),
+                 local_features_size=ConfiguredArg()):
         super(WaveRNN, self).__init__()
 
         assert hidden_size % 2 == 0, "Hidden size must be even."

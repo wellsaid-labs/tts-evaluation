@@ -19,14 +19,15 @@ def test_accumulated_metrics(mock_distributed):
     mock_distributed.reduce.return_value = None
     mock_distributed.is_initialized.return_value = True
     metrics = AccumulatedMetrics(type_=torch)
-    metrics.add_multiple_metrics({'test': torch.tensor([.25])}, 2)
-    metrics.add_multiple_metrics({'test': torch.tensor([.5])}, 3)
+    metrics.add_metrics({'test': torch.tensor([.25])}, 2)
+    metrics.add_metrics({'test': torch.tensor([.5])}, 3)
 
     def callable_(key, value):
         assert key == 'test' and value == 0.4
 
     metrics.log_step_end(callable_)
     metrics.log_epoch_end(callable_)
+    metrics.reset()
 
     called = False
 
@@ -34,8 +35,11 @@ def test_accumulated_metrics(mock_distributed):
         nonlocal called
         called = True
 
+    # No new metrics to report
     metrics.log_step_end(not_called)
     metrics.log_epoch_end(not_called)
+
+    assert not called
 
 
 def test_comet_ml():
@@ -53,6 +57,8 @@ def test_comet_ml():
     visualizer.log_figures({'figure': figure}, overwrite=True)
     visualizer.set_context('train')
     assert visualizer.context == 'train'
+    visualizer.log_current_epoch(0)
+    visualizer.log_epoch_end(0)
 
 
 def test_plot_spectrogram():

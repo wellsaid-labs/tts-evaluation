@@ -1,6 +1,7 @@
 from torch import nn
 
 from src.hparams import configurable
+from src.hparams import ConfiguredArg
 
 
 class AlwaysDropout(nn.Dropout):
@@ -23,12 +24,11 @@ class PreNet(nn.Module):
         applied only to layers in the pre-net of the autoregressive decoder.
 
     Args:
-        frame_channels (int, optional): Number of channels in each frame (sometimes refered to
+        frame_channels (int): Number of channels in each frame (sometimes refered to
             as "Mel-frequency bins" or "FFT bins" or "FFT bands").
-        num_layers (int, optional): Number of fully connected layers of ReLU units.
-        hidden_size (int, optional): Number of hidden units in each layer.
-        dropout (float, optional): Probability of an element to be zeroed.
-        nonlinearity (torch.nn.Module, optional): A non-linear differentiable function to use.
+        num_layers (int): Number of fully connected layers of ReLU units.
+        hidden_size (int): Number of hidden units in each layer.
+        dropout (float): Probability of an element to be zeroed.
 
     Reference:
         * Tacotron 2 Paper:
@@ -36,7 +36,11 @@ class PreNet(nn.Module):
     """
 
     @configurable
-    def __init__(self, frame_channels=80, num_layers=2, hidden_size=256, dropout=0.5):
+    def __init__(self,
+                 frame_channels,
+                 num_layers=ConfiguredArg(),
+                 hidden_size=ConfiguredArg(),
+                 dropout=ConfiguredArg()):
         super().__init__()
         self.layers = nn.Sequential(*tuple([
             nn.Sequential(

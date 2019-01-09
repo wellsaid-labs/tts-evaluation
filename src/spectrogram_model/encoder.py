@@ -5,6 +5,7 @@ from torchnlp.text_encoders import PADDING_INDEX
 from torchnlp.text_encoders.reserved_tokens import RESERVED_ITOS
 
 from src.hparams import configurable
+from src.hparams import ConfiguredArg
 
 
 class Encoder(nn.Module):
@@ -36,35 +37,35 @@ class Encoder(nn.Module):
     Args:
         vocab_size (int): Maximum size of the vocabulary used to encode ``tokens``.
         num_speakers (int)
-        out_dim (int, optional): Number of dimensions to output.
-        token_embedding_dim (int, optional): Size of the token embedding dimensions.
-        speaker_embedding_dim (int, optional): Size of the speaker embedding dimensions.
-        num_convolution_layers (int, optional): Number of convolution layers to apply.
-        num_convolution_filters (odd :clas:`int`, optional): Number of dimensions (channels)
+        out_dim (int): Number of dimensions to output.
+        token_embedding_dim (int): Size of the token embedding dimensions.
+        speaker_embedding_dim (int): Size of the speaker embedding dimensions.
+        num_convolution_layers (int): Number of convolution layers to apply.
+        num_convolution_filters (odd :clas:`int`): Number of dimensions (channels)
             produced by the convolution.
-        convolution_filter_size (int, optional): Size of the convolving kernel.
-        lstm_hidden_size (int, optional): The number of features in the LSTM hidden state. Must be
+        convolution_filter_size (int): Size of the convolving kernel.
+        lstm_hidden_size (int): The number of features in the LSTM hidden state. Must be
             an even integer if ``lstm_bidirectional`` is True. The hidden size of the final
             hidden feature representation.
-        lstm_layers (int, optional): Number of recurrent LSTM layers.
-        lstm_bidirectional (bool, optional): If True, becomes a bidirectional LSTM.
+        lstm_layers (int): Number of recurrent LSTM layers.
+        lstm_bidirectional (bool): If True, becomes a bidirectional LSTM.
     """
 
     @configurable
     def __init__(self,
                  vocab_size,
                  num_speakers,
-                 out_dim=128,
-                 token_embedding_dim=512,
-                 speaker_embedding_dim=256,
-                 num_convolution_layers=3,
-                 num_convolution_filters=512,
-                 convolution_filter_size=5,
-                 convolution_dropout=0.5,
-                 lstm_hidden_size=512,
-                 lstm_layers=1,
-                 lstm_bidirectional=True,
-                 lstm_dropout=0.1):
+                 out_dim=ConfiguredArg(),
+                 token_embedding_dim=ConfiguredArg(),
+                 speaker_embedding_dim=ConfiguredArg(),
+                 num_convolution_layers=ConfiguredArg(),
+                 num_convolution_filters=ConfiguredArg(),
+                 convolution_filter_size=ConfiguredArg(),
+                 convolution_dropout=ConfiguredArg(),
+                 lstm_hidden_size=ConfiguredArg(),
+                 lstm_layers=ConfiguredArg(),
+                 lstm_bidirectional=ConfiguredArg(),
+                 lstm_dropout=ConfiguredArg()):
 
         super().__init__()
 

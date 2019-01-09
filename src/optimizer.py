@@ -10,6 +10,7 @@ import numpy as np
 import torch
 
 from src.hparams import configurable
+from src.hparams import ConfiguredArg
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +121,7 @@ class AutoOptimizer(Optimizer):
     """
 
     @configurable
-    def __init__(self, optim, window_size):
+    def __init__(self, optim, window_size=ConfiguredArg()):
         super().__init__(optim)
         self.window_size = window_size
         self.window = []

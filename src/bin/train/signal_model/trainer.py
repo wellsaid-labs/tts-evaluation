@@ -19,10 +19,6 @@ from functools import partial
 
 import logging
 import random
-import time
-
-from torch.nn import CrossEntropyLoss
-from torch.optim import Adam
 
 import torch
 
@@ -31,6 +27,7 @@ from src.audio import split_signal
 from src.bin.train.signal_model.data_loader import DataLoader
 from src.datasets import compute_spectrograms
 from src.hparams import configurable
+from src.hparams import ConfiguredArg
 from src.hparams import get_config
 from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
@@ -39,18 +36,13 @@ from src.utils import AnomalyDetector
 from src.utils import dict_collapse
 from src.utils import evaluate
 from src.utils import get_total_parameters
+from src.utils import log_runtime
 from src.utils import OnDiskTensor
 from src.visualize import AccumulatedMetrics
 from src.visualize import CometML
 from src.visualize import plot_spectrogram
 
 logger = logging.getLogger(__name__)
-
-# TODO: Remove default parameters that are configured; otherwise, it's confusing as to which
-# values are used. Make a default ``configured_parameter`` object to set as a default for configured
-# parameters. This object throws an error if it's used in any shape or form.
-# Also, the configurable, can check for that parameter. Or the parameter can check to ensure it's
-# actually configured.
 
 TrainerState = namedtuple('TrainerState',
                           ['step', 'epoch', 'optimizer_state_dict', 'model_state_dict'])
@@ -64,27 +56,23 @@ class Trainer():
         train_dataset (iterable): Train dataset used to optimize the model.
         dev_dataset (iterable): Dev dataset used to evaluate.
         comet_ml_project_name (str): Project name, used for grouping experiments.
-        comet_ml_experiment_key (str, optioanl): Previous experiment key to restart visualization.
+        train_batch_size (int): Batch size used for training.
+        dev_batch_size (int): Batch size used for evaluation.
+        criterion (callable): Loss function used to score signal predictions.
+        optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
+        min_rollback (int): Minimum number of epochs to rollback in case of an anomaly.
+        use_predicted (bool): If ``True`` train from predicted spectrogram, otherwise
+            train from real spectrogram.
+        comet_ml_experiment_key (str, optional): Previous experiment key to restart visualization.
         spectrogram_model_checkpoint_path (str, optional): Checkpoint used to generate a spectrogram
             from text as input to the signal model.
-        train_batch_size (int, optional): Batch size used for training.
-        dev_batch_size (int, optional): Batch size used for evaluation.
         model (torch.nn.Module, optional): Model to train and evaluate.
         step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
         epoch (int, optional): Starting epoch, useful warm starts (i.e. checkpoints).
-        step_unit (str, optional): Unit to measuer steps in, either: ['batches', 'deciseconds'].
-        criterion (callable): Loss function used to score signal predictions.
-        optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
         anomaly_detector (AnomalyDetector, optional): Anomaly detector used to skip batches that
             result in large loss.
-        min_rollback (int, optional): Minimum number of epochs to rollback in case of an anomaly.
         use_tqdm (bool, optional): Use TQDM to track epoch progress.
-        use_predicted (bool, optional): If ``True`` train from predicted spectrogram, otherwise
-            train from real spectrogram.
     """
-
-    STEP_UNIT_DECISECONDS = 'deciseconds'
-    STEP_UNIT_BATCHES = 'batches'
 
     TRAIN_LABEL = 'train'
     DEV_INFERRED_LABEL = 'dev_inferred'
@@ -96,25 +84,22 @@ class Trainer():
                  train_dataset,
                  dev_dataset,
                  comet_ml_project_name,
+                 train_batch_size=ConfiguredArg(),
+                 dev_batch_size=ConfiguredArg(),
+                 criterion=ConfiguredArg(),
+                 optimizer=ConfiguredArg(),
+                 min_rollback=ConfiguredArg(),
+                 use_predicted=ConfiguredArg(),
                  comet_ml_experiment_key=None,
                  spectrogram_model_checkpoint_path=None,
-                 train_batch_size=32,
-                 dev_batch_size=128,
-                 model=WaveRNN,
+                 model=None,
                  step=0,
                  epoch=0,
-                 step_unit='batches',
-                 criterion=CrossEntropyLoss,
-                 optimizer=Adam,
                  anomaly_detector=None,
-                 min_rollback=1,
-                 use_tqdm=False,
-                 use_predicted=True):
-        assert step_unit in [self.STEP_UNIT_BATCHES,
-                             self.STEP_UNIT_DECISECONDS], 'Picked invalid step unit.'
+                 use_tqdm=False):
 
         # Allow for ``class`` or a class instance
-        self.model = model if isinstance(model, torch.nn.Module) else model()
+        self.model = model if isinstance(model, torch.nn.Module) else WaveRNN()
         self.model.to(device)
 
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
@@ -130,7 +115,6 @@ class Trainer():
         self.device = device
         self.step = step
         self.epoch = epoch
-        self.step_unit = step_unit
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
         self.spectrogram_model_checkpoint_path = spectrogram_model_checkpoint_path
@@ -163,7 +147,7 @@ class Trainer():
                                 spectrogram_model_checkpoint_path)
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
-        logger.info('Step (%s): %d', self.step_unit, self.step)
+        logger.info('Step: %d', self.step)
         logger.info('Epoch: %d', self.epoch)
         logger.info('Train Batch Size: %d', train_batch_size)
         logger.info('Dev Batch Size: %d', dev_batch_size)
@@ -207,6 +191,7 @@ class Trainer():
         else:
             self.rollback.append(self._get_state())
 
+    @log_runtime
     def run_epoch(self, train=False, trial_run=False):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
 
@@ -237,7 +222,6 @@ class Trainer():
             use_tqdm=self.use_tqdm)
 
         # Run epoch
-        start_time = time.time()
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
                 predictions = torch.nn.parallel.data_parallel(
@@ -254,21 +238,19 @@ class Trainer():
                 lambda k, v: self.comet_ml.log_metric('step/' + k, v) if train else None)
 
             if train:
-                if self.step_unit == self.STEP_UNIT_DECISECONDS:
-                    self.step += time.time() - start_time
-                    self.comet_ml.set_step(int(round(self.step * 10)))
-                elif self.step_unit == self.STEP_UNIT_BATCHES:
-                    self.step += 1
-                    self.comet_ml.set_step(self.step)
+                self.step += 1
+                self.comet_ml.set_step(self.step)
 
         # Log epoch metrics
         if not trial_run:
             self.comet_ml.log_epoch_end(self.epoch)
+            self.accumulated_metrics.log_epoch_end(
+                lambda k, v: self.comet_ml.log_metric('epoch/' + k, v))
             if train:
                 self.epoch += 1
                 self._maybe_rollback(self.accumulated_metrics.get_epoch_metric('coarse_loss'))
-            self.accumulated_metrics.log_epoch_end(
-                lambda k, v: self.comet_ml.log_metric('epoch/' + k, v))
+
+        self.accumulated_metrics.reset()
 
     def _do_loss_and_maybe_backwards(self, batch, predictions, do_backwards):
         """ Compute the losses and maybe do backwards.
@@ -298,7 +280,7 @@ class Trainer():
             self.optimizer.step(comet_ml=self.comet_ml)
 
         # Record metrics
-        self.accumulated_metrics.add_multiple_metrics({
+        self.accumulated_metrics.add_metrics({
             'coarse_loss': coarse_loss,
             'fine_loss': fine_loss
         }, batch.signal_mask[0].sum())

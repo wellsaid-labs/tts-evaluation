@@ -30,7 +30,8 @@ def test_conditional_features_upsample():
 
 
 def test_conditional_features_upsample_repeat():
-    upsample = ConditionalFeaturesUpsample(upsample_repeat=2)
+    upsample = ConditionalFeaturesUpsample(
+        in_channels=2, out_channels=4, num_filters=[8], kernels=[(1, 1)], upsample_repeat=2)
     local_features = torch.tensor([1, 2, 3]).view(1, 1, 3)
     local_features = upsample._repeat(local_features)
     local_features = local_features.view(-1)

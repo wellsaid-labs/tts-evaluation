@@ -19,12 +19,11 @@ import librosa
 import torch
 import numpy
 
-from src import datasets
 from src.audio import combine_signal
 from src.audio import griffin_lim
 from src.datasets import compute_spectrograms
-from src.datasets import Speaker
 from src.hparams import configurable
+from src.hparams import ConfiguredArg
 from src.hparams import log_config
 from src.hparams import set_hparams
 from src.utils import Checkpoint
@@ -65,13 +64,13 @@ def _get_spectrogram_length(example, use_predicted):
 
 
 @configurable
-def main(signal_model_checkpoint_path=None,
+def main(dataset=ConfiguredArg(),
+         signal_model_checkpoint_path=None,
          spectrogram_model_checkpoint_path=None,
-         dataset=datasets.lj_speech_dataset,
          destination='results/',
          num_samples=32,
          aligned=False,
-         speaker=Speaker.HILARY_NORIEGA,
+         speaker=None,
          spectrogram_model_batch_size=1,
          signal_model_batch_size=1,
          signal_model_device=torch.device('cpu')):
@@ -82,11 +81,11 @@ def main(signal_model_checkpoint_path=None,
     model.
 
     Args:
+        dataset (callable): Callable that returns an iterable of ``dict``.
         signal_model_checkpoint_path (str, optional): Checkpoint used to predict a raw waveform
             given a spectrogram.
         spectrogram_model_checkpoint_path (str, optional): Checkpoint used to generate spectrogram
             from text as input to the signal model.
-        dataset (callable, optional): Callable that returns an iterable of ``dict``.
         destination (str, optional): Path to store results.
         num_samples (int, optional): Number of rows to evaluate.
         aligned (bool, optional): If ``True``, predict a ground truth aligned spectrogram.

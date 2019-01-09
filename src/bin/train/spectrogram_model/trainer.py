@@ -2,9 +2,6 @@ import logging
 import math
 import random
 
-from torch.nn import BCEWithLogitsLoss
-from torch.nn import MSELoss
-from torch.optim import Adam
 from torchnlp.text_encoders import CharacterEncoder
 from torchnlp.text_encoders import IdentityEncoder
 
@@ -14,6 +11,7 @@ from src.audio import griffin_lim
 from src.bin.train.spectrogram_model.data_loader import DataLoader
 from src.datasets import compute_spectrograms
 from src.hparams import configurable
+from src.hparams import ConfiguredArg
 from src.hparams import get_config
 from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
@@ -44,18 +42,22 @@ class Trainer():
         train_dataset (iterable of TextSpeechRow): Train dataset used to optimize the model.
         dev_dataset (iterable of TextSpeechRow): Dev dataset used to evaluate.
         comet_ml_project_name (str): Project name, used for grouping experiments.
+        train_batch_size (int): Batch size used for training.
+        dev_batch_size (int): Batch size used for evaluation.
+        max_recursion (int): The maximum sequential predictions to make before
+            quitting; Used for testing and defensive design.
+        criterion_spectrogram (callable): Loss function used to score frame predictions.
+        criterion_stop_token (callable): Loss function used to score stop
+            token predictions.
+        optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
         comet_ml_experiment_key (str, optioanl): Previous experiment key to restart visualization.
-        text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
-        speaker_encoder (torchnlp.TextEncoder): Text encoder used to encode the speaker label.
-        train_batch_size (int, optional): Batch size used for training.
-        dev_batch_size (int, optional): Batch size used for evaluation.
+        text_encoder (torchnlp.TextEncoder, optional): Text encoder used to encode and decode the
+            text.
+        speaker_encoder (torchnlp.TextEncoder, optional): Text encoder used to encode the speaker
+            label.
         model (torch.nn.Module, optional): Model to train and evaluate.
         step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
         epoch (int, optional): Starting epoch, useful warm starts (i.e. checkpoints).
-        criterion_spectrogram (callable, optional): Loss function used to score frame predictions.
-        criterion_stop_token (callable, optional): Loss function used to score stop
-            token predictions.
-        optimizer (torch.optim.Optimizer, optional): Optimizer used for gradient descent.
         use_tqdm (bool, optional): Use TQDM to track epoch progress.
     """
 
@@ -69,17 +71,18 @@ class Trainer():
                  train_dataset,
                  dev_dataset,
                  comet_ml_project_name,
+                 train_batch_size=ConfiguredArg(),
+                 dev_batch_size=ConfiguredArg(),
+                 max_recursion=ConfiguredArg(),
+                 criterion_spectrogram=ConfiguredArg(),
+                 criterion_stop_token=ConfiguredArg(),
+                 optimizer=ConfiguredArg(),
                  comet_ml_experiment_key=None,
                  text_encoder=None,
                  speaker_encoder=None,
-                 train_batch_size=32,
-                 dev_batch_size=128,
-                 model=SpectrogramModel,
+                 model=None,
                  step=0,
                  epoch=0,
-                 criterion_spectrogram=MSELoss,
-                 criterion_stop_token=BCEWithLogitsLoss,
-                 optimizer=Adam,
                  use_tqdm=False):
 
         self.train_dataset = compute_spectrograms(train_dataset)
@@ -93,7 +96,7 @@ class Trainer():
             if speaker_encoder is None else speaker_encoder)
 
         # Allow for ``class`` or a class instance
-        self.model = model if isinstance(model, torch.nn.Module) else model(
+        self.model = model if isinstance(model, torch.nn.Module) else SpectrogramModel(
             self.text_encoder.vocab_size, self.speaker_encoder.vocab_size)
         self.model.to(device)
         if src.distributed.in_use():
@@ -112,6 +115,7 @@ class Trainer():
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
         self.use_tqdm = use_tqdm
+        self.max_recursion = max_recursion
 
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
@@ -188,7 +192,11 @@ class Trainer():
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
                 if infer:
-                    predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1])
+                    predictions = self.model(
+                        batch.text[0],
+                        batch.speaker[0],
+                        batch.text[1],
+                        max_recursion=self.max_recursion)
                 else:
                     predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1],
                                              batch.spectrogram[0])
@@ -213,6 +221,8 @@ class Trainer():
                 lambda k, v: self.comet_ml.log_metric('epoch/' + k, v))
             if train:
                 self.epoch += 1
+
+        self.accumulated_metrics.reset()
 
     def _do_loss_and_maybe_backwards(self, batch, predictions, do_backwards):
         """ Compute the losses and maybe do backwards.
@@ -243,13 +253,11 @@ class Trainer():
             self.optimizer.step(comet_ml=self.comet_ml)
 
         # Record metrics
-        self.accumulated_metrics.add_multiple_metrics({
+        self.accumulated_metrics.add_metrics({
             'pre_spectrogram_loss': pre_spectrogram_loss,
             'post_spectrogram_loss': post_spectrogram_loss,
         }, expanded_mask.sum())
-        self.accumulated_metrics.add_multiple_metrics({
-            'stop_token_loss': stop_token_loss
-        }, mask.sum())
+        self.accumulated_metrics.add_metrics({'stop_token_loss': stop_token_loss}, mask.sum())
 
         return (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss, expanded_mask.sum(),
                 mask.sum())
@@ -259,10 +267,12 @@ class Trainer():
         # predicted_alignments [num_frames, batch_size, num_tokens]
         mask = lengths_to_mask(lengths, device=predicted_alignments.device).transpose(0, 1)
         kwargs = {'tensor': predicted_alignments.detach(), 'dim': 2, 'mask': mask}
-        self.accumulated_metrics.add_multiple_metrics({
+        self.accumulated_metrics.add_metrics({
             'attention_norm': get_average_norm(norm=math.inf, **kwargs),
             'attention_std': get_weighted_stdev(**kwargs),
         }, kwargs['mask'].sum())
+        self.accumulated_metrics.add_metric('exceeded_max_length',
+                                            (lengths == self.max_recursion).sum(), lengths.shape[0])
 
     def visualize_inferred(self):
         """ Run in inference mode without teacher forcing and visualizing results.
@@ -279,7 +289,8 @@ class Trainer():
         with evaluate(model, device=self.device):
             logger.info('Running inference...')
             (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
-             predicted_alignments, _) = model(text, speaker)
+             predicted_alignments, _) = model(
+                 text, speaker, max_recursion=self.max_recursion)
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
 

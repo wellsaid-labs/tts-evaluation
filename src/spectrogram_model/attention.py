@@ -5,6 +5,7 @@ import torch
 from torch import nn
 
 from src.hparams import configurable
+from src.hparams import ConfiguredArg
 
 
 class LocationSensitiveAttention(nn.Module):
@@ -40,20 +41,20 @@ class LocationSensitiveAttention(nn.Module):
           https://arxiv.org/pdf/1506.07503.pdf
 
     Args:
+        query_hidden_size (int): The hidden size of the query to expect.
         hidden_size (int): The hidden size of the attention module dictating context, query,
             and location features size.
-        query_hidden_size (int): The hidden size of the query to expect.
-        num_convolution_filters (odd :clas:`int`, optional): Number of dimensions (channels)
+        num_convolution_filters (odd :clas:`int`): Number of dimensions (channels)
             produced by the convolution.
-        convolution_filter_size (int, optional): Size of the convolving kernel.
+        convolution_filter_size (int): Size of the convolving kernel.
     """
 
     @configurable
     def __init__(self,
-                 hidden_size=128,
-                 query_hidden_size=1024,
-                 num_convolution_filters=32,
-                 convolution_filter_size=31):
+                 query_hidden_size,
+                 hidden_size=ConfiguredArg(),
+                 num_convolution_filters=ConfiguredArg(),
+                 convolution_filter_size=ConfiguredArg()):
 
         super().__init__()
         # LEARN MORE:

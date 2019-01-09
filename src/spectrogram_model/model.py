@@ -6,6 +6,7 @@ from tqdm import tqdm
 import torch
 
 from src.hparams import configurable
+from src.hparams import ConfiguredArg
 from src.spectrogram_model.decoder import AutoregressiveDecoder
 from src.spectrogram_model.encoder import Encoder
 from src.spectrogram_model.post_net import PostNet
@@ -72,12 +73,12 @@ class SpectrogramModel(nn.Module):
       Args:
         vocab_size (int): Maximum size of the vocabulary used to encode ``tokens``.
         num_speakers (int)
-        frame_channels (int, optional): Number of channels in each frame (sometimes refered to
+        frame_channels (int): Number of channels in each frame (sometimes refered to
             as "Mel-frequency bins" or "FFT bins" or "FFT bands")
       """
 
     @configurable
-    def __init__(self, vocab_size, num_speakers, frame_channels=80):
+    def __init__(self, vocab_size, num_speakers, frame_channels=ConfiguredArg()):
 
         super().__init__()
 
@@ -277,6 +278,7 @@ class SpectrogramModel(nn.Module):
         tokens = tokens.transpose(0, 1)
         return tokens, speaker, num_tokens, target_frames
 
+    @configurable
     def forward(self, tokens, speaker, num_tokens=None, target_frames=None, **kwargs):
         """
         Args:

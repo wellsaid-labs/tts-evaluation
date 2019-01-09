@@ -257,7 +257,7 @@ def _predict_spectrogram(data,
 
                 # Compute some metrics for logging
                 mask = lengths_to_mask(spectrogram_lengths, device=predicted.device).transpose(0, 1)
-                metrics.add_multiple_metrics({
+                metrics.add_metrics({
                     'attention_norm': get_average_norm(alignments, norm=inf, dim=2, mask=mask),
                     'attention_std': get_weighted_stdev(alignments, dim=2, mask=mask),
                 }, mask.sum())

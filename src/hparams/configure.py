@@ -7,7 +7,10 @@ import torch
 from src.hparams import add_config
 from src.hparams import configurable
 
-# TODO: Add trainer ``optim`` to hparams
+from torch.nn import BCEWithLogitsLoss
+from torch.nn import CrossEntropyLoss
+from torch.nn import MSELoss
+from torch.optim import Adam
 
 
 def _set_anomaly_detection():
@@ -113,9 +116,8 @@ def _set_audio_processing():
                 # iterations seems to be enough), which is reasonably fast.
                 'iterations': 30,
             },
-            'mel_filters': {
+            '_mel_filters': {
                 'fft_length': fft_length,
-                'sample_rate': sample_rate,
                 # SOURCE (Tacotron 2):
                 # We transform the STFT magnitude to the mel scale using an 80 channel mel
                 # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
@@ -199,7 +201,6 @@ def _set_model_size(frame_channels, bits):
                     'convolution_filter_size': 31,
                 },
                 'decoder.AutoregressiveDecoder.__init__': {
-                    'frame_channels': frame_channels,
                     'pre_net_hidden_size': pre_net_hidden_size,
                     'attention_hidden_size': attention_hidden_size,
 
@@ -209,8 +210,6 @@ def _set_model_size(frame_channels, bits):
                     'lstm_hidden_size': 1024,
                 },
                 'pre_net.PreNet.__init__': {
-                    'frame_channels': frame_channels,
-
                     # SOURCE (Tacotron 2):
                     # The prediction from the previous time step is first passed through a small
                     # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
@@ -218,8 +217,6 @@ def _set_model_size(frame_channels, bits):
                     'hidden_size': pre_net_hidden_size,
                 },
                 'post_net.PostNet.__init__': {
-                    'frame_channels': frame_channels,
-
                     # SOURCE (Tacotron 2):
                     # Finally, the predicted mel spectrogram is passed
                     # through a 5-layer convolutional post-net which predicts a residual
@@ -233,42 +230,35 @@ def _set_model_size(frame_channels, bits):
                     'num_convolution_filters': 512,
                     'convolution_filter_size': 5,
                 },
-                'model.SpectrogramModel.__init__': {
-                    'frame_channels': frame_channels,
-                }
+                'model.SpectrogramModel.__init__.frame_channels': frame_channels,
             },
-            'signal_model': {
-                'upsample.ConditionalFeaturesUpsample.__init__': {
-                    # SOURCE: Efficient Neural Audio Synthesis Author
-                    # The author suggested adding 3 - 5 convolutions on top of WaveRNN.
-                    # SOURCE:
-                    # https://github.com/pytorch/examples/blob/master/super_resolution/model.py
-                    # Upsampling layer is inspired by super resolution
-                    'kernels': [(5, 5), (3, 3), (3, 3), (3, 3)],
-                },
-                'wave_rnn.WaveRNN': {
-                    '__init__': {
-                        'local_features_size': frame_channels,
+            'signal_model.wave_rnn.WaveRNN.__init__': {
+                'local_features_size': frame_channels,
 
-                        # SOURCE: Efficient Neural Audio Synthesis
-                        # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
-                        # designed to efficiently predict 16-bit raw audio samples.
-                        'bits': bits,
+                # SOURCE: Efficient Neural Audio Synthesis
+                # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
+                # designed to efficiently predict 16-bit raw audio samples.
+                'bits': bits,
 
-                        # SOURCE: Efficient Neural Audio Synthesis
-                        # We see that the WaveRNN with 896 units achieves NLL scores comparable to
-                        # those of the largest WaveNet model
-                        'hidden_size': 896,
+                # SOURCE: Efficient Neural Audio Synthesis
+                # We see that the WaveRNN with 896 units achieves NLL scores comparable to
+                # those of the largest WaveNet model
+                'hidden_size': 896,
 
-                        # SOURCE: Tacotron 2
-                        # only 2 upsampling layers are used in the conditioning stack instead of 3
-                        # layers.
-                        # SOURCE: Tacotron 2 Author Google Chat
-                        # We upsample 4x with the layers and then repeat each value 75x
-                        'upsample_num_filters': [64, 64, 32, 10],
-                        'upsample_repeat': 30
-                    }
-                },
+                # SOURCE: Efficient Neural Audio Synthesis Author
+                # The author suggested adding 3 - 5 convolutions on top of WaveRNN.
+                # SOURCE:
+                # https://github.com/pytorch/examples/blob/master/super_resolution/model.py
+                # Upsampling layer is inspired by super resolution
+                'upsample_kernels': [(5, 5), (3, 3), (3, 3), (3, 3)],
+
+                # SOURCE: Tacotron 2
+                # only 2 upsampling layers are used in the conditioning stack instead of 3
+                # layers.
+                # SOURCE: Tacotron 2 Author Google Chat
+                # We upsample 4x with the layers and then repeat each value 75x
+                'upsample_num_filters': [64, 64, 32, 10],
+                'upsample_repeat': 30
             }
         }
     })
@@ -308,7 +298,7 @@ def set_hparams():
 
     # SOURCE (Tacotron 2):
     # Finally, the predicted mel spectrogram is passed
-    is_signal_model_trained_from_predicted_spectrogram = True
+    train_signal_model_from_predicted_spectrogram = True
 
     spectrogram_model_dev_batch_size = 256
 
@@ -326,7 +316,7 @@ def set_hparams():
                 # probability 0.5 is applied only to layers in the pre-net of the
                 # autoregressive decoder.
                 'pre_net.PreNet.__init__.dropout': 0.5,
-                'post_net.PostNet.__init__.convolution_dropout': convolution_dropout,
+                'post_net.PostNet.__init__.convolution_dropout': convolution_dropout
             },
             'bin.evaluate.main.dataset': dataset,
             'datasets.process.compute_spectrograms.batch_size': spectrogram_model_dev_batch_size,
@@ -342,6 +332,24 @@ def set_hparams():
                         # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
                         'train_batch_size': 64,
                         'dev_batch_size': spectrogram_model_dev_batch_size,
+
+                        # SOURCE (Tacotron 2):
+                        # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
+                        'optimizer': Adam,
+
+                        # SOURCE (Tacotron 2 Author):
+                        # The author confirmed they used BCE loss in Google Chat.
+                        'criterion_stop_token': BCEWithLogitsLoss,
+
+                        # SOURCE: Tacotron 2
+                        # We minimize the summed mean squared error (MSE) from before and after the
+                        # post-net to aid convergence.
+                        'criterion_spectrogram': MSELoss,
+
+                        # The maximum sequential predictions to make before quitting. This was
+                        # pick semi-arbitrarily. The longest sequences in any dataset so far
+                        # encountered have been less than 2000 frames.
+                        'max_recursion': 2000,
                     },
                 },
                 'signal_model': {
@@ -354,12 +362,22 @@ def set_hparams():
                         # NOTE: Parameters set after experimentation on a 4 Px100 GPU.
                         'train_batch_size': 64,
                         'dev_batch_size': 256,
-                        'use_predicted': is_signal_model_trained_from_predicted_spectrogram,
+
+                        'use_predicted': train_signal_model_from_predicted_spectrogram,
+
+                        # These are not directly mentioned in the paper; however are popular choices
+                        # as of Jan 2019 for a sequence to sequence task.
+                        'criterion': CrossEntropyLoss,
+                        'optimizer': Adam
                     },
-                    'data_loader._get_slice': {
+                    'data_loader.DataLoader.__init__': {
                         # SOURCE: Efficient Neural Audio Synthesis
                         # The WaveRNN models are trained on sequences of 960 audio samples
                         'slice_size': int(900 / frame_hop),
+
+                        # TODO: Experiment with padding simply as big as the frame_size because
+                        # the sound at a particular time is described by multiple frames
+                        # surrounding the sound byte.
                         'slice_pad': 5,
                     },
                 }

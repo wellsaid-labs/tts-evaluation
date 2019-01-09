@@ -78,12 +78,7 @@ class ConditionalFeaturesUpsample(nn.Module):
     """
 
     @configurable
-    def __init__(self,
-                 in_channels=80,
-                 out_channels=64,
-                 kernels=[(5, 5), (3, 3), (3, 3), (3, 3)],
-                 num_filters=[64, 64, 32, 10],
-                 upsample_repeat=30):
+    def __init__(self, in_channels, out_channels, num_filters, upsample_repeat, kernels):
         super().__init__()
         self.out_channels = out_channels
         self.upsample_repeat = upsample_repeat

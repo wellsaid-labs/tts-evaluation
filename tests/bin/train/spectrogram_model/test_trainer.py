@@ -30,7 +30,8 @@ def get_trainer(compute_spectrograms_mock, comet_ml_mock):
         text_encoder=CharacterEncoder(['text encoder']),
         speaker_encoder=IdentityEncoder([Speaker.LINDA_JOHNSON]),
         train_batch_size=1,
-        dev_batch_size=1)
+        dev_batch_size=1,
+        comet_ml_experiment_key=None)
 
     # Make sure that stop-token is not predicted; therefore, reaching ``max_recursion``
     torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.weight, -math.inf)

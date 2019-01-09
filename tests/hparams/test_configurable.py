@@ -9,6 +9,9 @@ from src.hparams.configurable_ import _parse_configuration
 from src.hparams.configurable_ import add_config
 from src.hparams.configurable_ import clear_config
 from src.hparams.configurable_ import configurable
+from src.hparams.configurable_ import ConfiguredArg
+from src.hparams.configurable_ import get_config
+from src.hparams.configurable_ import log_config
 
 
 def test_parse_configuration_example():
@@ -182,25 +185,124 @@ def test_add_config_and_arguments():
     assert mock_configurable() == {}
 
 
+def test_log_config():
+    log_config()
+
+
+def test_get_config():
+    # Check that a function can be configured
+    add_config({'tests.hparams.test_configurable.mock_configurable': {'xyz': 'xyz'}})
+    assert len(get_config())
+
+    # Reset
+    clear_config()
+
+    assert len(get_config()) == 0
+
+
+def mock_configurable_2(arg=ConfiguredArg()):
+    pass
+
+
+def test_configured_arg_error():
+    global mock_configurable_2
+
+    mock_configurable_2 = configurable(mock_configurable_2)
+
+    # Check the ``ConfiguredArg`` parameter
+    with pytest.raises(ValueError):
+        mock_configurable_2()
+
+    add_config({'tests.hparams.test_configurable.mock_configurable_2.arg': ''})
+    # Does not raise error
+    mock_configurable_2()
+
+    clear_config()  # Reset config for other tests
+
+
+def test_configured_arg():
+    # Test that configured arg throws an error if you try anything with it
+    arg = ConfiguredArg()
+
+    with pytest.raises(ValueError):
+        str(arg)
+
+    with pytest.raises(ValueError):
+        arg.test
+
+    with pytest.raises(ValueError):
+        arg == arg
+
+    with pytest.raises(ValueError):
+        '' in arg
+
+    with pytest.raises(ValueError):
+        {arg: ''}
+
+    with pytest.raises(ValueError):
+        arg()
+
+    with pytest.raises(ValueError):
+        len(arg)
+
+    with pytest.raises(ValueError):
+        repr(arg)
+
+
+# Mocks that have never been run before `test_no_config_warning`
+@configurable
+def mock_configurable_test_no_config_warning(*args, **kwargs):
+    return kwargs
+
+
+class MockConfigurableTestNoConfigWarning(object):
+
+    @configurable
+    def __init__(self):
+        pass
+
+
+@mock.patch('src.hparams.configurable_.logger')
+def test_no_config_warning(logger_mock):
+    clear_config()
+
+    MockConfigurableTestNoConfigWarning()
+    logger_mock.warning.assert_called_once()  # No config warning
+    logger_mock.reset_mock()
+
+    mock_configurable_test_no_config_warning()
+    logger_mock.warning.assert_called_once()  # No config warning
+    logger_mock.reset_mock()
+
+
+def test_merge_args_too_many_args():
+    arg_kwarg = lambda a, b='abc': (a, b)
+    parameters = list(inspect.signature(arg_kwarg).parameters.values())
+
+    # Test too many arguments passed
+    with pytest.raises(TypeError):
+        _merge_args(parameters, ['a', 'abc', 'one too many'], {}, {'b': 'xyz'})
+
+
 @mock.patch('src.hparams.configurable_.logger')
 def test_merge_arg_kwarg(logger_mock):
     arg_kwarg = lambda a, b='abc': (a, b)
     parameters = list(inspect.signature(arg_kwarg).parameters.values())
 
     # Prefer ``args`` over ``other_kwargs``
-    merged = _merge_args(parameters, ['a', 'abc'], {}, {'b': 'xyz'})
+    merged = _merge_args(parameters, ['a', 'abc'], {}, {'b': 'xyz'}, is_first_run=True)
     assert merged == (['a', 'abc'], {})
     logger_mock.warning.assert_called_once()
     logger_mock.reset_mock()
 
     # Prefer ``kwargs`` over ``other_kwargs``
-    merged = _merge_args(parameters, ['a'], {'b': 'abc'}, {'b': 'xyz'})
+    merged = _merge_args(parameters, ['a'], {'b': 'abc'}, {'b': 'xyz'}, is_first_run=True)
     assert merged == (['a'], {'b': 'abc'})
     logger_mock.warning.assert_called_once()
     logger_mock.reset_mock()
 
     # Prefer ``other_kwargs`` over default argument
-    merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz'})
+    merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz'}, is_first_run=True)
     assert merged == (['a'], {'b': 'xyz'})
     logger_mock.warning.assert_not_called()
 
@@ -224,13 +326,13 @@ def test_merge_arg_variable(logger_mock):
     parameters = list(inspect.signature(arg_kwarg).parameters.values())
 
     # Handling of variable ``*args``
-    merged = _merge_args(parameters, ['a', 'b', 'c'], {}, {'b': 'xyz'})
+    merged = _merge_args(parameters, ['a', 'b', 'c'], {}, {'b': 'xyz'}, is_first_run=True)
     assert merged == (['a', 'b', 'c'], {'b': 'xyz'})
     logger_mock.warning.assert_not_called()
     logger_mock.reset_mock()
 
     # Handling of variable ``*args``
-    merged = _merge_args(parameters, ['a', 'b', 'c'], {}, {'a': 'xyz'})
+    merged = _merge_args(parameters, ['a', 'b', 'c'], {}, {'a': 'xyz'}, is_first_run=True)
     assert merged == (['a', 'b', 'c'], {})
     logger_mock.warning.assert_called_once()
     logger_mock.reset_mock()
@@ -245,19 +347,19 @@ def test_merge_kwarg_variable(logger_mock):
     parameters = list(inspect.signature(arg_kwarg).parameters.values())
 
     # Handling of variable ``**kwargs``
-    merged = _merge_args(parameters, ['a', 'b'], {}, {'b': 'xyz'})
+    merged = _merge_args(parameters, ['a', 'b'], {}, {'b': 'xyz'}, is_first_run=True)
     assert merged == (['a', 'b'], {})
     logger_mock.warning.assert_called_once()
     logger_mock.reset_mock()
 
     # Handling of variable ``**kwargs``
-    merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz'})
+    merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz'}, is_first_run=True)
     assert merged == (['a'], {'b': 'xyz'})
     logger_mock.warning.assert_not_called()
     logger_mock.reset_mock()
 
     # Handling of variable ``**kwargs``
-    merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz', 'c': 'abc'})
+    merged = _merge_args(parameters, ['a'], {}, {'b': 'xyz', 'c': 'abc'}, is_first_run=True)
     assert merged == (['a'], {'b': 'xyz', 'c': 'abc'})
     logger_mock.warning.assert_not_called()
     logger_mock.reset_mock()

@@ -67,7 +67,7 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
 
 
 def main(run_name,
-         comet_ml_project_name,
+         comet_ml_project_name=None,
          run_tags=[],
          run_root=Path('experiments/spectrogram_model/'),
          checkpoint_path=None,
@@ -131,6 +131,9 @@ def main(run_name,
                 logger.info('Ignoring checkpoint optimizer.')
                 checkpoint.optimizer = None
             logger.info('Loaded checkpoint %s', checkpoint.path)
+            # For backwards compatibility
+            comet_ml_project_name = getattr(checkpoint, 'comet_ml_project_name',
+                                            comet_ml_project_name)
             trainer_kwargs.update({
                 'model': checkpoint.model,
                 'optimizer': checkpoint.optimizer,
@@ -138,7 +141,8 @@ def main(run_name,
                 'step': checkpoint.step,
                 'comet_ml_experiment_key': checkpoint.comet_ml_experiment_key,
                 'text_encoder': checkpoint.text_encoder,
-                'speaker_encoder': checkpoint.speaker_encoder
+                'speaker_encoder': checkpoint.speaker_encoder,
+                'comet_ml_project_name': comet_ml_project_name
             })
 
         trainer = Trainer(context.device, train, dev, **trainer_kwargs)
@@ -161,6 +165,7 @@ def main(run_name,
             if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
                 if not src.distributed.in_use() or src.distributed.is_master():
                     Checkpoint(
+                        comet_ml_project_name=comet_ml_project_name,
                         directory=context.checkpoints_directory,
                         model=(trainer.model.module if src.distributed.in_use() else trainer.model),
                         optimizer=trainer.optimizer,

@@ -1,6 +1,7 @@
 from torch import nn
 
 from src.hparams import configurable
+from src.hparams import ConfiguredArg
 
 
 class PostNet(nn.Module):
@@ -21,13 +22,13 @@ class PostNet(nn.Module):
     NOTE: Google Tacotron 2 authors mentioned they did not add dropout to the PostNet over GChat.
 
     Args:
-        num_convolution_layers (int, optional): Number of convolution layers to apply.
-        num_convolution_filters (odd :clas:`int`, optional): Number of dimensions (channels)
-            produced by the convolution.
-        convolution_filter_size (int, optional): Size of the convolving kernel.
-        convolution_dropout (float, optional): Probability of an element to be zeroed.
-        frame_channels (int, optional): Number of channels in each frame (sometimes refered to
+        frame_channels (int): Number of channels in each frame (sometimes refered to
             as "Mel-frequency bins" or "FFT bins" or "FFT bands")
+        num_convolution_layers (int): Number of convolution layers to apply.
+        num_convolution_filters (odd :clas:`int`): Number of dimensions (channels)
+            produced by the convolution.
+        convolution_filter_size (int): Size of the convolving kernel.
+        convolution_dropout (float): Probability of an element to be zeroed.
 
     Reference:
         * Tacotron 2 Paper:
@@ -36,11 +37,11 @@ class PostNet(nn.Module):
 
     @configurable
     def __init__(self,
-                 num_convolution_layers=5,
-                 num_convolution_filters=512,
-                 convolution_filter_size=5,
-                 convolution_dropout=0.5,
-                 frame_channels=80):
+                 frame_channels,
+                 num_convolution_layers=ConfiguredArg(),
+                 num_convolution_filters=ConfiguredArg(),
+                 convolution_filter_size=ConfiguredArg(),
+                 convolution_dropout=ConfiguredArg()):
         super().__init__()
 
         # LEARN MORE:
