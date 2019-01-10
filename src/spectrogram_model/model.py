@@ -278,7 +278,6 @@ class SpectrogramModel(nn.Module):
         tokens = tokens.transpose(0, 1)
         return tokens, speaker, num_tokens, target_frames
 
-    @configurable
     def forward(self, tokens, speaker, num_tokens=None, target_frames=None, **kwargs):
         """
         Args:
