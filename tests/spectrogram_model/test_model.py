@@ -77,8 +77,8 @@ def test_spectrogram_model():
     assert alignment.type() == 'torch.FloatTensor'
     assert alignment.shape == (num_frames, batch_size, num_tokens)
 
-    assert len(lengths) == batch_size
-    for length in lengths:
+    assert lengths.shape == (1, batch_size)
+    for length in lengths[0].tolist():
         assert length > 0
         assert length <= num_frames
 

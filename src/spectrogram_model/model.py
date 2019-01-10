@@ -177,7 +177,7 @@ class SpectrogramModel(nn.Module):
             frames_with_residual (torch.FloatTensor [num_frames, batch_size, frame_channels])
             stop_token (torch.FloatTensor [num_frames, batch_size])
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-            lengths (torch.LongTensor [batch_size])
+            lengths (torch.LongTensor [1, batch_size] or [1])
         """
         # [num_tokens, batch_size, hidden_size]
         _, batch_size, _ = encoded_tokens.shape
@@ -216,7 +216,7 @@ class SpectrogramModel(nn.Module):
             logger.warning('%d sequences reached %d frames', lengths.count(max_recursion),
                            len(frames))
 
-        lengths = torch.tensor(lengths)
+        lengths = torch.tensor(lengths).unsqueeze(0)
         alignments = torch.stack(alignments, dim=0)
         frames = torch.stack(frames, dim=0)
         stop_tokens = torch.stack(stop_tokens, dim=0)
@@ -224,7 +224,7 @@ class SpectrogramModel(nn.Module):
 
         if is_unbatched:
             return (frames.squeeze(1), frames_with_residual.squeeze(1), stop_tokens.squeeze(1),
-                    alignments.squeeze(1), lengths.squeeze(0))
+                    alignments.squeeze(1), lengths.squeeze(1))
 
         return frames, frames_with_residual, stop_tokens, alignments, lengths
 
@@ -300,8 +300,8 @@ class SpectrogramModel(nn.Module):
                 stopping at each frame.
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens] or [num_frames,
                 num_tokens]): Attention alignments.
-            lengths (torch.LongTensor [batch_size]): Number of frames predicted for each sequence in
-                the batch.
+            lengths (torch.LongTensor [1, batch_size] or [1]): Number of frames predicted for each
+                sequence in the batch.
         """
         is_unbatched = len(tokens.shape) == 1
 
