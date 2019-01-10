@@ -2,8 +2,8 @@ from collections import namedtuple
 from functools import partial
 
 import logging
-
 import random
+
 import torch
 
 from src.audio import combine_signal
@@ -22,7 +22,7 @@ SignalModelTrainingRow = namedtuple('SignalModelTrainingRow', [
 ])
 
 
-def _get_slice(spectrogram, signal, slice_size, spectrogram_slice_pad, random=random):
+def _get_slice(spectrogram, signal, slice_size, spectrogram_slice_pad):
     """ Slice the data into bite sized chunks that fit onto GPU memory for training.
 
     Notes:
@@ -35,7 +35,6 @@ def _get_slice(spectrogram, signal, slice_size, spectrogram_slice_pad, random=ra
         signal (torch.Tensor [signal_length])
         slice_size (int): In spectrogram frames, size of slice.
         slice_pad (int): Pad the spectrogram slice with ``frame_pad`` frames on each side.
-        random (random.Random, optional): Random number generator to sample data.
 
     Returns: (SignalModelTrainingRow) (
         input_signal (torch.Tensor [signal_length, 2])
@@ -140,7 +139,6 @@ class DataLoader(DataLoader):
         device (torch.device): Device onto which to load data.
         use_tqdm (bool): If ``True`` display progress via TQDM.
         trial_run (bool or int): If ``True``, iterates over one batch.
-        random (random.Random, optional): Random number generator to sample data.
         **kwargs (any): Other arguments to the data loader ``_load_fn``
 
     Returns:
@@ -156,7 +154,7 @@ class DataLoader(DataLoader):
     """
 
     @configurable
-    def __init__(self, data, batch_size, device, use_tqdm, trial_run, random=random, **kwargs):
+    def __init__(self, data, batch_size, device, use_tqdm, trial_run, **kwargs):
 
         # ``drop_last`` to ensure full utilization of mutliple GPUs
         super().__init__(
@@ -164,9 +162,9 @@ class DataLoader(DataLoader):
             batch_size=batch_size,
             drop_last=True,
             collate_fn=collate_tensors,
-            load_fn=partial(_load_fn, random=random, **kwargs),
+            load_fn=partial(_load_fn, **kwargs),
             pin_memory=True,
             post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
-            sampler=RandomSampler(data, random=random),
+            sampler=RandomSampler(data),
             trial_run=trial_run,
             use_tqdm=use_tqdm)

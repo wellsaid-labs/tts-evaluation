@@ -126,7 +126,6 @@ class Trainer():
         self.dev_dataset = compute_spectrograms_partial(dev_dataset)
         self.use_tqdm = use_tqdm
         self.use_predicted = use_predicted
-        self.random = random.Random(123)  # Ensure the same samples are sampled
         # NOTE: Rollback ``maxlen=min_rollback + 1`` to store the current state of the model with
         # the additional rollbacks.
         self.rollback = deque([self._get_state()], maxlen=min_rollback + 1)
@@ -217,7 +216,6 @@ class Trainer():
             batch_size=self.train_batch_size if train else self.dev_batch_size,
             device=self.device,
             trial_run=trial_run,
-            random=self.random,
             use_predicted=self.use_predicted,
             use_tqdm=self.use_tqdm)
 
