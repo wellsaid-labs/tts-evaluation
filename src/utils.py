@@ -562,34 +562,33 @@ def pad_batch(batch, padding_index=PADDING_INDEX, dim=0):
     return padded, lengths
 
 
-def collate_sequences(batch, **kwargs):
-    """ Collate a list of tensors representing sequences using ``pad_batch``.
+def collate_tensors(batch, stack_tensors=torch.stack):
+    """ Collate a list of type k (dict, namedtuple, list, etc.) with tensors.
 
-    TODO: Have ``pad_batch`` automatically create a mask or be able to create one.
     TODO: Contribute this to PyTorch-NLP as a generic sequence collate function.
+
     NOTE:
         * For a none-tensors, the batch is returned.
-        * ``pad_batch`` returns lengths ``list of int`` along with the collated batch.
 
     Args:
         batch (list of k): List of rows of type ``k``
-        **kwargs (any): Key word arguments for ``stack_and_pad``.
+        stack_tensors (callable): Function to stack tensors into a batch.
 
     Returns:
         k: Collated batch of type ``k``.
     """
     if all([torch.is_tensor(b) for b in batch]):
-        return pad_batch(batch, **kwargs)
+        return stack_tensors(batch)
     if (all([isinstance(b, dict) for b in batch]) and
             all([b.keys() == batch[0].keys() for b in batch])):
-        return {key: collate_sequences([d[key] for d in batch], **kwargs) for key in batch[0]}
+        return {key: collate_tensors([d[key] for d in batch], stack_tensors) for key in batch[0]}
     elif all([is_namedtuple(b) for b in batch]):  # Handle ``namedtuple``
-        return batch[0].__class__(**collate_sequences([b._asdict() for b in batch], **kwargs))
+        return batch[0].__class__(**collate_tensors([b._asdict() for b in batch], stack_tensors))
     elif all([isinstance(b, list) for b in batch]):
         # Handle list of lists such each list has some column to be batched, similar to:
         # [['a', 'b'], ['a', 'b']] → [['a', 'a'], ['b', 'b']]
         transposed = zip(*batch)
-        return [collate_sequences(samples, **kwargs) for samples in transposed]
+        return [collate_tensors(samples, stack_tensors) for samples in transposed]
     else:
         return batch
 

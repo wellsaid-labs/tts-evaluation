@@ -28,8 +28,9 @@ from src.hparams import log_config
 from src.hparams import set_hparams
 from src.utils import Checkpoint
 from src.utils import chunks
-from src.utils import collate_sequences
+from src.utils import collate_tensors
 from src.utils import evaluate
+from src.utils import pad_batch
 from src.utils import RandomSampler
 from src.utils import record_stream
 from src.utils import tensors_to
@@ -138,7 +139,8 @@ def main(dataset=ConfiguredArg(),
 
         for chunk in chunks(list(zip(examples, indicies)), signal_model_batch_size):
             examples_chunk, indicies_chunk = zip(*chunk)
-            batch = collate_sequences(examples_chunk, padding_index=0)
+            batch = collate_tensors(
+                examples_chunk, stack_tensors=partial(pad_batch, padding_index=0))
             batch = tensors_to(batch, device=signal_model_device, non_blocking=True)
             spectrogram = (batch.predicted_spectrogram if use_predicted else batch.spectrogram)
 

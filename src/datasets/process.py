@@ -19,13 +19,14 @@ from src.audio import read_audio
 from src.datasets.constants import SpectrogramTextSpeechRow
 from src.hparams import configurable
 from src.utils import Checkpoint
-from src.utils import collate_sequences
+from src.utils import collate_tensors
 from src.utils import DataLoader
 from src.utils import evaluate
 from src.utils import get_average_norm
 from src.utils import get_weighted_stdev
 from src.utils import lengths_to_mask
 from src.utils import OnDiskTensor
+from src.utils import pad_batch
 from src.utils import ROOT_PATH
 from src.utils import sort_by_spectrogram_length
 from src.utils import tensors_to
@@ -239,7 +240,7 @@ def _predict_spectrogram(data,
             batch_size=batch_size,
             load_fn=partial(_load_fn, text_encoder=text_encoder, speaker_encoder=speaker_encoder),
             post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
-            collate_fn=partial(collate_sequences, dim=1),
+            collate_fn=partial(collate_tensors, stack_tensors=partial(pad_batch, dim=1)),
             pin_memory=True,
             use_tqdm=use_tqdm)
         with evaluate(checkpoint.model, device=device):

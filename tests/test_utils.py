@@ -1,4 +1,5 @@
 from collections import namedtuple
+from functools import partial
 from pathlib import Path
 from unittest import mock
 
@@ -17,7 +18,7 @@ from src.optimizer import Optimizer
 from src.utils import AnomalyDetector
 from src.utils import Checkpoint
 from src.utils import chunks
-from src.utils import collate_sequences
+from src.utils import collate_tensors
 from src.utils import DataLoader
 from src.utils import duplicate_stream
 from src.utils import evaluate
@@ -83,10 +84,11 @@ def test_data_loader():
         assert batch[0] == 3
 
 
-def test_collate_sequences():
+def test_collate_tensors():
     TestTuple = namedtuple('TestTuple', ['t'])
 
     tensor = torch.Tensor(1)
+    collate_sequences = partial(collate_tensors, stack_tensors=pad_batch)
     assert collate_sequences([tensor, tensor])[0].shape == (2, 1)
     assert collate_sequences([[tensor], [tensor]])[0][0].shape == (2, 1)
     assert collate_sequences([{'t': tensor}, {'t': tensor}])['t'][0].shape == (2, 1)

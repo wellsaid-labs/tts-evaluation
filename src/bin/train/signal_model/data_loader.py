@@ -9,11 +9,11 @@ import torch
 from src.audio import combine_signal
 from src.audio import split_signal
 from src.hparams import configurable
-from src.utils import collate_sequences
+from src.utils import collate_tensors
 from src.utils import DataLoader
+from src.utils import OnDiskTensor
 from src.utils import RandomSampler
 from src.utils import tensors_to
-from src.utils import OnDiskTensor
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ SignalModelTrainingRow = namedtuple('SignalModelTrainingRow', [
 ])
 
 
-def _get_slice(spectrogram, signal, slice_size, slice_pad, random=random):
+def _get_slice(spectrogram, signal, slice_size, spectrogram_slice_pad, random=random):
     """ Slice the data into bite sized chunks that fit onto GPU memory for training.
 
     Notes:
@@ -51,6 +51,21 @@ def _get_slice(spectrogram, signal, slice_size, slice_pad, random=random):
     # Signal model requires that there is a scaling factor between the signal and frames
     assert samples % num_frames == 0
 
+    # Get a source sample slice shifted back one and target signal
+    go_sample = signal.new_zeros(1)  # First sample passed in to start RNN
+    source_signal = torch.cat((go_sample, signal), dim=0)
+    target_signal = signal
+    signal_mask = torch.ones(signal.shape[0], dtype=torch.uint8, device=signal.device)
+
+    # Pad spectrogram and signal
+    spectrogram_zeros = slice_size - 1 + spectrogram_slice_pad
+    spectrogram = torch.nn.functional.pad(spectrogram, (0, 0, spectrogram_zeros, spectrogram_zeros))
+
+    signal_zeros = (slice_size - 1) * samples_per_frame
+    target_signal = torch.nn.functional.pad(target_signal, (signal_zeros, signal_zeros))
+    source_signal = torch.nn.functional.pad(source_signal, (signal_zeros, signal_zeros - 1))
+    signal_mask = torch.nn.functional.pad(signal_mask, (signal_zeros, signal_zeros))
+
     # Get a spectrogram slice
     # ``-slice_size + 1, num_frames - 1`` to ensure there is an equal chance to that a
     # sample will be included inside the slice.
@@ -58,46 +73,39 @@ def _get_slice(spectrogram, signal, slice_size, slice_pad, random=random):
     # (1), (1, 2), (2, 3), (3).
     # With each number represented twice.
     start_frame = random.randint(-slice_size + 1, num_frames - 1)
-    end_frame = min(start_frame + slice_size, num_frames)
-    start_frame = max(start_frame, 0)
+    end_frame = (start_frame + slice_size)
 
-    # Apply padding to slice
-    padded_start_frame = max(start_frame - slice_pad, 0)
-    padded_end_frame = min(end_frame + slice_pad, num_frames)
-    left_zero_pad = max(-1 * (start_frame - slice_pad), 0)
-    right_zero_pad = max(end_frame + slice_pad - num_frames, 0)
+    # Get slices from the padded tensors
+    # Offset start frame and end frame with `spectrogram_zeros` padding. Increase the range
+    # size with `spectrogram_slice_pad` on both ends
+    spectrogram_slice = slice(start_frame + spectrogram_zeros - spectrogram_slice_pad,
+                              end_frame + spectrogram_zeros + spectrogram_slice_pad)
+    spectrogram_slice = spectrogram[spectrogram_slice]
 
-    if slice_pad == 0:
-        assert left_zero_pad == 0 and right_zero_pad == 0
+    # Change units from frames to signals and offset with `signal_zeros`
+    signal_slice = slice(start_frame * samples_per_frame + signal_zeros,
+                         end_frame * samples_per_frame + signal_zeros)
+    source_signal_slice = source_signal[signal_slice]
+    target_signal_slice = target_signal[signal_slice]
+    signal_mask_slice = signal_mask[signal_slice]
 
-    spectrogram_slice = spectrogram[padded_start_frame:padded_end_frame]
-    spectrogram_slice = torch.nn.functional.pad(spectrogram_slice,
-                                                (0, 0, left_zero_pad, right_zero_pad))
+    assert source_signal_slice.shape[0] / samples_per_frame == slice_size
+    assert target_signal_slice.shape[0] / samples_per_frame == slice_size
+    assert spectrogram_slice.shape[0] == slice_size + spectrogram_slice_pad * 2
+    # Source is shifted one back from target
+    assert torch.equal(source_signal[1:], target_signal[:-1])
 
-    # Get a source sample slice shifted back one and target sample
-    end_sample = end_frame * samples_per_frame
-    start_sample = start_frame * samples_per_frame
-    source_signal_slice = signal[max(start_sample - 1, 0):end_sample - 1]
-    target_signal_slice = signal[start_sample:end_sample]
+    source_signal_coarse_slice, source_signal_fine_slice = split_signal(source_signal_slice)
+    target_signal_coarse_slice, target_signal_fine_slice = split_signal(target_signal_slice)
 
-    # EDGE CASE: Add a go sample for source
-    if start_sample == 0:
-        go_sample = signal.new_zeros(1)
-        source_signal_slice = torch.cat((go_sample, source_signal_slice), dim=0)
-
-    source_signal_coarse, source_signal_fine = split_signal(source_signal_slice)
-    target_signal_coarse, target_signal_fine = split_signal(target_signal_slice)
-
-    input_signal = torch.stack((source_signal_coarse, source_signal_fine), dim=1)
-    signal_length = target_signal_coarse.shape[0]
-    signal_mask = torch.full((signal_length,), 1).byte()
+    input_signal_slice = torch.stack((source_signal_coarse_slice, source_signal_fine_slice), dim=1)
 
     return SignalModelTrainingRow(
-        input_signal=input_signal,
+        input_signal=input_signal_slice,
         input_spectrogram=spectrogram_slice,
-        target_signal_coarse=target_signal_coarse,
-        target_signal_fine=target_signal_fine,
-        signal_mask=signal_mask)
+        target_signal_coarse=target_signal_coarse_slice,
+        target_signal_fine=target_signal_fine_slice,
+        signal_mask=signal_mask_slice)
 
 
 def _load_fn(row, use_predicted, **kwargs):
@@ -138,16 +146,12 @@ class DataLoader(DataLoader):
     Returns:
         Single-process or multi-process iterators over the dataset. Per iteration the batch returned
         includes: SpectrogramModelTrainingRow (
-            input_signal (tuple(torch.FloatTensor [batch_size, signal_length],
-                                torch.LongTensor [batch_size]))
-            input_spectrogram (tuple(torch.FloatTensor [batch_size, num_frames, frame_channels]),
-                                     torch.LongTensor [batch_size]))
-            target_signal_coarse (tuple(torch.LongTensor [batch_size, signal_length],
-                                        torch.LongTensor [batch_size]))
-            target_signal_fine (tuple(torch.LongTensor [batch_size, signal_length]),
-                                      torch.LongTensor [batch_size]))
-            signal_mask (tuple(torch.FloatTensor [batch_size, signal_length],
-                               torch.LongTensor [batch_size]))
+            input_signal (torch.FloatTensor [batch_size, slice_size * samples_per_frame])
+            input_spectrogram (torch.FloatTensor [batch_size, slice_size + spectrogram_slice_pad,
+                                                  frame_channels])
+            target_signal_coarse (torch.LongTensor [batch_size, slice_size * samples_per_frame])
+            target_signal_fine (torch.LongTensor [batch_size, slice_size * samples_per_frame])
+            signal_mask (torch.FloatTensor [batch_size, slice_size * samples_per_frame])
         )
     """
 
@@ -158,8 +162,8 @@ class DataLoader(DataLoader):
         super().__init__(
             data,
             batch_size=batch_size,
-            collate_fn=partial(collate_sequences),
             drop_last=True,
+            collate_fn=collate_tensors,
             load_fn=partial(_load_fn, random=random, **kwargs),
             pin_memory=True,
             post_processing_fn=partial(tensors_to, device=device, non_blocking=True),

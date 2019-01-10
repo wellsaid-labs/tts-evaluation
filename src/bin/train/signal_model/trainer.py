@@ -226,10 +226,10 @@ class Trainer():
             with torch.set_grad_enabled(train):
                 predictions = torch.nn.parallel.data_parallel(
                     module=self.model,
-                    inputs=batch.input_spectrogram[0],
+                    inputs=batch.input_spectrogram,
                     module_kwargs={
-                        'input_signal': batch.input_signal[0],
-                        'target_coarse': batch.target_signal_coarse[0].unsqueeze(2)
+                        'input_signal': batch.input_signal,
+                        'target_coarse': batch.target_signal_coarse.unsqueeze(2)
                     })
                 self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
@@ -267,12 +267,12 @@ class Trainer():
         predicted_coarse = predicted_coarse.transpose(1, 2)
 
         # coarse_loss [batch_size, signal_length]
-        coarse_loss = self.criterion(predicted_coarse, batch.target_signal_coarse[0])
-        coarse_loss = coarse_loss.masked_select(batch.signal_mask[0]).mean()
+        coarse_loss = self.criterion(predicted_coarse, batch.target_signal_coarse)
+        coarse_loss = coarse_loss.masked_select(batch.signal_mask).mean()
 
         # fine_loss [batch_size, signal_length]
-        fine_loss = self.criterion(predicted_fine, batch.target_signal_fine[0])
-        fine_loss = fine_loss.masked_select(batch.signal_mask[0]).mean()
+        fine_loss = self.criterion(predicted_fine, batch.target_signal_fine)
+        fine_loss = fine_loss.masked_select(batch.signal_mask).mean()
 
         if do_backwards:
             self.optimizer.zero_grad()
@@ -283,9 +283,9 @@ class Trainer():
         self.accumulated_metrics.add_metrics({
             'coarse_loss': coarse_loss,
             'fine_loss': fine_loss
-        }, batch.signal_mask[0].sum())
+        }, batch.signal_mask.sum())
 
-        return coarse_loss, fine_loss, batch.signal_mask[0].sum()
+        return coarse_loss, fine_loss, batch.signal_mask.sum()
 
     def visualize_inferred(self):
         """ Run in inference mode without teacher forcing and push results to Tensorboard.

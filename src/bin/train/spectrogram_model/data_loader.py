@@ -8,11 +8,12 @@ from torchnlp.samplers import BucketBatchSampler
 
 import torch
 
-from src.utils import collate_sequences
+from src.utils import collate_tensors
 from src.utils import DataLoader
 from src.utils import get_spectrogram_lengths
 from src.utils import identity
 from src.utils import OnDiskTensor
+from src.utils import pad_batch
 from src.utils import tensors_to
 
 import src.distributed
@@ -112,7 +113,7 @@ class DataLoader(DataLoader):
             load_fn=partial(_load_fn, **kwargs),
             post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
             batch_sampler=batch_sampler,
-            collate_fn=partial(collate_sequences, dim=1),
+            collate_fn=partial(collate_tensors, stack_tensors=partial(pad_batch, dim=1)),
             pin_memory=True,
             num_workers=num_workers,
             trial_run=trial_run)

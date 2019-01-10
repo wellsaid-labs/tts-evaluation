@@ -378,7 +378,7 @@ def set_hparams():
                         # TODO: Experiment with padding simply as big as the frame_size because
                         # the sound at a particular time is described by multiple frames
                         # surrounding the sound byte.
-                        'slice_pad': 5,
+                        'spectrogram_slice_pad': 5,
                     },
                 }
             },

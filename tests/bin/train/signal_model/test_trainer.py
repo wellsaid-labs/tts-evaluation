@@ -30,9 +30,9 @@ def test__do_loss_and_maybe_backwards():
     batch = SignalModelTrainingRow(
         input_signal=None,
         input_spectrogram=None,
-        target_signal_coarse=(torch.LongTensor([[0, 0, 1]]), [3]),
-        target_signal_fine=(torch.LongTensor([[1, 1, 1]]), [3]),
-        signal_mask=(torch.ByteTensor([[1, 1, 0]]), [3]))
+        target_signal_coarse=torch.LongTensor([[0, 0, 1]]),
+        target_signal_fine=torch.LongTensor([[1, 1, 1]]),
+        signal_mask=torch.ByteTensor([[1, 1, 0]]))
     predicted_coarse = torch.FloatTensor([[[1, 0], [1, 0], [1, 0]]])
     predicted_fine = torch.FloatTensor([[[1, 0], [1, 0], [1, 0]]])
 
@@ -63,17 +63,13 @@ def _get_example_batched_training_row(batch_size=2,
                                       frame_channels=8,
                                       bits=16):
     """ Get an example training row. """
-    signal_lengths = [signal_length] * batch_size
     bins = int(2**(bits / 2))
     return SignalModelTrainingRow(
-        input_signal=(torch.rand(batch_size, signal_length), signal_lengths),
-        input_spectrogram=(torch.rand(batch_size, num_frames, frame_channels),
-                           [num_frames] * batch_size),
-        target_signal_coarse=(torch.randint(bins, (batch_size, signal_length), dtype=torch.long),
-                              signal_lengths),
-        target_signal_fine=(torch.randint(bins, (batch_size, signal_length), dtype=torch.long),
-                            signal_lengths),
-        signal_mask=(torch.ByteTensor(batch_size, signal_length).fill_(1), signal_lengths))
+        input_signal=torch.rand(batch_size, signal_length),
+        input_spectrogram=torch.rand(batch_size, num_frames, frame_channels),
+        target_signal_coarse=torch.randint(bins, (batch_size, signal_length), dtype=torch.long),
+        target_signal_fine=torch.randint(bins, (batch_size, signal_length), dtype=torch.long),
+        signal_mask=torch.ByteTensor(batch_size, signal_length).fill_(1))
 
 
 def test_visualize_inferred():
