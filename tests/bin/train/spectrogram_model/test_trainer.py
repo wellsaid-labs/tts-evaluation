@@ -118,7 +118,6 @@ def test_run_epoch():
         mock_optimizer_step.return_value = None
         mock_auto_optimizer_step.return_value = None
 
-        # TODO: Fix, we cannot call infer with DistributedDataParallel
         trainer.run_epoch(train=False)
         trainer.run_epoch(train=False, trial_run=True)
         trainer.run_epoch(train=True)

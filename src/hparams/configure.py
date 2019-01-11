@@ -374,10 +374,6 @@ def set_hparams():
                         # SOURCE: Efficient Neural Audio Synthesis
                         # The WaveRNN models are trained on sequences of 960 audio samples
                         'slice_size': int(900 / frame_hop),
-
-                        # TODO: Experiment with padding simply as big as the frame_size because
-                        # the sound at a particular time is described by multiple frames
-                        # surrounding the sound byte.
                         'spectrogram_slice_pad': 5,
                     },
                 }
