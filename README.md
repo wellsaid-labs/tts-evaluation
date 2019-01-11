@@ -5,8 +5,8 @@
 
 WellSaid Lab's core product featuring our TrueVoice deep neural network architecture.
 
-![PyPI - Python Version](https://img.shields.io/badge/python-3.5%2C%203.6-blue.svg)
-[![Build Status](https://travis-ci.com/AI2Incubator/WellSaid-Labs-Text-To-Speech.svg?token=xKbC739Gn2ssU4AStE7z&branch=master)](https://travis-ci.com/AI2Incubator/WellSaid-Labs-Text-To-Speech)
+![PyPI - Python Version](https://img.shields.io/badge/python-3.6-blue.svg)
+[![Build Status](https://travis-ci.com/AI2Incubator/WellSaidLabs.svg?token=xKbC739Gn2ssU4AStE7z&branch=master)](https://travis-ci.com/AI2Incubator/WellSaidLabs)
 
 ## Installation
 
@@ -14,7 +14,7 @@ This section discusses various dependencies that need to be installed for this r
 
 ### 1. Install Python Dependencies
 
-Make sure you have Python 3.5+ with pip. Install most of the dependencies with the PIP package
+Make sure you have Python 3.6.6 with pip. Install most of the dependencies with the PIP package
 manager like so:
 
     python3 -m pip install -r requirements.txt
@@ -32,7 +32,14 @@ or
 
     brew install sox
 
-### 3. Install ``rsync``, ``lsyncd``, and ``gcloud compute`` (Optional)
+### 3. Create a Comet account
+
+With your new Comet account create a ``.env`` file with these details:
+
+    COMET_ML_WORKSPACE=blahblah
+    COMET_ML_API_KEY=blahblahblah
+
+### 4. Install ``rsync``, ``lsyncd``, and ``gcloud compute`` (Optional)
 
 To work with GCP, we recommend installing the dependencies listed in ``docs/GCP_WORKFLOW.md``.
 
@@ -40,33 +47,17 @@ To work with GCP, we recommend installing the dependencies listed in ``docs/GCP_
 
 This section describes commands to run the executables required for training.
 
-#### Feature Model
+#### Spectrogram Model
 
-First things first, preprocess the audio via:
+Train the spectrogram model like so:
 
-    python -m src.bin.train.feature_model.preprocess
-
-Train the feature model like so:
-
-    python3 -m src.bin.train.feature_model -n experiment_name
-
-Generate training data for the signal model like so:
-
-    python3 -m src.bin.train.feature_model.generate -c your_checkpoint
+    python -m src.bin.train.spectrogram_model -n experiment_name -p comet_ml_project_name
 
 #### Signal Model
 
 Train the signal model like so:
 
-    python3 -m src.bin.train.signal_model -n experiment_name
-
-## Run Text-to-Speech
-
-To run system end-to-end first launch Jupyter:
-
-    jupyter notebook
-
-Then, the ``notebooks/Synthesize Speech from Text.ipynb`` notebook runs the system from end-to-end.
+    python -m src.bin.train.signal_model -n experiment_name -p comet_ml_project_name
 
 ## Test
 
@@ -85,10 +76,10 @@ Thanks for considering contributing!
 ### Contributing Guide
 
 Read our
-[contributing guide](https://github.com/AI2Incubator/WellSaid-Labs-Text-To-Speech/blob/master/docs/CONTRIBUTING.md)
+[contributing guide](https://github.com/AI2Incubator/WellSaidLabs/blob/master/docs/CONTRIBUTING.md)
 to learn about our development process, how to propose bug-fixes and improvements, and how to build
-and test your changes to WellSaid-Labs-Text-To-Speech.
+and test your changes to WellSaidLabs.
 
 ## Authors
 
-* Michael Petrochuk - petrochukm@allenai.org
+* Michael Petrochuk - michaelp@allenai.org

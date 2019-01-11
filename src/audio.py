@@ -5,14 +5,16 @@ from tqdm import tqdm
 
 import librosa
 import numpy as np
+import torch
 
-from src.utils.configurable import configurable
+from src.hparams import configurable
+from src.hparams import ConfiguredArg
 
 logger = logging.getLogger(__name__)
 
 
 @configurable
-def read_audio(filename, sample_rate=None):
+def read_audio(filename, sample_rate=ConfiguredArg()):
     """ Read an audio file.
 
     Tacotron 1 Reference:
@@ -50,7 +52,11 @@ def read_audio(filename, sample_rate=None):
 
 
 @configurable
-def mel_filters(sample_rate, fft_length=2048, num_mel_bins=80, lower_hertz=125, upper_hertz=7600):
+def _mel_filters(sample_rate,
+                 fft_length=ConfiguredArg(),
+                 num_mel_bins=ConfiguredArg(),
+                 lower_hertz=ConfiguredArg(),
+                 upper_hertz=ConfiguredArg()):
     """ Create a Filterbank matrix to combine FFT bins into Mel-frequency bins.
 
     Reference:
@@ -59,11 +65,11 @@ def mel_filters(sample_rate, fft_length=2048, num_mel_bins=80, lower_hertz=125, 
 
     Args:
         sample_rate (int): The sample rate of the signal.
-        fft_length (int): The size of the FFT to apply. If not provided, uses the smallest power of
-          2 enclosing `frame_length`.
+        fft_length (int): The size of the FFT to apply. If not provided, uses the smallest
+            power of 2 enclosing `frame_length`.
         num_mel_bins (int): Number of Mel bands to generate.
-        lower_hertz (int): Lower bound on the frequencies to be included in the mel spectrum. This
-            corresponds to the lower edge of the lowest triangular band.
+        lower_hertz (int): Lower bound on the frequencies to be included in the mel
+            spectrum. This corresponds to the lower edge of the lowest triangular band.
         upper_hertz (int): The desired top edge of the highest frequency band.
 
     Returns:
@@ -73,6 +79,7 @@ def mel_filters(sample_rate, fft_length=2048, num_mel_bins=80, lower_hertz=125, 
     # minimum mentioned in their paper for the dynamic range is too high. NVIDIA/tacotron2 includes
     # norm and had to set their minimum to 10**-5 to compensate.
     # NOTE: ``htk=True`` because normalization of the mel filterbank is from Slaney's algorithm.
+    lower_hertz = 0.0 if lower_hertz is None else lower_hertz
     return librosa.filters.mel(
         sample_rate,
         fft_length,
@@ -85,12 +92,12 @@ def mel_filters(sample_rate, fft_length=2048, num_mel_bins=80, lower_hertz=125, 
 
 @configurable
 def get_log_mel_spectrogram(signal,
-                            sample_rate,
-                            frame_size=1200,
-                            frame_hop=300,
-                            fft_length=2048,
-                            window='hann',
-                            min_magnitude=0.01):
+                            sample_rate=ConfiguredArg(),
+                            frame_size=ConfiguredArg(),
+                            frame_hop=ConfiguredArg(),
+                            fft_length=ConfiguredArg(),
+                            window=ConfiguredArg(),
+                            min_magnitude=ConfiguredArg()):
     """ Compute a log-mel-scaled spectrogram from signal.
 
     Tacotron 2 Reference:
@@ -143,8 +150,8 @@ def get_log_mel_spectrogram(signal,
         fft_length (int): The window size used by the fourier transform.
         window (str, tuple, number, callable): Window function to be applied to each
             frame. See the full specification for window at ``librosa.filters.get_window``.
-        min_magnitude (float): Stabilizing minimum to avoid high dynamic ranges caused by the
-            singularity at zero in the mel spectrograms.
+        min_magnitude (float): Stabilizing minimum to avoid high dynamic ranges caused by
+            the singularity at zero in the mel spectrograms.
 
     Returns:
         log_mel_spectrograms (np.ndarray [frames, num_mel_bins]): Log mel spectrogram.
@@ -180,7 +187,7 @@ def get_log_mel_spectrogram(signal,
     # SOURCE (Tacotron 2):
     # We transform the STFT magnitude to the mel scale using an 80 channel mel filterbank
     # spanning 125 Hz to 7.6 kHz, followed by log dynamic range compression.
-    mel_basis = mel_filters(sample_rate)
+    mel_basis = _mel_filters(sample_rate)
     mel_spectrogram = np.dot(mel_basis, magnitude_spectrogram).transpose()
 
     # SOURCE (Tacotron 2):
@@ -209,7 +216,7 @@ def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, sample_rate):
     """
     mel_spectrogram = np.exp(log_mel_spectrogram)
     num_mel_bins = mel_spectrogram.shape[1]
-    mel_basis = mel_filters(sample_rate, num_mel_bins=num_mel_bins)
+    mel_basis = _mel_filters(sample_rate, num_mel_bins=num_mel_bins)
 
     # ``np.linalg.pinv`` creates approximate inverse matrix of ``mel_basis``
     inverse_mel_basis = np.linalg.pinv(mel_basis)
@@ -218,13 +225,14 @@ def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, sample_rate):
 
 @configurable
 def griffin_lim(log_mel_spectrogram,
-                sample_rate,
-                frame_size=1200,
-                frame_hop=300,
-                fft_length=2048,
-                window='hann',
-                power=1.2,
-                iterations=30):
+                sample_rate=ConfiguredArg(),
+                frame_size=ConfiguredArg(),
+                frame_hop=ConfiguredArg(),
+                fft_length=ConfiguredArg(),
+                window=ConfiguredArg(),
+                power=ConfiguredArg(),
+                iterations=ConfiguredArg(),
+                use_tqdm=False):
     """ Transform log mel spectrogram to wav file with the Griffin-Lim algorithm.
 
     Given a magnitude spectrogram as input, reconstruct the audio signal and return it using the
@@ -251,13 +259,18 @@ def griffin_lim(log_mel_spectrogram,
         sample_rate (int): Sample rate of the spectrogram and the resulting wav file.
         frame_size (int): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
         frame_hop (int): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
-        fft_length (int): The size of the FFT to apply. If not provided, uses the smallest power of
-          2 enclosing `frame_length`.
+        fft_length (int): The size of the FFT to apply. If not provided, uses the smallest
+            power of 2 enclosing `frame_length`.
         window (str, tuple, number, callable): Window function to be applied to each
             frame. See the full specification for window at ``librosa.filters.get_window``.
         power (float): Amplification float used to reduce artifacts.
         iterations (int): Number of iterations of griffin lim to run.
+        use_tqdm (bool, optional): If `True` attach a progress bar during iteration.
     """
+    if log_mel_spectrogram.shape[0] == 0:
+        return np.array([])
+
+    logger.info('Running Griffin-Lim....')
     spectrogram = _log_mel_spectrogram_to_spectrogram(
         log_mel_spectrogram=log_mel_spectrogram, sample_rate=sample_rate)
 
@@ -269,7 +282,10 @@ def griffin_lim(log_mel_spectrogram,
 
     len_samples = int((magnitude_spectrogram.shape[1] - 1) * frame_hop)
     waveform = np.random.uniform(size=(len_samples,))
-    for i in tqdm(range(iterations)):
+    iterator = range(iterations)
+    if use_tqdm:
+        iterator = tqdm(iterator)
+    for i in iterator:
         reconstruction_spectrogram = librosa.stft(
             waveform, n_fft=fft_length, hop_length=frame_hop, win_length=frame_size, window=window)
         reconstruction_angle = np.angle(reconstruction_spectrogram).astype(np.complex64)
@@ -281,5 +297,50 @@ def griffin_lim(log_mel_spectrogram,
 
     waveform = np.real(waveform)
     large_values = (waveform < -1).sum() + (waveform > 1).sum()
-    logger.warning('Griffin-lim waveform clipped %d samples.', large_values)
+    if large_values > 0:
+        logger.warning('Griffin-lim waveform clipped %d samples.', large_values)
     return np.clip(waveform, -1, 1)
+
+
+@configurable
+def split_signal(signal, bits=ConfiguredArg()):
+    """ Compute the coarse and fine components of the signal.
+
+    Args:
+        signal (torch.FloatTensor): Signal with values ranging from [-1, 1]
+        bits (int): Number of bits to encode signal in.
+
+    Returns:
+        coarse (torch.LongTensor): Top bits of the signal.
+        fine (torch.LongTensor): Bottom bits of the signal.
+    """
+    assert torch.min(signal) >= -1.0 and torch.max(signal) <= 1.0
+    assert (bits %
+            2 == 0), 'To support an even split between coarse and fine, use an even number of bits'
+    range_ = int((2**(bits - 1)))
+    signal = torch.round(signal * range_)
+    signal = torch.clamp(signal, -1 * range_, range_ - 1)
+    unsigned = signal + range_  # Move range minimum to 0
+    bins = int(2**(bits / 2))
+    coarse = torch.floor(unsigned / bins)
+    fine = unsigned % bins
+    return coarse.long(), fine.long()
+
+
+@configurable
+def combine_signal(coarse, fine, bits=ConfiguredArg()):
+    """ Compute the coarse and fine components of the signal.
+
+    Args:
+        coarse (torch.LongTensor): Top bits of the signal.
+        fine (torch.LongTensor): Bottom bits of the signal.
+        bits (int): Number of bits to encode signal in.
+
+    Returns:
+        signal (torch.FloatTensor): Signal with values ranging from [-1, 1]
+    """
+    bins = int(2**(bits / 2))
+    assert torch.min(coarse) >= 0 and torch.max(coarse) < bins
+    assert torch.min(fine) >= 0 and torch.max(fine) < bins
+    signal = coarse.float() * bins + fine.float() - 2**(bits - 1)
+    return signal / 2**(bits - 1)

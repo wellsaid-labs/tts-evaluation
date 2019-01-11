@@ -3,6 +3,9 @@
 import matplotlib
 matplotlib.use('Agg')
 
+# NOTE: Comet needs to be imported before torch
+import comet_ml  # noqa: F401
+
 # Fix this weird error: https://github.com/pytorch/pytorch/issues/2083
 import torch  # noqa: F401
 
@@ -11,9 +14,9 @@ import logging
 import pytest
 
 from src.hparams import set_hparams
+from src.hparams import clear_config
 
 logging.getLogger().setLevel(logging.INFO)
-set_hparams()
 
 
 def pytest_configure(config):
@@ -54,3 +57,14 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "slow" in item.keywords:
             item.add_marker(skip_slow)
+
+
+# REFERENCE: https://docs.pytest.org/en/latest/fixture.html
+
+
+@pytest.fixture(autouse=True)
+def run_before_test():
+    clear_config()
+    set_hparams()
+    yield
+    clear_config()

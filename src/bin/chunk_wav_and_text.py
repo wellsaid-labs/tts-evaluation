@@ -9,7 +9,6 @@ import json
 import logging
 import re
 import requests
-import sys
 import unidecode
 
 from collections import Counter
@@ -18,7 +17,7 @@ import pandas
 import librosa
 
 from src.audio import read_audio
-from src.utils import duplicate_stream
+from src.utils import record_stream
 
 GENTLE_SUCCESS_CASE = 'success'
 GENTLE_OOV_WORD = '<unk>'
@@ -84,10 +83,10 @@ def natural_keys(text):
     http://nedbatchelder.com/blog/200712/human_sorting.html
     (See Toothy's implementation in the comments)
     '''
-    return [(int(c) if c.isdigit() else c) for c in re.split('(\d+)', str(text))]
+    return [(int(c) if c.isdigit() else c) for c in re.split(r'(\d+)', str(text))]
 
 
-def _review_gentle(response, transcript):  # pragma: no cover
+def _review_gentle(response, transcript):
     """ Log warnings, check invariants, and compute statistics for the script user.
 
     Args:
@@ -114,8 +113,8 @@ def _review_gentle(response, transcript):  # pragma: no cover
             last_unaligned_word_index += 1
         else:
             if unaligned_text:
-                unaligned_text['text'] = transcript[unaligned_text['startOffset']:unaligned_text[
-                    'endOffset']]
+                unaligned_text['text'] = transcript[unaligned_text['startOffset']:
+                                                    unaligned_text['endOffset']]
                 logger.warning('Unaligned text: %s', unaligned_text)
 
             unaligned_text = {
@@ -127,8 +126,8 @@ def _review_gentle(response, transcript):  # pragma: no cover
 
     # Print any remaining unaligned text
     if unaligned_text:
-        unaligned_text['text'] = transcript[unaligned_text['startOffset']:unaligned_text[
-            'endOffset']]
+        unaligned_text['text'] = transcript[unaligned_text['startOffset']:
+                                            unaligned_text['endOffset']]
         logger.warning('Unaligned text: %s', unaligned_text)
 
     # Warn if aligned words do not match with transcript
@@ -169,7 +168,7 @@ def _request_gentle(wav_path,
                     port=8765,
                     parameters=(('async', 'false'),),
                     wait_per_second_of_audio=0.5,
-                    sample_rate=24000):  # pragma: no cover
+                    sample_rate=24000):
     """ Align an audio file with the trascript at a word granularity.
 
     Args:
@@ -582,9 +581,7 @@ def setup_io(wav_pattern,
              destination,
              wav_directory_name='wavs',
              csv_metadata_name='metadata.csv',
-             gentle_cache_name='.gentle',
-             stdout_name='stdout.log',
-             stderr_name='stderr.log'):  # pragma: no cover
+             gentle_cache_name='.gentle'):
     """ Perform basic IO operations to setup this script
 
     Args:
@@ -595,8 +592,6 @@ def setup_io(wav_pattern,
         wav_directory_name (str, optional): The directory name to store audio clips.
         csv_metadata_name (str, optional): The filename for metadata.
         gentle_cache_name (str, optional): The directory name for Gentle files.
-        stdout_name (str): The filename for stdout logs.
-        stderr_name (str): The filename for stderr logs.
 
     Returns:
         wav_paths (list of Path): WAV files to process.
@@ -612,8 +607,7 @@ def setup_io(wav_pattern,
     wav_directory.mkdir(parents=True, exist_ok=True)
     gentle_cache_directory.mkdir(exist_ok=True)
 
-    duplicate_stream(sys.stdout, destination / stdout_name)
-    duplicate_stream(sys.stderr, destination / stderr_name)
+    record_stream(destination)
 
     wav_paths = sorted(list(Path('.').glob(wav_pattern)), key=natural_keys)
     csv_paths = sorted(list(Path('.').glob(csv_pattern)), key=natural_keys)
@@ -635,7 +629,7 @@ def setup_io(wav_pattern,
     return wav_paths, csv_paths, wav_directory, gentle_cache_directory, metadata_filename
 
 
-def normalize_text(text):  # pragma: no cover
+def normalize_text(text):
     """ Normalize the text such that the text matches up closely to the audio.
 
     Args:
@@ -659,7 +653,7 @@ def main(wav_pattern,
          text_column='Content',
          wav_column='WAV Filename',
          sample_rate=44100,
-         max_chunk_length=10):  # pragma: no cover
+         max_chunk_length=10):
     """ Align audio with scripts, then create and save chunks of audio and text.
 
     Args:
@@ -696,7 +690,7 @@ def main(wav_pattern,
         try:
             alignments = align_wav_and_scripts(
                 wav_path, scripts, gentle_cache_directory, sample_rate=sample_rate)
-        except (requests.exceptions.RequestException, ValueError) as e:
+        except (requests.exceptions.RequestException, ValueError):
             logger.exception('Failed to align %s with %s', wav_path.name, csv_path.name)
             continue
 
@@ -716,13 +710,13 @@ def main(wav_pattern,
                 new_row = row.to_dict()
 
                 new_row[text_column] = script[slice(*chunk['text'])].strip()
-                audio_filename = script_wav_directory / ('script_%d_chunk_%d.wav' % (j, k))
-                new_row[wav_column] = str(audio_filename.relative_to(wav_directory))
+                audio_path = script_wav_directory / ('script_%d_chunk_%d.wav' % (j, k))
+                new_row[wav_column] = str(audio_path.relative_to(wav_directory))
                 del new_row['Index']  # Delete the default pandas Index column
                 to_write.append(new_row)
 
                 audio_span = audio[slice(*chunk['audio'])]
-                librosa.output.write_wav(str(audio_filename), audio_span, sr=sample_rate)
+                librosa.output.write_wav(str(audio_path), audio_span, sr=sample_rate)
 
         logger.info('Found %d chunks', len(to_write))
         pandas.DataFrame(to_write).to_csv(
@@ -730,13 +724,13 @@ def main(wav_pattern,
     print('=' * 100)
     all_unaligned_substrings = list(map(str, all_unaligned_substrings))
     total_unaligned_characters = sum([len(s) for s in all_unaligned_substrings])
-    logger.warn('Number of unaligned scripts %f%% [%d of %d]',
-                (1 - total_aligned_scripts / total_scripts) * 100,
-                total_scripts - total_aligned_scripts, total_scripts)
-    logger.warn('Found %f%% [%d of %d] unaligned characters',
-                total_unaligned_characters / total_characters * 100, total_unaligned_characters,
-                total_characters)
-    logger.warn('All unaligned substrings:\n%s', sorted(all_unaligned_substrings, key=len))
+    logger.warning('Number of unaligned scripts %f%% [%d of %d]',
+                   (1 - total_aligned_scripts / total_scripts) * 100,
+                   total_scripts - total_aligned_scripts, total_scripts)
+    logger.warning('Found %f%% [%d of %d] unaligned characters',
+                   total_unaligned_characters / total_characters * 100, total_unaligned_characters,
+                   total_characters)
+    logger.warning('All unaligned substrings:\n%s', sorted(all_unaligned_substrings, key=len))
 
 
 if __name__ == "__main__":  # pragma: no cover

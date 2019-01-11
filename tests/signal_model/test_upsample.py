@@ -1,5 +1,4 @@
 import torch
-import numpy as np
 
 from src.signal_model.upsample import ConditionalFeaturesUpsample
 
@@ -27,11 +26,3 @@ def test_conditional_features_upsample():
 
     # Smoke test back prop
     upsampled.sum().backward()
-
-
-def test_conditional_features_upsample_repeat():
-    upsample = ConditionalFeaturesUpsample(upsample_repeat=2)
-    local_features = torch.tensor([1, 2, 3]).view(1, 1, 3)
-    local_features = upsample._repeat(local_features)
-    local_features = local_features.view(-1)
-    np.testing.assert_allclose(local_features, torch.tensor([1, 1, 2, 2, 3, 3]))

@@ -1,0 +1,95 @@
+from matplotlib import pyplot
+from unittest import mock
+
+import matplotlib
+import torch
+
+from src.datasets import Speaker
+from src.visualize import AccumulatedMetrics
+from src.visualize import CometML
+from src.visualize import plot_attention
+from src.visualize import plot_spectrogram
+from src.visualize import plot_stop_token
+from src.visualize import plot_waveform
+from src.visualize import spectrogram_to_image
+
+
+@mock.patch('torch.distributed')
+def test_accumulated_metrics(mock_distributed):
+    mock_distributed.reduce.return_value = None
+    mock_distributed.is_initialized.return_value = True
+    metrics = AccumulatedMetrics(type_=torch)
+    metrics.add_metrics({'test': torch.tensor([.25])}, 2)
+    metrics.add_metrics({'test': torch.tensor([.5])}, 3)
+
+    def callable_(key, value):
+        assert key == 'test' and value == 0.4
+
+    metrics.log_step_end(callable_)
+    metrics.log_epoch_end(callable_)
+    metrics.reset()
+
+    called = False
+
+    def not_called():
+        nonlocal called
+        called = True
+
+    # No new metrics to report
+    metrics.log_step_end(not_called)
+    metrics.log_epoch_end(not_called)
+
+    assert not called
+
+
+def test_comet_ml():
+    # Smoke tests
+    visualizer = CometML('', disabled=True, api_key='')
+    visualizer.set_step(0)
+    visualizer.log_audio(
+        tag='audio',
+        text='test input',
+        speaker=Speaker.LINDA_JOHNSON,
+        predicted_audio=torch.rand(100),
+        gold_audio=torch.rand(100))
+    figure = pyplot.figure()
+    pyplot.close(figure)
+    visualizer.log_figures({'figure': figure}, overwrite=True)
+    visualizer.set_context('train')
+    assert visualizer.context == 'train'
+    visualizer.log_current_epoch(0)
+    visualizer.log_epoch_end(0)
+
+
+def test_plot_spectrogram():
+    arr = torch.rand(5, 6)
+    figure = plot_spectrogram(arr)
+    assert isinstance(figure, matplotlib.figure.Figure)
+    pyplot.close(figure)
+
+
+def test_spectrogram_to_image():
+    arr = torch.rand(5, 6)
+    image = spectrogram_to_image(arr)
+    assert image.shape == (6, 5, 3)
+
+
+def test_plot_attention():
+    arr = torch.rand(5, 6)
+    figure = plot_attention(arr)
+    assert isinstance(figure, matplotlib.figure.Figure)
+    pyplot.close(figure)
+
+
+def test_plot_waveform():
+    arr = torch.rand(5)
+    figure = plot_waveform(arr)
+    assert isinstance(figure, matplotlib.figure.Figure)
+    pyplot.close(figure)
+
+
+def test_plot_stop_token():
+    arr = torch.rand(5)
+    figure = plot_stop_token(arr)
+    assert isinstance(figure, matplotlib.figure.Figure)
+    pyplot.close(figure)

@@ -4,9 +4,9 @@ NOTE: This script uses ``sudo``, be prepared to type in your password.
 
 Example:
 
-    python3 -m src.bin.lsyncd --source ~/Code/WellSaid-Labs-Text-To-Speech/ \
-                              --destination /home/michaelp/WellSaid-Labs-Text-To-Speech \
-                              --user michaelp --instance tensorboard
+    python3 -m src.bin.gcp.lsyncd --source ~/Code/WellSaidLabs/ \
+                              --destination /home/michaelp/WellSaidLabs \
+                              --user michaelp --instance wellsaid
 """
 from pathlib import Path
 
@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def get_ip(instance_name):  # pragma: no cover
+def get_ip(instance_name):
     """ Get the IP address of an instance
 
     Args:
@@ -42,7 +42,7 @@ def main(source,
          instance,
          user,
          template='src/bin/gcp/lsyncd.conf.lua',
-         tmp='/tmp/lsyncd.conf.lua'):  # pragma: no cover
+         tmp='/tmp/lsyncd.conf.lua'):
     """ Starts a lsyncd session.
 
     Args:
@@ -59,10 +59,8 @@ def main(source,
     config = config.replace('{destination}', destination)
     config = config.replace('{ip}', get_ip(instance))
     config = config.replace('{home}', os.environ['HOME'])
-
-    with open(tmp, 'w+') as file_:
-        file_.write(config)
-
+    tmp = Path(tmp)
+    tmp.write_text(config)
     os.execvp('sudo', ['sudo', 'lsyncd', tmp])
 
 

@@ -16,17 +16,19 @@ brew install lsyncd
 
 ## Prerequisite: install (optional)
 
-To switch python versions, install ``pyenv`` on a GCP machine. First, install
-the ``pyenv`` requirements listed [here](https://github.com/pyenv/pyenv/wiki/Common-build-problems).
-Finally, install ``pyenv`` with the scripts [here](https://github.com/pyenv/pyenv-installer).
+To switch python versions, install ``pyenv`` on a GCP machine. First, install the ``pyenv``
+requirements listed [here](https://github.com/pyenv/pyenv/wiki/Common-build-problems). Finally,
+install ``pyenv`` with the scripts [here](https://github.com/pyenv/pyenv-installer).
+
+Note that distributed PyTorch is only verified to work on Python 3.6.6.
 
 ## Synchronize files
 
 Frequently, you'll want to share a files between your local machine and GCP. We allow for that via:
 
 ```
-python3 -m src.bin.gcp.lsyncd --source /path/to/WellSaid-Labs-Text-To-Speech \
-                          --destination /path/to/WellSaid-Labs-Text-To-Speech \
+python3 -m src.bin.gcp.lsyncd --source /path/to/WellSaidLabs \
+                          --destination /path/to/WellSaidLabs \
                           --user someone --instance a_gcp_instance
 ```
 
@@ -40,30 +42,12 @@ to keep alive GCP machines.
 Here's an example of using the script:
 ```
 python3 -m src.bin.gcp.keep_alive --command="screen -dm bash -c \
-        'cd WellSaid-Labs-Text-To-Speech/; \
+        'cd WellSaidLabs/; \
         ulimit -n 65536; \
         python3 -m src.bin.train.signal_model -c;'"
 ```
 
 The ``--command`` flag runs a command on restart of the GCP server.
-
-## Synchronize tensorboard
-
-When running multiple experiments, we provide a tool to synchronize multiple tensorboard events
-to one GCP instance. Use it like so:
-
-```
-# Light GCP instance for running tensorboard
-gcloud compute ssh tensorboard --zone=us-us-west1-b
-
-# Find any new servers
-gcloud compute config-ssh
-
-python3 -m src.bin.gcp.periodic_rsync --destination ~/WellSaid-Labs-Text-To-Speech/sync/ \
-                                  --source ~/WellSaid-Labs-Text-To-Speech/experiments/signal_model
-```
-
-Now, GCP instance ``tensorboard`` will periodically pull events from other GCP instances.
 
 ## Download
 

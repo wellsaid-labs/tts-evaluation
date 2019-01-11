@@ -24,7 +24,7 @@ or
 ### SystemError: unknown opcode
 
 For me, this happened when I tried to load a model checkpoint on a different python version
-than it was trained on. Specifically, I tried to load a model checkpoint created by Python3.5
+than it was trained on. Specifically, I tried to load a model checkpoint created by Python 3.5
 in jupyter using Python 3.6.
 
 To fix this, [this](https://stackoverflow.com/questions/9386048/ipython-reads-wrong-python-version)
@@ -39,3 +39,9 @@ directory that pip is attempting to install to. This can be solved by changing t
 ownership:
 
     sudo chown -R $(whoami) /home/michaelp/.local/
+
+
+### audioread.NoBackendError
+
+This error happened during the opening of a file with ``librosa``,
+[this thread](https://github.com/librosa/librosa/issues/219) provided me my solution .

@@ -96,3 +96,13 @@ experiments/
 # WWW
 generated
 *generated_audio_*.mp3
+
+# Various tmp files
+tmp/
+
+# Sensative files
+.env
+
+# Git patches used by comet.ml reproduce
+*.patch
+*.zip

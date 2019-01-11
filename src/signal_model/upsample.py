@@ -1,7 +1,5 @@
 from torch import nn
 
-from src.utils.configurable import configurable
-
 
 class Identity(nn.Module):
     """ Identity block returns the input. """
@@ -29,8 +27,7 @@ class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, padding):
         super().__init__()
         self.net = nn.Sequential(
-            nn.BatchNorm2d(num_features=in_channels),
-            nn.ReLU(),
+            nn.BatchNorm2d(num_features=in_channels), nn.ReLU(inplace=True),
             nn.Conv2d(
                 in_channels=in_channels,
                 out_channels=out_channels,
@@ -57,7 +54,6 @@ class ResidualBlock(nn.Module):
         tensor = tensor[:, :, less_width:tensor.shape[2] - less_width, less_height:tensor.shape[3] -
                         less_height]
 
-        # TODO: Consider multiplying by math.sqrt(0.5), normalizing the variance.
         return self.shortcut(tensor) + residual
 
 
@@ -72,20 +68,14 @@ class ConditionalFeaturesUpsample(nn.Module):
     Args:
         in_channels (int): Dimensionality of input features.
         out_channels (int): Dimensionality of outputed features.
-        kernels (list of tuples): Sizes of kernels used for upsampling, every kernel has an
-            associated number of filters.
         num_filters (list of int): Filters to be used with each kernel. The last kernel is used
             for upsampling the length.
         upsample_repeat (int): Number of times to repeat frames, another upsampling technique.
+        kernels (list of tuples): Sizes of kernels used for upsampling, every kernel has an
+            associated number of filters.
     """
 
-    @configurable
-    def __init__(self,
-                 in_channels=80,
-                 out_channels=64,
-                 kernels=[(5, 5), (3, 3), (3, 3), (3, 3)],
-                 num_filters=[64, 64, 32, 10],
-                 upsample_repeat=30):
+    def __init__(self, in_channels, out_channels, num_filters, upsample_repeat, kernels):
         super().__init__()
         self.out_channels = out_channels
         self.upsample_repeat = upsample_repeat
@@ -111,37 +101,8 @@ class ConditionalFeaturesUpsample(nn.Module):
 
         self.post_net = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
 
-    def _repeat(self, local_features):
-        """ Repeat similar to this 3x repeat [1, 2, 3] → [1, 1, 1, 2, 2, 2, 3, 3, 3].
-
-        Notes:
-            * Learn more:
-              https://stackoverflow.com/questions/35227224/torch-repeat-tensor-like-numpy-repeat
-
-        Args:
-            local_features (torch.FloatTensor [batch_size, in_channels, local_length]):
-                Local features to repeat.
-
-        Returns:
-            local_features (torch.FloatTensor [batch_size, in_channels, local_length * repeat]):
-                Local features repeated.
-        """
-        # [batch_size, in_channels, local_length] →
-        # [batch_size, in_channels, local_length, 1]
-        local_features = local_features.unsqueeze(3)
-
-        # [batch_size, in_channels, local_length] →
-        # [batch_size, in_channels, local_length, num_repeat]
-        local_features = local_features.repeat(1, 1, 1, self.upsample_repeat)
-
-        # [batch_size, in_channels, local_length, num_repeat] →
-        # [batch_size, in_channels, local_length * num_repeat]
-        return local_features.view(local_features.shape[0], local_features.shape[1], -1)
-
     def forward(self, local_features, pad=False):
         """
-        TODO: Support global conditioning
-
         Args:
             local_features (torch.FloatTensor [batch_size, local_length + padding, in_channels]):
                 Local features to condition signal generation (e.g. spectrogram). Upsample does
@@ -194,4 +155,6 @@ class ConditionalFeaturesUpsample(nn.Module):
         # [batch_size, out_channels, local_length * num_filters[-1]] →
         # [batch_size, out_channels,
         #  signal_length (local_length * num_filters[-1] * upsample_repeat)]
-        return self._repeat(local_features)
+        # Repeat similar to [1, 2, 3] → [1, 1, 1, 2, 2, 2, 3, 3, 3]
+        return nn.functional.interpolate(
+            local_features, scale_factor=self.upsample_repeat, mode='nearest')

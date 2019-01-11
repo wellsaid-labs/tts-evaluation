@@ -10,24 +10,23 @@ sync {
   host="{user}@{ip}", -- The remote host (use hostname or IP)
   targetdir="{destination}", -- The target dir on remote host, keep in mind this is absolute path
   delay = .2,
-  delete = false,
+  delete = true,
   rsync = {
       binary = "/usr/local/bin/rsync", -- OSX does not have updated version of rsync,
                                        -- install via: `brew install rsync`
       rsh = "ssh -i {home}/.ssh/google_compute_engine -o UserKnownHostsFile={home}/.ssh/known_hosts",
       verbose = true,
+      compress = true
   },
   exclude = {
-      "notebooks/QA Speech Datasets/",
-      "notebooks/Speech Dataset Script Generation/",
+      ".ipynb_checkpoints/**",
       "data/**",
       "experiments/**",
       "build/**",
       "__pycache__**",
-      ".git**",
       "htmlcov/**",
       "coverage/**",
-      "docs/**",
+      "*.wav",
       "*.py*.py" -- Odd temporary files
   }
 }
