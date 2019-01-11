@@ -2,9 +2,6 @@
 numpy
 torch==1.0.0 # NOTE: You may need to install with CUDA support seperatly from https://pytorch.org
 
-# Image Library
-Pillow
-
 # Language Library
 git+https://github.com/PetrochukM/PyTorch-NLP.git
 git+https://github.com/savoirfairelinux/num2words.git
@@ -32,5 +29,3 @@ tqdm # Progress bar
 jupyter # Notebooks
 python-dotenv # Environment variables
 
-# Service
-Flask==1.0.2

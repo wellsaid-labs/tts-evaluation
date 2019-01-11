@@ -32,7 +32,14 @@ or
 
     brew install sox
 
-### 3. Install ``rsync``, ``lsyncd``, and ``gcloud compute`` (Optional)
+### 3. Create a Comet account
+
+With your new Comet account create a ``.env`` file with these details:
+
+    COMET_ML_WORKSPACE=blahblah
+    COMET_ML_API_KEY=blahblahblah
+
+### 4. Install ``rsync``, ``lsyncd``, and ``gcloud compute`` (Optional)
 
 To work with GCP, we recommend installing the dependencies listed in ``docs/GCP_WORKFLOW.md``.
 
@@ -42,31 +49,15 @@ This section describes commands to run the executables required for training.
 
 #### Spectrogram Model
 
-First things first, preprocess the audio via:
-
-    python -m src.bin.train.spectrogram_model.preprocess
-
 Train the spectrogram model like so:
 
-    python3 -m src.bin.train.spectrogram_model -n experiment_name
-
-Generate training data for the signal model like so:
-
-    python3 -m src.bin.train.spectrogram_model.generate -c your_checkpoint
+    python -m src.bin.train.spectrogram_model -n experiment_name -p comet_ml_project_name
 
 #### Signal Model
 
 Train the signal model like so:
 
-    python3 -m src.bin.train.signal_model -n experiment_name
-
-## Run Text-to-Speech
-
-To run system end-to-end first launch Jupyter:
-
-    jupyter notebook
-
-Then, the ``notebooks/Synthesize Speech from Text.ipynb`` notebook runs the system from end-to-end.
+    python -m src.bin.train.signal_model -n experiment_name -p comet_ml_project_name
 
 ## Test
 
@@ -91,4 +82,4 @@ and test your changes to WellSaidLabs.
 
 ## Authors
 
-* Michael Petrochuk - petrochukm@allenai.org
+* Michael Petrochuk - michaelp@allenai.org
