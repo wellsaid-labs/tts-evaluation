@@ -36,6 +36,7 @@ from src.hparams import add_config
 from src.hparams import configurable
 from src.hparams import set_hparams
 from src.training_context_manager import TrainingContextManager
+from src.utils import assert_enough_disk_space
 from src.utils import Checkpoint
 from src.utils import parse_hparam_args
 from src.utils import set_basic_logging_config
@@ -113,6 +114,7 @@ def main(run_name,
         step = checkpoint.step
         directory = checkpoint.directory.parent.parent
     else:
+        assert_enough_disk_space()  # Before running a new experiment
         step = 0
         directory = run_root / str(time.strftime('%b_%d/%H:%M:%S', time.localtime())).lower()
         if src.distributed.in_use():
