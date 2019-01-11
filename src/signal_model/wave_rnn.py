@@ -8,6 +8,7 @@ from torch.nn.functional import softmax
 import torch
 
 from src.audio import split_signal
+from src.utils import log_runtime
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.signal_model.stripped_gru import StrippedGRU
@@ -228,6 +229,7 @@ class _WaveRNNInferrer(ScriptModule):
         fine_last_hidden = reference.new_zeros(self.half_size, batch_size)
         return coarse.long(), fine.long(), coarse_last_hidden, fine_last_hidden
 
+    @log_runtime
     def forward(self, local_features, hidden_state=None, pad=True):
         """  Run WaveRNN in inference mode.
 
@@ -309,7 +311,7 @@ class _WaveRNNInferrer(ScriptModule):
             conditional, batch_size, hidden_state)
 
         # Predict waveform
-        out_coarse, out_fine, coarse_last_hidden, fine_last_hidden = self._infer_loop(
+        out_coarse, out_fine, coarse_last_hidden, fine_last_hidden = log_runtime(self._infer_loop)(
             project_hidden_weights, project_hidden_bias, project_coarse_bias, project_fine_bias,
             coarse_last, fine_last, coarse_last_hidden, fine_last_hidden)
 

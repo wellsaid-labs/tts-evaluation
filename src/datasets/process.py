@@ -3,6 +3,7 @@ from math import inf
 
 import logging
 import os
+import pathlib
 
 from torch.multiprocessing import Pool
 from torch.nn.functional import mse_loss
@@ -177,33 +178,107 @@ def _normalize_audio_and_cache(audio_path,
     return dest_path
 
 
-def _load_fn(row, text_encoder, speaker_encoder):
+def _load_fn(row, text_encoder, speaker_encoder, load_spectrogram=False):
     """ Load function for loading a single row.
 
     Args:
         row (SpectrogramTextSpeechRow)
         text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
         speaker_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the speaker.
+        load_spectrogram (bool, optional)
 
     Returns:
         (SpectrogramTextSpeechRow)
     """
+    spectrogram = row.spectrogram
+    if load_spectrogram:
+        spectrogram = row.spectrogram.to_tensor() if isinstance(row.spectrogram,
+                                                                OnDiskTensor) else row.spectrogram
     return row._replace(
         text=text_encoder.encode(row.text),
         speaker=speaker_encoder.encode(row.speaker),
-        spectrogram=(row.spectrogram.to_tensor()
-                     if isinstance(row.spectrogram, OnDiskTensor) else row.spectrogram),
-        spectrogram_audio=(row.spectrogram_audio.to_tensor() if isinstance(
-            row.spectrogram_audio, OnDiskTensor) else row.spectrogram_audio))
+        spectrogram=spectrogram)
+
+
+def _predict_and_cache_spectrogram(data,
+                                   text_encoder,
+                                   speaker_encoder,
+                                   model,
+                                   batch_size,
+                                   device,
+                                   aligned=True,
+                                   use_tqdm=True):
+    """ Predict spectrograms from a list of ``SpectrogramTextSpeechRow`` rows and cache.
+
+    Args:
+        data (iterable of SpectrogramTextSpeechRow)
+        text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
+        speaker_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the speaker.
+        model (torch.nn.Module): Model used to compute spectrograms.
+        batch_size (int)
+        device (torch.device): Device to run prediction on.
+        aligned (bool): If ``True``, predict a ground truth aligned spectrogram.
+        use_tqdm (bool): Write a progress bar to console.
+    """
+    if all([r.spectrogram is not None for r in data]):
+        data = sort_by_spectrogram_length(data)
+    else:
+        data = sorted(data, key=lambda r: len(r.text))
+
+    load_fn_partial = partial(
+        _load_fn,
+        text_encoder=text_encoder,
+        speaker_encoder=speaker_encoder,
+        load_spectrogram=aligned)
+    loader = DataLoader(
+        data,
+        batch_size=batch_size,
+        load_fn=load_fn_partial,
+        post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
+        collate_fn=partial(collate_tensors, stack_tensors=partial(pad_batch, dim=1)),
+        pin_memory=True,
+        use_tqdm=use_tqdm)
+    with evaluate(model, device=device):
+        metrics = AccumulatedMetrics()
+        for batch in loader:
+            # Predict spectrogram
+            text, text_lengths = batch.text
+            speaker = batch.speaker[0]
+            if aligned:
+                spectrogram, spectrogram_lengths = batch.spectrogram
+                _, predicted, _, alignments = model(text, speaker, text_lengths, spectrogram)
+            else:
+                _, predicted, _, alignments, spectrogram_lengths = model(text, speaker)
+
+            # Compute some metrics for logging
+            mask = lengths_to_mask(spectrogram_lengths, device=predicted.device).transpose(0, 1)
+            metrics.add_metrics({
+                'attention_norm': get_average_norm(alignments, norm=inf, dim=2, mask=mask),
+                'attention_std': get_weighted_stdev(alignments, dim=2, mask=mask),
+            }, mask.sum())
+            if aligned:
+                mask = mask.unsqueeze(2).expand_as(predicted)
+                loss = mse_loss(predicted, spectrogram, reduction='none')
+                metrics.add_metric('loss', loss.masked_select(mask).mean(), mask.sum())
+
+            # Save to disk
+            splits = predicted.split(1, dim=1)
+            spectrogram_lengths = spectrogram_lengths.squeeze(0).tolist()
+            iterator = zip(splits, spectrogram_lengths, batch.predicted_spectrogram)
+            for tensor, length, on_disk_tensor in iterator:
+                # split [num_frames, 1, frame_channels]
+                on_disk_tensor.from_tensor(tensor[:length, 0])
+
+        metrics.log_epoch_end(lambda k, v: logger.info('Prediction metric (%s): %s', k, v))
 
 
 def _predict_spectrogram(data,
                          checkpoint_path,
                          device,
                          batch_size,
-                         aligned=True,
                          on_disk=True,
-                         use_tqdm=True):
+                         aligned=True,
+                         **kwargs):
     """ Predict spectrograms from a list of ``SpectrogramTextSpeechRow`` rows and maybe cache.
 
     Args:
@@ -211,72 +286,38 @@ def _predict_spectrogram(data,
         checkpoint_path (src or Path): Path to checkpoint for the spectrogram model.
         device (torch.device): Device to run prediction on.
         batch_size (int)
-        aligned (bool): If ``True``, predict a ground truth aligned spectrogram.
         on_disk (bool, optional): Save the tensor to disk, returning a ``OnDiskTensor`` instead of
             ``torch.Tensor``.
-        use_tqdm (bool): Write a progress bar to console.
+        aligned (bool): If ``True``, predict a ground truth aligned spectrogram.
+        **kwargs (any): Passed on to `_predict_and_cache_spectrogram`
 
     Returns:
         (iterable of SpectrogramTextSpeechRow)
     """
     checkpoint = Checkpoint.from_path(checkpoint_path, device=device)
+
+    # Create unique paths for caching too
     model_name = str(checkpoint.path.resolve().relative_to(ROOT_PATH))
     model_name = model_name.replace('/', '_').replace('.', '_')
-
     return_ = []
     for row in data:
+        if row.audio_path is None:
+            parent = pathlib.Path('/tmp')
+            name = hash(row.text) * hash(row.speaker)
+        else:
+            parent = row.audio_path.parent
+            name = row.audio_path.stem
+
         destination = 'predicted_spectrogram({},{},aligned={}).npy'.format(
-            row.audio_path.stem, model_name, aligned)
-        on_disk_tensor = OnDiskTensor(row.audio_path.parent / destination)
+            name, model_name, aligned)
+        on_disk_tensor = OnDiskTensor(parent / destination)
         return_.append(row._replace(predicted_spectrogram=on_disk_tensor))
 
+    # Check if already cached, if not `_predict_and_cache_spectrogram`
     is_cached = all([r.predicted_spectrogram.does_exist() for r in return_])
     if not is_cached and (not src.distributed.in_use() or src.distributed.is_master()):
-        return_ = sort_by_spectrogram_length(return_)
-        text_encoder = checkpoint.text_encoder
-        speaker_encoder = checkpoint.speaker_encoder
-        loader = DataLoader(
-            return_,
-            batch_size=batch_size,
-            load_fn=partial(_load_fn, text_encoder=text_encoder, speaker_encoder=speaker_encoder),
-            post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
-            collate_fn=partial(collate_tensors, stack_tensors=partial(pad_batch, dim=1)),
-            pin_memory=True,
-            use_tqdm=use_tqdm)
-        with evaluate(checkpoint.model, device=device):
-            metrics = AccumulatedMetrics()
-            for batch in loader:
-                # Predict spectrogram
-                text, text_lengths, speaker = batch.text[0], batch.text[1], batch.speaker[0]
-                spectrogram, spectrogram_lengths = batch.spectrogram
-                if aligned:
-                    _, predicted, _, alignments = checkpoint.model(text, speaker, text_lengths,
-                                                                   spectrogram)
-                else:
-                    _, predicted, _, alignments, spectrogram_lengths = checkpoint.model(
-                        text, speaker)
-
-                # Compute some metrics for logging
-                mask = lengths_to_mask(spectrogram_lengths, device=predicted.device).transpose(0, 1)
-                metrics.add_metrics({
-                    'attention_norm': get_average_norm(alignments, norm=inf, dim=2, mask=mask),
-                    'attention_std': get_weighted_stdev(alignments, dim=2, mask=mask),
-                }, mask.sum())
-                if aligned:
-                    mask = mask.unsqueeze(2).expand_as(predicted)
-                    loss = mse_loss(predicted, spectrogram, reduction='none')
-                    metrics.add_metric('loss', loss.masked_select(mask).mean(), mask.sum())
-
-                # Save to disk
-                splits = predicted.split(1, dim=1)
-                spectrogram_lengths = spectrogram_lengths.squeeze(0).tolist()
-                iterator = zip(splits, spectrogram_lengths, batch.predicted_spectrogram)
-                for tensor, length, on_disk_tensor in iterator:
-                    # split [num_frames, 1, frame_channels]
-                    on_disk_tensor.from_tensor(tensor[:length, 0])
-
-            metrics.log_epoch_end(lambda k, v: logger.info('Prediction metric (%s): %s', k, v))
-
+        _predict_and_cache_spectrogram(return_, checkpoint.text_encoder, checkpoint.speaker_encoder,
+                                       checkpoint.model, batch_size, device, aligned, **kwargs)
     if on_disk:
         return return_
 
@@ -296,6 +337,11 @@ def _compute_spectrogram(row, on_disk=True):
         (SpectrogramTextSpeechRow): Row of text and speech aligned data with spectrogram data.
     """
     audio_path = row.audio_path
+    if audio_path is None:
+        logger.warning('Without an audio file, you cannot compute spectrogram for %s', row)
+        return SpectrogramTextSpeechRow(
+            **row._asdict(), spectrogram_audio=None, spectrogram=None, predicted_spectrogram=None)
+
     dest_padded_audio = audio_path.parent / 'pad({}).npy'.format(audio_path.stem, audio_path.suffix)
     dest_spectrogram = audio_path.parent / 'spectrogram({}).npy'.format(audio_path.stem)
     return_ = SpectrogramTextSpeechRow(

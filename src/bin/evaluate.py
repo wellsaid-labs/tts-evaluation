@@ -15,6 +15,8 @@ import logging
 # Remove after this issue is resolved https://github.com/comet-ml/issue-tracking/issues/178
 import comet_ml  # noqa
 
+from torchnlp.text_encoders.reserved_tokens import RESERVED_ITOS
+
 import librosa
 import torch
 import numpy
@@ -22,6 +24,7 @@ import numpy
 from src.audio import combine_signal
 from src.audio import griffin_lim
 from src.datasets import compute_spectrograms
+from src.datasets import TextSpeechRow
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import log_config
@@ -39,29 +42,68 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def _save(destination, index, example, predicted_waveform):
-    """ Save a gold and predicted example.
+def _save(destination, tags, speaker, waveform):
+    """ Save a waveform.
 
     Args:
         destination (Path): Destination to save the predicted waveform.
-        index (int): Row index used to save the filename.
-        example (SpectrogramTextSpeechRow): The initial spectrogram example used to predict
-            the waveform.
-        predicted_waveform (np.ndarray): 1D signal.
+        tags (list of str): Tags to add to the filename.
+        speaker (src.datasets.Speaker): Speaker of the waveform.
+        waveform (np.ndarray): 1D signal to save.
     """
-    speaker_name = example.speaker.name.lower().replace(' ', '_')
-    gold_path = str(destination / ('%d_%s_gold.wav' % (index, speaker_name)))
-    librosa.output.write_wav(gold_path, example.spectrogram_audio.numpy())
-    logger.info('Saved file %s', gold_path)
-
-    predicted_path = str(destination / ('%d_%s_predicted.wav' % (index, speaker_name)))
-    librosa.output.write_wav(predicted_path, predicted_waveform)
-    logger.info('Saved file %s', predicted_path)
+    speaker_name = speaker.name.lower().replace(' ', '_')
+    path = str(destination / ('%s,%s.wav' % (speaker_name, ','.join(tags))))
+    librosa.output.write_wav(path, waveform)
+    logger.info('Saved file %s', path)
 
 
 def _get_spectrogram_length(example, use_predicted):
     return (example.predicted_spectrogram.shape[0]
             if use_predicted else example.spectrogram.shape[0])
+
+
+def _get_dataset(dataset, speaker_encoder, num_samples=None, speaker=None):
+    """ Get the dataset to evaluate.
+
+    Args:
+        dataset (callable or list): Dataset returned from `src.datasets` or a `list` of `str`.
+        speaker_encoder (torchnlp.TextEncoder): Speaker encoder with all possible speakers.
+        num_samples (int or None, optional): Randomly sample a number of samples.
+        speaker (src.datasets.Speaker): Filter to only one speaker
+
+    Returns:
+        dataset (list of TextSpeechRow)
+        indicies (list of int): Index of each example, useful to identifying the example.
+    """
+    if callable(dataset):  # CASE: Dataset created by a callable
+        _, dev = dataset()
+
+        if speaker is not None:
+            dev = [r for r in dev if r.speaker == speaker]
+
+        indicies = list(RandomSampler(dev))
+        if num_samples is not None:
+            indicies = indicies[:num_samples]
+
+        ret = [dev[i] for i in indicies]
+    elif isinstance(dataset, list):  # CASE: List of text
+        if speaker is not None:
+            speakers = [speaker]
+        else:
+            # Get all the speakers
+            speakers = set(speaker_encoder.vocab)
+            speakers = speakers.difference(set(RESERVED_ITOS))
+
+        ret = []
+        for speaker in speakers:
+            for text in dataset:
+                ret.append(
+                    TextSpeechRow(text=text, speaker=speaker, audio_path=None, metadata=None))
+        indicies = list(range(len(ret)))
+    else:
+        raise TypeError()
+
+    return ret, indicies
 
 
 @configurable
@@ -97,66 +139,73 @@ def main(dataset=ConfiguredArg(),
         signal_model_device (torch.device, optional): Device used for signal model inference, note
             that on CPU the signal model does not run out of memory.
     """
+    # Record the standard streams
     destination = Path(destination)
     destination.mkdir(exist_ok=False, parents=True)
     record_stream(destination)
-    spectrogram_model_device = torch.device('cuda') if torch.cuda.is_available() else torch.device(
-        'cpu')
 
     log_config()
 
-    # Sample and batch the validation data
-    _, dev = dataset()
+    # Create the dataset to iterate over
+    spectrogram_model_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    spectrogram_model_checkpoint = Checkpoint.from_path(
+        spectrogram_model_checkpoint_path, device=spectrogram_model_device)
+    examples, indicies = _get_dataset(dataset, spectrogram_model_checkpoint.speaker_encoder,
+                                      num_samples, speaker)
 
-    if speaker is not None:
-        dev = [r for r in dev if r.speaker == speaker]
+    # Compute target and / or predict spectrograms
+    examples = compute_spectrograms(
+        examples,
+        checkpoint_path=spectrogram_model_checkpoint_path,
+        device=spectrogram_model_device,
+        on_disk=False,
+        aligned=aligned,
+        batch_size=spectrogram_model_batch_size)
 
-    indicies = list(RandomSampler(dev))
-    if num_samples is not None:
-        indicies = indicies[:num_samples]
-
-    examples = compute_spectrograms([dev[i] for i in indicies],
-                                    checkpoint_path=spectrogram_model_checkpoint_path,
-                                    device=spectrogram_model_device,
-                                    on_disk=False,
-                                    aligned=aligned,
-                                    batch_size=spectrogram_model_batch_size)
+    # Output griffin-lim
+    for i, example in zip(indicies, examples):
+        waveform = griffin_lim(example.predicted_spectrogram.numpy())
+        _save(destination, ['index_%d' % i, 'griffin_lim'], example.speaker, waveform)
+        if example.spectrogram_audio is not None:
+            _save(destination, ['index_%d' % i, 'target'], example.speaker,
+                  example.spectrogram_audio.numpy())
 
     if signal_model_checkpoint_path is None:
-        for i, example in zip(indicies, examples):
-            waveform = griffin_lim(example.predicted_spectrogram.numpy())
-            _save(destination, i, example, waveform)
-    else:
-        signal_model_checkpoint = Checkpoint.from_path(
-            Path(signal_model_checkpoint_path), device=signal_model_device)
-        signal_model_inferrer = signal_model_checkpoint.model.to_inferrer(
-            device=signal_model_device)
-        use_predicted = spectrogram_model_checkpoint_path is not None
+        return
 
-        # NOTE: Sort by spectrogram lengths to batch similar sized outputs together
-        _get_length_partial = partial(_get_spectrogram_length, use_predicted=use_predicted)
-        examples = sorted(examples, key=lambda e: -_get_length_partial(e))
+    # Predict with the signal model
+    signal_model_checkpoint = Checkpoint.from_path(
+        signal_model_checkpoint_path, device=signal_model_device)
+    signal_model_inferrer = signal_model_checkpoint.model.to_inferrer(device=signal_model_device)
+    use_predicted = spectrogram_model_checkpoint_path is not None
 
-        for chunk in chunks(list(zip(examples, indicies)), signal_model_batch_size):
-            examples_chunk, indicies_chunk = zip(*chunk)
-            batch = collate_tensors(
-                examples_chunk, stack_tensors=partial(pad_batch, padding_index=0))
-            batch = tensors_to(batch, device=signal_model_device, non_blocking=True)
-            spectrogram = (batch.predicted_spectrogram if use_predicted else batch.spectrogram)
+    # NOTE: Sort by spectrogram lengths to batch similar sized outputs together
+    _get_length_partial = partial(_get_spectrogram_length, use_predicted=use_predicted)
+    examples = list(zip(examples, indicies))
+    examples = sorted(examples, key=lambda e: _get_length_partial(e[0]), reverse=True)
 
-            logger.info('Predicting signal...')
-            with evaluate(signal_model_inferrer):
-                # [batch_size, local_length, local_features_size] → [batch_size, signal_length]
-                predicted_coarse, predicted_fine, _ = signal_model_inferrer(spectrogram[0])
-                predicted_signal = combine_signal(predicted_coarse, predicted_fine).numpy()
+    for chunk in chunks(examples, signal_model_batch_size):
+        examples_chunk, indicies_chunk = zip(*chunk)
+        batch = collate_tensors(examples_chunk, stack_tensors=partial(pad_batch, padding_index=0))
+        batch = tensors_to(batch, device=signal_model_device, non_blocking=True)
+        spectrogram = (batch.predicted_spectrogram if use_predicted else batch.spectrogram)
+        spectrogram, spectrogram_lengths = spectrogram
 
-            # Split and save
-            factor = int(predicted_signal.shape[1] / spectrogram[0].shape[1])
-            splits = numpy.split(predicted_signal, signal_model_batch_size)
-            for i, example, predicted, spectrogram_length in zip(indicies_chunk, examples_chunk,
-                                                                 splits, spectrogram[1]):
-                _save(destination, i, example, predicted[0, :spectrogram_length * factor])
-                logger.info('-' * 100)
+        logger.info('Predicting signal from a batch of %d, %d frame spectrograms...',
+                    spectrogram.shape[0], spectrogram.shape[1])
+        with evaluate(signal_model_inferrer):
+            # [batch_size, local_length, local_features_size] → [batch_size, signal_length]
+            predicted_coarse, predicted_fine, _ = signal_model_inferrer(spectrogram)
+            predicted_signal = combine_signal(predicted_coarse, predicted_fine).numpy()
+
+        # Split and save
+        factor = int(predicted_signal.shape[1] / spectrogram.shape[1])
+        splits = numpy.split(predicted_signal, signal_model_batch_size)
+        for i, example, predicted, spectrogram_length in zip(indicies_chunk, examples_chunk, splits,
+                                                             spectrogram_lengths):
+            predicted = predicted[0, :spectrogram_length * factor]
+            _save(destination, ['index_%d' % i, 'wave_rnn'], example.speaker, predicted)
+            logger.info('-' * 100)
 
 
 if __name__ == '__main__':  # pragma: no cover
@@ -168,8 +217,18 @@ if __name__ == '__main__':  # pragma: no cover
         type=str,
         default=None,
         help='Spectrogram model checkpoint to evaluate.')
-    cli_args = parser.parse_args()
+    parser.add_argument(
+        '-t',
+        '--text',
+        action='append',
+        help='Input custom text to the model to compute.',
+        default=None)
+    args = parser.parse_args()
+    kwargs = {
+        'signal_model_checkpoint_path': args.signal_model,
+        'spectrogram_model_checkpoint_path': args.spectrogram_model
+    }
+    if args.text is not None:
+        kwargs['dataset'] = args.text
     set_hparams()
-    main(
-        signal_model_checkpoint_path=cli_args.signal_model,
-        spectrogram_model_checkpoint_path=cli_args.spectrogram_model)
+    main(**kwargs)
