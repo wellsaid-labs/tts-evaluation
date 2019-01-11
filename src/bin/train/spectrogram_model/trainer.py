@@ -16,6 +16,7 @@ from src.hparams import get_config
 from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
 from src.spectrogram_model import SpectrogramModel
+from src.utils import assert_enough_disk_space
 from src.utils import dict_collapse
 from src.utils import evaluate
 from src.utils import get_average_norm
@@ -84,6 +85,8 @@ class Trainer():
                  step=0,
                  epoch=0,
                  use_tqdm=False):
+
+        assert_enough_disk_space()
 
         self.train_dataset = compute_spectrograms(train_dataset)
         self.dev_dataset = compute_spectrograms(dev_dataset)

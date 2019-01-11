@@ -33,6 +33,7 @@ from src.optimizer import AutoOptimizer
 from src.optimizer import Optimizer
 from src.signal_model import WaveRNN
 from src.utils import AnomalyDetector
+from src.utils import assert_enough_disk_space
 from src.utils import dict_collapse
 from src.utils import evaluate
 from src.utils import get_total_parameters
@@ -97,6 +98,8 @@ class Trainer():
                  epoch=0,
                  anomaly_detector=None,
                  use_tqdm=False):
+
+        assert_enough_disk_space()
 
         # Allow for ``class`` or a class instance
         self.model = model if isinstance(model, torch.nn.Module) else WaveRNN()

@@ -861,3 +861,17 @@ def sort_by_spectrogram_length(data, **kwargs):
     lengths = get_spectrogram_lengths(data, **kwargs)
     _, return_ = zip(*sorted(zip(lengths, data), key=lambda r: r[0]))
     return return_
+
+
+def assert_enough_disk_space(min_space=0.2):
+    """ Check if there is enough disk space.
+
+    Args:
+        min_space (float): Minimum percentage of free disk space.
+    """
+    st = os.statvfs(ROOT_PATH)
+    free = st.f_bavail * st.f_frsize
+    total = st.f_blocks * st.f_frsize
+    available = free / total
+    assert available > min_space, 'There is not enough available (%f < %f) disk space.' % (
+        available, min_space)
