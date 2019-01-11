@@ -338,6 +338,12 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
     api_key = os.getenv('COMET_ML_API_KEY') if api_key is None else api_key
     workspace = os.getenv('COMET_ML_WORKSPACE') if workspace is None else workspace
 
+    untracked_files = subprocess.check_output(
+        'git ls-files --others --exclude-standard', shell=True).decode().strip()
+    if len(untracked_files) > 0:
+        raise ValueError(('Experiment is not reproducible, Comet does not track untracked files. '
+                          'Please track these files:\n%s') % untracked_files)
+
     kwargs.update({
         'project_name': project_name,
         'api_key': api_key,
