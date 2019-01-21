@@ -315,7 +315,7 @@ class _WaveRNNInferrer(ScriptModule):
             project_hidden_weights, project_hidden_bias, project_coarse_bias, project_fine_bias,
             coarse_last, fine_last, coarse_last_hidden, fine_last_hidden)
 
-        hidden_state = (out_coarse[-1], out_fine[-1], coarse_last_hidden, fine_last_hidden)
+        hidden_state = (out_coarse[:, -1], out_fine[:, -1], coarse_last_hidden, fine_last_hidden)
 
         if is_unbatched:
             # NOTE: Hidden state remains batched.

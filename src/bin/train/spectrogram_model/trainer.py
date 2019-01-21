@@ -44,8 +44,6 @@ class Trainer():
         comet_ml_project_name (str): Project name, used for grouping experiments.
         train_batch_size (int): Batch size used for training.
         dev_batch_size (int): Batch size used for evaluation.
-        max_recursion (int): The maximum sequential predictions to make before
-            quitting; Used for testing and defensive design.
         criterion_spectrogram (callable): Loss function used to score frame predictions.
         criterion_stop_token (callable): Loss function used to score stop
             token predictions.
@@ -73,7 +71,6 @@ class Trainer():
                  comet_ml_project_name,
                  train_batch_size=ConfiguredArg(),
                  dev_batch_size=ConfiguredArg(),
-                 max_recursion=ConfiguredArg(),
                  criterion_spectrogram=ConfiguredArg(),
                  criterion_stop_token=ConfiguredArg(),
                  optimizer=ConfiguredArg(),
@@ -115,7 +112,6 @@ class Trainer():
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
         self.use_tqdm = use_tqdm
-        self.max_recursion = max_recursion
 
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
@@ -192,11 +188,11 @@ class Trainer():
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
                 if infer:
-                    predictions = self.model(
-                        batch.text[0],
-                        batch.speaker[0],
-                        batch.text[1],
-                        max_recursion=self.max_recursion)
+                    predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1])
+                    self.accumulated_metrics.add_metric(
+                        'duration_gap',
+                        (predictions[-1].float() / batch.spectrogram[1].float()).mean(),
+                        predictions[-1].numel())
                 else:
                     predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1],
                                              batch.spectrogram[0])
@@ -271,8 +267,6 @@ class Trainer():
             'attention_norm': get_average_norm(norm=math.inf, **kwargs),
             'attention_std': get_weighted_stdev(**kwargs),
         }, kwargs['mask'].sum())
-        self.accumulated_metrics.add_metric('exceeded_max_length',
-                                            (lengths == self.max_recursion).sum(), lengths.shape[0])
 
     def visualize_inferred(self):
         """ Run in inference mode without teacher forcing and visualizing results.
@@ -289,8 +283,7 @@ class Trainer():
         with evaluate(model, device=self.device):
             logger.info('Running inference...')
             (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
-             predicted_alignments, _) = model(
-                 text, speaker, max_recursion=self.max_recursion)
+             predicted_alignments, _) = model(text, speaker)
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
 

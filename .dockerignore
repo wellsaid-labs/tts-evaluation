@@ -61,9 +61,6 @@ data/**
 # Test Files
 .pytest_cache
 
-# Experiments
-experiments/
-
 # Various tmp files
 tmp/
 

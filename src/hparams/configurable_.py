@@ -4,6 +4,7 @@ from functools import wraps
 from functools import lru_cache
 from importlib import import_module
 
+import importlib
 import inspect
 import logging
 import operator
@@ -176,6 +177,21 @@ def _get_module_name(func):
     return keys, print_name
 
 
+def _is_possible_module(module_path):
+    """ Return True if valid module path without importing the module.
+
+    Args:
+        module_path (str)
+
+    Returns:
+        (bool)
+    """
+    try:
+        return importlib.util.find_spec(module_path) is not None
+    except AttributeError:
+        return False
+
+
 def _check_configuration_helper(dict_, keys, trace):
     """ Recursive helper of ``_check_configuration``.
 
@@ -217,6 +233,9 @@ def _check_configuration_helper(dict_, keys, trace):
             except AttributeError:
                 trace.append('Function `%s` not found in `%s`.' % (keys[-1], module_path))
         except ImportError:
+            if _is_possible_module(module_path):
+                logger.exception('Skipping configurable checks for module %s.', module_path)
+                return
             trace.append('Failed to run `import %s`.' % module_path)
 
     if len(keys) >= 3:
@@ -251,6 +270,9 @@ def _check_configuration_helper(dict_, keys, trace):
             except AttributeError:
                 trace.append('Class `%s` not found in `%s`.' % (keys[-2], module_path))
         except ImportError:
+            if _is_possible_module(module_path):
+                logger.exception('Skipping configurable checks for module %s.', module_path)
+                return
             trace.append('Failed to run `import %s`.' % module_path)
 
     for key in dict_:

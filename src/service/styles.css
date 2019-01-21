@@ -1,0 +1,102 @@
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+input,
+select,
+textarea,
+p,
+button,
+h1 {
+  font-family: 'Assistant', sans-serif;
+  font-size: 16px;
+}
+
+body>div {
+  margin: 16px;
+  font-size: 16px;
+}
+
+#title>h1 {
+  font-size: 32px;
+}
+
+#metadata {
+  display: flex;
+  align-items: center;
+  width: 520px;
+  justify-content: space-between;
+}
+
+#metadata>input {
+  font-size: 16px;
+  border-radius: 8px;
+  height: 48px;
+  width: 240px;
+  padding: 16px;
+  outline: 0px;
+  border: 1px solid #BDBDBD;
+}
+
+#metadata>input:focus,
+#metadata>select:focus {
+  border: 1px solid #9E9E9E;
+}
+
+#metadata>select {
+  background-color: white;
+  border: 1px solid #BDBDBD;
+  font-size: 16px;
+  height: 48px;
+  margin-left: 8px;
+  outline: 0;
+  padding: 16px;
+  width: 160px;
+}
+
+
+#textarea {
+  position: relative;
+}
+
+#textarea>textarea {
+  width: 520px;
+  height: 240px;
+  border-radius: 8px;
+  z-index: -10;
+  outline: 0;
+  border: 1px solid #BDBDBD;
+  padding: 16px;
+}
+
+#textarea>textarea:focus {
+  border: 1px solid #9E9E9E;
+}
+
+#textarea>button {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  z-index: 10;
+  margin: 16px;
+  width: 120px;
+  height: 40px;
+  background-color: #EEEEEE;
+  border: 1px solid #EEEEEE;
+  border-radius: 8px;
+  outline: 0;
+}
+
+#textarea>button:hover {
+  cursor: pointer;
+}
+
+#textarea>button:active {
+  background-color: #E0E0E0;
+  border: 1px solid #E0E0E0;
+  box-shadow: none;
+  outline: 0;
+}

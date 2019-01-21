@@ -33,7 +33,7 @@ def get_trainer(compute_spectrograms_mock, comet_ml_mock):
         dev_batch_size=1,
         comet_ml_experiment_key=None)
 
-    # Make sure that stop-token is not predicted; therefore, reaching ``max_recursion``
+    # Make sure that stop-token is not predicted; therefore, reaching ``max_frames_per_token``
     torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.weight, -math.inf)
     torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.bias, -math.inf)
     return trainer

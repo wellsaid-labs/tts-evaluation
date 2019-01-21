@@ -30,6 +30,11 @@ class MockOnDiskTensor(OnDiskTensor):
         self.tensor = tensor
         self._does_exist = does_exist
         self.path = path
+        self.allow_pickle = False
+
+    @property
+    def shape(self):
+        return self.tensor.shape
 
     def to_tensor(self):
         return self.tensor

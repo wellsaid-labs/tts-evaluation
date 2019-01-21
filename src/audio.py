@@ -1,9 +1,9 @@
 import logging
 import math
+import struct
 
 from tqdm import tqdm
 
-import librosa
 import numpy as np
 import torch
 
@@ -11,6 +11,11 @@ from src.hparams import configurable
 from src.hparams import ConfiguredArg
 
 logger = logging.getLogger(__name__)
+
+try:
+    import librosa
+except ImportError:
+    logger.info('Skipping optional librosa import for now.')
 
 
 @configurable
@@ -302,6 +307,45 @@ def griffin_lim(log_mel_spectrogram,
     return np.clip(waveform, -1, 1)
 
 
+def build_wav_header(frame_rate, num_frames, wav_format=0x0001, num_channels=1, sample_width=2):
+    """ Create a WAV file header.
+
+    Args:
+        frame_rate (int): Number of frames per second.
+        num_frames (int): Number of frames. A frame includes one sample per channel.
+        wav_format (int): Format of the audio file, 1 indiciates PCM format.
+        num_channels (int): Number of audio channels.
+        sample_width (int): Number of bytes per sample, typically 1 (8-bit), 2 (16-bit)
+            or 4 (32-bit).
+
+    Returns:
+        (bytes): Bytes representing the WAV header.
+        (int): File size in bytes.
+    """
+    # Inspired by: https://github.com/python/cpython/blob/master/Lib/wave.py
+    # Inspired by: https://github.com/scipy/scipy/blob/v1.2.0/scipy/io/wavfile.py#L284-L396
+    data_length = num_frames * num_channels * sample_width
+    file_size = 36 + data_length
+    bytes_per_second = num_channels * frame_rate * sample_width
+    block_align = num_channels * sample_width
+    bit_depth = sample_width * 8
+
+    header = b'RIFF'  # RIFF identifier
+    header += struct.pack('<I', file_size)  # RIFF chunk length
+    header += b'WAVE'  # RIFF type
+    header += b'fmt '  # Format chunk identifier
+    header += struct.pack('<I', 16)  # Format chunk length
+    header += struct.pack('<HHIIHH', wav_format, num_channels, frame_rate, bytes_per_second,
+                          block_align, bit_depth)
+
+    if ((len(header) - 4 - 4) + (4 + 4 + data_length)) > 0xFFFFFFFF:
+        raise ValueError('Data exceeds wave file size limit.')
+
+    header += b'data'  # Data chunk identifier
+    header += struct.pack('<I', data_length)  # Data chunk length
+    return header, file_size
+
+
 @configurable
 def split_signal(signal, bits=ConfiguredArg()):
     """ Compute the coarse and fine components of the signal.
@@ -328,19 +372,35 @@ def split_signal(signal, bits=ConfiguredArg()):
 
 
 @configurable
-def combine_signal(coarse, fine, bits=ConfiguredArg()):
+def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
     """ Compute the coarse and fine components of the signal.
 
     Args:
         coarse (torch.LongTensor): Top bits of the signal.
         fine (torch.LongTensor): Bottom bits of the signal.
         bits (int): Number of bits to encode signal in.
+        return_int (bool, optional): Return in the range of integer min to max instead of [-1, 1].
 
     Returns:
-        signal (torch.FloatTensor): Signal with values ranging from [-1, 1]
+        signal (torch.FloatTensor): Signal with values ranging from [-1, 1] if `return_int` if
+            `False`; Otherwise, return an integer value from integer min to max.
     """
     bins = int(2**(bits / 2))
     assert torch.min(coarse) >= 0 and torch.max(coarse) < bins
     assert torch.min(fine) >= 0 and torch.max(fine) < bins
-    signal = coarse.float() * bins + fine.float() - 2**(bits - 1)
-    return signal / 2**(bits - 1)
+    signal = coarse * bins + fine - 2**(bits - 1)
+    if return_int:
+        if bits <= 16:
+            return signal.type(torch.int16)
+        elif bits <= 32:
+            return signal.type(torch.int32)
+        elif bits <= 64:
+            return signal.type(torch.int64)
+    else:
+        signal = signal.float() / 2**(bits - 1)  # Scale to [-1, 1] range.
+        if bits <= 16:
+            return signal.type(torch.float16)
+        elif bits <= 32:
+            return signal.type(torch.float32)
+        elif bits <= 64:
+            return signal.type(torch.float64)

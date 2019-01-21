@@ -47,8 +47,7 @@ class Speaker(object, metaclass=_LengthMetaClass):
 
     @classmethod
     def class_length(class_):
-        speakers = [v for n, v in vars(class_).items() if isinstance(v, Speaker)]
-        return len(speakers)
+        return len(_speaker_args)
 
     def __repr__(self):
         return '%s(name=\'%s\', gender=%s, id=%d)' % (self.__class__.__name__, self.name,

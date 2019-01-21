@@ -16,10 +16,17 @@ from src.datasets.process import _normalize_audio_and_cache
 from src.datasets.process import _predict_spectrogram
 from src.datasets.process import _process_in_parallel
 from src.datasets.process import _split_dataset
+from src.datasets.process import balance_dataset
 from src.datasets.process import compute_spectrograms
 from src.spectrogram_model import SpectrogramModel
 from src.utils import Checkpoint
 from src.utils import ROOT_PATH
+
+
+def test_balance_dataset():
+    balanced = balance_dataset(['a', 'a', 'b', 'b', 'c'], lambda x: x)
+    assert len(balanced) == 3
+    assert len(set(balanced)) == 3
 
 
 @mock.patch('src.datasets.process._process_in_parallel', return_value=[])

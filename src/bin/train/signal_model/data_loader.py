@@ -121,7 +121,7 @@ def _load_fn(row, use_predicted, **kwargs):
     spectrogram = spectrogram.to_tensor() if isinstance(spectrogram, OnDiskTensor) else spectrogram
     spectrogram_audio = row.spectrogram_audio.to_tensor() if isinstance(
         row.spectrogram_audio, OnDiskTensor) else row.spectrogram_audio
-    spectrogram_audio = combine_signal(*split_signal(spectrogram_audio))
+    spectrogram_audio = combine_signal(*split_signal(spectrogram_audio)).type(torch.float32)
 
     # Check invariants
     assert spectrogram.shape[0] > 0

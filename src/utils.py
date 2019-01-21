@@ -1,7 +1,3 @@
-import matplotlib
-
-matplotlib.use('Agg', warn=False)
-
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import lru_cache
@@ -714,12 +710,21 @@ class DataLoader(DataLoader):
         return 1 if self.trial_run else super().__len__()
 
     def __iter__(self):
+        start = time.time()
+        is_first = True
+
         iterator = super().__iter__()
         if self.use_tqdm:
             iterator = tqdm(iterator, total=len(self))
 
         for batch in iterator:
             yield self.post_processing_fn(batch)
+
+            if is_first:
+                elapsed = seconds_to_string(time.time() - start)
+                logger.info('Time to first batch was %s', elapsed)
+                is_first = False
+
             if self.trial_run:
                 break
 
@@ -731,8 +736,9 @@ class OnDiskTensor():
         path (str or Path)
     """
 
-    def __init__(self, path):
+    def __init__(self, path, allow_pickle=False):
         self.path = Path(path)
+        self.allow_pickle = allow_pickle
 
     def __hash__(self):
         return hash(self.path)
@@ -742,9 +748,13 @@ class OnDiskTensor():
             return self.path == other.path
         return NotImplemented
 
+    @property
+    def shape(self):
+        return np.load(str(self.path), mmap_mode='r', allow_pickle=self.allow_pickle).shape
+
     def to_tensor(self):
         """ Convert to a in-memory ``torch.tensor``. """
-        loaded = np.load(str(self.path))
+        loaded = np.load(str(self.path), allow_pickle=self.allow_pickle)
         return torch.from_numpy(loaded).contiguous()
 
     def does_exist(self):
@@ -768,7 +778,7 @@ class OnDiskTensor():
 
         # This storage was picked using this benchmark:
         # https://github.com/mverleg/array_storage_benchmark
-        np.save(str(self.path), tensor, allow_pickle=False)
+        np.save(str(self.path), tensor, allow_pickle=self.allow_pickle)
         return self
 
 
@@ -777,12 +787,11 @@ def _get_spectrogram_length(spectrogram):
     """ Get length of spectrogram (shape [num_frames, num_channels]).
 
     Args:
-        spectrogram (OnDiskTensor)
+        spectrogram (OnDiskTensor or torch.Tensor or np.ndarray)
 
     Returns:
         (int) Length of spectrogram
     """
-    spectrogram = spectrogram.to_tensor() if isinstance(spectrogram, OnDiskTensor) else spectrogram
     return spectrogram.shape[0]
 
 
@@ -791,7 +800,13 @@ def seconds_to_string(seconds):
 
     Example:
         >>> seconds_to_string(123)
-        '2m 3s'
+        '2m 3s 0ms'
+        >>> seconds_to_string(123.100)
+        '2m 3s 100ms'
+        >>> seconds_to_string(86400)
+        '1d 0h 0m 0s 0ms'
+        >>> seconds_to_string(3600)
+        '1h 0m 0s 0ms'
 
     Args:
         seconds (int)
@@ -799,18 +814,21 @@ def seconds_to_string(seconds):
     Returns
         str
     """
-    seconds = abs(int(seconds))
+    seconds, milliseconds = divmod(seconds, 1)
+    milliseconds = round(milliseconds * 1000)
     days, seconds = divmod(seconds, 86400)
     hours, seconds = divmod(seconds, 3600)
     minutes, seconds = divmod(seconds, 60)
     if days > 0:
-        return '%dd %dh %dm %ds' % (days, hours, minutes, seconds)
+        return '%dd %dh %dm %ds %dms' % (days, hours, minutes, seconds, milliseconds)
     elif hours > 0:
-        return '%dh %dm %ds' % (hours, minutes, seconds)
+        return '%dh %dm %ds %dms' % (hours, minutes, seconds, milliseconds)
     elif minutes > 0:
-        return '%dm %ds' % (minutes, seconds)
+        return '%dm %ds %dms' % (minutes, seconds, milliseconds)
+    elif seconds > 0:
+        return '%ds %dms' % (seconds, milliseconds)
     else:
-        return '%ds' % (seconds)
+        return '%dms' % (milliseconds)
 
 
 def log_runtime(function):

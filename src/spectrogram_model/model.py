@@ -159,15 +159,17 @@ class SpectrogramModel(nn.Module):
     def _infer(self,
                encoded_tokens,
                tokens_mask,
+               num_tokens,
                is_unbatched=False,
-               max_recursion=2000,
+               max_frames_per_token=15,
                stop_threshold=0.5,
                use_tqdm=False):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
             tokens_mask (torch.FloatTensor [batch_size, num_tokens])
-            max_recursion (int, optional): The maximum sequential predictions to make before
+            num_tokens (torch.LongTensor [batch_size]): The number of tokens in each sequence.
+            max_frames_per_token (int, optional): The maximum sequential predictions to make before
                 quitting; Used for testing and defensive design.
             stop_threshold (float, optional): The threshold probability for deciding to stop.
             use_tqdm (bool, optional): If ``True`` attach a progress bar to iterator.
@@ -185,10 +187,10 @@ class SpectrogramModel(nn.Module):
         stopped = set()
         hidden_state = None
         alignments, frames, stop_tokens = [], [], []
-        lengths = [max_recursion] * batch_size
+        lengths = (num_tokens * max_frames_per_token).tolist()
         if use_tqdm:
             progress_bar = tqdm(leave=True, unit='frame(s)')
-        while len(stopped) != batch_size and len(frames) < max_recursion:
+        while len(stopped) != batch_size and len(frames) < max(lengths):
             frame, stop_token, hidden_state, alignment = self.decoder(
                 encoded_tokens, tokens_mask, hidden_state=hidden_state)
             to_stop = self._get_stopped_indexes(stop_token, stop_threshold=stop_threshold)
@@ -212,14 +214,18 @@ class SpectrogramModel(nn.Module):
         if use_tqdm:
             progress_bar.close()
 
-        if len(frames) == max_recursion:
-            logger.warning('%d sequences reached %d frames', lengths.count(max_recursion),
-                           len(frames))
+        reached_max = 0
+        for i, length in enumerate(lengths):
+            if num_tokens[i] * max_frames_per_token == length:
+                reached_max += 1
 
-        lengths = torch.tensor(lengths).unsqueeze(0)
+        if reached_max > 0:
+            logger.warning('%d sequences reached max frames', reached_max)
+
         alignments = torch.stack(alignments, dim=0)
         frames = torch.stack(frames, dim=0)
         stop_tokens = torch.stack(stop_tokens, dim=0)
+        lengths = torch.tensor(lengths, device=frames.device).unsqueeze(0)
         frames_with_residual = self._add_residual(frames)
 
         if is_unbatched:
@@ -315,6 +321,6 @@ class SpectrogramModel(nn.Module):
         encoded_tokens = self.encoder(tokens, speaker)
 
         if target_frames is None:
-            return self._infer(encoded_tokens, tokens_mask, is_unbatched, **kwargs)
+            return self._infer(encoded_tokens, tokens_mask, num_tokens, is_unbatched, **kwargs)
         else:
             return self._aligned(encoded_tokens, tokens_mask, target_frames, is_unbatched, **kwargs)

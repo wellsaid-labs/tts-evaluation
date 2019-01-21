@@ -1,16 +1,18 @@
+from collections import defaultdict
 from functools import partial
 from math import inf
 
+import itertools
 import logging
 import os
 import pathlib
+import random
 
 from torch.multiprocessing import Pool
 from torch.nn.functional import mse_loss
 from torchnlp.utils import shuffle as do_deterministic_shuffle
 from tqdm import tqdm
 
-import librosa
 import numpy
 import torch
 import torchnlp.download
@@ -31,7 +33,6 @@ from src.utils import pad_batch
 from src.utils import ROOT_PATH
 from src.utils import sort_by_spectrogram_length
 from src.utils import tensors_to
-from src.visualize import AccumulatedMetrics
 
 import src.distributed
 
@@ -220,6 +221,9 @@ def _predict_and_cache_spectrogram(data,
         aligned (bool): If ``True``, predict a ground truth aligned spectrogram.
         use_tqdm (bool): Write a progress bar to console.
     """
+    # Avoid importing matplotlib inadvertently
+    from src.visualize import AccumulatedMetrics
+
     if all([r.spectrogram is not None for r in data]):
         data = sort_by_spectrogram_length(data)
     else:
@@ -336,6 +340,8 @@ def _compute_spectrogram(row, on_disk=True):
     Returns:
         (SpectrogramTextSpeechRow): Row of text and speech aligned data with spectrogram data.
     """
+    import librosa
+
     audio_path = row.audio_path
     if audio_path is None:
         logger.warning('Without an audio file, you cannot compute spectrogram for %s', row)
@@ -374,6 +380,26 @@ def _compute_spectrogram(row, on_disk=True):
             spectrogram=return_.spectrogram.to_tensor())
 
     return return_
+
+
+def balance_dataset(data, get_class):
+    """ Returns a random subsample of the dataset such that each class has equal representation.
+
+    Args:
+        data (iterable)
+        get_class (callable): Given an example, returns a class.
+
+    Returns:
+        data (iterable): Iterable with a balanced dataset so that each class has the same number
+            of samples.
+    """
+    random.shuffle(data)
+    split = defaultdict(list)
+    for example in data:
+        split[get_class(example)].append(example)
+    size = min([len(l) for l in split.values()])
+    subsample = [l[:size] for l in split.values()]
+    return list(itertools.chain(*subsample))  # Flatten list
 
 
 @configurable
