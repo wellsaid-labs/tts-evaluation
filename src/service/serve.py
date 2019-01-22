@@ -46,6 +46,7 @@ except ImportError:
 from functools import lru_cache
 
 import logging
+import pathlib
 import sys
 
 from flask import Flask
@@ -60,8 +61,6 @@ from src.audio import build_wav_header
 from src.audio import combine_signal
 # NOTE: `src.datasets.constants` to not import all `src.datasets` dependencies
 from src.datasets.constants import Speaker
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
 from src.hparams import set_hparams
 from src.utils import Checkpoint
 from src.utils import ROOT_PATH
@@ -99,10 +98,13 @@ def load_checkpoints(spectrogram_model_checkpoint_path, signal_model_checkpoint_
 
 
 # TODO: Upload the models to a bucket online, so that they can be downloaded anywhere at anytime.
-spectrogram_model_checkpoint_path = (
+spectrogram_model_checkpoint_path = pathlib.Path(
     'experiments/spectrogram_model/jan_06/20:16:43/checkpoints/1547107190/step_203750.pt')
-signal_model_checkpoint_path = (
+signal_model_checkpoint_path = pathlib.Path(
     'experiments/signal_model/jan_11/20:51:46/checkpoints/1547731761/step_1015568.pt')
+
+assert spectrogram_model_checkpoint_path.is_file(), 'Spectrogram model checkpoint cannot be found.'
+assert signal_model_checkpoint_path.is_file(), 'Signal model checkpoint cannot be found.'
 
 
 class InvalidUsage(Exception):
@@ -156,18 +158,12 @@ def send_styles_css():
     return send_from_directory(str(ROOT_PATH / 'src' / 'service'), 'styles.css')
 
 
-@configurable
-def _stream_text_to_speech_synthesis(text,
-                                     speaker,
-                                     sample_rate=ConfiguredArg(),
-                                     stop_threshold=None,
-                                     split_size=20):
+def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_size=20):
     """ Helper function for starting a speech synthesis stream.
 
     Args:
         text (str)
         speaker (src.datasets.Speaker)
-        bits (int): The fidelity of the generated audio.
         stop_threshold (float, optional): Probability to stop predicting frames.
         split_size (int): Number of frames to synthesize at a time.
 
@@ -200,7 +196,7 @@ def _stream_text_to_speech_synthesis(text,
     num_frames = spectrogram.shape[0]  # [num_frames, num_tokens]
     num_samples = scale_factor * num_frames
     spectrogram = torch.nn.functional.pad(spectrogram, (0, 0, half_padding, half_padding))
-    wav_header, wav_file_size = build_wav_header(sample_rate, num_samples)
+    wav_header, wav_file_size = build_wav_header(num_samples)
 
     def response():
         """ Generator incrementally generating a WAV file.

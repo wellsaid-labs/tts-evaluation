@@ -1,5 +1,6 @@
 # Math Library
 numpy
+scipy
 
 # Install torch seperatly via https://pytorch.org based on your system requirements
 # torch==1.0.0
@@ -14,7 +15,7 @@ librosa
 
 # Visualization Library
 matplotlib
-comet-ml==1.0.42
+comet-ml==1.0.43
 
 # Testing
 pytest

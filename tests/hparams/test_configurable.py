@@ -204,14 +204,18 @@ def mock_configurable_2(arg=ConfiguredArg()):
     pass
 
 
-def test_configured_arg_error():
+@mock.patch('src.hparams.configurable_.logger')
+def test_configured_arg_error(logger_mock):
+    import logging
+    logging.basicConfig(level=logging.INFO)
     global mock_configurable_2
 
     mock_configurable_2 = configurable(mock_configurable_2)
 
     # Check the ``ConfiguredArg`` parameter
-    with pytest.raises(ValueError):
-        mock_configurable_2()
+    logger_mock.reset_mock()
+    mock_configurable_2()
+    assert logger_mock.warning.call_count == 2
 
     add_config({'tests.hparams.test_configurable.mock_configurable_2.arg': ''})
     # Does not raise error
@@ -248,6 +252,15 @@ def test_configured_arg():
     with pytest.raises(ValueError):
         repr(arg)
 
+    with pytest.raises(ValueError):
+        arg + 1
+
+    with pytest.raises(ValueError):
+        arg * 1
+
+    with pytest.raises(ValueError):
+        arg - 1
+
 
 # Mocks that have never been run before `test_no_config_warning`
 @configurable
@@ -267,11 +280,11 @@ def test_no_config_warning(logger_mock):
     clear_config()
 
     MockConfigurableTestNoConfigWarning()
-    logger_mock.warning.assert_called_once()  # No config warning
+    logger_mock.warning.assert_called_once()  # No config, warning
     logger_mock.reset_mock()
 
     mock_configurable_test_no_config_warning()
-    logger_mock.warning.assert_called_once()  # No config warning
+    logger_mock.warning.assert_called_once()  # No config, warning
     logger_mock.reset_mock()
 
 

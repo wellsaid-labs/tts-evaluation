@@ -1,6 +1,5 @@
 from collections import defaultdict
 
-import base64
 import io
 import logging
 import matplotlib
@@ -16,6 +15,7 @@ from matplotlib import pyplot
 
 import librosa.display
 import numpy as np
+import scipy
 import torch
 
 from src.hparams import configurable
@@ -156,55 +156,6 @@ def plot_spectrogram(spectrogram,
     return figure
 
 
-_BASE_TEMPLATE = """
-  <link rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/meyer-reset/2.0/reset.css"
-        type="text/css">
-  <style>
-    body {
-      background-color: #f4f4f5;
-    }
-
-    p {
-      font-family: 'Roboto', system-ui, sans-serif;
-      margin-bottom: .5em;
-    }
-
-    b {
-      font-weight: bold
-    }
-
-    section {
-      padding: 1.5em;
-      border-bottom: 2px solid #E8E8E8;
-      background: white;
-    }
-  </style>
-  %s
-"""
-
-
-def _encode_audio(audio):
-    """ Encode audio into a base64 string.
-
-    Args:
-        audio (torch.Tensor): Audio in the form of a tensor
-        **kwargs: Other arguments for `write_wav`
-
-    Returns:
-        (str): The encoded audio.
-    """
-    if torch.is_tensor(audio):
-        audio = audio.detach().cpu().numpy()
-
-    assert np.max(audio) <= 1.0 and np.min(audio) >= -1.0, "Should be [-1, 1] it is [%f, %f]" % (
-        np.max(audio), np.min(audio))
-    in_memory_file = io.BytesIO()
-    librosa.output.write_wav(in_memory_file, audio, sr=24000)
-    audio = base64.b64encode(in_memory_file.read()).decode('utf-8')
-    return audio
-
-
 class AccumulatedMetrics():
     """
     Args:
@@ -315,6 +266,33 @@ class AccumulatedMetrics():
             log_metric(total_key, total_value / count_value)
 
 
+_BASE_HTML = """
+<link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/meyer-reset/2.0/reset.css"
+      type="text/css">
+<style>
+  body {
+    background-color: #f4f4f5;
+  }
+
+  p {
+    font-family: 'Roboto', system-ui, sans-serif;
+    margin-bottom: .5em;
+  }
+
+  b {
+    font-weight: bold
+  }
+
+  section {
+    padding: 1.5em;
+    border-bottom: 2px solid #E8E8E8;
+    background: white;
+  }
+</style>
+"""
+
+
 def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **kwargs):
     """
     Initiate a Comet.ml visualizer with several monkey patched methods.
@@ -363,6 +341,7 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
         'last_git_commit',
         subprocess.check_output('git log -1 --format=%cd', shell=True).decode().strip())
     experiment.log_parameter('num_gpu', torch.cuda.device_count())
+    experiment.log_html(_BASE_HTML)
 
     start_epoch_time = None
     start_epoch_step = None
@@ -387,15 +366,41 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
 
     experiment.log_epoch_end = log_epoch_end.__get__(experiment)
 
-    def log_audio(self, gold_audio=None, predicted_audio=None, step=None, **kwargs):
+    def _write_wav(file_name, data, sample_rate):
+        """ Write wav from a tensor to `io.BytesIO`.
+
+        Args:
+            file_name (str): File name to use with comet.ml
+            data (np.array or torch.tensor)
+
+        Returns:
+            (str): String url to the asset.
+        """
+        if torch.is_tensor(data):
+            data = data.numpy()
+
+        file_ = io.BytesIO()
+        scipy.io.wavfile.write(filename=file_, data=data, rate=sample_rate)
+        asset = experiment.log_asset(file_like_object=file_, file_name=file_name)
+        return asset['web'] if asset is not None else asset
+
+    @configurable
+    def log_audio(self,
+                  gold_audio=None,
+                  predicted_audio=None,
+                  step=None,
+                  sample_rate=ConfiguredArg(),
+                  **kwargs):
         """ Add text and audio to remote visualizer in one entry.
 
-        TODO: Consider logging the Waveform as well
+        TODO: Consider logging the waveform as well.
 
         Args:
             gold_audio (torch.Tensor)
             predicted_audio (torch.Tensor)
             step (int, optional)
+            sample_rate (int, optional)
+            **kwargs: Additional arguments to be printed.
         """
         step = self.curr_step if step is None else step
         assert step is not None
@@ -403,15 +408,14 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
         for key, value in kwargs.items():
             items.append('<p><b>{}:</b> {}</p>'.format(key.title(), value))
         if gold_audio is not None:
+            url = _write_wav('gold.wav', gold_audio, sample_rate)
             items.append('<p><b>Gold Audio:</b></p>')
-            items.append('<audio controls="" src="data:audio/wav;base64,{}"></audio>'.format(
-                _encode_audio(gold_audio)))
+            items.append('<audio controls src="{}"></audio>'.format(url))
         if predicted_audio is not None:
+            url = _write_wav('predicted.wav', predicted_audio, sample_rate)
             items.append('<p><b>Predicted Audio:</b></p>')
-            items.append('<audio controls="" src="data:audio/wav;base64,{}"></audio>'.format(
-                _encode_audio(predicted_audio)))
-
-        experiment.log_html(_BASE_TEMPLATE % '<section>{}</section>'.format('\n'.join(items)))
+            items.append('<audio control src="{}"></audio>'.format(url))
+        experiment.log_html('<section>{}</section>'.format('\n'.join(items)))
 
     experiment.log_audio = log_audio.__get__(experiment)
 

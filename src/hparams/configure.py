@@ -85,7 +85,14 @@ def _set_audio_processing():
         IPython.display.Audio.__init__ = configurable(IPython.display.Audio.__init__)
         add_config({'IPython.lib.display.Audio.__init__.rate': sample_rate})
     except ImportError:
-        logger.info('Ignoring optional IPython configurations.')
+        logger.info('Ignoring optional `IPython` configurations.')
+
+    try:
+        import scipy
+        scipy.io.wavfile.write = configurable(scipy.io.wavfile.write)
+        add_config({'scipy.io.wavfile.write.rate': sample_rate})
+    except ImportError:
+        logger.info('Ignoring optional `scipy` configurations.')
 
     add_config({
         'src.datasets.lj_speech.lj_speech_dataset': {
@@ -98,7 +105,6 @@ def _set_audio_processing():
             # NOTE: Guard to reduce clipping during resampling
             'guard': True,
         },
-        'src.service.serve._stream_text_to_speech_synthesis.sample_rate': sample_rate,
         'src.datasets.hilary.hilary_dataset.resample': sample_rate,
         'src.datasets.m_ailabs.m_ailabs_speech_dataset.resample': sample_rate,
         'src.audio': {
@@ -106,6 +112,11 @@ def _set_audio_processing():
             # To make this more tractable, we first apply a µ-law companding transformation
             # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
             'read_audio.sample_rate': sample_rate,
+            # NOTE: Practically, `frame_rate` is equal to `sample_rate`. However, the terminology is
+            # more appropriate because `sample_rate` is ambiguous. In a multi-channel scenario, each
+            # channel has its own set of samples. It's unclear if `sample_rate` depends on the
+            # number of channels, scaling linearly per channel.
+            'build_wav_header.frame_rate': sample_rate,
             'get_log_mel_spectrogram': {
                 'sample_rate': sample_rate,
                 'frame_size': frame_size,
@@ -142,6 +153,7 @@ def _set_audio_processing():
             'combine_signal.bits': bits,
         },
         'src.visualize': {
+            'CometML.<locals>.log_audio.sample_rate': sample_rate,
             'plot_waveform.sample_rate': sample_rate,
             'plot_spectrogram': {
                 'sample_rate': sample_rate,

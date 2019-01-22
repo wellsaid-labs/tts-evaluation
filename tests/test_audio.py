@@ -16,13 +16,11 @@ from src.audio import build_wav_header
 
 
 def test_build_wav_header():
-    sample_rate = 24000
+    sample_rate = 16000
     file_ = io.BytesIO()
     wavfile.write(file_, sample_rate, np.int16([]))
     expected_header = file_.getvalue()
-    wav_header, _ = build_wav_header(sample_rate, 0)
-    print(expected_header)
-    print(wav_header)
+    wav_header, _ = build_wav_header(0, sample_rate)
     assert expected_header == wav_header
 
 

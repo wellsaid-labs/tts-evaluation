@@ -307,12 +307,17 @@ def griffin_lim(log_mel_spectrogram,
     return np.clip(waveform, -1, 1)
 
 
-def build_wav_header(frame_rate, num_frames, wav_format=0x0001, num_channels=1, sample_width=2):
+@configurable
+def build_wav_header(num_frames,
+                     frame_rate=ConfiguredArg(),
+                     wav_format=0x0001,
+                     num_channels=1,
+                     sample_width=2):
     """ Create a WAV file header.
 
     Args:
-        frame_rate (int): Number of frames per second.
         num_frames (int): Number of frames. A frame includes one sample per channel.
+        frame_rate (int): Number of frames per second.
         wav_format (int): Format of the audio file, 1 indiciates PCM format.
         num_channels (int): Number of audio channels.
         sample_width (int): Number of bytes per sample, typically 1 (8-bit), 2 (16-bit)
