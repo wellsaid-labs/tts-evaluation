@@ -330,6 +330,7 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
     })
     if experiment_key is None:
         experiment = Experiment(**kwargs)
+        experiment.log_html(_BASE_HTML)
     else:
         experiment = ExistingExperiment(previous_experiment=experiment_key, **kwargs)
 
@@ -341,7 +342,6 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
         'last_git_commit',
         subprocess.check_output('git log -1 --format=%cd', shell=True).decode().strip())
     experiment.log_parameter('num_gpu', torch.cuda.device_count())
-    experiment.log_html(_BASE_HTML)
 
     start_epoch_time = None
     start_epoch_step = None

@@ -1,3 +1,4 @@
+from collections import namedtuple
 from functools import partial
 from pathlib import Path
 
@@ -14,6 +15,8 @@ from src.datasets.process import _split_dataset
 from src.hparams import configurable
 
 logger = logging.getLogger(__name__)
+
+HilaryMetadataRow = namedtuple('HilaryMetadataRow', ['script_title', 'script_source'])
 
 
 def _processing_row(row,
@@ -54,10 +57,8 @@ def _processing_row(row,
         text=text,
         audio_path=audio_path,
         speaker=speaker,
-        metadata={
-            'script_title': row[metadata_title_column],
-            'script_source': row[metadata_source_column],
-        })
+        metadata=HilaryMetadataRow(
+            script_title=row[metadata_title_column], script_source=row[metadata_source_column]))
 
 
 @configurable

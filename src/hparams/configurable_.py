@@ -207,7 +207,8 @@ def _check_configuration_helper(dict_, keys, trace):
                         'Attempts (most recent call last):\n\t%s' % ('\n\t'.join(trace),))
 
     if '<locals>' in keys:
-        logger.warning('Skipping configurable checks, cannot import <locals> %s.', '.'.join(keys))
+        logger.warning('Skipping configurable checks for `%s`, this cannot import `<locals>`.',
+                       '.'.join(keys))
         return
 
     if len(keys) >= 2:
@@ -238,8 +239,9 @@ def _check_configuration_helper(dict_, keys, trace):
                 trace.append('Function `%s` not found in `%s`.' % (keys[-1], module_path))
         except ImportError:
             if _is_possible_module(module_path):
-                logger.exception('Skipping configurable checks, cannot import module %s.',
-                                 module_path)
+                logger.warning(
+                    'Skipping configurable checks for module `%s`, this caught '
+                    'an ImportError trying to import the module.', module_path)
                 return
             trace.append('Failed to run `import %s`.' % module_path)
 
@@ -276,8 +278,9 @@ def _check_configuration_helper(dict_, keys, trace):
                 trace.append('Class `%s` not found in `%s`.' % (keys[-2], module_path))
         except ImportError:
             if _is_possible_module(module_path):
-                logger.exception('Skipping configurable checks, cannot import module %s.',
-                                 module_path)
+                logger.warning(
+                    'Skipping configurable checks for module `%s`, this caught '
+                    'an ImportError trying to import the module.', module_path)
                 return
             trace.append('Failed to run `import %s`.' % module_path)
 

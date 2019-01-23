@@ -17,9 +17,9 @@ import comet_ml  # noqa
 
 from torchnlp.text_encoders.reserved_tokens import RESERVED_ITOS
 
-import librosa
 import torch
 import numpy
+import scipy
 
 from src.audio import combine_signal
 from src.audio import griffin_lim
@@ -54,8 +54,9 @@ def _save(destination, tags, speaker, waveform):
     """
     speaker_name = speaker.name.lower().replace(' ', '_')
     path = str(destination / ('%s,%s.wav' % (speaker_name, ','.join(tags))))
-    librosa.output.write_wav(path, waveform)
-    logger.info('Saved file %s', path)
+    scipy.io.wavfile.write(filename=path, data=waveform)
+    logger.info('Saved file "%s" with waveform of shape %s and dtype %s', path, waveform.shape,
+                waveform.dtype)
 
 
 def _get_spectrogram_length(example, use_predicted):
@@ -68,6 +69,7 @@ def _sample_dataset(dataset, speaker_encoder, num_samples=None, speaker=None, ba
 
     Args:
         dataset (callable or list): Dataset returned from `src.datasets` or a `list` of `str`.
+            Where the `dev` set is the second value returned.
         speaker_encoder (torchnlp.TextEncoder): Speaker encoder with all possible speakers.
         num_samples (int or None, optional): Randomly sample a number of samples.
         speaker (src.datasets.Speaker): Filter to only one speaker.
@@ -82,7 +84,7 @@ def _sample_dataset(dataset, speaker_encoder, num_samples=None, speaker=None, ba
         _, dev = dataset()
 
         if balanced:
-            dev = balance_dataset(dev)
+            dev = balance_dataset(dev, lambda r: r.speaker)
         if speaker is not None:
             dev = [r for r in dev if r.speaker == speaker]
 
@@ -116,7 +118,7 @@ def main(dataset=ConfiguredArg(),
          signal_model_checkpoint_path=None,
          spectrogram_model_checkpoint_path=None,
          destination='results/',
-         num_samples=32,
+         num_samples=50,
          aligned=False,
          speaker=None,
          balanced=False,
@@ -140,7 +142,7 @@ def main(dataset=ConfiguredArg(),
         aligned (bool, optional): If ``True``, predict a ground truth aligned spectrogram.
         speaker (Speaker, optional): Filter the data for a particular speaker.
         balanced (bool, optional): If ``True``, sample from a dataset with equal speaker
-            distribution.
+            distribution. Note, that this operation shuffles the rows.
         spectrogram_model_batch_size (int, optional)
         signal_model_batch_size (int, optional): The batch size for the signal model. This is lower
             than during training because we are no longer using small slices.
@@ -208,7 +210,8 @@ def main(dataset=ConfiguredArg(),
         with evaluate(signal_model_inferrer):
             # [batch_size, local_length, local_features_size] → [batch_size, signal_length]
             predicted_coarse, predicted_fine, _ = signal_model_inferrer(spectrogram)
-            predicted_signal = combine_signal(predicted_coarse, predicted_fine).numpy()
+            predicted_signal = combine_signal(
+                predicted_coarse, predicted_fine, return_int=True).numpy()
 
         # Split and save
         factor = int(predicted_signal.shape[1] / spectrogram.shape[1])

@@ -300,14 +300,14 @@ class Trainer():
         target_signal = example.spectrogram_audio.to_tensor() if isinstance(
             example.spectrogram_audio, OnDiskTensor) else example.spectrogram_audio
         # Introduce quantization noise
-        target_signal = combine_signal(*split_signal(target_signal))
+        target_signal = combine_signal(*split_signal(target_signal), return_int=True)
 
         spectrogram = spectrogram.to(self.device)
         inferrer = self.model.to_inferrer(self.device)
         with evaluate(inferrer):
             logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[0])
             predicted_coarse, predicted_fine, _ = inferrer(spectrogram)
-            predicted_signal = combine_signal(predicted_coarse, predicted_fine)
+            predicted_signal = combine_signal(predicted_coarse, predicted_fine, return_int=True)
 
         self.comet_ml.log_audio(
             tag=self.DEV_INFERRED_LABEL,

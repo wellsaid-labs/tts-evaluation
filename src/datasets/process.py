@@ -7,7 +7,6 @@ import logging
 import os
 import pathlib
 import pprint
-import random
 
 from torch.multiprocessing import Pool
 from torch.nn.functional import mse_loss
@@ -197,10 +196,16 @@ def _load_fn(row, text_encoder, speaker_encoder, load_spectrogram=False):
     if load_spectrogram:
         spectrogram = row.spectrogram.to_tensor() if isinstance(row.spectrogram,
                                                                 OnDiskTensor) else row.spectrogram
+
+    encoded_text = text_encoder.encode(row.text)
+
+    # TODO: Broadly incoperate this into the torchnlp library. Maybe, add an option to either
+    # support <unk> tokens or reversable encoding.
+    if text_encoder.decode(encoded_text) != row.text:
+        logger.warning('Text encoding is not reversable for sentence %s', row.text)
+
     return row._replace(
-        text=text_encoder.encode(row.text),
-        speaker=speaker_encoder.encode(row.speaker),
-        spectrogram=spectrogram)
+        text=encoded_text, speaker=speaker_encoder.encode(row.speaker), spectrogram=spectrogram)
 
 
 def _predict_and_cache_spectrogram(data,
@@ -384,29 +389,37 @@ def _compute_spectrogram(row, on_disk=True):
     return return_
 
 
-def balance_dataset(data, get_class):
+def balance_dataset(data, get_class, random_seed=123):
     """ Returns a random subsample of the dataset such that each class has equal representation.
 
     Args:
         data (iterable)
         get_class (callable): Given an example, returns a class.
+        random_seed (int, optional): Shuffle deterministically provided some random seed always
+            returning the same split given the same dataset.
 
     Returns:
         data (iterable): Iterable with a balanced dataset so that each class has the same number
             of samples.
     """
-    random.shuffle(data)
+    if random_seed is not None:
+        do_deterministic_shuffle(data, random_seed=random_seed)
 
     split = defaultdict(list)
     for example in data:
         split[get_class(example)].append(example)
     size = min([len(l) for l in split.values()])
-    subsample = [l[:size] for l in split.values()]
 
-    logger.info('Balanced distribution from\n%s\nto an equal partition of size %d',
+    logger.info('Balanced distribution from\n%s\nto equal partitions of size %d.',
                 pprint.pformat({k: len(v) for k, v in split.items()}), size)
 
-    return list(itertools.chain(*subsample))  # Flatten list
+    subsample = [l[:size] for l in split.values()]
+    subsample = list(itertools.chain(*subsample))  # Flatten list
+
+    if random_seed is not None:
+        do_deterministic_shuffle(subsample, random_seed=random_seed)
+
+    return subsample
 
 
 @configurable

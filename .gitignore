@@ -73,3 +73,6 @@ tmp/
 # Git patches used by comet.ml reproduce
 *.patch
 *.zip
+
+# Default path for evaluation files
+results/
