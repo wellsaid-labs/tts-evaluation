@@ -6,6 +6,7 @@ import itertools
 import logging
 import os
 import pathlib
+import pprint
 import random
 
 from torch.multiprocessing import Pool
@@ -37,6 +38,7 @@ from src.utils import tensors_to
 import src.distributed
 
 logger = logging.getLogger(__name__)
+pprint = pprint.PrettyPrinter(indent=4)
 
 # LEARN MORE: https://github.com/pytorch/pytorch/issues/973
 torch.multiprocessing.set_sharing_strategy('file_system')
@@ -394,11 +396,16 @@ def balance_dataset(data, get_class):
             of samples.
     """
     random.shuffle(data)
+
     split = defaultdict(list)
     for example in data:
         split[get_class(example)].append(example)
     size = min([len(l) for l in split.values()])
     subsample = [l[:size] for l in split.values()]
+
+    logger.info('Balanced distribution from\n%s\nto an equal partition of size %d',
+                pprint.pformat({k: len(v) for k, v in split.items()}), size)
+
     return list(itertools.chain(*subsample))  # Flatten list
 
 

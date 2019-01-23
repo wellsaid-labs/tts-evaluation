@@ -23,6 +23,7 @@ import numpy
 
 from src.audio import combine_signal
 from src.audio import griffin_lim
+from src.datasets import balance_dataset
 from src.datasets import compute_spectrograms
 from src.datasets import TextSpeechRow
 from src.hparams import configurable
@@ -62,14 +63,16 @@ def _get_spectrogram_length(example, use_predicted):
             if use_predicted else example.spectrogram.shape[0])
 
 
-def _get_dataset(dataset, speaker_encoder, num_samples=None, speaker=None):
-    """ Get the dataset to evaluate.
+def _sample_dataset(dataset, speaker_encoder, num_samples=None, speaker=None, balanced=False):
+    """ Given a dataset, sample from it and configure it.
 
     Args:
         dataset (callable or list): Dataset returned from `src.datasets` or a `list` of `str`.
         speaker_encoder (torchnlp.TextEncoder): Speaker encoder with all possible speakers.
         num_samples (int or None, optional): Randomly sample a number of samples.
-        speaker (src.datasets.Speaker): Filter to only one speaker
+        speaker (src.datasets.Speaker): Filter to only one speaker.
+        balanced (bool, optional): If ``True``, sample from a dataset with equal speaker
+            distribution.
 
     Returns:
         dataset (list of TextSpeechRow)
@@ -78,6 +81,8 @@ def _get_dataset(dataset, speaker_encoder, num_samples=None, speaker=None):
     if callable(dataset):  # CASE: Dataset created by a callable
         _, dev = dataset()
 
+        if balanced:
+            dev = balance_dataset(dev)
         if speaker is not None:
             dev = [r for r in dev if r.speaker == speaker]
 
@@ -114,6 +119,7 @@ def main(dataset=ConfiguredArg(),
          num_samples=32,
          aligned=False,
          speaker=None,
+         balanced=False,
          spectrogram_model_batch_size=1,
          signal_model_batch_size=1,
          signal_model_device=torch.device('cpu')):
@@ -133,6 +139,8 @@ def main(dataset=ConfiguredArg(),
         num_samples (int, optional): Number of rows to evaluate.
         aligned (bool, optional): If ``True``, predict a ground truth aligned spectrogram.
         speaker (Speaker, optional): Filter the data for a particular speaker.
+        balanced (bool, optional): If ``True``, sample from a dataset with equal speaker
+            distribution.
         spectrogram_model_batch_size (int, optional)
         signal_model_batch_size (int, optional): The batch size for the signal model. This is lower
             than during training because we are no longer using small slices.
@@ -150,8 +158,12 @@ def main(dataset=ConfiguredArg(),
     spectrogram_model_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     spectrogram_model_checkpoint = Checkpoint.from_path(
         spectrogram_model_checkpoint_path, device=spectrogram_model_device)
-    examples, indicies = _get_dataset(dataset, spectrogram_model_checkpoint.speaker_encoder,
-                                      num_samples, speaker)
+    examples, indicies = _sample_dataset(
+        dataset,
+        speaker_encoder=spectrogram_model_checkpoint.speaker_encoder,
+        num_samples=num_samples,
+        speaker=speaker,
+        balanced=balanced)
 
     # Compute target and / or predict spectrograms
     examples = compute_spectrograms(
