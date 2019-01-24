@@ -72,19 +72,17 @@ def test_combine_signal():
     coarse, fine = split_signal(signal, 16)
     new_signal = combine_signal(coarse, fine, 16)
     # NOTE: 1.0 gets clipped to ``(2**15 - 1) / 2**15``
-    expected_signal = torch.HalfTensor([(2**15 - 1) / 2**15, -1.0, 0, 2**-7, 2**-8])
+    expected_signal = torch.FloatTensor([(2**15 - 1) / 2**15, -1.0, 0, 2**-7, 2**-8])
     np.testing.assert_allclose(expected_signal.numpy(), new_signal.numpy())
 
 
 def test_split_combine_signal():
     signal = torch.FloatTensor(1000).uniform_(-1.0, 1.0)
     reconstructed_signal = combine_signal(*split_signal(signal), bits=16)
-    expected_signal = signal.type(torch.float16)
-    np.testing.assert_allclose(expected_signal.numpy(), reconstructed_signal.numpy(), atol=1e-03)
+    np.testing.assert_allclose(signal.numpy(), reconstructed_signal.numpy(), atol=1e-03)
 
 
 def test_split_combine_signal_multiple_dim():
     signal = torch.FloatTensor(1000, 1000).uniform_(-1.0, 1.0)
     reconstructed_signal = combine_signal(*split_signal(signal), bits=16)
-    np.testing.assert_allclose(
-        signal.type(torch.float16).numpy(), reconstructed_signal.numpy(), atol=1e-03)
+    np.testing.assert_allclose(signal.numpy(), reconstructed_signal.numpy(), atol=1e-03)

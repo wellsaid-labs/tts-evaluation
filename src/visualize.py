@@ -410,11 +410,11 @@ def CometML(project_name, experiment_key=None, api_key=None, workspace=None, **k
         if gold_audio is not None:
             url = _write_wav('gold.wav', gold_audio, sample_rate)
             items.append('<p><b>Gold Audio:</b></p>')
-            items.append('<audio controls src="{}"></audio>'.format(url))
+            items.append('<audio controls preload="metadata" src="{}"></audio>'.format(url))
         if predicted_audio is not None:
             url = _write_wav('predicted.wav', predicted_audio, sample_rate)
             items.append('<p><b>Predicted Audio:</b></p>')
-            items.append('<audio control src="{}"></audio>'.format(url))
+            items.append('<audio controls preload="metadata" src="{}"></audio>'.format(url))
         experiment.log_html('<section>{}</section>'.format('\n'.join(items)))
 
     experiment.log_audio = log_audio.__get__(experiment)

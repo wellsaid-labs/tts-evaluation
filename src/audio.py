@@ -394,6 +394,7 @@ def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
     assert torch.min(coarse) >= 0 and torch.max(coarse) < bins
     assert torch.min(fine) >= 0 and torch.max(fine) < bins
     signal = coarse * bins + fine - 2**(bits - 1)
+
     if return_int:
         if bits <= 16:
             return signal.type(torch.int16)
@@ -401,11 +402,7 @@ def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
             return signal.type(torch.int32)
         elif bits <= 64:
             return signal.type(torch.int64)
-    else:
-        signal = signal.float() / 2**(bits - 1)  # Scale to [-1, 1] range.
-        if bits <= 16:
-            return signal.type(torch.float16)
-        elif bits <= 32:
-            return signal.type(torch.float32)
-        elif bits <= 64:
-            return signal.type(torch.float64)
+        else:
+            raise ValueError('Larger than 64-bit fidelity is not supported.')
+
+    return signal.float() / 2**(bits - 1)  # Scale to [-1, 1] range.
