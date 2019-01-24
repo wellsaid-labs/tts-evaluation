@@ -314,7 +314,9 @@ def _predict_spectrogram(data,
     for row in data:
         if row.audio_path is None:
             parent = pathlib.Path('/tmp')
-            name = hash(row.text) * hash(row.speaker)
+            # Learn more:
+            # https://computinglife.wordpress.com/2008/11/20/why-do-hash-functions-use-prime-numbers/
+            name = 31 * hash(row.text) + 97 * hash(row.speaker)
         else:
             parent = row.audio_path.parent
             name = row.audio_path.stem
@@ -351,7 +353,7 @@ def _compute_spectrogram(row, on_disk=True):
 
     audio_path = row.audio_path
     if audio_path is None:
-        logger.warning('Without an audio file, you cannot compute spectrogram for %s', row)
+        logger.warning('Skipping spectrogram computation, no audio file found in `%s`.', row)
         return SpectrogramTextSpeechRow(
             **row._asdict(), spectrogram_audio=None, spectrogram=None, predicted_spectrogram=None)
 

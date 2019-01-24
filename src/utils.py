@@ -722,7 +722,7 @@ class DataLoader(DataLoader):
 
             if is_first:
                 elapsed = seconds_to_string(time.time() - start)
-                logger.info('Time to first batch was %s', elapsed)
+                logger.info('Time to first batch was %s.', elapsed)
                 is_first = False
 
             if self.trial_run:

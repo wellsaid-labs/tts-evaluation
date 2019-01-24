@@ -55,7 +55,7 @@ def _save(destination, tags, speaker, waveform):
     speaker_name = speaker.name.lower().replace(' ', '_')
     path = str(destination / ('%s,%s.wav' % (speaker_name, ','.join(tags))))
     scipy.io.wavfile.write(filename=path, data=waveform)
-    logger.info('Saved file "%s" with waveform of shape %s and dtype %s', path, waveform.shape,
+    logger.info('Saved file "%s" with waveform of shape `%s` and dtype `%s`', path, waveform.shape,
                 waveform.dtype)
 
 
@@ -210,16 +210,16 @@ def main(dataset=ConfiguredArg(),
         with evaluate(signal_model_inferrer):
             # [batch_size, local_length, local_features_size] → [batch_size, signal_length]
             predicted_coarse, predicted_fine, _ = signal_model_inferrer(spectrogram)
-            predicted_signal = combine_signal(
-                predicted_coarse, predicted_fine, return_int=True).numpy()
+            predicted_signal = combine_signal(predicted_coarse, predicted_fine, return_int=True)
+            predicted_signal = predicted_signal.numpy()
 
         # Split and save
         factor = int(predicted_signal.shape[1] / spectrogram.shape[1])
         splits = numpy.split(predicted_signal, signal_model_batch_size)
-        for i, example, predicted, spectrogram_length in zip(indicies_chunk, examples_chunk, splits,
-                                                             spectrogram_lengths):
-            predicted = predicted[0, :spectrogram_length * factor]
-            _save(destination, ['index_%d' % i, 'wave_rnn'], example.speaker, predicted)
+        iterator = zip(indicies_chunk, examples_chunk, splits, spectrogram_lengths)
+        for i, example, predicted_waveform, spectrogram_length in iterator:
+            predicted_waveform = predicted_waveform[0, :spectrogram_length * factor]
+            _save(destination, ['index_%d' % i, 'wave_rnn'], example.speaker, predicted_waveform)
             logger.info('-' * 100)
 
 
