@@ -731,12 +731,15 @@ class DataLoader(DataLoader):
 
 class OnDiskTensor():
     """ Tensor that resides on disk.
-
     Args:
-        path (str or Path)
+        path (str or Path): Path for an `.npy` file to be saved.
+        allow_pickle (bool, optional): Allow saving object arrays using Python pickles. This
+            is not recommended for performance reasons.
     """
 
     def __init__(self, path, allow_pickle=False):
+        assert '.npy' in str(path), 'Path must include `.npy` extension.'
+
         self.path = Path(path)
         self.allow_pickle = allow_pickle
 
@@ -750,7 +753,10 @@ class OnDiskTensor():
 
     @property
     def shape(self):
-        return np.load(str(self.path), mmap_mode='r', allow_pickle=self.allow_pickle).shape
+        with open(str(self.path), 'rb') as file_:
+            version = np.lib.format.read_magic(file_)
+            shape, _, _ = np.lib.format._read_array_header(file_, version)
+        return shape
 
     def to_tensor(self):
         """ Convert to a in-memory ``torch.tensor``. """

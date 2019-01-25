@@ -27,6 +27,7 @@ from src.utils import get_total_parameters
 from src.utils import get_weighted_stdev
 from src.utils import identity
 from src.utils import lengths_to_mask
+from src.utils import OnDiskTensor
 from src.utils import pad_batch
 from src.utils import parse_hparam_args
 from src.utils import ROOT_PATH
@@ -34,6 +35,14 @@ from src.utils import sort_by_spectrogram_length
 from src.utils import tensors_to
 
 from tests.utils import get_example_spectrogram_text_speech_rows
+
+
+def test_on_disk_tensor():
+    original = torch.rand(4, 10)
+    tensor = OnDiskTensor('tests/_test_data/tensor.npy').from_tensor(original)
+    assert tensor.shape == original.shape
+    assert torch.equal(tensor.to_tensor(), original)
+    tensor.unlink()
 
 
 def test_pad_batch():

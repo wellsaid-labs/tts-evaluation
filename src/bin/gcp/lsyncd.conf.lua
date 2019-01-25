@@ -28,5 +28,11 @@ sync {
       "coverage/**",
       "*.wav",
       "*.py*.py" -- Odd temporary files
+
+      -- Various compressed formats are typically slow to sync
+      "*.zip",
+      "*.tar",
+      "*.tgz",
+      "*.gzip",
   }
 }
