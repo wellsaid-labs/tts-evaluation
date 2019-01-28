@@ -268,7 +268,7 @@ def _validate_and_unpack(args, max_characters=1000, num_api_key_characters=32):
 
     speaker_id = args.get('speaker_id')
     text = args.get('text')
-    stop_threshold = args.get('stop_threshold', default=None)
+    stop_threshold = args.get('stop_threshold', None)
 
     if not isinstance(speaker_id, (str, int)):
         raise InvalidUsage('Speaker ID must be either an integer or string.')
@@ -325,7 +325,7 @@ def get_input_validated():
         Response with status 200 if the arguments are valid; Otherwise, returning a `InvalidUsage`.
     """
     if request.method == 'POST':
-        args = request.to_dict(flat=False)
+        args = request.get_json()
     else:
         args = request.args
 
@@ -348,7 +348,7 @@ def get_stream():
         `audio/wav` streamed in chunks given that the arguments are valid.
     """
     if request.method == 'POST':
-        args = request.to_dict(flat=False)
+        args = request.get_json()
     else:
         args = request.args
 

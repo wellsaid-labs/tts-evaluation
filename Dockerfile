@@ -16,7 +16,8 @@ RUN apt-get update \
   git+https://github.com/PetrochukM/PyTorch-NLP.git \
   flask \
   gunicorn \
-  https://download.pytorch.org/whl/cpu/torch-1.0.0-cp36-cp36m-linux_x86_64.whl
+  https://download.pytorch.org/whl/cpu/torch-1.0.0-cp36-cp36m-linux_x86_64.whl \
+  python-dotenv
 
 RUN ls /usr/local
 

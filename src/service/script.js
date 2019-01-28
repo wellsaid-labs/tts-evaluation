@@ -81,6 +81,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
     // Start stream
     const streamURL = `${api}text_to_speech/stream?${parameterString}`;
     const request = new XMLHttpRequest();
+    generateButton.textContent = '0%';
     request.open('GET', streamURL, true);
     request.addEventListener('progress', function (event) {
       if (event.lengthComputable) {
