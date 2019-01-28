@@ -100,3 +100,8 @@ body>div {
   box-shadow: none;
   outline: 0;
 }
+
+#error {
+  color: #B71C1C;
+  display: None;
+}

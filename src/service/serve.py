@@ -29,8 +29,7 @@ The cons in summary are that the client cannot manage there own state due to the
 web audio api; therefore, the server must manage it via some database.
 
 Example:
-      $ export PYTHONPATH=.;
-      $ python3 -m src.www.app;
+      $ export PYTHONPATH=.; python3 -m src.service.serve;
 
 Example:
       $ gunicorn src.service.serve:app;
@@ -46,9 +45,11 @@ except ImportError:
 from functools import lru_cache
 
 import logging
+import os
 import pathlib
 import sys
 
+from dotenv import load_dotenv
 from flask import Flask
 from flask import jsonify
 from flask import request
@@ -67,13 +68,31 @@ from src.utils import ROOT_PATH
 from src.utils import set_basic_logging_config
 
 app = Flask(__name__)
-device = torch.device('cpu')
 logger = logging.getLogger(__name__)
 set_basic_logging_config()
+load_dotenv()
+DEVICE = torch.device('cpu')
+NO_CACHE_HEADERS = {
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+}
+API_KEY_SUFFIX = '_SPEECH_API_KEY'
+API_KEYS = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
+
+# TODO: Upload the models to a bucket online, so that they can be downloaded anywhere at anytime.
+SPECTROGRAM_MODEL_CHECKPOINT_PATH = pathlib.Path(
+    'experiments/spectrogram_model/jan_06/20:16:43/checkpoints/1547107190/step_203750.pt')
+SIGNAL_MODEL_CHECKPOINT_PATH = pathlib.Path(
+    'experiments/signal_model/jan_11/20:51:46/checkpoints/1547731761/step_1015568.pt')
+
+assert SPECTROGRAM_MODEL_CHECKPOINT_PATH.is_file(), 'Spectrogram model checkpoint cannot be found.'
+assert SIGNAL_MODEL_CHECKPOINT_PATH.is_file(), 'Signal model checkpoint cannot be found.'
 
 
 @lru_cache()
-def load_checkpoints(spectrogram_model_checkpoint_path, signal_model_checkpoint_path):
+def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPOINT_PATH,
+                     signal_model_checkpoint_path=SIGNAL_MODEL_CHECKPOINT_PATH):
     """
     Args:
         spectrogram_model_checkpoint_path (str)
@@ -87,24 +106,14 @@ def load_checkpoints(spectrogram_model_checkpoint_path, signal_model_checkpoint_
     """
     set_hparams()
 
-    spectrogram_model = Checkpoint.from_path(spectrogram_model_checkpoint_path, device=device)
+    spectrogram_model = Checkpoint.from_path(spectrogram_model_checkpoint_path, device=DEVICE)
     spectrogram_model, text_encoder, speaker_encoder = (spectrogram_model.model,
                                                         spectrogram_model.text_encoder,
                                                         spectrogram_model.speaker_encoder)
 
-    signal_model = Checkpoint.from_path(signal_model_checkpoint_path, device=device)
+    signal_model = Checkpoint.from_path(signal_model_checkpoint_path, device=DEVICE)
     signal_model = signal_model.model.to_inferrer()
     return signal_model, spectrogram_model, text_encoder, speaker_encoder
-
-
-# TODO: Upload the models to a bucket online, so that they can be downloaded anywhere at anytime.
-spectrogram_model_checkpoint_path = pathlib.Path(
-    'experiments/spectrogram_model/jan_06/20:16:43/checkpoints/1547107190/step_203750.pt')
-signal_model_checkpoint_path = pathlib.Path(
-    'experiments/signal_model/jan_11/20:51:46/checkpoints/1547731761/step_1015568.pt')
-
-assert spectrogram_model_checkpoint_path.is_file(), 'Spectrogram model checkpoint cannot be found.'
-assert signal_model_checkpoint_path.is_file(), 'Signal model checkpoint cannot be found.'
 
 
 class InvalidUsage(Exception):
@@ -171,8 +180,7 @@ def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_s
         (callable): Callable that returns a generator incrementally returning a WAV file.
         (int): Number of bytes to be returned in total by the generator.
     """
-    signal_model, spectrogram_model, text_encoder, speaker_encoder = load_checkpoints(
-        spectrogram_model_checkpoint_path, signal_model_checkpoint_path)
+    signal_model, spectrogram_model, text_encoder, speaker_encoder = load_checkpoints()
 
     # Compute spectrogram
     text = text_encoder.encode(text)
@@ -223,34 +231,52 @@ def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_s
     return response, wav_file_size
 
 
-@app.route('/api/speech_synthesis/v1/text_to_speech', methods=['GET'])
-def text_to_speech(max_characters=1000):
-    """ Get speech given `text`, `speaker`, and `stop_threshold`.
-
-    TODO: Authenticate request with some token.
+def _validate_and_unpack(args, max_characters=1000, num_api_key_characters=32):
+    """ Validate and unpack the request object.
 
     Args:
-        max_characters (int): Maximum allowed characters to stop nefarious requests.
+        args (dict) {
+          speaker_id (int or str)
+          text (str)
+          api_key (str)
+          stop_threshold (float or None)
+        }
+        max_characters (int)
+        num_api_key_characters (int)
 
-    Request Args:
-        speaker_id (str)
+    Returns:
+        speaker (src.datasets.Speaker)
         text (str)
-        token (str): Security token sent on behalf of client to ensure authenticity of the request.
-        stop_threshold (float, optional)
+        api_key (str)
+        stop_threshold (float or None)
     """
+    if 'api_key' not in args:
+        raise InvalidUsage('API key was not provided.', status_code=401)
 
-    logger.info('Got request for spectrogram: %s', request.args)
-    if not ('speaker_id' in request.args and 'text' in request.args and 'token' in request.args):
-        raise InvalidUsage('Must call with keys `speaker_id`, `text`, and `token`.')
+    api_key = args.get('api_key')
 
-    speaker_id = int(request.args.get('speaker_id'))
-    text = request.args.get('text')
-    token = request.args.get('token')
-    stop_threshold = request.args.get('stop_threshold', default=None)
+    if not (isinstance(api_key, str) and len(api_key) == num_api_key_characters):
+        raise InvalidUsage(
+            'API key must be a string with %d characters.' % num_api_key_characters,
+            status_code=401)
 
-    # Security
-    if not isinstance(token, str):
-        raise InvalidUsage('Token must be a string')
+    if api_key not in API_KEYS:
+        raise InvalidUsage('API key is not valid.', status_code=401)
+
+    if not ('speaker_id' in args and 'text' in args):
+        raise InvalidUsage('Must call with keys `speaker_id` and `text`.')
+
+    speaker_id = args.get('speaker_id')
+    text = args.get('text')
+    stop_threshold = args.get('stop_threshold', default=None)
+
+    if not isinstance(speaker_id, (str, int)):
+        raise InvalidUsage('Speaker ID must be either an integer or string.')
+
+    if isinstance(speaker_id, str) and not speaker_id.isdigit():
+        raise InvalidUsage('Speaker ID string must only consist of the symbols 0 - 9.')
+
+    speaker_id = int(speaker_id)
 
     if not (isinstance(speaker_id, int) and speaker_id < len(Speaker) and speaker_id >= 0):
         raise InvalidUsage('Speaker ID must be an integer between %d and %d.' % (0, len(Speaker)))
@@ -258,8 +284,7 @@ def text_to_speech(max_characters=1000):
     if not (isinstance(text, str) and len(text) < max_characters and len(text) > 0):
         raise InvalidUsage('Text must be a string under %d characters' % max_characters)
 
-    text_encoder = load_checkpoints(spectrogram_model_checkpoint_path,
-                                    signal_model_checkpoint_path)[2]
+    text_encoder = load_checkpoints()[2]
     processed_text = text_encoder.decode(text_encoder.encode(text))
     if processed_text != text:
         improper_characters = set(text).difference(set(processed_text))
@@ -271,16 +296,67 @@ def text_to_speech(max_characters=1000):
 
     if isinstance(stop_threshold, float):
         stop_threshold = round(stop_threshold, 2)
-    speaker = getattr(Speaker, str(speaker_id))
 
+    speaker = getattr(Speaker, str(speaker_id))
+    return speaker, text, stop_threshold
+
+
+# NOTE: The route `/api/speech_synthesis/v1/` standads for "speech synthesis api v1"
+
+
+@app.route('/api/speech_synthesis/v1/text_to_speech/input_validated', methods=['GET', 'POST'])
+def get_input_validated():
+    """ Validate the input to our text-to-speech endpoint before making a stream request.
+
+    NOTE: The API splits the validation responsibility from the streaming responsibility. During
+    streaming, we are unable to access any error codes generated by the validation script.
+    NOTE: The API supports both GET and POST requests. GET and POST requests have different
+    tradeoffs, GET allows for streaming with <audio> elements while POST allows more than 2000
+    characters of data to be passed.
+
+    Args:
+        speaker_id (str)
+        text (str)
+        api_key (str): Security token sent on behalf of client to ensure authenticity of the
+            request.
+        stop_threshold (float, optional)
+
+    Returns:
+        Response with status 200 if the arguments are valid; Otherwise, returning a `InvalidUsage`.
+    """
+    if request.method == 'POST':
+        args = request.to_dict(flat=False)
+    else:
+        args = request.args
+
+    _validate_and_unpack(args)
+    return jsonify({'message': 'OK'})
+
+
+@app.route('/api/speech_synthesis/v1/text_to_speech/stream', methods=['GET', 'POST'])
+def get_stream():
+    """ Get speech given `text`, `speaker`, and `stop_threshold`.
+
+    Args:
+        speaker_id (str)
+        text (str)
+        api_key (str): Security token sent on behalf of client to ensure authenticity of the
+            request.
+        stop_threshold (float, optional)
+
+    Returns:
+        `audio/wav` streamed in chunks given that the arguments are valid.
+    """
+    if request.method == 'POST':
+        args = request.to_dict(flat=False)
+    else:
+        args = request.args
+
+    speaker, text, stop_threshold = _validate_and_unpack(args)
     response, content_length = _stream_text_to_speech_synthesis(
         text=text, speaker=speaker, stop_threshold=stop_threshold)
-    headers = {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-        'Content-Length': content_length
-    }
+    headers = NO_CACHE_HEADERS.copy()
+    headers['Content-Length'] = content_length
     return Response(response(), headers=headers, mimetype='audio/wav')
 
 

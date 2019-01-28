@@ -9,10 +9,10 @@
 
 <body>
   <div id="title">
-    <h1>Speech API</h1>
+    <h1>Speech API Demo</h1>
   </div>
   <div id="metadata">
-    <input placeholder="Security token"></input>
+    <input placeholder="API Key"></input>
     <select id="speaker">
       <option selected disabled>Select Speaker</option>
       <option value="0">Judy Bieber</option>
@@ -26,15 +26,10 @@
     <textarea placeholder="Your Script"></textarea>
     <button>Play</button>
   </div>
-  <div id="audio">
-    <audio controls></audio>
-    <div class="buffered">
-      <p></p>
-    </div>
-    <div class="duration">
-      <p></p>
-    </div>
+  <div id="error">
+    <p></p>
   </div>
+  <audio controls></audio>
   <script src="script.js"></script>
 </body>
 
