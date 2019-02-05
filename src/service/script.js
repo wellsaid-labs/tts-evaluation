@@ -21,20 +21,21 @@ document.addEventListener('DOMContentLoaded', function (_) {
      */
     const speakerElement = speakerSelect.options[speakerSelect.selectedIndex];
     const textSubmitted = textarea.value.trim();
-    const parameterDictionary = {
+    const data = {
       speaker_id: parseInt(speakerElement.value),
-      text: encodeURIComponent(textSubmitted),
+      text: textSubmitted,
       api_key: apiKeyInput.value.trim(),
     }
-    validateParameters(parameterDictionary);
-
-    const parameterString = Object.keys(parameterDictionary)
-      .map(key => key + '=' + parameterDictionary[key])
-      .join('&');
+    validateParameters(data);
 
     // Check the stream input is valid
-    const getInputValidatedURL = `${endpoint}/text_to_speech/input_validated?${parameterString}`;
-    const response = await fetch(getInputValidatedURL);
+    const response = await fetch(`${endpoint}/text_to_speech/input_validated`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
     if (!response.ok) {
       throw (await response.json()).message;
     }
@@ -58,11 +59,11 @@ document.addEventListener('DOMContentLoaded', function (_) {
       // TODO: Use the reject parameter and resolve if loadstart does not work.
       // Start stream
       let startTime = new Date().getTime();
-      const streamURL = `${endpoint}/text_to_speech/stream?${parameterString}`;
       const request = new XMLHttpRequest();
 
       // Make request for stream
-      request.open('GET', streamURL);
+      request.open('POST', `${endpoint}/text_to_speech/stream`);
+      request.setRequestHeader('Content-Type', 'application/json');
       request.responseType = 'blob';
       request.addEventListener('loadstart', resolve);
       request.addEventListener('progress', (event) => {
@@ -96,7 +97,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
           sectionElement.querySelector('.progress p').textContent = message;
         }
       });
-      request.send();
+      request.send(JSON.stringify(data));
     });
   }
 

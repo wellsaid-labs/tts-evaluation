@@ -58,13 +58,15 @@ class Pod {
     return 'Running';
   }
 
-  static isReady(host, port) {
+  static isReady(host, port, timeout = 1000) {
     /**
      * Send a HTTP request to work, ensuring it's ready for more requests.
+     *
+     * @param {number} timeout Timeout for `http.request`.
      */
     return new Promise((resolve, _) => {
       console.log(`Pod.isReady: Requesting readiness from ${host}`);
-      http
+      const request = http
         .request({
           host: host,
           port: port,
@@ -72,14 +74,15 @@ class Pod {
           method: 'GET',
           headers: {
             'Connection': 'keep-alive',
-          }
+          },
+          timeout: timeout
         }, (response) => {
           resolve(response.statusCode == 200);
         })
         .on('error', (error) => {
           console.error(`Pod.isReady Error: ${error.message}`);
           resolve(false);
-        }).end();
+        }).on('timeout', () => request.abort()).end();
     });
   }
 
@@ -112,6 +115,7 @@ class Pod {
       throw `Pod.reserve Error: Pod ${this.name} is reserved, it cannot be reserved again.`
     }
 
+    console.log(`Reserving pod ${this.name}.`);
     this.freeSince = undefined;
     return this;
   }
@@ -451,7 +455,7 @@ APP.get('/healthy', (_, response) => {
   response.send('ok');
 });
 
-APP.get('/api/*', async (request, response, next) => {
+APP.all('/api/*', async (request, response, next) => {
   console.log(`/api/*: Got request.`);
   let pod;
   try {

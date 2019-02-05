@@ -162,6 +162,8 @@ def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_s
         (callable): Callable that returns a generator incrementally returning a WAV file.
         (int): Number of bytes to be returned in total by the generator.
     """
+    logger.info('Requested stream conditioned on: "%s", "%s" and "%s".', speaker, stop_threshold,
+                text)
     signal_model, spectrogram_model, text_encoder, speaker_encoder = load_checkpoints()
 
     # Compute spectrogram
@@ -180,8 +182,12 @@ def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_s
     padding = signal_model.conditional_features_upsample.min_padding
     half_padding = int(padding / 2)
 
+    logger.info('Generating spectrogram.')
+
     with torch.no_grad():
-        spectrogram = spectrogram_model(text, speaker, **kwargs)[1]
+        spectrogram = spectrogram_model(text, speaker, use_tqdm=True, **kwargs)[1]
+
+    logger.info('Generated spectrogram of shape %s.', spectrogram.shape)
 
     num_frames = spectrogram.shape[0]  # [num_frames, num_tokens]
     num_samples = scale_factor * num_frames
