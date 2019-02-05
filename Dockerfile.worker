@@ -38,4 +38,4 @@ EXPOSE 8000
 # https://stackoverflow.com/questions/35414479/docker-ports-are-not-exposed
 
 # Increased timeout to 3600 which is an hour due to the nature of this API.
-CMD ["/venv/bin/gunicorn", "src.service.serve:app", "--bind=0.0.0.0:8000", "--timeout=3600"]
+CMD ["/venv/bin/gunicorn", "src.service.worker:app", "--bind=0.0.0.0:8000", "--timeout=3600", "--keep-alive=300"]

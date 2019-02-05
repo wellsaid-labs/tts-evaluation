@@ -20,7 +20,8 @@ def test_build_wav_header():
     file_ = io.BytesIO()
     wavfile.write(file_, sample_rate, np.int16([]))
     expected_header = file_.getvalue()
-    wav_header, _ = build_wav_header(0, sample_rate)
+    wav_header, header_length = build_wav_header(0, sample_rate)
+    assert len(wav_header) == header_length
     assert expected_header == wav_header
 
 

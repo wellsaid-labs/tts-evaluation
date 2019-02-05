@@ -1,8 +1,9 @@
 body {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   flex-direction: column;
+  padding: 16px;
 }
 
 input,
@@ -15,9 +16,17 @@ h1 {
   font-size: 16px;
 }
 
+b {
+  font-weight: bold;
+}
+
 body>div {
-  margin: 16px;
+  margin: 8px;
   font-size: 16px;
+}
+
+#title {
+  margin: 48px;
 }
 
 #title>h1 {
@@ -88,6 +97,9 @@ body>div {
   border: 1px solid #EEEEEE;
   border-radius: 8px;
   outline: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 #textarea>button:hover {
@@ -104,4 +116,71 @@ body>div {
 #error {
   color: #B71C1C;
   display: None;
+}
+
+section {
+  margin-bottom: 24px;
+  width: 520px;
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #BDBDBD;
+  height: 54px;
+  overflow: hidden;
+}
+
+section>div:first-child {
+  width: 210px;
+  word-break: break-word;
+  overflow: hidden;
+}
+
+section>div {
+  position: relative;
+}
+
+section>div>div {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  border-radius: 32px;
+  background-color: #EFF1F2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+section>div:first-child>p:first-child {
+  margin-bottom: 8px;
+}
+
+section>p {
+  margin-bottom: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#clips {
+  margin-top: 32px
+}
+
+.loader {
+  border: 3px solid white;
+  border-top: 3px solid #9E9E9E;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }

@@ -54,7 +54,6 @@ from flask import Flask
 from flask import jsonify
 from flask import request
 from flask import Response
-from flask import send_from_directory
 
 import torch
 
@@ -64,7 +63,6 @@ from src.audio import combine_signal
 from src.datasets.constants import Speaker
 from src.hparams import set_hparams
 from src.utils import Checkpoint
-from src.utils import ROOT_PATH
 from src.utils import set_basic_logging_config
 
 app = Flask(__name__)
@@ -116,6 +114,10 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
     return signal_model, spectrogram_model, text_encoder, speaker_encoder
 
 
+# Cache the models
+load_checkpoints()
+
+
 class InvalidUsage(Exception):
     """
     Inspired by http://flask.pocoo.org/docs/1.0/patterns/apierrors/
@@ -145,26 +147,6 @@ def handle_invalid_usage(error):
     response = jsonify(error.to_dict())
     response.status_code = error.status_code
     return response
-
-
-@app.route('/script.js', methods=['GET'])
-def send_script_js():
-    return send_from_directory(str(ROOT_PATH / 'src' / 'service'), 'script.js')
-
-
-@app.route('/', methods=['GET'])
-def send_index_html():
-    return send_from_directory(str(ROOT_PATH / 'src' / 'service'), 'index.html')
-
-
-@app.route('/reset.css', methods=['GET'])
-def send_reset_css():
-    return send_from_directory(str(ROOT_PATH / 'src' / 'service'), 'reset.css')
-
-
-@app.route('/styles.css', methods=['GET'])
-def send_styles_css():
-    return send_from_directory(str(ROOT_PATH / 'src' / 'service'), 'styles.css')
 
 
 def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_size=20):
@@ -302,6 +284,11 @@ def _validate_and_unpack(args, max_characters=1000, num_api_key_characters=32):
 
 
 # NOTE: The route `/api/speech_synthesis/v1/` standads for "speech synthesis api v1"
+
+
+@app.route('/healthy', methods=['GET'])
+def healthy():
+    return 'ok'
 
 
 @app.route('/api/speech_synthesis/v1/text_to_speech/input_validated', methods=['GET', 'POST'])

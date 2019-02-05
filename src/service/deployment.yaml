@@ -1,0 +1,91 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    run: speech-api
+  name: speech-api
+  namespace: default
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      run: speech-api
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        run: speech-api
+    spec:
+      containers:
+        - name: speech-api
+          env:
+            - name: AUTOSCALE_LOOP # Time between deciding to scale
+              value: '5000' # 5 seconds in milliseconds
+            - name: AUTOSCALE_DOWNSCALE_DELAY # Minimum time a pod is online, preventing thrashing.
+              value: '1800000' # 30 minutes in milliseconds
+            - name: WORKER_POD_IMAGE
+              value: gcr.io/mythical-runner-203817/speech-api-worker:v1
+            - name: WORKER_POD_EXPOSED_PORT # Port master communicates with its workers on
+              value: '8000'
+            - name: WORKER_POD_PREFIX
+              value: speech-api-worker
+            - name: INITIAL_WORKER_PODS
+              value: '2'
+            - name: EXTRA_WORKER_PODS # Percentage of extra additional pods that are unused.
+              value: '0.5'
+            - name: API_KEY_SUFFIX # Pattern for discovering api keys
+              value: _SPEECH_API_KEY
+            - name: MATT_HOCKING_SPEECH_API_KEY # NOTE: Do not forget to create these secrets.
+              valueFrom:
+                secretKeyRef:
+                  key: matt_hocking_api_key
+                  name: speech-api-key
+            - name: MICHAEL_PETROCHUK_SPEECH_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: michael_petrochuk_api_key
+                  name: speech-api-key
+            - name: WEB_BACKEND_SPEECH_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: web_backend_api_key
+                  name: speech-api-key
+            - name: WEB_BACKEND_SPEECH_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: web_backend_api_key
+                  name: speech-api-key
+            - name: THIS_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: THIS_POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: THIS_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          image: gcr.io/mythical-runner-203817/speech-api:v1
+          imagePullPolicy: Always # Remove
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          resources: {}
+          readinessProbe:
+            httpGet:
+              path: /healthy
+              port: 8000
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+            periodSeconds: 15
+      restartPolicy: Always
+      securityContext: {}
+

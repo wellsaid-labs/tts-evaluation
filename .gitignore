@@ -76,3 +76,6 @@ tmp/
 
 # Default path for evaluation files
 results/
+
+# Local node modules
+node_modules/

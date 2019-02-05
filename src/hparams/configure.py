@@ -78,7 +78,7 @@ def _set_audio_processing():
             },
             'librosa.output.write_wav.sr': sample_rate})
     except ImportError:
-        logger.info('Ignoring optional librosa configurations.')
+        logger.info('Ignoring optional `librosa` configurations.')
 
     try:
         import IPython

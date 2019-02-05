@@ -70,3 +70,6 @@ tmp/
 # Git patches used by comet.ml reproduce
 *.patch
 *.zip
+
+# Local node modules
+node_modules/

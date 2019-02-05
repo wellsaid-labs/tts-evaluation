@@ -329,14 +329,15 @@ def build_wav_header(num_frames,
     """
     # Inspired by: https://github.com/python/cpython/blob/master/Lib/wave.py
     # Inspired by: https://github.com/scipy/scipy/blob/v1.2.0/scipy/io/wavfile.py#L284-L396
+    header_length = 36
     data_length = num_frames * num_channels * sample_width
-    file_size = 36 + data_length
+    file_size = header_length + data_length + 8
     bytes_per_second = num_channels * frame_rate * sample_width
     block_align = num_channels * sample_width
     bit_depth = sample_width * 8
 
     header = b'RIFF'  # RIFF identifier
-    header += struct.pack('<I', file_size)  # RIFF chunk length
+    header += struct.pack('<I', header_length + data_length)  # RIFF chunk length
     header += b'WAVE'  # RIFF type
     header += b'fmt '  # Format chunk identifier
     header += struct.pack('<I', 16)  # Format chunk length
