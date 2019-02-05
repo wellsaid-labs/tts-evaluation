@@ -72,10 +72,10 @@ document.addEventListener('DOMContentLoaded', function (_) {
       });
       request.addEventListener('error', (error) => {
         console.error(error);
-        sectionElement.querySelector('.progress p').textContent = `Unknown error, please retry.`;
+        sectionElement.querySelector('.progress p').textContent = `Network error.`;
       });
       request.addEventListener('timeout', () => {
-        sectionElement.querySelector('.progress p').textContent = `Request timedout.`;
+        sectionElement.querySelector('.progress p').textContent = `Request timed out.`;
       });
       request.addEventListener('abort', () => {
         sectionElement.querySelector('.progress p').textContent = `Request aborted.`;
@@ -86,7 +86,8 @@ document.addEventListener('DOMContentLoaded', function (_) {
           sectionElement.querySelector('audio').src = window.URL.createObjectURL(request.response);
           sectionElement.querySelector('audio').load();
         } else {
-          sectionElement.querySelector('.progress p').textContent = `${request.status} error.`;
+          const message = `Status code ${request.status}.`;
+          sectionElement.querySelector('.progress p').textContent = message;
         }
       });
       request.send();

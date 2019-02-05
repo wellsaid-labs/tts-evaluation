@@ -67,6 +67,7 @@ class Pod {
      * Send a HTTP request to work, ensuring it's ready for more requests.
      */
     return new Promise((resolve, _) => {
+      console.log(`Pod.isReady: Requesting readiness from ${host}`);
       http
         .request({
           host: host,
@@ -82,7 +83,7 @@ class Pod {
         .on('error', (error) => {
           console.error(`Pod.isReady Error: ${error.message}`);
           resolve(false);
-        });
+        }).end();
     });
   }
 
@@ -189,10 +190,10 @@ class Pod {
         'kind': 'Pod',
         'metadata': {
           'name': name,
-          'labels': {
+          'labels': { // Default setting created by GKE tooling
             'run': process.env.WORKER_POD_PREFIX,
           },
-          'ownerReferences': [{
+          'ownerReferences': [{ // Ensure this pod is garbage collected if this pod dies.
             'apiVersion': 'v1',
             'blockOwnerDeletion': true,
             'controller': true,
@@ -205,7 +206,6 @@ class Pod {
           'restartPolicy': 'Never',
           'containers': [{
             'image': process.env.WORKER_POD_IMAGE,
-            'imagePullPolicy': 'Always',
             'name': process.env.WORKER_POD_PREFIX,
             'env': apiKeys,
             'resources': {
@@ -223,15 +223,15 @@ class Pod {
               'protocol': 'TCP'
             }]
           }],
-          'terminationGracePeriodSeconds': 30,
-          'securityContext': {}
+          'terminationGracePeriodSeconds': 30, // Default setting created by GKE tooling
+          'securityContext': {} // Default setting created by GKE tooling
         }
       }
     }
     let info = await (await getClient()).pods.post(manifest);
     console.log(`Pod.build: Pod ${name} created.`);
 
-    async function isReady() {
+    await retry(async () => { // While Pod is not running or not ready, keep retrying.
       /**
        * Check if `Pod` is ready; otherwise, throw an error.
        */
@@ -246,10 +246,11 @@ class Pod {
       } else {
         throw `Pod.build Error: Pod is not running, recieved:\n${JSON.stringify(info.body.status)}`;
       }
-    }
-
-    // While Pod is not running or not ready, keep retrying.
-    await retry(isReady, statusRetries, statusLoop, false);
+    }, {
+      retries: statusRetries,
+      delay: statusLoop,
+      exponentialBackoff: false
+    });
 
     console.log(`Pod.build: Pod ${name} is ready to recieve traffic at ${info.body.status.podIP}`);
     const pod = new Pod(name, info.body.status.podIP, podPort);
@@ -267,7 +268,11 @@ function sleep(milliseconds) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
-async function retry(toTry, retries = 3, delay = 100, exponentialBackoff = true) {
+async function retry(toTry, {
+  retries = 3,
+  delay = 100,
+  exponentialBackoff = true
+} = {}) {
   /**
    * Retries a function mulitple times.
    *
@@ -355,12 +360,13 @@ async function async_filter(iterator, func) {
       // Destroy pods
       await Promise.all(toDestory.map((pod) => pod.destroy()));
     } else if (PODS.length < numDesired) {
+      // Create additional pods
       const numPodsToCreate = numDesired - PODS.length;
       console.log(`autoscaleJob: Creating ${numPodsToCreate} pods.`);
       try {
         await Promise.all(Array.from({
           length: numPodsToCreate
-        }, () => Pod.build));
+        }, () => Pod.build()));
       } catch (error) {
         console.error(`autoscaleJob: Unable to create pods due to error: ${error}`);
       }
@@ -425,6 +431,12 @@ APP.get('/script.js', (_, response) => {
 
 APP.get('/', (_, response) => {
   response.sendFile('index.html', {
+    root: __dirname
+  });
+});
+
+APP.get('/favicon.ico', (_, response) => {
+  response.sendFile('favicon.ico', {
     root: __dirname
   });
 });
