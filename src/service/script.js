@@ -47,27 +47,33 @@ document.addEventListener('DOMContentLoaded', function (_) {
                                 </div>
                                 <div>
                                   <div class="progress">
-                                    <p>0% Generated</p>
+                                    <p>Queuing</p>
                                   </div>
                                   <audio controls></audio>
                                 </div>`;
     clipsElement.prepend(sectionElement);
     clipNumber += 1;
 
-    return new Promise(function (resolve, reject) {
+    return new Promise(function (resolve, _) {
       // TODO: Use the reject parameter and resolve if loadstart does not work.
       // Start stream
+      let startTime = new Date().getTime();
       const streamURL = `${endpoint}/text_to_speech/stream?${parameterString}`;
       const request = new XMLHttpRequest();
 
       // Make request for stream
       request.open('GET', streamURL);
       request.responseType = 'blob';
+      request.addEventListener('loadstart', resolve);
       request.addEventListener('progress', (event) => {
         if (event.lengthComputable) {
-          resolve();
-          const percentage = Math.round((event.loaded / event.total) * 100);
-          sectionElement.querySelector('.progress p').textContent = `${percentage}% Generated`;
+          let percentage = event.loaded / event.total;
+          const now = new Date().getTime();
+          let estimatedTimeLeft = ((now - startTime) / percentage) * (1 - percentage);
+          estimatedTimeLeft = secondsToString(estimatedTimeLeft / 1000);
+          percentage = Math.round(percentage * 100); // Decimals to percent
+          const message = `${Math.round(percentage)}% Generated - ${estimatedTimeLeft} Left`
+          sectionElement.querySelector('.progress p').textContent = message;
         }
       });
       request.addEventListener('error', (error) => {
@@ -80,7 +86,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
       request.addEventListener('abort', () => {
         sectionElement.querySelector('.progress p').textContent = `Request aborted.`;
       });
-      request.addEventListener('load', (error) => {
+      request.addEventListener('load', () => {
         if (request.status === 200) {
           sectionElement.querySelector('.progress').style.display = 'none';
           sectionElement.querySelector('audio').src = window.URL.createObjectURL(request.response);
@@ -153,4 +159,23 @@ document.addEventListener('DOMContentLoaded', function (_) {
     isGenerateButtonDisabled = false;
     generateButton.innerHTML = 'Generate';
   };
+
+  function secondsToString(seconds) {
+    seconds = Math.round(seconds);
+    const hours = Math.floor(seconds / (60 * 60));
+
+    const divisor_for_minutes = seconds % (60 * 60);
+    const minutes = Math.floor(divisor_for_minutes / 60);
+
+    const divisor_for_seconds = divisor_for_minutes % 60;
+    seconds = Math.ceil(divisor_for_seconds);
+
+    if (hours > 0) {
+      return `${hours}hr`;
+    } else if (minutes > 0) {
+      return `${minutes}m`;
+    } else {
+      return `${seconds}s`;
+    }
+  }
 });

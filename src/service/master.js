@@ -58,10 +58,6 @@ class Pod {
     return 'Running';
   }
 
-  static get STATUS_PENDING() {
-    return 'Pending';
-  }
-
   static isReady(host, port) {
     /**
      * Send a HTTP request to work, ensuring it's ready for more requests.
@@ -109,6 +105,8 @@ class Pod {
      * Reserve `this` for a job.
      *
      * TODO: Have a leak prevention mechanism that cleans up pods reserved for more than an hour.
+     * This can be implemented with `isReady` due to synchronous nature of the workers; However,
+     * we'd need to timeout / abort mechanism.
      */
     if (this.isReserved()) {
       throw `Pod.reserve Error: Pod ${this.name} is reserved, it cannot be reserved again.`
@@ -144,13 +142,13 @@ class Pod {
       throw `Pod.destroy Error: Pod ${this.name} is reserved, it cannot be destroyed.`
     }
 
-    console.log(`Pod.destroy: Destorying Pod ${this.name}.`);
+    console.log(`Pod.destroy: Deleting Pod ${this.name}.`);
     PODS = PODS.filter(pod => pod !== this);
     try {
       await (await getClient()).pods(this.name).delete();
-      console.log(`Pod.destroy: Destoryed Pod ${this.name}.`);
+      console.log(`Pod.destroy: Deleted Pod ${this.name}.`);
     } catch (error) {
-      console.log(`Pod.destroy: Failed to destroy Pod ${this.name} due to error: ${error}`);
+      console.log(`Pod.destroy: Failed to delete Pod ${this.name} due to error: ${error}`);
     }
   }
 
@@ -231,26 +229,33 @@ class Pod {
     let info = await (await getClient()).pods.post(manifest);
     console.log(`Pod.build: Pod ${name} created.`);
 
-    await retry(async () => { // While Pod is not running or not ready, keep retrying.
-      /**
-       * Check if `Pod` is ready; otherwise, throw an error.
-       */
-      info = await (await getClient()).pods(name).get();
-      if (![Pod.STATUS_PENDING, Pod.STATUS_RUNNING].includes(info.body.status.phase)) {
-        throw `Pod.build Error: Unknown status, recieved:\n${JSON.stringify(info.body.status)}`;
-      }
-      if (info.body.status.phase == Pod.STATUS_RUNNING) {
-        if (!(await Pod.isReady(info.body.status.podIP, podPort))) {
-          throw 'Pod.build Error: Pod is not ready to recieve work.';
+    try {
+      await retry(async () => { // While Pod is not running or not ready, keep retrying.
+        /**
+         * Check if `Pod` is ready; otherwise, throw an error.
+         */
+        info = await (await getClient()).pods(name).get();
+        if (info.body.status.phase == Pod.STATUS_RUNNING) {
+          if (!(await Pod.isReady(info.body.status.podIP, podPort))) {
+            throw 'Pod.build Error: Pod is not ready to recieve work.';
+          }
+        } else {
+          throw `Pod.build Error: Not running, recieved:\n${JSON.stringify(info.body.status)}`;
         }
-      } else {
-        throw `Pod.build Error: Pod is not running, recieved:\n${JSON.stringify(info.body.status)}`;
+      }, {
+        retries: statusRetries,
+        delay: statusLoop,
+        exponentialBackoff: false
+      });
+    } catch (error) {
+      try {
+        console.warn(`Pod.build Warning: Unable to start, deleting Pod ${name}.`);
+        await (await getClient()).pods(name).delete();
+      } catch (error) {
+        console.error(`Pod.build Error: Failed to delete Pod ${name} due to error: ${error}`);
       }
-    }, {
-      retries: statusRetries,
-      delay: statusLoop,
-      exponentialBackoff: false
-    });
+      throw error;
+    }
 
     console.log(`Pod.build: Pod ${name} is ready to recieve traffic at ${info.body.status.podIP}`);
     const pod = new Pod(name, info.body.status.podIP, podPort);
@@ -398,6 +403,7 @@ async function getPodForWork() {
         pod.release();
       }
     }
+    // TODO: Consider if `Pod.build` is running too long to revist getting other `available` pods.
     console.log(`_getPodForWork: Created an extra Pod to fufill demand.`);
     return await Pod.build({
       reserved: true
@@ -463,7 +469,8 @@ APP.get('/api/*', async (request, response, next) => {
       method: request.method,
       headers: request.headers,
     }
-    console.log(`/api/*: Sending request to ${pod.name} with headers:\n` +
+    const prefix = `/api/* [${pod.name}]: `;
+    console.log(`${prefix}Sending request with headers:\n` +
       JSON.stringify(options.headers));
     const destination = http.request(options, (stream) => {
         // Write stream back.
@@ -474,11 +481,11 @@ APP.get('/api/*', async (request, response, next) => {
       })
       .on('error', (error) => {
         pod.release();
-        next(`/api/* [${pod.name}]: \`http.request\` emitted error event: ${error}`);
+        next(`${prefix}\`http.request\` emitted error event: ${error}`);
       })
       .on('abort', () => {
         pod.release();
-        console.log(`/api/* [${pod.name}]: Stream emitted \'abort\' event.`);
+        console.log(`${prefix}Stream emitted 'abort' event.`);
       });
 
     function clean(message) {
@@ -491,17 +498,19 @@ APP.get('/api/*', async (request, response, next) => {
 
     // Clean up after responding
     response
-      .on('close', () => clean(`/api/* [${pod.name}]: Response emitted \'close\' event.`))
-      .on('finish', () => clean(`/api/* [${pod.name}]: Response emitted \'finish\' event.`));
+      .on('close', () => clean(`${prefix}Response emitted 'close' event.`))
+      .on('finish', () => clean(`${prefix}Response emitted 'finish' event.`))
+      .on('error', (error) => clean(`${prefix}Response emitted 'error' (${error}) event.`));
 
     // Send data to `http.request`
     request
       .on('data', chunk => destination.write(chunk))
-      .on('end', () => destination.end());
+      .on('end', () => destination.end())
+      .on('error', () => clean(`${prefix}Request emitted 'error' (${error}) event.`));
 
   } catch (error) { // Catch and clean up after any other error
     pod.release();
-    next(`/api/* [${pod.name}]: Error: ${error}`);
+    next(`${prefix}Error: ${error}`);
   }
 });
 

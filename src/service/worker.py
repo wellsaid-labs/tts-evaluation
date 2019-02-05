@@ -80,9 +80,9 @@ API_KEYS = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
 
 # TODO: Upload the models to a bucket online, so that they can be downloaded anywhere at anytime.
 SPECTROGRAM_MODEL_CHECKPOINT_PATH = pathlib.Path(
-    'experiments/spectrogram_model/jan_06/20:16:43/checkpoints/1547107190/step_203750.pt')
+    'experiments/spectrogram_model/jan_12/00:51:22/checkpoints/1548398998/step_213156.pt')
 SIGNAL_MODEL_CHECKPOINT_PATH = pathlib.Path(
-    'experiments/signal_model/jan_11/20:51:46/checkpoints/1547731761/step_1015568.pt')
+    'experiments/signal_model/jan_11/20:51:46/checkpoints/1549309174/step_3775828.pt')
 
 assert SPECTROGRAM_MODEL_CHECKPOINT_PATH.is_file(), 'Spectrogram model checkpoint cannot be found.'
 assert SIGNAL_MODEL_CHECKPOINT_PATH.is_file(), 'Signal model checkpoint cannot be found.'
