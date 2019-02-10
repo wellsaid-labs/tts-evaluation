@@ -83,4 +83,3 @@ and test your changes to WellSaidLabs.
 ## Authors
 
 * Michael Petrochuk - michaelp@allenai.org
-# WellSaidLabsBenchmarks
