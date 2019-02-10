@@ -121,25 +121,36 @@ body>div {
 section {
   margin-bottom: 24px;
   width: 520px;
-  display: flex;
-  justify-content: space-between;
   padding-bottom: 24px;
   border-bottom: 1px solid #BDBDBD;
-  height: 54px;
   overflow: hidden;
 }
 
-section>div:first-child {
+section>footer>p {
+  font-size: 12px;
+  color: #616161;
+}
+
+section>main {
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  height: 58px;
+}
+
+
+section>main>div {
+  position: relative;
+}
+
+section>main>div:first-child {
   width: 210px;
   word-break: break-word;
   overflow: hidden;
 }
 
-section>div {
-  position: relative;
-}
 
-section>div>div {
+section>main>div>div {
   position: absolute;
   width: 100%;
   height: 100%;
@@ -151,16 +162,10 @@ section>div>div {
   justify-content: center;
 }
 
-section>div:first-child>p:first-child {
+section>main>div:first-child>p:first-child {
   margin-bottom: 8px;
 }
 
-section>p {
-  margin-bottom: 8px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
 
 #clips {
   margin-top: 32px

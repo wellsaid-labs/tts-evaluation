@@ -42,16 +42,21 @@ document.addEventListener('DOMContentLoaded', function (_) {
 
     // Create a UI element to recieve stream
     const sectionElement = document.createElement('section');
-    sectionElement.innerHTML = `<div>
-                                  <p><b>${clipNumber}. ${speakerElement.text}</b></p>
-                                  <p>${textSubmitted}</p>
-                                </div>
-                                <div>
-                                  <div class="progress">
-                                    <p>Queuing</p>
+    sectionElement.innerHTML = `<main>
+                                  <div>
+                                    <p><b>${clipNumber}. ${speakerElement.text}</b></p>
+                                    <p>${textSubmitted}</p>
                                   </div>
-                                  <audio controls></audio>
-                                </div>`;
+                                  <div>
+                                    <div class="progress">
+                                      <p>Queuing / Generating Spectrogram</p>
+                                    </div>
+                                    <audio controls></audio>
+                                  </div>
+                                </main>
+                                <footer>
+                                  <p></p>
+                                </footer>`;
     clipsElement.prepend(sectionElement);
     clipNumber += 1;
 
@@ -59,7 +64,9 @@ document.addEventListener('DOMContentLoaded', function (_) {
       // TODO: Use the reject parameter and resolve if loadstart does not work.
       // Start stream
       let startTime = new Date().getTime();
+      let queuingTime;
       const request = new XMLHttpRequest();
+      let hasProgress = false;
 
       // Make request for stream
       request.open('POST', `${endpoint}/text_to_speech/stream`);
@@ -68,6 +75,11 @@ document.addEventListener('DOMContentLoaded', function (_) {
       request.addEventListener('loadstart', resolve);
       request.addEventListener('progress', (event) => {
         if (event.lengthComputable) {
+          if (!hasProgress && event.loaded > 0) {
+            hasProgress = true;
+            // The server sends first WAV headers, before generating the spectrogram.
+            queuingTime = ((new Date().getTime()) - startTime) / 1000;
+          }
           let percentage = event.loaded / event.total;
           const now = new Date().getTime();
           let estimatedTimeLeft = ((now - startTime) / percentage) * (1 - percentage);
@@ -90,8 +102,26 @@ document.addEventListener('DOMContentLoaded', function (_) {
       request.addEventListener('load', () => {
         if (request.status === 200) {
           sectionElement.querySelector('.progress').style.display = 'none';
-          sectionElement.querySelector('audio').src = window.URL.createObjectURL(request.response);
-          sectionElement.querySelector('audio').load();
+          const audioElement = sectionElement.querySelector('audio');
+          const generatingTime = ((new Date().getTime()) - startTime) / 1000;
+
+          // Add statistics to the footer on `audioElement` load.
+          audioElement.addEventListener('loadedmetadata', () => {
+            // `numSamples` assumes the 16-bit audio and a 44-bit WAV header.
+            const numSamples = (request.getResponseHeader("Content-Length") - 44) / 2;
+            const generatingWaveTime = generatingTime - queuingTime;
+            const samplesPerSecond = Math.round(numSamples / generatingWaveTime);
+            sectionElement.querySelector('footer p').innerHTML = ([
+              `Audio Duration: ${Math.round(audioElement.duration * 100) / 100}s`,
+              `Generation Timer: ${Math.round(generatingTime * 100) / 100}s`,
+              `Queuing / Spectrogram Timer: ${Math.round(queuingTime * 100) / 100}s`,
+              `Waveform Timer: ${Math.round(generatingWaveTime * 100) / 100}s`,
+              `${Math.round(samplesPerSecond)} Samples Per Second`,
+            ].join('&nbsp;&nbsp;|&nbsp;&nbsp;'));
+          });
+
+          audioElement.src = window.URL.createObjectURL(request.response);
+          audioElement.load();
         } else {
           const message = `Status code ${request.status}.`;
           sectionElement.querySelector('.progress p').textContent = message;

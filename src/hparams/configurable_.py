@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 # TODO: Add 'No Config' mode preventing runtime warnings.
 # TODO: Print a warning if a hparam is being overridden, with a flag to turn the warning off.
+# TODO: Suggest in errors on how to add config / import set_config.
 
 
 class _KeyListDictionary(dict):

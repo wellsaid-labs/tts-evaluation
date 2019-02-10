@@ -1,14 +1,14 @@
 /**
  * TODO: Ensure that there are multiple copies of master running, in case of version upgrades.
  * TODO: Switch from `npm` to `yarn` for dependancy management.
- * TODO: Define Memory and CPU requirements for worker pods more precisely, they are default
- * values, at the moment.
  * TODO: Write tests for `master.js`.
  * TODO: Consider using HTTPS protocall between LoadBalancer and the container so that the API
  * Key is not sniffable?
  * TODO: Consider creating a namespace in kubernetes, it's proper practice.
  * TODO: Put a cache in front of the API frontend, ensuring it does not fail under a DDOS
  * attack.
+ * TODO: Check that `worker.py` PyTorch uses MKL, log this.
+ * TODO: Rewrite these dependancies with conda, and without pyenv or pip.
  */
 const express = require('express');
 const Client = require('kubernetes-client').Client
@@ -18,15 +18,15 @@ const bodyParser = require('body-parser');
 const http = require('http');
 
 const APP = express();
-let PODS = [];
+let PODS = []; // Add and removing pods is handled by `Pod` class.
 
 async function getClient() {
+  /**
+   * Get a `Client` in `THIS_POD_NAMESPACE` used to make requests to the Kubernetes API.
+   */
   let cache;
 
   async function makeClient() {
-    /**
-     * Get a `Client` in `THIS_POD_NAMESPACE`.
-     */
     const client = new Client({
       config: config.getInCluster(),
     });
@@ -44,11 +44,14 @@ class Pod {
      * `Pod` in `PODS` represents a worker.
      *
      * @param {string} name Name of the pod created.
+     * @param {string} ip IP address of this pod.
+     * @param {number} port An exposed port on the pod that is accepting http requests.
      */
     this.name = name;
     this.freeSince = Date.now();
     this.ip = ip;
     this.port = port;
+
     PODS.push(this);
   }
 
@@ -62,6 +65,8 @@ class Pod {
     /**
      * Send a HTTP request to work, ensuring it's ready for more requests.
      *
+     * @param {string} host Host to make HTTP request to.
+     * @param {number} port Port on host to query.
      * @param {number} timeout Timeout for `http.request`.
      */
     return new Promise((resolve, _) => {
@@ -94,8 +99,8 @@ class Pod {
     /**
      * Get if `this` is available for work.
      */
-    // If `this` is reserved then this should not make a request for readiness due to the
-    // synchronous implementation of the worker pods.
+    // If `this` is reserved then this does not make a request for readiness due to the synchronous
+    // implementation of the worker pods.
     return !this.isReserved() && (await this.isReady());
   }
 
@@ -109,7 +114,8 @@ class Pod {
      *
      * TODO: Have a leak prevention mechanism that cleans up pods reserved for more than an hour.
      * This can be implemented with `isReady` due to synchronous nature of the workers; However,
-     * we'd need to timeout / abort mechanism.
+     * we'd need to timeout / abort mechanism. A pod that `isReady` is no longer occupied with work,
+     * hence it is not reserved.
      */
     if (this.isReserved()) {
       throw `Pod.reserve Error: Pod ${this.name} is reserved, it cannot be reserved again.`
@@ -133,8 +139,8 @@ class Pod {
     /**
      * Return `true` if the `this` is no longer suitable for work.
      */
-    // If `this` is reserved then this should not make a request for readiness due to the
-    // synchronous implementation of the worker pods.
+    // If `this` is reserved then this does not make a request for readiness due to the synchronous
+    // implementation of the worker pods.
     return !this.isReserved() && !(await this.isReady());
   }
 
@@ -153,6 +159,7 @@ class Pod {
       console.log(`Pod.destroy: Deleted Pod ${this.name}.`);
     } catch (error) {
       console.log(`Pod.destroy: Failed to delete Pod ${this.name} due to error: ${error}`);
+      // TODO: Handle this scenario, try avoiding leaking a pod.
     }
   }
 
@@ -212,12 +219,12 @@ class Pod {
             'env': apiKeys,
             'resources': {
               'requests': {
-                'memory': '0.6Gi',
-                'cpu': '1000m'
+                'memory': '3Gi',
+                'cpu': '4000m'
               },
               'limits': {
-                'memory': '0.6Gi',
-                'cpu': '1000m'
+                'memory': '3Gi',
+                'cpu': '4000m'
               },
             },
             'ports': [{
@@ -297,7 +304,7 @@ async function retry(toTry, {
       const result = await toTry();
       return result;
     } catch (error) {
-      console.warn(error);
+      console.warn(`retry: Caught this error: ${error}`);
       if (i == retries - 1) {
         console.error(`retry: Reached maximum retries ${retries}, throwing error.`);
         throw error;
@@ -354,11 +361,11 @@ async function async_filter(iterator, func) {
     if (PODS.length > numDesired) {
       let toDestory = PODS.filter((pod) => !pod.isReserved());
 
-      // Get pods that exceeded `AUTOSCALE_DOWNSCALE_DELAY`.
+      // Get pods that exceeded `AUTOSCALE_DOWNSCALE_DELAY`
       const AUTOSCALE_DOWNSCALE_DELAY = parseInt(process.env.AUTOSCALE_DOWNSCALE_DELAY, 10);
       toDestory = toDestory.filter((pod) => Date.now() - pod.freeSince > AUTOSCALE_DOWNSCALE_DELAY);
 
-      // Sort by least recently used.
+      // Sort by least recently used
       toDestory = toDestory.sort((a, b) => a.freeSince - b.freeSince);
 
       // Select pods to destroy

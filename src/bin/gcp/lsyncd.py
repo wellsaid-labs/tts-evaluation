@@ -1,6 +1,7 @@
 """ This executable file runs parameterized lsyncd (https://github.com/axkibe/lsyncd).
 
 NOTE: This script uses ``sudo``, be prepared to type in your password.
+NOTE: `rsync` must be installed on the remote machine for this to work.
 
 Example:
 
