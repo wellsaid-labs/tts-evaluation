@@ -88,7 +88,7 @@ def _set_audio_processing():
         logger.info('Ignoring optional `IPython` configurations.')
 
     try:
-        import scipy
+        import scipy.io.wavfile
         scipy.io.wavfile.write = configurable(scipy.io.wavfile.write)
         add_config({'scipy.io.wavfile.write.rate': sample_rate})
     except ImportError:

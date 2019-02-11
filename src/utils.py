@@ -17,7 +17,7 @@ import subprocess
 import sys
 import time
 
-from third_party.data_loader import DataLoader
+from torch.utils.data import DataLoader
 from torch.multiprocessing import cpu_count
 from torch.utils import data
 from torch.utils.data.sampler import Sampler
@@ -431,7 +431,6 @@ class Checkpoint():
         if path is None:
             return None
 
-        torch.nn.Module.dump_patches = True  # NOTE: Dump code that's changed since the checkpoint.
         instance = load(str(path), device=device)
         setattr(instance, 'path', Path(path))
         instance.flatten_parameters(instance.model)

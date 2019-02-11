@@ -189,7 +189,7 @@ def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_s
 
     logger.info('Generated spectrogram of shape %s.', spectrogram.shape)
 
-    num_frames = spectrogram.shape[0]  # [num_frames, num_tokens]
+    num_frames = spectrogram.shape[0]  # [num_frames, num_channels]
     num_samples = scale_factor * num_frames
     spectrogram = torch.nn.functional.pad(spectrogram, (0, 0, half_padding, half_padding))
     wav_header, wav_file_size = build_wav_header(num_samples)

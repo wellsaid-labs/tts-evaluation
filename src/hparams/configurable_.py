@@ -189,7 +189,7 @@ def _is_possible_module(module_path):
     """
     try:
         return importlib.util.find_spec(module_path) is not None
-    except AttributeError:
+    except (ModuleNotFoundError, AttributeError):
         return False
 
 

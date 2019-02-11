@@ -19,8 +19,6 @@ RUN apt-get update \
   https://download.pytorch.org/whl/cpu/torch-1.0.0-cp36-cp36m-linux_x86_64.whl \
   python-dotenv
 
-RUN ls /usr/local
-
 FROM base
 
 # NOTE: COPY experiment folder fist, so that this layer is reused the most.

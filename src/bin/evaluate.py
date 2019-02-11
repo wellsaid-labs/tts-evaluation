@@ -18,7 +18,6 @@ import comet_ml  # noqa
 from torchnlp.text_encoders.reserved_tokens import RESERVED_ITOS
 
 import torch
-import numpy
 import scipy
 
 from src.audio import combine_signal
@@ -31,10 +30,7 @@ from src.hparams import ConfiguredArg
 from src.hparams import log_config
 from src.hparams import set_hparams
 from src.utils import Checkpoint
-from src.utils import chunks
-from src.utils import collate_tensors
 from src.utils import evaluate
-from src.utils import pad_batch
 from src.utils import RandomSampler
 from src.utils import record_stream
 from src.utils import tensors_to
@@ -123,7 +119,6 @@ def main(dataset=ConfiguredArg(),
          speaker=None,
          balanced=False,
          spectrogram_model_batch_size=1,
-         signal_model_batch_size=1,
          signal_model_device=torch.device('cpu')):
     """ Generate random samples of signal model to evaluate.
 
@@ -144,8 +139,6 @@ def main(dataset=ConfiguredArg(),
         balanced (bool, optional): If ``True``, sample from a dataset with equal speaker
             distribution. Note, that this operation shuffles the rows.
         spectrogram_model_batch_size (int, optional)
-        signal_model_batch_size (int, optional): The batch size for the signal model. This is lower
-            than during training because we are no longer using small slices.
         signal_model_device (torch.device, optional): Device used for signal model inference, note
             that on CPU the signal model does not run out of memory.
     """
@@ -198,29 +191,19 @@ def main(dataset=ConfiguredArg(),
     examples = list(zip(examples, indicies))
     examples = sorted(examples, key=lambda e: _get_length_partial(e[0]), reverse=True)
 
-    for chunk in chunks(examples, signal_model_batch_size):
-        examples_chunk, indicies_chunk = zip(*chunk)
-        batch = collate_tensors(examples_chunk, stack_tensors=partial(pad_batch, padding_index=0))
-        batch = tensors_to(batch, device=signal_model_device, non_blocking=True)
-        spectrogram = (batch.predicted_spectrogram if use_predicted else batch.spectrogram)
-        spectrogram, spectrogram_lengths = spectrogram
-
-        logger.info('Predicting signal from a batch of %d, %d frame spectrograms...',
-                    spectrogram.shape[0], spectrogram.shape[1])
+    for example, index in examples:
+        example = tensors_to(example, device=signal_model_device, non_blocking=True)
+        spectrogram = (example.predicted_spectrogram if use_predicted else example.spectrogram)
+        logger.info('Predicting signal a %s spectrogram.', spectrogram.shape)
         with evaluate(signal_model_inferrer):
-            # [batch_size, local_length, local_features_size] → [batch_size, signal_length]
+            # [local_length, local_features_size] → [signal_length]
             predicted_coarse, predicted_fine, _ = signal_model_inferrer(spectrogram)
             predicted_signal = combine_signal(predicted_coarse, predicted_fine, return_int=True)
             predicted_signal = predicted_signal.numpy()
 
-        # Split and save
-        factor = int(predicted_signal.shape[1] / spectrogram.shape[1])
-        splits = numpy.split(predicted_signal, signal_model_batch_size)
-        iterator = zip(indicies_chunk, examples_chunk, splits, spectrogram_lengths)
-        for i, example, predicted_waveform, spectrogram_length in iterator:
-            predicted_waveform = predicted_waveform[0, :spectrogram_length * factor]
-            _save(destination, ['index_%d' % i, 'wave_rnn'], example.speaker, predicted_waveform)
-            logger.info('-' * 100)
+        # Save
+        _save(destination, ['index_' + index, 'wave_rnn'], example.speaker, predicted_signal)
+        logger.info('-' * 100)
 
 
 if __name__ == '__main__':  # pragma: no cover

@@ -23,6 +23,10 @@ Refer to the above guides in case there are missing details in the below steps.
    docker push gcr.io/${PROJECT_ID}/speech-api:v1.17
    docker push gcr.io/${PROJECT_ID}/speech-api-worker:v1.17
    ```
+1. Test the build:
+   ```bash
+   docker run --rm -p 8000:8000 gcr.io/${PROJECT_ID}/speech-api-worker:v1.17
+   ```
 1. Update the Kubernetes deployment manifest (e.g. `src/service/deployment.yaml`) with the updated
    images.
 1. Update the Kubernetes deployment with:
