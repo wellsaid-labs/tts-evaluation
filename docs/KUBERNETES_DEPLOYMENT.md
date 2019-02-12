@@ -5,7 +5,7 @@
 These steps go over deploying the service at `src/service/` to GKE. This service creates a scalable
 endpoint to run our TTS model.
 
-## Updated Build
+## Update Container
 
 These deployment steps are loosely based on these guides below:
 - https://cloud.google.com/kubernetes-engine/docs/tutorials/hello-app
@@ -33,6 +33,18 @@ Refer to the above guides in case there are missing details in the below steps.
    ```bash
    kubectl apply -f src/service/deployment.yaml
    ```
+
+## Update Container from GCP Machine
+
+Similar to the above, except:
+
+- Docker will need to be installed like so:
+  https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04
+- For authentication reasons, the build should be pushed with the `gcloud` tool:
+  ```bash
+  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v1.04
+  ```
+  Learn more here: https://cloud.google.com/container-registry/docs/advanced-authentication
 
 ## New Cluster
 

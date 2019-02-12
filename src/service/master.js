@@ -219,12 +219,12 @@ class Pod {
             'env': apiKeys,
             'resources': {
               'requests': {
-                'memory': '3Gi',
-                'cpu': '4000m'
+                'memory': '7Gi',
+                'cpu': '8000m'
               },
               'limits': {
-                'memory': '3Gi',
-                'cpu': '4000m'
+                'memory': '7Gi',
+                'cpu': '8000m'
               },
             },
             'ports': [{

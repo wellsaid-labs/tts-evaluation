@@ -114,6 +114,13 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
     return signal_model, spectrogram_model, text_encoder, speaker_encoder
 
 
+# Set based off the resources dedicated to this worker in `master.js`
+torch.set_num_threads(4)
+
+logger.info('PyTorch version: %s', torch.__version__)
+logger.info('Found MKL: %s', torch.backends.mkl.is_available())
+logger.info('Threads: %s', torch.get_num_threads())
+
 # Cache the models
 load_checkpoints()
 

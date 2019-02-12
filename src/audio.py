@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 try:
     import librosa
 except ImportError:
-    logger.info('Skipping optional librosa import for now.')
+    logger.info('Skipping optional `librosa` import for now.')
 
 
 @configurable
