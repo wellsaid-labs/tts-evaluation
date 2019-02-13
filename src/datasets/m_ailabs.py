@@ -111,6 +111,9 @@ def _processing_row(row,
         logger.warning('Text is absent, skipping: %s', audio_path)
         return None
 
+    if book.speaker == Speaker.ELLIOT_MILLER:  # Ignore ELLIOT due to his acting.
+        return None
+
     audio_path = _normalize_audio_and_cache(audio_path, **kwargs)
     return TextSpeechRow(text=text, audio_path=audio_path, speaker=book.speaker, metadata=None)
 

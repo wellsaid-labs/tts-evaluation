@@ -134,9 +134,14 @@ def test_spectrogram_model_target():
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     speaker = torch.LongTensor(1, batch_size).fill_(0)
     target_frames = torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1)
+    target_lengths = torch.full((batch_size,), num_frames)
     batched_num_tokens = torch.full((batch_size,), num_tokens)
     frames, frames_with_residual, stop_token, alignment = model(
-        input_, speaker, num_tokens=batched_num_tokens, target_frames=target_frames)
+        input_,
+        speaker,
+        num_tokens=batched_num_tokens,
+        target_frames=target_frames,
+        target_lengths=target_lengths)
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, batch_size, frame_channels)
@@ -165,8 +170,9 @@ def test_spectrogram_model_target_unbatched():
     input_ = torch.LongTensor(num_tokens).random_(1, vocab_size)
     speaker = torch.LongTensor(1, 1).fill_(0)
     target_frames = torch.FloatTensor(num_frames, frame_channels).uniform_(0, 1)
+    target_lengths = torch.tensor(num_frames)
     frames, frames_with_residual, stop_token, alignment = model(
-        input_, speaker, target_frames=target_frames)
+        input_, speaker, target_frames=target_frames, target_lengths=target_lengths)
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, frame_channels)

@@ -341,7 +341,7 @@ def set_hparams():
                 # probability 0.5 is applied only to layers in the pre-net of the
                 # autoregressive decoder.
                 'pre_net.PreNet.__init__.dropout': 0.5,
-                'post_net.PostNet.__init__.convolution_dropout': convolution_dropout
+                'post_net.PostNet.__init__.convolution_dropout': 0.0
             },
             'bin.evaluate.main.dataset': dataset,
             'datasets.process.compute_spectrograms.batch_size': spectrogram_model_dev_batch_size,

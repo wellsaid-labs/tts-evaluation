@@ -149,6 +149,7 @@ def lj_speech_dataset(directory='data/',
     data = _process_in_parallel(
         data,
         partial(_processing_row, directory=directory, extracted_name=extracted_name, kwargs=kwargs))
+    data = list(filter(None.__ne__, data))
     return _split_dataset(data, splits=splits)
 
 

@@ -93,8 +93,17 @@ def test_data_loader():
         assert batch[0] == 3
 
 
+TestTuple = namedtuple('TestTuple', ['t'])
+
+
+def test_data_loader_named_tuples():
+
+    dataset = [TestTuple(t=torch.Tensor(1)), TestTuple(t=torch.Tensor(1))]
+    for batch in DataLoader(dataset, num_workers=1, batch_size=2, collate_fn=collate_tensors):
+        assert batch.t.shape == (2, 1)
+
+
 def test_collate_tensors():
-    TestTuple = namedtuple('TestTuple', ['t'])
 
     tensor = torch.Tensor(1)
     collate_sequences = partial(collate_tensors, stack_tensors=pad_batch)

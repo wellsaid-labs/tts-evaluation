@@ -112,10 +112,12 @@ class Encoder(nn.Module):
             if isinstance(module, nn.Conv1d):
                 nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
 
-    def forward(self, tokens, speaker):
+    def forward(self, tokens, tokens_mask, speaker):
         """
         Args:
             tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
+            tokens_mask (torch.ByteTensor [batch_size, num_tokens]): Mask such that padding tokens
+                are zeros.
             speaker (torch.LongTensor [batch_size]): Batched speaker encoding.
 
         Returns:
@@ -131,8 +133,12 @@ class Encoder(nn.Module):
         # need to transpose the tensor first.
         tokens = tokens.transpose(1, 2)
 
+        # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
+        tokens_mask = tokens_mask.unsqueeze(1)
+
         # [batch_size, num_convolution_filters, num_tokens]
         for conv in self.convolution_layers:
+            tokens = tokens.masked_fill(~tokens_mask, 0)
             tokens = conv(tokens)
 
         # Our input is expected to have shape `[batch_size, num_convolution_filters, num_tokens]`.
@@ -140,6 +146,7 @@ class Encoder(nn.Module):
         # `[seq_len (num_tokens), batch_size, input_size (num_convolution_filters)]`. We thus need
         # to permute the tensor first.
         tokens = tokens.permute(2, 0, 1)
+        tokens_mask = tokens_mask.permute(2, 0, 1)
 
         # [num_tokens, batch_size, lstm_hidden_size]
         encoded_tokens, _ = self.lstm(tokens)
@@ -153,7 +160,7 @@ class Encoder(nn.Module):
             speaker = speaker.unsqueeze(0)
 
             # [1, batch_size, speaker_embedding_dim] →
-            # num_tokens, batch_size, speaker_embedding_dim]
+            # [num_tokens, batch_size, speaker_embedding_dim]
             speaker = speaker.expand(out.size()[0], -1, -1)
 
             # [num_tokens, batch_size, speaker_embedding_dim + lstm_hidden_size]
@@ -161,4 +168,4 @@ class Encoder(nn.Module):
 
         # [num_tokens, batch_size, lstm_hidden_size +? speaker_embedding_dim] →
         # [num_tokens, batch_size, out_dim]
-        return self.project(out)
+        return self.project(out).masked_fill(~tokens_mask, 0)

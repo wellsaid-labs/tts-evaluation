@@ -17,7 +17,6 @@ import subprocess
 import sys
 import time
 
-from torch.utils.data import DataLoader
 from torch.multiprocessing import cpu_count
 from torch.utils import data
 from torch.utils.data.sampler import Sampler
@@ -658,12 +657,35 @@ def identity(x):
     return x
 
 
+def pin_memory_batch(batch):
+    # Taken from: https://github.com/pytorch/pytorch/blob/v1.0.1/torch/utils/data/dataloader.py#L237
+    if isinstance(batch, torch.Tensor):
+        return batch.pin_memory()
+    elif isinstance(batch, torch._six.string_classes):
+        return batch
+    # TODO: Send a PR to PyTorch github concerning this.
+    # CHANGED: This branch was added because ``container_abcs.Sequence`` was changing a
+    # ``namedtuple`` to a ``list``.
+    elif hasattr(batch, '_asdict') and isinstance(batch, tuple):  # Handle ``namedtuple``
+        return batch.__class__(**pin_memory_batch(batch._asdict()))
+    elif isinstance(batch, torch._six.container_abcs.Mapping):
+        return {k: pin_memory_batch(sample) for k, sample in batch.items()}
+    elif isinstance(batch, torch._six.container_abcs.Sequence):
+        return [pin_memory_batch(sample) for sample in batch]
+    else:
+        return batch
+
+
+assert hasattr(torch.utils.data.dataloader, 'pin_memory_batch')
+torch.utils.data.dataloader.pin_memory_batch = pin_memory_batch
+
+
 class _DataLoaderDataset(data.Dataset):
     """ Dataset that allows for a callable upon loading a single example.
 
     Args:
         dataset (torch.utils.data. Dataset): Dataset from which to load the data.
-        load_fn (callable): Function to run
+        load_fn (callable): Function to run on `__getitem__`.
     """
 
     def __init__(self, dataset, load_fn):
@@ -677,7 +699,7 @@ class _DataLoaderDataset(data.Dataset):
         return self.load_fn(self.dataset[index])
 
 
-class DataLoader(DataLoader):
+class DataLoader(torch.utils.data.dataloader.DataLoader):
     """ PyTorch DataLoader that supports a ``load_fn``.
 
     Args:
@@ -686,7 +708,7 @@ class DataLoader(DataLoader):
         post_process_fn (callable, optional): Callable run directly before the batch is returned.
         num_workers (int, optional): Number ofsubprocesses to use for data loading. 0 means that the
             data will be loaded in the main process.
-        trial_run (bool, optional):
+        trial_run (bool, optional): If `true` stop after the first batch.
         **kwargs: Other key word arguments to be passed to ``torch.utils.data.DataLoader``
     """
 

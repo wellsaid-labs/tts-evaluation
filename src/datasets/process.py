@@ -257,7 +257,8 @@ def _predict_and_cache_spectrogram(data,
             speaker = batch.speaker[0]
             if aligned:
                 spectrogram, spectrogram_lengths = batch.spectrogram
-                _, predicted, _, alignments = model(text, speaker, text_lengths, spectrogram)
+                _, predicted, _, alignments = model(text, speaker, text_lengths, spectrogram,
+                                                    spectrogram_lengths)
             else:
                 _, predicted, _, alignments, spectrogram_lengths = model(text, speaker)
 

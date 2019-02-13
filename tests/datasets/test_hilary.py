@@ -31,5 +31,5 @@ def test_hilary_dataset(mock_download_file_from_drive, mock_from_path):
     # Check a row are parsed correctly
     train, dev = hilary_dataset(
         directory=data_directory, resample=None, norm=False, guard=False, splits=(0.8, 0.2))
-    assert len(train) == 94
-    assert len(dev) == 24
+    assert len(train) == 91
+    assert len(dev) == 23

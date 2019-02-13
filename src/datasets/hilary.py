@@ -53,6 +53,11 @@ def _processing_row(row,
     text = row[metadata_text_column].strip()
     audio_path = Path(directory, extracted_name, audio_directory, row[metadata_audio_column])
     audio_path = _normalize_audio_and_cache(audio_path, **kwargs)
+
+    if len(set(text).intersection(set('0123456789'))) > 0:
+        logger.warning('Ignore unverbalized example from `hilary_dataset`: %s', text)
+        return None
+
     return TextSpeechRow(
         text=text,
         audio_path=audio_path,
@@ -111,4 +116,5 @@ def hilary_dataset(
             extracted_name=extracted_name,
             kwargs=kwargs,
         ))
+    data = list(filter(None.__ne__, data))
     return _split_dataset(data, splits=splits)

@@ -137,6 +137,7 @@ class Trainer():
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step: %d', self.step)
+        logger.info('Vocab: %s', sorted(self.text_encoder.vocab))
         logger.info('Epoch: %d', self.epoch)
         logger.info('Train Batch Size: %d', train_batch_size)
         logger.info('Dev Batch Size: %d', dev_batch_size)
@@ -195,7 +196,7 @@ class Trainer():
                         predictions[-1].numel())
                 else:
                     predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1],
-                                             batch.spectrogram[0])
+                                             batch.spectrogram[0], batch.spectrogram[1])
                     self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
                 spectrogram_lengths = predictions[-1] if infer else batch.spectrogram[1]

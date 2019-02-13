@@ -56,7 +56,7 @@ def _set_hparams():
         # We also apply L2 regularization with weight 10−6
         'torch.optim.adam.Adam.__init__': {
             'eps': 10**-6,
-            'weight_decay': 10**-5,
+            'weight_decay': 10**-6,
             'lr': 10**-3
         }
     })
@@ -201,7 +201,14 @@ if __name__ == '__main__':  # pragma: no cover
         required=True,
         help='Comet.ML project for the experiment to use.')
     parser.add_argument(
-        '-t', '--tags', default=[], action='append', help='List of tags for the experiment.')
+        '-t',
+        '--tags',
+        default=[
+            'detached post_net', 'masked conv', 'post_net dropout=0', 'weight_decay=10**-6',
+            'no elliot', 'no numbers'
+        ],
+        action='append',
+        help='List of tags for the experiment.')
     parser.add_argument(
         '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     # LEARN MORE: https://pytorch.org/docs/stable/distributed.html
