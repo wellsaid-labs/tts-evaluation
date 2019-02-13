@@ -169,9 +169,6 @@ class _WaveRNNInferrer(nn.Module):
                     to_bins_fine_pre_weight, to_bins_fine_bias, to_bins_fine_weight, input_out,
                     input_projection_out, hidden_projection_out, pre_bins_out, bins_out):
         """
-        TODO: Consider flattening all weights onto the same contiguous array, and using
-        seperate PyTorch views of each.
-
         Side effects:
             - `last_hidden` is modified in-place to be the updated hidden state
             - `project_coarse_bias` is modified in-place to some intermediate value.
