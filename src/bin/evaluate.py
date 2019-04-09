@@ -11,11 +11,8 @@ from pathlib import Path
 import argparse
 import logging
 
-# NOTE: Needs to be imported before torch
-# Remove after this issue is resolved https://github.com/comet-ml/issue-tracking/issues/178
-import comet_ml  # noqa
-
-from torchnlp.text_encoders.reserved_tokens import RESERVED_ITOS
+from torchnlp.utils import tensors_to
+from torch.utils.data.sampler import RandomSampler
 
 import torch
 import scipy
@@ -31,9 +28,7 @@ from src.hparams import log_config
 from src.hparams import set_hparams
 from src.utils import Checkpoint
 from src.utils import evaluate
-from src.utils import RandomSampler
 from src.utils import record_stream
-from src.utils import tensors_to
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -90,13 +85,7 @@ def _sample_dataset(dataset, speaker_encoder, num_samples=None, speaker=None, ba
 
         ret = [dev[i] for i in indicies]
     elif isinstance(dataset, list):  # CASE: List of text
-        if speaker is not None:
-            speakers = [speaker]
-        else:
-            # Get all the speakers
-            speakers = set(speaker_encoder.vocab)
-            speakers = speakers.difference(set(RESERVED_ITOS))
-
+        speakers = speaker_encoder.vocab if speaker is None else [speaker]
         ret = []
         for speaker in speakers:
             for text in dataset:

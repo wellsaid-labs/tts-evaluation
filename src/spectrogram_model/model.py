@@ -1,6 +1,7 @@
 import logging
 
 from torch import nn
+from torchnlp.utils import lengths_to_mask
 from tqdm import tqdm
 
 import torch
@@ -10,7 +11,6 @@ from src.hparams import ConfiguredArg
 from src.spectrogram_model.decoder import AutoregressiveDecoder
 from src.spectrogram_model.encoder import Encoder
 from src.spectrogram_model.post_net import PostNet
-from src.utils import lengths_to_mask
 
 logger = logging.getLogger(__name__)
 

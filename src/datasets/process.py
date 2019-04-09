@@ -10,7 +10,11 @@ import pprint
 
 from torch.multiprocessing import Pool
 from torch.nn.functional import mse_loss
+from torchnlp.encoders.text import stack_and_pad_tensors
+from torchnlp.utils import collate_tensors
+from torchnlp.utils import lengths_to_mask
 from torchnlp.utils import shuffle as do_deterministic_shuffle
+from torchnlp.utils import tensors_to
 from tqdm import tqdm
 
 import numpy
@@ -22,17 +26,14 @@ from src.audio import read_audio
 from src.datasets.constants import SpectrogramTextSpeechRow
 from src.hparams import configurable
 from src.utils import Checkpoint
-from src.utils import collate_tensors
 from src.utils import DataLoader
 from src.utils import evaluate
 from src.utils import get_average_norm
+from src.utils import get_tensors_dim_length
 from src.utils import get_weighted_stdev
-from src.utils import lengths_to_mask
 from src.utils import OnDiskTensor
-from src.utils import pad_batch
 from src.utils import ROOT_PATH
-from src.utils import sort_by_spectrogram_length
-from src.utils import tensors_to
+from src.utils import sort_together
 
 import src.distributed
 
@@ -48,11 +49,11 @@ def _download_file_maybe_extract(*args, **kwargs):
     Alias to ``torchnlp.download.download_file_maybe_extract`` that considers the distributed
     environment.
     """
-    if not src.distributed.in_use() or src.distributed.is_master():
+    if src.distributed.is_master():
         torchnlp.download.download_file_maybe_extract(*args, **kwargs)
 
     # Ensure data is downloaded before both worker and master proceed.
-    if src.distributed.in_use():
+    if src.distributed.is_initialized():
         torch.distributed.barrier()
 
 
@@ -99,8 +100,7 @@ def _process_in_parallel(data, processing_func, use_tqdm=True):
     """
     data = list(data)
 
-    use_pool = not src.distributed.in_use() or src.distributed.is_master()
-    if use_pool:
+    if src.distributed.is_master():
         pool = Pool()
         iterator = pool.imap(processing_func, data)
     else:  # PyTorch workers should not expect to do serious work
@@ -110,12 +110,12 @@ def _process_in_parallel(data, processing_func, use_tqdm=True):
         iterator = tqdm(iterator, total=len(data))
     processed = list(iterator)
 
-    if use_pool:  # Ensure pool work is finished
+    if src.distributed.is_master():  # Ensure pool work is finished
         pool.close()
         pool.join()
 
     # Ensure data is processed before both worker and master proceed.
-    if src.distributed.in_use():
+    if src.distributed.is_initialized():
         torch.distributed.barrier()
 
     return processed
@@ -164,7 +164,7 @@ def _normalize_audio_and_cache(audio_path,
 
     # Allow only the master node to save to disk while the worker nodes optimistically assume
     # the file already exists.
-    if src.distributed.in_use() and not src.distributed.is_master():
+    if not src.distributed.is_master():
         return dest_path
 
     norm_flag = '--norm=-.001' if norm else ''
@@ -180,13 +180,12 @@ def _normalize_audio_and_cache(audio_path,
     return dest_path
 
 
-def _load_fn(row, text_encoder, speaker_encoder, load_spectrogram=False):
+def _load_fn(row, input_encoder, load_spectrogram=False):
     """ Load function for loading a single row.
 
     Args:
         row (SpectrogramTextSpeechRow)
-        text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
-        speaker_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the speaker.
+        input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         load_spectrogram (bool, optional)
 
     Returns:
@@ -197,20 +196,12 @@ def _load_fn(row, text_encoder, speaker_encoder, load_spectrogram=False):
         spectrogram = row.spectrogram.to_tensor() if isinstance(row.spectrogram,
                                                                 OnDiskTensor) else row.spectrogram
 
-    encoded_text = text_encoder.encode(row.text)
-
-    # TODO: Broadly incoperate this into the torchnlp library. Maybe, add an option to either
-    # support <unk> tokens or reversable encoding.
-    if text_encoder.decode(encoded_text) != row.text:
-        logger.warning('Text encoding is not reversable for sentence %s', row.text)
-
-    return row._replace(
-        text=encoded_text, speaker=speaker_encoder.encode(row.speaker), spectrogram=spectrogram)
+    encoded_text, encoded_speaker = input_encoder.encode((row.text, row.speaker))
+    return row._replace(text=encoded_text, speaker=encoded_speaker, spectrogram=spectrogram)
 
 
 def _predict_and_cache_spectrogram(data,
-                                   text_encoder,
-                                   speaker_encoder,
+                                   input_encoder,
                                    model,
                                    batch_size,
                                    device,
@@ -220,33 +211,29 @@ def _predict_and_cache_spectrogram(data,
 
     Args:
         data (iterable of SpectrogramTextSpeechRow)
-        text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
-        speaker_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the speaker.
+        input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         model (torch.nn.Module): Model used to compute spectrograms.
         batch_size (int)
         device (torch.device): Device to run prediction on.
         aligned (bool): If ``True``, predict a ground truth aligned spectrogram.
         use_tqdm (bool): Write a progress bar to console.
     """
-    # Avoid importing matplotlib inadvertently
-    from src.visualize import AccumulatedMetrics
+    # Avoid importing ``matplotlib`` inadvertently
+    from src.utils import AccumulatedMetrics
 
     if all([r.spectrogram is not None for r in data]):
-        data = sort_by_spectrogram_length(data)
+        spectrogram_lengths = get_tensors_dim_length([r.spectrogram for r in data])
+        data = sort_together(data, spectrogram_lengths)
     else:
         data = sorted(data, key=lambda r: len(r.text))
 
-    load_fn_partial = partial(
-        _load_fn,
-        text_encoder=text_encoder,
-        speaker_encoder=speaker_encoder,
-        load_spectrogram=aligned)
+    load_fn_partial = partial(_load_fn, input_encoder=input_encoder, load_spectrogram=aligned)
     loader = DataLoader(
         data,
         batch_size=batch_size,
         load_fn=load_fn_partial,
         post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
-        collate_fn=partial(collate_tensors, stack_tensors=partial(pad_batch, dim=1)),
+        collate_fn=partial(collate_tensors, stack_tensors=partial(stack_and_pad_tensors, dim=1)),
         pin_memory=True,
         use_tqdm=use_tqdm)
     with evaluate(model, device=device):
@@ -298,9 +285,9 @@ def _predict_spectrogram(data,
         checkpoint_path (src or Path): Path to checkpoint for the spectrogram model.
         device (torch.device): Device to run prediction on.
         batch_size (int)
-        on_disk (bool, optional): Save the tensor to disk, returning a ``OnDiskTensor`` instead of
+        on_disk (bool, optional): Save the tensor to disk returning a ``OnDiskTensor`` instead of
             ``torch.Tensor``.
-        aligned (bool): If ``True``, predict a ground truth aligned spectrogram.
+        aligned (bool): If ``True`` predict a ground truth aligned spectrogram.
         **kwargs (any): Passed on to `_predict_and_cache_spectrogram`
 
     Returns:
@@ -328,10 +315,10 @@ def _predict_spectrogram(data,
         return_.append(row._replace(predicted_spectrogram=on_disk_tensor))
 
     # Check if already cached, if not `_predict_and_cache_spectrogram`
-    is_cached = all([r.predicted_spectrogram.does_exist() for r in return_])
-    if not is_cached and (not src.distributed.in_use() or src.distributed.is_master()):
-        _predict_and_cache_spectrogram(return_, checkpoint.text_encoder, checkpoint.speaker_encoder,
-                                       checkpoint.model, batch_size, device, aligned, **kwargs)
+    is_cached = all([r.predicted_spectrogram.exists() for r in return_])
+    if not is_cached and src.distributed.is_master():
+        _predict_and_cache_spectrogram(return_, checkpoint.input_encoder, checkpoint.model,
+                                       batch_size, device, aligned, **kwargs)
     if on_disk:
         return return_
 
@@ -344,7 +331,7 @@ def _compute_spectrogram(row, on_disk=True):
 
     Args:
         row (TextSpeechRow): Row of text and speech aligned data.
-        on_disk (bool, optional): Save the tensor to disk, returning a ``OnDiskTensor`` instead of
+        on_disk (bool, optional): Save the tensor to disk returning a ``OnDiskTensor`` instead of
             ``torch.Tensor``.
 
     Returns:
@@ -369,7 +356,7 @@ def _compute_spectrogram(row, on_disk=True):
     # For the distributed case, allow only the master node to save to disk while the worker nodes
     # optimistically assume the file already exists.
     is_cached = dest_spectrogram.is_file() and dest_padded_audio.is_file()
-    if (not is_cached and (not src.distributed.in_use() or src.distributed.is_master())):
+    if not is_cached and src.distributed.is_master():
         # Compute and save to disk the spectrogram and audio
         assert audio_path.is_file(), 'Audio path must be a file %s' % audio_path
         signal = read_audio(audio_path)
@@ -431,7 +418,7 @@ def compute_spectrograms(data, on_disk=True, checkpoint_path=None, **kwargs):
 
     Args:
         data (iterables of TextSpeechRow)
-        on_disk (bool, optional): Save the tensor to disk, returning a ``OnDiskTensor`` instead of
+        on_disk (bool, optional): Save the tensor to disk returning a ``OnDiskTensor`` instead of
             ``torch.Tensor``.
         checkpoint_path (str or None, optional): Spectrogram model to predict a ground truth aligned
             spectrogram.
@@ -448,7 +435,7 @@ def compute_spectrograms(data, on_disk=True, checkpoint_path=None, **kwargs):
         data = _predict_spectrogram(data, checkpoint_path, on_disk=on_disk, **kwargs)
 
     # Ensure data is processed before both worker and master proceed.
-    if src.distributed.in_use():
+    if src.distributed.is_initialized():
         torch.distributed.barrier()
 
     return data

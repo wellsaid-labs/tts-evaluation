@@ -1,6 +1,6 @@
 """ Run a web service with the spectrogram and signal models.
 
-During designing this API, there was multiple days of consideration of usage.
+During designing this API, we considered the requirements of a website.
 
 LEARNINGS:
 - `HTMLAudioElement` requires it's `src` property to be set with a url; Otherwise, one must use
@@ -34,14 +34,8 @@ Example:
 Example:
       $ gunicorn src.service.serve:app;
 
-TODO: Write tests for serve.py
+TODO: Write tests for this module.
 """
-try:
-    # NOTE: Comet needs to be imported before torch
-    import comet_ml  # noqa: F401
-except ImportError:
-    pass
-
 from functools import lru_cache
 
 import logging
@@ -87,6 +81,9 @@ SIGNAL_MODEL_CHECKPOINT_PATH = pathlib.Path(
 assert SPECTROGRAM_MODEL_CHECKPOINT_PATH.is_file(), 'Spectrogram model checkpoint cannot be found.'
 assert SIGNAL_MODEL_CHECKPOINT_PATH.is_file(), 'Signal model checkpoint cannot be found.'
 
+# TODO: Factor out these changes into individual branches; enabling me to move forward with
+# training more voices and running more experiments.
+
 
 @lru_cache()
 def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPOINT_PATH,
@@ -99,30 +96,16 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
     Returns:
         signal_model (torch.nn.Module)
         spectrogram_model (torch.nn.Module)
-        text_encoder (torchnlp.TextEncoder)
-        speaker_encoder (torchnlp.TextEncoder)
+        input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
     """
     set_hparams()
 
     spectrogram_model = Checkpoint.from_path(spectrogram_model_checkpoint_path, device=DEVICE)
-    spectrogram_model, text_encoder, speaker_encoder = (spectrogram_model.model,
-                                                        spectrogram_model.text_encoder,
-                                                        spectrogram_model.speaker_encoder)
+    spectrogram_model, input_encoder = (spectrogram_model.model, spectrogram_model.input_encoder)
 
     signal_model = Checkpoint.from_path(signal_model_checkpoint_path, device=DEVICE)
     signal_model = signal_model.model.to_inferrer()
-    return signal_model, spectrogram_model, text_encoder, speaker_encoder
-
-
-# Set based off the resources dedicated to this worker in `master.js`
-torch.set_num_threads(4)
-
-logger.info('PyTorch version: %s', torch.__version__)
-logger.info('Found MKL: %s', torch.backends.mkl.is_available())
-logger.info('Threads: %s', torch.get_num_threads())
-
-# Cache the models
-load_checkpoints()
+    return signal_model, spectrogram_model, input_encoder
 
 
 class InvalidUsage(Exception):
@@ -156,6 +139,16 @@ def handle_invalid_usage(error):
     return response
 
 
+@app.before_first_request
+def setup():
+    # Set based off the resources dedicated to this worker in `master.js`
+    torch.set_num_threads(4)
+
+    logger.info('PyTorch version: %s', torch.__version__)
+    logger.info('Found MKL: %s', torch.backends.mkl.is_available())
+    logger.info('Threads: %s', torch.get_num_threads())
+
+
 def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_size=20):
     """ Helper function for starting a speech synthesis stream.
 
@@ -171,21 +164,21 @@ def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_s
     """
     logger.info('Requested stream conditioned on: "%s", "%s" and "%s".', speaker, stop_threshold,
                 text)
-    signal_model, spectrogram_model, text_encoder, speaker_encoder = load_checkpoints()
+    signal_model, spectrogram_model, input_encoder = load_checkpoints()
 
     # Compute spectrogram
-    text = text_encoder.encode(text)
-    speaker = speaker_encoder.encode(speaker)
+    text, speaker = input_encoder.encode((text, speaker))
     kwargs = {}
     if isinstance(stop_threshold, float):
         kwargs['stop_threshold'] = stop_threshold
 
-    # TODO: Replace with `signal_model.conditional_features_upsample.scale_factor` for newer
+    # TODO: Replace with ``signal_model.conditional_features_upsample.scale_factor`` for newer
     # checkpoints
     scale_factor = (
         signal_model.conditional_features_upsample.pre_net[-1].net[-1].out_channels *
         signal_model.conditional_features_upsample.upsample_repeat)
-    # TODO: Replace with `signal_model.conditional_features_upsample.padding` for newer checkpoints
+    # TODO: Replace with ``signal_model.conditional_features_upsample.padding`` for newer
+    # checkpoints
     padding = signal_model.conditional_features_upsample.min_padding
     half_padding = int(padding / 2)
 
@@ -193,6 +186,11 @@ def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_s
 
     with torch.no_grad():
         spectrogram = spectrogram_model(text, speaker, use_tqdm=True, **kwargs)[1]
+
+    # TODO: If ``spectrogram`` reaches the ``max_frames_per_token``, return a 'failed to render'
+    # error.
+    # TODO: If a loud sound is created, cut off the stream or consider rerendering.
+    # TODO: Consider logging various events to stackdriver, to keep track.
 
     logger.info('Generated spectrogram of shape %s.', spectrogram.shape)
 
@@ -248,6 +246,7 @@ def _validate_and_unpack(args, max_characters=1000, num_api_key_characters=32):
     if 'api_key' not in args:
         raise InvalidUsage('API key was not provided.', status_code=401)
 
+    # TODO: Consider using the authorization header instead of a parameter ``api_key``.
     api_key = args.get('api_key')
 
     if not (isinstance(api_key, str) and len(api_key) == num_api_key_characters):
@@ -277,10 +276,11 @@ def _validate_and_unpack(args, max_characters=1000, num_api_key_characters=32):
         raise InvalidUsage('Speaker ID must be an integer between %d and %d.' % (0, len(Speaker)))
 
     if not (isinstance(text, str) and len(text) < max_characters and len(text) > 0):
+        # TODO: The error string should suggest the text must be none-empty.
         raise InvalidUsage('Text must be a string under %d characters' % max_characters)
 
-    text_encoder = load_checkpoints()[2]
-    processed_text = text_encoder.decode(text_encoder.encode(text))
+    input_encoder = load_checkpoints()[2]
+    processed_text = input_encoder.text_encoder.decode(input_encoder.text_encoder.encode(text))
     if processed_text != text:
         improper_characters = set(text).difference(set(processed_text))
         improper_characters = ', '.join(sorted(list(improper_characters)))
@@ -301,7 +301,13 @@ def _validate_and_unpack(args, max_characters=1000, num_api_key_characters=32):
 
 @app.route('/healthy', methods=['GET'])
 def healthy():
+    # Healthy iff ``load_checkpoints`` succeeds and this route succeeds.
+    load_checkpoints()
+
     return 'ok'
+
+
+# TODO: Remove the `speech_synthesis` namespace, it's not nessecary.
 
 
 @app.route('/api/speech_synthesis/v1/text_to_speech/input_validated', methods=['GET', 'POST'])
@@ -333,6 +339,9 @@ def get_input_validated():
     return jsonify({'message': 'OK'})
 
 
+# TODO: Remove `/stream` namespace it's not a helpful segmentation for right now.
+
+
 @app.route('/api/speech_synthesis/v1/text_to_speech/stream', methods=['GET', 'POST'])
 def get_stream():
     """ Get speech given `text`, `speaker`, and `stop_threshold`.
@@ -348,6 +357,11 @@ def get_stream():
         `audio/wav` streamed in chunks given that the arguments are valid.
     """
     if request.method == 'POST':
+        # NOTE: There is an edge case when both `speaker_id="3"` and
+        # text="Welcome to Dan’s pizza and shoe repair." breaks the below line. To reproduce, you
+        # must use `node` oddly as well. The error was not reproducible on PostMan. Ditto with
+        # `speaker_id` must be a `string` and the text must be exact; otherwise, the error
+        # was not reproducible.
         args = request.get_json()
     else:
         args = request.args

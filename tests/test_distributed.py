@@ -6,11 +6,18 @@ from src.distributed import broadcast_string
 from src.distributed import distribute_batch_sampler
 from src.distributed import get_master_rank
 from src.distributed import is_master
+from src.distributed import is_initialized
 
 
 @mock.patch('torch.distributed')
 def test_is_master(mock_distributed):
     mock_distributed.get_rank.return_value = get_master_rank()
+    assert is_master()
+
+
+def test_is_master__not_initialized():
+    # Defaults to ``is_master() == True``
+    assert not is_initialized()
     assert is_master()
 
 

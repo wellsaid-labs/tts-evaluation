@@ -20,12 +20,12 @@ logger = logging.getLogger(__name__)
 try:
     import unidecode
 except ImportError:
-    logger.info('Skipping optional `unidecode` import for now.')
+    logger.info('Skipping optional ``unidecode`` import for now.')
 
 try:
     from num2words import num2words
 except ImportError:
-    logger.info('Skipping optional `num2words` import for now.')
+    logger.info('Skipping optional ``num2words`` import for now.')
 
 
 def _processing_row(row,

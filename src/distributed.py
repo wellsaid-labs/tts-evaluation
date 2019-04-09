@@ -5,25 +5,34 @@ import torch
 logger = logging.getLogger(__name__)
 
 
-def in_use():
-    """ Return if distributed is mode in use. """
+def is_initialized():
+    """ Return ``True`` if distributed is mode is initialized. """
     return torch.distributed.is_available() and torch.distributed.is_initialized()
 
 
 def get_master_rank():
-    """ Returns the rank of the default master processs. The master process is the process that
-    does one off tasks like saving checkpoints.
-    """
+    """ Returns the rank of the master processs. """
     return 0
 
 
 def is_master():
-    """ Returns ``True`` if master process of distributed program """
+    """
+    Returns:
+        bool: ``True`` if master process of distributed process or if
+        ``is_initialized()`` is ``False``.
+    """
+    if not is_initialized():
+        return True
+
     return torch.distributed.get_rank() == get_master_rank()
 
 
 def broadcast_string(string, type_=torch.cuda):
     """ Broadcast from master a string to other processes.
+
+    Requires:
+        - Distributed was initialized: ``is_initialized() == True``
+        - The node device was set via: ``torch.cuda.set_device()``
 
     Args:
         string (str)
@@ -56,8 +65,12 @@ def broadcast_string(string, type_=torch.cuda):
 def distribute_batch_sampler(batch_sampler, batch_size, device, type_=torch.cuda):
     """ Split the batch sampler iterable between processes.
 
-    NOTE: For the purposes of step speed, this function does not compute the batches iteratively.
-    This avoids extra synchronizations.
+    NOTE: ``distribute_batch_sampler`` requires reading all samples in ``batch_sampler``. This
+    decision was made to avoid any extra synchronization.
+
+    Requires:
+        - Distributed was initialized: ``is_initialized() == True``
+        - The node device was set via: ``torch.cuda.set_device()``
 
     Args:
         batch_sampler (iterable or None): An iterable that returns batched dataset indicies. None

@@ -2,8 +2,7 @@ import logging
 import math
 import random
 
-from torchnlp.text_encoders import CharacterEncoder
-from torchnlp.text_encoders import IdentityEncoder
+from torchnlp.utils import lengths_to_mask
 
 import torch
 
@@ -13,17 +12,18 @@ from src.datasets import compute_spectrograms
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import get_config
-from src.optimizer import AutoOptimizer
-from src.optimizer import Optimizer
+from src.optimizers import AutoOptimizer
+from src.optimizers import Optimizer
+from src.spectrogram_model import InputEncoder
 from src.spectrogram_model import SpectrogramModel
+from src.utils import AccumulatedMetrics
+from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import evaluate
 from src.utils import get_average_norm
 from src.utils import get_total_parameters
 from src.utils import get_weighted_stdev
-from src.utils import lengths_to_mask
 from src.utils import log_runtime
-from src.visualize import AccumulatedMetrics
 from src.visualize import CometML
 from src.visualize import plot_attention
 from src.visualize import plot_spectrogram
@@ -35,27 +35,27 @@ logger = logging.getLogger(__name__)
 
 
 class Trainer():
-    """ Trainer that manages Tacotron training (i.e. running epochs, logging, etc.).
+    """ Trainer defines a simple interface for training the ``SpectrogramModel``.
 
     Args:
         device (torch.device): Device to train on.
         train_dataset (iterable of TextSpeechRow): Train dataset used to optimize the model.
-        dev_dataset (iterable of TextSpeechRow): Dev dataset used to evaluate.
-        comet_ml_project_name (str): Project name, used for grouping experiments.
+        dev_dataset (iterable of TextSpeechRow): Dev dataset used to evaluate the model.
+        comet_ml_project_name (str): Comet project name, used for grouping experiments.
         train_batch_size (int): Batch size used for training.
         dev_batch_size (int): Batch size used for evaluation.
         criterion_spectrogram (callable): Loss function used to score frame predictions.
         criterion_stop_token (callable): Loss function used to score stop
             token predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
-        comet_ml_experiment_key (str, optioanl): Previous experiment key to restart visualization.
-        text_encoder (torchnlp.TextEncoder, optional): Text encoder used to encode and decode the
-            text.
-        speaker_encoder (torchnlp.TextEncoder, optional): Text encoder used to encode the speaker
-            label.
+        comet_ml_experiment_key (str, optional): Previous experiment key to continue visualization
+            in comet.
+        input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         model (torch.nn.Module, optional): Model to train and evaluate.
-        step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
-        epoch (int, optional): Starting epoch, useful warm starts (i.e. checkpoints).
+        step (int, optional): Starting step; typically, this parameter is useful when starting from
+            a checkpoint.
+        epoch (int, optional): Starting epoch; typically, this parameter is useful when starting
+            from a checkpoint.
         use_tqdm (bool, optional): Use TQDM to track epoch progress.
     """
 
@@ -75,8 +75,7 @@ class Trainer():
                  criterion_stop_token=ConfiguredArg(),
                  optimizer=ConfiguredArg(),
                  comet_ml_experiment_key=None,
-                 text_encoder=None,
-                 speaker_encoder=None,
+                 input_encoder=None,
                  model=None,
                  step=0,
                  epoch=0,
@@ -85,18 +84,16 @@ class Trainer():
         self.train_dataset = compute_spectrograms(train_dataset)
         self.dev_dataset = compute_spectrograms(dev_dataset)
 
-        self.text_encoder = (
-            CharacterEncoder([r.text for r in self.train_dataset])
-            if text_encoder is None else text_encoder)
-        self.speaker_encoder = (
-            IdentityEncoder([r.speaker for r in self.train_dataset])
-            if speaker_encoder is None else speaker_encoder)
+        self.input_encoder = InputEncoder(
+            [r.text for r in self.train_dataset],
+            [r.speaker for r in self.train_dataset]) if input_encoder is None else input_encoder
 
         # Allow for ``class`` or a class instance
         self.model = model if isinstance(model, torch.nn.Module) else SpectrogramModel(
-            self.text_encoder.vocab_size, self.speaker_encoder.vocab_size)
+            self.input_encoder.text_encoder.vocab_size,
+            self.input_encoder.speaker_encoder.vocab_size)
         self.model.to(device)
-        if src.distributed.in_use():
+        if src.distributed.is_initialized():
             self.model = torch.nn.parallel.DistributedDataParallel(
                 self.model, device_ids=[device.index], output_device=device.index, dim=1)
 
@@ -116,10 +113,13 @@ class Trainer():
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
 
+        # Comet creates an experiment on `comet.ml`; therefore, this takes some time to execute.
+        # We leave this till the very end; ensursing everything else works before
+        # creating a comet_ml experiment.
         self.comet_ml = CometML(
             project_name=comet_ml_project_name,
             experiment_key=comet_ml_experiment_key,
-            disabled=src.distributed.in_use() and not src.distributed.is_master())
+            disabled=not src.distributed.is_master())
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])
@@ -129,29 +129,73 @@ class Trainer():
             'num_parameter': get_total_parameters(self.model),
             'num_training_row': len(self.train_dataset),
             'num_dev_row': len(self.dev_dataset),
-            'vocab_size': self.text_encoder.vocab_size,
-            'vocab': sorted(self.text_encoder.vocab),
-            'num_speakers': self.speaker_encoder.vocab_size,
-            'speakers': sorted([str(v) for v in self.speaker_encoder.vocab]),
+            'vocab_size': self.input_encoder.text_encoder.vocab_size,
+            'vocab': sorted(self.input_encoder.text_encoder.vocab),
+            'num_speakers': self.input_encoder.speaker_encoder.vocab_size,
+            'speakers': sorted([str(v) for v in self.input_encoder.speaker_encoder.vocab]),
         })
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step: %d', self.step)
-        logger.info('Vocab: %s', sorted(self.text_encoder.vocab))
+        logger.info('Vocab: %s', sorted(self.input_encoder.text_encoder.vocab))
         logger.info('Epoch: %d', self.epoch)
         logger.info('Train Batch Size: %d', train_batch_size)
         logger.info('Dev Batch Size: %d', dev_batch_size)
         logger.info('Model:\n%s', self.model)
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
+    @classmethod
+    def from_checkpoint(class_, checkpoint, **kwargs):
+        """ Instantiate ``Trainer`` from a checkpoint.
+
+        Args:
+            checkpoint (Checkpoint): Checkpoint to initiate ``Trainer`` with.
+            **kwargs: Additional keyword arguments passed to ``__init__``.
+
+        Returns:
+            (Trainer)
+        """
+        checkpoint_kwargs = {
+            'model': checkpoint.model,
+            'optimizer': checkpoint.optimizer,
+            'epoch': checkpoint.epoch,
+            'step': checkpoint.step,
+            'comet_ml_experiment_key': checkpoint.comet_ml_experiment_key,
+            'input_encoder': checkpoint.input_encoder,
+            'comet_ml_project_name': checkpoint.comet_ml_project_name
+        }
+        checkpoint_kwargs.update(kwargs)
+        return class_(**checkpoint_kwargs)
+
+    def save_checkpoint(self, directory):
+        """ Save a checkpoint.
+
+        Args:
+            directory (str): Directory to store checkpoint
+
+        Returns:
+            (str): Path the checkpoint was saved to.
+        """
+        return Checkpoint(
+            comet_ml_project_name=self.comet_ml.project_name,
+            directory=directory,
+            model=(self.model.module if src.distributed.is_initialized() else self.model),
+            optimizer=self.optimizer,
+            input_encoder=self.input_encoder,
+            epoch=self.epoch,
+            step=self.step,
+            comet_ml_experiment_key=self.comet_ml.get_key()).save()
+
     @log_runtime
     def run_epoch(self, train=False, trial_run=False, infer=False):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
 
         Args:
-            train (bool): If ``True``, the batch will store gradients.
-            trial_run (bool): If ``True``, then runs only 1 batch.
-            infer (bool): If ``True``, this computes attention metrics on the dev set.
+            train (bool, optional): If ``True`` the model will additionally take steps along the
+                computed gradient; furthermore, the Trainer ``step`` and ``epoch`` state will be
+                updated.
+            trial_run (bool, optional): If ``True`` then the epoch is limited to one batch.
+            infer (bool): If ``True`` the model is run in inference mode.
         """
         if infer and train:
             raise ValueError('Train and infer are mutually exclusive.')
@@ -179,8 +223,7 @@ class Trainer():
             data=dataset,
             batch_size=self.train_batch_size if train else self.dev_batch_size,
             device=self.device,
-            text_encoder=self.text_encoder,
-            speaker_encoder=self.speaker_encoder,
+            input_encoder=self.input_encoder,
             trial_run=trial_run,
             use_tqdm=self.use_tqdm)
 
@@ -270,16 +313,14 @@ class Trainer():
         }, kwargs['mask'].sum())
 
     def visualize_inferred(self):
-        """ Run in inference mode without teacher forcing and visualizing results.
+        """ Run in inference mode and visualize results.
         """
-        if src.distributed.in_use() and not src.distributed.is_master():
+        if not src.distributed.is_master():
             return
 
         example = random.sample(self.dev_dataset, 1)[0]
-
-        text = self.text_encoder.encode(example.text).to(self.device)
-        speaker = self.speaker_encoder.encode(example.speaker).to(self.device)
-        model = self.model.module if src.distributed.in_use() else self.model
+        text, speaker = self.input_encoder.encode((example.text, example.speaker))
+        model = self.model.module if src.distributed.is_initialized() else self.model
 
         with evaluate(model, device=self.device):
             logger.info('Running inference...')
@@ -309,7 +350,7 @@ class Trainer():
         })
 
     def _visualize_predicted(self, batch, predictions):
-        """ Visualize examples from a batch and visualize them.
+        """ Visualize examples from a batch.
 
         Args:
             batch (SpectrogramModelTrainingRow)

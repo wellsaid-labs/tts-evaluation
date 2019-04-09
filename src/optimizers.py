@@ -5,6 +5,8 @@ from math import floor
 import itertools
 import math
 
+from third_party import get_parameter_norm
+
 import logging
 import numpy as np
 import torch
@@ -15,44 +17,12 @@ from src.hparams import ConfiguredArg
 logger = logging.getLogger(__name__)
 
 
-def get_parameter_norm(parameters, norm_type=2):
-    """Compute the total norm of the parameters.
-
-    The norm is computed over all gradients together, as if they were
-    concatenated into a single vector.
-
-    Inspired by:
-    https://pytorch.org/docs/stable/_modules/torch/nn/utils/clip_grad.html#clip_grad_norm_
-
-    Args:
-        parameters (Iterable[Tensor]): An iterable of Tensors.
-        norm_type (float or int, optional): Type of the used p-norm. Can be ``'inf'`` for infinity
-            norm.
-
-    Return:
-        Total norm of the parameters (viewed as a single vector).
-    """
-    if isinstance(parameters, torch.Tensor):
-        parameters = [parameters]
-    parameters = list(filter(lambda p: p.grad is not None, parameters))
-    norm_type = float(norm_type)
-    if norm_type == math.inf:
-        total_norm = max(p.grad.data.abs().max() for p in parameters)
-    else:
-        total_norm = 0
-        for p in parameters:
-            param_norm = p.grad.data.norm(norm_type)
-            total_norm += param_norm.item()**norm_type
-        total_norm = total_norm**(1. / norm_type)
-    return total_norm
-
-
 class Optimizer(object):
-    """ Encapsulates ``torch.optim`` package adding gradient norm clipping.
+    """ Encapsulates ``torch.optim`` package adding additional functionality.
 
     Args:
-        optim (torch.optim.Optimizer): Optimizer object, the parameters to be optimized
-            should be given when instantiating the object (e.g. ``torch.optim.SGD(params)``)
+        optim (torch.optim.Optimizer): Optimizer object. Note the parameters to be optimized
+          should be given when instantiating ``optim`` (e.g. ``torch.optim.SGD(params)``)
     """
 
     def __init__(self, optim):
@@ -67,8 +37,7 @@ class Optimizer(object):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
 
         Args:
-            comet_ml (comet_ml.Experiment, optional): Remote visualizer for logging
-                infinite gradient.
+            comet_ml (comet_ml.Experiment, optional): Visualization library.
             max_grad_norm (float, optional): Clip gradient norm to this maximum.
 
         Returns:
@@ -97,8 +66,10 @@ class Optimizer(object):
         return parameter_norm
 
     def to(self, device):
-        """ Move the optimizer state to ``device``. After calling, any parameter specific state in
-        the optimizer will be located on ``device``.
+        """ Move the optimizer state to ``device``.
+
+        Side effects:
+            - Any parameter specific state in the optimizer will be located on ``device``.
 
         Args:
             device (torch.device)
@@ -111,12 +82,16 @@ class Optimizer(object):
                         param_state[k] = param_state[k].to(device)
 
 
+# TODO: Consider adding a complementary function to ``torch.nn.utils.clip_grad_norm_`` that auto
+# sets the grad norm cutoff.
+
+
 class AutoOptimizer(Optimizer):
-    """ Encapsulates ``torch.optim`` package adding automatic gradient norm clipping.
+    """ Encapsulates ``torch.optim`` package adding additional functionality.
 
     Args:
-        optim (torch.optim.Optimizer): Optimizer object, the parameters to be optimized
-            should be given when instantiating the object (e.g. ``torch.optim.SGD(params)``)
+        optim (torch.optim.Optimizer): Optimizer object. Note the parameters to be optimized
+          should be given when instantiating ``optim`` (e.g. ``torch.optim.SGD(params)``)
         window_size (int): Size of the sliding window used to compute max gradient norm.
     """
 
@@ -136,8 +111,7 @@ class AutoOptimizer(Optimizer):
             **kwargs (dict, optional): Keyword arguments to pass on to ``Optimizer.step``
 
         Returns:
-            parameter_norm (float): Total norm of the parameters if ``max_grad_norm > 0``;
-                otherwise, returns None.
+            parameter_norm (float): Total norm of the parameters,
         """
         parameter_norm = super().step(*args, max_grad_norm=self.max_grad_norm, **kwargs)
 

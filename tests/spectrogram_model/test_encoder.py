@@ -1,11 +1,9 @@
 import torch
 
-from torchnlp.text_encoders.reserved_tokens import RESERVED_ITOS
-
 from src.spectrogram_model.encoder import Encoder
 
 encoder_params = {
-    'num_speakers': 2 + len(RESERVED_ITOS),
+    'num_speakers': 2,
     'batch_size': 4,
     'num_tokens': 5,
     'vocab_size': 10,

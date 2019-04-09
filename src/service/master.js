@@ -392,6 +392,8 @@ async function async_filter(iterator, func) {
   }
 })();
 
+// TODO: Function level comments should be outside of the function.
+
 async function getPodForWork() {
   /**
    * Get an available pod and reserve it, useful for completing a job.
@@ -462,6 +464,8 @@ APP.get('/healthy', (_, response) => {
   response.send('ok');
 });
 
+// TODO: Consider remove `/api/*` so it is not redudant with the subdomain `api`.
+
 APP.all('/api/*', async (request, response, next) => {
   console.log(`/api/*: Got request.`);
   let pod;
@@ -507,6 +511,7 @@ APP.all('/api/*', async (request, response, next) => {
       destination.abort(); // Clean up proxy stream
     }
 
+    // TODO: Listen to ``request`` instead of ``response``.
     // Clean up after responding
     response
       .on('close', () => clean(`${prefix}Response emitted 'close' event.`))
@@ -517,7 +522,7 @@ APP.all('/api/*', async (request, response, next) => {
     request
       .on('data', chunk => destination.write(chunk))
       .on('end', () => destination.end())
-      .on('error', () => clean(`${prefix}Request emitted 'error' (${error}) event.`));
+      .on('error', (error) => clean(`${prefix}Request emitted 'error' (${error}) event.`));
 
   } catch (error) { // Catch and clean up after any other error
     pod.release();

@@ -4,17 +4,17 @@ from functools import partial
 import logging
 
 from torch.multiprocessing import cpu_count
+from torchnlp.encoders.text import stack_and_pad_tensors
 from torchnlp.samplers import BucketBatchSampler
+from torchnlp.utils import collate_tensors
+from torchnlp.utils import tensors_to
 
 import torch
 
-from src.utils import collate_tensors
 from src.utils import DataLoader
-from src.utils import get_spectrogram_lengths
+from src.utils import get_tensors_dim_length
 from src.utils import identity
 from src.utils import OnDiskTensor
-from src.utils import pad_batch
-from src.utils import tensors_to
 
 import src.distributed
 
@@ -25,13 +25,12 @@ SpectrogramModelTrainingRow = namedtuple('SpectrogramModelTrainingRow', [
 ])
 
 
-def _load_fn(row, text_encoder, speaker_encoder):
+def _load_fn(row, input_encoder):
     """ Load function for loading a single row.
 
     Args:
         row (SpectrogramTextSpeechRow)
-        text_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the text.
-        speaker_encoder (torchnlp.TextEncoder): Text encoder used to encode and decode the speaker.
+        input_encoder (src.spectrogram_model.InputEncoder)
 
     Returns:
         (SpectrogramModelTrainingRow)
@@ -45,9 +44,11 @@ def _load_fn(row, text_encoder, speaker_encoder):
     assert len(row.text) > 0
     assert spectrogram.shape[0] > 0
 
+    text, speaker = input_encoder.encode((row.text, row.speaker))
+
     return SpectrogramModelTrainingRow(
-        text=text_encoder.encode(row.text),
-        speaker=speaker_encoder.encode(row.speaker),
+        text=text,
+        speaker=speaker,
         stop_token=stop_token,
         spectrogram=spectrogram,
         spectrogram_mask=torch.ByteTensor(spectrogram.shape[0]).fill_(1),
@@ -93,16 +94,14 @@ class DataLoader(DataLoader):
                  trial_run=False,
                  num_workers=cpu_count(),
                  **kwargs):
-        batch_sampler = None
-        if not src.distributed.in_use() or src.distributed.is_master():
-            batch_sampler = BucketBatchSampler(
-                get_spectrogram_lengths(data),
-                batch_size,
-                drop_last=True,
-                sort_key=identity,
-                biggest_batches_first=identity)
+        batch_sampler = BucketBatchSampler(
+            get_tensors_dim_length([r.spectrogram for r in data]),
+            batch_size,
+            drop_last=True,
+            sort_key=identity,
+            biggest_batches_first=identity) if src.distributed.is_master() else None
 
-        if src.distributed.in_use():
+        if src.distributed.is_initialized():
             # Given there are multiple processes, we change the data loaded per process.
             num_workers = int(num_workers / torch.distributed.get_world_size())
             batch_sampler = src.distributed.distribute_batch_sampler(batch_sampler, batch_size,
@@ -113,7 +112,8 @@ class DataLoader(DataLoader):
             load_fn=partial(_load_fn, **kwargs),
             post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
             batch_sampler=batch_sampler,
-            collate_fn=partial(collate_tensors, stack_tensors=partial(pad_batch, dim=1)),
+            collate_fn=partial(
+                collate_tensors, stack_tensors=partial(stack_and_pad_tensors, dim=1)),
             pin_memory=True,
             num_workers=num_workers,
             trial_run=trial_run)

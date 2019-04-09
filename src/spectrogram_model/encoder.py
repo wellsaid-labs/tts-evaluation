@@ -1,8 +1,7 @@
 import torch
 
 from torch import nn
-from torchnlp.text_encoders import PADDING_INDEX
-from torchnlp.text_encoders.reserved_tokens import RESERVED_ITOS
+from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
 
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
@@ -10,8 +9,6 @@ from src.hparams import ConfiguredArg
 
 class Encoder(nn.Module):
     """ Encodes sequence as a hidden feature representation.
-
-    TODO: Submit PR to torchnlp to remove manditory reserved tokens
 
     SOURCE (Tacotron 2):
         The encoder converts a character sequence into a hidden feature representation. Input
@@ -73,9 +70,10 @@ class Encoder(nn.Module):
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, ('`convolution_filter_size` must be odd')
 
-        self.embed_token = nn.Embedding(vocab_size, token_embedding_dim, padding_idx=PADDING_INDEX)
+        self.embed_token = nn.Embedding(
+            vocab_size, token_embedding_dim, padding_idx=DEFAULT_PADDING_INDEX)
         self.embed_speaker = None
-        if num_speakers - len(RESERVED_ITOS) > 1:
+        if num_speakers > 1:
             self.embed_speaker = nn.Embedding(num_speakers, speaker_embedding_dim)
             self.project = nn.Linear(lstm_hidden_size + speaker_embedding_dim, out_dim)
         else:

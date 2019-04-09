@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 try:
     import librosa
 except ImportError:
-    logger.info('Skipping optional `librosa` import for now.')
+    logger.info('Skipping optional ``librosa`` import for now.')
 
 
 @configurable
@@ -44,7 +44,7 @@ def read_audio(filename, sample_rate=ConfiguredArg()):
         sample_rate (int or None): Assert this target sample rate.
 
     Returns:
-        numpy.ndarray [n,]: Audio time series.
+        (numpy.ndarray [n,]): Audio time series.
     """
     signal, observed_sample_rate = librosa.core.load(str(filename), sr=None)
     if sample_rate is not None:
@@ -78,7 +78,7 @@ def _mel_filters(sample_rate,
         upper_hertz (int): The desired top edge of the highest frequency band.
 
     Returns:
-        (np.ndarray [num_mel_bins, 1 + fft_length / 2): Mel transform matrix.
+        (np.ndarray [num_mel_bins, 1 + fft_length / 2]): Mel transform matrix.
     """
     # NOTE: The Tacotron 2 model likely did not normalize the filterbank; otherwise, the 0.01
     # minimum mentioned in their paper for the dynamic range is too high. NVIDIA/tacotron2 includes
@@ -238,7 +238,7 @@ def griffin_lim(log_mel_spectrogram,
                 power=ConfiguredArg(),
                 iterations=ConfiguredArg(),
                 use_tqdm=False):
-    """ Transform log mel spectrogram to wav file with the Griffin-Lim algorithm.
+    """ Transform log mel spectrogram to waveform with the Griffin-Lim algorithm.
 
     Given a magnitude spectrogram as input, reconstruct the audio signal and return it using the
     Griffin-Lim algorithm from the paper:
@@ -271,6 +271,9 @@ def griffin_lim(log_mel_spectrogram,
         power (float): Amplification float used to reduce artifacts.
         iterations (int): Number of iterations of griffin lim to run.
         use_tqdm (bool, optional): If `True` attach a progress bar during iteration.
+
+    Returns:
+        (np.ndarray [num_samples]): Predicted waveform.
     """
     if log_mel_spectrogram.shape[0] == 0:
         return np.array([])
@@ -388,8 +391,8 @@ def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
         return_int (bool, optional): Return in the range of integer min to max instead of [-1, 1].
 
     Returns:
-        signal (torch.FloatTensor): Signal with values ranging from [-1, 1] if `return_int` if
-            `False`; Otherwise, return an integer value from integer min to max.
+        signal (torch.FloatTensor): Signal with values ranging from [-1, 1] if ``return_int`` is
+            ``False``; Otherwise, return an integer value from integer min to max.
     """
     bins = int(2**(bits / 2))
     assert torch.min(coarse) >= 0 and torch.max(coarse) < bins

@@ -5,8 +5,8 @@ import unittest
 
 import torch
 
-from src.optimizer import Optimizer
-from src.optimizer import AutoOptimizer
+from src.optimizers import Optimizer
+from src.optimizers import AutoOptimizer
 
 
 class MockCometML():
@@ -37,11 +37,13 @@ class TestOptimizer(unittest.TestCase):
     def test_to(self):
         net = torch.nn.GRU(10, 20, 2)
         adam = torch.optim.Adam(net.parameters())
+
+        # Ensure there is some state.
         optim = Optimizer(adam)
         input_ = torch.randn(5, 3, 10)
         output, _ = net(input_)
         output.sum().backward()
-        optim.step(max_grad_norm=None, comet_ml=MockCometML())  # Set state
+        optim.step(max_grad_norm=None, comet_ml=MockCometML())
 
         optim.to(torch.device('cpu'))
 
@@ -54,10 +56,7 @@ class TestOptimizer(unittest.TestCase):
         output, _ = net(input_)
         output.sum().backward()
         mock_clip_grad_norm.return_value = 1.0
-        optim.step(
-            max_grad_norm=5,
-            comet_ml=MockCometML(),
-        )
+        optim.step(max_grad_norm=5, comet_ml=MockCometML())
         mock_clip_grad_norm.assert_called_once()
 
     @mock.patch('torch.nn.utils.clip_grad_norm_')

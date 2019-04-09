@@ -29,48 +29,52 @@ from src.datasets import compute_spectrograms
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import get_config
-from src.optimizer import AutoOptimizer
-from src.optimizer import Optimizer
+from src.optimizers import AutoOptimizer
+from src.optimizers import Optimizer
 from src.signal_model import WaveRNN
+from src.utils import AccumulatedMetrics
 from src.utils import AnomalyDetector
+from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import evaluate
 from src.utils import get_total_parameters
 from src.utils import log_runtime
 from src.utils import OnDiskTensor
-from src.visualize import AccumulatedMetrics
 from src.visualize import CometML
 from src.visualize import plot_spectrogram
 
 logger = logging.getLogger(__name__)
 
-TrainerState = namedtuple('TrainerState',
-                          ['step', 'epoch', 'optimizer_state_dict', 'model_state_dict'])
+_PartialTrainerState = namedtuple('_PartialTrainerState',
+                                  ['step', 'epoch', 'optimizer_state_dict', 'model_state_dict'])
 
 
 class Trainer():
-    """ Trainer that manages model training (i.e. running epochs, logging, etc.).
+    """ Trainer defines a simple interface for training the ``SignalModel``.
 
     Args:
         device (torch.device): Device to train on.
-        train_dataset (iterable): Train dataset used to optimize the model.
-        dev_dataset (iterable): Dev dataset used to evaluate.
-        comet_ml_project_name (str): Project name, used for grouping experiments.
+        train_dataset (iterable of TextSpeechRow): Train dataset used to optimize the model.
+        dev_dataset (iterable of TextSpeechRow): Dev dataset used to evaluate the model.
+        comet_ml_project_name (str): Comet project name, used for grouping experiments.
         train_batch_size (int): Batch size used for training.
         dev_batch_size (int): Batch size used for evaluation.
         criterion (callable): Loss function used to score signal predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
-        min_rollback (int): Minimum number of epochs to rollback in case of an anomaly.
-        use_predicted (bool): If ``True`` train from predicted spectrogram, otherwise
-            train from real spectrogram.
-        comet_ml_experiment_key (str, optional): Previous experiment key to restart visualization.
+        min_rollback (int): Minimum number of epochs to rollback in case of a loss anomaly.
+        use_predicted (bool): If ``True`` train from predicted spectrograms, otherwise
+            train from real spectrograms.
+        comet_ml_experiment_key (str, optional): Previous experiment key to continue visualization
+            in comet.
         spectrogram_model_checkpoint_path (str, optional): Checkpoint used to generate a spectrogram
             from text as input to the signal model.
         model (torch.nn.Module, optional): Model to train and evaluate.
-        step (int, optional): Starting step, useful warm starts (i.e. checkpoints).
-        epoch (int, optional): Starting epoch, useful warm starts (i.e. checkpoints).
+        step (int, optional): Starting step; typically, this parameter is useful when starting from
+            a checkpoint.
+        epoch (int, optional): Starting epoch; typically, this parameter is useful when starting
+            from a checkpoint.
         anomaly_detector (AnomalyDetector, optional): Anomaly detector used to skip batches that
-            result in large loss.
+            result in an anomalous loss.
         use_tqdm (bool, optional): Use TQDM to track epoch progress.
     """
 
@@ -98,7 +102,6 @@ class Trainer():
                  anomaly_detector=None,
                  use_tqdm=False):
 
-        # Allow for ``class`` or a class instance
         self.model = model if isinstance(model, torch.nn.Module) else WaveRNN()
         self.model.to(device)
 
@@ -121,7 +124,7 @@ class Trainer():
         compute_spectrograms_partial = partial(
             compute_spectrograms,
             checkpoint_path=spectrogram_model_checkpoint_path,
-            device=torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
+            device=self.device)
         self.train_dataset = compute_spectrograms_partial(train_dataset)
         self.dev_dataset = compute_spectrograms_partial(dev_dataset)
         self.use_tqdm = use_tqdm
@@ -152,23 +155,78 @@ class Trainer():
         logger.info('Dev Batch Size: %d', dev_batch_size)
         logger.info('Model:\n%s' % self.model)
 
+    @classmethod
+    def from_checkpoint(class_, checkpoint, **kwargs):
+        """ Instantiate ``Trainer`` from a checkpoint.
+
+        Args:
+            checkpoint (Checkpoint): Checkpoint to initiate ``Trainer`` with.
+            **kwargs: Additional keyword arguments passed to ``__init__``.
+
+        Returns:
+            (Trainer)
+        """
+        checkpoint_kwargs = {
+            # NOTE: ``rollback`` is not checkpointed due to it's size.
+            'model': checkpoint.model,
+            'optimizer': checkpoint.optimizer,
+            'epoch': checkpoint.epoch,
+            'step': checkpoint.step,
+            'comet_ml_experiment_key': checkpoint.comet_ml_experiment_key,
+            'anomaly_detector': checkpoint.anomaly_detector,
+            'spectrogram_model_checkpoint_path': checkpoint.spectrogram_model_checkpoint_path,
+            'comet_ml_project_name': checkpoint.comet_ml_project_name
+        }
+        checkpoint_kwargs.update(kwargs)
+        return class_(**checkpoint_kwargs)
+
+    def save_checkpoint(self, directory):
+        """ Save a checkpoint.
+
+        Args:
+            directory (str): Directory to store checkpoint
+
+        Returns:
+            (str): Path the checkpoint was saved to.
+        """
+        return Checkpoint(
+            directory=directory,
+            step=self.step,
+            model=self.model,
+            comet_ml_project_name=self.comet_ml.project_name,
+            optimizer=self.optimizer,
+            epoch=self.epoch,
+            anomaly_detector=self.anomaly_detector,
+            comet_ml_experiment_key=self.comet_ml.get_key(),
+            spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path).save()
+
     def _get_state(self):
-        # TODO: Add a test to ensure that _get_state does not change after run_epoch or something
+        """ Get ``this`` state as expressed by ``PartialTrainerState``.
+
+        Get private ``Trainer`` state used to role back the ``Trainer``.
+        """
+        # TODO: Test to ensure PyTorch operations do not change the state as a result of tensor
+        # side effects.
         # NOTE: In PyTorch, unless we ``deepcopy``, ``state_dict`` continues to update.
-        return TrainerState(
+        return _PartialTrainerState(
             step=self.step,
             epoch=self.epoch,
             optimizer_state_dict=deepcopy(self.optimizer.state_dict()),
             model_state_dict=deepcopy(self.model.state_dict()))
 
     def _set_state(self, state):
+        """ Set ``this`` state from ``PartialTrainerState``.
+
+        Args:
+            state (PartialTrainerState)
+        """
         self.model.load_state_dict(state.model_state_dict)
         self.optimizer.load_state_dict(state.optimizer_state_dict)
         self.step = state.step
         self.epoch = state.epoch
 
     def _maybe_rollback(self, epoch_coarse_loss):
-        """ Maybe rollback the model if the loss is too high.
+        """ Rollback the model if the loss is determined to be anomalous.
 
         Args:
             epoch_coarse_loss (float)
@@ -195,8 +253,10 @@ class Trainer():
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
 
         Args:
-            train (bool, optional): If ``True``, the batch will store gradients.
-            trial_run (bool, optional): If ``True``, then runs only 1 batch.
+            train (bool, optional): If ``True`` the model will additionally take steps along the
+                computed gradient; furthermore, the Trainer ``step`` and ``epoch`` state will be
+                updated.
+            trial_run (bool, optional): If ``True`` then the epoch is limited to one batch.
         """
         label = self.TRAIN_LABEL if train else self.DEV_LABEL
         logger.info('[%s] Running Epoch %d, Step %d', label.upper(), self.epoch, self.step)
@@ -286,9 +346,7 @@ class Trainer():
         return coarse_loss, fine_loss, batch.signal_mask.sum()
 
     def visualize_inferred(self):
-        """ Run in inference mode without teacher forcing and push results to Tensorboard.
-
-        Returns: None
+        """ Run in inference mode and visualize results.
         """
         self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
         example = random.sample(self.dev_dataset, 1)[0]

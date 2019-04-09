@@ -393,13 +393,13 @@ def set_hparams():
                     'data_loader.DataLoader.__init__': {
                         # SOURCE: Efficient Neural Audio Synthesis
                         # The WaveRNN models are trained on sequences of 960 audio samples
-                        'slice_size': int(900 / frame_hop),
+                        'spectrogram_slice_size': int(900 / frame_hop),
                         # TODO: This should depend on an upsample property.
                         'spectrogram_slice_pad': 5,
                     },
                 }
             },
             # NOTE: Window size smoothing parameter is not super sensative.
-            'optimizer.AutoOptimizer.__init__.window_size': 128,
+            'optimizers.AutoOptimizer.__init__.window_size': 128,
         }
     })

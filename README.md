@@ -3,7 +3,7 @@
 
 <h1 align="center">WellSaid Labs</h3>
 
-WellSaid Lab's core product featuring our TrueVoice deep neural network architecture.
+WellSaid Lab's TrueVoice deep neural network architecture.
 
 ![PyPI - Python Version](https://img.shields.io/badge/python-3.6-blue.svg)
 [![Build Status](https://travis-ci.com/AI2Incubator/WellSaidLabs.svg?token=xKbC739Gn2ssU4AStE7z&branch=master)](https://travis-ci.com/AI2Incubator/WellSaidLabs)
@@ -14,7 +14,7 @@ This section discusses various dependencies that need to be installed for this r
 
 ### 1. Install Python Dependencies
 
-Make sure you have Python 3.6.6 with pip. Install most of the dependencies with the PIP package
+Make sure you have Python 3.7.3 with PIP. Install most of the dependencies with the PIP package
 manager like so:
 
     python3 -m pip install -r requirements.txt
@@ -69,6 +69,53 @@ Run linting like so:
 
     flake8 src/; flake8 test/;
 
+
+## Repository Layout
+
+```
+.
+├── /.vscode/                           # Repository VS Code configuration.
+├── /data/                              # Default location for caching repository datasets.
+├── /docker/                            # Dockerfiles specified for this repository.
+                                        # TODO: The Dockerfile are only used in the context of
+                                        # the ``service``, consider moving them there.
+├── /docs/                              # Additional repository documentation.
+├── /experiments/                       # Default location for storing repository experiment data.
+├── /node_modules/                      # Default location for storing npm packages.
+├── /notebooks/                         # Experimental and unmaintained jupyter notebook scratch work.
+├── /src/                               # Repository source code.
+│   ├── /bin/                           # Executable scripts.
+│   │   ├── /gcp/                       # Executable GCP utility scripts.
+│   │   ├── /train/                     # Executable model training scripts.
+│   │   ├── /chunk_wav_and_text.py      # Executable to initially create a text-to-speech dataset.
+│   │   ├── /evaluate.py                # Executable to evaluate model performance.
+│   ├── /datasets/                      # Dataset hooks, schema definitions, and processing
+                                        # modules.
+│   │   ├── /constants.py               # Dataset schema definitions.
+│   │   ├── /hilary.py                  # Hilary dataset.
+│   │   ├── /lj_speech.py               # Linda Johnson dataset.
+│   │   ├── /m_ailabs.py                # M-AI Labs dataset.
+│   │   └── /process.py                 # Dataset example processing modules.
+│   ├── /hparams/                       # Global optional parameter configuration.
+                                        # TODO: Consider setting 'experiments/' and 'data/' folder
+                                        # via hparams.
+                                        # TODO: Consider renaming to 'defaults'.
+│   │   ├── /configurable_.py           # Module for applying configuration.
+│   │   └── /configure.py               # Global optional parameter configuration.
+│   ├── /service/                       # Service deployment with Kubernetes.
+│   ├── /signal_model/
+│   ├── /spectrogram_model/
+│   ├── /audio.py                       # Audio processing modules.
+│   ├── /distributed.py                 # PyTorch distributed training utilities.
+│   ├── /optimizers.py                  # Gradient descent optimizers definitions.
+│   ├── /training_context_manager.py    # Training environment context manager.
+│   ├── /utils.py                       # Other utilities.
+│   └── /visualize.py
+├── /tests/                             # Unit test definitions executed by PyTest.
+├── /third_party/                       # Third party modules not handled by a package manager.
+└── /travis/                            # Continuous integration testing scripts.
+```
+
 ## Contributing
 
 Thanks for considering contributing!
@@ -82,4 +129,4 @@ and test your changes to WellSaidLabs.
 
 ## Authors
 
-* Michael Petrochuk - michaelp@allenai.org
+* Michael Petrochuk - michael@wellsaidlabs.com
