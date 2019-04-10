@@ -19,9 +19,9 @@ from src.utils import ROOT_PATH
 @pytest.fixture()
 def root():
     root_ = ROOT_PATH / 'experiments'
-    before = set(list(root_.iterdir()))
+    before = set(list(root_.iterdir())) if root_.exists() else set()
     yield root_
-    after = set(list(root_.iterdir()))
+    after = set(list(root_.iterdir())) if root_.exists() else set()
 
     for path in after.difference(before):
         if not path.exists():

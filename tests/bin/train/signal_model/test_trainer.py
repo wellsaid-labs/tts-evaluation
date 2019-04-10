@@ -3,6 +3,7 @@ from unittest import mock
 
 import os
 
+import pytest
 import torch
 
 from src.bin.train.signal_model.data_loader import SignalModelTrainingRow
@@ -59,8 +60,8 @@ def test__do_loss_and_maybe_backwards():
 
     (coarse_loss, fine_loss, num_predictions) = trainer._do_loss_and_maybe_backwards(
         batch, (predicted_coarse, predicted_fine, None), False)
-    assert coarse_loss.item() == 0.31326165795326233
-    assert fine_loss.item() == 1.31326162815094
+    assert coarse_loss.item() == pytest.approx(0.3132616)
+    assert fine_loss.item() == pytest.approx(1.3132616)
     assert num_predictions == 2
 
 
