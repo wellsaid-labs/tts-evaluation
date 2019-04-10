@@ -17,4 +17,4 @@ notifications:
   email: false
 
 install: source travis/install.sh
-script: RUN_SLOW=true RUN_FLAKE8=true bash travis/test_script.sh
+script: RUN_FLAKE8=true bash travis/test_script.sh
