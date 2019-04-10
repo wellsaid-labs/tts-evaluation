@@ -1,0 +1,75 @@
+*.pyc
+.idea
+
+# Operating system related file
+.DS_Store
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*,cover
+.hypothesis/
+coverage/**
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# IPython Notebook
+.ipynb_checkpoints
+
+# Data
+data/**
+.data/**
+
+# Test Files
+.pytest_cache
+
+# Various tmp files
+tmp/
+
+# Sensative files
+.env
+
+# Git patches used by comet.ml reproduce
+*.patch
+*.zip
+
+# Local node modules
+node_modules/

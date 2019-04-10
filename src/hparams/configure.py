@@ -1,7 +1,7 @@
+import logging
+
 from torch import nn
 
-import IPython
-import librosa
 import torch
 
 from src.hparams import add_config
@@ -11,6 +11,8 @@ from torch.nn import BCEWithLogitsLoss
 from torch.nn import CrossEntropyLoss
 from torch.nn import MSELoss
 from torch.optim import Adam
+
+logger = logging.getLogger(__name__)
 
 
 def _set_anomaly_detection():
@@ -62,20 +64,37 @@ def _set_audio_processing():
     # designed to efficiently predict 16-bit raw audio samples.
     bits = 16
 
-    librosa.effects.trim = configurable(librosa.effects.trim)
-    librosa.output.write_wav = configurable(librosa.output.write_wav)
-    IPython.display.Audio.__init__ = configurable(IPython.display.Audio.__init__)
+    try:
+        import librosa
+        librosa.effects.trim = configurable(librosa.effects.trim)
+        librosa.output.write_wav = configurable(librosa.output.write_wav)
+        add_config({
+            'librosa.effects.trim': {
+                'frame_length': frame_size,
+                'hop_length': frame_hop,
+                # NOTE: Manually determined to be a adequate cutoff for Linda Johnson via:
+                # ``notebooks/Stripping Silence.ipynb``
+                'top_db': 50
+            },
+            'librosa.output.write_wav.sr': sample_rate})
+    except ImportError:
+        logger.info('Ignoring optional `librosa` configurations.')
+
+    try:
+        import IPython
+        IPython.display.Audio.__init__ = configurable(IPython.display.Audio.__init__)
+        add_config({'IPython.lib.display.Audio.__init__.rate': sample_rate})
+    except ImportError:
+        logger.info('Ignoring optional `IPython` configurations.')
+
+    try:
+        import scipy.io.wavfile
+        scipy.io.wavfile.write = configurable(scipy.io.wavfile.write)
+        add_config({'scipy.io.wavfile.write.rate': sample_rate})
+    except ImportError:
+        logger.info('Ignoring optional `scipy` configurations.')
 
     add_config({
-        'librosa.effects.trim': {
-            'frame_length': frame_size,
-            'hop_length': frame_hop,
-            # NOTE: Manually determined to be a adequate cutoff for Linda Johnson via:
-            # ``notebooks/Stripping Silence.ipynb``
-            'top_db': 50
-        },
-        'librosa.output.write_wav.sr': sample_rate,
-        'IPython.lib.display.Audio.__init__.rate': sample_rate,
         'src.datasets.lj_speech.lj_speech_dataset': {
             'resample': sample_rate,
             # NOTE: ``Signal Loudness Distribution`` notebook shows that LJ Speech is biased
@@ -93,6 +112,11 @@ def _set_audio_processing():
             # To make this more tractable, we first apply a µ-law companding transformation
             # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
             'read_audio.sample_rate': sample_rate,
+            # NOTE: Practically, `frame_rate` is equal to `sample_rate`. However, the terminology is
+            # more appropriate because `sample_rate` is ambiguous. In a multi-channel scenario, each
+            # channel has its own set of samples. It's unclear if `sample_rate` depends on the
+            # number of channels, scaling linearly per channel.
+            'build_wav_header.frame_rate': sample_rate,
             'get_log_mel_spectrogram': {
                 'sample_rate': sample_rate,
                 'frame_size': frame_size,
@@ -129,6 +153,7 @@ def _set_audio_processing():
             'combine_signal.bits': bits,
         },
         'src.visualize': {
+            'CometML.<locals>.log_audio.sample_rate': sample_rate,
             'plot_waveform.sample_rate': sample_rate,
             'plot_spectrogram': {
                 'sample_rate': sample_rate,
@@ -296,10 +321,6 @@ def set_hparams():
     from src import datasets
     dataset = datasets.lj_speech_dataset
 
-    # SOURCE (Tacotron 2):
-    # Finally, the predicted mel spectrogram is passed
-    train_signal_model_from_predicted_spectrogram = True
-
     spectrogram_model_dev_batch_size = 256
 
     # TODO: Add option to instead of strings to use direct references.
@@ -316,7 +337,7 @@ def set_hparams():
                 # probability 0.5 is applied only to layers in the pre-net of the
                 # autoregressive decoder.
                 'pre_net.PreNet.__init__.dropout': 0.5,
-                'post_net.PostNet.__init__.convolution_dropout': convolution_dropout
+                'post_net.PostNet.__init__.convolution_dropout': 0.0
             },
             'bin.evaluate.main.dataset': dataset,
             'datasets.process.compute_spectrograms.batch_size': spectrogram_model_dev_batch_size,
@@ -345,11 +366,6 @@ def set_hparams():
                         # We minimize the summed mean squared error (MSE) from before and after the
                         # post-net to aid convergence.
                         'criterion_spectrogram': MSELoss,
-
-                        # The maximum sequential predictions to make before quitting. This was
-                        # pick semi-arbitrarily. The longest sequences in any dataset so far
-                        # encountered have been less than 2000 frames.
-                        'max_recursion': 2000,
                     },
                 },
                 'signal_model': {
@@ -363,8 +379,6 @@ def set_hparams():
                         'train_batch_size': 64,
                         'dev_batch_size': 256,
 
-                        'use_predicted': train_signal_model_from_predicted_spectrogram,
-
                         # These are not directly mentioned in the paper; however are popular choices
                         # as of Jan 2019 for a sequence to sequence task.
                         'criterion': CrossEntropyLoss,
@@ -373,12 +387,13 @@ def set_hparams():
                     'data_loader.DataLoader.__init__': {
                         # SOURCE: Efficient Neural Audio Synthesis
                         # The WaveRNN models are trained on sequences of 960 audio samples
-                        'slice_size': int(900 / frame_hop),
+                        'spectrogram_slice_size': int(900 / frame_hop),
+                        # TODO: This should depend on an upsample property.
                         'spectrogram_slice_pad': 5,
                     },
                 }
             },
             # NOTE: Window size smoothing parameter is not super sensative.
-            'optimizer.AutoOptimizer.__init__.window_size': 128,
+            'optimizers.AutoOptimizer.__init__.window_size': 128,
         }
     })

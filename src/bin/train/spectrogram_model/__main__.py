@@ -38,16 +38,20 @@ from src.hparams import set_hparams
 from src.training_context_manager import TrainingContextManager
 from src.utils import Checkpoint
 from src.utils import parse_hparam_args
-from src.utils import set_basic_logging_config
 
 import src.distributed
 
 logger = logging.getLogger(__name__)
 
 
-def _set_hparams():
-    """ Set hyperparameters specific to the spectrogram model. """
+def _set_hparams(more_hparams=None):
+    """ Set hyperparameters for spectrogram model training.
+
+    Args:
+        more_harpams (dict, optional): Additional hyperparameters to set.
+    """
     set_hparams()
+
     add_config({
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999, eps = 10−6
@@ -55,29 +59,62 @@ def _set_hparams():
         # We also apply L2 regularization with weight 10−6
         'torch.optim.adam.Adam.__init__': {
             'eps': 10**-6,
-            'weight_decay': 10**-5,
+            'weight_decay': 10**-6,
             'lr': 10**-3
         }
     })
 
+    if more_hparams:
+        add_config(more_hparams)
+
 
 @configurable
 def _get_dataset(dataset=datasets.lj_speech_dataset):
-    return dataset
+    return dataset()
+
+
+def _train(trainer,
+           context,
+           evaluate_aligned_every_n_epochs=1,
+           evaluate_inferred_every_n_epochs=5,
+           save_checkpoint_every_n_epochs=5):
+    """ Loop for training and periodically evaluating the model.
+
+    Args:
+        trainer (src.bin.train.spectrogram_model.trainer.Trainer)
+        context (src.training_context_manager.TrainingContextManager)
+        evaluate_aligned_every_n_epochs (int, optional)
+        evaluate_inferred_every_n_epochs (int, optional)
+        save_checkpoint_every_n_epochs (int, optional)
+    """
+    is_trial_run = True  # The first iteration is run as a ``trial_run``
+
+    while True:
+        trainer.run_epoch(train=True, trial_run=is_trial_run)
+
+        if trainer.epoch % evaluate_aligned_every_n_epochs == 0 or is_trial_run:
+            trainer.run_epoch(train=False, trial_run=is_trial_run)
+
+        if trainer.epoch % evaluate_inferred_every_n_epochs == 0 or is_trial_run:
+            trainer.run_epoch(train=False, infer=True, trial_run=is_trial_run)
+            trainer.visualize_inferred()
+
+        if ((trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run) and
+                src.distributed.is_master()):
+            trainer.save_checkpoint(context.checkpoints_directory)
+
+        is_trial_run = False
+        logger.info('-' * 100)
 
 
 def main(run_name,
          comet_ml_project_name=None,
          run_tags=[],
          run_root=Path('experiments/spectrogram_model/'),
-         checkpoint_path=None,
+         checkpoint=None,
          reset_optimizer=False,
-         hparams={},
-         evaluate_aligned_every_n_epochs=1,
-         evaluate_inferred_every_n_epochs=5,
-         save_checkpoint_every_n_epochs=5,
-         distributed_rank=None,
-         distributed_backend='nccl'):
+         more_hparams={},
+         device_index=None):
     """ Main module that trains a the spectrogram model saving checkpoints incrementally.
 
     Args:
@@ -85,97 +122,53 @@ def main(run_name,
         comet_ml_project_name (str, optional): Project name to use with comet.ml.
         run_tags (list of str, optional): Comet.ml experiment tags.
         run_root (str, optional): Directory to save experiments.
-        checkpoint_path (str, optional): Accepts a checkpoint path to load or empty string
+        checkpoint (str or bool, optional): Accepts a checkpoint path to load or bool
             signaling to load the most recent checkpoint in ``run_root``.
         reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer.
-        hparams (dict, optional): Hparams to override default hparams.
-        evaluate_aligned_every_n_epochs (int, optional)
-        evaluate_inferred_every_n_epochs (int, optional)
-        save_checkpoint_every_n_epochs (int, optional)
-        distributed_rank (int, optional): Index of the GPU device to use in distributed system.
-        distributed_backend (str, optional): Name of the backend to use.
+        more_hparams (dict, optional): Hparams to override default hparams.
+        device_index (int, optional): Index of the GPU device to use.
     """
-    device = torch.device('cuda')
-    if distributed_rank is not None:
-        torch.distributed.init_process_group(backend=distributed_backend)
-        device = torch.device('cuda', distributed_rank)
-        torch.cuda.set_device(device.index)  # Must run before using distributed tensors
-
-    set_basic_logging_config(device)
-    _set_hparams()
-    add_config(hparams)
-
-    checkpoint = (
-        Checkpoint.most_recent(run_root / '**/*.pt', device=device)
-        if checkpoint_path == '' else Checkpoint.from_path(checkpoint_path, device=device))
-
-    if checkpoint is not None:
-        step = checkpoint.step
-        directory = checkpoint.directory.parent.parent
-    else:
-        step = 0
-        directory = run_root / str(time.strftime('%b_%d/%H:%M:%S', time.localtime())).lower()
-        if src.distributed.in_use():
-            directory = Path(src.distributed.broadcast_string(str(directory)))
-
-    with TrainingContextManager(root_directory=directory, step=step, device=device) as context:
-        logger.info('Directory: %s', directory)
+    device = torch.device('cuda') if device_index is None else torch.device('cuda', device_index)
+    with TrainingContextManager(device=device) as context:
         logger.info('Name: %s', run_name)
         logger.info('Tags: %s', run_tags)
-        train, dev = _get_dataset()()
 
-        # Load checkpointed values
-        trainer_kwargs = {'comet_ml_project_name': comet_ml_project_name}
-        if checkpoint is not None:
-            if reset_optimizer:
-                logger.info('Ignoring checkpoint optimizer.')
-                checkpoint.optimizer = None
-            logger.info('Loaded checkpoint %s', checkpoint.path)
-            # For backwards compatibility
-            comet_ml_project_name = getattr(checkpoint, 'comet_ml_project_name',
-                                            comet_ml_project_name)
-            trainer_kwargs.update({
-                'model': checkpoint.model,
-                'optimizer': checkpoint.optimizer,
-                'epoch': checkpoint.epoch,
-                'step': checkpoint.step,
-                'comet_ml_experiment_key': checkpoint.comet_ml_experiment_key,
-                'text_encoder': checkpoint.text_encoder,
-                'speaker_encoder': checkpoint.speaker_encoder,
-                'comet_ml_project_name': comet_ml_project_name
-            })
+        context.init_distributed()
 
-        trainer = Trainer(context.device, train, dev, **trainer_kwargs)
+        _set_hparams(more_hparams)
+
+        # Set the root directory and load checkpoint
+        if checkpoint is not None and checkpoint:
+            if isinstance(checkpoint, str):
+                checkpoint = Checkpoint.from_path(checkpoint)
+            elif isinstance(checkpoint, bool) and checkpoint:
+                checkpoint = Checkpoint.most_recent(run_root / '**/*.pt')
+            else:
+                raise ValueError('Unable to load checkpoint.')
+
+            context.set_context_root(checkpoint.directory.parent.parent, at_checkpoint=True)
+            checkpoint.optimizer = None if reset_optimizer else checkpoint.optimizer
+        else:
+            root = run_root / str(time.strftime('%b_%d/%H:%M:%S', time.localtime())).lower()
+            if src.distributed.is_initialized():
+                root = Path(src.distributed.broadcast_string(str(root)))
+            context.set_context_root(root)
+
+        train, dev = _get_dataset()
+
+        # Create trainer
+        kwargs = {'device': device, 'train_dataset': train, 'dev_dataset': dev}
+        if comet_ml_project_name is not None:
+            kwargs['comet_ml_project_name'] = comet_ml_project_name
+        if checkpoint:
+            kwargs['checkpoint'] = checkpoint
+        trainer = (Trainer.from_checkpoint if checkpoint else Trainer)(**kwargs)
+
         trainer.comet_ml.set_name(run_name)
         trainer.comet_ml.add_tags(run_tags)
-        trainer.comet_ml.log_other('directory', directory)
+        trainer.comet_ml.log_other('directory', context.root_directory)
 
-        # Training Loop
-        while True:
-            is_trial_run = trainer.step == step
-            trainer.run_epoch(train=True, trial_run=is_trial_run)
-
-            if trainer.epoch % evaluate_aligned_every_n_epochs == 0 or is_trial_run:
-                trainer.run_epoch(train=False, trial_run=is_trial_run)
-
-            if trainer.epoch % evaluate_inferred_every_n_epochs == 0 or is_trial_run:
-                trainer.run_epoch(train=False, infer=True, trial_run=is_trial_run)
-                trainer.visualize_inferred()
-
-            if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
-                if not src.distributed.in_use() or src.distributed.is_master():
-                    Checkpoint(
-                        comet_ml_project_name=comet_ml_project_name,
-                        directory=context.checkpoints_directory,
-                        model=(trainer.model.module if src.distributed.in_use() else trainer.model),
-                        optimizer=trainer.optimizer,
-                        text_encoder=trainer.text_encoder,
-                        speaker_encoder=trainer.speaker_encoder,
-                        epoch=trainer.epoch,
-                        step=trainer.step,
-                        comet_ml_experiment_key=trainer.comet_ml.get_key()).save()
-
-            logger.info('-' * 100)
+        _train(trainer, context)
 
 
 if __name__ == '__main__':  # pragma: no cover
@@ -183,12 +176,12 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '-c',
         '--checkpoint',
-        const='',
+        const=True,
         type=str,
         default=None,
         action='store',
         nargs='?',
-        help='Without a value, loads the most recent checkpoint;'
+        help='Without a value ``-c``, loads the most recent checkpoint; '
         'otherwise, expects a checkpoint file path.')
     parser.add_argument(
         '-n', '--name', type=str, default=None, help='Name describing the experiment')
@@ -199,7 +192,14 @@ if __name__ == '__main__':  # pragma: no cover
         required=True,
         help='Comet.ML project for the experiment to use.')
     parser.add_argument(
-        '-t', '--tags', default=[], action='append', help='List of tags for the experiment.')
+        '-t',
+        '--tags',
+        default=[
+            'detached post_net', 'masked conv', 'post_net dropout=0', 'weight_decay=10**-6',
+            'no elliot', 'no numbers'
+        ],
+        action='append',
+        help='List of tags for the experiment.')
     parser.add_argument(
         '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     # LEARN MORE: https://pytorch.org/docs/stable/distributed.html
@@ -226,7 +226,7 @@ if __name__ == '__main__':  # pragma: no cover
         run_name=args.name,
         run_tags=args.tags,
         comet_ml_project_name=args.project_name,
-        checkpoint_path=args.checkpoint,
+        checkpoint=args.checkpoint,
         reset_optimizer=args.reset_optimizer,
-        hparams=hparams,
-        distributed_rank=args.local_rank)
+        more_hparams=hparams,
+        device_index=args.local_rank)

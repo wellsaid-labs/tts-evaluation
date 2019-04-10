@@ -27,6 +27,12 @@ sync {
       "htmlcov/**",
       "coverage/**",
       "*.wav",
-      "*.py*.py" -- Odd temporary files
+      "*.py*.py", -- Odd temporary files
+      -- Various compressed formats are typically slow to sync
+      "*.zip",
+      "*.tar",
+      "*.tgz",
+      "*.gzip",
+      "node_modules/**"
   }
 }

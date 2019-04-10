@@ -19,9 +19,6 @@ fi
 
 run_tests() {
     TEST_CMD="python -m pytest tests/ src/ --doctest-modules --verbose --durations=20"
-    if [[ "$RUN_SLOW" == "true" ]]; then
-        TEST_CMD="$TEST_CMD --runslow"
-    fi
     $TEST_CMD
 }
 

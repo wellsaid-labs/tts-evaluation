@@ -11,18 +11,15 @@ from pathlib import Path
 import argparse
 import logging
 
-# NOTE: Needs to be imported before torch
-# Remove after this issue is resolved https://github.com/comet-ml/issue-tracking/issues/178
-import comet_ml  # noqa
+from torchnlp.utils import tensors_to
+from torch.utils.data.sampler import RandomSampler
 
-from torchnlp.text_encoders.reserved_tokens import RESERVED_ITOS
-
-import librosa
 import torch
-import numpy
+import scipy
 
 from src.audio import combine_signal
 from src.audio import griffin_lim
+from src.datasets import balance_dataset
 from src.datasets import compute_spectrograms
 from src.datasets import TextSpeechRow
 from src.hparams import configurable
@@ -30,13 +27,8 @@ from src.hparams import ConfiguredArg
 from src.hparams import log_config
 from src.hparams import set_hparams
 from src.utils import Checkpoint
-from src.utils import chunks
-from src.utils import collate_tensors
 from src.utils import evaluate
-from src.utils import pad_batch
-from src.utils import RandomSampler
 from src.utils import record_stream
-from src.utils import tensors_to
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -53,8 +45,9 @@ def _save(destination, tags, speaker, waveform):
     """
     speaker_name = speaker.name.lower().replace(' ', '_')
     path = str(destination / ('%s,%s.wav' % (speaker_name, ','.join(tags))))
-    librosa.output.write_wav(path, waveform)
-    logger.info('Saved file %s', path)
+    scipy.io.wavfile.write(filename=path, data=waveform)
+    logger.info('Saved file "%s" with waveform of shape `%s` and dtype `%s`', path, waveform.shape,
+                waveform.dtype)
 
 
 def _get_spectrogram_length(example, use_predicted):
@@ -62,14 +55,17 @@ def _get_spectrogram_length(example, use_predicted):
             if use_predicted else example.spectrogram.shape[0])
 
 
-def _get_dataset(dataset, speaker_encoder, num_samples=None, speaker=None):
-    """ Get the dataset to evaluate.
+def _sample_dataset(dataset, speaker_encoder, num_samples=None, speaker=None, balanced=False):
+    """ Given a dataset, sample from it and configure it.
 
     Args:
         dataset (callable or list): Dataset returned from `src.datasets` or a `list` of `str`.
+            Where the `dev` set is the second value returned.
         speaker_encoder (torchnlp.TextEncoder): Speaker encoder with all possible speakers.
         num_samples (int or None, optional): Randomly sample a number of samples.
-        speaker (src.datasets.Speaker): Filter to only one speaker
+        speaker (src.datasets.Speaker): Filter to only one speaker.
+        balanced (bool, optional): If ``True``, sample from a dataset with equal speaker
+            distribution.
 
     Returns:
         dataset (list of TextSpeechRow)
@@ -78,6 +74,8 @@ def _get_dataset(dataset, speaker_encoder, num_samples=None, speaker=None):
     if callable(dataset):  # CASE: Dataset created by a callable
         _, dev = dataset()
 
+        if balanced:
+            dev = balance_dataset(dev, lambda r: r.speaker)
         if speaker is not None:
             dev = [r for r in dev if r.speaker == speaker]
 
@@ -87,13 +85,7 @@ def _get_dataset(dataset, speaker_encoder, num_samples=None, speaker=None):
 
         ret = [dev[i] for i in indicies]
     elif isinstance(dataset, list):  # CASE: List of text
-        if speaker is not None:
-            speakers = [speaker]
-        else:
-            # Get all the speakers
-            speakers = set(speaker_encoder.vocab)
-            speakers = speakers.difference(set(RESERVED_ITOS))
-
+        speakers = speaker_encoder.vocab if speaker is None else [speaker]
         ret = []
         for speaker in speakers:
             for text in dataset:
@@ -111,11 +103,11 @@ def main(dataset=ConfiguredArg(),
          signal_model_checkpoint_path=None,
          spectrogram_model_checkpoint_path=None,
          destination='results/',
-         num_samples=32,
+         num_samples=50,
          aligned=False,
          speaker=None,
+         balanced=False,
          spectrogram_model_batch_size=1,
-         signal_model_batch_size=1,
          signal_model_device=torch.device('cpu')):
     """ Generate random samples of signal model to evaluate.
 
@@ -133,9 +125,9 @@ def main(dataset=ConfiguredArg(),
         num_samples (int, optional): Number of rows to evaluate.
         aligned (bool, optional): If ``True``, predict a ground truth aligned spectrogram.
         speaker (Speaker, optional): Filter the data for a particular speaker.
+        balanced (bool, optional): If ``True``, sample from a dataset with equal speaker
+            distribution. Note, that this operation shuffles the rows.
         spectrogram_model_batch_size (int, optional)
-        signal_model_batch_size (int, optional): The batch size for the signal model. This is lower
-            than during training because we are no longer using small slices.
         signal_model_device (torch.device, optional): Device used for signal model inference, note
             that on CPU the signal model does not run out of memory.
     """
@@ -150,8 +142,12 @@ def main(dataset=ConfiguredArg(),
     spectrogram_model_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     spectrogram_model_checkpoint = Checkpoint.from_path(
         spectrogram_model_checkpoint_path, device=spectrogram_model_device)
-    examples, indicies = _get_dataset(dataset, spectrogram_model_checkpoint.speaker_encoder,
-                                      num_samples, speaker)
+    examples, indicies = _sample_dataset(
+        dataset,
+        speaker_encoder=spectrogram_model_checkpoint.input_encoder.speaker_encoder,
+        num_samples=num_samples,
+        speaker=speaker,
+        balanced=balanced)
 
     # Compute target and / or predict spectrograms
     examples = compute_spectrograms(
@@ -184,28 +180,19 @@ def main(dataset=ConfiguredArg(),
     examples = list(zip(examples, indicies))
     examples = sorted(examples, key=lambda e: _get_length_partial(e[0]), reverse=True)
 
-    for chunk in chunks(examples, signal_model_batch_size):
-        examples_chunk, indicies_chunk = zip(*chunk)
-        batch = collate_tensors(examples_chunk, stack_tensors=partial(pad_batch, padding_index=0))
-        batch = tensors_to(batch, device=signal_model_device, non_blocking=True)
-        spectrogram = (batch.predicted_spectrogram if use_predicted else batch.spectrogram)
-        spectrogram, spectrogram_lengths = spectrogram
-
-        logger.info('Predicting signal from a batch of %d, %d frame spectrograms...',
-                    spectrogram.shape[0], spectrogram.shape[1])
+    for example, index in examples:
+        example = tensors_to(example, device=signal_model_device, non_blocking=True)
+        spectrogram = (example.predicted_spectrogram if use_predicted else example.spectrogram)
+        logger.info('Predicting signal a %s spectrogram.', spectrogram.shape)
         with evaluate(signal_model_inferrer):
-            # [batch_size, local_length, local_features_size] → [batch_size, signal_length]
+            # [local_length, local_features_size] → [signal_length]
             predicted_coarse, predicted_fine, _ = signal_model_inferrer(spectrogram)
-            predicted_signal = combine_signal(predicted_coarse, predicted_fine).numpy()
+            predicted_signal = combine_signal(predicted_coarse, predicted_fine, return_int=True)
+            predicted_signal = predicted_signal.numpy()
 
-        # Split and save
-        factor = int(predicted_signal.shape[1] / spectrogram.shape[1])
-        splits = numpy.split(predicted_signal, signal_model_batch_size)
-        for i, example, predicted, spectrogram_length in zip(indicies_chunk, examples_chunk, splits,
-                                                             spectrogram_lengths):
-            predicted = predicted[0, :spectrogram_length * factor]
-            _save(destination, ['index_%d' % i, 'wave_rnn'], example.speaker, predicted)
-            logger.info('-' * 100)
+        # Save
+        _save(destination, ['index_' + index, 'wave_rnn'], example.speaker, predicted_signal)
+        logger.info('-' * 100)
 
 
 if __name__ == '__main__':  # pragma: no cover

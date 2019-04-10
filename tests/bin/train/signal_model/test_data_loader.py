@@ -19,7 +19,8 @@ def test__get_slice(randint_mock):
     signal = torch.rand(100)
     slice_pad = 3
     slice_size = 3
-    slice_ = _get_slice(spectrogram, signal, slice_size=slice_size, spectrogram_slice_pad=slice_pad)
+    slice_ = _get_slice(
+        spectrogram, signal, spectrogram_slice_size=slice_size, spectrogram_slice_pad=slice_pad)
 
     assert slice_.input_spectrogram.shape == (slice_size + slice_pad * 2, spectrogram_channels)
     assert slice_.input_signal.shape == (slice_size * samples_per_frame, 2)
@@ -28,14 +29,15 @@ def test__get_slice(randint_mock):
 
 
 @mock.patch('src.bin.train.signal_model.data_loader.random.randint')
-def test__get_slice_2(randint_mock):
+def test__get_slice__padding(randint_mock):
     randint_mock.return_value = 2
     spectrogram = torch.tensor([[1], [2], [3]])
     signal = torch.tensor([.1, .1, .2, .2, .3, .3])
 
     slice_pad = 3
     slice_size = 2
-    slice_ = _get_slice(spectrogram, signal, slice_size=slice_size, spectrogram_slice_pad=slice_pad)
+    slice_ = _get_slice(
+        spectrogram, signal, spectrogram_slice_size=slice_size, spectrogram_slice_pad=slice_pad)
 
     assert torch.equal(slice_.input_spectrogram,
                        torch.tensor([[0], [1], [2], [3], [0], [0], [0], [0]]))
@@ -60,7 +62,7 @@ def test_data_loader():
         batch_size,
         device,
         use_predicted=False,
-        slice_size=slice_size,
+        spectrogram_slice_size=slice_size,
         spectrogram_slice_pad=slice_pad,
         use_tqdm=False,
         trial_run=False)

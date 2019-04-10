@@ -1,14 +1,18 @@
 from contextlib import ExitStack
 from unittest import mock
 
+import os
+
+import pytest
 import torch
 
 from src.bin.train.signal_model.data_loader import SignalModelTrainingRow
 from src.bin.train.signal_model.trainer import Trainer
 from src.utils import AnomalyDetector
+from src.utils import Checkpoint
 
-from tests.utils import MockCometML
 from tests.utils import get_example_spectrogram_text_speech_rows
+from tests.utils import MockCometML
 
 
 @mock.patch('src.bin.train.signal_model.trainer.CometML')
@@ -25,6 +29,24 @@ def get_trainer(compute_spectrograms_mock, comet_ml_mock):
         dev_batch_size=1)
 
 
+@mock.patch('src.bin.train.signal_model.trainer.CometML')
+@mock.patch('src.bin.train.signal_model.trainer.compute_spectrograms')
+def test_checkpoint(compute_spectrograms_mock, comet_ml_mock):
+    trainer = get_trainer()
+    comet_ml_mock.return_value = MockCometML()
+    compute_spectrograms_mock.return_value = get_example_spectrogram_text_speech_rows()
+
+    checkpoint_path = trainer.save_checkpoint('tests/_test_data/')
+    trainer.from_checkpoint(
+        checkpoint=Checkpoint.from_path(checkpoint_path),
+        device=torch.device('cpu'),
+        train_dataset=get_example_spectrogram_text_speech_rows(),
+        dev_dataset=get_example_spectrogram_text_speech_rows())
+
+    # Clean up
+    os.unlink(checkpoint_path)
+
+
 def test__do_loss_and_maybe_backwards():
     trainer = get_trainer()
     batch = SignalModelTrainingRow(
@@ -38,8 +60,8 @@ def test__do_loss_and_maybe_backwards():
 
     (coarse_loss, fine_loss, num_predictions) = trainer._do_loss_and_maybe_backwards(
         batch, (predicted_coarse, predicted_fine, None), False)
-    assert coarse_loss.item() == 0.31326165795326233
-    assert fine_loss.item() == 1.31326162815094
+    assert coarse_loss.item() == pytest.approx(0.3132616)
+    assert fine_loss.item() == pytest.approx(1.3132616)
     assert num_predictions == 2
 
 
@@ -103,7 +125,7 @@ def test_run_epoch():
                  'src.bin.train.signal_model.trainer.DataLoader',
                  'src.bin.train.signal_model.trainer.torch.nn.parallel.data_parallel',
                  'torch.Tensor.backward',
-                 'src.optimizer.Optimizer.step', 'src.optimizer.AutoOptimizer.step'
+                 'src.optimizers.Optimizer.step', 'src.optimizers.AutoOptimizer.step'
              ]
          ])
         MockDataLoader.return_value = loaded_data

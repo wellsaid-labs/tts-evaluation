@@ -4,6 +4,7 @@ from functools import wraps
 from functools import lru_cache
 from importlib import import_module
 
+import importlib
 import inspect
 import logging
 import operator
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 # TODO: Add 'No Config' mode preventing runtime warnings.
 # TODO: Print a warning if a hparam is being overridden, with a flag to turn the warning off.
+# TODO: Suggest in errors on how to add config / import set_config.
 
 
 class _KeyListDictionary(dict):
@@ -176,6 +178,21 @@ def _get_module_name(func):
     return keys, print_name
 
 
+def _is_possible_module(module_path):
+    """ Return True if valid module path without importing the module.
+
+    Args:
+        module_path (str)
+
+    Returns:
+        (bool)
+    """
+    try:
+        return importlib.util.find_spec(module_path) is not None
+    except (ModuleNotFoundError, AttributeError):
+        return False
+
+
 def _check_configuration_helper(dict_, keys, trace):
     """ Recursive helper of ``_check_configuration``.
 
@@ -189,6 +206,11 @@ def _check_configuration_helper(dict_, keys, trace):
         trace.reverse()
         raise TypeError('Failed to find `configurable` decorator along path %s.\n' % (keys,) +
                         'Attempts (most recent call last):\n\t%s' % ('\n\t'.join(trace),))
+
+    if '<locals>' in keys:
+        logger.warning('Skipping configurable checks for `%s`, this cannot import `<locals>`.',
+                       '.'.join(keys))
+        return
 
     if len(keys) >= 2:
         # CASE: Function
@@ -217,6 +239,11 @@ def _check_configuration_helper(dict_, keys, trace):
             except AttributeError:
                 trace.append('Function `%s` not found in `%s`.' % (keys[-1], module_path))
         except ImportError:
+            if _is_possible_module(module_path):
+                logger.warning(
+                    'Skipping configurable checks for module `%s`, this caught '
+                    'an ImportError trying to import the module.', module_path)
+                return
             trace.append('Failed to run `import %s`.' % module_path)
 
     if len(keys) >= 3:
@@ -251,6 +278,11 @@ def _check_configuration_helper(dict_, keys, trace):
             except AttributeError:
                 trace.append('Class `%s` not found in `%s`.' % (keys[-2], module_path))
         except ImportError:
+            if _is_possible_module(module_path):
+                logger.warning(
+                    'Skipping configurable checks for module `%s`, this caught '
+                    'an ImportError trying to import the module.', module_path)
+                return
             trace.append('Failed to run `import %s`.' % module_path)
 
     for key in dict_:
@@ -334,7 +366,7 @@ def _merge_args(parameters, args, kwargs, default_kwargs, print_name='', is_firs
     # Positional arguments must come before key word arguments
     for i, arg in enumerate(args):
         if i >= len(parameters):
-            raise TypeError("Too many arguments (%d > %d) passed." % (len(args), len(parameters)))
+            raise TypeError('Too many arguments (%d > %d) passed.' % (len(args), len(parameters)))
 
         if parameters[i].kind == parameters[i].VAR_POSITIONAL:
             # Rest of the args are absorbed by VAR_POSITIONAL (e.g. ``*args``)
@@ -346,17 +378,18 @@ def _merge_args(parameters, args, kwargs, default_kwargs, print_name='', is_firs
                 value = default_kwargs[parameters[i].name]
                 if is_first_run and value != arg:
                     logger.warning(
-                        ('Overwriting configured argument ``%s=%s`` in module %s with %s. '
-                         'This warning will not be repeated.') % (parameters[i].name, value,
-                                                                  print_name, arg))
+                        ('@configurable: Overwriting configured argument ``%s=%s`` in module %s '
+                         'with %s. This warning will not be repeated.') % (parameters[i].name,
+                                                                           value, print_name, arg))
                 del default_kwargs[parameters[i].name]
 
     if is_first_run:
         for key, value in kwargs.items():
             if key in default_kwargs and value != default_kwargs[key]:
-                logger.warning(('Overwriting configured argument ``%s=%s`` in module %s with %s. '
-                                'This warning will not be repeated.') % (key, default_kwargs[key],
-                                                                         print_name, value))
+                logger.warning(
+                    ('@configurable: Overwriting configured argument ``%s=%s`` in module %s '
+                     'with %s. This warning will not be repeated.') % (key, default_kwargs[key],
+                                                                       print_name, value))
 
     default_kwargs.update(kwargs)
 
@@ -409,6 +442,15 @@ class ConfiguredArg():
     def __call__(self, *args, **kwargs):
         self._raise()
 
+    def __sub__(self, other):
+        self._raise()
+
+    def __mul__(self, other):
+        self._raise()
+
+    def __add__(self, other):
+        self._raise()
+
 
 def _check_configured_args(func, global_config):
     """ Check that ``ConfiguredArg`` parameters have a global configuration.
@@ -426,8 +468,8 @@ def _check_configured_args(func, global_config):
     global_config = set(global_config.keys())
     not_globally_configured = local_config.difference(global_config)
     if len(not_globally_configured) > 0:
-        raise ValueError(
-            '`%s` parameters are not configured: %s' % (print_name, not_globally_configured))
+        logger.warning('ConfiguredArg(): Parameters %s of `%s` are not configured. '
+                       'This warning will not be repeated.' % (not_globally_configured, print_name))
 
 
 def configurable(func):
@@ -455,12 +497,14 @@ def configurable(func):
         config = _configuration[keys] if keys in _configuration else {}  # Get default
         if is_first_run:
             if len(config) == 0:
-                logger.warning('No config for `%s` (`%s`). This warning will not be repeated.',
-                               print_name, '.'.join(keys))
+                logger.warning(
+                    '@configurable: No config for `%s`. This warning will not be repeated.',
+                    print_name)
 
             _check_configured_args(func, config)
 
-        assert isinstance(config, dict), 'Invariant failed for %s config' % print_name
+        assert isinstance(config,
+                          dict), '@configurable: Invariant failed for %s config' % print_name
 
         parameters = list(inspect.signature(func).parameters.values())
         args, kwargs = _merge_args(parameters, args, kwargs, config, print_name, is_first_run)

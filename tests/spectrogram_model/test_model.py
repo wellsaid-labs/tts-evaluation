@@ -28,10 +28,13 @@ def test_spectrogram_model_batch_size_sensativity():
     # alignment [num_frames, batch_size, num_tokens]
     (batched_frames, batched_frames_with_residual, batched_stop_token, batched_alignment,
      batched_lengths) = model(
-         input_, speaker, num_tokens=batched_num_tokens, max_recursion=num_frames)
+         input_,
+         speaker,
+         num_tokens=batched_num_tokens,
+         max_frames_per_token=num_frames / num_tokens)
 
     frames, frames_with_residual, stop_token, alignment, lengths = model(
-        input_[:, :1], speaker[:, :1], max_recursion=num_frames)
+        input_[:, :1], speaker[:, :1], max_frames_per_token=num_frames / num_tokens)
 
     numpy.testing.assert_almost_equal(frames.detach().numpy(),
                                       batched_frames[:, :1].detach().numpy())
@@ -53,7 +56,7 @@ def test_spectrogram_model():
     num_speakers = 1
     model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels)
 
-    # Make sure that stop-token is not predicted; therefore, reaching ``max_recursion``
+    # Make sure that stop-token is not predicted; therefore, reaching ``max_frames_per_token``
     torch.nn.init.constant_(model.decoder.linear_stop_token.weight, -math.inf)
     torch.nn.init.constant_(model.decoder.linear_stop_token.bias, -math.inf)
 
@@ -63,7 +66,10 @@ def test_spectrogram_model():
     batched_num_tokens = torch.full((batch_size,), num_tokens)
 
     frames, frames_with_residual, stop_token, alignment, lengths = model(
-        input_, speaker, num_tokens=batched_num_tokens, max_recursion=num_frames)
+        input_,
+        speaker,
+        num_tokens=batched_num_tokens,
+        max_frames_per_token=num_frames / num_tokens)
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, batch_size, frame_channels)
@@ -91,7 +97,7 @@ def test_spectrogram_model_unbatched():
     num_speakers = 3
     model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels).eval()
 
-    # Make sure that stop-token is not predicted; therefore, reaching ``max_recursion``
+    # Make sure that stop-token is not predicted; therefore, reaching ``max_frames_per_token``
     torch.nn.init.constant_(model.decoder.linear_stop_token.weight, -math.inf)
     torch.nn.init.constant_(model.decoder.linear_stop_token.bias, -math.inf)
 
@@ -100,7 +106,7 @@ def test_spectrogram_model_unbatched():
     speaker = torch.LongTensor(1, 1).fill_(0)
 
     frames, frames_with_residual, stop_token, alignment, _ = model(
-        input_, speaker, max_recursion=num_frames)
+        input_, speaker, max_frames_per_token=num_frames / num_tokens)
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, frame_channels)
@@ -128,9 +134,14 @@ def test_spectrogram_model_target():
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     speaker = torch.LongTensor(1, batch_size).fill_(0)
     target_frames = torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1)
+    target_lengths = torch.full((batch_size,), num_frames)
     batched_num_tokens = torch.full((batch_size,), num_tokens)
     frames, frames_with_residual, stop_token, alignment = model(
-        input_, speaker, num_tokens=batched_num_tokens, target_frames=target_frames)
+        input_,
+        speaker,
+        num_tokens=batched_num_tokens,
+        target_frames=target_frames,
+        target_lengths=target_lengths)
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, batch_size, frame_channels)
@@ -159,8 +170,9 @@ def test_spectrogram_model_target_unbatched():
     input_ = torch.LongTensor(num_tokens).random_(1, vocab_size)
     speaker = torch.LongTensor(1, 1).fill_(0)
     target_frames = torch.FloatTensor(num_frames, frame_channels).uniform_(0, 1)
+    target_lengths = torch.tensor(num_frames)
     frames, frames_with_residual, stop_token, alignment = model(
-        input_, speaker, target_frames=target_frames)
+        input_, speaker, target_frames=target_frames, target_lengths=target_lengths)
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, frame_channels)

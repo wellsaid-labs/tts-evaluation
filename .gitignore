@@ -26,12 +26,6 @@ var/
 .installed.cfg
 *.egg
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
-
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
@@ -46,33 +40,19 @@ nosetests.xml
 coverage.xml
 *,cover
 .hypothesis/
+coverage/**
+cover/
 
 # Translations
 *.mo
 *.pot
 
-# Django stuff:
-local_settings.py
-
 # Flask stuff:
 instance/
 .webassets-cache
 
-# Scrapy stuff:
-.scrapy
-
-# PyBuilder
-target/
-
 # IPython Notebook
 .ipynb_checkpoints
-
-# Vagrant
-.vagrant
-
-# Coverage
-coverage/**
-cover/
 
 # Data
 data/**
@@ -81,21 +61,8 @@ data/**
 # Test Files
 .pytest_cache
 
-# ReadTheDocs build files
-docs/_build
-
 # Experiments
 experiments/
-
-# Sync
-**lrsyncssh.conf.lua
-
-# Settings
-.vscode/c_cpp_properties.json
-
-# WWW
-generated
-*generated_audio_*.mp3
 
 # Various tmp files
 tmp/
@@ -106,3 +73,9 @@ tmp/
 # Git patches used by comet.ml reproduce
 *.patch
 *.zip
+
+# Default path for evaluation files
+results/
+
+# Local node modules
+node_modules/

@@ -1,9 +1,9 @@
 import logging
 import math
+import struct
 
 from tqdm import tqdm
 
-import librosa
 import numpy as np
 import torch
 
@@ -11,6 +11,11 @@ from src.hparams import configurable
 from src.hparams import ConfiguredArg
 
 logger = logging.getLogger(__name__)
+
+try:
+    import librosa
+except ImportError:
+    logger.info('Skipping optional ``librosa`` import for now.')
 
 
 @configurable
@@ -39,7 +44,7 @@ def read_audio(filename, sample_rate=ConfiguredArg()):
         sample_rate (int or None): Assert this target sample rate.
 
     Returns:
-        numpy.ndarray [n,]: Audio time series.
+        (numpy.ndarray [n,]): Audio time series.
     """
     signal, observed_sample_rate = librosa.core.load(str(filename), sr=None)
     if sample_rate is not None:
@@ -73,7 +78,7 @@ def _mel_filters(sample_rate,
         upper_hertz (int): The desired top edge of the highest frequency band.
 
     Returns:
-        (np.ndarray [num_mel_bins, 1 + fft_length / 2): Mel transform matrix.
+        (np.ndarray [num_mel_bins, 1 + fft_length / 2]): Mel transform matrix.
     """
     # NOTE: The Tacotron 2 model likely did not normalize the filterbank; otherwise, the 0.01
     # minimum mentioned in their paper for the dynamic range is too high. NVIDIA/tacotron2 includes
@@ -233,7 +238,7 @@ def griffin_lim(log_mel_spectrogram,
                 power=ConfiguredArg(),
                 iterations=ConfiguredArg(),
                 use_tqdm=False):
-    """ Transform log mel spectrogram to wav file with the Griffin-Lim algorithm.
+    """ Transform log mel spectrogram to waveform with the Griffin-Lim algorithm.
 
     Given a magnitude spectrogram as input, reconstruct the audio signal and return it using the
     Griffin-Lim algorithm from the paper:
@@ -266,6 +271,9 @@ def griffin_lim(log_mel_spectrogram,
         power (float): Amplification float used to reduce artifacts.
         iterations (int): Number of iterations of griffin lim to run.
         use_tqdm (bool, optional): If `True` attach a progress bar during iteration.
+
+    Returns:
+        (np.ndarray [num_samples]): Predicted waveform.
     """
     if log_mel_spectrogram.shape[0] == 0:
         return np.array([])
@@ -303,6 +311,51 @@ def griffin_lim(log_mel_spectrogram,
 
 
 @configurable
+def build_wav_header(num_frames,
+                     frame_rate=ConfiguredArg(),
+                     wav_format=0x0001,
+                     num_channels=1,
+                     sample_width=2):
+    """ Create a WAV file header.
+
+    Args:
+        num_frames (int): Number of frames. A frame includes one sample per channel.
+        frame_rate (int): Number of frames per second.
+        wav_format (int): Format of the audio file, 1 indiciates PCM format.
+        num_channels (int): Number of audio channels.
+        sample_width (int): Number of bytes per sample, typically 1 (8-bit), 2 (16-bit)
+            or 4 (32-bit).
+
+    Returns:
+        (bytes): Bytes representing the WAV header.
+        (int): File size in bytes.
+    """
+    # Inspired by: https://github.com/python/cpython/blob/master/Lib/wave.py
+    # Inspired by: https://github.com/scipy/scipy/blob/v1.2.0/scipy/io/wavfile.py#L284-L396
+    header_length = 36
+    data_length = num_frames * num_channels * sample_width
+    file_size = header_length + data_length + 8
+    bytes_per_second = num_channels * frame_rate * sample_width
+    block_align = num_channels * sample_width
+    bit_depth = sample_width * 8
+
+    header = b'RIFF'  # RIFF identifier
+    header += struct.pack('<I', header_length + data_length)  # RIFF chunk length
+    header += b'WAVE'  # RIFF type
+    header += b'fmt '  # Format chunk identifier
+    header += struct.pack('<I', 16)  # Format chunk length
+    header += struct.pack('<HHIIHH', wav_format, num_channels, frame_rate, bytes_per_second,
+                          block_align, bit_depth)
+
+    if ((len(header) - 4 - 4) + (4 + 4 + data_length)) > 0xFFFFFFFF:
+        raise ValueError('Data exceeds wave file size limit.')
+
+    header += b'data'  # Data chunk identifier
+    header += struct.pack('<I', data_length)  # Data chunk length
+    return header, file_size
+
+
+@configurable
 def split_signal(signal, bits=ConfiguredArg()):
     """ Compute the coarse and fine components of the signal.
 
@@ -328,19 +381,32 @@ def split_signal(signal, bits=ConfiguredArg()):
 
 
 @configurable
-def combine_signal(coarse, fine, bits=ConfiguredArg()):
+def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
     """ Compute the coarse and fine components of the signal.
 
     Args:
         coarse (torch.LongTensor): Top bits of the signal.
         fine (torch.LongTensor): Bottom bits of the signal.
         bits (int): Number of bits to encode signal in.
+        return_int (bool, optional): Return in the range of integer min to max instead of [-1, 1].
 
     Returns:
-        signal (torch.FloatTensor): Signal with values ranging from [-1, 1]
+        signal (torch.FloatTensor): Signal with values ranging from [-1, 1] if ``return_int`` is
+            ``False``; Otherwise, return an integer value from integer min to max.
     """
     bins = int(2**(bits / 2))
     assert torch.min(coarse) >= 0 and torch.max(coarse) < bins
     assert torch.min(fine) >= 0 and torch.max(fine) < bins
-    signal = coarse.float() * bins + fine.float() - 2**(bits - 1)
-    return signal / 2**(bits - 1)
+    signal = coarse * bins + fine - 2**(bits - 1)
+
+    if return_int:
+        if bits <= 16:
+            return signal.type(torch.int16)
+        elif bits <= 32:
+            return signal.type(torch.int32)
+        elif bits <= 64:
+            return signal.type(torch.int64)
+        else:
+            raise ValueError('Larger than 64-bit fidelity is not supported.')
+
+    return signal.float() / 2**(bits - 1)  # Scale to [-1, 1] range.

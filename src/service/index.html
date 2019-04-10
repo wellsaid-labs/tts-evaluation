@@ -1,0 +1,37 @@
+<html>
+
+<head>
+  <title>WellSaid – Speech API</title>
+  <link rel="stylesheet" href="reset.css">
+  <link href="https://fonts.googleapis.com/css?family=Assistant:400,700" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <div id="title">
+    <h1>Speech API Demo</h1>
+  </div>
+  <div id="metadata">
+    <input placeholder="API Key" type="password"></input>
+    <select id="speaker">
+      <option selected disabled>Select Speaker</option>
+      <option value="0">Judy Bieber</option>
+      <option value="1">Mary Ann</option>
+      <option value="2">Elliot Miller</option>
+      <option value="3">Hilary Noriega</option>
+      <option value="4">Linda Johnson</option>
+    </select>
+  </div>
+  <div id="textarea">
+    <textarea placeholder="Type your script here"></textarea>
+    <button>Generate</button>
+  </div>
+  <div id="error">
+    <p></p>
+  </div>
+  <div id="clips">
+  </div>
+  <script src="script.js"></script>
+</body>
+
+</html>

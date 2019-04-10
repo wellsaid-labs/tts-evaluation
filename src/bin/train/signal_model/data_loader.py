@@ -4,16 +4,18 @@ from functools import partial
 import logging
 import random
 
+from torch.utils.data.sampler import RandomSampler
+from torchnlp.utils import collate_tensors
+from torchnlp.utils import tensors_to
+
 import torch
 
 from src.audio import combine_signal
 from src.audio import split_signal
 from src.hparams import configurable
-from src.utils import collate_tensors
-from src.utils import DataLoader
 from src.utils import OnDiskTensor
-from src.utils import RandomSampler
-from src.utils import tensors_to
+
+import src
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +24,7 @@ SignalModelTrainingRow = namedtuple('SignalModelTrainingRow', [
 ])
 
 
-def _get_slice(spectrogram, signal, slice_size, spectrogram_slice_pad):
+def _get_slice(spectrogram, signal, spectrogram_slice_size, spectrogram_slice_pad):
     """ Slice the data into bite sized chunks that fit onto GPU memory for training.
 
     Notes:
@@ -33,8 +35,9 @@ def _get_slice(spectrogram, signal, slice_size, spectrogram_slice_pad):
     Args:
         spectrogram (torch.Tensor [num_frames, channels])
         signal (torch.Tensor [signal_length])
-        slice_size (int): In spectrogram frames, size of slice.
-        slice_pad (int): Pad the spectrogram slice with ``frame_pad`` frames on each side.
+        spectrogram_slice_size (int): In spectrogram frames, size of slice.
+        spectrogram_slice_pad (int): Pad the spectrogram slice with ``frame_pad`` frames on each
+            side.
 
     Returns: (SignalModelTrainingRow) (
         input_signal (torch.Tensor [signal_length, 2])
@@ -57,22 +60,22 @@ def _get_slice(spectrogram, signal, slice_size, spectrogram_slice_pad):
     signal_mask = torch.ones(signal.shape[0], dtype=torch.uint8, device=signal.device)
 
     # Pad spectrogram and signal
-    spectrogram_zeros = slice_size - 1 + spectrogram_slice_pad
+    spectrogram_zeros = spectrogram_slice_size - 1 + spectrogram_slice_pad
     spectrogram = torch.nn.functional.pad(spectrogram, (0, 0, spectrogram_zeros, spectrogram_zeros))
 
-    signal_zeros = (slice_size - 1) * samples_per_frame
+    signal_zeros = (spectrogram_slice_size - 1) * samples_per_frame
     target_signal = torch.nn.functional.pad(target_signal, (signal_zeros, signal_zeros))
     source_signal = torch.nn.functional.pad(source_signal, (signal_zeros, signal_zeros - 1))
     signal_mask = torch.nn.functional.pad(signal_mask, (signal_zeros, signal_zeros))
 
     # Get a spectrogram slice
-    # ``-slice_size + 1, num_frames - 1`` to ensure there is an equal chance to that a
+    # ``-spectrogram_slice_size + 1, num_frames - 1`` to ensure there is an equal chance to that a
     # sample will be included inside the slice.
     # For example, with signal ``[1, 2, 3]`` and a ``slice_samples`` of 2 you'd get slices of:
     # (1), (1, 2), (2, 3), (3).
     # With each number represented twice.
-    start_frame = random.randint(-slice_size + 1, num_frames - 1)
-    end_frame = (start_frame + slice_size)
+    start_frame = random.randint(-spectrogram_slice_size + 1, num_frames - 1)
+    end_frame = (start_frame + spectrogram_slice_size)
 
     # Get slices from the padded tensors
     # Offset start frame and end frame with `spectrogram_zeros` padding. Increase the range
@@ -88,9 +91,9 @@ def _get_slice(spectrogram, signal, slice_size, spectrogram_slice_pad):
     target_signal_slice = target_signal[signal_slice]
     signal_mask_slice = signal_mask[signal_slice]
 
-    assert source_signal_slice.shape[0] / samples_per_frame == slice_size
-    assert target_signal_slice.shape[0] / samples_per_frame == slice_size
-    assert spectrogram_slice.shape[0] == slice_size + spectrogram_slice_pad * 2
+    assert source_signal_slice.shape[0] / samples_per_frame == spectrogram_slice_size
+    assert target_signal_slice.shape[0] / samples_per_frame == spectrogram_slice_size
+    assert spectrogram_slice.shape[0] == spectrogram_slice_size + spectrogram_slice_pad * 2
     # Source is shifted one back from target
     assert torch.equal(source_signal[1:], target_signal[:-1])
 
@@ -130,7 +133,7 @@ def _load_fn(row, use_predicted, **kwargs):
     return _get_slice(spectrogram, spectrogram_audio, **kwargs)
 
 
-class DataLoader(DataLoader):
+class DataLoader(src.utils.DataLoader):
     """ Get a batch iterator over the ``data``.
 
     Args:
@@ -144,23 +147,25 @@ class DataLoader(DataLoader):
     Returns:
         Single-process or multi-process iterators over the dataset. Per iteration the batch returned
         includes: SpectrogramModelTrainingRow (
-            input_signal (torch.FloatTensor [batch_size, slice_size * samples_per_frame])
-            input_spectrogram (torch.FloatTensor [batch_size, slice_size + spectrogram_slice_pad,
-                                                  frame_channels])
-            target_signal_coarse (torch.LongTensor [batch_size, slice_size * samples_per_frame])
-            target_signal_fine (torch.LongTensor [batch_size, slice_size * samples_per_frame])
-            signal_mask (torch.FloatTensor [batch_size, slice_size * samples_per_frame])
+            input_signal (torch.FloatTensor
+                [batch_size, spectrogram_slice_size * samples_per_frame])
+            input_spectrogram (torch.FloatTensor
+                [batch_size, spectrogram_slice_size + spectrogram_slice_pad, frame_channels])
+            target_signal_coarse (torch.LongTensor
+                [batch_size, spectrogram_slice_size * samples_per_frame])
+            target_signal_fine (torch.LongTensor
+                [batch_size, spectrogram_slice_size * samples_per_frame])
+            signal_mask (torch.FloatTensor
+                [batch_size, spectrogram_slice_size * samples_per_frame])
         )
     """
 
     @configurable
     def __init__(self, data, batch_size, device, use_tqdm, trial_run, **kwargs):
-
-        # ``drop_last`` to ensure full utilization of mutliple GPUs
         super().__init__(
             data,
             batch_size=batch_size,
-            drop_last=True,
+            drop_last=True,  # ``drop_last`` to ensure full utilization of mutliple GPUs
             collate_fn=collate_tensors,
             load_fn=partial(_load_fn, **kwargs),
             pin_memory=True,

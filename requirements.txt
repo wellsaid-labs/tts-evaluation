@@ -1,6 +1,9 @@
 # Math Library
 numpy
-torch==1.0.0 # NOTE: You may need to install with CUDA support seperatly from https://pytorch.org
+scipy
+
+# Install torch seperatly via https://pytorch.org based on your system requirements
+# torch==1.0.1.post2
 
 # Language Library
 git+https://github.com/PetrochukM/PyTorch-NLP.git
@@ -12,7 +15,7 @@ librosa
 
 # Visualization Library
 matplotlib
-comet-ml==1.0.42
+comet-ml==1.0.50
 
 # Testing
 pytest
@@ -29,3 +32,6 @@ tqdm # Progress bar
 jupyter # Notebooks
 python-dotenv # Environment variables
 
+# Web
+flask
+gunicorn

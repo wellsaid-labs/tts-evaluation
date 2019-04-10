@@ -1,17 +1,17 @@
 import math
+import os
 
 from contextlib import ExitStack
 from unittest import mock
 
-from torchnlp.text_encoders import CharacterEncoder
-from torchnlp.text_encoders import IdentityEncoder
-
 import pytest
 import torch
 
-from src.bin.train.spectrogram_model.trainer import Trainer
 from src.bin.train.spectrogram_model.data_loader import SpectrogramModelTrainingRow
+from src.bin.train.spectrogram_model.trainer import Trainer
 from src.datasets import Speaker
+from src.spectrogram_model import InputEncoder
+from src.utils import Checkpoint
 
 from tests.utils import get_example_spectrogram_text_speech_rows
 from tests.utils import MockCometML
@@ -27,16 +27,33 @@ def get_trainer(compute_spectrograms_mock, comet_ml_mock):
         train_dataset=get_example_spectrogram_text_speech_rows(),
         dev_dataset=get_example_spectrogram_text_speech_rows(),
         comet_ml_project_name='',
-        text_encoder=CharacterEncoder(['text encoder']),
-        speaker_encoder=IdentityEncoder([Speaker.LINDA_JOHNSON]),
+        input_encoder=InputEncoder(['text encoder'], [Speaker.LINDA_JOHNSON]),
         train_batch_size=1,
         dev_batch_size=1,
         comet_ml_experiment_key=None)
 
-    # Make sure that stop-token is not predicted; therefore, reaching ``max_recursion``
+    # Make sure that stop-token is not predicted; therefore, reaching ``max_frames_per_token``
     torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.weight, -math.inf)
     torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.bias, -math.inf)
     return trainer
+
+
+@mock.patch('src.bin.train.spectrogram_model.trainer.CometML')
+@mock.patch('src.bin.train.spectrogram_model.trainer.compute_spectrograms')
+def test_checkpoint(compute_spectrograms_mock, comet_ml_mock):
+    trainer = get_trainer()
+    comet_ml_mock.return_value = MockCometML()
+    compute_spectrograms_mock.return_value = get_example_spectrogram_text_speech_rows()
+
+    checkpoint_path = trainer.save_checkpoint('tests/_test_data/')
+    trainer.from_checkpoint(
+        checkpoint=Checkpoint.from_path(checkpoint_path),
+        device=torch.device('cpu'),
+        train_dataset=get_example_spectrogram_text_speech_rows(),
+        dev_dataset=get_example_spectrogram_text_speech_rows())
+
+    # Clean up
+    os.unlink(checkpoint_path)
 
 
 def test__do_loss_and_maybe_backwards():
@@ -107,8 +124,8 @@ def test_run_epoch():
                  'src.bin.train.spectrogram_model.trainer.DataLoader',
                  'src.bin.train.spectrogram_model.trainer.SpectrogramModel._aligned',
                  'src.bin.train.spectrogram_model.trainer.SpectrogramModel._infer',
-                 'torch.Tensor.backward', 'src.optimizer.Optimizer.step',
-                 'src.optimizer.AutoOptimizer.step'
+                 'torch.Tensor.backward', 'src.optimizers.Optimizer.step',
+                 'src.optimizers.AutoOptimizer.step'
              ]
          ])
         MockDataLoader.return_value = loaded_data

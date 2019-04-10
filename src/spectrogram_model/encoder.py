@@ -1,8 +1,7 @@
 import torch
 
 from torch import nn
-from torchnlp.text_encoders import PADDING_INDEX
-from torchnlp.text_encoders.reserved_tokens import RESERVED_ITOS
+from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
 
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
@@ -10,8 +9,6 @@ from src.hparams import ConfiguredArg
 
 class Encoder(nn.Module):
     """ Encodes sequence as a hidden feature representation.
-
-    TODO: Submit PR to torchnlp to remove manditory reserved tokens
 
     SOURCE (Tacotron 2):
         The encoder converts a character sequence into a hidden feature representation. Input
@@ -73,9 +70,10 @@ class Encoder(nn.Module):
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, ('`convolution_filter_size` must be odd')
 
-        self.embed_token = nn.Embedding(vocab_size, token_embedding_dim, padding_idx=PADDING_INDEX)
+        self.embed_token = nn.Embedding(
+            vocab_size, token_embedding_dim, padding_idx=DEFAULT_PADDING_INDEX)
         self.embed_speaker = None
-        if num_speakers - len(RESERVED_ITOS) > 1:
+        if num_speakers > 1:
             self.embed_speaker = nn.Embedding(num_speakers, speaker_embedding_dim)
             self.project = nn.Linear(lstm_hidden_size + speaker_embedding_dim, out_dim)
         else:
@@ -112,10 +110,12 @@ class Encoder(nn.Module):
             if isinstance(module, nn.Conv1d):
                 nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
 
-    def forward(self, tokens, speaker):
+    def forward(self, tokens, tokens_mask, speaker):
         """
         Args:
             tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
+            tokens_mask (torch.ByteTensor [batch_size, num_tokens]): Binary mask applied on
+                tokens.
             speaker (torch.LongTensor [batch_size]): Batched speaker encoding.
 
         Returns:
@@ -131,8 +131,12 @@ class Encoder(nn.Module):
         # need to transpose the tensor first.
         tokens = tokens.transpose(1, 2)
 
+        # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
+        tokens_mask = tokens_mask.unsqueeze(1)
+
         # [batch_size, num_convolution_filters, num_tokens]
         for conv in self.convolution_layers:
+            tokens = tokens.masked_fill(~tokens_mask, 0)
             tokens = conv(tokens)
 
         # Our input is expected to have shape `[batch_size, num_convolution_filters, num_tokens]`.
@@ -140,6 +144,7 @@ class Encoder(nn.Module):
         # `[seq_len (num_tokens), batch_size, input_size (num_convolution_filters)]`. We thus need
         # to permute the tensor first.
         tokens = tokens.permute(2, 0, 1)
+        tokens_mask = tokens_mask.permute(2, 0, 1)
 
         # [num_tokens, batch_size, lstm_hidden_size]
         encoded_tokens, _ = self.lstm(tokens)
@@ -153,7 +158,7 @@ class Encoder(nn.Module):
             speaker = speaker.unsqueeze(0)
 
             # [1, batch_size, speaker_embedding_dim] →
-            # num_tokens, batch_size, speaker_embedding_dim]
+            # [num_tokens, batch_size, speaker_embedding_dim]
             speaker = speaker.expand(out.size()[0], -1, -1)
 
             # [num_tokens, batch_size, speaker_embedding_dim + lstm_hidden_size]
@@ -161,4 +166,4 @@ class Encoder(nn.Module):
 
         # [num_tokens, batch_size, lstm_hidden_size +? speaker_embedding_dim] →
         # [num_tokens, batch_size, out_dim]
-        return self.project(out)
+        return self.project(out).masked_fill(~tokens_mask, 0)

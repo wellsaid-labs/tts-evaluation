@@ -9,8 +9,8 @@ from src.datasets import Speaker
 
 class MockCometML():
 
-    def __init__(*args, **kwargs):
-        pass
+    def __init__(self, *args, **kwargs):
+        self.project_name = ''
 
     @contextmanager
     def train(self, *args, **kwargs):
@@ -20,22 +20,30 @@ class MockCometML():
     def validate(self, *args, **kwargs):
         yield self
 
+    def get_key(self):
+        return ''
+
     def __getattr__(self, attr):
         return lambda *args, **kwargs: self
 
 
 class MockOnDiskTensor(OnDiskTensor):
 
-    def __init__(self, path, tensor, does_exist=True):
+    def __init__(self, path, tensor, exists=True):
         self.tensor = tensor
-        self._does_exist = does_exist
+        self.exists = exists
         self.path = path
+        self.allow_pickle = False
+
+    @property
+    def shape(self):
+        return self.tensor.shape
 
     def to_tensor(self):
         return self.tensor
 
-    def does_exist(self):
-        return self._does_exist
+    def exists(self):
+        return self.exists
 
     def unlink(self):
         return self

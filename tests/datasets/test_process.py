@@ -2,9 +2,6 @@ from unittest import mock
 
 import pathlib
 
-from torchnlp.text_encoders import CharacterEncoder
-from torchnlp.text_encoders import IdentityEncoder
-
 import numpy
 import torch
 
@@ -16,10 +13,18 @@ from src.datasets.process import _normalize_audio_and_cache
 from src.datasets.process import _predict_spectrogram
 from src.datasets.process import _process_in_parallel
 from src.datasets.process import _split_dataset
+from src.datasets.process import balance_dataset
 from src.datasets.process import compute_spectrograms
+from src.spectrogram_model import InputEncoder
 from src.spectrogram_model import SpectrogramModel
 from src.utils import Checkpoint
 from src.utils import ROOT_PATH
+
+
+def test_balance_dataset():
+    balanced = balance_dataset(['a', 'a', 'b', 'b', 'c'], lambda x: x)
+    assert len(balanced) == 3
+    assert len(set(balanced)) == 3
 
 
 @mock.patch('src.datasets.process._process_in_parallel', return_value=[])
@@ -93,8 +98,7 @@ def test__compute_spectrogram_not_on_disk(mock_load, mock_save):
 @mock.patch('src.datasets.process.numpy.load')
 @mock.patch('src.datasets.process.Checkpoint.from_path')
 def test__predict_spectrogram(mock_from_path, mock_load, mock_save):
-    text_encoder = CharacterEncoder(['this is a test'])
-    speaker_encoder = IdentityEncoder([Speaker.LINDA_JOHNSON])
+    input_encoder = InputEncoder(['this is a test'], [Speaker.LINDA_JOHNSON])
     frame_channels = 80
     num_frames = 10
     audio_path = pathlib.Path('tests/_test_data/lj_speech_24000.wav')
@@ -105,10 +109,11 @@ def test__predict_spectrogram(mock_from_path, mock_load, mock_save):
         path=ROOT_PATH / 'run/09_10/norm/step_123.pt',
         directory='.',
         model=SpectrogramModel(
-            text_encoder.vocab_size, speaker_encoder.vocab_size, frame_channels=frame_channels),
+            input_encoder.text_encoder.vocab_size,
+            input_encoder.speaker_encoder.vocab_size,
+            frame_channels=frame_channels),
         step=0,
-        speaker_encoder=speaker_encoder,
-        text_encoder=text_encoder)
+        input_encoder=input_encoder)
     row = SpectrogramTextSpeechRow(
         text='this is a test',
         audio_path=audio_path,
@@ -126,6 +131,46 @@ def test__predict_spectrogram(mock_from_path, mock_load, mock_save):
     rows = _predict_spectrogram([row], '', torch.device('cpu'), 1, on_disk=True)
     assert len(rows) == 1
     assert str(rows[0].predicted_spectrogram.path) == expected_path_predicted_spectrogram
+
+
+@mock.patch('src.datasets.process.numpy.save')
+@mock.patch('src.datasets.process.numpy.load')
+@mock.patch('src.datasets.process.Checkpoint.from_path')
+def test__compute_spectrograms(mock_from_path, mock_load, mock_save):
+    input_encoder = InputEncoder(['this is a test'], [Speaker.LINDA_JOHNSON])
+    frame_channels = 80
+    mock_from_path.return_value = Checkpoint(
+        path=ROOT_PATH / 'run/09_10/norm/step_123.pt',
+        directory='.',
+        model=SpectrogramModel(
+            input_encoder.text_encoder.vocab_size,
+            input_encoder.speaker_encoder.vocab_size,
+            frame_channels=frame_channels),
+        step=0,
+        input_encoder=input_encoder)
+    row = TextSpeechRow(
+        text='this is a test', audio_path=None, speaker=Speaker.LINDA_JOHNSON, metadata=None)
+    mock_save.return_value = None
+    mock_load.return_value = numpy.array([1])
+    rows = compute_spectrograms([row],
+                                checkpoint_path='',
+                                device=torch.device('cpu'),
+                                batch_size=1,
+                                on_disk=False,
+                                aligned=False)
+    assert len(rows) == 1
+    assert torch.is_tensor(rows[0].predicted_spectrogram)
+
+    rows = compute_spectrograms([row],
+                                checkpoint_path='',
+                                device=torch.device('cpu'),
+                                batch_size=1,
+                                on_disk=True,
+                                aligned=False)
+    assert len(rows) == 1
+    assert 'run_09_10_norm_step_123_pt,aligned=False).npy' in str(
+        rows[0].predicted_spectrogram.path)
+    assert 'tmp/predicted_spectrogram' in str(rows[0].predicted_spectrogram.path)
 
 
 def test__split_dataset():

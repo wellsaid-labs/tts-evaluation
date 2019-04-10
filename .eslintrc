@@ -1,12 +1,15 @@
 {
-  "extends": "jquery",
   "rules": {
     "max-len": ["error", {
-      "code": 100
+      "code": 100,
+      "ignoreUrls": true
     }]
+  },
+  "parserOptions": {
+    "ecmaVersion": 8
   },
   "env": {
     "browser": true,
-    "jquery": true
+    "es6": true
   }
 }

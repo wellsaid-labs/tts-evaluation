@@ -82,16 +82,19 @@ class PostNet(nn.Module):
                 nn.BatchNorm1d(num_features=frame_channels), nn.Dropout(p=convolution_dropout)))
         self.layers = nn.ModuleList(self.layers)
 
-    def forward(self, frames):
+    def forward(self, frames, mask):
         """
         Args:
             frames (torch.FloatTensor [batch_size, frame_channels, num_frames]): Batched set of
                 spectrogram frames.
+            mask (torch.ByteTensor [batch_size, num_frames]): Mask such that the padding tokens
+                are zeros.
 
         Returns:
             residual (torch.FloatTensor [batch_size, frame_channels, num_frames]): Residual to add
                 to the frames to improve the overall reconstruction.
         """
         for layer in self.layers:
+            frames = frames.masked_fill(~mask.unsqueeze(1), 0)
             frames = layer(frames)
-        return frames
+        return frames.masked_fill(~mask.unsqueeze(1), 0)

@@ -1,10 +1,8 @@
-import matplotlib
-
-matplotlib.use('Agg', warn=False)
-
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import lru_cache
+from functools import partial
 from functools import wraps
 from math import isclose
 from pathlib import Path
@@ -16,35 +14,32 @@ import logging
 import logging.config
 import math
 import os
-import random
 import subprocess
 import sys
 import time
 
-from third_party.data_loader import DataLoader
+from third_party import pin_memory_batch
 from torch.multiprocessing import cpu_count
-from torch.utils import data
-from torch.utils.data.sampler import Sampler
-from torchnlp.text_encoders import PADDING_INDEX
-from torchnlp.utils import pad_tensor
 from tqdm import tqdm
 
-import torch
 import numpy as np
+import torch
+import torch.utils.data
 
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 
+import src.distributed
+
 logger = logging.getLogger(__name__)
 
-# Repository root path
-ROOT_PATH = Path(__file__).parent.parent.resolve()
+ROOT_PATH = Path(__file__).parent.parent.resolve()  # Repository root path
 
 
 def dict_collapse(dict_, keys=[], delimitator='.'):
-    """ Recursive `dict` collapse.
+    """ Recursive ``dict`` collapse a nested dictionary.
 
-    Collapses a multi-level `dict` into a single level dict by merging the strings with a
+    Collapses a multi-level ``dict`` into a single level dict by merging the strings with a
     delimitator.
 
     Args:
@@ -53,7 +48,7 @@ def dict_collapse(dict_, keys=[], delimitator='.'):
         delimitator (str, optional): Delimitator used to join keys.
 
     Returns:
-        (dict): Collapsed `dict`.
+        (dict): Collapsed ``dict``.
     """
     ret_ = {}
     for key in dict_:
@@ -64,17 +59,23 @@ def dict_collapse(dict_, keys=[], delimitator='.'):
     return ret_
 
 
-def set_basic_logging_config(device=None):
-    """ Set up basic logging handlers. """
+def set_basic_logging_config(device=None, **kwargs):
+    """ Set up basic logging handlers.
+
+    Args:
+        device (torch.device, optional): Device used to prefix the logs.
+        **kwargs: Additional key word arguments passed to ``logging.basicConfig``.
+    """
     if device is None:
-        device_str = ''
+        device_prefix = ''
     else:
-        device_str = '[%s]' % device
+        device_prefix = '[%s]' % device
 
     logging.basicConfig(
         level=logging.INFO,
-        format='\033[90m[%(asctime)s]' + device_str +
-        '[%(name)s][%(levelname)s]\033[0m %(message)s')
+        format='\033[90m[%(asctime)s]' + device_prefix +
+        '[%(name)s][%(levelname)s]\033[0m %(message)s',
+        **kwargs)
 
 
 def duplicate_stream(from_, to):
@@ -97,13 +98,16 @@ def duplicate_stream(from_, to):
         to (str or Path): Filename to write in.
 
     Returns:
-        (callable): Stop the duplication.
+        callable: Executing the callable stops the duplication.
     """
     from_.flush()
 
+    to = Path(to)
+    to.touch()
+
     # Keep a file descriptor open to the original file object
     original_fileno = os.dup(from_.fileno())
-    tee = subprocess.Popen(['tee', str(to)], stdin=subprocess.PIPE)
+    tee = subprocess.Popen(['tee', '-a', str(to)], stdin=subprocess.PIPE)
     time.sleep(0.01)  # HACK: ``tee`` needs time to open
     os.dup2(tee.stdin.fileno(), from_.fileno())
 
@@ -131,7 +135,7 @@ def duplicate_stream(from_, to):
 
 
 def record_stream(directory, stdout_log_filename='stdout.log', stderr_log_filename='stderr.log'):
-    """ Record output ``sys.stdout`` and ``sys.stderr`` to log files
+    """ Record output ``sys.stdout`` and ``sys.stderr`` to log files.
 
     Args:
         directory (Path or str): Directory to save log files in.
@@ -139,21 +143,14 @@ def record_stream(directory, stdout_log_filename='stdout.log', stderr_log_filena
         stderr_log_filename (str, optional)
     """
     directory = Path(directory)
-
     duplicate_stream(sys.stdout, directory / stdout_log_filename)
     duplicate_stream(sys.stderr, directory / stderr_log_filename)
-
-
-def chunks(list_, n):
-    """ Yield successive n-sized chunks from list. """
-    for i in range(0, len(list_), n):
-        yield list_[i:i + n]
 
 
 def get_weighted_stdev(tensor, dim=0, mask=None):
     """ Computed the average weighted standard deviation accross some dimesnion.
 
-    We assume the weights are normalized between zero and one summing up to one on ``dim``.
+    This assumes the weights are normalized between zero and one summing up to one on ``dim``.
 
     Learn more:
         - https://en.wikipedia.org/wiki/Weighted_arithmetic_mean
@@ -161,7 +158,7 @@ def get_weighted_stdev(tensor, dim=0, mask=None):
 
     Args:
         tensor (torch.FloatTensor): Some tensor along which to compute the standard deviation.
-        dim (int): Dimension of ``tensor`` along which to compute the standard deviation.
+        dim (int, optional): Dimension of ``tensor`` along which to compute the standard deviation.
         mask (torch.FloatTensor, optional)
 
     Returns:
@@ -194,8 +191,9 @@ def get_average_norm(tensor, dim=0, mask=None, norm=2):
 
     Args:
         tensor (torch.FloatTensor)
-        dim (int)
-        mask (torch.FloatTensor, optional): Tensor minus the norm dimension.
+        dim (int, optional)
+        mask (torch.FloatTensor, optional): Mask applied to tensor. The shape is the same as
+          ``tensor`` without the norm dimension.
         norm (float, optional): The exponent value in the norm formulation.
 
     Returns:
@@ -240,7 +238,7 @@ class ExponentiallyWeightedMovingAverage():
         # https://www.coursera.org/lecture/deep-neural-network/bias-correction-in-exponentially-weighted-averages-XjuhD
         average_bias_corrected = self._average / (1 - self.beta**(self.step_counter))
 
-        # TODO: Double check the math we might not be debiasing this correctly assuming
+        # TODO: Double check the math, this might not be debiasing this correctly assuming
         # "Reliability weights"
         # LEARN MORE:
         # http://people.ds.cam.ac.uk/fanf2/hermes/doc/antiforgery/stats.pdf
@@ -335,15 +333,20 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
 
 
 def get_total_parameters(model):
-    """ Return the total number of trainable parameters in model """
+    """ Return the total number of trainable parameters in ``model``.
+
+    Args:
+        model (torch.nn.Module)
+    """
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
 def load(path, device=torch.device('cpu')):
-    """ Using ``torch.load`` and ``dill`` load an object from ``path`` onto ``self.device``.
+    """ Using ``torch.load`` load an object from ``path`` onto ``self.device``.
 
     Args:
         path (Path or str): Filename to load.
+        device (torch.device, optional): Device to load onto.
 
     Returns:
         (any): Object loaded.
@@ -361,7 +364,7 @@ def load(path, device=torch.device('cpu')):
 
 
 def save(path, data):
-    """ Using ``torch.save`` and ``dill`` save an object to ``path``.
+    """ Using ``torch.save`` to save an object to ``path``.
 
     Args:
         path (Path or str): Filename to save to.
@@ -403,8 +406,19 @@ def parse_hparam_args(hparam_args):
     return return_
 
 
+def flatten_parameters(model):
+    """ Apply ``flatten_parameters`` to ``model``.
+
+    Args:
+        model (torch.nn.Module)
+    """
+    return model.apply(
+        lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
+
+
 class Checkpoint():
-    """ Model checkpoint object
+    """ Torch model checkpoint object.
+
     Args:
         directory (Path or str): Directory where to save the checkpoint.
         model (torch.nn.Module): Model to train and evaluate.
@@ -412,33 +426,33 @@ class Checkpoint():
         **kwargs (dict, optional): Any other checkpoint attributes.
     """
 
-    def __init__(self, directory, step, model=None, **kwargs):
+    def __init__(self, directory, step, model, **kwargs):
         self.directory = Path(directory)
         self.step = step
         self.model = model
+        self.path = Path(self.directory) / 'step_{}.pt'.format(self.step)
 
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-    def flatten_parameters(self, model):
-        model.apply(lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
-
     @classmethod
     def from_path(class_, path, device=torch.device('cpu')):
         """ Load a checkpoint from path.
-        Args:
-            path (Path or str or None): Path to a checkpoint to load.
-            device (torch.device, optional): Device to load checkpoint onto.
-        Returns:
-            checkpoint (Checkpoint or None): Loaded checkpoint or None.
-        """
-        if path is None:
-            return None
 
-        torch.nn.Module.dump_patches = True  # NOTE: Dump code that's changed since the checkpoint.
+        NOTE: Given ``path`` is different than the loaded instance, the original path is not
+        overwritten.
+
+        Args:
+            path (Path or str): Path to a checkpoint to load.
+            device (torch.device, optional): Device to load checkpoint onto.
+
+        Returns:
+            checkpoint (Checkpoint): Loaded checkpoint.
+        """
         instance = load(str(path), device=device)
-        setattr(instance, 'path', Path(path))
-        instance.flatten_parameters(instance.model)
+        flatten_parameters(instance.model)
+        # Backwards compatibility for instances without paths.
+        instance.path = instance.path if hasattr(instance, 'path') else path
         logger.info('Loaded checkpoint at step %d from %s with model:\n%s', instance.step,
                     instance.path, instance.model)
         return instance
@@ -449,7 +463,7 @@ class Checkpoint():
 
         Args:
             pattern (str): Pattern to glob recursively for checkpoints.
-            **kwargs (dict, optional): Any additional parameters to pass to ``class.from_path``
+            **kwargs (dict, optional): Any additional parameters to pass to ``class_.from_path``.
 
         Returns:
             (Checkpoint or None): The most recent checkpoint found or None if none is found.
@@ -467,41 +481,34 @@ class Checkpoint():
                 logger.exception('Failed to load checkpoint %s' % path)
                 pass
 
-        return None
+        raise ValueError('Unable to load recent checkpoint.')
 
     def save(self):
         """ Save a checkpoint. """
-        name = 'step_{}.pt'.format(self.step)
-        filename = Path(self.directory) / name
-        self.path = filename
-        save(filename, self)
+        save(self.path, self)
         return self.path
 
 
-class RandomSampler(Sampler):
-    """ Samples elements randomly, without replacement.
+def maybe_get_model_devices(model):
+    """ Try to get all the devices the model is running on.
 
-    Args:
-        data (list): Data to sample from.
-        random (random.Random, optional): Random number generator to sample data.
+    As of April 2019, for this repositories usage, this should work.
     """
+    # Learn more:
+    # https://github.com/pytorch/pytorch/issues/7460
+    # https://discuss.pytorch.org/t/which-device-is-model-tensor-stored-on/4908
+    # https://github.com/pytorch/pytorch/issues/12460
 
-    def __init__(self, data, random=random):
-        self.data = data
-        self.random = random
-
-    def __iter__(self):
-        indicies = list(range(len(self.data)))
-        self.random.shuffle(indicies)
-        return iter(indicies)
-
-    def __len__(self):
-        return len(self.data)
+    # NOTE: ``torch.nn.Module.to`` changes the parameters and buffers of a module.
+    module_devices = [t.device for t in model.parameters()]
+    if hasattr(model, 'buffers'):
+        module_devices += [t.device for t in model.buffers()]
+    return list(set(module_devices))
 
 
 @contextmanager
 def evaluate(*modules, device=None):
-    """ Temporarily switch to evaluation mode for a ``torch.nn.Module``.
+    """ Context manager for ``torch.nn.Module`` evaluatation mode.
 
     Args:
         *modules (torch.nn.Module)
@@ -513,20 +520,16 @@ def evaluate(*modules, device=None):
 
     modules_metadata = []
     for module in modules:
-        # torch.nn.Module.to changes the parameters and buffers of a module
-        module_devices = [t.device for t in module.parameters()]
-        if hasattr(module, 'buffers'):
-            module_devices += [t.device for t in module.buffers()]
-        module_devices = list(set(module_devices))
-        # For switching devices, the implementation only supports modules on a single device.
-        assert len(module_devices) <= 1
-        module_device = module_devices[0] if len(
-            module_devices) == 1 and device is not None else None
+        module_device = None
+        if device is not None:
+            module_devices = maybe_get_model_devices(module)
+            if len(module_devices) > 1:
+                raise TypeError('Context manager supports models on a single device')
+            module_device = module_devices[0]
+            module.to(device)
 
         modules_metadata.append({'is_train': module.training, 'last_device': module_device})
         module.train(mode=False)
-        if device is not None:
-            module.to(device)
 
     with torch.autograd.no_grad():
         yield
@@ -537,138 +540,20 @@ def evaluate(*modules, device=None):
             module.to(metadata['last_device'])
 
 
-def is_namedtuple(object_):
-    return hasattr(object_, '_asdict') and isinstance(object_, tuple)
-
-
-def pad_batch(batch, padding_index=PADDING_INDEX, dim=0):
-    """ Pad a :class:`list` of ``tensors`` (``batch``) with ``padding_index``.
-
-    Args:
-        batch (:class:`list` of :class:`torch.Tensor`): Batch of tensors to pad.
-        padding_index (int, optional): Index to pad tensors with.
-        dim (int, optional): Dimension on to which to concatenate the batch of tensors.
-
-    Returns
-        torch.Tensor, torch.Tensor: Padded tensors and original lengths of tensors.
-    """
-    lengths = [tensor.shape[0] for tensor in batch]
-    max_len = max(lengths)
-    padded = [pad_tensor(tensor, max_len, padding_index) for tensor in batch]
-    lengths = torch.tensor(lengths)
-    padded = torch.stack(padded, dim=dim).contiguous()
-    for _ in range(dim):
-        lengths = lengths.unsqueeze(0)
-    return padded, lengths
-
-
-def collate_tensors(batch, stack_tensors=torch.stack):
-    """ Collate a list of type k (dict, namedtuple, list, etc.) with tensors.
-
-    TODO: Contribute this to PyTorch-NLP as a generic sequence collate function.
-
-    NOTE:
-        * For a none-tensors, the batch is returned.
-
-    Args:
-        batch (list of k): List of rows of type ``k``
-        stack_tensors (callable): Function to stack tensors into a batch.
-
-    Returns:
-        k: Collated batch of type ``k``.
-    """
-    if all([torch.is_tensor(b) for b in batch]):
-        return stack_tensors(batch)
-    if (all([isinstance(b, dict) for b in batch]) and
-            all([b.keys() == batch[0].keys() for b in batch])):
-        return {key: collate_tensors([d[key] for d in batch], stack_tensors) for key in batch[0]}
-    elif all([is_namedtuple(b) for b in batch]):  # Handle ``namedtuple``
-        return batch[0].__class__(**collate_tensors([b._asdict() for b in batch], stack_tensors))
-    elif all([isinstance(b, list) for b in batch]):
-        # Handle list of lists such each list has some column to be batched, similar to:
-        # [['a', 'b'], ['a', 'b']] → [['a', 'a'], ['b', 'b']]
-        transposed = zip(*batch)
-        return [collate_tensors(samples, stack_tensors) for samples in transposed]
-    else:
-        return batch
-
-
-def tensors_to(tensors, **kwargs):
-    """ Move a generic data structure of tensors to another device
-
-    TODO: Contribute this to PyTorch-NLP as a generic ``to`` function.
-
-    Args:
-        tensors (tensor, dict, list, namedtuple or tuple): Data structure with tensor values to
-            move.
-
-    Returns:
-        Same type as inputed with all tensor values moved in accordance to ``kwargs``.
-    """
-    if torch.is_tensor(tensors):
-        return tensors.to(**kwargs)
-    elif isinstance(tensors, dict):
-        return {k: tensors_to(v, **kwargs) for k, v in tensors.items()}
-    elif hasattr(tensors, '_asdict') and isinstance(tensors, tuple):  # Handle ``namedtuple``
-        return tensors.__class__(**tensors_to(tensors._asdict(), **kwargs))
-    elif isinstance(tensors, list):
-        return [tensors_to(t, **kwargs) for t in tensors]
-    elif isinstance(tensors, tuple):
-        return tuple([tensors_to(t, **kwargs) for t in tensors])
-    else:
-        return tensors
-
-
-def lengths_to_mask(*lengths, **kwargs):
-    """ Given a list of lengths, create a batch mask.
-
-    Example:
-        >>> from src.utils import lengths_to_mask
-        >>> lengths_to_mask([1, 2, 3])
-        tensor([[1, 0, 0],
-                [1, 1, 0],
-                [1, 1, 1]], dtype=torch.uint8)
-        >>> lengths_to_mask([1, 2, 2], [1, 2, 2])
-        tensor([[[1, 0],
-                 [0, 0]],
-        <BLANKLINE>
-                [[1, 1],
-                 [1, 1]],
-        <BLANKLINE>
-                [[1, 1],
-                 [1, 1]]], dtype=torch.uint8)
-
-    Args:
-        lengths (list of int or torch.Tensor)
-        **kwargs: Auxiliary arguments passed to ``torch.zeros``.
-
-    Returns:
-        torch.Tensor
-    """
-    # Squeeze to deal with random additional dimensions
-    lengths = [l.squeeze().tolist() if torch.is_tensor(l) else l for l in lengths]
-
-    # For cases where length is a scalar, we need to convert it to a list.
-    lengths = [l if isinstance(l, list) else [l] for l in lengths]
-    assert all(len(l) == len(lengths[0]) for l in lengths)
-    batch_size = len(lengths[0])
-    other_dimensions = tuple([int(max(l)) for l in lengths])
-    mask = torch.zeros(batch_size, *other_dimensions, **kwargs)
-    for i, length in enumerate(zip(*tuple(lengths))):
-        mask[i][[slice(int(l)) for l in length]].fill_(1)
-    return mask.byte()
-
-
 def identity(x):
     return x
 
 
-class _DataLoaderDataset(data.Dataset):
+assert hasattr(torch.utils.data.dataloader, 'pin_memory_batch')
+torch.utils.data.dataloader.pin_memory_batch = pin_memory_batch
+
+
+class DataLoaderDataset(torch.utils.data.Dataset):
     """ Dataset that allows for a callable upon loading a single example.
 
     Args:
         dataset (torch.utils.data. Dataset): Dataset from which to load the data.
-        load_fn (callable): Function to run
+        load_fn (callable): Function to run on `__getitem__`.
     """
 
     def __init__(self, dataset, load_fn):
@@ -682,16 +567,17 @@ class _DataLoaderDataset(data.Dataset):
         return self.load_fn(self.dataset[index])
 
 
-class DataLoader(DataLoader):
+class DataLoader(torch.utils.data.dataloader.DataLoader):
     """ PyTorch DataLoader that supports a ``load_fn``.
 
     Args:
         dataset (torch.utils.data. Dataset): Dataset from which to load the data.
         load_fn (callable, optional): Callable run to load a single row of the dataset.
         post_process_fn (callable, optional): Callable run directly before the batch is returned.
-        num_workers (int, optional): Number ofsubprocesses to use for data loading. 0 means that the
-            data will be loaded in the main process.
-        trial_run (bool, optional):
+        num_workers (int, optional): Number of subprocesses to use for data loading. Given a 0 value
+          the data will be loaded in the main process.
+        trial_run (bool, optional): If ``True`` iteration stops after the first batch.
+        use_tqdm (bool, optional): Log a TQDM progress bar.
         **kwargs: Other key word arguments to be passed to ``torch.utils.data.DataLoader``
     """
 
@@ -704,7 +590,7 @@ class DataLoader(DataLoader):
                  use_tqdm=False,
                  **kwargs):
         super().__init__(
-            dataset=_DataLoaderDataset(dataset, load_fn), num_workers=num_workers, **kwargs)
+            dataset=DataLoaderDataset(dataset, load_fn), num_workers=num_workers, **kwargs)
         logger.info('Launching with %d workers', num_workers)
         self.post_processing_fn = post_processing_fn
         self.trial_run = trial_run
@@ -714,12 +600,21 @@ class DataLoader(DataLoader):
         return 1 if self.trial_run else super().__len__()
 
     def __iter__(self):
+        start = time.time()
+        is_first = True
+
         iterator = super().__iter__()
         if self.use_tqdm:
             iterator = tqdm(iterator, total=len(self))
 
         for batch in iterator:
             yield self.post_processing_fn(batch)
+
+            if is_first:
+                elapsed = seconds_to_string(time.time() - start)
+                logger.info('Time to first batch was %s.', elapsed)
+                is_first = False
+
             if self.trial_run:
                 break
 
@@ -728,11 +623,16 @@ class OnDiskTensor():
     """ Tensor that resides on disk.
 
     Args:
-        path (str or Path)
+        path (str or Path): Path for an ``.npy`` file to be saved.
+        allow_pickle (bool, optional): Allow saving object arrays using Python pickles. This
+          is not recommended for performance reasons.
     """
 
-    def __init__(self, path):
+    def __init__(self, path, allow_pickle=False):
+        assert '.npy' in str(path), 'Path must include ``.npy`` extension.'
+
         self.path = Path(path)
+        self.allow_pickle = allow_pickle
 
     def __hash__(self):
         return hash(self.path)
@@ -740,14 +640,24 @@ class OnDiskTensor():
     def __eq__(self, other):
         if isinstance(other, OnDiskTensor):
             return self.path == other.path
+
+        # Learn more:
+        # https://stackoverflow.com/questions/878943/why-return-notimplemented-instead-of-raising-notimplementederror
         return NotImplemented
+
+    @property
+    def shape(self):
+        with open(str(self.path), 'rb') as file_:
+            version = np.lib.format.read_magic(file_)
+            shape, _, _ = np.lib.format._read_array_header(file_, version)
+        return shape
 
     def to_tensor(self):
         """ Convert to a in-memory ``torch.tensor``. """
-        loaded = np.load(str(self.path))
+        loaded = np.load(str(self.path), allow_pickle=self.allow_pickle)
         return torch.from_numpy(loaded).contiguous()
 
-    def does_exist(self):
+    def exists(self):
         """ If ``True``, the tensor exists on disk. """
         return self.path.is_file()
 
@@ -768,22 +678,8 @@ class OnDiskTensor():
 
         # This storage was picked using this benchmark:
         # https://github.com/mverleg/array_storage_benchmark
-        np.save(str(self.path), tensor, allow_pickle=False)
+        np.save(str(self.path), tensor, allow_pickle=self.allow_pickle)
         return self
-
-
-@lru_cache(maxsize=None)
-def _get_spectrogram_length(spectrogram):
-    """ Get length of spectrogram (shape [num_frames, num_channels]).
-
-    Args:
-        spectrogram (OnDiskTensor)
-
-    Returns:
-        (int) Length of spectrogram
-    """
-    spectrogram = spectrogram.to_tensor() if isinstance(spectrogram, OnDiskTensor) else spectrogram
-    return spectrogram.shape[0]
 
 
 def seconds_to_string(seconds):
@@ -791,7 +687,13 @@ def seconds_to_string(seconds):
 
     Example:
         >>> seconds_to_string(123)
-        '2m 3s'
+        '2m 3s 0ms'
+        >>> seconds_to_string(123.100)
+        '2m 3s 100ms'
+        >>> seconds_to_string(86400)
+        '1d 0h 0m 0s 0ms'
+        >>> seconds_to_string(3600)
+        '1h 0m 0s 0ms'
 
     Args:
         seconds (int)
@@ -799,18 +701,21 @@ def seconds_to_string(seconds):
     Returns
         str
     """
-    seconds = abs(int(seconds))
+    seconds, milliseconds = divmod(seconds, 1)
+    milliseconds = round(milliseconds * 1000)
     days, seconds = divmod(seconds, 86400)
     hours, seconds = divmod(seconds, 3600)
     minutes, seconds = divmod(seconds, 60)
     if days > 0:
-        return '%dd %dh %dm %ds' % (days, hours, minutes, seconds)
+        return '%dd %dh %dm %ds %dms' % (days, hours, minutes, seconds, milliseconds)
     elif hours > 0:
-        return '%dh %dm %ds' % (hours, minutes, seconds)
+        return '%dh %dm %ds %dms' % (hours, minutes, seconds, milliseconds)
     elif minutes > 0:
-        return '%dm %ds' % (minutes, seconds)
+        return '%dm %ds %dms' % (minutes, seconds, milliseconds)
+    elif seconds > 0:
+        return '%ds %dms' % (seconds, milliseconds)
     else:
-        return '%ds' % (seconds)
+        return '%dms' % (milliseconds)
 
 
 def log_runtime(function):
@@ -828,36 +733,169 @@ def log_runtime(function):
     return decorator
 
 
-@log_runtime
-def get_spectrogram_lengths(data, use_tqdm=False):
-    """ Get the spectrograms lengths for every data row.
-
+@lru_cache(maxsize=None)
+def _get_tensor_dim_length(tensor, dim):
+    """
     Args:
-        data (iterable of SpectrogramTextSpeechRow)
-        use_tqdm (bool)
+        tensor (OnDiskTensor or torch.Tensor or np.ndarray)
 
     Returns:
-        (list of int): Spectrogram length for every data point.
+        (int): Length of ``dim`` in ``tensor``.
     """
-    logger.info('Computing spectrogram lengths...')
+    return tensor.shape[dim]
+
+
+@log_runtime
+def get_tensors_dim_length(tensors, dim=0, use_tqdm=False):
+    """ Get the length of ``dim`` for each tensor in ``tensors``.
+
+    Args:
+        tensors (iterable of torch.Tensor)
+        dim (int, optional)
+        use_tqdm (bool, optional)
+
+    Returns:
+        (list of int): The length of ``dim`` for each tensor.
+    """
     with ThreadPoolExecutor() as pool:
-        iterator = pool.map(_get_spectrogram_length, [r.spectrogram for r in data])
+        iterator = pool.map(partial(_get_tensor_dim_length, dim=dim), tensors)
         if use_tqdm:
-            iterator = tqdm(iterator, total=len(data))
+            iterator = tqdm(iterator, total=len(tensors))
         lengths = list(iterator)
     return lengths
 
 
-def sort_by_spectrogram_length(data, **kwargs):
-    """ Sort ``SpectrogramTextSpeechRow`` rows by spectrogram lengths.
-
+def sort_together(list_, sort_key):
+    """
     Args:
-        data (iterable of SpectrogramTextSpeechRow)
-        **kwargs: Further key word arguments passed to ``get_spectrogram_lengths``
+        list_ (list)
+        sort_key (list)
 
     Returns:
-        (iterable of SpectrogramTextSpeechRow)
+        list: ``list_`` sorted with the sort key list ``sort_key``.
     """
-    lengths = get_spectrogram_lengths(data, **kwargs)
-    _, return_ = zip(*sorted(zip(lengths, data), key=lambda r: r[0]))
-    return return_
+    return [x for _, x in sorted(zip(sort_key, list_), key=lambda pair: pair[0])]
+
+
+def assert_enough_disk_space(min_space=0.2):
+    """ Check if there is enough disk space.
+
+    Args:
+        min_space (float): Minimum percentage of free disk space.
+    """
+    st = os.statvfs(ROOT_PATH)
+    free = st.f_bavail * st.f_frsize
+    total = st.f_blocks * st.f_frsize
+    available = free / total
+    assert available > min_space, 'There is not enough available (%f < %f) disk space.' % (
+        available, min_space)
+
+
+class AccumulatedMetrics():
+    """
+    Args:
+        type_: Default torch tensor type.
+    """
+
+    def __init__(self, type_=torch.cuda):
+        self.type_ = type_
+        self.reset()
+
+    def reset(self):
+        self.metrics = {
+            'epoch_total': defaultdict(float),
+            'epoch_count': defaultdict(float),
+            'step_total': defaultdict(float),
+            'step_count': defaultdict(float)
+        }
+
+    def add_metric(self, name, value, count=1):
+        """ Add metric as part of the current step.
+
+        Args:
+            name (str)
+            value (number)
+            count (int): Number of times to add value / frequency of value.
+        """
+        if torch.is_tensor(value):
+            value = value.item()
+
+        if torch.is_tensor(count):
+            count = count.item()
+
+        assert count > 0, '%s count, %f, must be a positive number' % (name, count)
+
+        self.metrics['step_total'][name] += value * count
+        self.metrics['step_count'][name] += count
+
+    def add_metrics(self, dict_, count=1):
+        """ Add multiple metrics as part of the current step.
+
+        Args:
+            dict_ (dict): Metrics in the form of key value pairs.
+            count (int): Number of times to add value / frequency of value.
+        """
+        for metric, value in dict_.items():
+            self.add_metric(metric, value, count)
+
+    def log_step_end(self, log_metric):
+        """ Log all metrics that have been accumulated since the last ``log_step_end``.
+
+        Note that in the distributed case, only the master node gets the accurate metric.
+
+        Args:
+            log_metric (callable(key, value)): Callable to log a metric.
+        """
+        # Accumulate metrics between multiple processes.
+        if src.distributed.is_initialized():
+            metrics_total_items = sorted(self.metrics['step_total'].items(), key=lambda t: t[0])
+            metrics_total_values = [value for _, value in metrics_total_items]
+
+            metrics_count_items = sorted(self.metrics['step_count'].items(), key=lambda t: t[0])
+            metrics_count_values = [value for _, value in metrics_count_items]
+
+            packed = self.type_.FloatTensor(metrics_total_values + metrics_count_values)
+            torch.distributed.reduce(packed, dst=src.distributed.get_master_rank())
+            packed = packed.tolist()
+
+            for (key, _), value in zip(metrics_total_items, packed[:len(metrics_total_items)]):
+                self.metrics['step_total'][key] = value
+
+            for (key, _), value in zip(metrics_count_items, packed[len(metrics_total_items):]):
+                self.metrics['step_count'][key] = value
+
+        # Log step metrics and update epoch metrics.
+        for (total_key, total_value), (count_key, count_value) in zip(
+                self.metrics['step_total'].items(), self.metrics['step_count'].items()):
+
+            assert total_key == count_key, 'AccumulatedMetrics invariant failed.'
+            assert count_value > 0, 'AccumulatedMetrics invariant failed (%s, %f, %f)'
+            log_metric(total_key, total_value / count_value)
+
+            self.metrics['epoch_total'][total_key] += total_value
+            self.metrics['epoch_count'][total_key] += count_value
+
+        # Reset step metrics
+        self.metrics['step_total'] = defaultdict(float)
+        self.metrics['step_count'] = defaultdict(float)
+
+    def get_epoch_metric(self, metric):
+        """ Get the current epoch value for a metric.
+        """
+        return self.metrics['epoch_total'][metric] / self.metrics['epoch_count'][metric]
+
+    def log_epoch_end(self, log_metric):
+        """ Log all metrics that have been accumulated since the last ``log_epoch_end``.
+
+        Args:
+            log_metric (callable(key, value)): Callable to log a metric.
+        """
+        self.log_step_end(lambda *args, **kwargs: None)
+
+        # Log epoch metrics
+        for (total_key, total_value), (count_key, count_value) in zip(
+                self.metrics['epoch_total'].items(), self.metrics['epoch_count'].items()):
+
+            assert total_key == count_key, 'AccumulatedMetrics invariant failed.'
+            assert count_value > 0, 'AccumulatedMetrics invariant failed (%s, %f, %f)'
+            log_metric(total_key, total_value / count_value)

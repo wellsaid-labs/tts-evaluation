@@ -1,6 +1,7 @@
 import logging
 
 from torch import nn
+from torchnlp.utils import lengths_to_mask
 from tqdm import tqdm
 
 import torch
@@ -10,7 +11,6 @@ from src.hparams import ConfiguredArg
 from src.spectrogram_model.decoder import AutoregressiveDecoder
 from src.spectrogram_model.encoder import Encoder
 from src.spectrogram_model.post_net import PostNet
-from src.utils import lengths_to_mask
 
 logger = logging.getLogger(__name__)
 
@@ -104,20 +104,28 @@ class SpectrogramModel(nn.Module):
         else:
             return []
 
-    def _add_residual(self, frames):
+    def _add_residual(self, frames, frames_lengths):
         """ Add residual to frames.
 
         Args:
             fames (torch.FloatTensor [num_frames, batch_size, frame_channels]) Predicted frames.
+            frames_lengths (torch.LongTensor [batch_size])
 
         Returns:
             fames (torch.FloatTensor [num_frames, batch_size, frame_channels]) Predicted frames.
         """
+        # Learned from experiments that detaching the gradient is important for convergence.
+        # Learn more on comet.ml.
+        frames = frames.detach()
+
         # ``frames`` is expected to have shape `[num_frames, batch_size, frame_channels]`.
         # The post net expect input of shape `[batch_size, frame_channels, num_frames]`. We thus
         # need to permute the tensor first.
         residual = frames.permute(1, 2, 0)
-        residual = self.post_net(residual)
+
+        # [batch_size, num_frames]
+        mask = lengths_to_mask(frames_lengths, device=residual.device)
+        residual = self.post_net(residual, mask)
 
         # In order to add frames with the residual, we need to permute for their sizes to be
         # compatible.
@@ -133,12 +141,13 @@ class SpectrogramModel(nn.Module):
 
         return frames_with_residual
 
-    def _aligned(self, encoded_tokens, tokens_mask, target_frames, is_unbatched):
+    def _aligned(self, encoded_tokens, tokens_mask, target_frames, target_lengths, is_unbatched):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
             tokens_mask (torch.FloatTensor [batch_size, num_tokens])
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
+            target_lengths (torch.LongTensor [batch_size]): The number of frames in each sequence.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
@@ -148,7 +157,7 @@ class SpectrogramModel(nn.Module):
         """
         frames, stop_tokens, hidden_state, alignments = self.decoder(
             encoded_tokens, tokens_mask, target_frames=target_frames)
-        frames_with_residual = self._add_residual(frames)
+        frames_with_residual = self._add_residual(frames, target_lengths)
 
         if is_unbatched:
             return (frames.squeeze(1), frames_with_residual.squeeze(1), stop_tokens.squeeze(1),
@@ -159,15 +168,17 @@ class SpectrogramModel(nn.Module):
     def _infer(self,
                encoded_tokens,
                tokens_mask,
+               num_tokens,
                is_unbatched=False,
-               max_recursion=2000,
+               max_frames_per_token=15,
                stop_threshold=0.5,
                use_tqdm=False):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
             tokens_mask (torch.FloatTensor [batch_size, num_tokens])
-            max_recursion (int, optional): The maximum sequential predictions to make before
+            num_tokens (torch.LongTensor [batch_size]): The number of tokens in each sequence.
+            max_frames_per_token (int, optional): The maximum sequential predictions to make before
                 quitting; Used for testing and defensive design.
             stop_threshold (float, optional): The threshold probability for deciding to stop.
             use_tqdm (bool, optional): If ``True`` attach a progress bar to iterator.
@@ -185,10 +196,10 @@ class SpectrogramModel(nn.Module):
         stopped = set()
         hidden_state = None
         alignments, frames, stop_tokens = [], [], []
-        lengths = [max_recursion] * batch_size
+        lengths = (num_tokens * max_frames_per_token).long().tolist()
         if use_tqdm:
             progress_bar = tqdm(leave=True, unit='frame(s)')
-        while len(stopped) != batch_size and len(frames) < max_recursion:
+        while len(stopped) != batch_size and len(frames) < max(lengths):
             frame, stop_token, hidden_state, alignment = self.decoder(
                 encoded_tokens, tokens_mask, hidden_state=hidden_state)
             to_stop = self._get_stopped_indexes(stop_token, stop_threshold=stop_threshold)
@@ -212,15 +223,19 @@ class SpectrogramModel(nn.Module):
         if use_tqdm:
             progress_bar.close()
 
-        if len(frames) == max_recursion:
-            logger.warning('%d sequences reached %d frames', lengths.count(max_recursion),
-                           len(frames))
+        reached_max = 0
+        for i, length in enumerate(lengths):
+            if num_tokens[i] * max_frames_per_token == length:
+                reached_max += 1
 
-        lengths = torch.tensor(lengths).unsqueeze(0)
+        if reached_max > 0:
+            logger.warning('%d sequences reached max frames', reached_max)
+
         alignments = torch.stack(alignments, dim=0)
         frames = torch.stack(frames, dim=0)
         stop_tokens = torch.stack(stop_tokens, dim=0)
-        frames_with_residual = self._add_residual(frames)
+        lengths = torch.tensor(lengths, device=frames.device).unsqueeze(0)
+        frames_with_residual = self._add_residual(frames, lengths)
 
         if is_unbatched:
             return (frames.squeeze(1), frames_with_residual.squeeze(1), stop_tokens.squeeze(1),
@@ -228,7 +243,7 @@ class SpectrogramModel(nn.Module):
 
         return frames, frames_with_residual, stop_tokens, alignments, lengths
 
-    def _normalize_shape(self, tokens, speaker, num_tokens, target_frames):
+    def _normalize_shape(self, tokens, speaker, num_tokens, target_frames, target_lengths):
         """ Normalize the shape of the forward inputs.
 
         Args:
@@ -237,12 +252,14 @@ class SpectrogramModel(nn.Module):
             num_tokens (torch.LongTensor [1, batch_size] or [batch_size] or [] or None)
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or
                 [num_frames, frame_channels] or None)
+            target_lengths (torch.LongTensor [1, batch_size] or [batch_size] or [])
 
         Returns:
             tokens (torch.LongTensor [batch_size, num_tokens])
             speaker (torch.LongTensor [batch_size])
             num_tokens (torch.LongTensor [batch_size])
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or None)
+            target_lengths (torch.LongTensor [batch_size] or None)
         """
         if len(tokens.shape) == 1:
             # [num_tokens] → [num_tokens, batch_size(1)]
@@ -260,6 +277,15 @@ class SpectrogramModel(nn.Module):
             # [1, batch_size] → [batch_size]
             speaker = speaker.squeeze(0)
 
+        if target_lengths is not None:
+            if len(target_lengths.shape) == 0:
+                # [] → [batch_size(1)]
+                target_lengths = target_lengths.unsqueeze(0)
+
+            if len(target_lengths.shape) == 2 and target_lengths.shape[0] == 1:
+                # [1, batch_size] → [batch_size]
+                target_lengths = target_lengths.squeeze(0)
+
         if num_tokens is not None:
             if len(num_tokens.shape) == 0:
                 # [] → [batch_size(1)]
@@ -276,9 +302,15 @@ class SpectrogramModel(nn.Module):
 
         # [num_tokens, batch_size] → [batch_size, num_tokens]
         tokens = tokens.transpose(0, 1)
-        return tokens, speaker, num_tokens, target_frames
+        return tokens, speaker, num_tokens, target_frames, target_lengths
 
-    def forward(self, tokens, speaker, num_tokens=None, target_frames=None, **kwargs):
+    def forward(self,
+                tokens,
+                speaker,
+                num_tokens=None,
+                target_frames=None,
+                target_lengths=None,
+                **kwargs):
         """
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens]): Batched set
@@ -289,6 +321,8 @@ class SpectrogramModel(nn.Module):
                 each sequence.
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or
                 [num_frames, frame_channels]): Ground truth frames to do aligned prediction.
+            target_lengths (torch.LongTensor [batch_size] or []): The number of frames in
+                each sequence.
             **kwargs: Other key word arugments passed to ``_infer`` or ``_aligned``.
 
         Returns:
@@ -305,16 +339,17 @@ class SpectrogramModel(nn.Module):
         """
         is_unbatched = len(tokens.shape) == 1
 
-        tokens, speaker, num_tokens, target_frames = self._normalize_shape(
-            tokens, speaker, num_tokens, target_frames)
+        tokens, speaker, num_tokens, target_frames, target_lengths = self._normalize_shape(
+            tokens, speaker, num_tokens, target_frames, target_lengths)
 
         # [batch_size, num_tokens]
         tokens_mask = lengths_to_mask(num_tokens, device=tokens.device)
 
         # [batch_size, num_tokens] → [num_tokens, batch_size, encoder_hidden_size]
-        encoded_tokens = self.encoder(tokens, speaker)
+        encoded_tokens = self.encoder(tokens, tokens_mask, speaker)
 
         if target_frames is None:
-            return self._infer(encoded_tokens, tokens_mask, is_unbatched, **kwargs)
+            return self._infer(encoded_tokens, tokens_mask, num_tokens, is_unbatched, **kwargs)
         else:
-            return self._aligned(encoded_tokens, tokens_mask, target_frames, is_unbatched, **kwargs)
+            return self._aligned(encoded_tokens, tokens_mask, target_frames, target_lengths,
+                                 is_unbatched, **kwargs)

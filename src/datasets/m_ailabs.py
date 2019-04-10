@@ -103,12 +103,16 @@ def _processing_row(row,
     audio_path = Path(metadata_path.parent,
                       metadata_audio_path_template.format(row[metadata_audio_column]))
 
+    # TODO: Factor this filtering out.
     if not audio_path.is_file():
         logger.warning('Not found audio file, skipping: %s', audio_path)
         return None
 
     if len(text) == 0:
         logger.warning('Text is absent, skipping: %s', audio_path)
+        return None
+
+    if book.speaker == Speaker.ELLIOT_MILLER:  # Ignore ELLIOT due to his acting.
         return None
 
     audio_path = _normalize_audio_and_cache(audio_path, **kwargs)

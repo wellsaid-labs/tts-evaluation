@@ -4,9 +4,6 @@ from pathlib import Path
 import csv
 import logging
 import re
-import unidecode
-
-from num2words import num2words
 
 import pandas
 
@@ -19,6 +16,16 @@ from src.datasets.process import _split_dataset
 from src.hparams import configurable
 
 logger = logging.getLogger(__name__)
+
+try:
+    import unidecode
+except ImportError:
+    logger.info('Skipping optional ``unidecode`` import for now.')
+
+try:
+    from num2words import num2words
+except ImportError:
+    logger.info('Skipping optional ``num2words`` import for now.')
 
 
 def _processing_row(row,
@@ -142,6 +149,7 @@ def lj_speech_dataset(directory='data/',
     data = _process_in_parallel(
         data,
         partial(_processing_row, directory=directory, extracted_name=extracted_name, kwargs=kwargs))
+    data = list(filter(None.__ne__, data))
     return _split_dataset(data, splits=splits)
 
 

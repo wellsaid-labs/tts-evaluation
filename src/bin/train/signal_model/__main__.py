@@ -26,14 +26,18 @@ from src.hparams import set_hparams
 from src.training_context_manager import TrainingContextManager
 from src.utils import Checkpoint
 from src.utils import parse_hparam_args
-from src.utils import set_basic_logging_config
 
 logger = logging.getLogger(__name__)
 
 
-def _set_hparams():
-    """ Set auxillary hyperparameters specific to the signal model. """
+def _set_hparams(more_hparams=None):
+    """ Set hyperparameters for signal model training.
+
+    Args:
+        more_harpams (dict, optional): Additional hyperparameters to set.
+    """
     set_hparams()
+
     add_config({
         # SOURCE (Tacotron 2):
         # We train with a batch size of 128 distributed across 32 GPUs with synchronous updates,
@@ -49,23 +53,57 @@ def _set_hparams():
         }
     })
 
+    if more_hparams:
+        add_config(more_hparams)
+
 
 @configurable
 def _get_dataset(dataset=datasets.lj_speech_dataset):
-    return dataset
+    return dataset()
+
+
+def _train(trainer,
+           context,
+           evaluate_every_n_epochs=3,
+           generate_every_n_epochs=30,
+           save_checkpoint_every_n_epochs=15):
+    """ Loop for training and periodically evaluating the model.
+
+    Args:
+        trainer (src.bin.train.signal_model.trainer.Trainer)
+        context (src.training_context_manager.TrainingContextManager)
+        evaluate_every_n_epochs (int, optional): Evaluate every ``evaluate_every_n_epochs`` epochs.
+        generate_every_n_epochs (int, optional): Generate an audio sample every
+            ``generate_every_n_epochs`` epochs.
+        save_checkpoint_every_n_epochs (int, optional): Save a checkpoint every
+            ``save_checkpoint_every_n_epochs`` epochs.
+    """
+    is_trial_run = True  # The first iteration is run as a ``trial_run``
+
+    while True:
+        trainer.run_epoch(train=True, trial_run=is_trial_run)
+
+        if trainer.epoch % evaluate_every_n_epochs == 0 or is_trial_run:
+            trainer.run_epoch(train=False, trial_run=is_trial_run)
+
+        if trainer.epoch % generate_every_n_epochs == 0 or is_trial_run:
+            trainer.visualize_inferred()
+
+        if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
+            trainer.save_checkpoint(context.checkpoints_directory)
+
+        is_trial_run = False
+        logger.info('-' * 100)
 
 
 def main(run_name,
          comet_ml_project_name=None,
          run_tags=[],
          run_root=Path('experiments/signal_model/'),
-         checkpoint_path=None,
+         checkpoint=None,
          spectrogram_model_checkpoint_path=None,
          reset_optimizer=False,
-         hparams={},
-         evaluate_every_n_epochs=3,
-         generate_every_n_epochs=30,
-         save_checkpoint_every_n_epochs=15):
+         more_hparams={}):
     """ Main module that trains a the signal model saving checkpoints incrementally.
 
     Args:
@@ -73,94 +111,49 @@ def main(run_name,
         comet_ml_project_name (str, optional): Project name to use with comet.ml.
         run_tags (list of str, optional): Tags describing the experiment.
         run_root (str, optional): Directory to save experiments.
-        checkpoint_path (str, optional): Accepts a checkpoint path to load or empty string
+        checkpoint_path (str or bool, optional): Accepts a checkpoint path to load or empty string
             signaling to load the most recent checkpoint in ``run_root``.
         spectrogram_model_checkpoint_path (str, optional): Checkpoint used to generate spectrogram
             from text as input to the signal model.
         reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer.
-        hparams (dict, optional): Hparams to override default hparams.
-        evaluate_every_n_epochs (int, optional): Evaluate every ``evaluate_every_n_epochs`` epochs.
-        generate_every_n_epochs (int, optional): Generate an audio sample every
-            ``generate_every_n_epochs`` epochs.
-        save_checkpoint_every_n_epochs (int, optional): Save a checkpoint every
-            ``save_checkpoint_every_n_epochs`` epochs.
+        more_hparams (dict, optional): Hparams to override default hparams.
     """
-    set_basic_logging_config()
-    _set_hparams()
-    add_config(hparams)
-
-    checkpoint = (
-        Checkpoint.most_recent(run_root / '**/*.pt')
-        if checkpoint_path == '' else Checkpoint.from_path(checkpoint_path))
-
-    if checkpoint is not None:
-        step = checkpoint.step
-        directory = checkpoint.directory.parent.parent
-    else:
-        step = 0
-        directory = run_root / str(time.strftime('%b_%d/%H:%M:%S', time.localtime())).lower()
-
-    with TrainingContextManager(root_directory=directory, step=step) as context:
-        logger.info('Directory: %s', directory)
+    with TrainingContextManager() as context:
         logger.info('Name: %s', run_name)
         logger.info('Tags: %s', run_tags)
-        trainer_kwargs = {
-            'comet_ml_project_name': comet_ml_project_name,
-            'spectrogram_model_checkpoint_path': spectrogram_model_checkpoint_path
-        }
-        if checkpoint is not None:
-            logger.info('Loaded checkpoint %s', checkpoint.path)
 
-            if reset_optimizer:
-                logger.info('Ignoring checkpoint optimizer.')
-                checkpoint.optimizer = None
+        _set_hparams(more_hparams)
 
-            # For backwards compatibility
-            comet_ml_project_name = getattr(checkpoint, 'comet_ml_project_name',
-                                            comet_ml_project_name)
+        # Set the root directory and load checkpoint
+        if checkpoint is not None and checkpoint:
+            if isinstance(checkpoint, str):
+                checkpoint = Checkpoint.from_path(checkpoint)
+            elif isinstance(checkpoint, bool) and checkpoint:
+                checkpoint = Checkpoint.most_recent(run_root / '**/*.pt')
+            else:
+                raise ValueError('Unable to load checkpoint.')
 
-            trainer_kwargs.update({
-                'model': checkpoint.model,
-                'optimizer': checkpoint.optimizer,
-                'epoch': checkpoint.epoch,
-                'step': checkpoint.step,
-                'comet_ml_experiment_key': checkpoint.comet_ml_experiment_key,
-                'anomaly_detector': checkpoint.anomaly_detector,
-                'spectrogram_model_checkpoint_path': checkpoint.spectrogram_model_checkpoint_path,
-                'comet_ml_project_name': comet_ml_project_name,
-            })
+            context.set_context_root(checkpoint.directory.parent.parent, at_checkpoint=True)
+            checkpoint.optimizer = None if reset_optimizer else checkpoint.optimizer
+        else:
+            root = run_root / str(time.strftime('%b_%d/%H:%M:%S', time.localtime())).lower()
+            context.set_context_root(root)
 
-        train, dev = _get_dataset()()
-        trainer = Trainer(context.device, train, dev, **trainer_kwargs)
+        train, dev = _get_dataset()
+
+        # Create trainer
+        kwargs = {'device': context.device, 'train_dataset': train, 'dev_dataset': dev}
+        if comet_ml_project_name is not None:
+            kwargs['comet_ml_project_name'] = comet_ml_project_name
+        if spectrogram_model_checkpoint_path is not None:
+            kwargs['spectrogram_model_checkpoint_path'] = spectrogram_model_checkpoint_path
+        trainer = (Trainer.from_checkpoint if checkpoint else Trainer)(**kwargs)
+
         trainer.comet_ml.set_name(run_name)
         trainer.comet_ml.add_tags(run_tags)
-        trainer.comet_ml.log_other('directory', directory)
+        trainer.comet_ml.log_other('directory', context.root_directory)
 
-        # Training Loop
-        while True:
-            is_trial_run = trainer.step == step
-            trainer.run_epoch(train=True, trial_run=is_trial_run)
-
-            if trainer.epoch % evaluate_every_n_epochs == 0 or is_trial_run:
-                trainer.run_epoch(train=False, trial_run=is_trial_run)
-
-            if trainer.epoch % generate_every_n_epochs == 0 or is_trial_run:
-                trainer.visualize_inferred()
-
-            if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
-                Checkpoint(
-                    comet_ml_project_name=comet_ml_project_name,
-                    directory=context.checkpoints_directory,
-                    model=trainer.model,
-                    optimizer=trainer.optimizer,
-                    epoch=trainer.epoch,
-                    step=trainer.step,
-                    anomaly_detector=trainer.anomaly_detector,
-                    comet_ml_experiment_key=trainer.comet_ml.get_key(),
-                    spectrogram_model_checkpoint_path=trainer
-                    .spectrogram_model_checkpoint_path).save()
-
-            logger.info('-' * 100)
+        _train(trainer, context)
 
 
 if __name__ == '__main__':  # pragma: no cover
@@ -168,7 +161,7 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '-c',
         '--checkpoint',
-        const='',
+        const=True,
         type=str,
         default=None,
         action='store',
@@ -200,7 +193,7 @@ if __name__ == '__main__':  # pragma: no cover
         run_name=args.name,
         run_tags=args.tags,
         comet_ml_project_name=args.project_name,
-        checkpoint_path=args.checkpoint,
+        checkpoint=args.checkpoint,
         spectrogram_model_checkpoint_path=args.spectrogram_model_checkpoint,
         reset_optimizer=args.reset_optimizer,
-        hparams=hparams)
+        more_hparams=hparams)
