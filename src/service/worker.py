@@ -78,9 +78,6 @@ SPECTROGRAM_MODEL_CHECKPOINT_PATH = pathlib.Path(
 SIGNAL_MODEL_CHECKPOINT_PATH = pathlib.Path(
     'experiments/signal_model/jan_11/20:51:46/checkpoints/1549309174/step_3775828.pt')
 
-assert SPECTROGRAM_MODEL_CHECKPOINT_PATH.is_file(), 'Spectrogram model checkpoint cannot be found.'
-assert SIGNAL_MODEL_CHECKPOINT_PATH.is_file(), 'Signal model checkpoint cannot be found.'
-
 # TODO: Factor out these changes into individual branches; enabling me to move forward with
 # training more voices and running more experiments.
 
@@ -98,6 +95,10 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
         spectrogram_model (torch.nn.Module)
         input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
     """
+    assert spectrogram_model_checkpoint_path.is_file(
+    ), 'Spectrogram model checkpoint cannot be found.'
+    assert signal_model_checkpoint_path.is_file(), 'Signal model checkpoint cannot be found.'
+
     set_hparams()
 
     spectrogram_model = Checkpoint.from_path(spectrogram_model_checkpoint_path, device=DEVICE)
