@@ -78,7 +78,11 @@ class TrainingContextManager(object):
             stdout_filename (str): Captured stdout stream filename.
             stderr_filename (str): Captured stderr stream filename.
         """
-        directory.mkdir(parents=True, exist_ok=True)
+        if src.distributed.is_master():
+            directory.mkdir(parents=True, exist_ok=True)
+        if src.distributed.is_initialized():  # Ensure ``mkdir`` runs on master before usage.
+            torch.distributed.barrier()
+
         stdout_filename = directory / stdout_filename
         stderr_filename = directory / stderr_filename
 
@@ -126,7 +130,8 @@ class TrainingContextManager(object):
             self.id = src.distributed.broadcast_string(self.id)
 
         self.checkpoints_directory = self.root_directory / 'checkpoints' / self.id
-        self.checkpoints_directory.mkdir(parents=True)
+        if src.distributed.is_master():
+            self.checkpoints_directory.mkdir(parents=True)
 
         self._copy_standard_streams(self.root_directory,
                                     '%s.%s.%s' % (self.id, self.device.index, 'stdout.log'),

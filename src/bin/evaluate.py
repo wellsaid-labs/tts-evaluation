@@ -144,7 +144,7 @@ def main(dataset=ConfiguredArg(),
         spectrogram_model_checkpoint_path, device=spectrogram_model_device)
     examples, indicies = _sample_dataset(
         dataset,
-        speaker_encoder=spectrogram_model_checkpoint.speaker_encoder,
+        speaker_encoder=spectrogram_model_checkpoint.input_encoder.speaker_encoder,
         num_samples=num_samples,
         speaker=speaker,
         balanced=balanced)

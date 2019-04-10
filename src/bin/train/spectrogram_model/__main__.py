@@ -23,6 +23,9 @@ import warnings
 warnings.filterwarnings('ignore', message='numpy.dtype size changed')
 warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
 
+# NOTE: Needs to be imported before torch
+import comet_ml  # noqa
+
 from torch import multiprocessing
 
 import torch

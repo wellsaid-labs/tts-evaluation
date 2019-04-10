@@ -15,6 +15,9 @@ import warnings
 warnings.filterwarnings('ignore', message='numpy.dtype size changed')
 warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
 
+# NOTE: Needs to be imported before torch
+import comet_ml  # noqa
+
 from src import datasets
 from src.bin.train.signal_model.trainer import Trainer
 from src.hparams import add_config
@@ -190,7 +193,7 @@ if __name__ == '__main__':  # pragma: no cover
         run_name=args.name,
         run_tags=args.tags,
         comet_ml_project_name=args.project_name,
-        checkpoint_path=args.checkpoint,
+        checkpoint=args.checkpoint,
         spectrogram_model_checkpoint_path=args.spectrogram_model_checkpoint,
         reset_optimizer=args.reset_optimizer,
         more_hparams=hparams)

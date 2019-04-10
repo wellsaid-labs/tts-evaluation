@@ -321,10 +321,6 @@ def set_hparams():
     from src import datasets
     dataset = datasets.lj_speech_dataset
 
-    # SOURCE (Tacotron 2):
-    # Finally, the predicted mel spectrogram is passed
-    train_signal_model_from_predicted_spectrogram = True
-
     spectrogram_model_dev_batch_size = 256
 
     # TODO: Add option to instead of strings to use direct references.
@@ -382,8 +378,6 @@ def set_hparams():
                         # NOTE: Parameters set after experimentation on a 4 Px100 GPU.
                         'train_batch_size': 64,
                         'dev_batch_size': 256,
-
-                        'use_predicted': train_signal_model_from_predicted_spectrogram,
 
                         # These are not directly mentioned in the paper; however are popular choices
                         # as of Jan 2019 for a sequence to sequence task.

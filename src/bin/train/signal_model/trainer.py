@@ -62,8 +62,6 @@ class Trainer():
         criterion (callable): Loss function used to score signal predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
         min_rollback (int): Minimum number of epochs to rollback in case of a loss anomaly.
-        use_predicted (bool): If ``True`` train from predicted spectrograms, otherwise
-            train from real spectrograms.
         comet_ml_experiment_key (str, optional): Previous experiment key to continue visualization
             in comet.
         spectrogram_model_checkpoint_path (str, optional): Checkpoint used to generate a spectrogram
@@ -93,7 +91,6 @@ class Trainer():
                  criterion=ConfiguredArg(),
                  optimizer=ConfiguredArg(),
                  min_rollback=ConfiguredArg(),
-                 use_predicted=ConfiguredArg(),
                  comet_ml_experiment_key=None,
                  spectrogram_model_checkpoint_path=None,
                  model=None,
@@ -128,7 +125,7 @@ class Trainer():
         self.train_dataset = compute_spectrograms_partial(train_dataset)
         self.dev_dataset = compute_spectrograms_partial(dev_dataset)
         self.use_tqdm = use_tqdm
-        self.use_predicted = use_predicted
+        self.use_predicted = spectrogram_model_checkpoint_path is not None
         # NOTE: Rollback ``maxlen=min_rollback + 1`` to store the current state of the model with
         # the additional rollbacks.
         self.rollback = deque([self._get_state()], maxlen=min_rollback + 1)
@@ -371,6 +368,6 @@ class Trainer():
             tag=self.DEV_INFERRED_LABEL,
             text=example.text,
             speaker=str(example.speaker),
-            gold_audio=target_signal,
-            predicted_audio=predicted_signal)
-        self.comet_ml.log_figure('spectrogram', plot_spectrogram(spectrogram))
+            gold_audio=target_signal.cpu(),
+            predicted_audio=predicted_signal.cpu())
+        self.comet_ml.log_figure('spectrogram', plot_spectrogram(spectrogram.cpu()))

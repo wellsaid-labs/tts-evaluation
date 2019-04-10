@@ -103,6 +103,7 @@ def _processing_row(row,
     audio_path = Path(metadata_path.parent,
                       metadata_audio_path_template.format(row[metadata_audio_column]))
 
+    # TODO: Factor this filtering out.
     if not audio_path.is_file():
         logger.warning('Not found audio file, skipping: %s', audio_path)
         return None

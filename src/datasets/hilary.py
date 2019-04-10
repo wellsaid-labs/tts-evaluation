@@ -54,6 +54,7 @@ def _processing_row(row,
     audio_path = Path(directory, extracted_name, audio_directory, row[metadata_audio_column])
     audio_path = _normalize_audio_and_cache(audio_path, **kwargs)
 
+    # TODO: Factor this filtering out.
     if len(set(text).intersection(set('0123456789'))) > 0:
         logger.warning('Ignore unverbalized example from `hilary_dataset`: %s', text)
         return None

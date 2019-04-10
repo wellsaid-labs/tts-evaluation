@@ -3,6 +3,7 @@ import math
 import random
 
 from torchnlp.utils import lengths_to_mask
+from torchnlp.utils import tensors_to
 
 import torch
 
@@ -319,7 +320,8 @@ class Trainer():
             return
 
         example = random.sample(self.dev_dataset, 1)[0]
-        text, speaker = self.input_encoder.encode((example.text, example.speaker))
+        text, speaker = tensors_to(
+            self.input_encoder.encode((example.text, example.speaker)), device=self.device)
         model = self.model.module if src.distributed.is_initialized() else self.model
 
         with evaluate(model, device=self.device):
