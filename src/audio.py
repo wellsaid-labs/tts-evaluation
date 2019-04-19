@@ -275,7 +275,7 @@ def griffin_lim(log_mel_spectrogram,
     Returns:
         (np.ndarray [num_samples]): Predicted waveform.
     """
-    if log_mel_spectrogram.shape[0] == 0:
+    if log_mel_spectrogram.shape[0] < 2:
         return np.array([])
 
     logger.info('Running Griffin-Lim....')
