@@ -194,10 +194,7 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '-t',
         '--tags',
-        default=[
-            'detached post_net', 'masked conv', 'post_net dropout=0', 'weight_decay=10**-6',
-            'no elliot', 'no numbers'
-        ],
+        default=['detached post_net', 'masked conv', 'post_net dropout=0', 'weight_decay=10**-6'],
         action='append',
         help='List of tags for the experiment.')
     parser.add_argument(
