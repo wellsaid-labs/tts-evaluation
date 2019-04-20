@@ -186,11 +186,7 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '-n', '--name', type=str, default=None, help='Name describing the experiment')
     parser.add_argument(
-        '-p',
-        '--project_name',
-        type=str,
-        required=True,
-        help='Comet.ML project for the experiment to use.')
+        '-p', '--project_name', type=str, help='Comet.ML project for the experiment to use.')
     parser.add_argument(
         '-t',
         '--tags',
