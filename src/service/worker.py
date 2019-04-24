@@ -273,6 +273,7 @@ def _validate_and_unpack(args, max_characters=1000, num_api_key_characters=32):
 
     speaker_id = int(speaker_id)
 
+    # TODO: Check that ``speaker_id`` is in ``input_encoder.speaker_encoder.vocab``
     if not (isinstance(speaker_id, int) and speaker_id < len(Speaker) and speaker_id >= 0):
         raise InvalidUsage('Speaker ID must be an integer between %d and %d.' % (0, len(Speaker)))
 

@@ -7,9 +7,9 @@ Prior:
 
 Example:
 
-    >>> python3 -m src.bin.chunk_wav_and_text --wav 'data/other/Heather/wavs/*.wav' \
-                                              --csv 'data/other/Heather/csvs/*.csv' \
-                                              --destination data/other/Heather/dest/
+    python3 -m src.bin.chunk_wav_and_text --wav 'data/other/Heather/wavs/*.wav' \
+                                          --csv 'data/other/Heather/csvs/*.csv' \
+                                          --destination data/other/Heather/dest/
 """
 from pathlib import Path
 

@@ -2,8 +2,8 @@
 
 Example:
 
-    >>> python3 src/bin/combine_csv.py --csvs 'Script 52.csv' 'Script 53.csv' 'Script 54.csv' \
-                                       --name 'Scripts 52-54.csv'
+    python3 src/bin/combine_csv.py --csvs 'Script 52.csv' 'Script 53.csv' 'Script 54.csv' \
+                                   --name 'Scripts 52-54.csv'
 
 """
 import argparse
