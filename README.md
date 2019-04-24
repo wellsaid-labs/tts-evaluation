@@ -130,7 +130,7 @@ and test your changes to WellSaidLabs.
 ### Other Documentation
 
 Additionally, further documentation can be found in the
-[docs](https://github.com/AI2Incubator/WellSaidLabs/blob/master/docs/).
+[docs](https://github.com/AI2Incubator/WellSaidLabs/blob/master/docs/) directory.
 
 ## Authors
 
