@@ -31,9 +31,9 @@ link to relevant issues.
 Once your pull request is created, our continuous build system will check your pull request.
 Continuous build will test that:
 
-* [`pytest`](https://docs.pytest.org/en/latest/) All tests pass
+* [`pytest`](https://docs.pytest.org/en/latest/) All tests pass.
 * [`flake8`](https://github.com/PyCQA/flake8) accepts the code style
-  (our guidelines are based on PEP8)
+  (our guidelines are based on PEP8).
 * Test coverage remains high. Please add unit tests so we maintain our code coverage.
 
 If your code fails one of these checks, you will be expected to fix your pull request before it is
