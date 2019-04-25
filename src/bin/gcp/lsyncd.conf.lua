@@ -16,7 +16,13 @@ sync {
                                        -- install via: `brew install rsync`
       rsh = "ssh -i {home}/.ssh/google_compute_engine -o UserKnownHostsFile={home}/.ssh/known_hosts",
       verbose = true,
-      compress = true
+      compress = true,
+      -- Learn more:
+      -- https://stackoverflow.com/questions/667992/rsync-error-failed-to-set-times-on-foo-bar-operation-not-permitted
+      -- "Same on Linux (Debian Squeeze in my case)... If I'm not the owner of the target directory,
+      -- rsync gives the "failed to set times" error message. (Having write permission on the
+      -- directory is not enough.) "
+      _extra = { "--omit-dir-times" }
   },
   exclude = {
       ".ipynb_checkpoints/**",

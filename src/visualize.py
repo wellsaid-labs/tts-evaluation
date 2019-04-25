@@ -282,7 +282,7 @@ def CometML(project_name,
 
         file_ = io.BytesIO()
         scipy.io.wavfile.write(filename=file_, data=data, rate=sample_rate)
-        asset = experiment.log_asset(file_like_object=file_, file_name=file_name)
+        asset = experiment.log_asset(file_, file_name=file_name)
         return asset['web'] if asset is not None else asset
 
     @configurable
