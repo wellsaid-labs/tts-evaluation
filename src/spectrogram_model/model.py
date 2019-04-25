@@ -261,6 +261,7 @@ class SpectrogramModel(nn.Module):
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or None)
             target_lengths (torch.LongTensor [batch_size] or None)
         """
+        # TODO: Clean this up by using "view" instead of "unsqueeze".
         if len(tokens.shape) == 1:
             # [num_tokens] → [num_tokens, batch_size(1)]
             tokens = tokens.unsqueeze(1)

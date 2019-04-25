@@ -182,11 +182,7 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     parser.add_argument(
-        '-p',
-        '--project_name',
-        type=str,
-        required=True,
-        help='Comet.ML project for the experiment to use.')
+        '-p', '--project_name', type=str, help='Comet.ML project for the experiment to use.')
     args, unknown_args = parser.parse_known_args()
     hparams = parse_hparam_args(unknown_args)
     main(

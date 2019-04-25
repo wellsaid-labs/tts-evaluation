@@ -1,6 +1,15 @@
 """ Script for chunking a transcript with the associated audio file.
 
-NOTE: Instead of testing this script via unit tests, we check various invariants with asserts.
+Prior:
+
+    1. Install the "pre-built Mac application" of ``gentle``.
+    2. Start ``gentle`` before running this script.
+
+Example:
+
+    python3 -m src.bin.chunk_wav_and_text --wav 'data/other/Heather/wavs/*.wav' \
+                                          --csv 'data/other/Heather/csvs/*.csv' \
+                                          --destination data/other/Heather/dest/
 """
 from pathlib import Path
 
@@ -210,6 +219,7 @@ def _request_gentle(wav_path,
 
     duration = librosa.get_duration(filename=str(wav_path), sr=sample_rate)
     url = 'http://{}:{}/transcriptions'.format(hostname, port)
+    logger.info('Making POST request to Gentle.')
     response = requests.post(
         url,
         params=parameters,
@@ -734,6 +744,7 @@ def main(wav_pattern,
 
 
 if __name__ == "__main__":  # pragma: no cover
+    # TODO: Consider accepting a list from bash glob.
     parser = argparse.ArgumentParser(description='Align and chunk audio file and text scripts.')
     parser.add_argument('-w', '--wav', type=str, help='Path / Pattern to WAV file to chunk.')
     parser.add_argument('-c', '--csv', type=str, help='Path / Pattern to CSV file with scripts.')
