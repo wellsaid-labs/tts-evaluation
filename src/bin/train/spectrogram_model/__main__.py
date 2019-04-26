@@ -164,6 +164,8 @@ def main(run_name,
             kwargs['checkpoint'] = checkpoint
         trainer = (Trainer.from_checkpoint if checkpoint else Trainer)(**kwargs)
 
+        # TODO: Consider ignoring ``add_tags`` if Checkpoint is loaded; or consider saving in the
+        # checkpoint the ``name`` and ``tags``; or consider fetching tags from the Comet.ML API.
         trainer.comet_ml.set_name(run_name)
         trainer.comet_ml.add_tags(run_tags)
         trainer.comet_ml.log_other('directory', context.root_directory)
