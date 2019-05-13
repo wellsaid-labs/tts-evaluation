@@ -1,6 +1,7 @@
 import logging
 import math
 import struct
+import os
 
 from tqdm import tqdm
 
@@ -9,6 +10,8 @@ import torch
 
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
+
+import src
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,8 @@ except ImportError:
 @configurable
 def read_audio(filename, sample_rate=ConfiguredArg()):
     """ Read an audio file.
+
+    TODO: Rename considering the tighter specification.
 
     Tacotron 1 Reference:
         We use 24 kHz sampling rate for all experiments.
@@ -361,7 +366,7 @@ def split_signal(signal, bits=ConfiguredArg()):
 
     Args:
         signal (torch.FloatTensor): Signal with values ranging from [-1, 1]
-        bits (int): Number of bits to encode signal in.
+        bits (int): Total number of bits to encode signal in.
 
     Returns:
         coarse (torch.LongTensor): Top bits of the signal.
@@ -387,7 +392,7 @@ def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
     Args:
         coarse (torch.LongTensor): Top bits of the signal.
         fine (torch.LongTensor): Bottom bits of the signal.
-        bits (int): Number of bits to encode signal in.
+        bits (int): Total number of bits to encode signal in.
         return_int (bool, optional): Return in the range of integer min to max instead of [-1, 1].
 
     Returns:
@@ -402,11 +407,65 @@ def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
     if return_int:
         if bits <= 16:
             return signal.type(torch.int16)
-        elif bits <= 32:
-            return signal.type(torch.int32)
-        elif bits <= 64:
-            return signal.type(torch.int64)
         else:
-            raise ValueError('Larger than 64-bit fidelity is not supported.')
+            raise ValueError('Larger than 16-bit fidelity is not supported.')
 
     return signal.float() / 2**(bits - 1)  # Scale to [-1, 1] range.
+
+
+def normalize_audio(audio_path,
+                    resample=None,
+                    norm=False,
+                    guard=False,
+                    lower_hertz=None,
+                    upper_hertz=None,
+                    loudness=False):
+    """ Normalize audio on disk with the SoX library.
+
+    Args:
+        audio_path (Path): Path to a audio file.
+        resample (int or None, optional): If integer is provided, uses SoX to create resampled
+            files.
+        norm (bool, optional): Automatically invoke the gain effect to guard against clipping and to
+            normalise the audio.
+        guard (bool, optional): Automatically invoke the gain effect to guard against clipping.
+        lower_hertz (int, optional): Apply a sinc kaiser-windowed high-pass.
+        upper_hertz (int, optional): Apply a sinc kaiser-windowed low-pass.
+        loudness (bool, optioanl): Normalize the subjective perception of loudness level based on
+            ISO 226.
+
+    Returns:
+        (str): Filename of the processed file.
+    """
+    lower_hertz = str(lower_hertz) if lower_hertz is not None else ''
+    upper_hertz = str(upper_hertz) if upper_hertz is not None else ''
+
+    # Create cach'd filename
+    stem = audio_path.stem
+    stem = ('norm(%s)' % stem) if norm else stem
+    stem = ('guard(%s)' % stem) if guard else stem
+    stem = ('rate(%s,%d)' % (stem, resample)) if resample is not None else stem
+    stem = (
+        'sinc(%s,%s,%s)' % (stem, lower_hertz, upper_hertz)) if lower_hertz or upper_hertz else stem
+    stem = ('loudness(%s)' % stem) if loudness else stem
+
+    destination = audio_path.parent / '{}{}'.format(stem, audio_path.suffix)
+    if stem == audio_path.stem or destination.is_file():
+        return destination
+
+    # Allow only the master node to save to disk while the worker nodes optimistically assume
+    # the file already exists.
+    if not src.distributed.is_master():
+        return destination
+
+    norm_flag = '--norm' if norm else ''
+    guard_flag = '--guard' if guard else ''
+    sinc_command = 'sinc %s-%s' % (lower_hertz, upper_hertz) if lower_hertz or upper_hertz else ''
+    loudness_command = 'loudness' if loudness else ''
+    resample_command = 'rate %s' % (resample if resample is not None else '',)
+    commands = ' '.join([resample_command, sinc_command, loudness_command])
+    flags = ' '.join([norm_flag, guard_flag])
+    command = 'sox "%s" %s "%s" %s ' % (audio_path, flags, destination, commands)
+    os.system(command)
+
+    return destination

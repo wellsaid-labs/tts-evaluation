@@ -3,6 +3,7 @@ from matplotlib import pyplot
 import matplotlib
 import torch
 
+from src.datasets import Gender
 from src.datasets import Speaker
 from src.visualize import CometML
 from src.visualize import plot_attention
@@ -19,7 +20,7 @@ def test_comet_ml():
     visualizer.log_audio(
         tag='audio',
         text='test input',
-        speaker=Speaker.LINDA_JOHNSON,
+        speaker=Speaker('Test Speaker', Gender.MALE),
         predicted_audio=torch.rand(100),
         gold_audio=torch.rand(100))
     figure = pyplot.figure()

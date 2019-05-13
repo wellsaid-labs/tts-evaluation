@@ -114,7 +114,7 @@ def _load_fn(row, use_predicted, **kwargs):
     """ Load function for loading a single row.
 
     Args:
-        row (SpectrogramTextSpeechRow)
+        row (TextSpeechRow)
         use_predicted (bool): If ``True`` use predicted spectrogram as opposed to the real one.
 
     Returns:
@@ -137,7 +137,7 @@ class DataLoader(src.utils.DataLoader):
     """ Get a batch iterator over the ``data``.
 
     Args:
-        data (iterable of SpectrogramTextSpeechRow): Data to iterate over.
+        data (iterable of TextSpeechRow): Data to iterate over.
         batch_size (int): Iteration batch size.
         device (torch.device): Device onto which to load data.
         use_tqdm (bool): If ``True`` display progress via TQDM.

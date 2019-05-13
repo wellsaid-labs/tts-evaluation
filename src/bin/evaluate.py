@@ -19,13 +19,14 @@ import scipy
 
 from src.audio import combine_signal
 from src.audio import griffin_lim
-from src.datasets import balance_dataset
-from src.datasets import compute_spectrograms
+from src.datasets import add_predicted_spectrogram_column
+from src.datasets import add_spectrogram_column
 from src.datasets import TextSpeechRow
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import log_config
 from src.hparams import set_hparams
+from src.utils import balance_list
 from src.utils import Checkpoint
 from src.utils import evaluate
 from src.utils import record_stream
@@ -75,7 +76,7 @@ def _sample_dataset(dataset, speaker_encoder, num_samples=None, speaker=None, ba
         _, dev = dataset()
 
         if balanced:
-            dev = balance_dataset(dev, lambda r: r.speaker)
+            dev = balance_list(dev, lambda r: r.speaker)
         if speaker is not None:
             dev = [r for r in dev if r.speaker == speaker]
 
@@ -150,13 +151,14 @@ def main(dataset=ConfiguredArg(),
         balanced=balanced)
 
     # Compute target and / or predict spectrograms
-    examples = compute_spectrograms(
+    examples = add_spectrogram_column(examples, on_disk=False)
+    examples = add_predicted_spectrogram_column(
         examples,
-        checkpoint_path=spectrogram_model_checkpoint_path,
-        device=spectrogram_model_device,
-        on_disk=False,
+        spectrogram_model_checkpoint_path,
+        spectrogram_model_device,
+        spectrogram_model_batch_size,
         aligned=aligned,
-        batch_size=spectrogram_model_batch_size)
+        on_disk=False)
 
     # Output griffin-lim
     for i, example in zip(indicies, examples):

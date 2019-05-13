@@ -9,7 +9,7 @@ import torch
 
 from src.audio import griffin_lim
 from src.bin.train.spectrogram_model.data_loader import DataLoader
-from src.datasets import compute_spectrograms
+from src.datasets import add_spectrogram_column
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import get_config
@@ -82,8 +82,8 @@ class Trainer():
                  epoch=0,
                  use_tqdm=False):
 
-        self.train_dataset = compute_spectrograms(train_dataset)
-        self.dev_dataset = compute_spectrograms(dev_dataset)
+        self.train_dataset = add_spectrogram_column(train_dataset)
+        self.dev_dataset = add_spectrogram_column(dev_dataset)
 
         self.input_encoder = InputEncoder(
             [r.text for r in self.train_dataset],

@@ -10,16 +10,24 @@ from pathlib import Path
 import ast
 import atexit
 import glob
+import itertools
 import logging
 import logging.config
 import math
 import os
+import pprint
+import random
 import subprocess
 import sys
 import time
 
 from third_party import pin_memory_batch
 from torch.multiprocessing import cpu_count
+from torch.nn.functional import mse_loss
+from torchnlp.encoders.text import stack_and_pad_tensors
+from torchnlp.utils import collate_tensors
+from torchnlp.utils import lengths_to_mask
+from torchnlp.utils import tensors_to
 from tqdm import tqdm
 
 import numpy as np
@@ -32,6 +40,7 @@ from src.hparams import ConfiguredArg
 import src.distributed
 
 logger = logging.getLogger(__name__)
+pprint = pprint.PrettyPrinter(indent=4)
 
 ROOT_PATH = Path(__file__).parent.parent.resolve()  # Repository root path
 
@@ -623,7 +632,7 @@ class OnDiskTensor():
     """ Tensor that resides on disk.
 
     Args:
-        path (str or Path): Path for an ``.npy`` file to be saved.
+        path (str or Path): Path to a tensor saved on disk as an ``.npy`` file.
         allow_pickle (bool, optional): Allow saving object arrays using Python pickles. This
           is not recommended for performance reasons.
     """
@@ -647,6 +656,9 @@ class OnDiskTensor():
 
     @property
     def shape(self):
+        if not self.exists():
+            raise RuntimeError('Tensor not found on disk.')
+
         with open(str(self.path), 'rb') as file_:
             version = np.lib.format.read_magic(file_)
             shape, _, _ = np.lib.format._read_array_header(file_, version)
@@ -654,6 +666,9 @@ class OnDiskTensor():
 
     def to_tensor(self):
         """ Convert to a in-memory ``torch.tensor``. """
+        if not self.exists():
+            raise RuntimeError('Tensor not found on disk.')
+
         loaded = np.load(str(self.path), allow_pickle=self.allow_pickle)
         return torch.from_numpy(loaded).contiguous()
 
@@ -662,24 +677,31 @@ class OnDiskTensor():
         return self.path.is_file()
 
     def unlink(self):
-        """ Remove the file this tensor was pointed to """
+        """ Delete the ``OnDiskTensor`` from disk.
+
+        Returns:
+            (Path): The path the ``OnDiskTensor`` used to reside in.
+        """
         self.path.unlink()
         return self
 
-    def from_tensor(self, tensor):
-        """ Make a ``OnDiskTensor`` from a tensor
+    @classmethod
+    def from_tensor(class_, path, tensor, allow_pickle=False):
+        """ Make a ``OnDiskTensor`` from a tensor.
 
         Args:
-            path (str or Path)
+            path (str or Path): Path to a tensor saved on disk as an ``.npy`` file.
             tensor (np.array or torch.tensor)
+            allow_pickle (bool, optional): Allow saving object arrays using Python pickles. This
+              is not recommended for performance reasons.
         """
         if torch.is_tensor(tensor):
             tensor = tensor.cpu().numpy()
 
         # This storage was picked using this benchmark:
         # https://github.com/mverleg/array_storage_benchmark
-        np.save(str(self.path), tensor, allow_pickle=self.allow_pickle)
-        return self
+        np.save(str(path), tensor, allow_pickle=allow_pickle)
+        return class_(path, allow_pickle)
 
 
 def seconds_to_string(seconds):
@@ -899,3 +921,161 @@ class AccumulatedMetrics():
             assert total_key == count_key, 'AccumulatedMetrics invariant failed.'
             assert count_value > 0, 'AccumulatedMetrics invariant failed (%s, %f, %f)'
             log_metric(total_key, total_value / count_value)
+
+
+def split_list(list_, splits):
+    """ Split ``list_`` using the ``splits`` ratio.
+
+    Args:
+        list_ (list): List to split.
+        splits (tuple): Tuple of decimals determining list splits summing up to 1.0.
+
+    Returns:
+        (list): Splits of the list.
+
+    Example:
+        >>> dataset = [1, 2, 3, 4, 5]
+        >>> split_list(dataset, splits=(.6, .2, .2))
+        [[1, 2, 3], [4], [5]]
+    """
+    assert sum(splits) == 1, 'Splits must sum to 1.0'
+    splits = [round(s * len(list_)) for s in splits]
+    lists = []
+    for split in splits[:-1]:
+        lists.append(list_[:split])
+        list_ = list_[split:]
+    lists.append(list_)
+    return lists
+
+
+def balance_list(list_, get_class=identity):
+    """ Returns a random subsample of the list such that each class has equal representation.
+
+    Args:
+        list_ (iterable)
+        get_class (callable, optional): Given a list item, returns a class.
+
+    Returns:
+        (iterable): Subsample of ``list_`` such that each class has the same number of samples.
+    """
+    split = defaultdict(list)
+
+    # Learn more:
+    # https://stackoverflow.com/questions/16270374/how-to-make-a-shallow-copy-of-a-list-in-python
+    list_ = list_[:]
+    random.shuffle(list_)
+    for item in list_:
+        split[get_class(item)].append(item)
+    size = min([len(l) for l in split.values()])
+
+    logger.info('Balanced distribution from\n%s\nto equal partitions of size %d.',
+                pprint.pformat({k: len(v) for k, v in split.items()}), size)
+
+    subsample = [l[:size] for l in split.values()]
+    subsample = list(itertools.chain(*subsample))  # Flatten list
+    random.shuffle(subsample)
+    return subsample
+
+
+# LEARN MORE: https://github.com/pytorch/pytorch/issues/973
+torch.multiprocessing.set_sharing_strategy('file_system')
+
+
+def _batch_predict_spectrogram_load_fn(row, input_encoder, load_spectrogram=False):
+    """ Load function for loading a single row.
+
+    Args:
+        row (TextSpeechRow)
+        input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
+        load_spectrogram (bool, optional)
+
+    Returns:
+        (TextSpeechRow)
+    """
+    encoded_text, encoded_speaker = input_encoder.encode((row.text, row.speaker))
+    row = row._replace(text=encoded_text, speaker=encoded_speaker)
+    if load_spectrogram and isinstance(row.spectrogram, OnDiskTensor):
+        row = row._replace(spectrogram=row.spectrogram.to_tensor())
+    return row
+
+
+def batch_predict_spectrograms(data,
+                               input_encoder,
+                               model,
+                               device,
+                               batch_size,
+                               filenames=None,
+                               aligned=True,
+                               use_tqdm=True):
+    """ Batch predict spectrograms.
+
+    Args:
+        data (iterable of TextSpeechRow)
+        input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
+        model (torch.nn.Module): Model used to compute spectrograms.
+        batch_size (int)
+        device (torch.device): Device to run model on.
+        filenames (list, optional): If provided, this saves predictions to these paths.
+        aligned (bool, optional): If ``True``, predict a ground truth aligned spectrogram.
+        use_tqdm (bool, optional): Write a progress bar to standard streams.
+
+    Returns:
+        (iterable of torch.Tensor or OnDiskTensor)
+    """
+    if filenames is not None:
+        assert len(filenames) == len(data)
+
+    # Sort by sequence length to reduce padding in batches.
+    if all([r.spectrogram is not None for r in data]):
+        spectrogram_lengths = get_tensors_dim_length([r.spectrogram for r in data])
+        data = sort_together(data, spectrogram_lengths)
+    else:
+        data = sorted(data, key=lambda r: len(r.text))
+
+    load_fn_partial = partial(
+        _batch_predict_spectrogram_load_fn, input_encoder=input_encoder, load_spectrogram=aligned)
+    loader = DataLoader(
+        data,
+        batch_size=batch_size,
+        load_fn=load_fn_partial,
+        post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
+        collate_fn=partial(collate_tensors, stack_tensors=partial(stack_and_pad_tensors, dim=1)),
+        pin_memory=True,
+        use_tqdm=use_tqdm)
+    return_ = []
+    with evaluate(model, device=device):
+        metrics = AccumulatedMetrics()
+        for batch in loader:
+            # Predict spectrogram
+            text, text_lengths = batch.text
+            speaker = batch.speaker[0]
+            if aligned:
+                spectrogram, spectrogram_lengths = batch.spectrogram
+                _, predictions, _, alignments = model(text, speaker, text_lengths, spectrogram,
+                                                      spectrogram_lengths)
+            else:
+                _, predictions, _, alignments, spectrogram_lengths = model(text, speaker)
+
+            # Compute metrics for logging
+            mask = lengths_to_mask(spectrogram_lengths, device=predictions.device).transpose(0, 1)
+            metrics.add_metrics({
+                'attention_norm': get_average_norm(alignments, norm=math.inf, dim=2, mask=mask),
+                'attention_std': get_weighted_stdev(alignments, dim=2, mask=mask),
+            }, mask.sum())
+            if aligned:
+                mask = mask.unsqueeze(2).expand_as(predictions)
+                loss = mse_loss(predictions, spectrogram, reduction='none')
+                metrics.add_metric('loss', loss.masked_select(mask).mean(), mask.sum())
+
+            # Split batch and store in-memory or on-disk
+            spectrogram_lengths = spectrogram_lengths.squeeze(0).tolist()
+            predictions = predictions.split(1, dim=1)
+            predictions = [p[:l, 0] for p, l in zip(predictions, spectrogram_lengths)]
+            if filenames is None:
+                return_ += predictions
+            else:
+                return_ += [OnDiskTensor.from_tensor(filenames.pop(0), p) for p in predictions]
+
+        metrics.log_epoch_end(lambda k, v: logger.info('Prediction metric (%s): %s', k, v))
+
+    return return_

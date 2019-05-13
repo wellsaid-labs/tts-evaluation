@@ -16,10 +16,12 @@ from tests.utils import MockCometML
 
 
 @mock.patch('src.bin.train.signal_model.trainer.CometML')
-@mock.patch('src.bin.train.signal_model.trainer.compute_spectrograms')
-def get_trainer(compute_spectrograms_mock, comet_ml_mock):
+@mock.patch('src.bin.train.signal_model.trainer.add_spectrogram_column')
+@mock.patch('src.bin.train.signal_model.trainer.add_predicted_spectrogram_column')
+def get_trainer(add_predicted_spectrogram_column_mock, add_spectrogram_column_mock, comet_ml_mock):
     comet_ml_mock.return_value = MockCometML()
-    compute_spectrograms_mock.return_value = get_example_spectrogram_text_speech_rows()
+    add_predicted_spectrogram_column_mock.return_value = get_example_spectrogram_text_speech_rows()
+    add_spectrogram_column_mock.return_value = get_example_spectrogram_text_speech_rows()
     return Trainer(
         device=torch.device('cpu'),
         train_dataset=get_example_spectrogram_text_speech_rows(),
@@ -30,11 +32,14 @@ def get_trainer(compute_spectrograms_mock, comet_ml_mock):
 
 
 @mock.patch('src.bin.train.signal_model.trainer.CometML')
-@mock.patch('src.bin.train.signal_model.trainer.compute_spectrograms')
-def test_checkpoint(compute_spectrograms_mock, comet_ml_mock):
+@mock.patch('src.bin.train.signal_model.trainer.add_spectrogram_column')
+@mock.patch('src.bin.train.signal_model.trainer.add_predicted_spectrogram_column')
+def test_checkpoint(add_predicted_spectrogram_column_mock, add_spectrogram_column_mock,
+                    comet_ml_mock):
     trainer = get_trainer()
     comet_ml_mock.return_value = MockCometML()
-    compute_spectrograms_mock.return_value = get_example_spectrogram_text_speech_rows()
+    add_predicted_spectrogram_column_mock.return_value = get_example_spectrogram_text_speech_rows()
+    add_spectrogram_column_mock.return_value = get_example_spectrogram_text_speech_rows()
 
     checkpoint_path = trainer.save_checkpoint('tests/_test_data/')
     trainer.from_checkpoint(
@@ -124,8 +129,8 @@ def test_run_epoch():
              stack.enter_context(mock.patch(arg)) for arg in [
                  'src.bin.train.signal_model.trainer.DataLoader',
                  'src.bin.train.signal_model.trainer.torch.nn.parallel.data_parallel',
-                 'torch.Tensor.backward',
-                 'src.optimizers.Optimizer.step', 'src.optimizers.AutoOptimizer.step'
+                 'torch.Tensor.backward', 'src.optimizers.Optimizer.step',
+                 'src.optimizers.AutoOptimizer.step'
              ]
          ])
         MockDataLoader.return_value = loaded_data

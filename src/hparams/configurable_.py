@@ -60,7 +60,7 @@ def _dict_merge(dict_, merge_dict, overwrite=False):
     Args:
         dict_ (dict): dict onto which the merge is executed
         merge_dict (dict): dict merged into ``dict_``
-        overwrite (bool): If True, ``merge_dict`` may overwrite ``dict_`` values.
+        overwrite (bool): If ``True``, ``merge_dict`` may overwrite ``dict_`` values.
     """
     for key in merge_dict:
         if key in dict_ and isinstance(merge_dict[key], dict) and isinstance(dict_[key], dict):

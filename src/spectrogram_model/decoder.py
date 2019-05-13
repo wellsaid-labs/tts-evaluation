@@ -111,7 +111,7 @@ class AutoregressiveDecoder(nn.Module):
         Args:
             batch_size (int): Batch size for the forward pass; used to shape initital tensor.
             num_tokens (int): Number of tokens for the forward pass; used to shape initital tensor.
-            is_cuda (bool): If True, move the tensors to CUDA memory.
+            is_cuda (bool): If ``True``, move the tensors to CUDA memory.
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
                 optional): Ground truth frames for teacher-forcing.
             hidden_state (AutoregressiveDecoderHiddenState): For sequential prediction, decoder

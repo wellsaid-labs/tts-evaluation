@@ -5,17 +5,17 @@ from collections import namedtuple
 #     text (str or torch.Tensor): Text transcription of audio
 #     speaker (Speaker or torch.Tensor): Speaker speaking the text.
 #     audio_path (Path or str): Path to the ``.wav`` file of text.
-#     predicted_spectrogram (OnDiskTensor or torch.Tensor): Two-dimensional spectrogram of the audio
-#         predicted by some model.
 #     spectrogram (OnDiskTensor or torch.Tensor): Two-dimensional spectrogram of the audio.
 #     spectrogram_audio (OnDiskTensor or torch.Tensor): One-dimensional signal aligned to the
 #         spectrogram.
+#     predicted_spectrogram (OnDiskTensor or torch.Tensor): Two-dimensional spectrogram of the audio
+#         predicted by some model.
 #     metadata (dict): Metadata for the data such as the data source.
-TextSpeechRow = namedtuple('TextSpeechRow', ['text', 'speaker', 'audio_path', 'metadata'])
-SpectrogramTextSpeechRow = namedtuple('SpectrogramTextSpeechRow', [
+TextSpeechRow = namedtuple('TextSpeechRow', [
     'text', 'speaker', 'audio_path', 'spectrogram', 'spectrogram_audio', 'predicted_spectrogram',
     'metadata'
 ])
+TextSpeechRow.__new__.__defaults__ = (None, None, None, None)
 
 
 class Gender(Enum):
@@ -23,45 +23,24 @@ class Gender(Enum):
     MALE = 1
 
 
-class _LengthMetaClass(type):
+class Speaker(object):
 
-    def __len__(self):
-        return self.class_length()
-
-
-class Speaker(object, metaclass=_LengthMetaClass):
-
-    def __init__(self, name, gender, id):
+    def __init__(self, name, gender):
         self.name = name
         self.gender = gender
-        self.id = id
-
-    def __int__(self):
-        return self.id
 
     def __eq__(self, other):
-        return self.id == other.id
+        if isinstance(other, Speaker):
+            return self.name == other.name and self.gender == other.gender
+
+        # Learn more:
+        # https://stackoverflow.com/questions/878943/why-return-notimplemented-instead-of-raising-notimplementederror
+        return NotImplemented
 
     def __hash__(self):
-        return self.id
-
-    @classmethod
-    def class_length(class_):
-        return len(_speaker_args)
+        # Learn more:
+        # https://computinglife.wordpress.com/2008/11/20/why-do-hash-functions-use-prime-numbers/
+        return 32 * hash(self.name) + 97 * hash(self.gender)
 
     def __repr__(self):
-        return '%s(name=\'%s\', gender=%s, id=%d)' % (self.__class__.__name__, self.name,
-                                                      self.gender.name, self.id)
-
-
-_speaker_args = {
-    'JUDY_BIEBER': ('Judy Bieber', Gender.FEMALE),
-    'MARY_ANN': ('Mary Ann', Gender.FEMALE),
-    'ELLIOT_MILLER': ('Elliot Miller', Gender.MALE),
-    'HILARY_NORIEGA': ('Hilary Noriega', Gender.FEMALE),
-    'LINDA_JOHNSON': ('Linda Johnson', Gender.FEMALE)
-}
-for id, (key, args) in enumerate(_speaker_args.items()):
-    speaker = Speaker(*args, id=id)
-    setattr(Speaker, key, speaker)
-    setattr(Speaker, str(id), speaker)
+        return '%s(name=\'%s\', gender=%s)' % (self.__class__.__name__, self.name, self.gender.name)

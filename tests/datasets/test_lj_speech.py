@@ -59,41 +59,23 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_from_path):
     mock_from_path.return_value = Checkpoint(directory='.', model=lambda x: x, step=0)
 
     # Check a row are parsed correctly
-    train, dev = lj_speech_dataset(
-        directory=lj_directory,
-        resample=None,
-        norm=False,
-        guard=False,
-        lower_hertz=None,
-        upper_hertz=None,
-        loudness=False,
-        splits=(0.8, 0.2))
-    assert len(train) == 13100 * 0.8
-    assert len(dev) == 13100 * 0.2
+    data = lj_speech_dataset(directory=lj_directory)
 
-    # Check sum to ensure its the same exact split
-    assert sum([len(r.text) for r in dev]) == 258045
-    assert sum([len(r.text) for r in train]) == 1052287
-
-    # Test deterministic shuffle
-    assert train[0].text == (
-        'Once a warrant-holder sent down a clerk to view certain goods, and the clerk found that '
-        'these goods had already a "stop" upon them, or were pledged.')
-    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ014-0331.wav' in str(train[0].audio_path)
-    assert dev[0].text == (
-        'Mister Mullay went, and a second interview was agreed upon, when a third person, '
-        'Mister Owen,')
-    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ011-0243.wav' in str(dev[0].audio_path)
+    assert len(data) == 13100
+    assert sum([len(r.text) for r in data]) == 1310332
+    assert data[0].text == (
+        'Printing, in the only sense with which we are at present concerned, differs from most if '
+        'not from all the arts and crafts represented in the Exhibition')
+    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ001-0001.wav' in str(data[0].audio_path)
 
     _re_filename = re.compile('LJ[0-9]{3}-[0-9]{4}')
 
     # Test verbilization
     seen = 0
-    for data in [train, dev]:
-        for row in data:
-            basename = row.audio_path.name[:10]
-            assert _re_filename.match(basename)
-            if basename in verbalize_test_cases:
-                seen += 1
-                assert verbalize_test_cases[basename] in row.text
+    for row in data:
+        basename = row.audio_path.name[:10]
+        assert _re_filename.match(basename)
+        if basename in verbalize_test_cases:
+            seen += 1
+            assert verbalize_test_cases[basename] in row.text
     assert seen == len(verbalize_test_cases)

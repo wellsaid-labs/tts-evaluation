@@ -1,6 +1,12 @@
 import logging
 
+from torch.multiprocessing import Pool
+from tqdm import tqdm
+
 import torch
+import torchnlp.download
+
+import src
 
 logger = logging.getLogger(__name__)
 
@@ -115,3 +121,55 @@ def distribute_batch_sampler(batch_sampler, batch_size, device, type_=torch.cuda
     # ``device.index`` could be ``None`` and cause a silent failure.
     assert isinstance(device.index, int), 'device.index must be specified'
     return batches[:, device.index].cpu().tolist()
+
+
+def download_file_maybe_extract(*args, **kwargs):
+    """
+    Alias to ``torchnlp.download.download_file_maybe_extract`` that considers the distributed
+    environment.
+    """
+    if src.distributed.is_master():
+        return_ = torchnlp.download.download_file_maybe_extract(*args, **kwargs)
+
+    # Ensure data is downloaded before both worker and master proceed.
+    if src.distributed.is_initialized():
+        torch.distributed.barrier()
+
+    if not src.distributed.is_master():
+        return_ = torchnlp.download.download_file_maybe_extract(*args, **kwargs)
+
+    return return_
+
+
+def map_multiprocess(data, func, use_tqdm=True):
+    """ Map ``func`` onto data while allocating multiple process only to the master process.
+
+    Args:
+        data (iterable)
+        func (callable)
+        use_tqdm (bool): Attach a progress bar to processing.
+
+    Returns:
+        (iterable)
+    """
+    data = list(data)
+
+    if is_master():
+        pool = Pool()
+        iterator = pool.imap(func, data)
+    else:  # PyTorch workers should not expect to do serious work
+        iterator = (func(row) for row in data)
+
+    if use_tqdm:
+        iterator = tqdm(iterator, total=len(data))
+    processed = list(iterator)
+
+    if is_master():  # Ensure pool work is finished
+        pool.close()
+        pool.join()
+
+    # Ensure data is processed before both worker and master proceed.
+    if is_initialized():
+        torch.distributed.barrier()
+
+    return processed

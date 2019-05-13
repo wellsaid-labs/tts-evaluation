@@ -15,7 +15,6 @@ Find stats on the Linda Johnson dataset here: https://keithito.com/LJ-Speech-Dat
 from collections import deque
 from collections import namedtuple
 from copy import deepcopy
-from functools import partial
 
 import logging
 import random
@@ -25,7 +24,8 @@ import torch
 from src.audio import combine_signal
 from src.audio import split_signal
 from src.bin.train.signal_model.data_loader import DataLoader
-from src.datasets import compute_spectrograms
+from src.datasets import add_predicted_spectrogram_column
+from src.datasets import add_spectrogram_column
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import get_config
@@ -118,12 +118,14 @@ class Trainer():
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
         self.spectrogram_model_checkpoint_path = spectrogram_model_checkpoint_path
-        compute_spectrograms_partial = partial(
-            compute_spectrograms,
-            checkpoint_path=spectrogram_model_checkpoint_path,
-            device=self.device)
-        self.train_dataset = compute_spectrograms_partial(train_dataset)
-        self.dev_dataset = compute_spectrograms_partial(dev_dataset)
+
+        def preprocess_data(data):
+            return add_predicted_spectrogram_column(
+                add_spectrogram_column(data), spectrogram_model_checkpoint_path, self.device)
+
+        self.train_dataset = preprocess_data(train_dataset)
+        self.dev_dataset = preprocess_data(dev_dataset)
+
         self.use_tqdm = use_tqdm
         self.use_predicted = spectrogram_model_checkpoint_path is not None
         # NOTE: Rollback ``maxlen=min_rollback + 1`` to store the current state of the model with

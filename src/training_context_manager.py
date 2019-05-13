@@ -149,10 +149,10 @@ class TrainingContextManager(object):
                 package = specification.split('==')[0]
                 installed = [p for p in freeze if p.split('==')[0] == package]
                 if not len(installed) == 1:
-                    raise ValueError('%s not installed' % package)
+                    raise RuntimeError('%s not installed' % package)
                 if not specification == installed[0]:
-                    # NOTE: ValueError could cause ``Illegal seek`` while running PyTest.
-                    raise ValueError(
+                    # NOTE: RuntimeError could cause ``Illegal seek`` while running PyTest.
+                    raise RuntimeError(
                         'Versions are not compatible %s =/= %s' % (specification, installed[0]))
 
     def _set_seed(self, seed):

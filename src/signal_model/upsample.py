@@ -79,11 +79,11 @@ class ConditionalFeaturesUpsample(nn.Module):
         super().__init__()
         self.out_channels = out_channels
         self.upsample_repeat = upsample_repeat
-        self.min_padding = sum([(kernel[0] - 1) for kernel in kernels])
+        self.padding = sum([(kernel[0] - 1) for kernel in kernels])
 
         assert all(all(s % 2 == 1 and s < in_channels for s in kernel) for kernel in kernels), (
             'Kernel size must be odd and must be less than ``in_channels``')
-        assert self.min_padding % 2 == 0, 'Padding invariant violated.'
+        assert self.padding % 2 == 0, 'Padding invariant violated.'
 
         self.initial_conv = nn.Conv2d(
             in_channels=1,
@@ -99,6 +99,8 @@ class ConditionalFeaturesUpsample(nn.Module):
                 padding=(0, int((kernel[1] - 1) / 2))) for i, kernel in enumerate(kernels)
         ])
 
+        # Multiplier for sequential size ``local_length``
+        self.scale_factor = self.upsample_repeat * num_filters[-1]
         self.post_net = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
 
     def forward(self, local_features, pad=False):
@@ -119,9 +121,9 @@ class ConditionalFeaturesUpsample(nn.Module):
         batch_size, local_length, in_channels = local_features.shape
 
         if pad:
-            local_features = nn.functional.pad(
-                local_features, (0, 0, int(self.min_padding / 2), int(self.min_padding / 2)))
-        assert local_features.shape[1] > self.min_padding, (
+            local_features = nn.functional.pad(local_features,
+                                               (0, 0, int(self.padding / 2), int(self.padding / 2)))
+        assert local_features.shape[1] > self.padding, (
             'Remember to pad local_features as described in the above docs.')
 
         # [batch_size, local_length + padding, in_channels] →

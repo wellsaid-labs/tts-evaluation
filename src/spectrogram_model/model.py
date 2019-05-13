@@ -261,48 +261,26 @@ class SpectrogramModel(nn.Module):
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or None)
             target_lengths (torch.LongTensor [batch_size] or None)
         """
-        # TODO: Clean this up by using "view" instead of "unsqueeze".
-        if len(tokens.shape) == 1:
-            # [num_tokens] → [num_tokens, batch_size(1)]
-            tokens = tokens.unsqueeze(1)
+        batch_size = tokens.shape[1] if len(tokens.shape) == 2 else 1
+        tokens = tokens.view(tokens.shape[0], batch_size).transpose(0,
+                                                                    1)  # [batch_size, num_tokens]
 
-        if target_frames is not None and len(target_frames.shape) == 2:
-            # [num_frames, frame_channels] → [num_frames, batch_size(1), frame_channels]
-            target_frames = target_frames.unsqueeze(1)
+        if target_frames is not None:
+            # [num_frames, batch_size, frame_channels]
+            target_frames = target_frames.view(target_frames.shape[0], batch_size, -1)
 
-        if len(speaker.shape) == 0:
-            # [] → [batch_size(1)]
-            speaker = speaker.unsqueeze(0)
-
-        if len(speaker.shape) == 2 and speaker.shape[0] == 1:
-            # [1, batch_size] → [batch_size]
-            speaker = speaker.squeeze(0)
+        speaker = speaker.view(batch_size)  # [batch_size]
 
         if target_lengths is not None:
-            if len(target_lengths.shape) == 0:
-                # [] → [batch_size(1)]
-                target_lengths = target_lengths.unsqueeze(0)
-
-            if len(target_lengths.shape) == 2 and target_lengths.shape[0] == 1:
-                # [1, batch_size] → [batch_size]
-                target_lengths = target_lengths.squeeze(0)
+            target_lengths = target_lengths.view(batch_size)  # [batch_size]
 
         if num_tokens is not None:
-            if len(num_tokens.shape) == 0:
-                # [] → [batch_size(1)]
-                num_tokens = num_tokens.unsqueeze(0)
+            num_tokens = num_tokens.view(batch_size)  # [batch_size]
+        elif num_tokens is None and batch_size == 1:
+            num_tokens = torch.full((batch_size,), tokens.shape[1],
+                                    device=tokens.device)  # [batch_size]
 
-            if len(num_tokens.shape) == 2 and num_tokens.shape[0] == 1:
-                # [1, batch_size] → [batch_size]
-                num_tokens = num_tokens.squeeze(0)
-
-        if tokens.shape[1] == 1:
-            num_tokens = torch.full((1,), tokens.shape[0], device=tokens.device)
-
-        assert num_tokens is not None, 'Must provide `num_tokens` unless batch size is 1'
-
-        # [num_tokens, batch_size] → [batch_size, num_tokens]
-        tokens = tokens.transpose(0, 1)
+        assert num_tokens is not None, 'Must provide `num_tokens` unless batch size is 1.'
         return tokens, speaker, num_tokens, target_frames, target_lengths
 
     def forward(self,
