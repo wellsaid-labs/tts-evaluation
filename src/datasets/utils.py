@@ -1,3 +1,4 @@
+from collections import Counter
 from functools import partial
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pandas
 import torch
 
 from src.audio import get_log_mel_spectrogram
+from src.audio import normalize_audio
 from src.audio import read_audio
 from src.datasets.constants import TextSpeechRow
 from src.distributed import download_file_maybe_extract
@@ -49,6 +51,7 @@ def add_predicted_spectrogram_column(data,
     Returns:
         (iterable of TextSpeechRow)
     """
+    logger.info('Adding a predicted spectrogram column to dataset.')
     checkpoint = Checkpoint.from_path(checkpoint_path, device=device)
 
     if not all([r.spectrogram is not None for r in data]):
@@ -149,7 +152,42 @@ def add_spectrogram_column(data, on_disk=True):
         (iterable of TextSpeechRow): Iterable of text speech rows along with spectrogram
             data.
     """
+    logger.info('Adding a spectrogram column to dataset.')
     return src.distributed.map_multiprocess(data, partial(_add_spectrogram_column, on_disk=on_disk))
+
+
+def _normalize_audio_column_helper(example):
+    return example._replace(audio_path=normalize_audio(example.audio_path))
+
+
+def normalize_audio_column(data):
+    """ For each example in ``data``, normalize the audio using SoX and update the ``audio_path``.
+
+    Args:
+        data (iterables of TextSpeechRow)
+
+    Returns:
+        (iterable of TextSpeechRow): Iterable of text speech rows with ``audio_path`` updated.
+    """
+    return src.distributed.map_multiprocess(data, _normalize_audio_column_helper)
+
+
+def filter_(function, dataset):
+    """ Similar to the python ``filter`` function with extra logging.
+
+    Args:
+        function (callable)
+        dataset (iterable of TextSpeechRow)
+
+    Returns:
+        iterable of TextSpeechRow
+    """
+    positive = list(filter(function, dataset))
+    negative = list(filter(lambda e: not function(e), dataset))
+    speaker_distribution = Counter([example.speaker for example in negative])
+    logger.info('Filtered out %d examples via ``%s`` with a speaker distribution of:\n%s',
+                len(negative), function.__name__, pprint.pformat(speaker_distribution))
+    return positive
 
 
 def _dataset_loader(
@@ -197,6 +235,7 @@ def _dataset_loader(
         list of TextSpeechRow: Dataset with audio filenames and text annotations.
     """
     logger.info('Loading %s speech dataset', extracted_name)
+    directory = Path(directory)
     metadata_filename = metadata_filename.format(directory=directory, extracted_name=extracted_name)
     check_files = [
         str(Path(f.format(metadata_filename=metadata_filename)).absolute()) for f in check_files

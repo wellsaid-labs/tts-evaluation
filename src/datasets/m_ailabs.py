@@ -38,7 +38,6 @@ from src.datasets.constants import Gender
 from src.datasets.constants import Speaker
 from src.datasets.constants import TextSpeechRow
 from src.distributed import download_file_maybe_extract
-from src.hparams import configurable
 
 logger = logging.getLogger(__name__)
 Book = namedtuple('Book', 'speaker title')
@@ -73,7 +72,6 @@ _ALL_BOOKS = [
 DOWNLOAD_DIRECTORY = Path('data/M-AILABS')
 
 
-@configurable
 def m_ailabs_speech_dataset(directory=DOWNLOAD_DIRECTORY,
                             url='http://www.caito.de/data/Training/stt_tts/en_US.tgz',
                             check_files=['en_US/by_book/info.txt'],

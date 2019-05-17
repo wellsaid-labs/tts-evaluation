@@ -18,6 +18,7 @@ from src.optimizers import Optimizer
 from src.spectrogram_model import InputEncoder
 from src.spectrogram_model import SpectrogramModel
 from src.utils import AccumulatedMetrics
+from src.utils import balance_list
 from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import evaluate
@@ -83,7 +84,8 @@ class Trainer():
                  use_tqdm=False):
 
         self.train_dataset = add_spectrogram_column(train_dataset)
-        self.dev_dataset = add_spectrogram_column(dev_dataset)
+        self.dev_dataset = add_spectrogram_column(
+            balance_list(dev_dataset, get_class=lambda r: r.speaker))
 
         self.input_encoder = InputEncoder(
             [r.text for r in self.train_dataset],
@@ -219,7 +221,8 @@ class Trainer():
             self.comet_ml.log_current_epoch(self.epoch)
 
         # Setup iterator and metrics
-        dataset = self.train_dataset if train else self.dev_dataset
+        dataset = balance_list(
+            self.train_dataset, get_class=lambda r: r.speaker) if train else self.dev_dataset
         data_loader = DataLoader(
             data=dataset,
             batch_size=self.train_batch_size if train else self.dev_batch_size,

@@ -413,8 +413,9 @@ def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
     return signal.float() / 2**(bits - 1)  # Scale to [-1, 1] range.
 
 
+@configurable
 def normalize_audio(audio_path,
-                    resample=None,
+                    resample=ConfiguredArg(),
                     norm=False,
                     guard=False,
                     lower_hertz=None,

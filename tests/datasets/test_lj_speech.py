@@ -8,7 +8,7 @@ import pytest
 from src.datasets import lj_speech_dataset
 from src.utils import Checkpoint
 
-from tests.datasets.utils import urlretrieve_side_effect
+from tests.datasets.utils import url_first_side_effect
 
 lj_directory = Path('tests/_test_data/')
 
@@ -55,7 +55,7 @@ def cleanup():
 @mock.patch("urllib.request.urlretrieve")
 @pytest.mark.usefixtures("cleanup")
 def test_lj_speech_dataset(mock_urlretrieve, mock_from_path):
-    mock_urlretrieve.side_effect = urlretrieve_side_effect
+    mock_urlretrieve.side_effect = url_first_side_effect
     mock_from_path.return_value = Checkpoint(directory='.', model=lambda x: x, step=0)
 
     # Check a row are parsed correctly

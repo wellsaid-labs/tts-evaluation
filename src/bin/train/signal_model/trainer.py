@@ -34,6 +34,7 @@ from src.optimizers import Optimizer
 from src.signal_model import WaveRNN
 from src.utils import AccumulatedMetrics
 from src.utils import AnomalyDetector
+from src.utils import balance_list
 from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import evaluate
@@ -124,7 +125,7 @@ class Trainer():
                 add_spectrogram_column(data), spectrogram_model_checkpoint_path, self.device)
 
         self.train_dataset = preprocess_data(train_dataset)
-        self.dev_dataset = preprocess_data(dev_dataset)
+        self.dev_dataset = preprocess_data(balance_list(dev_dataset, get_class=lambda r: r.speaker))
 
         self.use_tqdm = use_tqdm
         self.use_predicted = spectrogram_model_checkpoint_path is not None
@@ -269,7 +270,8 @@ class Trainer():
             self.comet_ml.log_current_epoch(self.epoch)
 
         # Setup iterator and metrics
-        dataset = self.train_dataset if train else self.dev_dataset
+        dataset = balance_list(
+            self.train_dataset, get_class=lambda r: r.speaker) if train else self.dev_dataset
         data_loader = DataLoader(
             data=dataset,
             batch_size=self.train_batch_size if train else self.dev_batch_size,

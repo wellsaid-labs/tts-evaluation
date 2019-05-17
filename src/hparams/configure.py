@@ -1,4 +1,5 @@
 import logging
+import itertools
 
 from torch import nn
 
@@ -142,6 +143,7 @@ def _set_audio_processing():
             },
             'split_signal.bits': bits,
             'combine_signal.bits': bits,
+            'normalize_audio.resample': 24000,
         },
         'src.visualize': {
             'CometML.<locals>.log_audio.sample_rate': sample_rate,
@@ -280,33 +282,36 @@ def _set_model_size(frame_channels, bits):
     })
 
 
-def _dataset_filters(example):
-    """
-    Args:
-        data (TextSpeechRow)
-
-    Returns:
-        (bool)
-    """
-    # NOTE: Prevent circular dependency
-    from src import datasets
-
+def _filter_audio_path_not_found(example):
     if not example.audio_path.is_file():
         logger.warning('[%s] Not found audio file, skipping: %s', example.speaker,
                        example.audio_path)
         return False
 
+    return True
+
+
+def _filter_no_text(example):
     if len(example.text) == 0:
         logger.warning('[%s] Text is absent, skipping: %s', example.speaker, example.audio_path)
         return False
 
+    return True
+
+
+def _filter_elliot_miller(example):
+    # NOTE: Prevent circular dependency
+    from src import datasets
+
     if example.speaker == datasets.m_ailabs.ELLIOT_MILLER:  # Ignore ELLIOT due to his acting.
         return False
 
+    return True
+
+
+def _filter_no_numbers(example):
     # Ignore numbers instead of attempting to verbalize them for now
     if len(set(example.text).intersection(set('0123456789'))) > 0:
-        logger.warning('[%s] Ignore unverbalized example voiced by %s: %s', example.speaker,
-                       example.text)
         return False
 
     return True
@@ -322,9 +327,25 @@ def get_dataset():
     # NOTE: Prevent circular dependency
     from src import datasets
     from src import utils
-
-    dataset = filter(_dataset_filters, datasets.lj_speech_dataset())
-    dataset = do_deterministic_shuffle(dataset, random_seed=123)
+    logger.info('Loading dataset...')
+    dataset = list(
+        itertools.chain.from_iterable([
+            datasets.hilary_speech_dataset(),
+            datasets.lj_speech_dataset(),
+            datasets.m_ailabs_speech_dataset(),
+            datasets.beth_speech_dataset(),
+            datasets.beth_custom_speech_dataset(),
+            datasets.heather_speech_dataset(),
+            datasets.susan_speech_dataset(),
+            datasets.sam_speech_dataset()
+        ]))
+    dataset = datasets.filter_(_filter_audio_path_not_found, dataset)
+    dataset = datasets.filter_(_filter_no_text, dataset)
+    dataset = datasets.filter_(_filter_elliot_miller, dataset)
+    dataset = datasets.filter_(_filter_no_numbers, dataset)
+    logger.info('Loaded %d dataset examples.', len(dataset))
+    dataset = datasets.normalize_audio_column(dataset)
+    do_deterministic_shuffle(dataset, random_seed=123)
     return utils.split_list(dataset, splits=(0.8, 0.2))
 
 
@@ -376,7 +397,8 @@ def set_hparams():
             },
             'datasets.utils.add_predicted_spectrogram_column.batch_size': (
                 spectrogram_model_dev_batch_size),
-            'bin.evaluate.main.dataset': get_dataset,
+            'bin.evaluate.main.dataset':
+                get_dataset,
             'bin.train': {
                 'spectrogram_model': {
                     '__main__._get_dataset.dataset': get_dataset,
@@ -387,7 +409,7 @@ def set_hparams():
                         # instead of the predicted output on the decoder side, also referred to as
                         # teacher-forcing) with a batch size of 64 on a single GPU.
                         # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
-                        'train_batch_size': 64,
+                        'train_batch_size': 56,
                         'dev_batch_size': spectrogram_model_dev_batch_size,
 
                         # SOURCE (Tacotron 2):
@@ -430,6 +452,7 @@ def set_hparams():
                 }
             },
             # NOTE: Window size smoothing parameter is not super sensative.
-            'optimizers.AutoOptimizer.__init__.window_size': 128,
+            'optimizers.AutoOptimizer.__init__.window_size':
+                128,
         }
     })

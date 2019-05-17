@@ -10,7 +10,7 @@ from src.datasets.m_ailabs import Gender
 from src.datasets.m_ailabs import THE_SEA_FAIRIES
 from src.utils import Checkpoint
 
-from tests.datasets.utils import urlretrieve_side_effect
+from tests.datasets.utils import url_first_side_effect
 
 M_AILABS_DIRECTORY = Path('tests/_test_data/M-AILABS')
 
@@ -30,7 +30,7 @@ def cleanup():
 @pytest.mark.usefixtures('cleanup')
 def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_from_path, mock_is_file):
     mock_is_file.return_value = True
-    mock_urlretrieve.side_effect = urlretrieve_side_effect
+    mock_urlretrieve.side_effect = url_first_side_effect
     mock_from_path.return_value = Checkpoint(directory='.', model=lambda x: x, step=0)
 
     # Check a row are parsed correctly
@@ -48,7 +48,7 @@ def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_from_path, mock_is_file)
 @mock.patch('urllib.request.urlretrieve')
 @pytest.mark.usefixtures('cleanup')
 def test_m_ailabs_speech_dataset_pickers(mock_urlretrieve, mock_from_path):
-    mock_urlretrieve.side_effect = urlretrieve_side_effect
+    mock_urlretrieve.side_effect = url_first_side_effect
     mock_from_path.return_value = Checkpoint(directory='.', model=lambda x: x, step=0)
 
     # Smoke test pickers

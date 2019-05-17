@@ -5,7 +5,6 @@ import re
 from src.datasets.constants import Gender
 from src.datasets.constants import Speaker
 from src.datasets.utils import _dataset_loader
-from src.hparams import configurable
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,6 @@ except ImportError:
 LINDA_JOHNSON = Speaker('Linda Johnson', Gender.FEMALE)
 
 
-@configurable
 def lj_speech_dataset(
         extracted_name='LJSpeech-1.1',
         url='http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',

@@ -19,6 +19,16 @@ Batch Example:
                                               --csv "$directory/04 Scripts (CSV)/*.csv" \
                                               --destination "$directory/05 Processed/"
     done
+
+Compression:
+
+    Use ``tar -czvf name-of-archive.tar.gz /path/to/directory-or-file`` to compress the archive. For
+    those using Mac OS do not use "compress" to create a `.zip` file instead [1].
+
+[1] Mac OS uses Archive Utility to compress a directory creaing by default a
+"Compressed UNIX CPIO Archive file" (CPGZ) under the `.zip` extension. The CPGZ is created with
+Apple's "Apple gzip" that a Linux gzip implementations are unable to handle.
+https://www.intego.com/mac-security-blog/understanding-compressed-files-and-apples-archive-utility/
 """
 from pathlib import Path
 
