@@ -61,7 +61,7 @@ class TrainingContextManager(object):
         """
         torch.distributed.init_process_group(backend=backend)
         if self.is_cuda:
-            torch.cuda.set_device(self.device.index)
+            torch.cuda.set_device(self.device)
 
     def _copy_standard_streams(self,
                                directory,

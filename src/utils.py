@@ -21,7 +21,6 @@ import subprocess
 import sys
 import time
 
-from third_party import pin_memory_batch
 from torch.multiprocessing import cpu_count
 from torch.nn.functional import mse_loss
 from torchnlp.encoders.text import stack_and_pad_tensors
@@ -551,10 +550,6 @@ def evaluate(*modules, device=None):
 
 def identity(x):
     return x
-
-
-assert hasattr(torch.utils.data.dataloader, 'pin_memory_batch')
-torch.utils.data.dataloader.pin_memory_batch = pin_memory_batch
 
 
 class DataLoaderDataset(torch.utils.data.Dataset):

@@ -3,27 +3,6 @@ import math
 import torch
 
 
-def pin_memory_batch(batch):
-    # Taken from: https://github.com/pytorch/pytorch/blob/v1.0.1/torch/utils/data/dataloader.py#L237
-    if isinstance(batch, torch.Tensor):
-        return batch.pin_memory()
-    elif isinstance(batch, torch._six.string_classes):
-        return batch
-    # TODO: Send a PR to PyTorch GitHub concerning this.
-    # CHANGED: This branch was added because ``container_abcs.Sequence`` was changing a
-    # ``namedtuple`` to a ``list``.
-    # Inspired by:
-    # https://stackoverflow.com/questions/2166818/how-to-check-if-an-object-is-an-instance-of-a-namedtuple
-    elif hasattr(batch, '_asdict') and isinstance(batch, tuple):  # Handle ``namedtuple``
-        return batch.__class__(**pin_memory_batch(batch._asdict()))
-    elif isinstance(batch, torch._six.container_abcs.Mapping):
-        return {k: pin_memory_batch(sample) for k, sample in batch.items()}
-    elif isinstance(batch, torch._six.container_abcs.Sequence):
-        return [pin_memory_batch(sample) for sample in batch]
-    else:
-        return batch
-
-
 def get_parameter_norm(parameters, norm_type=2):
     """ Compute the total norm of the parameters.
 

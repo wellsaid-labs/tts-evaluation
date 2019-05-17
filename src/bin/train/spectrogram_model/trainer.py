@@ -98,7 +98,7 @@ class Trainer():
         self.model.to(device)
         if src.distributed.is_initialized():
             self.model = torch.nn.parallel.DistributedDataParallel(
-                self.model, device_ids=[device.index], output_device=device.index, dim=1)
+                self.model, device_ids=[device], output_device=device, dim=1)
 
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))

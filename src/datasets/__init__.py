@@ -81,6 +81,22 @@ def susan_speech_dataset(
     return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
 
 
+def adrienne_speech_dataset(extracted_name='Adrienne Walker-Heller',
+                            url='https://drive.google.com/uc?export=download&id=',
+                            url_filename='Adrienne Walker-Heller.tar.gz',
+                            speaker=Speaker('Adrienne Walker-Heller', Gender.FEMALE),
+                            **kwargs):
+    return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
+
+
+def frank_speech_dataset(extracted_name='Frank Bonacquisti',
+                         url='https://drive.google.com/uc?export=download&id=',
+                         url_filename='Frank Bonacquisti.tar.gz',
+                         speaker=Speaker('Frank Bonacquisti', Gender.FEMALE),
+                         **kwargs):
+    return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
+
+
 __all__ = [
     'Speaker', 'Gender', 'lj_speech_dataset', 'm_ailabs_speech_dataset', 'hilary_speech_dataset',
     'heather_speech_dataset', 'beth_speech_dataset', 'beth_custom_speech_dataset',
