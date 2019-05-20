@@ -12,6 +12,17 @@ WellSaid Lab's TrueVoice deep neural network architecture.
 
 This section discusses various dependencies that need to be installed for this repository.
 
+### 0. Download the Repository
+
+Using `git` clone the repository onto your system:
+
+    git clone --depth=1 git@github.com:AI2Incubator/WellSaidLabs.git
+
+On May 20th the ~50 megabyte `.git` directory accounts for a majority of the project's size. The
+rest of the project is around ~8 megabytes. Using a shallow clone of the repo `--depth=1` decreases
+the `.git` footprint substantially to ~4 megabytes. This is useful for the current experimentation
+workflow which requires code synchronization.
+
 ### 1. Install Python Dependencies
 
 Make sure you have Python 3.7.3 with PIP. Install most of the dependencies with the PIP package
@@ -32,7 +43,7 @@ or
 
     brew install sox
 
-### 3. Create a Comet account
+### 3. Create a Comet Account
 
 With your new Comet account create a ``.env`` file with these details:
 
@@ -47,13 +58,13 @@ To work with GCP, we recommend installing the dependencies listed in ``docs/GCP_
 
 This section describes commands to run the executables required for training.
 
-#### Spectrogram Model
+### Spectrogram Model
 
 Train the spectrogram model like so:
 
     python -m src.bin.train.spectrogram_model -n experiment_name -p comet_ml_project_name
 
-#### Signal Model
+### Signal Model
 
 Train the signal model like so:
 
@@ -68,7 +79,6 @@ Run unit tests with code coverage like so:
 Run linting like so:
 
     flake8 src/; flake8 test/;
-
 
 ## Repository Layout
 
