@@ -16,7 +16,7 @@ This section discusses various dependencies that need to be installed for this r
 
 Using `git` clone the repository onto your system:
 
-    git clone --depth=1 --allow-unrelated-histories git@github.com:AI2Incubator/WellSaidLabs.git
+    git clone --depth=1 --no-single-branch git@github.com:AI2Incubator/WellSaidLabs.git
 
 On May 20th the ~50 megabyte `.git` directory accounts for a majority of the project's size. The
 rest of the project is around ~8 megabytes. Using a shallow clone of the repo `--depth=1` decreases
