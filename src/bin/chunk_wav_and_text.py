@@ -10,6 +10,25 @@ Example:
     python3 -m src.bin.chunk_wav_and_text --wav 'data/other/Heather/wavs/*.wav' \
                                           --csv 'data/other/Heather/csvs/*.csv' \
                                           --destination data/other/Heather/dest/
+
+Batch Example:
+
+    for directory in 'data/Beth' 'data/Heather' 'data/Hilary' 'data/Sam' 'data/Susan'
+    do
+        python3 -m src.bin.chunk_wav_and_text --wav "$directory/03 Recordings/*.wav" \
+                                              --csv "$directory/04 Scripts (CSV)/*.csv" \
+                                              --destination "$directory/05 Processed/"
+    done
+
+Compression:
+
+    Use ``tar -czvf name-of-archive.tar.gz /path/to/directory-or-file`` to compress the archive. For
+    those using Mac OS do not use "compress" to create a `.zip` file instead [1].
+
+[1] Mac OS uses Archive Utility to compress a directory creaing by default a
+"Compressed UNIX CPIO Archive file" (CPGZ) under the `.zip` extension. The CPGZ is created with
+Apple's "Apple gzip" that a Linux gzip implementations are unable to handle.
+https://www.intego.com/mac-security-blog/understanding-compressed-files-and-apples-archive-utility/
 """
 from pathlib import Path
 
@@ -24,8 +43,8 @@ from collections import Counter
 
 import pandas
 import librosa
+import numpy
 
-from src.audio import read_audio
 from src.utils import record_stream
 
 GENTLE_SUCCESS_CASE = 'success'
@@ -88,9 +107,8 @@ class Nonalignment():
 
 def natural_keys(text):
     '''
-    Sorts in human order
+    Sorts in a "natural" order inspired by:
     http://nedbatchelder.com/blog/200712/human_sorting.html
-    (See Toothy's implementation in the comments)
     '''
     return [(int(c) if c.isdigit() else c) for c in re.split(r'(\d+)', str(text))]
 
@@ -103,7 +121,9 @@ def _review_gentle(response, transcript):
         transcript (str): Transcript sent to Gentle.
     """
     # Check various invariants
-    assert response['transcript'] == transcript, 'Failed transcript invariant.'
+    assert response['transcript'] == transcript, (
+        'Failed transcript invariant:\n%s\n' % response['transcript'] + '-' * 100 +
+        '\n%s\n' % transcript)
     assert all([
         transcript[w['startOffset']:w['endOffset']] == w['word'] for w in response['words']
     ]), 'Transcript must align with word character offsets.'
@@ -592,7 +612,7 @@ def setup_io(wav_pattern,
              wav_directory_name='wavs',
              csv_metadata_name='metadata.csv',
              gentle_cache_name='.gentle'):
-    """ Perform basic IO operations to setup this script
+    """ Perform basic IO operations to setup this script.
 
     Args:
         wav_pattern (str): The audio file glob pattern.
@@ -622,6 +642,7 @@ def setup_io(wav_pattern,
     wav_paths = sorted(list(Path('.').glob(wav_pattern)), key=natural_keys)
     csv_paths = sorted(list(Path('.').glob(csv_pattern)), key=natural_keys)
 
+    # Check invariants
     assert all(
         [wav_path.suffix == '.wav' for wav_path in wav_paths]), 'Please select only WAV files'
     assert all(
@@ -631,11 +652,13 @@ def setup_io(wav_pattern,
         logger.warning('Found no CSV or WAV files.')
         return
     elif len(csv_paths) != len(wav_paths):
-        logger.warning('CSV and WAV files are not aligned.')
+        logger.warning('CSV (%d) and WAV (%d) files are not aligned.', len(csv_paths),
+                       len(wav_paths))
         return
     else:
         logger.info('Processing %d files', len(csv_paths))
 
+    logger.info('Found %d CSV and %d WAV files.', len(csv_paths), len(wav_paths))
     return wav_paths, csv_paths, wav_directory, gentle_cache_directory, metadata_filename
 
 
@@ -662,18 +685,15 @@ def main(wav_pattern,
          destination,
          text_column='Content',
          wav_column='WAV Filename',
-         sample_rate=44100,
          max_chunk_length=10):
     """ Align audio with scripts, then create and save chunks of audio and text.
 
     Args:
         wav_pattern (str): The audio file glob pattern.
-        csv_pattern (str): The CSV file globl pattern containing metadata associated with audio
-            file.
+        csv_pattern (str): The CSV file glob pattern containing metadata associated with audio file.
         destination (str): Directory to save the processed data.
         text_column (str, optional): The script column in the CSV file.
         wav_column (str, optional): Column name for the new audio filename column.
-        sample_rate (int, optional): Sample rate of the audio.
         max_chunk_length (float, optional): Number of seconds for the maximum chunk audio length.
     """
     (wav_paths, csv_paths, wav_directory, gentle_cache_directory, metadata_filename) = setup_io(
@@ -685,14 +705,17 @@ def main(wav_pattern,
     total_characters = 0
     for i, (wav_path, csv_path) in enumerate(zip(wav_paths, csv_paths)):
         print('-' * 100)
-        script_wav_directory = wav_directory / wav_path.stem
+        script_wav_directory = wav_directory / wav_path.stem  # Directory to resulting audio chunks
         script_wav_directory.mkdir(exist_ok=True)
         logger.info('Processing %s:%s', wav_path, csv_path)
 
         logger.info('Reading audio and csv...')
-        audio = read_audio(str(wav_path), sample_rate)
+        audio, sample_rate = librosa.core.load(str(wav_path), sr=None)
+        assert len(audio.shape) == 1, "Signal must be mono."
+        assert numpy.max(audio) <= 1 and numpy.min(audio) >= -1, "Signal must be in range [-1, 1]."
+
         data_frame = pandas.read_csv(csv_path)
-        scripts = [normalize_text(x) for x in data_frame[text_column]]
+        scripts = [normalize_text(str(x)) for x in data_frame[text_column]]
         total_scripts += len(scripts)
         total_characters += sum([len(s) for s in scripts])
 
@@ -722,7 +745,8 @@ def main(wav_pattern,
                 new_row[text_column] = script[slice(*chunk['text'])].strip()
                 audio_path = script_wav_directory / ('script_%d_chunk_%d.wav' % (j, k))
                 new_row[wav_column] = str(audio_path.relative_to(wav_directory))
-                del new_row['Index']  # Delete the default pandas Index column
+                if 'Index' in new_row:
+                    del new_row['Index']  # Delete the default pandas Index column
                 to_write.append(new_row)
 
                 audio_span = audio[slice(*chunk['audio'])]

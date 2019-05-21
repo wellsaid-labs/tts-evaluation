@@ -111,14 +111,14 @@ def mock_open(*args, **kargs):
 @mock.patch('subprocess.check_output', return_value='torch==0.4.1'.encode())
 @mock.patch('builtins.open', new_callable=mock_open, read_data='torch==0.4.0\n')
 def test_check_module_versions__wrong_version(_, __):
-    with pytest.raises(ValueError):
+    with pytest.raises(RuntimeError):
         TrainingContextManager._check_module_versions(None)
 
 
 @mock.patch('subprocess.check_output', return_value='tensorflow==0.4.0'.encode())
 @mock.patch('builtins.open', new_callable=mock_open, read_data='torch==0.4.0\n')
 def test_check_module_versions__missing_install(_, __):
-    with pytest.raises(ValueError):
+    with pytest.raises(RuntimeError):
         TrainingContextManager._check_module_versions(None)
 
 

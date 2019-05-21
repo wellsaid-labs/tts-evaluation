@@ -7,6 +7,7 @@ from src.distributed import distribute_batch_sampler
 from src.distributed import get_master_rank
 from src.distributed import is_master
 from src.distributed import is_initialized
+from src.distributed import map_multiprocess
 
 
 @mock.patch('torch.distributed')
@@ -81,3 +82,20 @@ def test_broadcast_string_worker(mock_distributed, __):
     mock_distributed.broadcast.side_effect = mock_broadcast_side_effect
 
     assert string == broadcast_string(string, torch)
+
+
+def mock_func(a):
+    return a**2
+
+
+def test_map_multiprocess():
+    expected = [1, 4, 9]
+    processed = map_multiprocess([1, 2, 3], mock_func)
+    assert expected == processed
+
+
+@mock.patch('src.distributed.is_master', return_value=False)
+def test_map_multiprocess_master(_):
+    expected = [1, 4, 9]
+    processed = map_multiprocess([1, 2, 3], mock_func)
+    assert expected == processed

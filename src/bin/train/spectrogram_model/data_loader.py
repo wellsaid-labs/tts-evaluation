@@ -14,7 +14,6 @@ import torch
 from src.utils import DataLoader
 from src.utils import get_tensors_dim_length
 from src.utils import identity
-from src.utils import OnDiskTensor
 
 import src.distributed
 
@@ -29,14 +28,13 @@ def _load_fn(row, input_encoder):
     """ Load function for loading a single row.
 
     Args:
-        row (SpectrogramTextSpeechRow)
+        row (TextSpeechRow)
         input_encoder (src.spectrogram_model.InputEncoder)
 
     Returns:
         (SpectrogramModelTrainingRow)
     """
-    spectrogram = row.spectrogram.to_tensor() if isinstance(row.spectrogram,
-                                                            OnDiskTensor) else row.spectrogram
+    spectrogram = row.spectrogram.to_tensor()
     stop_token = spectrogram.new_zeros((spectrogram.shape[0],))
     stop_token[-1] = 1
 

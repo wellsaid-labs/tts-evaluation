@@ -53,8 +53,6 @@ import torch
 
 from src.audio import build_wav_header
 from src.audio import combine_signal
-# NOTE: `src.datasets.constants` to not import all `src.datasets` dependencies
-from src.datasets.constants import Speaker
 from src.hparams import set_hparams
 from src.utils import Checkpoint
 from src.utils import set_basic_logging_config
@@ -77,9 +75,6 @@ SPECTROGRAM_MODEL_CHECKPOINT_PATH = pathlib.Path(
     'experiments/spectrogram_model/jan_12/00:51:22/checkpoints/1548398998/step_213156.pt')
 SIGNAL_MODEL_CHECKPOINT_PATH = pathlib.Path(
     'experiments/signal_model/jan_11/20:51:46/checkpoints/1549309174/step_3775828.pt')
-
-# TODO: Factor out these changes into individual branches; enabling me to move forward with
-# training more voices and running more experiments.
 
 
 @lru_cache()
@@ -173,14 +168,8 @@ def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_s
     if isinstance(stop_threshold, float):
         kwargs['stop_threshold'] = stop_threshold
 
-    # TODO: Replace with ``signal_model.conditional_features_upsample.scale_factor`` for newer
-    # checkpoints
-    scale_factor = (
-        signal_model.conditional_features_upsample.pre_net[-1].net[-1].out_channels *
-        signal_model.conditional_features_upsample.upsample_repeat)
-    # TODO: Replace with ``signal_model.conditional_features_upsample.padding`` for newer
-    # checkpoints
-    padding = signal_model.conditional_features_upsample.min_padding
+    scale_factor = signal_model.conditional_features_upsample.scale_factor
+    padding = signal_model.conditional_features_upsample.padding
     half_padding = int(padding / 2)
 
     logger.info('Generating spectrogram.')
@@ -273,15 +262,17 @@ def _validate_and_unpack(args, max_characters=1000, num_api_key_characters=32):
 
     speaker_id = int(speaker_id)
 
-    # TODO: Check that ``speaker_id`` is in ``input_encoder.speaker_encoder.vocab``
-    if not (isinstance(speaker_id, int) and speaker_id < len(Speaker) and speaker_id >= 0):
-        raise InvalidUsage('Speaker ID must be an integer between %d and %d.' % (0, len(Speaker)))
-
     if not (isinstance(text, str) and len(text) < max_characters and len(text) > 0):
         # TODO: The error string should suggest the text must be none-empty.
         raise InvalidUsage('Text must be a string under %d characters' % max_characters)
 
     input_encoder = load_checkpoints()[2]
+
+    if not (isinstance(speaker_id, int) and
+            speaker_id < input_encoder.speaker_encoder.vocab_size and speaker_id >= 0):
+        raise InvalidUsage('Speaker ID must be an integer between %d and %d.' %
+                           (0, input_encoder.speaker_encoder.vocab_size))
+
     processed_text = input_encoder.text_encoder.decode(input_encoder.text_encoder.encode(text))
     if processed_text != text:
         improper_characters = set(text).difference(set(processed_text))
@@ -294,7 +285,7 @@ def _validate_and_unpack(args, max_characters=1000, num_api_key_characters=32):
     if isinstance(stop_threshold, float):
         stop_threshold = round(stop_threshold, 2)
 
-    speaker = getattr(Speaker, str(speaker_id))
+    speaker = input_encoder.speaker_encoder.vocab[speaker_id]
     return speaker, text, stop_threshold
 
 

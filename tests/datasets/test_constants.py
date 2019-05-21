@@ -1,15 +1,12 @@
 from src.datasets import Speaker
-
-
-def test_speaker_length():
-    assert len(Speaker) > 0
-
-
-def test_speaker__smoke_screen():
-    int(Speaker.JUDY_BIEBER)
-    hash(Speaker.JUDY_BIEBER)
-    repr(Speaker.JUDY_BIEBER)
+from src.datasets import Gender
 
 
 def test_speaker_eq():
-    assert Speaker.JUDY_BIEBER == Speaker.JUDY_BIEBER
+    assert Speaker('Judy Bieber', Gender.FEMALE) == Speaker('Judy Bieber', Gender.FEMALE)
+
+
+def test_speaker_neq():
+    assert Speaker('Judy Bieber', Gender.MALE) != Speaker('Judy Bieber', Gender.FEMALE)
+    assert Speaker('Judy', Gender.FEMALE) != Speaker('Judy Bieber', Gender.FEMALE)
+    assert Speaker('Judy Bieber', Gender.FEMALE) != Speaker('judy bieber', Gender.FEMALE)

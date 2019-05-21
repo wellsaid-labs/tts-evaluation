@@ -9,7 +9,7 @@ import torch
 
 from src.audio import griffin_lim
 from src.bin.train.spectrogram_model.data_loader import DataLoader
-from src.datasets import compute_spectrograms
+from src.datasets import add_spectrogram_column
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import get_config
@@ -18,6 +18,7 @@ from src.optimizers import Optimizer
 from src.spectrogram_model import InputEncoder
 from src.spectrogram_model import SpectrogramModel
 from src.utils import AccumulatedMetrics
+from src.utils import balance_list
 from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import evaluate
@@ -82,8 +83,12 @@ class Trainer():
                  epoch=0,
                  use_tqdm=False):
 
-        self.train_dataset = compute_spectrograms(train_dataset)
-        self.dev_dataset = compute_spectrograms(dev_dataset)
+        self.train_dataset = add_spectrogram_column(train_dataset)
+        # The training and development dataset distribution of speakers is arbitrary (i.e. some
+        # audio books have more data and some have less). In order to ensure that no speaker
+        # is prioritized over another, we balance the number of examples for each speaker.
+        self.dev_dataset = add_spectrogram_column(
+            balance_list(dev_dataset, get_class=lambda r: r.speaker))
 
         self.input_encoder = InputEncoder(
             [r.text for r in self.train_dataset],
@@ -96,7 +101,7 @@ class Trainer():
         self.model.to(device)
         if src.distributed.is_initialized():
             self.model = torch.nn.parallel.DistributedDataParallel(
-                self.model, device_ids=[device.index], output_device=device.index, dim=1)
+                self.model, device_ids=[device], output_device=device, dim=1)
 
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
@@ -219,7 +224,8 @@ class Trainer():
             self.comet_ml.log_current_epoch(self.epoch)
 
         # Setup iterator and metrics
-        dataset = self.train_dataset if train else self.dev_dataset
+        dataset = balance_list(
+            self.train_dataset, get_class=lambda r: r.speaker) if train else self.dev_dataset
         data_loader = DataLoader(
             data=dataset,
             batch_size=self.train_batch_size if train else self.dev_batch_size,
@@ -229,6 +235,9 @@ class Trainer():
             use_tqdm=self.use_tqdm)
 
         # Run epoch
+        # NOTE: Within a distributed execution, ``random.randint`` produces different values in
+        # different processes. For example, the master process generator may be ahead of the
+        # worker processes because it executes auxiliary code the workers do not.
         random_batch = random.randint(0, len(data_loader) - 1)
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):

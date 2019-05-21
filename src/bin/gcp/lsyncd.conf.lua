@@ -39,6 +39,7 @@ sync {
       "*.tar",
       "*.tgz",
       "*.gzip",
+      "_data/**",
       "node_modules/**"
   }
 }

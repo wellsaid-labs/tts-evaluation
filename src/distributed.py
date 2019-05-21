@@ -1,6 +1,14 @@
 import logging
+import random
+
+from torch.multiprocessing import Pool
+from torchnlp.utils import shuffle as do_deterministic_shuffle
+from tqdm import tqdm
 
 import torch
+import torchnlp.download
+
+import src
 
 logger = logging.getLogger(__name__)
 
@@ -115,3 +123,80 @@ def distribute_batch_sampler(batch_sampler, batch_size, device, type_=torch.cuda
     # ``device.index`` could be ``None`` and cause a silent failure.
     assert isinstance(device.index, int), 'device.index must be specified'
     return batches[:, device.index].cpu().tolist()
+
+
+def download_file_maybe_extract(*args, **kwargs):
+    """
+    Alias to ``torchnlp.download.download_file_maybe_extract`` that considers the distributed
+    environment.
+    """
+    if src.distributed.is_master():
+        return_ = torchnlp.download.download_file_maybe_extract(*args, **kwargs)
+
+    # Ensure data is downloaded before both worker and master proceed.
+    if src.distributed.is_initialized():
+        torch.distributed.barrier()
+
+    if not src.distributed.is_master():
+        return_ = torchnlp.download.download_file_maybe_extract(*args, **kwargs)
+
+    return return_
+
+
+def map_multiprocess(data, func, use_tqdm=True):
+    """ Map ``func`` onto data while allocating multiple process only to the master process.
+
+    Args:
+        data (iterable)
+        func (callable)
+        use_tqdm (bool): Attach a progress bar to processing.
+
+    Returns:
+        (iterable)
+    """
+    data = list(data)
+
+    if is_master():
+        pool = Pool()
+        iterator = pool.imap(func, data)
+    else:  # PyTorch workers should not expect to do serious work
+        iterator = (func(row) for row in data)
+
+    if use_tqdm:
+        iterator = tqdm(iterator, total=len(data))
+    processed = list(iterator)
+
+    if is_master():  # Ensure pool work is finished
+        pool.close()
+        pool.join()
+
+    # Ensure data is processed before both worker and master proceed.
+    if is_initialized():
+        torch.distributed.barrier()
+
+    return processed
+
+
+def random_shuffle(list_, type_=torch.cuda):
+    """ Shuffle randomly the same way across multiple process.
+
+    Within a distributed setup each process has its own random generator and those random number
+    generators might in different positions. This module will shuffle the same way in processes
+    with out-of-sync number generators.
+
+    Args:
+        list_ (list)
+        type_ (any): Default tensor type to use.
+    """
+    if not is_initialized():
+        random.shuffle(list_)
+        return
+
+    # Broadcast a random seed
+    random_number = type_.LongTensor(1)
+    if is_master():
+        random_number[0] = random.randint(1, 2**31)
+    torch.distributed.broadcast(random_number, src=get_master_rank())
+    random_number = int(random_number)
+
+    do_deterministic_shuffle(list_, random_seed=random_number)

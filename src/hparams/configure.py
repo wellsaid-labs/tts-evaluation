@@ -1,4 +1,5 @@
 import logging
+import itertools
 
 from torch import nn
 
@@ -11,6 +12,7 @@ from torch.nn import BCEWithLogitsLoss
 from torch.nn import CrossEntropyLoss
 from torch.nn import MSELoss
 from torch.optim import Adam
+from torchnlp.utils import shuffle as do_deterministic_shuffle
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,7 @@ logger = logging.getLogger(__name__)
 def _set_anomaly_detection():
     # NOTE: Prevent circular dependency
     from src.utils import AnomalyDetector
+
     add_config({
         'src.bin.train.signal_model.trainer.Trainer.__init__.min_rollback': 2,
         'src.utils.AnomalyDetector.__init__': {
@@ -76,7 +79,8 @@ def _set_audio_processing():
                 # ``notebooks/Stripping Silence.ipynb``
                 'top_db': 50
             },
-            'librosa.output.write_wav.sr': sample_rate})
+            'librosa.output.write_wav.sr': sample_rate
+        })
     except ImportError:
         logger.info('Ignoring optional `librosa` configurations.')
 
@@ -95,23 +99,10 @@ def _set_audio_processing():
         logger.info('Ignoring optional `scipy` configurations.')
 
     add_config({
-        'src.datasets.lj_speech.lj_speech_dataset': {
-            'resample': sample_rate,
-            # NOTE: ``Signal Loudness Distribution`` notebook shows that LJ Speech is biased
-            # concerning the loudness and ``norm=True`` unbiases this. In addition, norm
-            # also helps smooth out the distribution in notebook ``Signal Energy Distribution``.
-            # While, ``loudness=True`` does not help.
-            'norm': True,
-            # NOTE: Guard to reduce clipping during resampling
-            'guard': True,
-        },
-        'src.datasets.hilary.hilary_dataset.resample': sample_rate,
-        'src.datasets.m_ailabs.m_ailabs_speech_dataset.resample': sample_rate,
         'src.audio': {
-            # SOURCE (Wavenet):
-            # To make this more tractable, we first apply a µ-law companding transformation
-            # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
-            'read_audio.sample_rate': sample_rate,
+            'read_audio': {
+                'sample_rate': sample_rate
+            },
             # NOTE: Practically, `frame_rate` is equal to `sample_rate`. However, the terminology is
             # more appropriate because `sample_rate` is ambiguous. In a multi-channel scenario, each
             # channel has its own set of samples. It's unclear if `sample_rate` depends on the
@@ -151,6 +142,15 @@ def _set_audio_processing():
             },
             'split_signal.bits': bits,
             'combine_signal.bits': bits,
+            'normalize_audio': {
+                'bits': bits,
+                'guard': True,
+                'loudness': False,
+                'lower_hertz': None,
+                'norm': False,
+                'resample': sample_rate,
+                'upper_hertz': None,
+            }
         },
         'src.visualize': {
             'CometML.<locals>.log_audio.sample_rate': sample_rate,
@@ -289,6 +289,95 @@ def _set_model_size(frame_channels, bits):
     })
 
 
+def _filter_audio_path_not_found(example):
+    if not example.audio_path.is_file():
+        logger.warning('[%s] Not found audio file, skipping: %s', example.speaker,
+                       example.audio_path)
+        return False
+
+    return True
+
+
+def _filter_no_text(example):
+    if len(example.text) == 0:
+        logger.warning('[%s] Text is absent, skipping: %s', example.speaker, example.audio_path)
+        return False
+
+    return True
+
+
+def _filter_books(example):
+    # NOTE: Prevent circular dependency
+    from src import datasets
+
+    # Filter our particular books from M-AILABS dataset due:
+    # - Inconsistent acoustic setup compared to other samples from the same speaker
+    # - Audible noise in the background
+    if (example.speaker == datasets.m_ailabs.MIDNIGHT_PASSENGER.speaker and
+            datasets.m_ailabs.MIDNIGHT_PASSENGER.title in str(example.audio_path)):
+        return False
+
+    if (example.speaker == datasets.m_ailabs.JANE_EYRE.speaker and
+            datasets.m_ailabs.JANE_EYRE.title in str(example.audio_path)):
+        return False
+
+    return True
+
+
+def _filter_elliot_miller(example):
+    # NOTE: Prevent circular dependency
+    from src import datasets
+
+    if example.speaker == datasets.m_ailabs.ELLIOT_MILLER:  # Ignore ELLIOT due to his acting.
+        return False
+
+    return True
+
+
+def _filter_no_numbers(example):
+    # Ignore numbers instead of attempting to verbalize them for now
+    if len(set(example.text).intersection(set('0123456789'))) > 0:
+        return False
+
+    return True
+
+
+def get_dataset():
+    """ Define the dataset.
+
+    Returns:
+        train (iterable)
+        dev (iterable)
+    """
+    # NOTE: Prevent circular dependency
+    from src import datasets
+    from src import utils
+    logger.info('Loading dataset...')
+    dataset = list(
+        itertools.chain.from_iterable([
+            datasets.hilary_speech_dataset(),
+            datasets.lj_speech_dataset(),
+            datasets.m_ailabs_en_uk_speech_dataset(),
+            datasets.m_ailabs_en_us_speech_dataset(),
+            datasets.beth_speech_dataset(),
+            datasets.beth_custom_speech_dataset(),
+            datasets.heather_speech_dataset(),
+            datasets.susan_speech_dataset(),
+            datasets.sam_speech_dataset(),
+            datasets.frank_speech_dataset(),
+            datasets.adrienne_speech_dataset()
+        ]))
+    dataset = datasets.filter_(_filter_audio_path_not_found, dataset)
+    dataset = datasets.filter_(_filter_no_text, dataset)
+    dataset = datasets.filter_(_filter_elliot_miller, dataset)
+    dataset = datasets.filter_(_filter_no_numbers, dataset)
+    dataset = datasets.filter_(_filter_books, dataset)
+    logger.info('Loaded %d dataset examples.', len(dataset))
+    dataset = datasets.normalize_audio_column(dataset)
+    do_deterministic_shuffle(dataset, random_seed=123)
+    return utils.split_list(dataset, splits=(0.8, 0.2))
+
+
 def set_hparams():
     """ Using the ``configurable`` module set the hyperparameters for the source code.
     """
@@ -317,10 +406,6 @@ def set_hparams():
     convolution_dropout = 0.5
     lstm_dropout = 0.1
 
-    # NOTE: Prevent circular dependency
-    from src import datasets
-    dataset = datasets.lj_speech_dataset
-
     spectrogram_model_dev_batch_size = 256
 
     # TODO: Add option to instead of strings to use direct references.
@@ -339,11 +424,13 @@ def set_hparams():
                 'pre_net.PreNet.__init__.dropout': 0.5,
                 'post_net.PostNet.__init__.convolution_dropout': 0.0
             },
-            'bin.evaluate.main.dataset': dataset,
-            'datasets.process.compute_spectrograms.batch_size': spectrogram_model_dev_batch_size,
+            'datasets.utils.add_predicted_spectrogram_column.batch_size': (
+                spectrogram_model_dev_batch_size),
+            'bin.evaluate.main.dataset':
+                get_dataset,
             'bin.train': {
                 'spectrogram_model': {
-                    '__main__._get_dataset.dataset': dataset,
+                    '__main__._get_dataset.dataset': get_dataset,
                     'trainer.Trainer.__init__': {
                         # SOURCE: Tacotron 2
                         # To train the feature prediction network, we apply the standard
@@ -351,7 +438,7 @@ def set_hparams():
                         # instead of the predicted output on the decoder side, also referred to as
                         # teacher-forcing) with a batch size of 64 on a single GPU.
                         # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
-                        'train_batch_size': 64,
+                        'train_batch_size': 56,
                         'dev_batch_size': spectrogram_model_dev_batch_size,
 
                         # SOURCE (Tacotron 2):
@@ -369,7 +456,7 @@ def set_hparams():
                     },
                 },
                 'signal_model': {
-                    '__main__._get_dataset.dataset': dataset,
+                    '__main__._get_dataset.dataset': get_dataset,
                     'trainer.Trainer.__init__': {
                         # SOURCE (Tacotron 2):
                         # We train with a batch size of 128 distributed across 32 GPUs with
@@ -394,6 +481,7 @@ def set_hparams():
                 }
             },
             # NOTE: Window size smoothing parameter is not super sensative.
-            'optimizers.AutoOptimizer.__init__.window_size': 128,
+            'optimizers.AutoOptimizer.__init__.window_size':
+                128,
         }
     })

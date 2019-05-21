@@ -32,16 +32,18 @@ manager like so:
 
 Finally, follow the "Get Started" guide on [pytorch.org](pytorch.org) to install ``torch``.
 
-### 2. Install SoX
+### 2. Install SoX and FFmpeg
 
-This repository requires [SoX](http://sox.sourceforge.net/) (Sound eXchange) for audio preprocessing
-which can be installed, like so:
+This repository requires [SoX](http://sox.sourceforge.net/) (Sound eXchange) and
+[FFmpeg](https://ffmpeg.org/) for audio preprocessing which can be installed, like so:
 
     apt-get install sox
+    apt-get install ffmpeg
 
 or
 
     brew install sox
+    brew install ffmpeg
 
 ### 3. Create a Comet Account
 

@@ -9,13 +9,21 @@ import sys
 from torch import nn
 from torchnlp.utils import collate_tensors
 
+import numpy
 import pytest
 import torch
 
+from src.datasets import Gender
+from src.datasets import Speaker
+from src.datasets import TextSpeechRow
 from src.optimizers import Optimizer
+from src.spectrogram_model import InputEncoder
+from src.spectrogram_model import SpectrogramModel
 from src.utils import AccumulatedMetrics
 from src.utils import AnomalyDetector
 from src.utils import assert_enough_disk_space
+from src.utils import balance_list
+from src.utils import batch_predict_spectrograms
 from src.utils import Checkpoint
 from src.utils import DataLoader
 from src.utils import DataLoaderDataset
@@ -33,7 +41,16 @@ from src.utils import OnDiskTensor
 from src.utils import parse_hparam_args
 from src.utils import ROOT_PATH
 from src.utils import set_basic_logging_config
+from src.utils import slice_by_cumulative_sum
 from src.utils import sort_together
+from src.utils import split_list
+
+
+def test_slice_by_cumulative_sum():
+    assert [1, 2, 3] == slice_by_cumulative_sum([1, 2, 3, 4], max_total_value=6)
+    assert [(1, 1), (1, 2)] == slice_by_cumulative_sum([(1, 1), (1, 2), (1, 3), (1, 4)],
+                                                       max_total_value=4,
+                                                       get_value=lambda x: x[1])
 
 
 def test_assert_enough_disk_space__smoke_test():
@@ -82,7 +99,7 @@ def test_dict_collapse():
 
 def test_on_disk_tensor():
     original = torch.rand(4, 10)
-    tensor = OnDiskTensor('tests/_test_data/tensor.npy').from_tensor(original)
+    tensor = OnDiskTensor.from_tensor('tests/_test_data/tensor.npy', original)
     assert tensor.shape == original.shape
     assert torch.equal(tensor.to_tensor(), original)
     assert tensor.exists()
@@ -340,3 +357,84 @@ def test_accumulated_metrics(mock_distributed):
     metrics.log_epoch_end(not_called)
 
     assert not called
+
+
+def test_balance_list():
+    balanced = balance_list(['a', 'a', 'b', 'b', 'c'])
+    assert len(balanced) == 3
+    assert len(set(balanced)) == 3
+
+
+def test_split_list():
+    dataset = [1, 2, 3, 4, 5]
+    splits = (.6, .2, .2)
+    assert split_list(dataset, splits) == [[1, 2, 3], [4], [5]]
+
+
+def test_split_list_rounding():
+    dataset = [1]
+    splits = (.33, .33, .34)
+    assert split_list(dataset, splits) == [[], [], [1]]
+
+
+@mock.patch('src.utils.np.save')
+@mock.patch('src.utils.np.load')
+def test_batch_predict_spectrograms(mock_load, mock_save):
+    speaker = Speaker('Test Speaker', Gender.FEMALE)
+    input_encoder = InputEncoder(['this is a test'], [speaker])
+    frame_channels = 128
+    model = SpectrogramModel(
+        input_encoder.text_encoder.vocab_size,
+        input_encoder.speaker_encoder.vocab_size,
+        frame_channels=frame_channels)
+    data = [TextSpeechRow(text='this is a test', audio_path=None, speaker=speaker)]
+    mock_save.return_value = None
+    mock_load.return_value = numpy.array([1])
+
+    predictions = batch_predict_spectrograms(
+        data=data,
+        input_encoder=input_encoder,
+        model=model,
+        batch_size=1,
+        device=torch.device('cpu'),
+        aligned=False)
+    assert len(predictions) == 1
+    assert torch.is_tensor(predictions[0])
+
+    predictions = batch_predict_spectrograms(
+        data=data,
+        input_encoder=input_encoder,
+        model=model,
+        batch_size=1,
+        device=torch.device('cpu'),
+        filenames=['/tmp/tensor.npy'],
+        aligned=False)
+    assert len(predictions) == 1
+    assert '/tmp/tensor.npy' in str(predictions[0].path)
+
+
+@mock.patch('src.utils.np.save')
+@mock.patch('src.utils.np.load')
+def test_batch_predict_spectrograms__aligned(mock_load, mock_save):
+    speaker = Speaker('Test Speaker', Gender.FEMALE)
+    input_encoder = InputEncoder(['this is a test'], [speaker])
+    frame_channels = 128
+    model = SpectrogramModel(
+        input_encoder.text_encoder.vocab_size,
+        input_encoder.speaker_encoder.vocab_size,
+        frame_channels=frame_channels)
+    spectrogram = torch.rand(10, frame_channels)
+    example = TextSpeechRow(
+        text='this is a test', audio_path=None, speaker=speaker, spectrogram=spectrogram)
+    mock_save.return_value = None
+    mock_load.return_value = numpy.array([1])
+
+    predictions = batch_predict_spectrograms(
+        data=[example],
+        input_encoder=input_encoder,
+        model=model,
+        batch_size=1,
+        device=torch.device('cpu'),
+        aligned=True)
+    assert len(predictions) == 1
+    assert torch.is_tensor(predictions[0])

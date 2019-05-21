@@ -1,10 +1,11 @@
 """ Train spectrogram model.
 
 Example:
-    $ python3 -m src.bin.train.spectrogram_model -l="Linda baseline";
+    $ python3 -m src.bin.train.spectrogram_model -l="Multispeaker v2 baseline";
 
 Distributed Example:
-    $ python3 -m third_party.launch src.bin.train.spectrogram_model -l="Linda distributed baseline";
+    $ python3 -m third_party.launch src.bin.train.spectrogram_model \
+      -l="Multispeaker v2 distributed baseline";
     $ pkill -9 python3; nvidia-smi;
 
 NOTE: The distributed example does clean up Python processes well; therefore, we kill all
@@ -192,7 +193,10 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '-t',
         '--tags',
-        default=['detached post_net', 'masked conv', 'post_net dropout=0', 'weight_decay=10**-6'],
+        default=[
+            'detached post_net', 'masked conv', 'post_net dropout=0', 'weight_decay=10**-6',
+            'no elliot', 'no numbers'
+        ],
         action='append',
         help='List of tags for the experiment.')
     parser.add_argument(

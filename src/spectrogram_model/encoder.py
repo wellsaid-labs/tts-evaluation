@@ -42,10 +42,10 @@ class Encoder(nn.Module):
             produced by the convolution.
         convolution_filter_size (int): Size of the convolving kernel.
         lstm_hidden_size (int): The number of features in the LSTM hidden state. Must be
-            an even integer if ``lstm_bidirectional`` is True. The hidden size of the final
+            an even integer if ``lstm_bidirectional`` is ``True``. The hidden size of the final
             hidden feature representation.
         lstm_layers (int): Number of recurrent LSTM layers.
-        lstm_bidirectional (bool): If True, becomes a bidirectional LSTM.
+        lstm_bidirectional (bool): If ``True``, becomes a bidirectional LSTM.
     """
 
     @configurable

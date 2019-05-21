@@ -3,7 +3,7 @@ numpy
 scipy
 
 # Install torch seperatly via https://pytorch.org based on your system requirements
-# torch==1.0.1.post2
+# torch==1.1.0
 
 # Language Library
 git+https://github.com/PetrochukM/PyTorch-NLP.git
@@ -15,7 +15,7 @@ librosa
 
 # Visualization Library
 matplotlib
-comet-ml==1.0.51
+comet-ml==1.0.53
 
 # Testing
 pytest
