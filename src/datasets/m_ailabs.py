@@ -185,8 +185,8 @@ def _book2path(book, directory, extracted_name):
 
     Examples:
         >>> from src.utils import ROOT_PATH
-        >>> _book2path(SKY_ISLAND, ROOT_PATH / 'data', 'en_US')
-        PosixPath('/Users/michaelp/Code/WellSaidLabs/data/en_US/by_book/female/judy_bieber/sky_island/metadata.csv')
+        >>> _book2path(SKY_ISLAND, ROOT_PATH / 'data', 'en_US').relative_to(ROOT_PATH)
+        PosixPath('data/en_US/by_book/female/judy_bieber/sky_island/metadata.csv')
     """
     name = book.speaker.name.lower().replace(' ', '_')
     gender = book.speaker.gender.name.lower()
