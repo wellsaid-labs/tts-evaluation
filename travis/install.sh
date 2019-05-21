@@ -7,6 +7,9 @@
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
+echo 'Install FFmpeg'
+sudo apt-get -y install ffmpeg
+
 echo 'List files from cached directories'
 if [ -d $HOME/download ]; then
     echo 'download:'
