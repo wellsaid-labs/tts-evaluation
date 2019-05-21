@@ -8,6 +8,7 @@
 set -e
 
 echo 'Install FFmpeg'
+sudo apt-get -y update
 sudo apt-get -y install ffmpeg
 
 echo 'List files from cached directories'
