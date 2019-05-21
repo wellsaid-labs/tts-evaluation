@@ -101,8 +101,6 @@ thoroughly vetted.
 
 Following creating the VM and logging in:
 
-1. Update the VM packages via: ``sudo apt-get update``
-
 1. Install CUDA via: https://developer.nvidia.com/cuda-toolkit
 
 1. Synchronize your local files with the VM by following the above instructions.
