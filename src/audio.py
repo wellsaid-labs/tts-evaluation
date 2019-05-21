@@ -416,12 +416,15 @@ def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
 @configurable
 def normalize_audio(audio_path,
                     resample=ConfiguredArg(),
-                    norm=False,
-                    guard=False,
-                    lower_hertz=None,
-                    upper_hertz=None,
-                    loudness=False):
+                    norm=ConfiguredArg(),
+                    guard=ConfiguredArg(),
+                    lower_hertz=ConfiguredArg(),
+                    upper_hertz=ConfiguredArg(),
+                    loudness=ConfiguredArg(),
+                    bits=ConfiguredArg()):
     """ Normalize audio on disk with the SoX library.
+
+    TODO: Consider adding an option for converting to mono channel audio.
 
     Args:
         audio_path (Path): Path to a audio file.
@@ -434,6 +437,7 @@ def normalize_audio(audio_path,
         upper_hertz (int, optional): Apply a sinc kaiser-windowed low-pass.
         loudness (bool, optioanl): Normalize the subjective perception of loudness level based on
             ISO 226.
+        bits (int, optional): The bit-depth of the normalized audio file.
 
     Returns:
         (str): Filename of the processed file.
@@ -446,6 +450,7 @@ def normalize_audio(audio_path,
     stem = ('norm(%s)' % stem) if norm else stem
     stem = ('guard(%s)' % stem) if guard else stem
     stem = ('rate(%s,%d)' % (stem, resample)) if resample is not None else stem
+    stem = ('bits(%s,%d)' % (stem, bits)) if bits is not None else stem
     stem = (
         'sinc(%s,%s,%s)' % (stem, lower_hertz, upper_hertz)) if lower_hertz or upper_hertz else stem
     stem = ('loudness(%s)' % stem) if loudness else stem
@@ -461,11 +466,12 @@ def normalize_audio(audio_path,
 
     norm_flag = '--norm' if norm else ''
     guard_flag = '--guard' if guard else ''
+    bits_flag = '--bits=%d' % bits if bits is not None else ''
+    resample_flag = '--rate=%d' % resample if resample is not None else ''
     sinc_command = 'sinc %s-%s' % (lower_hertz, upper_hertz) if lower_hertz or upper_hertz else ''
     loudness_command = 'loudness' if loudness else ''
-    resample_command = 'rate %s' % (resample if resample is not None else '',)
-    commands = ' '.join([resample_command, sinc_command, loudness_command])
-    flags = ' '.join([norm_flag, guard_flag])
+    commands = ' '.join([sinc_command, loudness_command])
+    flags = ' '.join([norm_flag, guard_flag, resample_flag, bits_flag])
     command = 'sox "%s" %s "%s" %s ' % (audio_path, flags, destination, commands)
     os.system(command)
 

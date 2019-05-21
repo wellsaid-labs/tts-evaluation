@@ -100,10 +100,9 @@ def _set_audio_processing():
 
     add_config({
         'src.audio': {
-            # SOURCE (Wavenet):
-            # To make this more tractable, we first apply a µ-law companding transformation
-            # (ITU-T, 1988) to the data, and then quantize it to 256 possible values
-            'read_audio.sample_rate': sample_rate,
+            'read_audio': {
+                'sample_rate': sample_rate
+            },
             # NOTE: Practically, `frame_rate` is equal to `sample_rate`. However, the terminology is
             # more appropriate because `sample_rate` is ambiguous. In a multi-channel scenario, each
             # channel has its own set of samples. It's unclear if `sample_rate` depends on the
@@ -143,7 +142,15 @@ def _set_audio_processing():
             },
             'split_signal.bits': bits,
             'combine_signal.bits': bits,
-            'normalize_audio.resample': 24000,
+            'normalize_audio': {
+                'bits': bits,
+                'guard': True,
+                'loudness': False,
+                'lower_hertz': None,
+                'norm': False,
+                'resample': sample_rate,
+                'upper_hertz': None,
+            }
         },
         'src.visualize': {
             'CometML.<locals>.log_audio.sample_rate': sample_rate,
@@ -299,6 +306,24 @@ def _filter_no_text(example):
     return True
 
 
+def _filter_books(example):
+    # NOTE: Prevent circular dependency
+    from src import datasets
+
+    # Filter our particular books from M-AILABS dataset due:
+    # - Inconsistent acoustic setup compared to other samples from the same speaker
+    # - Audible noise in the background
+    if (example.speaker == datasets.m_ailabs.MIDNIGHT_PASSENGER.speaker and
+            datasets.m_ailabs.MIDNIGHT_PASSENGER.title in str(example.audio_path)):
+        return False
+
+    if (example.speaker == datasets.m_ailabs.JANE_EYRE.speaker and
+            datasets.m_ailabs.JANE_EYRE.title in str(example.audio_path)):
+        return False
+
+    return True
+
+
 def _filter_elliot_miller(example):
     # NOTE: Prevent circular dependency
     from src import datasets
@@ -332,17 +357,21 @@ def get_dataset():
         itertools.chain.from_iterable([
             datasets.hilary_speech_dataset(),
             datasets.lj_speech_dataset(),
-            datasets.m_ailabs_speech_dataset(),
+            datasets.m_ailabs_en_uk_speech_dataset(),
+            datasets.m_ailabs_en_us_speech_dataset(),
             datasets.beth_speech_dataset(),
             datasets.beth_custom_speech_dataset(),
             datasets.heather_speech_dataset(),
             datasets.susan_speech_dataset(),
-            datasets.sam_speech_dataset()
+            datasets.sam_speech_dataset(),
+            datasets.frank_speech_dataset(),
+            datasets.adrienne_speech_dataset()
         ]))
     dataset = datasets.filter_(_filter_audio_path_not_found, dataset)
     dataset = datasets.filter_(_filter_no_text, dataset)
     dataset = datasets.filter_(_filter_elliot_miller, dataset)
     dataset = datasets.filter_(_filter_no_numbers, dataset)
+    dataset = datasets.filter_(_filter_books, dataset)
     logger.info('Loaded %d dataset examples.', len(dataset))
     dataset = datasets.normalize_audio_column(dataset)
     do_deterministic_shuffle(dataset, random_seed=123)

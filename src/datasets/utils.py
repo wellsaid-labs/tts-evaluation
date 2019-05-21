@@ -196,7 +196,7 @@ def _dataset_loader(
         speaker,
         url_filename=None,
         check_files=['{metadata_filename}'],
-        directory='data/',
+        directory=ROOT_PATH / 'data',
         metadata_filename='{directory}/{extracted_name}/metadata.csv',
         metadata_text_column='Content',
         metadata_audio_column='WAV Filename',

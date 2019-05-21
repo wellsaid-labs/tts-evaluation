@@ -16,7 +16,6 @@ import logging.config
 import math
 import os
 import pprint
-import random
 import subprocess
 import sys
 import time
@@ -863,6 +862,10 @@ class AccumulatedMetrics():
         Args:
             log_metric (callable(key, value)): Callable to log a metric.
         """
+        # Temporary until this issue is fixed: https://github.com/pytorch/pytorch/issues/20651
+        if len(self.metrics['step_total']) == 0 and len(self.metrics['step_count']) == 0:
+            return
+
         # Accumulate metrics between multiple processes.
         if src.distributed.is_initialized():
             metrics_total_items = sorted(self.metrics['step_total'].items(), key=lambda t: t[0])
@@ -943,12 +946,36 @@ def split_list(list_, splits):
     return lists
 
 
-def balance_list(list_, get_class=identity):
+def slice_by_cumulative_sum(list_, max_total_value, get_value=lambda x: x):
+    """ Get slice of a list such that the cumulative sum is less than or equal to ``max_total``.
+
+    Args:
+        list_ (iterable)
+        max_total_value (float): Maximum cumlative sum of the list slice.
+        get_value (callable, optional): Given a list item, determine the value of the list item.
+
+    Returns:
+        (iterable): Slice of the list.
+    """
+    return_ = []
+    total = 0
+    for item in list_:
+        total += get_value(item)
+        if total > max_total_value:
+            return return_
+        else:
+            return_.append(item)
+    return return_
+
+
+@log_runtime
+def balance_list(list_, get_class=identity, get_weight=lambda x: 1):
     """ Returns a random subsample of the list such that each class has equal representation.
 
     Args:
         list_ (iterable)
         get_class (callable, optional): Given a list item, returns a class.
+        get_weight (callable, optional): Given a list item, determine the weight of the list item.
 
     Returns:
         (iterable): Subsample of ``list_`` such that each class has the same number of samples.
@@ -958,17 +985,21 @@ def balance_list(list_, get_class=identity):
     # Learn more:
     # https://stackoverflow.com/questions/16270374/how-to-make-a-shallow-copy-of-a-list-in-python
     list_ = list_[:]
-    random.shuffle(list_)
+    src.distributed.random_shuffle(list_)
     for item in list_:
         split[get_class(item)].append(item)
-    size = min([len(l) for l in split.values()])
 
-    logger.info('Balanced distribution from\n%s\nto equal partitions of size %d.',
-                pprint.pformat({k: len(v) for k, v in split.items()}), size)
+    min_weight = min([sum([get_weight(i) for i in l]) for l in split.values()])
 
-    subsample = [l[:size] for l in split.values()]
+    logger.info('Balanced distribution from\n%s\nto equal partitions of weight %d.',
+                pprint.pformat({k: len(v) for k, v in split.items()}), min_weight)
+
+    subsample = [
+        slice_by_cumulative_sum(l, max_total_value=min_weight, get_value=get_weight)
+        for l in split.values()
+    ]
     subsample = list(itertools.chain(*subsample))  # Flatten list
-    random.shuffle(subsample)
+    src.distributed.random_shuffle(subsample)
     return subsample
 
 

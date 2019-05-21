@@ -1,6 +1,8 @@
 import logging
+import random
 
 from torch.multiprocessing import Pool
+from torchnlp.utils import shuffle as do_deterministic_shuffle
 from tqdm import tqdm
 
 import torch
@@ -173,3 +175,28 @@ def map_multiprocess(data, func, use_tqdm=True):
         torch.distributed.barrier()
 
     return processed
+
+
+def random_shuffle(list_, type_=torch.cuda):
+    """ Shuffle randomly the same way across multiple process.
+
+    Within a distributed setup each process has its own random generator and those random number
+    generators might in different positions. This module will shuffle the same way in processes
+    with out-of-sync number generators.
+
+    Args:
+        list_ (list)
+        type_ (any): Default tensor type to use.
+    """
+    if not is_initialized():
+        random.shuffle(list_)
+        return
+
+    # Broadcast a random seed
+    random_number = type_.LongTensor(1)
+    if is_master():
+        random_number[0] = random.randint(1, 2**31)
+    torch.distributed.broadcast(random_number, src=get_master_rank())
+    random_number = int(random_number)
+
+    do_deterministic_shuffle(list_, random_seed=random_number)

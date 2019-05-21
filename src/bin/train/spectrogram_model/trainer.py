@@ -84,6 +84,9 @@ class Trainer():
                  use_tqdm=False):
 
         self.train_dataset = add_spectrogram_column(train_dataset)
+        # The training and development dataset distribution of speakers is arbitrary (i.e. some
+        # audio books have more data and some have less). In order to ensure that no speaker
+        # is prioritized over another, we balance the number of examples for each speaker.
         self.dev_dataset = add_spectrogram_column(
             balance_list(dev_dataset, get_class=lambda r: r.speaker))
 
@@ -232,6 +235,9 @@ class Trainer():
             use_tqdm=self.use_tqdm)
 
         # Run epoch
+        # NOTE: Within a distributed execution, ``random.randint`` produces different values in
+        # different processes. For example, the master process generator may be ahead of the
+        # worker processes because it executes auxiliary code the workers do not.
         random_batch = random.randint(0, len(data_loader) - 1)
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):

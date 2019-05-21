@@ -15,6 +15,7 @@ Find stats on the Linda Johnson dataset here: https://keithito.com/LJ-Speech-Dat
 from collections import deque
 from collections import namedtuple
 from copy import deepcopy
+from functools import partial
 
 import logging
 import random
@@ -119,16 +120,22 @@ class Trainer():
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
         self.spectrogram_model_checkpoint_path = spectrogram_model_checkpoint_path
+        self.use_predicted = spectrogram_model_checkpoint_path is not None
 
         def preprocess_data(data):
             return add_predicted_spectrogram_column(
                 add_spectrogram_column(data), spectrogram_model_checkpoint_path, self.device)
 
+        def get_spectrogram_length(example):
+            return (example.predicted_spectrogram
+                    if self.use_predicted else example.spectrogram).shape[1]
+
         self.train_dataset = preprocess_data(train_dataset)
-        self.dev_dataset = preprocess_data(balance_list(dev_dataset, get_class=lambda r: r.speaker))
+        self.balance_dataset = partial(
+            balance_list, get_class=lambda r: r.speaker, get_weight=get_spectrogram_length)
+        self.dev_dataset = preprocess_data(self.balance_dataset(dev_dataset))
 
         self.use_tqdm = use_tqdm
-        self.use_predicted = spectrogram_model_checkpoint_path is not None
         # NOTE: Rollback ``maxlen=min_rollback + 1`` to store the current state of the model with
         # the additional rollbacks.
         self.rollback = deque([self._get_state()], maxlen=min_rollback + 1)
@@ -270,8 +277,7 @@ class Trainer():
             self.comet_ml.log_current_epoch(self.epoch)
 
         # Setup iterator and metrics
-        dataset = balance_list(
-            self.train_dataset, get_class=lambda r: r.speaker) if train else self.dev_dataset
+        dataset = self.balance_dataset(self.train_dataset) if train else self.dev_dataset
         data_loader = DataLoader(
             data=dataset,
             batch_size=self.train_batch_size if train else self.dev_batch_size,

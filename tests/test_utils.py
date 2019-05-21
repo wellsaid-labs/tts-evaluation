@@ -41,8 +41,16 @@ from src.utils import OnDiskTensor
 from src.utils import parse_hparam_args
 from src.utils import ROOT_PATH
 from src.utils import set_basic_logging_config
+from src.utils import slice_by_cumulative_sum
 from src.utils import sort_together
 from src.utils import split_list
+
+
+def test_slice_by_cumulative_sum():
+    assert [1, 2, 3] == slice_by_cumulative_sum([1, 2, 3, 4], max_total_value=6)
+    assert [(1, 1), (1, 2)] == slice_by_cumulative_sum([(1, 1), (1, 2), (1, 3), (1, 4)],
+                                                       max_total_value=4,
+                                                       get_value=lambda x: x[1])
 
 
 def test_assert_enough_disk_space__smoke_test():

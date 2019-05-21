@@ -98,6 +98,7 @@ def test_normalize_audio(mock_os_system):
     audio_path = Path('tests/_test_data/lj_speech.wav')
     normalized_audio_path = normalize_audio(
         audio_path,
+        bits=16,
         resample=24000,
         norm=True,
         guard=True,
@@ -112,6 +113,8 @@ def test_normalize_audio(mock_os_system):
     assert 'guard' in normalized_audio_path.stem
     assert 'sinc' in normalized_audio_path.stem
     assert '20,12000' in normalized_audio_path.stem
+    assert 'bits' in normalized_audio_path.stem
+    assert '16' in normalized_audio_path.stem
 
 
 @mock.patch('src.audio.os.system')
@@ -121,6 +124,7 @@ def test_normalize_audio__not_normalized(mock_os_system):
     audio_path = Path('tests/_test_data/lj_speech.wav')
     normalized_audio_path = normalize_audio(
         audio_path,
+        bits=None,
         resample=None,
         norm=False,
         guard=False,

@@ -16,17 +16,19 @@ from src.datasets.constants import Gender
 from src.datasets.constants import Speaker
 from src.datasets.constants import TextSpeechRow
 from src.datasets.lj_speech import lj_speech_dataset
-from src.datasets.m_ailabs import m_ailabs_speech_dataset
+from src.datasets.m_ailabs import m_ailabs_en_uk_speech_dataset
+from src.datasets.m_ailabs import m_ailabs_en_us_speech_dataset
 from src.datasets.utils import _dataset_loader
 from src.datasets.utils import add_predicted_spectrogram_column
 from src.datasets.utils import add_spectrogram_column
 from src.datasets.utils import filter_
 from src.datasets.utils import normalize_audio_column
 
-
 # TODO: Consider not using the actors realnames in the codebase in an effort to protect their
 # privacy.
 # TODO: Consider not using public Google Drive links for safety reasons.
+
+
 def hilary_speech_dataset(
         extracted_name='Hilary Noriega',
         url='https://drive.google.com/uc?export=download&id=18nU0L0gFDVU65ViVs9s1yh1aXEPH1kEI',
@@ -81,26 +83,28 @@ def susan_speech_dataset(
     return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
 
 
-def adrienne_speech_dataset(extracted_name='Adrienne Walker-Heller',
-                            url='https://drive.google.com/uc?export=download&id=',
-                            url_filename='Adrienne Walker-Heller.tar.gz',
-                            speaker=Speaker('Adrienne Walker-Heller', Gender.FEMALE),
-                            **kwargs):
+def adrienne_speech_dataset(
+        extracted_name='Adrienne Walker-Heller',
+        url='https://drive.google.com/uc?export=download&id=1hEifbEEn38kWZ6J38L4FmefK_Smv0fCT',
+        url_filename='Adrienne Walker-Heller.tar.gz',
+        speaker=Speaker('Adrienne Walker-Heller', Gender.FEMALE),
+        **kwargs):
     return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
 
 
-def frank_speech_dataset(extracted_name='Frank Bonacquisti',
-                         url='https://drive.google.com/uc?export=download&id=',
-                         url_filename='Frank Bonacquisti.tar.gz',
-                         speaker=Speaker('Frank Bonacquisti', Gender.FEMALE),
-                         **kwargs):
+def frank_speech_dataset(
+        extracted_name='Frank Bonacquisti',
+        url='https://drive.google.com/uc?export=download&id=1qauV_liShOXT3suFjTfr4-sFwJRBBK7N',
+        url_filename='Frank Bonacquisti.tar.gz',
+        speaker=Speaker('Frank Bonacquisti', Gender.FEMALE),
+        **kwargs):
     return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
 
 
 __all__ = [
-    'Speaker', 'Gender', 'lj_speech_dataset', 'm_ailabs_speech_dataset', 'hilary_speech_dataset',
-    'heather_speech_dataset', 'beth_speech_dataset', 'beth_custom_speech_dataset',
-    'sam_speech_dataset', 'susan_speech_dataset', 'TextSpeechRow',
-    'add_predicted_spectrogram_column', 'add_spectrogram_column', 'filter_',
-    'normalize_audio_column'
+    'Speaker', 'Gender', 'lj_speech_dataset', 'm_ailabs_en_us_speech_dataset',
+    'm_ailabs_en_uk_speech_dataset', 'hilary_speech_dataset', 'heather_speech_dataset',
+    'beth_speech_dataset', 'beth_custom_speech_dataset', 'sam_speech_dataset',
+    'susan_speech_dataset', 'TextSpeechRow', 'add_predicted_spectrogram_column',
+    'add_spectrogram_column', 'filter_', 'normalize_audio_column'
 ]
