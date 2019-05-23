@@ -4,6 +4,7 @@ from unittest import mock
 
 import logging
 import os
+import random
 import sys
 
 from torch import nn
@@ -32,6 +33,7 @@ from src.utils import duplicate_stream
 from src.utils import evaluate
 from src.utils import flatten_parameters
 from src.utils import get_average_norm
+from src.utils import get_random_generator_state
 from src.utils import get_tensors_dim_length
 from src.utils import get_total_parameters
 from src.utils import get_weighted_stdev
@@ -41,6 +43,7 @@ from src.utils import OnDiskTensor
 from src.utils import parse_hparam_args
 from src.utils import ROOT_PATH
 from src.utils import set_basic_logging_config
+from src.utils import set_random_generator_state
 from src.utils import slice_by_cumulative_sum
 from src.utils import sort_together
 from src.utils import split_list
@@ -306,7 +309,8 @@ def test_parse_hparam_args():
 def test_load_most_recent_checkpoint():
     checkpoint = Checkpoint.most_recent('tests/_test_data/**/*.pt')
     assert isinstance(checkpoint, Checkpoint)
-    assert 'tests/_test_data/step_10.pt' in str(checkpoint.path)
+    assert 'tests/_test_data/step_100.pt' in str(checkpoint.path)
+    assert 166257493 == random.randint(1, 2**31)  # Checkpoint set random generator state
 
 
 def test_load_most_recent_checkpoint_none():
@@ -319,7 +323,7 @@ def test_load_save_checkpoint():
     optimizer = Optimizer(
         torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
     checkpoint = Checkpoint(
-        directory='tests/_test_data/', model=model, step=100, optimizer=optimizer)
+        directory='tests/_test_data/', model=model, step=1000, optimizer=optimizer)
     filename = checkpoint.save()
     assert filename.is_file()
 
@@ -438,3 +442,20 @@ def test_batch_predict_spectrograms__aligned(mock_load, mock_save):
         aligned=True)
     assert len(predictions) == 1
     assert torch.is_tensor(predictions[0])
+
+
+def test_random_generator_state():
+    # TODO: Test `torch.cuda` random as well.
+    state = get_random_generator_state()
+    randint = random.randint(1, 2**31)
+    numpy_randint = numpy.random.randint(1, 2**31)
+    torch_randint = int(torch.randint(1, 2**31, (1,)))
+
+    set_random_generator_state(state)
+    post_randint = random.randint(1, 2**31)
+    post_numpy_randint = numpy.random.randint(1, 2**31)
+    post_torch_randint = int(torch.randint(1, 2**31, (1,)))
+
+    assert randint == post_randint
+    assert numpy_randint == post_numpy_randint
+    assert torch_randint == post_torch_randint

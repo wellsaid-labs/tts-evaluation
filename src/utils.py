@@ -1,4 +1,5 @@
 from collections import defaultdict
+from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import lru_cache
@@ -16,6 +17,7 @@ import logging.config
 import math
 import os
 import pprint
+import random
 import subprocess
 import sys
 import time
@@ -457,6 +459,7 @@ class Checkpoint():
             checkpoint (Checkpoint): Loaded checkpoint.
         """
         instance = load(str(path), device=device)
+        set_random_generator_state(instance.random_generator_state)
         flatten_parameters(instance.model)
         # Backwards compatibility for instances without paths.
         instance.path = instance.path if hasattr(instance, 'path') else path
@@ -492,8 +495,37 @@ class Checkpoint():
 
     def save(self):
         """ Save a checkpoint. """
+        self.random_generator_state = get_random_generator_state()
         save(self.path, self)
         return self.path
+
+
+RandomGeneratorState = namedtuple('RandomGeneratorState',
+                                  ['random', 'torch', 'numpy', 'torch_cuda'])
+
+
+def get_random_generator_state():
+    """ Get the global random generator state.
+
+    Returns:
+        RandomGeneratorState
+    """
+    return RandomGeneratorState(
+        random.getstate(), torch.random.get_rng_state(), np.random.get_state(),
+        torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None)
+
+
+def set_random_generator_state(state):
+    """ Set the global random generator state.
+
+    Args:
+        state (RandomGeneratorState)
+    """
+    random.setstate(state.random)
+    torch.random.set_rng_state(state.torch)
+    np.random.set_state(state.numpy)
+    if torch.cuda.is_available() and state.torch_cuda is not None:
+        torch.cuda.set_rng_state_all(state.torch_cuda)
 
 
 def maybe_get_model_devices(model):
