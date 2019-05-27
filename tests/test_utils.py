@@ -419,6 +419,35 @@ def test_batch_predict_spectrograms(mock_load, mock_save):
 
 @mock.patch('src.utils.np.save')
 @mock.patch('src.utils.np.load')
+def test_batch_predict_spectrograms_sorting(mock_load, mock_save):
+    speaker = Speaker('Test Speaker', Gender.FEMALE)
+    input_encoder = InputEncoder(['this is a test'], [speaker])
+    frame_channels = 128
+    model = SpectrogramModel(
+        input_encoder.text_encoder.vocab_size,
+        input_encoder.speaker_encoder.vocab_size,
+        frame_channels=frame_channels)
+    data = [TextSpeechRow(text='this is a test', audio_path=None, speaker=speaker)] * 20
+    filenames = ['/tmp/tensor_%d.npy' % d for d in range(20)]
+    mock_save.return_value = None
+    mock_load.return_value = numpy.array([1])
+
+    predictions = batch_predict_spectrograms(
+        data=data,
+        input_encoder=input_encoder,
+        model=model,
+        batch_size=1,
+        device=torch.device('cpu'),
+        filenames=filenames,
+        aligned=False)
+    assert len(filenames) == 20
+    # Ensure predictions are sorted in the right order
+    for prediction, filename in zip(predictions, filenames):
+        assert filename in str(prediction.path)
+
+
+@mock.patch('src.utils.np.save')
+@mock.patch('src.utils.np.load')
 def test_batch_predict_spectrograms__aligned(mock_load, mock_save):
     speaker = Speaker('Test Speaker', Gender.FEMALE)
     input_encoder = InputEncoder(['this is a test'], [speaker])

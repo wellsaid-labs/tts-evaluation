@@ -15,7 +15,7 @@ TextSpeechRow = namedtuple('TextSpeechRow', [
     'text', 'speaker', 'audio_path', 'spectrogram', 'spectrogram_audio', 'predicted_spectrogram',
     'metadata'
 ])
-TextSpeechRow.__new__.__defaults__ = (None, None, None, None)
+TextSpeechRow.__new__.__defaults__ = (None, None, None, {})
 
 
 class Gender(Enum):

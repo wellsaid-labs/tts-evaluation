@@ -133,7 +133,9 @@ class Trainer():
         self.train_dataset = preprocess_data(train_dataset)
         self.balance_dataset = partial(
             balance_list, get_class=lambda r: r.speaker, get_weight=get_spectrogram_length)
-        self.dev_dataset = preprocess_data(self.balance_dataset(dev_dataset))
+        # NOTE: ``balance_dataset`` requires the data to be preprocessed because it uses
+        # ``get_spectrogram_length``
+        self.dev_dataset = self.balance_dataset(preprocess_data(dev_dataset))
 
         self.use_tqdm = use_tqdm
         # NOTE: Rollback ``maxlen=min_rollback + 1`` to store the current state of the model with

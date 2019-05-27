@@ -459,7 +459,10 @@ class Checkpoint():
             checkpoint (Checkpoint): Loaded checkpoint.
         """
         instance = load(str(path), device=device)
-        set_random_generator_state(instance.random_generator_state)
+        if hasattr(instance, 'random_generator_state'):
+            set_random_generator_state(instance.random_generator_state)
+        else:
+            logger.warning('Old Checkpoint: unable to load checkpoint random generator state')
         flatten_parameters(instance.model)
         # Backwards compatibility for instances without paths.
         instance.path = instance.path if hasattr(instance, 'path') else path
@@ -1021,10 +1024,11 @@ def balance_list(list_, get_class=identity, get_weight=lambda x: 1):
     for item in list_:
         split[get_class(item)].append(item)
 
-    min_weight = min([sum([get_weight(i) for i in l]) for l in split.values()])
+    partitions = {k: sum([get_weight(i) for i in v]) for k, v in split.items()}
+    min_weight = min(partitions.values())
 
     logger.info('Balanced distribution from\n%s\nto equal partitions of weight %d.',
-                pprint.pformat({k: len(v) for k, v in split.items()}), min_weight)
+                pprint.pformat(partitions), min_weight)
 
     subsample = [
         slice_by_cumulative_sum(l, max_total_value=min_weight, get_value=get_weight)
@@ -1080,8 +1084,12 @@ def batch_predict_spectrograms(data,
     Returns:
         (iterable of torch.Tensor or OnDiskTensor)
     """
+    data = [d._replace(metadata={'index': i}) for i, d in enumerate(data)]
     if filenames is not None:
         assert len(filenames) == len(data)
+        iterator = zip(data, filenames)
+        data = [d._replace(metadata=dict({'filename': f}, **d.metadata)) for d, f in iterator]
+    return_ = [None] * len(data)
 
     # Sort by sequence length to reduce padding in batches.
     if all([r.spectrogram is not None for r in data]):
@@ -1100,7 +1108,6 @@ def batch_predict_spectrograms(data,
         collate_fn=partial(collate_tensors, stack_tensors=partial(stack_and_pad_tensors, dim=1)),
         pin_memory=True,
         use_tqdm=use_tqdm)
-    return_ = []
     with evaluate(model, device=device):
         metrics = AccumulatedMetrics()
         for batch in loader:
@@ -1129,10 +1136,13 @@ def batch_predict_spectrograms(data,
             spectrogram_lengths = spectrogram_lengths.squeeze(0).tolist()
             predictions = predictions.split(1, dim=1)
             predictions = [p[:l, 0] for p, l in zip(predictions, spectrogram_lengths)]
-            if filenames is None:
-                return_ += predictions
-            else:
-                return_ += [OnDiskTensor.from_tensor(filenames.pop(0), p) for p in predictions]
+            for i, prediction in enumerate(predictions):
+                return_index = batch.metadata['index'][i]
+                if filenames is None:
+                    return_[return_index] = prediction
+                else:
+                    filename = batch.metadata['filename'][i]
+                    return_[return_index] = OnDiskTensor.from_tensor(filename, prediction)
 
         metrics.log_epoch_end(lambda k, v: logger.info('Prediction metric (%s): %s', k, v))
 

@@ -96,7 +96,7 @@ def frank_speech_dataset(
         extracted_name='Frank Bonacquisti',
         url='https://drive.google.com/uc?export=download&id=1qauV_liShOXT3suFjTfr4-sFwJRBBK7N',
         url_filename='Frank Bonacquisti.tar.gz',
-        speaker=Speaker('Frank Bonacquisti', Gender.FEMALE),
+        speaker=Speaker('Frank Bonacquisti', Gender.MALE),
         **kwargs):
     return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
 
