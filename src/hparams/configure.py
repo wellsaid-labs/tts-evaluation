@@ -476,6 +476,11 @@ def set_hparams():
                         # The WaveRNN models are trained on sequences of 960 audio samples
                         'spectrogram_slice_size': int(900 / frame_hop),
                         # TODO: This should depend on an upsample property.
+                        # TODO: It may be more appropriate to pad by 2 spectrogram frames instead.
+                        # Given that each frame aligns with 300 samples and each frame is created
+                        # from 1200 samples, then there is 900 samples of context for each frame
+                        # outside of the aligned samples. Then it makes sense to have 450 samples
+                        # of padding or 2 spectrogram frames.
                         'spectrogram_slice_pad': 5,
                     },
                 }
