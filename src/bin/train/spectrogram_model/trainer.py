@@ -88,7 +88,7 @@ class Trainer():
         # audio books have more data and some have less). In order to ensure that no speaker
         # is prioritized over another, we balance the number of examples for each speaker.
         self.dev_dataset = add_spectrogram_column(
-            balance_list(dev_dataset, get_class=lambda r: r.speaker))
+            balance_list(dev_dataset, get_class=lambda r: r.speaker, random_seed=123))
 
         self.input_encoder = InputEncoder(
             [r.text for r in self.train_dataset],

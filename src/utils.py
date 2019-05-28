@@ -2,7 +2,6 @@ from collections import defaultdict
 from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from functools import lru_cache
 from functools import partial
 from functools import wraps
 from math import isclose
@@ -445,7 +444,7 @@ class Checkpoint():
             setattr(self, key, value)
 
     @classmethod
-    def from_path(class_, path, device=torch.device('cpu')):
+    def from_path(class_, path, device=torch.device('cpu'), load_random_state=True):
         """ Load a checkpoint from path.
 
         NOTE: Given ``path`` is different than the loaded instance, the original path is not
@@ -454,6 +453,7 @@ class Checkpoint():
         Args:
             path (Path or str): Path to a checkpoint to load.
             device (torch.device, optional): Device to load checkpoint onto.
+            load_random_state (bool, optional): Load the random state with the checkpoint.
 
         Returns:
             checkpoint (Checkpoint): Loaded checkpoint.
@@ -463,13 +463,14 @@ class Checkpoint():
 
         instance = load(str(path), device=device)
         if hasattr(instance, 'random_generator_state'):
-            set_random_generator_state(instance.random_generator_state)
+            if load_random_state:
+                set_random_generator_state(instance.random_generator_state)
         else:
             logger.warning('Old Checkpoint: unable to load checkpoint random generator state')
 
         if (hasattr(instance, 'input_encoder') and Speaker(
                 'Frank Bonacquisti', Gender.FEMALE) in instance.input_encoder.speaker_encoder.stoi):
-            logger.warning('Old Checkpoint: Frank B has the wrong gender, fixing...')
+            logger.warning('Old Checkpoint: detected and fixed Frank\'s gender')
 
             old_speaker = Speaker('Frank Bonacquisti', Gender.FEMALE)
             new_speaker = Speaker('Frank Bonacquisti', Gender.MALE)
@@ -528,7 +529,7 @@ RandomGeneratorState = namedtuple('RandomGeneratorState',
 
 
 def get_random_generator_state():
-    """ Get the global random generator state.
+    """ Get the `torch`, `numpy` and `random` random generator state.
 
     Returns:
         RandomGeneratorState
@@ -539,11 +540,12 @@ def get_random_generator_state():
 
 
 def set_random_generator_state(state):
-    """ Set the global random generator state.
+    """ Set the `torch`, `numpy` and `random` random generator state.
 
     Args:
         state (RandomGeneratorState)
     """
+    logger.info('Setting the random state for `torch`, `numpy` and `random`.')
     random.setstate(state.random)
     torch.random.set_rng_state(state.torch)
     np.random.set_state(state.numpy)
@@ -691,6 +693,8 @@ class OnDiskTensor():
 
         self.path = Path(path)
         self.allow_pickle = allow_pickle
+        self._shape = None
+        self._shape_path = None
 
     def __hash__(self):
         return hash(self.path)
@@ -708,9 +712,16 @@ class OnDiskTensor():
         if not self.exists():
             raise RuntimeError('Tensor not found on disk.')
 
+        if self.path == self._shape_path:
+            return self._shape
+
         with open(str(self.path), 'rb') as file_:
             version = np.lib.format.read_magic(file_)
             shape, _, _ = np.lib.format._read_array_header(file_, version)
+
+        self._shape = shape
+        self._shape_path = self.path
+
         return shape
 
     def to_tensor(self):
@@ -804,7 +815,6 @@ def log_runtime(function):
     return decorator
 
 
-@lru_cache(maxsize=None)
 def _get_tensor_dim_length(tensor, dim):
     """
     Args:
@@ -1024,13 +1034,15 @@ def slice_by_cumulative_sum(list_, max_total_value, get_value=lambda x: x):
 
 
 @log_runtime
-def balance_list(list_, get_class=identity, get_weight=lambda x: 1):
+def balance_list(list_, get_class=identity, get_weight=lambda x: 1, random_seed=None):
     """ Returns a random subsample of the list such that each class has equal representation.
 
     Args:
         list_ (iterable)
         get_class (callable, optional): Given a list item, returns a class.
         get_weight (callable, optional): Given a list item, determine the weight of the list item.
+        random_seed (int, optiona): If provided the shuffle is deterministic based on the seed
+            instead of the global generator state.
 
     Returns:
         (iterable): Subsample of ``list_`` such that each class has the same number of samples.
@@ -1040,7 +1052,7 @@ def balance_list(list_, get_class=identity, get_weight=lambda x: 1):
     # Learn more:
     # https://stackoverflow.com/questions/16270374/how-to-make-a-shallow-copy-of-a-list-in-python
     list_ = list_[:]
-    src.distributed.random_shuffle(list_)
+    src.distributed.random_shuffle(list_, random_seed=random_seed)
     for item in list_:
         split[get_class(item)].append(item)
 
@@ -1055,7 +1067,7 @@ def balance_list(list_, get_class=identity, get_weight=lambda x: 1):
         for l in split.values()
     ]
     subsample = list(itertools.chain(*subsample))  # Flatten list
-    src.distributed.random_shuffle(subsample)
+    src.distributed.random_shuffle(subsample, random_seed=random_seed)
     return subsample
 
 

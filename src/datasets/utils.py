@@ -52,7 +52,7 @@ def add_predicted_spectrogram_column(data,
         (iterable of TextSpeechRow)
     """
     logger.info('Adding a predicted spectrogram column to dataset.')
-    checkpoint = Checkpoint.from_path(checkpoint_path, device=device)
+    checkpoint = Checkpoint.from_path(checkpoint_path, device=device, load_random_state=False)
 
     if not all([r.spectrogram is not None for r in data]):
         raise RuntimeError("Spectrogram column of ``TextSpeechRow`` must not be ``None``.")

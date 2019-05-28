@@ -177,7 +177,7 @@ def map_multiprocess(data, func, use_tqdm=True):
     return processed
 
 
-def random_shuffle(list_, type_=torch.cuda):
+def random_shuffle(list_, type_=torch.cuda, random_seed=None):
     """ Shuffle randomly the same way across multiple process.
 
     Within a distributed setup each process has its own random generator and those random number
@@ -186,17 +186,23 @@ def random_shuffle(list_, type_=torch.cuda):
 
     Args:
         list_ (list)
-        type_ (any): Default tensor type to use.
+        type_ (any, optional): Default tensor type to use.
+        random_seed (int, optiona): If provided the shuffle is deterministic based on the seed
+            instead of the global generator state.
     """
+    if random_seed is not None:
+        do_deterministic_shuffle(list_, random_seed=random_seed)
+        return
+
     if not is_initialized():
         random.shuffle(list_)
         return
 
-    # Broadcast a random seed
-    random_number = type_.LongTensor(1)
+    # Broadcast a random seed from master
+    random_seed = type_.LongTensor(1)
     if is_master():
-        random_number[0] = random.randint(1, 2**31)
-    torch.distributed.broadcast(random_number, src=get_master_rank())
-    random_number = int(random_number)
+        random_seed[0] = random.randint(1, 2**31)
+    torch.distributed.broadcast(random_seed, src=get_master_rank())
+    random_seed = int(random_seed)
 
-    do_deterministic_shuffle(list_, random_seed=random_number)
+    do_deterministic_shuffle(list_, random_seed=random_seed)

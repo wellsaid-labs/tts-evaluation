@@ -147,6 +147,8 @@ def main(run_name,
             kwargs['comet_ml_project_name'] = comet_ml_project_name
         if spectrogram_model_checkpoint_path is not None:
             kwargs['spectrogram_model_checkpoint_path'] = spectrogram_model_checkpoint_path
+        if checkpoint is not None:
+            kwargs['checkpoint'] = checkpoint
         trainer = (Trainer.from_checkpoint if checkpoint else Trainer)(**kwargs)
 
         trainer.comet_ml.set_name(run_name)

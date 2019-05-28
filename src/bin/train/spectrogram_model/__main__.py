@@ -161,7 +161,7 @@ def main(run_name,
         kwargs = {'device': device, 'train_dataset': train, 'dev_dataset': dev}
         if comet_ml_project_name is not None:
             kwargs['comet_ml_project_name'] = comet_ml_project_name
-        if checkpoint:
+        if checkpoint is not None:
             kwargs['checkpoint'] = checkpoint
         trainer = (Trainer.from_checkpoint if checkpoint else Trainer)(**kwargs)
 

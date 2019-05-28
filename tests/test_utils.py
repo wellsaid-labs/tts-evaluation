@@ -104,6 +104,8 @@ def test_on_disk_tensor():
     original = torch.rand(4, 10)
     tensor = OnDiskTensor.from_tensor('tests/_test_data/tensor.npy', original)
     assert tensor.shape == original.shape
+    assert tensor._shape is not None
+    assert tensor.shape == original.shape  # Smoke test caching
     assert torch.equal(tensor.to_tensor(), original)
     assert tensor.exists()
     tensor.unlink()
@@ -367,6 +369,19 @@ def test_balance_list():
     balanced = balance_list(['a', 'a', 'b', 'b', 'c'])
     assert len(balanced) == 3
     assert len(set(balanced)) == 3
+
+
+def test_balance_list_determinism():
+    list_ = [(i, 'a' if i % 2 == 0 else 'b') for i in range(99)]
+    balanced = balance_list(list_, get_class=lambda i: i[1], random_seed=123)
+    assert len(balanced) == 98
+    assert balanced[0][0] == 57
+
+
+def test_balance_list_get_weight():
+    list_ = [(1, 'a'), (1, 'a'), (2, 'b')]
+    balanced = balance_list(list_, get_class=lambda i: i[1], get_weight=lambda i: i[0])
+    assert len(balanced) == 3
 
 
 def test_split_list():

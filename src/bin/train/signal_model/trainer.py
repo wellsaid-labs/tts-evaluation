@@ -39,6 +39,7 @@ from src.utils import balance_list
 from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import evaluate
+from src.utils import get_tensors_dim_length
 from src.utils import get_total_parameters
 from src.utils import log_runtime
 from src.utils import OnDiskTensor
@@ -122,20 +123,12 @@ class Trainer():
         self.spectrogram_model_checkpoint_path = spectrogram_model_checkpoint_path
         self.use_predicted = spectrogram_model_checkpoint_path is not None
 
-        def preprocess_data(data):
-            return add_predicted_spectrogram_column(
-                add_spectrogram_column(data), spectrogram_model_checkpoint_path, self.device)
-
-        def get_spectrogram_length(example):
-            return (example.predicted_spectrogram
-                    if self.use_predicted else example.spectrogram).shape[1]
-
-        self.train_dataset = preprocess_data(train_dataset)
+        self.train_dataset = self._preprocess_data(train_dataset)
         self.balance_dataset = partial(
-            balance_list, get_class=lambda r: r.speaker, get_weight=get_spectrogram_length)
+            balance_list, get_class=lambda r: r.speaker, get_weight=self._get_spectrogram_length)
         # NOTE: ``balance_dataset`` requires the data to be preprocessed because it uses
         # ``get_spectrogram_length``
-        self.dev_dataset = self.balance_dataset(preprocess_data(dev_dataset))
+        self.dev_dataset = self.balance_dataset(self._preprocess_data(dev_dataset), random_seed=123)
 
         self.use_tqdm = use_tqdm
         # NOTE: Rollback ``maxlen=min_rollback + 1`` to store the current state of the model with
@@ -156,6 +149,7 @@ class Trainer():
         })
         self.comet_ml.log_other('spectrogram_model_checkpoint_path',
                                 spectrogram_model_checkpoint_path)
+        self.log_input_dev_data_hash()
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step: %d', self.step)
@@ -163,6 +157,54 @@ class Trainer():
         logger.info('Train Batch Size: %d', train_batch_size)
         logger.info('Dev Batch Size: %d', dev_batch_size)
         logger.info('Model:\n%s' % self.model)
+
+    def _get_spectrogram_length(self, example):
+        """ Get the length of the spectrogram used by trainer.
+
+        Args:
+            example (TextSpeechRow)
+
+        Returns:
+            int: Length of the spectrogram used for training.
+        """
+        return (example.predicted_spectrogram
+                if self.use_predicted else example.spectrogram).shape[0]
+
+    def _preprocess_data(self, data):
+        """ Preprocess text speech examples.
+
+        Args:
+            data (iterable of TextSpeechRow)
+
+        Returns:
+            data (iterable of TextSpeechRow)
+        """
+        data = add_spectrogram_column(data)
+        if self.use_predicted:
+            data = add_predicted_spectrogram_column(data, self.spectrogram_model_checkpoint_path,
+                                                    self.device)
+            # Cache ``predicted_spectrogram`` shape for `OnDiskTensor`
+            get_tensors_dim_length([r.predicted_spectrogram for r in data])
+        return data
+
+    def log_input_dev_data_hash(self, max_examples=10):
+        """ Log to comet a basic hash of the predicted spectrogram data.
+
+        The predicted spectrogram data varies with the random state and checkpoint; therefore, the
+        hash helps differentiate between different datasets.
+
+        Args:
+            max_examples (int): The max number of examples to consider for computing the hash.
+        """
+        sum = torch.tensor(0.0)
+        sample = self.dev_dataset[:min(len(self.dev_dataset), max_examples)]
+        for example in sample:
+            spectrogram = (
+                example.predicted_spectrogram if self.use_predicted else example.spectrogram)
+            spectrogram = spectrogram.to_tensor() if isinstance(spectrogram,
+                                                                OnDiskTensor) else spectrogram
+            sum += spectrogram.sum()
+        self.comet_ml.log_other('input_dev_data_hash', (sum / len(sample)).item())
 
     @classmethod
     def from_checkpoint(class_, checkpoint, **kwargs):

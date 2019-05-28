@@ -377,19 +377,20 @@ def _merge_args(parameters, args, kwargs, default_kwargs, print_name='', is_firs
             if parameters[i].name in default_kwargs:
                 value = default_kwargs[parameters[i].name]
                 if is_first_run and value != arg:
-                    logger.warning(
-                        ('@configurable: Overwriting configured argument ``%s=%s`` in module %s '
-                         'with %s. This warning will not be repeated.') % (parameters[i].name,
-                                                                           value, print_name, arg))
+                    logger.warning((
+                        '@configurable: Overwriting configured argument ``%s=%s`` in module ``%s`` '
+                        'with ``%s``. '
+                        'This warning will not be repeated.') % (parameters[i].name, value,
+                                                                 print_name, arg))
                 del default_kwargs[parameters[i].name]
 
     if is_first_run:
         for key, value in kwargs.items():
             if key in default_kwargs and value != default_kwargs[key]:
                 logger.warning(
-                    ('@configurable: Overwriting configured argument ``%s=%s`` in module %s '
-                     'with %s. This warning will not be repeated.') % (key, default_kwargs[key],
-                                                                       print_name, value))
+                    ('@configurable: Overwriting configured argument ``%s=%s`` in module ``%s`` '
+                     'with ``%s``. This warning will not be repeated.') % (key, default_kwargs[key],
+                                                                           print_name, value))
 
     default_kwargs.update(kwargs)
 
