@@ -77,6 +77,8 @@ def add_predicted_spectrogram_column(data,
 
         filenames = [to_filename(example) for example in data]
         if all([f.is_file() for f in filenames]):
+            # TODO: Consider logging metrics on the predicted spectrogram despite the
+            # predictions being cached.
             tensors = [OnDiskTensor(f) for f in filenames]
             return [e._replace(predicted_spectrogram=t) for e, t in zip(data, tensors)]
 
