@@ -309,7 +309,7 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
         if self.step_counter + 1 < self.min_steps:
             return False
 
-        if not np.isfinite(value):
+        if not np.isfinite(value):  # NOTE: Handles inf and NaN values.
             return True
 
         if self.type == self.TYPE_HIGH and value - self.last_average > self.max_deviation:
@@ -379,7 +379,7 @@ def save(path, data):
         data (any): Data to save into file.
     """
     torch.save(data, str(path))
-    logger.info('Saved: %s' % (path,))
+    logger.info('Saved: %s', str(path))
 
 
 def parse_hparam_args(hparam_args):

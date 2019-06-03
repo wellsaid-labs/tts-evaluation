@@ -17,6 +17,7 @@ from collections import namedtuple
 from copy import deepcopy
 from functools import partial
 
+import atexit
 import logging
 import random
 
@@ -55,11 +56,14 @@ _PartialTrainerState = namedtuple('_PartialTrainerState',
 class Trainer():
     """ Trainer defines a simple interface for training the ``SignalModel``.
 
+    TODO: Ensure optional and none-optional parameters are consistent.
+
     Args:
         device (torch.device): Device to train on.
         train_dataset (iterable of TextSpeechRow): Train dataset used to optimize the model.
         dev_dataset (iterable of TextSpeechRow): Dev dataset used to evaluate the model.
         comet_ml_project_name (str): Comet project name, used for grouping experiments.
+        checkpoints_directory (str or Path): Directory to store checkpoints in.
         train_batch_size (int): Batch size used for training.
         dev_batch_size (int): Batch size used for evaluation.
         criterion (callable): Loss function used to score signal predictions.
@@ -89,6 +93,7 @@ class Trainer():
                  train_dataset,
                  dev_dataset,
                  comet_ml_project_name,
+                 checkpoints_directory,
                  train_batch_size=ConfiguredArg(),
                  dev_batch_size=ConfiguredArg(),
                  criterion=ConfiguredArg(),
@@ -121,6 +126,7 @@ class Trainer():
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
         self.spectrogram_model_checkpoint_path = spectrogram_model_checkpoint_path
+        self.checkpoints_directory = checkpoints_directory
         self.use_predicted = spectrogram_model_checkpoint_path is not None
 
         self.train_dataset = self._preprocess_data(train_dataset)
@@ -157,6 +163,8 @@ class Trainer():
         logger.info('Train Batch Size: %d', train_batch_size)
         logger.info('Dev Batch Size: %d', dev_batch_size)
         logger.info('Model:\n%s' % self.model)
+
+        atexit.register(self.save_checkpoint)
 
     def _get_spectrogram_length(self, example):
         """ Get the length of the spectrogram used by trainer.
@@ -231,17 +239,14 @@ class Trainer():
         checkpoint_kwargs.update(kwargs)
         return class_(**checkpoint_kwargs)
 
-    def save_checkpoint(self, directory):
+    def save_checkpoint(self):
         """ Save a checkpoint.
-
-        Args:
-            directory (str): Directory to store checkpoint
 
         Returns:
             (str): Path the checkpoint was saved to.
         """
         return Checkpoint(
-            directory=directory,
+            directory=self.checkpoints_directory,
             step=self.step,
             model=self.model,
             comet_ml_project_name=self.comet_ml.project_name,

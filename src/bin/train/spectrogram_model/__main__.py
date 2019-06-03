@@ -75,7 +75,6 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
 
 
 def _train(trainer,
-           context,
            evaluate_aligned_every_n_epochs=1,
            evaluate_inferred_every_n_epochs=5,
            save_checkpoint_every_n_epochs=5):
@@ -83,7 +82,6 @@ def _train(trainer,
 
     Args:
         trainer (src.bin.train.spectrogram_model.trainer.Trainer)
-        context (src.training_context_manager.TrainingContextManager)
         evaluate_aligned_every_n_epochs (int, optional)
         evaluate_inferred_every_n_epochs (int, optional)
         save_checkpoint_every_n_epochs (int, optional)
@@ -102,7 +100,7 @@ def _train(trainer,
 
         if ((trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run) and
                 src.distributed.is_master()):
-            trainer.save_checkpoint(context.checkpoints_directory)
+            trainer.save_checkpoint()
 
         is_trial_run = False
         logger.info('-' * 100)
@@ -158,7 +156,12 @@ def main(run_name,
         train, dev = _get_dataset()
 
         # Create trainer
-        kwargs = {'device': device, 'train_dataset': train, 'dev_dataset': dev}
+        kwargs = {
+            'device': device,
+            'train_dataset': train,
+            'dev_dataset': dev,
+            'checkpoints_directory': context.checkpoints_directory
+        }
         if comet_ml_project_name is not None:
             kwargs['comet_ml_project_name'] = comet_ml_project_name
         if checkpoint is not None:
@@ -171,7 +174,7 @@ def main(run_name,
         trainer.comet_ml.add_tags(run_tags)
         trainer.comet_ml.log_other('directory', context.root_directory)
 
-        _train(trainer, context)
+        _train(trainer)
 
 
 if __name__ == '__main__':  # pragma: no cover

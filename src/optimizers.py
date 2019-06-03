@@ -59,6 +59,8 @@ class Optimizer(object):
             if comet_ml is not None:
                 comet_ml.log_metric('step/grad_norm/two', parameter_norm)
                 comet_ml.log_metric('step/grad_norm/infinity', parameter_norm_inf)
+                for i, param_group in enumerate(self.optimizer.param_groups):
+                    comet_ml.log_metric('step/parameters_%d/lr' % i, param_group['lr'])
             self.optimizer.step()
         elif comet_ml is not None:
             logger.warning('Gradient was too large "%s", skipping batch.', str(parameter_norm))

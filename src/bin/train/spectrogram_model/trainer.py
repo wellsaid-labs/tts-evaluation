@@ -1,3 +1,4 @@
+import atexit
 import logging
 import math
 import random
@@ -44,6 +45,7 @@ class Trainer():
         train_dataset (iterable of TextSpeechRow): Train dataset used to optimize the model.
         dev_dataset (iterable of TextSpeechRow): Dev dataset used to evaluate the model.
         comet_ml_project_name (str): Comet project name, used for grouping experiments.
+        checkpoints_directory (str or Path): Directory to store checkpoints in.
         train_batch_size (int): Batch size used for training.
         dev_batch_size (int): Batch size used for evaluation.
         criterion_spectrogram (callable): Loss function used to score frame predictions.
@@ -71,6 +73,7 @@ class Trainer():
                  train_dataset,
                  dev_dataset,
                  comet_ml_project_name,
+                 checkpoints_directory,
                  train_batch_size=ConfiguredArg(),
                  dev_batch_size=ConfiguredArg(),
                  criterion_spectrogram=ConfiguredArg(),
@@ -115,6 +118,7 @@ class Trainer():
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
         self.use_tqdm = use_tqdm
+        self.checkpoints_directory = checkpoints_directory
 
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
@@ -150,6 +154,8 @@ class Trainer():
         logger.info('Model:\n%s', self.model)
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
+        atexit.register(self.save_checkpoint)
+
     @classmethod
     def from_checkpoint(class_, checkpoint, **kwargs):
         """ Instantiate ``Trainer`` from a checkpoint.
@@ -173,18 +179,15 @@ class Trainer():
         checkpoint_kwargs.update(kwargs)
         return class_(**checkpoint_kwargs)
 
-    def save_checkpoint(self, directory):
+    def save_checkpoint(self):
         """ Save a checkpoint.
-
-        Args:
-            directory (str): Directory to store checkpoint
 
         Returns:
             (str): Path the checkpoint was saved to.
         """
         return Checkpoint(
             comet_ml_project_name=self.comet_ml.project_name,
-            directory=directory,
+            directory=self.checkpoints_directory,
             model=(self.model.module if src.distributed.is_initialized() else self.model),
             optimizer=self.optimizer,
             input_encoder=self.input_encoder,
@@ -276,6 +279,8 @@ class Trainer():
 
     def _do_loss_and_maybe_backwards(self, batch, predictions, do_backwards):
         """ Compute the losses and maybe do backwards.
+
+        TODO: Consider logging seperate metrics per speaker.
 
         Args:
             batch (SpectrogramModelTrainingRow)

@@ -21,13 +21,16 @@ from tests.utils import MockCometML
 
 @mock.patch('src.bin.train.spectrogram_model.trainer.CometML')
 @mock.patch('src.bin.train.spectrogram_model.trainer.add_spectrogram_column')
-def get_trainer(add_spectrogram_column_mock, comet_ml_mock):
+@mock.patch('src.bin.train.signal_model.trainer.atexit.register')
+def get_trainer(register_mock, add_spectrogram_column_mock, comet_ml_mock):
     comet_ml_mock.return_value = MockCometML()
     add_spectrogram_column_mock.return_value = get_example_spectrogram_text_speech_rows()
+    register_mock.return_value = None
     trainer = Trainer(
         device=torch.device('cpu'),
         train_dataset=get_example_spectrogram_text_speech_rows(),
         dev_dataset=get_example_spectrogram_text_speech_rows(),
+        checkpoints_directory='tests/_test_data/',
         comet_ml_project_name='',
         input_encoder=InputEncoder(['text encoder'], [Speaker('Linda Johnson', Gender.FEMALE)]),
         train_batch_size=1,
@@ -42,15 +45,18 @@ def get_trainer(add_spectrogram_column_mock, comet_ml_mock):
 
 @mock.patch('src.bin.train.spectrogram_model.trainer.CometML')
 @mock.patch('src.bin.train.spectrogram_model.trainer.add_spectrogram_column')
-def test_checkpoint(add_spectrogram_column_mock, comet_ml_mock):
+@mock.patch('src.bin.train.signal_model.trainer.atexit.register')
+def test_checkpoint(register_mock, add_spectrogram_column_mock, comet_ml_mock):
     trainer = get_trainer()
     comet_ml_mock.return_value = MockCometML()
     add_spectrogram_column_mock.return_value = get_example_spectrogram_text_speech_rows()
+    register_mock.return_value = None
 
-    checkpoint_path = trainer.save_checkpoint('tests/_test_data/')
-    trainer.from_checkpoint(
+    checkpoint_path = trainer.save_checkpoint()
+    Trainer.from_checkpoint(
         checkpoint=Checkpoint.from_path(checkpoint_path),
         device=torch.device('cpu'),
+        checkpoints_directory='tests/_test_data/',
         train_dataset=get_example_spectrogram_text_speech_rows(),
         dev_dataset=get_example_spectrogram_text_speech_rows())
 

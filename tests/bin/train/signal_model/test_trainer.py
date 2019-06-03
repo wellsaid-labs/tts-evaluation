@@ -18,12 +18,16 @@ from tests.utils import MockCometML
 @mock.patch('src.bin.train.signal_model.trainer.CometML')
 @mock.patch('src.bin.train.signal_model.trainer.add_spectrogram_column')
 @mock.patch('src.bin.train.signal_model.trainer.add_predicted_spectrogram_column')
-def get_trainer(add_predicted_spectrogram_column_mock, add_spectrogram_column_mock, comet_ml_mock):
+@mock.patch('src.bin.train.signal_model.trainer.atexit.register')
+def get_trainer(register_mock, add_predicted_spectrogram_column_mock, add_spectrogram_column_mock,
+                comet_ml_mock):
     comet_ml_mock.return_value = MockCometML()
     add_predicted_spectrogram_column_mock.return_value = get_example_spectrogram_text_speech_rows()
     add_spectrogram_column_mock.return_value = get_example_spectrogram_text_speech_rows()
+    register_mock.return_value = None
     return Trainer(
         device=torch.device('cpu'),
+        checkpoints_directory='tests/_test_data/',
         train_dataset=get_example_spectrogram_text_speech_rows(),
         dev_dataset=get_example_spectrogram_text_speech_rows(),
         comet_ml_project_name='',
@@ -34,17 +38,20 @@ def get_trainer(add_predicted_spectrogram_column_mock, add_spectrogram_column_mo
 @mock.patch('src.bin.train.signal_model.trainer.CometML')
 @mock.patch('src.bin.train.signal_model.trainer.add_spectrogram_column')
 @mock.patch('src.bin.train.signal_model.trainer.add_predicted_spectrogram_column')
-def test_checkpoint(add_predicted_spectrogram_column_mock, add_spectrogram_column_mock,
-                    comet_ml_mock):
+@mock.patch('src.bin.train.signal_model.trainer.atexit.register')
+def test_checkpoint(register_mock, add_predicted_spectrogram_column_mock,
+                    add_spectrogram_column_mock, comet_ml_mock):
     trainer = get_trainer()
     comet_ml_mock.return_value = MockCometML()
     add_predicted_spectrogram_column_mock.return_value = get_example_spectrogram_text_speech_rows()
     add_spectrogram_column_mock.return_value = get_example_spectrogram_text_speech_rows()
+    register_mock.return_value = None
 
-    checkpoint_path = trainer.save_checkpoint('tests/_test_data/')
-    trainer.from_checkpoint(
+    checkpoint_path = trainer.save_checkpoint()
+    Trainer.from_checkpoint(
         checkpoint=Checkpoint.from_path(checkpoint_path),
         device=torch.device('cpu'),
+        checkpoints_directory='tests/_test_data/',
         train_dataset=get_example_spectrogram_text_speech_rows(),
         dev_dataset=get_example_spectrogram_text_speech_rows())
 

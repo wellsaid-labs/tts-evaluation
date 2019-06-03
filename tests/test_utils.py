@@ -143,11 +143,11 @@ def test_data_loader():
         assert batch[0] == 3
 
 
-TestTuple = namedtuple('TestTuple', ['t'])
+MockTuple = namedtuple('MockTuple', ['t'])
 
 
 def test_data_loader__named_tuple__collate_fn():
-    dataset = [TestTuple(t=torch.Tensor(1)), TestTuple(t=torch.Tensor(1))]
+    dataset = [MockTuple(t=torch.Tensor(1)), MockTuple(t=torch.Tensor(1))]
     for batch in DataLoader(dataset, num_workers=1, batch_size=2, collate_fn=collate_tensors):
         assert batch.t.shape == (2, 1)
 
