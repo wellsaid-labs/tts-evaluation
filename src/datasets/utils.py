@@ -54,7 +54,7 @@ def add_predicted_spectrogram_column(data,
     logger.info('Adding a predicted spectrogram column to dataset.')
     checkpoint = Checkpoint.from_path(checkpoint_path, device=device, load_random_state=False)
 
-    if not all([r.spectrogram is not None for r in data]):
+    if aligned and not all([r.spectrogram is not None for r in data]):
         raise RuntimeError("Spectrogram column of ``TextSpeechRow`` must not be ``None``.")
 
     filenames = None
@@ -89,7 +89,7 @@ def add_predicted_spectrogram_column(data,
         device,
         batch_size,
         filenames=filenames,
-        aligned=True,
+        aligned=aligned,
         use_tqdm=use_tqdm)
     return [e._replace(predicted_spectrogram=t) for e, t in zip(data, tensors)]
 

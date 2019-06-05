@@ -151,7 +151,8 @@ def main(dataset=ConfiguredArg(),
         balanced=balanced)
 
     # Compute target and / or predict spectrograms
-    examples = add_spectrogram_column(examples, on_disk=False)
+    if aligned:
+        examples = add_spectrogram_column(examples, on_disk=False)
     examples = add_predicted_spectrogram_column(
         examples,
         spectrogram_model_checkpoint_path,
@@ -162,11 +163,11 @@ def main(dataset=ConfiguredArg(),
 
     # Output griffin-lim
     for i, example in zip(indicies, examples):
-        waveform = griffin_lim(example.predicted_spectrogram.numpy())
+        waveform = griffin_lim(example.predicted_spectrogram.cpu().numpy())
         _save(destination, ['index_%d' % i, 'griffin_lim'], example.speaker, waveform)
         if example.spectrogram_audio is not None:
             _save(destination, ['index_%d' % i, 'target'], example.speaker,
-                  example.spectrogram_audio.numpy())
+                  example.spectrogram_audio.cpu().numpy())
 
     if signal_model_checkpoint_path is None:
         return
@@ -190,10 +191,10 @@ def main(dataset=ConfiguredArg(),
             # [local_length, local_features_size] → [signal_length]
             predicted_coarse, predicted_fine, _ = signal_model_inferrer(spectrogram)
             predicted_signal = combine_signal(predicted_coarse, predicted_fine, return_int=True)
-            predicted_signal = predicted_signal.numpy()
+            predicted_signal = predicted_signal.cpu().numpy()
 
         # Save
-        _save(destination, ['index_' + index, 'wave_rnn'], example.speaker, predicted_signal)
+        _save(destination, ['index_' + str(index), 'wave_rnn'], example.speaker, predicted_signal)
         logger.info('-' * 100)
 
 
