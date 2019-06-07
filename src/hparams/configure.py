@@ -7,9 +7,6 @@ import torch
 
 from src.hparams import add_config
 from src.hparams import configurable
-from src.optimizers import Lamb
-from src.signal_model import WaveRNN
-from src.spectrogram_model import SpectrogramModel
 
 from torch.nn import BCEWithLogitsLoss
 from torch.nn import CrossEntropyLoss
@@ -413,6 +410,11 @@ def signal_model_lr_multiplier_schedule(step, decay=80000, warmup=20000, min_lr_
 def set_hparams():
     """ Using the ``configurable`` module set the hyperparameters for the source code.
     """
+    # NOTE: Prevent circular dependency
+    from src.optimizers import Lamb
+    from src.signal_model import WaveRNN
+    from src.spectrogram_model import SpectrogramModel
+
     frame_channels, frame_hop, bits = _set_audio_processing()
     _set_anomaly_detection()
     _set_model_size(frame_channels, bits)
