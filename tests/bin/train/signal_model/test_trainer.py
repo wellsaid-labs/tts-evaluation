@@ -8,7 +8,6 @@ import torch
 
 from src.bin.train.signal_model.data_loader import SignalModelTrainingRow
 from src.bin.train.signal_model.trainer import Trainer
-from src.utils import AnomalyDetector
 from src.utils import Checkpoint
 
 from tests.utils import get_example_spectrogram_text_speech_rows
@@ -77,18 +76,18 @@ def test__do_loss_and_maybe_backwards():
     assert num_predictions == 2
 
 
-def test__maybe_rollback():
+def test__get_gru_orthogonal_loss():
     trainer = get_trainer()
-    min_steps = 10
-    anomaly_detector = AnomalyDetector(min_steps=min_steps, type_=AnomalyDetector.TYPE_BOTH)
-    trainer.anomaly_detector = anomaly_detector
-    for i in range(min_steps):
-        trainer._maybe_rollback(1)
-        assert len(trainer.rollback) == min(i + 2, trainer.rollback.maxlen)
-    trainer._maybe_rollback(2)
-    assert len(trainer.rollback) == 1
-    trainer._maybe_rollback(0)
-    assert len(trainer.rollback) == 1
+    assert trainer._get_gru_orthogonal_loss().item() > 0
+
+
+def test__partial_rollback():
+    trainer = get_trainer()
+    assert trainer.step == 0
+    trainer.step += 1
+    trainer._partial_rollback()
+    assert trainer.step == 0
+    assert trainer.num_rollbacks == 1
 
 
 def _get_example_batched_training_row(batch_size=2,
@@ -143,8 +142,8 @@ def test_run_epoch():
         MockDataLoader.return_value = loaded_data
         mock_data_parallel.return_value = forward_pass_return
         mock_backward.return_value = None
-        mock_optimizer_step.return_value = None
-        mock_auto_optimizer_step.return_value = None
+        mock_optimizer_step.return_value = 2.0
+        mock_auto_optimizer_step.return_value = 2.0
 
         trainer.run_epoch(train=False)
         trainer.run_epoch(train=False, trial_run=True)

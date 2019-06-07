@@ -22,12 +22,12 @@ def _set_anomaly_detection():
     from src.utils import AnomalyDetector
 
     add_config({
-        'src.bin.train.signal_model.trainer.Trainer.__init__.min_rollback': 2,
+        'src.bin.train.signal_model.trainer.Trainer.__init__.min_rollback': 32,
         'src.utils.AnomalyDetector.__init__': {
-            # NOTE: Determined empirically with the notebook:
-            # ``notebooks/Detecting Anomalies.ipynb``
-            'sigma': 6,
-            'beta': 0.98,
+            # NOTE: Based on ``notebooks/Detecting Anomalies.ipynb``. The current usage requires
+            # modeling gradient norm that has a lot of variation requiring a large `sigma`.
+            'sigma': 128,
+            'beta': 0.99,
             'type_': AnomalyDetector.TYPE_HIGH,
         }
     })

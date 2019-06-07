@@ -65,7 +65,8 @@ def test_data_loader():
         spectrogram_slice_size=slice_size,
         spectrogram_slice_pad=slice_pad,
         use_tqdm=False,
-        trial_run=False)
-    assert len(loader) == 1
+        trial_run=False,
+        num_epochs=2)
+    assert len(loader) == 2
     item = next(iter(loader))
     assert item.signal_mask.sum() <= slice_size * batch_size * samples_per_frame

@@ -87,9 +87,20 @@ def _train(trainer,
         save_checkpoint_every_n_epochs (int, optional)
     """
     is_trial_run = True  # The first iteration is run as a ``trial_run``
+    recent_checkpoint = None
 
     while True:
         trainer.run_epoch(train=True, trial_run=is_trial_run)
+
+        if trainer.epoch % save_checkpoint_every_n_epochs == 0 and src.distributed.is_master():
+            trainer.save_checkpoint()
+        elif src.distributed.is_master():
+            # NOTE: GCP shutdowns do not trigger `atexit`; therefore, it's useful to always save
+            # a temporary checkpoint just in case.
+            older_checkpoint = recent_checkpoint
+            recent_checkpoint = trainer.save_checkpoint()
+            if older_checkpoint is not None:
+                older_checkpoint.unlink()
 
         if trainer.epoch % evaluate_aligned_every_n_epochs == 0 or is_trial_run:
             trainer.run_epoch(train=False, trial_run=is_trial_run)
@@ -97,10 +108,6 @@ def _train(trainer,
         if trainer.epoch % evaluate_inferred_every_n_epochs == 0 or is_trial_run:
             trainer.run_epoch(train=False, infer=True, trial_run=is_trial_run)
             trainer.visualize_inferred()
-
-        if ((trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run) and
-                src.distributed.is_master()):
-            trainer.save_checkpoint()
 
         is_trial_run = False
         logger.info('-' * 100)
@@ -132,7 +139,8 @@ def main(run_name,
         logger.info('Name: %s', run_name)
         logger.info('Tags: %s', run_tags)
 
-        context.init_distributed()
+        if device_index is not None:  # Required by distributed to run
+            context.init_distributed()
 
         _set_hparams(more_hparams)
 

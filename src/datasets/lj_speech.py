@@ -47,6 +47,18 @@ def lj_speech_dataset(
         * Comparison of python resampling libraries:
           https://machinelearningmastery.com/resample-interpolate-time-series-data-python/
 
+    Books:
+        * [LJ001] Morris, William, et al. Arts and Crafts Essays. 1893.
+        * [LJ002-LJ019] Griffiths, Arthur. The Chronicles of Newgate, Vol. 2. 1884.
+        * [LJ020] Harland, Marion. Marion Harland's Cookery for Beginners. 1893.
+        * [LJ021-LJ024] Roosevelt, Franklin D. The Fireside Chats of
+          Franklin Delano Roosevelt. 1933-42.
+        * [LJ025-LJ027] Rolt-Wheeler, Francis. The Science - History of the Universe,
+          Vol. 5: Biology. 1910.
+        * [LJ028] Banks, Edgar J. The Seven Wonders of the Ancient World. 1916.
+        * [LJ029-LJ050] President's Commission on the Assassination of President Kennedy. Report of
+          the President's Commission on the Assassination of President Kennedy. 1964.
+
     Args:
         extracted_name (str, optional): Name of the extracted dataset directory.
         url (str, optional): URL of the dataset `tar.gz` file.

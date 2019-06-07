@@ -64,33 +64,42 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
 
 def _train(trainer,
            evaluate_every_n_epochs=3,
-           generate_every_n_epochs=30,
-           save_checkpoint_every_n_epochs=15):
+           generate_every_n_evaluations=10,
+           save_checkpoint_every_n_evaluations=5):
     """ Loop for training and periodically evaluating the model.
 
     Args:
         trainer (src.bin.train.signal_model.trainer.Trainer)
         evaluate_every_n_epochs (int, optional): Evaluate every ``evaluate_every_n_epochs`` epochs.
-        generate_every_n_epochs (int, optional): Generate an audio sample every
-            ``generate_every_n_epochs`` epochs.
-        save_checkpoint_every_n_epochs (int, optional): Save a checkpoint every
-            ``save_checkpoint_every_n_epochs`` epochs.
+        generate_every_n_evaluations (int, optional): Generate an audio sample every
+            ``generate_every_n_evaluations`` epochs.
+        save_checkpoint_every_n_evaluations (int, optional): Save a checkpoint every
+            ``save_checkpoint_every_n_evaluations`` epochs.
     """
-    is_trial_run = True  # The first iteration is run as a ``trial_run``
-
+    recent_checkpoint = None
+    index = 0
     while True:
-        trainer.run_epoch(train=True, trial_run=is_trial_run)
+        is_trial_run = index == 0  # The first iteration is run as a ``trial_run``.
+        trainer.run_epoch(train=True, trial_run=is_trial_run, num_epochs=evaluate_every_n_epochs)
 
-        if trainer.epoch % evaluate_every_n_epochs == 0 or is_trial_run:
-            trainer.run_epoch(train=False, trial_run=is_trial_run)
+        if index % save_checkpoint_every_n_evaluations == 0:
+            trainer.save_checkpoint()
+        else:
+            # TODO: Consider using the GCP shutdown scripts via
+            # https://haggainuchi.com/shutdown.html
+            # NOTE: GCP shutdowns do not trigger `atexit`; therefore, it's useful to always save
+            # a temporary checkpoint just in case.
+            older_checkpoint = recent_checkpoint
+            recent_checkpoint = trainer.save_checkpoint()
+            if older_checkpoint is not None:
+                older_checkpoint.unlink()  # Unlink only after `save_checkpoint` succeeds.
 
-        if trainer.epoch % generate_every_n_epochs == 0 or is_trial_run:
+        trainer.run_epoch(train=False, trial_run=is_trial_run)
+
+        if index % generate_every_n_evaluations == 0 or is_trial_run:
             trainer.visualize_inferred()
 
-        if trainer.epoch % save_checkpoint_every_n_epochs == 0 or is_trial_run:
-            trainer.save_checkpoint()
-
-        is_trial_run = False
+        index += 1
         logger.info('-' * 100)
 
 

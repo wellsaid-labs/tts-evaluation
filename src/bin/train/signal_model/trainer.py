@@ -49,8 +49,9 @@ from src.visualize import plot_spectrogram
 
 logger = logging.getLogger(__name__)
 
-_PartialTrainerState = namedtuple('_PartialTrainerState',
-                                  ['step', 'epoch', 'optimizer_state_dict', 'model_state_dict'])
+_RollbackTrainerState = namedtuple(
+    '_RollbackTrainerState',
+    ['step', 'epoch', 'optimizer_state_dict', 'model_state_dict', 'anomaly_detector'])
 
 
 class Trainer():
@@ -78,6 +79,7 @@ class Trainer():
             a checkpoint.
         epoch (int, optional): Starting epoch; typically, this parameter is useful when starting
             from a checkpoint.
+        num_rollbacks (int, optional): Number of rollbacks.
         anomaly_detector (AnomalyDetector, optional): Anomaly detector used to skip batches that
             result in an anomalous loss.
         use_tqdm (bool, optional): Use TQDM to track epoch progress.
@@ -104,6 +106,7 @@ class Trainer():
                  model=None,
                  step=0,
                  epoch=0,
+                 num_rollbacks=0,
                  anomaly_detector=None,
                  use_tqdm=False):
 
@@ -123,6 +126,7 @@ class Trainer():
         self.device = device
         self.step = step
         self.epoch = epoch
+        self.num_rollbacks = num_rollbacks
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
         self.spectrogram_model_checkpoint_path = spectrogram_model_checkpoint_path
@@ -139,7 +143,8 @@ class Trainer():
         self.use_tqdm = use_tqdm
         # NOTE: Rollback ``maxlen=min_rollback + 1`` to store the current state of the model with
         # the additional rollbacks.
-        self.rollback = deque([self._get_state()], maxlen=min_rollback + 1)
+        self._rollback_states = deque([self._make_partial_rollback_state()],
+                                      maxlen=min_rollback + 1)
 
         self.comet_ml = CometML(
             project_name=comet_ml_project_name, experiment_key=comet_ml_experiment_key)
@@ -155,7 +160,7 @@ class Trainer():
         })
         self.comet_ml.log_other('spectrogram_model_checkpoint_path',
                                 spectrogram_model_checkpoint_path)
-        self.log_input_dev_data_hash()
+        self._comet_ml_log_input_dev_data_hash()
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step: %d', self.step)
@@ -195,8 +200,8 @@ class Trainer():
             get_tensors_dim_length([r.predicted_spectrogram for r in data])
         return data
 
-    def log_input_dev_data_hash(self, max_examples=10):
-        """ Log to comet a basic hash of the predicted spectrogram data.
+    def _comet_ml_log_input_dev_data_hash(self, max_examples=10):
+        """ Log to comet a basic hash of the predicted spectrogram data in `self.dev_dataset`.
 
         The predicted spectrogram data varies with the random state and checkpoint; therefore, the
         hash helps differentiate between different datasets.
@@ -234,11 +239,13 @@ class Trainer():
             'comet_ml_experiment_key': checkpoint.comet_ml_experiment_key,
             'anomaly_detector': checkpoint.anomaly_detector,
             'spectrogram_model_checkpoint_path': checkpoint.spectrogram_model_checkpoint_path,
-            'comet_ml_project_name': checkpoint.comet_ml_project_name
+            'comet_ml_project_name': checkpoint.comet_ml_project_name,
+            'num_rollbacks': checkpoint.num_rollbacks
         }
         checkpoint_kwargs.update(kwargs)
         return class_(**checkpoint_kwargs)
 
+    @log_runtime
     def save_checkpoint(self):
         """ Save a checkpoint.
 
@@ -254,68 +261,95 @@ class Trainer():
             epoch=self.epoch,
             anomaly_detector=self.anomaly_detector,
             comet_ml_experiment_key=self.comet_ml.get_key(),
-            spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path).save()
+            spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
+            num_rollbacks=self.num_rollbacks).save()
 
-    def _get_state(self):
-        """ Get ``this`` state as expressed by ``PartialTrainerState``.
+    def _make_partial_rollback_state(self):
+        """ Make a state for rolling back to.
 
-        Get private ``Trainer`` state used to role back the ``Trainer``.
+        The rollback includes:
+           * Model weights
+           * Optimizer weights
+           * Step counter `self.step`
+           * Epoch counter `self.epoch`
+
+        The rollback does not include:
+           * Number of rollbacks `self.num_rollbacks`
+           * Comet_ml `self.comet_ml`. Comet ML does not have a mechanism for rolling back state
+             https://github.com/comet-ml/issue-tracking/issues/137.
+           * Accumulated Metrics `self.accumulated_metrics`. Any accumulated metrics are reset
+             during a rollback and a rollback is treated as the start of a new epoch.
+           * Random Generators. We do not make an effort to perserve the global state of the random
+             generators in `torch`, `numpy` and `random` modules.
+
+        Returns:
+            (_RollbackTrainerState)
         """
         # TODO: Test to ensure PyTorch operations do not change the state as a result of tensor
         # side effects.
         # NOTE: In PyTorch, unless we ``deepcopy``, ``state_dict`` continues to update.
-        return _PartialTrainerState(
+        return _RollbackTrainerState(
             step=self.step,
             epoch=self.epoch,
             optimizer_state_dict=deepcopy(self.optimizer.state_dict()),
-            model_state_dict=deepcopy(self.model.state_dict()))
+            model_state_dict=deepcopy(self.model.state_dict()),
+            anomaly_detector=deepcopy(self.anomaly_detector))
 
-    def _set_state(self, state):
-        """ Set ``this`` state from ``PartialTrainerState``.
-
-        Args:
-            state (PartialTrainerState)
+    def _partial_rollback(self):
+        """ Rollback to the earliest state available `self.rollback[0]` and restart the epoch.
         """
+        self._end_epoch()
+
+        state = self._rollback_states[0]
+        logger.info('Rolling back from step %d to %d and from epoch %d to %d', self.step,
+                    state.step, self.epoch, state.epoch)
+        self.num_rollbacks += 1
+        self.comet_ml.log_metric('num_rollback', self.num_rollbacks)
+
         self.model.load_state_dict(state.model_state_dict)
         self.optimizer.load_state_dict(state.optimizer_state_dict)
+        self.anomaly_detector = state.anomaly_detector
         self.step = state.step
         self.epoch = state.epoch
+        self.comet_ml.set_step(self.step)
 
-    def _maybe_rollback(self, epoch_coarse_loss):
-        """ Rollback the model if the loss is determined to be anomalous.
+        self._rollback_states.clear()  # Clear the future states
+        self._rollback_states.append(state)
 
-        Args:
-            epoch_coarse_loss (float)
+    def _end_epoch(self):
+        """ Reset the trainer state from the current epoch.
         """
-        is_anomaly = self.anomaly_detector.step(epoch_coarse_loss)
-        if is_anomaly:
-            logger.warning('Rolling back, detected a coarse loss anomaly #%d (%f > %f ± %f)',
-                           self.anomaly_detector.anomaly_counter, epoch_coarse_loss,
-                           self.anomaly_detector.last_average, self.anomaly_detector.max_deviation)
-            self.comet_ml.log_metric('num_rollback', self.anomaly_detector.anomaly_counter)
-            state = self.rollback[0]
-            logger.info('Rolling back from step %d to %d and from epoch %d to %d', self.step,
-                        state.step, self.epoch, state.epoch)
-            self._set_state(state)
-
-            # Clear the possibly degenerative states.
-            self.rollback.clear()
-            self.rollback.append(state)
-        else:
-            self.rollback.append(self._get_state())
+        self.comet_ml.log_epoch_end(self.epoch)
+        self.accumulated_metrics.log_epoch_end(
+            lambda k, v: self.comet_ml.log_metric('epoch/' + k, v))
+        self.accumulated_metrics.reset()
 
     @log_runtime
-    def run_epoch(self, train=False, trial_run=False):
+    def run_epoch(self, train=False, trial_run=False, num_epochs=1):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
+
+        The specification of an "epoch" is loose in rare circumstances:
+
+            - The trainer allows for partial rollbacks of state during training. There doesn't
+              exist effective mechanisms to capture the state of all modules and rollback like the
+              `DataLoader` and `comet_ml`.
+            - `DataLoader`'s specification allows it to drop data via `drop_last`. Therefore,
+              there is not always the same number of batches for each epoch.
+            - `trial_run` runs only on row of data.
+
+        NOTE: The original motivation `num_epochs > 1` is to save time on constructing and
+        deconstructing the `DataLoader` which can take many seconds.
 
         Args:
             train (bool, optional): If ``True`` the model will additionally take steps along the
                 computed gradient; furthermore, the Trainer ``step`` and ``epoch`` state will be
                 updated.
             trial_run (bool, optional): If ``True`` then the epoch is limited to one batch.
+            num_epochs (int, optional): Number of epochs to run.
         """
         label = self.TRAIN_LABEL if train else self.DEV_LABEL
-        logger.info('[%s] Running Epoch %d, Step %d', label.upper(), self.epoch, self.step)
+        logger.info('[%s] Running Epoch %d to %d, Step %d', label.upper(), self.epoch,
+                    self.epoch + num_epochs, self.step)
         if trial_run:
             logger.info('[%s] Trial run with one batch.', label.upper())
 
@@ -333,7 +367,8 @@ class Trainer():
             device=self.device,
             trial_run=trial_run,
             use_predicted=self.use_predicted,
-            use_tqdm=self.use_tqdm)
+            use_tqdm=self.use_tqdm,
+            num_epochs=num_epochs)
 
         # Run epoch
         for i, batch in enumerate(data_loader):
@@ -355,16 +390,32 @@ class Trainer():
                 self.step += 1
                 self.comet_ml.set_step(self.step)
 
-        # Log epoch metrics
-        if not trial_run:
-            self.comet_ml.log_epoch_end(self.epoch)
-            self.accumulated_metrics.log_epoch_end(
-                lambda k, v: self.comet_ml.log_metric('epoch/' + k, v))
-            if train:
-                self.epoch += 1
-                self._maybe_rollback(self.accumulated_metrics.get_epoch_metric('coarse_loss'))
+        self._end_epoch()
+        if train:
+            self.epoch += num_epochs
 
-        self.accumulated_metrics.reset()
+    def _get_gru_orthogonal_loss(self):
+        """ Get the orthogonal loss for the hidden-to-hidden matrix in our GRUs.
+
+        Papers describing the loss:
+          https://papers.nips.cc/paper/7680-can-we-gain-more-from-orthogonality-regularizations-in-training-deep-networks.pdf
+          https://github.com/pytorch/pytorch/issues/2421#issuecomment-355534285
+          http://mathworld.wolfram.com/FrobeniusNorm.html
+          https://github.com/MingtaoGuo/BigGAN-tensorflow/blob/7e531cd875236544866f54248aa397f9176296b6/ops.py#L111
+
+        Returns:
+            (torch.FloatTensor [1])
+        """
+
+        total = torch.tensor(0.0).to(self.device)
+        for name, parameter in self.model.named_parameters():
+            if 'gru.weight_hh' in name:
+                splits = parameter.chunk(3)
+                for split in splits:
+                    eye = torch.eye(split.shape[0], device=self.device)
+                    total += torch.nn.functional.mse_loss(torch.mm(split, torch.t(split)), eye)
+                    total += torch.nn.functional.mse_loss(torch.mm(torch.t(split), split), eye)
+        return total
 
     def _do_loss_and_maybe_backwards(self, batch, predictions, do_backwards):
         """ Compute the losses and maybe do backwards.
@@ -382,22 +433,34 @@ class Trainer():
 
         # coarse_loss [batch_size, signal_length]
         coarse_loss = self.criterion(predicted_coarse, batch.target_signal_coarse)
-        coarse_loss = coarse_loss.masked_select(batch.signal_mask).mean()
+        coarse_loss = coarse_loss.masked_select(batch.signal_mask).mean()  # coarse_loss [1]
 
         # fine_loss [batch_size, signal_length]
         fine_loss = self.criterion(predicted_fine, batch.target_signal_fine)
-        fine_loss = fine_loss.masked_select(batch.signal_mask).mean()
+        fine_loss = fine_loss.masked_select(batch.signal_mask).mean()  # fine_loss [1]
+
+        # TODO: Investigate if training on `orthogonal_loss` is effective.
+        orthogonal_loss = self._get_gru_orthogonal_loss()  # orthogonal_loss [1]
 
         if do_backwards:
             self.optimizer.zero_grad()
             (coarse_loss + fine_loss).backward()
-            self.optimizer.step(comet_ml=self.comet_ml)
+            grad_norm = self.optimizer.step(comet_ml=self.comet_ml)
+
+            if self.anomaly_detector.step(grad_norm):
+                logger.warning('Rolling back, detected an anomaly #%d (%f > %f ± %f)',
+                               self.num_rollbacks, grad_norm, self.anomaly_detector.last_average,
+                               self.anomaly_detector.max_deviation)
+                self._partial_rollback()
+            else:
+                self._rollback_states.append(self._make_partial_rollback_state())
 
         # Record metrics
         self.accumulated_metrics.add_metrics({
             'coarse_loss': coarse_loss,
             'fine_loss': fine_loss
         }, batch.signal_mask.sum())
+        self.accumulated_metrics.add_metric('orthogonal_loss', orthogonal_loss)
 
         return coarse_loss, fine_loss, batch.signal_mask.sum()
 

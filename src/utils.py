@@ -289,7 +289,6 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
         self.last_average = 0.0
         self.min_steps = min_steps
         self.eps = eps
-        self.anomaly_counter = 0
         self.type = type_
 
     @property
@@ -333,9 +332,7 @@ class AnomalyDetector(ExponentiallyWeightedMovingAverage):
             (bool): If ``value`` is an anomaly.
         """
         is_anomaly = self._is_anomaly(value)
-        if is_anomaly:
-            self.anomaly_counter += 1
-        else:
+        if not is_anomaly:
             self.last_average, self.last_standard_deviation = super().step(value)
         return is_anomaly
 

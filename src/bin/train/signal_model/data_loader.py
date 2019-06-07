@@ -142,6 +142,7 @@ class DataLoader(src.utils.DataLoader):
         device (torch.device): Device onto which to load data.
         use_tqdm (bool): If ``True`` display progress via TQDM.
         trial_run (bool or int): If ``True``, iterates over one batch.
+        num_epochs (int, optional): Number of epochs to run.
         **kwargs (any): Other arguments to the data loader ``_load_fn``
 
     Returns:
@@ -161,7 +162,8 @@ class DataLoader(src.utils.DataLoader):
     """
 
     @configurable
-    def __init__(self, data, batch_size, device, use_tqdm, trial_run, **kwargs):
+    def __init__(self, data, batch_size, device, use_tqdm, trial_run, num_epochs=1, **kwargs):
+
         super().__init__(
             data,
             batch_size=batch_size,
@@ -170,6 +172,6 @@ class DataLoader(src.utils.DataLoader):
             load_fn=partial(_load_fn, **kwargs),
             pin_memory=True,
             post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
-            sampler=RandomSampler(data),
+            sampler=RandomSampler(data, replacement=True, num_samples=len(data) * num_epochs),
             trial_run=trial_run,
             use_tqdm=use_tqdm)
