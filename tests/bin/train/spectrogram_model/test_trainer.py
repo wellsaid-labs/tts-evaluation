@@ -130,8 +130,8 @@ def test_run_epoch():
          mock_auto_optimizer_step) = tuple([
              stack.enter_context(mock.patch(arg)) for arg in [
                  'src.bin.train.spectrogram_model.trainer.DataLoader',
-                 'src.bin.train.spectrogram_model.trainer.SpectrogramModel._aligned',
-                 'src.bin.train.spectrogram_model.trainer.SpectrogramModel._infer',
+                 'src.spectrogram_model.model.SpectrogramModel._aligned',
+                 'src.spectrogram_model.model.SpectrogramModel._infer',
                  'torch.Tensor.backward', 'src.optimizers.Optimizer.step',
                  'src.optimizers.AutoOptimizer.step'
              ]

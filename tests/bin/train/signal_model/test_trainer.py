@@ -147,6 +147,8 @@ def test_run_epoch():
 
         trainer.run_epoch(train=False)
         trainer.run_epoch(train=False, trial_run=True)
-        trainer.run_epoch(train=True)
+        assert trainer.epoch == 0
+        trainer.run_epoch(train=True, num_epochs=2)
+        assert trainer.epoch == 2
 
         mock_data_parallel.assert_called()

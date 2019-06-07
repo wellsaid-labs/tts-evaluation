@@ -485,8 +485,7 @@ def configurable(func):
     Returns:
         (callable): Decorated function
     """
-    # Get the module name
-    keys, print_name = _get_module_name(func)
+    keys, print_name = _get_module_name(func)  # Get the module name
     is_first_run = True
 
     @wraps(func)

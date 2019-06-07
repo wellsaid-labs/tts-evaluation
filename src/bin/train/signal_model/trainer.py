@@ -21,6 +21,8 @@ import atexit
 import logging
 import random
 
+from torch.optim.lr_scheduler import LambdaLR
+
 import torch
 
 from src.audio import combine_signal
@@ -33,7 +35,6 @@ from src.hparams import ConfiguredArg
 from src.hparams import get_config
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
-from src.signal_model import WaveRNN
 from src.utils import AccumulatedMetrics
 from src.utils import AnomalyDetector
 from src.utils import balance_list
@@ -57,8 +58,6 @@ _RollbackTrainerState = namedtuple(
 class Trainer():
     """ Trainer defines a simple interface for training the ``SignalModel``.
 
-    TODO: Ensure optional and none-optional parameters are consistent.
-
     Args:
         device (torch.device): Device to train on.
         train_dataset (iterable of TextSpeechRow): Train dataset used to optimize the model.
@@ -70,11 +69,12 @@ class Trainer():
         criterion (callable): Loss function used to score signal predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
         min_rollback (int): Minimum number of epochs to rollback in case of a loss anomaly.
+        lr_multiplier_schedule (callable): Learning rate multiplier schedule.
+        model (torch.nn.Module, optional): Model to train and evaluate.
         comet_ml_experiment_key (str, optional): Previous experiment key to continue visualization
             in comet.
         spectrogram_model_checkpoint_path (str, optional): Checkpoint used to generate a spectrogram
             from text as input to the signal model.
-        model (torch.nn.Module, optional): Model to train and evaluate.
         step (int, optional): Starting step; typically, this parameter is useful when starting from
             a checkpoint.
         epoch (int, optional): Starting epoch; typically, this parameter is useful when starting
@@ -101,21 +101,25 @@ class Trainer():
                  criterion=ConfiguredArg(),
                  optimizer=ConfiguredArg(),
                  min_rollback=ConfiguredArg(),
+                 lr_multiplier_schedule=ConfiguredArg(),
+                 model=ConfiguredArg(),
                  comet_ml_experiment_key=None,
                  spectrogram_model_checkpoint_path=None,
-                 model=None,
                  step=0,
                  epoch=0,
                  num_rollbacks=0,
                  anomaly_detector=None,
                  use_tqdm=False):
 
-        self.model = model if isinstance(model, torch.nn.Module) else WaveRNN()
+        self.model = model if isinstance(model, torch.nn.Module) else model()
         self.model.to(device)
 
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.optimizer.to(device)
+
+        self.scheduler = LambdaLR(
+            self.optimizer.optimizer, lr_multiplier_schedule, last_epoch=step - 1)
 
         self.anomaly_detector = anomaly_detector if isinstance(
             anomaly_detector, AnomalyDetector) else AnomalyDetector()
@@ -311,6 +315,7 @@ class Trainer():
         self.anomaly_detector = state.anomaly_detector
         self.step = state.step
         self.epoch = state.epoch
+        self.scheduler.step(state.step)
         self.comet_ml.set_step(self.step)
 
         self._rollback_states.clear()  # Clear the future states
@@ -389,6 +394,7 @@ class Trainer():
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
+                self.scheduler.step(self.step)
 
         self._end_epoch()
         if train:

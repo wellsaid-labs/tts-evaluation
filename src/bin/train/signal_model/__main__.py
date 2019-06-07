@@ -38,21 +38,6 @@ def _set_hparams(more_hparams=None):
     """
     set_hparams()
 
-    add_config({
-        # SOURCE (Tacotron 2):
-        # We train with a batch size of 128 distributed across 32 GPUs with synchronous updates,
-        # using the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−8 and a fixed learning rate
-        # of 10−4
-        # SOURCE (Deep Voice):
-        # For training, we use the Adam optimization algorithm with β1 = 0.9, β2 = 0.999, ε = 10−8,
-        # a batch size of 8, a learning rate of 10−3
-        'torch.optim.adam.Adam.__init__': {
-            'eps': 10**-8,
-            'weight_decay': 0,
-            'lr': 10**-3
-        }
-    })
-
     if more_hparams:
         add_config(more_hparams)
 
@@ -63,7 +48,7 @@ def _get_dataset(dataset=datasets.lj_speech_dataset):
 
 
 def _train(trainer,
-           evaluate_every_n_epochs=3,
+           evaluate_every_n_epochs=9,
            generate_every_n_evaluations=10,
            save_checkpoint_every_n_evaluations=5):
     """ Loop for training and periodically evaluating the model.
@@ -190,7 +175,17 @@ if __name__ == '__main__':  # pragma: no cover
         help=('Spectrogram model checkpoint path used to predicted spectrogram from '
               'text as input to the signal model.'))
     parser.add_argument(
-        '-t', '--tags', default=[], action='append', help='List of tags for the experiment.')
+        '-t',
+        '--tags',
+        default=[
+            'batch_size=256',
+            'lamb optimizer',
+            'lr=2 * 10**-3',
+            'rollback v4',
+            'triangle LR schedule v3',
+        ],
+        action='append',
+        help='List of tags for the experiment.')
     parser.add_argument(
         '-n', '--name', type=str, default=None, help='Name describing the experiment')
     parser.add_argument(

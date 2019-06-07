@@ -7,6 +7,9 @@ import torch
 
 from src.hparams import add_config
 from src.hparams import configurable
+from src.optimizers import Lamb
+from src.signal_model import WaveRNN
+from src.spectrogram_model import SpectrogramModel
 
 from torch.nn import BCEWithLogitsLoss
 from torch.nn import CrossEntropyLoss
@@ -290,6 +293,8 @@ def _set_model_size(frame_channels, bits):
 
 
 def _filter_audio_path_not_found(example):
+    """ Filter out examples with no audio file.
+    """
     if not example.audio_path.is_file():
         logger.warning('[%s] Not found audio file, skipping: %s', example.speaker,
                        example.audio_path)
@@ -299,6 +304,8 @@ def _filter_audio_path_not_found(example):
 
 
 def _filter_no_text(example):
+    """ Filter out examples with no text.
+    """
     if len(example.text) == 0:
         logger.warning('[%s] Text is absent, skipping: %s', example.speaker, example.audio_path)
         return False
@@ -307,6 +314,8 @@ def _filter_no_text(example):
 
 
 def _filter_books(example):
+    """ Filter out examples originating from various audiobooks.
+    """
     # NOTE: Prevent circular dependency
     from src import datasets
 
@@ -325,17 +334,20 @@ def _filter_books(example):
 
 
 def _filter_elliot_miller(example):
+    """ Filter examples with the actor Elliot Miller due to his unannotated character portrayals.
+    """
     # NOTE: Prevent circular dependency
     from src import datasets
 
-    if example.speaker == datasets.m_ailabs.ELLIOT_MILLER:  # Ignore ELLIOT due to his acting.
+    if example.speaker == datasets.m_ailabs.ELLIOT_MILLER:
         return False
 
     return True
 
 
 def _filter_no_numbers(example):
-    # Ignore numbers instead of attempting to verbalize them for now
+    """ Filter examples with numbers inside the text instead of attempting to verbalize them.
+    """
     if len(set(example.text).intersection(set('0123456789'))) > 0:
         return False
 
@@ -343,7 +355,7 @@ def _filter_no_numbers(example):
 
 
 def get_dataset():
-    """ Define the dataset.
+    """ Define the dataset to train the text-to-speech models on.
 
     Returns:
         train (iterable)
@@ -378,6 +390,26 @@ def get_dataset():
     return utils.split_list(dataset, splits=(0.8, 0.2))
 
 
+def signal_model_lr_multiplier_schedule(step, decay=80000, warmup=20000, min_lr_multiplier=.05):
+    """ Learning rate multiplier schedule.
+
+    NOTE: BERT uses a similar learning rate: https://github.com/google-research/bert/issues/425
+
+    Args:
+        step (int): The current step.
+        decay (int, optional): The total number of steps to decay the learning rate.
+        warmup (int, optional): The total number of steps to warm up the learning rate.
+        min_lr_multiplier (int, optional): The minimum learning rate at the end of the decay.
+
+    Returns:
+        (float): Multiplier on the base learning rate.
+    """
+    if step < warmup:
+        return step / warmup
+    else:
+        return max(1 - ((step - warmup) / decay), min_lr_multiplier)
+
+
 def set_hparams():
     """ Using the ``configurable`` module set the hyperparameters for the source code.
     """
@@ -397,6 +429,12 @@ def set_hparams():
             'betas': (0.9, 0.999),
             'amsgrad': True,
             'lr': 10**-3
+        },
+        'src.optimizers.Lamb.__init__': {
+            'betas': (0.9, 0.999),
+            'amsgrad': False,
+            'lr': 2 * 10**-3,  # This learning rate performed well on Comet in June 2019.
+            'max_trust_ratio': 10,  # Default value as suggested in the paper proposing LAMB.
         }
     })
 
@@ -453,6 +491,9 @@ def set_hparams():
                         # We minimize the summed mean squared error (MSE) from before and after the
                         # post-net to aid convergence.
                         'criterion_spectrogram': MSELoss,
+
+                        # Tacotron 2 like model with any changes documented via Comet.ml.
+                        'model': SpectrogramModel,
                     },
                 },
                 'signal_model': {
@@ -462,14 +503,23 @@ def set_hparams():
                         # We train with a batch size of 128 distributed across 32 GPUs with
                         # synchronous updates, using the Adam optimizer with β1 = 0.9, β2 = 0.999, 
                         # eps = 10−8 and a fixed learning rate of 10−4
-                        # NOTE: Parameters set after experimentation on a 4 Px100 GPU.
-                        'train_batch_size': 64,
-                        'dev_batch_size': 256,
+                        # NOTE: Parameters set after experimentation on a 8 V100 GPUs.
+                        'train_batch_size': 256,
+                        'dev_batch_size': 512,
 
-                        # These are not directly mentioned in the paper; however are popular choices
-                        # as of Jan 2019 for a sequence to sequence task.
+                        # `CrossEntropyLoss` is not directly mentioned in the paper; however is
+                        # a popular choice as of Jan 2019 for a classification task.
                         'criterion': CrossEntropyLoss,
-                        'optimizer': Adam
+                        'optimizer': Lamb,
+
+                        # A similar schedule to used to train BERT; furthermore, experiments on
+                        # Comet show this schedule is effective along with the LAMB optimizer
+                        # and a large batch size.
+                        'lr_multiplier_schedule': signal_model_lr_multiplier_schedule,
+
+                        # WaveRNN from `Efficient Neural Audio Synthesis` is small, efficient, and
+                        # performant as a vocoder.
+                        'model': WaveRNN,
                     },
                     'data_loader.DataLoader.__init__': {
                         # SOURCE: Efficient Neural Audio Synthesis

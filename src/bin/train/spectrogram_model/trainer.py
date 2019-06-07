@@ -17,7 +17,6 @@ from src.hparams import get_config
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.spectrogram_model import InputEncoder
-from src.spectrogram_model import SpectrogramModel
 from src.utils import AccumulatedMetrics
 from src.utils import balance_list
 from src.utils import Checkpoint
@@ -52,10 +51,10 @@ class Trainer():
         criterion_stop_token (callable): Loss function used to score stop
             token predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
+        model (torch.nn.Module, optional): Model to train and evaluate.
         comet_ml_experiment_key (str, optional): Previous experiment key to continue visualization
             in comet.
         input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
-        model (torch.nn.Module, optional): Model to train and evaluate.
         step (int, optional): Starting step; typically, this parameter is useful when starting from
             a checkpoint.
         epoch (int, optional): Starting epoch; typically, this parameter is useful when starting
@@ -79,9 +78,9 @@ class Trainer():
                  criterion_spectrogram=ConfiguredArg(),
                  criterion_stop_token=ConfiguredArg(),
                  optimizer=ConfiguredArg(),
+                 model=ConfiguredArg(),
                  comet_ml_experiment_key=None,
                  input_encoder=None,
-                 model=None,
                  step=0,
                  epoch=0,
                  use_tqdm=False):
@@ -98,7 +97,7 @@ class Trainer():
             [r.speaker for r in self.train_dataset]) if input_encoder is None else input_encoder
 
         # Allow for ``class`` or a class instance
-        self.model = model if isinstance(model, torch.nn.Module) else SpectrogramModel(
+        self.model = model if isinstance(model, torch.nn.Module) else model(
             self.input_encoder.text_encoder.vocab_size,
             self.input_encoder.speaker_encoder.vocab_size)
         self.model.to(device)
