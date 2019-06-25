@@ -23,6 +23,8 @@ import src.distributed
 class TrainingContextManager(object):
     """ Context manger for managing the training environment.
 
+    TODO: Set default paths like ``tmp_directory`` via ``hparams/``.
+
     Manages:
         seed: This module sets seeds for reproduction.
         logs: This module captures logs.
@@ -38,7 +40,8 @@ class TrainingContextManager(object):
           files are deleted.
     """
 
-    def __init__(self, seed=1212212, device=None, min_time=60 * 15):
+    def __init__(self, seed=1212212, device=None, min_time=60 * 15,
+                 tmp_directory=ROOT_PATH / 'tmp'):
         self.__runtime_context = False
 
         if device is None:
@@ -49,6 +52,7 @@ class TrainingContextManager(object):
         self.is_cuda = self.device.type == 'cuda'
         self.min_time = min_time
         self.start_time = time.time()
+        self.tmp_directory = tmp_directory
         self.seed = seed
 
     def init_distributed(self, backend='nccl'):
@@ -174,9 +178,8 @@ class TrainingContextManager(object):
         self.__runtime_context = True  # Has entered the runtime context.
 
         # Setup logging with disk storage
-        # TODO: Set default paths like ``tmp`` via ``hparams/``
         prefix = '%d.%s' % (int(round(time.time())), self.device.index)
-        self._copy_standard_streams(ROOT_PATH / 'tmp', '%s.stdout.log' % prefix,
+        self._copy_standard_streams(self.tmp_directory, '%s.stdout.log' % prefix,
                                     '%s.stderr.log' % prefix)
         set_basic_logging_config(self.device)
         self.logger = logging.getLogger(__name__)
@@ -260,5 +263,13 @@ class TrainingContextManager(object):
         is_short_experiment = self.min_time is not None and elapsed_seconds < self.min_time
         if is_short_experiment and exception:
             self.clean_up()
+
+        # Remove log files only if they are in the `tmp_directory`
+        if (hasattr(self, 'stdout_filename') and self.stdout_filename.exists() and
+                self.stdout_filename.parents[0] == self.tmp_directory):
+            self.stdout_filename.unlink()
+        if (hasattr(self, 'stderr_filename') and self.stderr_filename.exists() and
+                self.stderr_filename.parents[0] == self.tmp_directory):
+            self.stderr_filename.unlink()
 
         self._notify('Experiment', 'Experiment has exited after %d seconds.' % (elapsed_seconds))

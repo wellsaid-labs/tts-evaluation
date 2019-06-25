@@ -1,5 +1,4 @@
 from pathlib import Path
-from unittest import mock
 
 import io
 
@@ -8,13 +7,27 @@ from scipy.io import wavfile
 import numpy as np
 import torch
 
+from src.audio import build_wav_header
 from src.audio import combine_signal
+from src.audio import get_audio_metadata
 from src.audio import get_log_mel_spectrogram
 from src.audio import griffin_lim
+from src.audio import normalize_audio
 from src.audio import read_audio
 from src.audio import split_signal
-from src.audio import build_wav_header
-from src.audio import normalize_audio
+from src.utils import ROOT_PATH
+from tests.utils import create_disk_garbage_collection_fixture
+
+gc_fixture = create_disk_garbage_collection_fixture(ROOT_PATH / 'tests' / '_test_data')
+
+
+def test_get_audio_metadata():
+    assert {
+        'sample_rate': 24000,
+        'bits': 16,
+        'channels': 1,
+        'encoding': 'signed-integer'
+    } == get_audio_metadata('tests/_test_data/lj_speech_24000.wav')
 
 
 def test_build_wav_header():
@@ -34,7 +47,12 @@ def test_log_mel_spectrogram_smoke():
     frame_hop = 300
     audio_path = 'tests/_test_data/lj_speech_24000.wav'
     sample_rate = 24000
-    signal = read_audio(audio_path, sample_rate)
+    signal = read_audio(audio_path, {
+        'sample_rate': sample_rate,
+        'bits': 16,
+        'channels': 1,
+        'encoding': 'signed-integer'
+    })
     log_mel_spectrogram, padding = get_log_mel_spectrogram(
         signal, sample_rate, frame_size=frame_size, frame_hop=frame_hop)
 
@@ -49,7 +67,12 @@ def test_griffin_lim_smoke():
     """
     audio_path = Path('tests/_test_data/lj_speech_24000.wav')
     sample_rate = 24000
-    signal = read_audio(audio_path, sample_rate)
+    signal = read_audio(audio_path, {
+        'sample_rate': sample_rate,
+        'channels': 1,
+        'bits': 16,
+        'encoding': 'signed-integer',
+    })
     log_mel_spectrogram, _ = get_log_mel_spectrogram(signal, sample_rate)
     waveform = griffin_lim(log_mel_spectrogram, sample_rate)
     assert len(waveform) > 0
@@ -91,46 +114,23 @@ def test_split_combine_signal_multiple_dim():
     np.testing.assert_allclose(signal.numpy(), reconstructed_signal.numpy(), atol=1e-03)
 
 
-@mock.patch('src.audio.os.system')
-def test_normalize_audio(mock_os_system):
-    mock_os_system.return_value = None
+def test_normalize_audio(gc_fixture):
+    audio_path = gc_fixture / 'lj_speech.wav'
+    new_audio_path = normalize_audio(
+        audio_path, bits=8, sample_rate=24000, channels=2, encoding='unsigned-integer')
+    assert (new_audio_path.stem ==
+            'encoding(channels(bits(rate(lj_speech,24000),8),2),unsigned-integer)')
+    assert new_audio_path.exists()
+    assert {
+        'bits': 8,
+        'sample_rate': 24000,
+        'channels': 2,
+        'encoding': 'unsigned-integer'
+    } == get_audio_metadata(new_audio_path)
 
-    audio_path = Path('tests/_test_data/lj_speech.wav')
+
+def test_normalize_audio__not_normalized():
+    audio_path = Path('tests/_test_data/lj_speech_24000.wav')
     normalized_audio_path = normalize_audio(
-        audio_path,
-        bits=16,
-        resample=24000,
-        norm=True,
-        guard=True,
-        lower_hertz=20,
-        upper_hertz=12000,
-        loudness=True)
-
-    assert 'rate' in normalized_audio_path.stem
-    assert '24000' in normalized_audio_path.stem
-    assert 'norm' in normalized_audio_path.stem
-    assert 'loudness' in normalized_audio_path.stem
-    assert 'guard' in normalized_audio_path.stem
-    assert 'sinc' in normalized_audio_path.stem
-    assert '20,12000' in normalized_audio_path.stem
-    assert 'bits' in normalized_audio_path.stem
-    assert '16' in normalized_audio_path.stem
-
-
-@mock.patch('src.audio.os.system')
-def test_normalize_audio__not_normalized(mock_os_system):
-    mock_os_system.return_value = None
-
-    audio_path = Path('tests/_test_data/lj_speech.wav')
-    normalized_audio_path = normalize_audio(
-        audio_path,
-        bits=None,
-        resample=None,
-        norm=False,
-        guard=False,
-        lower_hertz=None,
-        upper_hertz=None,
-        loudness=None)
-
-    assert not mock_os_system.called
-    assert normalized_audio_path == audio_path
+        audio_path, bits=16, sample_rate=24000, channels=1, encoding='signed-integer')
+    assert audio_path == normalized_audio_path

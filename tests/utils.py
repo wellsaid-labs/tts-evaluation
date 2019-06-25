@@ -1,11 +1,38 @@
 from contextlib import contextmanager
 
+import shutil
+
 import torch
+import pytest
 
 from src.datasets import Gender
 from src.datasets import Speaker
 from src.datasets import TextSpeechRow
 from src.utils import OnDiskTensor
+
+
+def create_disk_garbage_collection_fixture(root_directory):
+    """ Create fixture
+    """
+
+    @pytest.fixture()
+    def fixture():
+        before = set(list(root_directory.iterdir())) if root_directory.exists() else set()
+        yield root_directory
+        after = set(list(root_directory.iterdir())) if root_directory.exists() else set()
+
+        for path in after.difference(before):
+            if not path.exists():
+                continue
+
+            if path.is_dir():
+                shutil.rmtree(str(path))
+            elif path.is_file():
+                path.unlink()
+
+        assert before == set(list(root_directory.iterdir()))
+
+    return fixture
 
 
 class MockCometML():

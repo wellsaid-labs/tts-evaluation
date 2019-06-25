@@ -1,7 +1,7 @@
 import logging
 import math
 import struct
-import os
+import subprocess
 
 from tqdm import tqdm
 
@@ -11,7 +11,7 @@ import torch
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 
-import src
+import src.distributed
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ except ImportError:
 
 
 @configurable
-def read_audio(filename, sample_rate=ConfiguredArg()):
+def read_audio(filename, assert_metadata=ConfiguredArg()):
     """ Read an audio file.
 
     TODO: Rename considering the tighter specification.
@@ -46,17 +46,14 @@ def read_audio(filename, sample_rate=ConfiguredArg()):
 
     Args:
         filename (Path or str): Name of the file to load.
-        sample_rate (int or None): Assert this target sample rate.
+        assert_metadata (dict): Assert this metadata for any audio file read.
 
     Returns:
         (numpy.ndarray [n,]): Audio time series.
     """
-    signal, observed_sample_rate = librosa.core.load(str(filename), sr=None)
-    if sample_rate is not None:
-        assert sample_rate == observed_sample_rate, (
-            "Sample rate must be set to %d (!= %s) before hand for file %s" %
-            (sample_rate, observed_sample_rate, filename))
-    assert len(signal.shape) == 1, "Signal must be mono."
+    metadata = get_audio_metadata(filename)
+    assert metadata == assert_metadata, ("The filename metadata does not match `assert_metadata`.")
+    signal, _ = librosa.core.load(str(filename), sr=None, mono=False)
     assert np.max(signal) <= 1 and np.min(signal) >= -1, "Signal must be in range [-1, 1]."
     return signal
 
@@ -413,47 +410,66 @@ def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
     return signal.float() / 2**(bits - 1)  # Scale to [-1, 1] range.
 
 
+def get_audio_metadata(audio_path):
+    """ Get metadata on `audio_path`.
+
+    Args:
+        audio_path (Path or str): WAV audio file to get metadata on.
+
+    Returns: (dict) {
+        channels (int): The number of audio channels in the audio file.
+        bits (int): The bit depth of the audio.
+        sample_rate (int): The sample rate of the audio.
+        encoding (str): The encoding of the audio file: ['signed-integer', 'unsigned-integer',
+          'floating-point'].
+    }
+    """
+    audio_path = str(audio_path)
+    check_output = subprocess.check_output
+    encoding = check_output(['sox', '--i', '-e', audio_path]).decode("utf-8").strip()
+    encoding = encoding.replace('PCM', '').lower().strip().replace(' ', '-')
+    return {
+        'channels': int(check_output(['sox', '--i', '-c', audio_path]).decode("utf-8")),
+        'bits': int(check_output(['sox', '--i', '-b', audio_path]).decode("utf-8")),
+        'sample_rate': int(check_output(['sox', '--i', '-r', audio_path]).decode("utf-8")),
+        'encoding': encoding,
+    }
+
+
 @configurable
 def normalize_audio(audio_path,
-                    resample=ConfiguredArg(),
-                    norm=ConfiguredArg(),
-                    guard=ConfiguredArg(),
-                    lower_hertz=ConfiguredArg(),
-                    upper_hertz=ConfiguredArg(),
-                    loudness=ConfiguredArg(),
-                    bits=ConfiguredArg()):
+                    sample_rate=ConfiguredArg(),
+                    bits=ConfiguredArg(),
+                    channels=ConfiguredArg(),
+                    encoding=ConfiguredArg()):
     """ Normalize audio on disk with the SoX library.
-
-    TODO: Consider adding an option for converting to mono channel audio.
 
     Args:
         audio_path (Path): Path to a audio file.
-        resample (int or None, optional): If integer is provided, uses SoX to create resampled
-            files.
-        norm (bool, optional): Automatically invoke the gain effect to guard against clipping and to
-            normalise the audio.
-        guard (bool, optional): Automatically invoke the gain effect to guard against clipping.
-        lower_hertz (int, optional): Apply a sinc kaiser-windowed high-pass.
-        upper_hertz (int, optional): Apply a sinc kaiser-windowed low-pass.
-        loudness (bool, optioanl): Normalize the subjective perception of loudness level based on
-            ISO 226.
-        bits (int, optional): The bit-depth of the normalized audio file.
+        sample_rate (int or None, optional): Change the audio sampling rate
+            (i.e. resample the audio).
+        bits (int, optional): Change the bit-depth of the audio file.
+        channels (bool, optional): The channels effect should be invoked in order to change
+            the number of channels in an audio signal to `channels`.
+        encoding (str, optional): Changing the audio encoding type: ['signed-integer',
+          'unsigned-integer', 'floating-point'].
 
     Returns:
         (str): Filename of the processed file.
     """
-    lower_hertz = str(lower_hertz) if lower_hertz is not None else ''
-    upper_hertz = str(upper_hertz) if upper_hertz is not None else ''
+    # TODO: Consider adding support for `--show-progress`.
+    metadata = get_audio_metadata(audio_path)
 
-    # Create cach'd filename
+    _channels = None if metadata['channels'] == channels else channels
+    _sample_rate = None if metadata['sample_rate'] == sample_rate else sample_rate
+    _bits = None if metadata['bits'] == bits else bits
+    _encoding = None if metadata['encoding'] == encoding else encoding
+
     stem = audio_path.stem
-    stem = ('norm(%s)' % stem) if norm else stem
-    stem = ('guard(%s)' % stem) if guard else stem
-    stem = ('rate(%s,%d)' % (stem, resample)) if resample is not None else stem
-    stem = ('bits(%s,%d)' % (stem, bits)) if bits is not None else stem
-    stem = (
-        'sinc(%s,%s,%s)' % (stem, lower_hertz, upper_hertz)) if lower_hertz or upper_hertz else stem
-    stem = ('loudness(%s)' % stem) if loudness else stem
+    stem = stem if _sample_rate is None else ('rate(%s,%d)' % (stem, _sample_rate))
+    stem = stem if _bits is None else ('bits(%s,%d)' % (stem, _bits))
+    stem = stem if _channels is None else ('channels(%s,%d)' % (stem, _channels))
+    stem = stem if _encoding is None else ('encoding(%s,%s)' % (stem, _encoding))
 
     destination = audio_path.parent / '{}{}'.format(stem, audio_path.suffix)
     if stem == audio_path.stem or destination.is_file():
@@ -464,15 +480,14 @@ def normalize_audio(audio_path,
     if not src.distributed.is_master():
         return destination
 
-    norm_flag = '--norm' if norm else ''
-    guard_flag = '--guard' if guard else ''
-    bits_flag = '--bits=%d' % bits if bits is not None else ''
-    resample_flag = '--rate=%d' % resample if resample is not None else ''
-    sinc_command = 'sinc %s-%s' % (lower_hertz, upper_hertz) if lower_hertz or upper_hertz else ''
-    loudness_command = 'loudness' if loudness else ''
-    commands = ' '.join([sinc_command, loudness_command])
-    flags = ' '.join([norm_flag, guard_flag, resample_flag, bits_flag])
-    command = 'sox "%s" %s "%s" %s ' % (audio_path, flags, destination, commands)
-    os.system(command)
+    # `-G`: Automatically invoke the gain effect to guard against clipping.
+    commands = ['sox', '-G', audio_path, destination]
+    if _encoding is not None:
+        commands[-1:1] = ['-e', _encoding]
+    if _bits is not None:
+        commands[-1:1] = ['-b', str(_bits)]
+    commands = commands if _sample_rate is None else commands + ['rate', str(_sample_rate)]
+    commands = commands if _channels is None else commands + ['channels', str(_channels)]
+    subprocess.run(commands, check=True)
 
     return destination

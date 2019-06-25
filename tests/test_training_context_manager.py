@@ -2,7 +2,6 @@ from unittest import mock
 
 import logging
 import os
-import shutil
 import sys
 
 import pytest
@@ -10,33 +9,13 @@ import torch
 
 from src.training_context_manager import TrainingContextManager
 from src.utils import ROOT_PATH
+from tests.utils import create_disk_garbage_collection_fixture
 
-# TODO: Add a fixture to delete any files created similar too:
-# https://stackoverflow.com/questions/51737334/pytest-deleting-files-created-by-the-tested-function
-# Furthermore, then deleting empty directories from which the files were already deleted.
-
-
-@pytest.fixture()
-def root():
-    root_ = ROOT_PATH / 'experiments'
-    before = set(list(root_.iterdir())) if root_.exists() else set()
-    yield root_
-    after = set(list(root_.iterdir())) if root_.exists() else set()
-
-    for path in after.difference(before):
-        if not path.exists():
-            continue
-
-        if path.is_dir():
-            shutil.rmtree(str(path))
-        elif path.is_file():
-            path.unlink()
-
-    assert before == set(list(root_.iterdir()))
+gc_fixture = create_disk_garbage_collection_fixture(ROOT_PATH / 'experiments')
 
 
 @mock.patch('src.training_context_manager.assert_enough_disk_space', return_value=True)
-def test_save_standard_streams(_, root):
+def test_save_standard_streams(_, gc_fixture):
     logger = logging.getLogger(__name__)
     handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(logging.INFO)
@@ -48,7 +27,7 @@ def test_save_standard_streams(_, root):
         print('Test')
         sys.stderr.write('Error\n')
 
-        context.set_context_root(root / 'test_save_standard_streams')
+        context.set_context_root(gc_fixture / 'test_save_standard_streams')
 
         logger.info('Test Logger')
     print('After Context')
@@ -76,9 +55,9 @@ def test_save_standard_streams(_, root):
 
 
 @mock.patch('src.training_context_manager.assert_enough_disk_space', return_value=True)
-def test_experiment(_, root):
+def test_experiment(_, gc_fixture):
     with TrainingContextManager(device=torch.device('cpu')) as context:
-        context.set_context_root(root / 'test_experiment')
+        context.set_context_root(gc_fixture / 'test_experiment')
 
         # Check context directory was created
         assert context.root_directory.is_dir()
@@ -91,13 +70,13 @@ def test_experiment(_, root):
 
 
 @mock.patch('src.training_context_manager.assert_enough_disk_space', return_value=True)
-def test_duplicate(_, root):
+def test_duplicate(_, gc_fixture):
     with TrainingContextManager(device=torch.device('cpu')) as context:
-        context.set_context_root(root / 'test_experiment')
+        context.set_context_root(gc_fixture / 'test_experiment')
 
     with TrainingContextManager(device=torch.device('cpu')) as context:
         with pytest.raises(TypeError):
-            context.set_context_root(root / 'test_experiment')
+            context.set_context_root(gc_fixture / 'test_experiment')
 
 
 # Patch inspired by:
@@ -123,8 +102,8 @@ def test_check_module_versions__missing_install(_, __):
 
 
 @mock.patch('src.training_context_manager.assert_enough_disk_space', return_value=True)
-def test_clean_up(_, root):
-    directory = root / 'test_clean_up'
+def test_clean_up(_, gc_fixture):
+    directory = gc_fixture / 'test_clean_up'
 
     with TrainingContextManager() as context:
         context.set_context_root(directory)
@@ -142,8 +121,8 @@ def test_clean_up(_, root):
 
 
 @mock.patch('src.training_context_manager.assert_enough_disk_space', return_value=True)
-def test_clean_up__exception_clean_up(_, root):
-    directory = root / 'test_clean_up'
+def test_clean_up__exception_clean_up(_, gc_fixture):
+    directory = gc_fixture / 'test_clean_up'
 
     try:
         with TrainingContextManager() as context:

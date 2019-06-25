@@ -31,7 +31,11 @@ yapf==0.25.0
 tqdm # Progress bar
 jupyter # Notebooks
 python-dotenv # Environment variables
+python-Levenshtein # Sequence alignment
 
 # Web
 flask
 gunicorn
+
+# GCP
+google-cloud-speech

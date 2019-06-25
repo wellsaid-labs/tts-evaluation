@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 def get_ip(instance_name):
     """ Get the IP address of an instance
 
+    TODO: Remove all invocations of the `shell` due to this:
+    https://stackoverflow.com/questions/3172470/actual-meaning-of-shell-true-in-subprocess
+
     Args:
         instance_name (str): Name of GCP instance
 

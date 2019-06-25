@@ -107,7 +107,7 @@ def main(dataset=ConfiguredArg(),
          num_samples=50,
          aligned=False,
          speaker=None,
-         balanced=False,
+         balanced=True,
          spectrogram_model_batch_size=1,
          signal_model_device=torch.device('cpu')):
     """ Generate random samples of signal model to evaluate.
@@ -150,9 +150,8 @@ def main(dataset=ConfiguredArg(),
         speaker=speaker,
         balanced=balanced)
 
-    # Compute target and / or predict spectrograms
-    if aligned:
-        examples = add_spectrogram_column(examples, on_disk=False)
+    # Adds `spectrogram_audio` and `spectrogram` column.
+    examples = add_spectrogram_column(examples, on_disk=False)
     examples = add_predicted_spectrogram_column(
         examples,
         spectrogram_model_checkpoint_path,

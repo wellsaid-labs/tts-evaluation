@@ -67,6 +67,12 @@ def _set_audio_processing():
     # designed to efficiently predict 16-bit raw audio samples.
     bits = 16
 
+    # NOTE: The prior work only considers mono audio.
+    channels = 1
+    # Based on SoX this encoding is commonly used with a 16 or 24−bit encoding size. Learn more:
+    # http://sox.sourceforge.net/sox.html
+    encoding = 'signed-integer'
+
     try:
         import librosa
         librosa.effects.trim = configurable(librosa.effects.trim)
@@ -100,8 +106,11 @@ def _set_audio_processing():
 
     add_config({
         'src.audio': {
-            'read_audio': {
-                'sample_rate': sample_rate
+            'read_audio.assert_metadata': {
+                'sample_rate': sample_rate,
+                'bits': bits,
+                'channels': channels,
+                'encoding': encoding,
             },
             # NOTE: Practically, `frame_rate` is equal to `sample_rate`. However, the terminology is
             # more appropriate because `sample_rate` is ambiguous. In a multi-channel scenario, each
@@ -144,12 +153,9 @@ def _set_audio_processing():
             'combine_signal.bits': bits,
             'normalize_audio': {
                 'bits': bits,
-                'guard': True,
-                'loudness': False,
-                'lower_hertz': None,
-                'norm': False,
-                'resample': sample_rate,
-                'upper_hertz': None,
+                'sample_rate': sample_rate,
+                'channels': channels,
+                'encoding': encoding
             }
         },
         'src.visualize': {
@@ -161,6 +167,12 @@ def _set_audio_processing():
                 'y_axis': 'mel',
                 **hertz_bounds
             },
+        },
+        'src.bin.chunk_wav_and_text': {
+            'seconds_to_samples.sample_rate': sample_rate,
+            'samples_to_seconds.sample_rate': sample_rate,
+            'chunk_alignments.sample_rate': sample_rate,
+            'align_wav_and_scripts.sample_rate': sample_rate,
         }
     })
 
