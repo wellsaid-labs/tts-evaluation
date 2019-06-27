@@ -50,7 +50,7 @@ def test_add_predicted_spectrogram_column(mock_from_path, mock_load, mock_save):
 
     # On disk
     expected_path_predicted_spectrogram = (
-        'tests/_test_data/predicted_spectrogram'
+        'tests/_test_data/.tts/predicted_spectrogram'
         '(lj_speech_24000,run_09_10_norm_step_123_pt,aligned=True).npy')
     rows = add_predicted_spectrogram_column(rows, '', torch.device('cpu'), 1, on_disk=True)
     assert len(rows) == 1
@@ -65,10 +65,10 @@ def test_add_predicted_spectrogram_column(mock_from_path, mock_load, mock_save):
 
     # No audio path
     rows = [row._replace(audio_path=None)]
-    expected_path_predicted_spectrogram = '/tmp/predicted_spectrogram(lj_speech_24000,'
+    expected_path_predicted_spectrogram = '/tmp/.tts/predicted_spectrogram(lj_speech_24000,'
     rows = add_predicted_spectrogram_column(rows, '', torch.device('cpu'), 1, on_disk=True)
     assert len(rows) == 1
-    assert '/tmp/predicted_spectrogram(' in str(rows[0].predicted_spectrogram.path)
+    assert '/tmp/.tts/predicted_spectrogram(' in str(rows[0].predicted_spectrogram.path)
     assert ',run_09_10_norm_step_123_pt,aligned=True).npy' in str(
         rows[0].predicted_spectrogram.path)
     assert 'lj_speech_24000' not in str(rows[0].predicted_spectrogram.path)
@@ -94,8 +94,8 @@ def test_add_spectrogram_column(mock_load, mock_save):
     assert torch.is_tensor(processed[0].spectrogram_audio)
 
     # On disk
-    expected_dest_spectrogram = 'tests/_test_data/spectrogram(lj_speech_24000).npy'
-    expected_dest_padded_audio = 'tests/_test_data/pad(lj_speech_24000).npy'
+    expected_dest_spectrogram = 'tests/_test_data/.tts/spectrogram(lj_speech_24000).npy'
+    expected_dest_padded_audio = 'tests/_test_data/.tts/pad(lj_speech_24000).npy'
     processed = add_spectrogram_column(rows, on_disk=True)
     assert pathlib.Path(expected_dest_spectrogram) == processed[0].spectrogram.path
     assert pathlib.Path(expected_dest_padded_audio) == processed[0].spectrogram_audio.path

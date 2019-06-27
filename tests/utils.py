@@ -12,7 +12,10 @@ from src.utils import OnDiskTensor
 
 
 def create_disk_garbage_collection_fixture(root_directory):
-    """ Create fixture
+    """ Create fixture for deleting extra files and directories after a test is run.
+
+    NOTE: This function runs only at the top level; therefore, any new directories
+    created in `root_directory` will be deleted.
     """
 
     @pytest.fixture()

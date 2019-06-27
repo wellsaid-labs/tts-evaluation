@@ -45,6 +45,7 @@ def test_allow_substitution():
     assert not allow_substitution('tax-deferred', 'deferred')
     assert not allow_substitution('tax-deferred', 'tax')
     assert allow_substitution('A', 'a')
+    assert allow_substitution('In', 'An')
     assert allow_substitution('poietes', 'Pleiades')
     assert allow_substitution('Luchins', 'lucian\'s')
     assert allow_substitution('"raise"', 'raised')
@@ -73,12 +74,34 @@ def test_review_chunk_alignments():
     }]) == ['d', 'hi']
 
 
+def test_main__no_csv(gc_fixture, capsys):
+    with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
+        main('tests/_test_data/lj_speech_24000.wav', str(gc_fixture), max_chunk_seconds=2)
+    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_0.wav').exists()
+    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_1.wav').exists()
+    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_2.wav').exists()
+    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_3.wav').exists()
+    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_4.wav').exists()
+    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_5.wav').exists()
+    assert (gc_fixture / 'metadata.csv').exists()
+    assert (gc_fixture / 'stderr.log').exists()
+    assert (gc_fixture / 'stdout.log').exists()
+
+    assert ((gc_fixture / 'metadata.csv').read_text().strip() == """Content,WAV Filename
+The examination and testimony,lj_speech_24000/script_0_chunk_0.wav
+of the experts,lj_speech_24000/script_0_chunk_1.wav
+enabled the commission,lj_speech_24000/script_0_chunk_2.wav
+to conclude,lj_speech_24000/script_0_chunk_3.wav
+that five shots may,lj_speech_24000/script_0_chunk_4.wav
+have been fired.,lj_speech_24000/script_0_chunk_5.wav""".strip())
+
+
 def test_main(gc_fixture, capsys):
     with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
         main(
             'tests/_test_data/lj_speech_24000.wav',
-            'tests/_test_data/lj_speech.csv',
             str(gc_fixture),
+            csv_pattern='tests/_test_data/lj_speech.csv',
             max_chunk_seconds=2)
     assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_0.wav').exists()
     assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_1.wav').exists()
@@ -184,8 +207,8 @@ def test_chunk_alignments():
     token_test = token_test._replace(end_audio=len('A basic test.') + 1)
 
     alignment = [token_a, token_basic, token_test]
-    spans, unaligned_substrings = chunk_alignments(
-        alignment, script, max_chunk_seconds=len('A basic'), sample_rate=1)
+    spans = chunk_alignments(alignment, script, max_chunk_seconds=len('A basic'), sample_rate=1)
+    unaligned_substrings = review_chunk_alignments(script, spans)
 
     assert unaligned_substrings == []
     assert len(spans) == 2
@@ -201,8 +224,8 @@ def test_chunk_alignments_unable_to_cut():
     token_yup = MockAlignment(start_text=0, end_text=len('Yup,'))
 
     alignment = [token_yup, token_a, token_basic, token_test]
-    spans, unaligned_substrings = chunk_alignments(
-        alignment, script, max_chunk_seconds=4, sample_rate=1)
+    spans = chunk_alignments(alignment, script, max_chunk_seconds=4, sample_rate=1)
+    unaligned_substrings = review_chunk_alignments(script, spans)
 
     assert unaligned_substrings == [script]
     assert len(spans) == 0
@@ -218,8 +241,8 @@ def test_chunk_alignments_unable_to_cut_two():
     token_yup = MockAlignment(start_text=0, end_text=len('Yup,'))
 
     alignment = [token_yup, token_a, token_basic, token_test, token_today]
-    spans, unaligned_substrings = chunk_alignments(
-        alignment, script, max_chunk_seconds=6, sample_rate=1)
+    spans = chunk_alignments(alignment, script, max_chunk_seconds=6, sample_rate=1)
+    unaligned_substrings = review_chunk_alignments(script, spans)
 
     assert unaligned_substrings == ['a basic test']
     assert len(spans) == 2
@@ -232,12 +255,13 @@ def test_chunk_alignments_no_delimitations():
     token_a = MockAlignment(start_text=0, end_text=len('A'))
 
     alignment = [token_a, token_basic, token_test]
-    spans, unaligned_substrings = chunk_alignments(
+    spans = chunk_alignments(
         alignment,
         script,
         max_chunk_seconds=len('A basic'),
         sample_rate=1,
         delimiter=lambda *args: 0)
+    unaligned_substrings = review_chunk_alignments(script, spans)
 
     assert unaligned_substrings == []
     assert len(spans) == 2

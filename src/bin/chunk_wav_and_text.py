@@ -60,6 +60,7 @@ import unidecode
 import librosa
 import pandas
 
+from google.api_core.retry import Retry
 from google.cloud import speech
 from google.cloud.speech import types
 from google.protobuf.json_format import MessageToDict
@@ -187,10 +188,25 @@ def request_google_sst(wav_paths,
           }
         ]
     """
+
+    def _postprocess(sst_response):
+        """ Reprocess the `sst_response` removing unnecessary keys or hierarchy. """
+        results = sst_response['results']
+        return [r['alternatives'][0] for r in results if r['alternatives'][0]]
+
     sst_caches = [(sst_cache_directory / p.name).with_suffix('.json') for p in wav_paths]
-    if all(p.exists() for p in sst_caches):
-        results = [json.loads(p.read_text())['results'] for p in sst_caches]
-        return [[t['alternatives'][0] for t in r if t['alternatives'][0]] for r in results]
+    returns = [None] * len(sst_caches)
+    for i, path in enumerate(sst_caches):
+        if path.exists():
+            returns[i] = _postprocess(json.loads(path.read_text()))
+
+    if len([r for r in returns if r is None]) == 0:
+        return returns
+
+    wav_paths_not_cached_indices, wav_paths_not_cached, sst_caches_not_cached = zip(
+        *[(i, wav_path, sst_cache)
+          for i, (return_, wav_path, sst_cache) in enumerate(zip(returns, wav_paths, sst_caches))
+          if return_ is None])
 
     # Check via `gsutil -q stat` if the upload already occured.
     gcs_base_uri = 'gs://%s/%s' % (gcs_bucket_name, destination_name)
@@ -200,7 +216,8 @@ def request_google_sst(wav_paths,
     # Upload with `gsutil` for the progress bar.
     # `-m`: Performs the operation using a combination of multi-threading and multi-processing.
     # `-n`: When specified, existing files or objects at the destination will not be overwritten.
-    subprocess.run(['gsutil', '-m', 'cp', '-n'] + wav_paths + [gcs_base_uri], check=True)
+    subprocess.run(
+        ['gsutil', '-m', 'cp', '-n'] + list(wav_paths_not_cached) + [gcs_base_uri], check=True)
 
     def _helper(index, wav_path, sst_cache):
         gcs_uri = '%s/%s' % (gcs_base_uri, wav_path.name)
@@ -217,7 +234,9 @@ def request_google_sst(wav_paths,
             enable_word_time_offsets=True)
         # NOTE: Despite that this API is asynchronous, it cannot be used to launch multiple
         # parallel operations.
-        operation = client.long_running_recognize(config, audio)
+        operation = client.long_running_recognize(config, audio, retry=Retry())
+        # TODO: This approach with `tqdm` starts to mess up with more than 30 progress bars.
+        # Consider an approach with one progress bar that is updated by all threads.
         with tqdm(total=100, position=index, desc=wav_path.stem) as progress_bar:
             while not operation.done():
                 if operation.metadata is not None:
@@ -227,21 +246,26 @@ def request_google_sst(wav_paths,
                 # NOTE: Careful not to exceed default 300 requests a second quota; however, if you
                 # end up exceeding the quota, Google will force you to wait up to 30 minutes before
                 # it allows more requests.
-                time.sleep(60)
+                time.sleep(120)
             progress_bar.update(100 - progress_bar.n)
 
         sst_response = operation.result()
         sst_response = MessageToDict(sst_response)
         sst_cache.write_text(json.dumps(sst_response))
-        return sst_response['results']
+        return sst_response
 
-    pool = ThreadPool(len(wav_paths))
-    sst_responses = pool.starmap(_helper, list(zip(range(len(wav_paths)), wav_paths, sst_caches)))
+    logger.info('Running Speech-to-Text.')
+    pool = ThreadPool(len(wav_paths_not_cached))
+    sst_responses = pool.starmap(
+        _helper,
+        list(zip(range(len(wav_paths_not_cached)), wav_paths_not_cached, sst_caches_not_cached)))
+    for returns_index, sst_response in zip(wav_paths_not_cached_indices, sst_responses):
+        returns[returns_index] = _postprocess(sst_response)
     pool.close()
     pool.join()
 
     # NOTE: SST provides only one alternative unless configured otherwise.
-    return [[t['alternatives'][0] for t in r if t['alternatives'][0]] for r in sst_responses]
+    return returns
 
 
 def allow_substitution(a, b, max_length_difference=2):
@@ -346,8 +370,12 @@ def align_wav_and_scripts(sst_results, scripts, sample_rate=ConfiguredArg()):
     # NOTE: The 10% window has performed well based off empirical evidence while a 5% window
     # did not; furthermore, a 10% window is justified assuming a 7 - 8% insertion and deletion
     # rate following an alignment.
-    # NOTE: The `max(x, 10)` is present for testing small sequences.
-    alignment_window = max(round(max(len(sst_tokens), len(script_tokens)) * 0.1), 10)
+    # NOTE: The `max(x, 256)` is present for small sequences. 256 is small enough that it won't
+    # cause performance issues.
+    # NOTE: The `+ abs(len(script_tokens) - len(sst_tokens))` is for strange cases that
+    # include large misaligned sections.
+    alignment_window = max(round(max(len(sst_tokens), len(script_tokens)) * 0.1),
+                           256) + abs(len(script_tokens) - len(sst_tokens))
     num_unaligned, alignments = align_tokens([t['text'].lower() for t in script_tokens],
                                              [t['text'].lower() for t in sst_tokens],
                                              alignment_window,
@@ -389,7 +417,7 @@ def align_wav_and_scripts(sst_results, scripts, sample_rate=ConfiguredArg()):
     # Print consecutive unaligned spans.
     unaligned_substrings = []
     for script, script_alignments in zip(scripts, scripts_alignments):
-        spans = [list(s) for a, s in groupby(script_alignments) if type(a) == Nonalignment]
+        spans = [list(g) for key, g in groupby(script_alignments, key=type) if key == Nonalignment]
         if len(spans) > 0:
             unaligned_substrings += [script[s[0].start_text:s[-1].end_text] for s in spans]
     unaligned_substrings = sorted(unaligned_substrings, key=len, reverse=True)
@@ -522,7 +550,14 @@ def chunk_alignments(alignments,
     while len(max_chunk) > 0 and isinstance(max_chunk[-1], Nonalignment):
         max_chunk = max_chunk[:-1]
     if len(max_chunk) == 0:
-        return [], (len(script), len(script))
+        return []
+
+    # TODO: Consider not creating any chunks with unaligned phrases (i.e. 2+ `Nonalignment`'s in a
+    # row). Unaligned phrases, unlike unaligned words, hint at that some content was not verbalized.
+    # Unaligned words more likely hint that there was an alignment mistake. However, in the
+    # current implementation, `Nonalignment`'s are filtered out unless they are in the middle of
+    # copy; therefore, the unaligned phrases would correspond to phrases embeded in the copy
+    # that are not spoken.
 
     # Chunk the max chunk until the max chunk is smaller than ``max_chunk_samples``
     get_chunk_length = lambda chunk: chunk[-1].end_audio - chunk[0].start_audio
@@ -556,64 +591,7 @@ def chunk_alignments(alignments,
         'audio': (chunk[0].start_audio, chunk[-1].end_audio),
     } for chunk in chunks]
     spans = sorted(spans, key=lambda s: s['text'][0])
-    return spans, review_chunk_alignments(script, spans)
-
-
-def setup_io(wav_pattern,
-             csv_pattern,
-             destination,
-             wav_directory_name='wavs',
-             csv_metadata_name='metadata.csv',
-             sst_cache_name='.sst'):
-    """ Perform basic IO operations to setup this script.
-
-    The WAV paths and CSV paths are matched up based on a natural sorting algorithm: `natural_keys`.
-
-    Args:
-        wav_pattern (str): The audio file glob pattern.
-        csv_pattern (str): The CSV file globl pattern containing metadata associated with audio
-            file.
-        destination (Path): Directory to save the processed data.
-        wav_directory_name (str, optional): The directory name to store audio clips.
-        csv_metadata_name (str, optional): The filename for metadata.
-        sst_cache_name (str, optional): The directory name for SST files.
-
-    Returns:
-        wav_paths (list of Path): WAV files to process.
-        csv_paths (list of Path): CSV files to process.
-        wav_directory (Path): The directory in which to store audio clips.
-        sst_cache_directory (Path): The directory in which to cache SST requests.
-        metadata_filename (Path): The filename to write CSV metadata to.
-    """
-    metadata_filename = destination / csv_metadata_name  # Filename to store CSV metadata
-    wav_directory = destination / wav_directory_name  # Directory to store clips
-    sst_cache_directory = destination / sst_cache_name
-    wav_directory.mkdir(parents=True, exist_ok=True)
-    sst_cache_directory.mkdir(exist_ok=True)
-
-    record_stream(destination)
-
-    wav_paths = sorted(list(Path('.').glob(wav_pattern)), key=natural_keys)
-    csv_paths = sorted(list(Path('.').glob(csv_pattern)), key=natural_keys)
-
-    # Check invariants
-    assert all(
-        [wav_path.suffix == '.wav' for wav_path in wav_paths]), 'Please select only WAV files'
-    assert all(
-        [csv_path.suffix == '.csv' for csv_path in csv_paths]), 'Please select only CSV files'
-
-    if len(csv_paths) == 0 and len(wav_paths) == 0:
-        logger.warning('Found no CSV or WAV files.')
-        return
-    elif len(csv_paths) != len(wav_paths):
-        logger.warning('CSV (%d) and WAV (%d) files are not aligned.', len(csv_paths),
-                       len(wav_paths))
-        return
-    else:
-        logger.info('Processing %d files', len(csv_paths))
-
-    logger.info('Found %d CSV and %d WAV files.', len(csv_paths), len(wav_paths))
-    return wav_paths, csv_paths, wav_directory, sst_cache_directory, metadata_filename
+    return spans
 
 
 def normalize_text(text):
@@ -639,12 +617,50 @@ def normalize_text(text):
     return unidecode.unidecode(text)
 
 
+def get_paths_from_patterns(wav_pattern, csv_pattern):
+    """ Get the WAV and CSV paths from glob patterns.
+
+    The WAV paths and CSV paths are matched up based on a natural sorting algorithm: `natural_keys`.
+
+    Args:
+        wav_pattern (str): The audio file glob pattern.
+        csv_pattern (str): The CSV file globl pattern containing metadata associated with audio
+            file.
+
+    Returns:
+        wav_paths (list of Path)
+        csv_paths (list of Path)
+    """
+    wav_paths = sorted(list(Path('.').glob(wav_pattern)), key=natural_keys)
+    assert all(
+        [wav_path.suffix == '.wav' for wav_path in wav_paths]), 'Please select only WAV files'
+    logger.info('Processing %d files', len(wav_paths))
+
+    if csv_pattern is not None:
+        csv_paths = sorted(list(Path('.').glob(csv_pattern)), key=natural_keys)
+        assert all(
+            [csv_path.suffix == '.csv' for csv_path in csv_paths]), 'Please select only CSV files'
+        if len(csv_paths) == 0 and len(wav_paths) == 0:
+            raise ValueError('Found no CSV or WAV files.')
+        elif len(csv_paths) != len(wav_paths):
+            raise ValueError('CSV (%d) and WAV (%d) files are not aligned.', len(csv_paths),
+                             len(wav_paths))
+        logger.info('Found %d CSV and %d WAV files.', len(csv_paths), len(wav_paths))
+    else:
+        csv_paths = None
+
+    return wav_paths, csv_paths
+
+
 def main(wav_pattern,
-         csv_pattern,
          destination,
+         csv_pattern=None,
          text_column='Content',
          wav_column='WAV Filename',
-         max_chunk_seconds=16):
+         wav_directory_name='wavs',
+         csv_metadata_name='metadata.csv',
+         sst_cache_name='.sst',
+         max_chunk_seconds=15):
     """ Align audio with scripts, then create and save chunks of audio and text.
 
     TODO: Consider increasing the `max_chunk_seconds` up to 20 seconds in line with the
@@ -652,73 +668,102 @@ def main(wav_pattern,
       chunk seconds should be the maximum words a speaker will read without needing to pause
       or break up the voice-over.
 
+    NOTE: This script has a tendancy to fail because of network errors, bad file descriptors, or
+    `sox` errors. In most cases, the script can be safely rerun and it'll start off from where it
+    left off. That said, it'd be nice for these lower level issues not to occur.
+
     Args:
         wav_pattern (str): The audio file glob pattern.
-        csv_pattern (str): The CSV file glob pattern containing metadata associated with audio file.
         destination (str): Directory to save the processed data.
+        csv_pattern (str): The CSV file glob pattern containing metadata associated with audio file.
         text_column (str, optional): The script column in the CSV file.
         wav_column (str, optional): Column name for the new audio filename column.
+        wav_directory_name (str, optional): The directory name to store audio clips.
+        csv_metadata_name (str, optional): The filename for metadata.
+        sst_cache_name (str, optional): The directory name for SST files.
         max_chunk_seconds (float, optional): Number of seconds for the maximum chunk audio length.
     """
+    # Setup the basic file structure
+    destination = Path(destination)
+    metadata_filename = destination / csv_metadata_name  # Filename to store CSV metadata
+    wav_directory = destination / wav_directory_name  # Directory to store clips
+    sst_cache_directory = destination / sst_cache_name
+    wav_directory.mkdir(parents=True, exist_ok=True)
+    sst_cache_directory.mkdir(exist_ok=True)
+
+    record_stream(destination)  # Save a record of the execution for future reference
     set_hparams()
 
-    destination = Path(destination)
-    (wav_paths, csv_paths, wav_directory, sst_cache_directory, metadata_filename) = setup_io(
-        wav_pattern, csv_pattern, destination)
+    wav_paths, csv_paths = get_paths_from_patterns(wav_pattern, csv_pattern)
 
     logger.info('Normalizing audio files...')
     wav_paths = [normalize_audio(p) for p in tqdm(wav_paths)]
     sst_results = request_google_sst(wav_paths, sst_cache_directory, destination.name)
 
-    all_unaligned_substrings = []
-    num_characters = 0
-    chunk_lengths = []
-    for i, (wav_path, csv_path, sst_result) in enumerate(zip(wav_paths, csv_paths, sst_results)):
+    # Store some statistics from the execution
+    all_unaligned_substrings = []  # All substrings that didn't get aligned.
+    num_characters = 0  # Number of total characters processed.
+    chunk_lengths = []  # The length in seconds of every audio clip produced.
+
+    for i, (wav_path, sst_result) in enumerate(zip(wav_paths, sst_results)):
         print('-' * 100)
-        logger.info('Processing %s:%s', wav_path, csv_path)
-        script_wav_directory = wav_directory / wav_path.stem  # Directory to resulting audio chunks
-        script_wav_directory.mkdir(exist_ok=True)
-
-        logger.info('Reading audio and csv...')
-        audio = read_audio(wav_path)
-        data_frame = pandas.read_csv(csv_path)
-        if 'Index' in data_frame:  # NOTE: Some CSV files include a unhelpful `Index` column.
-            del data_frame['Index']
-        scripts = [normalize_text(str(x)) for x in data_frame[text_column]]
-        num_characters += sum([len(s) for s in scripts])
-
-        try:
-            alignments = align_wav_and_scripts(sst_result, scripts)
-        except (requests.exceptions.RequestException, ValueError):
-            logger.exception('Failed to align %s with %s', wav_path.name, csv_path.name)
-            continue
+        logger.info('Aligning WAV (%s)', wav_path)
+        if csv_paths is not None:
+            logger.info('Aligned WAV to CSV (%s)', csv_paths[i])
+            data_frame = pandas.read_csv(csv_paths[i])
+            # NOTE: Some CSV files include a unhelpful `Index` column.
+            data_frame = data_frame.drop(columns=['Index'] if 'Index' in data_frame else [])
+            data_frame[text_column].apply(normalize_text)
+            try:
+                alignments = align_wav_and_scripts(sst_result, data_frame[text_column].tolist())
+            except (requests.exceptions.RequestException, ValueError):
+                logger.exception('Failed to align %s with %s', wav_path.name, csv_paths[i].name)
+                continue
+        else:
+            script = ''
+            alignments = [[]]
+            for split in sst_result:
+                for word in split['words']:
+                    text_span = (len(script), len(script) + len(word['word']))
+                    audio_span = (seconds_to_samples(word['startTime']),
+                                  seconds_to_samples(word['endTime']))
+                    alignments[0].append(Alignment(*text_span, *audio_span))
+                    script += word['word'] + ' '
+            data_frame = pandas.DataFrame(data={text_column: [script.strip()]})
+        num_characters += data_frame[text_column].str.len().sum()
 
         logger.info('Chunking and writing...')
-        to_write = []
-        for j, (script, alignment, row) in enumerate(
-                zip(scripts, alignments, data_frame.to_dict('records'))):
-
-            chunks, unaligned_substrings = chunk_alignments(alignment, script, max_chunk_seconds)
-            all_unaligned_substrings += unaligned_substrings
+        audio_chunk_directory = wav_directory / wav_path.stem
+        audio_chunk_directory.mkdir(exist_ok=True)
+        audio = read_audio(wav_path)
+        to_write = []  # Metadata such as text to write in `metadata_filename`
+        for j, (alignment, row) in enumerate(zip(alignments, data_frame.to_dict('records'))):
+            script = row[text_column]
+            chunks = chunk_alignments(alignment, script, max_chunk_seconds)
+            all_unaligned_substrings += review_chunk_alignments(script, chunks)
 
             for k, chunk in enumerate(chunks):
                 new_row = row.copy()
 
                 new_row[text_column] = script[slice(*chunk['text'])].strip()
-                audio_path = script_wav_directory / ('script_%d_chunk_%d.wav' % (j, k))
+                audio_path = audio_chunk_directory / ('script_%d_chunk_%d.wav' % (j, k))
                 new_row[wav_column] = str(audio_path.relative_to(wav_directory))
                 to_write.append(new_row)
 
                 audio_span = audio[slice(*chunk['audio'])]
-                chunk_lengths.append(samples_to_seconds(chunk['audio'][1] - chunk['audio'][0]))
                 librosa.output.write_wav(str(audio_path), audio_span)
+
+                chunk_lengths.append(samples_to_seconds(chunk['audio'][1] - chunk['audio'][0]))
 
         logger.info('Found %d chunks', len(to_write))
         pandas.DataFrame(to_write).to_csv(
             str(metadata_filename), mode='a', header=i == 0, index=False)
 
     print('=' * 100)
-    all_unaligned_substrings = list(map(str, all_unaligned_substrings))
+
+    # Print global statistics on the execution.
+    # TODO: Consider printing the sum of all the chunk lengths to show the user the total dataset
+    # length in hours.
     num_unaligned_characters = sum([len(s) for s in all_unaligned_substrings])
     logger.info('Created %d chunks with mean length %fs ± %f and max length of %fs',
                 len(chunk_lengths), statistics.mean(chunk_lengths), statistics.stdev(chunk_lengths),
@@ -737,4 +782,4 @@ if __name__ == "__main__":  # pragma: no cover
     parser.add_argument('-c', '--csv', type=str, help='Path / Pattern to CSV file with scripts.')
     parser.add_argument('-d', '--destination', type=str, help='Path to save processed files.')
     args = parser.parse_args()
-    main(args.wav, args.csv, args.destination)
+    main(args.wav, args.destination, args.csv)

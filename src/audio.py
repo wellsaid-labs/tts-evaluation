@@ -426,7 +426,14 @@ def get_audio_metadata(audio_path):
     """
     audio_path = str(audio_path)
     check_output = subprocess.check_output
-    encoding = check_output(['sox', '--i', '-e', audio_path]).decode("utf-8").strip()
+
+    try:
+        encoding = check_output(['sox', '--i', '-e', audio_path],
+                                stderr=subprocess.STDOUT).decode("utf-8").strip()
+    except subprocess.CalledProcessError as error:
+        logger.error('Captured output:\n%s', error.output)
+        raise error
+
     encoding = encoding.replace('PCM', '').lower().strip().replace(' ', '-')
     return {
         'channels': int(check_output(['sox', '--i', '-c', audio_path]).decode("utf-8")),
@@ -471,14 +478,19 @@ def normalize_audio(audio_path,
     stem = stem if _channels is None else ('channels(%s,%d)' % (stem, _channels))
     stem = stem if _encoding is None else ('encoding(%s,%s)' % (stem, _encoding))
 
-    destination = audio_path.parent / '{}{}'.format(stem, audio_path.suffix)
-    if stem == audio_path.stem or destination.is_file():
+    if stem == audio_path.stem:
+        return audio_path
+
+    destination = audio_path.parent / '.sox' / '{}{}'.format(stem, audio_path.suffix)
+    if destination.is_file():
         return destination
 
     # Allow only the master node to save to disk while the worker nodes optimistically assume
     # the file already exists.
     if not src.distributed.is_master():
         return destination
+
+    destination.parent.mkdir(exist_ok=True)
 
     # `-G`: Automatically invoke the gain effect to guard against clipping.
     commands = ['sox', '-G', audio_path, destination]
