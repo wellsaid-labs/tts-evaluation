@@ -713,7 +713,7 @@ def main(wav_pattern,
             data_frame = pandas.read_csv(csv_paths[i])
             # NOTE: Some CSV files include a unhelpful `Index` column.
             data_frame = data_frame.drop(columns=['Index'] if 'Index' in data_frame else [])
-            data_frame[text_column].apply(normalize_text)
+            data_frame[text_column] = data_frame[text_column].apply(normalize_text)
             try:
                 alignments = align_wav_and_scripts(sst_result, data_frame[text_column].tolist())
             except (requests.exceptions.RequestException, ValueError):
