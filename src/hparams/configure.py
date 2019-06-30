@@ -76,7 +76,6 @@ def _set_audio_processing():
     try:
         import librosa
         librosa.effects.trim = configurable(librosa.effects.trim)
-        librosa.output.write_wav = configurable(librosa.output.write_wav)
         add_config({
             'librosa.effects.trim': {
                 'frame_length': frame_size,
@@ -84,8 +83,7 @@ def _set_audio_processing():
                 # NOTE: Manually determined to be a adequate cutoff for Linda Johnson via:
                 # ``notebooks/Stripping Silence.ipynb``
                 'top_db': 50
-            },
-            'librosa.output.write_wav.sr': sample_rate
+            }
         })
     except ImportError:
         logger.info('Ignoring optional `librosa` configurations.')
@@ -97,13 +95,6 @@ def _set_audio_processing():
     except ImportError:
         logger.info('Ignoring optional `IPython` configurations.')
 
-    try:
-        import scipy.io.wavfile
-        scipy.io.wavfile.write = configurable(scipy.io.wavfile.write)
-        add_config({'scipy.io.wavfile.write.rate': sample_rate})
-    except ImportError:
-        logger.info('Ignoring optional `scipy` configurations.')
-
     add_config({
         'src.audio': {
             'read_audio.assert_metadata': {
@@ -112,6 +103,7 @@ def _set_audio_processing():
                 'channels': channels,
                 'encoding': encoding,
             },
+            'write_audio.sample_rate': sample_rate,
             # NOTE: Practically, `frame_rate` is equal to `sample_rate`. However, the terminology is
             # more appropriate because `sample_rate` is ambiguous. In a multi-channel scenario, each
             # channel has its own set of samples. It's unclear if `sample_rate` depends on the
@@ -159,7 +151,6 @@ def _set_audio_processing():
             }
         },
         'src.visualize': {
-            'CometML.<locals>.log_audio.sample_rate': sample_rate,
             'plot_waveform.sample_rate': sample_rate,
             'plot_spectrogram': {
                 'sample_rate': sample_rate,
@@ -386,7 +377,8 @@ def get_dataset():
             datasets.susan_speech_dataset(),
             datasets.sam_speech_dataset(),
             datasets.frank_speech_dataset(),
-            datasets.adrienne_speech_dataset()
+            datasets.adrienne_speech_dataset(),
+            datasets.sean_speech_dataset()
         ]))
     dataset = datasets.filter_(_filter_audio_path_not_found, dataset)
     dataset = datasets.filter_(_filter_no_text, dataset)
@@ -394,8 +386,9 @@ def get_dataset():
     dataset = datasets.filter_(_filter_no_numbers, dataset)
     dataset = datasets.filter_(_filter_books, dataset)
     logger.info('Loaded %d dataset examples.', len(dataset))
-    dataset = datasets.normalize_audio_column(dataset)
     do_deterministic_shuffle(dataset, random_seed=123)
+    # NOTE: Performance for `normalize_audio_column` benefits from shuffling.
+    dataset = datasets.normalize_audio_column(dataset)
     return utils.split_list(dataset, splits=(0.8, 0.2))
 
 
@@ -458,7 +451,7 @@ def set_hparams():
     convolution_dropout = 0.5
     lstm_dropout = 0.1
 
-    spectrogram_model_dev_batch_size = 256
+    spectrogram_model_dev_batch_size = 224
 
     # TODO: Add option to instead of strings to use direct references.
     add_config({

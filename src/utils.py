@@ -44,6 +44,16 @@ pprint = pprint.PrettyPrinter(indent=4)
 
 ROOT_PATH = Path(__file__).parent.parent.resolve()  # Repository root path
 
+TTS_DISK_CACHE_NAME = '.tts_cache'  # Directory name for any disk cache's created by this repository
+
+
+def chunks(list_, n):
+    """ Yield successive n-sized chunks from `list_`. """
+    assert n > 0, 'The chunk size must be larger than zero.'
+
+    for i in range(0, len(list_), n):
+        yield list_[i:i + n]
+
 
 def dict_collapse(dict_, keys=[], delimitator='.'):
     """ Recursive ``dict`` collapse a nested dictionary.
@@ -715,7 +725,11 @@ class OnDiskTensor():
             return self._shape
 
         with open(str(self.path), 'rb') as file_:
-            version = np.lib.format.read_magic(file_)
+            try:
+                version = np.lib.format.read_magic(file_)
+            except ValueError as error:
+                logger.error('Failed to read shape of %s' % file_)
+                raise error
             shape, _, _ = np.lib.format._read_array_header(file_, version)
 
         self._shape = shape

@@ -15,7 +15,6 @@ from torchnlp.utils import tensors_to
 from torch.utils.data.sampler import RandomSampler
 
 import torch
-import scipy
 
 from src.audio import combine_signal
 from src.audio import griffin_lim
@@ -30,6 +29,7 @@ from src.utils import balance_list
 from src.utils import Checkpoint
 from src.utils import evaluate
 from src.utils import record_stream
+from src.audio import write_audio
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ def _save(destination, tags, speaker, waveform):
     """
     speaker_name = speaker.name.lower().replace(' ', '_')
     path = str(destination / ('%s,%s.wav' % (speaker_name, ','.join(tags))))
-    scipy.io.wavfile.write(filename=path, data=waveform)
+    write_audio(path, waveform)
     logger.info('Saved file "%s" with waveform of shape `%s` and dtype `%s`', path, waveform.shape,
                 waveform.dtype)
 

@@ -1,28 +1,41 @@
 import pytest
 
+from src.audio import read_audio
 from src.bin.chunk_wav_and_text import align_wav_and_scripts
 from src.bin.chunk_wav_and_text import Alignment
 from src.bin.chunk_wav_and_text import allow_substitution
 from src.bin.chunk_wav_and_text import average_silence_delimiter
 from src.bin.chunk_wav_and_text import chunk_alignments
+from src.bin.chunk_wav_and_text import get_samples_per_character
 from src.bin.chunk_wav_and_text import main
 from src.bin.chunk_wav_and_text import natural_keys
 from src.bin.chunk_wav_and_text import Nonalignment
 from src.bin.chunk_wav_and_text import normalize_text
 from src.bin.chunk_wav_and_text import remove_punctuation
 from src.bin.chunk_wav_and_text import review_chunk_alignments
-from src.bin.chunk_wav_and_text import seconds_to_samples
 from src.bin.chunk_wav_and_text import samples_to_seconds
+from src.bin.chunk_wav_and_text import seconds_to_samples
 from src.utils import ROOT_PATH
 from tests.utils import create_disk_garbage_collection_fixture
 
-gc_fixture = create_disk_garbage_collection_fixture(
+gc_lj_chunks = create_disk_garbage_collection_fixture(
     ROOT_PATH / 'tests' / '_test_data' / 'lj_speech_chunks')
+
+gc_test_data = create_disk_garbage_collection_fixture(ROOT_PATH / 'tests' / '_test_data')
 
 
 def MockAlignment(start_text, end_text):
     return Alignment(
         start_audio=start_text, end_audio=end_text, start_text=start_text, end_text=end_text)
+
+
+def test_get_samples_per_character():
+    assert get_samples_per_character(
+        Alignment(start_audio=0, end_audio=100, start_text=0, end_text=100)) == 1.0
+    assert get_samples_per_character(
+        Alignment(start_audio=0, end_audio=100, start_text=0, end_text=10)) == 10.0
+    assert get_samples_per_character(
+        Alignment(start_audio=0, end_audio=10, start_text=0, end_text=100)) == 0.1
 
 
 def test_natural_keys():
@@ -65,6 +78,24 @@ def test_review_chunk_alignments():
             'audio': (0, 3)
         }])
 
+    with pytest.raises(ValueError):
+        review_chunk_alignments('abcdefg', [{
+            'text': (0, 3),
+            'audio': (0, 0)
+        }, {
+            'text': (4, 7),
+            'audio': (4, 7)
+        }])
+
+    with pytest.raises(ValueError):
+        review_chunk_alignments('abcdefg', [{
+            'text': (0, 0),
+            'audio': (0, 3)
+        }, {
+            'text': (4, 7),
+            'audio': (4, 7)
+        }])
+
     assert review_chunk_alignments('abcdefghi', [{
         'text': (0, 3),
         'audio': (0, 3)
@@ -74,20 +105,20 @@ def test_review_chunk_alignments():
     }]) == ['d', 'hi']
 
 
-def test_main__no_csv(gc_fixture, capsys):
+def test_main__no_csv(gc_lj_chunks, capsys):
     with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
-        main('tests/_test_data/lj_speech_24000.wav', str(gc_fixture), max_chunk_seconds=2)
-    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_0.wav').exists()
-    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_1.wav').exists()
-    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_2.wav').exists()
-    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_3.wav').exists()
-    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_4.wav').exists()
-    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_5.wav').exists()
-    assert (gc_fixture / 'metadata.csv').exists()
-    assert (gc_fixture / 'stderr.log').exists()
-    assert (gc_fixture / 'stdout.log').exists()
+        main('tests/_test_data/lj_speech_24000.wav', str(gc_lj_chunks), max_chunk_seconds=2)
+    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_0.wav').exists()
+    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_1.wav').exists()
+    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_2.wav').exists()
+    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_3.wav').exists()
+    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_4.wav').exists()
+    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_5.wav').exists()
+    assert (gc_lj_chunks / 'metadata.csv').exists()
+    assert (gc_lj_chunks / 'stderr.log').exists()
+    assert (gc_lj_chunks / 'stdout.log').exists()
 
-    assert ((gc_fixture / 'metadata.csv').read_text().strip() == """Content,WAV Filename
+    assert ((gc_lj_chunks / 'metadata.csv').read_text().strip() == """Content,WAV Filename
 The examination and testimony,lj_speech_24000/script_0_chunk_0.wav
 of the experts,lj_speech_24000/script_0_chunk_1.wav
 enabled the commission,lj_speech_24000/script_0_chunk_2.wav
@@ -96,23 +127,39 @@ that five shots may,lj_speech_24000/script_0_chunk_4.wav
 have been fired.,lj_speech_24000/script_0_chunk_5.wav""".strip())
 
 
-def test_main(gc_fixture, capsys):
+def test_main__normalize_audio(gc_lj_chunks, gc_test_data, capsys):
+    with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
+        main(
+            'tests/_test_data/lj_speech.wav',
+            str(gc_lj_chunks),
+            csv_pattern='tests/_test_data/lj_speech.csv',
+            max_chunk_seconds=2)
+
+    with pytest.raises(AssertionError):  # The original audio file was not supported.
+        read_audio('tests/_test_data/lj_speech.wav')
+
+    # Ensure chunks are supported by this repository.
+    read_audio(gc_lj_chunks / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_0.wav')
+    read_audio(gc_lj_chunks / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_2.wav')
+
+
+def test_main(gc_lj_chunks, capsys):
     with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
         main(
             'tests/_test_data/lj_speech_24000.wav',
-            str(gc_fixture),
+            str(gc_lj_chunks),
             csv_pattern='tests/_test_data/lj_speech.csv',
             max_chunk_seconds=2)
-    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_0.wav').exists()
-    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_1.wav').exists()
-    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_1_chunk_0.wav').exists()
-    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_1_chunk_1.wav').exists()
-    assert (gc_fixture / 'wavs' / 'lj_speech_24000' / 'script_1_chunk_2.wav').exists()
-    assert (gc_fixture / 'metadata.csv').exists()
-    assert (gc_fixture / 'stderr.log').exists()
-    assert (gc_fixture / 'stdout.log').exists()
+    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_0.wav').exists()
+    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_1.wav').exists()
+    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_1_chunk_0.wav').exists()
+    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_1_chunk_1.wav').exists()
+    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_1_chunk_2.wav').exists()
+    assert (gc_lj_chunks / 'metadata.csv').exists()
+    assert (gc_lj_chunks / 'stderr.log').exists()
+    assert (gc_lj_chunks / 'stdout.log').exists()
 
-    assert ((gc_fixture / 'metadata.csv').read_text().strip() == """Content,WAV Filename
+    assert ((gc_lj_chunks / 'metadata.csv').read_text().strip() == """Content,WAV Filename
 The examination and,lj_speech_24000/script_0_chunk_0.wav
 of the experts enabled,lj_speech_24000/script_0_chunk_1.wav
 The SUBSTITUTE_WORD to conclude,lj_speech_24000/script_1_chunk_0.wav

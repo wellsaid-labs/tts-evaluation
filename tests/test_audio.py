@@ -4,6 +4,7 @@ import io
 
 from scipy.io import wavfile
 
+import librosa
 import numpy as np
 import torch
 
@@ -14,11 +15,50 @@ from src.audio import get_log_mel_spectrogram
 from src.audio import griffin_lim
 from src.audio import normalize_audio
 from src.audio import read_audio
+from src.audio import write_audio
 from src.audio import split_signal
 from src.utils import ROOT_PATH
 from tests.utils import create_disk_garbage_collection_fixture
 
 gc_fixture = create_disk_garbage_collection_fixture(ROOT_PATH / 'tests' / '_test_data')
+
+
+def test_read_audio():
+    integer = read_audio('tests/_test_data/lj_speech_24000.wav', to_float=False)
+    assert integer.dtype == np.dtype('int16')
+
+    float_ = read_audio('tests/_test_data/lj_speech_24000.wav', to_float=True)
+    assert float_.dtype == np.dtype('float32')
+
+    np.testing.assert_almost_equal(integer / 2**(16 - 1), float_)
+
+    librosa_, _ = librosa.core.load('tests/_test_data/lj_speech_24000.wav', sr=None, mono=False)
+
+    np.testing.assert_almost_equal(librosa_, float_)
+
+
+def test_write_audio(gc_fixture):
+    filename = gc_fixture / 'lj_speech.wav'
+    metadata = get_audio_metadata(filename)
+    sample_rate, signal = wavfile.read(str(filename))
+
+    new_filename = gc_fixture / 'new_lj_speech.wav'
+    write_audio(new_filename, signal, sample_rate)
+    new_metadata = get_audio_metadata(new_filename)
+
+    assert metadata == new_metadata  # Ensure the metadata stays the same
+
+
+def test_write_audio__read_audio(gc_fixture):
+    filename = gc_fixture / 'lj_speech_24000.wav'
+    metadata = get_audio_metadata(filename)
+    signal = read_audio(str(filename), to_float=False)
+
+    new_filename = gc_fixture / 'new_lj_speech_24000.wav'
+    write_audio(new_filename, signal, 24000)
+    new_metadata = get_audio_metadata(new_filename)
+
+    assert metadata == new_metadata  # Ensure the metadata stays the same
 
 
 def test_get_audio_metadata():
@@ -27,7 +67,18 @@ def test_get_audio_metadata():
         'bits': 16,
         'channels': 1,
         'encoding': 'signed-integer'
-    } == get_audio_metadata('tests/_test_data/lj_speech_24000.wav')
+    } == get_audio_metadata(
+        'tests/_test_data/lj_speech_24000.wav', optimistic_caching=True)
+
+    # This `assert` is `True` only because `optimistic_caching` assumed `lj_speech_24000` and
+    # `lj_speech` have the same metadata.
+    assert {
+        'sample_rate': 22050,
+        'bits': 16,
+        'channels': 1,
+        'encoding': 'signed-integer'
+    } == get_audio_metadata(
+        'tests/_test_data/lj_speech.wav', optimistic_caching=True)
 
 
 def test_build_wav_header():

@@ -14,12 +14,16 @@ from src.spectrogram_model import InputEncoder
 from src.spectrogram_model import SpectrogramModel
 from src.utils import Checkpoint
 from src.utils import ROOT_PATH
+from src.utils import TTS_DISK_CACHE_NAME
+from tests.utils import create_disk_garbage_collection_fixture
+
+gc_test_data = create_disk_garbage_collection_fixture(ROOT_PATH / 'tests' / '_test_data')
 
 
 @mock.patch('src.utils.np.save')
 @mock.patch('src.utils.np.load')
 @mock.patch('src.datasets.utils.Checkpoint.from_path')
-def test_add_predicted_spectrogram_column(mock_from_path, mock_load, mock_save):
+def test_add_predicted_spectrogram_column(mock_from_path, mock_load, mock_save, gc_test_data):
     speaker = Speaker('Test Speaker', Gender.MALE)
     input_encoder = InputEncoder(['this is a test'], [speaker])
     frame_channels = 124
@@ -50,7 +54,7 @@ def test_add_predicted_spectrogram_column(mock_from_path, mock_load, mock_save):
 
     # On disk
     expected_path_predicted_spectrogram = (
-        'tests/_test_data/.tts/predicted_spectrogram'
+        'tests/_test_data/' + TTS_DISK_CACHE_NAME + '/predicted_spectrogram'
         '(lj_speech_24000,run_09_10_norm_step_123_pt,aligned=True).npy')
     rows = add_predicted_spectrogram_column(rows, '', torch.device('cpu'), 1, on_disk=True)
     assert len(rows) == 1
@@ -65,10 +69,12 @@ def test_add_predicted_spectrogram_column(mock_from_path, mock_load, mock_save):
 
     # No audio path
     rows = [row._replace(audio_path=None)]
-    expected_path_predicted_spectrogram = '/tmp/.tts/predicted_spectrogram(lj_speech_24000,'
+    expected_path_predicted_spectrogram = (
+        '/tmp/' + TTS_DISK_CACHE_NAME + '/predicted_spectrogram(lj_speech_24000,')
     rows = add_predicted_spectrogram_column(rows, '', torch.device('cpu'), 1, on_disk=True)
     assert len(rows) == 1
-    assert '/tmp/.tts/predicted_spectrogram(' in str(rows[0].predicted_spectrogram.path)
+    assert '/tmp/' + TTS_DISK_CACHE_NAME + '/predicted_spectrogram(' in str(
+        rows[0].predicted_spectrogram.path)
     assert ',run_09_10_norm_step_123_pt,aligned=True).npy' in str(
         rows[0].predicted_spectrogram.path)
     assert 'lj_speech_24000' not in str(rows[0].predicted_spectrogram.path)
@@ -76,7 +82,7 @@ def test_add_predicted_spectrogram_column(mock_from_path, mock_load, mock_save):
 
 @mock.patch('src.utils.np.save')
 @mock.patch('src.utils.np.load')
-def test_add_spectrogram_column(mock_load, mock_save):
+def test_add_spectrogram_column(mock_load, mock_save, gc_test_data):
     audio_path = pathlib.Path('tests/_test_data/lj_speech_24000.wav')
     rows = [
         TextSpeechRow(
@@ -94,8 +100,10 @@ def test_add_spectrogram_column(mock_load, mock_save):
     assert torch.is_tensor(processed[0].spectrogram_audio)
 
     # On disk
-    expected_dest_spectrogram = 'tests/_test_data/.tts/spectrogram(lj_speech_24000).npy'
-    expected_dest_padded_audio = 'tests/_test_data/.tts/pad(lj_speech_24000).npy'
+    expected_dest_spectrogram = (
+        'tests/_test_data/' + TTS_DISK_CACHE_NAME + '/spectrogram(lj_speech_24000).npy')
+    expected_dest_padded_audio = (
+        'tests/_test_data/' + TTS_DISK_CACHE_NAME + '/pad(lj_speech_24000).npy')
     processed = add_spectrogram_column(rows, on_disk=True)
     assert pathlib.Path(expected_dest_spectrogram) == processed[0].spectrogram.path
     assert pathlib.Path(expected_dest_padded_audio) == processed[0].spectrogram_audio.path

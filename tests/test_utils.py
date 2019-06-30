@@ -49,6 +49,12 @@ from src.utils import set_random_generator_state
 from src.utils import slice_by_cumulative_sum
 from src.utils import sort_together
 from src.utils import split_list
+from src.utils import chunks
+
+
+def test_chunks():
+    assert list(chunks([1, 2, 3, 4, 5], 2)) == [[1, 2], [3, 4], [5]]
+    assert list(chunks([], 2)) == []
 
 
 def test_slice_by_cumulative_sum():

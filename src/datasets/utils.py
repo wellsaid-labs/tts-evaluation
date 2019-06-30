@@ -21,6 +21,7 @@ from src.utils import batch_predict_spectrograms
 from src.utils import Checkpoint
 from src.utils import OnDiskTensor
 from src.utils import ROOT_PATH
+from src.utils import TTS_DISK_CACHE_NAME
 
 import src.distributed
 
@@ -72,8 +73,9 @@ def add_predicted_spectrogram_column(data,
             else:
                 parent = example.audio_path.parent
                 name = example.audio_path.stem
-            (parent / '.tts').mkdir(exist_ok=True)
-            return parent / '.tts' / 'predicted_spectrogram({},{},aligned={}).npy'.format(
+            parent = parent if parent.name == TTS_DISK_CACHE_NAME else parent / TTS_DISK_CACHE_NAME
+            parent.mkdir(exist_ok=True)
+            return parent / 'predicted_spectrogram({},{},aligned={}).npy'.format(
                 name, model_name, aligned)
 
         filenames = [to_filename(example) for example in data]
@@ -111,9 +113,10 @@ def _add_spectrogram_column(example, on_disk=True):
     audio_path = example.audio_path
 
     if on_disk:
-        spectrogram_audio_path = audio_path.parent / '.tts' / 'pad({}).npy'.format(audio_path.stem)
-        spectrogram_path = audio_path.parent / '.tts' / 'spectrogram({}).npy'.format(
-            audio_path.stem)
+        parent = audio_path.parent
+        parent = parent if parent.name == TTS_DISK_CACHE_NAME else parent / TTS_DISK_CACHE_NAME
+        spectrogram_audio_path = parent / 'pad({}).npy'.format(audio_path.stem)
+        spectrogram_path = parent / 'spectrogram({}).npy'.format(audio_path.stem)
         is_cached = spectrogram_path.is_file() and spectrogram_audio_path.is_file()
 
     # For the distributed case, allow only the master node to save to disk while the worker nodes
@@ -133,7 +136,7 @@ def _add_spectrogram_column(example, on_disk=True):
         padded_signal = torch.from_numpy(padded_signal)
 
         if on_disk:
-            (audio_path.parent / '.tts').mkdir(exist_ok=True)
+            parent.mkdir(exist_ok=True)
             return example._replace(
                 spectrogram_audio=OnDiskTensor.from_tensor(spectrogram_audio_path, padded_signal),
                 spectrogram=OnDiskTensor.from_tensor(spectrogram_path, log_mel_spectrogram))
@@ -158,7 +161,7 @@ def add_spectrogram_column(data, on_disk=True):
             data.
     """
     logger.info('Adding a spectrogram column to dataset.')
-    return src.distributed.map_multiprocess(data, partial(_add_spectrogram_column, on_disk=on_disk))
+    return src.distributed.map_parallel(data, partial(_add_spectrogram_column, on_disk=on_disk))
 
 
 def _normalize_audio_column_helper(example):
@@ -174,7 +177,9 @@ def normalize_audio_column(data):
     Returns:
         (iterable of TextSpeechRow): Iterable of text speech rows with ``audio_path`` updated.
     """
-    return src.distributed.map_multiprocess(data, _normalize_audio_column_helper)
+    # NOTE: Use threads because `normalize_audio` launches processes via subprocess already.
+    logger.info('Normalizing dataset audio using SoX.')
+    return src.distributed.map_parallel(data, _normalize_audio_column_helper, use_threads=True)
 
 
 def filter_(function, dataset):

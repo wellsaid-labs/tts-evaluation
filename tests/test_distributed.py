@@ -7,7 +7,7 @@ from src.distributed import distribute_batch_sampler
 from src.distributed import get_master_rank
 from src.distributed import is_master
 from src.distributed import is_initialized
-from src.distributed import map_multiprocess
+from src.distributed import map_parallel
 
 
 @mock.patch('torch.distributed')
@@ -88,14 +88,20 @@ def mock_func(a):
     return a**2
 
 
-def test_map_multiprocess():
+def test_map_parallel__use_threads():
     expected = [1, 4, 9]
-    processed = map_multiprocess([1, 2, 3], mock_func)
+    processed = map_parallel([1, 2, 3], mock_func, use_threads=True)
+    assert expected == processed
+
+
+def test_map_parallel():
+    expected = [1, 4, 9]
+    processed = map_parallel([1, 2, 3], mock_func)
     assert expected == processed
 
 
 @mock.patch('src.distributed.is_master', return_value=False)
-def test_map_multiprocess_master(_):
+def test_map_parallel_master(_):
     expected = [1, 4, 9]
-    processed = map_multiprocess([1, 2, 3], mock_func)
+    processed = map_parallel([1, 2, 3], mock_func)
     assert expected == processed

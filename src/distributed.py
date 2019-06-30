@@ -1,4 +1,7 @@
+from multiprocessing.pool import ThreadPool
+
 import logging
+import os
 import random
 
 from torch.multiprocessing import Pool
@@ -143,30 +146,38 @@ def download_file_maybe_extract(*args, **kwargs):
     return return_
 
 
-def map_multiprocess(data, func, use_tqdm=True):
+def map_parallel(data,
+                 func,
+                 use_tqdm=True,
+                 use_threads=False,
+                 optimistic_worker=True,
+                 pool_size=os.cpu_count()):
     """ Map ``func`` onto data while allocating multiple process only to the master process.
 
     Args:
         data (iterable)
         func (callable)
-        use_tqdm (bool): Attach a progress bar to processing.
+        use_tqdm (bool, optional): Attach a progress bar to processing.
+        use_threads (bool, optional): Use threads instead of processes for parallel processing.
+        optimistic_worker (bool, optional): If `True` a worker process assumes there is no work.
+        pool_size (int, optional): The number of threads or processes in the worker pool.
 
     Returns:
         (iterable)
     """
     data = list(data)
 
-    if is_master():
-        pool = Pool()
+    if is_master() or not optimistic_worker:
+        pool = ThreadPool(pool_size) if use_threads else Pool(pool_size)
         iterator = pool.imap(func, data)
     else:  # PyTorch workers should not expect to do serious work
         iterator = (func(row) for row in data)
 
-    if use_tqdm:
+    if use_tqdm and is_master():  # TODO: Consider methods print a progress bar for workers as well.
         iterator = tqdm(iterator, total=len(data))
     processed = list(iterator)
 
-    if is_master():  # Ensure pool work is finished
+    if is_master() and not optimistic_worker:  # Ensure pool work is finished
         pool.close()
         pool.join()
 

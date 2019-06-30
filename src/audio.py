@@ -1,5 +1,8 @@
+from functools import lru_cache
+
 import logging
 import math
+import pathlib
 import struct
 import subprocess
 
@@ -10,6 +13,8 @@ import torch
 
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
+from src.utils import TTS_DISK_CACHE_NAME
+from src.utils import chunks
 
 import src.distributed
 
@@ -20,9 +25,14 @@ try:
 except ImportError:
     logger.info('Skipping optional ``librosa`` import for now.')
 
+try:
+    import scipy
+except ImportError:
+    logger.info('Skipping optional `scipy` import for now.')
+
 
 @configurable
-def read_audio(filename, assert_metadata=ConfiguredArg()):
+def read_audio(filename, assert_metadata=ConfiguredArg(), to_float=True):
     """ Read an audio file.
 
     TODO: Rename considering the tighter specification.
@@ -47,15 +57,34 @@ def read_audio(filename, assert_metadata=ConfiguredArg()):
     Args:
         filename (Path or str): Name of the file to load.
         assert_metadata (dict): Assert this metadata for any audio file read.
+        to_float (bool, optional): Convert the audio file to a `np.float32` array from [-1, 1].
 
     Returns:
         (numpy.ndarray [n,]): Audio time series.
     """
     metadata = get_audio_metadata(filename)
-    assert metadata == assert_metadata, ("The filename metadata does not match `assert_metadata`.")
-    signal, _ = librosa.core.load(str(filename), sr=None, mono=False)
-    assert np.max(signal) <= 1 and np.min(signal) >= -1, "Signal must be in range [-1, 1]."
+    assert metadata == assert_metadata, (
+        "The filename (%s) metadata does not match `assert_metadata`." % filename)
+    _, signal = scipy.io.wavfile.read(str(filename))
+    assert len(signal) > 0, ("Signal (%s) length is zero." % filename)
+    if to_float:
+        assert metadata['bits'] % 8 == 0, "A valid bits value must be a multiple of 8."
+        signal = librosa.util.buf_to_float(signal, n_bytes=int(metadata['bits'] / 8))
+        assert np.max(signal) <= 1 and np.min(signal) >= -1, (
+            "Signal (%s) must be in range [-1, 1]." % filename)
     return signal
+
+
+@configurable
+def write_audio(filename, audio, sample_rate=ConfiguredArg()):
+    """ Write a numpy array as a WAV file.
+
+    Args:
+        filename (Path or str or open file handle): Name of the file to load.
+        audio (np.ndarray): A 1-D or 2-D numpy array of either integer or float data-type.
+        sample_rate (int, optional): The sample rate (in samples/sec).
+    """
+    return scipy.io.wavfile.write(filename, sample_rate, audio)
 
 
 @configurable
@@ -410,8 +439,60 @@ def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
     return signal.float() / 2**(bits - 1)  # Scale to [-1, 1] range.
 
 
-def get_audio_metadata(audio_path):
+@lru_cache()
+def _parse_audio_metadata(metadata):
+    """ Parse audio metadata returned by `sox --i`.
+
+    Example:
+
+        >>> metadata = '''
+        ... Input File     : 'data/Heather Doe/03 Recordings/Heather_4-21.wav'
+        ... Channels       : 1
+        ... Sample Rate    : 44100
+        ... Precision      : 24-bit
+        ... Duration       : 03:46:28.09 = 599234761 samples = 1.01911e+06 CDDA sectors
+        ... File Size      : 1.80G
+        ... Bit Rate       : 1.06M
+        ... Sample Encoding: 24-bit Signed Integer PCM
+        ... '''
+        >>> str(_parse_audio_metadata(metadata)[0])
+        'data/Heather Doe/03 Recordings/Heather_4-21.wav'
+        >>> _parse_audio_metadata(metadata)[1]
+        {'channels': 1, 'bits': 24, 'sample_rate': 44100, 'encoding': 'signed-integer'}
+
+    Args:
+        metadata (str)
+
+    Returns:
+        (pathlib.Path): The audio path of the parsed `metadata`.
+        (dict): The parsed `metadata`.
+    """
+    # NOTE: Parse the output of `sox --i` instead individual requests like `sox --i -r` and
+    # `sox --i -b` to conserve on the number  of requests made via `subprocess`.
+    metadata = [s.split(':')[1].strip() for s in metadata.strip().split('\n')]
+    audio_path = str(metadata[0][1:-1])
+    channels = int(metadata[1])
+    sample_rate = int(metadata[2])
+    assert metadata[3][-4:] == '-bit', metadata
+    bits = int(metadata[3][:-4])
+    encoding = metadata[-1].replace(metadata[3], '').replace('PCM', '').lower().strip().replace(
+        ' ', '-')
+
+    return pathlib.Path(audio_path), {
+        'channels': channels,
+        'bits': bits,
+        'sample_rate': sample_rate,
+        'encoding': encoding,
+    }
+
+
+_AUDIO_METADATA_CACHE = {}
+
+
+def get_audio_metadata(audio_path, optimistic_caching=True):
     """ Get metadata on `audio_path`.
+
+    NOTE: Launching `subprocess` is slow, try to avoid it.
 
     Args:
         audio_path (Path or str): WAV audio file to get metadata on.
@@ -422,25 +503,44 @@ def get_audio_metadata(audio_path):
         sample_rate (int): The sample rate of the audio.
         encoding (str): The encoding of the audio file: ['signed-integer', 'unsigned-integer',
           'floating-point'].
+        optimistic_caching (bool, optional): Optimistically compute and cache metadata for all
+            audio files in the same directory as `audio_path`. This is more performant as it
+            launches one process for many audio files instead of an individual process for all
+            of them.
     }
     """
-    audio_path = str(audio_path)
-    check_output = subprocess.check_output
+    audio_path = pathlib.Path(audio_path)
+    if audio_path in _AUDIO_METADATA_CACHE:
+        return _AUDIO_METADATA_CACHE[audio_path]
 
-    try:
-        encoding = check_output(['sox', '--i', '-e', audio_path],
-                                stderr=subprocess.STDOUT).decode("utf-8").strip()
-    except subprocess.CalledProcessError as error:
-        logger.error('Captured output:\n%s', error.output)
-        raise error
+    if optimistic_caching:
+        # NOTE: `2048` limit avoids (assuming that the maximum filename length is `1024`):
+        # https://stackoverflow.com/questions/19354870/bash-command-line-and-input-limit
+        paths = [str(p) for p in audio_path.parent.glob('*' + audio_path.suffix)]
+        for chunk in chunks(paths, 2048):
+            # NOTE: Glob may find unused files like:
+            # `M-AILABS/ ... /judy_bieber/ozma_of_oz/wavs/._ozma_of_oz_10_f000095.wav`
+            # Those errors are ignored along with any other output from `stderr`.
+            metadatas = subprocess.run(['sox', '--i'] + chunk, check=False, stdout=subprocess.PIPE)
+            metadatas = metadatas.stdout.decode('utf-8').strip()
+            metadatas = metadatas.split('\n\n')
 
-    encoding = encoding.replace('PCM', '').lower().strip().replace(' ', '-')
-    return {
-        'channels': int(check_output(['sox', '--i', '-c', audio_path]).decode("utf-8")),
-        'bits': int(check_output(['sox', '--i', '-b', audio_path]).decode("utf-8")),
-        'sample_rate': int(check_output(['sox', '--i', '-r', audio_path]).decode("utf-8")),
-        'encoding': encoding,
-    }
+            if 'Total Duration' in metadatas[-1]:
+                metadatas = metadatas[:-1]
+
+            for metadata in metadatas:
+                metadata_audio_path, metadata = _parse_audio_metadata(metadata)
+                _AUDIO_METADATA_CACHE[metadata_audio_path] = metadata
+
+        return _AUDIO_METADATA_CACHE[audio_path]
+
+    # NOTE: `sox --i` behaves like `soxi`
+    # Learn more about `soxi`: http://sox.sourceforge.net/soxi.html
+    metadata = subprocess.run(['sox', '--i'] + chunk, check=False, stdout=subprocess.PIPE)
+    metadata = metadata.stdout.decode('utf-8').strip()
+    _, return_ = _parse_audio_metadata(metadata)
+    _AUDIO_METADATA_CACHE[audio_path] = return_
+    return return_
 
 
 @configurable
@@ -481,13 +581,17 @@ def normalize_audio(audio_path,
     if stem == audio_path.stem:
         return audio_path
 
-    destination = audio_path.parent / '.sox' / '{}{}'.format(stem, audio_path.suffix)
-    if destination.is_file():
-        return destination
+    parent = audio_path.parent
+    parent = parent if parent.name == TTS_DISK_CACHE_NAME else parent / TTS_DISK_CACHE_NAME
+    destination = parent / '{}{}'.format(stem, audio_path.suffix)
 
     # Allow only the master node to save to disk while the worker nodes optimistically assume
     # the file already exists.
+    # NOTE: This statement is before `destination.is_file()` to avoid unnecessary IO.
     if not src.distributed.is_master():
+        return destination
+
+    if destination.is_file():
         return destination
 
     destination.parent.mkdir(exist_ok=True)

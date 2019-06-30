@@ -15,9 +15,9 @@ from matplotlib import pyplot
 
 import librosa.display
 import numpy as np
-import scipy
 import torch
 
+from src.audio import write_audio
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 
@@ -266,13 +266,12 @@ def CometML(project_name,
 
     experiment.log_epoch_end = log_epoch_end.__get__(experiment)
 
-    def _write_wav(file_name, data, sample_rate):
+    def _write_wav(file_name, data):
         """ Write wav from a tensor to ``io.BytesIO``.
 
         Args:
             file_name (str): File name to use with comet.ml
             data (np.array or torch.tensor)
-            sample_rate (int)
 
         Returns:
             (str): String url to the asset.
@@ -281,17 +280,11 @@ def CometML(project_name,
             data = data.numpy()
 
         file_ = io.BytesIO()
-        scipy.io.wavfile.write(filename=file_, data=data, rate=sample_rate)
+        write_audio(file_, data)
         asset = experiment.log_asset(file_, file_name=file_name)
         return asset['web'] if asset is not None else asset
 
-    @configurable
-    def log_audio(self,
-                  gold_audio=None,
-                  predicted_audio=None,
-                  step=None,
-                  sample_rate=ConfiguredArg(),
-                  **kwargs):
+    def log_audio(self, gold_audio=None, predicted_audio=None, step=None, **kwargs):
         """ Add text and audio to Comet via their HTML tab.
 
         TODO: Consider logging the waveform visualized also.
@@ -300,7 +293,6 @@ def CometML(project_name,
             gold_audio (torch.Tensor, optional)
             predicted_audio (torch.Tensor, optional)
             step (int, optional)
-            sample_rate (int, optional)
             **kwargs: Additional arguments to be printed.
         """
         step = self.curr_step if step is None else step
@@ -309,11 +301,11 @@ def CometML(project_name,
         for key, value in kwargs.items():
             items.append('<p><b>{}:</b> {}</p>'.format(key.title(), value))
         if gold_audio is not None:
-            url = _write_wav('gold.wav', gold_audio, sample_rate)
+            url = _write_wav('gold.wav', gold_audio)
             items.append('<p><b>Gold Audio:</b></p>')
             items.append('<audio controls preload="metadata" src="{}"></audio>'.format(url))
         if predicted_audio is not None:
-            url = _write_wav('predicted.wav', predicted_audio, sample_rate)
+            url = _write_wav('predicted.wav', predicted_audio)
             items.append('<p><b>Predicted Audio:</b></p>')
             items.append('<audio controls preload="metadata" src="{}"></audio>'.format(url))
         experiment.log_html('<section>{}</section>'.format('\n'.join(items)))

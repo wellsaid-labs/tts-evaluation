@@ -93,7 +93,7 @@ class Trainer():
             balance_list(dev_dataset, get_class=lambda r: r.speaker, random_seed=123))
 
         self.input_encoder = InputEncoder(
-            [r.text for r in self.train_dataset],
+            [r.text for r in self.train_dataset] + [r.text for r in self.dev_dataset],
             [r.speaker for r in self.train_dataset]) if input_encoder is None else input_encoder
 
         # Allow for ``class`` or a class instance
