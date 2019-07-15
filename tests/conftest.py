@@ -10,8 +10,11 @@ import logging
 
 import pytest
 
-from src.hparams import set_hparams
 from src.hparams import clear_config
+from src.hparams import set_hparams
+from src.utils import ROOT_PATH
+from src.utils import TTS_DISK_CACHE_NAME
+from tests._utils import create_disk_garbage_collection_fixture
 
 logging.getLogger().setLevel(logging.INFO)
 
@@ -22,3 +25,20 @@ def run_before_test():
     set_hparams()
     yield
     clear_config()
+
+
+gc_fixture_test_data = create_disk_garbage_collection_fixture(
+    ROOT_PATH / 'tests' / '_test_data', autouse=True)
+
+if (ROOT_PATH / TTS_DISK_CACHE_NAME).exists():
+    gc_fixture_tts_cache = create_disk_garbage_collection_fixture(
+        ROOT_PATH / TTS_DISK_CACHE_NAME, autouse=True)
+
+if (ROOT_PATH / TTS_DISK_CACHE_NAME / 'disk_cache').exists():
+    gc_fixture_disk_cache = create_disk_garbage_collection_fixture(
+        ROOT_PATH / TTS_DISK_CACHE_NAME / 'disk_cache', autouse=True)
+
+gc_fixture_experiments = create_disk_garbage_collection_fixture(
+    ROOT_PATH / 'experiments', autouse=True)
+
+gc_fixture_root = create_disk_garbage_collection_fixture(ROOT_PATH, autouse=True)

@@ -15,15 +15,12 @@ from src.spectrogram_model import SpectrogramModel
 from src.utils import Checkpoint
 from src.utils import ROOT_PATH
 from src.utils import TTS_DISK_CACHE_NAME
-from tests.utils import create_disk_garbage_collection_fixture
-
-gc_test_data = create_disk_garbage_collection_fixture(ROOT_PATH / 'tests' / '_test_data')
 
 
-@mock.patch('src.utils.np.save')
-@mock.patch('src.utils.np.load')
+@mock.patch('src.utils.on_disk_tensor.np.save')
+@mock.patch('src.utils.on_disk_tensor.np.load')
 @mock.patch('src.datasets.utils.Checkpoint.from_path')
-def test_add_predicted_spectrogram_column(mock_from_path, mock_load, mock_save, gc_test_data):
+def test_add_predicted_spectrogram_column(mock_from_path, mock_load, mock_save):
     speaker = Speaker('Test Speaker', Gender.MALE)
     input_encoder = InputEncoder(['this is a test'], [speaker])
     frame_channels = 124
@@ -80,9 +77,9 @@ def test_add_predicted_spectrogram_column(mock_from_path, mock_load, mock_save, 
     assert 'lj_speech_24000' not in str(rows[0].predicted_spectrogram.path)
 
 
-@mock.patch('src.utils.np.save')
-@mock.patch('src.utils.np.load')
-def test_add_spectrogram_column(mock_load, mock_save, gc_test_data):
+@mock.patch('src.utils.on_disk_tensor.np.save')
+@mock.patch('src.utils.on_disk_tensor.np.load')
+def test_add_spectrogram_column(mock_load, mock_save):
     audio_path = pathlib.Path('tests/_test_data/lj_speech_24000.wav')
     rows = [
         TextSpeechRow(

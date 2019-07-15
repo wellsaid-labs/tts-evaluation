@@ -17,10 +17,6 @@ from src.audio import normalize_audio
 from src.audio import read_audio
 from src.audio import write_audio
 from src.audio import split_signal
-from src.utils import ROOT_PATH
-from tests.utils import create_disk_garbage_collection_fixture
-
-gc_fixture = create_disk_garbage_collection_fixture(ROOT_PATH / 'tests' / '_test_data')
 
 
 def test_read_audio():
@@ -37,24 +33,24 @@ def test_read_audio():
     np.testing.assert_almost_equal(librosa_, float_)
 
 
-def test_write_audio(gc_fixture):
-    filename = gc_fixture / 'lj_speech.wav'
+def test_write_audio():
+    filename = 'tests/_test_data/lj_speech.wav'
     metadata = get_audio_metadata(filename)
     sample_rate, signal = wavfile.read(str(filename))
 
-    new_filename = gc_fixture / 'new_lj_speech.wav'
+    new_filename = 'tests/_test_data/new_lj_speech.wav'
     write_audio(new_filename, signal, sample_rate)
     new_metadata = get_audio_metadata(new_filename)
 
     assert metadata == new_metadata  # Ensure the metadata stays the same
 
 
-def test_write_audio__read_audio(gc_fixture):
-    filename = gc_fixture / 'lj_speech_24000.wav'
+def test_write_audio__read_audio():
+    filename = 'tests/_test_data/lj_speech_24000.wav'
     metadata = get_audio_metadata(filename)
     signal = read_audio(str(filename), to_float=False)
 
-    new_filename = gc_fixture / 'new_lj_speech_24000.wav'
+    new_filename = 'tests/_test_data/new_lj_speech_24000.wav'
     write_audio(new_filename, signal, 24000)
     new_metadata = get_audio_metadata(new_filename)
 
@@ -165,8 +161,8 @@ def test_split_combine_signal_multiple_dim():
     np.testing.assert_allclose(signal.numpy(), reconstructed_signal.numpy(), atol=1e-03)
 
 
-def test_normalize_audio(gc_fixture):
-    audio_path = gc_fixture / 'lj_speech.wav'
+def test_normalize_audio():
+    audio_path = 'tests/_test_data/lj_speech.wav'
     new_audio_path = normalize_audio(
         audio_path, bits=8, sample_rate=24000, channels=2, encoding='unsigned-integer')
     assert (new_audio_path.stem ==

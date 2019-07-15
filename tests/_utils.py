@@ -11,14 +11,14 @@ from src.datasets import TextSpeechRow
 from src.utils import OnDiskTensor
 
 
-def create_disk_garbage_collection_fixture(root_directory):
+def create_disk_garbage_collection_fixture(root_directory, **kwargs):
     """ Create fixture for deleting extra files and directories after a test is run.
 
     NOTE: This function runs only at the top level; therefore, any new directories
     created in `root_directory` will be deleted.
     """
 
-    @pytest.fixture()
+    @pytest.fixture(**kwargs)
     def fixture():
         before = set(list(root_directory.iterdir())) if root_directory.exists() else set()
         yield root_directory
@@ -28,9 +28,12 @@ def create_disk_garbage_collection_fixture(root_directory):
             if not path.exists():
                 continue
 
+            # NOTE: These `print`s will help debug a test if it fails; otherwise, they are ignored.
             if path.is_dir():
+                print('Deleting directory: ', path)
                 shutil.rmtree(str(path))
             elif path.is_file():
+                print('Deleting file: ', path)
                 path.unlink()
 
         assert before == set(list(root_directory.iterdir()))

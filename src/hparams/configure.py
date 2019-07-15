@@ -23,7 +23,7 @@ def _set_anomaly_detection():
 
     add_config({
         'src.bin.train.signal_model.trainer.Trainer.__init__.min_rollback': 32,
-        'src.utils.AnomalyDetector.__init__': {
+        'src.utils.anomaly_detector.AnomalyDetector.__init__': {
             # NOTE: Based on ``notebooks/Detecting Anomalies.ipynb``. The current usage requires
             # modeling gradient norm that has a lot of variation requiring a large `sigma`.
             'sigma': 128,
@@ -109,6 +109,9 @@ def _set_audio_processing():
             # channel has its own set of samples. It's unclear if `sample_rate` depends on the
             # number of channels, scaling linearly per channel.
             'build_wav_header.frame_rate': sample_rate,
+            # NOTE: It's more performant to optimistically preprocess all the files in the same
+            # directory.
+            'get_audio_metadata.optimistic_caching': True,
             'get_log_mel_spectrogram': {
                 'sample_rate': sample_rate,
                 'frame_size': frame_size,

@@ -1,5 +1,4 @@
 import math
-import os
 
 from contextlib import ExitStack
 from unittest import mock
@@ -15,8 +14,8 @@ from src.spectrogram_model import InputEncoder
 from src.utils import Checkpoint
 
 
-from tests.utils import get_example_spectrogram_text_speech_rows
-from tests.utils import MockCometML
+from tests._utils import get_example_spectrogram_text_speech_rows
+from tests._utils import MockCometML
 
 
 @mock.patch('src.bin.train.spectrogram_model.trainer.CometML')
@@ -59,9 +58,6 @@ def test_checkpoint(register_mock, add_spectrogram_column_mock, comet_ml_mock):
         checkpoints_directory='tests/_test_data/',
         train_dataset=get_example_spectrogram_text_speech_rows(),
         dev_dataset=get_example_spectrogram_text_speech_rows())
-
-    # Clean up
-    os.unlink(checkpoint_path)
 
 
 def test__do_loss_and_maybe_backwards():

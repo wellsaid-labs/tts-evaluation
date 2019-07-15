@@ -2,8 +2,6 @@ from pathlib import Path
 from unittest import mock
 
 import pandas
-import pytest
-import shutil
 
 from src.datasets import beth_custom_speech_dataset
 from src.datasets import beth_speech_dataset
@@ -18,17 +16,7 @@ from tests.datasets.utils import url_first_side_effect
 data_directory = Path('tests/_test_data/')
 
 
-@pytest.fixture
-def cleanup():
-    yield
-    cleanup_dir = data_directory / 'Hilary Noriega'
-    print("Clean up: removing {}".format(cleanup_dir))
-    if cleanup_dir.is_dir():
-        shutil.rmtree(str(cleanup_dir))
-
-
 @mock.patch("torchnlp.download._download_file_from_drive")
-@pytest.mark.usefixtures("cleanup")
 def test_hilary_speech_dataset(mock_download_file_from_drive):
     mock_download_file_from_drive.side_effect = url_second_side_effect
 

@@ -1,8 +1,6 @@
 from contextlib import ExitStack
 from unittest import mock
 
-import os
-
 import pytest
 import torch
 
@@ -10,8 +8,8 @@ from src.bin.train.signal_model.data_loader import SignalModelTrainingRow
 from src.bin.train.signal_model.trainer import Trainer
 from src.utils import Checkpoint
 
-from tests.utils import get_example_spectrogram_text_speech_rows
-from tests.utils import MockCometML
+from tests._utils import get_example_spectrogram_text_speech_rows
+from tests._utils import MockCometML
 
 
 @mock.patch('src.bin.train.signal_model.trainer.CometML')
@@ -53,9 +51,6 @@ def test_checkpoint(register_mock, add_predicted_spectrogram_column_mock,
         checkpoints_directory='tests/_test_data/',
         train_dataset=get_example_spectrogram_text_speech_rows(),
         dev_dataset=get_example_spectrogram_text_speech_rows())
-
-    # Clean up
-    os.unlink(checkpoint_path)
 
 
 def test__do_loss_and_maybe_backwards():

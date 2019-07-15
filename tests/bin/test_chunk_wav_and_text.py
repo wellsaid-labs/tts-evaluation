@@ -16,12 +16,10 @@ from src.bin.chunk_wav_and_text import review_chunk_alignments
 from src.bin.chunk_wav_and_text import samples_to_seconds
 from src.bin.chunk_wav_and_text import seconds_to_samples
 from src.utils import ROOT_PATH
-from tests.utils import create_disk_garbage_collection_fixture
+from tests._utils import create_disk_garbage_collection_fixture
 
 gc_lj_chunks = create_disk_garbage_collection_fixture(
     ROOT_PATH / 'tests' / '_test_data' / 'lj_speech_chunks')
-
-gc_test_data = create_disk_garbage_collection_fixture(ROOT_PATH / 'tests' / '_test_data')
 
 
 def MockAlignment(start_text, end_text):
@@ -127,7 +125,7 @@ that five shots may,lj_speech_24000/script_0_chunk_4.wav
 have been fired.,lj_speech_24000/script_0_chunk_5.wav""".strip())
 
 
-def test_main__normalize_audio(gc_lj_chunks, gc_test_data, capsys):
+def test_main__normalize_audio(gc_lj_chunks, capsys):
     with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
         main(
             'tests/_test_data/lj_speech.wav',

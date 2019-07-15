@@ -3,7 +3,7 @@ import torch
 from src.bin.train.spectrogram_model.data_loader import DataLoader
 from src.spectrogram_model import InputEncoder
 
-from tests.utils import get_example_spectrogram_text_speech_rows
+from tests._utils import get_example_spectrogram_text_speech_rows
 
 
 def test_data_loader():

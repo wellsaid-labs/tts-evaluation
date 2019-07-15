@@ -9,13 +9,10 @@ import torch
 
 from src.training_context_manager import TrainingContextManager
 from src.utils import ROOT_PATH
-from tests.utils import create_disk_garbage_collection_fixture
-
-gc_fixture = create_disk_garbage_collection_fixture(ROOT_PATH / 'experiments')
 
 
 @mock.patch('src.training_context_manager.assert_enough_disk_space', return_value=True)
-def test_save_standard_streams(_, gc_fixture):
+def test_save_standard_streams(_):
     logger = logging.getLogger(__name__)
     handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(logging.INFO)
@@ -27,7 +24,7 @@ def test_save_standard_streams(_, gc_fixture):
         print('Test')
         sys.stderr.write('Error\n')
 
-        context.set_context_root(gc_fixture / 'test_save_standard_streams')
+        context.set_context_root(ROOT_PATH / 'experiments' / 'test_save_standard_streams')
 
         logger.info('Test Logger')
     print('After Context')
@@ -55,9 +52,9 @@ def test_save_standard_streams(_, gc_fixture):
 
 
 @mock.patch('src.training_context_manager.assert_enough_disk_space', return_value=True)
-def test_experiment(_, gc_fixture):
+def test_experiment(_):
     with TrainingContextManager(device=torch.device('cpu')) as context:
-        context.set_context_root(gc_fixture / 'test_experiment')
+        context.set_context_root(ROOT_PATH / 'experiments' / 'test_experiment')
 
         # Check context directory was created
         assert context.root_directory.is_dir()
@@ -70,13 +67,13 @@ def test_experiment(_, gc_fixture):
 
 
 @mock.patch('src.training_context_manager.assert_enough_disk_space', return_value=True)
-def test_duplicate(_, gc_fixture):
+def test_duplicate(_):
     with TrainingContextManager(device=torch.device('cpu')) as context:
-        context.set_context_root(gc_fixture / 'test_experiment')
+        context.set_context_root(ROOT_PATH / 'experiments' / 'test_experiment')
 
     with TrainingContextManager(device=torch.device('cpu')) as context:
         with pytest.raises(TypeError):
-            context.set_context_root(gc_fixture / 'test_experiment')
+            context.set_context_root(ROOT_PATH / 'experiments' / 'test_experiment')
 
 
 # Patch inspired by:
@@ -102,8 +99,8 @@ def test_check_module_versions__missing_install(_, __):
 
 
 @mock.patch('src.training_context_manager.assert_enough_disk_space', return_value=True)
-def test_clean_up(_, gc_fixture):
-    directory = gc_fixture / 'test_clean_up'
+def test_clean_up(_):
+    directory = ROOT_PATH / 'experiments' / 'test_clean_up'
 
     with TrainingContextManager() as context:
         context.set_context_root(directory)
@@ -121,8 +118,8 @@ def test_clean_up(_, gc_fixture):
 
 
 @mock.patch('src.training_context_manager.assert_enough_disk_space', return_value=True)
-def test_clean_up__exception_clean_up(_, gc_fixture):
-    directory = gc_fixture / 'test_clean_up'
+def test_clean_up__exception_clean_up(_):
+    directory = ROOT_PATH / 'experiments' / 'test_clean_up'
 
     try:
         with TrainingContextManager() as context:

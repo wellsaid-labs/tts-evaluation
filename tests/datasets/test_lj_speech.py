@@ -1,14 +1,13 @@
 from pathlib import Path
-
 from unittest import mock
+
 import re
-import shutil
-import pytest
 
 from src.datasets import lj_speech_dataset
 from src.utils import Checkpoint
 
 from tests.datasets.utils import url_first_side_effect
+from tests._utils import create_disk_garbage_collection_fixture
 
 lj_directory = Path('tests/_test_data/')
 
@@ -41,19 +40,12 @@ verbalize_test_cases = {
     'LJ020-0002': '"sponge,"',  # Test Quotation Normalization
 }
 
-
-@pytest.fixture
-def cleanup():
-    yield
-    cleanup_dir = lj_directory / 'LJSpeech-1.1'
-    print("Clean up: removing {}".format(cleanup_dir))
-    if cleanup_dir.is_dir():
-        shutil.rmtree(str(cleanup_dir))
+gc_fixture_data = create_disk_garbage_collection_fixture(
+    lj_directory / 'LJSpeech-1.1', autouse=True)
 
 
 @mock.patch("src.utils.Checkpoint.from_path")
 @mock.patch("urllib.request.urlretrieve")
-@pytest.mark.usefixtures("cleanup")
 def test_lj_speech_dataset(mock_urlretrieve, mock_from_path):
     mock_urlretrieve.side_effect = url_first_side_effect
     mock_from_path.return_value = Checkpoint(directory='.', model=lambda x: x, step=0)
