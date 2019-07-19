@@ -12,6 +12,12 @@ from src.hparams.configurable_ import configurable
 from src.hparams.configurable_ import ConfiguredArg
 from src.hparams.configurable_ import get_config
 from src.hparams.configurable_ import log_config
+from src.hparams.configurable_ import parse_hparam_args
+
+
+def test_parse_hparam_args():
+    hparam_args = ['--foo 0.01', '--bar WaveNet', '--moo.foo=1']
+    assert parse_hparam_args(hparam_args) == {'foo': 0.01, 'bar': 'WaveNet', 'moo.foo': 1}
 
 
 def test_parse_configuration_example():

@@ -9,14 +9,15 @@ import numpy as np
 import torch
 
 from src.audio import build_wav_header
+from src.audio import cache_get_audio_metadata
 from src.audio import combine_signal
 from src.audio import get_audio_metadata
 from src.audio import get_log_mel_spectrogram
 from src.audio import griffin_lim
 from src.audio import normalize_audio
 from src.audio import read_audio
-from src.audio import write_audio
 from src.audio import split_signal
+from src.audio import write_audio
 
 
 def test_read_audio():
@@ -57,24 +58,27 @@ def test_write_audio__read_audio():
     assert metadata == new_metadata  # Ensure the metadata stays the same
 
 
+def test_cache_get_audio_metadata():
+    path = Path('tests/_test_data/lj_speech_24000.wav')
+    get_audio_metadata.cache.clear()
+    assert len(get_audio_metadata.cache) == 0
+    cache_get_audio_metadata(['tests/_test_data/lj_speech_24000.wav'])
+    assert len(get_audio_metadata.cache) == 1
+    assert get_audio_metadata.cache.get(kwargs={'audio_path': path}) == {
+        'sample_rate': 24000,
+        'bits': 16,
+        'channels': 1,
+        'encoding': 'signed-integer'
+    }
+
+
 def test_get_audio_metadata():
     assert {
         'sample_rate': 24000,
         'bits': 16,
         'channels': 1,
         'encoding': 'signed-integer'
-    } == get_audio_metadata(
-        'tests/_test_data/lj_speech_24000.wav', optimistic_caching=True)
-
-    # This `assert` is `True` only because `optimistic_caching` assumed `lj_speech_24000` and
-    # `lj_speech` have the same metadata.
-    assert {
-        'sample_rate': 22050,
-        'bits': 16,
-        'channels': 1,
-        'encoding': 'signed-integer'
-    } == get_audio_metadata(
-        'tests/_test_data/lj_speech.wav', optimistic_caching=True)
+    } == get_audio_metadata('tests/_test_data/lj_speech_24000.wav')
 
 
 def test_build_wav_header():

@@ -10,22 +10,10 @@ Example:
     python3 -m src.bin.gcp.keep_alive \
         --instance voclip \
         --command="screen -dm bash -c \
-              'source ~/.bashrc; \
-              source ~/.bash_profile; \
-              cd WellSaidLabs/; \
-              ulimit -n 65536; \
-              python3 -m src.bin.train.signal_model -c; \
-              sudo shutdown;'"
-
-Distributed Example:
-
-    python3 -m src.bin.gcp.keep_alive \
-        --instance voclip \
-        --command="screen -dm bash -c \
                       'source ~/.bashrc; \
                       source ~/.bash_profile; \
                       cd WellSaidLabs/; \
-                      python3 -m third_party.launch src.bin.train.spectrogram_model -c; \
+                      python3 -m src.bin.train.spectrogram_model -c; \
                       sudo shutdown;'"
 """
 import argparse
@@ -101,7 +89,7 @@ def keep_alive(instances, command, scheduler, repeat_every=60 * 5, retry_timeout
         status = output['status']
         logger.info('Status of the instance is: %s', status)
 
-        # TODO: Support halting by querying comet.ml for the machine name via
+        # TODO: Check for halting / stalling by querying comet.ml for the machine name via
         # /rest/v1/experiments
 
         if status == INSTANCE_STOPPED:

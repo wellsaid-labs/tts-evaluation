@@ -1,18 +1,12 @@
-from pathlib import Path
-
-import logging
-import os
-import sys
+import time
 
 from torch import nn
 
 import pytest
 import torch
 
-from src.utils.utils import assert_enough_disk_space
 from src.utils.utils import balance_list
 from src.utils.utils import dict_collapse
-from src.utils.utils import duplicate_stream
 from src.utils.utils import evaluate
 from src.utils.utils import flatten
 from src.utils.utils import flatten_parameters
@@ -22,12 +16,35 @@ from src.utils.utils import get_total_parameters
 from src.utils.utils import get_weighted_stdev
 from src.utils.utils import identity
 from src.utils.utils import log_runtime
-from src.utils.utils import parse_hparam_args
-from src.utils.utils import ROOT_PATH
-from src.utils.utils import set_basic_logging_config
+from src.utils.utils import ResetableTimer
 from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
 from src.utils.utils import split_list
+from src.utils.utils import get_chunks
+
+
+def test_get_chunks():
+    assert list(get_chunks([1, 2, 3, 4, 5], 2)) == [[1, 2], [3, 4], [5]]
+
+
+def test_resetable_timer():
+    called = 0
+
+    def _helper():
+        nonlocal called
+        called += 1
+
+    timer = ResetableTimer(0.5, _helper)
+    timer.start()
+    time.sleep(0.25)
+    assert called == 0
+
+    timer.reset()
+    time.sleep(0.25)
+    assert called == 0
+
+    time.sleep(0.3)
+    assert called == 1
 
 
 def test_flatten():
@@ -39,10 +56,6 @@ def test_slice_by_cumulative_sum():
     assert [(1, 1), (1, 2)] == slice_by_cumulative_sum([(1, 1), (1, 2), (1, 3), (1, 4)],
                                                        max_total_value=4,
                                                        get_value=lambda x: x[1])
-
-
-def test_assert_enough_disk_space__smoke_test():
-    assert_enough_disk_space(0)
 
 
 def test_sort_together():
@@ -59,11 +72,6 @@ def test_log_runtime__smoke_test():
     func = lambda x: x + 1
     func = log_runtime(func)
     func(1)
-
-
-def test_set_basic_logging_config__smoke_test():
-    set_basic_logging_config()
-    set_basic_logging_config(torch.device('cpu'))
 
 
 def test_dict_collapse():
@@ -99,27 +107,6 @@ def test_evaluate():
 
 def test_identity():
     assert identity(2) == 2
-
-
-def test_duplicate_stream(capsys):
-    stdout_log = Path('tests/_test_data/stdout.log')
-    with capsys.disabled():  # Disable capsys because it messes with sys.stdout
-        logger = logging.getLogger(__name__)
-        handler = logging.StreamHandler(sys.stdout)
-        logger.addHandler(handler)
-        stop = duplicate_stream(sys.stdout, stdout_log)
-
-        print('1')
-        logger.info('2')
-        os.system('echo 3')
-
-        # Flush and close
-        stop()
-        logger.removeHandler(handler)
-
-    assert stdout_log.is_file()
-    output = stdout_log.read_text()
-    assert set(output.split()) == set(['1', '2', '3'])
 
 
 def test_get_average_norm__shape_invariant():
@@ -183,15 +170,6 @@ def test_get_total_parameters():
 def test_flatten_parameters__smoke_test():
     flatten_parameters(MockModel())
     flatten_parameters(nn.LSTM(10, 10))
-
-
-def test_get_root_path():
-    assert (ROOT_PATH / 'requirements.txt').is_file()
-
-
-def test_parse_hparam_args():
-    hparam_args = ['--foo 0.01', '--bar WaveNet', '--moo.foo=1']
-    assert parse_hparam_args(hparam_args) == {'foo': 0.01, 'bar': 'WaveNet', 'moo.foo': 1}
 
 
 def test_balance_list():

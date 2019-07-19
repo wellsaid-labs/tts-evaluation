@@ -27,7 +27,6 @@ def get_trainer(register_mock, add_predicted_spectrogram_column_mock, add_spectr
         checkpoints_directory='tests/_test_data/',
         train_dataset=get_example_spectrogram_text_speech_rows(),
         dev_dataset=get_example_spectrogram_text_speech_rows(),
-        comet_ml_project_name='',
         train_batch_size=1,
         dev_batch_size=1)
 

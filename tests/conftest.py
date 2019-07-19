@@ -10,10 +10,10 @@ import logging
 
 import pytest
 
+from src.environment import ROOT_PATH
+from src.environment import TTS_DISK_CACHE_NAME
 from src.hparams import clear_config
 from src.hparams import set_hparams
-from src.utils import ROOT_PATH
-from src.utils import TTS_DISK_CACHE_NAME
 from tests._utils import create_disk_garbage_collection_fixture
 
 logging.getLogger().setLevel(logging.INFO)
@@ -37,8 +37,5 @@ if (ROOT_PATH / TTS_DISK_CACHE_NAME).exists():
 if (ROOT_PATH / TTS_DISK_CACHE_NAME / 'disk_cache').exists():
     gc_fixture_disk_cache = create_disk_garbage_collection_fixture(
         ROOT_PATH / TTS_DISK_CACHE_NAME / 'disk_cache', autouse=True)
-
-gc_fixture_experiments = create_disk_garbage_collection_fixture(
-    ROOT_PATH / 'experiments', autouse=True)
 
 gc_fixture_root = create_disk_garbage_collection_fixture(ROOT_PATH, autouse=True)

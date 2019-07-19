@@ -8,9 +8,6 @@ import torch
 
 from src.bin.train.spectrogram_model.data_loader import SpectrogramModelTrainingRow
 from src.bin.train.spectrogram_model.trainer import Trainer
-from src.datasets import Gender
-from src.datasets import Speaker
-from src.spectrogram_model import InputEncoder
 from src.utils import Checkpoint
 
 
@@ -19,22 +16,18 @@ from tests._utils import MockCometML
 
 
 @mock.patch('src.bin.train.spectrogram_model.trainer.CometML')
-@mock.patch('src.bin.train.spectrogram_model.trainer.add_spectrogram_column')
 @mock.patch('src.bin.train.signal_model.trainer.atexit.register')
-def get_trainer(register_mock, add_spectrogram_column_mock, comet_ml_mock):
+def get_trainer(register_mock, comet_ml_mock):
     comet_ml_mock.return_value = MockCometML()
-    add_spectrogram_column_mock.return_value = get_example_spectrogram_text_speech_rows()
     register_mock.return_value = None
+    examples = get_example_spectrogram_text_speech_rows()
     trainer = Trainer(
         device=torch.device('cpu'),
-        train_dataset=get_example_spectrogram_text_speech_rows(),
-        dev_dataset=get_example_spectrogram_text_speech_rows(),
+        train_dataset=examples,
+        dev_dataset=examples,
         checkpoints_directory='tests/_test_data/',
-        comet_ml_project_name='',
-        input_encoder=InputEncoder(['text encoder'], [Speaker('Linda Johnson', Gender.FEMALE)]),
         train_batch_size=1,
-        dev_batch_size=1,
-        comet_ml_experiment_key=None)
+        dev_batch_size=1)
 
     # Make sure that stop-token is not predicted; therefore, reaching ``max_frames_per_token``
     torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.weight, -math.inf)
@@ -43,12 +36,10 @@ def get_trainer(register_mock, add_spectrogram_column_mock, comet_ml_mock):
 
 
 @mock.patch('src.bin.train.spectrogram_model.trainer.CometML')
-@mock.patch('src.bin.train.spectrogram_model.trainer.add_spectrogram_column')
 @mock.patch('src.bin.train.signal_model.trainer.atexit.register')
-def test_checkpoint(register_mock, add_spectrogram_column_mock, comet_ml_mock):
+def test_checkpoint(register_mock, comet_ml_mock):
     trainer = get_trainer()
     comet_ml_mock.return_value = MockCometML()
-    add_spectrogram_column_mock.return_value = get_example_spectrogram_text_speech_rows()
     register_mock.return_value = None
 
     checkpoint_path = trainer.save_checkpoint()
@@ -58,6 +49,25 @@ def test_checkpoint(register_mock, add_spectrogram_column_mock, comet_ml_mock):
         checkpoints_directory='tests/_test_data/',
         train_dataset=get_example_spectrogram_text_speech_rows(),
         dev_dataset=get_example_spectrogram_text_speech_rows())
+
+
+def test_visualize_inferred():
+    num_frames = 8
+    num_tokens = 8
+    frame_channels = 16
+    frame_lengths = torch.full((1,), num_frames)
+    trainer = get_trainer()
+    infer_pass_return = (torch.FloatTensor(num_frames, frame_channels).fill_(1),
+                         torch.FloatTensor(num_frames, frame_channels).fill_(1),
+                         torch.FloatTensor(num_frames).fill_(1),
+                         torch.FloatTensor(num_frames,
+                                           num_tokens).fill_(1.0 / num_tokens),
+                         frame_lengths)
+
+    with mock.patch('src.spectrogram_model.model.SpectrogramModel._infer') as mock_forward:
+        mock_forward.return_value = infer_pass_return
+        trainer.visualize_inferred()
+        mock_forward.assert_called()
 
 
 def test__do_loss_and_maybe_backwards():
@@ -94,8 +104,8 @@ def test_run_epoch():
     num_frames = 8
     num_tokens = 8
     frame_channels = 16
-    text_vocab_size = 10
-    speaker_vocab_size = 4
+    text_vocab_size = trainer.input_encoder.text_encoder.vocab_size
+    speaker_vocab_size = trainer.input_encoder.speaker_encoder.vocab_size
     frame_lengths = torch.full((1, batch_size,), num_frames)
     loaded_data = [
         SpectrogramModelTrainingRow(

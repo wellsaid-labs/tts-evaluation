@@ -4,6 +4,7 @@ from functools import wraps
 from functools import lru_cache
 from importlib import import_module
 
+import ast
 import importlib
 import inspect
 import logging
@@ -140,8 +141,7 @@ def _check_configuration(dict_):
 @lru_cache(maxsize=1)
 def _get_main_module_name():
     """ Get __main__ module name """
-    from src.utils import ROOT_PATH  # Prevent circular dependecy
-
+    from src.environment import ROOT_PATH  # Prevent circular dependency
     file_name = sys.argv[0]
 
     try:
@@ -516,3 +516,35 @@ def configurable(func):
     decorator._configurable = True
 
     return decorator
+
+
+def parse_hparam_args(hparam_args):
+    """ Parse CLI arguments like ``['--torch.optim.adam.Adam.__init__.lr 0.1',]`` to :class:`dict`.
+
+    Args:
+        hparams_args (list of str): List of CLI arguments
+
+    Returns
+        (dict): Dictionary of arguments.
+    """
+
+    def to_literal(value):
+        try:
+            value = ast.literal_eval(value)
+        except ValueError:
+            pass
+        return value
+
+    return_ = {}
+
+    for hparam in hparam_args:
+        assert '--' in hparam, 'Hparam argument (%s) must have a double flag' % hparam
+        split = hparam.replace('=', ' ').split()
+        assert len(split) == 2, 'Hparam %s must be equal to one value' % split
+        key, value = tuple(split)
+        assert key[:2] == '--', 'Hparam argument (%s) must have a double flag' % hparam
+        key = key[2:]  # Remove flag
+        value = to_literal(value)
+        return_[key] = value
+
+    return return_

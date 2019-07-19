@@ -1,15 +1,13 @@
-from collections import namedtuple
 from pathlib import Path
 
 import glob
 import logging
 import os
-import random
 
-import numpy as np
 import torch
 import torch.utils.data
 
+from src.environment import get_random_generator_state
 from src.utils.utils import flatten_parameters
 from src.utils.utils import load
 from src.utils.utils import save
@@ -33,7 +31,13 @@ class Checkpoint():
         self.model = model
         self.path = Path(self.directory) / 'step_{}.pt'.format(self.step)
 
+        # TODO: Consider using the `NamedTuple` approach for attribute naming with underscores. The
+        # approach allows attributes to be populated by the user but also allows having some
+        # built-in attributes.
+        # Learn more:
+        # https://softwareengineering.stackexchange.com/questions/315348/why-is-the-replace-method-of-python-namedtuple-classes-protected
         for key, value in kwargs.items():
+            assert not hasattr(self, key), 'This checkpoint attribute already exists.'
             setattr(self, key, value)
 
     @classmethod
@@ -55,10 +59,7 @@ class Checkpoint():
         from src.datasets import Speaker
 
         instance = load(str(path), device=device)
-        if hasattr(instance, 'random_generator_state'):
-            if load_random_state:
-                set_random_generator_state(instance.random_generator_state)
-        else:
+        if not hasattr(instance, 'random_generator_state'):
             logger.warning('Old Checkpoint: unable to load checkpoint random generator state')
 
         if (hasattr(instance, 'input_encoder') and Speaker(
@@ -115,33 +116,3 @@ class Checkpoint():
         self.random_generator_state = get_random_generator_state()
         save(self.path, self)
         return self.path
-
-
-RandomGeneratorState = namedtuple('RandomGeneratorState',
-                                  ['random', 'torch', 'numpy', 'torch_cuda'])
-
-
-def get_random_generator_state():
-    """ Get the `torch`, `numpy` and `random` random generator state.
-
-    Returns:
-        RandomGeneratorState
-    """
-    return RandomGeneratorState(
-        random.getstate(), torch.random.get_rng_state(), np.random.get_state(),
-        torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None)
-
-
-def set_random_generator_state(state):
-    """ Set the `torch`, `numpy` and `random` random generator state.
-
-    Args:
-        state (RandomGeneratorState)
-    """
-    logger.info('Setting the random state for `torch`, `numpy` and `random`.')
-    random.setstate(state.random)
-    torch.random.set_rng_state(state.torch)
-    np.random.set_state(state.numpy)
-    if torch.cuda.is_available() and state.torch_cuda is not None and len(
-            state.torch_cuda) == torch.cuda.device_count():
-        torch.cuda.set_rng_state_all(state.torch_cuda)

@@ -96,6 +96,7 @@ def _set_audio_processing():
         logger.info('Ignoring optional `IPython` configurations.')
 
     add_config({
+        'src.environment.set_seed.seed': 1212212,
         'src.audio': {
             'read_audio.assert_metadata': {
                 'sample_rate': sample_rate,
@@ -109,9 +110,6 @@ def _set_audio_processing():
             # channel has its own set of samples. It's unclear if `sample_rate` depends on the
             # number of channels, scaling linearly per channel.
             'build_wav_header.frame_rate': sample_rate,
-            # NOTE: It's more performant to optimistically preprocess all the files in the same
-            # directory.
-            'get_audio_metadata.optimistic_caching': True,
             'get_log_mel_spectrogram': {
                 'sample_rate': sample_rate,
                 'frame_size': frame_size,
@@ -389,9 +387,8 @@ def get_dataset():
     dataset = datasets.filter_(_filter_no_numbers, dataset)
     dataset = datasets.filter_(_filter_books, dataset)
     logger.info('Loaded %d dataset examples.', len(dataset))
-    do_deterministic_shuffle(dataset, random_seed=123)
-    # NOTE: Performance for `normalize_audio_column` benefits from shuffling.
     dataset = datasets.normalize_audio_column(dataset)
+    do_deterministic_shuffle(dataset, random_seed=123)
     return utils.split_list(dataset, splits=(0.8, 0.2))
 
 

@@ -71,9 +71,9 @@ from src.audio import write_audio
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import set_hparams
+from src.record_standard_streams import RecordStandardStreams
 from src.utils import align_tokens
 from src.utils import flatten
-from src.utils import record_stream
 from src.utils import seconds_to_string
 
 TERMINAL_COLOR_RESET = '\033[0m'
@@ -224,8 +224,8 @@ def request_google_sst(wav_paths,
         gcs_uri = '%s/%s' % (gcs_base_uri, wav_path.name)
         client = speech.SpeechClient()
         audio = types.RecognitionAudio(uri=gcs_uri)
-        # Note that the documentation for `RecognitionConfig` does not include all the options.
-        # All the potential parameters are included here:
+        # NOTE: The documentation for `RecognitionConfig` does not include all the available
+        # options. All the potential parameters are included here:
         # https://cloud.google.com/speech-to-text/docs/reference/rest/v1p1beta1/RecognitionConfig
         config = types.RecognitionConfig(
             language_code='en-US',
@@ -778,13 +778,14 @@ def main(wav_pattern,
     """
     # Setup the basic file structure
     destination = Path(destination)
+    # Save a record of the execution for future reference
+    RecordStandardStreams(destination).start()
     metadata_filename = destination / csv_metadata_name  # Filename to store CSV metadata
     wav_directory = destination / wav_directory_name  # Directory to store clips
     sst_cache_directory = destination / sst_cache_name
     wav_directory.mkdir(parents=True, exist_ok=True)
     sst_cache_directory.mkdir(exist_ok=True)
 
-    record_stream(destination)  # Save a record of the execution for future reference
     set_hparams()
 
     wav_paths, csv_paths = get_paths_from_patterns(wav_pattern, csv_pattern)

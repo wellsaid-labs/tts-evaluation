@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from src.audio import read_audio
@@ -15,7 +17,7 @@ from src.bin.chunk_wav_and_text import remove_punctuation
 from src.bin.chunk_wav_and_text import review_chunk_alignments
 from src.bin.chunk_wav_and_text import samples_to_seconds
 from src.bin.chunk_wav_and_text import seconds_to_samples
-from src.utils import ROOT_PATH
+from src.environment import ROOT_PATH
 from tests._utils import create_disk_garbage_collection_fixture
 
 gc_lj_chunks = create_disk_garbage_collection_fixture(
@@ -113,8 +115,8 @@ def test_main__no_csv(gc_lj_chunks, capsys):
     assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_4.wav').exists()
     assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_5.wav').exists()
     assert (gc_lj_chunks / 'metadata.csv').exists()
-    assert (gc_lj_chunks / 'stderr.log').exists()
-    assert (gc_lj_chunks / 'stdout.log').exists()
+    assert (gc_lj_chunks / ('stderr.%s.log' % os.getpid())).exists()
+    assert (gc_lj_chunks / ('stdout.%s.log' % os.getpid())).exists()
 
     assert ((gc_lj_chunks / 'metadata.csv').read_text().strip() == """Content,WAV Filename
 The examination and testimony,lj_speech_24000/script_0_chunk_0.wav
@@ -154,8 +156,8 @@ def test_main(gc_lj_chunks, capsys):
     assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_1_chunk_1.wav').exists()
     assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_1_chunk_2.wav').exists()
     assert (gc_lj_chunks / 'metadata.csv').exists()
-    assert (gc_lj_chunks / 'stderr.log').exists()
-    assert (gc_lj_chunks / 'stdout.log').exists()
+    assert (gc_lj_chunks / ('stderr.%s.log' % os.getpid())).exists()
+    assert (gc_lj_chunks / ('stdout.%s.log' % os.getpid())).exists()
 
     assert ((gc_lj_chunks / 'metadata.csv').read_text().strip() == """Content,WAV Filename
 The examination and,lj_speech_24000/script_0_chunk_0.wav

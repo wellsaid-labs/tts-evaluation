@@ -53,13 +53,13 @@ import torch
 
 from src.audio import build_wav_header
 from src.audio import combine_signal
+from src.environment import set_basic_logging_config
 from src.hparams import set_hparams
 from src.utils import Checkpoint
-from src.utils import set_basic_logging_config
 
 app = Flask(__name__)
-logger = logging.getLogger(__name__)
 set_basic_logging_config()
+logger = logging.getLogger(__name__)
 load_dotenv()
 DEVICE = torch.device('cpu')
 NO_CACHE_HEADERS = {

@@ -10,11 +10,29 @@ from src.datasets import Speaker
 from src.datasets import TextSpeechRow
 from src.datasets.utils import add_predicted_spectrogram_column
 from src.datasets.utils import add_spectrogram_column
+from src.datasets.utils import filter_
+from src.environment import ROOT_PATH
+from src.environment import TTS_DISK_CACHE_NAME
 from src.spectrogram_model import InputEncoder
 from src.spectrogram_model import SpectrogramModel
 from src.utils import Checkpoint
-from src.utils import ROOT_PATH
-from src.utils import TTS_DISK_CACHE_NAME
+
+
+def test_filter_():
+    a = TextSpeechRow(
+        text='this is a test',
+        speaker=Speaker('Stay', Gender.FEMALE),
+        audio_path='')
+    b = TextSpeechRow(
+        text='this is a test',
+        speaker=Speaker('Stay', Gender.FEMALE),
+        audio_path='')
+    c = TextSpeechRow(
+        text='this is a test',
+        speaker=Speaker('Remove', Gender.FEMALE),
+        audio_path='')
+
+    assert filter_(lambda e: e.speaker != Speaker('Remove', Gender.FEMALE), [a, b, c]) == [a, b]
 
 
 @mock.patch('src.utils.on_disk_tensor.np.save')
@@ -26,8 +44,7 @@ def test_add_predicted_spectrogram_column(mock_from_path, mock_load, mock_save):
     frame_channels = 124
     num_frames = 10
     audio_path = pathlib.Path('tests/_test_data/lj_speech_24000.wav')
-    mock_from_path.return_value = Checkpoint(
-        path=ROOT_PATH / 'run/09_10/norm/step_123.pt',
+    checkpoint = Checkpoint(
         directory='.',
         model=SpectrogramModel(
             input_encoder.text_encoder.vocab_size,
@@ -35,6 +52,8 @@ def test_add_predicted_spectrogram_column(mock_from_path, mock_load, mock_save):
             frame_channels=frame_channels),
         step=0,
         input_encoder=input_encoder)
+    checkpoint.path = ROOT_PATH / 'run/09_10/norm/step_123.pt'
+    mock_from_path.return_value = checkpoint
     row = TextSpeechRow(
         text='this is a test',
         audio_path=audio_path,

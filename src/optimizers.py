@@ -83,6 +83,8 @@ class Optimizer(object):
                     if torch.is_tensor(param_state[k]):
                         param_state[k] = param_state[k].to(device)
 
+        return self
+
 
 # TODO: Consider adding a complementary function to ``torch.nn.utils.clip_grad_norm_`` that auto
 # sets the grad norm cutoff.

@@ -1,12 +1,9 @@
-from unittest import mock
-
 import pickle
 import time
 
-from src.utils import ROOT_PATH
+from src.environment import ROOT_PATH
 from src.utils.disk_cache_ import _Cache
 from src.utils.disk_cache_ import disk_cache
-from src.utils.utils import HashableDict
 
 
 def test_cache():
@@ -17,7 +14,6 @@ def test_cache():
     assert cache.get(kwargs={'a': 'a', 'b': 'b', 'c': 'c'}) == 'd'
     assert len(cache) == 1
     assert len(list(iter(cache))) == 1
-    pickle.dumps(cache)  # Smoke test
 
 
 def test_cache_update():
@@ -35,9 +31,7 @@ def test_cache_update():
     assert (('a', 'b', None),) in cache
 
 
-@mock.patch('src.utils.disk_cache_.atexit.register')
-def test_disk_cache(register_mock):
-    register_mock.return_value = None
+def test_disk_cache():
     filename = (
         ROOT_PATH / 'tests' / '_test_data' / '.disk_cache' /
         'tests.utils.test_disk_cache_.test_disk_cache.<locals>.helper')
@@ -47,7 +41,7 @@ def test_disk_cache(register_mock):
         return arg
 
     helper('a')
-    helper('a')  # Trigger timer reset
+    helper('b')  # Trigger timer reset
 
     assert not filename.exists()
 
@@ -55,8 +49,9 @@ def test_disk_cache(register_mock):
 
     assert filename.exists()
     # TODO: Ensure `write_bytes` was only called once via an `assert`
-    assert len(helper.cache) == 1
-    assert helper.cache[HashableDict({'arg': 'a'})] == 'a'
+    assert len(helper.cache) == 2
+    assert helper.cache.get(kwargs={'arg': 'a'}) == 'a'
+    assert helper.cache.get(kwargs={'arg': 'b'}) == 'b'
 
     # Load cache from disk into another decorator instance
     other_helper = disk_cache(helper, directory=filename.parent)

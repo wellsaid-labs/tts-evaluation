@@ -6,24 +6,26 @@ import logging
 import pathlib
 import pprint
 
+from torch.multiprocessing import Pool
+from torchnlp.download import download_file_maybe_extract
+from tqdm import tqdm
+
 import numpy
 import pandas
 import torch
 
+from src.audio import cache_get_audio_metadata
 from src.audio import get_log_mel_spectrogram
 from src.audio import normalize_audio
 from src.audio import read_audio
 from src.datasets.constants import TextSpeechRow
-from src.distributed import download_file_maybe_extract
+from src.environment import ROOT_PATH
+from src.environment import TTS_DISK_CACHE_NAME
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.utils import batch_predict_spectrograms
 from src.utils import Checkpoint
 from src.utils import OnDiskTensor
-from src.utils import ROOT_PATH
-from src.utils import TTS_DISK_CACHE_NAME
-
-import src.distributed
 
 logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
@@ -119,10 +121,7 @@ def _add_spectrogram_column(example, on_disk=True):
         spectrogram_path = parent / 'spectrogram({}).npy'.format(audio_path.stem)
         is_cached = spectrogram_path.is_file() and spectrogram_audio_path.is_file()
 
-    # For the distributed case, allow only the master node to save to disk while the worker nodes
-    # optimistically assume the file already exists.
-
-    if not on_disk or (on_disk and not is_cached and src.distributed.is_master()):
+    if not on_disk or (on_disk and not is_cached):
         # Compute and save to disk the spectrogram and audio
         assert audio_path.is_file(), 'Audio path must be a file %s' % audio_path
         signal = read_audio(audio_path)
@@ -161,7 +160,12 @@ def add_spectrogram_column(data, on_disk=True):
             data.
     """
     logger.info('Adding a spectrogram column to dataset.')
-    return src.distributed.map_parallel(data, partial(_add_spectrogram_column, on_disk=on_disk))
+    partial_ = partial(_add_spectrogram_column, on_disk=on_disk)
+    with Pool() as pool:
+        # NOTE: `chunksize` with `imap` is more performant while allowing us to measure progress.
+        # Learn more about `imap_unordered` vs `imap`:
+        # https://stackoverflow.com/questions/19063238/in-what-situation-do-we-need-to-use-multiprocessing-pool-imap-unordered
+        return list(tqdm(pool.imap_unordered(partial_, data, chunksize=128), total=len(data)))
 
 
 def _normalize_audio_column_helper(example):
@@ -177,9 +181,21 @@ def normalize_audio_column(data):
     Returns:
         (iterable of TextSpeechRow): Iterable of text speech rows with ``audio_path`` updated.
     """
-    # NOTE: Use threads because `normalize_audio` launches processes via subprocess already.
+    cache_get_audio_metadata([e.audio_path for e in data])
+
     logger.info('Normalizing dataset audio using SoX.')
-    return src.distributed.map_parallel(data, _normalize_audio_column_helper, use_threads=True)
+    with Pool() as pool:
+        # NOTE: `chunksize` allows `imap` to be much more performant while allowing us to measure
+        # progress.
+        # Learn more about `imap_unordered` vs `imap`:
+        # https://stackoverflow.com/questions/19063238/in-what-situation-do-we-need-to-use-multiprocessing-pool-imap-unordered
+        iterator = pool.imap_unordered(_normalize_audio_column_helper, data, chunksize=1024)
+        return_ = list(tqdm(iterator, total=len(data)))
+
+    # NOTE: `cache_get_audio_metadata` for any new normalized audio paths.
+    cache_get_audio_metadata([e.audio_path for e in return_])
+
+    return return_
 
 
 def filter_(function, dataset):
@@ -192,8 +208,9 @@ def filter_(function, dataset):
     Returns:
         iterable of TextSpeechRow
     """
-    positive = list(filter(function, dataset))
-    negative = list(filter(lambda e: not function(e), dataset))
+    bools = [function(e) for e in dataset]
+    positive = [e for i, e in enumerate(dataset) if bools[i]]
+    negative = [e for i, e in enumerate(dataset) if not bools[i]]
     speaker_distribution = Counter([example.speaker for example in negative])
     logger.info('Filtered out %d examples via ``%s`` with a speaker distribution of:\n%s',
                 len(negative), function.__name__, pprint.pformat(speaker_distribution))
@@ -244,7 +261,7 @@ def _dataset_loader(
     Returns:
         list of TextSpeechRow: Dataset with audio filenames and text annotations.
     """
-    logger.info('Loading %s speech dataset', extracted_name)
+    logger.info('Loading `%s` speech dataset', extracted_name)
     directory = Path(directory)
     metadata_filename = metadata_filename.format(directory=directory, extracted_name=extracted_name)
     check_files = [

@@ -5,16 +5,12 @@ from functools import partial
 from functools import wraps
 from math import isclose
 from pathlib import Path
+from threading import Timer
 
-import ast
-import atexit
 import itertools
 import logging
 import logging.config
-import os
 import pprint
-import subprocess
-import sys
 import time
 
 from tqdm import tqdm
@@ -27,9 +23,11 @@ import src.distributed
 logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
 
-ROOT_PATH = Path(__file__).parents[2].resolve()  # Repository root path
 
-TTS_DISK_CACHE_NAME = '.tts_cache'  # Directory name for any disk cache's created by this repository
+def get_chunks(list_, n):
+    """ Yield successive `n`-sized chunks from `list_`. """
+    for i in range(0, len(list_), n):
+        yield list_[i:i + n]
 
 
 def dict_collapse(dict_, keys=[], delimitator='.'):
@@ -53,94 +51,6 @@ def dict_collapse(dict_, keys=[], delimitator='.'):
         else:
             ret_[delimitator.join(keys + [key])] = dict_[key]
     return ret_
-
-
-def set_basic_logging_config(device=None, **kwargs):
-    """ Set up basic logging handlers.
-
-    Args:
-        device (torch.device, optional): Device used to prefix the logs.
-        **kwargs: Additional key word arguments passed to ``logging.basicConfig``.
-    """
-    if device is None:
-        device_prefix = ''
-    else:
-        device_prefix = '[%s]' % device
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format='\033[90m[%(asctime)s]' + device_prefix +
-        '[%(name)s][%(levelname)s]\033[0m %(message)s',
-        **kwargs)
-
-
-def duplicate_stream(from_, to):
-    """ Writes any messages to file object ``from_`` in file object ``to`` as well.
-
-    Note:
-        With the various references below, we were unable to add C support. Find more details
-        here: https://travis-ci.com/AI2Incubator/WellSaidLabs/jobs/152504931
-
-    Learn more:
-        - https://eli.thegreenplace.net/2015/redirecting-all-kinds-of-stdout-in-python/
-        - https://stackoverflow.com/questions/17942874/stdout-redirection-with-ctypes
-        - https://gist.github.com/denilsonsa/9c8f5c44bf2038fd000f
-        - https://github.com/IDSIA/sacred/blob/master/sacred/stdout_capturing.py
-        - http://stackoverflow.com/a/651718/1388435
-        - http://stackoverflow.com/a/22434262/1388435
-
-    Args:
-        from_ (file object)
-        to (str or Path): Filename to write in.
-
-    Returns:
-        callable: Executing the callable stops the duplication.
-    """
-    from_.flush()
-
-    to = Path(to)
-    to.touch()
-
-    # Keep a file descriptor open to the original file object
-    original_fileno = os.dup(from_.fileno())
-    tee = subprocess.Popen(['tee', '-a', str(to)], stdin=subprocess.PIPE)
-    time.sleep(0.01)  # HACK: ``tee`` needs time to open
-    os.dup2(tee.stdin.fileno(), from_.fileno())
-
-    def _clean_up():
-        """ Clean up called during exit or by user. """
-        # (High Level) Ensure ``from_`` flushes before tee is closed
-        from_.flush()
-
-        # Tee Flush / close / terminate
-        tee.stdin.close()
-        tee.terminate()
-        tee.wait()
-
-        # Reset ``from_``
-        os.dup2(original_fileno, from_.fileno())
-        os.close(original_fileno)
-
-    def stop():
-        """ Stop duplication early before the program exits. """
-        atexit.unregister(_clean_up)
-        _clean_up()
-
-    atexit.register(_clean_up)
-    return stop
-
-
-def record_stream(directory, stdout_log_filename='stdout.log', stderr_log_filename='stderr.log'):
-    """ Record output ``sys.stdout`` and ``sys.stderr`` to log files.
-
-    Args:
-        directory (Path or str): Directory to save log files in.
-        stdout_log_filename (str, optional)
-        stderr_log_filename (str, optional)
-    """
-    directory = Path(directory)
-    duplicate_stream(sys.stdout, directory / stdout_log_filename)
-    duplicate_stream(sys.stderr, directory / stderr_log_filename)
 
 
 def get_weighted_stdev(tensor, dim=0, mask=None):
@@ -243,38 +153,6 @@ def save(path, data):
     """
     torch.save(data, str(path))
     logger.info('Saved: %s', str(path))
-
-
-def parse_hparam_args(hparam_args):
-    """ Parse CLI arguments like ``['--torch.optim.adam.Adam.__init__.lr 0.1',]`` to :class:`dict`.
-
-    Args:
-        hparams_args (list of str): List of CLI arguments
-
-    Returns
-        (dict): Dictionary of arguments.
-    """
-
-    def to_literal(value):
-        try:
-            value = ast.literal_eval(value)
-        except ValueError:
-            pass
-        return value
-
-    return_ = {}
-
-    for hparam in hparam_args:
-        assert '--' in hparam, 'Hparam argument (%s) must have a double flag' % hparam
-        split = hparam.replace('=', ' ').split()
-        assert len(split) == 2, 'Hparam %s must be equal to one value' % split
-        key, value = tuple(split)
-        assert key[:2] == '--', 'Hparam argument (%s) must have a double flag' % hparam
-        key = key[2:]  # Remove flag
-        value = to_literal(value)
-        return_[key] = value
-
-    return return_
 
 
 """ Flatten a list of lists into a list. """
@@ -440,20 +318,6 @@ def sort_together(list_, sort_key):
     return [x for _, x in sorted(zip(sort_key, list_), key=lambda pair: pair[0])]
 
 
-def assert_enough_disk_space(min_space=0.2):
-    """ Check if there is enough disk space.
-
-    Args:
-        min_space (float): Minimum percentage of free disk space.
-    """
-    st = os.statvfs(ROOT_PATH)
-    free = st.f_bavail * st.f_frsize
-    total = st.f_blocks * st.f_frsize
-    available = free / total
-    assert available > min_space, 'There is not enough available (%f < %f) disk space.' % (
-        available, min_space)
-
-
 def split_list(list_, splits):
     """ Split ``list_`` using the ``splits`` ratio.
 
@@ -537,3 +401,31 @@ def balance_list(list_, get_class=identity, get_weight=lambda x: 1, random_seed=
     subsample = list(itertools.chain(*subsample))  # Flatten list
     src.distributed.random_shuffle(subsample, random_seed=random_seed)
     return subsample
+
+
+class ResetableTimer(Timer):
+    """ Similar to `Timer` but with an included `reset` method.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.continue_waiting = True
+
+    def run(self):
+        while self.continue_waiting:
+            self.continue_waiting = False
+            self.finished.wait(self.interval)
+
+        if not self.finished.isSet():
+            self.function(*self.args, **self.kwargs)
+        self.finished.set()
+
+    def reset(self):
+        """ Reset the timer.
+
+        NOTE: The `Timer` executes an action only once; therefore, the timer can be reset up until
+        the action has executed. Following the action execution the timer thread exits.
+        """
+        self.continue_waiting = True
+        self.finished.set()
+        self.finished.clear()

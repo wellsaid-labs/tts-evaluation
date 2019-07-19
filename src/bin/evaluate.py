@@ -11,13 +11,19 @@ from pathlib import Path
 import argparse
 import logging
 
-from torchnlp.utils import tensors_to
 from torch.utils.data.sampler import RandomSampler
+from torchnlp.utils import tensors_to
 
 import torch
 
+# NOTE: Some modules log on import; therefore, we first setup logging.
+from src.environment import set_basic_logging_config
+
+set_basic_logging_config()
+
 from src.audio import combine_signal
 from src.audio import griffin_lim
+from src.audio import write_audio
 from src.datasets import add_predicted_spectrogram_column
 from src.datasets import add_spectrogram_column
 from src.datasets import TextSpeechRow
@@ -25,13 +31,11 @@ from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import log_config
 from src.hparams import set_hparams
+from src.record_standard_streams import RecordStandardStreams
 from src.utils import balance_list
 from src.utils import Checkpoint
 from src.utils import evaluate
-from src.utils import record_stream
-from src.audio import write_audio
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -132,12 +136,18 @@ def main(dataset=ConfiguredArg(),
         signal_model_device (torch.device, optional): Device used for signal model inference, note
             that on CPU the signal model does not run out of memory.
     """
-    # Record the standard streams
     destination = Path(destination)
     destination.mkdir(exist_ok=False, parents=True)
-    record_stream(destination)
 
+    RecordStandardStreams(destination).start()
+
+    set_hparams()
     log_config()
+
+    # NOTE: Load early and crash early by ensuring that the checkpoint exists and is not corrupt.
+    if signal_model_checkpoint_path is not None:
+        signal_model_checkpoint = Checkpoint.from_path(
+            signal_model_checkpoint_path, device=signal_model_device)
 
     # Create the dataset to iterate over
     spectrogram_model_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -151,7 +161,11 @@ def main(dataset=ConfiguredArg(),
         balanced=balanced)
 
     # Adds `spectrogram_audio` and `spectrogram` column.
-    examples = add_spectrogram_column(examples, on_disk=False)
+    if all(e.audio_path is not None for e in examples):
+        examples = add_spectrogram_column(examples, on_disk=False)
+    else:
+        logger.info('Skipping `add_spectrogram_column`.')
+
     examples = add_predicted_spectrogram_column(
         examples,
         spectrogram_model_checkpoint_path,
@@ -172,8 +186,6 @@ def main(dataset=ConfiguredArg(),
         return
 
     # Predict with the signal model
-    signal_model_checkpoint = Checkpoint.from_path(
-        signal_model_checkpoint_path, device=signal_model_device)
     signal_model_inferrer = signal_model_checkpoint.model.to_inferrer(device=signal_model_device)
     use_predicted = spectrogram_model_checkpoint_path is not None
 
@@ -213,11 +225,12 @@ if __name__ == '__main__':  # pragma: no cover
         help='Input custom text to the model to compute.',
         default=None)
     args = parser.parse_args()
+
     kwargs = {
         'signal_model_checkpoint_path': args.signal_model,
         'spectrogram_model_checkpoint_path': args.spectrogram_model
     }
     if args.text is not None:
         kwargs['dataset'] = args.text
-    set_hparams()
+
     main(**kwargs)

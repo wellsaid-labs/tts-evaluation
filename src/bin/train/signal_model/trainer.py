@@ -62,7 +62,6 @@ class Trainer():
         device (torch.device): Device to train on.
         train_dataset (iterable of TextSpeechRow): Train dataset used to optimize the model.
         dev_dataset (iterable of TextSpeechRow): Dev dataset used to evaluate the model.
-        comet_ml_project_name (str): Comet project name, used for grouping experiments.
         checkpoints_directory (str or Path): Directory to store checkpoints in.
         train_batch_size (int): Batch size used for training.
         dev_batch_size (int): Batch size used for evaluation.
@@ -71,8 +70,6 @@ class Trainer():
         min_rollback (int): Minimum number of epochs to rollback in case of a loss anomaly.
         lr_multiplier_schedule (callable): Learning rate multiplier schedule.
         model (torch.nn.Module, optional): Model to train and evaluate.
-        comet_ml_experiment_key (str, optional): Previous experiment key to continue visualization
-            in comet.
         spectrogram_model_checkpoint_path (str, optional): Checkpoint used to generate a spectrogram
             from text as input to the signal model.
         step (int, optional): Starting step; typically, this parameter is useful when starting from
@@ -94,7 +91,6 @@ class Trainer():
                  device,
                  train_dataset,
                  dev_dataset,
-                 comet_ml_project_name,
                  checkpoints_directory,
                  train_batch_size=ConfiguredArg(),
                  dev_batch_size=ConfiguredArg(),
@@ -103,7 +99,6 @@ class Trainer():
                  min_rollback=ConfiguredArg(),
                  lr_multiplier_schedule=ConfiguredArg(),
                  model=ConfiguredArg(),
-                 comet_ml_experiment_key=None,
                  spectrogram_model_checkpoint_path=None,
                  step=0,
                  epoch=0,
@@ -150,8 +145,7 @@ class Trainer():
         self._rollback_states = deque([self._make_partial_rollback_state()],
                                       maxlen=min_rollback + 1)
 
-        self.comet_ml = CometML(
-            project_name=comet_ml_project_name, experiment_key=comet_ml_experiment_key)
+        self.comet_ml = CometML()
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])
@@ -240,10 +234,8 @@ class Trainer():
             'optimizer': checkpoint.optimizer,
             'epoch': checkpoint.epoch,
             'step': checkpoint.step,
-            'comet_ml_experiment_key': checkpoint.comet_ml_experiment_key,
             'anomaly_detector': checkpoint.anomaly_detector,
             'spectrogram_model_checkpoint_path': checkpoint.spectrogram_model_checkpoint_path,
-            'comet_ml_project_name': checkpoint.comet_ml_project_name,
             'num_rollbacks': checkpoint.num_rollbacks
         }
         checkpoint_kwargs.update(kwargs)
@@ -260,7 +252,6 @@ class Trainer():
             directory=self.checkpoints_directory,
             step=self.step,
             model=self.model,
-            comet_ml_project_name=self.comet_ml.project_name,
             optimizer=self.optimizer,
             epoch=self.epoch,
             anomaly_detector=self.anomaly_detector,
@@ -353,10 +344,11 @@ class Trainer():
             num_epochs (int, optional): Number of epochs to run.
         """
         label = self.TRAIN_LABEL if train else self.DEV_LABEL
-        logger.info('[%s] Running Epoch %d to %d, Step %d', label.upper(), self.epoch,
-                    self.epoch + num_epochs, self.step)
         if trial_run:
             logger.info('[%s] Trial run with one batch.', label.upper())
+        else:
+            logger.info('[%s] Running Epoch %d to %d, Step %d', label.upper(), self.epoch,
+                        self.epoch + num_epochs, self.step)
 
         # Set mode(s)
         self.model.train(mode=train)
@@ -397,7 +389,7 @@ class Trainer():
                 self.scheduler.step(self.step)
 
         self._end_epoch()
-        if train:
+        if train and not trial_run:
             self.epoch += num_epochs
 
     def _get_gru_orthogonal_loss(self):

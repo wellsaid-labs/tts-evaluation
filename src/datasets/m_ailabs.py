@@ -27,13 +27,14 @@ import csv
 import logging
 import os
 
+from torchnlp.download import download_file_maybe_extract
+
 import pandas
 
 from src.datasets.constants import Gender
 from src.datasets.constants import Speaker
 from src.datasets.constants import TextSpeechRow
-from src.distributed import download_file_maybe_extract
-from src.utils import ROOT_PATH
+from src.environment import ROOT_PATH
 
 logger = logging.getLogger(__name__)
 Book = namedtuple('Book', 'speaker title')
@@ -156,7 +157,7 @@ def _m_ailabs_speech_dataset(directory,
         >>> set_hparams() # doctest: +SKIP
         >>> train, dev = m_ailabs_speech_dataset() # doctest: +SKIP
     """
-    logger.info('Loading M-AILABS %s speech dataset', extracted_name)
+    logger.info('Loading `M-AILABS %s` speech dataset', extracted_name)
     directory = Path(directory)
     download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
 
@@ -184,7 +185,7 @@ def _book2path(book, directory, extracted_name):
     """ Given a book of :class:`Book` type, returns the relative path to its metadata.csv file.
 
     Examples:
-        >>> from src.utils import ROOT_PATH
+        >>> from src.environment import ROOT_PATH
         >>> _book2path(SKY_ISLAND, ROOT_PATH / 'data', 'en_US').relative_to(ROOT_PATH)
         PosixPath('data/en_US/by_book/female/judy_bieber/sky_island/metadata.csv')
     """
@@ -197,7 +198,7 @@ def _path2book(metadata_path, directory):
     """ Given a path to a book's metadata.csv, returns the corresponding :class:`Book` object.
 
     Examples:
-        >>> from src.utils import ROOT_PATH
+        >>> from src.environment import ROOT_PATH
         >>> path = ROOT_PATH / 'data/M-AILABS/en_US/by_book/female/judy_bieber/sky_island/metadata.csv'
         >>> _path2book(metadata_path=path, directory=ROOT_PATH / 'data/M-AILABS') # noqa: E501
         Book(speaker=Speaker(name='Judy Bieber', gender=FEMALE), title='sky_island')

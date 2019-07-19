@@ -18,32 +18,61 @@ warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
 # NOTE: Needs to be imported before torch
 import comet_ml  # noqa
 
-from src import datasets
+import torch
+
+# NOTE: Some modules log on import; therefore, we first setup logging.
+from src.environment import set_basic_logging_config
+
+set_basic_logging_config()
+
 from src.bin.train.signal_model.trainer import Trainer
+from src.environment import assert_enough_disk_space
+from src.environment import check_module_versions
+from src.environment import ROOT_PATH
+from src.environment import set_random_generator_state
+from src.environment import set_seed
 from src.hparams import add_config
 from src.hparams import configurable
+from src.hparams import ConfiguredArg
+from src.hparams import parse_hparam_args
 from src.hparams import set_hparams
-from src.training_context_manager import TrainingContextManager
+from src.record_standard_streams import RecordStandardStreams
 from src.utils import Checkpoint
-from src.utils import parse_hparam_args
+from src.visualize import CometML
 
 logger = logging.getLogger(__name__)
 
 
-def _set_hparams(more_hparams=None):
+def _set_hparams(more_hparams, checkpoint, comet_ml_project_name=None):
     """ Set hyperparameters for signal model training.
 
     Args:
-        more_harpams (dict, optional): Additional hyperparameters to set.
+        more_harpams (dict): Additional hyperparameters to set.
+        checkpoint (src.utils.Checkpoint): Checkpoint to load random generator state from.
+        comet_ml_project_name (str or None, optional)
     """
     set_hparams()
 
-    if more_hparams:
-        add_config(more_hparams)
+    comet_ml_project_name = (
+        comet_ml_project_name if checkpoint is None else checkpoint.comet_ml_project_name)
+    comet_ml_experiment_key = None if checkpoint is None else checkpoint.comet_ml_experiment_key
+
+    add_config({
+        'src.visualize.CometML': {
+            'project_name': comet_ml_project_name,
+            'experiment_key': comet_ml_experiment_key,
+        },
+    })
+    add_config(more_hparams)
+
+    set_seed()
+
+    if 'random_generator_state' in checkpoint:
+        set_random_generator_state(checkpoint.random_generator_state)
 
 
 @configurable
-def _get_dataset(dataset=datasets.lj_speech_dataset):
+def _get_dataset(dataset=ConfiguredArg()):
     return dataset()
 
 
@@ -88,71 +117,67 @@ def _train(trainer,
         logger.info('-' * 100)
 
 
+def _time_label():
+    return str(time.strftime('%Y-%m-%d_%H:%M:%S', time.localtime())).lower()
+
+
 def main(run_name,
          comet_ml_project_name=None,
          run_tags=[],
-         run_root=Path('experiments/signal_model/'),
+         run_root=ROOT_PATH / 'experiments' / 'signal_model' / _time_label(),
+         checkpoints_directory=Path('checkpoints') / _time_label(),
          checkpoint=None,
          spectrogram_model_checkpoint_path=None,
-         reset_optimizer=False,
-         more_hparams={}):
+         more_hparams={},
+         device=torch.device('cuda')):
     """ Main module that trains a the signal model saving checkpoints incrementally.
 
     Args:
         run_name (str): Name describing the experiment.
         comet_ml_project_name (str, optional): Project name to use with comet.ml.
-        run_tags (list of str, optional): Tags describing the experiment.
-        run_root (str, optional): Directory to save experiments.
-        checkpoint_path (str or bool, optional): Accepts a checkpoint path to load or empty string
-            signaling to load the most recent checkpoint in ``run_root``.
+        run_tags (list of str, optional): Comet.ml experiment tags.
+        run_root (str, optional): Directory to save experiments, unless a checkpoint is loaded.
+        checkpoints_directory (str, optional): Directory to save checkpoints inside `run_root`.
+        checkpoint (src.utils.Checkpoint, optional): Checkpoint or None.
         spectrogram_model_checkpoint_path (str, optional): Checkpoint used to generate spectrogram
             from text as input to the signal model.
-        reset_optimizer (bool, optional): Given a checkpoint, resets the optimizer.
         more_hparams (dict, optional): Hparams to override default hparams.
+        device (torch.device): Primary device used for training.
     """
-    with TrainingContextManager() as context:
-        logger.info('Name: %s', run_name)
-        logger.info('Tags: %s', run_tags)
+    recorder = RecordStandardStreams().start()
+    _set_hparams(more_hparams, checkpoint, comet_ml_project_name)
 
-        _set_hparams(more_hparams)
+    # Load `checkpoint`, setup `run_root`, and setup `checkpoints_directory`.
+    run_root = run_root if checkpoint is None else checkpoint.directory.parent.parent
+    if checkpoint is None:
+        run_root.mkdir(parents=True)
+    checkpoints_directory = run_root / checkpoints_directory
+    checkpoints_directory.mkdir()
+    recorder.update(run_root)
 
-        # Set the root directory and load checkpoint
-        if checkpoint is not None and checkpoint:
-            if isinstance(checkpoint, str):
-                checkpoint = Checkpoint.from_path(checkpoint)
-            elif isinstance(checkpoint, bool) and checkpoint:
-                checkpoint = Checkpoint.most_recent(run_root / '**/*.pt')
-            else:
-                raise ValueError('Unable to load checkpoint.')
+    comet = CometML()
+    logger.info('Name: %s', run_name)
+    logger.info('Tags: %s', run_tags)
+    comet.set_name(run_name)
+    comet.add_tags(run_tags)
+    comet.log_other('directory', run_root)
 
-            context.set_context_root(checkpoint.directory.parent.parent, at_checkpoint=True)
-            checkpoint.optimizer = None if reset_optimizer else checkpoint.optimizer
-        else:
-            root = run_root / str(time.strftime('%b_%d/%H:%M:%S', time.localtime())).lower()
-            context.set_context_root(root)
+    train, dev = _get_dataset()
 
-        train, dev = _get_dataset()
+    # Create trainer
+    kwargs = {
+        'device': device,
+        'train_dataset': train,
+        'dev_dataset': dev,
+        'checkpoints_directory': checkpoints_directory
+    }
+    if spectrogram_model_checkpoint_path is not None:
+        kwargs['spectrogram_model_checkpoint_path'] = spectrogram_model_checkpoint_path
+    if checkpoint is not None:
+        kwargs['checkpoint'] = checkpoint
+    trainer = (Trainer.from_checkpoint if checkpoint else Trainer)(**kwargs)
 
-        # Create trainer
-        kwargs = {
-            'device': context.device,
-            'train_dataset': train,
-            'dev_dataset': dev,
-            'checkpoints_directory': context.checkpoints_directory
-        }
-        if comet_ml_project_name is not None:
-            kwargs['comet_ml_project_name'] = comet_ml_project_name
-        if spectrogram_model_checkpoint_path is not None:
-            kwargs['spectrogram_model_checkpoint_path'] = spectrogram_model_checkpoint_path
-        if checkpoint is not None:
-            kwargs['checkpoint'] = checkpoint
-        trainer = (Trainer.from_checkpoint if checkpoint else Trainer)(**kwargs)
-
-        trainer.comet_ml.set_name(run_name)
-        trainer.comet_ml.add_tags(run_tags)
-        trainer.comet_ml.log_other('directory', context.root_directory)
-
-        _train(trainer)
+    _train(trainer)
 
 
 if __name__ == '__main__':  # pragma: no cover
@@ -192,13 +217,29 @@ if __name__ == '__main__':  # pragma: no cover
         '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     parser.add_argument(
         '-p', '--project_name', type=str, help='Comet.ML project for the experiment to use.')
-    args, unknown_args = parser.parse_known_args()
-    hparams = parse_hparam_args(unknown_args)
+
+    args, unparsed_args = parser.parse_known_args()
+
+    # Pre-run checks on the `requirements.txt` and on the available disk space.
+    check_module_versions()
+    assert_enough_disk_space()
+
+    if isinstance(args.checkpoint, str):
+        args.checkpoint = Checkpoint.from_path(args.checkpoint)
+    elif isinstance(args.checkpoint, bool) and args.checkpoint:
+        args.checkpoint = Checkpoint.most_recent(ROOT_PATH / '**/*.pt')
+    else:
+        args.checkpoint = None
+
+    if args.checkpoint is not None:
+        # TODO: Remove coupling between `Trainer` and `checkpoint`.
+        args.checkpoint.optimizer = None if args.reset_optimizer else args.checkpoint.optimizer
+        args.project_name = args.checkpoint.comet_ml_project_name
+
     main(
         run_name=args.name,
         run_tags=args.tags,
         comet_ml_project_name=args.project_name,
         checkpoint=args.checkpoint,
         spectrogram_model_checkpoint_path=args.spectrogram_model_checkpoint,
-        reset_optimizer=args.reset_optimizer,
-        more_hparams=hparams)
+        more_hparams=parse_hparam_args(unparsed_args))

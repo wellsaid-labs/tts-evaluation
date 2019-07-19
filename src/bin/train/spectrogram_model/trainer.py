@@ -10,7 +10,6 @@ import torch
 
 from src.audio import griffin_lim
 from src.bin.train.spectrogram_model.data_loader import DataLoader
-from src.datasets import add_spectrogram_column
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import get_config
@@ -43,7 +42,6 @@ class Trainer():
         device (torch.device): Device to train on.
         train_dataset (iterable of TextSpeechRow): Train dataset used to optimize the model.
         dev_dataset (iterable of TextSpeechRow): Dev dataset used to evaluate the model.
-        comet_ml_project_name (str): Comet project name, used for grouping experiments.
         checkpoints_directory (str or Path): Directory to store checkpoints in.
         train_batch_size (int): Batch size used for training.
         dev_batch_size (int): Batch size used for evaluation.
@@ -52,8 +50,6 @@ class Trainer():
             token predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
         model (torch.nn.Module, optional): Model to train and evaluate.
-        comet_ml_experiment_key (str, optional): Previous experiment key to continue visualization
-            in comet.
         input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         step (int, optional): Starting step; typically, this parameter is useful when starting from
             a checkpoint.
@@ -71,7 +67,6 @@ class Trainer():
                  device,
                  train_dataset,
                  dev_dataset,
-                 comet_ml_project_name,
                  checkpoints_directory,
                  train_batch_size=ConfiguredArg(),
                  dev_batch_size=ConfiguredArg(),
@@ -79,22 +74,21 @@ class Trainer():
                  criterion_stop_token=ConfiguredArg(),
                  optimizer=ConfiguredArg(),
                  model=ConfiguredArg(),
-                 comet_ml_experiment_key=None,
                  input_encoder=None,
                  step=0,
                  epoch=0,
                  use_tqdm=False):
 
-        self.train_dataset = add_spectrogram_column(train_dataset)
+        self.train_dataset = train_dataset
         # The training and development dataset distribution of speakers is arbitrary (i.e. some
         # audio books have more data and some have less). In order to ensure that no speaker
         # is prioritized over another, we balance the number of examples for each speaker.
-        self.dev_dataset = add_spectrogram_column(
-            balance_list(dev_dataset, get_class=lambda r: r.speaker, random_seed=123))
+        self.dev_dataset = balance_list(dev_dataset, get_class=lambda r: r.speaker, random_seed=123)
 
         self.input_encoder = InputEncoder(
             [r.text for r in self.train_dataset] + [r.text for r in self.dev_dataset],
-            [r.speaker for r in self.train_dataset]) if input_encoder is None else input_encoder
+            [r.speaker for r in self.train_dataset] +
+            [r.speaker for r in self.dev_dataset]) if input_encoder is None else input_encoder
 
         # Allow for ``class`` or a class instance
         self.model = model if isinstance(model, torch.nn.Module) else model(
@@ -122,13 +116,7 @@ class Trainer():
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
 
-        # Comet creates an experiment on `comet.ml`; therefore, this takes some time to execute.
-        # We leave this till the very end; ensursing everything else works before
-        # creating a comet_ml experiment.
-        self.comet_ml = CometML(
-            project_name=comet_ml_project_name,
-            experiment_key=comet_ml_experiment_key,
-            disabled=not src.distributed.is_master())
+        self.comet_ml = CometML()
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])
@@ -171,9 +159,7 @@ class Trainer():
             'optimizer': checkpoint.optimizer,
             'epoch': checkpoint.epoch,
             'step': checkpoint.step,
-            'comet_ml_experiment_key': checkpoint.comet_ml_experiment_key,
             'input_encoder': checkpoint.input_encoder,
-            'comet_ml_project_name': checkpoint.comet_ml_project_name
         }
         checkpoint_kwargs.update(kwargs)
         return class_(**checkpoint_kwargs)
@@ -343,6 +329,7 @@ class Trainer():
              predicted_alignments, _) = model(text, speaker)
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
+        print(predicted_post_spectrogram.shape)
 
         self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
         self.comet_ml.log_audio(

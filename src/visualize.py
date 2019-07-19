@@ -20,8 +20,7 @@ import torch
 from src.audio import write_audio
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
-
-import src.distributed
+from src.utils import log_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +183,9 @@ _BASE_HTML_STYLING = """
 """
 
 
-def CometML(project_name,
+@configurable
+@log_runtime
+def CometML(project_name=ConfiguredArg(),
             experiment_key=None,
             api_key=None,
             workspace=None,
@@ -204,6 +205,8 @@ def CometML(project_name,
     Returns:
         (Experiment or ExistingExperiment): Object for visualization with comet.
     """
+    assert isinstance(project_name, str), 'Project name must be a string.'
+
     load_dotenv()
 
     api_key = os.getenv('COMET_ML_API_KEY') if api_key is None else api_key
@@ -233,7 +236,6 @@ def CometML(project_name,
     # fails to upload.
     experiment._upload_git_patch()
 
-    experiment.log_other('is_distributed', src.distributed.is_initialized())
     # Log the last git commit date
     experiment.log_other(
         'last_git_commit',

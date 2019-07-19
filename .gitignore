@@ -80,3 +80,6 @@ results/
 
 # Local node modules
 node_modules/
+
+# Disk cache for this repo.
+.tts_cache

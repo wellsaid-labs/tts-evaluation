@@ -1,5 +1,4 @@
-from threading import Lock
-from threading import get_ident
+from multiprocessing import Pool
 
 import logging
 import math
@@ -12,10 +11,11 @@ from tqdm import tqdm
 import numpy as np
 import torch
 
+from src.environment import TTS_DISK_CACHE_NAME
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
-from src.utils import TTS_DISK_CACHE_NAME
 from src.utils import disk_cache
+from src.utils import get_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -485,51 +485,13 @@ def _parse_audio_metadata(metadata):
 
 
 @disk_cache
-def _get_audio_metadata(audio_path):
-    # NOTE: `sox --i` behaves like `soxi`
-    # Learn more about `soxi`: http://sox.sourceforge.net/soxi.html
-    metadata = subprocess.run(['sox', '--i', audio_path], check=False, stdout=subprocess.PIPE)
-    metadata = metadata.stdout.decode('utf-8').strip()
-    return _parse_audio_metadata(metadata)[1]
-
-
-def _get_audio_metadata_batch_cache(paths):
-    """ Cache all `paths` in `_get_audio_metadata.cache`.
-
-    Args:
-        paths (list): List of `path.Pathlib` to compute.
-    """
-    # NOTE: Glob may find unused files like:
-    # `M-AILABS/ ... /judy_bieber/ozma_of_oz/wavs/._ozma_of_oz_10_f000095.wav`
-    # Those errors are ignored along with any other output from `stderr`.
-    command = ['sox', '--i'] + paths
-    metadatas = subprocess.run(command, stdout=subprocess.PIPE).stdout.decode('utf-8')
-    metadatas = metadatas.strip().split('\n\n')
-    metadatas = metadatas[:-1] if 'Total Duration' in metadatas[-1] else metadatas
-
-    for metadata in metadatas:
-        metadata_audio_path, metadata = _parse_audio_metadata(metadata)
-        _get_audio_metadata.cache.set_(kwargs={'audio_path': metadata_audio_path}, return_=metadata)
-
-
-_OPTIMISTIC_CACHING_LOCKS = {}
-_GET_AUDIO_METADATA_LOCK = Lock()
-
-
-@configurable
-def get_audio_metadata(audio_path, optimistic_caching=ConfiguredArg(), max_characters=1024 * 128):
+def get_audio_metadata(audio_path):
     """ Get metadata on `audio_path`.
 
-    NOTE: Launching `subprocess` is slow, try to avoid it.
+    NOTE: Launching `subprocess` via `get_audio_metadata` is slow, try to avoid it.
 
     Args:
         audio_path (Path or str): WAV audio file to get metadata on.
-        optimistic_caching (bool): Optimistically compute and cache metadata for all
-            audio files in the same directory as `audio_path`. This is more performant as it
-            launches one process for many audio files instead of an individual process for all
-            of them.
-        max_characters (int, optional): The maximum number of characters that bash accepts for
-            commands.
 
     Returns: (dict) {
         channels (int): The number of audio channels in the audio file.
@@ -539,32 +501,49 @@ def get_audio_metadata(audio_path, optimistic_caching=ConfiguredArg(), max_chara
           'floating-point'].
     }
     """
-    audio_path = pathlib.Path(audio_path)
+    # NOTE: `sox --i` behaves like `soxi`
+    # Learn more about `soxi`: http://sox.sourceforge.net/soxi.html
+    metadata = subprocess.run(['sox', '--i', audio_path], check=False, stdout=subprocess.PIPE)
+    metadata = metadata.stdout.decode('utf-8').strip()
+    return _parse_audio_metadata(metadata)[1]
 
-    in_cache = ((), {'audio_path': audio_path}) in _get_audio_metadata.cache
-    print('[%d] get_audio_metadata in_cache' % get_ident(), in_cache)
-    if optimistic_caching and not in_cache:
-        # NOTE: Ensure that multiple threads don't compute the same `audio_path.parent`.
-        with _GET_AUDIO_METADATA_LOCK:
-            has_optimistic_caching_lock = audio_path.parent not in _OPTIMISTIC_CACHING_LOCKS
-            _OPTIMISTIC_CACHING_LOCKS[audio_path.parent] = True
 
-        if has_optimistic_caching_lock:
-            print('[%d] optimistic caching: %s' % (get_ident(), audio_path.parent))
-            paths = []
-            total_characters = 0
-            for path in audio_path.parent.glob('*' + audio_path.suffix):
-                if total_characters + len(str(path)) < max_characters:
-                    paths.append(str(path))
-                    total_characters += len(str(path))
-                else:
-                    _get_audio_metadata_batch_cache(paths)
-                    paths = [str(path)]
-                    total_characters = len(str(path))
-            _get_audio_metadata_batch_cache(paths)
-            print('[%d] optimistic caching done: %s' % (get_ident(), audio_path.parent))
+def _cache_get_audio_metadata_helper(chunk):
+    # NOTE: Glob may find unused files like:
+    # `M-AILABS/ ... /judy_bieber/ozma_of_oz/wavs/._ozma_of_oz_10_f000095.wav`
+    # Those errors are ignored along with any other output from `stderr`.
+    command = ['sox', '--i'] + chunk
+    metadatas = subprocess.run(command, stdout=subprocess.PIPE).stdout.decode('utf-8')
+    metadatas = metadatas.strip().split('\n\n')
+    metadatas = metadatas[:-1] if 'Total Duration' in metadatas[-1] else metadatas
+    return [_parse_audio_metadata(metadata) for metadata in metadatas]
 
-    return _get_audio_metadata(audio_path)
+
+def cache_get_audio_metadata(paths):
+    """ Cache all `paths` in `_get_audio_metadata.cache`.
+
+    NOTE: This method is more performant due to batching than calling `get_audio_metadata` the same
+    number of times for the same paths.
+
+    Args:
+        paths (iterable): List of `path.Pathlib`s to cache.
+    """
+    paths = sorted(list(paths))
+    paths = [path for path in paths if ((), {'audio_path': path}) not in get_audio_metadata.cache]
+    logger.info('Caching audio metadata for %d audio files.', len(paths))
+
+    # NOTE: It's difficult to determine the bash maximum argument length, learn more:
+    # https://unix.stackexchange.com/questions/45143/what-is-a-canonical-way-to-find-the-actual-maximum-argument-list-length
+    # https://stackoverflow.com/questions/19354870/bash-command-line-and-input-limit
+    # NOTE: 2048 was choosen empirically to be less then the bash maximum argument length on most
+    # systems.
+    chunks = list(get_chunks(paths, 2048))
+    progress_bar = tqdm(total=len(paths))
+    with Pool() as pool:
+        for result in pool.imap_unordered(_cache_get_audio_metadata_helper, chunks):
+            for audio_path, metadata in result:
+                get_audio_metadata.cache.set_(args=(audio_path,), return_=metadata)
+                progress_bar.update()
 
 
 @configurable

@@ -1,17 +1,9 @@
-from multiprocessing.pool import ThreadPool
-
 import logging
-import os
 import random
 
-from torch.multiprocessing import Pool
 from torchnlp.utils import shuffle as do_deterministic_shuffle
-from tqdm import tqdm
 
 import torch
-import torchnlp.download
-
-import src
 
 logger = logging.getLogger(__name__)
 
@@ -36,41 +28,6 @@ def is_master():
         return True
 
     return torch.distributed.get_rank() == get_master_rank()
-
-
-def broadcast_string(string, type_=torch.cuda):
-    """ Broadcast from master a string to other processes.
-
-    Requires:
-        - Distributed was initialized: ``is_initialized() == True``
-        - The node device was set via: ``torch.cuda.set_device()``
-
-    Args:
-        string (str)
-        type_ (any): Default tensor type to use.
-
-    Returns:
-        (str): String sent by master.
-    """
-    string = list(string)
-    string = [ord(c) for c in string]  # Convert string into an integer representation
-
-    if is_master():
-        len_string = type_.LongTensor([len(string)])
-    else:
-        len_string = type_.LongTensor(1)
-
-    torch.distributed.broadcast(len_string, src=get_master_rank())
-    len_string = int(len_string)
-
-    if is_master():
-        string = type_.LongTensor(string)
-    else:
-        string = type_.LongTensor(len_string)
-
-    torch.distributed.broadcast(string, src=get_master_rank())
-    string = string.cpu().tolist()
-    return ''.join([chr(c) for c in string])
 
 
 def distribute_batch_sampler(batch_sampler, batch_size, device, type_=torch.cuda):
@@ -126,66 +83,6 @@ def distribute_batch_sampler(batch_sampler, batch_size, device, type_=torch.cuda
     # ``device.index`` could be ``None`` and cause a silent failure.
     assert isinstance(device.index, int), 'device.index must be specified'
     return batches[:, device.index].cpu().tolist()
-
-
-def download_file_maybe_extract(*args, **kwargs):
-    """
-    Alias to ``torchnlp.download.download_file_maybe_extract`` that considers the distributed
-    environment.
-    """
-    if src.distributed.is_master():
-        return_ = torchnlp.download.download_file_maybe_extract(*args, **kwargs)
-
-    # Ensure data is downloaded before both worker and master proceed.
-    if src.distributed.is_initialized():
-        torch.distributed.barrier()
-
-    if not src.distributed.is_master():
-        return_ = torchnlp.download.download_file_maybe_extract(*args, **kwargs)
-
-    return return_
-
-
-def map_parallel(data,
-                 func,
-                 use_tqdm=True,
-                 use_threads=False,
-                 optimistic_worker=True,
-                 pool_size=os.cpu_count()):
-    """ Map ``func`` onto data while allocating multiple process only to the master process.
-
-    Args:
-        data (iterable)
-        func (callable)
-        use_tqdm (bool, optional): Attach a progress bar to processing.
-        use_threads (bool, optional): Use threads instead of processes for parallel processing.
-        optimistic_worker (bool, optional): If `True` a worker process assumes there is no work.
-        pool_size (int, optional): The number of threads or processes in the worker pool.
-
-    Returns:
-        (iterable)
-    """
-    data = list(data)
-
-    if is_master() or not optimistic_worker:
-        pool = ThreadPool(pool_size) if use_threads else Pool(pool_size)
-        iterator = pool.imap(func, data)
-    else:  # PyTorch workers should not expect to do serious work
-        iterator = (func(row) for row in data)
-
-    if use_tqdm and is_master():  # TODO: Consider methods print a progress bar for workers as well.
-        iterator = tqdm(iterator, total=len(data))
-    processed = list(iterator)
-
-    if is_master() and not optimistic_worker:  # Ensure pool work is finished
-        pool.close()
-        pool.join()
-
-    # Ensure data is processed before both worker and master proceed.
-    if is_initialized():
-        torch.distributed.barrier()
-
-    return processed
 
 
 def random_shuffle(list_, type_=torch.cuda, random_seed=None):
