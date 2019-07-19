@@ -19,18 +19,10 @@ from src.utils import Checkpoint
 
 
 def test_filter_():
-    a = TextSpeechRow(
-        text='this is a test',
-        speaker=Speaker('Stay', Gender.FEMALE),
-        audio_path='')
-    b = TextSpeechRow(
-        text='this is a test',
-        speaker=Speaker('Stay', Gender.FEMALE),
-        audio_path='')
+    a = TextSpeechRow(text='this is a test', speaker=Speaker('Stay', Gender.FEMALE), audio_path='')
+    b = TextSpeechRow(text='this is a test', speaker=Speaker('Stay', Gender.FEMALE), audio_path='')
     c = TextSpeechRow(
-        text='this is a test',
-        speaker=Speaker('Remove', Gender.FEMALE),
-        audio_path='')
+        text='this is a test', speaker=Speaker('Remove', Gender.FEMALE), audio_path='')
 
     assert filter_(lambda e: e.speaker != Speaker('Remove', Gender.FEMALE), [a, b, c]) == [a, b]
 

@@ -10,7 +10,6 @@ from src.bin.train.spectrogram_model.data_loader import SpectrogramModelTraining
 from src.bin.train.spectrogram_model.trainer import Trainer
 from src.utils import Checkpoint
 
-
 from tests._utils import get_example_spectrogram_text_speech_rows
 from tests._utils import MockCometML
 
@@ -60,8 +59,7 @@ def test_visualize_inferred():
     infer_pass_return = (torch.FloatTensor(num_frames, frame_channels).fill_(1),
                          torch.FloatTensor(num_frames, frame_channels).fill_(1),
                          torch.FloatTensor(num_frames).fill_(1),
-                         torch.FloatTensor(num_frames,
-                                           num_tokens).fill_(1.0 / num_tokens),
+                         torch.FloatTensor(num_frames, num_tokens).fill_(1.0 / num_tokens),
                          frame_lengths)
 
     with mock.patch('src.spectrogram_model.model.SpectrogramModel._infer') as mock_forward:
@@ -106,13 +104,22 @@ def test_run_epoch():
     frame_channels = 16
     text_vocab_size = trainer.input_encoder.text_encoder.vocab_size
     speaker_vocab_size = trainer.input_encoder.speaker_encoder.vocab_size
-    frame_lengths = torch.full((1, batch_size,), num_frames)
+    frame_lengths = torch.full((
+        1,
+        batch_size,
+    ), num_frames)
     loaded_data = [
         SpectrogramModelTrainingRow(
             text=(torch.randint(text_vocab_size, (num_tokens, batch_size), dtype=torch.long),
-                  torch.full((1, batch_size,), num_tokens)),
+                  torch.full((
+                      1,
+                      batch_size,
+                  ), num_tokens)),
             speaker=(torch.randint(speaker_vocab_size, (1, batch_size), dtype=torch.long),
-                     torch.full((1, batch_size,), 1)),
+                     torch.full((
+                         1,
+                         batch_size,
+                     ), 1)),
             spectrogram=(torch.rand(num_frames, batch_size, frame_channels), frame_lengths),
             stop_token=(torch.rand(num_frames, batch_size), frame_lengths),
             spectrogram_mask=(torch.ones(num_frames, batch_size, dtype=torch.float).byte(),
@@ -129,17 +136,15 @@ def test_run_epoch():
                          torch.FloatTensor(num_frames, batch_size, frame_channels).fill_(1),
                          torch.FloatTensor(num_frames, batch_size).fill_(1),
                          torch.FloatTensor(num_frames, batch_size,
-                                           num_tokens).fill_(1.0 / num_tokens),
-                         frame_lengths)
+                                           num_tokens).fill_(1.0 / num_tokens), frame_lengths)
     with ExitStack() as stack:
         (MockDataLoader, mock_aligned, mock_infer, mock_backward, mock_optimizer_step,
          mock_auto_optimizer_step) = tuple([
              stack.enter_context(mock.patch(arg)) for arg in [
                  'src.bin.train.spectrogram_model.trainer.DataLoader',
                  'src.spectrogram_model.model.SpectrogramModel._aligned',
-                 'src.spectrogram_model.model.SpectrogramModel._infer',
-                 'torch.Tensor.backward', 'src.optimizers.Optimizer.step',
-                 'src.optimizers.AutoOptimizer.step'
+                 'src.spectrogram_model.model.SpectrogramModel._infer', 'torch.Tensor.backward',
+                 'src.optimizers.Optimizer.step', 'src.optimizers.AutoOptimizer.step'
              ]
          ])
         MockDataLoader.return_value = loaded_data

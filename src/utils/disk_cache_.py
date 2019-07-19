@@ -116,30 +116,27 @@ class _DiskCache(_Cache):
 
         self.load()
 
-
     def load(self):
         """ Load cache from disk. """
         if self._file_path.exists():
             with self._write_lock:
                 disk_storage = pickle.loads(self._file_path.read_bytes())
-                logger.info('Loaded %d `_DiskCache` for function `%s`.' % (len(disk_storage),
-                                                                           self._file_name))
+                logger.info('Loaded %d `_DiskCache` for function `%s`.', len(disk_storage),
+                            self._file_name)
                 self._storage.update(disk_storage)
 
     def save(self):
         """ Save cache to disk. """
-        print('save')
         # NOTE Ensure that while writing that the `disk_cache` is not updated; therefore, the
         # `disk_cache` will not lose any data on update.
         with self._write_lock:
             self.load()  # NOTE: Disk may contain items not in `self._storage`
-            logger.info('Saving %d `_DiskCache` for function `%s`.' % (len(self), self._file_name))
+            logger.info('Saving %d `_DiskCache` for function `%s`.', len(self), self._file_name)
             new_disk_storage = pickle.dumps(self._storage)
             self._file_path.parent.mkdir(parents=True, exist_ok=True)
             self._file_path.write_bytes(new_disk_storage)
 
     def set_(self, *args, **kwargs):
-        print('_DiskCache.set_')
         if self._write_timer is not None and self._write_timer.is_alive():
             self._write_timer.reset()
         else:
