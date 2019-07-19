@@ -1,4 +1,5 @@
-from functools import lru_cache
+from threading import Lock
+from threading import get_ident
 
 import logging
 import math
@@ -14,9 +15,7 @@ import torch
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.utils import TTS_DISK_CACHE_NAME
-from src.utils import chunks
-
-import src.distributed
+from src.utils import disk_cache
 
 logger = logging.getLogger(__name__)
 
@@ -439,7 +438,6 @@ def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
     return signal.float() / 2**(bits - 1)  # Scale to [-1, 1] range.
 
 
-@lru_cache()
 def _parse_audio_metadata(metadata):
     """ Parse audio metadata returned by `sox --i`.
 
@@ -486,16 +484,52 @@ def _parse_audio_metadata(metadata):
     }
 
 
-_AUDIO_METADATA_CACHE = {}
+@disk_cache
+def _get_audio_metadata(audio_path):
+    # NOTE: `sox --i` behaves like `soxi`
+    # Learn more about `soxi`: http://sox.sourceforge.net/soxi.html
+    metadata = subprocess.run(['sox', '--i', audio_path], check=False, stdout=subprocess.PIPE)
+    metadata = metadata.stdout.decode('utf-8').strip()
+    return _parse_audio_metadata(metadata)[1]
 
 
-def get_audio_metadata(audio_path, optimistic_caching=True):
+def _get_audio_metadata_batch_cache(paths):
+    """ Cache all `paths` in `_get_audio_metadata.cache`.
+
+    Args:
+        paths (list): List of `path.Pathlib` to compute.
+    """
+    # NOTE: Glob may find unused files like:
+    # `M-AILABS/ ... /judy_bieber/ozma_of_oz/wavs/._ozma_of_oz_10_f000095.wav`
+    # Those errors are ignored along with any other output from `stderr`.
+    command = ['sox', '--i'] + paths
+    metadatas = subprocess.run(command, stdout=subprocess.PIPE).stdout.decode('utf-8')
+    metadatas = metadatas.strip().split('\n\n')
+    metadatas = metadatas[:-1] if 'Total Duration' in metadatas[-1] else metadatas
+
+    for metadata in metadatas:
+        metadata_audio_path, metadata = _parse_audio_metadata(metadata)
+        _get_audio_metadata.cache.set_(kwargs={'audio_path': metadata_audio_path}, return_=metadata)
+
+
+_OPTIMISTIC_CACHING_LOCKS = {}
+_GET_AUDIO_METADATA_LOCK = Lock()
+
+
+@configurable
+def get_audio_metadata(audio_path, optimistic_caching=ConfiguredArg(), max_characters=1024 * 128):
     """ Get metadata on `audio_path`.
 
     NOTE: Launching `subprocess` is slow, try to avoid it.
 
     Args:
         audio_path (Path or str): WAV audio file to get metadata on.
+        optimistic_caching (bool): Optimistically compute and cache metadata for all
+            audio files in the same directory as `audio_path`. This is more performant as it
+            launches one process for many audio files instead of an individual process for all
+            of them.
+        max_characters (int, optional): The maximum number of characters that bash accepts for
+            commands.
 
     Returns: (dict) {
         channels (int): The number of audio channels in the audio file.
@@ -503,44 +537,34 @@ def get_audio_metadata(audio_path, optimistic_caching=True):
         sample_rate (int): The sample rate of the audio.
         encoding (str): The encoding of the audio file: ['signed-integer', 'unsigned-integer',
           'floating-point'].
-        optimistic_caching (bool, optional): Optimistically compute and cache metadata for all
-            audio files in the same directory as `audio_path`. This is more performant as it
-            launches one process for many audio files instead of an individual process for all
-            of them.
     }
     """
     audio_path = pathlib.Path(audio_path)
-    if audio_path in _AUDIO_METADATA_CACHE:
-        return _AUDIO_METADATA_CACHE[audio_path]
 
-    if optimistic_caching:
-        # NOTE: `2048` limit avoids (assuming that the maximum filename length is `1024`):
-        # https://stackoverflow.com/questions/19354870/bash-command-line-and-input-limit
-        paths = [str(p) for p in audio_path.parent.glob('*' + audio_path.suffix)]
-        for chunk in chunks(paths, 2048):
-            # NOTE: Glob may find unused files like:
-            # `M-AILABS/ ... /judy_bieber/ozma_of_oz/wavs/._ozma_of_oz_10_f000095.wav`
-            # Those errors are ignored along with any other output from `stderr`.
-            metadatas = subprocess.run(['sox', '--i'] + chunk, check=False, stdout=subprocess.PIPE)
-            metadatas = metadatas.stdout.decode('utf-8').strip()
-            metadatas = metadatas.split('\n\n')
+    in_cache = ((), {'audio_path': audio_path}) in _get_audio_metadata.cache
+    print('[%d] get_audio_metadata in_cache' % get_ident(), in_cache)
+    if optimistic_caching and not in_cache:
+        # NOTE: Ensure that multiple threads don't compute the same `audio_path.parent`.
+        with _GET_AUDIO_METADATA_LOCK:
+            has_optimistic_caching_lock = audio_path.parent not in _OPTIMISTIC_CACHING_LOCKS
+            _OPTIMISTIC_CACHING_LOCKS[audio_path.parent] = True
 
-            if 'Total Duration' in metadatas[-1]:
-                metadatas = metadatas[:-1]
+        if has_optimistic_caching_lock:
+            print('[%d] optimistic caching: %s' % (get_ident(), audio_path.parent))
+            paths = []
+            total_characters = 0
+            for path in audio_path.parent.glob('*' + audio_path.suffix):
+                if total_characters + len(str(path)) < max_characters:
+                    paths.append(str(path))
+                    total_characters += len(str(path))
+                else:
+                    _get_audio_metadata_batch_cache(paths)
+                    paths = [str(path)]
+                    total_characters = len(str(path))
+            _get_audio_metadata_batch_cache(paths)
+            print('[%d] optimistic caching done: %s' % (get_ident(), audio_path.parent))
 
-            for metadata in metadatas:
-                metadata_audio_path, metadata = _parse_audio_metadata(metadata)
-                _AUDIO_METADATA_CACHE[metadata_audio_path] = metadata
-
-        return _AUDIO_METADATA_CACHE[audio_path]
-
-    # NOTE: `sox --i` behaves like `soxi`
-    # Learn more about `soxi`: http://sox.sourceforge.net/soxi.html
-    metadata = subprocess.run(['sox', '--i'] + chunk, check=False, stdout=subprocess.PIPE)
-    metadata = metadata.stdout.decode('utf-8').strip()
-    _, return_ = _parse_audio_metadata(metadata)
-    _AUDIO_METADATA_CACHE[audio_path] = return_
-    return return_
+    return _get_audio_metadata(audio_path)
 
 
 @configurable
@@ -552,7 +576,7 @@ def normalize_audio(audio_path,
     """ Normalize audio on disk with the SoX library.
 
     Args:
-        audio_path (Path): Path to a audio file.
+        audio_path (Path or str): Path to a audio file.
         sample_rate (int or None, optional): Change the audio sampling rate
             (i.e. resample the audio).
         bits (int, optional): Change the bit-depth of the audio file.
@@ -564,6 +588,8 @@ def normalize_audio(audio_path,
     Returns:
         (str): Filename of the processed file.
     """
+    audio_path = pathlib.Path(audio_path)
+
     # TODO: Consider adding support for `--show-progress`.
     metadata = get_audio_metadata(audio_path)
 
@@ -584,12 +610,6 @@ def normalize_audio(audio_path,
     parent = audio_path.parent
     parent = parent if parent.name == TTS_DISK_CACHE_NAME else parent / TTS_DISK_CACHE_NAME
     destination = parent / '{}{}'.format(stem, audio_path.suffix)
-
-    # Allow only the master node to save to disk while the worker nodes optimistically assume
-    # the file already exists.
-    # NOTE: This statement is before `destination.is_file()` to avoid unnecessary IO.
-    if not src.distributed.is_master():
-        return destination
 
     if destination.is_file():
         return destination
