@@ -1,14 +1,11 @@
 """ Train spectrogram model.
 
-TODO: Document the current usage.
-
 Example:
-    $ python3 -m src.bin.train.spectrogram_model -l="Multispeaker v2 distributed baseline";
-    $ pkill -9 python3; nvidia-smi;
 
     $ PYTHONPATH='.' python3 src/bin/train/spectrogram_model/__main__.py  \
         -p "stft-baselines" \
         -n "Multispeaker v3 baseline";
+    $ pkill -9 python3; nvidia-smi;
 
 NOTE: The distributed example does clean up Python processes well; therefore, we kill all
 ``python3`` processes and check that ``nvidia-smi`` cache was cleared.
