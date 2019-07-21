@@ -380,7 +380,7 @@ class ResetableTimer(Timer):
 
     def run(self):
         while self.continue_waiting:
-            with self.reset_lock:
+            with self.reset_lock:  # TODO: Test reset lock with various race conditions.
                 self.continue_waiting = False
             self.finished.wait(self.interval)
 

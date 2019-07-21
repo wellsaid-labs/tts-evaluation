@@ -54,19 +54,22 @@ import src.distributed
 logger = logging.getLogger(__name__)
 
 
-def _set_hparams(more_hparams, checkpoint, comet_ml_project_name=None):
+def _set_hparams(more_hparams, checkpoint, comet_ml_project_name=None,
+                 comet_ml_experiment_key=None):
     """ Set hyperparameters for spectrogram model training.
 
     Args:
         more_harpams (dict): Additional hyperparameters to set.
         checkpoint (src.utils.Checkpoint): Checkpoint to load random generator state from.
         comet_ml_project_name (str or None, optional)
+        comet_ml_experiment_key (str or None, optional)
     """
     set_hparams()
 
     comet_ml_project_name = (
         comet_ml_project_name if checkpoint is None else checkpoint.comet_ml_project_name)
-    comet_ml_experiment_key = None if checkpoint is None else checkpoint.comet_ml_experiment_key
+    comet_ml_experiment_key = (
+        comet_ml_experiment_key if checkpoint is None else checkpoint.comet_ml_experiment_key)
 
     add_config({
         # SOURCE (Tacotron 2):
@@ -103,6 +106,7 @@ def _train(device_index,
            train_dataset,
            dev_dataset,
            comet_ml_project_name,
+           comet_ml_experiment_key,
            more_hparams,
            evaluate_aligned_every_n_epochs=1,
            evaluate_inferred_every_n_epochs=5,
@@ -118,8 +122,9 @@ def _train(device_index,
         checkpoint (src.utils.Checkpoint): Loaded `Checkpoint` or None.
         train_dataset (iterable)
         dev_dataset (iterable)
-        comet_ml_project_name (str, optional): Project name to use with comet.ml.
-        more_hparams (dict, optional): Hparams to override default hparams.
+        comet_ml_project_name (str): Project name to use with comet.ml.
+        comet_ml_experiment_key (str): Experiment key to use with comet.ml.
+        more_hparams (dict): Hparams to override default hparams.
     """
     recorder = RecordStandardStreams().start()
     # Initiate distributed environment, learn more:
@@ -133,7 +138,7 @@ def _train(device_index,
     device = torch.device('cuda', device_index)
     torch.cuda.set_device(device)
 
-    _set_hparams(more_hparams, checkpoint, comet_ml_project_name)
+    _set_hparams(more_hparams, checkpoint, comet_ml_project_name, comet_ml_experiment_key)
     recorder.update(run_root)
 
     trainer_kwargs = {
@@ -233,6 +238,7 @@ def main(run_name,
             train_dataset,
             dev_dataset,
             comet_ml_project_name,
+            comet.get_key(),
             more_hparams,
         ))
 

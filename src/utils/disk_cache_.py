@@ -142,7 +142,7 @@ class _DiskCache(_Cache):
     def load(self):
         """ Load cache from disk into memory. """
         if self._file_path.exists():
-            with self._write_lock:
+            with self._write_lock:  # TODO: Test write lock with various race conditions.
                 disk_storage = pickle.loads(self._file_path.read_bytes())
                 logger.info('Loaded `_DiskCache` of size %d for function `%s`.', len(disk_storage),
                             self._file_name)
