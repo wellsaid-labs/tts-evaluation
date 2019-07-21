@@ -38,10 +38,10 @@ from src.optimizers import Optimizer
 from src.utils import AccumulatedMetrics
 from src.utils import AnomalyDetector
 from src.utils import balance_list
+from src.utils import cache_on_disk_tensor_shapes
 from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import evaluate
-from src.utils import get_tensors_dim_length
 from src.utils import get_total_parameters
 from src.utils import log_runtime
 from src.utils import OnDiskTensor
@@ -195,7 +195,8 @@ class Trainer():
             data = add_predicted_spectrogram_column(data, self.spectrogram_model_checkpoint_path,
                                                     self.device)
             # Cache ``predicted_spectrogram`` shape for `OnDiskTensor`
-            get_tensors_dim_length([r.predicted_spectrogram for r in data])
+            # TODO: Consider supporting `Tensor` as well as `OnDiskTensor`.
+            cache_on_disk_tensor_shapes([r.predicted_spectrogram for r in data])
         return data
 
     def _comet_ml_log_input_dev_data_hash(self, max_examples=10):

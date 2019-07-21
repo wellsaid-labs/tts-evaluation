@@ -1,12 +1,49 @@
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import logging
+
+from tqdm import tqdm
 
 import numpy as np
 import torch
 import torch.utils.data
 
+from src.utils.disk_cache_ import disk_cache
+from src.utils.utils import log_runtime
+
 logger = logging.getLogger(__name__)
+
+
+@disk_cache
+def _get_on_disk_tensor_shape(path):
+    if not path.is_file():
+        raise RuntimeError('Tensor not found on disk.')
+
+    with open(str(path), 'rb') as file_:
+        try:
+            version = np.lib.format.read_magic(file_)
+        except ValueError as error:
+            logger.error('Failed to read shape of %s' % file_)
+            raise error
+        shape, _, _ = np.lib.format._read_array_header(file_, version)
+
+    return shape
+
+
+@log_runtime
+def cache_on_disk_tensor_shapes(tensors):
+    tensors = [t for t in tensors if ((), {'path': t.path}) not in _get_on_disk_tensor_shape.cache]
+    if len(tensors) == 0:
+        return
+
+    logger.info('Caching `OnDiskTensor` shape metadata for %d tensors.', len(tensors))
+    with ThreadPoolExecutor() as pool:
+        iterator = pool.map(_get_on_disk_tensor_shape, [t.path for t in tensors])
+        iterator = tqdm(iterator, total=len(tensors))
+        list(iterator)
+
+    _get_on_disk_tensor_shape.cache.save()
 
 
 class OnDiskTensor():
@@ -23,8 +60,6 @@ class OnDiskTensor():
 
         self.path = Path(path)
         self.allow_pickle = allow_pickle
-        self._shape = None
-        self._shape_path = None
 
     def __hash__(self):
         return hash(self.path)
@@ -39,24 +74,7 @@ class OnDiskTensor():
 
     @property
     def shape(self):
-        if not self.exists():
-            raise RuntimeError('Tensor not found on disk.')
-
-        if self.path == self._shape_path:
-            return self._shape
-
-        with open(str(self.path), 'rb') as file_:
-            try:
-                version = np.lib.format.read_magic(file_)
-            except ValueError as error:
-                logger.error('Failed to read shape of %s' % file_)
-                raise error
-            shape, _, _ = np.lib.format._read_array_header(file_, version)
-
-        self._shape = shape
-        self._shape_path = self.path
-
-        return shape
+        return _get_on_disk_tensor_shape(self.path)
 
     def to_tensor(self):
         """ Convert to a in-memory ``torch.tensor``. """

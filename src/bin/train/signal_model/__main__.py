@@ -48,7 +48,7 @@ def _set_hparams(more_hparams, checkpoint, comet_ml_project_name=None):
 
     Args:
         more_harpams (dict): Additional hyperparameters to set.
-        checkpoint (src.utils.Checkpoint): Checkpoint to load random generator state from.
+        checkpoint (src.utils.Checkpoint or None): Checkpoint to load random generator state from.
         comet_ml_project_name (str or None, optional)
     """
     set_hparams()
@@ -67,7 +67,7 @@ def _set_hparams(more_hparams, checkpoint, comet_ml_project_name=None):
 
     set_seed()
 
-    if 'random_generator_state' in checkpoint:
+    if checkpoint is not None and 'random_generator_state' in checkpoint:
         set_random_generator_state(checkpoint.random_generator_state)
 
 
@@ -152,7 +152,7 @@ def main(run_name,
     if checkpoint is None:
         run_root.mkdir(parents=True)
     checkpoints_directory = run_root / checkpoints_directory
-    checkpoints_directory.mkdir()
+    checkpoints_directory.mkdir(parents=True)
     recorder.update(run_root)
 
     comet = CometML()

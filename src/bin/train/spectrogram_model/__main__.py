@@ -1,8 +1,14 @@
 """ Train spectrogram model.
 
+TODO: Document the current usage.
+
 Example:
     $ python3 -m src.bin.train.spectrogram_model -l="Multispeaker v2 distributed baseline";
     $ pkill -9 python3; nvidia-smi;
+
+    $ PYTHONPATH='.' python3 src/bin/train/spectrogram_model/__main__.py  \
+        -p "stft-baselines" \
+        -n "Multispeaker v3 baseline";
 
 NOTE: The distributed example does clean up Python processes well; therefore, we kill all
 ``python3`` processes and check that ``nvidia-smi`` cache was cleared.
@@ -11,7 +17,6 @@ from pathlib import Path
 
 import argparse
 import logging
-import sys
 import time
 import warnings
 
@@ -22,8 +27,6 @@ warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
 
 # NOTE: Needs to be imported before torch
 import comet_ml  # noqa
-
-from torch import multiprocessing
 
 import torch
 
@@ -45,6 +48,7 @@ from src.hparams import ConfiguredArg
 from src.hparams import parse_hparam_args
 from src.hparams import set_hparams
 from src.record_standard_streams import RecordStandardStreams
+from src.utils import cache_on_disk_tensor_shapes
 from src.utils import Checkpoint
 from src.visualize import CometML
 
@@ -86,7 +90,7 @@ def _set_hparams(more_hparams, checkpoint, comet_ml_project_name=None):
 
     set_seed()
 
-    if 'random_generator_state' in checkpoint:
+    if checkpoint is not None and 'random_generator_state' in checkpoint:
         set_random_generator_state(checkpoint.random_generator_state)
 
 
@@ -201,7 +205,7 @@ def main(run_name,
     if checkpoint is None:
         run_root.mkdir(parents=True)
     checkpoints_directory = run_root / checkpoints_directory
-    checkpoints_directory.mkdir()
+    checkpoints_directory.mkdir(parents=True)
     recorder.update(run_root)
 
     # TODO: Consider ignoring ``add_tags`` if Checkpoint is loaded; or consider saving in the
@@ -217,6 +221,9 @@ def main(run_name,
     # NOTE: Preprocessing is faster to compute outside of distributed environment.
     train_dataset = add_spectrogram_column(train_dataset)
     dev_dataset = add_spectrogram_column(dev_dataset)
+    # TODO: Consider supporting `Tensor` as well as `OnDiskTensor`.
+    cache_on_disk_tensor_shapes([e.spectrogram for e in train_dataset] +
+                                [e.spectrogram for e in dev_dataset])
 
     num_cuda_devices = torch.cuda.device_count()
     torch.multiprocessing.spawn(
@@ -274,16 +281,6 @@ if __name__ == '__main__':  # pragma: no cover
     # Pre-run checks on the `requirements.txt` and on the available disk space.
     check_module_versions()
     assert_enough_disk_space()
-
-    # Python version must be 3.6.6 or higher for distributed to work
-    assert sys.version_info >= (3, 6, 6)
-    # LEARN MORE:
-    # https://pytorch.org/docs/stable/nn.html?highlight=distributeddataparallel#torch.nn.parallel.DistributedDataParallel
-    # https://github.com/tqdm/tqdm/issues/611#issuecomment-423113285
-    try:
-        multiprocessing.set_start_method('spawn')
-    except RuntimeError:
-        pass
 
     if isinstance(args.checkpoint, str):
         args.checkpoint = Checkpoint.from_path(args.checkpoint)

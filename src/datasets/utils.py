@@ -6,6 +6,7 @@ import logging
 import pathlib
 import pprint
 
+from third_party import LazyLoader
 from torch.multiprocessing import Pool
 from torchnlp.download import download_file_maybe_extract
 from tqdm import tqdm
@@ -13,6 +14,7 @@ from tqdm import tqdm
 import numpy
 import pandas
 import torch
+librosa = LazyLoader('librosa', globals(), 'librosa')
 
 from src.audio import cache_get_audio_metadata
 from src.audio import get_log_mel_spectrogram
@@ -110,8 +112,6 @@ def _add_spectrogram_column(example, on_disk=True):
     Returns:
         (TextSpeechRow): Row of text and speech aligned data with spectrogram data.
     """
-    import librosa
-
     audio_path = example.audio_path
 
     if on_disk:
@@ -163,9 +163,11 @@ def add_spectrogram_column(data, on_disk=True):
     partial_ = partial(_add_spectrogram_column, on_disk=on_disk)
     with Pool() as pool:
         # NOTE: `chunksize` with `imap` is more performant while allowing us to measure progress.
-        # Learn more about `imap_unordered` vs `imap`:
+        # TODO: Consider using `imap_unordered` instead of `imap` because it is more performant,
+        # learn more:
         # https://stackoverflow.com/questions/19063238/in-what-situation-do-we-need-to-use-multiprocessing-pool-imap-unordered
-        return list(tqdm(pool.imap_unordered(partial_, data, chunksize=128), total=len(data)))
+        # However, it's important to return the results in the same order as they came.
+        return list(tqdm(pool.imap(partial_, data, chunksize=128), total=len(data)))
 
 
 def _normalize_audio_column_helper(example):
@@ -187,9 +189,7 @@ def normalize_audio_column(data):
     with Pool() as pool:
         # NOTE: `chunksize` allows `imap` to be much more performant while allowing us to measure
         # progress.
-        # Learn more about `imap_unordered` vs `imap`:
-        # https://stackoverflow.com/questions/19063238/in-what-situation-do-we-need-to-use-multiprocessing-pool-imap-unordered
-        iterator = pool.imap_unordered(_normalize_audio_column_helper, data, chunksize=1024)
+        iterator = pool.imap(_normalize_audio_column_helper, data, chunksize=1024)
         return_ = list(tqdm(iterator, total=len(data)))
 
     # NOTE: `cache_get_audio_metadata` for any new normalized audio paths.

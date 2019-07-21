@@ -11,7 +11,6 @@ from src.utils.utils import evaluate
 from src.utils.utils import flatten
 from src.utils.utils import flatten_parameters
 from src.utils.utils import get_average_norm
-from src.utils.utils import get_tensors_dim_length
 from src.utils.utils import get_total_parameters
 from src.utils.utils import get_weighted_stdev
 from src.utils.utils import identity
@@ -60,12 +59,6 @@ def test_slice_by_cumulative_sum():
 
 def test_sort_together():
     assert ['c', 'a', 'b'] == sort_together(['a', 'b', 'c'], [2, 3, 1])
-
-
-def test_get_tensors_dim_length():
-    assert [5, 5] == get_tensors_dim_length([torch.randn(5, 5) for _ in range(2)],
-                                            dim=1,
-                                            use_tqdm=True)
 
 
 def test_log_runtime__smoke_test():

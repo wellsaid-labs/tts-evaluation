@@ -12,10 +12,11 @@ from comet_ml import Experiment
 from dotenv import load_dotenv
 from matplotlib import cm as colormap
 from matplotlib import pyplot
+from third_party import LazyLoader
 
-import librosa.display
 import numpy as np
 import torch
+librosa_display = LazyLoader('librosa_display', globals(), 'librosa.display')
 
 from src.audio import write_audio
 from src.hparams import configurable
@@ -107,7 +108,7 @@ def plot_waveform(signal, sample_rate=ConfiguredArg()):
 
     pyplot.style.use('ggplot')
     figure = pyplot.figure()
-    librosa.display.waveplot(signal, sr=sample_rate)
+    librosa_display.waveplot(signal, sr=sample_rate)
     pyplot.ylabel('Energy')
     pyplot.xlabel('Time')
     pyplot.ylim(-1, 1)
@@ -141,7 +142,7 @@ def plot_spectrogram(spectrogram,
     if torch.is_tensor(spectrogram):
         spectrogram = spectrogram.detach().cpu().numpy()
     spectrogram = spectrogram.transpose()
-    librosa.display.specshow(
+    librosa_display.specshow(
         spectrogram,
         hop_length=frame_hop,
         sr=sample_rate,

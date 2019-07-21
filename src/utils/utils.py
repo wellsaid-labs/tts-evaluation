@@ -1,10 +1,9 @@
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from functools import partial
 from functools import wraps
 from math import isclose
 from pathlib import Path
+from threading import Lock
 from threading import Timer
 
 import itertools
@@ -12,8 +11,6 @@ import logging
 import logging.config
 import pprint
 import time
-
-from tqdm import tqdm
 
 import torch
 import torch.utils.data
@@ -275,37 +272,6 @@ def log_runtime(function):
     return decorator
 
 
-def _get_tensor_dim_length(tensor, dim):
-    """
-    Args:
-        tensor (OnDiskTensor or torch.Tensor or np.ndarray)
-
-    Returns:
-        (int): Length of ``dim`` in ``tensor``.
-    """
-    return tensor.shape[dim]
-
-
-@log_runtime
-def get_tensors_dim_length(tensors, dim=0, use_tqdm=False):
-    """ Get the length of ``dim`` for each tensor in ``tensors``.
-
-    Args:
-        tensors (iterable of torch.Tensor)
-        dim (int, optional)
-        use_tqdm (bool, optional)
-
-    Returns:
-        (list of int): The length of ``dim`` for each tensor.
-    """
-    with ThreadPoolExecutor() as pool:
-        iterator = pool.map(partial(_get_tensor_dim_length, dim=dim), tensors)
-        if use_tqdm:
-            iterator = tqdm(iterator, total=len(tensors))
-        lengths = list(iterator)
-    return lengths
-
-
 def sort_together(list_, sort_key):
     """
     Args:
@@ -410,10 +376,12 @@ class ResetableTimer(Timer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.continue_waiting = True
+        self.reset_lock = Lock()
 
     def run(self):
         while self.continue_waiting:
-            self.continue_waiting = False
+            with self.reset_lock:
+                self.continue_waiting = False
             self.finished.wait(self.interval)
 
         if not self.finished.isSet():
@@ -426,6 +394,7 @@ class ResetableTimer(Timer):
         NOTE: The `Timer` executes an action only once; therefore, the timer can be reset up until
         the action has executed. Following the action execution the timer thread exits.
         """
-        self.continue_waiting = True
-        self.finished.set()
-        self.finished.clear()
+        with self.reset_lock:
+            self.continue_waiting = True
+            self.finished.set()
+            self.finished.clear()

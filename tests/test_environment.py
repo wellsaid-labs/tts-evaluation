@@ -12,6 +12,11 @@ from src.environment import set_random_generator_state
 from src.environment import check_module_versions
 from src.environment import set_basic_logging_config
 from src.environment import assert_enough_disk_space
+from src.environment import set_seed
+
+
+def test_set_seed__smoke_test():
+    set_seed(123)
 
 
 def test_set_basic_logging_config__smoke_test():

@@ -14,10 +14,10 @@ import torch.utils.data
 
 from src.utils.accumulated_metrics import AccumulatedMetrics
 from src.utils.data_loader import DataLoader
+from src.utils.on_disk_tensor import cache_on_disk_tensor_shapes
 from src.utils.on_disk_tensor import OnDiskTensor
 from src.utils.utils import evaluate
 from src.utils.utils import get_average_norm
-from src.utils.utils import get_tensors_dim_length
 from src.utils.utils import get_weighted_stdev
 from src.utils.utils import sort_together
 
@@ -77,7 +77,9 @@ def batch_predict_spectrograms(data,
 
     # Sort by sequence length to reduce padding in batches.
     if all([r.spectrogram is not None for r in data]):
-        spectrogram_lengths = get_tensors_dim_length([r.spectrogram for r in data])
+        cache_on_disk_tensor_shapes(
+            [r.spectrogram for r in data if isinstance(r.spectrogram, OnDiskTensor)])
+        spectrogram_lengths = [r.spectrogram.shape[0] for r in data]
         data = sort_together(data, spectrogram_lengths)
     else:
         data = sorted(data, key=lambda r: len(r.text))

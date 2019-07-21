@@ -7,7 +7,6 @@ def test_on_disk_tensor():
     original = torch.rand(4, 10)
     tensor = OnDiskTensor.from_tensor('tests/_test_data/tensor.npy', original)
     assert tensor.shape == original.shape
-    assert tensor._shape is not None
     assert tensor.shape == original.shape  # Smoke test caching
     assert torch.equal(tensor.to_tensor(), original)
     assert tensor.exists()

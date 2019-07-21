@@ -388,7 +388,7 @@ def get_dataset():
     dataset = datasets.filter_(_filter_books, dataset)
     logger.info('Loaded %d dataset examples.', len(dataset))
     dataset = datasets.normalize_audio_column(dataset)
-    do_deterministic_shuffle(dataset, random_seed=123)
+    do_deterministic_shuffle(dataset)
     return utils.split_list(dataset, splits=(0.8, 0.2))
 
 
@@ -545,5 +545,8 @@ def set_hparams():
             # NOTE: Window size smoothing parameter is not super sensative.
             'optimizers.AutoOptimizer.__init__.window_size':
                 128,
+            # NOTE: Gideon from Comet suggested this as a fix.
+            'visualize.CometML.auto_output_logging':
+                'simple',
         }
     })

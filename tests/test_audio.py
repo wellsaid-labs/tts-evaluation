@@ -35,11 +35,11 @@ def test_read_audio():
 
 
 def test_write_audio():
-    filename = 'tests/_test_data/lj_speech.wav'
+    filename = Path('tests/_test_data/lj_speech.wav')
     metadata = get_audio_metadata(filename)
     sample_rate, signal = wavfile.read(str(filename))
 
-    new_filename = 'tests/_test_data/new_lj_speech.wav'
+    new_filename = Path('tests/_test_data/new_lj_speech.wav')
     write_audio(new_filename, signal, sample_rate)
     new_metadata = get_audio_metadata(new_filename)
 
@@ -47,11 +47,11 @@ def test_write_audio():
 
 
 def test_write_audio__read_audio():
-    filename = 'tests/_test_data/lj_speech_24000.wav'
+    filename = Path('tests/_test_data/lj_speech_24000.wav')
     metadata = get_audio_metadata(filename)
     signal = read_audio(str(filename), to_float=False)
 
-    new_filename = 'tests/_test_data/new_lj_speech_24000.wav'
+    new_filename = Path('tests/_test_data/new_lj_speech_24000.wav')
     write_audio(new_filename, signal, 24000)
     new_metadata = get_audio_metadata(new_filename)
 
@@ -60,10 +60,7 @@ def test_write_audio__read_audio():
 
 def test_cache_get_audio_metadata():
     path = Path('tests/_test_data/lj_speech_24000.wav')
-    get_audio_metadata.cache.clear()
-    assert len(get_audio_metadata.cache) == 0
-    cache_get_audio_metadata(['tests/_test_data/lj_speech_24000.wav'])
-    assert len(get_audio_metadata.cache) == 1
+    cache_get_audio_metadata([path])
     assert get_audio_metadata.cache.get(kwargs={'audio_path': path}) == {
         'sample_rate': 24000,
         'bits': 16,
@@ -78,7 +75,7 @@ def test_get_audio_metadata():
         'bits': 16,
         'channels': 1,
         'encoding': 'signed-integer'
-    } == get_audio_metadata('tests/_test_data/lj_speech_24000.wav')
+    } == get_audio_metadata(Path('tests/_test_data/lj_speech_24000.wav'))
 
 
 def test_build_wav_header():

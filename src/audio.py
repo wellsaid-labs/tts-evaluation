@@ -1,15 +1,21 @@
 from multiprocessing import Pool
+from pathlib import Path
 
 import logging
 import math
-import pathlib
 import struct
 import subprocess
 
+from third_party import LazyLoader
 from tqdm import tqdm
 
 import numpy as np
 import torch
+
+# NOTE: `LazyLoader` allows for this repository to run without these dependancies. Also,
+# it side-steps this issue: https://github.com/librosa/librosa/issues/924.
+librosa = LazyLoader('librosa', globals(), 'librosa')
+scipy = LazyLoader('scipy', globals(), 'scipy')
 
 from src.environment import TTS_DISK_CACHE_NAME
 from src.hparams import configurable
@@ -18,16 +24,6 @@ from src.utils import disk_cache
 from src.utils import get_chunks
 
 logger = logging.getLogger(__name__)
-
-try:
-    import librosa
-except ImportError:
-    logger.info('Skipping optional ``librosa`` import for now.')
-
-try:
-    import scipy
-except ImportError:
-    logger.info('Skipping optional `scipy` import for now.')
 
 
 @configurable
@@ -61,7 +57,7 @@ def read_audio(filename, assert_metadata=ConfiguredArg(), to_float=True):
     Returns:
         (numpy.ndarray [n,]): Audio time series.
     """
-    metadata = get_audio_metadata(filename)
+    metadata = get_audio_metadata(Path(filename))
     assert metadata == assert_metadata, (
         "The filename (%s) metadata does not match `assert_metadata`." % filename)
     _, signal = scipy.io.wavfile.read(str(filename))
@@ -462,7 +458,7 @@ def _parse_audio_metadata(metadata):
         metadata (str)
 
     Returns:
-        (pathlib.Path): The audio path of the parsed `metadata`.
+        (Path): The audio path of the parsed `metadata`.
         (dict): The parsed `metadata`.
     """
     # NOTE: Parse the output of `sox --i` instead individual requests like `sox --i -r` and
@@ -476,7 +472,7 @@ def _parse_audio_metadata(metadata):
     encoding = metadata[-1].replace(metadata[3], '').replace('PCM', '').lower().strip().replace(
         ' ', '-')
 
-    return pathlib.Path(audio_path), {
+    return Path(audio_path), {
         'channels': channels,
         'bits': bits,
         'sample_rate': sample_rate,
@@ -491,7 +487,7 @@ def get_audio_metadata(audio_path):
     NOTE: Launching `subprocess` via `get_audio_metadata` is slow, try to avoid it.
 
     Args:
-        audio_path (Path or str): WAV audio file to get metadata on.
+        audio_path (Path): WAV audio file to get metadata on.
 
     Returns: (dict) {
         channels (int): The number of audio channels in the audio file.
@@ -501,6 +497,7 @@ def get_audio_metadata(audio_path):
           'floating-point'].
     }
     """
+    assert isinstance(audio_path, Path), '`audio_path` must be a Path for caching.'
     # NOTE: `sox --i` behaves like `soxi`
     # Learn more about `soxi`: http://sox.sourceforge.net/soxi.html
     metadata = subprocess.run(['sox', '--i', audio_path], check=False, stdout=subprocess.PIPE)
@@ -526,10 +523,13 @@ def cache_get_audio_metadata(paths):
     number of times for the same paths.
 
     Args:
-        paths (iterable): List of `path.Pathlib`s to cache.
+        paths (iterable): List of `Path`s to cache.
     """
     paths = sorted(list(paths))
-    paths = [path for path in paths if ((), {'audio_path': path}) not in get_audio_metadata.cache]
+    paths = [p for p in paths if ((), {'audio_path': Path(p)}) not in get_audio_metadata.cache]
+    if len(paths) == 0:
+        return
+
     logger.info('Caching audio metadata for %d audio files.', len(paths))
 
     # NOTE: It's difficult to determine the bash maximum argument length, learn more:
@@ -544,6 +544,8 @@ def cache_get_audio_metadata(paths):
             for audio_path, metadata in result:
                 get_audio_metadata.cache.set_(args=(audio_path,), return_=metadata)
                 progress_bar.update()
+
+    get_audio_metadata.cache.save()
 
 
 @configurable
@@ -567,7 +569,7 @@ def normalize_audio(audio_path,
     Returns:
         (str): Filename of the processed file.
     """
-    audio_path = pathlib.Path(audio_path)
+    audio_path = Path(audio_path)
 
     # TODO: Consider adding support for `--show-progress`.
     metadata = get_audio_metadata(audio_path)

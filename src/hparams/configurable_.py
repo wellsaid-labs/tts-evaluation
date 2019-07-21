@@ -1,8 +1,9 @@
-from pathlib import Path
+from functools import lru_cache
 from functools import reduce
 from functools import wraps
-from functools import lru_cache
 from importlib import import_module
+from multiprocessing import current_process
+from pathlib import Path
 
 import ast
 import importlib
@@ -140,7 +141,7 @@ def _check_configuration(dict_):
 
 @lru_cache(maxsize=1)
 def _get_main_module_name():
-    """ Get __main__ module name """
+    """ Get `__main__` / `__mp_main__` module name """
     from src.environment import ROOT_PATH  # Prevent circular dependency
     file_name = sys.argv[0]
 
@@ -165,7 +166,7 @@ def _get_module_name(func):
         print_name (str): Short name of the module for logging.
     """
     module_keys = inspect.getmodule(func).__name__.split('.')
-    if module_keys == ['__main__']:
+    if module_keys == ['__main__'] or module_keys == ['__mp_main__']:
         module_keys = _get_main_module_name().split('.')
     module_keys = [k for k in module_keys if k != '']
     keys = module_keys + func.__qualname__.split('.')
@@ -212,6 +213,8 @@ def _check_configuration_helper(dict_, keys, trace):
                        '.'.join(keys))
         return
 
+    # TODO: Automatically adjust any relative names to absolute module names.
+
     if len(keys) >= 2:
         # CASE: Function
         # For example:
@@ -222,7 +225,10 @@ def _check_configuration_helper(dict_, keys, trace):
             # Try to import a function
             module_path = '.'.join(keys[:-1])
             if module_path == _get_main_module_name():
-                module_path = '__main__'
+                if current_process().name == 'MainProcess':
+                    module_path = '__main__'
+                else:
+                    module_path = '__mp_main__'
             module = import_module(module_path)
             try:
                 function = getattr(module, keys[-1])
@@ -231,7 +237,7 @@ def _check_configuration_helper(dict_, keys, trace):
                     absolute_keys = _get_module_name(function)[0]
                     if keys != absolute_keys:
                         raise TypeError(
-                            'The module path must be absolute: %s vs %s' % (keys, absolute_keys))
+                            'The module path must be absolute: %s → %s' % (keys, absolute_keys))
                     return
                 else:
                     trace.append(
@@ -256,7 +262,10 @@ def _check_configuration_helper(dict_, keys, trace):
         try:
             module_path = '.'.join(keys[:-2])
             if module_path == _get_main_module_name():
-                module_path = '__main__'
+                if current_process().name == 'MainProcess':
+                    module_path = '__main__'
+                else:
+                    module_path = '__mp_main__'
             module = import_module(module_path)
             try:
                 class_ = getattr(module, keys[-2])
@@ -412,7 +421,8 @@ class ConfiguredArg():
     def __init__(self):
         lineno = inspect.stack()[1].lineno  # Ge the caller line number
         filename = inspect.stack()[1].filename
-        self.error_message = 'The parameter at %s:%s must be overwritten' % (filename, lineno)
+        self.error_message = 'The parameter set to `ConfiguredArg` at %s:%s must be overwritten' % (
+            filename, lineno)
 
     def _raise(self):
         raise ValueError(self.error_message)

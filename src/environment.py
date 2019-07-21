@@ -25,6 +25,8 @@ TEMP_PATH = ROOT_PATH / TTS_DISK_CACHE_NAME / 'tmp'
 
 TEMP_PATH.mkdir(exist_ok=True, parents=True)
 
+IS_TESTING_ENVIRONMENT = 'pytest' in sys.modules
+
 RandomGeneratorState = namedtuple('RandomGeneratorState',
                                   ['random', 'torch', 'numpy', 'torch_cuda'])
 
@@ -72,7 +74,7 @@ def set_seed(seed=ConfiguredArg()):
     random.seed(seed)
     torch.manual_seed(seed)
     np.random.seed(seed)
-    if torch.cuda.is_ava:
+    if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
 

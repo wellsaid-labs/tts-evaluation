@@ -12,7 +12,6 @@ from torchnlp.utils import tensors_to
 import torch
 
 from src.utils import DataLoader
-from src.utils import get_tensors_dim_length
 from src.utils import identity
 
 import src.distributed
@@ -93,7 +92,7 @@ class DataLoader(DataLoader):
                  num_workers=cpu_count(),
                  **kwargs):
         batch_sampler = BucketBatchSampler(
-            get_tensors_dim_length([r.spectrogram for r in data]),
+            [r.spectrogram.shape[0] for r in data],
             batch_size,
             drop_last=True,
             sort_key=identity,

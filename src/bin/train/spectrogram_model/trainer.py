@@ -25,6 +25,7 @@ from src.utils import get_average_norm
 from src.utils import get_total_parameters
 from src.utils import get_weighted_stdev
 from src.utils import log_runtime
+from src.utils import OnDiskTensor
 from src.visualize import CometML
 from src.visualize import plot_attention
 from src.visualize import plot_spectrogram
@@ -116,7 +117,7 @@ class Trainer():
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
 
-        self.comet_ml = CometML()
+        self.comet_ml = CometML(disabled=not src.distributed.is_master())
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])
@@ -131,6 +132,7 @@ class Trainer():
             'num_speakers': self.input_encoder.speaker_encoder.vocab_size,
             'speakers': sorted([str(v) for v in self.input_encoder.speaker_encoder.vocab]),
         })
+        self._comet_ml_log_input_dev_data_hash()
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step: %d', self.step)
@@ -142,6 +144,24 @@ class Trainer():
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
         atexit.register(self.save_checkpoint)
+
+    def _comet_ml_log_input_dev_data_hash(self, max_examples=10):
+        """ Log to comet a basic hash of the predicted spectrogram data in `self.dev_dataset`.
+
+        The predicted spectrogram data varies with the random state and checkpoint; therefore, the
+        hash helps differentiate between different datasets.
+
+        Args:
+            max_examples (int): The max number of examples to consider for computing the hash.
+        """
+        sum = torch.tensor(0.0)
+        sample = self.dev_dataset[:min(len(self.dev_dataset), max_examples)]
+        for example in sample:
+            spectrogram = example.spectrogram
+            spectrogram = spectrogram.to_tensor() if isinstance(spectrogram,
+                                                                OnDiskTensor) else spectrogram
+            sum += spectrogram.sum()
+        self.comet_ml.log_other('input_dev_data_hash', (sum / len(sample)).item())
 
     @classmethod
     def from_checkpoint(class_, checkpoint, **kwargs):
@@ -329,7 +349,6 @@ class Trainer():
              predicted_alignments, _) = model(text, speaker)
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
-        print(predicted_post_spectrogram.shape)
 
         self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
         self.comet_ml.log_audio(

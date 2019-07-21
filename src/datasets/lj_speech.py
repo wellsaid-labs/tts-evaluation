@@ -2,21 +2,16 @@ import csv
 import logging
 import re
 
+from third_party import LazyLoader
+
+unidecode = LazyLoader('unidecode', globals(), 'unidecode')
+num2words = LazyLoader('num2words', globals(), 'num2words')
+
 from src.datasets.constants import Gender
 from src.datasets.constants import Speaker
 from src.datasets.utils import _dataset_loader
 
 logger = logging.getLogger(__name__)
-
-try:
-    import unidecode
-except ImportError:
-    logger.info('Skipping optional ``unidecode`` import for now.')
-
-try:
-    from num2words import num2words
-except ImportError:
-    logger.info('Skipping optional ``num2words`` import for now.')
 
 LINDA_JOHNSON = Speaker('Linda Johnson', Gender.FEMALE)
 
@@ -326,7 +321,7 @@ def _verbalize_time_of_day(text):
     def _replace(match):
         split = match.split(':')
         assert len(split) == 2
-        words = [num2words(int(num)) for num in split]
+        words = [num2words.num2words(int(num)) for num in split]
         ret = ' '.join(words)
         return ret
 
@@ -352,7 +347,7 @@ def _verbalize_ordinals(text):
 
     def _replace(match):
         digit = ''.join([c for c in match if c.isdigit()])
-        ret = num2words(int(digit), ordinal=True)
+        ret = num2words.num2words(int(digit), ordinal=True)
         return ret
 
     return _iterate_and_replace(_re_ordinals, text, _replace)
@@ -377,7 +372,7 @@ def _verbalize_currency(text):
 
     def _replace(match):
         digit = match[1:].replace(',', '')
-        ret = num2words(digit, to='currency', currency='USD')
+        ret = num2words.num2words(digit, to='currency', currency='USD')
         ret = ret.replace(', zero cents', '')
         ret = ret.replace('hundred and', 'hundred')
         if '£' in match:
@@ -412,7 +407,7 @@ def _verbalize_serial_numbers(text):
 
     def _replace(match):
         split = match.split(' ')
-        ret = [num2words(int(t)) if t.isdigit() else t for t in list(split[-1])]
+        ret = [num2words.num2words(int(t)) if t.isdigit() else t for t in list(split[-1])]
         ret = ' '.join(ret)
         if len(split) == 2:
             ret = split[0] + ' ' + ret
@@ -447,7 +442,7 @@ def _verbalize_year(text):
     """
 
     def _replace(match):
-        ret = num2words(int(match), lang='en', to='year')
+        ret = num2words.num2words(int(match), lang='en', to='year')
         return ret
 
     for regex in [_re_year_thousand, _re_year_hundred, _re_year_bce]:
@@ -473,7 +468,7 @@ def _verbalize_numeral(text):
     """
 
     def _replace(match):
-        ret = num2words(int(match), lang='en', to='year')
+        ret = num2words.num2words(int(match), lang='en', to='year')
         return ret
 
     return _iterate_and_replace(_re_numeral, text, _replace)
@@ -509,7 +504,7 @@ def _verbalize_roman_number(text):
         else:
             num = 5 + len(match) - 1
 
-        ret = 'the ' + num2words(int(num), to='ordinal')
+        ret = 'the ' + num2words.num2words(int(num), to='ordinal')
         return ret
 
     return _iterate_and_replace(_re_roman_number, text, _replace)
@@ -542,7 +537,7 @@ def _verbalize_number(text):
 
     def _replace(match):
         match = match.replace(',', '')
-        ret = num2words(float(match))
+        ret = num2words.num2words(float(match))
         ret = ret.replace('hundred and', 'hundred')
         return ret
 
