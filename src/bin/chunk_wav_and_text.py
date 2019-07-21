@@ -9,11 +9,11 @@ Prior:
     account something similar to "michael-local-gcs". Download a key as JSON and put it somewhere
     secure locally:
 
-    $ mv ~/Downloads/WellSaidLabs-bd1l2j3opsc.json env/gcs/credentials.json
+    $ mv ~/Downloads/WellSaidLabs-bd1l2j3opsc.json gcs_credentials.json
 
 Example:
 
-    GOOGLE_APPLICATION_CREDENTIALS=env/gcs/credentials.json \
+    GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
     python3 -m src.bin.chunk_wav_and_text --wav 'data/other/Heather/wavs/*.wav' \
                                           --csv 'data/other/Heather/csvs/*.csv' \
                                           --destination data/other/Heather/dest/
@@ -22,7 +22,7 @@ Batch Example:
 
     for directory in 'data/Beth' 'data/Heather' 'data/Hilary' 'data/Sam' 'data/Susan'
     do
-        GOOGLE_APPLICATION_CREDENTIALS=env/gcs/credentials.json \
+        GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
         python3 -m src.bin.chunk_wav_and_text --wav "$directory/03 Recordings/*[!)].wav" \
                                               --csv "$directory/04 Scripts (CSV)/*.csv" \
                                               --destination "$directory/05 Processed/"

@@ -83,3 +83,6 @@ node_modules/
 
 # Disk cache for this repo.
 .tts_cache
+
+# Google Cloud Storage credentials
+gcs_credentials.json
