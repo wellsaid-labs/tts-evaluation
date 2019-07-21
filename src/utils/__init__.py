@@ -7,6 +7,7 @@ from src.utils.data_loader import DataLoader
 from src.utils.disk_cache_ import disk_cache
 from src.utils.on_disk_tensor import cache_on_disk_tensor_shapes
 from src.utils.on_disk_tensor import OnDiskTensor
+from src.utils.record_standard_streams import RecordStandardStreams
 from src.utils.utils import balance_list
 from src.utils.utils import dict_collapse
 from src.utils.utils import evaluate
@@ -32,5 +33,5 @@ __all__ = [
     'get_total_parameters', 'load', 'save', 'flatten_parameters', 'maybe_get_model_devices',
     'evaluate', 'identity', 'seconds_to_string', 'log_runtime', 'sort_together', 'split_list',
     'slice_by_cumulative_sum', 'balance_list', 'flatten', 'batch_predict_spectrograms',
-    'get_chunks', 'cache_on_disk_tensor_shapes'
+    'get_chunks', 'cache_on_disk_tensor_shapes', 'RecordStandardStreams'
 ]

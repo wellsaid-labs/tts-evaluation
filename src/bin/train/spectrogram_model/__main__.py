@@ -47,9 +47,9 @@ from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import parse_hparam_args
 from src.hparams import set_hparams
-from src.record_standard_streams import RecordStandardStreams
 from src.utils import cache_on_disk_tensor_shapes
 from src.utils import Checkpoint
+from src.utils import RecordStandardStreams
 from src.visualize import CometML
 
 import src.distributed

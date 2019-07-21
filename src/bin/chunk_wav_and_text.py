@@ -71,9 +71,9 @@ from src.audio import write_audio
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import set_hparams
-from src.record_standard_streams import RecordStandardStreams
 from src.utils import align_tokens
 from src.utils import flatten
+from src.utils import RecordStandardStreams
 from src.utils import seconds_to_string
 
 TERMINAL_COLOR_RESET = '\033[0m'

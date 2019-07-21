@@ -36,8 +36,8 @@ from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import parse_hparam_args
 from src.hparams import set_hparams
-from src.record_standard_streams import RecordStandardStreams
 from src.utils import Checkpoint
+from src.utils import RecordStandardStreams
 from src.visualize import CometML
 
 logger = logging.getLogger(__name__)

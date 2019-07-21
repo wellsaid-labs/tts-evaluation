@@ -31,10 +31,10 @@ from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import log_config
 from src.hparams import set_hparams
-from src.record_standard_streams import RecordStandardStreams
 from src.utils import balance_list
 from src.utils import Checkpoint
 from src.utils import evaluate
+from src.utils import RecordStandardStreams
 
 logger = logging.getLogger(__name__)
 

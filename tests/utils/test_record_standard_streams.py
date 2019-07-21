@@ -5,8 +5,8 @@ import os
 import pathlib
 import sys
 
-from src.record_standard_streams import RecordStandardStreams
-from src.record_standard_streams import _duplicate_stream
+from src.utils import RecordStandardStreams
+from src.utils.record_standard_streams import _duplicate_stream
 
 
 def test__duplicate_stream(capsys):
