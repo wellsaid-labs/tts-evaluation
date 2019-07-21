@@ -268,7 +268,7 @@ if __name__ == '__main__':  # pragma: no cover
         '--tags',
         default=[
             'detached post_net', 'masked conv', 'post_net dropout=0', 'weight_decay=10**-6',
-            'no elliot', 'no numbers'
+            'no numbers'
         ],
         action='append',
         help='List of tags for a new experiments.')

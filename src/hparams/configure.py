@@ -327,10 +327,6 @@ def _filter_books(example):
             datasets.m_ailabs.MIDNIGHT_PASSENGER.title in str(example.audio_path)):
         return False
 
-    if (example.speaker == datasets.m_ailabs.JANE_EYRE.speaker and
-            datasets.m_ailabs.JANE_EYRE.title in str(example.audio_path)):
-        return False
-
     return True
 
 
@@ -370,7 +366,6 @@ def get_dataset():
         itertools.chain.from_iterable([
             datasets.hilary_speech_dataset(),
             datasets.lj_speech_dataset(),
-            datasets.m_ailabs_en_uk_speech_dataset(),
             datasets.m_ailabs_en_us_speech_dataset(),
             datasets.beth_speech_dataset(),
             datasets.beth_custom_speech_dataset(),
