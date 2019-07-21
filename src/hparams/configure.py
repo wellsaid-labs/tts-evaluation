@@ -378,8 +378,7 @@ def get_dataset():
             datasets.susan_speech_dataset(),
             datasets.sam_speech_dataset(),
             datasets.frank_speech_dataset(),
-            datasets.adrienne_speech_dataset(),
-            datasets.sean_speech_dataset()
+            datasets.adrienne_speech_dataset()
         ]))
     dataset = datasets.filter_(_filter_audio_path_not_found, dataset)
     dataset = datasets.filter_(_filter_no_text, dataset)
