@@ -27,6 +27,17 @@ TEMP_PATH.mkdir(exist_ok=True, parents=True)
 
 IS_TESTING_ENVIRONMENT = 'pytest' in sys.modules
 
+# NOTE (Michael P., 07-22-2019): The torch cuda random generator state can be very large and can
+# cause OOM errors; therefore, it's usage is optional and not recommended.
+#
+# RNG state size:
+# >>> import torch
+# >>> torch.cuda.get_rng_state().shape
+# torch.Size([824016])
+# >>> torch.random.get_rng_state().shape
+# torch.Size([5048])
+#
+# That said, in PyTorch 1.2 (or the current master), this should be fixed.
 RandomGeneratorState = namedtuple('RandomGeneratorState',
                                   ['random', 'torch', 'numpy', 'torch_cuda'])
 
@@ -37,9 +48,8 @@ def get_random_generator_state():
     Returns:
         RandomGeneratorState
     """
-    return RandomGeneratorState(
-        random.getstate(), torch.random.get_rng_state(), np.random.get_state(),
-        torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None)
+    return RandomGeneratorState(random.getstate(), torch.random.get_rng_state(),
+                                np.random.get_state(), None)
 
 
 def set_random_generator_state(state):
@@ -52,9 +62,6 @@ def set_random_generator_state(state):
     random.setstate(state.random)
     torch.random.set_rng_state(state.torch)
     np.random.set_state(state.numpy)
-    if torch.cuda.is_available() and state.torch_cuda is not None and len(
-            state.torch_cuda) == torch.cuda.device_count():
-        torch.cuda.set_rng_state_all(state.torch_cuda)
 
 
 def set_basic_logging_config():
