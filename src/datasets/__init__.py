@@ -51,7 +51,7 @@ def beth_custom_speech_dataset(
         extracted_name='Beth Cameron (Custom)',
         url='https://drive.google.com/uc?export=download&id=1OJBAtSoaDzdlW9NWUR20F6HJ6U_BXBK2',
         url_filename='Beth Cameron (Custom).tar.gz',
-        speaker=Speaker('Beth Cameron', Gender.FEMALE),
+        speaker=Speaker('Beth Cameron (Custom)', Gender.FEMALE),
         **kwargs):
     return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
 
