@@ -42,6 +42,8 @@ logger = logging.getLogger(__name__)
 def _save(destination, tags, speaker, waveform):
     """ Save a waveform.
 
+    TODO: Add method to obsure the name of the audio clip for the purposes of mech turk.
+
     Args:
         destination (Path): Destination to save the predicted waveform.
         tags (list of str): Tags to add to the filename.
@@ -141,7 +143,6 @@ def main(dataset=ConfiguredArg(),
 
     RecordStandardStreams(destination).start()
 
-    set_hparams()
     log_config()
 
     # NOTE: Load early and crash early by ensuring that the checkpoint exists and is not corrupt.
@@ -232,5 +233,7 @@ if __name__ == '__main__':  # pragma: no cover
     }
     if args.text is not None:
         kwargs['dataset'] = args.text
+
+    set_hparams()
 
     main(**kwargs)

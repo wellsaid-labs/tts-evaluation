@@ -463,84 +463,83 @@ def set_hparams():
                 'pre_net.PreNet.__init__.dropout': 0.5,
                 'post_net.PostNet.__init__.convolution_dropout': 0.0
             },
-            'datasets.utils.add_predicted_spectrogram_column.batch_size': (
-                spectrogram_model_dev_batch_size),
-            'bin.evaluate.main.dataset':
-                get_dataset,
-            'bin.train': {
-                'spectrogram_model': {
-                    '__main__._get_dataset.dataset': get_dataset,
-                    'trainer.Trainer.__init__': {
-                        # SOURCE: Tacotron 2
-                        # To train the feature prediction network, we apply the standard
-                        # maximum-likelihood training procedure (feeding in the correct output
-                        # instead of the predicted output on the decoder side, also referred to as
-                        # teacher-forcing) with a batch size of 64 on a single GPU.
-                        # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
-                        'train_batch_size': 56,
-                        'dev_batch_size': spectrogram_model_dev_batch_size,
+            'datasets.utils.add_predicted_spectrogram_column.batch_size':
+                (spectrogram_model_dev_batch_size),
+            'bin': {
+                'evaluate.main.dataset': get_dataset,
+                'train': {
+                    'spectrogram_model': {
+                        '__main__._get_dataset.dataset': get_dataset,
+                        'trainer.Trainer.__init__': {
+                            # SOURCE: Tacotron 2
+                            # To train the feature prediction network, we apply the standard
+                            # maximum-likelihood training procedure (feeding in the correct output
+                            # instead of the predicted output on the decoder side, also referred to
+                            # as teacher-forcing) with a batch size of 64 on a single GPU.
+                            # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
+                            'train_batch_size': 56,
+                            'dev_batch_size': spectrogram_model_dev_batch_size,
 
-                        # SOURCE (Tacotron 2):
-                        # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
-                        'optimizer': Adam,
+                            # SOURCE (Tacotron 2):
+                            # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
+                            'optimizer': Adam,
 
-                        # SOURCE (Tacotron 2 Author):
-                        # The author confirmed they used BCE loss in Google Chat.
-                        'criterion_stop_token': BCEWithLogitsLoss,
+                            # SOURCE (Tacotron 2 Author):
+                            # The author confirmed they used BCE loss in Google Chat.
+                            'criterion_stop_token': BCEWithLogitsLoss,
 
-                        # SOURCE: Tacotron 2
-                        # We minimize the summed mean squared error (MSE) from before and after the
-                        # post-net to aid convergence.
-                        'criterion_spectrogram': MSELoss,
+                            # SOURCE: Tacotron 2
+                            # We minimize the summed mean squared error (MSE) from before and after
+                            # the post-net to aid convergence.
+                            'criterion_spectrogram': MSELoss,
 
-                        # Tacotron 2 like model with any changes documented via Comet.ml.
-                        'model': SpectrogramModel,
+                            # Tacotron 2 like model with any changes documented via Comet.ml.
+                            'model': SpectrogramModel,
+                        },
                     },
+                    'signal_model': {
+                        '__main__._get_dataset.dataset': get_dataset,
+                        'trainer.Trainer.__init__': {
+                            # SOURCE (Tacotron 2):
+                            # We train with a batch size of 128 distributed across 32 GPUs with
+                            # synchronous updates, using the Adam optimizer with β1 = 0.9, β2 =
+                            # 0.999, eps = 10−8 and a fixed learning rate of 10−4
+                            # NOTE: Parameters set after experimentation on a 8 V100 GPUs.
+                            'train_batch_size': 256,
+                            'dev_batch_size': 512,
+
+                            # `CrossEntropyLoss` is not directly mentioned in the paper; however is
+                            # a popular choice as of Jan 2019 for a classification task.
+                            'criterion': CrossEntropyLoss,
+                            'optimizer': Lamb,
+
+                            # A similar schedule to used to train BERT; furthermore, experiments on
+                            # Comet show this schedule is effective along with the LAMB optimizer
+                            # and a large batch size.
+                            'lr_multiplier_schedule': signal_model_lr_multiplier_schedule,
+
+                            # WaveRNN from `Efficient Neural Audio Synthesis` is small, efficient,
+                            # and performant as a vocoder.
+                            'model': WaveRNN,
+                        },
+                        'data_loader.DataLoader.__init__': {
+                            # SOURCE: Efficient Neural Audio Synthesis
+                            # The WaveRNN models are trained on sequences of 960 audio samples
+                            'spectrogram_slice_size': int(900 / frame_hop),
+                            # TODO: This should depend on an upsample property.
+                            # TODO: It may be more appropriate to pad by 2 spectrogram frames
+                            # instead. Given that each frame aligns with 300 samples and each frame
+                            # is created from 1200 samples, then there is 900 samples of context for
+                            # each frame outside of the aligned samples. Then it makes sense to have
+                            # 450 samples of padding or 2 spectrogram frames.
+                            'spectrogram_slice_pad': 5,
+                        },
+                    }
                 },
-                'signal_model': {
-                    '__main__._get_dataset.dataset': get_dataset,
-                    'trainer.Trainer.__init__': {
-                        # SOURCE (Tacotron 2):
-                        # We train with a batch size of 128 distributed across 32 GPUs with
-                        # synchronous updates, using the Adam optimizer with β1 = 0.9, β2 = 0.999, 
-                        # eps = 10−8 and a fixed learning rate of 10−4
-                        # NOTE: Parameters set after experimentation on a 8 V100 GPUs.
-                        'train_batch_size': 256,
-                        'dev_batch_size': 512,
-
-                        # `CrossEntropyLoss` is not directly mentioned in the paper; however is
-                        # a popular choice as of Jan 2019 for a classification task.
-                        'criterion': CrossEntropyLoss,
-                        'optimizer': Lamb,
-
-                        # A similar schedule to used to train BERT; furthermore, experiments on
-                        # Comet show this schedule is effective along with the LAMB optimizer
-                        # and a large batch size.
-                        'lr_multiplier_schedule': signal_model_lr_multiplier_schedule,
-
-                        # WaveRNN from `Efficient Neural Audio Synthesis` is small, efficient, and
-                        # performant as a vocoder.
-                        'model': WaveRNN,
-                    },
-                    'data_loader.DataLoader.__init__': {
-                        # SOURCE: Efficient Neural Audio Synthesis
-                        # The WaveRNN models are trained on sequences of 960 audio samples
-                        'spectrogram_slice_size': int(900 / frame_hop),
-                        # TODO: This should depend on an upsample property.
-                        # TODO: It may be more appropriate to pad by 2 spectrogram frames instead.
-                        # Given that each frame aligns with 300 samples and each frame is created
-                        # from 1200 samples, then there is 900 samples of context for each frame
-                        # outside of the aligned samples. Then it makes sense to have 450 samples
-                        # of padding or 2 spectrogram frames.
-                        'spectrogram_slice_pad': 5,
-                    },
-                }
             },
             # NOTE: Window size smoothing parameter is not super sensative.
-            'optimizers.AutoOptimizer.__init__.window_size':
-                128,
+            'optimizers.AutoOptimizer.__init__.window_size': 128,
             # NOTE: Gideon from Comet suggested this as a fix.
-            'visualize.CometML.auto_output_logging':
-                'simple',
+            'visualize.CometML.auto_output_logging': 'simple',
         }
     })

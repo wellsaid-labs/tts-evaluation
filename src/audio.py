@@ -535,9 +535,9 @@ def cache_get_audio_metadata(paths):
     # NOTE: It's difficult to determine the bash maximum argument length, learn more:
     # https://unix.stackexchange.com/questions/45143/what-is-a-canonical-way-to-find-the-actual-maximum-argument-list-length
     # https://stackoverflow.com/questions/19354870/bash-command-line-and-input-limit
-    # NOTE: 2048 was choosen empirically to be less then the bash maximum argument length on most
+    # NOTE: 1024 was choosen empirically to be less then the bash maximum argument length on most
     # systems.
-    chunks = list(get_chunks(paths, 2048))
+    chunks = list(get_chunks(paths, 1024))
     progress_bar = tqdm(total=len(paths))
     with Pool() as pool:
         for result in pool.imap_unordered(_cache_get_audio_metadata_helper, chunks):
