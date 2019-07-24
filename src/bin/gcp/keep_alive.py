@@ -40,8 +40,18 @@ INSTANCE_STOPPED = 'TERMINATED'
 load_dotenv()
 
 COMET_ML_WORKSPACE = os.getenv('COMET_ML_WORKSPACE')
-COMET_ML_API = CometAPI(
-    api_key=os.getenv('COMET_ML_API_KEY'), rest_api_key=os.getenv('COMET_ML_REST_API_KEY'))
+COMET_ML_API_KEY = os.getenv('COMET_ML_API_KEY')
+COMET_ML_REST_API_KEY = os.getenv('COMET_ML_REST_API_KEY')
+
+
+def get_comet_ml_api():
+    """ Get an instance of `CometAPI`.
+
+    NOTE: Data received from `CometAPI` can be cached. To reset the cache, create a new instance.
+    Learn more: https://www.comet.ml/docs/python-sdk/Comet-REST-API/#utility-functions
+    """
+    return CometAPI(
+        api_key=os.getenv('COMET_ML_API_KEY'), rest_api_key=os.getenv('COMET_ML_REST_API_KEY'))
 
 
 def get_available_instances(names=None):
@@ -90,10 +100,11 @@ def get_running_experiments(instances, comet_ml_project_name):
         (list): List of the most recently created experiments for each instance in `instances`.
     """
     logger.info('Getting comet experiment metadata.')
-    experiments = COMET_ML_API.get(COMET_ML_WORKSPACE, comet_ml_project_name)
+    comet_ml_api = get_comet_ml_api()
+    experiments = comet_ml_api.get(COMET_ML_WORKSPACE, comet_ml_project_name)
 
     experiments = sorted(experiments, key=lambda e: e.data['start_server_timestamp'], reverse=True)
-    get_hostname = lambda e: COMET_ML_API.get_experiment_system_details(e.key)['hostname']
+    get_hostname = lambda e: comet_ml_api.get_experiment_system_details(e.key)['hostname']
     return [next(e for e in experiments if get_hostname(e) == i['name']) for i in instances]
 
 
@@ -157,8 +168,8 @@ def keep_alive(comet_ml_project_name,
                     logger.warning('Exception: %s', e)
         elif status == INSTANCE_RUNNING:
             # NOTE: Checks if an experiment has been halted for longer than `max_halt_time`.
-            updated_experiment = COMET_ML_API.get(COMET_ML_WORKSPACE, comet_ml_project_name,
-                                                  experiment.key)
+            updated_experiment = get_comet_ml_api().get(COMET_ML_WORKSPACE, comet_ml_project_name,
+                                                        experiment.key)
             elapsed = time.time() * 1000 - updated_experiment.data['end_server_timestamp']
             logger.info('The instance was heard from %s ago.', seconds_to_string(elapsed / 1000))
             if elapsed > max_halt_time:
