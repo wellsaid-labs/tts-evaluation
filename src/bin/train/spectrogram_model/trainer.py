@@ -87,8 +87,8 @@ class Trainer():
         self.dev_dataset = balance_list(dev_dataset, get_class=lambda r: r.speaker, random_seed=123)
 
         self.input_encoder = InputEncoder(
-            [r.text for r in self.train_dataset] + [r.text for r in self.dev_dataset],
-            [r.speaker for r in self.train_dataset] +
+            [r.text for r in self.train_dataset] +
+            [r.text for r in self.dev_dataset], [r.speaker for r in self.train_dataset] +
             [r.speaker for r in self.dev_dataset]) if input_encoder is None else input_encoder
 
         # Allow for ``class`` or a class instance
@@ -209,7 +209,7 @@ class Trainer():
                 computed gradient; furthermore, the Trainer ``step`` and ``epoch`` state will be
                 updated.
             trial_run (bool, optional): If ``True`` then the epoch is limited to one batch.
-            infer (bool): If ``True`` the model is run in inference mode.
+            infer (bool, optional): If ``True`` the model is run in inference mode.
         """
         if infer and train:
             raise ValueError('Train and infer are mutually exclusive.')
@@ -251,10 +251,9 @@ class Trainer():
             with torch.set_grad_enabled(train):
                 if infer:
                     predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1])
-                    self.accumulated_metrics.add_metric(
-                        'duration_gap',
-                        (predictions[-1].float() / batch.spectrogram[1].float()).mean(),
-                        predictions[-1].numel())
+                    duration_gap = (predictions[-1].float() / batch.spectrogram[1].float()).mean()
+                    self.accumulated_metrics.add_metric('duration_gap', duration_gap,
+                                                        predictions[-1].numel())
                 else:
                     predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1],
                                              batch.spectrogram[0], batch.spectrogram[1])
@@ -296,6 +295,8 @@ class Trainer():
          predicted_alignments) = predictions
         spectrogram = batch.spectrogram[0]
 
+        # expanded_mask, predicted_pre_spectrogram, predicted_post_spectrogram, spectrogram
+        # [num_frames, batch_size, frame_channels]
         expanded_mask = batch.spectrogram_expanded_mask[0]
         pre_spectrogram_loss = self.criterion_spectrogram(predicted_pre_spectrogram, spectrogram)
         pre_spectrogram_loss = pre_spectrogram_loss.masked_select(expanded_mask).mean()
@@ -313,10 +314,11 @@ class Trainer():
             self.optimizer.step(comet_ml=self.comet_ml)
 
         # Record metrics
-        self.accumulated_metrics.add_metrics({
-            'pre_spectrogram_loss': pre_spectrogram_loss,
-            'post_spectrogram_loss': post_spectrogram_loss,
-        }, expanded_mask.sum())
+        self.accumulated_metrics.add_metrics(
+            {
+                'pre_spectrogram_loss': pre_spectrogram_loss,
+                'post_spectrogram_loss': post_spectrogram_loss,
+            }, expanded_mask.sum())
         self.accumulated_metrics.add_metrics({'stop_token_loss': stop_token_loss}, mask.sum())
 
         return (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss, expanded_mask.sum(),
@@ -327,10 +329,11 @@ class Trainer():
         # predicted_alignments [num_frames, batch_size, num_tokens]
         mask = lengths_to_mask(lengths, device=predicted_alignments.device).transpose(0, 1)
         kwargs = {'tensor': predicted_alignments.detach(), 'dim': 2, 'mask': mask}
-        self.accumulated_metrics.add_metrics({
-            'attention_norm': get_average_norm(norm=math.inf, **kwargs),
-            'attention_std': get_weighted_stdev(**kwargs),
-        }, kwargs['mask'].sum())
+        self.accumulated_metrics.add_metrics(
+            {
+                'attention_norm': get_average_norm(norm=math.inf, **kwargs),
+                'attention_std': get_weighted_stdev(**kwargs),
+            }, kwargs['mask'].sum())
 
     def visualize_inferred(self):
         """ Run in inference mode and visualize results.

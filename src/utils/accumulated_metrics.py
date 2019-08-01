@@ -84,9 +84,8 @@ class AccumulatedMetrics():
                 self.metrics['step_count'][key] = value
 
         # Log step metrics and update epoch metrics.
-        for (total_key, total_value), (count_key, count_value) in zip(
-                self.metrics['step_total'].items(), self.metrics['step_count'].items()):
-
+        iterator = zip(self.metrics['step_total'].items(), self.metrics['step_count'].items())
+        for (total_key, total_value), (count_key, count_value) in iterator:
             assert total_key == count_key, 'AccumulatedMetrics invariant failed.'
             assert count_value > 0, 'AccumulatedMetrics invariant failed (%s, %f, %f)'
             log_metric(total_key, total_value / count_value)
@@ -112,9 +111,8 @@ class AccumulatedMetrics():
         self.log_step_end(lambda *args, **kwargs: None)
 
         # Log epoch metrics
-        for (total_key, total_value), (count_key, count_value) in zip(
-                self.metrics['epoch_total'].items(), self.metrics['epoch_count'].items()):
-
+        iterator = zip(self.metrics['epoch_total'].items(), self.metrics['epoch_count'].items())
+        for (total_key, total_value), (count_key, count_value) in iterator:
             assert total_key == count_key, 'AccumulatedMetrics invariant failed.'
             assert count_value > 0, 'AccumulatedMetrics invariant failed (%s, %f, %f)'
             log_metric(total_key, total_value / count_value)

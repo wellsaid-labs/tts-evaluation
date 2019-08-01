@@ -127,10 +127,12 @@ def main(run_name,
          run_root=ROOT_PATH / 'experiments' / 'signal_model' / _time_label(),
          checkpoints_directory=Path('checkpoints') / _time_label(),
          checkpoint=None,
-         spectrogram_model_checkpoint_path=None,
+         spectrogram_model_checkpoint=None,
          more_hparams={},
          device=torch.device('cuda')):
     """ Main module that trains a the signal model saving checkpoints incrementally.
+
+    TODO: Test this module.
 
     Args:
         run_name (str): Name describing the experiment.
@@ -139,7 +141,7 @@ def main(run_name,
         run_root (str, optional): Directory to save experiments, unless a checkpoint is loaded.
         checkpoints_directory (str, optional): Directory to save checkpoints inside `run_root`.
         checkpoint (src.utils.Checkpoint, optional): Checkpoint or None.
-        spectrogram_model_checkpoint_path (str, optional): Checkpoint used to generate spectrogram
+        spectrogram_model_checkpoint (str, optional): Checkpoint used to generate spectrogram
             from text as input to the signal model.
         more_hparams (dict, optional): Hparams to override default hparams.
         device (torch.device): Primary device used for training.
@@ -171,8 +173,8 @@ def main(run_name,
         'dev_dataset': dev,
         'checkpoints_directory': checkpoints_directory
     }
-    if spectrogram_model_checkpoint_path is not None:
-        kwargs['spectrogram_model_checkpoint_path'] = spectrogram_model_checkpoint_path
+    if spectrogram_model_checkpoint is not None:
+        kwargs['spectrogram_model_checkpoint'] = spectrogram_model_checkpoint
     if checkpoint is not None:
         kwargs['checkpoint'] = checkpoint
     trainer = (Trainer.from_checkpoint if checkpoint else Trainer)(**kwargs)
@@ -231,6 +233,9 @@ if __name__ == '__main__':  # pragma: no cover
     else:
         args.checkpoint = None
 
+    if args.spectrogram_model_checkpoint is not None:
+        args.spectrogram_model_checkpoint = Checkpoint.from_path(args.spectrogram_model_checkpoint)
+
     if args.checkpoint is not None:
         # TODO: Remove coupling between `Trainer` and `checkpoint`.
         args.checkpoint.optimizer = None if args.reset_optimizer else args.checkpoint.optimizer
@@ -241,5 +246,5 @@ if __name__ == '__main__':  # pragma: no cover
         run_tags=args.tags,
         comet_ml_project_name=args.project_name,
         checkpoint=args.checkpoint,
-        spectrogram_model_checkpoint_path=args.spectrogram_model_checkpoint,
+        spectrogram_model_checkpoint=args.spectrogram_model_checkpoint,
         more_hparams=parse_hparam_args(unparsed_args))

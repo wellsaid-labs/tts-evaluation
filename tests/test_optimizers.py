@@ -10,6 +10,7 @@ import numpy
 from src.optimizers import AutoOptimizer
 from src.optimizers import Lamb
 from src.optimizers import Optimizer
+from tests._utils import MockCometML
 
 
 def test_lamb_optimizer():  # Smoke test
@@ -52,15 +53,6 @@ def test_lamb_optimizer_amsgrad():  # Smoke test
     output.sum().backward()
     optimizer.zero_grad()
     optimizer.step()
-
-
-class MockCometML():
-
-    def __init__(self):
-        pass
-
-    def __getattr__(self, attr):
-        return lambda *args, **kwargs: self
 
 
 class TestOptimizer(unittest.TestCase):

@@ -1,4 +1,3 @@
-from multiprocessing import Pool
 from pathlib import Path
 
 import logging
@@ -22,6 +21,7 @@ from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.utils import disk_cache
 from src.utils import get_chunks
+from src.utils import Pool
 
 logger = logging.getLogger(__name__)
 
@@ -469,8 +469,8 @@ def _parse_audio_metadata(metadata):
     sample_rate = int(metadata[2])
     assert metadata[3][-4:] == '-bit', metadata
     bits = int(metadata[3][:-4])
-    encoding = metadata[-1].replace(metadata[3], '').replace('PCM', '').lower().strip().replace(
-        ' ', '-')
+    encoding = metadata[-1].replace(metadata[3], '').replace('PCM', '')
+    encoding = encoding.lower().strip().replace(' ', '-')
 
     return Path(audio_path), {
         'channels': channels,

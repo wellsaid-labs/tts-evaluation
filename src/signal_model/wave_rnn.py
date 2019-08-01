@@ -388,7 +388,7 @@ class _WaveRNNInferrer(nn.Module):
                 ``bins`` categories for the ``fine`` random variable.
             hidden_state (tuple): Hidden state with RNN hidden state and last coarse/fine samples.
         """
-        # [local_length, local_features_size]  → [1, local_length, local_features_size]
+        # [local_length, local_features_size] → [1, local_length, local_features_size]
         local_features = local_features.unsqueeze(0)
         device = local_features.device
 

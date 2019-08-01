@@ -67,17 +67,18 @@ WIVES_AND_DAUGHTERS = Book(ELIZABETH_KLETT, 'wives_and_daughters')
 DOWNLOAD_DIRECTORY = ROOT_PATH / 'data/M-AILABS'
 
 
-def m_ailabs_en_us_speech_dataset(
-        directory=DOWNLOAD_DIRECTORY,
-        url='http://www.caito.de/data/Training/stt_tts/en_US.tgz',
-        check_files=['en_US/by_book/info.txt'],
-        extracted_name='en_US',
-        all_books=[
-            THE_SEA_FAIRIES, THE_MASTER_KEY, RINKITINK_IN_OZ, DOROTHY_AND_WIZARD_OZ, SKY_ISLAND,
-            OZMA_OF_OZ, EMERALD_CITY_OF_OZ, MIDNIGHT_PASSENGER, NORTH_AND_SOUTH, PIRATES_OF_ERSATZ,
-            POISONED_PEN, SILENT_BULLET, HUNTERS_SPACE, PINK_FAIRY_BOOK
-        ],
-        **kwargs):
+def m_ailabs_en_us_speech_dataset(directory=DOWNLOAD_DIRECTORY,
+                                  url='http://www.caito.de/data/Training/stt_tts/en_US.tgz',
+                                  check_files=['en_US/by_book/info.txt'],
+                                  extracted_name='en_US',
+                                  all_books=[
+                                      THE_SEA_FAIRIES, THE_MASTER_KEY, RINKITINK_IN_OZ,
+                                      DOROTHY_AND_WIZARD_OZ, SKY_ISLAND, OZMA_OF_OZ,
+                                      EMERALD_CITY_OF_OZ, MIDNIGHT_PASSENGER, NORTH_AND_SOUTH,
+                                      PIRATES_OF_ERSATZ, POISONED_PEN, SILENT_BULLET, HUNTERS_SPACE,
+                                      PINK_FAIRY_BOOK
+                                  ],
+                                  **kwargs):
     """ Load the M-AILABS ``en_US`` dataset.
 
     Download, extract, and process the M-AILABS ``en_US`` dataset, which is 8GB compressed. The file

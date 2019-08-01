@@ -260,8 +260,8 @@ class Lamb(torch.optim.Optimizer):
                 # https://github.com/noahgolmant/pytorch-lars/blob/master/lars.py
                 # https://github.com/cybertronai/pytorch-lamb
                 # https://github.com/tensorflow/tensorflow/blob/master/tensorflow/contrib/opt/python/training/lars_optimizer.py
-                adam_update = (
-                    exp_avg / denom) + group['weight_decay'] * p.data  # AdamW implementation
+                # NOTE: `AdamW` version of `weight_decay`
+                adam_update = (exp_avg / denom) + group['weight_decay'] * p.data
                 r_1 = p.data.norm(2)
                 r_2 = adam_update.norm(2)
                 trust_ratio = 1.0 if r_1 == 0 or r_2 == 0 else r_1 / r_2

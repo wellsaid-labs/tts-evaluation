@@ -1,4 +1,5 @@
 import os
+import pathlib
 
 import pytest
 
@@ -17,11 +18,8 @@ from src.bin.chunk_wav_and_text import remove_punctuation
 from src.bin.chunk_wav_and_text import review_chunk_alignments
 from src.bin.chunk_wav_and_text import samples_to_seconds
 from src.bin.chunk_wav_and_text import seconds_to_samples
-from src.environment import ROOT_PATH
-from tests._utils import create_disk_garbage_collection_fixture
 
-gc_lj_chunks = create_disk_garbage_collection_fixture(
-    ROOT_PATH / 'tests' / '_test_data' / 'lj_speech_chunks')
+CHUNKS_PATH = pathlib.Path('tests/_test_data/bin/test_chunk_wav_and_text/lj_speech_chunks')
 
 
 def MockAlignment(start_text, end_text):
@@ -105,66 +103,69 @@ def test_review_chunk_alignments():
     }]) == ['d', 'hi']
 
 
-def test_main__no_csv(gc_lj_chunks, capsys):
-    with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
-        main('tests/_test_data/lj_speech_24000.wav', str(gc_lj_chunks), max_chunk_seconds=2)
-    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_0.wav').exists()
-    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_1.wav').exists()
-    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_2.wav').exists()
-    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_3.wav').exists()
-    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_4.wav').exists()
-    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_5.wav').exists()
-    assert (gc_lj_chunks / 'metadata.csv').exists()
-    assert (gc_lj_chunks / ('stderr.%s.log' % os.getpid())).exists()
-    assert (gc_lj_chunks / ('stdout.%s.log' % os.getpid())).exists()
-
-    assert ((gc_lj_chunks / 'metadata.csv').read_text().strip() == """Content,WAV Filename
-The examination and testimony,lj_speech_24000/script_0_chunk_0.wav
-of the experts,lj_speech_24000/script_0_chunk_1.wav
-enabled the commission,lj_speech_24000/script_0_chunk_2.wav
-to conclude,lj_speech_24000/script_0_chunk_3.wav
-that five shots may,lj_speech_24000/script_0_chunk_4.wav
-have been fired.,lj_speech_24000/script_0_chunk_5.wav""".strip())
-
-
-def test_main__normalize_audio(gc_lj_chunks, capsys):
+def test_main__no_csv(capsys):
     with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
         main(
-            'tests/_test_data/lj_speech.wav',
-            str(gc_lj_chunks),
-            csv_pattern='tests/_test_data/lj_speech.csv',
+            'tests/_test_data/bin/test_chunk_wav_and_text/rate(lj_speech,24000).wav',
+            str(CHUNKS_PATH),
+            max_chunk_seconds=2)
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_0.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_1.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_2.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_3.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_4.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_5.wav').exists()
+    assert (CHUNKS_PATH / 'metadata.csv').exists()
+    assert (CHUNKS_PATH / ('stderr.%s.log' % os.getpid())).exists()
+    assert (CHUNKS_PATH / ('stdout.%s.log' % os.getpid())).exists()
+
+    assert ((CHUNKS_PATH / 'metadata.csv').read_text().strip() == """Content,WAV Filename
+The examination and testimony,"rate(lj_speech,24000)/script_0_chunk_0.wav"
+of the experts,"rate(lj_speech,24000)/script_0_chunk_1.wav"
+enabled the commission,"rate(lj_speech,24000)/script_0_chunk_2.wav"
+to conclude,"rate(lj_speech,24000)/script_0_chunk_3.wav"
+that five shots may,"rate(lj_speech,24000)/script_0_chunk_4.wav"
+have been fired.,"rate(lj_speech,24000)/script_0_chunk_5.wav" """.strip())
+
+
+def test_main__normalize_audio(capsys):
+    with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
+        main(
+            'tests/_test_data/bin/test_chunk_wav_and_text/lj_speech.wav',
+            str(CHUNKS_PATH),
+            csv_pattern='tests/_test_data/bin/test_chunk_wav_and_text/lj_speech.csv',
             max_chunk_seconds=2)
 
     with pytest.raises(AssertionError):  # The original audio file was not supported.
-        read_audio('tests/_test_data/lj_speech.wav')
+        read_audio('tests/_test_data/bin/test_chunk_wav_and_text/lj_speech.wav')
 
     # Ensure chunks are supported by this repository.
-    read_audio(gc_lj_chunks / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_0.wav')
-    read_audio(gc_lj_chunks / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_2.wav')
+    read_audio(CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_0.wav')
+    read_audio(CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_2.wav')
 
 
-def test_main(gc_lj_chunks, capsys):
+def test_main(capsys):
     with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
         main(
-            'tests/_test_data/lj_speech_24000.wav',
-            str(gc_lj_chunks),
-            csv_pattern='tests/_test_data/lj_speech.csv',
+            'tests/_test_data/bin/test_chunk_wav_and_text/rate(lj_speech,24000).wav',
+            str(CHUNKS_PATH),
+            csv_pattern='tests/_test_data/bin/test_chunk_wav_and_text/lj_speech.csv',
             max_chunk_seconds=2)
-    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_0.wav').exists()
-    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_0_chunk_1.wav').exists()
-    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_1_chunk_0.wav').exists()
-    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_1_chunk_1.wav').exists()
-    assert (gc_lj_chunks / 'wavs' / 'lj_speech_24000' / 'script_1_chunk_2.wav').exists()
-    assert (gc_lj_chunks / 'metadata.csv').exists()
-    assert (gc_lj_chunks / ('stderr.%s.log' % os.getpid())).exists()
-    assert (gc_lj_chunks / ('stdout.%s.log' % os.getpid())).exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_0.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_1.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_0.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_1.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_2.wav').exists()
+    assert (CHUNKS_PATH / 'metadata.csv').exists()
+    assert (CHUNKS_PATH / ('stderr.%s.log' % os.getpid())).exists()
+    assert (CHUNKS_PATH / ('stdout.%s.log' % os.getpid())).exists()
 
-    assert ((gc_lj_chunks / 'metadata.csv').read_text().strip() == """Content,WAV Filename
-The examination and,lj_speech_24000/script_0_chunk_0.wav
-of the experts enabled,lj_speech_24000/script_0_chunk_1.wav
-The SUBSTITUTE_WORD to conclude,lj_speech_24000/script_1_chunk_0.wav
-that ADDED_WORD five sAhots may,lj_speech_24000/script_1_chunk_1.wav
-have been fired.,lj_speech_24000/script_1_chunk_2.wav""".strip())
+    assert ((CHUNKS_PATH / 'metadata.csv').read_text().strip() == """Content,WAV Filename
+The examination and,"rate(lj_speech,24000)/script_0_chunk_0.wav"
+of the experts enabled,"rate(lj_speech,24000)/script_0_chunk_1.wav"
+The SUBSTITUTE_WORD to conclude,"rate(lj_speech,24000)/script_1_chunk_0.wav"
+that ADDED_WORD five sAhots may,"rate(lj_speech,24000)/script_1_chunk_1.wav"
+have been fired.,"rate(lj_speech,24000)/script_1_chunk_2.wav" """.strip())
 
 
 def test_average_silence_delimiter():
@@ -193,6 +194,11 @@ def test_align_wav_and_scripts():
                     'startTime': '%ds' % len('Script '),
                     'endTime': '%ds' % len('Script 1.'),
                     'word': '1.',
+                },
+                {
+                    'startTime': '%ds' % len('Script 1.'),
+                    'endTime': '%ds' % len('Script 1.'),
+                    'word': '',
                 },
             ]
         },
@@ -223,6 +229,7 @@ def test_align_wav_and_scripts():
                 end_text=len('Script 1.'),
                 start_audio=len('Script ') * sample_rate,
                 end_audio=len('Script 1.') * sample_rate),
+            Nonalignment(start_text=len('Script 1.'), end_text=len('Script 1.')),
         ],
         [
             Alignment(

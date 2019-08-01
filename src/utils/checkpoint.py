@@ -41,7 +41,7 @@ class Checkpoint():
             setattr(self, key, value)
 
     @classmethod
-    def from_path(class_, path, device=torch.device('cpu'), load_random_state=True):
+    def from_path(class_, path, device=torch.device('cpu')):
         """ Load a checkpoint from path.
 
         NOTE: Given ``path`` is different than the loaded instance, the original path is not
@@ -50,7 +50,6 @@ class Checkpoint():
         Args:
             path (Path or str): Path to a checkpoint to load.
             device (torch.device, optional): Device to load checkpoint onto.
-            load_random_state (bool, optional): Load the random state with the checkpoint.
 
         Returns:
             checkpoint (Checkpoint): Loaded checkpoint.
@@ -79,8 +78,7 @@ class Checkpoint():
             instance.input_encoder.speaker_encoder.tokens[old_speaker] = count
 
         flatten_parameters(instance.model)
-        # Backwards compatibility for instances without paths.
-        instance.path = instance.path if hasattr(instance, 'path') else path
+        instance.path = path
         logger.info('Loaded checkpoint at step %d from %s with model:\n%s', instance.step,
                     instance.path, instance.model)
         return instance

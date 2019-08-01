@@ -4,9 +4,11 @@ from pathlib import Path
 from threading import RLock
 
 import atexit
+import gc
 import inspect
 import logging
 import pickle
+import weakref
 
 from src.environment import IS_TESTING_ENVIRONMENT
 from src.environment import ROOT_PATH
@@ -25,11 +27,18 @@ class _Cache(object):
     Args:
         function (callable)
     """
+    _instances = []
 
     def __init__(self, function):
+        self.__class__._instances.append(weakref.ref(self))
         self._co_varnames = function.__code__.co_varnames
         self._storage = {}
         self._write_lock_property = None
+
+    @classmethod
+    def get_instances(class_):
+        resolved = [i() for i in class_._instances]
+        return [i for i in resolved if i is not None]
 
     @property
     def _write_lock(self):
@@ -130,27 +139,41 @@ class _DiskCache(_Cache):
     def _atexit(self):
         if self._write_timer is not None:
             self._write_timer.cancel()
-            if not IS_TESTING_ENVIRONMENT:
-                self.save()
+
+        if not IS_TESTING_ENVIRONMENT:
+            self.save()
 
     def clear(self):
         """ Clear cache from disk and memory."""
         with self._write_lock:
-            self._file_path.unlink()
+            if self._file_path.exists():
+                self._file_path.unlink()
             self._storage = {}
 
     def load(self):
         """ Load cache from disk into memory. """
+        if self._storage_property is None:
+            self._storage_property = {}
+
         if self._file_path.exists():
             with self._write_lock:  # TODO: Test write lock with various race conditions.
-                disk_storage = pickle.loads(self._file_path.read_bytes())
+                bytes_ = self._file_path.read_bytes()
+
+                # NOTE: Speed up `pickle.loads` via `gc`, learn more:
+                # https://stackoverflow.com/questions/26860051/how-to-reduce-the-time-taken-to-load-a-pickle-file-in-python
+                gc.disable()
+                disk_storage = pickle.loads(bytes_)
+                gc.enable()
+
                 logger.info('Loaded `_DiskCache` of size %d for function `%s`.', len(disk_storage),
                             self._file_name)
+
                 self._storage_property.update(disk_storage)
 
     def save(self):
         """ Save cache to disk. """
-        self._write_timer.cancel()
+        if self._write_timer is not None:
+            self._write_timer.cancel()
 
         # NOTE Ensure that while writing that the `disk_cache` is not updated; therefore, the
         # `disk_cache` will not lose any data on update.
@@ -163,11 +186,12 @@ class _DiskCache(_Cache):
             self._file_path.write_bytes(new_disk_storage)
 
     def set_(self, *args, **kwargs):
-        if self._write_timer is not None and self._write_timer.is_alive():
-            self._write_timer.reset()
-        else:
-            self._write_timer = ResetableTimer(self.save_to_disk_delay, self.save)
-            self._write_timer.start()
+        if self.save_to_disk_delay is not None:
+            if self._write_timer is not None and self._write_timer.is_alive():
+                self._write_timer.reset()
+            else:
+                self._write_timer = ResetableTimer(self.save_to_disk_delay, self.save)
+                self._write_timer.start()
 
         return super().set_(*args, **kwargs)
 
@@ -175,7 +199,6 @@ class _DiskCache(_Cache):
     def _storage(self):
         """ `self._storage` with a lazy load from disk for saving cache'd data. """
         if self._storage_property is None:
-            self._storage_property = {}
             self.load()
         return self._storage_property
 
@@ -184,9 +207,11 @@ class _DiskCache(_Cache):
         self._storage_property = value
 
 
-def disk_cache(function=None,
-               directory=ROOT_PATH / TTS_DISK_CACHE_NAME / 'disk_cache',
-               save_to_disk_delay=180):
+def disk_cache(
+        function=None,
+        directory=(ROOT_PATH / 'tests' / '_test_data' if IS_TESTING_ENVIRONMENT else ROOT_PATH) /
+        TTS_DISK_CACHE_NAME / 'disk_cache',
+        save_to_disk_delay=None if IS_TESTING_ENVIRONMENT else 180):
     """ Function decorator that caches all function calls and saves them to disk.
 
     Attrs:

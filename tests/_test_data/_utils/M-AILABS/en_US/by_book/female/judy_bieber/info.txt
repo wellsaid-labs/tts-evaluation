@@ -1,0 +1,4 @@
+Source:	  LibriVox (https://librivox.org)
+Language: English
+Speaker:  Judy Bieber
+Duration: 36:43:13

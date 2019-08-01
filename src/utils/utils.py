@@ -12,10 +12,11 @@ import logging.config
 import pprint
 import time
 
+from torch import multiprocessing
+from torchnlp.utils import shuffle as do_deterministic_shuffle
+
 import torch
 import torch.utils.data
-
-import src.distributed
 
 logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
@@ -162,8 +163,8 @@ def flatten_parameters(model):
     Args:
         model (torch.nn.Module)
     """
-    return model.apply(
-        lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None)
+    return model.apply(lambda m: m.flatten_parameters()
+                       if hasattr(m, 'flatten_parameters') else None)
 
 
 def maybe_get_model_devices(model):
@@ -345,12 +346,15 @@ def balance_list(list_, get_class=identity, get_weight=lambda x: 1, random_seed=
     Returns:
         (iterable): Subsample of ``list_`` such that each class has the same number of samples.
     """
+    if len(list_) == 0:
+        return list_
+
     split = defaultdict(list)
 
     # Learn more:
     # https://stackoverflow.com/questions/16270374/how-to-make-a-shallow-copy-of-a-list-in-python
     list_ = list_[:]
-    src.distributed.random_shuffle(list_, random_seed=random_seed)
+    do_deterministic_shuffle(list_, random_seed=random_seed)
     for item in list_:
         split[get_class(item)].append(item)
 
@@ -365,7 +369,7 @@ def balance_list(list_, get_class=identity, get_weight=lambda x: 1, random_seed=
         for l in split.values()
     ]
     subsample = list(itertools.chain(*subsample))  # Flatten list
-    src.distributed.random_shuffle(subsample, random_seed=random_seed)
+    do_deterministic_shuffle(subsample, random_seed=random_seed)
     return subsample
 
 
@@ -398,3 +402,15 @@ class ResetableTimer(Timer):
             self.continue_waiting = True
             self.finished.set()
             self.finished.clear()
+
+
+@contextmanager
+def Pool(*args, **kwargs):
+    """ Alternative implementation of a `Pool` context manager. The original `multiprocessing.Pool`
+    context manager calls `terminate` rather than `close` followed by `join`.
+    """
+    # Learn more: https://pytest-cov.readthedocs.io/en/latest/subprocess-support.html
+    pool = multiprocessing.Pool(*args, **kwargs)
+    yield pool
+    pool.close()  # Marks the pool as closed.
+    pool.join()  # Waits for workers to exit.

@@ -51,9 +51,6 @@ def test_save_standard_streams(capsys):
         assert (directory / stdout_name).is_file()
         assert (directory / stderr_name).is_file()
 
-        print('directory / stdout_name).read_text()', (directory / stdout_name).read_text())
-        print('(directory / stderr_name).read_text()', (directory / stderr_name).read_text())
-
         new_stdout_name = 'stdout_new.log'
         new_stderr_name = 'stderr_new.log'
         recorder.update(directory, new_stdout_name, new_stderr_name)

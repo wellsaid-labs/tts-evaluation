@@ -259,7 +259,19 @@ def _set_model_size(frame_channels, bits):
                     'num_convolution_filters': 512,
                     'convolution_filter_size': 5,
                 },
-                'model.SpectrogramModel.__init__.frame_channels': frame_channels,
+                'model.SpectrogramModel': {
+                    '__init__.frame_channels': frame_channels,
+                    '_infer': {
+                        # NOTE: Estimated loosely to be a multiple of the slowest speech observed in
+                        # one dataset. This threshhold is primarly intended to prevent recursion.
+                        'max_frames_per_token': 15,
+
+                        # SOURCE (Tacotron 2):
+                        # Specifically, generation completes at the first frame for which this
+                        # probability exceeds a threshold of 0.5.
+                        'stop_threshold': 0.5,
+                    }
+                }
             },
             'signal_model.wave_rnn.WaveRNN.__init__': {
                 'local_features_size': frame_channels,
@@ -466,7 +478,7 @@ def set_hparams():
             'datasets.utils.add_predicted_spectrogram_column.batch_size':
                 (spectrogram_model_dev_batch_size),
             'bin': {
-                'evaluate.main.dataset': get_dataset,
+                'evaluate._get_dev_dataset.dataset': get_dataset,
                 'train': {
                     'spectrogram_model': {
                         '__main__._get_dataset.dataset': get_dataset,

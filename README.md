@@ -76,7 +76,7 @@ Train the signal model like so:
 
 Run unit tests with code coverage like so:
 
-    python -m pytest tests/ src/ --doctest-modules --cov=src --cov-report html:coverage --cov-report=term-missing
+    python -m pytest
 
 Run linting like so:
 

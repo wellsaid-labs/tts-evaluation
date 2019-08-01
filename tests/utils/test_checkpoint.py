@@ -12,10 +12,10 @@ from src.environment import set_random_generator_state
 def test_load_most_recent_checkpoint():
     checkpoint = Checkpoint.most_recent('tests/_test_data/**/*.pt')
     assert isinstance(checkpoint, Checkpoint)
-    assert 'tests/_test_data/step_100.pt' in str(checkpoint.path)
+    assert 'tests/_test_data/utils/step_100.pt' in str(checkpoint.path)
 
     set_random_generator_state(checkpoint.random_generator_state)
-    assert 666765114 == random.randint(1, 2**31)  # Checkpoint set random generator state
+    assert 1489973967 == random.randint(1, 2**31)  # Checkpoint set random generator state
 
 
 def test_load_most_recent_checkpoint_none():

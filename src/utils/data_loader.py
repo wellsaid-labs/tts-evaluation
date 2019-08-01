@@ -7,6 +7,7 @@ from tqdm import tqdm
 import torch
 import torch.utils.data
 
+from src.environment import IS_TESTING_ENVIRONMENT
 from src.utils.utils import identity
 from src.utils.utils import seconds_to_string
 
@@ -41,7 +42,8 @@ class DataLoader(torch.utils.data.dataloader.DataLoader):
         post_process_fn (callable, optional): Callable run directly before the batch is returned.
         num_workers (int, optional): Number of subprocesses to use for data loading. Given a 0 value
           the data will be loaded in the main process.
-        trial_run (bool, optional): If ``True`` iteration stops after the first batch.
+        trial_run (bool, optional): If ``True`` iteration stops after the first batch and doesn't
+          start any workers.
         use_tqdm (bool, optional): Log a TQDM progress bar.
         **kwargs: Other key word arguments to be passed to ``torch.utils.data.DataLoader``
     """
@@ -50,15 +52,19 @@ class DataLoader(torch.utils.data.dataloader.DataLoader):
                  dataset,
                  load_fn=identity,
                  post_processing_fn=identity,
-                 num_workers=cpu_count(),
+                 num_workers=0 if IS_TESTING_ENVIRONMENT else cpu_count(),
                  trial_run=False,
                  use_tqdm=False,
                  **kwargs):
         super().__init__(
             dataset=_DataLoaderDataset(dataset, load_fn), num_workers=num_workers, **kwargs)
-        logger.info('Launching with %d workers', num_workers)
-        self.post_processing_fn = post_processing_fn
+
         self.trial_run = trial_run
+        if self.trial_run:
+            self.num_workers = 0
+
+        logger.info('Launching with %d workers', self.num_workers)
+        self.post_processing_fn = post_processing_fn
         self.use_tqdm = use_tqdm
 
     def __len__(self):

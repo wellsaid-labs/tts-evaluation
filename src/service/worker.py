@@ -251,6 +251,7 @@ def _validate_and_unpack(args, max_characters=1000, num_api_key_characters=32):
         raise InvalidUsage('Must call with keys `speaker_id` and `text`.')
 
     speaker_id = args.get('speaker_id')
+    # TODO: Normalize the text such that special quotes are normalized and don't prevent API usage.
     text = args.get('text')
     stop_threshold = args.get('stop_threshold', None)
 

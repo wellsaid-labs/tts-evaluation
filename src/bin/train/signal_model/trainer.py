@@ -70,7 +70,7 @@ class Trainer():
         min_rollback (int): Minimum number of epochs to rollback in case of a loss anomaly.
         lr_multiplier_schedule (callable): Learning rate multiplier schedule.
         model (torch.nn.Module, optional): Model to train and evaluate.
-        spectrogram_model_checkpoint_path (str, optional): Checkpoint used to generate a spectrogram
+        spectrogram_model_checkpoint (str, optional): Checkpoint used to generate a spectrogram
             from text as input to the signal model.
         step (int, optional): Starting step; typically, this parameter is useful when starting from
             a checkpoint.
@@ -99,7 +99,7 @@ class Trainer():
                  min_rollback=ConfiguredArg(),
                  lr_multiplier_schedule=ConfiguredArg(),
                  model=ConfiguredArg(),
-                 spectrogram_model_checkpoint_path=None,
+                 spectrogram_model_checkpoint=None,
                  step=0,
                  epoch=0,
                  num_rollbacks=0,
@@ -128,16 +128,18 @@ class Trainer():
         self.num_rollbacks = num_rollbacks
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
-        self.spectrogram_model_checkpoint_path = spectrogram_model_checkpoint_path
         self.checkpoints_directory = checkpoints_directory
-        self.use_predicted = spectrogram_model_checkpoint_path is not None
+        self.use_predicted = spectrogram_model_checkpoint is not None
+        self.spectrogram_model_checkpoint_path = (None if spectrogram_model_checkpoint is None else
+                                                  spectrogram_model_checkpoint.path)
 
-        self.train_dataset = self._preprocess_data(train_dataset)
+        self.train_dataset = self._preprocess_data(spectrogram_model_checkpoint, train_dataset)
         self.balance_dataset = partial(
             balance_list, get_class=lambda r: r.speaker, get_weight=self._get_spectrogram_length)
         # NOTE: ``balance_dataset`` requires the data to be preprocessed because it uses
         # ``get_spectrogram_length``
-        self.dev_dataset = self.balance_dataset(self._preprocess_data(dev_dataset), random_seed=123)
+        self.dev_dataset = self.balance_dataset(
+            self._preprocess_data(spectrogram_model_checkpoint, dev_dataset), random_seed=123)
 
         self.use_tqdm = use_tqdm
         # NOTE: Rollback ``maxlen=min_rollback + 1`` to store the current state of the model with
@@ -157,7 +159,7 @@ class Trainer():
             'num_dev_row': len(self.dev_dataset),
         })
         self.comet_ml.log_other('spectrogram_model_checkpoint_path',
-                                spectrogram_model_checkpoint_path)
+                                self.spectrogram_model_checkpoint_path)
         self._comet_ml_log_input_dev_data_hash()
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
@@ -181,7 +183,7 @@ class Trainer():
         return (example.predicted_spectrogram
                 if self.use_predicted else example.spectrogram).shape[0]
 
-    def _preprocess_data(self, data):
+    def _preprocess_data(self, spectrogram_model_checkpoint, data):
         """ Preprocess text speech examples.
 
         Args:
@@ -192,9 +194,7 @@ class Trainer():
         """
         data = add_spectrogram_column(data)
         if self.use_predicted:
-            data = add_predicted_spectrogram_column(data, self.spectrogram_model_checkpoint_path,
-                                                    self.device)
-            # Cache ``predicted_spectrogram`` shape for `OnDiskTensor`
+            data = add_predicted_spectrogram_column(data, spectrogram_model_checkpoint, self.device)
             # TODO: Consider supporting `Tensor` as well as `OnDiskTensor`.
             cache_on_disk_tensor_shapes([r.predicted_spectrogram for r in data])
         return data
@@ -229,6 +229,9 @@ class Trainer():
         Returns:
             (Trainer)
         """
+        spectrogram_model_checkpoint_path = checkpoint.spectrogram_model_checkpoint_path
+        spectrogram_model_checkpoint = (None if spectrogram_model_checkpoint_path is None else
+                                        Checkpoint.from_path(spectrogram_model_checkpoint_path))
         checkpoint_kwargs = {
             # NOTE: ``rollback`` is not checkpointed due to it's size.
             'model': checkpoint.model,
@@ -236,7 +239,7 @@ class Trainer():
             'epoch': checkpoint.epoch,
             'step': checkpoint.step,
             'anomaly_detector': checkpoint.anomaly_detector,
-            'spectrogram_model_checkpoint_path': checkpoint.spectrogram_model_checkpoint_path,
+            'spectrogram_model_checkpoint': spectrogram_model_checkpoint,
             'num_rollbacks': checkpoint.num_rollbacks
         }
         checkpoint_kwargs.update(kwargs)
@@ -256,6 +259,7 @@ class Trainer():
             optimizer=self.optimizer,
             epoch=self.epoch,
             anomaly_detector=self.anomaly_detector,
+            comet_ml_project_name=self.comet_ml.project_name,
             comet_ml_experiment_key=self.comet_ml.get_key(),
             spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
             num_rollbacks=self.num_rollbacks).save()
@@ -371,13 +375,19 @@ class Trainer():
         # Run epoch
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
-                predictions = torch.nn.parallel.data_parallel(
-                    module=self.model,
-                    inputs=batch.input_spectrogram,
-                    module_kwargs={
-                        'input_signal': batch.input_signal,
-                        'target_coarse': batch.target_signal_coarse.unsqueeze(2)
-                    })
+                if self.device.type == 'cpu':
+                    predictions = self.model(
+                        batch.input_spectrogram,
+                        input_signal=batch.input_signal,
+                        target_coarse=batch.target_signal_coarse.unsqueeze(2))
+                else:
+                    predictions = torch.nn.parallel.data_parallel(
+                        module=self.model,
+                        inputs=batch.input_spectrogram,
+                        module_kwargs={
+                            'input_signal': batch.input_signal,
+                            'target_coarse': batch.target_signal_coarse.unsqueeze(2)
+                        })
                 self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
 

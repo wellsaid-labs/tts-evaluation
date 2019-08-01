@@ -7,7 +7,7 @@ from src.bin.train.signal_model.data_loader import _get_slice
 from src.bin.train.signal_model.data_loader import DataLoader
 from src.audio import combine_signal
 
-from tests._utils import get_example_spectrogram_text_speech_rows
+from tests._utils import get_tts_mocks
 
 
 @mock.patch('src.bin.train.signal_model.data_loader.random.randint')
@@ -51,12 +51,17 @@ def test__get_slice__padding(randint_mock):
 
 
 def test_data_loader():
-    samples_per_frame = 2
-    data = get_example_spectrogram_text_speech_rows(samples_per_frame=samples_per_frame)
+    mocks = get_tts_mocks(add_spectrogram=True)
+    data = mocks['dev_dataset']
+    samples_per_frame = data[0].spectrogram_audio.shape[0] / data[0].spectrogram.shape[0]
     batch_size = 2
+    num_epochs = 2
     slice_size = 75
     slice_pad = 0
+
     device = torch.device('cpu')
+
+    # Smoke test
     loader = DataLoader(
         data,
         batch_size,
@@ -66,7 +71,9 @@ def test_data_loader():
         spectrogram_slice_pad=slice_pad,
         use_tqdm=False,
         trial_run=False,
-        num_epochs=2)
-    assert len(loader) == 2
+        num_epochs=num_epochs)
+    assert len(loader) == (len(data) // batch_size) * 2
+
+    # Test collate
     item = next(iter(loader))
     assert item.signal_mask.sum() <= slice_size * batch_size * samples_per_frame

@@ -21,25 +21,27 @@ from src.audio import write_audio
 
 
 def test_read_audio():
-    integer = read_audio('tests/_test_data/lj_speech_24000.wav', to_float=False)
+    path = 'tests/_test_data/test_audio/rate(lj_speech,24000).wav'
+
+    integer = read_audio(path, to_float=False)
     assert integer.dtype == np.dtype('int16')
 
-    float_ = read_audio('tests/_test_data/lj_speech_24000.wav', to_float=True)
+    float_ = read_audio(path, to_float=True)
     assert float_.dtype == np.dtype('float32')
 
     np.testing.assert_almost_equal(integer / 2**(16 - 1), float_)
 
-    librosa_, _ = librosa.core.load('tests/_test_data/lj_speech_24000.wav', sr=None, mono=False)
+    librosa_, _ = librosa.core.load(path, sr=None, mono=False)
 
     np.testing.assert_almost_equal(librosa_, float_)
 
 
 def test_write_audio():
-    filename = Path('tests/_test_data/lj_speech.wav')
+    filename = Path('tests/_test_data/test_audio/lj_speech.wav')
     metadata = get_audio_metadata(filename)
     sample_rate, signal = wavfile.read(str(filename))
 
-    new_filename = Path('tests/_test_data/new_lj_speech.wav')
+    new_filename = Path('tests/_test_data/test_audio/lj_speech_two.wav')
     write_audio(new_filename, signal, sample_rate)
     new_metadata = get_audio_metadata(new_filename)
 
@@ -47,11 +49,11 @@ def test_write_audio():
 
 
 def test_write_audio__read_audio():
-    filename = Path('tests/_test_data/lj_speech_24000.wav')
+    filename = Path('tests/_test_data/test_audio/rate(lj_speech,24000).wav')
     metadata = get_audio_metadata(filename)
     signal = read_audio(str(filename), to_float=False)
 
-    new_filename = Path('tests/_test_data/new_lj_speech_24000.wav')
+    new_filename = Path('tests/_test_data/test_audio/clone(rate(lj_speech,24000)).wav')
     write_audio(new_filename, signal, 24000)
     new_metadata = get_audio_metadata(new_filename)
 
@@ -59,7 +61,7 @@ def test_write_audio__read_audio():
 
 
 def test_cache_get_audio_metadata():
-    path = Path('tests/_test_data/lj_speech_24000.wav')
+    path = Path('tests/_test_data/test_audio/rate(lj_speech,24000).wav')
     cache_get_audio_metadata([path])
     assert get_audio_metadata.cache.get(kwargs={'audio_path': path}) == {
         'sample_rate': 24000,
@@ -70,12 +72,13 @@ def test_cache_get_audio_metadata():
 
 
 def test_get_audio_metadata():
+    path = Path('tests/_test_data/test_audio/rate(lj_speech,24000).wav')
     assert {
         'sample_rate': 24000,
         'bits': 16,
         'channels': 1,
         'encoding': 'signed-integer'
-    } == get_audio_metadata(Path('tests/_test_data/lj_speech_24000.wav'))
+    } == get_audio_metadata(path)
 
 
 def test_build_wav_header():
@@ -93,9 +96,9 @@ def test_log_mel_spectrogram_smoke():
     """
     frame_size = 1200
     frame_hop = 300
-    audio_path = 'tests/_test_data/lj_speech_24000.wav'
+    path = Path('tests/_test_data/test_audio/rate(lj_speech,24000).wav')
     sample_rate = 24000
-    signal = read_audio(audio_path, {
+    signal = read_audio(path, {
         'sample_rate': sample_rate,
         'bits': 16,
         'channels': 1,
@@ -113,9 +116,9 @@ def test_log_mel_spectrogram_smoke():
 def test_griffin_lim_smoke():
     """ Smoke test to ensure everything runs.
     """
-    audio_path = Path('tests/_test_data/lj_speech_24000.wav')
+    path = Path('tests/_test_data/test_audio/rate(lj_speech,24000).wav')
     sample_rate = 24000
-    signal = read_audio(audio_path, {
+    signal = read_audio(path, {
         'sample_rate': sample_rate,
         'channels': 1,
         'bits': 16,
@@ -163,9 +166,9 @@ def test_split_combine_signal_multiple_dim():
 
 
 def test_normalize_audio():
-    audio_path = 'tests/_test_data/lj_speech.wav'
+    path = Path('tests/_test_data/test_audio/lj_speech.wav')
     new_audio_path = normalize_audio(
-        audio_path, bits=8, sample_rate=24000, channels=2, encoding='unsigned-integer')
+        path, bits=8, sample_rate=24000, channels=2, encoding='unsigned-integer')
     assert (new_audio_path.stem ==
             'encoding(channels(bits(rate(lj_speech,24000),8),2),unsigned-integer)')
     assert new_audio_path.exists()
@@ -178,7 +181,7 @@ def test_normalize_audio():
 
 
 def test_normalize_audio__not_normalized():
-    audio_path = Path('tests/_test_data/lj_speech_24000.wav')
+    path = Path('tests/_test_data/test_audio/rate(lj_speech,24000).wav')
     normalized_audio_path = normalize_audio(
-        audio_path, bits=16, sample_rate=24000, channels=1, encoding='signed-integer')
-    assert audio_path == normalized_audio_path
+        path, bits=16, sample_rate=24000, channels=1, encoding='signed-integer')
+    assert path == normalized_audio_path

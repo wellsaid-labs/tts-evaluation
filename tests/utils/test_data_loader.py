@@ -22,7 +22,6 @@ def test_data_loader():
             trial_run=True,
             post_processing_fn=lambda x: x + 1,
             load_fn=lambda x: x + 1,
-            num_workers=1,
             use_tqdm=True):
         assert len(batch) == 1
         assert batch[0] == 3
@@ -33,5 +32,5 @@ MockTuple = namedtuple('MockTuple', ['t'])
 
 def test_data_loader__named_tuple__collate_fn():
     dataset = [MockTuple(t=torch.Tensor(1)), MockTuple(t=torch.Tensor(1))]
-    for batch in DataLoader(dataset, num_workers=1, batch_size=2, collate_fn=collate_tensors):
+    for batch in DataLoader(dataset, batch_size=2, collate_fn=collate_tensors):
         assert batch.t.shape == (2, 1)

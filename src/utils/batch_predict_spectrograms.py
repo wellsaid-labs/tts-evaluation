@@ -109,10 +109,11 @@ def batch_predict_spectrograms(data,
 
             # Compute metrics for logging
             mask = lengths_to_mask(spectrogram_lengths, device=predictions.device).transpose(0, 1)
-            metrics.add_metrics({
-                'attention_norm': get_average_norm(alignments, norm=math.inf, dim=2, mask=mask),
-                'attention_std': get_weighted_stdev(alignments, dim=2, mask=mask),
-            }, mask.sum())
+            metrics.add_metrics(
+                {
+                    'attention_norm': get_average_norm(alignments, norm=math.inf, dim=2, mask=mask),
+                    'attention_std': get_weighted_stdev(alignments, dim=2, mask=mask),
+                }, mask.sum())
             if aligned:
                 mask = mask.unsqueeze(2).expand_as(predictions)
                 loss = mse_loss(predictions, spectrogram, reduction='none')

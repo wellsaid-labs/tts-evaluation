@@ -41,8 +41,8 @@ class _ExponentiallyWeightedMovingAverage():
         # "Reliability weights"
         # LEARN MORE:
         # http://people.ds.cam.ac.uk/fanf2/hermes/doc/antiforgery/stats.pdf
-        self._variance = self.beta * self._variance + (1 - self.beta) * (
-            value - average_bias_corrected)**2
+        self._variance = self.beta * self._variance + (1 - self.beta) * (value -
+                                                                         average_bias_corrected)**2
         variance_bias_corrected = self._variance / (1 - self.beta**(self.step_counter))
 
         return average_bias_corrected, math.sqrt(variance_bias_corrected)

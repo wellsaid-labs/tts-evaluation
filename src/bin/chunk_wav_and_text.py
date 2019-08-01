@@ -718,19 +718,17 @@ def get_paths_from_patterns(wav_pattern, csv_pattern):
         csv_paths (list of Path)
     """
     wav_paths = sorted(list(Path('.').glob(wav_pattern)), key=natural_keys)
-    assert all(
-        [wav_path.suffix == '.wav' for wav_path in wav_paths]), 'Please select only WAV files'
+    assert all([p.suffix == '.wav' for p in wav_paths]), 'Please select only WAV files'
     logger.info('Processing %d files', len(wav_paths))
 
     if csv_pattern is not None:
         csv_paths = sorted(list(Path('.').glob(csv_pattern)), key=natural_keys)
-        assert all(
-            [csv_path.suffix == '.csv' for csv_path in csv_paths]), 'Please select only CSV files'
+        assert all([p.suffix == '.csv' for p in csv_paths]), 'Please select only CSV files'
         if len(csv_paths) == 0 and len(wav_paths) == 0:
             raise ValueError('Found no CSV or WAV files.')
         elif len(csv_paths) != len(wav_paths):
-            raise ValueError(
-                'CSV (%d) and WAV (%d) files are not aligned.' % (len(csv_paths), len(wav_paths)))
+            raise ValueError('CSV (%d) and WAV (%d) files are not aligned.' %
+                             (len(csv_paths), len(wav_paths)))
         logger.info('Found %d CSV and %d WAV files.', len(csv_paths), len(wav_paths))
     else:
         csv_paths = None

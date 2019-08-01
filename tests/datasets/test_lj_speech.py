@@ -1,15 +1,10 @@
-from pathlib import Path
 from unittest import mock
 
 import re
 
 from src.datasets import lj_speech_dataset
-from src.utils import Checkpoint
 
-from tests.datasets.utils import url_first_side_effect
-from tests._utils import create_disk_garbage_collection_fixture
-
-lj_directory = Path('tests/_test_data/')
+from tests._utils import url_first_side_effect
 
 verbalize_test_cases = {
     'LJ044-0055': 'five four four Camp Street New',  # Test special case
@@ -40,25 +35,20 @@ verbalize_test_cases = {
     'LJ020-0002': '"sponge,"',  # Test Quotation Normalization
 }
 
-gc_fixture_data = create_disk_garbage_collection_fixture(
-    lj_directory / 'LJSpeech-1.1', autouse=True)
 
-
-@mock.patch("src.utils.Checkpoint.from_path")
 @mock.patch("urllib.request.urlretrieve")
-def test_lj_speech_dataset(mock_urlretrieve, mock_from_path):
+def test_lj_speech_dataset(mock_urlretrieve):
     mock_urlretrieve.side_effect = url_first_side_effect
-    mock_from_path.return_value = Checkpoint(directory='.', model=lambda x: x, step=0)
 
     # Check a row are parsed correctly
-    data = lj_speech_dataset(directory=lj_directory)
+    data = lj_speech_dataset(directory='tests/_test_data/datasets/')
 
     assert len(data) == 13100
     assert sum([len(r.text) for r in data]) == 1310332
     assert data[0].text == (
         'Printing, in the only sense with which we are at present concerned, differs from most if '
         'not from all the arts and crafts represented in the Exhibition')
-    assert 'tests/_test_data/LJSpeech-1.1/wavs/LJ001-0001.wav' in str(data[0].audio_path)
+    assert 'tests/_test_data/datasets/LJSpeech-1.1/wavs/LJ001-0001.wav' in str(data[0].audio_path)
 
     _re_filename = re.compile('LJ[0-9]{3}-[0-9]{4}')
 

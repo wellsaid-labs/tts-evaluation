@@ -2,8 +2,9 @@ from functools import lru_cache
 from functools import reduce
 from functools import wraps
 from importlib import import_module
-from multiprocessing import current_process
 from pathlib import Path
+
+from torch.multiprocessing import current_process
 
 import ast
 import importlib
@@ -236,12 +237,12 @@ def _check_configuration_helper(dict_, keys, trace):
                 if (hasattr(function, '_configurable')):
                     absolute_keys = _get_module_name(function)[0]
                     if keys != absolute_keys:
-                        raise TypeError(
-                            'The module path must be absolute: %s → %s' % (keys, absolute_keys))
+                        raise TypeError('The module path must be absolute: %s → %s' %
+                                        (keys, absolute_keys))
                     return
                 else:
-                    trace.append(
-                        'Function `%s` is not decorated with `configurable`.' % '.'.join(keys))
+                    trace.append('Function `%s` is not decorated with `configurable`.' %
+                                 '.'.join(keys))
             except AttributeError:
                 trace.append('Function `%s` not found in `%s`.' % (keys[-1], module_path))
         except ImportError:
@@ -280,8 +281,8 @@ def _check_configuration_helper(dict_, keys, trace):
                                             (keys, absolute_keys))
                         return
                     else:
-                        trace.append(
-                            'Function `%s` is not decorated with `configurable`.' % '.'.join(keys))
+                        trace.append('Function `%s` is not decorated with `configurable`.' %
+                                     '.'.join(keys))
                 except AttributeError:
                     trace.append('Function %s not found in class `%s`.' % (keys[-1], keys[-2]))
             except AttributeError:
@@ -386,11 +387,10 @@ def _merge_args(parameters, args, kwargs, default_kwargs, print_name='', is_firs
             if parameters[i].name in default_kwargs:
                 value = default_kwargs[parameters[i].name]
                 if is_first_run and value != arg:
-                    logger.warning((
+                    logger.warning(
                         '@configurable: Overwriting configured argument ``%s=%s`` in module ``%s`` '
-                        'with ``%s``. '
-                        'This warning will not be repeated.') % (parameters[i].name, value,
-                                                                 print_name, arg))
+                        'with ``%s``. This warning will not be repeated.', parameters[i].name,
+                        value, print_name, arg)
                 del default_kwargs[parameters[i].name]
 
     if is_first_run:
@@ -398,8 +398,8 @@ def _merge_args(parameters, args, kwargs, default_kwargs, print_name='', is_firs
             if key in default_kwargs and value != default_kwargs[key]:
                 logger.warning(
                     ('@configurable: Overwriting configured argument ``%s=%s`` in module ``%s`` '
-                     'with ``%s``. This warning will not be repeated.') % (key, default_kwargs[key],
-                                                                           print_name, value))
+                     'with ``%s``. This warning will not be repeated.') %
+                    (key, default_kwargs[key], print_name, value))
 
     default_kwargs.update(kwargs)
 

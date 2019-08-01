@@ -26,6 +26,7 @@ from src.utils.utils import seconds_to_string
 from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
 from src.utils.utils import split_list
+from src.utils.utils import Pool
 
 __all__ = [
     'AccumulatedMetrics', 'align_tokens', 'AnomalyDetector', 'Checkpoint', 'DataLoader',
@@ -33,5 +34,5 @@ __all__ = [
     'get_total_parameters', 'load', 'save', 'flatten_parameters', 'maybe_get_model_devices',
     'evaluate', 'identity', 'seconds_to_string', 'log_runtime', 'sort_together', 'split_list',
     'slice_by_cumulative_sum', 'balance_list', 'flatten', 'batch_predict_spectrograms',
-    'get_chunks', 'cache_on_disk_tensor_shapes', 'RecordStandardStreams'
+    'get_chunks', 'cache_on_disk_tensor_shapes', 'RecordStandardStreams', 'Pool'
 ]

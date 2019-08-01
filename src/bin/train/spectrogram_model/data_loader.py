@@ -11,6 +11,7 @@ from torchnlp.utils import tensors_to
 
 import torch
 
+from src.environment import IS_TESTING_ENVIRONMENT
 from src.utils import DataLoader
 from src.utils import identity
 
@@ -89,12 +90,12 @@ class DataLoader(DataLoader):
                  device,
                  use_tqdm,
                  trial_run=False,
-                 num_workers=cpu_count(),
+                 num_workers=0 if IS_TESTING_ENVIRONMENT else cpu_count(),
                  **kwargs):
         batch_sampler = BucketBatchSampler(
             [r.spectrogram.shape[0] for r in data],
             batch_size,
-            drop_last=True,
+            drop_last=True,  # ``drop_last`` to ensure full utilization of mutliple GPUs
             sort_key=identity,
             biggest_batches_first=identity) if src.distributed.is_master() else None
 

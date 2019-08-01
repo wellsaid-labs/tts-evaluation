@@ -3,11 +3,9 @@ from functools import partial
 from pathlib import Path
 
 import logging
-import pathlib
 import pprint
 
 from third_party import LazyLoader
-from torch.multiprocessing import Pool
 from torchnlp.download import download_file_maybe_extract
 from tqdm import tqdm
 
@@ -22,12 +20,13 @@ from src.audio import normalize_audio
 from src.audio import read_audio
 from src.datasets.constants import TextSpeechRow
 from src.environment import ROOT_PATH
+from src.environment import TEMP_PATH
 from src.environment import TTS_DISK_CACHE_NAME
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.utils import batch_predict_spectrograms
-from src.utils import Checkpoint
 from src.utils import OnDiskTensor
+from src.utils import Pool
 
 logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
@@ -35,7 +34,7 @@ pprint = pprint.PrettyPrinter(indent=4)
 
 @configurable
 def add_predicted_spectrogram_column(data,
-                                     checkpoint_path,
+                                     checkpoint,
                                      device,
                                      batch_size=ConfiguredArg(),
                                      on_disk=True,
@@ -45,7 +44,7 @@ def add_predicted_spectrogram_column(data,
 
     Args:
         data (iterable of TextSpeechRow)
-        checkpoint_path (src or Path): Path to checkpoint for the spectrogram model.
+        checkpoint (src.utils.Checkpoint): Spectrogram model checkpoint.
         device (torch.device): Device to run prediction on.
         batch_size (int, optional)
         on_disk (bool, optional): Save the tensor to disk returning a ``OnDiskTensor`` instead of
@@ -57,8 +56,6 @@ def add_predicted_spectrogram_column(data,
         (iterable of TextSpeechRow)
     """
     logger.info('Adding a predicted spectrogram column to dataset.')
-    checkpoint = Checkpoint.from_path(checkpoint_path, device=device, load_random_state=False)
-
     if aligned and not all([r.spectrogram is not None for r in data]):
         raise RuntimeError("Spectrogram column of ``TextSpeechRow`` must not be ``None``.")
 
@@ -70,7 +67,7 @@ def add_predicted_spectrogram_column(data,
 
         def to_filename(example):
             if example.audio_path is None:
-                parent = pathlib.Path('/tmp')
+                parent = TEMP_PATH
                 # Learn more:
                 # https://computinglife.wordpress.com/2008/11/20/why-do-hash-functions-use-prime-numbers/
                 name = 31 * hash(example.text) + 97 * hash(example.speaker)

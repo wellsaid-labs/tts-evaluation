@@ -115,5 +115,5 @@ def check_module_versions():
                 raise RuntimeError('%s not installed' % package)
             if not specification == installed[0]:
                 # NOTE: RuntimeError could cause ``Illegal seek`` while running PyTest.
-                raise RuntimeError(
-                    'Versions are not compatible %s =/= %s' % (specification, installed[0]))
+                raise RuntimeError('Versions are not compatible %s =/= %s' %
+                                   (specification, installed[0]))
