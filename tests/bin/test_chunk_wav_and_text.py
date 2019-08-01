@@ -1,8 +1,11 @@
+from copy import deepcopy
+
 import os
 
 import pytest
 
 from src.audio import read_audio
+from src.bin.chunk_wav_and_text import align_wav
 from src.bin.chunk_wav_and_text import align_wav_and_scripts
 from src.bin.chunk_wav_and_text import Alignment
 from src.bin.chunk_wav_and_text import allow_substitution
@@ -17,25 +20,34 @@ from src.bin.chunk_wav_and_text import remove_punctuation
 from src.bin.chunk_wav_and_text import review_chunk_alignments
 from src.bin.chunk_wav_and_text import samples_to_seconds
 from src.bin.chunk_wav_and_text import seconds_to_samples
+from src.environment import ROOT_PATH
 from src.environment import TEST_DATA_PATH
 
 TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'bin' / 'test_chunk_wav_and_text'
 
 CHUNKS_PATH = TEST_DATA_PATH_LOCAL / 'lj_speech_chunks'
 
+MOCK_SST_RESULTS = [{
+    'words': [{
+        'startTime': '0.400s',
+        'endTime': '1s',
+        'word': 'Welcome'
+    }, {
+        'startTime': '1s',
+        'endTime': '1.100s',
+        'word': 'to'
+    }, {
+        'startTime': '1.100s',
+        'endTime': '1.700s',
+        'word': 'Morton'
+    }, {
+        'startTime': '1.700s',
+        'endTime': '2.600s',
+        'word': 'Arboretum'
+    }]
+}]
 
-def MockAlignment(start_text, end_text):
-    return Alignment(
-        start_audio=start_text, end_audio=end_text, start_text=start_text, end_text=end_text)
-
-
-def test_get_samples_per_character():
-    assert get_samples_per_character(
-        Alignment(start_audio=0, end_audio=100, start_text=0, end_text=100)) == 1.0
-    assert get_samples_per_character(
-        Alignment(start_audio=0, end_audio=100, start_text=0, end_text=10)) == 10.0
-    assert get_samples_per_character(
-        Alignment(start_audio=0, end_audio=10, start_text=0, end_text=100)) == 0.1
+MOCK_SCRIPTS = ['Welcome to', 'Morton Arboretum']
 
 
 def test_natural_keys():
@@ -49,6 +61,15 @@ def test_seconds_to_samples():
 
 def test_samples_to_seconds():
     assert samples_to_seconds(2400, 24000) == 0.1
+
+
+def test_get_samples_per_character():
+    assert get_samples_per_character(
+        Alignment(start_audio=0, end_audio=100, start_text=0, end_text=100)) == 1.0
+    assert get_samples_per_character(
+        Alignment(start_audio=0, end_audio=100, start_text=0, end_text=10)) == 10.0
+    assert get_samples_per_character(
+        Alignment(start_audio=0, end_audio=10, start_text=0, end_text=100)) == 0.1
 
 
 def test_allow_substitution():
@@ -105,69 +126,9 @@ def test_review_chunk_alignments():
     }]) == ['d', 'hi']
 
 
-def test_main__no_csv(capsys):
-    with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
-        main(
-            TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav',
-            str(CHUNKS_PATH),
-            max_chunk_seconds=2)
-    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_0.wav').exists()
-    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_1.wav').exists()
-    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_2.wav').exists()
-    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_3.wav').exists()
-    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_4.wav').exists()
-    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_5.wav').exists()
-    assert (CHUNKS_PATH / 'metadata.csv').exists()
-    assert (CHUNKS_PATH / ('stderr.%s.log' % os.getpid())).exists()
-    assert (CHUNKS_PATH / ('stdout.%s.log' % os.getpid())).exists()
-
-    assert ((CHUNKS_PATH / 'metadata.csv').read_text().strip() == """Content,WAV Filename
-The examination and testimony,"rate(lj_speech,24000)/script_0_chunk_0.wav"
-of the experts,"rate(lj_speech,24000)/script_0_chunk_1.wav"
-enabled the commission,"rate(lj_speech,24000)/script_0_chunk_2.wav"
-to conclude,"rate(lj_speech,24000)/script_0_chunk_3.wav"
-that five shots may,"rate(lj_speech,24000)/script_0_chunk_4.wav"
-have been fired.,"rate(lj_speech,24000)/script_0_chunk_5.wav" """.strip())
-
-
-def test_main__normalize_audio(capsys):
-    with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
-        main(
-            TEST_DATA_PATH_LOCAL / 'lj_speech.wav',
-            str(CHUNKS_PATH),
-            csv_pattern=TEST_DATA_PATH_LOCAL / 'lj_speech.csv',
-            max_chunk_seconds=2)
-
-    with pytest.raises(AssertionError):  # The original audio file was not supported.
-        read_audio(TEST_DATA_PATH_LOCAL / 'lj_speech.wav')
-
-    # Ensure chunks are supported by this repository.
-    read_audio(CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_0.wav')
-    read_audio(CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_2.wav')
-
-
-def test_main(capsys):
-    with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
-        main(
-            TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav',
-            str(CHUNKS_PATH),
-            csv_pattern=TEST_DATA_PATH_LOCAL / 'lj_speech.csv',
-            max_chunk_seconds=2)
-    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_0.wav').exists()
-    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_1.wav').exists()
-    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_0.wav').exists()
-    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_1.wav').exists()
-    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_2.wav').exists()
-    assert (CHUNKS_PATH / 'metadata.csv').exists()
-    assert (CHUNKS_PATH / ('stderr.%s.log' % os.getpid())).exists()
-    assert (CHUNKS_PATH / ('stdout.%s.log' % os.getpid())).exists()
-
-    assert ((CHUNKS_PATH / 'metadata.csv').read_text().strip() == """Content,WAV Filename
-The examination and,"rate(lj_speech,24000)/script_0_chunk_0.wav"
-of the experts enabled,"rate(lj_speech,24000)/script_0_chunk_1.wav"
-The SUBSTITUTE_WORD to conclude,"rate(lj_speech,24000)/script_1_chunk_0.wav"
-that ADDED_WORD five sAhots may,"rate(lj_speech,24000)/script_1_chunk_1.wav"
-have been fired.,"rate(lj_speech,24000)/script_1_chunk_2.wav" """.strip())
+def MockAlignment(start_text, end_text):
+    return Alignment(
+        start_audio=start_text, end_audio=end_text, start_text=start_text, end_text=end_text)
 
 
 def test_average_silence_delimiter():
@@ -179,77 +140,102 @@ def test_average_silence_delimiter():
     assert average_silence_delimiter(nonalignment, next_alignment) == -1.0
 
 
-def test_align_wav_and_scripts():
-    sst_results = [
-        {
-            'transcript':
-                'Script 1.',
-            'confidence':
-                1.0,
-            'words': [
-                {
-                    'startTime': '0.0s',
-                    'endTime': '%ds' % len('Script'),
-                    'word': 'Script',
-                },
-                {
-                    'startTime': '%ds' % len('Script '),
-                    'endTime': '%ds' % len('Script 1.'),
-                    'word': '1.',
-                },
-                {
-                    'startTime': '%ds' % len('Script 1.'),
-                    'endTime': '%ds' % len('Script 1.'),
-                    'word': '',
-                },
-            ]
-        },
-        {
-            'transcript':
-                'Script.',
-            'confidence':
-                1.0,
-            'words': [{
-                'startTime': '%ds' % len('Script 1. '),
-                'endTime': '%ds' % len('Script 1. Script 2.'),
-                'word': 'Script.',
-            }]
-        },
-    ]
-    sample_rate = 44100
-    scripts = ['Script 1.', 'Script 2.']
-    output = align_wav_and_scripts(sst_results, scripts, sample_rate=sample_rate)
-    expected_output = [
-        [
-            Alignment(
-                start_text=0,
-                end_text=len('Script'),
-                start_audio=0,
-                end_audio=len('Script') * sample_rate),
-            Alignment(
-                start_text=len('Script '),
-                end_text=len('Script 1.'),
-                start_audio=len('Script ') * sample_rate,
-                end_audio=len('Script 1.') * sample_rate),
-            Nonalignment(start_text=len('Script 1.'), end_text=len('Script 1.')),
-        ],
-        [
-            Alignment(
-                start_text=0,
-                end_text=len('Script'),
-                start_audio=len('Script 1. ') * sample_rate,
-                end_audio=len('Script 1. Script 2.') * sample_rate),
-            Nonalignment(start_text=len('Script '), end_text=len('Script 2.'))
-        ],
-    ]
+def assert_equal_alignments(alignments, expected_alignments):
+    for alignment, expected_alignment in zip(alignments, expected_alignments):
+        assert isinstance(alignment, Alignment) or isinstance(alignment, Nonalignment)
 
-    for script_alignments, expected_script_alignments in zip(output, expected_output):
-        for alignment, expected_alignment in zip(script_alignments, expected_script_alignments):
-            assert alignment.start_text == expected_alignment.start_text
-            assert alignment.end_text == expected_alignment.end_text
-            if isinstance(alignment, Alignment):
-                assert alignment.start_audio == expected_alignment.start_audio
-                assert alignment.end_audio == expected_alignment.end_audio
+        assert alignment.start_text == expected_alignment.start_text
+        assert alignment.end_text == expected_alignment.end_text
+
+        if isinstance(alignment, Alignment):
+            assert alignment.start_audio == expected_alignment.start_audio
+            assert alignment.end_audio == expected_alignment.end_audio
+
+
+MockAlignmentTwo = lambda a, b, c, d: Alignment(a, b, seconds_to_samples(c), seconds_to_samples(d))
+
+
+def test_align_wav():
+    results = align_wav(MOCK_SST_RESULTS, 0.02)
+
+    assert results[0][0] == 'Welcome to Morton Arboretum'
+    assert_equal_alignments(results[1][0], [
+        MockAlignmentTwo(0, len('Welcome'), '0.4s', '1.0s'),
+        MockAlignmentTwo(len('Welcome '), len('Welcome to'), '1.0s', '1.1s'),
+        MockAlignmentTwo(len('Welcome to '), len('Welcome to Morton'), '1.1s', '1.7s'),
+        MockAlignmentTwo(
+            len('Welcome to Morton '), len('Welcome to Morton Arboretum'), '1.7s', '2.6s'),
+    ])
+
+
+def test_align_wav__min_seconds_per_character():
+    results = align_wav(MOCK_SST_RESULTS, 0.075)
+
+    assert results[0][0] == 'Welcome to Morton Arboretum'
+    assert_equal_alignments(results[1][0], [
+        MockAlignmentTwo(0, len('Welcome'), '0.4s', '1.0s'),
+        Nonalignment(len('Welcome '), len('Welcome to')),
+        MockAlignmentTwo(len('Welcome to '), len('Welcome to Morton'), '1.1s', '1.7s'),
+        MockAlignmentTwo(
+            len('Welcome to Morton '), len('Welcome to Morton Arboretum'), '1.7s', '2.6s'),
+    ])
+
+
+def test_align_wav_and_scripts():
+    scripts_alignments = align_wav_and_scripts(MOCK_SST_RESULTS, MOCK_SCRIPTS, 0.02)
+    assert len(scripts_alignments) == 2
+    assert_equal_alignments(scripts_alignments[0], [
+        MockAlignmentTwo(0, len('Welcome'), '0.4s', '1.0s'),
+        MockAlignmentTwo(len('Welcome '), len('Welcome to'), '1.0s', '1.1s'),
+    ])
+    assert_equal_alignments(scripts_alignments[1], [
+        MockAlignmentTwo(0, len('Morton'), '1.1s', '1.7s'),
+        MockAlignmentTwo(len('Morton '), len('Morton Arboretum'), '1.7s', '2.6s'),
+    ])
+
+
+def test_align_wav_and_scripts__missing_tokens():
+    mock_sst_results = deepcopy(MOCK_SST_RESULTS)
+    mock_sst_results[0]['words'].pop(1)
+    mock_scripts = ['Welcome to', 'Morton']
+
+    scripts_alignments = align_wav_and_scripts(mock_sst_results, mock_scripts, 0.02)
+    assert len(scripts_alignments) == 2
+    assert_equal_alignments(scripts_alignments[0], [
+        MockAlignmentTwo(0, len('Welcome'), '0.4s', '1.0s'),
+        Nonalignment(len('Welcome '), len('Welcome to')),
+    ])
+    assert_equal_alignments(scripts_alignments[1], [
+        MockAlignmentTwo(0, len('Morton'), '1.1s', '1.7s'),
+    ])
+
+
+def test_align_wav_and_scripts__misspellings():
+    mock_scripts = ['Welome to', 'Morton Aboretum.']
+
+    scripts_alignments = align_wav_and_scripts(MOCK_SST_RESULTS, mock_scripts, 0.02)
+    assert len(scripts_alignments) == 2
+    assert_equal_alignments(scripts_alignments[0], [
+        MockAlignmentTwo(0, len('Welome'), '0.4s', '1.0s'),
+        MockAlignmentTwo(len('Welome '), len('Welome to'), '1.0s', '1.1s'),
+    ])
+    assert_equal_alignments(scripts_alignments[1], [
+        MockAlignmentTwo(0, len('Morton'), '1.1s', '1.7s'),
+        MockAlignmentTwo(len('Morton '), len('Morton Aboretum.'), '1.7s', '2.6s'),
+    ])
+
+
+def test_align_wav_and_scripts__min_seconds_per_character():
+    scripts_alignments = align_wav_and_scripts(MOCK_SST_RESULTS, MOCK_SCRIPTS, 0.075)
+    assert len(scripts_alignments) == 2
+    assert_equal_alignments(scripts_alignments[0], [
+        MockAlignmentTwo(0, len('Welcome'), '0.4s', '1.0s'),
+        Nonalignment(len('Welcome '), len('Welcome to')),
+    ])
+    assert_equal_alignments(scripts_alignments[1], [
+        MockAlignmentTwo(0, len('Morton'), '1.1s', '1.7s'),
+        MockAlignmentTwo(len('Morton '), len('Morton Arboretum'), '1.7s', '2.6s'),
+    ])
 
 
 def test_chunk_alignments():
@@ -334,3 +320,68 @@ def test_normalize_text():
             'V. D.. Retrieved March 30, 2016, from medscape.com')
     assert (normalize_text('•\tIt can act as buffer, or temporary storage area,') ==
             '*  It can act as buffer, or temporary storage area,')
+
+
+def test_main__no_csv(capsys):
+    with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
+        main(
+            str((TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav').relative_to(ROOT_PATH)),
+            str(CHUNKS_PATH),
+            max_chunk_seconds=2)
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_0.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_1.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_2.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_3.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_4.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_5.wav').exists()
+    assert (CHUNKS_PATH / 'metadata.csv').exists()
+    assert (CHUNKS_PATH / ('stderr.%s.log' % os.getpid())).exists()
+    assert (CHUNKS_PATH / ('stdout.%s.log' % os.getpid())).exists()
+
+    assert ((CHUNKS_PATH / 'metadata.csv').read_text().strip() == """Content,WAV Filename
+The examination and testimony,"rate(lj_speech,24000)/script_0_chunk_0.wav"
+of the experts,"rate(lj_speech,24000)/script_0_chunk_1.wav"
+enabled the commission,"rate(lj_speech,24000)/script_0_chunk_2.wav"
+to conclude,"rate(lj_speech,24000)/script_0_chunk_3.wav"
+that five shots may,"rate(lj_speech,24000)/script_0_chunk_4.wav"
+have been fired.,"rate(lj_speech,24000)/script_0_chunk_5.wav" """.strip())
+
+
+def test_main__normalize_audio(capsys):
+    with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
+        main(
+            str((TEST_DATA_PATH_LOCAL / 'lj_speech.wav').relative_to(ROOT_PATH)),
+            str(CHUNKS_PATH),
+            csv_pattern=str((TEST_DATA_PATH_LOCAL / 'lj_speech.csv').relative_to(ROOT_PATH)),
+            max_chunk_seconds=2)
+
+    with pytest.raises(AssertionError):  # The original audio file was not supported.
+        read_audio(TEST_DATA_PATH_LOCAL / 'lj_speech.wav')
+
+    # Ensure chunks are supported by this repository.
+    read_audio(CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_0.wav')
+    read_audio(CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_2.wav')
+
+
+def test_main(capsys):
+    with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
+        main(
+            str((TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav').relative_to(ROOT_PATH)),
+            str(CHUNKS_PATH),
+            csv_pattern=str((TEST_DATA_PATH_LOCAL / 'lj_speech.csv').relative_to(ROOT_PATH)),
+            max_chunk_seconds=2)
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_0.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_1.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_0.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_1.wav').exists()
+    assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_2.wav').exists()
+    assert (CHUNKS_PATH / 'metadata.csv').exists()
+    assert (CHUNKS_PATH / ('stderr.%s.log' % os.getpid())).exists()
+    assert (CHUNKS_PATH / ('stdout.%s.log' % os.getpid())).exists()
+
+    assert ((CHUNKS_PATH / 'metadata.csv').read_text().strip() == """Content,WAV Filename
+The examination and,"rate(lj_speech,24000)/script_0_chunk_0.wav"
+of the experts enabled,"rate(lj_speech,24000)/script_0_chunk_1.wav"
+The SUBSTITUTE_WORD to conclude,"rate(lj_speech,24000)/script_1_chunk_0.wav"
+that ADDED_WORD five sAhots may,"rate(lj_speech,24000)/script_1_chunk_1.wav"
+have been fired.,"rate(lj_speech,24000)/script_1_chunk_2.wav" """.strip())

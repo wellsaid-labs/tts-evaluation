@@ -340,7 +340,7 @@ def format_list(list_, is_emphasized, emphasis_color=TERMINAL_COLOR_RED):
 def log_unaligned_substrings(scripts, scripts_alignments, min_samples_per_character):
     """ Log all unaligned text spans based on sequences of `Nonalignment`.
 
-    Args::
+    Args:
         scripts (list of str): The scripts spoken in the audio.
         scripts_alignments: (list of Alignment or Nonalignment): List of scripts and their
           corresponding token alignments.
@@ -389,11 +389,49 @@ def format_ratio(a, b):
     return '%f%% [%d of %d]' % ((float(a) / b) * 100, a, b)
 
 
+def align_wav(sst_result, min_seconds_per_character):
+    """ Align an audio file via transcription.
+
+    NOTE: This follows a similar paradigm as `align_wav_and_scripts`; however, it does require a
+    pre-existing transcript.
+
+    Args:
+        sst_results (list): Speech-to-text alignment.
+        min_seconds_per_character (float, optional): When SST messes up alignment, the
+            timing of the characters per second is a strong signal. This sets a minimum for the
+            number of characters per second that can be said for it to be a valid alignment.
+
+    Returns:
+        scripts (list of str): The scripts spoken in the audio.
+        (list of Alignment or Nonalignment): List of scripts and their corresponding token
+            alignments.
+    """
+    script = ''
+    alignments = []
+    words = flatten([[word for word in split['words']] for split in sst_result])
+    min_samples_per_character = seconds_to_samples(min_seconds_per_character)
+    for j, word in enumerate(words):
+        text_span = (len(script), len(script) + len(word['word']))
+        audio_span = (seconds_to_samples(word['startTime']), seconds_to_samples(word['endTime']))
+        alignment = Alignment(*text_span, *audio_span)
+        samples_per_character = get_samples_per_character(alignment)
+        if samples_per_character >= min_samples_per_character:
+            alignments.append(Alignment(*text_span, *audio_span))
+        else:
+            alignments.append(Nonalignment(*text_span))
+        script += word['word'] if j == len(words) - 1 else word['word'] + ' '
+
+    assert len(words) == len(alignments), 'Invariant failure.'
+    logger.info('Filtered %d alignments via `min_seconds_per_character`.',
+                len([a for a in alignments if type(a) == Nonalignment]))
+    return [script], [alignments]
+
+
 @configurable
 def align_wav_and_scripts(sst_results,
                           scripts,
-                          sample_rate=ConfiguredArg(),
-                          min_seconds_per_character=0.02):
+                          min_seconds_per_character,
+                          sample_rate=ConfiguredArg()):
     """ Align an audio file with the scripts spoken in the audio.
 
     NOTE: SST stands for Speech-to-Text.
@@ -416,10 +454,10 @@ def align_wav_and_scripts(sst_results,
     Args:
         sst_results (list): Speech-to-text alignment.
         scripts (list of str): The scripts spoken in the audio.
-        sample_rate (int): The sample rate of the audio.
         min_seconds_per_character (float, optional): When SST messes up alignment, the
             timing of the characters per second is a strong signal. This sets a minimum for the
             number of characters per second that can be said for it to be a valid alignment.
+        sample_rate (int): The sample rate of the audio.
 
     Returns:
         (list of Alignment or Nonalignment): List of scripts and their corresponding token
@@ -481,6 +519,7 @@ def align_wav_and_scripts(sst_results,
             if samples_per_character >= min_samples_per_character:
                 script_alignments.append(alignment)
             else:
+                script_alignments.append(Nonalignment(*text_span))
                 num_filtered_alignments += 1
 
             alignment = alignments.pop(0) if len(alignments) > 0 else None
@@ -496,6 +535,8 @@ def align_wav_and_scripts(sst_results,
                 irregular_alignements.append((script_token_text, sst_token_text, distance))
             if remove_punctuation(sst_token_text) != remove_punctuation(script_token_text):
                 num_unaligned_tokens += 1
+
+    assert len(script_tokens) == len(flatten(scripts_alignments)), 'Invariant failure.'
 
     # Print statistics and visualizations of the alignment.
     irregular_alignements = sorted(irregular_alignements, key=lambda a: a[2], reverse=True)
@@ -744,7 +785,8 @@ def main(wav_pattern,
          wav_directory_name='wavs',
          csv_metadata_name='metadata.csv',
          sst_cache_name='.sst',
-         max_chunk_seconds=12.5):
+         max_chunk_seconds=10,
+         min_seconds_per_character=0.02):
     """ Align audio with scripts, then create and save chunks of audio and text.
 
     TODO: Consider increasing the `max_chunk_seconds` up to 20 seconds in line with the
@@ -770,6 +812,9 @@ def main(wav_pattern,
         csv_metadata_name (str, optional): The filename for metadata.
         sst_cache_name (str, optional): The directory name for SST files.
         max_chunk_seconds (float, optional): Number of seconds for the maximum chunk audio length.
+        min_seconds_per_character (float, optional): When SST messes up alignment, the
+            timing of the characters per second is a strong signal. This sets a minimum for the
+            number of characters per second that can be said for it to be a valid alignment.
     """
     # Setup the basic file structure
     destination = Path(destination)
@@ -793,7 +838,7 @@ def main(wav_pattern,
     # Store some statistics from the execution
     all_unaligned_substrings = []  # All substrings that didn't get aligned.
     num_characters = 0  # Number of total characters processed.
-    chunk_lengths = []  # The length in seconds of every audio clip produced.
+    chunk_lengths_in_seconds = []  # The length in seconds of every audio clip produced.
     text_chunks = []  # All text spans.
 
     for i, (wav_path, sst_result) in enumerate(zip(wav_paths, sst_results)):
@@ -806,21 +851,15 @@ def main(wav_pattern,
             data_frame = data_frame.drop(columns=['Index'] if 'Index' in data_frame else [])
             data_frame[text_column] = data_frame[text_column].apply(normalize_text)
             try:
-                alignments = align_wav_and_scripts(sst_result, data_frame[text_column].tolist())
+                alignments = align_wav_and_scripts(sst_result, data_frame[text_column].tolist(),
+                                                   min_seconds_per_character)
             except (requests.exceptions.RequestException, ValueError):
                 logger.exception('Failed to align %s with %s', wav_path.name, csv_paths[i].name)
                 continue
         else:
-            script = ''
-            alignments = [[]]
-            for split in sst_result:
-                for word in split['words']:
-                    text_span = (len(script), len(script) + len(word['word']))
-                    audio_span = (seconds_to_samples(word['startTime']),
-                                  seconds_to_samples(word['endTime']))
-                    alignments[0].append(Alignment(*text_span, *audio_span))
-                    script += word['word'] + ' '
-            data_frame = pandas.DataFrame(data={text_column: [script.strip()]})
+            scripts, alignments = align_wav(sst_result, min_seconds_per_character)
+            data_frame = pandas.DataFrame(data={text_column: scripts})
+
         num_characters += data_frame[text_column].str.len().sum()
 
         logger.info('Chunking and writing...')
@@ -845,7 +884,8 @@ def main(wav_pattern,
                 audio_span = audio[slice(*chunk['audio'])]
                 write_audio(str(audio_path), audio_span)
 
-                chunk_lengths.append(samples_to_seconds(chunk['audio'][1] - chunk['audio'][0]))
+                chunk_lengths_in_seconds.append(
+                    samples_to_seconds(chunk['audio'][1] - chunk['audio'][0]))
 
         logger.info('Found %d chunks', len(to_write))
         pandas.DataFrame(to_write).to_csv(
@@ -856,10 +896,14 @@ def main(wav_pattern,
     # Print global statistics on the execution.
     num_unaligned_characters = sum([len(s) for s in all_unaligned_substrings])
     # TODO: Consider logging the total length of audio not included in the dataset.
-    logger.info('Created a %s dataset.', seconds_to_string(sum(chunk_lengths)))
+    logger.info('Created a %s dataset.', seconds_to_string(sum(chunk_lengths_in_seconds)))
     logger.info('Created %d chunks with mean length %fs ± %f and max length of %fs.',
-                len(chunk_lengths), statistics.mean(chunk_lengths), statistics.stdev(chunk_lengths),
-                max(chunk_lengths))
+                len(chunk_lengths_in_seconds), statistics.mean(chunk_lengths_in_seconds),
+                statistics.stdev(chunk_lengths_in_seconds), max(chunk_lengths_in_seconds))
+    chunk_lengths_in_characters = [len(t) for t in text_chunks]
+    logger.info('Chunks character mean length is %f ± %f and max length is %f.',
+                statistics.mean(chunk_lengths_in_characters),
+                statistics.stdev(chunk_lengths_in_characters), max(chunk_lengths_in_characters))
     logger.warning('Found %s unaligned characters.',
                    format_ratio(num_unaligned_characters, num_characters))
     logger.info('N shortest text spans: %s', sorted(text_chunks, key=len)[:100])
