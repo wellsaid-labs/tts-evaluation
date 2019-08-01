@@ -28,7 +28,7 @@ set_basic_logging_config()
 from src.bin.train.signal_model.trainer import Trainer
 from src.environment import assert_enough_disk_space
 from src.environment import check_module_versions
-from src.environment import ROOT_PATH
+from src.environment import EXPERIMENTS_PATH
 from src.environment import set_random_generator_state
 from src.environment import set_seed
 from src.hparams import add_config
@@ -124,7 +124,7 @@ def _time_label():
 def main(run_name,
          comet_ml_project_name=None,
          run_tags=[],
-         run_root=ROOT_PATH / 'experiments' / 'signal_model' / _time_label(),
+         run_root=EXPERIMENTS_PATH / 'signal_model' / _time_label(),
          checkpoints_directory=Path('checkpoints') / _time_label(),
          checkpoint=None,
          spectrogram_model_checkpoint=None,
@@ -229,7 +229,7 @@ if __name__ == '__main__':  # pragma: no cover
     if isinstance(args.checkpoint, str):
         args.checkpoint = Checkpoint.from_path(args.checkpoint)
     elif isinstance(args.checkpoint, bool) and args.checkpoint:
-        args.checkpoint = Checkpoint.most_recent(ROOT_PATH / '**/*.pt')
+        args.checkpoint = Checkpoint.most_recent(EXPERIMENTS_PATH / '**/*.pt')
     else:
         args.checkpoint = None
 

@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import atexit
 import logging
 import math
@@ -16,16 +18,16 @@ from src.hparams import get_config
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.spectrogram_model import InputEncoder
-from src.utils import AccumulatedMetrics
 from src.utils import balance_list
 from src.utils import Checkpoint
 from src.utils import dict_collapse
+from src.utils import DistributedAveragedMetric
 from src.utils import evaluate
 from src.utils import get_average_norm
 from src.utils import get_total_parameters
 from src.utils import get_weighted_stdev
 from src.utils import log_runtime
-from src.utils import OnDiskTensor
+from src.utils import maybe_load_tensor
 from src.visualize import CometML
 from src.visualize import plot_attention
 from src.visualize import plot_spectrogram
@@ -34,6 +36,11 @@ from src.visualize import plot_stop_token
 import src.distributed
 
 logger = logging.getLogger(__name__)
+
+# TODO: Consider re-organizing `Trainer` to be more functional, with each function being stateless
+# and rather simply changing state. This more closely fits with the "checkpoint" pattern. Testing
+# will be simpler because we can avoid potentially mocking all the objects created during
+# `Trainer` instantiation. Finally, it aligns more closely with PyTorch's design.
 
 
 class Trainer():
@@ -104,7 +111,7 @@ class Trainer():
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.optimizer.to(device)
 
-        self.accumulated_metrics = AccumulatedMetrics()
+        self.metrics = defaultdict(DistributedAveragedMetric)
 
         self.device = device
         self.step = step
@@ -154,14 +161,10 @@ class Trainer():
         Args:
             max_examples (int): The max number of examples to consider for computing the hash.
         """
-        sum = torch.tensor(0.0)
         sample = self.dev_dataset[:min(len(self.dev_dataset), max_examples)]
-        for example in sample:
-            spectrogram = example.spectrogram
-            spectrogram = spectrogram.to_tensor() if isinstance(spectrogram,
-                                                                OnDiskTensor) else spectrogram
-            sum += spectrogram.sum()
-        self.comet_ml.log_other('input_dev_data_hash', (sum / len(sample)).item())
+        sum_ = sum([maybe_load_tensor(e.spectrogram).sum() for e in sample])
+        average = sum_.item() / len(sample) if len(sample) > 0 else 0.0
+        self.comet_ml.log_other('input_dev_data_hash', average)
 
     @classmethod
     def from_checkpoint(class_, checkpoint, **kwargs):
@@ -252,8 +255,7 @@ class Trainer():
                 if infer:
                     predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1])
                     duration_gap = (predictions[-1].float() / batch.spectrogram[1].float()).mean()
-                    self.accumulated_metrics.add_metric('duration_gap', duration_gap,
-                                                        predictions[-1].numel())
+                    self.metrics['duration_gap'].update(duration_gap, predictions[-1].numel())
                 else:
                     predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1],
                                              batch.spectrogram[0], batch.spectrogram[1])
@@ -265,8 +267,9 @@ class Trainer():
             if not train and not infer and i == random_batch:
                 self._visualize_predicted(batch, predictions)
 
-            self.accumulated_metrics.log_step_end(
-                lambda k, v: self.comet_ml.log_metric('step/' + k, v) if train else None)
+            for name, metric in self.metrics.items():
+                self.comet_ml.log_metric('step/%s' % name, metric.sync().last_update())
+
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
@@ -274,12 +277,10 @@ class Trainer():
         # Log epoch metrics
         if not trial_run:
             self.comet_ml.log_epoch_end(self.epoch)
-            self.accumulated_metrics.log_epoch_end(
-                lambda k, v: self.comet_ml.log_metric('epoch/' + k, v))
+            for name, metric in self.metrics.items():
+                self.comet_ml.log_metric('epoch/%s' % name, metric.sync().reset())
             if train:
                 self.epoch += 1
-
-        self.accumulated_metrics.reset()
 
     def _do_loss_and_maybe_backwards(self, batch, predictions, do_backwards):
         """ Compute the losses and maybe do backwards.
@@ -313,27 +314,21 @@ class Trainer():
             (pre_spectrogram_loss + post_spectrogram_loss + stop_token_loss).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
 
-        # Record metrics
-        self.accumulated_metrics.add_metrics(
-            {
-                'pre_spectrogram_loss': pre_spectrogram_loss,
-                'post_spectrogram_loss': post_spectrogram_loss,
-            }, expanded_mask.sum())
-        self.accumulated_metrics.add_metrics({'stop_token_loss': stop_token_loss}, mask.sum())
+        self.metrics['pre_spectrogram_loss'].update(pre_spectrogram_loss, expanded_mask.sum())
+        self.metrics['post_spectrogram_loss'].update(post_spectrogram_loss, expanded_mask.sum())
+        self.metrics['stop_token_loss'].update(stop_token_loss, mask.sum())
 
         return (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss, expanded_mask.sum(),
                 mask.sum())
 
     def _add_attention_metrics(self, predicted_alignments, lengths):
-        """ Compute and report attention metrics """
+        """ Compute and report attention metrics. """
         # predicted_alignments [num_frames, batch_size, num_tokens]
         mask = lengths_to_mask(lengths, device=predicted_alignments.device).transpose(0, 1)
         kwargs = {'tensor': predicted_alignments.detach(), 'dim': 2, 'mask': mask}
-        self.accumulated_metrics.add_metrics(
-            {
-                'attention_norm': get_average_norm(norm=math.inf, **kwargs),
-                'attention_std': get_weighted_stdev(**kwargs),
-            }, kwargs['mask'].sum())
+        self.metrics['attention_norm'].update(
+            get_average_norm(norm=math.inf, **kwargs), kwargs['mask'].sum())
+        self.metrics['attention_std'].update(get_weighted_stdev(**kwargs), kwargs['mask'].sum())
 
     def visualize_inferred(self):
         """ Run in inference mode and visualize results.
@@ -359,7 +354,7 @@ class Trainer():
             text=example.text,
             speaker=example.speaker,
             predicted_audio=griffin_lim(predicted_post_spectrogram.cpu().numpy()),
-            gold_audio=example.spectrogram_audio.to_tensor())
+            gold_audio=maybe_load_tensor(example.spectrogram_audio))
         self.comet_ml.log_metrics({  # [num_frames, num_tokens] → scalar
             'single/attention_norm': get_average_norm(predicted_alignments, dim=1, norm=math.inf),
             'single/attention_std': get_weighted_stdev(predicted_alignments, dim=1),
@@ -367,7 +362,7 @@ class Trainer():
         self.comet_ml.log_figures({
             'final_spectrogram': plot_spectrogram(predicted_post_spectrogram),
             'residual_spectrogram': plot_spectrogram(predicted_residual),
-            'gold_spectrogram': plot_spectrogram(example.spectrogram.to_tensor()),
+            'gold_spectrogram': plot_spectrogram(maybe_load_tensor(example.spectrogram)),
             'pre_spectrogram': plot_spectrogram(predicted_pre_spectrogram),
             'alignment': plot_attention(predicted_alignments),
             'stop_token': plot_stop_token(predicted_stop_tokens),

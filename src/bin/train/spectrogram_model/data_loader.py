@@ -14,6 +14,7 @@ import torch
 from src.environment import IS_TESTING_ENVIRONMENT
 from src.utils import DataLoader
 from src.utils import identity
+from src.utils import maybe_load_tensor
 
 import src.distributed
 
@@ -34,7 +35,7 @@ def _load_fn(row, input_encoder):
     Returns:
         (SpectrogramModelTrainingRow)
     """
-    spectrogram = row.spectrogram.to_tensor()
+    spectrogram = maybe_load_tensor(row.spectrogram)
     stop_token = spectrogram.new_zeros((spectrogram.shape[0],))
     stop_token[-1] = 1
 

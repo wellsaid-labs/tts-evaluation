@@ -290,7 +290,7 @@ def CometML(project_name=ConfiguredArg(),
     def log_audio(self, gold_audio=None, predicted_audio=None, step=None, **kwargs):
         """ Add text and audio to Comet via their HTML tab.
 
-        TODO: Consider logging the waveform visualized also.
+        TODO: Consider logging a visualized waveform also.
 
         Args:
             gold_audio (torch.Tensor, optional)

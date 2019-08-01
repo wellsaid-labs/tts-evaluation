@@ -19,13 +19,22 @@ logger = logging.getLogger(__name__)
 
 ROOT_PATH = Path(__file__).parents[1].resolve()  # Repository root path
 
+IS_TESTING_ENVIRONMENT = 'pytest' in sys.modules
+
 TTS_DISK_CACHE_NAME = '.tts_cache'  # Directory name for any disk cache's created by this repository
 
-TEMP_PATH = ROOT_PATH / TTS_DISK_CACHE_NAME / 'tmp'
+TEST_DATA_PATH = ROOT_PATH / 'tests' / '_test_data'
+
+DATA_PATH = ROOT_PATH / 'data'
+
+EXPERIMENTS_PATH = ROOT_PATH / 'experiments'
+
+DEFAULT_TTS_DISK_CACHE = (TEST_DATA_PATH
+                          if IS_TESTING_ENVIRONMENT else ROOT_PATH) / TTS_DISK_CACHE_NAME
+
+TEMP_PATH = DEFAULT_TTS_DISK_CACHE / 'tmp'
 
 TEMP_PATH.mkdir(exist_ok=True, parents=True)
-
-IS_TESTING_ENVIRONMENT = 'pytest' in sys.modules
 
 # NOTE (Michael P., 07-22-2019): The torch cuda random generator state can be very large and can
 # cause OOM errors; therefore, it's usage is optional and not recommended.

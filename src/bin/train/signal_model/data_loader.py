@@ -13,7 +13,7 @@ import torch
 from src.audio import combine_signal
 from src.audio import split_signal
 from src.hparams import configurable
-from src.utils import OnDiskTensor
+from src.utils import maybe_load_tensor
 
 import src
 
@@ -120,10 +120,8 @@ def _load_fn(row, use_predicted, **kwargs):
     Returns:
         (SignalModelTrainingRow)
     """
-    spectrogram = row.predicted_spectrogram if use_predicted else row.spectrogram
-    spectrogram = spectrogram.to_tensor() if isinstance(spectrogram, OnDiskTensor) else spectrogram
-    spectrogram_audio = row.spectrogram_audio.to_tensor() if isinstance(
-        row.spectrogram_audio, OnDiskTensor) else row.spectrogram_audio
+    spectrogram = maybe_load_tensor(row.predicted_spectrogram if use_predicted else row.spectrogram)
+    spectrogram_audio = maybe_load_tensor(row.spectrogram_audio)
     spectrogram_audio = combine_signal(*split_signal(spectrogram_audio))
 
     # Check invariants

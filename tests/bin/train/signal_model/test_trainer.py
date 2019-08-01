@@ -6,8 +6,8 @@ import torch
 from src.audio import read_audio
 from src.bin.train.signal_model.data_loader import SignalModelTrainingRow
 from src.bin.train.signal_model.trainer import Trainer
+from src.environment import TEMP_PATH
 from src.utils import Checkpoint
-
 from tests._utils import get_tts_mocks
 from tests._utils import MockCometML
 
@@ -29,7 +29,7 @@ def get_trainer(read_audio_mock, register_mock, comet_ml_mock, load_data=True):
 
     return Trainer(
         device=mocks['device'],
-        checkpoints_directory='tests/_test_data/',
+        checkpoints_directory=TEMP_PATH,
         train_dataset=mocks['train_dataset'] if load_data else [],
         dev_dataset=mocks['dev_dataset'] if load_data else [],
         spectrogram_model_checkpoint=mocks['spectrogram_model_checkpoint'],

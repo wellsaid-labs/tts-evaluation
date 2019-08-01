@@ -19,6 +19,7 @@ from src.audio import get_log_mel_spectrogram
 from src.audio import normalize_audio
 from src.audio import read_audio
 from src.datasets.constants import TextSpeechRow
+from src.environment import DATA_PATH
 from src.environment import ROOT_PATH
 from src.environment import TEMP_PATH
 from src.environment import TTS_DISK_CACHE_NAME
@@ -220,7 +221,7 @@ def _dataset_loader(
         speaker,
         url_filename=None,
         check_files=['{metadata_filename}'],
-        directory=ROOT_PATH / 'data',
+        directory=DATA_PATH,
         metadata_filename='{directory}/{extracted_name}/metadata.csv',
         metadata_text_column='Content',
         metadata_audio_column='WAV Filename',

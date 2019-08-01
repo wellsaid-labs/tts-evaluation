@@ -12,6 +12,7 @@ Walking through the math, a real epoch for the Linda Joshon dataset would be abo
 
 Find stats on the Linda Johnson dataset here: https://keithito.com/LJ-Speech-Dataset/
 """
+from collections import defaultdict
 from collections import deque
 from collections import namedtuple
 from copy import deepcopy
@@ -35,8 +36,8 @@ from src.hparams import ConfiguredArg
 from src.hparams import get_config
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
-from src.utils import AccumulatedMetrics
 from src.utils import AnomalyDetector
+from src.utils import AveragedMetric
 from src.utils import balance_list
 from src.utils import cache_on_disk_tensor_shapes
 from src.utils import Checkpoint
@@ -44,7 +45,7 @@ from src.utils import dict_collapse
 from src.utils import evaluate
 from src.utils import get_total_parameters
 from src.utils import log_runtime
-from src.utils import OnDiskTensor
+from src.utils import maybe_load_tensor
 from src.visualize import CometML
 from src.visualize import plot_spectrogram
 
@@ -120,7 +121,7 @@ class Trainer():
             anomaly_detector, AnomalyDetector) else AnomalyDetector()
 
         self.criterion = criterion(reduction='none').to(device)
-        self.accumulated_metrics = AccumulatedMetrics()
+        self.metrics = defaultdict(AveragedMetric)
 
         self.device = device
         self.step = step
@@ -195,7 +196,6 @@ class Trainer():
         data = add_spectrogram_column(data)
         if self.use_predicted:
             data = add_predicted_spectrogram_column(data, spectrogram_model_checkpoint, self.device)
-            # TODO: Consider supporting `Tensor` as well as `OnDiskTensor`.
             cache_on_disk_tensor_shapes([r.predicted_spectrogram for r in data])
         return data
 
@@ -211,11 +211,9 @@ class Trainer():
         sum = torch.tensor(0.0)
         sample = self.dev_dataset[:min(len(self.dev_dataset), max_examples)]
         for example in sample:
-            spectrogram = (
-                example.predicted_spectrogram if self.use_predicted else example.spectrogram)
-            spectrogram = spectrogram.to_tensor() if isinstance(spectrogram,
-                                                                OnDiskTensor) else spectrogram
-            sum += spectrogram.sum()
+            spectrogram = getattr(example,
+                                  'predicted_spectrogram' if self.use_predicted else 'spectrogram')
+            sum += maybe_load_tensor(spectrogram).sum()
         self.comet_ml.log_other('input_dev_data_hash', (sum / len(sample)).item())
 
     @classmethod
@@ -274,11 +272,11 @@ class Trainer():
            * Epoch counter `self.epoch`
 
         The rollback does not include:
-           * Number of rollbacks `self.num_rollbacks`
+           * Number of rollbacks `self.num_rollbacks`.
            * Comet_ml `self.comet_ml`. Comet ML does not have a mechanism for rolling back state
              https://github.com/comet-ml/issue-tracking/issues/137.
-           * Accumulated Metrics `self.accumulated_metrics`. Any accumulated metrics are reset
-             during a rollback and a rollback is treated as the start of a new epoch.
+           * Metrics `self.metrics`. Any metrics are reset during a rollback and a rollback is
+             treated as the start of a new epoch.
            * Random Generators. We do not make an effort to perserve the global state of the random
              generators in `torch`, `numpy` and `random` modules.
 
@@ -321,9 +319,8 @@ class Trainer():
         """ Reset the trainer state from the current epoch.
         """
         self.comet_ml.log_epoch_end(self.epoch)
-        self.accumulated_metrics.log_epoch_end(
-            lambda k, v: self.comet_ml.log_metric('epoch/' + k, v))
-        self.accumulated_metrics.reset()
+        for name, metric in self.metrics.items():
+            self.comet_ml.log_metric('epoch/%s' % name, metric.reset())
 
     @log_runtime
     def run_epoch(self, train=False, trial_run=False, num_epochs=1):
@@ -391,8 +388,8 @@ class Trainer():
                 self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
 
-            self.accumulated_metrics.log_step_end(
-                lambda k, v: self.comet_ml.log_metric('step/' + k, v) if train else None)
+            for name, metric in self.metrics.items():
+                self.comet_ml.log_metric('step/%s' % name, metric.last_update())
 
             if train:
                 self.step += 1
@@ -415,7 +412,6 @@ class Trainer():
         Returns:
             (torch.FloatTensor [1])
         """
-
         total = torch.tensor(0.0).to(self.device)
         for name, parameter in self.model.named_parameters():
             if 'gru.weight_hh' in name:
@@ -465,11 +461,9 @@ class Trainer():
                 self._rollback_states.append(self._make_partial_rollback_state())
 
         # Record metrics
-        self.accumulated_metrics.add_metrics({
-            'coarse_loss': coarse_loss,
-            'fine_loss': fine_loss
-        }, batch.signal_mask.sum())
-        self.accumulated_metrics.add_metric('orthogonal_loss', orthogonal_loss)
+        self.metrics['coarse_loss'].update(coarse_loss, batch.signal_mask.sum())
+        self.metrics['fine_loss'].update(fine_loss, batch.signal_mask.sum())
+        self.metrics['orthogonal_loss'].update(orthogonal_loss)
 
         return coarse_loss, fine_loss, batch.signal_mask.sum()
 
@@ -479,12 +473,8 @@ class Trainer():
         self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
         example = random.sample(self.dev_dataset, 1)[0]
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
-        # [num_frames, frame_channels]
-        spectrogram = spectrogram.to_tensor() if isinstance(spectrogram,
-                                                            OnDiskTensor) else spectrogram
-        # [signal_length]
-        target_signal = example.spectrogram_audio.to_tensor() if isinstance(
-            example.spectrogram_audio, OnDiskTensor) else example.spectrogram_audio
+        spectrogram = maybe_load_tensor(spectrogram)  # [num_frames, frame_channels]
+        target_signal = maybe_load_tensor(example.spectrogram_audio)  # [signal_length]
         # Introduce quantization noise
         target_signal = combine_signal(*split_signal(target_signal), return_int=True)
 

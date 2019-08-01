@@ -46,6 +46,17 @@ def cache_on_disk_tensor_shapes(tensors):
     _get_on_disk_tensor_shape.cache.save()
 
 
+def maybe_load_tensor(tensor):
+    """ Load `tensor` into memory if it's not in memory already.
+
+    Args:
+        tensor (torch.Tensor or OnDiskTensor)
+
+    Returns:
+        (torch.Tensor)
+    """
+    return tensor.to_tensor() if isinstance(tensor, OnDiskTensor) else tensor
+
 class OnDiskTensor():
     """ Tensor that resides on disk.
 

@@ -36,7 +36,7 @@ from src.bin.train.spectrogram_model.trainer import Trainer
 from src.datasets import add_spectrogram_column
 from src.environment import assert_enough_disk_space
 from src.environment import check_module_versions
-from src.environment import ROOT_PATH
+from src.environment import EXPERIMENTS_PATH
 from src.environment import set_random_generator_state
 from src.environment import set_seed
 from src.hparams import add_config
@@ -184,7 +184,7 @@ def _time_label():
 def main(run_name,
          comet_ml_project_name=None,
          run_tags=[],
-         run_root=ROOT_PATH / 'experiments' / 'spectrogram_model' / _time_label(),
+         run_root=EXPERIMENTS_PATH / 'spectrogram_model' / _time_label(),
          checkpoints_directory=Path('checkpoints') / _time_label(),
          checkpoint=None,
          more_hparams={}):
@@ -223,7 +223,6 @@ def main(run_name,
     # NOTE: Preprocessing is faster to compute outside of distributed environment.
     train_dataset = add_spectrogram_column(train_dataset)
     dev_dataset = add_spectrogram_column(dev_dataset)
-    # TODO: Consider supporting `Tensor` as well as `OnDiskTensor`.
     cache_on_disk_tensor_shapes([e.spectrogram for e in train_dataset] +
                                 [e.spectrogram for e in dev_dataset])
 
@@ -288,7 +287,7 @@ if __name__ == '__main__':  # pragma: no cover
     if isinstance(args.checkpoint, str):
         args.checkpoint = Checkpoint.from_path(args.checkpoint)
     elif isinstance(args.checkpoint, bool) and args.checkpoint:
-        args.checkpoint = Checkpoint.most_recent(ROOT_PATH / '**/*.pt')
+        args.checkpoint = Checkpoint.most_recent(EXPERIMENTS_PATH / '**/*.pt')
     else:
         args.checkpoint = None
 

@@ -1,5 +1,4 @@
 import os
-import pathlib
 
 import pytest
 
@@ -18,8 +17,11 @@ from src.bin.chunk_wav_and_text import remove_punctuation
 from src.bin.chunk_wav_and_text import review_chunk_alignments
 from src.bin.chunk_wav_and_text import samples_to_seconds
 from src.bin.chunk_wav_and_text import seconds_to_samples
+from src.environment import TEST_DATA_PATH
 
-CHUNKS_PATH = pathlib.Path('tests/_test_data/bin/test_chunk_wav_and_text/lj_speech_chunks')
+TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'bin' / 'test_chunk_wav_and_text'
+
+CHUNKS_PATH = TEST_DATA_PATH_LOCAL / 'lj_speech_chunks'
 
 
 def MockAlignment(start_text, end_text):
@@ -106,7 +108,7 @@ def test_review_chunk_alignments():
 def test_main__no_csv(capsys):
     with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
         main(
-            'tests/_test_data/bin/test_chunk_wav_and_text/rate(lj_speech,24000).wav',
+            TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav',
             str(CHUNKS_PATH),
             max_chunk_seconds=2)
     assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_0.wav').exists()
@@ -131,13 +133,13 @@ have been fired.,"rate(lj_speech,24000)/script_0_chunk_5.wav" """.strip())
 def test_main__normalize_audio(capsys):
     with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
         main(
-            'tests/_test_data/bin/test_chunk_wav_and_text/lj_speech.wav',
+            TEST_DATA_PATH_LOCAL / 'lj_speech.wav',
             str(CHUNKS_PATH),
-            csv_pattern='tests/_test_data/bin/test_chunk_wav_and_text/lj_speech.csv',
+            csv_pattern=TEST_DATA_PATH_LOCAL / 'lj_speech.csv',
             max_chunk_seconds=2)
 
     with pytest.raises(AssertionError):  # The original audio file was not supported.
-        read_audio('tests/_test_data/bin/test_chunk_wav_and_text/lj_speech.wav')
+        read_audio(TEST_DATA_PATH_LOCAL / 'lj_speech.wav')
 
     # Ensure chunks are supported by this repository.
     read_audio(CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_0.wav')
@@ -147,9 +149,9 @@ def test_main__normalize_audio(capsys):
 def test_main(capsys):
     with capsys.disabled():  # Required for the test to pass (could be a bug with PyTest).
         main(
-            'tests/_test_data/bin/test_chunk_wav_and_text/rate(lj_speech,24000).wav',
+            TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav',
             str(CHUNKS_PATH),
-            csv_pattern='tests/_test_data/bin/test_chunk_wav_and_text/lj_speech.csv',
+            csv_pattern=TEST_DATA_PATH_LOCAL / 'lj_speech.csv',
             max_chunk_seconds=2)
     assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_0.wav').exists()
     assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_1.wav').exists()

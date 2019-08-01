@@ -5,8 +5,8 @@ import torch
 
 from src.bin.train.spectrogram_model.data_loader import SpectrogramModelTrainingRow
 from src.bin.train.spectrogram_model.trainer import Trainer
+from src.environment import TEMP_PATH
 from src.utils import Checkpoint
-
 from tests._utils import get_tts_mocks
 from tests._utils import MockCometML
 
@@ -26,7 +26,7 @@ def get_trainer(register_mock, comet_ml_mock, load_data=True):
         device=mocks['device'],
         train_dataset=mocks['train_dataset'] if load_data else [],
         dev_dataset=mocks['dev_dataset'] if load_data else [],
-        checkpoints_directory='tests/_test_data/',
+        checkpoints_directory=TEMP_PATH,
         train_batch_size=1,
         dev_batch_size=1)
 
@@ -46,7 +46,7 @@ def test_checkpoint(register_mock, comet_ml_mock):
     Trainer.from_checkpoint(
         checkpoint=Checkpoint.from_path(checkpoint_path),
         device=torch.device('cpu'),
-        checkpoints_directory='tests/_test_data/',
+        checkpoints_directory=TEMP_PATH,
         train_dataset=trainer.train_dataset,
         dev_dataset=trainer.dev_dataset)
 

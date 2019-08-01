@@ -3,7 +3,6 @@ from contextlib import contextmanager
 from unittest import mock
 from functools import lru_cache
 
-import pathlib
 import shutil
 import urllib.request
 
@@ -18,6 +17,7 @@ from src.datasets import lj_speech_dataset
 from src.datasets import m_ailabs_en_us_speech_dataset
 from src.datasets import normalize_audio_column
 from src.datasets.m_ailabs import DOROTHY_AND_WIZARD_OZ
+from src.environment import TEST_DATA_PATH
 from src.hparams import add_config
 from src.optimizers import Optimizer
 from src.signal_model import WaveRNN
@@ -151,7 +151,7 @@ class LazyDict(MutableMapping):
         return len(self._dict)
 
 
-TEST_DATA_PATH = pathlib.Path('tests/_test_data/_utils')
+TEST_DATA_PATH_UTILS = TEST_DATA_PATH / '_utils'
 
 
 @lru_cache()
@@ -160,8 +160,8 @@ def _get_mock_data():
     with mock.patch('urllib.request.urlretrieve') as mock_urlretrieve:
         mock_urlretrieve.side_effect = url_first_side_effect
         data = m_ailabs_en_us_speech_dataset(
-            directory=TEST_DATA_PATH / 'M-AILABS', all_books=[DOROTHY_AND_WIZARD_OZ])
-        data += lj_speech_dataset(directory=TEST_DATA_PATH)
+            directory=TEST_DATA_PATH_UTILS / 'M-AILABS', all_books=[DOROTHY_AND_WIZARD_OZ])
+        data += lj_speech_dataset(directory=TEST_DATA_PATH_UTILS)
     return data
 
 
@@ -218,7 +218,7 @@ def get_tts_mocks(add_spectrogram=False,
         checkpoint = Checkpoint(
             comet_ml_project_name='',
             comet_ml_experiment_key='',
-            directory=TEST_DATA_PATH,
+            directory=TEST_DATA_PATH_UTILS,
             model=return_['spectrogram_model'],
             optimizer=spectrogram_model_optimizer,
             epoch=0,
@@ -236,7 +236,7 @@ def get_tts_mocks(add_spectrogram=False,
         checkpoint = Checkpoint(
             comet_ml_project_name='',
             comet_ml_experiment_key='',
-            directory=TEST_DATA_PATH,
+            directory=TEST_DATA_PATH_UTILS,
             epoch=0,
             step=0,
             anomaly_detector=AnomalyDetector(),

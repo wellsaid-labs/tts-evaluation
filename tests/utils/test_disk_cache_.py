@@ -1,6 +1,6 @@
 import time
 
-from src.environment import ROOT_PATH
+from src.environment import TEMP_PATH
 from src.utils.disk_cache_ import _Cache
 from src.utils.disk_cache_ import disk_cache
 
@@ -32,8 +32,7 @@ def test_cache_update():
 
 def test_disk_cache():
     filename = (
-        ROOT_PATH / 'tests' / '_test_data' / '.disk_cache' /
-        'tests.utils.test_disk_cache_.test_disk_cache.<locals>.helper')
+        TEMP_PATH / '.disk_cache' / 'tests.utils.test_disk_cache_.test_disk_cache.<locals>.helper')
 
     @disk_cache(directory=filename.parent, save_to_disk_delay=.25)
     def helper(arg):

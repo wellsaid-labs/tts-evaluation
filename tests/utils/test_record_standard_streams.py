@@ -1,16 +1,16 @@
-from pathlib import Path
-
 import logging
 import os
-import pathlib
 import sys
 
+from src.environment import TEST_DATA_PATH
 from src.utils import RecordStandardStreams
 from src.utils.record_standard_streams import _duplicate_stream
 
+TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'utils'
+
 
 def test__duplicate_stream(capsys):
-    stdout_log = Path('tests/_test_data/stdout.log')
+    stdout_log = TEST_DATA_PATH_LOCAL / 'stdout.log'
     with capsys.disabled():  # Disable capsys because it messes with sys.stdout
         logger = logging.getLogger(__name__)
         handler = logging.StreamHandler(sys.stdout)
@@ -37,33 +37,32 @@ def test_save_standard_streams(capsys):
         handler.setLevel(logging.INFO)
         logger.addHandler(handler)
 
-        directory = pathlib.Path('tests/_test_data')
         stdout_name = 'stdout.log'
         stderr_name = 'stderr.log'
 
-        recorder = RecordStandardStreams(directory, stdout_name, stderr_name).start()
+        recorder = RecordStandardStreams(TEST_DATA_PATH_LOCAL, stdout_name, stderr_name).start()
 
         # Check if stdout gets captured
         print('Test')
         sys.stderr.write('Error\n')
         logger.info('Test Logger')
 
-        assert (directory / stdout_name).is_file()
-        assert (directory / stderr_name).is_file()
+        assert (TEST_DATA_PATH_LOCAL / stdout_name).is_file()
+        assert (TEST_DATA_PATH_LOCAL / stderr_name).is_file()
 
         new_stdout_name = 'stdout_new.log'
         new_stderr_name = 'stderr_new.log'
-        recorder.update(directory, new_stdout_name, new_stderr_name)
+        recorder.update(TEST_DATA_PATH_LOCAL, new_stdout_name, new_stderr_name)
 
-        assert not (directory / stdout_name).is_file()
-        assert not (directory / stderr_name).is_file()
-        assert (directory / new_stdout_name).is_file()
-        assert (directory / new_stderr_name).is_file()
+        assert not (TEST_DATA_PATH_LOCAL / stdout_name).is_file()
+        assert not (TEST_DATA_PATH_LOCAL / stderr_name).is_file()
+        assert (TEST_DATA_PATH_LOCAL / new_stdout_name).is_file()
+        assert (TEST_DATA_PATH_LOCAL / new_stderr_name).is_file()
 
         print('Test Update')
 
         # Just `Test` print in stdout
-        lines = set((directory / new_stdout_name).read_text().strip().split('\n'))
+        lines = set((TEST_DATA_PATH_LOCAL / new_stdout_name).read_text().strip().split('\n'))
         assert 'Test' in lines
         assert 'Test Logger' in lines
         assert 'Test Update' in lines
@@ -72,7 +71,7 @@ def test_save_standard_streams(capsys):
         # assert 'Error' not in lines
 
         # Nothing in stderr
-        lines = set((directory / new_stderr_name).read_text().strip().split('\n'))
+        lines = set((TEST_DATA_PATH_LOCAL / new_stderr_name).read_text().strip().split('\n'))
         assert 'Error' in lines
 
         assert 'Test Logger' not in lines

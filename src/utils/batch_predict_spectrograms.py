@@ -1,3 +1,4 @@
+from collections import defaultdict
 from functools import partial
 
 import logging
@@ -12,9 +13,10 @@ from torchnlp.utils import tensors_to
 import torch
 import torch.utils.data
 
-from src.utils.accumulated_metrics import AccumulatedMetrics
+from src.utils.averaged_metric import AveragedMetric
 from src.utils.data_loader import DataLoader
 from src.utils.on_disk_tensor import cache_on_disk_tensor_shapes
+from src.utils.on_disk_tensor import maybe_load_tensor
 from src.utils.on_disk_tensor import OnDiskTensor
 from src.utils.utils import evaluate
 from src.utils.utils import get_average_norm
@@ -40,8 +42,8 @@ def _batch_predict_spectrogram_load_fn(row, input_encoder, load_spectrogram=Fals
     """
     encoded_text, encoded_speaker = input_encoder.encode((row.text, row.speaker))
     row = row._replace(text=encoded_text, speaker=encoded_speaker)
-    if load_spectrogram and isinstance(row.spectrogram, OnDiskTensor):
-        row = row._replace(spectrogram=row.spectrogram.to_tensor())
+    if load_spectrogram:
+        row = row._replace(spectrogram=maybe_load_tensor(row.spectrogram))
     return row
 
 
@@ -95,7 +97,7 @@ def batch_predict_spectrograms(data,
         pin_memory=True,
         use_tqdm=use_tqdm)
     with evaluate(model, device=device):
-        metrics = AccumulatedMetrics()
+        metrics = defaultdict(AveragedMetric)
         for batch in loader:
             # Predict spectrogram
             text, text_lengths = batch.text
@@ -109,15 +111,14 @@ def batch_predict_spectrograms(data,
 
             # Compute metrics for logging
             mask = lengths_to_mask(spectrogram_lengths, device=predictions.device).transpose(0, 1)
-            metrics.add_metrics(
-                {
-                    'attention_norm': get_average_norm(alignments, norm=math.inf, dim=2, mask=mask),
-                    'attention_std': get_weighted_stdev(alignments, dim=2, mask=mask),
-                }, mask.sum())
+            metrics['attention_norm'].update(
+                get_average_norm(alignments, norm=math.inf, dim=2, mask=mask), mask.sum())
+            metrics['attention_std'].update(
+                get_weighted_stdev(alignments, dim=2, mask=mask), mask.sum())
             if aligned:
                 mask = mask.unsqueeze(2).expand_as(predictions)
                 loss = mse_loss(predictions, spectrogram, reduction='none')
-                metrics.add_metric('loss', loss.masked_select(mask).mean(), mask.sum())
+                metrics['loss'].update(loss.masked_select(mask).mean(), mask.sum())
 
             # Split batch and store in-memory or on-disk
             spectrogram_lengths = spectrogram_lengths.squeeze(0).tolist()
@@ -131,6 +132,7 @@ def batch_predict_spectrograms(data,
                     filename = batch.metadata['filename'][i]
                     return_[return_index] = OnDiskTensor.from_tensor(filename, prediction)
 
-        metrics.log_epoch_end(lambda k, v: logger.info('Prediction metric (%s): %s', k, v))
+        for name, metric in metrics.items():
+            logger.info('Prediction metric (%s): %s', name, metric.reset())
 
     return return_

@@ -34,7 +34,7 @@ import pandas
 from src.datasets.constants import Gender
 from src.datasets.constants import Speaker
 from src.datasets.constants import TextSpeechRow
-from src.environment import ROOT_PATH
+from src.environment import DATA_PATH
 
 logger = logging.getLogger(__name__)
 Book = namedtuple('Book', 'speaker title')
@@ -64,7 +64,7 @@ PINK_FAIRY_BOOK = Book(ELLIOT_MILLER, 'pink_fairy_book')
 JANE_EYRE = Book(ELIZABETH_KLETT, 'jane_eyre')
 WIVES_AND_DAUGHTERS = Book(ELIZABETH_KLETT, 'wives_and_daughters')
 
-DOWNLOAD_DIRECTORY = ROOT_PATH / 'data/M-AILABS'
+DOWNLOAD_DIRECTORY = DATA_PATH / 'M-AILABS'
 
 
 def m_ailabs_en_us_speech_dataset(directory=DOWNLOAD_DIRECTORY,
@@ -186,9 +186,9 @@ def _book2path(book, directory, extracted_name):
     """ Given a book of :class:`Book` type, returns the relative path to its metadata.csv file.
 
     Examples:
-        >>> from src.environment import ROOT_PATH
-        >>> _book2path(SKY_ISLAND, ROOT_PATH / 'data', 'en_US').relative_to(ROOT_PATH)
-        PosixPath('data/en_US/by_book/female/judy_bieber/sky_island/metadata.csv')
+        >>> from src.environment import DATA_PATH
+        >>> _book2path(SKY_ISLAND, DATA_PATH / 'M-AILABS', 'en_US').relative_to(DATA_PATH)
+        PosixPath('M-AILABS/en_US/by_book/female/judy_bieber/sky_island/metadata.csv')
     """
     name = book.speaker.name.lower().replace(' ', '_')
     gender = book.speaker.gender.name.lower()
@@ -199,9 +199,9 @@ def _path2book(metadata_path, directory):
     """ Given a path to a book's metadata.csv, returns the corresponding :class:`Book` object.
 
     Examples:
-        >>> from src.environment import ROOT_PATH
-        >>> path = ROOT_PATH / 'data/M-AILABS/en_US/by_book/female/judy_bieber/sky_island/metadata.csv'
-        >>> _path2book(metadata_path=path, directory=ROOT_PATH / 'data/M-AILABS') # noqa: E501
+        >>> from src.environment import DATA_PATH
+        >>> path = DATA_PATH / 'M-AILABS/en_US/by_book/female/judy_bieber/sky_island/metadata.csv'
+        >>> _path2book(metadata_path=path, directory=DATA_PATH / 'M-AILABS') # noqa: E501
         Book(speaker=Speaker(name='Judy Bieber', gender=FEMALE), title='sky_island')
     """
     metadata_path = metadata_path.relative_to(directory)

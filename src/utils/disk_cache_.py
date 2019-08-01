@@ -10,9 +10,8 @@ import logging
 import pickle
 import weakref
 
+from src.environment import DEFAULT_TTS_DISK_CACHE
 from src.environment import IS_TESTING_ENVIRONMENT
-from src.environment import ROOT_PATH
-from src.environment import TTS_DISK_CACHE_NAME
 from src.utils.utils import ResetableTimer
 
 logger = logging.getLogger(__name__)
@@ -207,11 +206,9 @@ class _DiskCache(_Cache):
         self._storage_property = value
 
 
-def disk_cache(
-        function=None,
-        directory=(ROOT_PATH / 'tests' / '_test_data' if IS_TESTING_ENVIRONMENT else ROOT_PATH) /
-        TTS_DISK_CACHE_NAME / 'disk_cache',
-        save_to_disk_delay=None if IS_TESTING_ENVIRONMENT else 180):
+def disk_cache(function=None,
+               directory=DEFAULT_TTS_DISK_CACHE / 'disk_cache',
+               save_to_disk_delay=None if IS_TESTING_ENVIRONMENT else 180):
     """ Function decorator that caches all function calls and saves them to disk.
 
     Attrs:

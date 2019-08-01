@@ -1,11 +1,10 @@
-from pathlib import Path
 from unittest import mock
 
 from src.datasets import m_ailabs_en_us_speech_dataset
-
+from src.environment import TEST_DATA_PATH
 from tests._utils import url_first_side_effect
 
-M_AILABS_DIRECTORY = Path('tests/_test_data/datasets/M-AILABS')
+M_AILABS_DIRECTORY = TEST_DATA_PATH / 'datasets/M-AILABS'
 
 
 @mock.patch('pathlib.Path.is_file')
@@ -20,6 +19,6 @@ def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_is_file):
     assert len(data) == 2046
     assert sum([len(r.text) for r in data]) == 226649
     assert data[0].text == ('To My Readers.')
-    assert ('tests/_test_data/datasets/M-AILABS/en_US/by_book/female/judy_bieber/'
-            'dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav') in str(
-                data[0].audio_path)
+    assert str(M_AILABS_DIRECTORY / 'en_US/by_book/female/judy_bieber' /
+               'dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav') in str(
+                   data[0].audio_path)

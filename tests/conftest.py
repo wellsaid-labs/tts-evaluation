@@ -8,9 +8,9 @@ import torch  # noqa: F401
 
 import pytest
 
-from src.environment import ROOT_PATH
+from src.environment import DEFAULT_TTS_DISK_CACHE
 from src.environment import set_basic_logging_config
-from src.environment import TTS_DISK_CACHE_NAME
+from src.environment import TEST_DATA_PATH
 from src.hparams import clear_config
 from src.hparams import set_hparams
 from src.utils.disk_cache_ import _DiskCache
@@ -31,10 +31,5 @@ def run_before_test():
     yield
 
 
-(ROOT_PATH / TTS_DISK_CACHE_NAME).mkdir(exist_ok=True)
-
-gc_fixture_tts_cache = create_disk_garbage_collection_fixture(
-    ROOT_PATH / TTS_DISK_CACHE_NAME, autouse=True)
-
-gc_fixture_test_data = create_disk_garbage_collection_fixture(
-    ROOT_PATH / 'tests' / '_test_data', autouse=True)
+gc_fixture_tts_cache = create_disk_garbage_collection_fixture(DEFAULT_TTS_DISK_CACHE, autouse=True)
+gc_fixture_test_data = create_disk_garbage_collection_fixture(TEST_DATA_PATH, autouse=True)
