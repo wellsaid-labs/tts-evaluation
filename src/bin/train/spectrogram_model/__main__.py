@@ -181,7 +181,7 @@ def _time_label():
     return str(time.strftime('%Y-%m-%d_%H:%M:%S', time.localtime())).lower()
 
 
-def main(run_name,
+def main(run_name=None,
          comet_ml_project_name=None,
          run_tags=[],
          run_root=EXPERIMENTS_PATH / 'spectrogram_model' / _time_label(),
@@ -191,7 +191,7 @@ def main(run_name,
     """ Main module that trains a the spectrogram model saving checkpoints incrementally.
 
     Args:
-        run_name (str): Name describing the experiment.
+        run_name (str, optional): Name of the experiment.
         comet_ml_project_name (str, optional): Project name to use with comet.ml.
         run_tags (list of str, optional): Comet.ml experiment tags.
         run_root (str, optional): Directory to save experiments, unless a checkpoint is loaded.
@@ -213,9 +213,10 @@ def main(run_name,
     # TODO: Consider ignoring ``add_tags`` if Checkpoint is loaded; or consider saving in the
     # checkpoint the ``name`` and ``tags``; or consider fetching tags from the Comet.ML API.
     comet = CometML()
-    logger.info('Name: %s', run_name)
+    if run_name is not None:
+        logger.info('Name: %s', run_name)
+        comet.set_name(run_name)
     logger.info('Tags: %s', run_tags)
-    comet.set_name(run_name)
     comet.add_tags(run_tags)
     comet.log_other('directory', run_root)
 
@@ -254,7 +255,7 @@ if __name__ == '__main__':  # pragma: no cover
         nargs='?',
         help='Without a value ``-c``, loads the most recent checkpoint; '
         'otherwise, expects a checkpoint file path.')
-    parser.add_argument('-n', '--name', type=str, default=None, help='Name of a new experiment.')
+    parser.add_argument('-n', '--name', type=str, default=None, help='Name of the experiment.')
     parser.add_argument(
         '-p',
         '--project_name',

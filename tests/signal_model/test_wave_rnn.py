@@ -5,13 +5,13 @@ from src.signal_model import WaveRNN
 from src.audio import split_signal
 
 
-def test_wave_rnn_infer_equals_forward():
+def test_wave_rnn__infer_equals_forward():
     bits = 16
     local_length = 4
     local_features_size = 80
     upsample_learned = 2
     upsample_repeat = 2
-    hidden_size = 32
+    hidden_size = 64
     upsample_kernels = [(5, 5), (3, 3), (3, 3), (3, 3)]
     length_padding = sum([(kernel[0] - 1) for kernel in upsample_kernels])
 
@@ -108,7 +108,7 @@ def test_wave_rnn_forward():
     (predicted_coarse + predicted_fine).sum().backward()
 
 
-def test_wave_rnn_infer():
+def test_wave_rnn_infer__basic():
     bits = 16
     local_length = 16
     local_features_size = 80
@@ -121,7 +121,7 @@ def test_wave_rnn_infer():
     local_features = torch.FloatTensor(local_length, local_features_size).fill_(1)
 
     net = WaveRNN(
-        hidden_size=32,
+        hidden_size=64,
         bits=bits,
         upsample_num_filters=[64, 64, 32, upsample_learned],
         upsample_repeat=upsample_repeat,

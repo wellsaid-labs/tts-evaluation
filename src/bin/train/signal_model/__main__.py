@@ -1,6 +1,7 @@
 """ Train the signal model.
 
 Example:
+
     $ python3 -m src.bin.train.signal_model -l="Linda baseline";
 """
 from pathlib import Path
@@ -78,7 +79,7 @@ def _get_dataset(dataset=ConfiguredArg()):
 
 def _train(trainer,
            evaluate_every_n_epochs=9,
-           generate_every_n_evaluations=10,
+           generate_every_n_evaluations=1,
            save_checkpoint_every_n_evaluations=5):
     """ Loop for training and periodically evaluating the model.
 
@@ -121,7 +122,7 @@ def _time_label():
     return str(time.strftime('%Y-%m-%d_%H:%M:%S', time.localtime())).lower()
 
 
-def main(run_name,
+def main(run_name=None,
          comet_ml_project_name=None,
          run_tags=[],
          run_root=EXPERIMENTS_PATH / 'signal_model' / _time_label(),
@@ -135,7 +136,7 @@ def main(run_name,
     TODO: Test this module.
 
     Args:
-        run_name (str): Name describing the experiment.
+        run_name (str, optional): Name of the experiment.
         comet_ml_project_name (str, optional): Project name to use with comet.ml.
         run_tags (list of str, optional): Comet.ml experiment tags.
         run_root (str, optional): Directory to save experiments, unless a checkpoint is loaded.
@@ -158,9 +159,10 @@ def main(run_name,
     recorder.update(run_root)
 
     comet = CometML()
-    logger.info('Name: %s', run_name)
+    if run_name is not None:
+        logger.info('Name: %s', run_name)
+        comet.set_name(run_name)
     logger.info('Tags: %s', run_tags)
-    comet.set_name(run_name)
     comet.add_tags(run_tags)
     comet.log_other('directory', run_root)
 
@@ -213,8 +215,7 @@ if __name__ == '__main__':  # pragma: no cover
         ],
         action='append',
         help='List of tags for the experiment.')
-    parser.add_argument(
-        '-n', '--name', type=str, default=None, help='Name describing the experiment')
+    parser.add_argument('-n', '--name', type=str, default=None, help='Name of the experiment.')
     parser.add_argument(
         '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     parser.add_argument(

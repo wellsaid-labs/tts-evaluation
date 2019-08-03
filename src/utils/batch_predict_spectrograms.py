@@ -77,14 +77,14 @@ def batch_predict_spectrograms(data,
         data = [d._replace(metadata=dict({'filename': f}, **d.metadata)) for d, f in iterator]
     return_ = [None] * len(data)
 
-    # Sort by sequence length to reduce padding in batches.
+    # NOTE: Sort by sequence length to reduce padding in batches.
+    # NOTE: Sort by longest to shortest allowing us to trigger any OOM errors earlier.
     if all([r.spectrogram is not None for r in data]):
         cache_on_disk_tensor_shapes(
             [r.spectrogram for r in data if isinstance(r.spectrogram, OnDiskTensor)])
-        spectrogram_lengths = [r.spectrogram.shape[0] for r in data]
-        data = sort_together(data, spectrogram_lengths)
+        data = sort_together(data, [-r.spectrogram.shape[0] for r in data])
     else:
-        data = sorted(data, key=lambda r: len(r.text))
+        data = sorted(data, key=lambda r: len(r.text), reverse=True)
 
     load_fn_partial = partial(
         _batch_predict_spectrogram_load_fn, input_encoder=input_encoder, load_spectrogram=aligned)

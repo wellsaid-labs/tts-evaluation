@@ -42,8 +42,7 @@ def test_main(capsys):
             num_samples=num_samples,
             destination=str(LOCAL_TEST_DATA_PATH),
             metadata_filename=metadata_filename,
-            spectrogram_model_device=mocks['device'],
-            signal_model_device=mocks['device'])
+            spectrogram_model_device=mocks['device'])
         assert LOCAL_TEST_DATA_PATH.exists()
         assert (LOCAL_TEST_DATA_PATH / metadata_filename).exists()
         assert len(list(LOCAL_TEST_DATA_PATH.glob('*.log'))) == 2

@@ -218,7 +218,7 @@ def CometML(project_name=ConfiguredArg(),
         'git ls-files --others --exclude-standard', shell=True).decode().strip()
     if len(untracked_files) > 0:
         raise ValueError(('Experiment is not reproducible, Comet does not track untracked files. '
-                          'Please track these files:\n%s') % untracked_files)
+                          'Please track these files via `git`:\n%s') % untracked_files)
 
     kwargs.update({
         'project_name': project_name,

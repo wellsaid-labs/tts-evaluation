@@ -101,7 +101,6 @@ def main(dataset,
          balanced=True,
          obscure=False,
          spectrogram_model_batch_size=1,
-         signal_model_device=torch.device('cpu'),
          spectrogram_model_device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
     """ Generate random samples of the `dataset`.
 
@@ -124,7 +123,6 @@ def main(dataset,
         obscure (bool, optional): If `True`, obscure the audio filename such that the
             filename does not provide hints towards the method of synthesis.
         spectrogram_model_batch_size (int, optional)
-        signal_model_device (torch.device, optional): Device used for signal model inference.
         spectrogram_model_device (torch.device, optional): Device used for spectrogram model
             inference.
     """
@@ -184,7 +182,7 @@ def main(dataset,
     # Save the signal model predictions
     if signal_model_checkpoint is not None and (has_target_audio or
                                                 spectrogram_model_checkpoint is not None):
-        signal_model_model = signal_model_checkpoint.model.to_inferrer(device=signal_model_device)
+        signal_model_model = signal_model_checkpoint.model.to_inferrer()
         use_predicted = spectrogram_model_checkpoint is not None
 
         # NOTE: Sort by spectrogram lengths to batch similar sized outputs together
@@ -194,7 +192,7 @@ def main(dataset,
         iterator = sorted(iterator, key=get_length, reverse=True)
 
         for example, i in iterator:
-            example = tensors_to(example, device=signal_model_device, non_blocking=True)
+            example = tensors_to(example, device=torch.device('cpu'), non_blocking=True)
             spectrogram = example.predicted_spectrogram if use_predicted else example.spectrogram
             logger.info('Predicting signal from spectrogram of size %s.', spectrogram.shape)
             with evaluate(signal_model_model):

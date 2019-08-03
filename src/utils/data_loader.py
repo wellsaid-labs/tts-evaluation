@@ -79,12 +79,14 @@ class DataLoader(torch.utils.data.dataloader.DataLoader):
             iterator = tqdm(iterator, total=len(self))
 
         for batch in iterator:
-            yield self.post_processing_fn(batch)
+            batch_ = self.post_processing_fn(batch)
 
             if is_first:
                 elapsed = seconds_to_string(time.time() - start)
                 logger.info('Time to first batch was %s.', elapsed)
                 is_first = False
+
+            yield batch_
 
             if self.trial_run:
                 break

@@ -78,7 +78,7 @@ class Checkpoint():
             instance.input_encoder.speaker_encoder.tokens[old_speaker] = count
 
         flatten_parameters(instance.model)
-        instance.path = path
+        instance.path = Path(path)
         logger.info('Loaded checkpoint at step %d from %s with model:\n%s', instance.step,
                     instance.path, instance.model)
         return instance

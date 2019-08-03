@@ -475,8 +475,9 @@ def set_hparams():
                 'pre_net.PreNet.__init__.dropout': 0.5,
                 'post_net.PostNet.__init__.convolution_dropout': 0.0
             },
+            # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
             'datasets.utils.add_predicted_spectrogram_column.batch_size':
-                (spectrogram_model_dev_batch_size),
+                (spectrogram_model_dev_batch_size // 2),
             'bin': {
                 'evaluate._get_dev_dataset.dataset': get_dataset,
                 'train': {
@@ -488,7 +489,7 @@ def set_hparams():
                             # maximum-likelihood training procedure (feeding in the correct output
                             # instead of the predicted output on the decoder side, also referred to
                             # as teacher-forcing) with a batch size of 64 on a single GPU.
-                            # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
+                            # NOTE: Parameters set after experimentation on a 2 Px100 GPU.
                             'train_batch_size': 56,
                             'dev_batch_size': spectrogram_model_dev_batch_size,
 
