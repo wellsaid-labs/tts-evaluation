@@ -159,6 +159,7 @@ def main(run_name=None,
     recorder.update(run_root)
 
     comet = CometML()
+    add_config({'src.visualize.CometML.experiment_key': comet.get_key()})
     if run_name is not None:
         logger.info('Name: %s', run_name)
         comet.set_name(run_name)

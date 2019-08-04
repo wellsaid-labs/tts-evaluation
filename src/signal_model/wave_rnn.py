@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import copy
 import logging
 
 from torch import nn
@@ -33,6 +34,7 @@ class _WaveRNNInferrer(nn.Module):
             sampling from a multinomial distribution.
     """
 
+    @log_runtime
     def __init__(self,
                  hidden_size,
                  to_bins_coarse,
@@ -82,6 +84,13 @@ class _WaveRNNInferrer(nn.Module):
         self.argmax = argmax
         self.size = hidden_size
 
+        to_bins_coarse = to_bins_coarse.cpu()
+        to_bins_fine = to_bins_fine.cpu()
+        project_coarse_input = project_coarse_input.cpu()
+        project_fine_input = project_fine_input.cpu()
+        stripped_gru = stripped_gru.cpu()
+        conditional_features_upsample = conditional_features_upsample.cpu()
+
         # Initialize to_bins_coarse.
         self.to_bins_coarse_pre_bias_aligned = to_bins_coarse[0].bias.clone()
         self.to_bins_coarse_pre_weight_t = to_bins_coarse[0].weight.t().clone()
@@ -107,7 +116,7 @@ class _WaveRNNInferrer(nn.Module):
 
         # [self.size * 3] → bias_r, bias_u, bias_e [self.size]
         (self.stripped_gru_bias_r, self.stripped_gru_bias_i,
-         self.stripped_gru_bias_n) = stripped_gru.gru.bias_ih_l0.chunk(3)
+         self.stripped_gru_bias_n) = stripped_gru.gru.bias_ih_l0.clone().chunk(3)
 
         self.conditional_features_upsample = conditional_features_upsample
 
@@ -359,12 +368,12 @@ class WaveRNN(nn.Module):
         """
         return _WaveRNNInferrer(
             hidden_size=self.size,
-            to_bins_coarse=self.to_bins_coarse,
-            to_bins_fine=self.to_bins_fine,
-            project_coarse_input=self.project_coarse_input,
-            project_fine_input=self.project_fine_input,
-            conditional_features_upsample=self.conditional_features_upsample,
-            stripped_gru=self.stripped_gru,
+            to_bins_coarse=copy.deepcopy(self.to_bins_coarse),
+            to_bins_fine=copy.deepcopy(self.to_bins_fine),
+            project_coarse_input=copy.deepcopy(self.project_coarse_input),
+            project_fine_input=copy.deepcopy(self.project_fine_input),
+            conditional_features_upsample=copy.deepcopy(self.conditional_features_upsample),
+            stripped_gru=copy.deepcopy(self.stripped_gru),
             argmax=argmax)
 
     def forward(self, local_features, input_signal, target_coarse, hidden_state=None, pad=False):

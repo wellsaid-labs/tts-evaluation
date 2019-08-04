@@ -2,8 +2,9 @@
 numpy
 scipy
 
-# Install torch seperatly via https://pytorch.org based on your system requirements
-# torch==1.1.0
+# NOTE: For optimized `torch` install, visit https://pytorch.org and follow the "Get Started"
+# guide.
+torch
 
 # Language Library
 git+https://github.com/PetrochukM/PyTorch-NLP.git

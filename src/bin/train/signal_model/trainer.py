@@ -160,7 +160,7 @@ class Trainer():
             'num_dev_row': len(self.dev_dataset),
         })
         self.comet_ml.log_other('spectrogram_model_checkpoint_path',
-                                self.spectrogram_model_checkpoint_path)
+                                str(self.spectrogram_model_checkpoint_path))
         self._comet_ml_log_input_dev_data_hash()
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
@@ -478,8 +478,8 @@ class Trainer():
         # Introduce quantization noise
         target_signal = combine_signal(*split_signal(target_signal), return_int=True)
 
-        spectrogram = spectrogram.to(self.device)
-        inferrer = self.model.to_inferrer(self.device)
+        spectrogram = spectrogram.to(torch.device('cpu'))
+        inferrer = self.model.to_inferrer()
         with evaluate(inferrer):
             logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[0])
             predicted_coarse, predicted_fine, _ = inferrer(spectrogram)
@@ -489,6 +489,6 @@ class Trainer():
             tag=self.DEV_INFERRED_LABEL,
             text=example.text,
             speaker=str(example.speaker),
-            gold_audio=target_signal.cpu(),
-            predicted_audio=predicted_signal.cpu())
-        self.comet_ml.log_figure('spectrogram', plot_spectrogram(spectrogram.cpu()))
+            gold_audio=target_signal,
+            predicted_audio=predicted_signal)
+        self.comet_ml.log_figure('spectrogram', plot_spectrogram(spectrogram))

@@ -30,8 +30,6 @@ manager like so:
 
     python3 -m pip install -r requirements.txt
 
-Finally, follow the "Get Started" guide on [pytorch.org](pytorch.org) to install ``torch``.
-
 ### 2. Install SoX and FFmpeg
 
 This repository requires [SoX](http://sox.sourceforge.net/) (Sound eXchange) and
@@ -64,13 +62,21 @@ This section describes commands to run the executables required for training.
 
 Train the spectrogram model like so:
 
-    python -m src.bin.train.spectrogram_model -n experiment_name -p comet_ml_project_name
+    python -m src.bin.train.spectrogram_model --project_name comet_ml_project_name
+
+Learn more via:
+
+    python -m src.bin.train.spectrogram_model --help
 
 ### Signal Model
 
 Train the signal model like so:
 
-    python -m src.bin.train.signal_model -n experiment_name -p comet_ml_project_name
+    python -m src.bin.train.signal_model --project_name comet_ml_project_name
+
+Learn more via:
+
+    python -m src.bin.train.signal_model --help
 
 ## Test
 
