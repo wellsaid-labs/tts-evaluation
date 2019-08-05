@@ -785,7 +785,7 @@ def main(wav_pattern,
          wav_directory_name='wavs',
          csv_metadata_name='metadata.csv',
          sst_cache_name='.sst',
-         max_chunk_seconds=10,
+         max_chunk_seconds=12.5,
          min_seconds_per_character=0.02):
     """ Align audio with scripts, then create and save chunks of audio and text.
 
