@@ -29,10 +29,10 @@ The cons in summary are that the client cannot manage there own state due to the
 web audio api; therefore, the server must manage it via some database.
 
 Example:
-      $ export PYTHONPATH=.; python3 -m src.service.serve;
+      $ PYTHONPATH=. python -m src.service.serve
 
 Example:
-      $ gunicorn src.service.serve:app;
+      $ gunicorn src.service.serve:app
 
 TODO: Write tests for this module.
 """

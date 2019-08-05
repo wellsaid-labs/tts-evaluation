@@ -2,7 +2,7 @@
 
 Example:
 
-    $ python3 -m src.bin.train.signal_model -l="Linda baseline";
+    $ python -m src.bin.train.signal_model
 """
 from pathlib import Path
 

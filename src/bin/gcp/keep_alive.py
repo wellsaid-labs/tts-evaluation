@@ -1,21 +1,14 @@
 """
 This script runs a loop to restart preetible servers or shutdown halted experiments.
 
-
 Example:
 
-    $ python3 -m src.bin.gcp.keep_alive -p 'stft-baselines' \
-            --instance spectrogram-model-experiment-1 \
-            --instance spectrogram-model-experiment-2 \
-            --instance spectrogram-model-experiment-3 \
-            --instance spectrogram-model-experiment-4 \
-            --instance spectrogram-model-experiment-5 \
-            --instance spectrogram-model-experiment-6 \
-            --instance spectrogram-model-experiment-7 \
-            --instance spectrogram-model-experiment-8 \
-            --command="screen -dm bash -c \
-                          'cd ../WellSaidLabs/; \
-                          PYTHONPATH='.' python3 src/bin/train/spectrogram_model/__main__.py -c;'"
+    $ python -m src.bin.gcp.keep_alive --project_name 'your_comet_ml_project_name' \
+             --instance your_gcp_instance_name \
+             --command="screen -dm bash -c \
+                  'cd /opt/wellsaid-labs/Text-to-Speech;
+                  . venv/bin/activate
+                  PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py -c;'"
 """
 import argparse
 import json

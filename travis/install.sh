@@ -7,11 +7,13 @@
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
-echo 'Install FFmpeg'
+echo 'Installing FFmpeg, Sox and Ninja'
 sudo apt-get -y update
 sudo apt-get -y install ffmpeg
+sudo apt-get -y install sox
+sudo apt-get -y install ninja-build
 
-echo 'List files from cached directories'
+echo 'Listing files from cached directories.'
 if [ -d $HOME/download ]; then
     echo 'download:'
     ls $HOME/download

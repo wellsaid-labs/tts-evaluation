@@ -14,7 +14,7 @@ def _duplicate_stream(from_, to):
 
     Note:
         With the various references below, we were unable to add C support. Find more details
-        here: https://travis-ci.com/wellsaid-labs/WellSaidLabs/jobs/152504931
+        here: https://travis-ci.com/wellsaid-labs/Text-to-Speech/jobs/152504931
 
     Learn more:
         - https://eli.thegreenplace.net/2015/redirecting-all-kinds-of-stdout-in-python/

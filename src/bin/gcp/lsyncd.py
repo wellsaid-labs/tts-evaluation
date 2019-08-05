@@ -5,9 +5,10 @@ NOTE: `rsync` must be installed on the remote machine for this to work.
 
 Example:
 
-    python3 -m src.bin.gcp.lsyncd --source ~/Code/WellSaidLabs/ \
-                              --destination /home/michaelp/WellSaidLabs \
-                              --user michaelp --instance wellsaid
+    $ python -m src.bin.gcp.lsyncd --source $(pwd) \
+                                   --destination /opt/wellsaid-labs/Text-to-Speech \
+                                   --user your_gcp_user_name \
+                                   --instance your_gcp_instance_name
 """
 from pathlib import Path
 
