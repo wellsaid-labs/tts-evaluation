@@ -14,7 +14,6 @@ from pathlib import Path
 
 import argparse
 import logging
-import time
 import warnings
 
 # LEARN MORE:
@@ -44,6 +43,7 @@ from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import parse_hparam_args
 from src.hparams import set_hparams
+from src.utils import bash_time_label
 from src.utils import cache_on_disk_tensor_shapes
 from src.utils import Checkpoint
 from src.utils import RecordStandardStreams
@@ -177,15 +177,11 @@ def _train(device_index,
         logger.info('-' * 100)
 
 
-def _time_label():
-    return str(time.strftime('%Y-%m-%d_%H:%M:%S', time.localtime())).lower()
-
-
 def main(run_name=None,
          comet_ml_project_name=None,
          run_tags=[],
-         run_root=EXPERIMENTS_PATH / 'spectrogram_model' / _time_label(),
-         checkpoints_directory=Path('checkpoints') / _time_label(),
+         run_root=EXPERIMENTS_PATH / 'spectrogram_model' / bash_time_label(),
+         checkpoints_directory=Path('checkpoints') / bash_time_label(),
          checkpoint=None,
          more_hparams={}):
     """ Main module that trains a the spectrogram model saving checkpoints incrementally.

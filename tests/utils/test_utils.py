@@ -20,6 +20,20 @@ from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
 from src.utils.utils import split_list
 from src.utils.utils import get_chunks
+from src.utils.utils import bash_time_label
+
+
+def test_bash_time_label():
+    """ Test to ensure that no bash special characters appear in the label, learn more:
+    https://unix.stackexchange.com/questions/270977/what-characters-are-required-to-be-escaped-in-command-line-arguments
+    """
+    label = bash_time_label()
+    # NOTE (michael p): `:` wasn't mentioned explicitly; however, in my shell it required an escape.
+    for character in ([
+            '`', '~', '!', '#', '$', '&', '*', '(', ')', ' ', '\t', '\n', '{', '}', '[', ']', '|',
+            ';', '\'', '"', '<', '>', '?'
+    ] + [':']):
+        assert character not in label
 
 
 def test_get_chunks():

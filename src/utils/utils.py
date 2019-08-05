@@ -414,3 +414,16 @@ def Pool(*args, **kwargs):
     yield pool
     pool.close()  # Marks the pool as closed.
     pool.join()  # Waits for workers to exit.
+
+
+def bash_time_label():
+    """ Get a bash friendly string representing the time.
+
+    NOTE: This string is optimized for sorting by ordering units of time from largest to smallest.
+    NOTE: This string avoids any special bash characters, learn more:
+    https://unix.stackexchange.com/questions/270977/what-characters-are-required-to-be-escaped-in-command-line-arguments
+
+    Returns:
+        (str)
+    """
+    return str(time.strftime('%Y-%m-%d_%H-%M-%S', time.localtime())).lower()

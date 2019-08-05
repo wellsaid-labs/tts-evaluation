@@ -29,6 +29,7 @@ from src.utils.utils import seconds_to_string
 from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
 from src.utils.utils import split_list
+from src.utils.utils import bash_time_label
 
 __all__ = [
     'align_tokens', 'AnomalyDetector', 'Checkpoint', 'DataLoader', 'disk_cache', 'OnDiskTensor',
@@ -37,5 +38,5 @@ __all__ = [
     'seconds_to_string', 'log_runtime', 'sort_together', 'split_list', 'slice_by_cumulative_sum',
     'balance_list', 'flatten', 'batch_predict_spectrograms', 'get_chunks',
     'cache_on_disk_tensor_shapes', 'RecordStandardStreams', 'Pool', 'maybe_load_tensor',
-    'AveragedMetric', 'DistributedAveragedMetric'
+    'AveragedMetric', 'DistributedAveragedMetric', 'bash_time_label'
 ]
