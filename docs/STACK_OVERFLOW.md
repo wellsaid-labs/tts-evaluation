@@ -44,3 +44,9 @@ ownership:
 
 This error happened during the opening of a file with ``librosa``,
 [this thread](https://github.com/librosa/librosa/issues/219) provided me my solution .
+
+## WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!
+
+This error occurs frequently for me when using `python3 -m src.bin.gcp.lsyncd` with GCP because
+their host identification always changes. This can be resolved by deleted the line number mentioned
+after `Offending ECDSA key in /Users/michaelp/.ssh/known_hosts:`.
