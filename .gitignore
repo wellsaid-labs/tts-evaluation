@@ -86,3 +86,6 @@ node_modules/
 
 # Google Cloud Storage credentials
 gcs_credentials.json
+
+# Python package `venv` directory
+/venv/
