@@ -222,6 +222,9 @@ def main(run_name=None,
                                 [e.spectrogram for e in dev_dataset])
 
     num_cuda_devices = torch.cuda.device_count()
+    # NOTE (michael): Without this assert, when `nprocs` is zero, `torch.multiprocessing.spawn`
+    # crashes in a nondescript way.
+    assert num_cuda_devices > 0, 'Unable to find CUDA devices.'
     torch.multiprocessing.spawn(
         _train,
         nprocs=num_cuda_devices,

@@ -171,14 +171,15 @@ You've now setup an instance for training that can be imaged and replicated.
 
 You'll want to polish and clean up the disk before imaging it so that it's useful to your team
 members. First, you'll want to remove any personal and temporary files. These files include but are
-not limited to your `.git` directory, `.env` settings and the `experiments` directory. Second,
-you'll want to run `sudo chmod -R a+rwx /opt/` to ensure all your team members have access to use
-your source code. Finally, you'll want to upgrade the system packages like so:
+not limited to your `.git` directory, `.env` settings and temporary experiments. Second, you'll want
+to run `sudo chmod -R a+rwx /opt/` to ensure all your team members have access to use your source
+code. Finally, you'll want to upgrade the system packages like so:
 
 ```bash
 sudo apt-get update
 sudo apt-get upgrade
 sudo apt-get dist-upgrade
+sudo apt-get autoremove
 ```
 
 ### 3. Create An Image

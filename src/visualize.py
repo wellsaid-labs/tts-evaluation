@@ -206,8 +206,6 @@ def CometML(project_name=ConfiguredArg(),
     Returns:
         (Experiment or ExistingExperiment): Object for visualization with comet.
     """
-    assert isinstance(project_name, str), 'Project name must be a string.'
-
     load_dotenv()
 
     api_key = os.getenv('COMET_ML_API_KEY') if api_key is None else api_key
@@ -221,11 +219,12 @@ def CometML(project_name=ConfiguredArg(),
                           'Please track these files via `git`:\n%s') % untracked_files)
 
     kwargs.update({
-        'project_name': project_name,
         'api_key': api_key,
         'workspace': workspace,
         'log_git_patch': log_git_patch,
     })
+    if project_name is not None:
+        kwargs.update({'project_name': project_name})
     if experiment_key is None:
         experiment = Experiment(**kwargs)
         experiment.log_html(_BASE_HTML_STYLING)

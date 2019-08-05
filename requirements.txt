@@ -16,7 +16,7 @@ librosa
 
 # Visualization Library
 matplotlib
-comet-ml==2.0.5
+comet-ml==2.0.6
 
 # Testing
 pytest
