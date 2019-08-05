@@ -165,6 +165,7 @@ def main(dataset,
 
     # Save the griffin-lim predictions
     if spectrogram_model_checkpoint is not None:
+        logger.info('The spectrogram model path is: %s', spectrogram_model_checkpoint.path)
         dataset = add_predicted_spectrogram_column(
             dataset,
             spectrogram_model_checkpoint,
@@ -182,6 +183,7 @@ def main(dataset,
     # Save the signal model predictions
     if signal_model_checkpoint is not None and (has_target_audio or
                                                 spectrogram_model_checkpoint is not None):
+        logger.info('The signal model path is: %s', signal_model_checkpoint.path)
         signal_model_model = signal_model_checkpoint.model.to_inferrer()
         use_predicted = spectrogram_model_checkpoint is not None
 
