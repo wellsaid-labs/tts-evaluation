@@ -67,7 +67,7 @@ def beth_speech_dataset(
 
 def sean_speech_dataset(
         extracted_name='Sean Hannity',
-        url='https://drive.google.com/uc?export=download&id=1Qly0EIpkANQqQWWjsOI7Pai5rWdrInqT',
+        url='https://drive.google.com/uc?export=download&id=1YHX6yl1kX7lQguxSs4sJ1FPrAS9NZ8O4',
         url_filename='Sean Hannity.tar.gz',
         speaker=Speaker('Sean Hannity', Gender.MALE),
         **kwargs):
