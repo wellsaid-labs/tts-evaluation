@@ -57,6 +57,7 @@ def maybe_load_tensor(tensor):
     """
     return tensor.to_tensor() if isinstance(tensor, OnDiskTensor) else tensor
 
+
 class OnDiskTensor():
     """ Tensor that resides on disk.
 
