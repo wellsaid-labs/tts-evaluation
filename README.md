@@ -83,7 +83,7 @@ COMET_ML_WORKSPACE=xx
 # NOTE: Both API keys can be found in your settings:
 # https://www.comet.ml/YOUR_COMET_USER_NAME/settings/account
 COMET_ML_API_KEY=xx
-COMET_ML_REST_API_KEY=xx  #
+COMET_ML_REST_API_KEY=xx
 ```
 
 ### Your Done
