@@ -2,8 +2,8 @@
 
 Example:
 
-    $ PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py;
-    $ pkill -9 python; nvidia-smi;
+    $ PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py
+    $ pkill -9 python; nvidia-smi
 
 NOTE: The distributed example does clean up Python processes well; therefore, we kill all
 ``python`` processes and check that ``nvidia-smi`` cache was cleared.
