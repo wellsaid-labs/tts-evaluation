@@ -13,7 +13,7 @@ import torch
 from src.audio import combine_signal
 from src.audio import split_signal
 from src.hparams import configurable
-from src.utils import OnDiskTensor
+from src.utils import maybe_load_tensor
 
 import src
 
@@ -120,10 +120,8 @@ def _load_fn(row, use_predicted, **kwargs):
     Returns:
         (SignalModelTrainingRow)
     """
-    spectrogram = row.predicted_spectrogram if use_predicted else row.spectrogram
-    spectrogram = spectrogram.to_tensor() if isinstance(spectrogram, OnDiskTensor) else spectrogram
-    spectrogram_audio = row.spectrogram_audio.to_tensor() if isinstance(
-        row.spectrogram_audio, OnDiskTensor) else row.spectrogram_audio
+    spectrogram = maybe_load_tensor(row.predicted_spectrogram if use_predicted else row.spectrogram)
+    spectrogram_audio = maybe_load_tensor(row.spectrogram_audio)
     spectrogram_audio = combine_signal(*split_signal(spectrogram_audio))
 
     # Check invariants
@@ -142,6 +140,7 @@ class DataLoader(src.utils.DataLoader):
         device (torch.device): Device onto which to load data.
         use_tqdm (bool): If ``True`` display progress via TQDM.
         trial_run (bool or int): If ``True``, iterates over one batch.
+        num_epochs (int, optional): Number of epochs to run.
         **kwargs (any): Other arguments to the data loader ``_load_fn``
 
     Returns:
@@ -161,7 +160,8 @@ class DataLoader(src.utils.DataLoader):
     """
 
     @configurable
-    def __init__(self, data, batch_size, device, use_tqdm, trial_run, **kwargs):
+    def __init__(self, data, batch_size, device, use_tqdm, trial_run, num_epochs=1, **kwargs):
+
         super().__init__(
             data,
             batch_size=batch_size,
@@ -170,6 +170,6 @@ class DataLoader(src.utils.DataLoader):
             load_fn=partial(_load_fn, **kwargs),
             pin_memory=True,
             post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
-            sampler=RandomSampler(data),
+            sampler=RandomSampler(data, replacement=True, num_samples=len(data) * num_epochs),
             trial_run=trial_run,
             use_tqdm=use_tqdm)

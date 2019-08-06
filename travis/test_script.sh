@@ -18,7 +18,7 @@ if [[ "$RUN_FLAKE8" == "true" ]]; then
 fi
 
 run_tests() {
-    TEST_CMD="python -m pytest tests/ src/ --doctest-modules --verbose --durations=20"
+    TEST_CMD="python -m pytest --verbose"
     $TEST_CMD
 }
 

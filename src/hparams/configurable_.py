@@ -1,9 +1,12 @@
-from pathlib import Path
+from functools import lru_cache
 from functools import reduce
 from functools import wraps
-from functools import lru_cache
 from importlib import import_module
+from pathlib import Path
 
+from torch.multiprocessing import current_process
+
+import ast
 import importlib
 import inspect
 import logging
@@ -139,9 +142,8 @@ def _check_configuration(dict_):
 
 @lru_cache(maxsize=1)
 def _get_main_module_name():
-    """ Get __main__ module name """
-    from src.utils import ROOT_PATH  # Prevent circular dependecy
-
+    """ Get `__main__` / `__mp_main__` module name """
+    from src.environment import ROOT_PATH  # Prevent circular dependency
     file_name = sys.argv[0]
 
     try:
@@ -165,7 +167,7 @@ def _get_module_name(func):
         print_name (str): Short name of the module for logging.
     """
     module_keys = inspect.getmodule(func).__name__.split('.')
-    if module_keys == ['__main__']:
+    if module_keys == ['__main__'] or module_keys == ['__mp_main__']:
         module_keys = _get_main_module_name().split('.')
     module_keys = [k for k in module_keys if k != '']
     keys = module_keys + func.__qualname__.split('.')
@@ -212,6 +214,8 @@ def _check_configuration_helper(dict_, keys, trace):
                        '.'.join(keys))
         return
 
+    # TODO: Automatically adjust any relative names to absolute module names.
+
     if len(keys) >= 2:
         # CASE: Function
         # For example:
@@ -222,7 +226,10 @@ def _check_configuration_helper(dict_, keys, trace):
             # Try to import a function
             module_path = '.'.join(keys[:-1])
             if module_path == _get_main_module_name():
-                module_path = '__main__'
+                if current_process().name == 'MainProcess':
+                    module_path = '__main__'
+                else:
+                    module_path = '__mp_main__'
             module = import_module(module_path)
             try:
                 function = getattr(module, keys[-1])
@@ -230,12 +237,12 @@ def _check_configuration_helper(dict_, keys, trace):
                 if (hasattr(function, '_configurable')):
                     absolute_keys = _get_module_name(function)[0]
                     if keys != absolute_keys:
-                        raise TypeError(
-                            'The module path must be absolute: %s vs %s' % (keys, absolute_keys))
+                        raise TypeError('The module path must be absolute: %s → %s' %
+                                        (keys, absolute_keys))
                     return
                 else:
-                    trace.append(
-                        'Function `%s` is not decorated with `configurable`.' % '.'.join(keys))
+                    trace.append('Function `%s` is not decorated with `configurable`.' %
+                                 '.'.join(keys))
             except AttributeError:
                 trace.append('Function `%s` not found in `%s`.' % (keys[-1], module_path))
         except ImportError:
@@ -256,7 +263,10 @@ def _check_configuration_helper(dict_, keys, trace):
         try:
             module_path = '.'.join(keys[:-2])
             if module_path == _get_main_module_name():
-                module_path = '__main__'
+                if current_process().name == 'MainProcess':
+                    module_path = '__main__'
+                else:
+                    module_path = '__mp_main__'
             module = import_module(module_path)
             try:
                 class_ = getattr(module, keys[-2])
@@ -271,8 +281,8 @@ def _check_configuration_helper(dict_, keys, trace):
                                             (keys, absolute_keys))
                         return
                     else:
-                        trace.append(
-                            'Function `%s` is not decorated with `configurable`.' % '.'.join(keys))
+                        trace.append('Function `%s` is not decorated with `configurable`.' %
+                                     '.'.join(keys))
                 except AttributeError:
                     trace.append('Function %s not found in class `%s`.' % (keys[-1], keys[-2]))
             except AttributeError:
@@ -377,11 +387,10 @@ def _merge_args(parameters, args, kwargs, default_kwargs, print_name='', is_firs
             if parameters[i].name in default_kwargs:
                 value = default_kwargs[parameters[i].name]
                 if is_first_run and value != arg:
-                    logger.warning((
+                    logger.warning(
                         '@configurable: Overwriting configured argument ``%s=%s`` in module ``%s`` '
-                        'with ``%s``. '
-                        'This warning will not be repeated.') % (parameters[i].name, value,
-                                                                 print_name, arg))
+                        'with ``%s``. This warning will not be repeated.', parameters[i].name,
+                        value, print_name, arg)
                 del default_kwargs[parameters[i].name]
 
     if is_first_run:
@@ -389,8 +398,8 @@ def _merge_args(parameters, args, kwargs, default_kwargs, print_name='', is_firs
             if key in default_kwargs and value != default_kwargs[key]:
                 logger.warning(
                     ('@configurable: Overwriting configured argument ``%s=%s`` in module ``%s`` '
-                     'with ``%s``. This warning will not be repeated.') % (key, default_kwargs[key],
-                                                                           print_name, value))
+                     'with ``%s``. This warning will not be repeated.') %
+                    (key, default_kwargs[key], print_name, value))
 
     default_kwargs.update(kwargs)
 
@@ -412,7 +421,8 @@ class ConfiguredArg():
     def __init__(self):
         lineno = inspect.stack()[1].lineno  # Ge the caller line number
         filename = inspect.stack()[1].filename
-        self.error_message = 'The parameter at %s:%s must be overwritten' % (filename, lineno)
+        self.error_message = 'The parameter set to `ConfiguredArg` at %s:%s must be overwritten' % (
+            filename, lineno)
 
     def _raise(self):
         raise ValueError(self.error_message)
@@ -485,8 +495,7 @@ def configurable(func):
     Returns:
         (callable): Decorated function
     """
-    # Get the module name
-    keys, print_name = _get_module_name(func)
+    keys, print_name = _get_module_name(func)  # Get the module name
     is_first_run = True
 
     @wraps(func)
@@ -517,3 +526,35 @@ def configurable(func):
     decorator._configurable = True
 
     return decorator
+
+
+def parse_hparam_args(hparam_args):
+    """ Parse CLI arguments like ``['--torch.optim.adam.Adam.__init__.lr 0.1',]`` to :class:`dict`.
+
+    Args:
+        hparams_args (list of str): List of CLI arguments
+
+    Returns
+        (dict): Dictionary of arguments.
+    """
+
+    def to_literal(value):
+        try:
+            value = ast.literal_eval(value)
+        except ValueError:
+            pass
+        return value
+
+    return_ = {}
+
+    for hparam in hparam_args:
+        assert '--' in hparam, 'Hparam argument (%s) must have a double flag' % hparam
+        split = hparam.replace('=', ' ').split()
+        assert len(split) == 2, 'Hparam %s must be equal to one value' % split
+        key, value = tuple(split)
+        assert key[:2] == '--', 'Hparam argument (%s) must have a double flag' % hparam
+        key = key[2:]  # Remove flag
+        value = to_literal(value)
+        return_[key] = value
+
+    return return_

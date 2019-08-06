@@ -38,8 +38,13 @@ sync {
       "*.zip",
       "*.tar",
       "*.tgz",
+      "*.tar.gz",
       "*.gzip",
       "_data/**",
-      "node_modules/**"
+      "tmp/**",
+      "tests/**",
+      "venv/**",
+      "node_modules/**",
+      ".tts_cache"
   }
 }

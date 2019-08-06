@@ -1,7 +1,3 @@
-import math
-import os
-
-from contextlib import ExitStack
 from unittest import mock
 
 import pytest
@@ -9,63 +5,61 @@ import torch
 
 from src.bin.train.spectrogram_model.data_loader import SpectrogramModelTrainingRow
 from src.bin.train.spectrogram_model.trainer import Trainer
-from src.datasets import Gender
-from src.datasets import Speaker
-from src.spectrogram_model import InputEncoder
+from src.environment import TEMP_PATH
 from src.utils import Checkpoint
-
-
-from tests.utils import get_example_spectrogram_text_speech_rows
-from tests.utils import MockCometML
+from tests._utils import get_tts_mocks
+from tests._utils import MockCometML
 
 
 @mock.patch('src.bin.train.spectrogram_model.trainer.CometML')
-@mock.patch('src.bin.train.spectrogram_model.trainer.add_spectrogram_column')
 @mock.patch('src.bin.train.signal_model.trainer.atexit.register')
-def get_trainer(register_mock, add_spectrogram_column_mock, comet_ml_mock):
+def get_trainer(register_mock, comet_ml_mock, load_data=True):
+    """
+    Args:
+        load_data (bool, optional): If `False` do not load any data for faster instantiation.
+    """
     comet_ml_mock.return_value = MockCometML()
-    add_spectrogram_column_mock.return_value = get_example_spectrogram_text_speech_rows()
     register_mock.return_value = None
-    trainer = Trainer(
-        device=torch.device('cpu'),
-        train_dataset=get_example_spectrogram_text_speech_rows(),
-        dev_dataset=get_example_spectrogram_text_speech_rows(),
-        checkpoints_directory='tests/_test_data/',
-        comet_ml_project_name='',
-        input_encoder=InputEncoder(['text encoder'], [Speaker('Linda Johnson', Gender.FEMALE)]),
-        train_batch_size=1,
-        dev_batch_size=1,
-        comet_ml_experiment_key=None)
 
-    # Make sure that stop-token is not predicted; therefore, reaching ``max_frames_per_token``
-    torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.weight, -math.inf)
-    torch.nn.init.constant_(trainer.model.decoder.linear_stop_token.bias, -math.inf)
+    mocks = get_tts_mocks(add_spectrogram=True)
+    trainer = Trainer(
+        device=mocks['device'],
+        train_dataset=mocks['train_dataset'] if load_data else [],
+        dev_dataset=mocks['dev_dataset'] if load_data else [],
+        checkpoints_directory=TEMP_PATH,
+        train_batch_size=1,
+        dev_batch_size=1)
+
     return trainer
 
 
 @mock.patch('src.bin.train.spectrogram_model.trainer.CometML')
-@mock.patch('src.bin.train.spectrogram_model.trainer.add_spectrogram_column')
 @mock.patch('src.bin.train.signal_model.trainer.atexit.register')
-def test_checkpoint(register_mock, add_spectrogram_column_mock, comet_ml_mock):
-    trainer = get_trainer()
+def test_checkpoint(register_mock, comet_ml_mock):
+    """ Ensure checkpoint can be saved and loaded from. """
     comet_ml_mock.return_value = MockCometML()
-    add_spectrogram_column_mock.return_value = get_example_spectrogram_text_speech_rows()
     register_mock.return_value = None
+
+    trainer = get_trainer(load_data=False)
 
     checkpoint_path = trainer.save_checkpoint()
     Trainer.from_checkpoint(
         checkpoint=Checkpoint.from_path(checkpoint_path),
         device=torch.device('cpu'),
-        checkpoints_directory='tests/_test_data/',
-        train_dataset=get_example_spectrogram_text_speech_rows(),
-        dev_dataset=get_example_spectrogram_text_speech_rows())
+        checkpoints_directory=TEMP_PATH,
+        train_dataset=trainer.train_dataset,
+        dev_dataset=trainer.dev_dataset)
 
-    # Clean up
-    os.unlink(checkpoint_path)
+
+def test_visualize_inferred():
+    """ Smoke test to ensure that `visualize_inferred` runs without failure. """
+    trainer = get_trainer()
+    trainer.visualize_inferred()
 
 
 def test__do_loss_and_maybe_backwards():
-    trainer = get_trainer()
+    """ Test that the correct loss values are computed and back propagated. """
+    trainer = get_trainer(load_data=False)
 
     batch = SpectrogramModelTrainingRow(
         text=None,
@@ -93,60 +87,8 @@ def test__do_loss_and_maybe_backwards():
 
 
 def test_run_epoch():
+    """ Smoke test to ensure that `run_epoch` runs without failure. """
     trainer = get_trainer()
-    batch_size = 2
-    num_frames = 8
-    num_tokens = 8
-    frame_channels = 16
-    text_vocab_size = 10
-    speaker_vocab_size = 4
-    frame_lengths = torch.full((1, batch_size,), num_frames)
-    loaded_data = [
-        SpectrogramModelTrainingRow(
-            text=(torch.randint(text_vocab_size, (num_tokens, batch_size), dtype=torch.long),
-                  torch.full((1, batch_size,), num_tokens)),
-            speaker=(torch.randint(speaker_vocab_size, (1, batch_size), dtype=torch.long),
-                     torch.full((1, batch_size,), 1)),
-            spectrogram=(torch.rand(num_frames, batch_size, frame_channels), frame_lengths),
-            stop_token=(torch.rand(num_frames, batch_size), frame_lengths),
-            spectrogram_mask=(torch.ones(num_frames, batch_size, dtype=torch.float).byte(),
-                              frame_lengths),
-            spectrogram_expanded_mask=(torch.ones(
-                num_frames, batch_size, frame_channels, dtype=torch.float).byte(), frame_lengths))
-    ]
-    forward_pass_return = (torch.FloatTensor(num_frames, batch_size, frame_channels).fill_(1),
-                           torch.FloatTensor(num_frames, batch_size, frame_channels).fill_(1),
-                           torch.FloatTensor(num_frames, batch_size).fill_(1),
-                           torch.FloatTensor(num_frames, batch_size,
-                                             num_tokens).fill_(1.0 / num_tokens))
-    infer_pass_return = (torch.FloatTensor(num_frames, batch_size, frame_channels).fill_(1),
-                         torch.FloatTensor(num_frames, batch_size, frame_channels).fill_(1),
-                         torch.FloatTensor(num_frames, batch_size).fill_(1),
-                         torch.FloatTensor(num_frames, batch_size,
-                                           num_tokens).fill_(1.0 / num_tokens),
-                         frame_lengths)
-    with ExitStack() as stack:
-        (MockDataLoader, mock_aligned, mock_infer, mock_backward, mock_optimizer_step,
-         mock_auto_optimizer_step) = tuple([
-             stack.enter_context(mock.patch(arg)) for arg in [
-                 'src.bin.train.spectrogram_model.trainer.DataLoader',
-                 'src.bin.train.spectrogram_model.trainer.SpectrogramModel._aligned',
-                 'src.bin.train.spectrogram_model.trainer.SpectrogramModel._infer',
-                 'torch.Tensor.backward', 'src.optimizers.Optimizer.step',
-                 'src.optimizers.AutoOptimizer.step'
-             ]
-         ])
-        MockDataLoader.return_value = loaded_data
-        mock_aligned.return_value = forward_pass_return
-        mock_infer.return_value = infer_pass_return
-        mock_backward.return_value = None
-        mock_optimizer_step.return_value = None
-        mock_auto_optimizer_step.return_value = None
-
-        trainer.run_epoch(train=False)
-        trainer.run_epoch(train=False, trial_run=True)
-        trainer.run_epoch(train=True)
-        trainer.run_epoch(train=False, infer=True)
-
-        mock_aligned.assert_called()
-        mock_infer.assert_called()
+    trainer.run_epoch(train=False, trial_run=False)
+    trainer.run_epoch(train=False, trial_run=True)
+    trainer.run_epoch(train=False, infer=True, trial_run=False)

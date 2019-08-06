@@ -29,10 +29,10 @@ The cons in summary are that the client cannot manage there own state due to the
 web audio api; therefore, the server must manage it via some database.
 
 Example:
-      $ export PYTHONPATH=.; python3 -m src.service.serve;
+      $ PYTHONPATH=. python -m src.service.serve
 
 Example:
-      $ gunicorn src.service.serve:app;
+      $ gunicorn src.service.serve:app
 
 TODO: Write tests for this module.
 """
@@ -53,13 +53,13 @@ import torch
 
 from src.audio import build_wav_header
 from src.audio import combine_signal
+from src.environment import set_basic_logging_config
 from src.hparams import set_hparams
 from src.utils import Checkpoint
-from src.utils import set_basic_logging_config
 
 app = Flask(__name__)
-logger = logging.getLogger(__name__)
 set_basic_logging_config()
+logger = logging.getLogger(__name__)
 load_dotenv()
 DEVICE = torch.device('cpu')
 NO_CACHE_HEADERS = {
@@ -251,6 +251,7 @@ def _validate_and_unpack(args, max_characters=1000, num_api_key_characters=32):
         raise InvalidUsage('Must call with keys `speaker_id` and `text`.')
 
     speaker_id = args.get('speaker_id')
+    # TODO: Normalize the text such that special quotes are normalized and don't prevent API usage.
     text = args.get('text')
     stop_threshold = args.get('stop_threshold', None)
 

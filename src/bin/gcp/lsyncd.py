@@ -5,9 +5,10 @@ NOTE: `rsync` must be installed on the remote machine for this to work.
 
 Example:
 
-    python3 -m src.bin.gcp.lsyncd --source ~/Code/WellSaidLabs/ \
-                              --destination /home/michaelp/WellSaidLabs \
-                              --user michaelp --instance wellsaid
+    $ python -m src.bin.gcp.lsyncd --source $(pwd) \
+                                   --destination /opt/wellsaid-labs/Text-to-Speech \
+                                   --user your_gcp_user_name \
+                                   --instance your_gcp_instance_name
 """
 from pathlib import Path
 
@@ -23,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 def get_ip(instance_name):
     """ Get the IP address of an instance
+
+    TODO: Remove all invocations of the `shell` due to this:
+    https://stackoverflow.com/questions/3172470/actual-meaning-of-shell-true-in-subprocess
 
     Args:
         instance_name (str): Name of GCP instance

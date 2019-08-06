@@ -3,26 +3,31 @@ from functools import partial
 from pathlib import Path
 
 import logging
-import pathlib
 import pprint
+
+from third_party import LazyLoader
+from torchnlp.download import download_file_maybe_extract
+from tqdm import tqdm
 
 import numpy
 import pandas
 import torch
+librosa = LazyLoader('librosa', globals(), 'librosa')
 
+from src.audio import cache_get_audio_metadata
 from src.audio import get_log_mel_spectrogram
 from src.audio import normalize_audio
 from src.audio import read_audio
 from src.datasets.constants import TextSpeechRow
-from src.distributed import download_file_maybe_extract
+from src.environment import DATA_PATH
+from src.environment import ROOT_PATH
+from src.environment import TEMP_PATH
+from src.environment import TTS_DISK_CACHE_NAME
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.utils import batch_predict_spectrograms
-from src.utils import Checkpoint
 from src.utils import OnDiskTensor
-from src.utils import ROOT_PATH
-
-import src.distributed
+from src.utils import Pool
 
 logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
@@ -30,7 +35,7 @@ pprint = pprint.PrettyPrinter(indent=4)
 
 @configurable
 def add_predicted_spectrogram_column(data,
-                                     checkpoint_path,
+                                     checkpoint,
                                      device,
                                      batch_size=ConfiguredArg(),
                                      on_disk=True,
@@ -40,7 +45,7 @@ def add_predicted_spectrogram_column(data,
 
     Args:
         data (iterable of TextSpeechRow)
-        checkpoint_path (src or Path): Path to checkpoint for the spectrogram model.
+        checkpoint (src.utils.Checkpoint): Spectrogram model checkpoint.
         device (torch.device): Device to run prediction on.
         batch_size (int, optional)
         on_disk (bool, optional): Save the tensor to disk returning a ``OnDiskTensor`` instead of
@@ -52,8 +57,6 @@ def add_predicted_spectrogram_column(data,
         (iterable of TextSpeechRow)
     """
     logger.info('Adding a predicted spectrogram column to dataset.')
-    checkpoint = Checkpoint.from_path(checkpoint_path, device=device, load_random_state=False)
-
     if aligned and not all([r.spectrogram is not None for r in data]):
         raise RuntimeError("Spectrogram column of ``TextSpeechRow`` must not be ``None``.")
 
@@ -65,13 +68,15 @@ def add_predicted_spectrogram_column(data,
 
         def to_filename(example):
             if example.audio_path is None:
-                parent = pathlib.Path('/tmp')
+                parent = TEMP_PATH
                 # Learn more:
                 # https://computinglife.wordpress.com/2008/11/20/why-do-hash-functions-use-prime-numbers/
                 name = 31 * hash(example.text) + 97 * hash(example.speaker)
             else:
                 parent = example.audio_path.parent
                 name = example.audio_path.stem
+            parent = parent if parent.name == TTS_DISK_CACHE_NAME else parent / TTS_DISK_CACHE_NAME
+            parent.mkdir(exist_ok=True)
             return parent / 'predicted_spectrogram({},{},aligned={}).npy'.format(
                 name, model_name, aligned)
 
@@ -105,19 +110,16 @@ def _add_spectrogram_column(example, on_disk=True):
     Returns:
         (TextSpeechRow): Row of text and speech aligned data with spectrogram data.
     """
-    import librosa
-
     audio_path = example.audio_path
 
     if on_disk:
-        spectrogram_audio_path = audio_path.parent / 'pad({}).npy'.format(audio_path.stem)
-        spectrogram_path = audio_path.parent / 'spectrogram({}).npy'.format(audio_path.stem)
+        parent = audio_path.parent
+        parent = parent if parent.name == TTS_DISK_CACHE_NAME else parent / TTS_DISK_CACHE_NAME
+        spectrogram_audio_path = parent / 'pad({}).npy'.format(audio_path.stem)
+        spectrogram_path = parent / 'spectrogram({}).npy'.format(audio_path.stem)
         is_cached = spectrogram_path.is_file() and spectrogram_audio_path.is_file()
 
-    # For the distributed case, allow only the master node to save to disk while the worker nodes
-    # optimistically assume the file already exists.
-
-    if not on_disk or (on_disk and not is_cached and src.distributed.is_master()):
+    if not on_disk or (on_disk and not is_cached):
         # Compute and save to disk the spectrogram and audio
         assert audio_path.is_file(), 'Audio path must be a file %s' % audio_path
         signal = read_audio(audio_path)
@@ -131,6 +133,7 @@ def _add_spectrogram_column(example, on_disk=True):
         padded_signal = torch.from_numpy(padded_signal)
 
         if on_disk:
+            parent.mkdir(exist_ok=True)
             return example._replace(
                 spectrogram_audio=OnDiskTensor.from_tensor(spectrogram_audio_path, padded_signal),
                 spectrogram=OnDiskTensor.from_tensor(spectrogram_path, log_mel_spectrogram))
@@ -155,7 +158,14 @@ def add_spectrogram_column(data, on_disk=True):
             data.
     """
     logger.info('Adding a spectrogram column to dataset.')
-    return src.distributed.map_multiprocess(data, partial(_add_spectrogram_column, on_disk=on_disk))
+    partial_ = partial(_add_spectrogram_column, on_disk=on_disk)
+    with Pool() as pool:
+        # NOTE: `chunksize` with `imap` is more performant while allowing us to measure progress.
+        # TODO: Consider using `imap_unordered` instead of `imap` because it is more performant,
+        # learn more:
+        # https://stackoverflow.com/questions/19063238/in-what-situation-do-we-need-to-use-multiprocessing-pool-imap-unordered
+        # However, it's important to return the results in the same order as they came.
+        return list(tqdm(pool.imap(partial_, data, chunksize=128), total=len(data)))
 
 
 def _normalize_audio_column_helper(example):
@@ -171,7 +181,19 @@ def normalize_audio_column(data):
     Returns:
         (iterable of TextSpeechRow): Iterable of text speech rows with ``audio_path`` updated.
     """
-    return src.distributed.map_multiprocess(data, _normalize_audio_column_helper)
+    cache_get_audio_metadata([e.audio_path for e in data])
+
+    logger.info('Normalizing dataset audio using SoX.')
+    with Pool() as pool:
+        # NOTE: `chunksize` allows `imap` to be much more performant while allowing us to measure
+        # progress.
+        iterator = pool.imap(_normalize_audio_column_helper, data, chunksize=1024)
+        return_ = list(tqdm(iterator, total=len(data)))
+
+    # NOTE: `cache_get_audio_metadata` for any new normalized audio paths.
+    cache_get_audio_metadata([e.audio_path for e in return_])
+
+    return return_
 
 
 def filter_(function, dataset):
@@ -184,8 +206,9 @@ def filter_(function, dataset):
     Returns:
         iterable of TextSpeechRow
     """
-    positive = list(filter(function, dataset))
-    negative = list(filter(lambda e: not function(e), dataset))
+    bools = [function(e) for e in dataset]
+    positive = [e for i, e in enumerate(dataset) if bools[i]]
+    negative = [e for i, e in enumerate(dataset) if not bools[i]]
     speaker_distribution = Counter([example.speaker for example in negative])
     logger.info('Filtered out %d examples via ``%s`` with a speaker distribution of:\n%s',
                 len(negative), function.__name__, pprint.pformat(speaker_distribution))
@@ -198,7 +221,7 @@ def _dataset_loader(
         speaker,
         url_filename=None,
         check_files=['{metadata_filename}'],
-        directory=ROOT_PATH / 'data',
+        directory=DATA_PATH,
         metadata_filename='{directory}/{extracted_name}/metadata.csv',
         metadata_text_column='Content',
         metadata_audio_column='WAV Filename',
@@ -236,7 +259,7 @@ def _dataset_loader(
     Returns:
         list of TextSpeechRow: Dataset with audio filenames and text annotations.
     """
-    logger.info('Loading %s speech dataset', extracted_name)
+    logger.info('Loading `%s` speech dataset', extracted_name)
     directory = Path(directory)
     metadata_filename = metadata_filename.format(directory=directory, extracted_name=extracted_name)
     check_files = [

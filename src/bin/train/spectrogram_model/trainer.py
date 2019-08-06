@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import atexit
 import logging
 import math
@@ -10,23 +12,22 @@ import torch
 
 from src.audio import griffin_lim
 from src.bin.train.spectrogram_model.data_loader import DataLoader
-from src.datasets import add_spectrogram_column
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import get_config
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.spectrogram_model import InputEncoder
-from src.spectrogram_model import SpectrogramModel
-from src.utils import AccumulatedMetrics
 from src.utils import balance_list
 from src.utils import Checkpoint
 from src.utils import dict_collapse
+from src.utils import DistributedAveragedMetric
 from src.utils import evaluate
 from src.utils import get_average_norm
 from src.utils import get_total_parameters
 from src.utils import get_weighted_stdev
 from src.utils import log_runtime
+from src.utils import maybe_load_tensor
 from src.visualize import CometML
 from src.visualize import plot_attention
 from src.visualize import plot_spectrogram
@@ -36,6 +37,11 @@ import src.distributed
 
 logger = logging.getLogger(__name__)
 
+# TODO: Consider re-organizing `Trainer` to be more functional, with each function being stateless
+# and rather simply changing state. This more closely fits with the "checkpoint" pattern. Testing
+# will be simpler because we can avoid potentially mocking all the objects created during
+# `Trainer` instantiation. Finally, it aligns more closely with PyTorch's design.
+
 
 class Trainer():
     """ Trainer defines a simple interface for training the ``SpectrogramModel``.
@@ -44,7 +50,6 @@ class Trainer():
         device (torch.device): Device to train on.
         train_dataset (iterable of TextSpeechRow): Train dataset used to optimize the model.
         dev_dataset (iterable of TextSpeechRow): Dev dataset used to evaluate the model.
-        comet_ml_project_name (str): Comet project name, used for grouping experiments.
         checkpoints_directory (str or Path): Directory to store checkpoints in.
         train_batch_size (int): Batch size used for training.
         dev_batch_size (int): Batch size used for evaluation.
@@ -52,10 +57,8 @@ class Trainer():
         criterion_stop_token (callable): Loss function used to score stop
             token predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
-        comet_ml_experiment_key (str, optional): Previous experiment key to continue visualization
-            in comet.
-        input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         model (torch.nn.Module, optional): Model to train and evaluate.
+        input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         step (int, optional): Starting step; typically, this parameter is useful when starting from
             a checkpoint.
         epoch (int, optional): Starting epoch; typically, this parameter is useful when starting
@@ -72,33 +75,31 @@ class Trainer():
                  device,
                  train_dataset,
                  dev_dataset,
-                 comet_ml_project_name,
                  checkpoints_directory,
                  train_batch_size=ConfiguredArg(),
                  dev_batch_size=ConfiguredArg(),
                  criterion_spectrogram=ConfiguredArg(),
                  criterion_stop_token=ConfiguredArg(),
                  optimizer=ConfiguredArg(),
-                 comet_ml_experiment_key=None,
+                 model=ConfiguredArg(),
                  input_encoder=None,
-                 model=None,
                  step=0,
                  epoch=0,
                  use_tqdm=False):
 
-        self.train_dataset = add_spectrogram_column(train_dataset)
+        self.train_dataset = train_dataset
         # The training and development dataset distribution of speakers is arbitrary (i.e. some
         # audio books have more data and some have less). In order to ensure that no speaker
         # is prioritized over another, we balance the number of examples for each speaker.
-        self.dev_dataset = add_spectrogram_column(
-            balance_list(dev_dataset, get_class=lambda r: r.speaker, random_seed=123))
+        self.dev_dataset = balance_list(dev_dataset, get_class=lambda r: r.speaker, random_seed=123)
 
         self.input_encoder = InputEncoder(
-            [r.text for r in self.train_dataset],
-            [r.speaker for r in self.train_dataset]) if input_encoder is None else input_encoder
+            [r.text for r in self.train_dataset] +
+            [r.text for r in self.dev_dataset], [r.speaker for r in self.train_dataset] +
+            [r.speaker for r in self.dev_dataset]) if input_encoder is None else input_encoder
 
         # Allow for ``class`` or a class instance
-        self.model = model if isinstance(model, torch.nn.Module) else SpectrogramModel(
+        self.model = model if isinstance(model, torch.nn.Module) else model(
             self.input_encoder.text_encoder.vocab_size,
             self.input_encoder.speaker_encoder.vocab_size)
         self.model.to(device)
@@ -110,7 +111,7 @@ class Trainer():
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.optimizer.to(device)
 
-        self.accumulated_metrics = AccumulatedMetrics()
+        self.metrics = defaultdict(DistributedAveragedMetric)
 
         self.device = device
         self.step = step
@@ -123,13 +124,7 @@ class Trainer():
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
 
-        # Comet creates an experiment on `comet.ml`; therefore, this takes some time to execute.
-        # We leave this till the very end; ensursing everything else works before
-        # creating a comet_ml experiment.
-        self.comet_ml = CometML(
-            project_name=comet_ml_project_name,
-            experiment_key=comet_ml_experiment_key,
-            disabled=not src.distributed.is_master())
+        self.comet_ml = CometML(disabled=not src.distributed.is_master())
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])
@@ -144,6 +139,7 @@ class Trainer():
             'num_speakers': self.input_encoder.speaker_encoder.vocab_size,
             'speakers': sorted([str(v) for v in self.input_encoder.speaker_encoder.vocab]),
         })
+        self._comet_ml_log_input_dev_data_hash()
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step: %d', self.step)
@@ -155,6 +151,20 @@ class Trainer():
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
         atexit.register(self.save_checkpoint)
+
+    def _comet_ml_log_input_dev_data_hash(self, max_examples=10):
+        """ Log to comet a basic hash of the predicted spectrogram data in `self.dev_dataset`.
+
+        The predicted spectrogram data varies with the random state and checkpoint; therefore, the
+        hash helps differentiate between different datasets.
+
+        Args:
+            max_examples (int): The max number of examples to consider for computing the hash.
+        """
+        sample = self.dev_dataset[:min(len(self.dev_dataset), max_examples)]
+        sum_ = sum([maybe_load_tensor(e.spectrogram).sum() for e in sample])
+        average = sum_.item() / len(sample) if len(sample) > 0 else 0.0
+        self.comet_ml.log_other('input_dev_data_hash', average)
 
     @classmethod
     def from_checkpoint(class_, checkpoint, **kwargs):
@@ -172,9 +182,7 @@ class Trainer():
             'optimizer': checkpoint.optimizer,
             'epoch': checkpoint.epoch,
             'step': checkpoint.step,
-            'comet_ml_experiment_key': checkpoint.comet_ml_experiment_key,
             'input_encoder': checkpoint.input_encoder,
-            'comet_ml_project_name': checkpoint.comet_ml_project_name
         }
         checkpoint_kwargs.update(kwargs)
         return class_(**checkpoint_kwargs)
@@ -204,7 +212,7 @@ class Trainer():
                 computed gradient; furthermore, the Trainer ``step`` and ``epoch`` state will be
                 updated.
             trial_run (bool, optional): If ``True`` then the epoch is limited to one batch.
-            infer (bool): If ``True`` the model is run in inference mode.
+            infer (bool, optional): If ``True`` the model is run in inference mode.
         """
         if infer and train:
             raise ValueError('Train and infer are mutually exclusive.')
@@ -246,10 +254,8 @@ class Trainer():
             with torch.set_grad_enabled(train):
                 if infer:
                     predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1])
-                    self.accumulated_metrics.add_metric(
-                        'duration_gap',
-                        (predictions[-1].float() / batch.spectrogram[1].float()).mean(),
-                        predictions[-1].numel())
+                    duration_gap = (predictions[-1].float() / batch.spectrogram[1].float()).mean()
+                    self.metrics['duration_gap'].update(duration_gap, predictions[-1].numel())
                 else:
                     predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1],
                                              batch.spectrogram[0], batch.spectrogram[1])
@@ -261,8 +267,9 @@ class Trainer():
             if not train and not infer and i == random_batch:
                 self._visualize_predicted(batch, predictions)
 
-            self.accumulated_metrics.log_step_end(
-                lambda k, v: self.comet_ml.log_metric('step/' + k, v) if train else None)
+            for name, metric in self.metrics.items():
+                self.comet_ml.log_metric('step/%s' % name, metric.sync().last_update())
+
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
@@ -270,12 +277,10 @@ class Trainer():
         # Log epoch metrics
         if not trial_run:
             self.comet_ml.log_epoch_end(self.epoch)
-            self.accumulated_metrics.log_epoch_end(
-                lambda k, v: self.comet_ml.log_metric('epoch/' + k, v))
+            for name, metric in self.metrics.items():
+                self.comet_ml.log_metric('epoch/%s' % name, metric.sync().reset())
             if train:
                 self.epoch += 1
-
-        self.accumulated_metrics.reset()
 
     def _do_loss_and_maybe_backwards(self, batch, predictions, do_backwards):
         """ Compute the losses and maybe do backwards.
@@ -291,6 +296,8 @@ class Trainer():
          predicted_alignments) = predictions
         spectrogram = batch.spectrogram[0]
 
+        # expanded_mask, predicted_pre_spectrogram, predicted_post_spectrogram, spectrogram
+        # [num_frames, batch_size, frame_channels]
         expanded_mask = batch.spectrogram_expanded_mask[0]
         pre_spectrogram_loss = self.criterion_spectrogram(predicted_pre_spectrogram, spectrogram)
         pre_spectrogram_loss = pre_spectrogram_loss.masked_select(expanded_mask).mean()
@@ -307,25 +314,21 @@ class Trainer():
             (pre_spectrogram_loss + post_spectrogram_loss + stop_token_loss).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
 
-        # Record metrics
-        self.accumulated_metrics.add_metrics({
-            'pre_spectrogram_loss': pre_spectrogram_loss,
-            'post_spectrogram_loss': post_spectrogram_loss,
-        }, expanded_mask.sum())
-        self.accumulated_metrics.add_metrics({'stop_token_loss': stop_token_loss}, mask.sum())
+        self.metrics['pre_spectrogram_loss'].update(pre_spectrogram_loss, expanded_mask.sum())
+        self.metrics['post_spectrogram_loss'].update(post_spectrogram_loss, expanded_mask.sum())
+        self.metrics['stop_token_loss'].update(stop_token_loss, mask.sum())
 
         return (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss, expanded_mask.sum(),
                 mask.sum())
 
     def _add_attention_metrics(self, predicted_alignments, lengths):
-        """ Compute and report attention metrics """
+        """ Compute and report attention metrics. """
         # predicted_alignments [num_frames, batch_size, num_tokens]
         mask = lengths_to_mask(lengths, device=predicted_alignments.device).transpose(0, 1)
         kwargs = {'tensor': predicted_alignments.detach(), 'dim': 2, 'mask': mask}
-        self.accumulated_metrics.add_metrics({
-            'attention_norm': get_average_norm(norm=math.inf, **kwargs),
-            'attention_std': get_weighted_stdev(**kwargs),
-        }, kwargs['mask'].sum())
+        self.metrics['attention_norm'].update(
+            get_average_norm(norm=math.inf, **kwargs), kwargs['mask'].sum())
+        self.metrics['attention_std'].update(get_weighted_stdev(**kwargs), kwargs['mask'].sum())
 
     def visualize_inferred(self):
         """ Run in inference mode and visualize results.
@@ -351,7 +354,7 @@ class Trainer():
             text=example.text,
             speaker=example.speaker,
             predicted_audio=griffin_lim(predicted_post_spectrogram.cpu().numpy()),
-            gold_audio=example.spectrogram_audio.to_tensor())
+            gold_audio=maybe_load_tensor(example.spectrogram_audio))
         self.comet_ml.log_metrics({  # [num_frames, num_tokens] → scalar
             'single/attention_norm': get_average_norm(predicted_alignments, dim=1, norm=math.inf),
             'single/attention_std': get_weighted_stdev(predicted_alignments, dim=1),
@@ -359,7 +362,7 @@ class Trainer():
         self.comet_ml.log_figures({
             'final_spectrogram': plot_spectrogram(predicted_post_spectrogram),
             'residual_spectrogram': plot_spectrogram(predicted_residual),
-            'gold_spectrogram': plot_spectrogram(example.spectrogram.to_tensor()),
+            'gold_spectrogram': plot_spectrogram(maybe_load_tensor(example.spectrogram)),
             'pre_spectrogram': plot_spectrogram(predicted_pre_spectrogram),
             'alignment': plot_attention(predicted_alignments),
             'stop_token': plot_stop_token(predicted_stop_tokens),

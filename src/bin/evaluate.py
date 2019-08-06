@@ -1,24 +1,49 @@
 """
-Generate random samples of signal model to evaluate from either predicted or
+Generate random samples of `dev` dataset to evaluate.
 
-Example:
+Examples
+--------
 
-    python3 -m src.bin.evaluate --signal_model experiments/your/checkpoint.pt
+Example of sampling the preprocessed dataset:
+    $ python -m src.bin.evaluate
+
+
+Example of generating signal model samples from the ground truth spectrograms:
+    $ python -m src.bin.evaluate --signal_model experiments/your/checkpoint.pt
+
+
+Example of generating TTS samples end-to-end:
+    $ python -m src.bin.evaluate --signal_model experiments/your/checkpoint.pt \
+                                 --spectrogram_model experiments/your/checkpoint.pt
+
+
+Example of generating TTS samples end-to-end with custom text:
+    $ python -m src.bin.evaluate --signal_model experiments/your/checkpoint.pt \
+                                 --spectrogram_model experiments/your/checkpoint.pt \
+                                 --text "custom text" \
+                                 --text "more custom text"
 """
-from functools import partial
+from itertools import product
 from pathlib import Path
 
 import argparse
 import logging
+import sys
 
-from torchnlp.utils import tensors_to
 from torch.utils.data.sampler import RandomSampler
+from torchnlp.utils import tensors_to
 
+import pandas
 import torch
-import scipy
+
+# NOTE: Some modules log on import; therefore, we first setup logging.
+from src.environment import set_basic_logging_config
+
+set_basic_logging_config()
 
 from src.audio import combine_signal
 from src.audio import griffin_lim
+from src.audio import write_audio
 from src.datasets import add_predicted_spectrogram_column
 from src.datasets import add_spectrogram_column
 from src.datasets import TextSpeechRow
@@ -29,13 +54,12 @@ from src.hparams import set_hparams
 from src.utils import balance_list
 from src.utils import Checkpoint
 from src.utils import evaluate
-from src.utils import record_stream
+from src.utils import RecordStandardStreams
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def _save(destination, tags, speaker, waveform):
+def _save(destination, tags, speaker, waveform, obscure=False):
     """ Save a waveform.
 
     Args:
@@ -43,159 +67,149 @@ def _save(destination, tags, speaker, waveform):
         tags (list of str): Tags to add to the filename.
         speaker (src.datasets.Speaker): Speaker of the waveform.
         waveform (np.ndarray): 1D signal to save.
-    """
-    speaker_name = speaker.name.lower().replace(' ', '_')
-    path = str(destination / ('%s,%s.wav' % (speaker_name, ','.join(tags))))
-    scipy.io.wavfile.write(filename=path, data=waveform)
-    logger.info('Saved file "%s" with waveform of shape `%s` and dtype `%s`', path, waveform.shape,
-                waveform.dtype)
-
-
-def _get_spectrogram_length(example, use_predicted):
-    return (example.predicted_spectrogram.shape[0]
-            if use_predicted else example.spectrogram.shape[0])
-
-
-def _sample_dataset(dataset, speaker_encoder, num_samples=None, speaker=None, balanced=False):
-    """ Given a dataset, sample from it and configure it.
-
-    Args:
-        dataset (callable or list): Dataset returned from `src.datasets` or a `list` of `str`.
-            Where the `dev` set is the second value returned.
-        speaker_encoder (torchnlp.TextEncoder): Speaker encoder with all possible speakers.
-        num_samples (int or None, optional): Randomly sample a number of samples.
-        speaker (src.datasets.Speaker): Filter to only one speaker.
-        balanced (bool, optional): If ``True``, sample from a dataset with equal speaker
-            distribution.
+        obscure (bool, optional): Hash the filename, obscuring the orignal filename.
 
     Returns:
-        dataset (list of TextSpeechRow)
-        indicies (list of int): Index of each example, useful to identifying the example.
+        (str): The filename of the saved file.
     """
-    if callable(dataset):  # CASE: Dataset created by a callable
-        _, dev = dataset()
-
-        if balanced:
-            dev = balance_list(dev, lambda r: r.speaker)
-        if speaker is not None:
-            dev = [r for r in dev if r.speaker == speaker]
-
-        indicies = list(RandomSampler(dev))
-        if num_samples is not None:
-            indicies = indicies[:num_samples]
-
-        ret = [dev[i] for i in indicies]
-    elif isinstance(dataset, list):  # CASE: List of text
-        speakers = speaker_encoder.vocab if speaker is None else [speaker]
-        ret = []
-        for speaker in speakers:
-            for text in dataset:
-                ret.append(
-                    TextSpeechRow(text=text, speaker=speaker, audio_path=None, metadata=None))
-        indicies = list(range(len(ret)))
-    else:
-        raise TypeError()
-
-    return ret, indicies
+    speaker_name = speaker.name.lower().replace(' ', '_')
+    filename = 'speaker=%s,%s' % (speaker_name, ','.join(tags))
+    if obscure:
+        filename = hash(filename)
+    filename = str(filename) + '.wav'
+    path = str(destination / filename)
+    write_audio(path, waveform)
+    logger.info('Saved file "%s" with waveform of shape `%s` and dtype `%s`', path, waveform.shape,
+                waveform.dtype)
+    return filename
 
 
 @configurable
-def main(dataset=ConfiguredArg(),
-         signal_model_checkpoint_path=None,
-         spectrogram_model_checkpoint_path=None,
-         destination='results/',
-         num_samples=50,
-         aligned=False,
-         speaker=None,
-         balanced=False,
-         spectrogram_model_batch_size=1,
-         signal_model_device=torch.device('cpu')):
-    """ Generate random samples of signal model to evaluate.
+def _get_dev_dataset(dataset=ConfiguredArg()):
+    _, dev = dataset()
+    return dev
 
-    NOTE: We use a batch size of 1 during evaluation to get similar results as the deployed product.
-    Padding needed to batch together sequences, affects both the signal model and the spectrogram
-    model.
+
+def main(dataset,
+         signal_model_checkpoint,
+         spectrogram_model_checkpoint,
+         num_samples,
+         destination='samples/',
+         metadata_filename='metadata.csv',
+         aligned=False,
+         speakers=None,
+         balanced=True,
+         obscure=False,
+         spectrogram_model_batch_size=1,
+         spectrogram_model_device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+    """ Generate random samples of the `dataset`.
+
+    NOTE: Padding can affect the output of the signal and spectrogram model; therefore, it's
+    recommended to use a `batch_size` of one to ensure similar results as the deployed product.
 
     Args:
-        dataset (callable): Callable that returns an iterable of ``dict``.
-        signal_model_checkpoint_path (str, optional): Checkpoint used to predict a raw waveform
+        dataset (callable): Callable that returns an iterable of `dict`.
+        signal_model_checkpoint (str or None): Checkpoint used to predict a raw waveform
             given a spectrogram.
-        spectrogram_model_checkpoint_path (str, optional): Checkpoint used to generate spectrogram
+        spectrogram_model_checkpoint (str or None): Checkpoint used to generate spectrogram
             from text as input to the signal model.
+        num_samples (int): Number of rows to evaluate.
         destination (str, optional): Path to store results.
-        num_samples (int, optional): Number of rows to evaluate.
-        aligned (bool, optional): If ``True``, predict a ground truth aligned spectrogram.
-        speaker (Speaker, optional): Filter the data for a particular speaker.
-        balanced (bool, optional): If ``True``, sample from a dataset with equal speaker
+        metadata_filename (str, optional): The filename for a CSV file containing clip metadata.
+        aligned (bool, optional): If `True`, predict a ground truth aligned spectrogram.
+        speakers (list of Speaker, optional): Filter the data for a particular speakers.
+        balanced (bool, optional): If `True`, sample from a dataset with equal speaker
             distribution. Note, that this operation shuffles the rows.
+        obscure (bool, optional): If `True`, obscure the audio filename such that the
+            filename does not provide hints towards the method of synthesis.
         spectrogram_model_batch_size (int, optional)
-        signal_model_device (torch.device, optional): Device used for signal model inference, note
-            that on CPU the signal model does not run out of memory.
+        spectrogram_model_device (torch.device, optional): Device used for spectrogram model
+            inference.
     """
-    # Record the standard streams
     destination = Path(destination)
     destination.mkdir(exist_ok=False, parents=True)
-    record_stream(destination)
+
+    RecordStandardStreams(destination).start()
+
+    logger.info('The command line arguments are: %s', str(sys.argv))
 
     log_config()
 
-    # Create the dataset to iterate over
-    spectrogram_model_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    spectrogram_model_checkpoint = Checkpoint.from_path(
-        spectrogram_model_checkpoint_path, device=spectrogram_model_device)
-    examples, indicies = _sample_dataset(
-        dataset,
-        speaker_encoder=spectrogram_model_checkpoint.input_encoder.speaker_encoder,
-        num_samples=num_samples,
-        speaker=speaker,
-        balanced=balanced)
+    # Sample from the dataset
+    dataset = dataset() if callable(dataset) else dataset
+    dataset = balance_list(dataset, lambda r: r.speaker) if balanced else dataset
+    dataset = dataset if speakers is None else filter(lambda r: r.speaker in speakers, dataset)
+    indicies = list(RandomSampler(dataset))[:num_samples] if num_samples else range(len(dataset))
+    dataset = [dataset[i] for i in indicies]
 
-    # Compute target and / or predict spectrograms
-    if aligned:
-        examples = add_spectrogram_column(examples, on_disk=False)
-    examples = add_predicted_spectrogram_column(
-        examples,
-        spectrogram_model_checkpoint_path,
-        spectrogram_model_device,
-        spectrogram_model_batch_size,
-        aligned=aligned,
-        on_disk=False)
+    has_target_audio = all(e.audio_path is not None for e in dataset)
 
-    # Output griffin-lim
-    for i, example in zip(indicies, examples):
-        waveform = griffin_lim(example.predicted_spectrogram.cpu().numpy())
-        _save(destination, ['index_%d' % i, 'griffin_lim'], example.speaker, waveform)
-        if example.spectrogram_audio is not None:
-            _save(destination, ['index_%d' % i, 'target'], example.speaker,
-                  example.spectrogram_audio.cpu().numpy())
+    # Metadata saved along with audio clips
+    metadata = []
+    add_to_metadata = lambda example, **kwargs: metadata.append(
+        dict(**kwargs, text=example.text, speaker=example.speaker.name))
+    _save_partial = lambda i, tags, *args: _save(
+        destination, ['index=%d' % i] + tags, *args, obscure=obscure)
 
-    if signal_model_checkpoint_path is None:
-        return
+    # Save the target predictions
+    if has_target_audio:
+        # NOTE: Adds `spectrogram_audio` and `spectrogram` column.
+        dataset = add_spectrogram_column(dataset, on_disk=False)
+        for i, example in zip(indicies, dataset):
+            if example.spectrogram_audio is not None:
+                waveform = example.spectrogram_audio.cpu().numpy()
+                audio_path = _save_partial(i, ['type=gold'], example.speaker, waveform)
+                add_to_metadata(example, audio_path=audio_path, index=i, type='gold')
+    else:
+        logger.info('Skipping the writing of ground truth audio.')
 
-    # Predict with the signal model
-    signal_model_checkpoint = Checkpoint.from_path(
-        signal_model_checkpoint_path, device=signal_model_device)
-    signal_model_inferrer = signal_model_checkpoint.model.to_inferrer(device=signal_model_device)
-    use_predicted = spectrogram_model_checkpoint_path is not None
+    # Save the griffin-lim predictions
+    if spectrogram_model_checkpoint is not None:
+        logger.info('The spectrogram model path is: %s', spectrogram_model_checkpoint.path)
+        dataset = add_predicted_spectrogram_column(
+            dataset,
+            spectrogram_model_checkpoint,
+            spectrogram_model_device,
+            batch_size=spectrogram_model_batch_size,
+            aligned=aligned,
+            on_disk=False)
+        for i, example in zip(indicies, dataset):
+            waveform = griffin_lim(example.predicted_spectrogram.cpu().numpy())
+            audio_path = _save_partial(i, ['type=griffin_lim'], example.speaker, waveform)
+            add_to_metadata(example, audio_path=audio_path, index=i, type='griffin_lim')
+    else:
+        logger.info('Skipping the writing of griffin-lim predictions.')
 
-    # NOTE: Sort by spectrogram lengths to batch similar sized outputs together
-    _get_length_partial = partial(_get_spectrogram_length, use_predicted=use_predicted)
-    examples = list(zip(examples, indicies))
-    examples = sorted(examples, key=lambda e: _get_length_partial(e[0]), reverse=True)
+    # Save the signal model predictions
+    if signal_model_checkpoint is not None and (has_target_audio or
+                                                spectrogram_model_checkpoint is not None):
+        logger.info('The signal model path is: %s', signal_model_checkpoint.path)
+        signal_model_model = signal_model_checkpoint.model.to_inferrer()
+        use_predicted = spectrogram_model_checkpoint is not None
 
-    for example, index in examples:
-        example = tensors_to(example, device=signal_model_device, non_blocking=True)
-        spectrogram = (example.predicted_spectrogram if use_predicted else example.spectrogram)
-        logger.info('Predicting signal a %s spectrogram.', spectrogram.shape)
-        with evaluate(signal_model_inferrer):
-            # [local_length, local_features_size] → [signal_length]
-            predicted_coarse, predicted_fine, _ = signal_model_inferrer(spectrogram)
-            predicted_signal = combine_signal(predicted_coarse, predicted_fine, return_int=True)
-            predicted_signal = predicted_signal.cpu().numpy()
+        # NOTE: Sort by spectrogram lengths to batch similar sized outputs together
+        iterator = list(zip(dataset, indicies))
+        get_length = lambda e: getattr(e[0], 'predicted_spectrogram'
+                                       if use_predicted else 'spectrogram').shape[0]
+        iterator = sorted(iterator, key=get_length, reverse=True)
 
-        # Save
-        _save(destination, ['index_' + str(index), 'wave_rnn'], example.speaker, predicted_signal)
-        logger.info('-' * 100)
+        for example, i in iterator:
+            example = tensors_to(example, device=torch.device('cpu'), non_blocking=True)
+            spectrogram = example.predicted_spectrogram if use_predicted else example.spectrogram
+            logger.info('Predicting signal from spectrogram of size %s.', spectrogram.shape)
+            with evaluate(signal_model_model):
+                # [local_length, local_features_size] → [signal_length]
+                predicted_coarse, predicted_fine, _ = signal_model_model(spectrogram)
+                waveform = combine_signal(predicted_coarse, predicted_fine, return_int=True)
+                waveform = waveform.cpu().numpy()
+
+            audio_path = _save_partial(i, ['type=wave_rnn'], example.speaker, waveform)
+            add_to_metadata(example, audio_path=audio_path, index=i, type='wave_rnn')
+            logger.info('-' * 100)
+    else:
+        logger.info('Skipping the writing of neural vocoder predictions.')
+
+    pandas.DataFrame(metadata).to_csv(str((destination / metadata_filename)), index=False)
 
 
 if __name__ == '__main__':  # pragma: no cover
@@ -213,12 +227,29 @@ if __name__ == '__main__':  # pragma: no cover
         action='append',
         help='Input custom text to the model to compute.',
         default=None)
+    parser.add_argument(
+        '-n', '--num_samples', type=int, help='Number of samples to generate in total.', default=50)
     args = parser.parse_args()
-    kwargs = {
-        'signal_model_checkpoint_path': args.signal_model,
-        'spectrogram_model_checkpoint_path': args.spectrogram_model
-    }
-    if args.text is not None:
-        kwargs['dataset'] = args.text
+
+    # NOTE: Load early and crash early by ensuring that the checkpoint exists and is not corrupt.
+    if args.signal_model is not None:
+        args.signal_model = Checkpoint.from_path(args.signal_model)
+
+    dataset = _get_dev_dataset
+    if args.spectrogram_model is not None:
+        args.spectrogram_model = Checkpoint.from_path(args.spectrogram_model)
+        if args.text is not None:
+            speakers = args.spectrogram_model.input_encoder.speaker_encoder.speakers
+            dataset = [TextSpeechRow(t, s, None) for t, s in product(args.text, speakers)]
+    elif args.text is not None:
+        raise argparse.ArgumentTypeError(
+            'For custom data, `--spectrogram_model` must be defined; '
+            'otherwise, there is no accompanying audio data for evaluation.')
+
     set_hparams()
-    main(**kwargs)
+
+    main(
+        dataset=dataset,
+        spectrogram_model_checkpoint=args.spectrogram_model,
+        signal_model_checkpoint=args.signal_model,
+        num_samples=args.num_samples if args.text is None else len(dataset))

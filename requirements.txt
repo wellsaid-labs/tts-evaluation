@@ -2,8 +2,9 @@
 numpy
 scipy
 
-# Install torch seperatly via https://pytorch.org based on your system requirements
-# torch==1.1.0
+# NOTE: For optimized `torch` install, visit https://pytorch.org and follow the "Get Started"
+# guide.
+torch
 
 # Language Library
 git+https://github.com/PetrochukM/PyTorch-NLP.git
@@ -15,7 +16,7 @@ librosa
 
 # Visualization Library
 matplotlib
-comet-ml==1.0.55
+comet-ml==2.0.6
 
 # Testing
 pytest
@@ -25,13 +26,17 @@ pytest-cov
 flake8
 
 # Auto Formatter
-yapf==0.25.0
+yapf==0.28.0
 
 # Utils
 tqdm # Progress bar
 jupyter # Notebooks
 python-dotenv # Environment variables
+python-Levenshtein # Sequence alignment
 
 # Web
 flask
 gunicorn
+
+# GCP
+google-cloud-speech

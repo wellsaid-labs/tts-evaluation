@@ -11,9 +11,10 @@ from torchnlp.utils import tensors_to
 
 import torch
 
+from src.environment import IS_TESTING_ENVIRONMENT
 from src.utils import DataLoader
-from src.utils import get_tensors_dim_length
 from src.utils import identity
+from src.utils import maybe_load_tensor
 
 import src.distributed
 
@@ -34,7 +35,7 @@ def _load_fn(row, input_encoder):
     Returns:
         (SpectrogramModelTrainingRow)
     """
-    spectrogram = row.spectrogram.to_tensor()
+    spectrogram = maybe_load_tensor(row.spectrogram)
     stop_token = spectrogram.new_zeros((spectrogram.shape[0],))
     stop_token[-1] = 1
 
@@ -90,12 +91,12 @@ class DataLoader(DataLoader):
                  device,
                  use_tqdm,
                  trial_run=False,
-                 num_workers=cpu_count(),
+                 num_workers=0 if IS_TESTING_ENVIRONMENT else cpu_count(),
                  **kwargs):
         batch_sampler = BucketBatchSampler(
-            get_tensors_dim_length([r.spectrogram for r in data]),
+            [r.spectrogram.shape[0] for r in data],
             batch_size,
-            drop_last=True,
+            drop_last=True,  # ``drop_last`` to ensure full utilization of mutliple GPUs
             sort_key=identity,
             biggest_batches_first=identity) if src.distributed.is_master() else None
 

@@ -1,22 +1,18 @@
-import torch
-
 from src.bin.train.spectrogram_model.data_loader import DataLoader
-from src.spectrogram_model import InputEncoder
 
-from tests.utils import get_example_spectrogram_text_speech_rows
+from tests._utils import get_tts_mocks
 
 
 def test_data_loader():
-    num_frames = [50, 100]
-    data = get_example_spectrogram_text_speech_rows(num_frames=num_frames)
-    input_encoder = InputEncoder([r.text for r in data], [r.speaker for r in data])
+    mocks = get_tts_mocks(add_spectrogram=True)
+    data = mocks['dev_dataset']
     batch_size = 2
 
     # Smoke test
     iterator = DataLoader(
-        data, batch_size, torch.device('cpu'), input_encoder=input_encoder, use_tqdm=True)
-    assert len(iterator) == 1
-    item = next(iter(iterator))
+        data, batch_size, mocks['device'], input_encoder=mocks['input_encoder'], use_tqdm=True)
+    assert len(iterator) == len(data) // batch_size
 
     # Test collate
-    assert item.spectrogram_mask[0].sum().item() == sum(num_frames)
+    total_frames = sum([r.spectrogram.shape[0] for r in data])
+    assert sum([r.spectrogram_mask[0].sum().item() for r in iterator]) == total_frames

@@ -1,34 +1,17 @@
-from pathlib import Path
-
 from unittest import mock
-import shutil
-import pytest
 
 from src.datasets import m_ailabs_en_us_speech_dataset
-from src.utils import Checkpoint
+from src.environment import TEST_DATA_PATH
+from tests._utils import url_first_side_effect
 
-from tests.datasets.utils import url_first_side_effect
-
-M_AILABS_DIRECTORY = Path('tests/_test_data/M-AILABS')
-
-
-@pytest.fixture
-def cleanup():
-    yield
-    cleanup_dir = M_AILABS_DIRECTORY / 'en_US'
-    print('Clean up: removing {}'.format(cleanup_dir))
-    if cleanup_dir.is_dir():
-        shutil.rmtree(str(cleanup_dir))
+M_AILABS_DIRECTORY = TEST_DATA_PATH / 'datasets/M-AILABS'
 
 
 @mock.patch('pathlib.Path.is_file')
-@mock.patch('src.utils.Checkpoint.from_path')
 @mock.patch('urllib.request.urlretrieve')
-@pytest.mark.usefixtures('cleanup')
-def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_from_path, mock_is_file):
+def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_is_file):
     mock_is_file.return_value = True
     mock_urlretrieve.side_effect = url_first_side_effect
-    mock_from_path.return_value = Checkpoint(directory='.', model=lambda x: x, step=0)
 
     # Check a row are parsed correctly
     data = m_ailabs_en_us_speech_dataset(directory=M_AILABS_DIRECTORY)
@@ -36,6 +19,6 @@ def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_from_path, mock_is_file)
     assert len(data) == 2046
     assert sum([len(r.text) for r in data]) == 226649
     assert data[0].text == ('To My Readers.')
-    assert ('tests/_test_data/M-AILABS/en_US/by_book/female/judy_bieber/'
-            'dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav') in str(
-                data[0].audio_path)
+    assert str(M_AILABS_DIRECTORY / 'en_US/by_book/female/judy_bieber' /
+               'dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav') in str(
+                   data[0].audio_path)

@@ -1,28 +1,33 @@
+from pathlib import Path
+
 import logging
 import math
 import struct
-import os
+import subprocess
 
+from third_party import LazyLoader
 from tqdm import tqdm
 
 import numpy as np
 import torch
 
+# NOTE: `LazyLoader` allows for this repository to run without these dependancies. Also,
+# it side-steps this issue: https://github.com/librosa/librosa/issues/924.
+librosa = LazyLoader('librosa', globals(), 'librosa')
+scipy = LazyLoader('scipy', globals(), 'scipy')
+
+from src.environment import TTS_DISK_CACHE_NAME
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
-
-import src
+from src.utils import disk_cache
+from src.utils import get_chunks
+from src.utils import Pool
 
 logger = logging.getLogger(__name__)
 
-try:
-    import librosa
-except ImportError:
-    logger.info('Skipping optional ``librosa`` import for now.')
-
 
 @configurable
-def read_audio(filename, sample_rate=ConfiguredArg()):
+def read_audio(filename, assert_metadata=ConfiguredArg(), to_float=True):
     """ Read an audio file.
 
     TODO: Rename considering the tighter specification.
@@ -46,19 +51,35 @@ def read_audio(filename, sample_rate=ConfiguredArg()):
 
     Args:
         filename (Path or str): Name of the file to load.
-        sample_rate (int or None): Assert this target sample rate.
+        assert_metadata (dict): Assert this metadata for any audio file read.
+        to_float (bool, optional): Convert the audio file to a `np.float32` array from [-1, 1].
 
     Returns:
         (numpy.ndarray [n,]): Audio time series.
     """
-    signal, observed_sample_rate = librosa.core.load(str(filename), sr=None)
-    if sample_rate is not None:
-        assert sample_rate == observed_sample_rate, (
-            "Sample rate must be set to %d (!= %s) before hand for file %s" %
-            (sample_rate, observed_sample_rate, filename))
-    assert len(signal.shape) == 1, "Signal must be mono."
-    assert np.max(signal) <= 1 and np.min(signal) >= -1, "Signal must be in range [-1, 1]."
+    metadata = get_audio_metadata(Path(filename))
+    assert metadata == assert_metadata, (
+        "The filename (%s) metadata does not match `assert_metadata`." % filename)
+    _, signal = scipy.io.wavfile.read(str(filename))
+    assert len(signal) > 0, ("Signal (%s) length is zero." % filename)
+    if to_float:
+        assert metadata['bits'] % 8 == 0, "A valid bits value must be a multiple of 8."
+        signal = librosa.util.buf_to_float(signal, n_bytes=int(metadata['bits'] / 8))
+        assert np.max(signal) <= 1 and np.min(signal) >= -1, (
+            "Signal (%s) must be in range [-1, 1]." % filename)
     return signal
+
+
+@configurable
+def write_audio(filename, audio, sample_rate=ConfiguredArg()):
+    """ Write a numpy array as a WAV file.
+
+    Args:
+        filename (Path or str or open file handle): Name of the file to load.
+        audio (np.ndarray): A 1-D or 2-D numpy array of either integer or float data-type.
+        sample_rate (int, optional): The sample rate (in samples/sec).
+    """
+    return scipy.io.wavfile.write(filename, sample_rate, audio)
 
 
 @configurable
@@ -413,66 +434,177 @@ def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
     return signal.float() / 2**(bits - 1)  # Scale to [-1, 1] range.
 
 
-@configurable
-def normalize_audio(audio_path,
-                    resample=ConfiguredArg(),
-                    norm=ConfiguredArg(),
-                    guard=ConfiguredArg(),
-                    lower_hertz=ConfiguredArg(),
-                    upper_hertz=ConfiguredArg(),
-                    loudness=ConfiguredArg(),
-                    bits=ConfiguredArg()):
-    """ Normalize audio on disk with the SoX library.
+def _parse_audio_metadata(metadata):
+    """ Parse audio metadata returned by `sox --i`.
 
-    TODO: Consider adding an option for converting to mono channel audio.
+    Example:
+
+        >>> metadata = '''
+        ... Input File     : 'data/Heather Doe/03 Recordings/Heather_4-21.wav'
+        ... Channels       : 1
+        ... Sample Rate    : 44100
+        ... Precision      : 24-bit
+        ... Duration       : 03:46:28.09 = 599234761 samples = 1.01911e+06 CDDA sectors
+        ... File Size      : 1.80G
+        ... Bit Rate       : 1.06M
+        ... Sample Encoding: 24-bit Signed Integer PCM
+        ... '''
+        >>> str(_parse_audio_metadata(metadata)[0])
+        'data/Heather Doe/03 Recordings/Heather_4-21.wav'
+        >>> _parse_audio_metadata(metadata)[1]
+        {'channels': 1, 'bits': 24, 'sample_rate': 44100, 'encoding': 'signed-integer'}
 
     Args:
-        audio_path (Path): Path to a audio file.
-        resample (int or None, optional): If integer is provided, uses SoX to create resampled
-            files.
-        norm (bool, optional): Automatically invoke the gain effect to guard against clipping and to
-            normalise the audio.
-        guard (bool, optional): Automatically invoke the gain effect to guard against clipping.
-        lower_hertz (int, optional): Apply a sinc kaiser-windowed high-pass.
-        upper_hertz (int, optional): Apply a sinc kaiser-windowed low-pass.
-        loudness (bool, optioanl): Normalize the subjective perception of loudness level based on
-            ISO 226.
-        bits (int, optional): The bit-depth of the normalized audio file.
+        metadata (str)
+
+    Returns:
+        (Path): The audio path of the parsed `metadata`.
+        (dict): The parsed `metadata`.
+    """
+    # NOTE: Parse the output of `sox --i` instead individual requests like `sox --i -r` and
+    # `sox --i -b` to conserve on the number  of requests made via `subprocess`.
+    metadata = [s.split(':')[1].strip() for s in metadata.strip().split('\n')]
+    audio_path = str(metadata[0][1:-1])
+    channels = int(metadata[1])
+    sample_rate = int(metadata[2])
+    assert metadata[3][-4:] == '-bit', metadata
+    bits = int(metadata[3][:-4])
+    encoding = metadata[-1].replace(metadata[3], '').replace('PCM', '')
+    encoding = encoding.lower().strip().replace(' ', '-')
+
+    return Path(audio_path), {
+        'channels': channels,
+        'bits': bits,
+        'sample_rate': sample_rate,
+        'encoding': encoding,
+    }
+
+
+@disk_cache
+def get_audio_metadata(audio_path):
+    """ Get metadata on `audio_path`.
+
+    NOTE: Launching `subprocess` via `get_audio_metadata` is slow, try to avoid it.
+
+    Args:
+        audio_path (Path): WAV audio file to get metadata on.
+
+    Returns: (dict) {
+        channels (int): The number of audio channels in the audio file.
+        bits (int): The bit depth of the audio.
+        sample_rate (int): The sample rate of the audio.
+        encoding (str): The encoding of the audio file: ['signed-integer', 'unsigned-integer',
+          'floating-point'].
+    }
+    """
+    assert isinstance(audio_path, Path), '`audio_path` must be a Path for caching.'
+    # NOTE: `sox --i` behaves like `soxi`
+    # Learn more about `soxi`: http://sox.sourceforge.net/soxi.html
+    metadata = subprocess.run(['sox', '--i', audio_path], check=False, stdout=subprocess.PIPE)
+    metadata = metadata.stdout.decode('utf-8').strip()
+    return _parse_audio_metadata(metadata)[1]
+
+
+def _cache_get_audio_metadata_helper(chunk):
+    # NOTE: Glob may find unused files like:
+    # `M-AILABS/ ... /judy_bieber/ozma_of_oz/wavs/._ozma_of_oz_10_f000095.wav`
+    # Those errors are ignored along with any other output from `stderr`.
+    command = ['sox', '--i'] + chunk
+    metadatas = subprocess.run(command, stdout=subprocess.PIPE).stdout.decode('utf-8')
+    metadatas = metadatas.strip().split('\n\n')
+    metadatas = metadatas[:-1] if 'Total Duration' in metadatas[-1] else metadatas
+    return [_parse_audio_metadata(metadata) for metadata in metadatas]
+
+
+def cache_get_audio_metadata(paths):
+    """ Cache all `paths` in `_get_audio_metadata.cache`.
+
+    NOTE: This method is more performant due to batching than calling `get_audio_metadata` the same
+    number of times for the same paths.
+
+    Args:
+        paths (iterable): List of `Path`s to cache.
+    """
+    paths = sorted(list(paths))
+    paths = [p for p in paths if ((), {'audio_path': Path(p)}) not in get_audio_metadata.cache]
+    if len(paths) == 0:
+        return
+
+    logger.info('Caching audio metadata for %d audio files.', len(paths))
+
+    # NOTE: It's difficult to determine the bash maximum argument length, learn more:
+    # https://unix.stackexchange.com/questions/45143/what-is-a-canonical-way-to-find-the-actual-maximum-argument-list-length
+    # https://stackoverflow.com/questions/19354870/bash-command-line-and-input-limit
+    # NOTE: 1024 was choosen empirically to be less then the bash maximum argument length on most
+    # systems.
+    chunks = list(get_chunks(paths, 1024))
+    progress_bar = tqdm(total=len(paths))
+    with Pool() as pool:
+        for result in pool.imap_unordered(_cache_get_audio_metadata_helper, chunks):
+            for audio_path, metadata in result:
+                get_audio_metadata.cache.set_(args=(audio_path,), return_=metadata)
+                progress_bar.update()
+
+    get_audio_metadata.cache.save()
+
+
+@configurable
+def normalize_audio(audio_path,
+                    sample_rate=ConfiguredArg(),
+                    bits=ConfiguredArg(),
+                    channels=ConfiguredArg(),
+                    encoding=ConfiguredArg()):
+    """ Normalize audio on disk with the SoX library.
+
+    Args:
+        audio_path (Path or str): Path to a audio file.
+        sample_rate (int or None, optional): Change the audio sampling rate
+            (i.e. resample the audio).
+        bits (int, optional): Change the bit-depth of the audio file.
+        channels (bool, optional): The channels effect should be invoked in order to change
+            the number of channels in an audio signal to `channels`.
+        encoding (str, optional): Changing the audio encoding type: ['signed-integer',
+          'unsigned-integer', 'floating-point'].
 
     Returns:
         (str): Filename of the processed file.
     """
-    lower_hertz = str(lower_hertz) if lower_hertz is not None else ''
-    upper_hertz = str(upper_hertz) if upper_hertz is not None else ''
+    audio_path = Path(audio_path)
 
-    # Create cach'd filename
+    # TODO: Consider adding support for `--show-progress`.
+    metadata = get_audio_metadata(audio_path)
+
+    _channels = None if metadata['channels'] == channels else channels
+    _sample_rate = None if metadata['sample_rate'] == sample_rate else sample_rate
+    _bits = None if metadata['bits'] == bits else bits
+    _encoding = None if metadata['encoding'] == encoding else encoding
+
     stem = audio_path.stem
-    stem = ('norm(%s)' % stem) if norm else stem
-    stem = ('guard(%s)' % stem) if guard else stem
-    stem = ('rate(%s,%d)' % (stem, resample)) if resample is not None else stem
-    stem = ('bits(%s,%d)' % (stem, bits)) if bits is not None else stem
-    stem = (
-        'sinc(%s,%s,%s)' % (stem, lower_hertz, upper_hertz)) if lower_hertz or upper_hertz else stem
-    stem = ('loudness(%s)' % stem) if loudness else stem
+    stem = stem if _sample_rate is None else ('rate(%s,%d)' % (stem, _sample_rate))
+    stem = stem if _bits is None else ('bits(%s,%d)' % (stem, _bits))
+    stem = stem if _channels is None else ('channels(%s,%d)' % (stem, _channels))
+    stem = stem if _encoding is None else ('encoding(%s,%s)' % (stem, _encoding))
 
-    destination = audio_path.parent / '{}{}'.format(stem, audio_path.suffix)
-    if stem == audio_path.stem or destination.is_file():
+    if stem == audio_path.stem:
+        return audio_path
+
+    parent = audio_path.parent
+    parent = parent if parent.name == TTS_DISK_CACHE_NAME else parent / TTS_DISK_CACHE_NAME
+    destination = parent / '{}{}'.format(stem, audio_path.suffix)
+
+    if destination.is_file():
         return destination
 
-    # Allow only the master node to save to disk while the worker nodes optimistically assume
-    # the file already exists.
-    if not src.distributed.is_master():
-        return destination
+    destination.parent.mkdir(exist_ok=True)
 
-    norm_flag = '--norm' if norm else ''
-    guard_flag = '--guard' if guard else ''
-    bits_flag = '--bits=%d' % bits if bits is not None else ''
-    resample_flag = '--rate=%d' % resample if resample is not None else ''
-    sinc_command = 'sinc %s-%s' % (lower_hertz, upper_hertz) if lower_hertz or upper_hertz else ''
-    loudness_command = 'loudness' if loudness else ''
-    commands = ' '.join([sinc_command, loudness_command])
-    flags = ' '.join([norm_flag, guard_flag, resample_flag, bits_flag])
-    command = 'sox "%s" %s "%s" %s ' % (audio_path, flags, destination, commands)
-    os.system(command)
+    # `-G`: Automatically invoke the gain effect to guard against clipping.
+    commands = ['sox', '-G', audio_path, destination]
+    if _encoding is not None:
+        commands[-1:1] = ['-e', _encoding]
+    if _bits is not None:
+        commands[-1:1] = ['-b', str(_bits)]
+    commands = commands if _sample_rate is None else commands + ['rate', str(_sample_rate)]
+    commands = commands if _channels is None else commands + ['channels', str(_channels)]
+    subprocess.run(commands, check=True)
 
     return destination

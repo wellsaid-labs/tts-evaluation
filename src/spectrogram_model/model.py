@@ -165,13 +165,14 @@ class SpectrogramModel(nn.Module):
 
         return frames, frames_with_residual, stop_tokens, alignments
 
+    @configurable
     def _infer(self,
                encoded_tokens,
                tokens_mask,
                num_tokens,
                is_unbatched=False,
-               max_frames_per_token=15,
-               stop_threshold=0.5,
+               max_frames_per_token=ConfiguredArg(),
+               stop_threshold=ConfiguredArg(),
                use_tqdm=False):
         """
         Args:

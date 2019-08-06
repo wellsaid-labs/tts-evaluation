@@ -26,8 +26,8 @@ def test_encoder():
         token_embedding_dim=encoder_params['token_embedding_dim'])
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
-    input_ = torch.LongTensor(encoder_params['batch_size'], encoder_params['num_tokens']).random_(
-        1, encoder_params['vocab_size'])
+    input_ = torch.LongTensor(encoder_params['batch_size'],
+                              encoder_params['num_tokens']).random_(1, encoder_params['vocab_size'])
     speaker = torch.LongTensor(encoder_params['batch_size']).fill_(0)
     tokens_mask = torch.full((encoder_params['batch_size'], encoder_params['num_tokens']), 1).byte()
     output = encoder(input_, tokens_mask, speaker)
@@ -51,8 +51,8 @@ def test_encoder_one_speaker():
         token_embedding_dim=encoder_params['token_embedding_dim'])
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
-    input_ = torch.LongTensor(encoder_params['batch_size'], encoder_params['num_tokens']).random_(
-        1, encoder_params['vocab_size'])
+    input_ = torch.LongTensor(encoder_params['batch_size'],
+                              encoder_params['num_tokens']).random_(1, encoder_params['vocab_size'])
     speaker = torch.LongTensor(encoder_params['batch_size']).fill_(0)
     tokens_mask = torch.full((encoder_params['batch_size'], encoder_params['num_tokens']), 1).byte()
     output = encoder(input_, tokens_mask, speaker)

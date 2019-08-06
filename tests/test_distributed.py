@@ -2,12 +2,10 @@ from unittest import mock
 
 import torch
 
-from src.distributed import broadcast_string
 from src.distributed import distribute_batch_sampler
 from src.distributed import get_master_rank
 from src.distributed import is_master
 from src.distributed import is_initialized
-from src.distributed import map_multiprocess
 
 
 @mock.patch('torch.distributed')
@@ -57,45 +55,5 @@ def test_distribute_batch_sampler_worker(mock_distributed, _):
     assert updated_batch_sampler == [[1, 2], [5, 6]]
 
 
-@mock.patch('src.distributed.is_master', return_value=True)
-@mock.patch('torch.distributed')
-def test_broadcast_string(mock_distributed, __):
-    mock_distributed.broadcast.return_value = None
-    string = "this is a test !@#()(!@#/.'"
-    assert string == broadcast_string(string, torch)
-
-
-@mock.patch('src.distributed.is_master', return_value=False)
-@mock.patch('torch.distributed')
-def test_broadcast_string_worker(mock_distributed, __):
-    string = "this is a test !@#()(!@#/.'"
-    string_tensor = list(string)
-    string_tensor = [ord(c) for c in string]
-    string_tensor = torch.tensor(string_tensor)
-
-    def mock_broadcast_side_effect(tensor, src):
-        if tensor.shape[0] == 1:
-            tensor.fill_(len(string))  # num_batches
-        else:
-            tensor.copy_(string_tensor)  # batches
-
-    mock_distributed.broadcast.side_effect = mock_broadcast_side_effect
-
-    assert string == broadcast_string(string, torch)
-
-
 def mock_func(a):
     return a**2
-
-
-def test_map_multiprocess():
-    expected = [1, 4, 9]
-    processed = map_multiprocess([1, 2, 3], mock_func)
-    assert expected == processed
-
-
-@mock.patch('src.distributed.is_master', return_value=False)
-def test_map_multiprocess_master(_):
-    expected = [1, 4, 9]
-    processed = map_multiprocess([1, 2, 3], mock_func)
-    assert expected == processed

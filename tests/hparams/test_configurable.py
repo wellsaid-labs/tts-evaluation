@@ -12,6 +12,12 @@ from src.hparams.configurable_ import configurable
 from src.hparams.configurable_ import ConfiguredArg
 from src.hparams.configurable_ import get_config
 from src.hparams.configurable_ import log_config
+from src.hparams.configurable_ import parse_hparam_args
+
+
+def test_parse_hparam_args():
+    hparam_args = ['--foo 0.01', '--bar WaveNet', '--moo.foo=1']
+    assert parse_hparam_args(hparam_args) == {'foo': 0.01, 'bar': 'WaveNet', 'moo.foo': 1}
 
 
 def test_parse_configuration_example():
@@ -102,8 +108,8 @@ def test_check_configuration_external_libraries():
 
 def test_check_configuration_internal_libraries():
     # Test that check configuration can check ``configurable`` on internal libraries
-    _check_configuration({
-        'tests': {
+    _check_configuration(
+        {'tests': {
             'hparams': {
                 'test_configurable': {
                     'mock_configurable': {
@@ -111,15 +117,14 @@ def test_check_configuration_internal_libraries():
                     }
                 }
             }
-        }
-    })
+        }})
 
 
 def test_check_configuration_error_internal_libraries():
     # Test that check configuration fails on internal libraries
     with pytest.raises(TypeError):
-        _check_configuration({
-            'tests': {
+        _check_configuration(
+            {'tests': {
                 'hparams': {
                     'test_configurable': {
                         'mock': {
@@ -127,8 +132,7 @@ def test_check_configuration_error_internal_libraries():
                         }
                     }
                 }
-            }
-        })
+            }})
 
 
 def test_check_configuration_error_external_libraries():
@@ -157,8 +161,8 @@ def test_check_configuration_class():
 def test_check_configuration_error_class():
     # Test that check configuration works for classes
     with pytest.raises(TypeError):
-        _check_configuration({
-            'tests': {
+        _check_configuration(
+            {'tests': {
                 'hparams': {
                     'test_configurable': {
                         'Mock': {
@@ -168,8 +172,7 @@ def test_check_configuration_error_class():
                         }
                     }
                 }
-            }
-        })
+            }})
 
 
 def test_add_config_and_arguments():

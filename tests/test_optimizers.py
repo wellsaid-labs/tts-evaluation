@@ -1,21 +1,58 @@
+from copy import deepcopy
 from unittest import mock
 
 import math
 import unittest
 
 import torch
+import numpy
 
-from src.optimizers import Optimizer
 from src.optimizers import AutoOptimizer
+from src.optimizers import Lamb
+from src.optimizers import Optimizer
+from tests._utils import MockCometML
 
 
-class MockCometML():
+def test_lamb_optimizer():  # Smoke test
+    net_lamb = torch.nn.LSTM(10, 20, 2)
+    net_adam = torch.nn.LSTM(10, 20, 2)
 
-    def __init__(self):
-        pass
+    net_adam.load_state_dict(deepcopy(net_lamb.state_dict()))  # Same weights as `net_lamb`
 
-    def __getattr__(self, attr):
-        return lambda *args, **kwargs: self
+    # `trust_ratio=1.0` ensures equality with AdamW (similar to Adam with a different weight decay).
+    lamb = Lamb(
+        params=net_lamb.parameters(),
+        amsgrad=False,
+        lr=10**-3,
+        min_trust_ratio=1,
+        max_trust_ratio=1)
+    adam = torch.optim.Adam(params=net_adam.parameters(), amsgrad=False, lr=10**-3)
+
+    input_ = torch.randn(5, 3, 10, requires_grad=False)
+
+    output_lamb, _ = net_lamb(input_)
+    lamb.zero_grad()
+    output_lamb.sum().backward()
+    lamb.step()
+
+    output_adam, _ = net_adam(input_)
+    adam.zero_grad()
+    output_adam.sum().backward()
+    adam.step()
+
+    # The first step for LAMB should have an Adam update
+    for p1, p2 in zip(net_lamb.parameters(), net_adam.parameters()):
+        numpy.testing.assert_allclose(p1.detach().numpy(), p2.detach().numpy(), rtol=1e-4)
+
+
+def test_lamb_optimizer_amsgrad():  # Smoke test
+    net = torch.nn.LSTM(10, 20, 2)
+    optimizer = Lamb(params=filter(lambda p: p.requires_grad, net.parameters()), amsgrad=True)
+    input = torch.randn(5, 3, 10)
+    output, (hn, cn) = net(input)
+    output.sum().backward()
+    optimizer.zero_grad()
+    optimizer.step()
 
 
 class TestOptimizer(unittest.TestCase):
