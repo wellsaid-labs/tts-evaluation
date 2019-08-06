@@ -552,7 +552,8 @@ def set_hparams():
             },
             # NOTE: Window size smoothing parameter is not super sensative.
             'optimizers.AutoOptimizer.__init__.window_size': 128,
-            # NOTE: Gideon from Comet suggested this as a fix.
+            # NOTE: Train the spectrogram model would cause CometML to error with
+            # "OSError: [Errno 9] Bad file descriptor". Gideon from Comet suggested this as a fix.
             'visualize.CometML.auto_output_logging': 'simple',
         }
     })

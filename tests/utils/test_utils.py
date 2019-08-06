@@ -1,3 +1,7 @@
+from collections import Counter
+from copy import deepcopy
+
+import random
 import time
 
 from torch import nn
@@ -185,14 +189,31 @@ def test_balance_list():
     assert len(set(balanced)) == 3
 
 
-def test_balance_list_determinism():
-    list_ = [(i, 'a' if i % 2 == 0 else 'b') for i in range(99)]
+def test_balance_list__determinism():
+    """ Test to ensure that `balance_list` is deterministic when `random_seed` is provided. """
+    random_ = random.Random(123)
+    list_ = [(i, random_.choice('abcde')) for i in range(99)]
     balanced = balance_list(list_, get_class=lambda i: i[1], random_seed=123)
-    assert len(balanced) == 98
-    assert balanced[0][0] == 57
+    assert len(balanced) == 70
+    count = Counter([e[1] for e in balanced])
+    assert len(set(count.values())) == 1  # Ensure that the list is balanced.
+    assert [e[0] for e in balanced[:10]] == [7, 33, 62, 51, 14, 50, 19, 73, 56, 21]
 
 
-def test_balance_list_get_weight():
+def test_balance_list__nondeterminism():
+    """ Test to ensure that `balance_list` is not deterministic when `random_seed` is not provided.
+    """
+    random_ = random.Random(123)
+    list_ = [(i, random_.choice('abcde')) for i in range(10000)]
+    balanced = balance_list(list_, get_class=lambda i: i[1])
+
+    list_other = deepcopy(list_)
+    balanced_other = balance_list(list_other, get_class=lambda i: i[1])
+    # NOTE: This test should fail one in 10000 times.
+    assert balanced_other[0][0] != balanced[0][0]
+
+
+def test_balance_list__get_weight():
     list_ = [(1, 'a'), (1, 'a'), (2, 'b')]
     balanced = balance_list(list_, get_class=lambda i: i[1], get_weight=lambda i: i[0])
     assert len(balanced) == 3

@@ -13,10 +13,11 @@ import pprint
 import time
 
 from torch import multiprocessing
-from torchnlp.utils import shuffle as do_deterministic_shuffle
 
 import torch
 import torch.utils.data
+
+import src.distributed
 
 logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
@@ -354,7 +355,7 @@ def balance_list(list_, get_class=identity, get_weight=lambda x: 1, random_seed=
     # Learn more:
     # https://stackoverflow.com/questions/16270374/how-to-make-a-shallow-copy-of-a-list-in-python
     list_ = list_[:]
-    do_deterministic_shuffle(list_, random_seed=random_seed)
+    src.distributed.random_shuffle(list_, random_seed=random_seed)
     for item in list_:
         split[get_class(item)].append(item)
 
@@ -369,7 +370,7 @@ def balance_list(list_, get_class=identity, get_weight=lambda x: 1, random_seed=
         for l in split.values()
     ]
     subsample = list(itertools.chain(*subsample))  # Flatten list
-    do_deterministic_shuffle(subsample, random_seed=random_seed)
+    src.distributed.random_shuffle(subsample, random_seed=random_seed)
     return subsample
 
 

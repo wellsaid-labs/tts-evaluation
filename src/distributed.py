@@ -1,4 +1,7 @@
 import logging
+import random
+
+from torchnlp.utils import shuffle as do_deterministic_shuffle
 
 import torch
 
@@ -80,3 +83,62 @@ def distribute_batch_sampler(batch_sampler, batch_size, device, type_=torch.cuda
     # ``device.index`` could be ``None`` and cause a silent failure.
     assert isinstance(device.index, int), 'device.index must be specified'
     return batches[:, device.index].cpu().tolist()
+
+
+def assert_synced(value, message='', type_=torch.cuda):
+    """ Assert that `value` is the same between master and worker nodes.
+
+    Args:
+        value (number): Value to check.
+        message (str): Assert message.
+        type_ (any): Default tensor type to use.
+    """
+    # NOTE: The `value` is split into digits to support large numbers like 128-bit hashes.
+    if is_master():
+        length = type_.LongTensor([len(str(value))])
+    else:
+        length = type_.LongTensor(1)
+    torch.distributed.broadcast(length, src=get_master_rank())
+    length = length.item()
+    assert len(str(value)) == length, message
+
+    value = type_.LongTensor([int(d) for d in str(value)])
+    if is_master():
+        torch.distributed.broadcast(value, src=get_master_rank())
+        master_value = value
+    else:
+        master_value = type_.LongTensor(length)
+        torch.distributed.broadcast(master_value, src=get_master_rank())
+
+    assert torch.equal(master_value, value), message
+
+
+def random_shuffle(list_, type_=torch.cuda, random_seed=None):
+    """ Shuffle randomly the same way across multiple process.
+
+    Within a distributed setup each process has its own random generator and those random number
+    generators might in different positions. This module will shuffle the same way in processes
+    with out-of-sync number generators.
+
+    Args:
+        list_ (list)
+        type_ (any, optional): Default tensor type to use.
+        random_seed (int, optiona): If provided the shuffle is deterministic based on the seed
+            instead of the global generator state.
+    """
+    if random_seed is not None:
+        do_deterministic_shuffle(list_, random_seed=random_seed)
+        return
+
+    if not is_initialized():
+        random.shuffle(list_)
+        return
+
+    # Broadcast a random seed from master
+    random_seed = type_.LongTensor(1)
+    if is_master():
+        random_seed[0] = random.randint(1, 2**31)
+    torch.distributed.broadcast(random_seed, src=get_master_rank())
+    random_seed = int(random_seed)
+
+    do_deterministic_shuffle(list_, random_seed=random_seed)

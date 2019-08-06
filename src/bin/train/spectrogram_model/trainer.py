@@ -130,6 +130,9 @@ class Trainer():
         self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])
         self.comet_ml.log_parameters(dict_collapse(get_config()))
         self.comet_ml.set_model_graph(str(self.model))
+        train_text_length = sum([len(r.text) for r in self.train_dataset])
+        train_text_length = None if len(
+            self.train_dataset) == 0 else train_text_length / len(self.train_dataset)
         self.comet_ml.log_parameters({
             'num_parameter': get_total_parameters(self.model),
             'num_training_row': len(self.train_dataset),
@@ -138,6 +141,7 @@ class Trainer():
             'vocab': sorted(self.input_encoder.text_encoder.vocab),
             'num_speakers': self.input_encoder.speaker_encoder.vocab_size,
             'speakers': sorted([str(v) for v in self.input_encoder.speaker_encoder.vocab]),
+            'train_text_length': train_text_length
         })
         self._comet_ml_log_input_dev_data_hash()
 
@@ -159,12 +163,20 @@ class Trainer():
         hash helps differentiate between different datasets.
 
         Args:
-            max_examples (int): The max number of examples to consider for computing the hash.
+            max_examples (int): The max number of examples to consider for computing the hash. This
+                is limited to a small number of elements for faster performance.
         """
+        # NOTE: On different GPUs this may produce different results. For example, a V100 computed
+        # this value as -63890.96875 while a P100 computed -63890.9625.
         sample = self.dev_dataset[:min(len(self.dev_dataset), max_examples)]
         sum_ = sum([maybe_load_tensor(e.spectrogram).sum() for e in sample])
         average = sum_.item() / len(sample) if len(sample) > 0 else 0.0
         self.comet_ml.log_other('input_dev_data_hash', average)
+
+        # NOTE: Unlike the above hash, this hash should stay stable but will have less variance.
+        text_sum = sum([len(e.text) for e in sample])
+        text_average = text_sum / len(sample) if len(sample) > 0 else 0.0
+        self.comet_ml.log_other('input_dev_text_data_hash', text_average)
 
     @classmethod
     def from_checkpoint(class_, checkpoint, **kwargs):

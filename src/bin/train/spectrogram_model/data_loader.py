@@ -1,6 +1,8 @@
 from collections import namedtuple
 from functools import partial
 
+import hashlib
+import json
 import logging
 
 from torch.multiprocessing import cpu_count
@@ -93,6 +95,17 @@ class DataLoader(DataLoader):
                  trial_run=False,
                  num_workers=0 if IS_TESTING_ENVIRONMENT else cpu_count(),
                  **kwargs):
+        if src.distributed.is_initialized():
+            # NOTE: For best performance, the data must be the same between the master and worker
+            # nodes; Otherwise, the `BucketBatchSampler` computed on master won't be effective on
+            # on the worker nodes following `src.distributed.distribute_batch_sampler` because it
+            # was computed on different data.
+            # NOTE: Learn more about `hashlib` and `json` here:
+            # https://stackoverflow.com/questions/5417949/computing-an-md5-hash-of-a-data-structure
+            hash_ = hashlib.md5(json.dumps([e.text for e in data]).encode('utf-8')).hexdigest()
+            src.distributed.assert_synced(
+                int(hash_, 16), 'This dataset does not match the master dataset.')
+
         batch_sampler = BucketBatchSampler(
             [r.spectrogram.shape[0] for r in data],
             batch_size,

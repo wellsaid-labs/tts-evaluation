@@ -42,7 +42,6 @@ sync {
       "*.gzip",
       "_data/**",
       "tmp/**",
-      "tests/**",
       "venv/**",
       "node_modules/**",
       ".tts_cache"
