@@ -161,10 +161,17 @@ class Trainer():
         Args:
             max_examples (int): The max number of examples to consider for computing the hash.
         """
+        # NOTE: On different GPUs this may produce different results. For example, a V100 computed
+        # this value as -63890.96875 while a P100 computed -63890.9625.
         sample = self.dev_dataset[:min(len(self.dev_dataset), max_examples)]
         sum_ = sum([maybe_load_tensor(e.spectrogram).sum() for e in sample])
         average = sum_.item() / len(sample) if len(sample) > 0 else 0.0
         self.comet_ml.log_other('input_dev_data_hash', average)
+
+        # NOTE: Unlike the above hash, this hash should stay stable but will have less variance.
+        text_sum = sum([len(e.text) for e in sample])
+        text_average = text_sum / len(sample) if len(sample) > 0 else 0.0
+        self.comet_ml.log_other('input_dev_text_data_hash', text_average)
 
     @classmethod
     def from_checkpoint(class_, checkpoint, **kwargs):
