@@ -182,7 +182,7 @@ class _DiskCache(_Cache):
                         self._file_name)
             new_disk_storage = pickle.dumps(self._storage)
             self._file_path.parent.mkdir(parents=True, exist_ok=True)
-            # TODO: Implement an automatic write to prevent accidentally corruputing the cache.
+            # TODO: Implement an automatic write to prevent accidentally corrupting the cache.
             self._file_path.write_bytes(new_disk_storage)
 
     def set_(self, *args, **kwargs):
