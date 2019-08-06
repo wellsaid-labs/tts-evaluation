@@ -206,7 +206,8 @@ class Trainer():
         hash helps differentiate between different datasets.
 
         Args:
-            max_examples (int): The max number of examples to consider for computing the hash.
+            max_examples (int): The max number of examples to consider for computing the hash. This
+                is limited to a small number of elements for faster performance.
         """
         sum = torch.tensor(0.0)
         sample = self.dev_dataset[:min(len(self.dev_dataset), max_examples)]
