@@ -200,7 +200,7 @@ def test_balance_list__determinism():
     assert [e[0] for e in balanced[:10]] == [7, 33, 62, 51, 14, 50, 19, 73, 56, 21]
 
 
-def test_balance_list__non_determinism():
+def test_balance_list__nondeterminism():
     """ Test to ensure that `balance_list` is not deterministic when `random_seed` is not provided.
     """
     random_ = random.Random(123)
