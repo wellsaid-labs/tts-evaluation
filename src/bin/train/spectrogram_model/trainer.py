@@ -266,6 +266,8 @@ class Trainer():
             with torch.set_grad_enabled(train):
                 if infer:
                     predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1])
+                    # NOTE: `duration_gap` computes the average length of the predictions
+                    # verus the average length of the original spectrograms.
                     duration_gap = (predictions[-1].float() / batch.spectrogram[1].float()).mean()
                     self.metrics['duration_gap'].update(duration_gap, predictions[-1].numel())
                 else:
@@ -335,6 +337,7 @@ class Trainer():
             (pre_spectrogram_loss + post_spectrogram_loss + stop_token_loss).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
 
+        # NOTE: These losses are from the original Tacotron 2 paper.
         self.metrics['pre_spectrogram_loss'].update(pre_spectrogram_loss, expanded_mask.sum())
         self.metrics['post_spectrogram_loss'].update(post_spectrogram_loss, expanded_mask.sum())
         self.metrics['stop_token_loss'].update(stop_token_loss, mask.sum())
@@ -354,8 +357,11 @@ class Trainer():
         # mask [batch_size, num_frames] → [num_frames, batch_size]
         mask = mask.transpose(0, 1)
         kwargs = {'tensor': predicted_alignments, 'dim': 2, 'mask': mask}
+        # NOTE: `attention_norm` with `norm=math.inf` computes the maximum value along `num_tokens`
+        # dimension.
         self.metrics['attention_norm'].update(
             get_average_norm(norm=math.inf, **kwargs), kwargs['mask'].sum())
+        # NOTE: `attention_std` computes the standard deviation along `num_tokens` dimension.
         self.metrics['attention_std'].update(get_weighted_stdev(**kwargs), kwargs['mask'].sum())
 
     def visualize_inferred(self):
