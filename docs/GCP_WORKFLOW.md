@@ -102,6 +102,10 @@ PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py \
     --project_name your_comet_ml_project_name
 ```
 
+Now that your experiment is running, you will want to detach from the process by typing
+`Ctrl-A` then `Ctrl-D`. This will detach your screen session but leave your process running.
+Finally, you can now log out of your instance with the bash command `exit`.
+
 You'll want to train the `signal_model` after you've trained the `spectrogram_model` most likely.
 The procedure is similar.
 
