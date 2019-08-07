@@ -127,50 +127,58 @@ def keep_alive(comet_ml_project_name,
             restarted in milliseconds.
     """
     for instance, experiment in zip(instances, experiments):
-        name = instance['name']
-        zone = instance['zone'].split('/')[-1]
+        try:
+            name = instance['name']
+            zone = instance['zone'].split('/')[-1]
 
-        logger.info('Checking instance "%s" status in zone %s', name, zone)
-        output = json.loads(
-            subprocess.check_output(
-                'gcloud compute instances describe %s --zone=%s --format=json' % (name, zone),
-                shell=True))
-        status = output['status']
-        logger.info('Status of the instance is: %s', status)
+            logger.info('Checking instance "%s" status in zone %s', name, zone)
+            output = json.loads(
+                subprocess.check_output(
+                    'gcloud compute instances describe %s --zone=%s --format=json' % (name, zone),
+                    shell=True))
+            status = output['status']
+            logger.info('Status of the instance is: %s', status)
 
-        if status == INSTANCE_STOPPED:
-            for i in range(retry):
-                if i > 0:
-                    logger.info('Retrying again in %d', retry_timeout)
-                    time.sleep(retry_timeout)
+            if status == INSTANCE_STOPPED:
+                for i in range(retry):
+                    if i > 0:
+                        logger.info('Retrying again in %d', retry_timeout)
+                        time.sleep(retry_timeout)
 
-                try:
-                    logger.info('Restarting instance "%s" in zone %s', name, zone)
+                    try:
+                        logger.info('Restarting instance "%s" in zone %s', name, zone)
+                        output = subprocess.check_output(
+                            'gcloud compute instances start %s --zone=%s' % (name, zone),
+                            shell=True)
+                        logger.info('Restarting instance output:\n%s', output.decode('utf-8'))
+
+                        logger.info('Running command on instance: %s', command)
+                        output = subprocess.check_output(
+                            'gcloud compute ssh %s --zone=%s --command="%s"' %
+                            (name, zone, command),
+                            shell=True)
+                        logger.info('Command output:\n%s', output.decode('utf-8'))
+                        break
+
+                    except Exception:
+                        logger.exception('Fatal error, trying again!')
+            elif status == INSTANCE_RUNNING:
+                # NOTE: Checks if an experiment has been halted for longer than `max_halt_time`.
+                updated_experiment = get_comet_ml_api().get(COMET_ML_WORKSPACE,
+                                                            comet_ml_project_name, experiment.key)
+                elapsed = time.time() * 1000 - updated_experiment.data['end_server_timestamp']
+                logger.info('The instance was heard from %s ago.',
+                            seconds_to_string(elapsed / 1000))
+                if elapsed > max_halt_time:
+                    logger.info(
+                        'Stopping instance "%s" in zone %s, it has not been heard from for %s.',
+                        name, zone, seconds_to_string(max_halt_time / 1000))
                     output = subprocess.check_output(
-                        'gcloud compute instances start %s --zone=%s' % (name, zone), shell=True)
-                    logger.info('Restarting instance output:\n%s', output.decode('utf-8'))
+                        'gcloud compute instances stop %s --zone=%s' % (name, zone), shell=True)
+                    logger.info('Stoppping instance output:\n%s', output.decode('utf-8'))
 
-                    logger.info('Running command on instance: %s', command)
-                    output = subprocess.check_output(
-                        'gcloud compute ssh %s --zone=%s --command="%s"' % (name, zone, command),
-                        shell=True)
-                    logger.info('Command output:\n%s', output.decode('utf-8'))
-                    break
-
-                except Exception as e:
-                    logger.warning('Exception: %s', e)
-        elif status == INSTANCE_RUNNING:
-            # NOTE: Checks if an experiment has been halted for longer than `max_halt_time`.
-            updated_experiment = get_comet_ml_api().get(COMET_ML_WORKSPACE, comet_ml_project_name,
-                                                        experiment.key)
-            elapsed = time.time() * 1000 - updated_experiment.data['end_server_timestamp']
-            logger.info('The instance was heard from %s ago.', seconds_to_string(elapsed / 1000))
-            if elapsed > max_halt_time:
-                logger.info('Stopping instance "%s" in zone %s, it has not been heard from for %s.',
-                            name, zone, seconds_to_string(max_halt_time / 1000))
-                output = subprocess.check_output(
-                    'gcloud compute instances stop %s --zone=%s' % (name, zone), shell=True)
-                logger.info('Stoppping instance output:\n%s', output.decode('utf-8'))
+        except Exception:
+            logger.exception('Fatal error caught, trying again in %ds.', repeat_every)
 
         print('-' * 100)
 
