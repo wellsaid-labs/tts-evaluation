@@ -304,21 +304,30 @@ class Trainer():
             predictions (any): Return value from ``self.model.forwards``.
             do_backwards (bool): If ``True`` backward propogate the loss.
         """
+        # predicted_pre_spectrogram, predicted_post_spectrogram
+        # [num_frames, batch_size, frame_channels]
+        # predicted_stop_tokens [num_frames, batch_size]
+        # predicted_alignments [num_frames, batch_size, num_tokens]
         (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
          predicted_alignments) = predictions
-        spectrogram = batch.spectrogram[0]
+        spectrogram = batch.spectrogram[0]  # [num_frames, batch_size, frame_channels]
 
-        # expanded_mask, predicted_pre_spectrogram, predicted_post_spectrogram, spectrogram
-        # [num_frames, batch_size, frame_channels]
+        # expanded_mask [num_frames, batch_size, frame_channels]
         expanded_mask = batch.spectrogram_expanded_mask[0]
+        # pre_spectrogram_loss [num_frames, batch_size, frame_channels]
         pre_spectrogram_loss = self.criterion_spectrogram(predicted_pre_spectrogram, spectrogram)
+        # [num_frames, batch_size, frame_channels] → [1]
         pre_spectrogram_loss = pre_spectrogram_loss.masked_select(expanded_mask).mean()
 
+        # post_spectrogram_loss [num_frames, batch_size, frame_channels]
         post_spectrogram_loss = self.criterion_spectrogram(predicted_post_spectrogram, spectrogram)
+        # [num_frames, batch_size, frame_channels] → [1]
         post_spectrogram_loss = post_spectrogram_loss.masked_select(expanded_mask).mean()
 
-        mask = batch.spectrogram_mask[0]
+        mask = batch.spectrogram_mask[0]  # [num_frames, batch_size]
+        # stop_token_loss [num_frames, batch_size]
         stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, batch.stop_token[0])
+        # [num_frames, batch_size] → [1]
         stop_token_loss = stop_token_loss.masked_select(mask).mean()
 
         if do_backwards:
@@ -334,10 +343,17 @@ class Trainer():
                 mask.sum())
 
     def _add_attention_metrics(self, predicted_alignments, lengths):
-        """ Compute and report attention metrics. """
-        # predicted_alignments [num_frames, batch_size, num_tokens]
-        mask = lengths_to_mask(lengths, device=predicted_alignments.device).transpose(0, 1)
-        kwargs = {'tensor': predicted_alignments.detach(), 'dim': 2, 'mask': mask}
+        """ Compute and report attention metrics.
+
+        Args:
+            predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+            lengths (torch.LongTensor [batch_size])
+        """
+        # lengths [batch_size] → mask [batch_size, num_frames]
+        mask = lengths_to_mask(lengths, device=predicted_alignments.device)
+        # mask [batch_size, num_frames] → [num_frames, batch_size]
+        mask = mask.transpose(0, 1)
+        kwargs = {'tensor': predicted_alignments, 'dim': 2, 'mask': mask}
         self.metrics['attention_norm'].update(
             get_average_norm(norm=math.inf, **kwargs), kwargs['mask'].sum())
         self.metrics['attention_std'].update(get_weighted_stdev(**kwargs), kwargs['mask'].sum())
