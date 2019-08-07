@@ -161,7 +161,7 @@ def keep_alive(comet_ml_project_name,
                         break
 
                     except Exception:
-                        logger.exception('Fatal error, trying again!')
+                        logger.exception('Fatal error caught while restarting instance.')
             elif status == INSTANCE_RUNNING:
                 # NOTE: Checks if an experiment has been halted for longer than `max_halt_time`.
                 updated_experiment = get_comet_ml_api().get(COMET_ML_WORKSPACE,
