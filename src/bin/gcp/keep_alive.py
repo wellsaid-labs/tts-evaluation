@@ -164,8 +164,13 @@ def keep_alive(comet_ml_project_name,
                         logger.exception('Fatal error caught while restarting instance.')
             elif status == INSTANCE_RUNNING:
                 # NOTE: Checks if an experiment has been halted for longer than `max_halt_time`.
+                logger.info('Checking on experiment %s/%s/%s', COMET_ML_WORKSPACE,
+                            comet_ml_project_name, experiment.key)
                 updated_experiment = get_comet_ml_api().get(COMET_ML_WORKSPACE,
                                                             comet_ml_project_name, experiment.key)
+                # NOTE: This API returns a `list` if the `experimet.key` is partial or invalid.
+                assert not isinstance(updated_experiment,
+                                      list), 'The experiment key is no longer valid.'
                 elapsed = time.time() * 1000 - updated_experiment.data['end_server_timestamp']
                 logger.info('The instance was heard from %s ago.',
                             seconds_to_string(elapsed / 1000))
