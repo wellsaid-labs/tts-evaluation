@@ -313,7 +313,6 @@ class _DiskCache(_Cache):
                 self._save_disk_metadata(os.path.getmtime(str(self._file_path)), len(self))
 
     def set(self, args=(), kwargs={}, return_=None):
-
         if self.save_to_disk_delay is not None and not self.contains(args=args, kwargs=kwargs):
             if self._write_timer is not None and self._write_timer.is_alive():
                 self._write_timer.reset()
