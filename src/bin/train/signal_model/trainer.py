@@ -405,10 +405,10 @@ class Trainer():
         """ Get the orthogonal loss for the hidden-to-hidden matrix in our GRUs.
 
         Papers describing the loss:
-          https://papers.nips.cc/paper/7680-can-we-gain-more-from-orthogonality-regularizations-in-training-deep-networks.pdf
-          https://github.com/pytorch/pytorch/issues/2421#issuecomment-355534285
-          http://mathworld.wolfram.com/FrobeniusNorm.html
-          https://github.com/MingtaoGuo/BigGAN-tensorflow/blob/7e531cd875236544866f54248aa397f9176296b6/ops.py#L111
+        https://papers.nips.cc/paper/7680-can-we-gain-more-from-orthogonality-regularizations-in-training-deep-networks.pdf
+        https://github.com/pytorch/pytorch/issues/2421#issuecomment-355534285
+        http://mathworld.wolfram.com/FrobeniusNorm.html
+        https://github.com/MingtaoGuo/BigGAN-tensorflow/blob/7e531cd875236544866f54248aa397f9176296b6/ops.py#L111
 
         Returns:
             (torch.FloatTensor [1])
@@ -445,7 +445,6 @@ class Trainer():
         fine_loss = self.criterion(predicted_fine, batch.target_signal_fine)
         fine_loss = fine_loss.masked_select(batch.signal_mask).mean()  # fine_loss [1]
 
-        # TODO: Investigate if training on `orthogonal_loss` is effective.
         orthogonal_loss = self._get_gru_orthogonal_loss()  # orthogonal_loss [1]
 
         if do_backwards:
@@ -461,12 +460,25 @@ class Trainer():
             else:
                 self._rollback_states.append(self._make_partial_rollback_state())
 
-        # Record metrics
+        # Learn more about `coarse_loss` and `fine_loss` in the "Efficient Neural Audio Synthesis"
+        # paper.
         self.metrics['coarse_loss'].update(coarse_loss, batch.signal_mask.sum())
         self.metrics['fine_loss'].update(fine_loss, batch.signal_mask.sum())
         self.metrics['orthogonal_loss'].update(orthogonal_loss)
 
         return coarse_loss, fine_loss, batch.signal_mask.sum()
+
+    def _get_sample_density_gap(self, predicted_signal, target_signal, greater_than):
+        """ Measure the relative difference in sample density inside a specified range.
+
+        Args:
+            predicted_signal (torch.FloatTensor [predicted_signal_length])
+            target_signal (torch.FloatTensor [target_signal_length])
+            greater_than (float): Defines the amplitude range.
+        """
+        count_samples = lambda signal: (signal.abs().float() >= greater_than).sum().float()
+        return (count_samples(predicted_signal) / predicted_signal.numel()) - (
+            count_samples(target_signal) / target_signal.numel())
 
     def visualize_inferred(self):
         """ Run in inference mode and visualize results.
@@ -476,20 +488,25 @@ class Trainer():
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
         spectrogram = maybe_load_tensor(spectrogram)  # [num_frames, frame_channels]
         target_signal = maybe_load_tensor(example.spectrogram_audio)  # [signal_length]
-        # Introduce quantization noise
-        target_signal = combine_signal(*split_signal(target_signal), return_int=True)
 
         spectrogram = spectrogram.to(torch.device('cpu'))
         inferrer = self.model.to_inferrer()
         with evaluate(inferrer):
             logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[0])
             predicted_coarse, predicted_fine, _ = inferrer(spectrogram)
-            predicted_signal = combine_signal(predicted_coarse, predicted_fine, return_int=True)
 
+        # NOTE: Introduce quantization noise similar to the model inputs.
+        signals = (combine_signal(predicted_coarse, predicted_fine, return_int=False),
+                   combine_signal(*split_signal(target_signal), return_int=False))
+        self.comet_ml.log_metrics({
+            'single/99_sample_density_gap': self._get_sample_density_gap(*signals, 0.99),
+            'single/95_sample_density_gap': self._get_sample_density_gap(*signals, 0.95),
+            'single/90_sample_density_gap': self._get_sample_density_gap(*signals, 0.90)
+        })
         self.comet_ml.log_audio(
             tag=self.DEV_INFERRED_LABEL,
             text=example.text,
             speaker=str(example.speaker),
-            gold_audio=target_signal,
-            predicted_audio=predicted_signal)
+            gold_audio=combine_signal(*split_signal(target_signal), return_int=True),
+            predicted_audio=combine_signal(predicted_coarse, predicted_fine, return_int=True))
         self.comet_ml.log_figure('spectrogram', plot_spectrogram(spectrogram))

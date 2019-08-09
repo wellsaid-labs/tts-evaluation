@@ -14,7 +14,9 @@ sync {
   rsync = {
       binary = "/usr/local/bin/rsync", -- OSX does not have updated version of rsync,
                                        -- install via: `brew install rsync`
-      rsh = "ssh -i {home}/.ssh/google_compute_engine -o UserKnownHostsFile={home}/.ssh/known_hosts",
+      -- NOTE: We disable SSH host key checking because GCP frequently changes it's remote
+      -- host identification.
+      rsh = "ssh -i {home}/.ssh/google_compute_engine -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no",
       verbose = true,
       compress = true,
       -- Learn more:

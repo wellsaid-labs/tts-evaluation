@@ -18,6 +18,8 @@ import logging
 import os
 import subprocess
 
+from src.environment import ROOT_PATH
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -46,7 +48,7 @@ def main(source,
          destination,
          instance,
          user,
-         template='src/bin/gcp/lsyncd.conf.lua',
+         template=ROOT_PATH / 'src' / 'bin' / 'gcp' / 'lsyncd.conf.lua',
          tmp='/tmp/lsyncd.conf.lua'):
     """ Starts a lsyncd session.
 
@@ -55,10 +57,10 @@ def main(source,
         destination (str): Path on remote machine to sync.
         instance (str): Name of remote GCP instance.
         user (str): Username on remote machine.
-        template (str): Template configuration for lsyncd.
+        template (Path): Template configuration for lsyncd.
         tmp (str): Tmp filename to save configuration.
     """
-    config = Path(template).read_text().strip()
+    config = template.read_text().strip()
     config = config.replace('{source}', source)
     config = config.replace('{user}', user)
     config = config.replace('{destination}', destination)

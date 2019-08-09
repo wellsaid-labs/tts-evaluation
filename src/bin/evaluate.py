@@ -239,7 +239,7 @@ if __name__ == '__main__':  # pragma: no cover
     if args.spectrogram_model is not None:
         args.spectrogram_model = Checkpoint.from_path(args.spectrogram_model)
         if args.text is not None:
-            speakers = args.spectrogram_model.input_encoder.speaker_encoder.speakers
+            speakers = args.spectrogram_model.input_encoder.speaker_encoder.vocab
             dataset = [TextSpeechRow(t, s, None) for t, s in product(args.text, speakers)]
     elif args.text is not None:
         raise argparse.ArgumentTypeError(

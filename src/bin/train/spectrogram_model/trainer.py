@@ -266,6 +266,8 @@ class Trainer():
             with torch.set_grad_enabled(train):
                 if infer:
                     predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1])
+                    # NOTE: `duration_gap` computes the average length of the predictions
+                    # verus the average length of the original spectrograms.
                     duration_gap = (predictions[-1].float() / batch.spectrogram[1].float()).mean()
                     self.metrics['duration_gap'].update(duration_gap, predictions[-1].numel())
                 else:
@@ -304,21 +306,30 @@ class Trainer():
             predictions (any): Return value from ``self.model.forwards``.
             do_backwards (bool): If ``True`` backward propogate the loss.
         """
+        # predicted_pre_spectrogram, predicted_post_spectrogram
+        # [num_frames, batch_size, frame_channels]
+        # predicted_stop_tokens [num_frames, batch_size]
+        # predicted_alignments [num_frames, batch_size, num_tokens]
         (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
          predicted_alignments) = predictions
-        spectrogram = batch.spectrogram[0]
+        spectrogram = batch.spectrogram[0]  # [num_frames, batch_size, frame_channels]
 
-        # expanded_mask, predicted_pre_spectrogram, predicted_post_spectrogram, spectrogram
-        # [num_frames, batch_size, frame_channels]
+        # expanded_mask [num_frames, batch_size, frame_channels]
         expanded_mask = batch.spectrogram_expanded_mask[0]
+        # pre_spectrogram_loss [num_frames, batch_size, frame_channels]
         pre_spectrogram_loss = self.criterion_spectrogram(predicted_pre_spectrogram, spectrogram)
+        # [num_frames, batch_size, frame_channels] → [1]
         pre_spectrogram_loss = pre_spectrogram_loss.masked_select(expanded_mask).mean()
 
+        # post_spectrogram_loss [num_frames, batch_size, frame_channels]
         post_spectrogram_loss = self.criterion_spectrogram(predicted_post_spectrogram, spectrogram)
+        # [num_frames, batch_size, frame_channels] → [1]
         post_spectrogram_loss = post_spectrogram_loss.masked_select(expanded_mask).mean()
 
-        mask = batch.spectrogram_mask[0]
+        mask = batch.spectrogram_mask[0]  # [num_frames, batch_size]
+        # stop_token_loss [num_frames, batch_size]
         stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, batch.stop_token[0])
+        # [num_frames, batch_size] → [1]
         stop_token_loss = stop_token_loss.masked_select(mask).mean()
 
         if do_backwards:
@@ -326,6 +337,7 @@ class Trainer():
             (pre_spectrogram_loss + post_spectrogram_loss + stop_token_loss).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
 
+        # NOTE: These losses are from the original Tacotron 2 paper.
         self.metrics['pre_spectrogram_loss'].update(pre_spectrogram_loss, expanded_mask.sum())
         self.metrics['post_spectrogram_loss'].update(post_spectrogram_loss, expanded_mask.sum())
         self.metrics['stop_token_loss'].update(stop_token_loss, mask.sum())
@@ -334,12 +346,22 @@ class Trainer():
                 mask.sum())
 
     def _add_attention_metrics(self, predicted_alignments, lengths):
-        """ Compute and report attention metrics. """
-        # predicted_alignments [num_frames, batch_size, num_tokens]
-        mask = lengths_to_mask(lengths, device=predicted_alignments.device).transpose(0, 1)
-        kwargs = {'tensor': predicted_alignments.detach(), 'dim': 2, 'mask': mask}
+        """ Compute and report attention metrics.
+
+        Args:
+            predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+            lengths (torch.LongTensor [batch_size])
+        """
+        # lengths [batch_size] → mask [batch_size, num_frames]
+        mask = lengths_to_mask(lengths, device=predicted_alignments.device)
+        # mask [batch_size, num_frames] → [num_frames, batch_size]
+        mask = mask.transpose(0, 1)
+        kwargs = {'tensor': predicted_alignments, 'dim': 2, 'mask': mask}
+        # NOTE: `attention_norm` with `norm=math.inf` computes the maximum value along `num_tokens`
+        # dimension.
         self.metrics['attention_norm'].update(
             get_average_norm(norm=math.inf, **kwargs), kwargs['mask'].sum())
+        # NOTE: `attention_std` computes the standard deviation along `num_tokens` dimension.
         self.metrics['attention_std'].update(get_weighted_stdev(**kwargs), kwargs['mask'].sum())
 
     def visualize_inferred(self):

@@ -64,6 +64,26 @@ def test_resetable_timer():
     assert called == 1
 
 
+def test_resetable_timer__race_condition():
+    """ Test to ensure that subsequent calls for `reset` do not trigger a race condition. """
+    called = 0
+
+    def _helper():
+        nonlocal called
+        called += 1
+
+    timer = ResetableTimer(0.1, _helper)
+    timer.start()
+    for i in range(10000):
+        timer.reset()
+
+    assert called == 0
+
+    time.sleep(0.3)
+
+    assert called == 1
+
+
 def test_flatten():
     assert flatten([[1, 2], [3, 4]]) == [1, 2, 3, 4]
 
