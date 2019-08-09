@@ -468,6 +468,17 @@ class Trainer():
 
         return coarse_loss, fine_loss, batch.signal_mask.sum()
 
+    def _get_sample_density_gap(self, predicted_signal, target_signal, greater_than):
+        """ Measure the relative difference in sample density inside a specified range.
+
+        Args:
+            predicted_signal (torch.FloatTensor [predicted_signal_length])
+            target_signal (torch.FloatTensor [target_signal_length])
+            greater_than (float): Defines the amplitude range.
+        """
+        return ((predicted_signal.abs() >= greater_than).sum() / predicted_signal.numel()) - (
+            (target_signal.abs() >= greater_than).sum() / target_signal.numel())
+
     def visualize_inferred(self):
         """ Run in inference mode and visualize results.
         """
@@ -476,8 +487,6 @@ class Trainer():
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
         spectrogram = maybe_load_tensor(spectrogram)  # [num_frames, frame_channels]
         target_signal = maybe_load_tensor(example.spectrogram_audio)  # [signal_length]
-        # Introduce quantization noise
-        target_signal = combine_signal(*split_signal(target_signal), return_int=True)
 
         spectrogram = spectrogram.to(torch.device('cpu'))
         inferrer = self.model.to_inferrer()
@@ -486,6 +495,14 @@ class Trainer():
             predicted_coarse, predicted_fine, _ = inferrer(spectrogram)
             predicted_signal = combine_signal(predicted_coarse, predicted_fine, return_int=True)
 
+        # NOTE: Introduce quantization noise similar to the model inputs.
+        target_signal = combine_signal(*split_signal(target_signal), return_int=True)
+        signals = (predicted_signal, target_signal)
+        self.comet_ml.log_metrics({
+            'single/99_sample_density_gap': self._get_sample_density_gap(*signals, 0.99),
+            'single/95_sample_density_gap': self._get_sample_density_gap(*signals, 0.95),
+            'single/90_sample_density_gap': self._get_sample_density_gap(*signals, 0.90)
+        })
         self.comet_ml.log_audio(
             tag=self.DEV_INFERRED_LABEL,
             text=example.text,

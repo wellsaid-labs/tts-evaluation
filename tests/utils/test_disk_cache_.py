@@ -123,7 +123,7 @@ def test_disk_cache(mock_replace):
 
     assert not file_path.exists()
 
-    time.sleep(0.4)
+    time.sleep(0.2)
 
     assert file_path.exists()
     mock_replace.assert_called_once()
@@ -151,11 +151,11 @@ def test_disk_cache__redundant_os_operations(mock_replace):
 
     with patch.object(
             Path, 'read_bytes', wraps=helper.cache._file_path.read_bytes) as mock_read_bytes:
-        for i in range(10000):  # Ensure that `save_to_disk_delay` works.
+        for i in range(100):  # Ensure that `save_to_disk_delay` works.
             helper('a' * i)
 
         helper.cache.save()  # Cancel the write timer and save.
-        time.sleep(0.4)  # Enough time for `save_to_disk_delay` to expire.
+        time.sleep(0.2)  # Enough time for `save_to_disk_delay` to expire.
         helper.cache.save()  # Try multiple saves in a row.
         assert mock_replace.call_count == 1
 
@@ -163,11 +163,11 @@ def test_disk_cache__redundant_os_operations(mock_replace):
         assert mock_read_bytes.call_count == 0
 
         helper('a')  # Test if redundant call triggers a save, it shouldn't.
-        time.sleep(0.4)
+        time.sleep(0.2)
         assert mock_replace.call_count == 1
 
         helper('b')  # New data should trigger a save.
-        time.sleep(0.4)
+        time.sleep(0.2)
         assert mock_replace.call_count == 2
         assert mock_read_bytes.call_count == 0
 
