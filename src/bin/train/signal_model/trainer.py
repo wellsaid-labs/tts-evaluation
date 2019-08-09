@@ -476,8 +476,9 @@ class Trainer():
             target_signal (torch.FloatTensor [target_signal_length])
             greater_than (float): Defines the amplitude range.
         """
-        return ((predicted_signal.abs() >= greater_than).sum() / predicted_signal.numel()) - (
-            (target_signal.abs() >= greater_than).sum() / target_signal.numel())
+        count_samples = lambda signal: (signal.abs().float() >= greater_than).sum().float()
+        return (count_samples(predicted_signal) / predicted_signal.numel()) - (
+            count_samples(target_signal) / target_signal.numel())
 
     def visualize_inferred(self):
         """ Run in inference mode and visualize results.
@@ -493,11 +494,10 @@ class Trainer():
         with evaluate(inferrer):
             logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[0])
             predicted_coarse, predicted_fine, _ = inferrer(spectrogram)
-            predicted_signal = combine_signal(predicted_coarse, predicted_fine, return_int=True)
 
         # NOTE: Introduce quantization noise similar to the model inputs.
-        target_signal = combine_signal(*split_signal(target_signal), return_int=True)
-        signals = (predicted_signal, target_signal)
+        signals = (combine_signal(predicted_coarse, predicted_fine, return_int=False),
+                   combine_signal(*split_signal(target_signal), return_int=False))
         self.comet_ml.log_metrics({
             'single/99_sample_density_gap': self._get_sample_density_gap(*signals, 0.99),
             'single/95_sample_density_gap': self._get_sample_density_gap(*signals, 0.95),
@@ -507,6 +507,6 @@ class Trainer():
             tag=self.DEV_INFERRED_LABEL,
             text=example.text,
             speaker=str(example.speaker),
-            gold_audio=target_signal,
-            predicted_audio=predicted_signal)
+            gold_audio=combine_signal(*split_signal(target_signal), return_int=True),
+            predicted_audio=combine_signal(predicted_coarse, predicted_fine, return_int=True))
         self.comet_ml.log_figure('spectrogram', plot_spectrogram(spectrogram))
