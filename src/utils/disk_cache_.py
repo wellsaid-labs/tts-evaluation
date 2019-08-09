@@ -284,6 +284,9 @@ class _DiskCache(_Cache):
 
     def save(self):
         """ Save cache to disk. """
+        if self._lazy_storage is None:
+            return
+
         if self._write_timer is not None:
             self._write_timer.cancel()
 
