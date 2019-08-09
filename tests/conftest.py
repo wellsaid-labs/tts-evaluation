@@ -24,11 +24,15 @@ def run_before_test():
     # Invalidate cache before each test.
     clear_config()
     for cache in _DiskCache.get_instances():
-        cache.clear()
+        cache.purge()
 
     set_hparams()
 
     yield
+
+    # NOTE: We need to invalidate caching after the test because of delayed writes.
+    for cache in _DiskCache.get_instances():
+        cache.purge()
 
 
 gc_fixture_tts_cache = create_disk_garbage_collection_fixture(DEFAULT_TTS_DISK_CACHE, autouse=True)

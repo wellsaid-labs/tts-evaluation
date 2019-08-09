@@ -526,7 +526,7 @@ def cache_get_audio_metadata(paths):
         paths (iterable): List of `Path`s to cache.
     """
     paths = sorted(list(paths))
-    paths = [p for p in paths if ((), {'audio_path': Path(p)}) not in get_audio_metadata.cache]
+    paths = [p for p in paths if {'audio_path': Path(p)} not in get_audio_metadata.cache]
     if len(paths) == 0:
         return
 
@@ -542,7 +542,7 @@ def cache_get_audio_metadata(paths):
     with Pool() as pool:
         for result in pool.imap_unordered(_cache_get_audio_metadata_helper, chunks):
             for audio_path, metadata in result:
-                get_audio_metadata.cache.set_(args=(audio_path,), return_=metadata)
+                get_audio_metadata.cache.set(args=(audio_path,), return_=metadata)
                 progress_bar.update()
 
     get_audio_metadata.cache.save()

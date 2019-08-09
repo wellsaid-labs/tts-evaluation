@@ -33,7 +33,7 @@ def _get_on_disk_tensor_shape(path):
 
 @log_runtime
 def cache_on_disk_tensor_shapes(tensors):
-    tensors = [t for t in tensors if ((), {'path': t.path}) not in _get_on_disk_tensor_shape.cache]
+    tensors = [t for t in tensors if {'path': t.path} not in _get_on_disk_tensor_shape.cache]
     if len(tensors) == 0:
         return
 
