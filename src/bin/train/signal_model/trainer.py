@@ -405,10 +405,10 @@ class Trainer():
         """ Get the orthogonal loss for the hidden-to-hidden matrix in our GRUs.
 
         Papers describing the loss:
-          https://papers.nips.cc/paper/7680-can-we-gain-more-from-orthogonality-regularizations-in-training-deep-networks.pdf
-          https://github.com/pytorch/pytorch/issues/2421#issuecomment-355534285
-          http://mathworld.wolfram.com/FrobeniusNorm.html
-          https://github.com/MingtaoGuo/BigGAN-tensorflow/blob/7e531cd875236544866f54248aa397f9176296b6/ops.py#L111
+        https://papers.nips.cc/paper/7680-can-we-gain-more-from-orthogonality-regularizations-in-training-deep-networks.pdf
+        https://github.com/pytorch/pytorch/issues/2421#issuecomment-355534285
+        http://mathworld.wolfram.com/FrobeniusNorm.html
+        https://github.com/MingtaoGuo/BigGAN-tensorflow/blob/7e531cd875236544866f54248aa397f9176296b6/ops.py#L111
 
         Returns:
             (torch.FloatTensor [1])
@@ -445,7 +445,6 @@ class Trainer():
         fine_loss = self.criterion(predicted_fine, batch.target_signal_fine)
         fine_loss = fine_loss.masked_select(batch.signal_mask).mean()  # fine_loss [1]
 
-        # TODO: Investigate if training on `orthogonal_loss` is effective.
         orthogonal_loss = self._get_gru_orthogonal_loss()  # orthogonal_loss [1]
 
         if do_backwards:
@@ -461,7 +460,8 @@ class Trainer():
             else:
                 self._rollback_states.append(self._make_partial_rollback_state())
 
-        # Record metrics
+        # Learn more about `coarse_loss` and `fine_loss` in the "Efficient Neural Audio Synthesis"
+        # paper.
         self.metrics['coarse_loss'].update(coarse_loss, batch.signal_mask.sum())
         self.metrics['fine_loss'].update(fine_loss, batch.signal_mask.sum())
         self.metrics['orthogonal_loss'].update(orthogonal_loss)
