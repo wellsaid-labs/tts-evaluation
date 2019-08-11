@@ -113,9 +113,10 @@ class DataLoader(DataLoader):
         batch_sampler = OomBatchSampler(
             batch_sampler, get_item_size=lambda i: get_number_of_elements(data[i]))
         batch_sampler = DeterministicSampler(batch_sampler)
+
         if src.distributed.is_initialized():
             num_workers = int(num_workers / torch.distributed.get_world_size())
-            batch_sampler = DistributedBatchSampler(batch_sampler, device)
+            batch_sampler = DistributedBatchSampler(batch_sampler)
 
         super().__init__(
             data,

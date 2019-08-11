@@ -9,6 +9,7 @@ import torch.utils.data
 
 from src.environment import IS_TESTING_ENVIRONMENT
 from src.utils.utils import identity
+from src.utils.utils import log_runtime
 from src.utils.utils import seconds_to_string
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ class DataLoader(torch.utils.data.dataloader.DataLoader):
         **kwargs: Other key word arguments to be passed to ``torch.utils.data.DataLoader``
     """
 
+    @log_runtime
     def __init__(self,
                  dataset,
                  load_fn=identity,

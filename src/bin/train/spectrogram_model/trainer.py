@@ -90,6 +90,10 @@ class Trainer():
         self.checkpoints_directory = checkpoints_directory
         self.dev_dataset = dev_dataset
         self.train_dataset = train_dataset
+        self.train_batch_size = train_batch_size
+        self.dev_batch_size = dev_batch_size
+        self.dev_loader = None
+        self.train_loader = None
 
         # TODO: The `input_encoder` should not have any insight onto the `dev_dataset`. There
         # should be a process for dealing with unknown characters instead.
@@ -97,13 +101,6 @@ class Trainer():
         speakers = [r.speaker for r in self.train_dataset] + [r.speaker for r in self.dev_dataset]
         self.input_encoder = (
             InputEncoder(corpus, speakers) if input_encoder is None else input_encoder)
-
-        loader_kwargs = {'device': self.device, 'input_encoder': self.input_encoder}
-        # NOTE: The `dev_loader` does not always load the same batches. That said, the batches
-        # are sampled from the same distribution via `self.dev_dataset`; therefore, it should be
-        # comparable between experiments.
-        self.dev_loader = DataLoader(self.dev_dataset, dev_batch_size, **loader_kwargs)
-        self.train_loader = DataLoader(self.train_dataset, train_batch_size, **loader_kwargs)
 
         num_tokens = self.input_encoder.text_encoder.vocab_size
         num_speakers = self.input_encoder.speaker_encoder.vocab_size
@@ -206,15 +203,18 @@ class Trainer():
         Returns:
             (str): Path the checkpoint was saved to.
         """
-        return Checkpoint(
-            comet_ml_project_name=self.comet_ml.project_name,
-            directory=self.checkpoints_directory,
-            model=(self.model.module if src.distributed.is_initialized() else self.model),
-            optimizer=self.optimizer,
-            input_encoder=self.input_encoder,
-            epoch=self.epoch,
-            step=self.step,
-            comet_ml_experiment_key=self.comet_ml.get_key()).save()
+        if src.distributed.is_master():
+            return Checkpoint(
+                comet_ml_project_name=self.comet_ml.project_name,
+                directory=self.checkpoints_directory,
+                model=(self.model.module if src.distributed.is_initialized() else self.model),
+                optimizer=self.optimizer,
+                input_encoder=self.input_encoder,
+                epoch=self.epoch,
+                step=self.step,
+                comet_ml_experiment_key=self.comet_ml.get_key()).save()
+        else:
+            return None
 
     @log_runtime
     def run_epoch(self, train=False, trial_run=False, infer=False):
@@ -247,7 +247,17 @@ class Trainer():
         if not trial_run:
             self.comet_ml.log_current_epoch(self.epoch)
 
+        # NOTE: The `dev_loader` does not always load the same batches. That said, the batches
+        # are sampled from the same distribution via `self.dev_dataset`; therefore, it should be
+        # comparable between experiments.
+        loader_kwargs = {'device': self.device, 'input_encoder': self.input_encoder}
+        if train and self.train_loader is None:
+            self.train_loader = DataLoader(self.train_dataset, self.train_batch_size,
+                                           **loader_kwargs)
+        elif not train and self.dev_loader is None:
+            self.dev_loader = DataLoader(self.dev_dataset, self.dev_batch_size, **loader_kwargs)
         data_loader = self.train_loader if train else self.dev_loader
+
         random_batch = random.randint(0, len(data_loader) - 1)
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):

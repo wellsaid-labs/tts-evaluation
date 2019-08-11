@@ -28,24 +28,22 @@ import torch
 from src.audio import combine_signal
 from src.audio import split_signal
 from src.bin.train.signal_model.data_loader import DataLoader
-from src.datasets import add_predicted_spectrogram_column
-from src.datasets import add_spectrogram_column
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import get_config
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.utils import AnomalyDetector
-from src.utils import AveragedMetric
-from src.utils import cache_on_disk_tensor_shapes
 from src.utils import Checkpoint
 from src.utils import dict_collapse
-from src.utils import evaluate
+from src.utils import DistributedAveragedMetric
 from src.utils import get_total_parameters
 from src.utils import log_runtime
 from src.utils import maybe_load_tensor
 from src.visualize import CometML
 from src.visualize import plot_spectrogram
+
+import src.distributed
 
 logger = logging.getLogger(__name__)
 
@@ -106,20 +104,23 @@ class Trainer():
         self.device = device
         self.step = step
         self.epoch = epoch
+        self.train_batch_size = train_batch_size
+        self.dev_batch_size = dev_batch_size
         self.num_rollbacks = num_rollbacks
         self.checkpoints_directory = checkpoints_directory
         self.use_predicted = spectrogram_model_checkpoint is not None
         self.spectrogram_model_checkpoint_path = (None if spectrogram_model_checkpoint is None else
                                                   spectrogram_model_checkpoint.path)
-
-        self.train_dataset = self._preprocess_data(spectrogram_model_checkpoint, train_dataset)
-        self.dev_dataset = self._preprocess_data(spectrogram_model_checkpoint, dev_dataset)
-        loader_kwargs = {'device': self.device, 'use_predicted': self.use_predicted}
-        self.dev_loader = DataLoader(self.dev_dataset, dev_batch_size, **loader_kwargs)
-        self.train_loader = DataLoader(self.train_dataset, train_batch_size, **loader_kwargs)
+        self.train_dataset = train_dataset
+        self.dev_dataset = dev_dataset
+        self.dev_loader = None
+        self.train_loader = None
 
         self.model = model if isinstance(model, torch.nn.Module) else model()
         self.model.to(device)
+        if src.distributed.is_initialized():
+            self.model = torch.nn.parallel.DistributedDataParallel(
+                self.model, device_ids=[device], output_device=device, dim=1)
 
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
@@ -132,14 +133,15 @@ class Trainer():
             anomaly_detector, AnomalyDetector) else AnomalyDetector()
 
         self.criterion = criterion(reduction='none').to(device)
-        self.metrics = defaultdict(AveragedMetric)
+
+        self.metrics = defaultdict(DistributedAveragedMetric)
 
         # NOTE: Rollback `maxlen=min_rollback + 1` to store the current state of the model with
         # the additional rollbacks.
         self._rollback_states = deque([self._make_partial_rollback_state()],
                                       maxlen=min_rollback + 1)
 
-        self.comet_ml = CometML()
+        self.comet_ml = CometML(disabled=not src.distributed.is_master())
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])
@@ -160,24 +162,9 @@ class Trainer():
         logger.info('Train Batch Size: %d', train_batch_size)
         logger.info('Dev Batch Size: %d', dev_batch_size)
         logger.info('Model:\n%s' % self.model)
+        logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
         atexit.register(self.save_checkpoint)
-
-    def _preprocess_data(self, spectrogram_model_checkpoint, data):
-        """ Preprocess text speech examples.
-
-        Args:
-            data (iterable of TextSpeechRow)
-
-        Returns:
-            data (iterable of TextSpeechRow)
-        """
-        data = add_spectrogram_column(data)
-        cache_on_disk_tensor_shapes([r.spectrogram for r in data])
-        if self.use_predicted:
-            data = add_predicted_spectrogram_column(data, spectrogram_model_checkpoint, self.device)
-            cache_on_disk_tensor_shapes([r.predicted_spectrogram for r in data])
-        return data
 
     def _comet_ml_log_input_dev_data_hash(self, max_examples=10):
         """ Log to comet a basic hash of the predicted spectrogram data in `self.dev_dataset`.
@@ -192,8 +179,8 @@ class Trainer():
         sum_ = torch.tensor(0.0)
         sample = self.dev_dataset[:min(len(self.dev_dataset), max_examples)]
         for example in sample:
-            spectrogram = getattr(example,
-                                  'predicted_spectrogram' if self.use_predicted else 'spectrogram')
+            use_predicted = self.use_predicted
+            spectrogram = example.predicted_spectrogram if use_predicted else example.spectrogram
             sum_ += maybe_load_tensor(spectrogram).sum()
         self.comet_ml.log_other('input_dev_data_hash', (sum_ / len(sample)).item())
 
@@ -231,17 +218,20 @@ class Trainer():
         Returns:
             (str): Path the checkpoint was saved to.
         """
-        return Checkpoint(
-            directory=self.checkpoints_directory,
-            step=self.step,
-            model=self.model,
-            optimizer=self.optimizer,
-            epoch=self.epoch,
-            anomaly_detector=self.anomaly_detector,
-            comet_ml_project_name=self.comet_ml.project_name,
-            comet_ml_experiment_key=self.comet_ml.get_key(),
-            spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
-            num_rollbacks=self.num_rollbacks).save()
+        if src.distributed.is_master():
+            return Checkpoint(
+                directory=self.checkpoints_directory,
+                step=self.step,
+                model=(self.model.module if src.distributed.is_initialized() else self.model),
+                optimizer=self.optimizer,
+                epoch=self.epoch,
+                anomaly_detector=self.anomaly_detector,
+                comet_ml_project_name=self.comet_ml.project_name,
+                comet_ml_experiment_key=self.comet_ml.get_key(),
+                spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
+                num_rollbacks=self.num_rollbacks).save()
+        else:
+            return None
 
     def _make_partial_rollback_state(self):
         """ Make a state for rolling back to.
@@ -303,7 +293,7 @@ class Trainer():
         """
         self.comet_ml.log_epoch_end(self.epoch)
         for name, metric in self.metrics.items():
-            self.comet_ml.log_metric('epoch/%s' % name, metric.reset())
+            self.comet_ml.log_metric('epoch/%s' % name, metric.sync().reset())
 
     @log_runtime
     def run_epoch(self, train=False, trial_run=False):
@@ -336,28 +326,25 @@ class Trainer():
         if not trial_run:
             self.comet_ml.log_current_epoch(self.epoch)
 
+        loader_kwargs = {'device': self.device, 'use_predicted': self.use_predicted}
+        if train and self.train_loader is None:
+            self.train_loader = DataLoader(self.train_dataset, self.train_batch_size,
+                                           **loader_kwargs)
+        elif not train and self.dev_loader is None:
+            self.dev_loader = DataLoader(self.dev_dataset, self.dev_batch_size, **loader_kwargs)
         data_loader = self.train_loader if train else self.dev_loader
 
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
-                if self.device.type == 'cpu':
-                    predictions = self.model(
-                        batch.input_spectrogram,
-                        input_signal=batch.input_signal,
-                        target_coarse=batch.target_signal_coarse.unsqueeze(2))
-                else:
-                    predictions = torch.nn.parallel.data_parallel(
-                        module=self.model,
-                        inputs=batch.input_spectrogram,
-                        module_kwargs={
-                            'input_signal': batch.input_signal,
-                            'target_coarse': batch.target_signal_coarse.unsqueeze(2)
-                        })
+                predictions = self.model(
+                    batch.input_spectrogram,
+                    input_signal=batch.input_signal,
+                    target_coarse=batch.target_signal_coarse.unsqueeze(2))
                 self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
 
             for name, metric in self.metrics.items():
-                self.comet_ml.log_metric('step/%s' % name, metric.last_update())
+                self.comet_ml.log_metric('step/%s' % name, metric.sync().last_update())
 
             if train:
                 self.step += 1
@@ -422,6 +409,9 @@ class Trainer():
             (coarse_loss + fine_loss).backward()
             grad_norm = self.optimizer.step(comet_ml=self.comet_ml)
 
+            grad_norm = torch.tensor(grad_norm, device=coarse_loss.device)
+            torch.distributed.all_reduce(grad_norm)
+            grad_norm = (grad_norm / torch.distributed.get_world_size()).cpu().item()
             if self.anomaly_detector.step(grad_norm):
                 logger.warning('Rolling back, detected an anomaly #%d (%f > %f ± %f)',
                                self.num_rollbacks, grad_norm, self.anomaly_detector.last_average,
@@ -442,41 +432,65 @@ class Trainer():
         """ Measure the relative difference in sample density inside a specified range.
 
         Args:
-            predicted_signal (torch.FloatTensor [predicted_signal_length])
-            target_signal (torch.FloatTensor [target_signal_length])
+            predicted_signal (torch.IntTensor [predicted_signal_length])
+            target_signal (torch.IntTensor [target_signal_length])
             greater_than (float): Defines the amplitude range.
-        """
-        count_samples = lambda signal: (signal.abs().float() >= greater_than).sum().float()
-        return (count_samples(predicted_signal) / predicted_signal.numel()) - (
-            count_samples(target_signal) / target_signal.numel())
 
-    def visualize_inferred(self):
+        Returns:
+            (float): The density margin between the predicted and target signals.
+        """
+
+        def get_density(unnormalized_signal):
+            maximum = torch.iinfo(unnormalized_signal.dtype).max
+            normalized = unnormalized_signal.float() / maximum
+            num_selected_samples = (normalized.abs() >= greater_than).sum()
+            total_samples = unnormalized_signal.numel()
+            print(total_samples, num_selected_samples, num_selected_samples.float() / total_samples)
+            return num_selected_samples.float() / total_samples
+
+        return (get_density(predicted_signal) - get_density(target_signal)).item()
+
+    @log_runtime
+    def visualize_inferred(self, split_size=20):
         """ Run in inference mode and visualize results.
+
+        Args:
+            split_size (int): Number of frames to synthesize at a time.
         """
         self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
+
+        # Load data
         example = random.sample(self.dev_dataset, 1)[0]
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
         spectrogram = maybe_load_tensor(spectrogram)  # [num_frames, frame_channels]
         target_signal = maybe_load_tensor(example.spectrogram_audio)  # [signal_length]
-
         spectrogram = spectrogram.to(torch.device('cpu'))
-        inferrer = self.model.to_inferrer()
-        with evaluate(inferrer):
-            logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[0])
-            predicted_coarse, predicted_fine, _ = inferrer(spectrogram)
 
-        # NOTE: Introduce quantization noise similar to the model inputs.
-        signals = (combine_signal(predicted_coarse, predicted_fine, return_int=False),
-                   combine_signal(*split_signal(target_signal), return_int=False))
+        logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[0])
+
+        # Split spectrogram in memory friendly chunks
+        half_padding = int(self.model.conditional_features_upsample.padding / 2)
+        spectrogram = torch.nn.functional.pad(spectrogram, (0, 0, half_padding, half_padding))
+        iterator = range(half_padding, spectrogram.shape[0] + half_padding, split_size)
+        splits = [spectrogram[i - half_padding:i + split_size + half_padding] for i in iterator]
+
+        inferrer = self.model.to_inferrer()
+        hidden_state = None
+        results = []
+        for split in splits:
+            coarse, fine, hidden_state = inferrer(split, hidden_state, pad=False)
+            results.append((coarse, fine))
+        predicted_coarse, predicted_fine = zip(*results)
+        predicted = combine_signal(
+            torch.cat(predicted_coarse), torch.cat(predicted_fine), return_int=True)
+
+        # NOTE: Introduce quantization noise similar to the model outputs and inputs.
+        target = combine_signal(*split_signal(target_signal), return_int=True)
+
         self.comet_ml.log_metrics({
-            'single/99_sample_density_gap': self._get_sample_density_gap(*signals, 0.99),
-            'single/95_sample_density_gap': self._get_sample_density_gap(*signals, 0.95),
-            'single/90_sample_density_gap': self._get_sample_density_gap(*signals, 0.90)
+            'single/%s_sample_density_gap' % n: self._get_sample_density_gap(predicted, target, n)
+            for n in [0.99, 0.95, 0.90]
         })
-        self.comet_ml.log_audio(
-            tag=self.DEV_INFERRED_LABEL,
-            text=example.text,
-            speaker=str(example.speaker),
-            gold_audio=combine_signal(*split_signal(target_signal), return_int=True),
-            predicted_audio=combine_signal(predicted_coarse, predicted_fine, return_int=True))
+        self.comet_ml.log_audio(self.DEV_INFERRED_LABEL, example.text, str(example.speaker), target,
+                                predicted)
         self.comet_ml.log_figure('spectrogram', plot_spectrogram(spectrogram))

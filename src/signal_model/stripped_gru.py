@@ -28,7 +28,6 @@ class StrippedGRU(nn.Module):
         # we are able to get away with an identity matrix here instead
         self.gru.weight_ih_l0 = torch.nn.Parameter(
             torch.eye(size * 3, size * 3), requires_grad=False)
-        self.gru.flatten_parameters()
 
     def forward(self, input_, hidden=None):
         assert input_.shape[2] == self.size * 3

@@ -3,9 +3,10 @@ from unittest import mock
 import torch
 import numpy as np
 
+from src.audio import combine_signal
+from src.audio import split_signal
 from src.bin.train.signal_model.data_loader import _get_slice
 from src.bin.train.signal_model.data_loader import DataLoader
-from src.audio import combine_signal
 
 from tests._utils import get_tts_mocks
 
@@ -20,7 +21,11 @@ def test__get_slice(randint_mock):
     slice_pad = 3
     slice_size = 3
     slice_ = _get_slice(
-        spectrogram, signal, spectrogram_slice_size=slice_size, spectrogram_slice_pad=slice_pad)
+        spectrogram,
+        signal,
+        split_signal,
+        spectrogram_slice_size=slice_size,
+        spectrogram_slice_pad=slice_pad)
 
     assert slice_.input_spectrogram.shape == (slice_size + slice_pad * 2, spectrogram_channels)
     assert slice_.input_signal.shape == (slice_size * samples_per_frame, 2)
@@ -37,7 +42,11 @@ def test__get_slice__padding(randint_mock):
     slice_pad = 3
     slice_size = 2
     slice_ = _get_slice(
-        spectrogram, signal, spectrogram_slice_size=slice_size, spectrogram_slice_pad=slice_pad)
+        spectrogram,
+        signal,
+        split_signal,
+        spectrogram_slice_size=slice_size,
+        spectrogram_slice_pad=slice_pad)
 
     assert torch.equal(slice_.input_spectrogram,
                        torch.tensor([[0], [1], [2], [3], [0], [0], [0], [0]]))
