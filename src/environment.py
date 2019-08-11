@@ -1,8 +1,10 @@
 """ Setup any global configurations like `logging`, `seed`, environment and disk configurations.
 """
 from collections import namedtuple
+from contextlib import contextmanager
 from pathlib import Path
 
+import functools
 import logging
 import os
 import random
@@ -36,29 +38,23 @@ TEMP_PATH = DEFAULT_TTS_DISK_CACHE / 'tmp'
 
 TEMP_PATH.mkdir(exist_ok=True, parents=True)
 
-# NOTE (Michael P., 07-22-2019): The torch cuda random generator state can be very large and can
-# cause OOM errors; therefore, it's usage is optional and not recommended.
-#
-# RNG state size:
-# >>> import torch
-# >>> torch.cuda.get_rng_state().shape
-# torch.Size([824016])
-# >>> torch.random.get_rng_state().shape
-# torch.Size([5048])
-#
-# That said, in PyTorch 1.2 (or the current master), this should be fixed.
 RandomGeneratorState = namedtuple('RandomGeneratorState',
                                   ['random', 'torch', 'numpy', 'torch_cuda'])
 
 
-def get_random_generator_state():
+def get_random_generator_state(cuda=torch.cuda.is_available()):
     """ Get the `torch`, `numpy` and `random` random generator state.
+
+    Args:
+        cuda (bool, optional): If `True` saves the `cuda` seed also. Note that getting and setting
+            the random generator state for CUDA can be quite slow if you have a lot of GPUs.
 
     Returns:
         RandomGeneratorState
     """
     return RandomGeneratorState(random.getstate(), torch.random.get_rng_state(),
-                                np.random.get_state(), None)
+                                np.random.get_state(),
+                                torch.cuda.get_rng_state_all() if cuda else None)
 
 
 def set_random_generator_state(state):
@@ -67,10 +63,44 @@ def set_random_generator_state(state):
     Args:
         state (RandomGeneratorState)
     """
-    logger.info('Setting the random state for `torch`, `numpy` and `random`.')
     random.setstate(state.random)
     torch.random.set_rng_state(state.torch)
     np.random.set_state(state.numpy)
+    if state.torch_cuda is not None and torch.cuda.is_available() and len(
+            state.torch_cuda) == torch.cuda.device_count():
+        torch.cuda.set_rng_state_all(state.torch_cuda)
+
+
+@contextmanager
+def fork_rng(seed=None, cuda=torch.cuda.is_available()):
+    """ Forks the `torch`, `numpy` and `random` random generators, so that when you return, the
+    random generators are reset to the state that they were previously in.
+
+    Args:
+        seed (int or None, optional): If defined this sets the seed values for the random
+            generator fork. This is a convenience parameter.
+        cuda (bool, optional): If `True` saves the `cuda` seed also. Getting and setting the random
+            generator state can be quite slow if you have a lot of GPUs.
+    """
+    state = get_random_generator_state(cuda)
+    if seed is not None:
+        set_seed(seed, cuda)
+    yield
+    set_random_generator_state(state)
+
+
+def fork_rng_wrap(function=None, **kwargs):
+    """ Decorator alias for `fork_rng`.
+    """
+    if not function:
+        return functools.partial(fork_rng_wrap, **kwargs)
+
+    @functools.wraps(function)
+    def wrapper():
+        with fork_rng(**kwargs):
+            return function()
+
+    return wrapper
 
 
 def set_basic_logging_config():
@@ -81,18 +111,24 @@ def set_basic_logging_config():
 
 
 @configurable
-def set_seed(seed=ConfiguredArg()):
+def set_seed(seed=ConfiguredArg(), cuda=torch.cuda.is_available()):
     """ Set seed values for random generators.
 
     Args:
         seed (int): Value used as a seed.
+        cuda (bool, optional): If `True` sets the `cuda` seed also.
     """
     random.seed(seed)
     torch.manual_seed(seed)
     np.random.seed(seed)
-    if torch.cuda.is_available():
+    if cuda:
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
+
+
+@configurable
+def get_initial_seed(seed=ConfiguredArg()):
+    return seed
 
 
 def assert_enough_disk_space(min_space=0.2):

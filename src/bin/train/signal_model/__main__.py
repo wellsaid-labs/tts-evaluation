@@ -95,7 +95,9 @@ def _train(trainer,
     index = 0
     while True:
         is_trial_run = index == 0  # The first iteration is run as a ``trial_run``.
-        trainer.run_epoch(train=True, trial_run=is_trial_run, num_epochs=evaluate_every_n_epochs)
+
+        for _ in range(1 if is_trial_run else evaluate_every_n_epochs):
+            trainer.run_epoch(train=True, trial_run=is_trial_run)
 
         if index % save_checkpoint_every_n_evaluations == 0:
             trainer.save_checkpoint()

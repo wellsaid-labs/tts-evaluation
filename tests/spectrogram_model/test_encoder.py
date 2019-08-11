@@ -29,7 +29,7 @@ def test_encoder():
     input_ = torch.LongTensor(encoder_params['batch_size'],
                               encoder_params['num_tokens']).random_(1, encoder_params['vocab_size'])
     speaker = torch.LongTensor(encoder_params['batch_size']).fill_(0)
-    tokens_mask = torch.full((encoder_params['batch_size'], encoder_params['num_tokens']), 1).byte()
+    tokens_mask = torch.full((encoder_params['batch_size'], encoder_params['num_tokens']), 1).bool()
     output = encoder(input_, tokens_mask, speaker)
 
     assert output.type() == 'torch.FloatTensor'
@@ -54,7 +54,7 @@ def test_encoder_one_speaker():
     input_ = torch.LongTensor(encoder_params['batch_size'],
                               encoder_params['num_tokens']).random_(1, encoder_params['vocab_size'])
     speaker = torch.LongTensor(encoder_params['batch_size']).fill_(0)
-    tokens_mask = torch.full((encoder_params['batch_size'], encoder_params['num_tokens']), 1).byte()
+    tokens_mask = torch.full((encoder_params['batch_size'], encoder_params['num_tokens']), 1).bool()
     output = encoder(input_, tokens_mask, speaker)
 
     assert output.type() == 'torch.FloatTensor'
@@ -83,7 +83,7 @@ def test_encoder_filter_size():
                                       1, encoder_params['vocab_size'])
         speaker = torch.LongTensor(encoder_params['batch_size']).fill_(0)
         tokens_mask = torch.full((encoder_params['batch_size'], encoder_params['num_tokens']),
-                                 1).byte()
+                                 1).bool()
         output = encoder(input_, tokens_mask, speaker)
 
         assert output.type() == 'torch.FloatTensor'

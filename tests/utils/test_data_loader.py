@@ -17,12 +17,7 @@ def test_data_loader_dataset():
 
 def test_data_loader():
     dataset = [1]
-    for batch in DataLoader(
-            dataset,
-            trial_run=True,
-            post_processing_fn=lambda x: x + 1,
-            load_fn=lambda x: x + 1,
-            use_tqdm=True):
+    for batch in DataLoader(dataset, post_processing_fn=lambda x: x + 1, load_fn=lambda x: x + 1):
         assert len(batch) == 1
         assert batch[0] == 3
 

@@ -52,8 +52,6 @@ class DataLoader(torch.utils.data.dataloader.DataLoader):
         post_process_fn (callable, optional): Callable run directly before the batch is returned.
         num_workers (int, optional): Number of subprocesses to use for data loading. Given a 0 value
           the data will be loaded in the main process.
-        trial_run (bool, optional): If ``True`` iteration stops after the first batch and doesn't
-          start any workers.
         use_tqdm (bool, optional): Log a TQDM progress bar.
         **kwargs: Other key word arguments to be passed to ``torch.utils.data.DataLoader``
     """
@@ -63,40 +61,29 @@ class DataLoader(torch.utils.data.dataloader.DataLoader):
                  load_fn=identity,
                  post_processing_fn=identity,
                  num_workers=0 if IS_TESTING_ENVIRONMENT else cpu_count(),
-                 trial_run=False,
                  use_tqdm=False,
                  **kwargs):
+        from src.samplers import RepeatSampler  # NOTE: Prevent circular dependency
+
         super().__init__(
             dataset=_DataLoaderDataset(dataset, load_fn), num_workers=num_workers, **kwargs)
 
-        self.trial_run = trial_run
-        if self.trial_run:
-            self.num_workers = 0
-
         logger.info('Launching with %d workers', self.num_workers)
         self.post_processing_fn = post_processing_fn
+        self.batch_sampler = RepeatSampler(self.batch_sampler)
         self.use_tqdm = use_tqdm
+        self.iterator = super().__iter__()
 
     def __len__(self):
-        return 1 if self.trial_run else super().__len__()
+        return len(self.batch_sampler.sampler)
 
     def __iter__(self):
         start = time.time()
-        is_first = True
-
-        iterator = super().__iter__()
-        if self.use_tqdm:
-            iterator = tqdm(iterator, total=len(self))
-
-        for batch in iterator:
-            batch_ = self.post_processing_fn(batch)
-
-            if is_first:
+        iterator = range(len(self))
+        iterator = tqdm(iterator) if self.use_tqdm else iterator
+        for i in iterator:
+            batch = self.post_processing_fn(next(self.iterator))
+            if i == 0:
                 elapsed = seconds_to_string(time.time() - start)
                 logger.info('Time to first batch was %s.', elapsed)
-                is_first = False
-
-            yield batch_
-
-            if self.trial_run:
-                break
+            yield batch

@@ -11,7 +11,7 @@ def test_post_net():
 
     # NOTE: spectrogram frames are around the range of 0 to 1
     input_ = torch.FloatTensor(batch_size, frame_channels, num_frames).uniform_(0, 1)
-    mask = torch.ByteTensor(batch_size, num_frames).fill_(1)
+    mask = torch.BoolTensor(batch_size, num_frames).fill_(1)
     output = pre_net(input_, mask)
 
     assert output.type() == 'torch.FloatTensor'

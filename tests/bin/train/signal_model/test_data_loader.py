@@ -55,7 +55,6 @@ def test_data_loader():
     data = mocks['dev_dataset']
     samples_per_frame = data[0].spectrogram_audio.shape[0] / data[0].spectrogram.shape[0]
     batch_size = 2
-    num_epochs = 2
     slice_size = 75
     slice_pad = 0
 
@@ -68,11 +67,8 @@ def test_data_loader():
         device,
         use_predicted=False,
         spectrogram_slice_size=slice_size,
-        spectrogram_slice_pad=slice_pad,
-        use_tqdm=False,
-        trial_run=False,
-        num_epochs=num_epochs)
-    assert len(loader) == (len(data) // batch_size) * 2
+        spectrogram_slice_pad=slice_pad)
+    assert len(loader) == (len(data) // batch_size)
 
     # Test collate
     item = next(iter(loader))

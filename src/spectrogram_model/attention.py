@@ -81,7 +81,7 @@ class LocationSensitiveAttention(nn.Module):
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]):
                 Batched set of encoded sequences.
-            tokens_mask (torch.FloatTensor [batch_size, num_tokens]): Binary mask where zeros's
+            tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask where zeros's
                 represent padding in ``encoded_tokens``.
             query (torch.FloatTensor [1, batch_size, hidden_size]): Query vector used to score
                 individual token vectors.
@@ -140,7 +140,7 @@ class LocationSensitiveAttention(nn.Module):
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batched set of
                 encoded sequences.
-            tokens_mask (torch.FloatTensor [batch_size, num_tokens]): Binary mask where zero's
+            tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask where zero's
                 represent padding in ``encoded_tokens``.
             query (torch.FloatTensor [1, batch_size, query_hidden_size]): Query vector used to score
                 individual token vectors.

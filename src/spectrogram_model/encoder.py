@@ -114,7 +114,7 @@ class Encoder(nn.Module):
         """
         Args:
             tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
-            tokens_mask (torch.ByteTensor [batch_size, num_tokens]): Binary mask applied on
+            tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask applied on
                 tokens.
             speaker (torch.LongTensor [batch_size]): Batched speaker encoding.
 

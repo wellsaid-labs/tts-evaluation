@@ -36,15 +36,17 @@ def test_spectrogram_model_batch_size_sensativity():
     frames, frames_with_residual, stop_token, alignment, lengths = model(
         input_[:, :1], speaker[:, :1], max_frames_per_token=num_frames / num_tokens)
 
-    numpy.testing.assert_almost_equal(frames.detach().numpy(),
-                                      batched_frames[:, :1].detach().numpy())
-    numpy.testing.assert_almost_equal(frames_with_residual.detach().numpy(),
-                                      batched_frames_with_residual[:, :1].detach().numpy())
-    numpy.testing.assert_almost_equal(stop_token.detach().numpy(),
-                                      batched_stop_token[:, :1].detach().numpy())
-    numpy.testing.assert_almost_equal(alignment.detach().numpy(),
-                                      batched_alignment[:, :1].detach().numpy())
-    numpy.testing.assert_almost_equal(lengths.numpy(), lengths[:1].numpy())
+    numpy.testing.assert_almost_equal(
+        frames.detach().numpy(), batched_frames[:, :1].detach().numpy(), decimal=6)
+    numpy.testing.assert_almost_equal(
+        frames_with_residual.detach().numpy(),
+        batched_frames_with_residual[:, :1].detach().numpy(),
+        decimal=6)
+    numpy.testing.assert_almost_equal(
+        stop_token.detach().numpy(), batched_stop_token[:, :1].detach().numpy(), decimal=6)
+    numpy.testing.assert_almost_equal(
+        alignment.detach().numpy(), batched_alignment[:, :1].detach().numpy(), decimal=6)
+    numpy.testing.assert_almost_equal(lengths.numpy(), lengths[:1].numpy(), decimal=6)
 
 
 def test_spectrogram_model():

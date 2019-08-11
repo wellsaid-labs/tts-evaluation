@@ -378,6 +378,8 @@ class WaveRNN(nn.Module):
 
     def forward(self, local_features, input_signal, target_coarse, hidden_state=None, pad=False):
         """
+        TODO: Explore speeding up training with `JIT`.
+
         Note:
             - Forward does not support unbatched mode, yet unlike other model
 

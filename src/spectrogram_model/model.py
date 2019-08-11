@@ -145,7 +145,7 @@ class SpectrogramModel(nn.Module):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
-            tokens_mask (torch.FloatTensor [batch_size, num_tokens])
+            tokens_mask (torch.BoolTensor [batch_size, num_tokens])
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
             target_lengths (torch.LongTensor [batch_size]): The number of frames in each sequence.
 
@@ -177,7 +177,7 @@ class SpectrogramModel(nn.Module):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
-            tokens_mask (torch.FloatTensor [batch_size, num_tokens])
+            tokens_mask (torch.BoolTensor [batch_size, num_tokens])
             num_tokens (torch.LongTensor [batch_size]): The number of tokens in each sequence.
             max_frames_per_token (int, optional): The maximum sequential predictions to make before
                 quitting; Used for testing and defensive design.
@@ -292,6 +292,8 @@ class SpectrogramModel(nn.Module):
                 target_lengths=None,
                 **kwargs):
         """
+        TODO: Explore speeding up training with `JIT`.
+
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens]): Batched set
                 of sequences.

@@ -16,7 +16,6 @@ from collections import defaultdict
 from collections import deque
 from collections import namedtuple
 from copy import deepcopy
-from functools import partial
 
 import atexit
 import logging
@@ -38,7 +37,6 @@ from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.utils import AnomalyDetector
 from src.utils import AveragedMetric
-from src.utils import balance_list
 from src.utils import cache_on_disk_tensor_shapes
 from src.utils import Checkpoint
 from src.utils import dict_collapse
@@ -51,9 +49,10 @@ from src.visualize import plot_spectrogram
 
 logger = logging.getLogger(__name__)
 
-_RollbackTrainerState = namedtuple(
-    '_RollbackTrainerState',
-    ['step', 'epoch', 'optimizer_state_dict', 'model_state_dict', 'anomaly_detector'])
+_RollbackTrainerState = namedtuple('_RollbackTrainerState', [
+    'step', 'epoch', 'optimizer_state_dict', 'model_state_dict', 'scheduler_state_dict',
+    'anomaly_detector'
+])
 
 
 class Trainer():
@@ -80,7 +79,6 @@ class Trainer():
         num_rollbacks (int, optional): Number of rollbacks.
         anomaly_detector (AnomalyDetector, optional): Anomaly detector used to skip batches that
             result in an anomalous loss.
-        use_tqdm (bool, optional): Use TQDM to track epoch progress.
     """
 
     TRAIN_LABEL = 'train'
@@ -104,8 +102,21 @@ class Trainer():
                  step=0,
                  epoch=0,
                  num_rollbacks=0,
-                 anomaly_detector=None,
-                 use_tqdm=False):
+                 anomaly_detector=None):
+        self.device = device
+        self.step = step
+        self.epoch = epoch
+        self.num_rollbacks = num_rollbacks
+        self.checkpoints_directory = checkpoints_directory
+        self.use_predicted = spectrogram_model_checkpoint is not None
+        self.spectrogram_model_checkpoint_path = (None if spectrogram_model_checkpoint is None else
+                                                  spectrogram_model_checkpoint.path)
+
+        self.train_dataset = self._preprocess_data(spectrogram_model_checkpoint, train_dataset)
+        self.dev_dataset = self._preprocess_data(spectrogram_model_checkpoint, dev_dataset)
+        loader_kwargs = {'device': self.device, 'use_predicted': self.use_predicted}
+        self.dev_loader = DataLoader(self.dev_dataset, dev_batch_size, **loader_kwargs)
+        self.train_loader = DataLoader(self.train_dataset, train_batch_size, **loader_kwargs)
 
         self.model = model if isinstance(model, torch.nn.Module) else model()
         self.model.to(device)
@@ -123,27 +134,7 @@ class Trainer():
         self.criterion = criterion(reduction='none').to(device)
         self.metrics = defaultdict(AveragedMetric)
 
-        self.device = device
-        self.step = step
-        self.epoch = epoch
-        self.num_rollbacks = num_rollbacks
-        self.train_batch_size = train_batch_size
-        self.dev_batch_size = dev_batch_size
-        self.checkpoints_directory = checkpoints_directory
-        self.use_predicted = spectrogram_model_checkpoint is not None
-        self.spectrogram_model_checkpoint_path = (None if spectrogram_model_checkpoint is None else
-                                                  spectrogram_model_checkpoint.path)
-
-        self.train_dataset = self._preprocess_data(spectrogram_model_checkpoint, train_dataset)
-        self.balance_dataset = partial(
-            balance_list, get_class=lambda r: r.speaker, get_weight=self._get_spectrogram_length)
-        # NOTE: ``balance_dataset`` requires the data to be preprocessed because it uses
-        # ``get_spectrogram_length``
-        self.dev_dataset = self.balance_dataset(
-            self._preprocess_data(spectrogram_model_checkpoint, dev_dataset), random_seed=123)
-
-        self.use_tqdm = use_tqdm
-        # NOTE: Rollback ``maxlen=min_rollback + 1`` to store the current state of the model with
+        # NOTE: Rollback `maxlen=min_rollback + 1` to store the current state of the model with
         # the additional rollbacks.
         self._rollback_states = deque([self._make_partial_rollback_state()],
                                       maxlen=min_rollback + 1)
@@ -172,18 +163,6 @@ class Trainer():
 
         atexit.register(self.save_checkpoint)
 
-    def _get_spectrogram_length(self, example):
-        """ Get the length of the spectrogram used by trainer.
-
-        Args:
-            example (TextSpeechRow)
-
-        Returns:
-            int: Length of the spectrogram used for training.
-        """
-        return (example.predicted_spectrogram
-                if self.use_predicted else example.spectrogram).shape[0]
-
     def _preprocess_data(self, spectrogram_model_checkpoint, data):
         """ Preprocess text speech examples.
 
@@ -194,6 +173,7 @@ class Trainer():
             data (iterable of TextSpeechRow)
         """
         data = add_spectrogram_column(data)
+        cache_on_disk_tensor_shapes([r.spectrogram for r in data])
         if self.use_predicted:
             data = add_predicted_spectrogram_column(data, spectrogram_model_checkpoint, self.device)
             cache_on_disk_tensor_shapes([r.predicted_spectrogram for r in data])
@@ -209,13 +189,13 @@ class Trainer():
             max_examples (int): The max number of examples to consider for computing the hash. This
                 is limited to a small number of elements for faster performance.
         """
-        sum = torch.tensor(0.0)
+        sum_ = torch.tensor(0.0)
         sample = self.dev_dataset[:min(len(self.dev_dataset), max_examples)]
         for example in sample:
             spectrogram = getattr(example,
                                   'predicted_spectrogram' if self.use_predicted else 'spectrogram')
-            sum += maybe_load_tensor(spectrogram).sum()
-        self.comet_ml.log_other('input_dev_data_hash', (sum / len(sample)).item())
+            sum_ += maybe_load_tensor(spectrogram).sum()
+        self.comet_ml.log_other('input_dev_data_hash', (sum_ / len(sample)).item())
 
     @classmethod
     def from_checkpoint(class_, checkpoint, **kwargs):
@@ -292,6 +272,7 @@ class Trainer():
             epoch=self.epoch,
             optimizer_state_dict=deepcopy(self.optimizer.state_dict()),
             model_state_dict=deepcopy(self.model.state_dict()),
+            scheduler_state_dict=deepcopy(self.scheduler.state_dict()),
             anomaly_detector=deepcopy(self.anomaly_detector))
 
     def _partial_rollback(self):
@@ -307,10 +288,11 @@ class Trainer():
 
         self.model.load_state_dict(state.model_state_dict)
         self.optimizer.load_state_dict(state.optimizer_state_dict)
+        self.scheduler.load_state_dict(state.scheduler_state_dict)
+        self.optimizer.zero_grad()
         self.anomaly_detector = state.anomaly_detector
         self.step = state.step
         self.epoch = state.epoch
-        self.scheduler.step(state.step)
         self.comet_ml.set_step(self.step)
 
         self._rollback_states.clear()  # Clear the future states
@@ -324,7 +306,7 @@ class Trainer():
             self.comet_ml.log_metric('epoch/%s' % name, metric.reset())
 
     @log_runtime
-    def run_epoch(self, train=False, trial_run=False, num_epochs=1):
+    def run_epoch(self, train=False, trial_run=False):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
 
         The specification of an "epoch" is loose in rare circumstances:
@@ -336,22 +318,17 @@ class Trainer():
               there is not always the same number of batches for each epoch.
             - `trial_run` runs only on row of data.
 
-        NOTE: The original motivation `num_epochs > 1` is to save time on constructing and
-        deconstructing the `DataLoader` which can take many seconds.
-
         Args:
             train (bool, optional): If ``True`` the model will additionally take steps along the
                 computed gradient; furthermore, the Trainer ``step`` and ``epoch`` state will be
                 updated.
             trial_run (bool, optional): If ``True`` then the epoch is limited to one batch.
-            num_epochs (int, optional): Number of epochs to run.
         """
         label = self.TRAIN_LABEL if train else self.DEV_LABEL
         if trial_run:
             logger.info('[%s] Trial run with one batch.', label.upper())
         else:
-            logger.info('[%s] Running Epoch %d to %d, Step %d', label.upper(), self.epoch,
-                        self.epoch + num_epochs, self.step)
+            logger.info('[%s] Running Epoch %d, Step %d', label.upper(), self.epoch, self.step)
 
         # Set mode(s)
         self.model.train(mode=train)
@@ -359,18 +336,8 @@ class Trainer():
         if not trial_run:
             self.comet_ml.log_current_epoch(self.epoch)
 
-        # Setup iterator and metrics
-        dataset = self.balance_dataset(self.train_dataset) if train else self.dev_dataset
-        data_loader = DataLoader(
-            data=dataset,
-            batch_size=self.train_batch_size if train else self.dev_batch_size,
-            device=self.device,
-            trial_run=trial_run,
-            use_predicted=self.use_predicted,
-            use_tqdm=self.use_tqdm,
-            num_epochs=num_epochs)
+        data_loader = self.train_loader if train else self.dev_loader
 
-        # Run epoch
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
                 if self.device.type == 'cpu':
@@ -397,9 +364,12 @@ class Trainer():
                 self.comet_ml.set_step(self.step)
                 self.scheduler.step(self.step)
 
+            if trial_run:
+                break
+
         self._end_epoch()
         if train and not trial_run:
-            self.epoch += num_epochs
+            self.epoch += 1
 
     def _get_gru_orthogonal_loss(self):
         """ Get the orthogonal loss for the hidden-to-hidden matrix in our GRUs.

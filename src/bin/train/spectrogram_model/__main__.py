@@ -124,6 +124,7 @@ def _train(device_index,
         comet_ml_experiment_key (str): Experiment key to use with comet.ml.
         more_hparams (dict): Hparams to override default hparams.
     """
+    # TODO: Consider naming the logs based on the time they are started for sorting.
     recorder = RecordStandardStreams().start()
     # Initiate distributed environment, learn more:
     # https://pytorch.org/tutorials/intermediate/dist_tuto.htm
@@ -135,6 +136,8 @@ def _train(device_index,
         init_method=distributed_init_method)
     device = torch.device('cuda', device_index)
     torch.cuda.set_device(device)
+
+    logger.info('Worker %d started.', torch.distributed.get_rank())
 
     _set_hparams(more_hparams, checkpoint, comet_ml_project_name, comet_ml_experiment_key)
     recorder.update(run_root)

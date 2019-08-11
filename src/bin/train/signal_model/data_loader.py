@@ -4,7 +4,6 @@ from functools import partial
 import logging
 import random
 
-from torch.utils.data.sampler import RandomSampler
 from torchnlp.utils import collate_tensors
 from torchnlp.utils import tensors_to
 
@@ -13,6 +12,8 @@ import torch
 from src.audio import combine_signal
 from src.audio import split_signal
 from src.hparams import configurable
+from src.samplers import BalancedSampler
+from src.samplers import DeterministicSampler
 from src.utils import maybe_load_tensor
 
 import src
@@ -44,7 +45,7 @@ def _get_slice(spectrogram, signal, spectrogram_slice_size, spectrogram_slice_pa
         input_spectrogram (torch.Tensor [num_frames, channels])
         target_signal_coarse (torch.Tensor [signal_length])
         target_signal_fine (torch.Tensor [signal_length])
-        signal_mask (torch.Tensor [signal_length])
+        signal_mask (torch.BoolTensor [signal_length])
     )
     """
     samples, num_frames = signal.shape[0], spectrogram.shape[0]
@@ -57,7 +58,7 @@ def _get_slice(spectrogram, signal, spectrogram_slice_size, spectrogram_slice_pa
     go_sample = signal.new_zeros(1)  # First sample passed in to start RNN
     source_signal = torch.cat((go_sample, signal), dim=0)
     target_signal = signal
-    signal_mask = torch.ones(signal.shape[0], dtype=torch.uint8, device=signal.device)
+    signal_mask = torch.ones(signal.shape[0], dtype=torch.bool, device=signal.device)
 
     # Pad spectrogram and signal
     spectrogram_zeros = spectrogram_slice_size - 1 + spectrogram_slice_pad
@@ -138,9 +139,7 @@ class DataLoader(src.utils.DataLoader):
         data (iterable of TextSpeechRow): Data to iterate over.
         batch_size (int): Iteration batch size.
         device (torch.device): Device onto which to load data.
-        use_tqdm (bool): If ``True`` display progress via TQDM.
-        trial_run (bool or int): If ``True``, iterates over one batch.
-        num_epochs (int, optional): Number of epochs to run.
+        use_predicted (bool): If ``True`` use predicted spectrogram as opposed to the real one.
         **kwargs (any): Other arguments to the data loader ``_load_fn``
 
     Returns:
@@ -154,22 +153,26 @@ class DataLoader(src.utils.DataLoader):
                 [batch_size, spectrogram_slice_size * samples_per_frame])
             target_signal_fine (torch.LongTensor
                 [batch_size, spectrogram_slice_size * samples_per_frame])
-            signal_mask (torch.FloatTensor
+            signal_mask (torch.BoolTensor
                 [batch_size, spectrogram_slice_size * samples_per_frame])
         )
     """
 
     @configurable
-    def __init__(self, data, batch_size, device, use_tqdm, trial_run, num_epochs=1, **kwargs):
+    def __init__(self, data, batch_size, device, use_predicted, **kwargs):
+        sampler = BalancedSampler(
+            data,
+            get_class=lambda e: e.speaker,
+            get_weight=lambda e: (e.predicted_spectrogram
+                                  if use_predicted else e.spectrogram).shape[0])
+        sampler = DeterministicSampler(sampler)
 
         super().__init__(
             data,
             batch_size=batch_size,
             drop_last=True,  # ``drop_last`` to ensure full utilization of mutliple GPUs
             collate_fn=collate_tensors,
-            load_fn=partial(_load_fn, **kwargs),
+            load_fn=partial(_load_fn, use_predicted=use_predicted, **kwargs),
             pin_memory=True,
             post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
-            sampler=RandomSampler(data, replacement=True, num_samples=len(data) * num_epochs),
-            trial_run=trial_run,
-            use_tqdm=use_tqdm)
+            sampler=sampler)
