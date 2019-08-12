@@ -112,6 +112,9 @@ class Encoder(nn.Module):
 
     def forward(self, tokens, tokens_mask, speaker):
         """
+        NOTE: The results for the spectrogram model are different depending on the batch size due
+        to the backwards LSTM needing to consider variable padding.
+
         Args:
             tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask applied on

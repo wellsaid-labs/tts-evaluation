@@ -1,5 +1,4 @@
 from src.bin.train.spectrogram_model.data_loader import DataLoader
-
 from tests._utils import get_tts_mocks
 
 
@@ -13,7 +12,11 @@ def test_data_loader():
     assert len(iterator) == len(data) // batch_size
 
     # Test collate
-    total_frames = sum([r.spectrogram.shape[0] for r in data])
-    print([r.spectrogram.shape[0] for r in data])
-    print([r.spectrogram_mask[0].sum().item() for r in iterator])
-    assert sum([r.spectrogram_mask[0].sum().item() for r in iterator]) == total_frames
+    samples = [r for r in iterator]  # The iterator contains some randomness everytime it's sampled.
+    assert sum([r.spectrogram_mask[0].sum().item() for r in samples]) == (
+        sum([r.spectrogram[1].sum().item() for r in samples]))
+    assert sum([r.spectrogram_mask[0].sum().item() for r in samples]) == (
+        sum([r.spectrogram[0].sum(dim=2).nonzero().shape[0] for r in samples]))
+    assert sum([r.spectrogram_expanded_mask[0].sum().item() for r in samples]) == (
+        sum([r.spectrogram[0].nonzero().shape[0] for r in samples]))
+    assert sum([r.stop_token[0].sum().item() for r in samples]) == len(samples) * batch_size

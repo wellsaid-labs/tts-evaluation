@@ -210,8 +210,11 @@ class DeterministicSampler(Sampler):
                 set_random_generator_state(self.rng_state)
             else:
                 set_seed(self.random_seed)
-            yield
-            self.rng_state = get_random_generator_state(cuda=self.cuda)
+
+            try:
+                yield
+            finally:
+                self.rng_state = get_random_generator_state(cuda=self.cuda)
 
     def __iter__(self):
         with self._fork_rng():

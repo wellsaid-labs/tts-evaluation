@@ -10,6 +10,7 @@ from torch.utils.data.sampler import SequentialSampler
 
 from src.environment import fork_rng
 from src.environment import fork_rng_wrap
+from src.environment import set_seed
 from src.samplers import BalancedSampler
 from src.samplers import BucketBatchSampler
 from src.samplers import DeterministicSampler
@@ -142,6 +143,21 @@ def test_deterministic_sampler__nondeterministic_next():
 
     sampler = DeterministicSampler(_Sampler(), random_seed=123)
     assert list(sampler)[:10] == [7, 35, 12, 99, 53, 35, 14, 5, 49, 69]
+
+
+def test_deterministic_sampler__side_effects():
+    """ Ensure that the sampler does not affect random generation after it's finished. """
+    set_seed(123)
+    pre_randint = [random.randint(1, 2**31), random.randint(1, 2**31)]
+
+    sampler = DeterministicSampler(list(range(10)))
+    list(iter(sampler))
+
+    post_randint = [random.randint(1, 2**31), random.randint(1, 2**31)]
+
+    set_seed(123)
+    assert pre_randint == [random.randint(1, 2**31), random.randint(1, 2**31)]
+    assert post_randint == [random.randint(1, 2**31), random.randint(1, 2**31)]
 
 
 @fork_rng_wrap(seed=123)

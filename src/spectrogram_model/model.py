@@ -204,10 +204,12 @@ class SpectrogramModel(nn.Module):
             frame, stop_token, hidden_state, alignment = self.decoder(
                 encoded_tokens, tokens_mask, hidden_state=hidden_state)
             to_stop = self._get_stopped_indexes(stop_token, stop_threshold=stop_threshold)
-            stopped.update(to_stop)
 
             # Zero out stopped frames
             frame[:, list(stopped)] *= 0
+            # NOTE: `_get_stopped_indexes` predicts the last valid frame; therefore, these should
+            # be zero'd out afterwards.
+            stopped.update(to_stop)
 
             # Store results
             frames.append(frame.squeeze(0))

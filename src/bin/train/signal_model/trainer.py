@@ -445,7 +445,6 @@ class Trainer():
             normalized = unnormalized_signal.float() / maximum
             num_selected_samples = (normalized.abs() >= greater_than).sum()
             total_samples = unnormalized_signal.numel()
-            print(total_samples, num_selected_samples, num_selected_samples.float() / total_samples)
             return num_selected_samples.float() / total_samples
 
         return (get_density(predicted_signal) - get_density(target_signal)).item()

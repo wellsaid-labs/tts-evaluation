@@ -6,13 +6,29 @@ import pytest
 import torch
 import numpy
 
-from src.environment import ROOT_PATH
-from src.environment import get_random_generator_state
-from src.environment import set_random_generator_state
-from src.environment import check_module_versions
-from src.environment import set_basic_logging_config
 from src.environment import assert_enough_disk_space
+from src.environment import check_module_versions
+from src.environment import fork_rng
+from src.environment import get_random_generator_state
+from src.environment import ROOT_PATH
+from src.environment import set_basic_logging_config
+from src.environment import set_random_generator_state
 from src.environment import set_seed
+
+
+def test_fork_rng():
+    set_seed(123)
+    pre_randint = [random.randint(1, 2**31), random.randint(1, 2**31)]
+
+    with fork_rng(seed=123):
+        random.randint(1, 2**31)
+
+    post_randint = [random.randint(1, 2**31), random.randint(1, 2**31)]
+
+    set_seed(123)
+    assert pre_randint != post_randint
+    assert pre_randint == [random.randint(1, 2**31), random.randint(1, 2**31)]
+    assert post_randint == [random.randint(1, 2**31), random.randint(1, 2**31)]
 
 
 def test_set_seed__smoke_test():

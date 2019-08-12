@@ -85,8 +85,10 @@ def fork_rng(seed=None, cuda=torch.cuda.is_available()):
     state = get_random_generator_state(cuda)
     if seed is not None:
         set_seed(seed, cuda)
-    yield
-    set_random_generator_state(state)
+    try:
+        yield
+    finally:
+        set_random_generator_state(state)
 
 
 def fork_rng_wrap(function=None, **kwargs):
