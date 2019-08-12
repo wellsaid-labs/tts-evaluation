@@ -142,6 +142,9 @@ class Lamb(torch.optim.Optimizer):
 
     It was proposed in `Reducing BERT Pre-Training Time from 3 Days to 76 Minutes`_.
 
+    NOTE: The `weight_decay` implementation may be incorrect:
+    https://github.com/pytorch/pytorch/pull/21250#issuecomment-520289064
+
     Arguments:
         params (iterable): iterable of parameters to optimize or dicts defining
             parameter groups
@@ -218,6 +221,7 @@ class Lamb(torch.optim.Optimizer):
             for p in group['params']:
                 if p.grad is None:
                     continue
+
                 grad = p.grad.data
                 if grad.is_sparse:
                     raise RuntimeError('Lamb does not support sparse gradients')
@@ -242,9 +246,7 @@ class Lamb(torch.optim.Optimizer):
                 beta1, beta2 = group['betas']
 
                 state['step'] += 1
-
-                if group['l2_regularization'] != 0:
-                    grad.add_(group['l2_regularization'], p.data)
+                grad.add_(group['l2_regularization'], p.data)
 
                 # Decay the first and second moment running average coefficient
                 exp_avg.mul_(beta1).add_(1 - beta1, grad)
@@ -267,7 +269,6 @@ class Lamb(torch.optim.Optimizer):
                 # https://github.com/noahgolmant/pytorch-lars/blob/master/lars.py
                 # https://github.com/cybertronai/pytorch-lamb
                 # https://github.com/tensorflow/tensorflow/blob/master/tensorflow/contrib/opt/python/training/lars_optimizer.py
-                # NOTE: `AdamW` version of `weight_decay`
                 adam_update = (exp_avg / denom) + group['weight_decay'] * p.data
                 r_1 = p.data.norm(2)
                 r_2 = adam_update.norm(2)

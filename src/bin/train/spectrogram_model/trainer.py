@@ -220,6 +220,9 @@ class Trainer():
     def run_epoch(self, train=False, trial_run=False, infer=False):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
 
+        TODO: In PyTorch 1.2 they allow DDP gradient accumulation to further increase training
+        speed, try it.
+
         Args:
             train (bool, optional): If ``True`` the model will additionally take steps along the
                 computed gradient; furthermore, the Trainer ``step`` and ``epoch`` state will be
