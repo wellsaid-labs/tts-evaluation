@@ -244,14 +244,23 @@ def CometML(project_name=ConfiguredArg(),
 
     start_epoch_time = None
     start_epoch_step = None
+    first_epoch_time = None
+    first_epoch_step = None
 
     other_log_current_epoch = experiment.log_current_epoch
 
     def log_current_epoch(self, *args, **kwargs):
         nonlocal start_epoch_time
         nonlocal start_epoch_step
+        nonlocal first_epoch_time
+        nonlocal first_epoch_step
+
         start_epoch_step = self.curr_step
         start_epoch_time = time.time()
+
+        if first_epoch_time is None and first_epoch_step is None:
+            first_epoch_step = self.curr_step
+            first_epoch_time = time.time()
 
         return other_log_current_epoch(*args, **kwargs)
 
@@ -260,9 +269,18 @@ def CometML(project_name=ConfiguredArg(),
     other_log_epoch_end = experiment.log_epoch_end
 
     def log_epoch_end(self, *args, **kwargs):
+        # NOTE: Logs an average `steps_per_second` for each epoch.
         if start_epoch_step is not None and start_epoch_time is not None:
             self.log_metric('epoch/steps_per_second',
                             (self.curr_step - start_epoch_step) / (time.time() - start_epoch_time))
+
+        # NOTE: Logs an average `steps_per_second` since the training started.
+        if first_epoch_time is not None and first_epoch_step is not None:
+            old_context = self.context
+            self.context = None
+            self.log_metric('steps_per_second',
+                            (self.curr_step - first_epoch_step) / (time.time() - first_epoch_time))
+            self.context = old_context
 
         return other_log_epoch_end(*args, **kwargs)
 

@@ -5,6 +5,7 @@ import logging
 import math
 import random
 
+from torch import nn
 from torchnlp.utils import lengths_to_mask
 from torchnlp.utils import tensors_to
 
@@ -18,7 +19,6 @@ from src.hparams import get_config
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.spectrogram_model import InputEncoder
-from src.utils import balance_list
 from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
@@ -57,13 +57,12 @@ class Trainer():
         criterion_stop_token (callable): Loss function used to score stop
             token predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
-        model (torch.nn.Module, optional): Model to train and evaluate.
+        model (torch.nn.Module): Model to train and evaluate.
         input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         step (int, optional): Starting step; typically, this parameter is useful when starting from
             a checkpoint.
         epoch (int, optional): Starting epoch; typically, this parameter is useful when starting
             from a checkpoint.
-        use_tqdm (bool, optional): Use TQDM to track epoch progress.
     """
 
     TRAIN_LABEL = 'train'
@@ -84,27 +83,32 @@ class Trainer():
                  model=ConfiguredArg(),
                  input_encoder=None,
                  step=0,
-                 epoch=0,
-                 use_tqdm=False):
-
+                 epoch=0):
+        self.device = device
+        self.step = step
+        self.epoch = epoch
+        self.checkpoints_directory = checkpoints_directory
+        self.dev_dataset = dev_dataset
         self.train_dataset = train_dataset
-        # The training and development dataset distribution of speakers is arbitrary (i.e. some
-        # audio books have more data and some have less). In order to ensure that no speaker
-        # is prioritized over another, we balance the number of examples for each speaker.
-        self.dev_dataset = balance_list(dev_dataset, get_class=lambda r: r.speaker, random_seed=123)
+        self.train_batch_size = train_batch_size
+        self.dev_batch_size = dev_batch_size
+        self.dev_loader = None
+        self.train_loader = None
 
-        self.input_encoder = InputEncoder(
-            [r.text for r in self.train_dataset] +
-            [r.text for r in self.dev_dataset], [r.speaker for r in self.train_dataset] +
-            [r.speaker for r in self.dev_dataset]) if input_encoder is None else input_encoder
+        # TODO: The `input_encoder` should not have any insight onto the `dev_dataset`. There
+        # should be a process for dealing with unknown characters instead.
+        corpus = [r.text for r in self.train_dataset] + [r.text for r in self.dev_dataset]
+        speakers = [r.speaker for r in self.train_dataset] + [r.speaker for r in self.dev_dataset]
+        self.input_encoder = (
+            InputEncoder(corpus, speakers) if input_encoder is None else input_encoder)
 
-        # Allow for ``class`` or a class instance
-        self.model = model if isinstance(model, torch.nn.Module) else model(
-            self.input_encoder.text_encoder.vocab_size,
-            self.input_encoder.speaker_encoder.vocab_size)
+        num_tokens = self.input_encoder.text_encoder.vocab_size
+        num_speakers = self.input_encoder.speaker_encoder.vocab_size
+        # NOTE: Allow for `class` or a class instance.
+        self.model = model if isinstance(model, nn.Module) else model(num_tokens, num_speakers)
         self.model.to(device)
         if src.distributed.is_initialized():
-            self.model = torch.nn.parallel.DistributedDataParallel(
+            self.model = nn.parallel.DistributedDataParallel(
                 self.model, device_ids=[device], output_device=device, dim=1)
 
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
@@ -112,14 +116,6 @@ class Trainer():
         self.optimizer.to(device)
 
         self.metrics = defaultdict(DistributedAveragedMetric)
-
-        self.device = device
-        self.step = step
-        self.epoch = epoch
-        self.train_batch_size = train_batch_size
-        self.dev_batch_size = dev_batch_size
-        self.use_tqdm = use_tqdm
-        self.checkpoints_directory = checkpoints_directory
 
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
@@ -130,9 +126,10 @@ class Trainer():
         self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])
         self.comet_ml.log_parameters(dict_collapse(get_config()))
         self.comet_ml.set_model_graph(str(self.model))
-        train_text_length = sum([len(r.text) for r in self.train_dataset])
-        train_text_length = None if len(
-            self.train_dataset) == 0 else train_text_length / len(self.train_dataset)
+        total_train_text_length = sum([len(r.text) for r in self.train_dataset])
+        total_train_spectrogram_length = sum([r.spectrogram.shape[0] for r in self.train_dataset])
+        _average = lambda sum_: None if len(self.train_dataset) == 0 else sum_ / len(self.
+                                                                                     train_dataset)
         self.comet_ml.log_parameters({
             'num_parameter': get_total_parameters(self.model),
             'num_training_row': len(self.train_dataset),
@@ -141,7 +138,8 @@ class Trainer():
             'vocab': sorted(self.input_encoder.text_encoder.vocab),
             'num_speakers': self.input_encoder.speaker_encoder.vocab_size,
             'speakers': sorted([str(v) for v in self.input_encoder.speaker_encoder.vocab]),
-            'train_text_length': train_text_length
+            'average_train_text_length': _average(total_train_text_length),
+            'average_train_spectrogram_length': _average(total_train_spectrogram_length),
         })
         self._comet_ml_log_input_dev_data_hash()
 
@@ -205,19 +203,25 @@ class Trainer():
         Returns:
             (str): Path the checkpoint was saved to.
         """
-        return Checkpoint(
-            comet_ml_project_name=self.comet_ml.project_name,
-            directory=self.checkpoints_directory,
-            model=(self.model.module if src.distributed.is_initialized() else self.model),
-            optimizer=self.optimizer,
-            input_encoder=self.input_encoder,
-            epoch=self.epoch,
-            step=self.step,
-            comet_ml_experiment_key=self.comet_ml.get_key()).save()
+        if src.distributed.is_master():
+            return Checkpoint(
+                comet_ml_project_name=self.comet_ml.project_name,
+                directory=self.checkpoints_directory,
+                model=(self.model.module if src.distributed.is_initialized() else self.model),
+                optimizer=self.optimizer,
+                input_encoder=self.input_encoder,
+                epoch=self.epoch,
+                step=self.step,
+                comet_ml_experiment_key=self.comet_ml.get_key()).save()
+        else:
+            return None
 
     @log_runtime
     def run_epoch(self, train=False, trial_run=False, infer=False):
         """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
+
+        TODO: In PyTorch 1.2 they allow DDP gradient accumulation to further increase training
+        speed, try it.
 
         Args:
             train (bool, optional): If ``True`` the model will additionally take steps along the
@@ -246,21 +250,17 @@ class Trainer():
         if not trial_run:
             self.comet_ml.log_current_epoch(self.epoch)
 
-        # Setup iterator and metrics
-        dataset = balance_list(
-            self.train_dataset, get_class=lambda r: r.speaker) if train else self.dev_dataset
-        data_loader = DataLoader(
-            data=dataset,
-            batch_size=self.train_batch_size if train else self.dev_batch_size,
-            device=self.device,
-            input_encoder=self.input_encoder,
-            trial_run=trial_run,
-            use_tqdm=self.use_tqdm)
+        # NOTE: The `dev_loader` does not always load the same batches. That said, the batches
+        # are sampled from the same distribution via `self.dev_dataset`; therefore, it should be
+        # comparable between experiments.
+        loader_kwargs = {'device': self.device, 'input_encoder': self.input_encoder}
+        if train and self.train_loader is None:
+            self.train_loader = DataLoader(self.train_dataset, self.train_batch_size,
+                                           **loader_kwargs)
+        elif not train and self.dev_loader is None:
+            self.dev_loader = DataLoader(self.dev_dataset, self.dev_batch_size, **loader_kwargs)
+        data_loader = self.train_loader if train else self.dev_loader
 
-        # Run epoch
-        # NOTE: Within a distributed execution, ``random.randint`` produces different values in
-        # different processes. For example, the master process generator may be ahead of the
-        # worker processes because it executes auxiliary code the workers do not.
         random_batch = random.randint(0, len(data_loader) - 1)
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
@@ -287,6 +287,9 @@ class Trainer():
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
+
+            if trial_run:
+                break
 
         # Log epoch metrics
         if not trial_run:

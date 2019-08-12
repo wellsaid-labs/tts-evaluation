@@ -1,7 +1,3 @@
-from collections import Counter
-from copy import deepcopy
-
-import random
 import time
 
 from torch import nn
@@ -9,7 +5,6 @@ from torch import nn
 import pytest
 import torch
 
-from src.utils.utils import balance_list
 from src.utils.utils import dict_collapse
 from src.utils.utils import evaluate
 from src.utils.utils import flatten
@@ -148,7 +143,7 @@ def test_get_average_norm__shape_invariant():
 
 def test_get_average_norm__mask_invariant():
     tensor = torch.randn(3, 4, 5)
-    mask = torch.ones(3, 5).byte()
+    mask = torch.ones(3, 5).bool()
     assert get_average_norm(tensor, dim=1) == get_average_norm(tensor, mask=mask, dim=1)
 
 
@@ -175,7 +170,7 @@ def test_get_weighted_stdev():
 def test_get_weighted_stdev__mask():
     tensor = torch.Tensor([[[0.33333, 0.33333, 0.33334], [0, 0.5, 0.5]],
                            [[0, 0.5, 0.5], [0, 0.5, 0.5]]])
-    mask = torch.ByteTensor([[1, 0], [0, 0]])
+    mask = torch.BoolTensor([[1, 0], [0, 0]])
     standard_deviation = get_weighted_stdev(tensor, dim=2, mask=mask)
     # Population standard deviation for 1,2,3
     assert standard_deviation == pytest.approx(0.81649658093, rel=1.0e-04)
@@ -201,42 +196,6 @@ def test_get_total_parameters():
 def test_flatten_parameters__smoke_test():
     flatten_parameters(MockModel())
     flatten_parameters(nn.LSTM(10, 10))
-
-
-def test_balance_list():
-    balanced = balance_list(['a', 'a', 'b', 'b', 'c'])
-    assert len(balanced) == 3
-    assert len(set(balanced)) == 3
-
-
-def test_balance_list__determinism():
-    """ Test to ensure that `balance_list` is deterministic when `random_seed` is provided. """
-    random_ = random.Random(123)
-    list_ = [(i, random_.choice('abcde')) for i in range(99)]
-    balanced = balance_list(list_, get_class=lambda i: i[1], random_seed=123)
-    assert len(balanced) == 70
-    count = Counter([e[1] for e in balanced])
-    assert len(set(count.values())) == 1  # Ensure that the list is balanced.
-    assert [e[0] for e in balanced[:10]] == [7, 33, 62, 51, 14, 50, 19, 73, 56, 21]
-
-
-def test_balance_list__nondeterminism():
-    """ Test to ensure that `balance_list` is not deterministic when `random_seed` is not provided.
-    """
-    random_ = random.Random(123)
-    list_ = [(i, random_.choice('abcde')) for i in range(10000)]
-    balanced = balance_list(list_, get_class=lambda i: i[1])
-
-    list_other = deepcopy(list_)
-    balanced_other = balance_list(list_other, get_class=lambda i: i[1])
-    # NOTE: This test should fail one in 10000 times.
-    assert balanced_other[0][0] != balanced[0][0]
-
-
-def test_balance_list__get_weight():
-    list_ = [(1, 'a'), (1, 'a'), (2, 'b')]
-    balanced = balance_list(list_, get_class=lambda i: i[1], get_weight=lambda i: i[0])
-    assert len(balanced) == 3
 
 
 def test_split_list():

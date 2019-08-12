@@ -3,6 +3,7 @@ import itertools
 
 from torch import nn
 
+import random
 import torch
 
 from src.hparams import add_config
@@ -12,7 +13,7 @@ from torch.nn import BCEWithLogitsLoss
 from torch.nn import CrossEntropyLoss
 from torch.nn import MSELoss
 from torch.optim import Adam
-from torchnlp.utils import shuffle as do_deterministic_shuffle
+
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +23,12 @@ def _set_anomaly_detection():
     from src.utils import AnomalyDetector
 
     add_config({
-        'src.bin.train.signal_model.trainer.Trainer.__init__.min_rollback': 32,
+        'src.bin.train.signal_model.trainer.Trainer.__init__.min_rollback': 64,
         'src.utils.anomaly_detector.AnomalyDetector.__init__': {
             # NOTE: Based on ``notebooks/Detecting Anomalies.ipynb``. The current usage requires
             # modeling gradient norm that has a lot of variation requiring a large `sigma`.
-            'sigma': 128,
-            'beta': 0.99,
+            'sigma': 1024,
+            'beta': 0.98,
             'type_': AnomalyDetector.TYPE_HIGH,
         }
     })
@@ -97,6 +98,7 @@ def _set_audio_processing():
 
     add_config({
         'src.environment.set_seed.seed': 1212212,
+        'src.environment.get_initial_seed.seed': 1212212,
         'src.audio': {
             'read_audio.assert_metadata': {
                 'sample_rate': sample_rate,
@@ -373,29 +375,34 @@ def get_dataset():
     # NOTE: Prevent circular dependency
     from src import datasets
     from src import utils
-    logger.info('Loading dataset...')
-    dataset = list(
-        itertools.chain.from_iterable([
-            datasets.hilary_speech_dataset(),
-            datasets.lj_speech_dataset(),
-            datasets.m_ailabs_en_us_speech_dataset(),
-            datasets.beth_speech_dataset(),
-            datasets.beth_custom_speech_dataset(),
-            datasets.heather_speech_dataset(),
-            datasets.susan_speech_dataset(),
-            datasets.sam_speech_dataset(),
-            datasets.frank_speech_dataset(),
-            datasets.adrienne_speech_dataset()
-        ]))
-    dataset = datasets.filter_(_filter_audio_path_not_found, dataset)
-    dataset = datasets.filter_(_filter_no_text, dataset)
-    dataset = datasets.filter_(_filter_elliot_miller, dataset)
-    dataset = datasets.filter_(_filter_no_numbers, dataset)
-    dataset = datasets.filter_(_filter_books, dataset)
-    logger.info('Loaded %d dataset examples.', len(dataset))
-    dataset = datasets.normalize_audio_column(dataset)
-    do_deterministic_shuffle(dataset)
-    return utils.split_list(dataset, splits=(0.8, 0.2))
+    from src.environment import fork_rng
+
+    # NOTE: This `seed` should never change; otherwise, the training and dev datasets may be
+    # different from experiment to experiment.
+    with fork_rng(seed=123):
+        logger.info('Loading dataset...')
+        dataset = list(
+            itertools.chain.from_iterable([
+                datasets.hilary_speech_dataset(),
+                datasets.lj_speech_dataset(),
+                datasets.m_ailabs_en_us_speech_dataset(),
+                datasets.beth_speech_dataset(),
+                datasets.beth_custom_speech_dataset(),
+                datasets.heather_speech_dataset(),
+                datasets.susan_speech_dataset(),
+                datasets.sam_speech_dataset(),
+                datasets.frank_speech_dataset(),
+                datasets.adrienne_speech_dataset()
+            ]))
+        dataset = datasets.filter_(_filter_audio_path_not_found, dataset)
+        dataset = datasets.filter_(_filter_no_text, dataset)
+        dataset = datasets.filter_(_filter_elliot_miller, dataset)
+        dataset = datasets.filter_(_filter_no_numbers, dataset)
+        dataset = datasets.filter_(_filter_books, dataset)
+        logger.info('Loaded %d dataset examples.', len(dataset))
+        dataset = datasets.normalize_audio_column(dataset)
+        random.shuffle(dataset)
+        return utils.split_list(dataset, splits=(0.8, 0.2))
 
 
 def signal_model_lr_multiplier_schedule(step, decay=80000, warmup=20000, min_lr_multiplier=.05):
@@ -448,6 +455,8 @@ def set_hparams():
             'amsgrad': False,
             'lr': 2 * 10**-3,  # This learning rate performed well on Comet in June 2019.
             'max_trust_ratio': 10,  # Default value as suggested in the paper proposing LAMB.
+            'l2_regularization': 0.0,
+            'weight_decay': 0.0,
         }
     })
 

@@ -51,7 +51,7 @@ from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import log_config
 from src.hparams import set_hparams
-from src.utils import balance_list
+from src.samplers import BalancedSampler
 from src.utils import Checkpoint
 from src.utils import evaluate
 from src.utils import RecordStandardStreams
@@ -137,7 +137,8 @@ def main(dataset,
 
     # Sample from the dataset
     dataset = dataset() if callable(dataset) else dataset
-    dataset = balance_list(dataset, lambda r: r.speaker) if balanced else dataset
+    dataset = ([dataset[i] for i in BalancedSampler(dataset, get_class=lambda r: r.speaker)]
+               if balanced else dataset)
     dataset = dataset if speakers is None else filter(lambda r: r.speaker in speakers, dataset)
     indicies = list(RandomSampler(dataset))[:num_samples] if num_samples else range(len(dataset))
     dataset = [dataset[i] for i in indicies]

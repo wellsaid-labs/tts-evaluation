@@ -76,7 +76,7 @@ cd /opt/wellsaid-labs/Text-to-Speech
 . venv/bin/activate
 
 # Install Python dependencies
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt --upgrade
 ```
 
 You may encounter a permissions errors when running the above commands, it can be resolve like

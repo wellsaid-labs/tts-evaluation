@@ -20,7 +20,7 @@ def get_trainer(read_audio_mock, register_mock, comet_ml_mock, load_data=True):
     Args:
         load_data (bool, optional): If `False` do not load any data for faster instantiation.
     """
-    mocks = get_tts_mocks()
+    mocks = get_tts_mocks(add_predicted_spectrogram=load_data, add_spectrogram=load_data)
 
     comet_ml_mock.return_value = MockCometML()
     register_mock.return_value = None
@@ -35,6 +35,17 @@ def get_trainer(read_audio_mock, register_mock, comet_ml_mock, load_data=True):
         spectrogram_model_checkpoint=mocks['spectrogram_model_checkpoint'],
         train_batch_size=1,
         dev_batch_size=1)
+
+
+def test__get_sample_density_gap():
+    trainer = get_trainer(load_data=False)
+    assert 0.0 == trainer._get_sample_density_gap(
+        torch.tensor([10, 0, 10]), torch.tensor([10, 0, 10]), 0.0)
+    assert 0.0 == trainer._get_sample_density_gap(
+        torch.tensor([10, 0, 10]), torch.tensor([10, 0, 10]), 1.0)
+    assert 0.25 == trainer._get_sample_density_gap(
+        torch.tensor([-120, 0, 120, 0], dtype=torch.int8),
+        torch.tensor([32760, 0, 0, 0], dtype=torch.int16), 0.9)
 
 
 @mock.patch('src.bin.train.signal_model.trainer.CometML')
@@ -63,7 +74,7 @@ def test__do_loss_and_maybe_backwards():
         input_spectrogram=None,
         target_signal_coarse=torch.LongTensor([[0, 0, 1]]),
         target_signal_fine=torch.LongTensor([[1, 1, 1]]),
-        signal_mask=torch.ByteTensor([[1, 1, 0]]))
+        signal_mask=torch.BoolTensor([[1, 1, 0]]))
     predicted_coarse = torch.FloatTensor([[[1, 0], [1, 0], [1, 0]]])
     predicted_fine = torch.FloatTensor([[[1, 0], [1, 0], [1, 0]]])
 

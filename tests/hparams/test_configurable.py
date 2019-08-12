@@ -203,7 +203,7 @@ def test_get_config():
     assert len(get_config()) == 0
 
 
-def mock_configurable_2(arg=ConfiguredArg()):
+def mock_configurable_2(arg=ConfiguredArg(), other_arg=ConfiguredArg()):
     pass
 
 
@@ -214,15 +214,17 @@ def test_configured_arg_error(logger_mock):
     global mock_configurable_2
 
     mock_configurable_2 = configurable(mock_configurable_2)
+    add_config({'tests.hparams.test_configurable.mock_configurable_2': {'arg': ''}})
 
     # Check the ``ConfiguredArg`` parameter
     logger_mock.reset_mock()
     mock_configurable_2()
-    assert logger_mock.warning.call_count == 2
+    assert logger_mock.warning.call_count == 1
 
-    add_config({'tests.hparams.test_configurable.mock_configurable_2.arg': ''})
+    add_config({'tests.hparams.test_configurable.mock_configurable_2': {'other_arg': ''}})
     # Does not raise error
     mock_configurable_2()
+    assert logger_mock.warning.call_count == 1
 
     clear_config()  # Reset config for other tests
 

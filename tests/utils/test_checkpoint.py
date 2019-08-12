@@ -18,7 +18,7 @@ def test_load_most_recent_checkpoint():
     assert str(TEST_DATA_PATH_LOCAL / 'step_100.pt') in str(checkpoint.path)
 
     set_random_generator_state(checkpoint.random_generator_state)
-    assert 1489973967 == random.randint(1, 2**31)  # Checkpoint set random generator state
+    assert 1419116234 == random.randint(1, 2**31)  # Checkpoint set random generator state
 
 
 def test_load_most_recent_checkpoint_none():

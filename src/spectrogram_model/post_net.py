@@ -87,7 +87,7 @@ class PostNet(nn.Module):
         Args:
             frames (torch.FloatTensor [batch_size, frame_channels, num_frames]): Batched set of
                 spectrogram frames.
-            mask (torch.ByteTensor [batch_size, num_frames]): Mask such that the padding tokens
+            mask (torch.BoolTensor [batch_size, num_frames]): Mask such that the padding tokens
                 are zeros.
 
         Returns:

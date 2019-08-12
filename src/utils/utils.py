@@ -1,4 +1,3 @@
-from collections import defaultdict
 from contextlib import contextmanager
 from functools import wraps
 from math import isclose
@@ -6,7 +5,6 @@ from pathlib import Path
 from threading import Lock
 from threading import Timer
 
-import itertools
 import logging
 import logging.config
 import pprint
@@ -16,8 +14,6 @@ from torch import multiprocessing
 
 import torch
 import torch.utils.data
-
-import src.distributed
 
 logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
@@ -64,7 +60,7 @@ def get_weighted_stdev(tensor, dim=0, mask=None):
     Args:
         tensor (torch.FloatTensor): Some tensor along which to compute the standard deviation.
         dim (int, optional): Dimension of ``tensor`` along which to compute the standard deviation.
-        mask (torch.FloatTensor, optional)
+        mask (torch.BoolTensor, optional)
 
     Returns:
         (float): Returns the average weighted standard deviation of each row of the input tensor in
@@ -97,7 +93,7 @@ def get_average_norm(tensor, dim=0, mask=None, norm=2):
     Args:
         tensor (torch.FloatTensor)
         dim (int, optional)
-        mask (torch.FloatTensor, optional): Mask applied to tensor. The shape is the same as
+        mask (torch.BoolTensor, optional): Mask applied to tensor. The shape is the same as
           ``tensor`` without the norm dimension.
         norm (float, optional): The exponent value in the norm formulation.
 
@@ -331,47 +327,6 @@ def slice_by_cumulative_sum(list_, max_total_value, get_value=lambda x: x):
         else:
             return_.append(item)
     return return_
-
-
-@log_runtime
-def balance_list(list_, get_class=identity, get_weight=lambda x: 1, random_seed=None):
-    """ Returns a random subsample of the list such that each class has equal representation.
-
-    Args:
-        list_ (iterable)
-        get_class (callable, optional): Given a list item, returns a class.
-        get_weight (callable, optional): Given a list item, determine the weight of the list item.
-        random_seed (int, optiona): If provided the shuffle is deterministic based on the seed
-            instead of the global generator state.
-
-    Returns:
-        (iterable): Subsample of ``list_`` such that each class has the same number of samples.
-    """
-    if len(list_) == 0:
-        return list_
-
-    split = defaultdict(list)
-
-    # Learn more:
-    # https://stackoverflow.com/questions/16270374/how-to-make-a-shallow-copy-of-a-list-in-python
-    list_ = list_[:]
-    src.distributed.random_shuffle(list_, random_seed=random_seed)
-    for item in list_:
-        split[get_class(item)].append(item)
-
-    partitions = {k: sum([get_weight(i) for i in v]) for k, v in split.items()}
-    min_weight = min(partitions.values())
-
-    logger.info('Balanced distribution from\n%s\nto equal partitions of weight %d.',
-                pprint.pformat(partitions), min_weight)
-
-    subsample = [
-        slice_by_cumulative_sum(l, max_total_value=min_weight, get_value=get_weight)
-        for l in split.values()
-    ]
-    subsample = list(itertools.chain(*subsample))  # Flatten list
-    src.distributed.random_shuffle(subsample, random_seed=random_seed)
-    return subsample
 
 
 class ResetableTimer(Timer):

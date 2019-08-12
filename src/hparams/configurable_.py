@@ -1,4 +1,5 @@
 from functools import lru_cache
+from functools import partial
 from functools import reduce
 from functools import wraps
 from importlib import import_module
@@ -423,43 +424,28 @@ class ConfiguredArg():
         filename = inspect.stack()[1].filename
         self.error_message = 'The parameter set to `ConfiguredArg` at %s:%s must be overwritten' % (
             filename, lineno)
+        # Learn more about special methods:
+        # https://stackoverflow.com/questions/21887091/cant-dynamically-bind-repr-str-to-a-class-created-with-type
+        # https://stackoverflow.com/questions/1418825/where-is-the-python-documentation-for-the-special-methods-init-new
+        for attribute in [
+                '__str__', '__repr__', '__contains__', '__hash__', '__len__', '__call__', '__add__',
+                '__sub__', '__mul__', '__floordiv__', '__div__', '__mod__', '__pow__', '__lshift__',
+                '__rshift__', '__and__', '__xor__', '__or__', '__iadd__', '__isub__', '__imul__',
+                '__idiv__', '__ifloordiv__', '__imod__', '__ipow__', '__ilshift__', '__irshift__',
+                '__iand__', '__ixor__', '__ior__', '__neg__', '__pos__', '__abs__', '__invert__',
+                '__complex__', '__int__', '__long__', '__float__', '__oct__', '__hex__', '__lt__',
+                '__le__', '__eq__', '__ne__', '__ge__', '__gt__', '__cmp__', '__round__',
+                '__getitem__', '__setitem__', '__delitem__', '__iter__', '__reversed__', '__copy__',
+                '__deepcopy__'
+        ]:
+            setattr(self.__class__, attribute, self._raise)
 
-    def _raise(self):
+    def _raise(self, *args, **kwargs):
         raise ValueError(self.error_message)
 
     def __getattribute__(self, name):
-        if name in ['error_message', '_raise']:
+        if name in ['error_message', '_raise', '__dict__', '__class__']:
             return super().__getattribute__(name)
-        self._raise()
-
-    def __str__(self):
-        self._raise()
-
-    def __repr__(self):
-        self._raise()
-
-    def __eq__(self, _):
-        self._raise()
-
-    def __contains__(self, _):
-        self._raise()
-
-    def __hash__(self):
-        self._raise()
-
-    def __len__(self):
-        self._raise()
-
-    def __call__(self, *args, **kwargs):
-        self._raise()
-
-    def __sub__(self, other):
-        self._raise()
-
-    def __mul__(self, other):
-        self._raise()
-
-    def __add__(self, other):
         self._raise()
 
 
@@ -486,6 +472,8 @@ def _check_configured_args(func, global_config):
 def configurable(func):
     """ Decorater enables configuring module arguments and storing module argument calls.
 
+    TOOD: Consider renaming this decorator to `global_defaults`.
+
     Decorator enables one to set the arguments of a module via a global configuration. The decorator
     also stores the parameters the decorated function was called with.
 
@@ -510,8 +498,8 @@ def configurable(func):
                 logger.warning(
                     '@configurable: No config for `%s`. This warning will not be repeated.',
                     print_name)
-
-            _check_configured_args(func, config)
+            else:
+                _check_configured_args(func, config)
 
         assert isinstance(config,
                           dict), '@configurable: Invariant failed for %s config' % print_name
@@ -521,6 +509,13 @@ def configurable(func):
 
         is_first_run = False
         return func(*args, **kwargs)
+
+    # USE CASE: `get_configured_partial` can be used to export a function with it's configuration
+    # for multiprocessing.
+    def get_configured_partial():
+        return partial(decorator, **(_configuration[keys] if keys in _configuration else {}))
+
+    decorator.get_configured_partial = get_configured_partial
 
     # Add a flag to the func; enabling us to check if a function has the configurable decorator.
     decorator._configurable = True

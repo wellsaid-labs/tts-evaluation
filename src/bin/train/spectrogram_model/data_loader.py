@@ -7,15 +7,19 @@ import logging
 
 from torch.multiprocessing import cpu_count
 from torchnlp.encoders.text import stack_and_pad_tensors
-from torchnlp.samplers import BucketBatchSampler
 from torchnlp.utils import collate_tensors
 from torchnlp.utils import tensors_to
 
 import torch
 
 from src.environment import IS_TESTING_ENVIRONMENT
+from src.samplers import BalancedSampler
+from src.samplers import BucketBatchSampler
+from src.samplers import DeterministicSampler
+from src.samplers import DistributedBatchSampler
+from src.samplers import get_number_of_elements
+from src.samplers import OomBatchSampler
 from src.utils import DataLoader
-from src.utils import identity
 from src.utils import maybe_load_tensor
 
 import src.distributed
@@ -52,8 +56,8 @@ def _load_fn(row, input_encoder):
         speaker=speaker,
         stop_token=stop_token,
         spectrogram=spectrogram,
-        spectrogram_mask=torch.ByteTensor(spectrogram.shape[0]).fill_(1),
-        spectrogram_expanded_mask=torch.ByteTensor(*spectrogram.shape).fill_(1))
+        spectrogram_mask=torch.BoolTensor(spectrogram.shape[0]).fill_(1),
+        spectrogram_expanded_mask=torch.BoolTensor(*spectrogram.shape).fill_(1))
 
 
 class DataLoader(DataLoader):
@@ -63,8 +67,6 @@ class DataLoader(DataLoader):
         data (iterable): Data to iterate over.
         batch_size (int): Iteration batch size.
         device (torch.device): Device onto which to load data.
-        use_tqdm (bool): If ``True`` display progress via TQDM.
-        trial_run (bool or int): If ``True``, iterates over one batch.
         num_workers (int, optional): Number of workers for data loading.
         **kwargs (any): Other arguments to the data loader ``_load_fn``
 
@@ -79,10 +81,10 @@ class DataLoader(DataLoader):
                               torch.LongTensor [1, batch_size]))
             speaker (tuple(torch.LongTensor [1, batch_size],
                            torch.LongTensor [1, batch_size]))
-            spectrogram_expanded_mask (tuple(torch.FloatTensor [num_frames, batch_size,
+            spectrogram_expanded_mask (tuple(torch.BoolTensor [num_frames, batch_size,
                                                                 frame_channels],
                                              torch.LongTensor [1, batch_size]))
-            spectrogram_mask (tuple(torch.FloatTensor [num_frames, batch_size],
+            spectrogram_mask (tuple(torch.BoolTensor [num_frames, batch_size],
                                     torch.LongTensor [1, batch_size]))
         )
     """
@@ -91,33 +93,30 @@ class DataLoader(DataLoader):
                  data,
                  batch_size,
                  device,
-                 use_tqdm,
-                 trial_run=False,
                  num_workers=0 if IS_TESTING_ENVIRONMENT else cpu_count(),
                  **kwargs):
         if src.distributed.is_initialized():
-            # NOTE: For best performance, the data must be the same between the master and worker
-            # nodes; Otherwise, the `BucketBatchSampler` computed on master won't be effective on
-            # on the worker nodes following `src.distributed.distribute_batch_sampler` because it
-            # was computed on different data.
+            # NOTE: `DistributedBatchSampler` assumes that the workers and master have the same
+            # sampling; therefore, the same data.
             # NOTE: Learn more about `hashlib` and `json` here:
             # https://stackoverflow.com/questions/5417949/computing-an-md5-hash-of-a-data-structure
             hash_ = hashlib.md5(json.dumps([e.text for e in data]).encode('utf-8')).hexdigest()
             src.distributed.assert_synced(
                 int(hash_, 16), 'This dataset does not match the master dataset.')
 
+        # NOTE: The training and development dataset distribution of speakers is arbitrary (i.e.
+        # some audio books have more data and some have less). In order to ensure that no speaker
+        # is prioritized over another, we balance the number of examples for each speaker.
+        sampler = BalancedSampler(data, get_class=lambda e: e.speaker)
         batch_sampler = BucketBatchSampler(
-            [r.spectrogram.shape[0] for r in data],
-            batch_size,
-            drop_last=True,  # ``drop_last`` to ensure full utilization of mutliple GPUs
-            sort_key=identity,
-            biggest_batches_first=identity) if src.distributed.is_master() else None
+            sampler, batch_size, drop_last=True, sort_key=lambda i: data[i].spectrogram.shape[0])
+        batch_sampler = OomBatchSampler(
+            batch_sampler, get_item_size=lambda i: get_number_of_elements(data[i]))
+        batch_sampler = DeterministicSampler(batch_sampler)
 
         if src.distributed.is_initialized():
-            # Given there are multiple processes, we change the data loaded per process.
             num_workers = int(num_workers / torch.distributed.get_world_size())
-            batch_sampler = src.distributed.distribute_batch_sampler(batch_sampler, batch_size,
-                                                                     device)
+            batch_sampler = DistributedBatchSampler(batch_sampler)
 
         super().__init__(
             data,
@@ -127,5 +126,4 @@ class DataLoader(DataLoader):
             collate_fn=partial(
                 collate_tensors, stack_tensors=partial(stack_and_pad_tensors, dim=1)),
             pin_memory=True,
-            num_workers=num_workers,
-            trial_run=trial_run)
+            num_workers=num_workers)

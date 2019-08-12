@@ -204,7 +204,6 @@ class _WaveRNNInferrer(nn.Module):
         hidden_state = reference.new_zeros(self.size)
         return coarse.long(), fine.long(), hidden_state
 
-    @log_runtime
     def forward(self, local_features, hidden_state=None, pad=True):
         """  Run WaveRNN in inference mode.
 
@@ -270,13 +269,11 @@ class _WaveRNNInferrer(nn.Module):
             conditional, hidden_state)
 
         # Predict waveform
-        out_coarse, out_fine, gru_hidden_state = log_runtime(self._infer_loop)(coarse_last,
-                                                                               fine_last,
-                                                                               gru_hidden_state,
-                                                                               bias_coarse,
-                                                                               bias_fine)
+        out_coarse, out_fine, gru_hidden_state = self._infer_loop(coarse_last, fine_last,
+                                                                  gru_hidden_state, bias_coarse,
+                                                                  bias_fine)
 
-        return out_coarse, out_fine, (out_coarse[-1], out_fine[-1], gru_hidden_state)
+        return out_coarse, out_fine, (out_coarse[-1:], out_fine[-1:], gru_hidden_state)
 
 
 class WaveRNN(nn.Module):
@@ -378,6 +375,9 @@ class WaveRNN(nn.Module):
 
     def forward(self, local_features, input_signal, target_coarse, hidden_state=None, pad=False):
         """
+        TODO: Explore speeding up training with `JIT`. We'd need to consider saving a JIT model.
+        Also, we'd need to consider: https://github.com/pytorch/pytorch/issues/24164
+
         Note:
             - Forward does not support unbatched mode, yet unlike other model
 

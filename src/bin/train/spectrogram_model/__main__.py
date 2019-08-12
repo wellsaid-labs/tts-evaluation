@@ -2,8 +2,7 @@
 
 Example:
 
-    $ PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py
-    $ pkill -9 python; nvidia-smi
+    $ pkill -9 python; nvidia-smi; PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py
 
 NOTE: The distributed example does clean up Python processes well; therefore, we kill all
 ``python`` processes and check that ``nvidia-smi`` cache was cleared.
@@ -113,6 +112,8 @@ def _train(device_index,
            distributed_init_method='tcp://127.0.0.1:29500'):
     """ Loop for training and periodically evaluating the model.
 
+    TODO: Discuss how `distributed_init_method` and `distributed_backend` were choosen.
+
     Args:
         device_index (int)
         run_root (Path): Directory to save experiment.
@@ -123,7 +124,13 @@ def _train(device_index,
         comet_ml_project_name (str): Project name to use with comet.ml.
         comet_ml_experiment_key (str): Experiment key to use with comet.ml.
         more_hparams (dict): Hparams to override default hparams.
+        evaluate_aligned_every_n_epochs (int, optional)
+        evaluate_inferred_every_n_epochs (int, optional)
+        save_checkpoint_every_n_epochs (int, optional)
+        distributed_backend (str, optional)
+        distributed_init_method (str, optional)
     """
+    # TODO: Consider naming the logs based on the time they are started for sorting.
     recorder = RecordStandardStreams().start()
     # Initiate distributed environment, learn more:
     # https://pytorch.org/tutorials/intermediate/dist_tuto.htm
@@ -135,6 +142,8 @@ def _train(device_index,
         init_method=distributed_init_method)
     device = torch.device('cuda', device_index)
     torch.cuda.set_device(device)
+
+    logger.info('Worker %d started.', torch.distributed.get_rank())
 
     _set_hparams(more_hparams, checkpoint, comet_ml_project_name, comet_ml_experiment_key)
     recorder.update(run_root)

@@ -142,6 +142,9 @@ class Lamb(torch.optim.Optimizer):
 
     It was proposed in `Reducing BERT Pre-Training Time from 3 Days to 76 Minutes`_.
 
+    NOTE: The `weight_decay` implementation may be incorrect:
+    https://github.com/pytorch/pytorch/pull/21250#issuecomment-520289064
+
     Arguments:
         params (iterable): iterable of parameters to optimize or dicts defining
             parameter groups
@@ -152,6 +155,8 @@ class Lamb(torch.optim.Optimizer):
             numerical stability (default: 1e-8)
         weight_decay (float, optional): weight decay as proposed in
             `Decoupled Weight Decay Regularization` (default: 0)
+        l2_regularization (float, optional): L2 regularization as proposed in the original Adam
+            paper (default: 0)
         max_trust_ratio (float, optional): the maximum trust ratio per layer (default: 10)
         min_trust_ratio (float, optional): the minimum trust ratio per layer (default: 0)
         amsgrad (boolean, optional): whether to use the AMSGrad variant of this
@@ -176,6 +181,7 @@ class Lamb(torch.optim.Optimizer):
                  betas=(0.9, 0.999),
                  eps=1e-8,
                  weight_decay=0,
+                 l2_regularization=0,
                  max_trust_ratio=10,
                  min_trust_ratio=0,
                  amsgrad=False):
@@ -194,6 +200,7 @@ class Lamb(torch.optim.Optimizer):
             betas=betas,
             eps=eps,
             weight_decay=weight_decay,
+            l2_regularization=l2_regularization,
             amsgrad=amsgrad,
             max_trust_ratio=max_trust_ratio,
             min_trust_ratio=min_trust_ratio)
@@ -214,6 +221,10 @@ class Lamb(torch.optim.Optimizer):
             for p in group['params']:
                 if p.grad is None:
                     continue
+
+                # Perform stepweight decay
+                p.data.mul_(1 - group['lr'] * group['weight_decay'])
+
                 grad = p.grad.data
                 if grad.is_sparse:
                     raise RuntimeError('Lamb does not support sparse gradients')
@@ -238,6 +249,7 @@ class Lamb(torch.optim.Optimizer):
                 beta1, beta2 = group['betas']
 
                 state['step'] += 1
+                grad.add_(group['l2_regularization'], p.data)
 
                 # Decay the first and second moment running average coefficient
                 exp_avg.mul_(beta1).add_(1 - beta1, grad)
@@ -260,8 +272,7 @@ class Lamb(torch.optim.Optimizer):
                 # https://github.com/noahgolmant/pytorch-lars/blob/master/lars.py
                 # https://github.com/cybertronai/pytorch-lamb
                 # https://github.com/tensorflow/tensorflow/blob/master/tensorflow/contrib/opt/python/training/lars_optimizer.py
-                # NOTE: `AdamW` version of `weight_decay`
-                adam_update = (exp_avg / denom) + group['weight_decay'] * p.data
+                adam_update = (exp_avg / denom)
                 r_1 = p.data.norm(2)
                 r_2 = adam_update.norm(2)
                 trust_ratio = 1.0 if r_1 == 0 or r_2 == 0 else r_1 / r_2
