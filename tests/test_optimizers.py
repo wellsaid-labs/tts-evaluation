@@ -90,10 +90,9 @@ def test_lamb_optimizer__adam_w():  # Smoke test
         lr=10**-3,
         min_trust_ratio=1,
         max_trust_ratio=1,
-        weight_decay=0.01,
-        betas=(0, 0))
+        weight_decay=0.01)
     adam = torch.optim.AdamW(
-        params=net_adam.parameters(), amsgrad=False, lr=10**-3, weight_decay=0.01, betas=(0, 0))
+        params=net_adam.parameters(), amsgrad=False, lr=10**-3, weight_decay=0.01)
 
     input_ = torch.randn(5, 3, 10, requires_grad=False)
 

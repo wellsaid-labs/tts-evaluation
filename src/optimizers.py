@@ -222,6 +222,9 @@ class Lamb(torch.optim.Optimizer):
                 if p.grad is None:
                     continue
 
+                # Perform stepweight decay
+                p.data.mul_(1 - group['lr'] * group['weight_decay'])
+
                 grad = p.grad.data
                 if grad.is_sparse:
                     raise RuntimeError('Lamb does not support sparse gradients')
@@ -269,7 +272,7 @@ class Lamb(torch.optim.Optimizer):
                 # https://github.com/noahgolmant/pytorch-lars/blob/master/lars.py
                 # https://github.com/cybertronai/pytorch-lamb
                 # https://github.com/tensorflow/tensorflow/blob/master/tensorflow/contrib/opt/python/training/lars_optimizer.py
-                adam_update = (exp_avg / denom) + group['weight_decay'] * p.data
+                adam_update = (exp_avg / denom)
                 r_1 = p.data.norm(2)
                 r_2 = adam_update.norm(2)
                 trust_ratio = 1.0 if r_1 == 0 or r_2 == 0 else r_1 / r_2
