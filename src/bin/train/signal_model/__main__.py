@@ -316,6 +316,8 @@ if __name__ == '__main__':  # pragma: no cover
         # TODO: Remove coupling between `Trainer` and `checkpoint`.
         args.checkpoint.optimizer = None if args.reset_optimizer else args.checkpoint.optimizer
         args.project_name = args.checkpoint.comet_ml_project_name
+        args.spectrogram_model_checkpoint = Checkpoint.from_path(
+            args.checkpoint.spectrogram_model_checkpoint_path)
 
     main(
         run_name=args.name,
