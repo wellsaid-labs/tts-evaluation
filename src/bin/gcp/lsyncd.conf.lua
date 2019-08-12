@@ -27,13 +27,16 @@ sync {
       _extra = { "--omit-dir-times" }
   },
   exclude = {
-      ".ipynb_checkpoints/**",
+      ".ipynb_checkpoints/**", -- Jupyter files
       "data/**",
       "experiments/**",
       "build/**",
+      ".DS_Store", -- Macbook files
       "__pycache__**",
-      "htmlcov/**",
-      "coverage/**",
+      "htmlcov/**", -- PyTest Coverage files
+      ".coverage*", -- PyTest Coverage files
+      "coverage/**", -- PyTest Coverage files
+      "git_diff.patch", -- Comet ML patch
       "*.wav",
       "*.py*.py", -- Odd temporary files
       -- Various compressed formats are typically slow to sync
