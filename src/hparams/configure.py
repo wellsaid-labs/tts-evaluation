@@ -23,12 +23,12 @@ def _set_anomaly_detection():
     from src.utils import AnomalyDetector
 
     add_config({
-        'src.bin.train.signal_model.trainer.Trainer.__init__.min_rollback': 32,
+        'src.bin.train.signal_model.trainer.Trainer.__init__.min_rollback': 64,
         'src.utils.anomaly_detector.AnomalyDetector.__init__': {
             # NOTE: Based on ``notebooks/Detecting Anomalies.ipynb``. The current usage requires
             # modeling gradient norm that has a lot of variation requiring a large `sigma`.
-            'sigma': 128,
-            'beta': 0.99,
+            'sigma': 1024,
+            'beta': 0.98,
             'type_': AnomalyDetector.TYPE_HIGH,
         }
     })
@@ -455,6 +455,8 @@ def set_hparams():
             'amsgrad': False,
             'lr': 2 * 10**-3,  # This learning rate performed well on Comet in June 2019.
             'max_trust_ratio': 10,  # Default value as suggested in the paper proposing LAMB.
+            'l2_regularization': 0.0,
+            'weight_decay': 0.0,
         }
     })
 

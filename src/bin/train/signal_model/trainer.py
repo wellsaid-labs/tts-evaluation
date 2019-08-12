@@ -451,30 +451,34 @@ class Trainer():
         return (get_density(predicted_signal) - get_density(target_signal)).item()
 
     @log_runtime
-    def visualize_inferred(self, split_size=20):
+    def visualize_inferred(self, split_size=40):
         """ Run in inference mode and visualize results.
 
         Args:
             split_size (int): Number of frames to synthesize at a time.
         """
-        self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
+        if not src.distributed.is_master():
+            return
 
-        # Load data
+        self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
+        model = self.model.module if src.distributed.is_initialized() else self.model
+
         example = random.sample(self.dev_dataset, 1)[0]
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
         spectrogram = maybe_load_tensor(spectrogram)  # [num_frames, frame_channels]
         target_signal = maybe_load_tensor(example.spectrogram_audio)  # [signal_length]
         spectrogram = spectrogram.to(torch.device('cpu'))
 
-        logger.info('Running inference on %d spectrogram frames...', spectrogram.shape[0])
+        logger.info('Running inference on %d spectrogram frames with %d threads.',
+                    spectrogram.shape[0], torch.get_num_threads())
 
         # Split spectrogram in memory friendly chunks
-        half_padding = int(self.model.conditional_features_upsample.padding / 2)
-        spectrogram = torch.nn.functional.pad(spectrogram, (0, 0, half_padding, half_padding))
-        iterator = range(half_padding, spectrogram.shape[0] + half_padding, split_size)
-        splits = [spectrogram[i - half_padding:i + split_size + half_padding] for i in iterator]
+        half_padding = model.conditional_features_upsample.padding // 2
+        padded = torch.nn.functional.pad(spectrogram, (0, 0, half_padding, half_padding))
+        iterator = range(half_padding, padded.shape[0] - half_padding, split_size)
+        splits = [padded[i - half_padding:i + split_size + half_padding] for i in iterator]
 
-        inferrer = self.model.to_inferrer()
+        inferrer = model.to_inferrer()
         hidden_state = None
         results = []
         for split in splits:
@@ -491,6 +495,10 @@ class Trainer():
             'single/%s_sample_density_gap' % n: self._get_sample_density_gap(predicted, target, n)
             for n in [0.99, 0.95, 0.90]
         })
-        self.comet_ml.log_audio(self.DEV_INFERRED_LABEL, example.text, str(example.speaker), target,
-                                predicted)
+        self.comet_ml.log_audio(
+            tag=self.DEV_INFERRED_LABEL,
+            text=example.text,
+            speaker=str(example.speaker),
+            gold_audio=target,
+            predicted_audio=predicted)
         self.comet_ml.log_figure('spectrogram', plot_spectrogram(spectrogram))

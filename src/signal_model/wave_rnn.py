@@ -204,7 +204,6 @@ class _WaveRNNInferrer(nn.Module):
         hidden_state = reference.new_zeros(self.size)
         return coarse.long(), fine.long(), hidden_state
 
-    @log_runtime
     def forward(self, local_features, hidden_state=None, pad=True):
         """  Run WaveRNN in inference mode.
 
@@ -270,13 +269,11 @@ class _WaveRNNInferrer(nn.Module):
             conditional, hidden_state)
 
         # Predict waveform
-        out_coarse, out_fine, gru_hidden_state = log_runtime(self._infer_loop)(coarse_last,
-                                                                               fine_last,
-                                                                               gru_hidden_state,
-                                                                               bias_coarse,
-                                                                               bias_fine)
+        out_coarse, out_fine, gru_hidden_state = self._infer_loop(coarse_last, fine_last,
+                                                                  gru_hidden_state, bias_coarse,
+                                                                  bias_fine)
 
-        return out_coarse, out_fine, (out_coarse[-1], out_fine[-1], gru_hidden_state)
+        return out_coarse, out_fine, (out_coarse[-1:], out_fine[-1:], gru_hidden_state)
 
 
 class WaveRNN(nn.Module):

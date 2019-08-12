@@ -152,6 +152,8 @@ class Lamb(torch.optim.Optimizer):
             numerical stability (default: 1e-8)
         weight_decay (float, optional): weight decay as proposed in
             `Decoupled Weight Decay Regularization` (default: 0)
+        l2_regularization (float, optional): L2 regularization as proposed in the original Adam
+            paper (default: 0)
         max_trust_ratio (float, optional): the maximum trust ratio per layer (default: 10)
         min_trust_ratio (float, optional): the minimum trust ratio per layer (default: 0)
         amsgrad (boolean, optional): whether to use the AMSGrad variant of this
@@ -176,6 +178,7 @@ class Lamb(torch.optim.Optimizer):
                  betas=(0.9, 0.999),
                  eps=1e-8,
                  weight_decay=0,
+                 l2_regularization=0,
                  max_trust_ratio=10,
                  min_trust_ratio=0,
                  amsgrad=False):
@@ -194,6 +197,7 @@ class Lamb(torch.optim.Optimizer):
             betas=betas,
             eps=eps,
             weight_decay=weight_decay,
+            l2_regularization=l2_regularization,
             amsgrad=amsgrad,
             max_trust_ratio=max_trust_ratio,
             min_trust_ratio=min_trust_ratio)
@@ -238,6 +242,9 @@ class Lamb(torch.optim.Optimizer):
                 beta1, beta2 = group['betas']
 
                 state['step'] += 1
+
+                if group['l2_regularization'] != 0:
+                    grad.add_(group['l2_regularization'], p.data)
 
                 # Decay the first and second moment running average coefficient
                 exp_avg.mul_(beta1).add_(1 - beta1, grad)
