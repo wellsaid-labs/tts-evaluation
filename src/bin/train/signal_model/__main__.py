@@ -282,11 +282,8 @@ if __name__ == '__main__':  # pragma: no cover
         '-t',
         '--tags',
         default=[
-            'batch_size=256',
-            'lamb optimizer',
-            'lr=2 * 10**-3',
-            'rollback v5',
-            'triangle LR schedule v3',
+            'batch_size=256', 'lamb optimizer', 'lr=2 * 10**-3', 'rollback v5',
+            'triangle LR schedule v3', 'l2_regularization=10**-7'
         ],
         action='append',
         help='List of tags for the experiment.')

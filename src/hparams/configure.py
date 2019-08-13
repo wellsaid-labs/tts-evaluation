@@ -448,14 +448,21 @@ def set_hparams():
         'torch.optim.adam.Adam.__init__': {
             'betas': (0.9, 0.999),
             'amsgrad': True,
-            'lr': 10**-3
+            'lr': 10**-3,
         },
         'src.optimizers.Lamb.__init__': {
-            'betas': (0.9, 0.999),
+            'betas': (0.9, 0.999),  # NOTE: Default value as suggested in the paper proposing Adam.
+            # NOTE: `amsgrad` caused substantially lower performance (tested on Comet in August
+            # 2019).
             'amsgrad': False,
-            'lr': 2 * 10**-3,  # This learning rate performed well on Comet in June 2019.
-            'max_trust_ratio': 10,  # Default value as suggested in the paper proposing LAMB.
-            'l2_regularization': 0.0,
+            # NOTE: This learning rate performed well on (tested on Comet in June 2019).
+            'lr': 2 * 10**-3,
+            'max_trust_ratio': 10,  # NOTE: Default value as suggested in the paper proposing LAMB.
+            # NOTE: This l2 regularization reduced audio artifacts without sacrificing performance
+            # (tested on Comet in August 2019).
+            'l2_regularization': 10**-7,
+            # NOTE: `weight_decay` was more sensistive than l2 regularization without providing
+            # much benefit (tested on Comet in August 2019).
             'weight_decay': 0.0,
         }
     })
