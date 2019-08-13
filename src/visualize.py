@@ -2,6 +2,7 @@ import io
 import logging
 import matplotlib
 import os
+import random
 import subprocess
 import time
 
@@ -208,7 +209,13 @@ def CometML(project_name=ConfiguredArg(),
     """
     load_dotenv()
 
-    api_key = os.getenv('COMET_ML_API_KEY') if api_key is None else api_key
+    # NOTE: We support multiple `COMET_ML_API_KEY`s in the environment. The comet team may give you
+    # extra API keys to ensure their system does not throttle you.
+    # TODO: Ideally, we'd assign this parameter based on the number of running experiments
+    # so that it's evenly distributed.
+    api_key = (
+        os.getenv(random.choice([key for key in os.environ if 'COMET_ML_API_KEY' in key]))
+        if api_key is None else api_key)
     workspace = os.getenv('COMET_ML_WORKSPACE') if workspace is None else workspace
 
     # NOTE: Comet ensures reproducibility if all files are tracked via git.
