@@ -542,4 +542,6 @@ def parse_hparam_args(hparam_args):
         key = key[2:]  # Remove flag
         return_[key] = eval(value)
 
+    logger.info('Parsed these hparams from args: %s', return_)
+
     return return_
