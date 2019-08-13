@@ -491,8 +491,8 @@ class Trainer():
         target = combine_signal(*split_signal(target_signal), return_int=True)
 
         self.comet_ml.log_metrics({
-            'single/%s_sample_density_gap' % n: self._get_sample_density_gap(predicted, target, n)
-            for n in [0.99, 0.95, 0.90]
+            'single/%s_sample_density_gap' % str(int(n * 100)):
+            self._get_sample_density_gap(predicted, target, n) for n in [0.99, 0.95, 0.90]
         })
         self.comet_ml.log_audio(
             tag=self.DEV_INFERRED_LABEL,
