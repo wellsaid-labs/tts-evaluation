@@ -16,8 +16,13 @@ from src.hparams.configurable_ import parse_hparam_args
 
 
 def test_parse_hparam_args():
-    hparam_args = ['--foo 0.01', '--bar WaveNet', '--moo.foo=1']
-    assert parse_hparam_args(hparam_args) == {'foo': 0.01, 'bar': 'WaveNet', 'moo.foo': 1}
+    hparam_args = ['--foo 0.01', '--bar "WaveNet"', '--moo.foo=1', '--oops 10**-6']
+    assert parse_hparam_args(hparam_args) == {
+        'foo': 0.01,
+        'bar': 'WaveNet',
+        'moo.foo': 1,
+        'oops': 10**-6,
+    }
 
 
 def test_parse_configuration_example():

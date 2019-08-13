@@ -7,7 +7,6 @@ from pathlib import Path
 
 from torch.multiprocessing import current_process
 
-import ast
 import importlib
 import inspect
 import logging
@@ -532,14 +531,6 @@ def parse_hparam_args(hparam_args):
     Returns
         (dict): Dictionary of arguments.
     """
-
-    def to_literal(value):
-        try:
-            value = ast.literal_eval(value)
-        except ValueError:
-            pass
-        return value
-
     return_ = {}
 
     for hparam in hparam_args:
@@ -549,7 +540,6 @@ def parse_hparam_args(hparam_args):
         key, value = tuple(split)
         assert key[:2] == '--', 'Hparam argument (%s) must have a double flag' % hparam
         key = key[2:]  # Remove flag
-        value = to_literal(value)
-        return_[key] = value
+        return_[key] = eval(value)
 
     return return_
