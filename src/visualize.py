@@ -213,8 +213,10 @@ def CometML(project_name=ConfiguredArg(),
     # extra API keys to ensure their system does not throttle you.
     # TODO: Ideally, we'd assign this parameter based on the number of running experiments
     # so that it's evenly distributed.
+    # NOTE: Use a random number generator that has not been seeded to avoid determinism.
+    generator = random.Random(int(time.time()))
     api_key = (
-        os.getenv(random.choice([key for key in os.environ if 'COMET_ML_API_KEY' in key]))
+        os.getenv(generator.choice([key for key in os.environ if 'COMET_ML_API_KEY' in key]))
         if api_key is None else api_key)
     workspace = os.getenv('COMET_ML_WORKSPACE') if workspace is None else workspace
 
