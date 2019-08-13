@@ -192,7 +192,7 @@ class DataLoader(src.utils.DataLoader):
             get_class=lambda e: e.speaker,
             get_weight=lambda e: (e.predicted_spectrogram
                                   if use_predicted else e.spectrogram).shape[0])
-        # NOTE: `drop_last` to ensure full utilization of mutliple GPUs
+        # NOTE: `drop_last` to ensure full utilization of mutliple GPUs.
         batch_sampler = BatchSampler(sampler, batch_size, drop_last=True)
         batch_sampler = DeterministicSampler(batch_sampler)
 

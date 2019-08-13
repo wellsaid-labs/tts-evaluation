@@ -12,7 +12,7 @@ def test_data_loader():
     assert len(iterator) == len(data) // batch_size
 
     # Test collate
-    samples = [r for r in iterator]  # The iterator contains some randomness everytime it's sampled.
+    samples = list(iterator)  # The iterator contains some randomness everytime it's sampled.
     assert sum([r.spectrogram_mask[0].sum().item() for r in samples]) == (
         sum([r.spectrogram[1].sum().item() for r in samples]))
     assert sum([r.spectrogram_mask[0].sum().item() for r in samples]) == (

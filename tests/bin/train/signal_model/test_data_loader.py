@@ -7,7 +7,7 @@ from src.audio import combine_signal
 from src.audio import split_signal
 from src.bin.train.signal_model.data_loader import _get_slice
 from src.bin.train.signal_model.data_loader import DataLoader
-
+from src.environment import fork_rng
 from tests._utils import get_tts_mocks
 
 
@@ -78,6 +78,14 @@ def test_data_loader():
         spectrogram_slice_size=slice_size,
         spectrogram_slice_pad=slice_pad)
     assert len(loader) == (len(data) // batch_size)
+
+    # Ensure that sampled batches are different each time.
+    with fork_rng(seed=123):
+        samples = list(loader)
+        assert len(set([s.input_spectrogram[0].sum().item() for s in samples])) == len(samples)
+        more_samples = list(loader)
+        assert len(set([s.input_spectrogram[0].sum().item() for s in more_samples + samples])) == (
+            len(samples) + len(more_samples))
 
     # Test collate
     item = next(iter(loader))
