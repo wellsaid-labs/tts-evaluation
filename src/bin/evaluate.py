@@ -75,12 +75,16 @@ def _save(destination, tags, speaker, waveform, obscure=False):
     filename = 'speaker=%s,%s' % (speaker_name, ','.join(tags))
     if obscure:
         filename = hash(filename)
-    filename = str(filename) + '.wav'
-    path = str(destination / filename)
+    filename_with_suffix = str(filename) + '.wav'
+    attempt = 2
+    while (destination / filename_with_suffix).exists():
+        filename_with_suffix = str(filename) + ',attempt=%d.wav' % attempt
+        attempt += 1
+    path = str(destination / filename_with_suffix)
     write_audio(path, waveform)
     logger.info('Saved file "%s" with waveform of shape `%s` and dtype `%s`', path, waveform.shape,
                 waveform.dtype)
-    return filename
+    return filename_with_suffix
 
 
 @configurable
