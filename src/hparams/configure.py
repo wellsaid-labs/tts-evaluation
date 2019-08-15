@@ -294,14 +294,14 @@ def _set_model_size(frame_channels, bits):
                 # SOURCE:
                 # https://github.com/pytorch/examples/blob/master/super_resolution/model.py
                 # Upsampling layer is inspired by super resolution
-                'upsample_kernels': [(5, 5), (3, 3), (3, 3), (3, 3)],
+                'upsample_kernels': [(5, 5)],
 
                 # SOURCE: Tacotron 2
                 # only 2 upsampling layers are used in the conditioning stack instead of 3
                 # layers.
                 # SOURCE: Tacotron 2 Author Google Chat
                 # We upsample 4x with the layers and then repeat each value 75x
-                'upsample_num_filters': [64, 64, 32, 10],
+                'upsample_num_filters': [10],
                 'upsample_repeat': 30
             }
         }
@@ -555,14 +555,14 @@ def set_hparams():
                         'data_loader.DataLoader.__init__': {
                             # SOURCE: Efficient Neural Audio Synthesis
                             # The WaveRNN models are trained on sequences of 960 audio samples
-                            'spectrogram_slice_size': int(900 / frame_hop),
+                            'spectrogram_slice_size': int(1800 / frame_hop),
                             # TODO: This should depend on an upsample property.
                             # TODO: It may be more appropriate to pad by 2 spectrogram frames
                             # instead. Given that each frame aligns with 300 samples and each frame
                             # is created from 1200 samples, then there is 900 samples of context for
                             # each frame outside of the aligned samples. Then it makes sense to have
                             # 450 samples of padding or 2 spectrogram frames.
-                            'spectrogram_slice_pad': 5,
+                            'spectrogram_slice_pad': 2,
                         },
                     }
                 },

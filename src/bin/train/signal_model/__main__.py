@@ -283,7 +283,8 @@ if __name__ == '__main__':  # pragma: no cover
         '--tags',
         default=[
             'batch_size=256', 'lamb optimizer', 'lr=2 * 10**-3', 'rollback v5',
-            'triangle LR schedule v3', 'l2_regularization=10**-7'
+            'triangle LR schedule v3', 'l2_regularization=10**-7', 'no batchnorm', 'no shortcut',
+            'filters=[10]', 'kernels=[(5,5)]', 'slice_size=1800', 'spectrogram_slice_pad=2'
         ],
         action='append',
         help='List of tags for the experiment.')
