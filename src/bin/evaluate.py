@@ -29,8 +29,8 @@ from pathlib import Path
 import argparse
 import logging
 import sys
+import time
 
-from torch.utils.data.sampler import RandomSampler
 from torchnlp.utils import tensors_to
 
 import pandas
@@ -53,7 +53,6 @@ from src.hparams import log_config
 from src.hparams import set_hparams
 from src.samplers import BalancedSampler
 from src.utils import Checkpoint
-from src.utils import evaluate
 from src.utils import RecordStandardStreams
 
 logger = logging.getLogger(__name__)
@@ -90,10 +89,16 @@ def _get_dev_dataset(dataset=ConfiguredArg()):
     return dev
 
 
+@configurable
+def _get_sample_rate(sample_rate=ConfiguredArg()):
+    return sample_rate
+
+
 def main(dataset,
          signal_model_checkpoint,
          spectrogram_model_checkpoint,
          num_samples,
+         get_sample_rate=_get_sample_rate,
          destination='samples/',
          metadata_filename='metadata.csv',
          aligned=False,
@@ -114,6 +119,7 @@ def main(dataset,
         spectrogram_model_checkpoint (str or None): Checkpoint used to generate spectrogram
             from text as input to the signal model.
         num_samples (int): Number of rows to evaluate.
+        get_sample_rate (callable): Get the number of samples in a clip per second.
         destination (str, optional): Path to store results.
         metadata_filename (str, optional): The filename for a CSV file containing clip metadata.
         aligned (bool, optional): If `True`, predict a ground truth aligned spectrogram.
@@ -135,12 +141,15 @@ def main(dataset,
 
     log_config()
 
+    sample_rate = get_sample_rate()
+
     # Sample from the dataset
     dataset = dataset() if callable(dataset) else dataset
-    dataset = ([dataset[i] for i in BalancedSampler(dataset, get_class=lambda r: r.speaker)]
-               if balanced else dataset)
-    dataset = dataset if speakers is None else filter(lambda r: r.speaker in speakers, dataset)
-    indicies = list(RandomSampler(dataset))[:num_samples] if num_samples else range(len(dataset))
+    dataset = list(
+        dataset if speakers is None else filter(lambda r: r.speaker in speakers, dataset))
+    indicies = (
+        list(BalancedSampler(dataset, get_class=lambda r: r.speaker, num_samples=num_samples))
+        if balanced else range(len(dataset)))
     dataset = [dataset[i] for i in indicies]
 
     has_target_audio = all(e.audio_path is not None for e in dataset)
@@ -185,24 +194,26 @@ def main(dataset,
     if signal_model_checkpoint is not None and (has_target_audio or
                                                 spectrogram_model_checkpoint is not None):
         logger.info('The signal model path is: %s', signal_model_checkpoint.path)
-        signal_model_model = signal_model_checkpoint.model.to_inferrer()
+        logger.info('Running inference with %d threads.', torch.get_num_threads())
+        signal_model = signal_model_checkpoint.model.to_inferrer()
         use_predicted = spectrogram_model_checkpoint is not None
 
         # NOTE: Sort by spectrogram lengths to batch similar sized outputs together
         iterator = list(zip(dataset, indicies))
         get_length = lambda e: getattr(e[0], 'predicted_spectrogram'
                                        if use_predicted else 'spectrogram').shape[0]
-        iterator = sorted(iterator, key=get_length, reverse=True)
+        iterator = sorted(iterator, key=get_length)
 
         for example, i in iterator:
             example = tensors_to(example, device=torch.device('cpu'), non_blocking=True)
             spectrogram = example.predicted_spectrogram if use_predicted else example.spectrogram
             logger.info('Predicting signal from spectrogram of size %s.', spectrogram.shape)
-            with evaluate(signal_model_model):
-                # [local_length, local_features_size] → [signal_length]
-                predicted_coarse, predicted_fine, _ = signal_model_model(spectrogram)
-                waveform = combine_signal(predicted_coarse, predicted_fine, return_int=True)
-                waveform = waveform.cpu().numpy()
+            start = time.time()
+            # [local_length, local_features_size] → [signal_length]
+            predicted_coarse, predicted_fine, _ = signal_model(spectrogram)
+            waveform = combine_signal(predicted_coarse, predicted_fine, return_int=True).numpy()
+            logger.info('Processed in %fx real time.',
+                        (time.time() - start) / (waveform.shape[0] / sample_rate))
 
             audio_path = _save_partial(i, ['type=wave_rnn'], example.speaker, waveform)
             add_to_metadata(example, audio_path=audio_path, index=i, type='wave_rnn')
@@ -253,4 +264,5 @@ if __name__ == '__main__':  # pragma: no cover
         dataset=dataset,
         spectrogram_model_checkpoint=args.spectrogram_model,
         signal_model_checkpoint=args.signal_model,
+        balanced=callable(dataset),
         num_samples=args.num_samples if args.text is None else len(dataset))

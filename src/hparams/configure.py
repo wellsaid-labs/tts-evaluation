@@ -97,6 +97,7 @@ def _set_audio_processing():
         logger.info('Ignoring optional `IPython` configurations.')
 
     add_config({
+        'src.bin.evaluate._get_sample_rate.sample_rate': sample_rate,
         'src.environment.set_seed.seed': 1212212,
         'src.environment.get_initial_seed.seed': 1212212,
         'src.audio': {
