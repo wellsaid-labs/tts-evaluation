@@ -426,10 +426,10 @@ def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
     signal = coarse * bins + fine - 2**(bits - 1)
 
     if return_int:
-        if bits <= 16:
+        if bits == 16:
             return signal.type(torch.int16)
         else:
-            raise ValueError('Larger than 16-bit fidelity is not supported.')
+            raise ValueError('Only 16-bit fidelity is supported.')
 
     return signal.float() / 2**(bits - 1)  # Scale to [-1, 1] range.
 
