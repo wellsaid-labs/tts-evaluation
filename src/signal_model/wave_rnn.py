@@ -1,15 +1,20 @@
 from pathlib import Path
+from unittest.mock import patch
 
 import copy
+import hashlib
 import logging
+import pickle
 
 from torch import nn
-from torch.utils.cpp_extension import load_inline
+from torch.utils.cpp_extension import JIT_EXTENSION_VERSIONER
+from torch.utils.cpp_extension import load
 
 import torch
 
 from src.audio import split_signal
 from src.environment import ROOT_PATH
+from src.environment import NINJA_BUILD_PATH
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.signal_model.stripped_gru import StrippedGRU
@@ -32,6 +37,9 @@ class _WaveRNNInferrer(nn.Module):
         stripped_gru (torch.nn.Module): Provided by WaveRNN.
         argmax (bool, optional): If ``True``, during sampling pick the most likely bin instead of
             sampling from a multinomial distribution.
+        extension_name (str, optional): A unique name for the extension to build. This MUST be the
+            same as the name of the pybind11 module!
+        cflags (list, optional): Optional list of compiler flags to forward to the build.
     """
 
     @log_runtime
@@ -43,43 +51,60 @@ class _WaveRNNInferrer(nn.Module):
                  project_fine_input,
                  conditional_features_upsample,
                  stripped_gru,
-                 argmax=False):
+                 argmax=False,
+                 extension_name='wave_rnn_inference',
+                 cflags=['-O2', '-funroll-loops', '-march=native']):
         super().__init__()
 
         logger.info('Instantiating `_WaveRNNInferrer`.')
 
-        assert hidden_size % 64 == 0, 'Hidden size must be multiple of 64.'
+        assert hidden_size % 64 == 0, 'Hidden size must be multiple of 64 for best performance.'
 
-        # See documentation for more information:
-        # https: // pytorch.org/docs/stable/cpp_extension.html#torch.utils.cpp_extension.load
-        assert torch.utils.cpp_extension.verify_ninja_availability(), (
-            '`_WaveRNNInferrer` requires that `ninja` is installed, '
-            'learn more here: via https://ninja-build.org/')
-
-        cflags = ['-O2', '-funroll-loops', '-march=native']
         ldflags = []
-        if Path('/usr/lib/x86_64-linux-gnu/mkl/').exists():
-            # NOTE: The MKL path is hard coded assuming that this is running on a machine with
-            # Ubuntu 18.10 or higher and has `libmkl-full-dev` installed.
-            ldflags += ['-L/usr/lib/x86_64-linux-gnu/mkl/', '-lblas']
+        extra_include_paths = [str(ROOT_PATH / 'third_party')]
+        if Path('/opt/intel/mkl/lib/intel64/').exists() and Path(
+                '/opt/intel/mkl/include/').exists():
+            # NOTE: The MKL path is hard coded assuming that MKL was installed like so:
+            # https://software.intel.com/en-us/articles/installing-intel-free-libs-and-python-apt-repo
+            ldflags.append('-L/opt/intel/mkl/lib/intel64/ -lmkl_rt')
+            cflags.append('-DMKL_DIRECT_CALL')
             cflags.append('-fopenmp')
+            extra_include_paths.append('/opt/intel/mkl/include/')
         else:
             logger.warning(
-                '`_WaveRNNInferrer` will be less performant because the requirements '
-                'for MKL have not been met. For MKL, the program must be running on a Ubuntu 18.10 '
-                'or higher machine with the `apt-get install libmkl-full-dev` package.')
+                '`_WaveRNNInferrer` will be less performant because MKL has not been found. '
+                'To install MKL, please see `sudo bash src/bin/install_mkl.sh`')
             cflags.append('-DNO_MKL=1')
 
-        logger.info('Building `inference.cpp` with `ninja`...')
-        # NOTE: Learn more about `read_text` here:
-        # https://github.com/wellsaid-labs/Benchmarks/pull/6/files#r306031034
-        self._cpp_inference = load_inline(
-            name='inference',
-            cpp_sources=(Path(__file__).parent / 'inference.cpp').read_text(),
-            extra_include_paths=[str(ROOT_PATH / 'third_party')],
-            extra_cflags=cflags,
-            extra_ldflags=ldflags,
-            verbose=True)
+        build_directory = NINJA_BUILD_PATH / extension_name
+        build_directory.mkdir(exist_ok=True, parents=True)
+
+        # NOTE: Cache the version between `Python` restarts (this is not multiprocess safe).
+        version_filename = build_directory / 'version.pkl'
+        if version_filename.exists():
+            version = pickle.loads(version_filename.read_bytes())
+            JIT_EXTENSION_VERSIONER.entries[extension_name] = version
+
+        with patch('torch.utils._cpp_extension_versioner.update_hash') as patched_update_hash:
+
+            def update_hash(seed, value):
+                """ Patched hash such that the hash is the same from process to process. """
+                hash_ = int(hashlib.md5(str(value).encode('utf-8')).hexdigest(), 16)
+                return seed ^ (hash_ + 0x9e3779b9 + (seed << 6) + (seed >> 2))
+
+            patched_update_hash.side_effect = update_hash
+
+            self._cpp_inference = load(
+                name=extension_name,
+                sources=[str(Path(__file__).parent / 'inference.cpp')],
+                extra_include_paths=extra_include_paths,
+                extra_cflags=cflags,
+                extra_ldflags=ldflags,
+                build_directory=build_directory,
+                verbose=True)
+
+        version = JIT_EXTENSION_VERSIONER.entries[extension_name]
+        version_filename.write_bytes(pickle.dumps(version))
 
         self.argmax = argmax
         self.size = hidden_size
@@ -160,28 +185,27 @@ class _WaveRNNInferrer(nn.Module):
               ``bins`` categories for the ``fine`` random variable.
             hidden_state (torch.FloatTensor [self.size]): Hidden state with RNN hidden state.
         """
-        with torch.no_grad():
-            return tuple(
-                self._cpp_inference.run(
-                    coarse_last.clone(),
-                    fine_last.clone(),
-                    hidden_state.clone(),
-                    project_coarse_bias.clone(),
-                    self.project_coarse_input_weight_t,
-                    project_fine_bias.clone(),
-                    self.project_fine_input_weight_t,
-                    self.project_hidden_bias_aligned,
-                    self.project_hidden_weight_aligned,
-                    self.to_bins_coarse_pre_bias_aligned,
-                    self.to_bins_coarse_pre_weight_t,
-                    self.to_bins_coarse_bias_aligned,
-                    self.to_bins_coarse_weight_t,
-                    self.to_bins_fine_pre_bias_aligned,
-                    self.to_bins_fine_pre_weight_t,
-                    self.to_bins_fine_bias_aligned,
-                    self.to_bins_fine_weight_t,
-                    self.argmax,
-                ))
+        return tuple(
+            self._cpp_inference.run(
+                coarse_last.clone(),
+                fine_last.clone(),
+                hidden_state.clone(),
+                project_coarse_bias.clone(),
+                self.project_coarse_input_weight_t,
+                project_fine_bias.clone(),
+                self.project_fine_input_weight_t,
+                self.project_hidden_bias_aligned,
+                self.project_hidden_weight_aligned,
+                self.to_bins_coarse_pre_bias_aligned,
+                self.to_bins_coarse_pre_weight_t,
+                self.to_bins_coarse_bias_aligned,
+                self.to_bins_coarse_weight_t,
+                self.to_bins_fine_pre_bias_aligned,
+                self.to_bins_fine_pre_weight_t,
+                self.to_bins_fine_bias_aligned,
+                self.to_bins_fine_weight_t,
+                self.argmax,
+            ))
 
     def _infer_initial_state(self, reference, hidden_state=None):
         """ Initial state returns the initial hidden state and go sample.
@@ -234,46 +258,50 @@ class _WaveRNNInferrer(nn.Module):
                 ``bins`` categories for the ``fine`` random variable.
             hidden_state (tuple): Hidden state with RNN hidden state and last coarse/fine samples.
         """
-        # [local_length, local_features_size] → [1, local_length, local_features_size]
-        local_features = local_features.unsqueeze(0)
+        with torch.no_grad():
+            # [local_length, local_features_size] → [1, local_length, local_features_size]
+            local_features = local_features.unsqueeze(0)
 
-        # [1, local_length, local_features_size] →
-        # [1, self.size * 3, signal_length]
-        conditional = self.conditional_features_upsample(local_features, pad=pad)
+            # [1, local_length, local_features_size] →
+            # [1, self.size * 3, signal_length]
+            conditional = self.conditional_features_upsample(local_features, pad=pad)
 
-        # [1, self.size * 3, signal_length] → [self.size * 3, signal_length]
-        conditional = conditional.squeeze(0)
+            # [1, self.size * 3, signal_length] → [self.size * 3, signal_length]
+            conditional = conditional.squeeze(0)
 
-        _, signal_length = conditional.shape
+            _, signal_length = conditional.shape
 
-        # [self.size * 3, signal_length] →
-        # [signal_length, self.size * 3]
-        conditional = conditional.transpose(0, 1)
+            # [self.size * 3, signal_length] →
+            # [signal_length, self.size * 3]
+            conditional = conditional.transpose(0, 1)
 
-        # [signal_length,  3 * self.size] →
-        # [signal_length,  3, self.size]
-        conditional = conditional.view(signal_length, 3, -1)
+            # [signal_length,  3 * self.size] →
+            # [signal_length,  3, self.size]
+            conditional = conditional.view(signal_length, 3, -1)
 
-        # ... [signal_length, half_size]
-        chunk = torch.chunk
-        bias_coarse_r, bias_fine_r = chunk(conditional[:, 0] + self.stripped_gru_bias_r, 2, dim=1)
-        bias_coarse_i, bias_fine_i = chunk(conditional[:, 1] + self.stripped_gru_bias_i, 2, dim=1)
-        bias_coarse_n, bias_fine_n = chunk(conditional[:, 2] + self.stripped_gru_bias_n, 2, dim=1)
+            # ... [signal_length, half_size]
+            chunk = torch.chunk
+            bias_coarse_r, bias_fine_r = chunk(
+                conditional[:, 0] + self.stripped_gru_bias_r, 2, dim=1)
+            bias_coarse_i, bias_fine_i = chunk(
+                conditional[:, 1] + self.stripped_gru_bias_i, 2, dim=1)
+            bias_coarse_n, bias_fine_n = chunk(
+                conditional[:, 2] + self.stripped_gru_bias_n, 2, dim=1)
 
-        # [signal_length, half_size] → [signal_length, 3 * half_size]
-        bias_coarse = torch.cat((bias_coarse_r, bias_coarse_i, bias_coarse_n), dim=1)
-        bias_fine = torch.cat((bias_fine_r, bias_fine_i, bias_fine_n), dim=1)
+            # [signal_length, half_size] → [signal_length, 3 * half_size]
+            bias_coarse = torch.cat((bias_coarse_r, bias_coarse_i, bias_coarse_n), dim=1)
+            bias_fine = torch.cat((bias_fine_r, bias_fine_i, bias_fine_n), dim=1)
 
-        # Initial inputs
-        coarse_last, fine_last, gru_hidden_state = self._infer_initial_state(
-            conditional, hidden_state)
+            # Initial inputs
+            coarse_last, fine_last, gru_hidden_state = self._infer_initial_state(
+                conditional, hidden_state)
 
-        # Predict waveform
-        out_coarse, out_fine, gru_hidden_state = self._infer_loop(coarse_last, fine_last,
-                                                                  gru_hidden_state, bias_coarse,
-                                                                  bias_fine)
+            # Predict waveform
+            out_coarse, out_fine, gru_hidden_state = self._infer_loop(coarse_last, fine_last,
+                                                                      gru_hidden_state, bias_coarse,
+                                                                      bias_fine)
 
-        return out_coarse, out_fine, (out_coarse[-1:], out_fine[-1:], gru_hidden_state)
+            return out_coarse, out_fine, (out_coarse[-1:], out_fine[-1:], gru_hidden_state)
 
 
 class WaveRNN(nn.Module):

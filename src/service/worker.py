@@ -29,30 +29,31 @@ The cons in summary are that the client cannot manage there own state due to the
 web audio api; therefore, the server must manage it via some database.
 
 Example:
-      $ PYTHONPATH=. python -m src.service.serve
-
-Example:
-      $ gunicorn src.service.serve:app
+      $ PYTHONPATH=. YOUR_SPEECH_API_KEY=123 python -m src.service.worker
 
 TODO: Write tests for this module.
 """
 from functools import lru_cache
 
+import json
 import logging
 import os
 import pathlib
 import sys
+import unidecode
 
 from dotenv import load_dotenv
 from flask import Flask
 from flask import jsonify
 from flask import request
 from flask import Response
+from flask import send_file
 
 import torch
 
 from src.audio import build_wav_header
 from src.audio import combine_signal
+from src.environment import ROOT_PATH
 from src.environment import set_basic_logging_config
 from src.hparams import set_hparams
 from src.utils import Checkpoint
@@ -61,6 +62,7 @@ app = Flask(__name__)
 set_basic_logging_config()
 logger = logging.getLogger(__name__)
 load_dotenv()
+model_config = json.loads((ROOT_PATH / 'src' / 'service' / 'models.config.json').read_text())
 DEVICE = torch.device('cpu')
 NO_CACHE_HEADERS = {
     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -69,12 +71,12 @@ NO_CACHE_HEADERS = {
 }
 API_KEY_SUFFIX = '_SPEECH_API_KEY'
 API_KEYS = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
+MIN_API_KEY_LENGTH = min([len(key) for key in API_KEYS]) if len(API_KEYS) > 0 else 0
+MAX_API_KEY_LENGTH = max([len(key) for key in API_KEYS]) if len(API_KEYS) > 0 else 0
 
 # TODO: Upload the models to a bucket online, so that they can be downloaded anywhere at anytime.
-SPECTROGRAM_MODEL_CHECKPOINT_PATH = pathlib.Path(
-    'experiments/spectrogram_model/jan_12/00:51:22/checkpoints/1548398998/step_213156.pt')
-SIGNAL_MODEL_CHECKPOINT_PATH = pathlib.Path(
-    'experiments/signal_model/jan_11/20:51:46/checkpoints/1549309174/step_3775828.pt')
+SPECTROGRAM_MODEL_CHECKPOINT_PATH = pathlib.Path(model_config['spectrogram_model'])
+SIGNAL_MODEL_CHECKPOINT_PATH = pathlib.Path(model_config['signal_model'])
 
 
 @lru_cache()
@@ -94,17 +96,26 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
     ), 'Spectrogram model checkpoint cannot be found.'
     assert signal_model_checkpoint_path.is_file(), 'Signal model checkpoint cannot be found.'
 
+    # Set based off the resources dedicated to this worker in `master.js`
+    torch.set_num_threads(8)
+
+    logger.info('PyTorch version: %s', torch.__version__)
+    logger.info('Found MKL: %s', torch.backends.mkl.is_available())
+    logger.info('Threads: %s', torch.get_num_threads())
+
     set_hparams()
 
     spectrogram_model = Checkpoint.from_path(spectrogram_model_checkpoint_path, device=DEVICE)
     spectrogram_model, input_encoder = (spectrogram_model.model, spectrogram_model.input_encoder)
+
+    logger.info('Loading speakers: %s', input_encoder.speaker_encoder.vocab)
 
     signal_model = Checkpoint.from_path(signal_model_checkpoint_path, device=DEVICE)
     signal_model = signal_model.model.to_inferrer()
     return signal_model, spectrogram_model, input_encoder
 
 
-class InvalidUsage(Exception):
+class FlaskException(Exception):
     """
     Inspired by http://flask.pocoo.org/docs/1.0/patterns/apierrors/
 
@@ -127,7 +138,7 @@ class InvalidUsage(Exception):
         return response
 
 
-@app.errorhandler(InvalidUsage)
+@app.errorhandler(FlaskException)
 def handle_invalid_usage(error):
     # Register an error response
     response = jsonify(error.to_dict())
@@ -135,17 +146,11 @@ def handle_invalid_usage(error):
     return response
 
 
-@app.before_first_request
-def setup():
-    # Set based off the resources dedicated to this worker in `master.js`
-    torch.set_num_threads(4)
-
-    logger.info('PyTorch version: %s', torch.__version__)
-    logger.info('Found MKL: %s', torch.backends.mkl.is_available())
-    logger.info('Threads: %s', torch.get_num_threads())
-
-
-def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_size=20):
+def _stream_text_to_speech_synthesis(text,
+                                     speaker,
+                                     stop_threshold=None,
+                                     split_size=20,
+                                     max_frames_per_token=30):
     """ Helper function for starting a speech synthesis stream.
 
     Args:
@@ -153,6 +158,7 @@ def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_s
         speaker (src.datasets.Speaker)
         stop_threshold (float, optional): Probability to stop predicting frames.
         split_size (int): Number of frames to synthesize at a time.
+        max_frames_per_token (int): Maximum frames generated per token before erroring.
 
     Returns:
         (callable): Callable that returns a generator incrementally returning a WAV file.
@@ -160,7 +166,7 @@ def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_s
     """
     logger.info('Requested stream conditioned on: "%s", "%s" and "%s".', speaker, stop_threshold,
                 text)
-    signal_model, spectrogram_model, input_encoder = load_checkpoints()
+    signal_model_inferrer, spectrogram_model, input_encoder = load_checkpoints()
 
     # Compute spectrogram
     text, speaker = input_encoder.encode((text, speaker))
@@ -168,25 +174,25 @@ def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_s
     if isinstance(stop_threshold, float):
         kwargs['stop_threshold'] = stop_threshold
 
-    scale_factor = signal_model.conditional_features_upsample.scale_factor
-    padding = signal_model.conditional_features_upsample.padding
-    half_padding = int(padding / 2)
-
-    logger.info('Generating spectrogram.')
-
+    logger.info('Generating spectrogram...')
     with torch.no_grad():
-        spectrogram = spectrogram_model(text, speaker, use_tqdm=True, **kwargs)[1]
+        spectrogram = spectrogram_model(
+            text, speaker, use_tqdm=True, max_frames_per_token=max_frames_per_token, **kwargs)[1]
+    logger.info('Generated spectrogram of shape %s.', spectrogram.shape)
 
-    # TODO: If ``spectrogram`` reaches the ``max_frames_per_token``, return a 'failed to render'
-    # error.
+    if spectrogram.shape[0] == max_frames_per_token * text.shape[0]:
+        raise FlaskException('Failed to render, try again.', status_code=500)
+
     # TODO: If a loud sound is created, cut off the stream or consider rerendering.
     # TODO: Consider logging various events to stackdriver, to keep track.
 
-    logger.info('Generated spectrogram of shape %s.', spectrogram.shape)
+    half_padding = signal_model_inferrer.conditional_features_upsample.padding // 2
+    scale_factor = signal_model_inferrer.conditional_features_upsample.scale_factor
+    num_samples = scale_factor * spectrogram.shape[0]  # [num_frames, num_channels]
+    padded = torch.nn.functional.pad(spectrogram, (0, 0, half_padding, half_padding))
+    iterator = range(half_padding, padded.shape[0] - half_padding, split_size)
+    splits = [padded[i - half_padding:i + split_size + half_padding] for i in iterator]
 
-    num_frames = spectrogram.shape[0]  # [num_frames, num_channels]
-    num_samples = scale_factor * num_frames
-    spectrogram = torch.nn.functional.pad(spectrogram, (0, 0, half_padding, half_padding))
     wav_header, wav_file_size = build_wav_header(num_samples)
 
     def response():
@@ -195,16 +201,8 @@ def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_s
         assert sys.byteorder == 'little', 'Ensure byte order is of little-endian format.'
         yield wav_header
         hidden_state = None
-        for start_frame in list(range(half_padding, num_frames + half_padding, split_size)):
-            # Get padded split
-            end_frame = start_frame + split_size
-            padded_start_frame = start_frame - half_padding
-            padded_end_frame = end_frame + half_padding
-            split = spectrogram[padded_start_frame:padded_end_frame]
-
-            with torch.no_grad():
-                coarse, fine, hidden_state = signal_model(split, hidden_state, pad=False)
-
+        for split in splits:
+            coarse, fine, hidden_state = signal_model_inferrer(split, hidden_state, pad=False)
             waveform = combine_signal(coarse, fine, return_int=True).numpy()
             logger.info('Waveform shape %s', waveform.shape)
             yield waveform.tostring()
@@ -214,7 +212,7 @@ def _stream_text_to_speech_synthesis(text, speaker, stop_threshold=None, split_s
     return response, wav_file_size
 
 
-def _validate_and_unpack(args, max_characters=1000, num_api_key_characters=32):
+def _validate_and_unpack(args, max_characters=1000):
     """ Validate and unpack the request object.
 
     Args:
@@ -225,7 +223,6 @@ def _validate_and_unpack(args, max_characters=1000, num_api_key_characters=32):
           stop_threshold (float or None)
         }
         max_characters (int)
-        num_api_key_characters (int)
 
     Returns:
         speaker (src.datasets.Speaker)
@@ -234,54 +231,59 @@ def _validate_and_unpack(args, max_characters=1000, num_api_key_characters=32):
         stop_threshold (float or None)
     """
     if 'api_key' not in args:
-        raise InvalidUsage('API key was not provided.', status_code=401)
+        raise FlaskException('API key was not provided.', status_code=401)
 
     # TODO: Consider using the authorization header instead of a parameter ``api_key``.
     api_key = args.get('api_key')
 
-    if not (isinstance(api_key, str) and len(api_key) == num_api_key_characters):
-        raise InvalidUsage(
-            'API key must be a string with %d characters.' % num_api_key_characters,
+    if not (isinstance(api_key, str) and len(api_key) >= MIN_API_KEY_LENGTH and
+            len(api_key) <= MAX_API_KEY_LENGTH):
+        raise FlaskException(
+            'API key must be a string between %d and %d characters.' %
+            (MIN_API_KEY_LENGTH, MAX_API_KEY_LENGTH),
             status_code=401)
 
     if api_key not in API_KEYS:
-        raise InvalidUsage('API key is not valid.', status_code=401)
+        raise FlaskException('API key is not valid.', status_code=401)
 
     if not ('speaker_id' in args and 'text' in args):
-        raise InvalidUsage('Must call with keys `speaker_id` and `text`.')
+        raise FlaskException('Must call with keys `speaker_id` and `text`.')
 
     speaker_id = args.get('speaker_id')
-    # TODO: Normalize the text such that special quotes are normalized and don't prevent API usage.
     text = args.get('text')
     stop_threshold = args.get('stop_threshold', None)
 
     if not isinstance(speaker_id, (str, int)):
-        raise InvalidUsage('Speaker ID must be either an integer or string.')
+        raise FlaskException('Speaker ID must be either an integer or string.')
 
     if isinstance(speaker_id, str) and not speaker_id.isdigit():
-        raise InvalidUsage('Speaker ID string must only consist of the symbols 0 - 9.')
+        raise FlaskException('Speaker ID string must only consist of the symbols 0 - 9.')
 
     speaker_id = int(speaker_id)
 
     if not (isinstance(text, str) and len(text) < max_characters and len(text) > 0):
-        # TODO: The error string should suggest the text must be none-empty.
-        raise InvalidUsage('Text must be a string under %d characters' % max_characters)
+        raise FlaskException(
+            'Text must be a string under %d characters and more than 0 characters.' %
+            max_characters)
 
     input_encoder = load_checkpoints()[2]
 
     if not (isinstance(speaker_id, int) and
             speaker_id < input_encoder.speaker_encoder.vocab_size and speaker_id >= 0):
-        raise InvalidUsage('Speaker ID must be an integer between %d and %d.' %
-                           (0, input_encoder.speaker_encoder.vocab_size))
+        raise FlaskException('Speaker ID must be an integer between %d and %d.' %
+                             (0, input_encoder.speaker_encoder.vocab_size))
 
+    # NOTE: Normalize text similar to the normalization during dataset creation.
+    text = unidecode.unidecode(text)
+    input_encoder.text_encoder.enforce_reversible = False
     processed_text = input_encoder.text_encoder.decode(input_encoder.text_encoder.encode(text))
     if processed_text != text:
         improper_characters = set(text).difference(set(processed_text))
         improper_characters = ', '.join(sorted(list(improper_characters)))
-        raise InvalidUsage('Text cannot contain these characters: %s' % improper_characters)
+        raise FlaskException('Text cannot contain these characters: %s' % improper_characters)
 
     if not (isinstance(stop_threshold, float) or stop_threshold is None):
-        raise InvalidUsage('Stop threshold must be a float.')
+        raise FlaskException('Stop threshold must be a float.')
 
     if isinstance(stop_threshold, float):
         stop_threshold = round(stop_threshold, 2)
@@ -322,7 +324,8 @@ def get_input_validated():
         stop_threshold (float, optional)
 
     Returns:
-        Response with status 200 if the arguments are valid; Otherwise, returning a `InvalidUsage`.
+        Response with status 200 if the arguments are valid; Otherwise, returning a
+        `FlaskException`.
     """
     if request.method == 'POST':
         args = request.get_json()
@@ -368,5 +371,32 @@ def get_stream():
     return Response(response(), headers=headers, mimetype='audio/wav')
 
 
+@app.route('/styles.css')
+def styles_css():
+    return send_file('styles.css')
+
+
+@app.route('/reset.css')
+def reset_css():
+    return send_file('reset.css')
+
+
+@app.route('/script.js')
+def script_js():
+    return send_file('script.js')
+
+
+@app.route('/')
+def index():
+    return send_file('index.html')
+
+
+@app.route('/favicon.ico')
+def favicon_ico():
+    return send_file('favicon.ico')
+
+
 if __name__ == "__main__":
+    load_checkpoints()  # Cache checkpoints on worker start.
+
     app.run(host='0.0.0.0', port=8000, debug=True)

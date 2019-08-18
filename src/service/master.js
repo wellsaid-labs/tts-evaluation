@@ -7,7 +7,6 @@
  * TODO: Consider creating a namespace in kubernetes, it's proper practice.
  * TODO: Put a cache in front of the API frontend, ensuring it does not fail under a DDOS
  * attack.
- * TODO: Check that `worker.py` PyTorch uses MKL, log this.
  * TODO: Rewrite these dependancies with conda, and without pyenv or pip.
  */
 const express = require('express');
@@ -164,7 +163,7 @@ class Pod {
   }
 
   static async build({
-    statusRetries = 15,
+    statusRetries = 64,
     statusLoop = 2000,
     reserved = false
   } = {}) {
@@ -219,12 +218,10 @@ class Pod {
             'env': apiKeys,
             'resources': {
               'requests': {
-                'memory': '7Gi',
-                'cpu': '8000m'
-              },
-              'limits': {
-                'memory': '7Gi',
-                'cpu': '8000m'
+                // NOTE: This is smaller than required purposefully to give room for any other
+                // system pods.
+                'memory': '4.25Gi',
+                'cpu': '7250m'
               },
             },
             'ports': [{

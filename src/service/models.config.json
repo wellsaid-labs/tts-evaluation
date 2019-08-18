@@ -1,0 +1,14 @@
+{
+  "_comments": [
+    [
+      "This configuration is added to ensure that both `build.py` and `worker.py` can be run",
+      "seperately outside of Kubernetes and Docker."
+    ],
+    [
+      "TODO: These models should be uploaded online for so that everyone has access to them",
+      "and we do not lose track of them."
+    ]
+  ],
+  "spectrogram_model": "experiments/spectrogram_model/step_183968.pt",
+  "signal_model": "experiments/signal_model/step_195094.pt"
+}

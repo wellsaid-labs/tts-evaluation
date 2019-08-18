@@ -70,6 +70,17 @@ or
 brew install ninja
 ```
 
+#### (Optional) [MKL](https://software.intel.com/en-us/mkl)
+
+For optimal signal model inference performance install [MKL](https://software.intel.com/en-us/mkl)
+like so:
+
+```bash
+sudo bash src/bin/install_mkl.sh
+```
+
+Note that this installation will only work on Linux machines with an Intel CPU.
+
 ### 4. Configure Visualization Dependencies
 
 This repository requires [Comet](https://www.comet.ml) for visualization. You'll need to ask
