@@ -14,16 +14,16 @@ document.addEventListener('DOMContentLoaded', function (_) {
   const errorParagraphElement = document.querySelector('#error p');
   const errorElement = document.querySelector('#error');
   const clipsElement = document.querySelector('#clips');
+  const splitBySetencesInput = document.querySelector('#split-by-setences');
 
-  async function generate() {
+  async function generate(text) {
     /**
      * Generate a clip and append it to the UI.
      */
     const speakerElement = speakerSelect.options[speakerSelect.selectedIndex];
-    const textSubmitted = textarea.value.trim();
     const data = {
       speaker_id: parseInt(speakerElement.value),
-      text: textSubmitted,
+      text: text,
       api_key: apiKeyInput.value.trim(),
     }
     validateParameters(data);
@@ -45,7 +45,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
     sectionElement.innerHTML = `<main>
                                   <div>
                                     <p><b>${clipNumber}. ${speakerElement.text}</b></p>
-                                    <p>${textSubmitted}</p>
+                                    <p>${text}</p>
                                   </div>
                                   <div>
                                     <div class="progress">
@@ -137,7 +137,17 @@ document.addEventListener('DOMContentLoaded', function (_) {
       clearError();
       disableGenerateButton();
       try {
-        await generate();
+        const textSubmitted = textarea.value.trim();
+        const promises = [];
+        if (splitBySetencesInput.checked) {
+          const sentences = splitIntoSentences(textSubmitted);
+          for (const sentence of sentences) {
+            promises.push(generate(sentence));
+          }
+        } else {
+          promises.push(generate(textSubmitted));
+        }
+        await Promise.all(promises);
       } catch (error) {
         displayError(error);
       }
@@ -166,6 +176,17 @@ document.addEventListener('DOMContentLoaded', function (_) {
     } else {
       return;
     }
+  }
+
+  function splitIntoSentences(text) {
+    /**
+     * Inspired by:
+     * https://stackoverflow.com/questions/11761563/javascript-regexp-for-splitting-text-into-sentences-and-keeping-the-delimiter
+     *
+     * @param {string} text
+     * @returns {Array.<string>}
+     */
+    return text.match(/([^\.!\?]+[\.!\?]+)|([^\.!\?]+$)/g);
   }
 
   function displayError(message) {

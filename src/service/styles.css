@@ -171,6 +171,15 @@ section>main>div:first-child>p:first-child {
   margin-top: 32px
 }
 
+#controls {
+  width: 520px;
+}
+
+#controls input,
+#controls label {
+  display: inline-block;
+}
+
 .loader {
   border: 3px solid white;
   border-top: 3px solid #9E9E9E;
