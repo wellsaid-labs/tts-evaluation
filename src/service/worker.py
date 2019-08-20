@@ -146,33 +146,25 @@ def handle_invalid_usage(error):
     return response
 
 
-def _stream_text_to_speech_synthesis(text,
-                                     speaker,
-                                     stop_threshold=None,
-                                     split_size=20,
-                                     max_frames_per_token=30):
+def _stream_text_to_speech_synthesis(text, speaker, max_frames_per_token=30):
     """ Helper function for starting a speech synthesis stream.
 
     Args:
         text (str)
         speaker (src.datasets.Speaker)
-        stop_threshold (float, optional): Probability to stop predicting frames.
-        split_size (int): Number of frames to synthesize at a time.
-        max_frames_per_token (int): Maximum frames generated per token before erroring.
+        max_frames_per_token (int): Maximum frames generated per token before erroring. This
+            parameter is tunned based on the slowests speaking rate of our speakers.
 
     Returns:
         (callable): Callable that returns a generator incrementally returning a WAV file.
         (int): Number of bytes to be returned in total by the generator.
     """
-    logger.info('Requested stream conditioned on: "%s", "%s" and "%s".', speaker, stop_threshold,
-                text)
+    logger.info('Requested stream conditioned on: "%s" and "%s".', speaker, text)
     signal_model_inferrer, spectrogram_model, input_encoder = load_checkpoints()
 
     # Compute spectrogram
     text, speaker = input_encoder.encode((text, speaker))
     kwargs = {}
-    if isinstance(stop_threshold, float):
-        kwargs['stop_threshold'] = stop_threshold
 
     logger.info('Generating spectrogram...')
     with torch.no_grad():
@@ -186,27 +178,18 @@ def _stream_text_to_speech_synthesis(text,
     # TODO: If a loud sound is created, cut off the stream or consider rerendering.
     # TODO: Consider logging various events to stackdriver, to keep track.
 
-    half_padding = signal_model_inferrer.conditional_features_upsample.padding // 2
     scale_factor = signal_model_inferrer.conditional_features_upsample.scale_factor
-    num_samples = scale_factor * spectrogram.shape[0]  # [num_frames, num_channels]
-    padded = torch.nn.functional.pad(spectrogram, (0, 0, half_padding, half_padding))
-    iterator = range(half_padding, padded.shape[0] - half_padding, split_size)
-    splits = [padded[i - half_padding:i + split_size + half_padding] for i in iterator]
-
-    wav_header, wav_file_size = build_wav_header(num_samples)
+    wav_header, wav_file_size = build_wav_header(scale_factor * spectrogram.shape[0])
 
     def response():
         """ Generator incrementally generating a WAV file.
         """
         assert sys.byteorder == 'little', 'Ensure byte order is of little-endian format.'
         yield wav_header
-        hidden_state = None
-        for split in splits:
-            coarse, fine, hidden_state = signal_model_inferrer(split, hidden_state, pad=False)
+        for coarse, fine, _ in signal_model_inferrer(spectrogram, generator=True):
             waveform = combine_signal(coarse, fine, return_int=True).numpy()
             logger.info('Waveform shape %s', waveform.shape)
             yield waveform.tostring()
-
         logger.info('Finished generating waveform.')
 
     return response, wav_file_size
@@ -220,7 +203,6 @@ def _validate_and_unpack(args, max_characters=1000):
           speaker_id (int or str)
           text (str)
           api_key (str)
-          stop_threshold (float or None)
         }
         max_characters (int)
 
@@ -228,7 +210,6 @@ def _validate_and_unpack(args, max_characters=1000):
         speaker (src.datasets.Speaker)
         text (str)
         api_key (str)
-        stop_threshold (float or None)
     """
     if 'api_key' not in args:
         raise FlaskException('API key was not provided.', status_code=401)
@@ -251,7 +232,6 @@ def _validate_and_unpack(args, max_characters=1000):
 
     speaker_id = args.get('speaker_id')
     text = args.get('text')
-    stop_threshold = args.get('stop_threshold', None)
 
     if not isinstance(speaker_id, (str, int)):
         raise FlaskException('Speaker ID must be either an integer or string.')
@@ -282,14 +262,8 @@ def _validate_and_unpack(args, max_characters=1000):
         improper_characters = ', '.join(sorted(list(improper_characters)))
         raise FlaskException('Text cannot contain these characters: %s' % improper_characters)
 
-    if not (isinstance(stop_threshold, float) or stop_threshold is None):
-        raise FlaskException('Stop threshold must be a float.')
-
-    if isinstance(stop_threshold, float):
-        stop_threshold = round(stop_threshold, 2)
-
     speaker = input_encoder.speaker_encoder.vocab[speaker_id]
-    return speaker, text, stop_threshold
+    return speaker, text
 
 
 # NOTE: The route `/api/speech_synthesis/v1/` standads for "speech synthesis api v1"
@@ -321,7 +295,6 @@ def get_input_validated():
         text (str)
         api_key (str): Security token sent on behalf of client to ensure authenticity of the
             request.
-        stop_threshold (float, optional)
 
     Returns:
         Response with status 200 if the arguments are valid; Otherwise, returning a
@@ -341,14 +314,13 @@ def get_input_validated():
 
 @app.route('/api/speech_synthesis/v1/text_to_speech/stream', methods=['GET', 'POST'])
 def get_stream():
-    """ Get speech given `text`, `speaker`, and `stop_threshold`.
+    """ Get speech given `text` and `speaker`.
 
     Args:
         speaker_id (str)
         text (str)
         api_key (str): Security token sent on behalf of client to ensure authenticity of the
             request.
-        stop_threshold (float, optional)
 
     Returns:
         `audio/wav` streamed in chunks given that the arguments are valid.
@@ -363,9 +335,8 @@ def get_stream():
     else:
         args = request.args
 
-    speaker, text, stop_threshold = _validate_and_unpack(args)
-    response, content_length = _stream_text_to_speech_synthesis(
-        text=text, speaker=speaker, stop_threshold=stop_threshold)
+    speaker, text = _validate_and_unpack(args)
+    response, content_length = _stream_text_to_speech_synthesis(text=text, speaker=speaker)
     headers = NO_CACHE_HEADERS.copy()
     headers['Content-Length'] = content_length
     return Response(response(), headers=headers, mimetype='audio/wav')

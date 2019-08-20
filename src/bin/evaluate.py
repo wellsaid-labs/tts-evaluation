@@ -28,6 +28,7 @@ from pathlib import Path
 
 import argparse
 import logging
+import os
 import sys
 import time
 
@@ -73,8 +74,7 @@ def _save(destination, tags, speaker, waveform, obscure=False):
     """
     speaker_name = speaker.name.lower().replace(' ', '_')
     filename = 'speaker=%s,%s' % (speaker_name, ','.join(tags))
-    if obscure:
-        filename = hex(hash(filename))[2:]
+    filename = '%x' % hash(filename) if obscure else filename
     filename_with_suffix = str(filename) + '.wav'
     collision = 1
     while (destination / filename_with_suffix).exists():
@@ -166,10 +166,23 @@ def main(dataset,
 
     # Metadata saved along with audio clips
     metadata = []
+    # NOTE: `os.getpid` is often used by routines that generate unique identifiers, learn more:
+    # http://manpages.ubuntu.com/manpages/cosmic/man2/getpid.2.html
     add_to_metadata = lambda example, **kwargs: metadata.append(
-        dict(**kwargs, text=example.text, speaker=example.speaker.name))
+        dict(
+            **kwargs,
+            text=example.text,
+            speaker=example.speaker.name,
+            signal_model_checkpoint_path=(None if signal_model_checkpoint is None else
+                                          signal_model_checkpoint.path),
+            spectrogram_model_checkpoint_path=(None if spectrogram_model_checkpoint is None else
+                                               spectrogram_model_checkpoint.path),
+            spectrogram_model_batch_size=spectrogram_model_batch_size,
+            is_aligned=aligned,
+            is_balanced=balanced,
+            process_id=os.getpid()))
     _save_partial = lambda i, tags, *args: _save(
-        destination, ['index=%d' % i] + tags, *args, obscure=obscure)
+        destination, ['example_index=%d' % i] + tags, *args, obscure=obscure)
 
     # Save the target predictions
     if has_target_audio:
@@ -263,6 +276,11 @@ if __name__ == '__main__':  # pragma: no cover
         action='store_true',
         default=False,
         help='Do not generate and save signal model clips.')
+    parser.add_argument(
+        '--obscure_filename',
+        action='store_true',
+        default=False,
+        help='Obscure the filename such that the audio file\'s generation method is unknowable.')
     args = parser.parse_args()
 
     # NOTE: Load early and crash early by ensuring that the checkpoint exists and is not corrupt.
@@ -290,4 +308,5 @@ if __name__ == '__main__':  # pragma: no cover
         num_samples=args.num_samples if args.text is None else len(dataset),
         no_griffin_lim=args.no_griffin_lim,
         no_signal_model=args.no_signal_model,
-        no_target_audio=args.no_target_audio)
+        no_target_audio=args.no_target_audio,
+        obscure=args.obscure_filename)
