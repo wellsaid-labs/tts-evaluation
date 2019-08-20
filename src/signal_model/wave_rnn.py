@@ -198,7 +198,7 @@ class _WaveRNNInferrer(nn.Module):
         hidden_state = reference.new_zeros(self.size)
         return coarse.long(), fine.long(), hidden_state
 
-    def _infer_split(self, local_features, hidden_state=None):
+    def _infer(self, local_features, hidden_state=None):
         # [local_length, local_features_size] → [1, local_length, local_features_size]
         local_features = local_features.unsqueeze(0)
 
@@ -288,7 +288,7 @@ class _WaveRNNInferrer(nn.Module):
             nonlocal hidden_state
             with torch.no_grad():
                 for split in splits:
-                    coarse, fine, hidden_state = self._infer_split(split, hidden_state)
+                    coarse, fine, hidden_state = self._infer(split, hidden_state)
                     yield coarse, fine, hidden_state
 
         if not generator:
