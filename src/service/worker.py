@@ -96,8 +96,8 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
     ), 'Spectrogram model checkpoint cannot be found.'
     assert signal_model_checkpoint_path.is_file(), 'Signal model checkpoint cannot be found.'
 
-    # Set based off the resources dedicated to this worker in `master.js`
-    torch.set_num_threads(8)
+    if 'NUM_CPU_THREADS' in os.environ:
+        torch.set_num_threads(int(os.environ['NUM_CPU_THREADS']))
 
     logger.info('PyTorch version: %s', torch.__version__)
     logger.info('Found MKL: %s', torch.backends.mkl.is_available())

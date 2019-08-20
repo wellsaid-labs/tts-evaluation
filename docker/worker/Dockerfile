@@ -1,11 +1,24 @@
+# NOTE: The total size of this image is expected to be around ~756mb.
+
+# NOTE: The GCP VM cold startup time is around 25 - 45 seconds. Afterwards, it takes time to
+# download and start the docker image. Learn more:
+# https://medium.com/google-cloud/understanding-and-profiling-gce-cold-boot-time-32c209fe86ab
+# https://cloud.google.com/blog/products/gcp/three-steps-to-compute-engine-startup-time-bliss-google-cloud-performance-atlas?m=1
+
 # NOTE: Alpine does not work with PyTorch wheel due to the reliance on various symbols like
 # `__printf_chk`. Learn more: https://github.com/gliderlabs/docker-alpine/issues/149
-FROM python:3.6-slim
+FROM python:3.6-slim as base
+
+# Learn more about multi-stage builds:
+# https://blog.realkinetic.com/building-minimal-docker-containers-for-python-applications-37d0272c52f3
+FROM base as builder
 
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 # NOTE: Learn more about debian frontend, here: https://github.com/moby/moby/issues/4032
 ENV DEBIAN_FRONTEND=noninteractive
 
+# NOTE: This is PyTorch's MKL installation:
+# https://github.com/pytorch/builder/blob/master/manywheel/Dockerfile_101#L16
 RUN apt-get update --fix-missing \
   && apt-get install -y wget \
   # Required for `apt-key add`
@@ -21,64 +34,71 @@ RUN apt-get update --fix-missing \
   # Configure dynamic linker MKL run-time bindings
   && echo "/opt/intel/lib/intel64"     >  /etc/ld.so.conf.d/mkl.conf \
   && echo "/opt/intel/mkl/lib/intel64" >> /etc/ld.so.conf.d/mkl.conf \
-  && ldconfig \
-  # Removes > 90% of `/opt/intel/` folder leaving ~155m. There is 20m more potentially that can be
-  # deleted.
-  && rm -rf /opt/intel/mkl/lib/ia32_lin \
-  && rm -rf /opt/intel/mkl/lib/intel64_lin/*.a \
-  && rm -rf /opt/intel/conda_channel* \
-  && rm -rf /opt/intel/mkl/benchmarks \
-  && rm -rf /opt/intel/compilers_and_libraries_2019.4.243/linux/compiler/lib/ia32_lin \
-  && rm -rf /opt/intel/tbb/lib/ia32_lin \
-  && rm -rf /opt/intel/mkl/examples \
-  && rm -rf /opt/intel/compilers_and_libraries_2019.4.243/linux/bin \
-  && rm -rf /opt/intel/compilers_and_libraries_2019.4.243/linux/mkl/interfaces \
-  && find /opt/intel/mkl/lib/intel64_lin/ ! -name "libmkl_rt.so" ! -name "libmkl_core.so" \
-  ! -name "libmkl_intel_thread.so" ! -name "libmkl_intel_lp64.so" -maxdepth 1 -type f -delete \
-  && apt-get -y --purge autoremove wget gnupg \
-  && apt-get -y clean \
-  && rm -rf /var/lib/apt/lists/*
+  && ldconfig
 
-RUN python3 -m venv /venv
+WORKDIR /app
 
-# NOTE: COPY experiment folder fist, so that this layer is reused the most.
+RUN python3 -m venv venv
+
+# NOTE: `COPY` experiment folder fist, so that this layer is reused the most.
 COPY experiments/ experiments/
 COPY src/ src/
 COPY third_party/ third_party/
 
 # Install Python Dependencies
-RUN apt-get update --fix-missing \
-  && apt-get install -y --no-install-recommends git-core \
+RUN apt-get install -y --no-install-recommends git-core \
   && apt-get install -y ninja-build g++ \
-  && /venv/bin/pip install --no-cache-dir numpy \
-  git+https://github.com/PetrochukM/PyTorch-NLP.git \
+  # TODO: Consider the ideas here to reduce the size of numpy installation:
+  # https://towardsdatascience.com/how-to-shrink-numpy-scipy-pandas-and-matplotlib-for-your-data-product-4ec8d7e86ee4
+  && venv/bin/pip install --no-cache-dir numpy \
   flask \
   gunicorn \
+  # TODO: PyTorch is ~233mb due to MKL and MKLDNN. It may be possible to share our MKL installation
+  # with PyTorch; however, we ran into issues while trying to do this:
+  # https://github.com/pytorch/pytorch/issues/24844
   torch==1.2.0+cpu -f https://download.pytorch.org/whl/torch_stable.html \
   python-dotenv \
   unidecode \
-  && /venv/bin/python -m src.service.build \
-  # Remove large unused directories.
-  && /venv/bin/pip uninstall -y pip \
-  && rm -rf /venv/lib/python3.6/site-packages/torch/test \
-  && rm -rf /venv/lib/python3.6/site-packages/caffe2 \
+  tqdm \
+  && venv/bin/pip install --no-cache-dir --no-dependencies \
+  git+https://github.com/PetrochukM/PyTorch-NLP.git \
+  && venv/bin/python -m src.service.worker_setup \
+  && venv/bin/pip uninstall -y pip \
+  && rm -rf venv/lib/python3.6/site-packages/torch/test \
+  && rm -rf venv/lib/python3.6/site-packages/caffe2 \
   # Inspired by: https://jcrist.github.io/conda-docker-tips.html
-  && find /venv/ -follow -type f -name '*.pyc' -delete \
-  && find /venv/ -follow -type f -name '*.a' -delete \
-  && find /venv/ -follow -type f -name '*.js.map' -delete \
-  && apt-get -y --purge autoremove git-core g++ ninja-build \
-  && apt-get -y clean \
-  && rm -rf /var/lib/apt/lists/*
+  && find venv/ -follow -type f -name '*.pyc' -delete \
+  && find venv/ -follow -type f -name '*.a' -delete \
+  && find venv/ -follow -type f -name '*.js.map' -delete
+
+FROM base
+
+WORKDIR /app
+
+COPY --from=builder /app/ /app/
+
+# We do not need 94.8% of `/opt/intel/` folder (2.6G) leaving ~135m.
+COPY --from=builder /opt/intel/mkl/include /opt/intel/mkl/include
+COPY --from=builder /opt/intel/mkl/lib/intel64/libmkl_rt.so /opt/intel/mkl/lib/intel64/libmkl_rt.so
+COPY --from=builder /opt/intel/mkl/lib/intel64/libmkl_core.so /opt/intel/mkl/lib/intel64/libmkl_core.so
+COPY --from=builder /opt/intel/mkl/lib/intel64/libmkl_intel_thread.so /opt/intel/mkl/lib/intel64/libmkl_intel_thread.so
+COPY --from=builder /opt/intel/mkl/lib/intel64/libmkl_intel_lp64.so /opt/intel/mkl/lib/intel64/libmkl_intel_lp64.so
+# Configure dynamic linker MKL run-time bindings
+RUN echo "/opt/intel/lib/intel64"     >  /etc/ld.so.conf.d/mkl.conf \
+  && echo "/opt/intel/mkl/lib/intel64" >> /etc/ld.so.conf.d/mkl.conf \
+  && ldconfig
 
 LABEL maintainer="michael@wellsaidlabs.com"
 
 # Start web service
 EXPOSE 8000
 
-RUN echo 'Top N largest directories\n' && du -h  | sort -rh | head -100
+RUN echo 'Top N largest directories\n' && du -h / | sort -rh | head -100
 
 # Concerning binding to 0.0.0.0, learn more here:
 # https://stackoverflow.com/questions/35414479/docker-ports-are-not-exposed
 
 # Increased timeout to 3600 which is an hour due to the nature of this API.
-CMD ["/venv/bin/gunicorn", "src.service.worker:app", "--bind=0.0.0.0:8000", "--timeout=3600", "--keep-alive=300"]
+# TODO: `venv/bin/gunicorn` takes 3 seconds to initialize, consider looking into speeding up it's
+# initialization time.
+CMD ["venv/bin/gunicorn", "src.service.worker:app", "--bind=0.0.0.0:8000", "--timeout=3600", "--keep-alive=300"]

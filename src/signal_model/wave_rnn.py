@@ -78,12 +78,14 @@ class _WaveRNNInferrer(nn.Module):
 
         build_directory = NINJA_BUILD_PATH / extension_name
         build_directory.mkdir(exist_ok=True, parents=True)
+        logger.info('The `_WaveRNNInferrer` `build_directory` is `%s`', build_directory)
 
         # NOTE: Cache the version between `Python` restarts (this is not multiprocess safe).
         version_filename = build_directory / 'version.pkl'
         if version_filename.exists():
             version = pickle.loads(version_filename.read_bytes())
             JIT_EXTENSION_VERSIONER.entries[extension_name] = version
+            logger.info('Found cached `_WaveRNNInferrer` build on disk versioned: `%s`', version)
 
         with patch('torch.utils._cpp_extension_versioner.update_hash') as patched_update_hash:
 

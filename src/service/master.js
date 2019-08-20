@@ -215,7 +215,12 @@ class Pod {
           'containers': [{
             'image': process.env.WORKER_POD_IMAGE,
             'name': process.env.WORKER_POD_PREFIX,
-            'env': apiKeys,
+            'env': [{
+                'name': 'NUM_CPU_THREADS',
+                'value': '8',
+              },
+              ...apiKeys,
+            ],
             'resources': {
               'requests': {
                 // NOTE: This is smaller than required purposefully to give room for any other
@@ -397,27 +402,27 @@ async function getPodForWork() {
    *
    * @return {Pod} Available and reserved pod.
    */
-
+  // TODO: Consider logging and monitoring the average time it takes for a pod to respond to a
+  // job request.
   async function _getPodForWork() {
-    let available = PODS.filter(pod => !pod.isReserved());
-    // Sort most recently used first, allowing unused pods to stay unused, triggering down scaling.
-    available = available.sort((a, b) => b.freeSince - a.freeSince);
-    console.log(`_getPodForWork: Number of unreserved pods ${available.length}.`);
-    for (let pod of available) {
-      // Reserve preemptively before `await` during which `javascript` could run another thread
-      // that'll reserve it.
-      pod.reserve();
-      if (await pod.isReady()) { // Get first ready pod.
-        return pod;
-      } else {
-        pod.release();
+    while (true) {
+      let available = PODS.filter(pod => !pod.isReserved());
+      // Sort most recently used first, allowing unused pods to stay unused, triggering down scaling.
+      available = available.sort((a, b) => b.freeSince - a.freeSince);
+      console.log(`_getPodForWork: Number of unreserved pods ${available.length}.`);
+      for (let pod of available) {
+        // Reserve preemptively before `await` during which `javascript` could run another thread
+        // that'll reserve it.
+        pod.reserve();
+        if (await pod.isReady()) { // Get first ready pod.
+          return pod;
+        } else {
+          pod.release();
+        }
       }
+
+      await sleep(parseInt(process.env.AVAILABILITY_LOOP, 10));
     }
-    // TODO: Consider if `Pod.build` is running too long to revist getting other `available` pods.
-    console.log(`_getPodForWork: Created an extra Pod to fufill demand.`);
-    return await Pod.build({
-      reserved: true
-    });
   }
 
   const pod = await _getPodForWork();
@@ -508,7 +513,8 @@ APP.all('/api/*', async (request, response, next) => {
       destination.abort(); // Clean up proxy stream
     }
 
-    // TODO: Listen to ``request`` instead of ``response``.
+    // TODO: Listen to ``request`` instead of ``response`` similar to:
+    // https://github.com/wellsaid-labs/Website/blob/master/web/server/controllers/tts.js
     // Clean up after responding
     response
       .on('close', () => clean(`${prefix}Response emitted 'close' event.`))
