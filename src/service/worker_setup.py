@@ -1,4 +1,4 @@
-""" Runs various preprocessing code to build the custom docker image.
+""" Runs various preprocessing code to build the `docker/worker/Dockerfile` file.
 """
 import json
 import pathlib

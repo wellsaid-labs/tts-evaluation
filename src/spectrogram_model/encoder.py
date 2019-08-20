@@ -74,7 +74,10 @@ class Encoder(nn.Module):
             vocab_size, token_embedding_dim, padding_idx=DEFAULT_PADDING_INDEX)
         self.embed_speaker = None
         if num_speakers > 1:
-            self.embed_speaker = nn.Embedding(num_speakers, speaker_embedding_dim)
+            self.embed_speaker = nn.Sequential(
+                nn.Embedding(num_speakers, speaker_embedding_dim),
+                nn.Linear(speaker_embedding_dim, speaker_embedding_dim), nn.ReLU(),
+                nn.Dropout(0.25), nn.Linear(speaker_embedding_dim, speaker_embedding_dim))
             self.project = nn.Linear(lstm_hidden_size + speaker_embedding_dim, out_dim)
         else:
             self.project = nn.Linear(lstm_hidden_size, out_dim)
