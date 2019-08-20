@@ -67,8 +67,10 @@ class _WaveRNNInferrer(nn.Module):
             # NOTE: The MKL path is hard coded assuming that MKL was installed like so:
             # https://software.intel.com/en-us/articles/installing-intel-free-libs-and-python-apt-repo
             ldflags.append('-L/opt/intel/mkl/lib/intel64/ -lmkl_rt')
-            cflags.append('-DMKL_DIRECT_CALL')
-            cflags.append('-fopenmp')
+            if '-DMKL_DIRECT_CALL' not in cflags:
+                cflags.append('-DMKL_DIRECT_CALL')
+            if '-fopenmp' not in cflags:
+                cflags.append('-fopenmp')
             extra_include_paths.append('/opt/intel/mkl/include/')
         else:
             logger.warning(
