@@ -15,12 +15,12 @@ Refer to the above guides in case there are missing details in the below steps.
 1. Build the container image:
    ```bash
    export PROJECT_ID="$(gcloud config get-value project -q)"
-   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v1.33 .
+   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v1.34 .
    docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v2.05 .
    ```
 1. Push the build:
    ```bash
-   docker push gcr.io/${PROJECT_ID}/speech-api:v1.33
+   docker push gcr.io/${PROJECT_ID}/speech-api:v1.34
    docker push gcr.io/${PROJECT_ID}/speech-api-worker:v2.05
    ```
 1. Test the build:

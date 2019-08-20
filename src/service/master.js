@@ -163,16 +163,19 @@ class Pod {
   }
 
   static async build({
-    statusRetries = 64,
-    statusLoop = 2000,
-    reserved = false
+    statusRetries = 90,
+    statusLoop = 2000
   } = {}) {
     /**
      * Create a `Pod` running an image, ready to recieve requests.
      *
+     * NOTE: The GCP VM cold startup time is around 25 - 45 seconds. Afterwards, it takes time to
+     * download and start the docker image. Learn more:
+     * https://medium.com/google-cloud/understanding-and-profiling-gce-cold-boot-time-32c209fe86ab
+     * https://cloud.google.com/blog/products/gcp/three-steps-to-compute-engine-startup-time-bliss-google-cloud-performance-atlas?m=1
+     *
      * @param {int} statusRetries Number of status checks before giving up on `Pod` creation.
      * @param {number} statusLoop Length in milliseconds between pod status checks.
-     * @param {bool} reserved Reserve the pod on creation, preventing race to reserve the new Pod.
      * @throws Error if Pod is unavailable for work, after querying status `statusRetries` times.
      * @returns {Pod} Returns a `Pod` in the `PODS` pool.
      */
@@ -271,8 +274,7 @@ class Pod {
     }
 
     console.log(`Pod.build: Pod ${name} is ready to recieve traffic at ${info.body.status.podIP}`);
-    const pod = new Pod(name, info.body.status.podIP, podPort);
-    return reserved ? pod.reserve() : pod;
+    return new Pod(name, info.body.status.podIP, podPort);
   }
 }
 
@@ -404,6 +406,12 @@ async function getPodForWork() {
    */
   // TODO: Consider logging and monitoring the average time it takes for a pod to respond to a
   // job request.
+  // NOTE: In this case, there are not enough machines to serve all the concurrent requests.
+  let available = PODS.filter(pod => !pod.isReserved());
+  if (available.length == 0) {
+    Pod.build();
+  }
+
   async function _getPodForWork() {
     while (true) {
       let available = PODS.filter(pod => !pod.isReserved());
