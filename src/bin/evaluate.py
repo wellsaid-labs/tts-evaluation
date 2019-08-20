@@ -172,11 +172,11 @@ def main(dataset,
         destination, ['index=%d' % i] + tags, *args, obscure=obscure)
 
     # Save the target predictions
-    if not no_target_audio and has_target_audio:
+    if has_target_audio:
         # NOTE: Adds `spectrogram_audio` and `spectrogram` column.
         dataset = add_spectrogram_column(dataset, on_disk=False)
-        for i, example in zip(indicies, dataset):
-            if example.spectrogram_audio is not None:
+        if not no_target_audio:
+            for i, example in zip(indicies, dataset):
                 waveform = example.spectrogram_audio.cpu().numpy()
                 audio_path = _save_partial(i, ['type=gold'], example.speaker, waveform)
                 add_to_metadata(example, audio_path=audio_path, example_index=i, type='gold')
@@ -184,7 +184,7 @@ def main(dataset,
         logger.info('Skipping the writing of ground truth audio.')
 
     # Save the griffin-lim predictions
-    if not no_griffin_lim and spectrogram_model_checkpoint is not None:
+    if spectrogram_model_checkpoint is not None:
         logger.info('The spectrogram model path is: %s', spectrogram_model_checkpoint.path)
         dataset = add_predicted_spectrogram_column(
             dataset,
@@ -193,10 +193,11 @@ def main(dataset,
             batch_size=spectrogram_model_batch_size,
             aligned=aligned,
             on_disk=False)
-        for i, example in zip(indicies, dataset):
-            waveform = griffin_lim(example.predicted_spectrogram.cpu().numpy())
-            audio_path = _save_partial(i, ['type=griffin_lim'], example.speaker, waveform)
-            add_to_metadata(example, audio_path=audio_path, example_index=i, type='griffin_lim')
+        if not no_griffin_lim:
+            for i, example in zip(indicies, dataset):
+                waveform = griffin_lim(example.predicted_spectrogram.cpu().numpy())
+                audio_path = _save_partial(i, ['type=griffin_lim'], example.speaker, waveform)
+                add_to_metadata(example, audio_path=audio_path, example_index=i, type='griffin_lim')
     else:
         logger.info('Skipping the writing of griffin-lim predictions.')
 
