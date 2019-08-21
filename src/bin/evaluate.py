@@ -48,6 +48,7 @@ from src.audio import write_audio
 from src.datasets import add_predicted_spectrogram_column
 from src.datasets import add_spectrogram_column
 from src.datasets import TextSpeechRow
+from src.environment import fork_rng
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import log_config
@@ -113,7 +114,8 @@ def main(dataset,
          no_griffin_lim=False,
          no_signal_model=False,
          spectrogram_model_batch_size=1,
-         spectrogram_model_device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+         spectrogram_model_device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
+         random_seed=os.getpid()):
     """ Generate random samples of the `dataset`.
 
     NOTE: Padding can affect the output of the signal and spectrogram model; therefore, it's
@@ -141,6 +143,8 @@ def main(dataset,
         spectrogram_model_batch_size (int, optional)
         spectrogram_model_device (torch.device, optional): Device used for spectrogram model
             inference.
+        random_seed (int, optional): Random seed determining which `dev` rows are randomly
+            evaluated.
     """
     destination = Path(destination)
     destination.mkdir(exist_ok=False, parents=True)
@@ -157,9 +161,11 @@ def main(dataset,
     dataset = dataset() if callable(dataset) else dataset
     dataset = list(
         dataset if speakers is None else filter(lambda r: r.speaker in speakers, dataset))
-    indicies = (
-        list(BalancedSampler(dataset, get_class=lambda r: r.speaker, num_samples=num_samples))
-        if balanced else range(len(dataset)))
+    logger.info('The random seed is: %s', random_seed)
+    with fork_rng(seed=random_seed):
+        indicies = (
+            list(BalancedSampler(dataset, get_class=lambda r: r.speaker, num_samples=num_samples))
+            if balanced else range(len(dataset)))
     dataset = [dataset[i] for i in indicies]
 
     has_target_audio = all(e.audio_path is not None for e in dataset)
@@ -207,6 +213,7 @@ def main(dataset,
             aligned=aligned,
             on_disk=False)
         if not no_griffin_lim:
+            # TODO: Consider predicting `griffin_lim` for real spectrogram.
             for i, example in zip(indicies, dataset):
                 waveform = griffin_lim(example.predicted_spectrogram.cpu().numpy())
                 audio_path = _save_partial(i, ['type=griffin_lim'], example.speaker, waveform)
