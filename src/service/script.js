@@ -10,21 +10,67 @@ document.addEventListener('DOMContentLoaded', function (_) {
   const textarea = document.querySelector('textarea');
   const speakerSelect = document.querySelector('select');
   const apiKeyInput = document.querySelector('input');
-  const generateButton = document.querySelector('button');
+  const generateButton = document.querySelector('#generate-button');
+  const downloadAllButton = document.querySelector('#download-all');
   const errorParagraphElement = document.querySelector('#error p');
   const errorElement = document.querySelector('#error');
   const clipsElement = document.querySelector('#clips');
   const splitBySetencesInput = document.querySelector('#split-by-setences');
 
-  // `zip` function similar to python.
-  const zip = (a, b) => a.map((x, i) => [x, b[i]]);
+  const zip = (a, b) => a.map((x, i) => [x, b[i]]); // `zip` function similar to python.
+
+  function splitIntoSentences(text) {
+    /**
+     * Inspired by:
+     * https://stackoverflow.com/questions/11761563/javascript-regexp-for-splitting-text-into-sentences-and-keeping-the-delimiter
+     * https://stackoverflow.com/questions/25735644/python-regex-for-splitting-text-into-sentences-sentence-tokenizing
+     * https://stackoverflow.com/questions/4576077/python-split-text-on-sentences
+     */
+    if (text.includes("\n")) {
+      return text.split("\n").map(t => splitIntoSentences(t)).flat();
+    }
+
+    text = text.trim();
+    text = text.replace(/([0-9]+)[.]([0-9]+)/, '$1<period>$2');
+    text = text.replace(/(Mr|St|Mrs|Ms|Dr|Prof|Capt|Cpt|Lt|Mt|Inc|Ltd|Jr|Sr|Co)[.]/g, '$1<period>');
+    text = text.replace(/Ph\.D\./g, 'Ph<period>D<period>');
+    text = text.replace(/e\.g\./g, 'e<period>g<period>');
+    text = text.replace(/i\.e\./g, 'i<period>e<period>');
+    text = text.replace(/vs\./g, 'vs<period>');
+    text = text.replace(/([A-Za-z])[.]([A-Za-z])[.]([A-Za-z])[.]/g, '$1<period>$2<period>$3<period>');
+    text = text.replace(/([A-Za-z])[.]([A-Za-z])[.]/g, '$1<period>$2<period>');
+    text = text.replace(/[.](com|net|org|io|gov|me|edu)/g, '<period>$1');
+    text = text.replace(/([.!?][.!?"”'’)]{0,})/g, '$1<stop>');
+    text = text.replace(/<period>/g, '.');
+    return text.split('<stop>').map(t => t.trim()).filter(s => s.length > 0);
+  }
+
+  console.assert(splitIntoSentences('A woman screams .').length == 1);
+  console.assert(splitIntoSentences('A woman screams . Shrill and desolate, the brief sound rips ' +
+    'through the solemn hush in the corridors of the federal courthouse.').length == 2);
+  console.assert(splitIntoSentences('“No pulse,” the doctor shouts.  ' +
+    '“Help, please!” ').length == 2);
+  console.assert(splitIntoSentences('Marta would say ... A woman screams .').length == 2);
+  console.assert(splitIntoSentences('You will learn that Kiril Pafko is both a medical ' +
+    'doctor, an M.D., and a Ph.D. in biochemistry. ').length == 1);
+  console.assert(splitIntoSentences('Mr. John Johnson Jr. was born in the U.S.A but earned his ' +
+    'Ph.D. in Israel before joining Nike Inc. as an engineer. He also worked at craigslist.org ' +
+    'as a business analyst.').length == 2);
+  console.assert(splitIntoSentences('Good morning Dr. Adams. The patient is ' +
+    'waiting for you in room number 3.').length == 2);
+  console.assert(splitIntoSentences('This is waaaaayyyy too much for you!!!!!! ' +
+    'This is waaaaayyyy too much for you!!!!!!').length == 2);
+  console.assert(splitIntoSentences('(How does it deal with this parenthesis?)  ' +
+    '"It should be a new sentence." "(And the same with this one.)" ' +
+    '(\'And this one!\')"(\'(And (this)) \'?)"').length == 5);
 
   async function generate() {
     /**
      * Generate a clip and append it to the UI.
      */
     const textSubmitted = textarea.value.trim();
-    const corpus = splitBySetencesInput.checked ? sentenceSplit(textSubmitted) : [textSubmitted];
+    const corpus = splitBySetencesInput.checked ?
+      splitIntoSentences(textSubmitted) : [textSubmitted];
     const speakerElement = speakerSelect.options[speakerSelect.selectedIndex];
     const speakerId = parseInt(speakerElement.value);
     const apiKey = apiKeyInput.value.trim();
@@ -34,23 +80,13 @@ document.addEventListener('DOMContentLoaded', function (_) {
     for (const text of corpus) {
       const payload = {
         speaker_id: speakerId,
-        text: text,
+        text: text.trim(),
         api_key: apiKey
       };
       payloads.push(payload);
 
       // Check the stream input is valid
       validateParameters(payload);
-      const response = await fetch(`${endpoint}/text_to_speech/input_validated`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      if (!response.ok) {
-        throw (await response.json()).message;
-      }
 
       // Create a UI element to recieve stream
       const sectionElement = document.createElement('section');
@@ -74,9 +110,20 @@ document.addEventListener('DOMContentLoaded', function (_) {
       clipNumber += 1;
     }
 
-    const promises = [];
     for (const [payload, sectionElement] of zip(payloads, sections)) {
-      promises.push(new Promise(function (resolve, _) {
+      new Promise(async () => {
+        const response = await fetch(`${endpoint}/text_to_speech/input_validated`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        if (!response.ok) {
+          sectionElement.querySelector('.progress p').textContent = (await response.json()).message;
+          return;
+        }
+
         // Start stream
         let startTime = new Date().getTime();
         let queuingTime;
@@ -87,7 +134,6 @@ document.addEventListener('DOMContentLoaded', function (_) {
         request.open('POST', `${endpoint}/text_to_speech/stream`);
         request.setRequestHeader('Content-Type', 'application/json');
         request.responseType = 'blob';
-        request.addEventListener('loadstart', resolve);
         request.addEventListener('progress', (event) => {
           if (event.lengthComputable) {
             if (!hasProgress && event.loaded > 0) {
@@ -143,13 +189,27 @@ document.addEventListener('DOMContentLoaded', function (_) {
           }
         });
         request.send(JSON.stringify(payload));
-      }));
+      });
     }
-    return Promise.all(promises);
+  }
+
+  downloadAllButton.onclick = () => {
+    /** Donwload all the audio clips on the page. */
+    document.querySelectorAll('main').forEach((mainElement) => {
+      const filename = mainElement.querySelector('main>div:first-child')
+        .textContent.trim().replace(/\s+/g, '_').toLowerCase() + '.wav';
+      const audioElement = mainElement.querySelector('audio');
+      if (audioElement && audioElement.src) {
+        const link = document.createElement("a");
+        link.href = audioElement.src;
+        link.setAttribute('download', filename);
+        link.click();
+      }
+    });
   }
 
   let isGenerateButtonDisabled = false;
-  generateButton.onclick = async function () {
+  generateButton.onclick = async () => {
     if (!isGenerateButtonDisabled) {
       clearError();
       disableGenerateButton();
@@ -185,16 +245,6 @@ document.addEventListener('DOMContentLoaded', function (_) {
     }
   }
 
-  function sentenceSplit(text) {
-    /**
-     * Inspired by:
-     * https://stackoverflow.com/questions/11761563/javascript-regexp-for-splitting-text-into-sentences-and-keeping-the-delimiter
-     *
-     * @param {string} text
-     * @returns {Array.<string>}
-     */
-    return text.match(/([^\.!\?]+[\.!\?]+)|([^\.!\?]+$)/g);
-  }
 
   function displayError(message) {
     /** Display the error element. */

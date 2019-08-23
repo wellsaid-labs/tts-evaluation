@@ -279,7 +279,7 @@ class _WaveRNNInferrer(nn.Module):
             local_features = torch.nn.functional.pad(local_features,
                                                      (0, 0, half_padding, half_padding))
         assert num_frames > 0, 'Remember to pad `local_features` as described in the docs.'
-        split_size = max(num_frames if split_size is None else split_size, num_frames)
+        split_size = min(num_frames if split_size is None else split_size, num_frames)
         iterator = range(half_padding, local_features.shape[0] - half_padding, split_size)
         splits = [local_features[i - half_padding:i + split_size + half_padding] for i in iterator]
         assert sum([s.shape[0] - padding for s in splits]) == num_frames, 'Invariant failed.'

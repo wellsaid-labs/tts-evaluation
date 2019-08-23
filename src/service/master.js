@@ -9,15 +9,22 @@
  * attack.
  * TODO: Rewrite these dependancies with conda, and without pyenv or pip.
  */
-const express = require('express');
+const AbortController = require('abort-controller');
+const bodyParser = require('body-parser');
 const Client = require('kubernetes-client').Client
 const config = require('kubernetes-client').config
+const express = require('express');
+const fetch = require('node-fetch');
 const uuidv4 = require('uuid/v4');
-const bodyParser = require('body-parser');
-const http = require('http');
 
 const APP = express();
 let PODS = []; // Add and removing pods is handled by `Pod` class.
+
+const logger = {
+  log: (...arguments) => console.log(`[${(new Date()).toISOString()}]`, ...arguments),
+  warn: (...arguments) => console.warn(`[${(new Date()).toISOString()}]`, ...arguments),
+  error: (...arguments) => console.error(`[${(new Date()).toISOString()}]`, ...arguments),
+}
 
 async function getClient() {
   /**
@@ -60,7 +67,7 @@ class Pod {
     return 'Running';
   }
 
-  static isReady(host, port, timeout = 1000) {
+  static async isReady(host, port, timeout = 1000) {
     /**
      * Send a HTTP request to work, ensuring it's ready for more requests.
      *
@@ -68,26 +75,26 @@ class Pod {
      * @param {number} port Port on host to query.
      * @param {number} timeout Timeout for `http.request`.
      */
-    return new Promise((resolve, _) => {
-      console.log(`Pod.isReady: Requesting readiness from ${host}`);
-      const request = http
-        .request({
-          host: host,
-          port: port,
-          path: '/healthy',
-          method: 'GET',
-          headers: {
-            'Connection': 'keep-alive',
-          },
-          timeout: timeout
-        }, (response) => {
-          resolve(response.statusCode == 200);
-        })
-        .on('error', (error) => {
-          console.error(`Pod.isReady Error: ${error.message}`);
-          resolve(false);
-        }).on('timeout', () => request.abort()).end();
-    });
+    try {
+      const abortController = new AbortController();
+      setTimeout(() => abortController.abort(), timeout);
+      const response = await fetch(`http://${host}:${port}/healthy`, {
+        signal: abortController.signal,
+        method: 'GET',
+        headers: {
+          'Connection': 'keep-alive',
+        },
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        logger.error(`Pod.isReady Error "${response.statusText}":\n${body}`);
+      }
+      return response.ok;
+    } catch (error) {
+      logger.error(`Pod.isReady Error: ${error.message}`);
+      return false
+    }
   }
 
   async isReady() {
@@ -120,7 +127,7 @@ class Pod {
       throw `Pod.reserve Error: Pod ${this.name} is reserved, it cannot be reserved again.`
     }
 
-    console.log(`Reserving pod ${this.name}.`);
+    logger.log(`Reserving pod ${this.name}.`);
     this.freeSince = undefined;
     return this;
   }
@@ -129,7 +136,7 @@ class Pod {
     /**
      * Release `this` Pod from the job.
      */
-    console.log(`Releasing pod ${this.name}.`);
+    logger.log(`Releasing pod ${this.name}.`);
     this.freeSince = Date.now();
     return this;
   }
@@ -140,6 +147,7 @@ class Pod {
      */
     // If `this` is reserved then this does not make a request for readiness due to the synchronous
     // implementation of the worker pods.
+    // TODO: Retry a couple times before preemptively killing a pod.
     return !this.isReserved() && !(await this.isReady());
   }
 
@@ -151,13 +159,13 @@ class Pod {
       throw `Pod.destroy Error: Pod ${this.name} is reserved, it cannot be destroyed.`
     }
 
-    console.log(`Pod.destroy: Deleting Pod ${this.name}.`);
+    logger.log(`Pod.destroy: Deleting Pod ${this.name}.`);
     PODS = PODS.filter(pod => pod !== this);
     try {
       await (await getClient()).pods(this.name).delete();
-      console.log(`Pod.destroy: Deleted Pod ${this.name}.`);
+      logger.log(`Pod.destroy: Deleted Pod ${this.name}.`);
     } catch (error) {
-      console.log(`Pod.destroy: Failed to delete Pod ${this.name} due to error: ${error}`);
+      logger.log(`Pod.destroy: Failed to delete Pod ${this.name} due to error: ${error}`);
       // TODO: Handle this scenario, try avoiding leaking a pod.
     }
   }
@@ -180,7 +188,7 @@ class Pod {
      * @returns {Pod} Returns a `Pod` in the `PODS` pool.
      */
     const name = `${process.env.WORKER_POD_PREFIX}-${uuidv4()}`;
-    console.log(`Pod.build: Creating pod named ${name}.`);
+    logger.log(`Pod.build: Creating pod named ${name}.`);
 
     // Included in the Pod environment, a list of API Keys defined by `API_KEY_SUFFIX`.
     let apiKeys = Object.entries(process.env);
@@ -228,8 +236,11 @@ class Pod {
               'requests': {
                 // NOTE: This is smaller than required purposefully to give room for any other
                 // system pods.
-                'memory': '4.25Gi',
+                'memory': '3Gi',
                 'cpu': '7250m'
+              },
+              'limits': {
+                'memory': '5Gi'
               },
             },
             'ports': [{
@@ -243,7 +254,7 @@ class Pod {
       }
     }
     let info = await (await getClient()).pods.post(manifest);
-    console.log(`Pod.build: Pod ${name} created.`);
+    logger.log(`Pod.build: Pod ${name} created.`);
 
     try {
       await retry(async () => { // While Pod is not running or not ready, keep retrying.
@@ -261,19 +272,18 @@ class Pod {
       }, {
         retries: statusRetries,
         delay: statusLoop,
-        exponentialBackoff: false
       });
     } catch (error) {
       try {
-        console.warn(`Pod.build Warning: Unable to start, deleting Pod ${name}.`);
+        logger.warn(`Pod.build Warning: Unable to start, deleting Pod ${name}.`);
         await (await getClient()).pods(name).delete();
       } catch (error) {
-        console.error(`Pod.build Error: Failed to delete Pod ${name} due to error: ${error}`);
+        logger.error(`Pod.build Error: Failed to delete Pod ${name} due to error: ${error}`);
       }
       throw error;
     }
 
-    console.log(`Pod.build: Pod ${name} is ready to recieve traffic at ${info.body.status.podIP}`);
+    logger.log(`Pod.build: Pod ${name} is ready to recieve traffic at ${info.body.status.podIP}`);
     return new Pod(name, info.body.status.podIP, podPort);
   }
 }
@@ -291,7 +301,6 @@ function sleep(milliseconds) {
 async function retry(toTry, {
   retries = 3,
   delay = 100,
-  exponentialBackoff = true
 } = {}) {
   /**
    * Retries a function mulitple times.
@@ -299,23 +308,19 @@ async function retry(toTry, {
    * @param {Function} toTry Function to retry.
    * @param {number} retries Number of times to retry the function.
    * @param {number} delay Initial delay in milliseconds.
-   * @param {bool} exponentialBackoff Increase the delay exponentially every retry.
    * @returns {any}
    */
   for (let i = 0; i < retries; i++) {
     try {
-      console.log(`retry: Attempt #${i}.`);
+      logger.log(`retry: Attempt #${i}.`);
       const result = await toTry();
       return result;
     } catch (error) {
-      console.warn(`retry: Caught this error: ${error}`);
+      logger.warn(`retry: Caught this error: "${error}"`);
       if (i == retries - 1) {
-        console.error(`retry: Reached maximum retries ${retries}, throwing error.`);
+        logger.error(`retry: Reached maximum retries ${retries}, throwing error.`);
         throw error;
       } else {
-        if (exponentialBackoff) {
-          delay *= 2;
-        }
         await sleep(delay);
       }
     }
@@ -348,7 +353,7 @@ async function async_filter(iterator, func) {
   while (true) {
     // Clean up dead pods
     const deadPods = await async_filter(PODS, pod => pod.isDead());
-    console.log(`autoscaleJob: There are ${deadPods.length} dead pod(s).`);
+    logger.log(`autoscaleJob: There are ${deadPods.length} dead pod(s).`);
     await Promise.all(deadPods.map(pod => pod.destroy()));
 
     // Compute the `POD` statistics
@@ -357,9 +362,9 @@ async function async_filter(iterator, func) {
     const numDesired = Math.max(parseInt(process.env.INITIAL_WORKER_PODS, 10),
       Math.ceil(numNotAvailable * (1 + parseFloat(process.env.EXTRA_WORKER_PODS))));
 
-    console.log(`autoscaleJob: There are ${numNotAvailable} unavailable and ` +
+    logger.log(`autoscaleJob: There are ${numNotAvailable} unavailable and ` +
       `${available.length} available pod(s).`);
-    console.log(`autoscaleJob: This desires ${numDesired} pod(s).`);
+    logger.log(`autoscaleJob: This desires ${numDesired} pod(s).`);
 
     // Autoscale to `numDesired`
     if (PODS.length > numDesired) {
@@ -374,7 +379,7 @@ async function async_filter(iterator, func) {
 
       // Select pods to destroy
       let numPodsToDestory = Math.min(PODS.length - numDesired, toDestory.length);
-      console.log(`autoscaleJob: Destorying ${numPodsToDestory} pods.`);
+      logger.log(`autoscaleJob: Destorying ${numPodsToDestory} pods.`);
       toDestory = toDestory.slice(numPodsToDestory);
 
       // Destroy pods
@@ -382,13 +387,13 @@ async function async_filter(iterator, func) {
     } else if (PODS.length < numDesired) {
       // Create additional pods
       const numPodsToCreate = numDesired - PODS.length;
-      console.log(`autoscaleJob: Creating ${numPodsToCreate} pods.`);
+      logger.log(`autoscaleJob: Creating ${numPodsToCreate} pods.`);
       try {
         await Promise.all(Array.from({
           length: numPodsToCreate
         }, () => Pod.build()));
       } catch (error) {
-        console.error(`autoscaleJob: Unable to create pods due to error: ${error}`);
+        logger.error(`autoscaleJob: Unable to create pods due to error: ${error}`);
       }
     }
 
@@ -417,16 +422,15 @@ async function getPodForWork() {
       let available = PODS.filter(pod => !pod.isReserved());
       // Sort most recently used first, allowing unused pods to stay unused, triggering down scaling.
       available = available.sort((a, b) => b.freeSince - a.freeSince);
-      console.log(`_getPodForWork: Number of unreserved pods ${available.length}.`);
+      logger.log(`_getPodForWork: Number of unreserved pods ${available.length}.`);
       for (let pod of available) {
         // Reserve preemptively before `await` during which `javascript` could run another thread
         // that'll reserve it.
         pod.reserve();
         if (await pod.isReady()) { // Get first ready pod.
           return pod;
-        } else {
-          pod.release();
         }
+        pod.release();
       }
 
       await sleep(parseInt(process.env.AVAILABILITY_LOOP, 10));
@@ -434,11 +438,11 @@ async function getPodForWork() {
   }
 
   const pod = await _getPodForWork();
-  console.log(`getPodForWork: Reserved ${pod.name} for work.`);
+  logger.log(`getPodForWork: Reserved ${pod.name} for work.`);
   return pod;
 }
 
-APP.use(bodyParser.raw()); // Learn more: https://github.com/request/request/issues/2391
+APP.use(bodyParser.json());
 
 APP.get('/styles.css', (_, response) => {
   response.sendFile('styles.css', {
@@ -477,7 +481,7 @@ APP.get('/healthy', (_, response) => {
 // TODO: Consider remove `/api/*` so it is not redudant with the subdomain `api`.
 
 APP.all('/api/*', async (request, response, next) => {
-  console.log(`/api/*: Got request.`);
+  logger.log(`/api/*: Got request.`);
   let pod;
   try {
     pod = await getPodForWork();
@@ -486,60 +490,68 @@ APP.all('/api/*', async (request, response, next) => {
     return;
   }
 
+  const ttsAbortController = new AbortController();
+  const prefix = `/api/* [${pod.name}]: `;
+  let isPodReserved = true; // Ensure that a pod is not released twice.
+
+  function exit(message) {
+    if (message) {
+      logger.log(`${prefix}${message}`);
+    }
+    ttsAbortController.abort();
+    response.end();
+    if (isPodReserved) {
+      pod.release(); // Release pod for more work.
+      isPodReserved = false;
+    }
+  }
+
   try {
-    const options = {
-      host: pod.ip,
-      port: pod.port,
-      path: request.url,
+    const ttsEndPoint = `http://${pod.ip}:${pod.port}${request.url}`;
+    // NOTE: We do not log the body because it contains sensitive information.
+    logger.log(`${prefix}Sending request with to ${ttsEndPoint} headers:\n` +
+      JSON.stringify(request.headers));
+    const ttsResponse = await fetch(ttsEndPoint, {
+      signal: ttsAbortController.signal,
       method: request.method,
       headers: request.headers,
-    }
-    const prefix = `/api/* [${pod.name}]: `;
-    console.log(`${prefix}Sending request with headers:\n` +
-      JSON.stringify(options.headers));
-    const destination = http.request(options, (stream) => {
-        // Write stream back.
-        response.writeHead(stream.statusCode, stream.headers);
-        stream
-          .on('data', (chunk) => response.write(chunk))
-          .on('close', () => response.end());
-      })
-      .on('error', (error) => {
-        pod.release();
-        next(`${prefix}\`http.request\` emitted error event: ${error}`);
-      })
-      .on('abort', () => {
-        pod.release();
-        console.log(`${prefix}Stream emitted 'abort' event.`);
-      });
+      body: JSON.stringify(request.body),
+    });
 
-    function clean(message) {
-      if (message) {
-        console.log(message);
-      }
-      pod.release(); // Release pod for more work.
-      destination.abort(); // Clean up proxy stream
-    }
-
-    // TODO: Listen to ``request`` instead of ``response`` similar to:
-    // https://github.com/wellsaid-labs/Website/blob/master/web/server/controllers/tts.js
-    // Clean up after responding
-    response
-      .on('close', () => clean(`${prefix}Response emitted 'close' event.`))
-      .on('finish', () => clean(`${prefix}Response emitted 'finish' event.`))
-      .on('error', (error) => clean(`${prefix}Response emitted 'error' (${error}) event.`));
-
-    // Send data to `http.request`
+    // Handle canceled request
+    // https://stackoverflow.com/questions/35198208/handling-cancelled-request-with-express-node-js-and-angular
+    const requestType = request.constructor.name
     request
-      .on('data', chunk => destination.write(chunk))
-      .on('end', () => destination.end())
-      .on('error', (error) => clean(`${prefix}Request emitted 'error' (${error}) event.`));
+      // NOTE: `http.IncomingMessage`: Handle events when the request has been aborted or the
+      // underlying connection was closed.
+      .on('aborted', () => exit(`\`request\` (${requestType}) emitted 'aborted' event.`))
+      .on('close', () => exit(`\`request\` (${requestType}) emitted 'close' event.`))
+      .on('finish', () => exit(`\`request\` (${requestType}) emitted 'finish' event.`))
+      .on('error', error => exit(`\`request\` (${requestType}) emitted 'error' (${error}) event.`));
 
+    const responeType = response.constructor.name
+    response
+      // NOTE: `http.ServerResponse`: Handle events when the response has been sent or the
+      // underlying connection was closed.
+      .on('close', () => exit(`\`response\` (${responeType}) emitted 'close' event.`))
+      .on('finish', () => exit(`\`response\` (${responeType}) emitted 'finish' event.`))
+      .on('error', error => exit(
+        `\`response\` (${responeType}) emitted 'error' (${error}) event.`));
+
+    // Stream response back
+    response.writeHead(ttsResponse.status, ttsResponse.headers.raw());
+    const ttsResponseType = ttsResponse.body.constructor.name;
+    ttsResponse.body
+      .on('data', chunk => response.write(chunk))
+      // NOTE: `stream.Readable`: Handle events when there is no more data to be read.
+      .on('end', () => exit(`\`ttsResponse.body\` (${ttsResponseType}) emitted 'end' event.`))
+      .on('close', () => exit(`\`ttsResponse.body\` (${ttsResponseType}) emitted 'close' event.`))
+      .on('error', (error) =>
+        exit(`\`ttsResponse.body\` (${ttsResponseType}) emitted 'error' (${error}) event.`));
   } catch (error) { // Catch and clean up after any other error
-    pod.release();
+    exit();
     next(`${prefix}Error: ${error}`);
   }
 });
 
-APP.listen(8000, '0.0.0.0',
-  () => console.log(`Listening on port ${8000}!`));
+APP.listen(8000, '0.0.0.0', () => logger.log(`Listening on port ${8000}!`));

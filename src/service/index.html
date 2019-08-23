@@ -9,7 +9,7 @@
 
 <body>
   <div id="title">
-    <h1>Speech API Demo</h1>
+    <h1>Speech API</h1>
   </div>
   <div id="metadata">
     <input placeholder="API Key" type="password"></input>
@@ -30,13 +30,16 @@
   </div>
   <div id="textarea">
     <textarea placeholder="Type your script here"></textarea>
-    <button>Generate</button>
+    <button id="generate-button">Generate</button>
   </div>
   <div id="controls">
-    <input type="checkbox" id="split-by-setences" name="split-by-setences">
-    <label for="split-by-setences">
-      <p>Naive Sentence Splitter</p>
-    </label>
+    <button id="download-all">Download All</button>
+    <div>
+      <input type="checkbox" id="split-by-setences" name="split-by-setences">
+      <label for="split-by-setences">
+        <p>Split On Sentences</p>
+      </label>
+    </div>
   </div>
   <div id="error">
     <p></p>

@@ -1,6 +1,9 @@
 {
   "_comments": [
     [
+      "NOTE: `.json` files do not allow for comments."
+    ],
+    [
       "This configuration is added to ensure that both `build.py` and `worker.py` can be run",
       "seperately outside of Kubernetes and Docker."
     ],
@@ -10,5 +13,5 @@
     ]
   ],
   "spectrogram_model": "experiments/spectrogram_model/step_183968.pt",
-  "signal_model": "experiments/signal_model/step_195094.pt"
+  "signal_model": "experiments/signal_model/step_165137.pt"
 }

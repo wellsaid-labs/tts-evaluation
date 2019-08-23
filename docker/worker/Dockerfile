@@ -1,4 +1,7 @@
-# NOTE: The total size of this image is expected to be around ~756mb.
+# NOTE: The total size of this image is expected to be around ~756mb. 715 megabytes consist of:
+# - Python dependencies: 247 mb torch, 75 mb numpy
+# - Model weights: 98 mb spectrogram model, 41 mb signal model
+# - Other dependencies: 135 mb intel, 63 mb python 3.6, 56 mb standard packages
 
 # NOTE: The GCP VM cold startup time is around 25 - 45 seconds. Afterwards, it takes time to
 # download and start the docker image. Learn more:

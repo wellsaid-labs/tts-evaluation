@@ -170,14 +170,18 @@ def _stream_text_to_speech_synthesis(text, speaker, max_frames_per_token=30):
     with torch.no_grad():
         spectrogram = spectrogram_model(
             text, speaker, use_tqdm=True, max_frames_per_token=max_frames_per_token, **kwargs)[1]
-    logger.info('Generated spectrogram of shape %s.', spectrogram.shape)
+    logger.info('Generated spectrogram of shape %s for text of shape %s.', spectrogram.shape,
+                text.shape)
 
-    if spectrogram.shape[0] == max_frames_per_token * text.shape[0]:
-        raise FlaskException('Failed to render, try again.', status_code=500)
+    if spectrogram.shape[0] >= max_frames_per_token * text.shape[0]:
+        # NOTE: Status code 508 is "The server detected an infinite loop while processing the
+        # request". Learn more here: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
+        raise FlaskException('Failed to render, try again.', status_code=508)
 
     # TODO: If a loud sound is created, cut off the stream or consider rerendering.
     # TODO: Consider logging various events to stackdriver, to keep track.
 
+    logger.info('Generating waveform header...')
     scale_factor = signal_model_inferrer.conditional_features_upsample.scale_factor
     wav_header, wav_file_size = build_wav_header(scale_factor * spectrogram.shape[0])
 
@@ -186,6 +190,7 @@ def _stream_text_to_speech_synthesis(text, speaker, max_frames_per_token=30):
         """
         assert sys.byteorder == 'little', 'Ensure byte order is of little-endian format.'
         yield wav_header
+        logger.info('Generating waveform...')
         for coarse, fine, _ in signal_model_inferrer(spectrogram, generator=True):
             waveform = combine_signal(coarse, fine, return_int=True).numpy()
             logger.info('Waveform shape %s', waveform.shape)

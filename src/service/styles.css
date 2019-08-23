@@ -20,6 +20,22 @@ b {
   font-weight: bold;
 }
 
+button {
+  width: 120px;
+  height: 40px;
+  border-radius: 8px;
+  outline: 0;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  border: 1px solid #EEEEEE;
+  background-color: #EEEEEE;
+}
+
+button:hover {
+  cursor: pointer;
+}
+
 body>div {
   margin: 8px;
   font-size: 16px;
@@ -91,19 +107,6 @@ body>div {
   right: 0;
   z-index: 10;
   margin: 16px;
-  width: 120px;
-  height: 40px;
-  background-color: #EEEEEE;
-  border: 1px solid #EEEEEE;
-  border-radius: 8px;
-  outline: 0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-#textarea>button:hover {
-  cursor: pointer;
 }
 
 #textarea>button:active {
@@ -162,6 +165,11 @@ section>main>div>div {
   justify-content: center;
 }
 
+section>main>div>div>p {
+  width: calc(100% - 64px);
+  text-align: center;
+}
+
 section>main>div:first-child>p:first-child {
   margin-bottom: 8px;
 }
@@ -173,6 +181,8 @@ section>main>div:first-child>p:first-child {
 
 #controls {
   width: 520px;
+  display: flex;
+  justify-content: space-between;
 }
 
 #controls label {
