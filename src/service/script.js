@@ -5,7 +5,7 @@
  */
 document.addEventListener('DOMContentLoaded', function (_) {
   let clipNumber = 1;
-  const endpoint = '/api/speech_synthesis/v1';
+  const endpoint = '/api/text_to_speech';
 
   const textarea = document.querySelector('textarea');
   const speakerSelect = document.querySelector('select');
@@ -112,7 +112,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
 
     for (const [payload, sectionElement] of zip(payloads, sections)) {
       new Promise(async () => {
-        const response = await fetch(`${endpoint}/text_to_speech/input_validated`, {
+        const response = await fetch(`${endpoint}/input_validated`, {
           method: 'POST',
           body: JSON.stringify(payload),
           headers: {
@@ -131,7 +131,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
         let hasProgress = false;
 
         // Make request for stream
-        request.open('POST', `${endpoint}/text_to_speech/stream`);
+        request.open('POST', `${endpoint}/stream`);
         request.setRequestHeader('Content-Type', 'application/json');
         request.responseType = 'blob';
         request.addEventListener('progress', (event) => {

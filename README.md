@@ -37,7 +37,7 @@ python -m venv venv
 . venv/bin/activate
 
 # Install Python dependencies
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt --upgrade
 ```
 
 ### 3. Install Additional Dependencies

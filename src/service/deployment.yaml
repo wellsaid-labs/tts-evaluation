@@ -6,43 +6,49 @@ metadata:
   name: speech-api
   namespace: default
 spec:
-  progressDeadlineSeconds: 600
   replicas: 1
-  revisionHistoryLimit: 10
   selector:
     matchLabels:
       run: speech-api
-  strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 1
-    type: RollingUpdate
   template:
     metadata:
       labels:
         run: speech-api
     spec:
       nodeSelector:
-        cloud.google.com/gke-nodepool: masters
+        cloud.google.com/gke-nodepool: master-pool
       containers:
         - name: speech-api
           env:
-            - name: AUTOSCALE_LOOP # Time between deciding to scale
-              value: '5000' # 5 seconds in milliseconds
-            - name: AVAILABILITY_LOOP # Time between worker availability checks
-              value: '500' # 500 milliseconds, schedule the clip for the user as fast as possible.
-            - name: AUTOSCALE_DOWNSCALE_DELAY # Minimum time a pod is online, preventing thrashing.
+            # This is the maximum time between recomputing the number of pods. This ensures that
+            # pods are scaled down quickly if pods are no longer in-use.
+            - name: AUTOSCALE_LOOP
+              value: '15000' # 15 seconds in milliseconds
+            # This is the time between checking for pod availability. It is important to schedule
+            # the work for the user as fast as possible.
+            - name: AVAILABILITY_LOOP
+              value: '100' # 100 milliseconds,
+            # This is the time we look into the past to compute the number of resources needed for
+            # the next time period.
+            - name: AUTOSCALE_WINDOW
               value: '600000' # 10 minutes in milliseconds
+            - name: MAXIMUM_PODS
+              value: '100'
             - name: WORKER_POD_IMAGE
-              value: gcr.io/mythical-runner-203817/speech-api-worker:v2.20
+              value: gcr.io/mythical-runner-203817/speech-api-worker:v2.24
             - name: WORKER_POD_EXPOSED_PORT # Port master communicates with its workers on
               value: '8000'
             - name: WORKER_POD_PREFIX
-              value: speech-api-worker
-            - name: INITIAL_WORKER_PODS
+              value: speech-api-worker-pod
+            - name: WORKER_NODE_PREFIX
+              value: speech-api-worker-node
+            - name: WORKER_NODE_POOL
+              value: worker-pool
+            - name: MINIMUM_WORKER_PODS
               value: '1'
-            - name: EXTRA_WORKER_PODS # Percentage of extra additional pods that are unused.
-              value: '0.5'
+            # Percentage of extra additional pods for any spillover jobs.
+            - name: EXTRA_WORKER_PODS
+              value: '1.0'
             - name: API_KEY_SUFFIX # Pattern for discovering api keys
               value: _SPEECH_API_KEY
             - name: MATT_HOCKING_SPEECH_API_KEY # NOTE: Do not forget to create these secrets.
@@ -77,13 +83,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-          image: gcr.io/mythical-runner-203817/speech-api:v1.40
+          image: gcr.io/mythical-runner-203817/speech-api:v1.60
           ports:
             - containerPort: 8000
               protocol: TCP
-          resources:
-            requests:
-              cpu: "400m"
           readinessProbe:
             httpGet:
               path: /healthy
@@ -91,6 +94,3 @@ spec:
             initialDelaySeconds: 5
             timeoutSeconds: 1
             periodSeconds: 15
-      restartPolicy: Always
-      securityContext: {}
-

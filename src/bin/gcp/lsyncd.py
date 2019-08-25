@@ -40,7 +40,8 @@ def get_ip(instance_name):
         subprocess.check_output('gcloud compute instances list --format json',
                                 shell=True).decode("utf-8"))
     instances = [i for i in instances if i['name'] == instance_name]
-    assert len(instances) == 1
+    assert len(instances) == 1, ('The `gcloud` instances cannot be found or there is a '
+                                 'duplicate instance with the same name.')
     return instances[0]['networkInterfaces'][0]['accessConfigs'][0]['natIP']
 
 

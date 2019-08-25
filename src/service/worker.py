@@ -30,15 +30,11 @@ web audio api; therefore, the server must manage it via some database.
 
 Example:
       $ PYTHONPATH=. YOUR_SPEECH_API_KEY=123 python -m src.service.worker
-
-TODO: Write tests for this module.
 """
 from functools import lru_cache
 
-import json
 import logging
 import os
-import pathlib
 import sys
 import unidecode
 
@@ -53,16 +49,17 @@ import torch
 
 from src.audio import build_wav_header
 from src.audio import combine_signal
-from src.environment import ROOT_PATH
 from src.environment import set_basic_logging_config
 from src.hparams import set_hparams
+from src.service.worker_config import SIGNAL_MODEL_CHECKPOINT_PATH
+from src.service.worker_config import SPEAKER_ID_TO_SPEAKER_ID
+from src.service.worker_config import SPECTROGRAM_MODEL_CHECKPOINT_PATH
 from src.utils import Checkpoint
 
 app = Flask(__name__)
 set_basic_logging_config()
 logger = logging.getLogger(__name__)
 load_dotenv()
-model_config = json.loads((ROOT_PATH / 'src' / 'service' / 'models.config.json').read_text())
 DEVICE = torch.device('cpu')
 NO_CACHE_HEADERS = {
     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -71,12 +68,6 @@ NO_CACHE_HEADERS = {
 }
 API_KEY_SUFFIX = '_SPEECH_API_KEY'
 API_KEYS = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
-MIN_API_KEY_LENGTH = min([len(key) for key in API_KEYS]) if len(API_KEYS) > 0 else 0
-MAX_API_KEY_LENGTH = max([len(key) for key in API_KEYS]) if len(API_KEYS) > 0 else 0
-
-# TODO: Upload the models to a bucket online, so that they can be downloaded anywhere at anytime.
-SPECTROGRAM_MODEL_CHECKPOINT_PATH = pathlib.Path(model_config['spectrogram_model'])
-SIGNAL_MODEL_CHECKPOINT_PATH = pathlib.Path(model_config['signal_model'])
 
 
 @lru_cache()
@@ -92,10 +83,6 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
         spectrogram_model (torch.nn.Module)
         input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
     """
-    assert spectrogram_model_checkpoint_path.is_file(
-    ), 'Spectrogram model checkpoint cannot be found.'
-    assert signal_model_checkpoint_path.is_file(), 'Signal model checkpoint cannot be found.'
-
     if 'NUM_CPU_THREADS' in os.environ:
         torch.set_num_threads(int(os.environ['NUM_CPU_THREADS']))
 
@@ -105,14 +92,16 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
 
     set_hparams()
 
-    spectrogram_model = Checkpoint.from_path(spectrogram_model_checkpoint_path, device=DEVICE)
-    spectrogram_model, input_encoder = (spectrogram_model.model, spectrogram_model.input_encoder)
+    spectrogram_model_checkpoint = Checkpoint.from_path(
+        spectrogram_model_checkpoint_path, device=DEVICE)
+    signal_model_checkpoint = Checkpoint.from_path(signal_model_checkpoint_path, device=DEVICE)
 
+    spectrogram_model = spectrogram_model_checkpoint.model
+    input_encoder = spectrogram_model_checkpoint.input_encoder
     logger.info('Loading speakers: %s', input_encoder.speaker_encoder.vocab)
+    signal_model = signal_model_checkpoint.model.to_inferrer()
 
-    signal_model = Checkpoint.from_path(signal_model_checkpoint_path, device=DEVICE)
-    signal_model = signal_model.model.to_inferrer()
-    return signal_model, spectrogram_model, input_encoder
+    return signal_model, spectrogram_model.eval(), input_encoder
 
 
 class FlaskException(Exception):
@@ -139,17 +128,24 @@ class FlaskException(Exception):
 
 
 @app.errorhandler(FlaskException)
-def handle_invalid_usage(error):
-    # Register an error response
+def handle_invalid_usage(error):  # Register an error response
     response = jsonify(error.to_dict())
     response.status_code = error.status_code
     return response
 
 
-def _stream_text_to_speech_synthesis(text, speaker, max_frames_per_token=30):
+def stream_text_to_speech_synthesis(signal_model_inferrer,
+                                    spectrogram_model,
+                                    input_encoder,
+                                    text,
+                                    speaker,
+                                    max_frames_per_token=30):
     """ Helper function for starting a speech synthesis stream.
 
     Args:
+        signal_model (torch.nn.Module)
+        spectrogram_model (torch.nn.Module)
+        input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         text (str)
         speaker (src.datasets.Speaker)
         max_frames_per_token (int): Maximum frames generated per token before erroring. This
@@ -160,7 +156,6 @@ def _stream_text_to_speech_synthesis(text, speaker, max_frames_per_token=30):
         (int): Number of bytes to be returned in total by the generator.
     """
     logger.info('Requested stream conditioned on: "%s" and "%s".', speaker, text)
-    signal_model_inferrer, spectrogram_model, input_encoder = load_checkpoints()
 
     # Compute spectrogram
     text, speaker = input_encoder.encode((text, speaker))
@@ -200,7 +195,11 @@ def _stream_text_to_speech_synthesis(text, speaker, max_frames_per_token=30):
     return response, wav_file_size
 
 
-def _validate_and_unpack(args, max_characters=1000):
+def validate_and_unpack(request_args,
+                        input_encoder,
+                        max_characters=1000,
+                        api_keys=API_KEYS,
+                        speaker_id_to_speaker_id=SPEAKER_ID_TO_SPEAKER_ID):
     """ Validate and unpack the request object.
 
     Args:
@@ -209,34 +208,39 @@ def _validate_and_unpack(args, max_characters=1000):
           text (str)
           api_key (str)
         }
-        max_characters (int)
+        input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
+        max_characters (int, optional)
+        api_keys (list of str, optional)
+        speaker_id_to_speaker_id (dict, optional)
 
     Returns:
         speaker (src.datasets.Speaker)
         text (str)
         api_key (str)
     """
-    if 'api_key' not in args:
+    if 'api_key' not in request_args:
         raise FlaskException('API key was not provided.', status_code=401)
 
     # TODO: Consider using the authorization header instead of a parameter ``api_key``.
-    api_key = args.get('api_key')
+    api_key = request_args.get('api_key')
+    min_api_key_length = min([len(key) for key in api_keys])
+    max_api_key_length = min([len(key) for key in api_keys])
 
-    if not (isinstance(api_key, str) and len(api_key) >= MIN_API_KEY_LENGTH and
-            len(api_key) <= MAX_API_KEY_LENGTH):
+    if not (isinstance(api_key, str) and len(api_key) >= min_api_key_length and
+            len(api_key) <= max_api_key_length):
         raise FlaskException(
             'API key must be a string between %d and %d characters.' %
-            (MIN_API_KEY_LENGTH, MAX_API_KEY_LENGTH),
+            (min_api_key_length, max_api_key_length),
             status_code=401)
 
-    if api_key not in API_KEYS:
+    if api_key not in api_key:
         raise FlaskException('API key is not valid.', status_code=401)
 
-    if not ('speaker_id' in args and 'text' in args):
+    if not ('speaker_id' in request_args and 'text' in request_args):
         raise FlaskException('Must call with keys `speaker_id` and `text`.')
 
-    speaker_id = args.get('speaker_id')
-    text = args.get('text')
+    speaker_id = request_args.get('speaker_id')
+    text = request_args.get('text')
 
     if not isinstance(speaker_id, (str, int)):
         raise FlaskException('Speaker ID must be either an integer or string.')
@@ -251,10 +255,7 @@ def _validate_and_unpack(args, max_characters=1000):
             'Text must be a string under %d characters and more than 0 characters.' %
             max_characters)
 
-    input_encoder = load_checkpoints()[2]
-
-    if not (isinstance(speaker_id, int) and
-            speaker_id < input_encoder.speaker_encoder.vocab_size and speaker_id >= 0):
+    if not (speaker_id < input_encoder.speaker_encoder.vocab_size and speaker_id >= 0):
         raise FlaskException('Speaker ID must be an integer between %d and %d.' %
                              (0, input_encoder.speaker_encoder.vocab_size))
 
@@ -267,25 +268,21 @@ def _validate_and_unpack(args, max_characters=1000):
         improper_characters = ', '.join(sorted(list(improper_characters)))
         raise FlaskException('Text cannot contain these characters: %s' % improper_characters)
 
-    speaker = input_encoder.speaker_encoder.vocab[speaker_id]
-    return speaker, text
-
-
-# NOTE: The route `/api/speech_synthesis/v1/` standads for "speech synthesis api v1"
+    speaker = input_encoder.speaker_encoder.vocab[speaker_id_to_speaker_id[speaker_id]]
+    return text, speaker
 
 
 @app.route('/healthy', methods=['GET'])
 def healthy():
-    # Healthy iff ``load_checkpoints`` succeeds and this route succeeds.
-    load_checkpoints()
-
+    load_checkpoints()  # Healthy iff ``load_checkpoints`` succeeds and this route succeeds.
     return 'ok'
 
 
-# TODO: Remove the `speech_synthesis` namespace, it's not nessecary.
+# NOTE: `/api/speech_synthesis/v1/` was added for backward compatibility.
 
 
 @app.route('/api/speech_synthesis/v1/text_to_speech/input_validated', methods=['GET', 'POST'])
+@app.route('/api/text_to_speech/input_validated', methods=['GET', 'POST'])
 def get_input_validated():
     """ Validate the input to our text-to-speech endpoint before making a stream request.
 
@@ -305,19 +302,14 @@ def get_input_validated():
         Response with status 200 if the arguments are valid; Otherwise, returning a
         `FlaskException`.
     """
-    if request.method == 'POST':
-        args = request.get_json()
-    else:
-        args = request.args
-
-    _validate_and_unpack(args)
+    request_args = request.get_json() if request.method == 'POST' else request.args
+    input_encoder = load_checkpoints()[2]
+    validate_and_unpack(request_args, input_encoder)
     return jsonify({'message': 'OK'})
 
 
-# TODO: Remove `/stream` namespace it's not a helpful segmentation for right now.
-
-
 @app.route('/api/speech_synthesis/v1/text_to_speech/stream', methods=['GET', 'POST'])
+@app.route('/api/text_to_speech/stream', methods=['GET', 'POST'])
 def get_stream():
     """ Get speech given `text` and `speaker`.
 
@@ -330,18 +322,12 @@ def get_stream():
     Returns:
         `audio/wav` streamed in chunks given that the arguments are valid.
     """
-    if request.method == 'POST':
-        # NOTE: There is an edge case when both `speaker_id="3"` and
-        # text="Welcome to Dan’s pizza and shoe repair." breaks the below line. To reproduce, you
-        # must use `node` oddly as well. The error was not reproducible on PostMan. Ditto with
-        # `speaker_id` must be a `string` and the text must be exact; otherwise, the error
-        # was not reproducible.
-        args = request.get_json()
-    else:
-        args = request.args
-
-    speaker, text = _validate_and_unpack(args)
-    response, content_length = _stream_text_to_speech_synthesis(text=text, speaker=speaker)
+    request_args = request.get_json() if request.method == 'POST' else request.args
+    signal_model_inferrer, spectrogram_model, input_encoder = load_checkpoints()
+    text, speaker = validate_and_unpack(request_args, input_encoder)
+    response, content_length = stream_text_to_speech_synthesis(signal_model_inferrer,
+                                                               spectrogram_model, input_encoder,
+                                                               text, speaker)
     headers = NO_CACHE_HEADERS.copy()
     headers['Content-Length'] = content_length
     return Response(response(), headers=headers, mimetype='audio/wav')
@@ -374,5 +360,4 @@ def favicon_ico():
 
 if __name__ == "__main__":
     load_checkpoints()  # Cache checkpoints on worker start.
-
     app.run(host='0.0.0.0', port=8000, debug=True)
