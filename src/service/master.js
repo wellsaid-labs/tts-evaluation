@@ -2,6 +2,8 @@
  * The goal of this master is to assign pods to complete work. It is optimized to handle two
  * primary use cases: burst traffic and consistent traffic.
  *
+ * NOTE: This file is tested via `node tests/service/test_master.js`.
+ *
  * TODO: Ensure that there are multiple copies of master running, in case of version upgrades.
  * TODO: Switch from `npm` to `yarn` for dependancy management.
  * TODO: Consider using HTTPS protocall between LoadBalancer and the container so that the API
