@@ -7,7 +7,6 @@
 process.env['API_KEY_SUFFIX'] = '_SPEECH_API_KEY';
 process.env['AUTOSCALE_WINDOW'] = '600000';
 process.env['AUTOSCALE_LOOP'] = '5000';
-process.env['AVAILABILITY_LOOP'] = '500';
 process.env['EXTRA_WORKER_PODS'] = '1.0';
 process.env['MINIMUM_WORKER_PODS'] = '1';
 process.env['WORKER_NODE_POOL'] = 'workers-v2';
@@ -128,7 +127,7 @@ async function testPodPoolGetNumShortTermPods() {
 
 async function testPodPoolGetNumLongTermPods() {
   console.log('Running `testPodPoolGetNumLongTermPods`.');
-  let eventLog = new master.EventLog();
+  let eventLog = new master.EventLog(2000);
   eventLog.addEvent(1);
   await master.sleep(500);
   eventLog.addEvent(2);
@@ -151,16 +150,49 @@ async function testPodPoolGetNumLongTermPods() {
   assert.equal(master.PodPool.getNumLongTermPods(eventLog, 5, 1.0), 5);
 
   // Test one event
-  eventLog = new master.EventLog();
+  eventLog = new master.EventLog(250);
+  await master.sleep(500);
   eventLog.addEvent(1);
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0), 1);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0), 0);
   assert.equal(master.PodPool.getNumLongTermPods(eventLog, 2, 0), 2);
   assert.equal(master.PodPool.getNumLongTermPods(eventLog, 2, 1.0), 2);
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 1.0), 2);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 1.0), 0);
 
   // Test no events
   assert.equal(master.PodPool.getNumLongTermPods(new master.EventLog(), 0, 0), 0);
 }
+
+async function testPodPoolGetNumLongTermPodsLastEvent() {
+  console.log('Running `testPodPoolGetNumLongTermPodsLastEvent`.');
+  let eventLog = new master.EventLog(1250);
+  eventLog.addEvent(1);
+  await master.sleep(500);
+  eventLog.addEvent(2);
+  // Ensure that time since the last event is accounted for.
+  await master.sleep(1000);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0), 2);
+}
+
+async function testPodPoolGetNumLongTermPodsFirstEvent() {
+  console.log('Running `testPodPoolGetNumLongTermPodsFirstEvent`.');
+  let eventLog = new master.EventLog(1250);
+  eventLog.addEvent(10);
+  await master.sleep(500);
+  eventLog.addEvent(2);
+  // Without a prior event, the zero pods dominates.
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0), 0);
+}
+
+async function testPodPoolGetNumLongTermPodsOldEvent() {
+  console.log('Running `testPodPoolGetNumLongTermPodsOldEvent`.');
+  let eventLog = new master.EventLog(250);
+  eventLog.addEvent(10);
+  await master.sleep(500);
+  eventLog.addEvent(2);
+  // An event before `maxTime` is considered if it's applicable.
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0), 10);
+}
+
 
 async function main() {
   await testEventLog();
@@ -171,6 +203,9 @@ async function main() {
   await testPod();
   await testPodPoolGetNumShortTermPods();
   await testPodPoolGetNumLongTermPods();
+  await testPodPoolGetNumLongTermPodsLastEvent();
+  await testPodPoolGetNumLongTermPodsFirstEvent();
+  await testPodPoolGetNumLongTermPodsOldEvent();
 }
 
 main();

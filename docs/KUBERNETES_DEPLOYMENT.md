@@ -15,18 +15,23 @@ Refer to the above guides in case there are missing details in the below steps.
 1. Build the container image:
    ```bash
    export PROJECT_ID="$(gcloud config get-value project -q)"
-   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v1.40 .
-   docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v2.20 .
+   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v1.84 .
+   docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v2.25 .
    ```
 1. Push the build:
    ```bash
-   docker push gcr.io/${PROJECT_ID}/speech-api:v1.40
-   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v2.20
+   docker push gcr.io/${PROJECT_ID}/speech-api:v1.84
+   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v2.25
    ```
 1. Test the build:
    ```bash
    docker run --rm -p 8000:8000 -e "YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api-worker:v2.20
+      gcr.io/${PROJECT_ID}/speech-api-worker:v2.25
+   ```
+   Or:
+   ```bash
+   docker run --rm -p 8000:8000 -e "AUTOSCALE_LOOP=5000 YOUR_SPEECH_API_KEY=123" \
+      gcr.io/${PROJECT_ID}/speech-api:v1.84
    ```
 1. Update the Kubernetes deployment manifest (e.g. `src/service/deployment.yaml`) with the updated
    images.
@@ -43,7 +48,7 @@ Similar to the above, except:
   https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04
 - For authentication reasons, the build should be pushed with the `gcloud` tool:
   ```bash
-  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v2.20
+  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v2.25
   ```
   Learn more here: https://cloud.google.com/container-registry/docs/advanced-authentication
 
@@ -63,14 +68,10 @@ Note that we need to still investigate using preemtible nodes.
     1. Pick the `Standard cluster` template on the left hand side.
     1. Ensure that the `Maintenance window` is set to 3:00am under
        `Availability, networking, security, and additional features`.
-    1. Name the cluster at the top of the form. The name should describe properties of the cluster
-       like compute resources, region, usage, etc.
     1. Create a `Node pool` for worker and master nodes. The worker and master likely do not need
        default 100GB disk size. The worker likely has an optimized architecture that it runs
        most quickly on.
     1. Pick the required computer resources for this deployment.
-    1. Expand the `Advanced options` section. Google has some suggestions marked by an exclamation
-       mark, so follow them.
 1. Assuming GKE is installed on your system. Log into your cluster via:
    ```bash
    gcloud container clusters get-credentials yourclustername --zone=yourclusterzone
@@ -78,7 +79,7 @@ Note that we need to still investigate using preemtible nodes.
 1. Set up permissions via RBAC:
     1. To run the next step, your account will need to be a `cluster-admin`:
        ```bash
-       kubectl create clusterrolebinding yourname-cluster-admin-binding \
+       kubectl create clusterrolebinding your-name-cluster-admin-binding \
            --clusterrole=cluster-admin \
            --user=youremail
        ```

@@ -19,6 +19,16 @@ document.addEventListener('DOMContentLoaded', function (_) {
 
   const zip = (a, b) => a.map((x, i) => [x, b[i]]); // `zip` function similar to python.
 
+  /**
+   * Sleep for a number of milliseconds.
+   *
+   * @param {number} milliseconds Number of milliseconds to sleep.
+   * @returns {Promise}
+   */
+  function sleep(milliseconds) {
+    return new Promise(resolve => setTimeout(resolve, milliseconds));
+  }
+
   function splitIntoSentences(text) {
     /**
      * Inspired by:
@@ -83,7 +93,6 @@ document.addEventListener('DOMContentLoaded', function (_) {
         text: text.trim(),
         api_key: apiKey
       };
-      payloads.push(payload);
 
       // Check the stream input is valid
       validateParameters(payload);
@@ -105,25 +114,28 @@ document.addEventListener('DOMContentLoaded', function (_) {
                                   <footer>
                                     <p></p>
                                   </footer>`;
-      sections.push(sectionElement);
       clipsElement.prepend(sectionElement);
       clipNumber += 1;
+
+      const response = await fetch(`${endpoint}/input_validated`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!response.ok) {
+        sectionElement.querySelector('.progress p').textContent = (await response.json()).message;
+      } else {
+        sections.push(sectionElement);
+        payloads.push(payload);
+      }
     }
 
     for (const [payload, sectionElement] of zip(payloads, sections)) {
+      // NOTE: Chrome will only keep six connections open at a time:
+      // https://stackoverflow.com/questions/29206067/understanding-chrome-network-log-stalled-state
       new Promise(async () => {
-        const response = await fetch(`${endpoint}/input_validated`, {
-          method: 'POST',
-          body: JSON.stringify(payload),
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-        if (!response.ok) {
-          sectionElement.querySelector('.progress p').textContent = (await response.json()).message;
-          return;
-        }
-
         // Start stream
         let startTime = new Date().getTime();
         let queuingTime;
@@ -190,6 +202,10 @@ document.addEventListener('DOMContentLoaded', function (_) {
         });
         request.send(JSON.stringify(payload));
       });
+      // NOTE: Ensure that the requests are captured by the server in the right order. In the
+      // future, this can be done more efficiently with a `Date` header. Learn more:
+      // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Date
+      await sleep(100);
     }
   }
 
