@@ -120,6 +120,7 @@ Refer to the above guides in case there are missing details in the below steps.
         1. Within the details, there is a section titled "Ingress". Within the section, click the
            link to the right of "Backend services".
         1. On the top nav bar select "edit", edit the timeout to 3600 (1 hour).
+        1. Wait up to 10 minutes to the changes to take effect.
     1. It is important to set up a secure HTTPS endpoint, here are the steps to do so:
         1. On a web browser, navigate to the ingress service in the GKE frontend landing on a
            page called "Ingress Details".
