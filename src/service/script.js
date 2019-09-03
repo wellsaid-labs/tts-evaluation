@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
   const errorElement = document.querySelector('#error');
   const clipsElement = document.querySelector('#clips');
   const splitBySetencesInput = document.querySelector('#split-by-setences');
+  const allAudio = [];
 
   const zip = (a, b) => a.map((x, i) => [x, b[i]]); // `zip` function similar to python.
 
@@ -73,6 +74,85 @@ document.addEventListener('DOMContentLoaded', function (_) {
   console.assert(splitIntoSentences('(How does it deal with this parenthesis?)  ' +
     '"It should be a new sentence." "(And the same with this one.)" ' +
     '(\'And this one!\')"(\'(And (this)) \'?)"').length == 5);
+
+  function requestAudio(payload, sectionElement, retry = 0, maxRetries = 3) {
+    // Start stream
+    let startTime = new Date().getTime();
+    let queuingTime;
+    const request = new XMLHttpRequest();
+    let hasProgress = false;
+
+    // Make request for stream
+    request.open('POST', `${endpoint}/stream`);
+    request.setRequestHeader('Content-Type', 'application/json');
+    request.responseType = 'blob';
+    request.addEventListener('progress', (event) => {
+      if (event.lengthComputable) {
+        if (!hasProgress && event.loaded > 0) {
+          hasProgress = true;
+          // The server sends first WAV headers, before generating the spectrogram.
+          queuingTime = ((new Date().getTime()) - startTime) / 1000;
+        }
+        let percentage = event.loaded / event.total;
+        const now = new Date().getTime();
+        let estimatedTimeLeft = ((now - startTime) / percentage) * (1 - percentage);
+        estimatedTimeLeft = secondsToString(estimatedTimeLeft / 1000);
+        percentage = Math.round(percentage * 100); // Decimals to percent
+        const message = `${Math.round(percentage)}% Generated - ${estimatedTimeLeft} Left`
+        sectionElement.querySelector('.progress p').textContent = message;
+      }
+    });
+    request.addEventListener('error', (error) => {
+      console.error(error);
+      sectionElement.querySelector('.progress p').textContent = `Network error.`;
+    });
+    request.addEventListener('timeout', () => {
+      sectionElement.querySelector('.progress p').textContent = `Request timed out.`;
+    });
+    request.addEventListener('abort', () => {
+      sectionElement.querySelector('.progress p').textContent = `Request aborted.`;
+    });
+    request.addEventListener('load', () => {
+      if (request.status === 200) {
+        sectionElement.querySelector('.progress').style.display = 'none';
+        const audioElement = sectionElement.querySelector('audio');
+        const generatingTime = ((new Date().getTime()) - startTime) / 1000;
+
+        // Add statistics to the footer on `audioElement` load.
+        audioElement.addEventListener('loadedmetadata', () => {
+          // `numSamples` assumes the 16-bit audio and a 44-bit WAV header.
+          const numSamples = (request.getResponseHeader("Content-Length") - 44) / 2;
+          const generatingWaveTime = generatingTime - queuingTime;
+          const samplesPerSecond = Math.round(numSamples / generatingWaveTime);
+          sectionElement.querySelector('footer p').innerHTML = ([
+            `Audio Duration: ${Math.round(audioElement.duration * 100) / 100}s`,
+            `Generation Timer: ${Math.round(generatingTime * 100) / 100}s`,
+            `Queuing / Spectrogram Timer: ${Math.round(queuingTime * 100) / 100}s`,
+            `Waveform Timer: ${Math.round(generatingWaveTime * 100) / 100}s`,
+            `${Math.round(samplesPerSecond)} Samples Per Second`,
+          ].join('&nbsp;&nbsp;|&nbsp;&nbsp;'));
+        });
+
+        allAudio.push({
+          'response': request.response,
+          'speakerId': payload.speaker_id,
+          'text': payload.text,
+        });
+        audioElement.src = window.URL.createObjectURL(request.response);
+        audioElement.load();
+      } else {
+        if (request.status === 502 && retry < maxRetries) {
+          sectionElement.querySelector('.progress p').textContent =
+            'Queuing / Generating Spectrogram';
+          requestAudio(payload, sectionElement, retry + 1);
+        } else {
+          const message = `Status code ${request.status}.`;
+          sectionElement.querySelector('.progress p').textContent = message;
+        }
+      }
+    });
+    request.send(JSON.stringify(payload));
+  };
 
   async function generate() {
     /**
@@ -135,73 +215,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
     for (const [payload, sectionElement] of zip(payloads, sections)) {
       // NOTE: Chrome will only keep six connections open at a time:
       // https://stackoverflow.com/questions/29206067/understanding-chrome-network-log-stalled-state
-      new Promise(async () => {
-        // Start stream
-        let startTime = new Date().getTime();
-        let queuingTime;
-        const request = new XMLHttpRequest();
-        let hasProgress = false;
-
-        // Make request for stream
-        request.open('POST', `${endpoint}/stream`);
-        request.setRequestHeader('Content-Type', 'application/json');
-        request.responseType = 'blob';
-        request.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            if (!hasProgress && event.loaded > 0) {
-              hasProgress = true;
-              // The server sends first WAV headers, before generating the spectrogram.
-              queuingTime = ((new Date().getTime()) - startTime) / 1000;
-            }
-            let percentage = event.loaded / event.total;
-            const now = new Date().getTime();
-            let estimatedTimeLeft = ((now - startTime) / percentage) * (1 - percentage);
-            estimatedTimeLeft = secondsToString(estimatedTimeLeft / 1000);
-            percentage = Math.round(percentage * 100); // Decimals to percent
-            const message = `${Math.round(percentage)}% Generated - ${estimatedTimeLeft} Left`
-            sectionElement.querySelector('.progress p').textContent = message;
-          }
-        });
-        request.addEventListener('error', (error) => {
-          console.error(error);
-          sectionElement.querySelector('.progress p').textContent = `Network error.`;
-        });
-        request.addEventListener('timeout', () => {
-          sectionElement.querySelector('.progress p').textContent = `Request timed out.`;
-        });
-        request.addEventListener('abort', () => {
-          sectionElement.querySelector('.progress p').textContent = `Request aborted.`;
-        });
-        request.addEventListener('load', () => {
-          if (request.status === 200) {
-            sectionElement.querySelector('.progress').style.display = 'none';
-            const audioElement = sectionElement.querySelector('audio');
-            const generatingTime = ((new Date().getTime()) - startTime) / 1000;
-
-            // Add statistics to the footer on `audioElement` load.
-            audioElement.addEventListener('loadedmetadata', () => {
-              // `numSamples` assumes the 16-bit audio and a 44-bit WAV header.
-              const numSamples = (request.getResponseHeader("Content-Length") - 44) / 2;
-              const generatingWaveTime = generatingTime - queuingTime;
-              const samplesPerSecond = Math.round(numSamples / generatingWaveTime);
-              sectionElement.querySelector('footer p').innerHTML = ([
-                `Audio Duration: ${Math.round(audioElement.duration * 100) / 100}s`,
-                `Generation Timer: ${Math.round(generatingTime * 100) / 100}s`,
-                `Queuing / Spectrogram Timer: ${Math.round(queuingTime * 100) / 100}s`,
-                `Waveform Timer: ${Math.round(generatingWaveTime * 100) / 100}s`,
-                `${Math.round(samplesPerSecond)} Samples Per Second`,
-              ].join('&nbsp;&nbsp;|&nbsp;&nbsp;'));
-            });
-
-            audioElement.src = window.URL.createObjectURL(request.response);
-            audioElement.load();
-          } else {
-            const message = `Status code ${request.status}.`;
-            sectionElement.querySelector('.progress p').textContent = message;
-          }
-        });
-        request.send(JSON.stringify(payload));
-      });
+      requestAudio(payload, sectionElement);
       // NOTE: Ensure that the requests are captured by the server in the right order. In the
       // future, this can be done more efficiently with a `Date` header. Learn more:
       // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Date
@@ -211,16 +225,29 @@ document.addEventListener('DOMContentLoaded', function (_) {
 
   downloadAllButton.onclick = () => {
     /** Donwload all the audio clips on the page. */
-    document.querySelectorAll('main').forEach((mainElement) => {
-      const filename = mainElement.querySelector('main>div:first-child')
-        .textContent.trim().replace(/\s+/g, '_').toLowerCase() + '.wav';
-      const audioElement = mainElement.querySelector('audio');
-      if (audioElement && audioElement.src) {
-        const link = document.createElement("a");
-        link.href = audioElement.src;
-        link.setAttribute('download', filename);
-        link.click();
+    if (allAudio.length == 0) {
+      return;
+    }
+
+    const zip = new JSZip();
+    const clips = zip.folder("clips");
+    allAudio.forEach(function ({
+      response,
+      speakerId,
+      text,
+      maxTextLength = 50, // NOTE: There is a maximum length in various OSs for filenames.
+    }, i) {
+      const speakerName = speakerSelect.options[speakerId].text;
+      let partialText = text.trim();
+      if (partialText.length > maxTextLength) {
+        partialText = partialText.slice(0, maxTextLength) + '...';
       }
+      clips.file(i + ' - ' + speakerName.trim() + ' - ' + partialText + '.wav', response);
+    });
+    zip.generateAsync({
+      type: "blob"
+    }).then(content => {
+      saveAs(content, 'clips.zip');
     });
   }
 

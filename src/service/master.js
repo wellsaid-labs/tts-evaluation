@@ -11,6 +11,7 @@
  * TODO: Consider creating a namespace in kubernetes, it's proper practice.
  * TODO: Put a cache in front of the API frontend, ensuring it does not fail under a DDOS
  * attack.
+ * TODO: Track the audio hour cost and the price efficiency.
  * TODO: The workers managed by this master run on pods managed by Kubernetes. Those pods are
  *  executed on nodes that run on Google Cloud VMs. The provisioning of the VMs are managed by the
  *  GKE auto-scalar that is not configurable. Learn more:
@@ -195,11 +196,16 @@ class Pod {
   /**
    * Check if this Pod is ready for more requests.
    *
+   * NOTE (September, 2019): The worker should respond in at most ~1.5 seconds. The maximum response
+   * time occurs when the worker is aborted right after starting a new generation. The worker will
+   * not abort until it attempts to send some results.
+   *
+   * @param {string} name The pod name to request.
    * @param {string} host Host to make HTTP request to.
    * @param {number} port Port on host to query.
    * @param {number} timeout Timeout for the HTTP request.
    */
-  static async isReady(host, port, timeout = 1000) {
+  static async isReady(name, host, port, timeout = 5000) {
     try {
       const abortController = new AbortController();
       setTimeout(() => abortController.abort(), timeout);
@@ -214,11 +220,14 @@ class Pod {
 
       if (!response.ok) {
         const body = await response.text();
-        logger.error(`Pod.isReady Error "${response.statusText}":\n${body}`);
+        logger.error(`[${name}] Pod.isReady Error ${response.status} ` +
+          `"${response.statusText}":\n${body}`);
+      } else {
+        logger.log(`Pod.isReady: Pod ${name} is ready.`);
       }
       return response.ok;
     } catch (error) {
-      logger.error(`Pod.isReady Error: ${error.message}`);
+      logger.error(`[${name}] Pod.isReady Error: ${error.message}`);
       return false
     }
   }
@@ -228,7 +237,7 @@ class Pod {
       throw `Pod.isReady Error: Pod ${this.name} has already been destroyed.`
     }
 
-    return Pod.isReady(this.ip, this.port);
+    return Pod.isReady(this.name, this.ip, this.port);
   }
 
   /**
@@ -437,7 +446,7 @@ class Pod {
         // Learn more about pod status:
         // https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/
         if (info.body.status.phase == 'Running') {
-          if (!(await Pod.isReady(info.body.status.podIP, podPort))) {
+          if (!(await Pod.isReady(name, info.body.status.podIP, podPort))) {
             throw 'Pod.build Error: Pod is not ready to recieve work.';
           }
         } else {
@@ -531,17 +540,27 @@ class PodPool {
   /**
    * Reserve a pod for work.
    *
-   * @returns {Pod} A reserved pod available to complete work.
+   * @param {function(Pod)} reservedPodCallback Callback called with a reserved Pod available for
+   *  work.
+   * @param {function} cancelPodRequest Callback this function to cancel the reservation.
    */
-  async reservePod() {
-    return new Promise((resolve) => {
-      logger.log(`PodPool.reservePod: Requesting pod for work.`);
-      this.podRequests.push((pod) => {
-        logger.log(`PodPool.reservePod: Reserved ${pod.name} for work.`);
-        resolve(pod);
-      });
-      this.fufillPodRequests(); // Attempt to immediately fufill the pod request.
-    });
+  reservePod(reservedPodCallback) {
+    logger.log(`PodPool.reservePod: Requesting pod for work.`);
+    const callback = (pod) => {
+      logger.log(`PodPool.reservePod: Reserved ${pod.name} for work.`);
+      return reservedPodCallback(pod);
+    };
+    this.podRequests.push(callback);
+    this.fufillPodRequests(); // Attempt to immediately fufill the pod request.
+    return () => {
+      if (this.podRequests.includes(callback)) {
+        logger.log(`PodPool.reservePod: Canceling one Pod request from ` +
+          `${this.podRequests.length} Pod request(s).`);
+        this.podRequests = this.podRequests.filter(r => r !== callback);
+        logger.log(`PodPool.reservePod: There are ${this.podRequests.length} Pod request(s).`);
+        this.scale();
+      }
+    }
   }
 
   /**
@@ -549,7 +568,7 @@ class PodPool {
    *
    * @param {Pod} pod The pod to release.
    */
-  async releasePod(pod) {
+  releasePod(pod) {
     pod.release();
     logger.log(`PodPool.releasePod: Released ${pod.name}.`);
     this.logNumReservedPods();
@@ -626,7 +645,7 @@ class PodPool {
           this.fufillPodRequests();
         }
       } catch (error) {
-        throw `PodPool.upscale Error: Pod build failed: ${error}`;
+        logger.warn(`PodPool.upscale Error: Pod build failed: ${error}`);
       }
       this.numPodsBuilding -= 1;
     }));
@@ -636,7 +655,9 @@ class PodPool {
    * Remove any dead pods.
    */
   async clean() {
-    const deadPods = await asyncFilter(this.pods, p => p.isDead());
+    let deadPods = await asyncFilter(this.pods, p => p.isDead());
+    // NOTE: `filter` any pods that left `this.pods` during `await`.
+    deadPods = deadPods.filter(p => this.pods.includes(p));
     logger.log(`PodPool.clean: There are ${deadPods.length} dead pod(s).`);
     this.pods = this.pods.filter(p => !deadPods.includes(p));
     return Promise.all(deadPods.map(p => p.destroy()));
@@ -691,7 +712,7 @@ class PodPool {
     extraPods = parseFloat(process.env.EXTRA_WORKER_PODS),
   ) {
     const numEvents = reservationLog.events.length;
-    logger.log(`PodPool.getNumLongTermPods: There are ${numEvents} events in  \`reservationLog\`.`);
+    logger.log(`PodPool.getNumLongTermPods: There are ${numEvents} events in \`reservationLog\`.`);
     if (numEvents == 0) {
       return minPods;
     }
@@ -760,80 +781,100 @@ APP.get('/healthy', (_, response) => {
   response.send('ok');
 });
 
-// TODO: Consider remove `/api/*` so it is not redudant with the subdomain `api`.
+// TODO: Consider remove `/api/*` so it is not redundant with the subdomain `api`.
+
+/**
+ * Call `func` on the close of `request` or `response`.
+ *
+ * @param {http.IncomingMessage} request
+ * @param {http.ServerResponse} response
+ * @param {function} func
+ */
+function onClose(request, response, func) {
+  // Handle canceled request
+  // https://stackoverflow.com/questions/35198208/handling-cancelled-request-with-express-node-js-and-angular
+  // NOTE: `http.IncomingMessage`: Handle events when the request has been aborted or the underlying
+  // connection was closed.
+  const requestPrefix = '[request (http.IncomingMessage)] ';
+  request
+    .on('aborted', () => func(`${requestPrefix}Emitted 'aborted' event.`))
+    .on('close', () => func(`${requestPrefix}Emitted 'close' event.`))
+    .on('error', error => func(`${requestPrefix}Emitted 'error' (${error}) event.`));
+
+  // NOTE: `http.ServerResponse`: Handle events when the response has been sent or the underlying
+  // connection was closed.
+  const responsePrefix = '[response (http.ServerResponse)] ';
+  response
+    .on('close', () => func(`${responsePrefix}Emitted 'close' event.`))
+    .on('finish', () => func(`${responsePrefix}Emitted 'finish' event.`))
+    .on('error', error => func(`${responsePrefix}Emitted 'error' (${error}) event.`));
+}
 
 APP.all('/api/*', async (request, response, next) => {
-  logger.log(`/api/*: Got request.`);
-  let pod;
-  try {
-    pod = await request.app.locals.podPool.reservePod();
-  } catch (error) {
-    next(error);
-    return;
-  }
+  let prefix = `/api/*: `;
+  logger.log(`${prefix}Got request.`);
 
-  const ttsAbortController = new AbortController();
-  const prefix = `/api/* [${pod.name}]: `;
-  let isPodReserved = true; // Ensure that a pod is not released twice.
+  // TODO: Consider sending a partial header to indicate that the request was recieved. Furthermore,
+  // it'll prevent Chrome timing out requests with a 502 based on TTFB.
 
-  function exit(message) {
-    if (message) {
-      logger.log(`${prefix}${message}`);
+  const cancelReservation = request.app.locals.podPool.reservePod(async (pod) => {
+    prefix = `/api/* [${pod.name}]: `;
+    let isPodReserved = true; // Ensure that `Pod` is not released twice.
+    const ttsAbortController = new AbortController(); // Abort `await fetch`
+    const handleClose = () => {
+      ttsAbortController.abort();
+      logger.log(`${prefix}Trying to release \`Pod\`.`);
+      if (isPodReserved) {
+        request.app.locals.podPool.releasePod(pod);
+        isPodReserved = false;
+      }
+    };
+    onClose(request, response, handleClose); // Handle an aborts with `await fetch`.
+
+    try {
+      // WARNING: Do not log request body because it contains sensitive user information.
+      const ttsEndPoint = `http://${pod.ip}:${pod.port}${request.url}`;
+      logger.log(`${prefix}Sending request with to ${ttsEndPoint} headers:\n` +
+        JSON.stringify(request.headers));
+      const ttsResponse = await fetch(ttsEndPoint, {
+        signal: ttsAbortController.signal,
+        method: request.method,
+        headers: request.headers,
+        body: JSON.stringify(request.body),
+      });
+
+      // Stream response back
+      response.writeHead(ttsResponse.status, ttsResponse.headers.raw());
+      // NOTE (September 2019): It may take up to a 2 seconds for the first body chunk to be
+      // written.
+      response.flushHeaders();
+      ttsResponse.body
+        .on('data', chunk => response.write(chunk))
+        .on('end', () => {
+          logger.log(`${prefix}[ttsResponse.body] Emitted 'close' event.`);
+          response.end();
+        })
+        .on('error', (error) => {
+          logger.log(`${prefix}[ttsResponse.body] Emitted 'error' (${error}) event.`);
+          handleClose();
+          next(error);
+        });
+    } catch (error) {
+      handleClose();
+      next(error);
     }
-    ttsAbortController.abort();
-    response.end();
-    if (isPodReserved) {
-      request.app.locals.podPool.releasePod(pod);
-      isPodReserved = false;
-    }
-  }
+  });
 
-  try {
-    const ttsEndPoint = `http://${pod.ip}:${pod.port}${request.url}`;
-    // NOTE: We do not log the body because it contains sensitive information.
-    logger.log(`${prefix}Sending request with to ${ttsEndPoint} headers:\n` +
-      JSON.stringify(request.headers));
-    const ttsResponse = await fetch(ttsEndPoint, {
-      signal: ttsAbortController.signal,
-      method: request.method,
-      headers: request.headers,
-      body: JSON.stringify(request.body),
-    });
+  onClose(request, response, (event) => {
+    logger.log(`${prefix}${event}`);
+    cancelReservation();
+  });
+});
 
-    // Handle canceled request
-    // https://stackoverflow.com/questions/35198208/handling-cancelled-request-with-express-node-js-and-angular
-    const requestType = request.constructor.name
-    request
-      // NOTE: `http.IncomingMessage`: Handle events when the request has been aborted or the
-      // underlying connection was closed.
-      .on('aborted', () => exit(`\`request\` (${requestType}) emitted 'aborted' event.`))
-      .on('close', () => exit(`\`request\` (${requestType}) emitted 'close' event.`))
-      .on('finish', () => exit(`\`request\` (${requestType}) emitted 'finish' event.`))
-      .on('error', error => exit(`\`request\` (${requestType}) emitted 'error' (${error}) event.`));
-
-    const responeType = response.constructor.name
-    response
-      // NOTE: `http.ServerResponse`: Handle events when the response has been sent or the
-      // underlying connection was closed.
-      .on('close', () => exit(`\`response\` (${responeType}) emitted 'close' event.`))
-      .on('finish', () => exit(`\`response\` (${responeType}) emitted 'finish' event.`))
-      .on('error', error => exit(
-        `\`response\` (${responeType}) emitted 'error' (${error}) event.`));
-
-    // Stream response back
-    response.writeHead(ttsResponse.status, ttsResponse.headers.raw());
-    const ttsResponseType = ttsResponse.body.constructor.name;
-    ttsResponse.body
-      .on('data', chunk => response.write(chunk))
-      // NOTE: `stream.Readable`: Handle events when there is no more data to be read.
-      .on('end', () => exit(`\`ttsResponse.body\` (${ttsResponseType}) emitted 'end' event.`))
-      .on('close', () => exit(`\`ttsResponse.body\` (${ttsResponseType}) emitted 'close' event.`))
-      .on('error', (error) =>
-        exit(`\`ttsResponse.body\` (${ttsResponseType}) emitted 'error' (${error}) event.`));
-  } catch (error) { // Catch and clean up after any other error
-    exit(`${prefix}Error: ${error}`);
-    next(error);
-  }
+// Catch-all error handler.
+APP.use((error, request, response) => {
+  logger.error(error);
+  response.sendStatus(500);
 });
 
 if (require.main === module) {
@@ -848,7 +889,7 @@ if (require.main === module) {
     listener.close(() => {
       console.log('HTTP server closed.');
       clearTimeout(APP.locals.podPool.loopTimeout);
-      // NOTE: There needs to be at least 1 Pod for GKE to function.
+      // NOTE: There needs to be at least 1 `Pod` for GKE to function.
       APP.locals.podPool.clean();
       APP.locals.podPool.downscale(1);
     });

@@ -183,14 +183,19 @@ def stream_text_to_speech_synthesis(signal_model_inferrer,
     def response():
         """ Generator incrementally generating a WAV file.
         """
-        assert sys.byteorder == 'little', 'Ensure byte order is of little-endian format.'
-        yield wav_header
-        logger.info('Generating waveform...')
-        for coarse, fine, _ in signal_model_inferrer(spectrogram, generator=True):
-            waveform = combine_signal(coarse, fine, return_int=True).numpy()
-            logger.info('Waveform shape %s', waveform.shape)
-            yield waveform.tostring()
-        logger.info('Finished generating waveform.')
+        try:
+            assert sys.byteorder == 'little', 'Ensure byte order is of little-endian format.'
+            yield wav_header
+            logger.info('Generating waveform...')
+            for coarse, fine, _ in signal_model_inferrer(spectrogram, generator=True):
+                waveform = combine_signal(coarse, fine, return_int=True).numpy()
+                logger.info('Waveform shape %s', waveform.shape)
+                yield waveform.tostring()
+            logger.info('Finished generating waveform.')
+        # NOTE: Flask may abort this generator if the underlying request aborts.
+        except Exception as error:
+            logging.exception('Finished generating waveform.')
+            raise error
 
     return response, wav_file_size
 
@@ -255,9 +260,11 @@ def validate_and_unpack(request_args,
             'Text must be a string under %d characters and more than 0 characters.' %
             max_characters)
 
-    if not (speaker_id < input_encoder.speaker_encoder.vocab_size and speaker_id >= 0):
-        raise FlaskException('Speaker ID must be an integer between %d and %d.' %
-                             (0, input_encoder.speaker_encoder.vocab_size))
+    if not (speaker_id <= max(speaker_id_to_speaker_id.keys()) and
+            speaker_id >= min(speaker_id_to_speaker_id.keys())):
+        raise FlaskException(
+            'Speaker ID must be an integer between %d and %d.' %
+            (min(speaker_id_to_speaker_id.keys()), max(speaker_id_to_speaker_id.keys())))
 
     # NOTE: Normalize text similar to the normalization during dataset creation.
     text = unidecode.unidecode(text)
