@@ -20,17 +20,17 @@ Refer to the above guides in case there are missing details in the below steps.
    ```bash
    export PROJECT_ID="$(gcloud config get-value project -q)"
    docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v1.97 .
-   docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v2.29 .
+   docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v2.30 .
    ```
 1. Push the build:
    ```bash
    docker push gcr.io/${PROJECT_ID}/speech-api:v1.97
-   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v2.29
+   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v2.30
    ```
 1. Test the build:
    ```bash
    docker run --rm -p 8000:8000 -e "YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api-worker:v2.29
+      gcr.io/${PROJECT_ID}/speech-api-worker:v2.30
    ```
    Or:
    ```bash
@@ -52,7 +52,7 @@ Similar to the above, except:
   https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04
 - For authentication reasons, the build should be pushed with the `gcloud` tool:
   ```bash
-  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v2.29
+  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v2.30
   ```
   Learn more here: https://cloud.google.com/container-registry/docs/advanced-authentication
 

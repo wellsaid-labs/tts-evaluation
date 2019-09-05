@@ -238,7 +238,7 @@ def validate_and_unpack(request_args,
             (min_api_key_length, max_api_key_length),
             status_code=401)
 
-    if api_key not in api_key:
+    if api_key not in api_keys:
         raise FlaskException('API key is not valid.', status_code=401)
 
     if not ('speaker_id' in request_args and 'text' in request_args):

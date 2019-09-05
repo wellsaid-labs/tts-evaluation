@@ -31,7 +31,7 @@ spec:
             - name: MAXIMUM_PODS
               value: '100'
             - name: WORKER_POD_IMAGE
-              value: gcr.io/mythical-runner-203817/speech-api-worker:v2.29
+              value: gcr.io/mythical-runner-203817/speech-api-worker:v2.30
             - name: WORKER_POD_EXPOSED_PORT # Port master communicates with its workers on
               value: '8000'
             - name: WORKER_POD_PREFIX
