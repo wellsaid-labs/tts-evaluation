@@ -19,23 +19,23 @@ Refer to the above guides in case there are missing details in the below steps.
 1. Build the container image:
    ```bash
    export PROJECT_ID="$(gcloud config get-value project -q)"
-   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v1.97 .
-   docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v2.30 .
+   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v2.11 .
+   docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v2.32 .
    ```
 1. Push the build:
    ```bash
-   docker push gcr.io/${PROJECT_ID}/speech-api:v1.97
-   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v2.30
+   docker push gcr.io/${PROJECT_ID}/speech-api:v2.11
+   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v2.32
    ```
 1. Test the build:
    ```bash
    docker run --rm -p 8000:8000 -e "YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api-worker:v2.30
+      gcr.io/${PROJECT_ID}/speech-api-worker:v2.32
    ```
    Or:
    ```bash
    docker run --rm -p 8000:8000 -e "AUTOSCALE_LOOP=5000 YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api:v1.97
+      gcr.io/${PROJECT_ID}/speech-api:v2.11
    ```
 1. Update the Kubernetes deployment manifest (e.g. `src/service/deployment.yaml`) with the updated
    images.
@@ -52,7 +52,7 @@ Similar to the above, except:
   https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04
 - For authentication reasons, the build should be pushed with the `gcloud` tool:
   ```bash
-  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v2.30
+  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v2.32
   ```
   Learn more here: https://cloud.google.com/container-registry/docs/advanced-authentication
 
@@ -72,9 +72,9 @@ Note that we need to still investigate using preemtible nodes.
     1. Pick the `Standard cluster` template on the left hand side.
     1. Ensure that the `Maintenance window` is set to 3:00am under
        `Availability, networking, security, and additional features`.
-    1. Create a `Node pool` for worker and master nodes. The worker and master likely do not need
-       default 100GB disk size. The worker likely has an optimized architecture that it runs
-       most quickly on.
+    1. Create a `Node pool` for worker (i.e. 'worker-pool') and master nodes (i.e. 'master-pool').
+       The worker and master likely do not need default 100GB disk size. The worker likely has an
+       optimized architecture that it runs most quickly on.
     1. Pick the required computer resources for this deployment.
 1. Assuming GKE is installed on your system. Log into your cluster via:
    ```bash
@@ -98,7 +98,6 @@ Note that we need to still investigate using preemtible nodes.
      --from-literal=michael_petrochuk_api_key='blahblah' \
      --from-literal=web_backend_api_key='blahblah'
    ```
-   The API Keys must be 32 characters each.
 1. Deploy the web application to Kubernetes.
     1. Apply the deployment manifest, creating a `Deployment`.
        ```bash
@@ -117,6 +116,12 @@ Note that we need to still investigate using preemtible nodes.
    routing external HTTP(S) traffic to internal services. On GKE, Ingress is implemented using
    Cloud Load Balancing. When you create an Ingress in your cluster, GKE creates an HTTP(S) load
    balancer and configures it to route traffic to your application.
+    1. Reserve a static address
+       [here](https://console.cloud.google.com/networking/addresses/add?project=mythical-runner-203817).
+       Ensure that the static IP address is of type "Global (to be used with Global forwarding
+       rules)".
+    1. Change `kubernetes.io/ingress.global-static-ip-name` in `src/service/ingress.yaml` to
+       your static IP address name.
     1. Apply the ingress manifest, creating a `Ingress`.
        ```bash
        kubectl apply -f src/service/ingress.yaml

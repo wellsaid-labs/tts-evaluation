@@ -104,4 +104,10 @@ RUN echo 'Top N largest directories\n' && du -h / | sort -rh | head -100
 # Increased timeout to 3600 which is an hour due to the nature of this API.
 # TODO: `venv/bin/gunicorn` takes 3 seconds to initialize, consider looking into speeding up it's
 # initialization time.
-CMD ["venv/bin/gunicorn", "src.service.worker:app", "--bind=0.0.0.0:8000", "--timeout=3600", "--keep-alive=300"]
+# NOTE: `--workers=2` enables the worker to handle multiple requests in parallel. All endpoints
+# on the worker can handle parallel requests; however, the stream endpoint will suffer a large
+# performance decrease.
+# Learn more about various `gunicorn` optimizations:
+# https://medium.com/building-the-system/gunicorn-3-means-of-concurrency-efbb547674b7
+CMD ["venv/bin/gunicorn", "src.service.worker:app", "--bind=0.0.0.0:8000", "--timeout=3600", \
+  "--keep-alive=300", "--workers=2"]

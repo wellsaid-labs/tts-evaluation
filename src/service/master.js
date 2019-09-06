@@ -206,6 +206,7 @@ class Pod {
    * @param {number} timeout Timeout for the HTTP request.
    */
   static async isReady(name, host, port, timeout = 5000) {
+    // TODO: For efficiency consider caching `isReady` for some seconds.
     try {
       const abortController = new AbortController();
       setTimeout(() => abortController.abort(), timeout);
@@ -484,6 +485,7 @@ class PodPool {
     this.podRequests = [];
     this.reservationLog = new EventLog(scalingWindow);
     this.loop(scaleLoop);
+    this.waiting = [];
   }
 
   /**
@@ -502,6 +504,19 @@ class PodPool {
   }
 
   /**
+   * Wait until there are Pods ready.
+   */
+  waitTillReady() {
+    return new Promise(async (resolve) => {
+      if (this.pods.length > 0 && await Promise.race(this.pods.map(p => p.isReady()))) {
+        resolve();
+      } else {
+        this.waiting.push(resolve);
+      }
+    });
+  }
+
+  /**
    * Take note of the number of reserved pods in `this.pods` after it's been changed.
    */
   logNumReservedPods() {
@@ -512,9 +527,13 @@ class PodPool {
   }
 
   /**
-   * Fulfill the next pod reservation request in `this.podRequests`.
+   * Fulfill the next pod reservation request in `this.podRequests` and `this.waiting`.
    */
   async fufillPodRequests() {
+    if (this.waiting.length > 0 && await Promise.race(this.pods.map(p => p.isReady()))) {
+      this.waiting.map(resolve => resolve());
+    }
+
     while (this.podRequests.length > 0) {
       // NOTE: Always re-sort and re-filter because `pod.isReady()` can take some time.
       const available = this.pods.filter(p => !p.isReserved());
@@ -745,46 +764,10 @@ class PodPool {
   }
 }
 
-APP.use(bodyParser.json());
-
-APP.get('/styles.css', (_, response) => {
-  response.sendFile('styles.css', {
-    root: __dirname
-  });
-});
-
-APP.get('/reset.css', (_, response) => {
-  response.sendFile('reset.css', {
-    root: __dirname
-  });
-});
-
-APP.get('/script.js', (_, response) => {
-  response.sendFile('script.js', {
-    root: __dirname
-  });
-});
-
-APP.get('/', (_, response) => {
-  response.sendFile('index.html', {
-    root: __dirname
-  });
-});
-
-APP.get('/favicon.ico', (_, response) => {
-  response.sendFile('favicon.ico', {
-    root: __dirname
-  });
-});
-
-APP.get('/healthy', (_, response) => {
-  response.send('ok');
-});
-
-// TODO: Consider remove `/api/*` so it is not redundant with the subdomain `api`.
-
 /**
  * Call `func` on the close of `request` or `response`.
+ *
+ * NOTE: `func` may be called multiple times; therefore, it must be idempotent.
  *
  * @param {http.IncomingMessage} request
  * @param {http.ServerResponse} response
@@ -797,40 +780,44 @@ function onClose(request, response, func) {
   // connection was closed.
   const requestPrefix = '[request (http.IncomingMessage)] ';
   request
-    .on('aborted', () => func(`${requestPrefix}Emitted 'aborted' event.`))
-    .on('close', () => func(`${requestPrefix}Emitted 'close' event.`))
-    .on('error', error => func(`${requestPrefix}Emitted 'error' (${error}) event.`));
+    .on('aborted', () => func(`${requestPrefix}Emitted 'aborted' event.`, null))
+    .on('close', () => func(`${requestPrefix}Emitted 'close' event.`, null))
+    .on('error', error => func(`${requestPrefix}Emitted 'error' (${error}) event.`, error));
 
   // NOTE: `http.ServerResponse`: Handle events when the response has been sent or the underlying
   // connection was closed.
   const responsePrefix = '[response (http.ServerResponse)] ';
   response
-    .on('close', () => func(`${responsePrefix}Emitted 'close' event.`))
-    .on('finish', () => func(`${responsePrefix}Emitted 'finish' event.`))
-    .on('error', error => func(`${responsePrefix}Emitted 'error' (${error}) event.`));
+    .on('close', () => func(`${responsePrefix}Emitted 'close' event.`, null))
+    .on('finish', () => func(`${responsePrefix}Emitted 'finish' event.`, null))
+    .on('error', error => func(`${responsePrefix}Emitted 'error' (${error}) event.`, error));
 }
 
-APP.all('/api/*', async (request, response, next) => {
-  let prefix = `/api/*: `;
-  logger.log(`${prefix}Got request.`);
-
-  // TODO: Consider sending a partial header to indicate that the request was recieved. Furthermore,
-  // it'll prevent Chrome timing out requests with a 502 based on TTFB.
-
-  const cancelReservation = request.app.locals.podPool.reservePod(async (pod) => {
-    prefix = `/api/* [${pod.name}]: `;
-    let isPodReserved = true; // Ensure that `Pod` is not released twice.
-    const ttsAbortController = new AbortController(); // Abort `await fetch`
-    const handleClose = () => {
+/**
+ * Send `request` to `pod` and pass back the response to `response`.
+ *
+ * @param {string} prefix A string prefix printed with every log.
+ * @param {Pod} pod The Pod to proxy the request to.
+ * @param {express.Request} request
+ * @param {express.Response} response
+ * @param {boolean} flushHeaders Bypasses a Node optimization. Learn more:
+ *  https://nodejs.org/api/http.html#http_request_flushheaders
+ */
+function proxyRequestToPod(prefix, pod, request, response, flushHeaders = false) {
+  return new Promise(async (resolve, reject) => {
+    const ttsAbortController = new AbortController();
+    const handleClose = (message, error) => {
+      logger.log(`${prefix}${message}`);
       ttsAbortController.abort();
-      logger.log(`${prefix}Trying to release \`Pod\`.`);
-      if (isPodReserved) {
-        request.app.locals.podPool.releasePod(pod);
-        isPodReserved = false;
+      // NOTE: Node ignores any `resolve` or `reject` calls after the first call, learn more:
+      // http://jsbin.com/gemepay/3/edit?js,console
+      if (error == null) {
+        resolve();
+      } else {
+        reject(error);
       }
-    };
-    onClose(request, response, handleClose); // Handle an aborts with `await fetch`.
-
+    }
+    onClose(request, response, handleClose);
     try {
       // WARNING: Do not log request body because it contains sensitive user information.
       const ttsEndPoint = `http://${pod.ip}:${pod.port}${request.url}`;
@@ -845,36 +832,131 @@ APP.all('/api/*', async (request, response, next) => {
 
       // Stream response back
       response.writeHead(ttsResponse.status, ttsResponse.headers.raw());
-      // NOTE (September 2019): It may take up to a 2 seconds for the first body chunk to be
-      // written.
-      response.flushHeaders();
+      if (flushHeaders) {
+        response.flushHeaders();
+      }
       ttsResponse.body
         .on('data', chunk => response.write(chunk))
         .on('end', () => {
-          logger.log(`${prefix}[ttsResponse.body] Emitted 'close' event.`);
+          logger.log(`[ttsResponse.body] Emitted 'close' event.`);
           response.end();
         })
-        .on('error', (error) => {
-          logger.log(`${prefix}[ttsResponse.body] Emitted 'error' (${error}) event.`);
-          handleClose();
-          next(error);
-        });
+        .on('error', (error) =>
+          handleClose(`[ttsResponse.body] Emitted 'error' (${error}) event.`, error));
     } catch (error) {
-      handleClose();
+      handleClose(`[proxyRequestToPod] Caught error (${error}).`, error);
+    }
+  })
+}
+
+/**
+ * Reserve a Pod and proxy a request to the Pod.
+ *
+ * NOTE: `reservePodController` never sends parallel requests to the same Pod.
+ *
+ * @param {express.Request} request
+ * @param {express.Response} response
+ * @param {function} next
+ */
+function reservePodController(request, response, next) {
+  let prefix = `reservePodController: `;
+  logger.log(`${prefix}Got request.`);
+
+  // TODO: Chrome times out requests that when TTFB (time to first byte) exceeds 2 minutes.
+  // It may take longer than that to reserve a Pod under heavy load. To ensure Chrome does not
+  // timeout, try sending one byte before starting the process of reserving a Pod. Learn more about
+  // sending one byte: https://blog.cloudflare.com/ttfb-time-to-first-byte-considered-meaningles/
+
+  const cancelReservation = request.app.locals.podPool.reservePod(async (pod) => {
+    prefix = `reservePodController [${pod.name}]: `;
+    try {
+      // NOTE (September 2019): It may take up to a 2 seconds for the first body chunk to be
+      // written; therefore, we `flushHeaders`.
+      await proxyRequestToPod(prefix, pod, request, response, flushHeaders = true);
+    } catch (error) {
       next(error);
     }
+    logger.log(`${prefix}Releasing \`Pod\`.`);
+    request.app.locals.podPool.releasePod(pod);
   });
 
-  onClose(request, response, (event) => {
+  onClose(request, response, (event, _) => {
     logger.log(`${prefix}${event}`);
     cancelReservation();
   });
+}
+
+const noReservationController = (() => {
+  let podIndex = 0;
+
+  /**
+   * Return a Pod to query with Pod cycling.
+   *
+   * @returns {Pod}
+   */
+  function getPod(podPool) {
+    podIndex %= podPool.pods.length;
+    const pod = podPool.pods[podIndex];
+    podIndex += 1;
+    logger.log(`noReservationController: Got Pod ${pod.name}.`);
+    return pod;
+  }
+
+  /**
+   * Proxy requests to a Pod regardless of it's reservation status.
+   *
+   * @param {express.Request} request
+   * @param {express.Response} response
+   * @param {function} next
+   */
+  return async (request, response, next) => {
+    logger.log(`noReservationController: Got request.`);
+    await request.app.locals.podPool.waitTillReady();
+    let pod = getPod(request.app.locals.podPool);
+    while (!(await pod.isReady())) {
+      pod = getPod(request.app.locals.podPool);
+    }
+    try {
+      await proxyRequestToPod(`noReservationController [${pod.name}]: `, pod, request, response);
+    } catch (error) {
+      next(error);
+    }
+  };
+})();
+
+
+APP.use(bodyParser.json());
+
+['styles.css', 'reset.css', 'script.js', 'favicon.ico'].forEach((filename) => {
+  APP.get('/' + filename, (_, response) => {
+    response.sendFile(filename, {
+      root: __dirname
+    });
+  });
+})
+
+APP.get('/', (_, response) => {
+  response.sendFile('index.html', {
+    root: __dirname
+  });
 });
 
+APP.get('/healthy', (_, response) => {
+  response.send('ok');
+});
+
+// TODO: Consider remove `/api/*` so it is not redundant with the subdomain `api`.
+
+APP.all('/api/text_to_speech/stream', reservePodController);
+APP.all('/api/speech_synthesis/v1/text_to_speech/stream', reservePodController);
+APP.all('/api/*', noReservationController);
+
 // Catch-all error handler.
-APP.use((error, request, response) => {
+// NOTE: Express requires all four parameters despite the `next` parameter being unused:
+// https://stackoverflow.com/questions/51826711/express-js-error-handler-doesnt-work-if-i-remove-next-parameter
+APP.use((error, request, response, next) => {
   logger.error(error);
-  response.sendStatus(500);
+  next(error);
 });
 
 if (require.main === module) {

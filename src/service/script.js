@@ -197,18 +197,24 @@ document.addEventListener('DOMContentLoaded', function (_) {
       clipsElement.prepend(sectionElement);
       clipNumber += 1;
 
-      const response = await fetch(`${endpoint}/input_validated`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-        headers: {
-          'Content-Type': 'application/json'
+      try {
+        const response = await fetch(`${endpoint}/input_validated`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        if (!response.ok) {
+          sectionElement.querySelector('.progress p').textContent = (await response.json()).message;
+        } else {
+          sections.push(sectionElement);
+          payloads.push(payload);
         }
-      });
-      if (!response.ok) {
-        sectionElement.querySelector('.progress p').textContent = (await response.json()).message;
-      } else {
-        sections.push(sectionElement);
-        payloads.push(payload);
+      } catch (error) {
+        // TODO: Retry input validation a couple times if so.
+        console.error(error);
+        sectionElement.querySelector('.progress p').textContent = 'Network error';
       }
     }
 
