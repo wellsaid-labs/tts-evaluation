@@ -27,7 +27,7 @@ spec:
             # This is the time we look into the past to compute the number of resources needed for
             # the next time period.
             - name: AUTOSCALE_WINDOW
-              value: '600000' # 10 minutes in milliseconds
+              value: '1800000' # 30 minutes in milliseconds
             - name: MAXIMUM_PODS
               value: '100'
             - name: WORKER_POD_IMAGE
@@ -45,6 +45,10 @@ spec:
             # Percentage of extra additional pods for any spillover jobs.
             - name: EXTRA_WORKER_PODS
               value: '0.5'
+            # Ensure there are enough resources for `COVERAGE`% of clips generated based on the
+            # `AUTOSCALE_WINDOW`.
+            - name: COVERAGE
+              value: '0.99'
             - name: API_KEY_SUFFIX # Pattern for discovering api keys
               value: _SPEECH_API_KEY
             - name: MATT_HOCKING_SPEECH_API_KEY # NOTE: Do not forget to create these secrets.
@@ -79,7 +83,7 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-          image: gcr.io/mythical-runner-203817/speech-api:v2.11
+          image: gcr.io/mythical-runner-203817/speech-api:v2.12
           ports:
             - containerPort: 8000
               protocol: TCP

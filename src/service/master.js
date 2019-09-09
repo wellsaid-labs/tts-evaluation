@@ -723,12 +723,14 @@ class PodPool {
    * @param {EventLog} reservationLog  A log of the number of reservations over a period of time.
    * @param {number} minPods The minimum worker pods to keep online always.
    * @param {number} extraPods The percentage of extra pods to keep online for any spill over.
+   * @param {number} percentile The percentile median is computed at.
    * @returns {number} Get the number of pods to keep online.
    */
   static getNumLongTermPods(
     reservationLog,
     minPods = parseInt(process.env.MINIMUM_WORKER_PODS, 10),
     extraPods = parseFloat(process.env.EXTRA_WORKER_PODS),
+    percentile = parseFloat(process.env.COVERAGE),
   ) {
     const numEvents = reservationLog.events.length;
     logger.log(`PodPool.getNumLongTermPods: There are ${numEvents} events in \`reservationLog\`.`);
@@ -757,7 +759,7 @@ class PodPool {
     let timeCounter = 0;
     for (const [numReserved, time] of sorted) {
       timeCounter += time;
-      if (timeCounter >= totalTime / 2) {
+      if (timeCounter >= totalTime * percentile) {
         return Math.max(minPods, Math.ceil(numReserved * (1 + extraPods)));
       }
     }
@@ -816,7 +818,7 @@ function proxyRequestToPod(prefix, pod, request, response, flushHeaders = false)
       } else {
         reject(error);
       }
-    }
+    };
     onClose(request, response, handleClose);
     try {
       // WARNING: Do not log request body because it contains sensitive user information.
@@ -838,7 +840,7 @@ function proxyRequestToPod(prefix, pod, request, response, flushHeaders = false)
       ttsResponse.body
         .on('data', chunk => response.write(chunk))
         .on('end', () => {
-          logger.log(`[ttsResponse.body] Emitted 'close' event.`);
+          logger.log(`${prefix}[ttsResponse.body] Emitted 'close' event.`);
           response.end();
         })
         .on('error', (error) =>
@@ -846,7 +848,7 @@ function proxyRequestToPod(prefix, pod, request, response, flushHeaders = false)
     } catch (error) {
       handleClose(`[proxyRequestToPod] Caught error (${error}).`, error);
     }
-  })
+  });
 }
 
 /**

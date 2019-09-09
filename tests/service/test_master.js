@@ -137,29 +137,29 @@ async function testPodPoolGetNumLongTermPods() {
   eventLog.addEvent(2);
   await master.sleep(250);
   eventLog.addEvent(1);
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0), 2);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0, 0.5), 2);
 
   // Test min pods
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 3, 0), 3);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 3, 0, 0.5), 3);
 
   // Test extra pods
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 1.0), 4);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 1.0, 0.5), 4);
 
   // Test extra pods and min pods
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 3, 1.0), 4);
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 5, 1.0), 5);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 3, 1.0, 0.5), 4);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 5, 1.0, 0.5), 5);
 
   // Test one event
   eventLog = new master.EventLog(250);
   await master.sleep(500);
   eventLog.addEvent(1);
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0), 0);
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 2, 0), 2);
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 2, 1.0), 2);
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 1.0), 0);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0, 0.5), 0);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 2, 0, 0.5), 2);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 2, 1.0, 0.5), 2);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 1.0, 0.5), 0);
 
   // Test no events
-  assert.equal(master.PodPool.getNumLongTermPods(new master.EventLog(), 0, 0), 0);
+  assert.equal(master.PodPool.getNumLongTermPods(new master.EventLog(), 0, 0, 0.5), 0);
 }
 
 async function testPodPoolGetNumLongTermPodsLastEvent() {
@@ -170,7 +170,7 @@ async function testPodPoolGetNumLongTermPodsLastEvent() {
   eventLog.addEvent(2);
   // Ensure that time since the last event is accounted for.
   await master.sleep(1000);
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0), 2);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0, 0.5), 2);
 }
 
 async function testPodPoolGetNumLongTermPodsFirstEvent() {
@@ -180,7 +180,7 @@ async function testPodPoolGetNumLongTermPodsFirstEvent() {
   await master.sleep(500);
   eventLog.addEvent(2);
   // Without a prior event, the zero pods dominates.
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0), 0);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0, 0.5), 0);
 }
 
 async function testPodPoolGetNumLongTermPodsOldEvent() {
@@ -190,7 +190,19 @@ async function testPodPoolGetNumLongTermPodsOldEvent() {
   await master.sleep(500);
   eventLog.addEvent(2);
   // An event before `maxTime` is considered if it's applicable.
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0), 10);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0, 0.5), 10);
+}
+
+async function testPodPoolGetNumLongTermPodsPercentile() {
+  console.log('Running `testPodPoolGetNumLongTermPodsPercentile`.');
+  let eventLog = new master.EventLog(1000);
+  eventLog.addEvent(10);
+  await master.sleep(50);
+  eventLog.addEvent(0);
+  // An event before `maxTime` is considered if it's applicable.
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0, 0.99), 10);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0, 0.5), 0);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0, 0.0), 0);
 }
 
 
@@ -206,6 +218,7 @@ async function main() {
   await testPodPoolGetNumLongTermPodsLastEvent();
   await testPodPoolGetNumLongTermPodsFirstEvent();
   await testPodPoolGetNumLongTermPodsOldEvent();
+  await testPodPoolGetNumLongTermPodsPercentile();
 }
 
 main();
