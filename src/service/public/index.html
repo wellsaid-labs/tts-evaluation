@@ -8,6 +8,8 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.2.2/jszip.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/g/filesaver.js"></script>
   <script defer src="script.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charSet="utf-8" />
 </head>
 
 <body>
@@ -16,19 +18,23 @@
   </div>
   <div id="metadata">
     <input placeholder="API Key" type="password"></input>
+    <select id="version">
+      <option value="Latest">Latest Version</option>
+      <option value="V1">Version 1</option>
+    </select>
     <select id="speaker">
       <option selected disabled>Select Speaker</option>
-      <option value="0">Judy Bieber</option>
-      <option value="1">Mary Ann</option>
-      <option value="3">Hilary Noriega</option>
-      <option value="4">Beth Cameron</option>
-      <option value="5">Beth Cameron (Custom)</option>
-      <option value="6">Linda Johnson</option>
-      <option value="7">Sam Scholl</option>
-      <option value="8">Adrienne Walker-Heller</option>
-      <option value="9">Frank Bonacquisti</option>
-      <option value="10">Susan Murphy</option>
-      <option value="11">Heather Doe</option>
+      <option value="0">Judy</option>
+      <option value="1">Mary</option>
+      <option value="2">Linda</option>
+      <option value="3">Hilary</option>
+      <option value="4">Beth</option>
+      <option value="5">Beth (Custom)</option>
+      <option value="7">Sam</option>
+      <option value="8">Adrienne</option>
+      <option value="9">Frank</option>
+      <option value="10">Susan</option>
+      <option value="11">Heather</option>
     </select>
   </div>
   <div id="textarea">

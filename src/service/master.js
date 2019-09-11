@@ -11,6 +11,8 @@
  * TODO: Consider creating a namespace in kubernetes, it's proper practice.
  * TODO: Put a cache in front of the API frontend, ensuring it does not fail under a DDOS
  * attack.
+ * TODO: Investigate using preemtible nodes. It'll be more cost effective but it may preempt a
+ * stream.
  * TODO: Track the audio hour cost and the price efficiency.
  * TODO: The workers managed by this master run on pods managed by Kubernetes. Those pods are
  *  executed on nodes that run on Google Cloud VMs. The provisioning of the VMs are managed by the
@@ -38,9 +40,8 @@ const Client = require('kubernetes-client').Client
 const config = require('kubernetes-client').config
 const express = require('express');
 const fetch = require('node-fetch');
+const path = require('path');
 const uuidv4 = require('uuid/v4');
-
-const APP = express();
 
 // TODO: The below constants should be parameterized and dynamically updated as the process runs.
 // That'll provide a more accurate estimate.
@@ -355,7 +356,10 @@ class Pod {
    * NOTE: After `statusRetries` it's presumed the pod may no longer be relevant.
    * TODO: Instead of estimating pod usefulness via `statusRetries` instead there should be a
    * mechanism aborting pod builds once the work load decreases.
+   * TODO: `statusLoop` and `statusRetries` default parameters should not be coupled via a
+   * constant number.
    *
+   * @param {string} podImage The Kubernetes image for the pod.
    * @param {int} statusRetries Number of status checks before giving up on `Pod` creation.
    * @param {number} statusLoop Length in milliseconds between pod status checks.
    * @param {number} timeToLive The maximum number of milliseconds this pod is allowed to live.
@@ -364,9 +368,9 @@ class Pod {
    * @throws Error if Pod is unavailable for work, after querying status `statusRetries` times.
    * @returns {Pod} Returns a `Pod`.
    */
-  static async build({
+  static async build(podImage, {
     statusRetries = Math.ceil((AVERAGE_POD_BUILD_TIME + MINIMUM_POD_TIME_TO_LIVE) / 2000),
-    statusLoop = 5000,
+    statusLoop = 2000,
     timeToLive = Infinity,
   } = {}) {
     const name = `${process.env.WORKER_POD_PREFIX}-${uuidv4()}`;
@@ -408,7 +412,7 @@ class Pod {
         'spec': {
           'restartPolicy': 'Never',
           'containers': [{
-            'image': process.env.WORKER_POD_IMAGE,
+            'image': podImage,
             'name': process.env.WORKER_POD_PREFIX,
             'env': [{
                 'name': 'NUM_CPU_THREADS',
@@ -471,12 +475,14 @@ class PodPool {
   /**
    * This manages the scaling and reservation of pods for work.
    *
+   * @param {string} podImage The Kubernetes Pod image to autoscale.
    * @param {number} scaleLoop This is the maximum time between recomputing the number of pods. This
    *   ensures that pods are scaled down quickly if pods are no longer in-use.
    * @param {number} scalingWindow This is the time we look into the past to compute the number of
    *   resources needed for the next time period.
    */
   constructor(
+    podImage,
     scaleLoop = parseInt(process.env.AUTOSCALE_LOOP, 10),
     scalingWindow = parseInt(process.env.AUTOSCALE_WINDOW, 10),
   ) {
@@ -486,6 +492,15 @@ class PodPool {
     this.reservationLog = new EventLog(scalingWindow);
     this.loop(scaleLoop);
     this.waiting = [];
+    this.podImage = podImage;
+
+    // Learn more about `arguments` in a `class`:
+    // https://stackoverflow.com/questions/48519484/uncaught-syntaxerror-unexpected-eval-or-arguments-in-strict-mode-window-gtag?rq=1
+    this.logger = {
+      log: (...args) => logger.log(`[${podImage}]`, `[${(new Date()).toISOString()}]`, ...args),
+      warn: (...args) => logger.warn(`[${podImage}]`, `[${(new Date()).toISOString()}]`, ...args),
+      error: (...args) => logger.error(`[${podImage}]`, `[${(new Date()).toISOString()}]`, ...args),
+    }
   }
 
   /**
@@ -521,7 +536,7 @@ class PodPool {
    */
   logNumReservedPods() {
     const numReservedPods = this.pods.filter(p => p.isReserved()).length;
-    logger.log(`PodPool.logNumReservedPods: There are ${numReservedPods} reserved pods.`);
+    this.logger.log(`PodPool.logNumReservedPods: There are ${numReservedPods} reserved pods.`);
     this.reservationLog.addEvent(numReservedPods);
     this.scale();
   }
@@ -564,19 +579,19 @@ class PodPool {
    * @param {function} cancelPodRequest Callback this function to cancel the reservation.
    */
   reservePod(reservedPodCallback) {
-    logger.log(`PodPool.reservePod: Requesting pod for work.`);
+    this.logger.log(`PodPool.reservePod: Requesting pod for work.`);
     const callback = (pod) => {
-      logger.log(`PodPool.reservePod: Reserved ${pod.name} for work.`);
+      this.logger.log(`PodPool.reservePod: Reserved ${pod.name} for work.`);
       return reservedPodCallback(pod);
     };
     this.podRequests.push(callback);
     this.fufillPodRequests(); // Attempt to immediately fufill the pod request.
     return () => {
       if (this.podRequests.includes(callback)) {
-        logger.log(`PodPool.reservePod: Canceling one Pod request from ` +
+        this.logger.log(`PodPool.reservePod: Canceling one Pod request from ` +
           `${this.podRequests.length} Pod request(s).`);
         this.podRequests = this.podRequests.filter(r => r !== callback);
-        logger.log(`PodPool.reservePod: There are ${this.podRequests.length} Pod request(s).`);
+        this.logger.log(`PodPool.reservePod: There are ${this.podRequests.length} Pod request(s).`);
         this.scale();
       }
     }
@@ -589,7 +604,7 @@ class PodPool {
    */
   releasePod(pod) {
     pod.release();
-    logger.log(`PodPool.releasePod: Released ${pod.name}.`);
+    this.logger.log(`PodPool.releasePod: Released ${pod.name}.`);
     this.logNumReservedPods();
     this.fufillPodRequests();
   }
@@ -601,15 +616,15 @@ class PodPool {
    */
   async scale() {
     await this.clean();
-    logger.log(`PodPool.scale: There are ${this.pods.length} pod(s).`);
-    logger.log(`PodPool.scale: There are ${this.numPodsBuilding} pod(s) building.`);
+    this.logger.log(`PodPool.scale: There are ${this.pods.length} pod(s).`);
+    this.logger.log(`PodPool.scale: There are ${this.numPodsBuilding} pod(s) building.`);
     const shortTermNumPodsDesired = PodPool.getNumShortTermPods(
       this.podRequests.length, this.pods.length);
-    logger.log(`PodPool.scale: This desires short term ${shortTermNumPodsDesired} pod(s).`);
+    this.logger.log(`PodPool.scale: This desires short term ${shortTermNumPodsDesired} pod(s).`);
     const longTermNumPodsDesired = PodPool.getNumLongTermPods(this.reservationLog);
-    logger.log(`PodPool.scale: This desires long term ${longTermNumPodsDesired} pod(s).`);
+    this.logger.log(`PodPool.scale: This desires long term ${longTermNumPodsDesired} pod(s).`);
     const numPodsDesired = Math.max(shortTermNumPodsDesired, longTermNumPodsDesired);
-    logger.log(`PodPool.scale: This desires ${numPodsDesired} pod(s).`);
+    this.logger.log(`PodPool.scale: This desires ${numPodsDesired} pod(s).`);
     if (numPodsDesired > this.pods.length + this.numPodsBuilding) {
       await this.upscale(numPodsDesired);
     } else if (numPodsDesired < this.pods.length) {
@@ -623,20 +638,20 @@ class PodPool {
    * @param {number} numPods
    */
   async downscale(numPods) {
-    logger.log(`PodPool.downscale: Attempting to downscale to ${numPods} pods.`);
+    this.logger.log(`PodPool.downscale: Attempting to downscale to ${numPods} pods.`);
     let toDestory = this.pods.filter(p => !p.isReserved());
 
     // Due to GCP pricing, it does not make sense to destroy pods prior to
     // `MINIMUM_POD_TIME_TO_LIVE`.
     toDestory = toDestory.filter(p => Date.now() - p.createdAt >= MINIMUM_POD_TIME_TO_LIVE);
-    logger.log(`PodPool.downscale: ${toDestory.length} pods are eligable for destruction.`);
+    this.logger.log(`PodPool.downscale: ${toDestory.length} pods are eligable for destruction.`);
 
     toDestory = toDestory.sort((a, b) => a.freeSince - b.freeSince); // Sort by least recently used
 
     // Select pods to destroy
     let numPodsToDestory = Math.min(this.pods.length - numPods, toDestory.length);
     toDestory = toDestory.slice(0, numPodsToDestory);
-    logger.log(`PodPool.downscale: Destorying ${toDestory.length} pods.`);
+    this.logger.log(`PodPool.downscale: Destorying ${toDestory.length} pods.`);
 
     // Destroy pods
     this.pods = this.pods.filter(p => !toDestory.includes(p));
@@ -652,19 +667,19 @@ class PodPool {
   async upscale(numPods, maximumPods = parseInt(process.env.MAXIMUM_PODS, 10)) {
     const numPodsToCreate = Math.min(maximumPods, numPods) -
       this.pods.length - this.numPodsBuilding;
-    logger.log(`PodPool.upscale: Creating ${numPodsToCreate} pods.`);
+    this.logger.log(`PodPool.upscale: Creating ${numPodsToCreate} pods.`);
     this.numPodsBuilding += numPodsToCreate;
     return Promise.all(Array.from({
       length: numPodsToCreate
     }, async () => {
       try {
-        const pod = await Pod.build();
+        const pod = await Pod.build(this.podImage);
         if (pod != null) {
           this.pods.push(pod);
           this.fufillPodRequests();
         }
       } catch (error) {
-        logger.warn(`PodPool.upscale Error: Pod build failed: ${error}`);
+        this.logger.warn(`PodPool.upscale Error: Pod build failed: ${error}`);
       }
       this.numPodsBuilding -= 1;
     }));
@@ -677,7 +692,7 @@ class PodPool {
     let deadPods = await asyncFilter(this.pods, p => p.isDead());
     // NOTE: `filter` any pods that left `this.pods` during `await`.
     deadPods = deadPods.filter(p => this.pods.includes(p));
-    logger.log(`PodPool.clean: There are ${deadPods.length} dead pod(s).`);
+    this.logger.log(`PodPool.clean: There are ${deadPods.length} dead pod(s).`);
     this.pods = this.pods.filter(p => !deadPods.includes(p));
     return Promise.all(deadPods.map(p => p.destroy()));
   }
@@ -722,14 +737,14 @@ class PodPool {
    *
    * @param {EventLog} reservationLog  A log of the number of reservations over a period of time.
    * @param {number} minPods The minimum worker pods to keep online always.
-   * @param {number} extraPods The percentage of extra pods to keep online for any spill over.
+   * @param {number} extraPods The number of extra pods to keep online for any spill over.
    * @param {number} percentile The percentile median is computed at.
    * @returns {number} Get the number of pods to keep online.
    */
   static getNumLongTermPods(
     reservationLog,
     minPods = parseInt(process.env.MINIMUM_WORKER_PODS, 10),
-    extraPods = parseFloat(process.env.EXTRA_WORKER_PODS),
+    extraPods = parseInt(process.env.EXTRA_WORKER_PODS),
     percentile = parseFloat(process.env.COVERAGE),
   ) {
     const numEvents = reservationLog.events.length;
@@ -760,7 +775,11 @@ class PodPool {
     for (const [numReserved, time] of sorted) {
       timeCounter += time;
       if (timeCounter >= totalTime * percentile) {
-        return Math.max(minPods, Math.ceil(numReserved * (1 + extraPods)));
+        if (numReserved > 0 && numReserved >= minPods) {
+          return numReserved + extraPods;
+        } else {
+          return minPods;
+        }
       }
     }
   }
@@ -852,6 +871,37 @@ function proxyRequestToPod(prefix, pod, request, response, flushHeaders = false)
 }
 
 /**
+ * Error with a status code attached.
+ *
+ * Inspired by: https://gist.github.com/justmoon/15511f92e5216fa2624b
+ *
+ * @param {number} status The HTTP status code to send.
+ * @param {string} message The error message.
+ */
+function HTTPError(status, message) {
+  Error.captureStackTrace(this, this.constructor);
+  this.name = this.constructor.name;
+  this.status = status;
+  this.message = message;
+};
+
+/**
+ * Get a Pod Pool to serve requests based on the `Accept-Version` header.
+ *
+ * @param {express.Request} request
+ */
+function getPodPool(request) {
+  const version = request.get('Accept-Version');
+  logger.log(`getPodPool: Getting Pod Pool version ${version}.`);
+  if (version && request.app.locals.podPools[version.toLowerCase()]) {
+    return request.app.locals.podPools[version.toLowerCase()];
+  } else if (version) {
+    throw HTTPError(404, 'Version not found.');
+  }
+  return request.app.locals.podPools.latest;
+}
+
+/**
  * Reserve a Pod and proxy a request to the Pod.
  *
  * NOTE: `reservePodController` never sends parallel requests to the same Pod.
@@ -869,7 +919,8 @@ function reservePodController(request, response, next) {
   // timeout, try sending one byte before starting the process of reserving a Pod. Learn more about
   // sending one byte: https://blog.cloudflare.com/ttfb-time-to-first-byte-considered-meaningles/
 
-  const cancelReservation = request.app.locals.podPool.reservePod(async (pod) => {
+  const podPool = getPodPool(request);
+  const cancelReservation = podPool.reservePod(async (pod) => {
     prefix = `reservePodController [${pod.name}]: `;
     try {
       // NOTE (September 2019): It may take up to a 2 seconds for the first body chunk to be
@@ -879,7 +930,7 @@ function reservePodController(request, response, next) {
       next(error);
     }
     logger.log(`${prefix}Releasing \`Pod\`.`);
-    request.app.locals.podPool.releasePod(pod);
+    podPool.releasePod(pod);
   });
 
   onClose(request, response, (event, _) => {
@@ -913,10 +964,11 @@ const noReservationController = (() => {
    */
   return async (request, response, next) => {
     logger.log(`noReservationController: Got request.`);
-    await request.app.locals.podPool.waitTillReady();
-    let pod = getPod(request.app.locals.podPool);
+    const podPool = getPodPool(request);
+    await podPool.waitTillReady();
+    let pod = getPod(podPool);
     while (!(await pod.isReady())) {
-      pod = getPod(request.app.locals.podPool);
+      pod = getPod(podPool);
     }
     try {
       await proxyRequestToPod(`noReservationController [${pod.name}]: `, pod, request, response);
@@ -927,42 +979,50 @@ const noReservationController = (() => {
 })();
 
 
+const APP = express();
+
 APP.use(bodyParser.json());
 
-['styles.css', 'reset.css', 'script.js', 'favicon.ico'].forEach((filename) => {
-  APP.get('/' + filename, (_, response) => {
-    response.sendFile(filename, {
-      root: __dirname
-    });
-  });
-})
-
+APP.use(express.static(path.join(__dirname, 'public')));
 APP.get('/', (_, response) => {
-  response.sendFile('index.html', {
+  response.sendFile('public/index.html', {
     root: __dirname
   });
 });
-
 APP.get('/healthy', (_, response) => {
   response.send('ok');
 });
 
 // TODO: Consider remove `/api/*` so it is not redundant with the subdomain `api`.
-
 APP.all('/api/text_to_speech/stream', reservePodController);
 APP.all('/api/speech_synthesis/v1/text_to_speech/stream', reservePodController);
 APP.all('/api/*', noReservationController);
 
-// Catch-all error handler.
+// Catch-all error handler similar to:
+// https://expressjs.com/en/guide/error-handling.html
 // NOTE: Express requires all four parameters despite the `next` parameter being unused:
 // https://stackoverflow.com/questions/51826711/express-js-error-handler-doesnt-work-if-i-remove-next-parameter
 APP.use((error, request, response, next) => {
   logger.error(error);
-  next(error);
+
+  if (response.headersSent) {
+    next(error);
+    return;
+  }
+
+  response.status(error instanceof HTTPError ? error.status : 500);
+  response.render('error', {
+    error,
+  });
 });
 
 if (require.main === module) {
-  APP.locals.podPool = new PodPool();
+  APP.locals.podPools = {
+    v1: new PodPool(process.env.V1_WORKER_POD_IMAGE),
+    v2: new PodPool(process.env.V2_WORKER_POD_IMAGE),
+  };
+  APP.locals.podPools.latest = APP.locals.podPools.v2;
+
   const listener = APP.listen(8000, '0.0.0.0', () => logger.log(`Listening on port ${8000}!`));
 
   // Shutdown `server` gracefully.
@@ -972,10 +1032,12 @@ if (require.main === module) {
     console.log('SIGTERM signal received, shutting down.');
     listener.close(() => {
       console.log('HTTP server closed.');
-      clearTimeout(APP.locals.podPool.loopTimeout);
-      // NOTE: There needs to be at least 1 `Pod` for GKE to function.
-      APP.locals.podPool.clean();
-      APP.locals.podPool.downscale(1);
+      for (const podPool of Object.values(APP.locals.podPools)) {
+        clearTimeout(podPool.loopTimeout);
+        // NOTE: There needs to be at least 1 `Pod` for GKE to function.
+        podPool.clean();
+        podPool.downscale(1);
+      }
     });
   });
 } else {

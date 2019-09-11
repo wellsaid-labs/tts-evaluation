@@ -30,21 +30,23 @@ spec:
               value: '1800000' # 30 minutes in milliseconds
             - name: MAXIMUM_PODS
               value: '100'
-            - name: WORKER_POD_IMAGE
-              value: gcr.io/mythical-runner-203817/speech-api-worker:v2.32
+            - name: V1_WORKER_POD_IMAGE
+              value: gcr.io/mythical-runner-203817/speech-api-worker:v1.06
+            - name: V2_WORKER_POD_IMAGE
+              value: gcr.io/mythical-runner-203817/speech-api-worker:v2.34
             - name: WORKER_POD_EXPOSED_PORT # Port master communicates with its workers on
               value: '8000'
             - name: WORKER_POD_PREFIX
               value: speech-api-worker-pod
-            - name: WORKER_NODE_PREFIX
-              value: speech-api-worker-node
             - name: WORKER_NODE_POOL
               value: worker-pool
             - name: MINIMUM_WORKER_PODS
-              value: '2'
-            # Percentage of extra additional pods for any spillover jobs.
+              value: '1'
+            # Number of extra additional pods for any spillover jobs. Also this caps the growth
+            # rate of the long term scaling because it is capped by the maximum number of pods that
+            # existed within the `AUTOSCALE_WINDOW` time period.
             - name: EXTRA_WORKER_PODS
-              value: '0.5'
+              value: '2'
             # Ensure there are enough resources for `COVERAGE`% of clips generated based on the
             # `AUTOSCALE_WINDOW`.
             - name: COVERAGE
@@ -61,15 +63,10 @@ spec:
                 secretKeyRef:
                   key: michael_petrochuk_api_key
                   name: speech-api-key
-            - name: WEB_BACKEND_SPEECH_API_KEY
+            - name: WEBSITE_BACKEND_SPEECH_API_KEY
               valueFrom:
                 secretKeyRef:
-                  key: web_backend_api_key
-                  name: speech-api-key
-            - name: WEB_BACKEND_SPEECH_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  key: web_backend_api_key
+                  key: website_backend_api_key
                   name: speech-api-key
             - name: THIS_POD_NAME
               valueFrom:
@@ -83,7 +80,7 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-          image: gcr.io/mythical-runner-203817/speech-api:v2.12
+          image: gcr.io/mythical-runner-203817/speech-api:v2.21
           ports:
             - containerPort: 8000
               protocol: TCP

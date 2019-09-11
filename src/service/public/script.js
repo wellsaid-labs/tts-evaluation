@@ -5,10 +5,12 @@
  */
 document.addEventListener('DOMContentLoaded', function (_) {
   let clipNumber = 1;
-  const endpoint = '/api/text_to_speech';
+  // NOTE: This endpoint is backwards compatible.
+  const endpoint = '/api/speech_synthesis/v1/text_to_speech';
 
   const textarea = document.querySelector('textarea');
-  const speakerSelect = document.querySelector('select');
+  const speakerSelect = document.querySelector('#speaker');
+  const speakerOptionElements = document.querySelectorAll('#speaker option');
   const apiKeyInput = document.querySelector('input');
   const generateButton = document.querySelector('#generate-button');
   const downloadAllButton = document.querySelector('#download-all');
@@ -16,9 +18,26 @@ document.addEventListener('DOMContentLoaded', function (_) {
   const errorElement = document.querySelector('#error');
   const clipsElement = document.querySelector('#clips');
   const splitBySetencesInput = document.querySelector('#split-by-setences');
+  const versionSelect = document.querySelector('#version');
   const allAudio = [];
 
-  const zip = (a, b) => a.map((x, i) => [x, b[i]]); // `zip` function similar to python.
+  versionSelect.onchange = () => {
+    const version = versionSelect.value.toLowerCase();
+    let speakers;
+    // TODO: Share a configuration file between server and browser on the versions available
+    // and the speakers available.
+    if (version == "v1") {
+      speakers = [0, 1, 2, 3];
+    } else if (version == "v2" || version == "latest") {
+      speakers = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    }
+    speakerOptionElements.forEach(option => {
+      option.disabled = !speakers.includes(parseInt(option.value));
+    });
+  }
+
+  // `zip` function similar to python.
+  const zip = (...args) => args[0].map((_, i) => args.map(arg => arg[i]));
 
   /**
    * Sleep for a number of milliseconds.
@@ -75,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
     '"It should be a new sentence." "(And the same with this one.)" ' +
     '(\'And this one!\')"(\'(And (this)) \'?)"').length == 5);
 
-  function requestAudio(payload, sectionElement, retry = 0, maxRetries = 3) {
+  function requestAudio(version, payload, sectionElement, retry = 0, maxRetries = 3) {
     // Start stream
     let startTime = new Date().getTime();
     let queuingTime;
@@ -85,6 +104,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
     // Make request for stream
     request.open('POST', `${endpoint}/stream`);
     request.setRequestHeader('Content-Type', 'application/json');
+    request.setRequestHeader('Accept-Version', version);
     request.responseType = 'blob';
     request.addEventListener('progress', (event) => {
       if (event.lengthComputable) {
@@ -144,7 +164,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
         if (request.status === 502 && retry < maxRetries) {
           sectionElement.querySelector('.progress p').textContent =
             'Queuing / Generating Spectrogram';
-          requestAudio(payload, sectionElement, retry + 1);
+          requestAudio(version, payload, sectionElement, retry + 1);
         } else {
           const message = `Status code ${request.status}.`;
           sectionElement.querySelector('.progress p').textContent = message;
@@ -162,10 +182,13 @@ document.addEventListener('DOMContentLoaded', function (_) {
     const corpus = splitBySetencesInput.checked ?
       splitIntoSentences(textSubmitted) : [textSubmitted];
     const speakerElement = speakerSelect.options[speakerSelect.selectedIndex];
+    const versionElement = versionSelect.options[versionSelect.selectedIndex];
     const speakerId = parseInt(speakerElement.value);
+    const version = versionElement.value;
     const apiKey = apiKeyInput.value.trim();
     const payloads = [];
     const sections = [];
+    const versions = [];
 
     for (const text of corpus) {
       const payload = {
@@ -181,7 +204,8 @@ document.addEventListener('DOMContentLoaded', function (_) {
       const sectionElement = document.createElement('section');
       sectionElement.innerHTML = `<main>
                                     <div>
-                                      <p><b>${clipNumber}. ${speakerElement.text}</b></p>
+                                      <p><b>${clipNumber}. ${speakerElement.text} (${
+                                        version})</b></p>
                                       <p>${text}</p>
                                     </div>
                                     <div>
@@ -202,7 +226,8 @@ document.addEventListener('DOMContentLoaded', function (_) {
           method: 'POST',
           body: JSON.stringify(payload),
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept-Version': version,
           }
         })
         if (!response.ok) {
@@ -210,6 +235,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
         } else {
           sections.push(sectionElement);
           payloads.push(payload);
+          versions.push(version);
         }
       } catch (error) {
         // TODO: Retry input validation a couple times if so.
@@ -218,10 +244,10 @@ document.addEventListener('DOMContentLoaded', function (_) {
       }
     }
 
-    for (const [payload, sectionElement] of zip(payloads, sections)) {
+    for (const [version, payload, sectionElement] of zip(versions, payloads, sections)) {
       // NOTE: Chrome will only keep six connections open at a time:
       // https://stackoverflow.com/questions/29206067/understanding-chrome-network-log-stalled-state
-      requestAudio(payload, sectionElement);
+      requestAudio(version, payload, sectionElement);
       // NOTE: Ensure that the requests are captured by the server in the right order. In the
       // future, this can be done more efficiently with a `Date` header. Learn more:
       // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Date
@@ -283,10 +309,10 @@ document.addEventListener('DOMContentLoaded', function (_) {
      * @param {string} text
      * @param {string} api_key
      */
-    if (isNaN(speaker_id)) {
-      throw 'Speaker was not selected.';
-    } else if (api_key == '') {
+    if (api_key == '') {
       throw 'API Key was not provided.';
+    } else if (isNaN(speaker_id)) {
+      throw 'Speaker was not selected.';
     } else if (text == '') {
       throw 'Text was not provided.';
     } else {

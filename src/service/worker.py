@@ -44,6 +44,7 @@ from flask import jsonify
 from flask import request
 from flask import Response
 from flask import send_file
+from flask import send_from_directory
 
 import torch
 
@@ -155,6 +156,7 @@ def stream_text_to_speech_synthesis(signal_model_inferrer,
         (callable): Callable that returns a generator incrementally returning a WAV file.
         (int): Number of bytes to be returned in total by the generator.
     """
+    # TODO (michael): Remove this log because it logs sensitive information.
     logger.info('Requested stream conditioned on: "%s" and "%s".', speaker, text)
 
     # Compute spectrogram
@@ -286,6 +288,8 @@ def healthy():
 
 
 # NOTE: `/api/speech_synthesis/v1/` was added for backward compatibility.
+# TODO: Consider renaming `api.wellsaidlabs.com` to `tts.wellsaidlabs.com`. There already exists
+# an `wellsaidlabs.com/api` that's generic.
 
 
 @app.route('/api/speech_synthesis/v1/text_to_speech/input_validated', methods=['GET', 'POST'])
@@ -340,29 +344,14 @@ def get_stream():
     return Response(response(), headers=headers, mimetype='audio/wav')
 
 
-@app.route('/styles.css')
-def styles_css():
-    return send_file('styles.css')
-
-
-@app.route('/reset.css')
-def reset_css():
-    return send_file('reset.css')
-
-
-@app.route('/script.js')
-def script_js():
-    return send_file('script.js')
-
-
 @app.route('/')
 def index():
-    return send_file('index.html')
+    return send_file('public/index.html')
 
 
-@app.route('/favicon.ico')
-def favicon_ico():
-    return send_file('favicon.ico')
+@app.route('/<path:path>')
+def send_static(path):
+    return send_from_directory('public', path)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ assert SPECTROGRAM_MODEL_CHECKPOINT_PATH.is_file(), 'Spectrogram model checkpoin
 SPEAKER_ID_TO_SPEAKER_ID = {
     0: 4,  # Judy Bieber
     1: 2,  # Mary Ann
+    2: 3,  # Linda Johnson
     3: 5,  # Hilary Noriega
     4: 0,  # Beth Cameron
     5: 1,  # Beth Cameron (Custom)

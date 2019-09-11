@@ -7,10 +7,9 @@
 process.env['API_KEY_SUFFIX'] = '_SPEECH_API_KEY';
 process.env['AUTOSCALE_WINDOW'] = '600000';
 process.env['AUTOSCALE_LOOP'] = '5000';
-process.env['EXTRA_WORKER_PODS'] = '1.0';
+process.env['EXTRA_WORKER_PODS'] = '1';
 process.env['MINIMUM_WORKER_PODS'] = '1';
 process.env['WORKER_NODE_POOL'] = 'workers-v2';
-process.env['WORKER_NODE_PREFIX'] = 'speech-api-worker-pod';
 process.env['WORKER_POD_PREFIX'] = 'speech-api-worker-node';
 
 const assert = require('assert');
@@ -143,11 +142,11 @@ async function testPodPoolGetNumLongTermPods() {
   assert.equal(master.PodPool.getNumLongTermPods(eventLog, 3, 0, 0.5), 3);
 
   // Test extra pods
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 1.0, 0.5), 4);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 1, 0.5), 3);
 
   // Test extra pods and min pods
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 3, 1.0, 0.5), 4);
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 5, 1.0, 0.5), 5);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 3, 1, 0.5), 3);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 5, 1, 0.5), 5);
 
   // Test one event
   eventLog = new master.EventLog(250);
@@ -155,8 +154,8 @@ async function testPodPoolGetNumLongTermPods() {
   eventLog.addEvent(1);
   assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 0, 0.5), 0);
   assert.equal(master.PodPool.getNumLongTermPods(eventLog, 2, 0, 0.5), 2);
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 2, 1.0, 0.5), 2);
-  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 1.0, 0.5), 0);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 2, 1, 0.5), 2);
+  assert.equal(master.PodPool.getNumLongTermPods(eventLog, 0, 1, 0.5), 0);
 
   // Test no events
   assert.equal(master.PodPool.getNumLongTermPods(new master.EventLog(), 0, 0, 0.5), 0);
