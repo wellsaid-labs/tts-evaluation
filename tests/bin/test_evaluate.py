@@ -26,7 +26,7 @@ def test__save_obscure():
         np.array([0, 0.5, 0, -0.5]),
         obscure=True)
     expected_filename = 'speaker=first_last,tag_1,tag_2'
-    assert filename == str(hash(expected_filename)) + '.wav'
+    assert filename == '%x.wav' % hash(expected_filename)
 
 
 def test_main(capsys):

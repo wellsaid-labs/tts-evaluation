@@ -450,11 +450,8 @@ class Trainer():
         return (get_density(predicted_signal) - get_density(target_signal)).item()
 
     @log_runtime
-    def visualize_inferred(self, split_size=40):
+    def visualize_inferred(self):
         """ Run in inference mode and visualize results.
-
-        Args:
-            split_size (int): Number of frames to synthesize at a time.
         """
         if not src.distributed.is_master():
             return
@@ -471,21 +468,9 @@ class Trainer():
         logger.info('Running inference on %d spectrogram frames with %d threads.',
                     spectrogram.shape[0], torch.get_num_threads())
 
-        # Split spectrogram in memory friendly chunks
-        half_padding = model.conditional_features_upsample.padding // 2
-        padded = torch.nn.functional.pad(spectrogram, (0, 0, half_padding, half_padding))
-        iterator = range(half_padding, padded.shape[0] - half_padding, split_size)
-        splits = [padded[i - half_padding:i + split_size + half_padding] for i in iterator]
-
         inferrer = model.to_inferrer()
-        hidden_state = None
-        results = []
-        for split in splits:
-            coarse, fine, hidden_state = inferrer(split, hidden_state, pad=False)
-            results.append((coarse, fine))
-        predicted_coarse, predicted_fine = zip(*results)
-        predicted = combine_signal(
-            torch.cat(predicted_coarse), torch.cat(predicted_fine), return_int=True)
+        predicted_coarse, predicted_fine, _ = inferrer(spectrogram)
+        predicted = combine_signal(predicted_coarse, predicted_fine, return_int=True)
 
         # NOTE: Introduce quantization noise similar to the model outputs and inputs.
         target = combine_signal(*split_signal(target_signal), return_int=True)

@@ -1,184 +1,389 @@
 /**
+ * The goal of this master is to assign pods to complete work. It is optimized to handle two
+ * primary use cases: burst traffic and consistent traffic.
+ *
+ * NOTE: This file is tested via `node tests/service/test_master.js`.
+ *
  * TODO: Ensure that there are multiple copies of master running, in case of version upgrades.
  * TODO: Switch from `npm` to `yarn` for dependancy management.
- * TODO: Write tests for `master.js`.
- * TODO: Consider using HTTPS protocall between LoadBalancer and the container so that the API
- * Key is not sniffable?
+ * TODO: Consider using HTTPS protocall between LoadBalancer and the container to protect the
+ * sensitive information.
  * TODO: Consider creating a namespace in kubernetes, it's proper practice.
- * TODO: Put a cache in front of the API frontend, ensuring it does not fail under a DDOS
- * attack.
- * TODO: Check that `worker.py` PyTorch uses MKL, log this.
- * TODO: Rewrite these dependancies with conda, and without pyenv or pip.
+ * TODO: Investigate using preemtible nodes. It'll be more cost effective but it may preempt a
+ * stream.
+ * TODO: Track the audio hour cost and the price efficiency.
+ * TODO: The workers managed by this master run on pods managed by Kubernetes. Those pods are
+ *  executed on nodes that run on Google Cloud VMs. The provisioning of the VMs are managed by the
+ *  GKE auto-scalar that is not configurable. Learn more:
+ *  https://github.com/kubernetes/autoscaler/issues/966.
+ *
+ *  The GKE autoscalar has a number of inefficiencies that are not easily overcomable. For example,
+ *  it may take up to 10 minutes trigger VM deletion and 15 - 60 seconds to trigger node creation.
+ *  Learn more:
+ *  - https://cloud.google.com/kubernetes-engine/docs/concepts/cluster-autoscaler
+ *  - https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md
+ *  - https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/proposals/scalability_tests.md
+ *
+ *  For this reason, it might be useful to not use Kubernetes for running workers. There is a
+ *  relatively simple Google Cloud Python API
+ *  (https://cloud.google.com/compute/docs/tutorials/python-guide) that can be used to create
+ *  and manage instances. For a master node to create an instance, it must have Google Cloud API
+ *  permissions set in the node-pool configurations.
+ *
+ *  Lastly, there might not be a concrete benefit to use Kubernetes for workers.
+ * TODO: Consider implementing rate limiting to mitigate DDOS or brute force attacks.
  */
-const express = require('express');
-const Client = require('kubernetes-client').Client
-const config = require('kubernetes-client').config
-const uuidv4 = require('uuid/v4');
+const AbortController = require('abort-controller');
 const bodyParser = require('body-parser');
-const http = require('http');
+const Client = require('kubernetes-client').Client;
+const express = require('express');
+const fetch = require('node-fetch');
+const helmet = require('helmet');
+const path = require('path');
+const Request = require('kubernetes-client/backends/request');
+const uuidv4 = require('uuid/v4');
 
-const APP = express();
-let PODS = []; // Add and removing pods is handled by `Pod` class.
+const {
+  KubeConfig
+} = require('kubernetes-client');
 
-async function getClient() {
-  /**
-   * Get a `Client` in `THIS_POD_NAMESPACE` used to make requests to the Kubernetes API.
-   */
-  let cache;
+// TODO: The below constants should be parameterized and dynamically updated as the process runs.
+// That'll provide a more accurate estimate.
+// NOTE: The pod build times is a combination of:
+// - ~49 seconds to provision an instance:
+//   https://medium.com/google-cloud/understanding-and-profiling-gce-cold-boot-time-32c209fe86ab
+// - ~15 seconds for the cluster-autoscalar to trigger provisioning:
+//   https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#what-are-the-service-level-objectives-for-cluster-autoscaler
+// - ~10 seconds for the pod to start `gunicorn`, load checkpoints, and load docker container.
+// NOTE: Practically, the build time is around 85 seconds.
+const AVERAGE_POD_BUILD_TIME = 85 * 1000;
+// NOTE: This average assumes 5.5x real time processing for an average clip length of 7.147 seconds.
+// These numbers were computed based on the first ~5500 clips generated on our website.
+const AVERAGE_JOB_TIME = 5.5 * 7.147 * 1000;
+// NOTE: At minimum, this should a minute long because at minimum GCP charges for a minute
+// of usage. Learn more: https://cloud.google.com/compute/vm-instance-pricing
+// NOTE: After the minute long, GCP charges for every second of usage.
+// NOTE: Unfortunately, due to the auto-scaler, the minimum time a pod is online is 10 minutes.
+// Learn more: https://cloud.google.com/compute/docs/autoscaler/understanding-autoscaler-decisions
+const MINIMUM_POD_TIME_TO_LIVE = 10 * 60 * 1000;
 
-  async function makeClient() {
-    const client = new Client({
-      config: config.getInCluster(),
-    });
-    await client.loadSpec();
-    return client.api.v1.namespaces(process.env.THIS_POD_NAMESPACE);
-  }
-
-  return !cache ? await makeClient() : cache;
+const logger = {
+  log: (...arguments) => console.log(`[${(new Date()).toISOString()}]`, ...arguments),
+  warn: (...arguments) => console.warn(`[${(new Date()).toISOString()}]`, ...arguments),
+  error: (...arguments) => console.error(`[${(new Date()).toISOString()}]`, ...arguments),
 }
 
-class Pod {
+/**
+ * Get a `Client` in `THIS_POD_NAMESPACE` used to make requests to the Kubernetes API.
+ *
+ * TODO: Consider caching this client.
+ */
+async function getClient(namespace = process.env.THIS_POD_NAMESPACE) {
+  const kubeconfig = new KubeConfig();
+  kubeconfig.loadFromCluster();
+  const backend = new Request({
+    kubeconfig
+  });
+  const client = new Client({
+    backend
+  });
+  await client.loadSpec();
+  if (namespace) {
+    return client.api.v1.namespaces(namespace);
+  } else {
+    return client.api.v1;
+  }
+}
 
-  constructor(name, ip, port) {
-    /**
-     * `Pod` in `PODS` represents a worker.
-     *
-     * @param {string} name Name of the pod created.
-     * @param {string} ip IP address of this pod.
-     * @param {number} port An exposed port on the pod that is accepting http requests.
-     */
+/**
+ * Time bounded log of events.
+ *
+ * @param {number} maxTime The maximum time to keep events around. This is defined in
+ *    milliseconds.
+ */
+class EventLog {
+  constructor(maxTime = Infinity) {
+    this.events = [];
+    this.timestamps = [];
+    this.maxTime = maxTime;
+    this.createdAt = Date.now();
+    this.lastEvent = null; // The event before `maxTime`.
+  }
+
+  /**
+   * Add an event to the event log.
+   *
+   * @param {*} event
+   */
+  addEvent(event) {
+    this.events.push(event);
+    this.timestamps.push(Date.now());
+    if (this.maxTime != Infinity) {
+      setTimeout(() => {
+        this.lastEvent = this.events[0];
+        this.events.shift();
+        this.timestamps.shift();
+      }, this.maxTime);
+    }
+  }
+}
+
+
+/**
+ * Sleep for a number of milliseconds.
+ *
+ * @param {number} milliseconds Number of milliseconds to sleep.
+ * @returns {Promise}
+ */
+function sleep(milliseconds) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
+/**
+ * Retries a function mulitple times.
+ *
+ * @param {Function} toTry Function to retry.
+ * @param {number} retries Number of times to retry the function.
+ * @param {number} delay Initial delay in milliseconds.
+ * @returns {any}
+ */
+async function retry(toTry, {
+  retries = 3,
+  delay = 100,
+} = {}) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      logger.log(`retry: Attempt #${i}.`);
+      const result = await toTry();
+      return result;
+    } catch (error) {
+      logger.warn(`retry: Caught this error: "${error}"`);
+      if (i == retries - 1) {
+        logger.error(`retry: Reached maximum retries ${retries}, throwing error.`);
+        throw error;
+      } else {
+        await sleep(delay);
+      }
+    }
+  }
+}
+
+/**
+ * `Array.filter` with `async` support.
+ *
+ * Given node can change threads during `async` operations, the filter may not be accurate when
+ * this function returns.
+ *
+ * @param {iterator} iterator Iterator to run filter on.
+ * @param {Function} func Async function used to filter the iterator.
+ * @returns {iterator} The filtered iterator.
+ */
+async function asyncFilter(iterator, func) {
+  const promises = await Promise.all(iterator.map(element => func(element)));
+  return iterator.filter((_, i) => promises[i]);
+}
+
+
+class Pod {
+  /**
+   * `Pod` represents a worker with one Kubernetes Pod and Node attached.
+   *
+   * @param {string} name Name of the pod created.
+   * @param {string} nodeName Name of the node created.
+   * @param {string} ip IP address of this pod.
+   * @param {number} port An exposed port on the pod that is accepting http requests.
+   */
+  constructor(name, nodeName, ip, port) {
     this.name = name;
+    this.nodeName = nodeName;
     this.freeSince = Date.now();
+    this.createdAt = Date.now();
     this.ip = ip;
     this.port = port;
-
-    PODS.push(this);
+    this.isDestroyed = false;
   }
 
-  // Learn more about pod status: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/
+  /**
+   * Check if this Pod is ready for more requests.
+   *
+   * NOTE (September, 2019): The worker should respond in at most ~1.5 seconds. The maximum response
+   * time occurs when the worker is aborted right after starting a new generation. The worker will
+   * not abort until it attempts to send some results.
+   *
+   * @param {string} name The pod name to request.
+   * @param {string} host Host to make HTTP request to.
+   * @param {number} port Port on host to query.
+   * @param {number} timeout Timeout for the HTTP request.
+   */
+  static async isReady(name, host, port, timeout = 5000) {
+    // TODO: For efficiency consider caching `isReady` for some seconds.
+    try {
+      const abortController = new AbortController();
+      setTimeout(() => abortController.abort(), timeout);
 
-  static get STATUS_RUNNING() {
-    return 'Running';
-  }
+      const response = await fetch(`http://${host}:${port}/healthy`, {
+        signal: abortController.signal,
+        method: 'GET',
+        headers: {
+          'Connection': 'keep-alive',
+        },
+      });
 
-  static isReady(host, port, timeout = 1000) {
-    /**
-     * Send a HTTP request to work, ensuring it's ready for more requests.
-     *
-     * @param {string} host Host to make HTTP request to.
-     * @param {number} port Port on host to query.
-     * @param {number} timeout Timeout for `http.request`.
-     */
-    return new Promise((resolve, _) => {
-      console.log(`Pod.isReady: Requesting readiness from ${host}`);
-      const request = http
-        .request({
-          host: host,
-          port: port,
-          path: '/healthy',
-          method: 'GET',
-          headers: {
-            'Connection': 'keep-alive',
-          },
-          timeout: timeout
-        }, (response) => {
-          resolve(response.statusCode == 200);
-        })
-        .on('error', (error) => {
-          console.error(`Pod.isReady Error: ${error.message}`);
-          resolve(false);
-        }).on('timeout', () => request.abort()).end();
-    });
+      if (!response.ok) {
+        const body = await response.text();
+        logger.error(`[${name}] Pod.isReady Error ${response.status} ` +
+          `"${response.statusText}":\n${body}`);
+      } else {
+        logger.log(`Pod.isReady: Pod ${name} is ready.`);
+      }
+      return response.ok;
+    } catch (error) {
+      logger.error(`[${name}] Pod.isReady Error: ${error.message}`);
+      return false
+    }
   }
 
   async isReady() {
-    return Pod.isReady(this.ip, this.port);
+    if (this.isDestroyed) {
+      throw `Pod.isReady Error: Pod ${this.name} has already been destroyed.`
+    }
+
+    return Pod.isReady(this.name, this.ip, this.port);
   }
 
+  /**
+   * Get if `this` is available for work.
+   */
   async isAvailable() {
-    /**
-     * Get if `this` is available for work.
-     */
+    if (this.isDestroyed) {
+      throw `Pod.isAvailable Error: Pod ${this.name} has already been destroyed.`
+    }
+
     // If `this` is reserved then this does not make a request for readiness due to the synchronous
     // implementation of the worker pods.
     return !this.isReserved() && (await this.isReady());
   }
 
+  /**
+   * Get if `this` is reserved and is unable to do more work.
+   */
   isReserved() {
+    if (this.isDestroyed) {
+      throw `Pod.isReserved Error: Pod ${this.name} has already been destroyed.`
+    }
+
     return this.freeSince === undefined;
   }
 
+  /**
+   * Reserve `this` for a job.
+   *
+   * TODO: Consider implementing a leak pervention mechanism that cleans up pods reserved for more
+   * than an hour. This can be implemented with `isReady` due to synchronous nature of the workers;
+   * However, we'd need to timeout / abort mechanism. A pod that `isReady` is no longer occupied
+   * with work, hence it is not reserved.
+   */
   reserve() {
-    /**
-     * Reserve `this` for a job.
-     *
-     * TODO: Have a leak prevention mechanism that cleans up pods reserved for more than an hour.
-     * This can be implemented with `isReady` due to synchronous nature of the workers; However,
-     * we'd need to timeout / abort mechanism. A pod that `isReady` is no longer occupied with work,
-     * hence it is not reserved.
-     */
+    if (this.isDestroyed) {
+      throw `Pod.reserve Error: Pod ${this.name} has already been destroyed.`
+    }
+
     if (this.isReserved()) {
       throw `Pod.reserve Error: Pod ${this.name} is reserved, it cannot be reserved again.`
     }
 
-    console.log(`Reserving pod ${this.name}.`);
+    logger.log(`Reserving pod ${this.name}.`);
     this.freeSince = undefined;
     return this;
   }
 
+  /**
+   * Release `this` Pod from the job.
+   */
   release() {
-    /**
-     * Release `this` Pod from the job.
-     */
-    console.log(`Releasing pod ${this.name}.`);
+    if (this.isDestroyed) {
+      throw `Pod.release Error: Pod ${this.name} has already been destroyed.`
+    }
+
+    if (!this.isReserved()) {
+      throw `Pod.release Error: Pod ${this.name} has not already been reserved.`
+    }
+
+    logger.log(`Releasing pod ${this.name}.`);
     this.freeSince = Date.now();
     return this;
   }
 
+  /**
+   * Return `true` if the `this` is no longer suitable for work.
+   */
   async isDead() {
-    /**
-     * Return `true` if the `this` is no longer suitable for work.
-     */
     // If `this` is reserved then this does not make a request for readiness due to the synchronous
     // implementation of the worker pods.
-    return !this.isReserved() && !(await this.isReady());
+    // TODO: Retry a couple times before preemptively killing a pod.
+    return this.isDestroyed || (!this.isReserved() && !(await this.isReady()));
   }
 
+  static async destroy(podName, nodeName) {
+    logger.log(`Pod.destroy: Deleting Pod ${podName} and Node ${nodeName}.`);
+
+    try {
+      await (await getClient()).pods(podName).delete();
+      logger.log(`Pod.destroy: Deleted Pod ${podName}.`);
+    } catch (error) { // TODO: Handle this scenario, try avoiding leaking a pod.
+      logger.log(`Pod.destroy: Failed to delete Pod ${podName} due to error: ${error}`);
+    }
+
+    try {
+      await (await getClient(null)).nodes(nodeName).delete();
+      logger.log(`Pod.destroy: Deleted Node ${nodeName}.`);
+    } catch (error) { // TODO: Handle this scenario, try avoiding leaking a node.
+      logger.log(`Pod.destroy: Failed to delete Node ${nodeName} due to error: ${error}`);
+    }
+  }
+
+  /**
+   * Destroy `this`.
+   */
   async destroy() {
-    /**
-     * Destroy `this` and remove from `PODS`.
-     */
     if (this.isReserved()) {
       throw `Pod.destroy Error: Pod ${this.name} is reserved, it cannot be destroyed.`
     }
 
-    console.log(`Pod.destroy: Deleting Pod ${this.name}.`);
-    PODS = PODS.filter(pod => pod !== this);
-    try {
-      await (await getClient()).pods(this.name).delete();
-      console.log(`Pod.destroy: Deleted Pod ${this.name}.`);
-    } catch (error) {
-      console.log(`Pod.destroy: Failed to delete Pod ${this.name} due to error: ${error}`);
-      // TODO: Handle this scenario, try avoiding leaking a pod.
+    if (this.isDestroyed) {
+      throw `Pod.destory Error: Pod ${this.name} has already been destroyed.`
     }
+
+    logger.log(`Pod.destroy: Deleting Pod ${this.name}.`);
+    this.isDestroyed = true;
+    await Pod.destroy(this.name, this.nodeName);
   }
 
-  static async build({
-    statusRetries = 15,
+  /**
+   * Create a `Pod` running an image, ready to recieve requests.
+   *
+   * NOTE: After `statusRetries` it's presumed the pod may no longer be relevant.
+   * TODO: Instead of estimating pod usefulness via `statusRetries` instead there should be a
+   * mechanism aborting pod builds once the work load decreases.
+   * TODO: `statusLoop` and `statusRetries` default parameters should not be coupled via a
+   * constant number.
+   *
+   * @param {string} podImage The Kubernetes image for the pod.
+   * @param {int} statusRetries Number of status checks before giving up on `Pod` creation.
+   * @param {number} statusLoop Length in milliseconds between pod status checks.
+   * @param {number} timeToLive The maximum number of milliseconds this pod is allowed to live.
+   *    At minimum, this should a minute long because at minimum GCP charages for a minute
+   *    of usage. Learn more: https://cloud.google.com/compute/vm-instance-pricing
+   * @throws Error if Pod is unavailable for work, after querying status `statusRetries` times.
+   * @returns {Pod} Returns a `Pod`.
+   */
+  static async build(podImage, {
+    statusRetries = Math.ceil((AVERAGE_POD_BUILD_TIME + MINIMUM_POD_TIME_TO_LIVE) / 2000),
     statusLoop = 2000,
-    reserved = false
+    timeToLive = Infinity,
   } = {}) {
-    /**
-     * Create a `Pod` running an image, ready to recieve requests.
-     *
-     * @param {int} statusRetries Number of status checks before giving up on `Pod` creation.
-     * @param {number} statusLoop Length in milliseconds between pod status checks.
-     * @param {bool} reserved Reserve the pod on creation, preventing race to reserve the new Pod.
-     * @throws Error if Pod is unavailable for work, after querying status `statusRetries` times.
-     * @returns {Pod} Returns a `Pod` in the `PODS` pool.
-     */
     const name = `${process.env.WORKER_POD_PREFIX}-${uuidv4()}`;
-    console.log(`Pod.build: Creating pod named ${name}.`);
+    logger.log(`Pod.build: Creating pod named ${name}.`);
 
     // Included in the Pod environment, a list of API Keys defined by `API_KEY_SUFFIX`.
     let apiKeys = Object.entries(process.env);
@@ -193,16 +398,18 @@ class Pod {
     // Learn more about `body.spec.ownerReferences[].controller` key:
     // https://stackoverflow.com/questions/51068026/when-exactly-do-i-set-an-ownerreferences-controller-field-to-true
     // Note, kubernetes will ignore keys that are not proper sometimes.
-    const manifest = {
+    let info = await (await getClient()).pods.post({
       'body': {
         'apiVersion': 'v1',
         'kind': 'Pod',
         'metadata': {
           'name': name,
-          'labels': { // Default setting created by GKE tooling
+          'labels': {
             'run': process.env.WORKER_POD_PREFIX,
           },
-          'ownerReferences': [{ // Ensure this pod is garbage collected if this pod dies.
+          // NOTE: Once this Pod is delegated as an owner of a kubernetes resource it enables those
+          // resources to be garbage collected if this pod dies.
+          'ownerReferences': [{
             'apiVersion': 'v1',
             'blockOwnerDeletion': true,
             'controller': true,
@@ -214,40 +421,46 @@ class Pod {
         'spec': {
           'restartPolicy': 'Never',
           'containers': [{
-            'image': process.env.WORKER_POD_IMAGE,
+            'image': podImage,
             'name': process.env.WORKER_POD_PREFIX,
-            'env': apiKeys,
+            'env': [{
+                'name': 'NUM_CPU_THREADS',
+                'value': '8',
+              },
+              ...apiKeys,
+            ],
             'resources': {
               'requests': {
-                'memory': '7Gi',
-                'cpu': '8000m'
+                // NOTE: This is smaller than required purposefully to give room for any other
+                // system pods.
+                'memory': '3Gi',
+                'cpu': '7250m'
               },
               'limits': {
-                'memory': '7Gi',
-                'cpu': '8000m'
+                'memory': '5Gi'
               },
             },
             'ports': [{
               'containerPort': podPort,
               'protocol': 'TCP'
             }]
-          }],
-          'terminationGracePeriodSeconds': 30, // Default setting created by GKE tooling
-          'securityContext': {} // Default setting created by GKE tooling
+          }]
         }
       }
-    }
-    let info = await (await getClient()).pods.post(manifest);
-    console.log(`Pod.build: Pod ${name} created.`);
+    });
+    logger.log(`Pod.build: Pod ${name} manifest sent.`);
 
     try {
       await retry(async () => { // While Pod is not running or not ready, keep retrying.
         /**
-         * Check if `Pod` is ready; otherwise, throw an error.
+         * Check if `Pod` has "been bound to a node, and all of the Containers have been created.";
+         * otherwise, throw an error.
          */
         info = await (await getClient()).pods(name).get();
-        if (info.body.status.phase == Pod.STATUS_RUNNING) {
-          if (!(await Pod.isReady(info.body.status.podIP, podPort))) {
+        // Learn more about pod status:
+        // https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/
+        if (info.body.status.phase == 'Running') {
+          if (!(await Pod.isReady(name, info.body.status.podIP, podPort))) {
             throw 'Pod.build Error: Pod is not ready to recieve work.';
           }
         } else {
@@ -256,279 +469,597 @@ class Pod {
       }, {
         retries: statusRetries,
         delay: statusLoop,
-        exponentialBackoff: false
       });
     } catch (error) {
-      try {
-        console.warn(`Pod.build Warning: Unable to start, deleting Pod ${name}.`);
-        await (await getClient()).pods(name).delete();
-      } catch (error) {
-        console.error(`Pod.build Error: Failed to delete Pod ${name} due to error: ${error}`);
-      }
-      throw error;
+      Pod.destroy(name, info.body.spec.nodeName);
+      return null;
     }
 
-    console.log(`Pod.build: Pod ${name} is ready to recieve traffic at ${info.body.status.podIP}`);
-    const pod = new Pod(name, info.body.status.podIP, podPort);
-    return reserved ? pod.reserve() : pod;
+    logger.log(`Pod.build: Pod ${name} is ready to recieve traffic at ${info.body.status.podIP}`);
+    return new Pod(name, info.body.spec.nodeName, info.body.status.podIP, podPort, timeToLive);
   }
 }
 
-function sleep(milliseconds) {
+class PodPool {
   /**
-   * Sleep for a number of milliseconds.
+   * This manages the scaling and reservation of pods for work.
    *
-   * @param {number} milliseconds Number of milliseconds to sleep.
-   * @returns {Promise}
+   * @param {string} podImage The Kubernetes Pod image to autoscale.
+   * @param {number} scaleLoop This is the maximum time between recomputing the number of pods. This
+   *   ensures that pods are scaled down quickly if pods are no longer in-use.
+   * @param {number} scalingWindow This is the time we look into the past to compute the number of
+   *   resources needed for the next time period.
    */
-  return new Promise(resolve => setTimeout(resolve, milliseconds));
-}
+  constructor(
+    podImage,
+    scaleLoop = parseInt(process.env.AUTOSCALE_LOOP, 10),
+    scalingWindow = parseInt(process.env.AUTOSCALE_WINDOW, 10),
+  ) {
+    this.pods = [];
+    this.numPodsBuilding = 0;
+    this.podRequests = [];
+    this.reservationLog = new EventLog(scalingWindow);
+    this.loop(scaleLoop);
+    this.waiting = [];
+    this.podImage = podImage;
 
-async function retry(toTry, {
-  retries = 3,
-  delay = 100,
-  exponentialBackoff = true
-} = {}) {
+    // Learn more about `arguments` in a `class`:
+    // https://stackoverflow.com/questions/48519484/uncaught-syntaxerror-unexpected-eval-or-arguments-in-strict-mode-window-gtag?rq=1
+    this.logger = {
+      log: (...args) => logger.log(`[${podImage}]`, `[${(new Date()).toISOString()}]`, ...args),
+      warn: (...args) => logger.warn(`[${podImage}]`, `[${(new Date()).toISOString()}]`, ...args),
+      error: (...args) => logger.error(`[${podImage}]`, `[${(new Date()).toISOString()}]`, ...args),
+    }
+  }
+
   /**
-   * Retries a function mulitple times.
+   * Start a loop to scale `this`.
    *
-   * @param {Function} toTry Function to retry.
-   * @param {number} retries Number of times to retry the function.
-   * @param {number} delay Initial delay in milliseconds.
-   * @param {bool} exponentialBackoff Increase the delay exponentially every retry.
-   * @returns {any}
+   * Typically, `this.scale` is triggered by activity like reserving or releasing pods. `this.loop`
+   * covers the case where `PodPool` is not getting any activity and needs to be downscaled.
+   *
+   * @param {number} delay The number of milliseconds between loops.
    */
-  for (let i = 0; i < retries; i++) {
-    try {
-      console.log(`retry: Attempt #${i}.`);
-      const result = await toTry();
-      return result;
-    } catch (error) {
-      console.warn(`retry: Caught this error: ${error}`);
-      if (i == retries - 1) {
-        console.error(`retry: Reached maximum retries ${retries}, throwing error.`);
-        throw error;
+  loop(delay) {
+    this.loopTimeout = setTimeout(() => {
+      this.scale();
+      this.loop(delay);
+    }, delay);
+  }
+
+  /**
+   * Wait until there are Pods ready.
+   */
+  waitTillReady() {
+    return new Promise(async (resolve) => {
+      if (this.pods.length > 0 && await Promise.race(this.pods.map(p => p.isReady()))) {
+        resolve();
       } else {
-        if (exponentialBackoff) {
-          delay *= 2;
-        }
-        await sleep(delay);
+        this.waiting.push(resolve);
       }
-    }
-  }
-}
-
-async function async_filter(iterator, func) {
-  /**
-   * `Array.filter` with `async` support.
-   *
-   * Given node can change threads during `async` operations, the filter may not be accurate when
-   * this function returns.
-   *
-   * @param {iterator} iterator Iterator to run filter on.
-   * @param {Function} func Async function used to filter the iterator.
-   * @returns {iterator} The filtered iterator.
-   */
-  let promises = iterator.map(element => func(element));
-  promises = await Promise.all(promises);
-  return iterator.filter((_, index) => promises[index]);
-}
-
-
-(async function autoscaleJob() {
-  /**
-   * Job to ensure there is at least
-   * `min(INITIAL_WORKER_PODS, ceil(numNotAvailable * (1 + EXTRA_WORKER_PODS)))`
-   * pods available or doing work.
-   */
-  while (true) {
-    // Clean up dead pods
-    const deadPods = await async_filter(PODS, pod => pod.isDead());
-    console.log(`autoscaleJob: There are ${deadPods.length} dead pod(s).`);
-    await Promise.all(deadPods.map(pod => pod.destroy()));
-
-    // Compute the `POD` statistics
-    const available = await async_filter(PODS, pod => pod.isAvailable());
-    const numNotAvailable = PODS.length - available.length;
-    const numDesired = Math.max(parseInt(process.env.INITIAL_WORKER_PODS, 10),
-      Math.ceil(numNotAvailable * (1 + parseFloat(process.env.EXTRA_WORKER_PODS))));
-
-    console.log(`autoscaleJob: There are ${numNotAvailable} unavailable and ` +
-      `${available.length} available pod(s).`);
-    console.log(`autoscaleJob: This desires ${numDesired} pod(s).`);
-
-    // Autoscale to `numDesired`
-    if (PODS.length > numDesired) {
-      let toDestory = PODS.filter((pod) => !pod.isReserved());
-
-      // Get pods that exceeded `AUTOSCALE_DOWNSCALE_DELAY`
-      const AUTOSCALE_DOWNSCALE_DELAY = parseInt(process.env.AUTOSCALE_DOWNSCALE_DELAY, 10);
-      toDestory = toDestory.filter((pod) => Date.now() - pod.freeSince > AUTOSCALE_DOWNSCALE_DELAY);
-
-      // Sort by least recently used
-      toDestory = toDestory.sort((a, b) => a.freeSince - b.freeSince);
-
-      // Select pods to destroy
-      let numPodsToDestory = Math.min(PODS.length - numDesired, toDestory.length);
-      console.log(`autoscaleJob: Destorying ${numPodsToDestory} pods.`);
-      toDestory = toDestory.slice(numPodsToDestory);
-
-      // Destroy pods
-      await Promise.all(toDestory.map((pod) => pod.destroy()));
-    } else if (PODS.length < numDesired) {
-      // Create additional pods
-      const numPodsToCreate = numDesired - PODS.length;
-      console.log(`autoscaleJob: Creating ${numPodsToCreate} pods.`);
-      try {
-        await Promise.all(Array.from({
-          length: numPodsToCreate
-        }, () => Pod.build()));
-      } catch (error) {
-        console.error(`autoscaleJob: Unable to create pods due to error: ${error}`);
-      }
-    }
-
-    await sleep(parseInt(process.env.AUTOSCALE_LOOP, 10));
-  }
-})();
-
-// TODO: Function level comments should be outside of the function.
-
-async function getPodForWork() {
-  /**
-   * Get an available pod and reserve it, useful for completing a job.
-   *
-   * @return {Pod} Available and reserved pod.
-   */
-
-  async function _getPodForWork() {
-    let available = PODS.filter(pod => !pod.isReserved());
-    // Sort most recently used first, allowing unused pods to stay unused, triggering down scaling.
-    available = available.sort((a, b) => b.freeSince - a.freeSince);
-    console.log(`_getPodForWork: Number of unreserved pods ${available.length}.`);
-    for (let pod of available) {
-      // Reserve preemptively before `await` during which `javascript` could run another thread
-      // that'll reserve it.
-      pod.reserve();
-      if (await pod.isReady()) { // Get first ready pod.
-        return pod;
-      } else {
-        pod.release();
-      }
-    }
-    // TODO: Consider if `Pod.build` is running too long to revist getting other `available` pods.
-    console.log(`_getPodForWork: Created an extra Pod to fufill demand.`);
-    return await Pod.build({
-      reserved: true
     });
   }
 
-  const pod = await _getPodForWork();
-  console.log(`getPodForWork: Reserved ${pod.name} for work.`);
-  return pod;
+  /**
+   * Take note of the number of reserved pods in `this.pods` after it's been changed.
+   */
+  logNumReservedPods() {
+    const numReservedPods = this.pods.filter(p => p.isReserved()).length;
+    this.logger.log(`PodPool.logNumReservedPods: There are ${numReservedPods} reserved pods.`);
+    this.reservationLog.addEvent(numReservedPods);
+    this.scale();
+  }
+
+  /**
+   * Fulfill the next pod reservation request in `this.podRequests` and `this.waiting`.
+   */
+  async fufillPodRequests() {
+    if (this.waiting.length > 0 && await Promise.race(this.pods.map(p => p.isReady()))) {
+      this.waiting.map(resolve => resolve());
+    }
+
+    while (this.podRequests.length > 0) {
+      // NOTE: Always re-sort and re-filter because `pod.isReady()` can take some time.
+      const available = this.pods.filter(p => !p.isReserved());
+      if (available.length == 0) {
+        break;
+      }
+
+      // NOTE: Sort most recently used first, allowing unused pods to stay unused.
+      const pod = available.sort((a, b) => b.freeSince - a.freeSince)[0];
+      // NOTE: Reserve preemptively before `await` during which `javascript` could run another
+      // thread that'll reserve it.
+      pod.reserve();
+      if (await pod.isReady()) {
+        this.podRequests.shift()(pod);
+        this.logNumReservedPods();
+      } else { // CASE: `pod` is dead.
+        pod.release();
+      }
+    }
+    this.scale();
+  }
+
+  /**
+   * Reserve a pod for work.
+   *
+   * @param {function(Pod)} reservedPodCallback Callback called with a reserved Pod available for
+   *  work.
+   * @param {function} cancelPodRequest Callback this function to cancel the reservation.
+   */
+  reservePod(reservedPodCallback) {
+    this.logger.log(`PodPool.reservePod: Requesting pod for work.`);
+    const callback = (pod) => {
+      this.logger.log(`PodPool.reservePod: Reserved ${pod.name} for work.`);
+      return reservedPodCallback(pod);
+    };
+    this.podRequests.push(callback);
+    this.fufillPodRequests(); // Attempt to immediately fufill the pod request.
+    return () => {
+      if (this.podRequests.includes(callback)) {
+        this.logger.log(`PodPool.reservePod: Canceling one Pod request from ` +
+          `${this.podRequests.length} Pod request(s).`);
+        this.podRequests = this.podRequests.filter(r => r !== callback);
+        this.logger.log(`PodPool.reservePod: There are ${this.podRequests.length} Pod request(s).`);
+        this.scale();
+      }
+    }
+  }
+
+  /**
+   * Release pod to the pool.
+   *
+   * @param {Pod} pod The pod to release.
+   */
+  releasePod(pod) {
+    pod.release();
+    this.logger.log(`PodPool.releasePod: Released ${pod.name}.`);
+    this.logNumReservedPods();
+    this.fufillPodRequests();
+  }
+
+  /**
+   * Recompute the number of pods needed and scale.
+   *
+   * This method should be called whenever the results might be affected.
+   */
+  async scale() {
+    await this.clean();
+    this.logger.log(`PodPool.scale: There are ${this.pods.length} pod(s).`);
+    this.logger.log(`PodPool.scale: There are ${this.numPodsBuilding} pod(s) building.`);
+    const shortTermNumPodsDesired = PodPool.getNumShortTermPods(
+      this.podRequests.length, this.pods.length);
+    this.logger.log(`PodPool.scale: This desires short term ${shortTermNumPodsDesired} pod(s).`);
+    const longTermNumPodsDesired = PodPool.getNumLongTermPods(this.reservationLog);
+    this.logger.log(`PodPool.scale: This desires long term ${longTermNumPodsDesired} pod(s).`);
+    const numPodsDesired = Math.max(shortTermNumPodsDesired, longTermNumPodsDesired);
+    this.logger.log(`PodPool.scale: This desires ${numPodsDesired} pod(s).`);
+    if (numPodsDesired > this.pods.length + this.numPodsBuilding) {
+      await this.upscale(numPodsDesired);
+    } else if (numPodsDesired < this.pods.length) {
+      await this.downscale(numPodsDesired);
+    }
+  }
+
+  /**
+   * Downscale up the number of pods in `this`.
+   *
+   * @param {number} numPods
+   */
+  async downscale(numPods) {
+    this.logger.log(`PodPool.downscale: Attempting to downscale to ${numPods} pods.`);
+    let toDestory = this.pods.filter(p => !p.isReserved());
+
+    // Due to GCP pricing, it does not make sense to destroy pods prior to
+    // `MINIMUM_POD_TIME_TO_LIVE`.
+    toDestory = toDestory.filter(p => Date.now() - p.createdAt >= MINIMUM_POD_TIME_TO_LIVE);
+    this.logger.log(`PodPool.downscale: ${toDestory.length} pods are eligable for destruction.`);
+
+    toDestory = toDestory.sort((a, b) => a.freeSince - b.freeSince); // Sort by least recently used
+
+    // Select pods to destroy
+    let numPodsToDestory = Math.min(this.pods.length - numPods, toDestory.length);
+    toDestory = toDestory.slice(0, numPodsToDestory);
+    this.logger.log(`PodPool.downscale: Destorying ${toDestory.length} pods.`);
+
+    // Destroy pods
+    this.pods = this.pods.filter(p => !toDestory.includes(p));
+    return Promise.all(toDestory.map(p => p.destroy()));
+  }
+
+  /**
+   * Scale up the number of pods in `this`.
+   *
+   * @param {number} numPods
+   * @param {number} maximumPods The maximum number of pods this can scale to.
+   */
+  async upscale(numPods, maximumPods = parseInt(process.env.MAXIMUM_PODS, 10)) {
+    const numPodsToCreate = Math.min(maximumPods, numPods) -
+      this.pods.length - this.numPodsBuilding;
+    this.logger.log(`PodPool.upscale: Creating ${numPodsToCreate} pods.`);
+    this.numPodsBuilding += numPodsToCreate;
+    return Promise.all(Array.from({
+      length: numPodsToCreate
+    }, async () => {
+      try {
+        const pod = await Pod.build(this.podImage);
+        if (pod != null) {
+          this.pods.push(pod);
+          this.fufillPodRequests();
+        }
+      } catch (error) {
+        this.logger.warn(`PodPool.upscale Error: Pod build failed: ${error}`);
+      }
+      this.numPodsBuilding -= 1;
+    }));
+  }
+
+  /**
+   * Remove any dead pods.
+   */
+  async clean() {
+    let deadPods = await asyncFilter(this.pods, p => p.isDead());
+    // NOTE: `filter` any pods that left `this.pods` during `await`.
+    deadPods = deadPods.filter(p => this.pods.includes(p));
+    this.logger.log(`PodPool.clean: There are ${deadPods.length} dead pod(s).`);
+    this.pods = this.pods.filter(p => !deadPods.includes(p));
+    return Promise.all(deadPods.map(p => p.destroy()));
+  }
+
+  /**
+   * Get the number of pods needed to complete the outstanding jobs.
+   *
+   * @param {number} numJobsOutstanding The number of jobs that need to be completed.
+   * @param {number} numPods The number of pods existing to complete jobs.
+   * @param {number} averagePodBuildTime The average time in milliseconds it takes for a pod to come
+   *    online.
+   * @param {number} averageJobTime The average time in milliseconds it takes for a job to finish.
+   * @param {number} minJobsPerPod The minimum work a pod should do before going offline. This
+   *    ensures that pods are price efficient.
+   */
+  static getNumShortTermPods(
+    numJobsOutstanding,
+    numPods,
+    averagePodBuildTime = AVERAGE_POD_BUILD_TIME,
+    averageJobTime = AVERAGE_JOB_TIME,
+    minJobsPerPod = Math.floor(MINIMUM_POD_TIME_TO_LIVE / AVERAGE_JOB_TIME),
+  ) {
+    logger.log(`PodPool.getNumShortTermPods: There are ${numJobsOutstanding} jobs outstanding.`);
+    const jobsCompletedDuringPodBuildTime = Math.floor(averagePodBuildTime / averageJobTime);
+    if (numJobsOutstanding / jobsCompletedDuringPodBuildTime > numPods) {
+      // Get the number of pods to build to finish the outstanding jobs as quickly as possible.
+      const jobsUnaccountedFor = numJobsOutstanding - numPods * jobsCompletedDuringPodBuildTime;
+      const numPodsToBuild = Math.ceil(jobsUnaccountedFor / minJobsPerPod);
+      return numPods + numPodsToBuild;
+    }
+
+    // Get the number of pods needed so that new pods do not need to be built.
+    return Math.ceil(numJobsOutstanding / jobsCompletedDuringPodBuildTime);
+  }
+
+  /**
+   * Get the number of pods consistently used over a period of time.
+   *
+   * Note this computes the weighted median of the number of pods reserved in the `reservationLog`.
+   * This means that we'll have enough resources to fufill customer needs immediately most of the
+   * time as a baseline.
+   *
+   * @param {EventLog} reservationLog  A log of the number of reservations over a period of time.
+   * @param {number} minPods The minimum worker pods to keep online always.
+   * @param {number} extraPods The number of extra pods to keep online for any spill over.
+   * @param {number} percentile The percentile median is computed at.
+   * @returns {number} Get the number of pods to keep online.
+   */
+  static getNumLongTermPods(
+    reservationLog,
+    minPods = parseInt(process.env.MINIMUM_WORKER_PODS, 10),
+    extraPods = parseInt(process.env.EXTRA_WORKER_PODS),
+    percentile = parseFloat(process.env.COVERAGE),
+  ) {
+    const numEvents = reservationLog.events.length;
+    logger.log(`PodPool.getNumLongTermPods: There are ${numEvents} events in \`reservationLog\`.`);
+    if (numEvents == 0) {
+      return minPods;
+    }
+    const now = Date.now();
+    const timestamps = reservationLog.timestamps;
+
+    const mapTimeCounter = new Map();
+    const timeBeforeFirstEvent = reservationLog.maxTime - (now - timestamps[0]);
+    mapTimeCounter.set(reservationLog.lastEvent == null ? 0 : reservationLog.lastEvent,
+      timeBeforeFirstEvent);
+    for (let i = 0; i < numEvents; i++) {
+      const numReserved = reservationLog.events[i];
+      const isLastEvent = i == numEvents - 1;
+      const timeReserved = isLastEvent ? now - timestamps[i] : timestamps[i + 1] - timestamps[i];
+      mapTimeCounter.set(numReserved, timeReserved +
+        (mapTimeCounter.has(numReserved) ? mapTimeCounter.get(numReserved) : 0));
+    }
+    logger.log('PodPool.getNumLongTermPods: The distribution of reservations are in milliseconds:');
+    logger.log(mapTimeCounter);
+
+    const sorted = [...mapTimeCounter.entries()].sort((a, b) => a[0] - b[0]);
+    const totalTime = sorted.map(s => s[1]).reduce((a, b) => a + b, 0);
+    let timeCounter = 0;
+    for (const [numReserved, time] of sorted) {
+      timeCounter += time;
+      if (timeCounter >= totalTime * percentile) {
+        if (numReserved > 0 && numReserved >= minPods) {
+          return numReserved + extraPods;
+        } else {
+          return minPods;
+        }
+      }
+    }
+  }
 }
 
-APP.use(bodyParser.raw()); // Learn more: https://github.com/request/request/issues/2391
+/**
+ * Call `func` on the close of `request` or `response`.
+ *
+ * NOTE: `func` may be called multiple times; therefore, it must be idempotent.
+ *
+ * @param {http.IncomingMessage} request
+ * @param {http.ServerResponse} response
+ * @param {function} func
+ */
+function onClose(request, response, func) {
+  // Handle canceled request
+  // https://stackoverflow.com/questions/35198208/handling-cancelled-request-with-express-node-js-and-angular
+  // NOTE: `http.IncomingMessage`: Handle events when the request has been aborted or the underlying
+  // connection was closed.
+  const requestPrefix = '[request (http.IncomingMessage)] ';
+  request
+    .on('aborted', () => func(`${requestPrefix}Emitted 'aborted' event.`, null))
+    .on('close', () => func(`${requestPrefix}Emitted 'close' event.`, null))
+    .on('error', error => func(`${requestPrefix}Emitted 'error' (${error}) event.`, error));
 
-APP.get('/styles.css', (_, response) => {
-  response.sendFile('styles.css', {
+  // NOTE: `http.ServerResponse`: Handle events when the response has been sent or the underlying
+  // connection was closed.
+  const responsePrefix = '[response (http.ServerResponse)] ';
+  response
+    .on('close', () => func(`${responsePrefix}Emitted 'close' event.`, null))
+    .on('finish', () => func(`${responsePrefix}Emitted 'finish' event.`, null))
+    .on('error', error => func(`${responsePrefix}Emitted 'error' (${error}) event.`, error));
+}
+
+/**
+ * Send `request` to `pod` and pass back the response to `response`.
+ *
+ * @param {string} prefix A string prefix printed with every log.
+ * @param {Pod} pod The Pod to proxy the request to.
+ * @param {express.Request} request
+ * @param {express.Response} response
+ * @param {boolean} flushHeaders Bypasses a Node optimization. Learn more:
+ *  https://nodejs.org/api/http.html#http_request_flushheaders
+ */
+function proxyRequestToPod(prefix, pod, request, response, flushHeaders = false) {
+  return new Promise(async (resolve, reject) => {
+    const ttsAbortController = new AbortController();
+    const handleClose = (message, error) => {
+      logger.log(`${prefix}${message}`);
+      ttsAbortController.abort();
+      // NOTE: Node ignores any `resolve` or `reject` calls after the first call, learn more:
+      // http://jsbin.com/gemepay/3/edit?js,console
+      if (error == null) {
+        resolve();
+      } else {
+        reject(error);
+      }
+    };
+    onClose(request, response, handleClose);
+    try {
+      // WARNING: Do not log request body because it contains sensitive user information.
+      const ttsEndPoint = `http://${pod.ip}:${pod.port}${request.url}`;
+      logger.log(`${prefix}Sending request with to ${ttsEndPoint} headers:\n` +
+        JSON.stringify(request.headers));
+      const ttsResponse = await fetch(ttsEndPoint, {
+        signal: ttsAbortController.signal,
+        method: request.method,
+        headers: request.headers,
+        body: JSON.stringify(request.body),
+      });
+
+      // Stream response back
+      response.writeHead(ttsResponse.status, ttsResponse.headers.raw());
+      if (flushHeaders) {
+        response.flushHeaders();
+      }
+      ttsResponse.body
+        .on('data', chunk => response.write(chunk))
+        .on('end', () => {
+          logger.log(`${prefix}[ttsResponse.body] Emitted 'close' event.`);
+          response.end();
+        })
+        .on('error', (error) =>
+          handleClose(`[ttsResponse.body] Emitted 'error' (${error}) event.`, error));
+    } catch (error) {
+      handleClose(`[proxyRequestToPod] Caught error (${error}).`, error);
+    }
+  });
+}
+
+/**
+ * Error with a status code attached.
+ *
+ * Inspired by: https://gist.github.com/justmoon/15511f92e5216fa2624b
+ *
+ * @param {number} status The HTTP status code to send.
+ * @param {string} message The error message.
+ */
+function HTTPError(status, message) {
+  Error.captureStackTrace(this, this.constructor);
+  this.name = this.constructor.name;
+  this.status = status;
+  this.message = message;
+};
+
+/**
+ * Get a Pod Pool to serve requests based on the `Accept-Version` header.
+ *
+ * @param {express.Request} request
+ */
+function getPodPool(request) {
+  const version = request.get('Accept-Version');
+  logger.log(`getPodPool: Getting Pod Pool version ${version}.`);
+  if (version && request.app.locals.podPools[version.toLowerCase()]) {
+    return request.app.locals.podPools[version.toLowerCase()];
+  } else if (version) {
+    throw HTTPError(404, 'Version not found.');
+  }
+  return request.app.locals.podPools.latest;
+}
+
+/**
+ * Reserve a Pod and proxy a request to the Pod.
+ *
+ * NOTE: `reservePodController` never sends parallel requests to the same Pod.
+ *
+ * @param {express.Request} request
+ * @param {express.Response} response
+ * @param {function} next
+ */
+function reservePodController(request, response, next) {
+  let prefix = `reservePodController: `;
+  logger.log(`${prefix}Got request.`);
+
+  // TODO: Chrome times out requests that when TTFB (time to first byte) exceeds 2 minutes.
+  // It may take longer than that to reserve a Pod under heavy load. To ensure Chrome does not
+  // timeout, try sending one byte before starting the process of reserving a Pod. Learn more about
+  // sending one byte: https://blog.cloudflare.com/ttfb-time-to-first-byte-considered-meaningles/
+
+  const podPool = getPodPool(request);
+  const cancelReservation = podPool.reservePod(async (pod) => {
+    prefix = `reservePodController [${pod.name}]: `;
+    try {
+      // NOTE (September 2019): It may take up to a 2 seconds for the first body chunk to be
+      // written; therefore, we `flushHeaders`.
+      await proxyRequestToPod(prefix, pod, request, response, flushHeaders = true);
+    } catch (error) {
+      next(error);
+    }
+    logger.log(`${prefix}Releasing \`Pod\`.`);
+    podPool.releasePod(pod);
+  });
+
+  onClose(request, response, (event, _) => {
+    logger.log(`${prefix}${event}`);
+    cancelReservation();
+  });
+}
+
+const noReservationController = (() => {
+  let podIndex = 0;
+
+  /**
+   * Return a Pod to query with Pod cycling.
+   *
+   * @returns {Pod}
+   */
+  function getPod(podPool) {
+    podIndex %= podPool.pods.length;
+    const pod = podPool.pods[podIndex];
+    podIndex += 1;
+    logger.log(`noReservationController: Got Pod ${pod.name}.`);
+    return pod;
+  }
+
+  /**
+   * Proxy requests to a Pod regardless of it's reservation status.
+   *
+   * @param {express.Request} request
+   * @param {express.Response} response
+   * @param {function} next
+   */
+  return async (request, response, next) => {
+    logger.log(`noReservationController: Got request.`);
+    const podPool = getPodPool(request);
+    await podPool.waitTillReady();
+    let pod = getPod(podPool);
+    while (!(await pod.isReady())) {
+      pod = getPod(podPool);
+    }
+    try {
+      await proxyRequestToPod(`noReservationController [${pod.name}]: `, pod, request, response);
+    } catch (error) {
+      next(error);
+    }
+  };
+})();
+
+
+const app = express();
+
+app.use(bodyParser.json());
+// NOTE: Recommened by:
+// https://blog.risingstack.com/node-js-security-checklist/
+//https://expressjs.com/en/advanced/best-practice-security.html
+app.use(helmet());
+
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (_, response) => {
+  response.sendFile('public/index.html', {
     root: __dirname
   });
 });
-
-APP.get('/reset.css', (_, response) => {
-  response.sendFile('reset.css', {
-    root: __dirname
-  });
-});
-
-APP.get('/script.js', (_, response) => {
-  response.sendFile('script.js', {
-    root: __dirname
-  });
-});
-
-APP.get('/', (_, response) => {
-  response.sendFile('index.html', {
-    root: __dirname
-  });
-});
-
-APP.get('/favicon.ico', (_, response) => {
-  response.sendFile('favicon.ico', {
-    root: __dirname
-  });
-});
-
-APP.get('/healthy', (_, response) => {
+app.get('/healthy', (_, response) => {
   response.send('ok');
 });
 
-// TODO: Consider remove `/api/*` so it is not redudant with the subdomain `api`.
+// TODO: Consider remove `/api/*` so it is not redundant with the subdomain `api`.
+app.all('/api/text_to_speech/stream', reservePodController);
+app.all('/api/speech_synthesis/v1/text_to_speech/stream', reservePodController);
+app.all('/api/*', noReservationController);
 
-APP.all('/api/*', async (request, response, next) => {
-  console.log(`/api/*: Got request.`);
-  let pod;
-  try {
-    pod = await getPodForWork();
-  } catch (error) {
-    next(`/api/*: Error: ${error}`);
+// Catch-all error handler similar to:
+// https://expressjs.com/en/guide/error-handling.html
+// NOTE: Express requires all four parameters despite the `next` parameter being unused:
+// https://stackoverflow.com/questions/51826711/express-js-error-handler-doesnt-work-if-i-remove-next-parameter
+app.use((error, request, response, next) => {
+  logger.error(error);
+
+  if (response.headersSent) {
+    next(error);
     return;
   }
 
-  try {
-    const options = {
-      host: pod.ip,
-      port: pod.port,
-      path: request.url,
-      method: request.method,
-      headers: request.headers,
-    }
-    const prefix = `/api/* [${pod.name}]: `;
-    console.log(`${prefix}Sending request with headers:\n` +
-      JSON.stringify(options.headers));
-    const destination = http.request(options, (stream) => {
-        // Write stream back.
-        response.writeHead(stream.statusCode, stream.headers);
-        stream
-          .on('data', (chunk) => response.write(chunk))
-          .on('close', () => response.end());
-      })
-      .on('error', (error) => {
-        pod.release();
-        next(`${prefix}\`http.request\` emitted error event: ${error}`);
-      })
-      .on('abort', () => {
-        pod.release();
-        console.log(`${prefix}Stream emitted 'abort' event.`);
-      });
-
-    function clean(message) {
-      if (message) {
-        console.log(message);
-      }
-      pod.release(); // Release pod for more work.
-      destination.abort(); // Clean up proxy stream
-    }
-
-    // TODO: Listen to ``request`` instead of ``response``.
-    // Clean up after responding
-    response
-      .on('close', () => clean(`${prefix}Response emitted 'close' event.`))
-      .on('finish', () => clean(`${prefix}Response emitted 'finish' event.`))
-      .on('error', (error) => clean(`${prefix}Response emitted 'error' (${error}) event.`));
-
-    // Send data to `http.request`
-    request
-      .on('data', chunk => destination.write(chunk))
-      .on('end', () => destination.end())
-      .on('error', (error) => clean(`${prefix}Request emitted 'error' (${error}) event.`));
-
-  } catch (error) { // Catch and clean up after any other error
-    pod.release();
-    next(`${prefix}Error: ${error}`);
-  }
+  response.status(error instanceof HTTPError ? error.status : 500);
+  response.render('error', {
+    error,
+  });
 });
 
-APP.listen(8000, '0.0.0.0',
-  () => console.log(`Listening on port ${8000}!`));
+if (require.main === module) {
+  app.locals.podPools = {
+    v1: new PodPool(process.env.V1_WORKER_POD_IMAGE),
+    v2: new PodPool(process.env.V2_WORKER_POD_IMAGE),
+  };
+  app.locals.podPools.latest = app.locals.podPools.v2;
+
+  const listener = app.listen(8000, '0.0.0.0', () => logger.log(`Listening on port ${8000}!`));
+
+  // Shutdown `server` gracefully.
+  // Learn more: https://expressjs.com/en/advanced/healthcheck-graceful-shutdown.html
+  // Learn more: https://hackernoon.com/graceful-shutdown-in-nodejs-2f8f59d1c357
+  process.on('SIGTERM', () => {
+    console.log('SIGTERM signal received, shutting down.');
+    listener.close(() => {
+      console.log('HTTP server closed.');
+      for (const podPool of Object.values(app.locals.podPools)) {
+        clearTimeout(podPool.loopTimeout);
+        // NOTE: There needs to be at least 1 `Pod` for GKE to function.
+        podPool.clean();
+        podPool.downscale(1);
+      }
+    });
+  });
+} else {
+  module.exports = {
+    EventLog,
+    Pod,
+    PodPool,
+    sleep,
+    retry,
+    asyncFilter,
+  };
+}

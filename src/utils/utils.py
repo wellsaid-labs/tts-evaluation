@@ -4,16 +4,22 @@ from math import isclose
 from pathlib import Path
 from threading import Lock
 from threading import Timer
+from unittest.mock import patch
 
+import hashlib
 import logging
 import logging.config
+import pickle
 import pprint
 import time
 
 from torch import multiprocessing
+from torch.utils import cpp_extension
 
 import torch
 import torch.utils.data
+
+from src.environment import NINJA_BUILD_PATH
 
 logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
@@ -383,3 +389,47 @@ def bash_time_label():
         (str)
     """
     return str(time.strftime('%Y-%m-%d_%H-%M-%S', time.localtime())).lower()
+
+
+def torch_cpp_extension_load(name, sources, build_directory=None, **kwargs):
+    """ Loads a PyTorch C++ extension just-in-time (JIT).
+
+    This function extends the functionality `torch.utils.cpp_extension.load`, like so:
+    - The disk cache is now used between processes and process restarts.
+    - The `build_directory` default is updated to be based in `src.environment.NINJA_BUILD_PATH`.
+    - Additional logging was added.
+
+    Args:
+        See `torch.utils.cpp_extension.load`.
+
+    Returns:
+        See `torch.utils.cpp_extension.load`.
+    """
+    build_directory = NINJA_BUILD_PATH / name if build_directory is None else build_directory
+    build_directory.mkdir(exist_ok=True, parents=True)
+    logger.info('The cpp extension "%s" will be cached here: `%s`', name, build_directory)
+
+    # NOTE: Cache the version between `Python` restarts (this is not multiprocess safe).
+    version_filename = build_directory / 'version.pkl'
+    if version_filename.exists():
+        version = pickle.loads(version_filename.read_bytes())
+        cpp_extension.JIT_EXTENSION_VERSIONER.entries[name] = version
+        logger.info('Found cached build of cpp extension "%s" on disk versioned `%s`.', name,
+                    version)
+
+    # TODO: Submit a PR to `pytorch` to use a process insensitive hash method.
+    with patch('torch.utils._cpp_extension_versioner.update_hash') as patched_update_hash:
+
+        def update_hash(seed, value):
+            """ Patched hash such that the hash is the same from process to process. """
+            hash_ = int(hashlib.md5(str(value).encode('utf-8')).hexdigest(), 16)
+            return seed ^ (hash_ + 0x9e3779b9 + (seed << 6) + (seed >> 2))
+
+        patched_update_hash.side_effect = update_hash
+
+        module = cpp_extension.load(
+            name=name, sources=sources, build_directory=build_directory, **kwargs)
+
+    version = cpp_extension.JIT_EXTENSION_VERSIONER.entries[name]
+    version_filename.write_bytes(pickle.dumps(version))
+    return module

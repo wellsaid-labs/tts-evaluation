@@ -54,29 +54,7 @@ class Checkpoint():
         Returns:
             checkpoint (Checkpoint): Loaded checkpoint.
         """
-        from src.datasets import Gender  # NOTE: Prevent circular dependency
-        from src.datasets import Speaker
-
         instance = load(str(path), device=device)
-        if not hasattr(instance, 'random_generator_state'):
-            logger.warning('Old Checkpoint: unable to load checkpoint random generator state')
-
-        if (hasattr(instance, 'input_encoder') and Speaker(
-                'Frank Bonacquisti', Gender.FEMALE) in instance.input_encoder.speaker_encoder.stoi):
-            logger.warning('Old Checkpoint: detected and fixed Frank\'s gender')
-
-            old_speaker = Speaker('Frank Bonacquisti', Gender.FEMALE)
-            new_speaker = Speaker('Frank Bonacquisti', Gender.MALE)
-
-            index = instance.input_encoder.speaker_encoder.stoi[old_speaker]
-            instance.input_encoder.speaker_encoder.itos[index] = new_speaker
-            del instance.input_encoder.speaker_encoder.stoi[old_speaker]
-            instance.input_encoder.speaker_encoder.stoi[new_speaker] = index
-
-            count = instance.input_encoder.speaker_encoder.tokens[old_speaker]
-            del instance.input_encoder.speaker_encoder.tokens[old_speaker]
-            instance.input_encoder.speaker_encoder.tokens[old_speaker] = count
-
         flatten_parameters(instance.model)
         instance.path = Path(path)
         logger.info('Loaded checkpoint at step %d from %s with model:\n%s', instance.step,

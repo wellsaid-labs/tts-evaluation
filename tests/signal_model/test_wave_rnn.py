@@ -38,10 +38,8 @@ def test_wave_rnn__infer_equals_forward():
 
     # Run inference
     # NOTE: argmax to ensure forward and infer sample the deterministically
-    with torch.no_grad():
-        infer_predicted_coarse, infer_predicted_fine, infer_hidden_state = net.to_inferrer(
-            argmax=True)(
-                local_features, hidden_state=infer_hidden_state, pad=False)
+    infer_predicted_coarse, infer_predicted_fine, infer_hidden_state = net.to_inferrer(argmax=True)(
+        local_features, hidden_state=infer_hidden_state, pad=False, split_size=None)
 
     # [signal_length] → [signal_length - 1, 2]
     forward_input_signal = torch.stack((infer_predicted_coarse.long(), infer_predicted_fine.long()),
@@ -128,8 +126,7 @@ def test_wave_rnn_infer__basic():
         upsample_kernels=upsample_kernels,
         local_features_size=local_features_size).to_inferrer()
 
-    with torch.no_grad():
-        predicted_coarse, predicted_fine, _ = net(local_features, pad=True)
+    predicted_coarse, predicted_fine, _ = net(local_features, split_size=None)
 
     assert predicted_coarse.shape == (signal_length,)
     assert predicted_fine.shape == (signal_length,)

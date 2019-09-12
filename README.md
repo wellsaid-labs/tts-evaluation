@@ -37,7 +37,7 @@ python -m venv venv
 . venv/bin/activate
 
 # Install Python dependencies
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt --upgrade
 ```
 
 ### 3. Install Additional Dependencies
@@ -69,6 +69,17 @@ or
 ```bash
 brew install ninja
 ```
+
+#### (Optional) [MKL](https://software.intel.com/en-us/mkl)
+
+For optimal signal model inference performance install [MKL](https://software.intel.com/en-us/mkl)
+like so:
+
+```bash
+sudo bash src/bin/install_mkl.sh
+```
+
+Note that this installation will only work on Linux machines with an Intel CPU.
 
 ### 4. Configure Visualization Dependencies
 

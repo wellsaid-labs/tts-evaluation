@@ -10,9 +10,9 @@ from torchnlp.download import download_file_maybe_extract
 from tqdm import tqdm
 
 import numpy
-import pandas
 import torch
 librosa = LazyLoader('librosa', globals(), 'librosa')
+pandas = LazyLoader('pandas', globals(), 'pandas')
 
 from src.audio import cache_get_audio_metadata
 from src.audio import get_log_mel_spectrogram

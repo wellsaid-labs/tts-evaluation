@@ -28,8 +28,9 @@ import logging
 import os
 
 from torchnlp.download import download_file_maybe_extract
+from third_party import LazyLoader
 
-import pandas
+pandas = LazyLoader('pandas', globals(), 'pandas')
 
 from src.datasets.constants import Gender
 from src.datasets.constants import Speaker

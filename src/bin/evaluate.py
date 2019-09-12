@@ -28,6 +28,7 @@ from pathlib import Path
 
 import argparse
 import logging
+import os
 import sys
 import time
 
@@ -47,6 +48,7 @@ from src.audio import write_audio
 from src.datasets import add_predicted_spectrogram_column
 from src.datasets import add_spectrogram_column
 from src.datasets import TextSpeechRow
+from src.environment import fork_rng
 from src.hparams import configurable
 from src.hparams import ConfiguredArg
 from src.hparams import log_config
@@ -73,13 +75,12 @@ def _save(destination, tags, speaker, waveform, obscure=False):
     """
     speaker_name = speaker.name.lower().replace(' ', '_')
     filename = 'speaker=%s,%s' % (speaker_name, ','.join(tags))
-    if obscure:
-        filename = hash(filename)
+    filename = '%x' % hash(filename) if obscure else filename
     filename_with_suffix = str(filename) + '.wav'
-    attempt = 2
+    collision = 1
     while (destination / filename_with_suffix).exists():
-        filename_with_suffix = str(filename) + ',attempt=%d.wav' % attempt
-        attempt += 1
+        filename_with_suffix = str(filename) + ',collision=%d.wav' % collision
+        collision += 1
     path = str(destination / filename_with_suffix)
     write_audio(path, waveform)
     logger.info('Saved file "%s" with waveform of shape `%s` and dtype `%s`', path, waveform.shape,
@@ -109,8 +110,12 @@ def main(dataset,
          speakers=None,
          balanced=True,
          obscure=False,
+         no_target_audio=False,
+         no_griffin_lim=False,
+         no_signal_model=False,
          spectrogram_model_batch_size=1,
-         spectrogram_model_device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+         spectrogram_model_device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
+         random_seed=os.getpid()):
     """ Generate random samples of the `dataset`.
 
     NOTE: Padding can affect the output of the signal and spectrogram model; therefore, it's
@@ -132,9 +137,14 @@ def main(dataset,
             distribution. Note, that this operation shuffles the rows.
         obscure (bool, optional): If `True`, obscure the audio filename such that the
             filename does not provide hints towards the method of synthesis.
+        no_target_audio (bool, optional): If `True` don't save target audio clips.
+        no_griffin_lim (bool, optional): If `True` don't generate and save griffin lim clips.
+        no_signal_model (bool, optional): If `True` don't generate and save signal model clips.
         spectrogram_model_batch_size (int, optional)
         spectrogram_model_device (torch.device, optional): Device used for spectrogram model
             inference.
+        random_seed (int, optional): Random seed determining which `dev` rows are randomly
+            evaluated.
     """
     destination = Path(destination)
     destination.mkdir(exist_ok=False, parents=True)
@@ -151,29 +161,44 @@ def main(dataset,
     dataset = dataset() if callable(dataset) else dataset
     dataset = list(
         dataset if speakers is None else filter(lambda r: r.speaker in speakers, dataset))
-    indicies = (
-        list(BalancedSampler(dataset, get_class=lambda r: r.speaker, num_samples=num_samples))
-        if balanced else range(len(dataset)))
+    logger.info('The random seed is: %s', random_seed)
+    with fork_rng(seed=random_seed):
+        indicies = (
+            list(BalancedSampler(dataset, get_class=lambda r: r.speaker, num_samples=num_samples))
+            if balanced else range(len(dataset)))
     dataset = [dataset[i] for i in indicies]
 
     has_target_audio = all(e.audio_path is not None for e in dataset)
 
     # Metadata saved along with audio clips
     metadata = []
+    # NOTE: `os.getpid` is often used by routines that generate unique identifiers, learn more:
+    # http://manpages.ubuntu.com/manpages/cosmic/man2/getpid.2.html
     add_to_metadata = lambda example, **kwargs: metadata.append(
-        dict(**kwargs, text=example.text, speaker=example.speaker.name))
+        dict(
+            **kwargs,
+            text=example.text,
+            speaker=example.speaker.name,
+            signal_model_checkpoint_path=(None if signal_model_checkpoint is None else
+                                          signal_model_checkpoint.path),
+            spectrogram_model_checkpoint_path=(None if spectrogram_model_checkpoint is None else
+                                               spectrogram_model_checkpoint.path),
+            spectrogram_model_batch_size=spectrogram_model_batch_size,
+            is_aligned=aligned,
+            is_balanced=balanced,
+            process_id=os.getpid()))
     _save_partial = lambda i, tags, *args: _save(
-        destination, ['index=%d' % i] + tags, *args, obscure=obscure)
+        destination, ['example_index=%d' % i] + tags, *args, obscure=obscure)
 
     # Save the target predictions
     if has_target_audio:
         # NOTE: Adds `spectrogram_audio` and `spectrogram` column.
         dataset = add_spectrogram_column(dataset, on_disk=False)
-        for i, example in zip(indicies, dataset):
-            if example.spectrogram_audio is not None:
+        if not no_target_audio:
+            for i, example in zip(indicies, dataset):
                 waveform = example.spectrogram_audio.cpu().numpy()
                 audio_path = _save_partial(i, ['type=gold'], example.speaker, waveform)
-                add_to_metadata(example, audio_path=audio_path, index=i, type='gold')
+                add_to_metadata(example, audio_path=audio_path, example_index=i, type='gold')
     else:
         logger.info('Skipping the writing of ground truth audio.')
 
@@ -187,16 +212,18 @@ def main(dataset,
             batch_size=spectrogram_model_batch_size,
             aligned=aligned,
             on_disk=False)
-        for i, example in zip(indicies, dataset):
-            waveform = griffin_lim(example.predicted_spectrogram.cpu().numpy())
-            audio_path = _save_partial(i, ['type=griffin_lim'], example.speaker, waveform)
-            add_to_metadata(example, audio_path=audio_path, index=i, type='griffin_lim')
+        if not no_griffin_lim:
+            # TODO: Consider predicting `griffin_lim` for real spectrogram.
+            for i, example in zip(indicies, dataset):
+                waveform = griffin_lim(example.predicted_spectrogram.cpu().numpy())
+                audio_path = _save_partial(i, ['type=griffin_lim'], example.speaker, waveform)
+                add_to_metadata(example, audio_path=audio_path, example_index=i, type='griffin_lim')
     else:
         logger.info('Skipping the writing of griffin-lim predictions.')
 
     # Save the signal model predictions
-    if signal_model_checkpoint is not None and (has_target_audio or
-                                                spectrogram_model_checkpoint is not None):
+    if not no_signal_model and signal_model_checkpoint is not None and (
+            has_target_audio or spectrogram_model_checkpoint is not None):
         logger.info('The signal model path is: %s', signal_model_checkpoint.path)
         logger.info('Running inference with %d threads.', torch.get_num_threads())
         signal_model = signal_model_checkpoint.model.to_inferrer()
@@ -219,8 +246,8 @@ def main(dataset,
             logger.info('Processed in %fx real time.',
                         (time.time() - start) / (waveform.shape[0] / sample_rate))
 
-            audio_path = _save_partial(i, ['type=wave_rnn'], example.speaker, waveform)
-            add_to_metadata(example, audio_path=audio_path, index=i, type='wave_rnn')
+            audio_path = _save_partial(i, ['type=signal_model'], example.speaker, waveform)
+            add_to_metadata(example, audio_path=audio_path, example_index=i, type='signal_model')
             logger.info('-' * 100)
     else:
         logger.info('Skipping the writing of neural vocoder predictions.')
@@ -238,13 +265,29 @@ if __name__ == '__main__':  # pragma: no cover
         default=None,
         help='Spectrogram model checkpoint to evaluate.')
     parser.add_argument(
-        '-t',
-        '--text',
-        action='append',
-        help='Input custom text to the model to compute.',
-        default=None)
+        '--text', action='append', help='Input custom text to the model to compute.', default=None)
     parser.add_argument(
-        '-n', '--num_samples', type=int, help='Number of samples to generate in total.', default=50)
+        '--num_samples', type=int, help='Number of samples to generate in total.', default=50)
+    parser.add_argument(
+        '--no_target_audio',
+        action='store_true',
+        default=False,
+        help='Do not save target audio clips.')
+    parser.add_argument(
+        '--no_griffin_lim',
+        action='store_true',
+        default=False,
+        help='Do not generate and save griffin lim clips.')
+    parser.add_argument(
+        '--no_signal_model',
+        action='store_true',
+        default=False,
+        help='Do not generate and save signal model clips.')
+    parser.add_argument(
+        '--obscure_filename',
+        action='store_true',
+        default=False,
+        help='Obscure the filename such that the audio file\'s generation method is unknowable.')
     args = parser.parse_args()
 
     # NOTE: Load early and crash early by ensuring that the checkpoint exists and is not corrupt.
@@ -269,4 +312,8 @@ if __name__ == '__main__':  # pragma: no cover
         spectrogram_model_checkpoint=args.spectrogram_model,
         signal_model_checkpoint=args.signal_model,
         balanced=callable(dataset),
-        num_samples=args.num_samples if args.text is None else len(dataset))
+        num_samples=args.num_samples if args.text is None else len(dataset),
+        no_griffin_lim=args.no_griffin_lim,
+        no_signal_model=args.no_signal_model,
+        no_target_audio=args.no_target_audio,
+        obscure=args.obscure_filename)

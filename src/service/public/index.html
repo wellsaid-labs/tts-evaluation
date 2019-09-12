@@ -1,0 +1,60 @@
+<html>
+
+<head>
+  <title>WellSaid – Speech API</title>
+  <link rel="stylesheet" href="reset.css">
+  <link href="https://fonts.googleapis.com/css?family=Assistant:400,700" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.2.2/jszip.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/g/filesaver.js"></script>
+  <script defer src="script.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charSet="utf-8" />
+</head>
+
+<body>
+  <div id="title">
+    <h1>Speech API</h1>
+  </div>
+  <div id="metadata">
+    <input placeholder="API Key" type="password"></input>
+    <select id="version">
+      <option value="Latest">Latest Version</option>
+      <option value="V1">Version 1</option>
+    </select>
+    <select id="speaker">
+      <option selected disabled>Select Speaker</option>
+      <option value="0">Sally F</option>
+      <option value="1">Macy C</option>
+      <option value="2">Linda</option>
+      <option value="3">Alana B</option>
+      <option value="4">Ramona J</option>
+      <option value="5">Ramona J (Custom)</option>
+      <option value="7">Wade C</option>
+      <option value="8">Sofia H</option>
+      <option value="9">David D</option>
+      <option value="10">Vanessa N</option>
+      <option value="11">Isabel V</option>
+    </select>
+  </div>
+  <div id="textarea">
+    <textarea placeholder="Type your script here"></textarea>
+    <button id="generate-button">Generate</button>
+  </div>
+  <div id="controls">
+    <button id="download-all">Download All</button>
+    <div>
+      <input type="checkbox" id="split-by-setences" name="split-by-setences">
+      <label for="split-by-setences">
+        <p>Split On Sentences</p>
+      </label>
+    </div>
+  </div>
+  <div id="error">
+    <p></p>
+  </div>
+  <div id="clips">
+  </div>
+</body>
+
+</html>

@@ -1,3 +1,5 @@
+#include <torch/extension.h>
+
 #include <sleef.h>
 #include <iostream>
 #include <random>
@@ -62,7 +64,7 @@ inline void torch_addmv_out(Tensor &hidden_projection, const Tensor &project_hid
   hidden_projection.copy_(torch::addmv(project_hidden_bias, project_hidden_weight, hidden_state));
 }
 #else
-#include <mkl/mkl.h>
+#include "mkl.h"
 inline void addmv_out(TA1D &res, const TA1D &b, const TA2D &m, const TA1D &v)
 {
   /** Computes res = b + m @ v  (@ = matrix-vector product) using MKL.
@@ -186,22 +188,6 @@ inline float addmv_exp_out(TA1D &res, const TA1D &b, const TA2D &m,
   return the_sum;
 }
 
-float addmv_exp_out_wrapper(Tensor &res, const Tensor &b,
-                            const Tensor &m, const Tensor &v)
-{
-  /** Computes res = relu(b + m.t() @ v)  (@ = matrix-vector product)
-   *  Wrapper for Python binding
-   *
-   * @param (output) res [n] 1d output
-   * @param b [n]
-   * @param m [k, k] NOTE: the n-stride is assumed to be contiguous!
-   * @param v [k]
-   */
-  auto res_a = res.accessor<float, 1>();
-  return addmv_exp_out(res_a, b.accessor<float, 1>(), m.accessor<float, 2>(),
-                       v.accessor<float, 1>());
-}
-
 static std::default_random_engine generator;
 static std::uniform_real_distribution<double> distribution(0.0, 1.0);
 
@@ -230,30 +216,19 @@ int64_t sample_multinomial(const TA1D &unnorm_probs, float sum)
   return n_bins - 1;
 }
 
-int64_t sample_multinomial_wrapper(const Tensor &unnorm_probs, float sum)
-{
-  /** Samples from multinomial distribution.
-   *  Python wrapper.
-   *
-   * @param unnorm_probs [bins] unnormed probability vector
-   * @param sum sum of unnorm_probs
-   * @return random integer 0..bins-1, with sampled with probabilities
-   *         given by unnormed_probs / sum
-   */
-  return sample_multinomial(unnorm_probs.accessor<float, 1>(), sum);
-}
-
 int64_t get_argmax(const TA1D &x)
 {
   /** Argmax of x.
    *
+   * NOTE: This assumes that the tensor `x.size(0)` > 2.
+   *
    * @param x [n] vector, must not be empty
    * @return i with x[i] maximal
    */
-  int64_t maxidx = 0;
-  float max = x[0];
   auto n_bins = x.size(0);
-  for (int64_t i = 1; i < n_bins; i++)
+  int64_t maxidx = n_bins - 1;
+  float max = x[maxidx];
+  for (int64_t i = maxidx - 1; i >= 0; i--)
   {
     if (x[i] > max)
     {
@@ -267,6 +242,9 @@ int64_t get_argmax(const TA1D &x)
 inline __m256 sigmoid(__m256 a)
 {
   /** __m256torized y = 1/(1+exp(-x))
+   *
+   * NOTE: This is not a numerically stable implementation of sigmoid, learn more:
+   * https://timvieira.github.io/blog/post/2014/02/11/exp-normalize-trick/
    *
    * @param x __m256
    * @return y = 1/(1+exp(-x))
@@ -521,7 +499,7 @@ std::vector<Tensor> inference(
    * projection.
    * @param project_fine_bias [sequence_length, 1.5 * hidden_size] Bias for fine
    *    projection.
-   * @param project_fine_weight [3, 1.5 * hidden_size] Weights for coarse
+   * @param project_fine_weight [1.5 * hidden_size, 3] Weights for coarse
    * projection.
    * @param project_hidden_bias [3 * hidden_size] Bias for hidden projection.
    * @param project_hidden_weight [3 * hidden_size, hidden_size] Weights for
@@ -672,7 +650,5 @@ std::vector<Tensor> inference(
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
   m.def("run", &inference, "Run inference for WaveRNN.");
-  m.def("addmv_exp_out", &addmv_exp_out_wrapper, "fused addmv and exp");
-  m.def("sample_multinomial", &sample_multinomial_wrapper, "multinomial sample");
   m.def("get_timings", &get_timings, "get timings from profiler");
 }

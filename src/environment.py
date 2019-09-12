@@ -36,7 +36,9 @@ DEFAULT_TTS_DISK_CACHE = (TEST_DATA_PATH
 
 TEMP_PATH = DEFAULT_TTS_DISK_CACHE / 'tmp'
 
-TEMP_PATH.mkdir(exist_ok=True, parents=True)
+NINJA_BUILD_PATH = TEMP_PATH / 'ninja_build'
+
+NINJA_BUILD_PATH.mkdir(exist_ok=True, parents=True)
 
 RandomGeneratorState = namedtuple('RandomGeneratorState',
                                   ['random', 'torch', 'numpy', 'torch_cuda'])

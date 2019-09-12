@@ -4,8 +4,6 @@ import copy
 import logging
 
 from torch import nn
-from torch.utils.cpp_extension import load_inline
-
 import torch
 
 from src.audio import split_signal
@@ -15,6 +13,7 @@ from src.hparams import ConfiguredArg
 from src.signal_model.stripped_gru import StrippedGRU
 from src.signal_model.upsample import ConditionalFeaturesUpsample
 from src.utils import log_runtime
+from src.utils import torch_cpp_extension_load
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +31,8 @@ class _WaveRNNInferrer(nn.Module):
         stripped_gru (torch.nn.Module): Provided by WaveRNN.
         argmax (bool, optional): If ``True``, during sampling pick the most likely bin instead of
             sampling from a multinomial distribution.
+        extension_name (str, optional): A unique name for the extension to build. This MUST be the
+            same as the name of the pybind11 module!
     """
 
     @log_runtime
@@ -43,40 +44,34 @@ class _WaveRNNInferrer(nn.Module):
                  project_fine_input,
                  conditional_features_upsample,
                  stripped_gru,
-                 argmax=False):
+                 argmax=False,
+                 extension_name='wave_rnn_inference'):
         super().__init__()
 
         logger.info('Instantiating `_WaveRNNInferrer`.')
 
-        assert hidden_size % 64 == 0, 'Hidden size must be multiple of 64.'
+        assert hidden_size % 64 == 0, 'Hidden size must be multiple of 64 for best performance.'
 
-        # See documentation for more information:
-        # https: // pytorch.org/docs/stable/cpp_extension.html#torch.utils.cpp_extension.load
-        assert torch.utils.cpp_extension.verify_ninja_availability(), (
-            '`_WaveRNNInferrer` requires that `ninja` is installed, '
-            'learn more here: via https://ninja-build.org/')
-
-        cflags = ['-O2', '-funroll-loops', '-march=native']
         ldflags = []
-        if Path('/usr/lib/x86_64-linux-gnu/mkl/').exists():
-            # NOTE: The MKL path is hard coded assuming that this is running on a machine with
-            # Ubuntu 18.10 or higher and has `libmkl-full-dev` installed.
-            ldflags += ['-L/usr/lib/x86_64-linux-gnu/mkl/', '-lblas']
+        cflags = ['-O2', '-funroll-loops', '-march=native']  # NOTE: Most performant `cflags`.
+        extra_include_paths = [str(ROOT_PATH / 'third_party')]
+        if Path('/opt/intel/mkl/lib/intel64/').exists() and Path(
+                '/opt/intel/mkl/include/').exists():
+            # NOTE: The MKL path is hard coded assuming that MKL was installed like so:
+            # https://software.intel.com/en-us/articles/installing-intel-free-libs-and-python-apt-repo
+            ldflags.append('-L/opt/intel/mkl/lib/intel64/ -lmkl_rt')
+            cflags.append('-DMKL_DIRECT_CALL')
             cflags.append('-fopenmp')
+            extra_include_paths.append('/opt/intel/mkl/include/')
         else:
-            logger.warning(
-                '`_WaveRNNInferrer` will be less performant because the requirements '
-                'for MKL have not been met. For MKL, the program must be running on a Ubuntu 18.10 '
-                'or higher machine with the `apt-get install libmkl-full-dev` package.')
+            logger.warning('`_WaveRNNInferrer` will be less performant because MKL has not been '
+                           'found. To install MKL, please see `sudo bash src/bin/install_mkl.sh`')
             cflags.append('-DNO_MKL=1')
 
-        logger.info('Building `inference.cpp` with `ninja`...')
-        # NOTE: Learn more about `read_text` here:
-        # https://github.com/wellsaid-labs/Benchmarks/pull/6/files#r306031034
-        self._cpp_inference = load_inline(
-            name='inference',
-            cpp_sources=(Path(__file__).parent / 'inference.cpp').read_text(),
-            extra_include_paths=[str(ROOT_PATH / 'third_party')],
+        self._cpp_inference = torch_cpp_extension_load(
+            name=extension_name,
+            sources=[str(Path(__file__).parent / 'inference.cpp')],
+            extra_include_paths=extra_include_paths,
             extra_cflags=cflags,
             extra_ldflags=ldflags,
             verbose=True)
@@ -160,28 +155,27 @@ class _WaveRNNInferrer(nn.Module):
               ``bins`` categories for the ``fine`` random variable.
             hidden_state (torch.FloatTensor [self.size]): Hidden state with RNN hidden state.
         """
-        with torch.no_grad():
-            return tuple(
-                self._cpp_inference.run(
-                    coarse_last.clone(),
-                    fine_last.clone(),
-                    hidden_state.clone(),
-                    project_coarse_bias.clone(),
-                    self.project_coarse_input_weight_t,
-                    project_fine_bias.clone(),
-                    self.project_fine_input_weight_t,
-                    self.project_hidden_bias_aligned,
-                    self.project_hidden_weight_aligned,
-                    self.to_bins_coarse_pre_bias_aligned,
-                    self.to_bins_coarse_pre_weight_t,
-                    self.to_bins_coarse_bias_aligned,
-                    self.to_bins_coarse_weight_t,
-                    self.to_bins_fine_pre_bias_aligned,
-                    self.to_bins_fine_pre_weight_t,
-                    self.to_bins_fine_bias_aligned,
-                    self.to_bins_fine_weight_t,
-                    self.argmax,
-                ))
+        return tuple(
+            self._cpp_inference.run(
+                coarse_last.clone(),
+                fine_last.clone(),
+                hidden_state.clone(),
+                project_coarse_bias.clone(),
+                self.project_coarse_input_weight_t,
+                project_fine_bias.clone(),
+                self.project_fine_input_weight_t,
+                self.project_hidden_bias_aligned,
+                self.project_hidden_weight_aligned,
+                self.to_bins_coarse_pre_bias_aligned,
+                self.to_bins_coarse_pre_weight_t,
+                self.to_bins_coarse_bias_aligned,
+                self.to_bins_coarse_weight_t,
+                self.to_bins_fine_pre_bias_aligned,
+                self.to_bins_fine_pre_weight_t,
+                self.to_bins_fine_bias_aligned,
+                self.to_bins_fine_weight_t,
+                self.argmax,
+            ))
 
     def _infer_initial_state(self, reference, hidden_state=None):
         """ Initial state returns the initial hidden state and go sample.
@@ -204,42 +198,13 @@ class _WaveRNNInferrer(nn.Module):
         hidden_state = reference.new_zeros(self.size)
         return coarse.long(), fine.long(), hidden_state
 
-    def forward(self, local_features, hidden_state=None, pad=True):
-        """  Run WaveRNN in inference mode.
-
-        Variables:
-            r: ``r`` stands for a reset gate component.
-            i: ``i`` stands for a input gate component.
-            n: ``n`` stands for a new gate component.
-
-        Reference: # noqa
-            * PyTorch GRU Equations
-              https://pytorch.org/docs/stable/nn.html?highlight=gru#torch.nn.GRU
-            * Efficient Neural Audio Synthesis Equations
-              https://arxiv.org/abs/1802.08435
-            * https://cs.stackexchange.com/questions/79241/what-is-temperature-in-lstm-and-neural-networks-generally
-
-        Args:
-            local_features (torch.FloatTensor [local_length, local_features_size]): Local feature to
-                condition signal generation (e.g. spectrogram).
-            hidden_state (tuple, optional): Initial hidden state with RNN hidden state and last
-                coarse/fine samples.
-            pad (bool, optional): Pad the spectrogram with zeros on the ends, assuming that the
-                spectrogram has no context on the ends.
-
-        Returns:
-            out_coarse (torch.LongTensor [signal_length]): Predicted categorical distribution over
-                ``bins`` categories for the ``coarse`` random variable.
-            out_fine (torch.LongTensor [signal_length]): Predicted categorical distribution over
-                ``bins`` categories for the ``fine`` random variable.
-            hidden_state (tuple): Hidden state with RNN hidden state and last coarse/fine samples.
-        """
+    def _infer(self, local_features, hidden_state=None):
         # [local_length, local_features_size] → [1, local_length, local_features_size]
         local_features = local_features.unsqueeze(0)
 
         # [1, local_length, local_features_size] →
         # [1, self.size * 3, signal_length]
-        conditional = self.conditional_features_upsample(local_features, pad=pad)
+        conditional = self.conditional_features_upsample(local_features, pad=False)
 
         # [1, self.size * 3, signal_length] → [self.size * 3, signal_length]
         conditional = conditional.squeeze(0)
@@ -274,6 +239,63 @@ class _WaveRNNInferrer(nn.Module):
                                                                   bias_fine)
 
         return out_coarse, out_fine, (out_coarse[-1:], out_fine[-1:], gru_hidden_state)
+
+    def forward(self, local_features, hidden_state=None, pad=True, split_size=20, generator=False):
+        """  Run WaveRNN in inference mode.
+
+        Variables:
+            r: ``r`` stands for a reset gate component.
+            i: ``i`` stands for a input gate component.
+            n: ``n`` stands for a new gate component.
+
+        Reference: # noqa
+            * PyTorch GRU Equations
+              https://pytorch.org/docs/stable/nn.html?highlight=gru#torch.nn.GRU
+            * Efficient Neural Audio Synthesis Equations
+              https://arxiv.org/abs/1802.08435
+            * https://cs.stackexchange.com/questions/79241/what-is-temperature-in-lstm-and-neural-networks-generally
+
+        Args:
+            local_features (torch.FloatTensor [local_length, local_features_size]): Local feature to
+                condition signal generation (e.g. spectrogram).
+            hidden_state (tuple, optional): Initial hidden state with RNN hidden state and last
+                coarse/fine samples.
+            pad (bool, optional): Pad the spectrogram with zeros on the ends, assuming that the
+                spectrogram has no context on the ends.
+            split_size (int or None, optional): Number of frames to synthesize at a time.
+            generator (bool, optional): If `True` this returns results incrementally.
+
+        Returns:
+            out_coarse (torch.LongTensor [signal_length]): Predicted categorical distribution over
+                ``bins`` categories for the ``coarse`` random variable.
+            out_fine (torch.LongTensor [signal_length]): Predicted categorical distribution over
+                ``bins`` categories for the ``fine`` random variable.
+            hidden_state (tuple): Hidden state with RNN hidden state and last coarse/fine samples.
+        """
+        padding = self.conditional_features_upsample.padding
+        half_padding = padding // 2
+        num_frames = local_features.shape[0] if pad else local_features.shape[0] - padding
+        if pad:
+            local_features = torch.nn.functional.pad(local_features,
+                                                     (0, 0, half_padding, half_padding))
+        assert num_frames > 0, 'Remember to pad `local_features` as described in the docs.'
+        split_size = min(num_frames if split_size is None else split_size, num_frames)
+        iterator = range(half_padding, local_features.shape[0] - half_padding, split_size)
+        splits = [local_features[i - half_padding:i + split_size + half_padding] for i in iterator]
+        assert sum([s.shape[0] - padding for s in splits]) == num_frames, 'Invariant failed.'
+
+        def _generate():
+            nonlocal hidden_state
+            with torch.no_grad():
+                for split in splits:
+                    coarse, fine, hidden_state = self._infer(split, hidden_state)
+                    yield coarse, fine, hidden_state
+
+        if not generator:
+            predicted_coarse, predicted_fine, hidden_states = zip(*list(_generate()))
+            return torch.cat(predicted_coarse), torch.cat(predicted_fine), hidden_states[-1]
+
+        return _generate()
 
 
 class WaveRNN(nn.Module):
