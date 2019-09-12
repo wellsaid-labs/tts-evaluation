@@ -12,6 +12,8 @@ LABEL maintainer="michael@wellsaidlabs.com"
 
 # Learn more about NODE_ENV:
 # https://expressjs.com/en/advanced/best-practice-performance.html
+# TODO (michael): Apply these security best practices:
+# https://snyk.io/blog/10-docker-image-security-best-practices/
 ENV NODE_ENV production
 
 EXPOSE 8000

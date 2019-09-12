@@ -6,11 +6,9 @@
  *
  * TODO: Ensure that there are multiple copies of master running, in case of version upgrades.
  * TODO: Switch from `npm` to `yarn` for dependancy management.
- * TODO: Consider using HTTPS protocall between LoadBalancer and the container so that the API
- * Key is not sniffable?
+ * TODO: Consider using HTTPS protocall between LoadBalancer and the container to protect the
+ * sensitive information.
  * TODO: Consider creating a namespace in kubernetes, it's proper practice.
- * TODO: Put a cache in front of the API frontend, ensuring it does not fail under a DDOS
- * attack.
  * TODO: Investigate using preemtible nodes. It'll be more cost effective but it may preempt a
  * stream.
  * TODO: Track the audio hour cost and the price efficiency.
@@ -33,15 +31,21 @@
  *  permissions set in the node-pool configurations.
  *
  *  Lastly, there might not be a concrete benefit to use Kubernetes for workers.
+ * TODO: Consider implementing rate limiting to mitigate DDOS or brute force attacks.
  */
 const AbortController = require('abort-controller');
 const bodyParser = require('body-parser');
-const Client = require('kubernetes-client').Client
-const config = require('kubernetes-client').config
+const Client = require('kubernetes-client').Client;
 const express = require('express');
 const fetch = require('node-fetch');
+const helmet = require('helmet');
 const path = require('path');
+const Request = require('kubernetes-client/backends/request');
 const uuidv4 = require('uuid/v4');
+
+const {
+  KubeConfig
+} = require('kubernetes-client');
 
 // TODO: The below constants should be parameterized and dynamically updated as the process runs.
 // That'll provide a more accurate estimate.
@@ -75,8 +79,13 @@ const logger = {
  * TODO: Consider caching this client.
  */
 async function getClient(namespace = process.env.THIS_POD_NAMESPACE) {
+  const kubeconfig = new KubeConfig();
+  kubeconfig.loadFromCluster();
+  const backend = new Request({
+    kubeconfig
+  });
   const client = new Client({
-    config: config.getInCluster(),
+    backend
   });
   await client.loadSpec();
   if (namespace) {
@@ -979,30 +988,34 @@ const noReservationController = (() => {
 })();
 
 
-const APP = express();
+const app = express();
 
-APP.use(bodyParser.json());
+app.use(bodyParser.json());
+// NOTE: Recommened by:
+// https://blog.risingstack.com/node-js-security-checklist/
+//https://expressjs.com/en/advanced/best-practice-security.html
+app.use(helmet());
 
-APP.use(express.static(path.join(__dirname, 'public')));
-APP.get('/', (_, response) => {
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (_, response) => {
   response.sendFile('public/index.html', {
     root: __dirname
   });
 });
-APP.get('/healthy', (_, response) => {
+app.get('/healthy', (_, response) => {
   response.send('ok');
 });
 
 // TODO: Consider remove `/api/*` so it is not redundant with the subdomain `api`.
-APP.all('/api/text_to_speech/stream', reservePodController);
-APP.all('/api/speech_synthesis/v1/text_to_speech/stream', reservePodController);
-APP.all('/api/*', noReservationController);
+app.all('/api/text_to_speech/stream', reservePodController);
+app.all('/api/speech_synthesis/v1/text_to_speech/stream', reservePodController);
+app.all('/api/*', noReservationController);
 
 // Catch-all error handler similar to:
 // https://expressjs.com/en/guide/error-handling.html
 // NOTE: Express requires all four parameters despite the `next` parameter being unused:
 // https://stackoverflow.com/questions/51826711/express-js-error-handler-doesnt-work-if-i-remove-next-parameter
-APP.use((error, request, response, next) => {
+app.use((error, request, response, next) => {
   logger.error(error);
 
   if (response.headersSent) {
@@ -1017,13 +1030,13 @@ APP.use((error, request, response, next) => {
 });
 
 if (require.main === module) {
-  APP.locals.podPools = {
+  app.locals.podPools = {
     v1: new PodPool(process.env.V1_WORKER_POD_IMAGE),
     v2: new PodPool(process.env.V2_WORKER_POD_IMAGE),
   };
-  APP.locals.podPools.latest = APP.locals.podPools.v2;
+  app.locals.podPools.latest = app.locals.podPools.v2;
 
-  const listener = APP.listen(8000, '0.0.0.0', () => logger.log(`Listening on port ${8000}!`));
+  const listener = app.listen(8000, '0.0.0.0', () => logger.log(`Listening on port ${8000}!`));
 
   // Shutdown `server` gracefully.
   // Learn more: https://expressjs.com/en/advanced/healthcheck-graceful-shutdown.html
@@ -1032,7 +1045,7 @@ if (require.main === module) {
     console.log('SIGTERM signal received, shutting down.');
     listener.close(() => {
       console.log('HTTP server closed.');
-      for (const podPool of Object.values(APP.locals.podPools)) {
+      for (const podPool of Object.values(app.locals.podPools)) {
         clearTimeout(podPool.loopTimeout);
         // NOTE: There needs to be at least 1 `Pod` for GKE to function.
         podPool.clean();
