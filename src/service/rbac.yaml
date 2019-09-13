@@ -1,25 +1,25 @@
-# Note this error on using this YAML:
+# NTOE: This error on using this YAML:
 # https://stackoverflow.com/questions/44349987/error-from-server-forbidden-error-when-creating-clusterroles-rbac-author
-kind: Role
+# NOTE: This needs to be `ClusterRole` instead of `Role` to `delete` a `node`; however, this
+# also means that we cannot use namespaces.
+kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: pod-creator
-  namespace: default
 rules:
 - apiGroups: [""] # "" indicates the core API group
   resources: ["pods", "nodes"]
   verbs: ["get", "create", "delete"]
 ---
-kind: RoleBinding
+kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: create-pods
-  namespace: default
 subjects:
 - kind: ServiceAccount
   name: default
   namespace: default
 roleRef:
-  kind: Role
+  kind: ClusterRole
   name: pod-creator
   apiGroup: ""

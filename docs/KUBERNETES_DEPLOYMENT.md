@@ -23,14 +23,14 @@ Refer to the above guides in case there are missing details in the below steps.
 
    ```bash
    export PROJECT_ID="$(gcloud config get-value project -q)"
-   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v2.24 .
+   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v2.26 .
    docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v2.34 .
    ```
 
 1. Push the build:
 
    ```bash
-   docker push gcr.io/${PROJECT_ID}/speech-api:v2.24
+   docker push gcr.io/${PROJECT_ID}/speech-api:v2.26
    docker push gcr.io/${PROJECT_ID}/speech-api-worker:v2.34
    ```
 
@@ -45,7 +45,7 @@ Refer to the above guides in case there are missing details in the below steps.
 
    ```bash
    docker run --rm -p 8000:8000 -e "AUTOSCALE_LOOP=5000 YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api:v2.24
+      gcr.io/${PROJECT_ID}/speech-api:v2.26
    ```
 
 1. Update the Kubernetes deployment manifest (e.g. `src/service/deployment.yaml`) with the updated
@@ -73,7 +73,7 @@ Similar to the above, except:
 ## Staging Namespace
 
 These steps will allow you to setup a staging `namespace` to a test Kubernetes setup. Also
-these deployment steps are loosely based on the below `New Cluster` guide.
+these deployment steps are loosely based on the below "New Cluster" guide.
 
 1. Create a `staging` namespace like so:
 
@@ -87,9 +87,12 @@ these deployment steps are loosely based on the below `New Cluster` guide.
    kubectl config set-context --current --namespace=staging
    ```
 
-1. Follow the instructions in `New Cluster` to setup any permissions and secrets. Note that you'll
-   need to update any `namespace` manifest arguments before using them.
-1. Update the deployment manifest `namespace` argument in `src/service/deployment.yaml` to
+1. Follow the instructions in "New Cluster" to add secrets but first you'll need to update all their
+   `namespace` manifest configurations.
+1. Follow the instructions in "New Cluster" to add permissions. For `Role` and `RoleBinding`
+   resources, you'll need to update the `namespace` manifest configurations. For
+   `ClusterRoleBinding` resources, you'll need to add to the `subjects` configuration.
+1. Update the deployment manifest `namespace` configuration in `src/service/deployment.yaml` to
    `staging`. Then apply the deployment manifest, creating a `Deployment`.
 
    ```bash

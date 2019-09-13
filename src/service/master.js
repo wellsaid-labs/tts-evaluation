@@ -570,7 +570,7 @@ class PodPool {
       // NOTE: Reserve preemptively before `await` during which `javascript` could run another
       // thread that'll reserve it.
       pod.reserve();
-      if (await pod.isReady()) {
+      if (await pod.isReady() && this.podRequests.length > 0) {
         this.podRequests.shift()(pod);
         this.logNumReservedPods();
       } else { // CASE: `pod` is dead.
@@ -698,12 +698,15 @@ class PodPool {
    * Remove any dead pods.
    */
   async clean() {
-    let deadPods = await asyncFilter(this.pods, p => p.isDead());
-    // NOTE: `filter` any pods that left `this.pods` during `await`.
-    deadPods = deadPods.filter(p => this.pods.includes(p));
-    this.logger.log(`PodPool.clean: There are ${deadPods.length} dead pod(s).`);
-    this.pods = this.pods.filter(p => !deadPods.includes(p));
-    return Promise.all(deadPods.map(p => p.destroy()));
+    const destroyedPods = await asyncFilter(this.pods, async (pod) => {
+      const isDead = await pod.isDead();
+      if (isDead) {
+        this.pods = this.pods.filter(p => p !== pod);
+        await pod.destroy();
+      }
+      return isDead;
+    });
+    this.logger.log(`PodPool.clean: Cleaned up ${destroyedPods.length} dead pod(s).`);
   }
 
   /**
