@@ -168,22 +168,6 @@ async function retry(toTry, {
   }
 }
 
-/**
- * `Array.filter` with `async` support.
- *
- * Given node can change threads during `async` operations, the filter may not be accurate when
- * this function returns.
- *
- * @param {iterator} iterator Iterator to run filter on.
- * @param {Function} func Async function used to filter the iterator.
- * @returns {iterator} The filtered iterator.
- */
-async function asyncFilter(iterator, func) {
-  const promises = await Promise.all(iterator.map(element => func(element)));
-  return iterator.filter((_, i) => promises[i]);
-}
-
-
 class Pod {
   /**
    * `Pod` represents a worker with one Kubernetes Pod and Node attached.
@@ -261,7 +245,14 @@ class Pod {
 
     // If `this` is reserved then this does not make a request for readiness due to the synchronous
     // implementation of the worker pods.
-    return !this.isReserved() && (await this.isReady());
+    if (this.isReserved()) {
+      return false;
+    }
+
+
+    // NOTE: Recompute `this.isReserved` after `this.isReady` to ensure it's still not reserved.
+    const isReady = await this.isReady();
+    return !this.isReserved() && isReady;
   }
 
   /**
@@ -321,7 +312,18 @@ class Pod {
     // If `this` is reserved then this does not make a request for readiness due to the synchronous
     // implementation of the worker pods.
     // TODO: Retry a couple times before preemptively killing a pod.
-    return this.isDestroyed || (!this.isReserved() && !(await this.isReady()));
+    if (this.isDestroyed) {
+      return true;
+    }
+
+    if (this.isReserved()) {
+      return false;
+    }
+
+    const isReady = await this.isReady();
+
+    // NOTE: Recompute `this.isReserved` after `this.isReady` to ensure it's still not reserved.
+    return !this.isReserved() && !isReady;
   }
 
   static async destroy(podName, nodeName) {
@@ -506,9 +508,9 @@ class PodPool {
     // Learn more about `arguments` in a `class`:
     // https://stackoverflow.com/questions/48519484/uncaught-syntaxerror-unexpected-eval-or-arguments-in-strict-mode-window-gtag?rq=1
     this.logger = {
-      log: (...args) => logger.log(`[${podImage}]`, `[${(new Date()).toISOString()}]`, ...args),
-      warn: (...args) => logger.warn(`[${podImage}]`, `[${(new Date()).toISOString()}]`, ...args),
-      error: (...args) => logger.error(`[${podImage}]`, `[${(new Date()).toISOString()}]`, ...args),
+      log: (...args) => logger.log(`[${podImage}]`, ...args),
+      warn: (...args) => logger.warn(`[${podImage}]`, ...args),
+      error: (...args) => logger.error(`[${podImage}]`, ...args),
     }
   }
 
@@ -624,6 +626,7 @@ class PodPool {
    * This method should be called whenever the results might be affected.
    */
   async scale() {
+    this.logger.log(`PodPool.scale: Removing dead pod(s).`);
     await this.clean();
     this.logger.log(`PodPool.scale: There are ${this.pods.length} pod(s).`);
     this.logger.log(`PodPool.scale: There are ${this.numPodsBuilding} pod(s) building.`);
@@ -697,16 +700,14 @@ class PodPool {
   /**
    * Remove any dead pods.
    */
-  async clean() {
-    const destroyedPods = await asyncFilter(this.pods, async (pod) => {
-      const isDead = await pod.isDead();
-      if (isDead) {
+  clean() {
+    return Promise.all(this.pods.map(async (pod) => {
+      if (await pod.isDead()) {
+        this.logger.log(`PodPool.clean: Cleaning up Pod ${pod.name}.`);
         this.pods = this.pods.filter(p => p !== pod);
         await pod.destroy();
       }
-      return isDead;
-    });
-    this.logger.log(`PodPool.clean: Cleaned up ${destroyedPods.length} dead pod(s).`);
+    }));
   }
 
   /**
@@ -1063,6 +1064,5 @@ if (require.main === module) {
     PodPool,
     sleep,
     retry,
-    asyncFilter,
   };
 }

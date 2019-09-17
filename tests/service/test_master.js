@@ -70,20 +70,6 @@ async function testRetry() {
   }), 2);
 }
 
-async function testAsyncFilter() {
-  console.log('Running `testAsyncFilter`.');
-
-  result = await master.asyncFilter([1, 2, 3, 1], async (i) => i == 1);
-  expected = [1, 1];
-  assert.ok(result.length == expected.length && expected.every(function (u, i) {
-    return u === result[i];
-  }));
-
-  result = await master.asyncFilter([], async (i) => i == 1);
-  expected = [];
-  assert.ok(result.length == expected.length);
-}
-
 async function testPod() {
   console.log('Running `testPod`.');
   const pod = new master.Pod('podName', 'nodeName', '0.0.0.0', 8000);
@@ -99,6 +85,7 @@ async function testPod() {
 
   pod.reserve();
   assert.ok(pod.isReserved());
+  assert.ok(~(await pod.isDead()));
   // Double releasing pod fails.
   assert.throws(pod.reserve, Error);
 
@@ -210,7 +197,6 @@ async function main() {
   await testEventLogMaxTime();
   await testSleep();
   await testRetry();
-  await testAsyncFilter();
   await testPod();
   await testPodPoolGetNumShortTermPods();
   await testPodPoolGetNumLongTermPods();
