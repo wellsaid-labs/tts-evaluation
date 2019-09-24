@@ -38,7 +38,7 @@ on this
 Then you'll need to SSH into your new VM instance like so:
 
 ```bash
-gcloud compute ssh your_gcp_instance_name --zone=your_gcp_instance_zone
+. src/bin/gcp/ssh.sh your_gcp_instance_name
 ```
 
 On the VM instance, please take note of your username. You can find out your user name like so:
@@ -49,6 +49,12 @@ echo $USER
 
 Note, by default our preconfigured VM(s) are set to be preemtible. This means that sometimes GCP
 will not have enough resources for us. In those cases, you may get a none-preemtible machine.
+
+Finally, you'll want to be able to write to this machine and update its dependencies. To pre-emptively resolve any permissions issues, run:
+
+```
+sudo chmod -R a+rwx /opt/
+```
 
 ### 4. Synchronize Your Files
 
@@ -78,9 +84,6 @@ cd /opt/wellsaid-labs/Text-to-Speech
 # Install Python dependencies
 python -m pip install -r requirements.txt --upgrade
 ```
-
-You may encounter a permissions errors when running the above commands, it can be resolve like
-so `sudo chmod -R a+rwx /opt/`.
 
 ### 6. Start Training Spectrogram Model
 
