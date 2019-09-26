@@ -72,7 +72,7 @@ brew install ninja
 
 #### (Optional) [MKL](https://software.intel.com/en-us/mkl)
 
-For optimal signal model inference performance install [MKL](https://software.intel.com/en-us/mkl)
+For optimal signal model inference performance, install [MKL](https://software.intel.com/en-us/mkl)
 like so:
 
 ```bash
@@ -97,7 +97,7 @@ COMET_ML_API_KEY=xx
 COMET_ML_REST_API_KEY=xx
 ```
 
-### Your Done
+### You're Done
 
 Verify that your installation was successful by running the test suite:
 
@@ -107,4 +107,4 @@ python -m pytest
 
 ### Other Documentation
 
-Additionally, further documentation can be found [here](docs/).
+Additionally, further documentation (such as how to train a model) can be found [here](docs/).
