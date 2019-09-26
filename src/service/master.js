@@ -232,7 +232,9 @@ class Pod {
       throw `Pod.isReady Error: Pod ${this.name} has already been destroyed.`
     }
 
-    return Pod.isReady(this.name, this.ip, this.port);
+    const isReady = await Pod.isReady(this.name, this.ip, this.port);
+    // NOTE: This could be destroy during `await Pod.isReady`.
+    return isReady && !this.isDestroyed;
   }
 
   /**
@@ -252,7 +254,7 @@ class Pod {
 
     // NOTE: Recompute `this.isReserved` after `this.isReady` to ensure it's still not reserved.
     const isReady = await this.isReady();
-    return !this.isReserved() && isReady;
+    return isReady && !this.isReserved();
   }
 
   /**
@@ -323,7 +325,8 @@ class Pod {
     const isReady = await this.isReady();
 
     // NOTE: Recompute `this.isReserved` after `this.isReady` to ensure it's still not reserved.
-    return !this.isReserved() && !isReady;
+    // NOTE: Ensure that after `await this.isReady` is hasn't died.
+    return this.isDestroyed || (!this.isReserved() && !isReady);
   }
 
   static async destroy(podName, nodeName) {
@@ -658,6 +661,7 @@ class PodPool {
     toDestory = toDestory.filter(p => Date.now() - p.createdAt >= MINIMUM_POD_TIME_TO_LIVE);
     this.logger.log(`PodPool.downscale: ${toDestory.length} pods are eligable for destruction.`);
 
+    // TODO: Consider sorting by creation time to benefit from Google's long usage discounts.
     toDestory = toDestory.sort((a, b) => a.freeSince - b.freeSince); // Sort by least recently used
 
     // Select pods to destroy
@@ -1006,6 +1010,8 @@ app.get('/', (_, response) => {
     root: __dirname
   });
 });
+
+// TODO: Do not respond to `healthy` until PodPools are online with the minimum number of pods.
 app.get('/healthy', (_, response) => {
   response.send('ok');
 });
