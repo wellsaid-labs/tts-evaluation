@@ -85,7 +85,7 @@ cd /opt/wellsaid-labs/Text-to-Speech
 python -m pip install -r requirements.txt --upgrade
 ```
 
-### 6. Start Training Spectrogram Model
+### 6. Training Spectrogram Model
 
 Finally, your ready to start training your model. You can do so, like so:
 
@@ -109,8 +109,59 @@ Now that your experiment is running, you will want to detach from the process by
 `Ctrl-A` then `Ctrl-D`. This will detach your screen session but leave your process running.
 Finally, you can now log out of your instance with the bash command `exit`.
 
+It's best to leave your spectrogram model training for 150,000 steps. See the '''Keeping Your VM Instance Alive''' section to optimize your experiment running time and keep it running overnight! Monitor your experiment in Comet.ML and once it has surpassed 150,000 and you are satisfied with the data you've gathered, end your process!
+
 You'll want to train the `signal_model` after you've trained the `spectrogram_model` most likely.
-The procedure is similar.
+The procedure is similar:
+
+### 6. Training Signal Model
+
+You are ready to train the signal model after you've trained the spectrogram model. This model is a required argument for kicking of the signal model training.
+
+Signal model training requires some upgrades to your GCP VM instance. Open your GCP VM instance and click ''Edit''.
+Under ''Machine Type'', choose ''n1-highmem-32 (32 vCPU, 208 GB memory)''.
+Expand ''CPU platform and GPU''.
+Under ''GPU type'', choose ''NVIDIA Tesla V100''. Under ''Number of GPUs'', choose ''8''.
+Scroll to the bottom and click ''Save''.
+
+Re-start your GCP VM Instance and log back into it:
+```bash
+. src/bin/gcp/ssh.sh your_gcp_instance_name
+```
+
+Signal model checkpoints are stored on your cloud machine under something similar to:
+```
+experiments/spectrogram_model/[LATEST DATE OF TRAINING]/checkpoints/[LATEST DATE OF TRAINING]/step_[~150000].pt
+```
+Do some investigating to find where the near 150,000th step .pt file exists.
+
+Once you've settled on a spectrogram model checkpoint, you're ready to train! We pass `-t` arguments to tag our experiment and `-s` argument to pass the spectrogram model checkpoint.
+
+```bash
+cd /opt/wellsaid-labs/Text-to-Speech
+
+# Activate the virtual environment
+. venv/bin/activate
+
+# Install Python dependencies
+python -m pip install -r requirements.txt --upgrade
+
+screen
+
+# Activate the virtual environment
+. venv/bin/activate
+
+# Kill any existing processes (sometimes `src/bin/train/spectrogram_model/__main__.py` does not
+# exit cleanly).
+pkill -9 python; nvidia-smi;
+
+PYTHONPATH=. python src/bin/train/signal_model/__main__.py \
+    --project_name your_comet_ml_project_name -t signal \
+    -s experiments/spectrogram_model/[LATEST DATE OF TRAINING]/checkpoints/[LATEST DATE OF TRAINING]/step_[~150000].pt
+```
+
+Again, keep your experiment running out past 150,000 steps. Monitor your experiment in Comet.ML and once it has surpassed 150,000 and you are satisfied with the data you've gathered, end your process!
+
 
 ### (Optional) Keeping Your VM Instance Alive
 
@@ -140,7 +191,7 @@ gcloud compute scp --recurse --zone=your_gcp_instance_zone \
     your_gcp_instance_name:/path/to/download ~/Downloads/
 ```
 
-### 7. Delete Your VM Instance
+### 8. Delete Your VM Instance
 
 To ensure that experiments are reproducible, please delete your VM instance after you've completed
 your experiments and use a new VM instance for any new experiment(s).
