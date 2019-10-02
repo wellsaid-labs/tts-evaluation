@@ -229,7 +229,7 @@ class Pod {
 
   async isReady() {
     if (this.isDestroyed) {
-      throw `Pod.isReady Error: Pod ${this.name} has already been destroyed.`;
+      throw new Error(`Pod.isReady Error: Pod ${this.name} has already been destroyed.`);
     }
 
     const isReady = await Pod.isReady(this.name, this.ip, this.port);
@@ -242,7 +242,7 @@ class Pod {
    */
   async isAvailable() {
     if (this.isDestroyed) {
-      throw `Pod.isAvailable Error: Pod ${this.name} has already been destroyed.`;
+      throw new Error(`Pod.isAvailable Error: Pod ${this.name} has already been destroyed.`);
     }
 
     // If `this` is reserved then this does not make a request for readiness due to the synchronous
@@ -262,7 +262,7 @@ class Pod {
    */
   isReserved() {
     if (this.isDestroyed) {
-      throw `Pod.isReserved Error: Pod ${this.name} has already been destroyed.`;
+      throw new Error(`Pod.isReserved Error: Pod ${this.name} has already been destroyed.`);
     }
 
     return this.freeSince === undefined;
@@ -278,11 +278,12 @@ class Pod {
    */
   reserve() {
     if (this.isDestroyed) {
-      throw `Pod.reserve Error: Pod ${this.name} has already been destroyed.`;
+      throw new Error(`Pod.reserve Error: Pod ${this.name} has already been destroyed.`);
     }
 
     if (this.isReserved()) {
-      throw `Pod.reserve Error: Pod ${this.name} is reserved, it cannot be reserved again.`;
+      throw new Error(
+        `Pod.reserve Error: Pod ${this.name} is reserved, it cannot be reserved again.`);
     }
 
     logger.log(`Reserving pod ${this.name}.`);
@@ -295,11 +296,11 @@ class Pod {
    */
   release() {
     if (this.isDestroyed) {
-      throw `Pod.release Error: Pod ${this.name} has already been destroyed.`;
+      throw new Error(`Pod.release Error: Pod ${this.name} has already been destroyed.`);
     }
 
     if (!this.isReserved()) {
-      throw `Pod.release Error: Pod ${this.name} has not already been reserved.`;
+      throw new Error(`Pod.release Error: Pod ${this.name} has not already been reserved.`);
     }
 
     logger.log(`Releasing pod ${this.name}.`);
@@ -352,11 +353,11 @@ class Pod {
    */
   async destroy() {
     if (this.isDestroyed) {
-      throw `Pod.destory Error: Pod ${this.name} has already been destroyed.`;
+      throw new Error(`Pod.destory Error: Pod ${this.name} has already been destroyed.`);
     }
 
     if (this.isReserved()) {
-      throw `Pod.destroy Error: Pod ${this.name} is reserved, it cannot be destroyed.`;
+      throw new Error(`Pod.destroy Error: Pod ${this.name} is reserved, it cannot be destroyed.`);
     }
 
     logger.log(`Pod.destroy: Deleting Pod ${this.name}.`);
@@ -466,10 +467,11 @@ class Pod {
         // https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/
         if (info.body.status.phase == 'Running') {
           if (!(await Pod.isReady(name, info.body.status.podIP, podPort))) {
-            throw 'Pod.build Error: Pod is not ready to recieve work.';
+            throw new Error('Pod.build Error: Pod is not ready to recieve work.');
           }
         } else {
-          throw `Pod.build Error: Not running, recieved:\n${JSON.stringify(info.body.status)}`;
+          throw new Error(
+            `Pod.build Error: Not running, recieved:\n${JSON.stringify(info.body.status)}`);
         }
       }, {
         retries: statusRetries,
