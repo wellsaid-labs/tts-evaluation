@@ -17,4 +17,4 @@ LABEL maintainer="michael@wellsaidlabs.com"
 ENV NODE_ENV production
 
 EXPOSE 8000
-CMD ["node", "src/service/master.js"]
+CMD ["node", "--trace-warnings", "src/service/master.js"]

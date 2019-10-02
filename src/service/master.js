@@ -229,7 +229,7 @@ class Pod {
 
   async isReady() {
     if (this.isDestroyed) {
-      throw `Pod.isReady Error: Pod ${this.name} has already been destroyed.`
+      throw `Pod.isReady Error: Pod ${this.name} has already been destroyed.`;
     }
 
     const isReady = await Pod.isReady(this.name, this.ip, this.port);
@@ -242,7 +242,7 @@ class Pod {
    */
   async isAvailable() {
     if (this.isDestroyed) {
-      throw `Pod.isAvailable Error: Pod ${this.name} has already been destroyed.`
+      throw `Pod.isAvailable Error: Pod ${this.name} has already been destroyed.`;
     }
 
     // If `this` is reserved then this does not make a request for readiness due to the synchronous
@@ -262,7 +262,7 @@ class Pod {
    */
   isReserved() {
     if (this.isDestroyed) {
-      throw `Pod.isReserved Error: Pod ${this.name} has already been destroyed.`
+      throw `Pod.isReserved Error: Pod ${this.name} has already been destroyed.`;
     }
 
     return this.freeSince === undefined;
@@ -278,11 +278,11 @@ class Pod {
    */
   reserve() {
     if (this.isDestroyed) {
-      throw `Pod.reserve Error: Pod ${this.name} has already been destroyed.`
+      throw `Pod.reserve Error: Pod ${this.name} has already been destroyed.`;
     }
 
     if (this.isReserved()) {
-      throw `Pod.reserve Error: Pod ${this.name} is reserved, it cannot be reserved again.`
+      throw `Pod.reserve Error: Pod ${this.name} is reserved, it cannot be reserved again.`;
     }
 
     logger.log(`Reserving pod ${this.name}.`);
@@ -295,11 +295,11 @@ class Pod {
    */
   release() {
     if (this.isDestroyed) {
-      throw `Pod.release Error: Pod ${this.name} has already been destroyed.`
+      throw `Pod.release Error: Pod ${this.name} has already been destroyed.`;
     }
 
     if (!this.isReserved()) {
-      throw `Pod.release Error: Pod ${this.name} has not already been reserved.`
+      throw `Pod.release Error: Pod ${this.name} has not already been reserved.`;
     }
 
     logger.log(`Releasing pod ${this.name}.`);
@@ -351,12 +351,12 @@ class Pod {
    * Destroy `this`.
    */
   async destroy() {
-    if (this.isReserved()) {
-      throw `Pod.destroy Error: Pod ${this.name} is reserved, it cannot be destroyed.`
+    if (this.isDestroyed) {
+      throw `Pod.destory Error: Pod ${this.name} has already been destroyed.`;
     }
 
-    if (this.isDestroyed) {
-      throw `Pod.destory Error: Pod ${this.name} has already been destroyed.`
+    if (this.isReserved()) {
+      throw `Pod.destroy Error: Pod ${this.name} is reserved, it cannot be destroyed.`;
     }
 
     logger.log(`Pod.destroy: Deleting Pod ${this.name}.`);
@@ -537,6 +537,7 @@ class PodPool {
    */
   waitTillReady() {
     return new Promise(async (resolve) => {
+      this.logger.log(`PodPool.waitTillReady: Waiting till ready.`);
       if (this.pods.length > 0 && await Promise.race(this.pods.map(p => p.isReady()))) {
         resolve();
       } else {
@@ -559,6 +560,7 @@ class PodPool {
    * Fulfill the next pod reservation request in `this.podRequests` and `this.waiting`.
    */
   async fufillPodRequests() {
+    this.logger.log(`PodPool.fufillPodRequests: Fufilling pod requests.`);
     if (this.waiting.length > 0 && await Promise.race(this.pods.map(p => p.isReady()))) {
       this.waiting.map(resolve => resolve());
     }
@@ -706,7 +708,8 @@ class PodPool {
    */
   clean() {
     return Promise.all(this.pods.map(async (pod) => {
-      if (await pod.isDead()) {
+      this.logger.log(`PodPool.clean: Maybe cleaning up Pod ${pod.name}.`);
+      if (await pod.isDead() && this.pods.includes(pod)) {
         this.logger.log(`PodPool.clean: Cleaning up Pod ${pod.name}.`);
         this.pods = this.pods.filter(p => p !== pod);
         await pod.destroy();
@@ -995,6 +998,11 @@ const noReservationController = (() => {
   };
 })();
 
+process.on('unhandledRejection', error => {
+  logger.error('Caught `unhandledRejection`.');
+  logger.error(error);
+  process.exit(1);
+});
 
 const app = express();
 
