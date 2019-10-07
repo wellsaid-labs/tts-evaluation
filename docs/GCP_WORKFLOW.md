@@ -109,33 +109,32 @@ Now that your experiment is running, you will want to detach from the process by
 `Ctrl-A` then `Ctrl-D`. This will detach your screen session but leave your process running.
 Finally, you can now log out of your instance with the bash command `exit`.
 
-It's best to leave your spectrogram model training for 150,000 steps. See the '''Keeping Your VM Instance Alive''' section to optimize your experiment running time and keep it running overnight! Monitor your experiment in Comet.ML and once it has surpassed 150,000 and you are satisfied with the data you've gathered, end your process!
+You'll want to train your spectrogram model till convergence which as of 
+October 2019 is around 150,000 steps. See the '''Keeping Your VM Instance Alive''' section 
+to optimize your experiment running time and keep it running overnight! Lastly, monitor
+your experiment in [comet](comet.ml) and kill your process after it's converged.
 
 You'll want to train the `signal_model` after you've trained the `spectrogram_model` most likely.
-The procedure is similar:
 
-### 6. Training Signal Model
+### 7. Training Signal Model
 
-You are ready to train the signal model after you've trained the spectrogram model. This model is a required argument for kicking of the signal model training.
+For most use cases, you'll train your signal model with your spectrogram model. The spectrogram
+model can be passed as an argument to kick of signal model training. 
 
-Signal model training requires some upgrades to your GCP VM instance. Open your GCP VM instance and click ''Edit''.
-Under ''Machine Type'', choose ''n1-highmem-32 (32 vCPU, 208 GB memory)''.
-Expand ''CPU platform and GPU''.
-Under ''GPU type'', choose ''NVIDIA Tesla V100''. Under ''Number of GPUs'', choose ''8''.
-Scroll to the bottom and click ''Save''.
+The signal model training GCP VM instance requires:
 
-Re-start your GCP VM Instance and log back into it:
-```bash
-. src/bin/gcp/ssh.sh your_gcp_instance_name
-```
+- ''n1-highmem-32 (32 vCPU, 208 GB memory)'' machine type.
+- 8 ''NVIDIA Tesla V100'' GPUs. 
 
-Signal model checkpoints are stored on your cloud machine under something similar to:
+Note that in order to make changes to the GCP VM instance you'll need to stop your machine first.
+
+The spectrogram model checkpoint will be stored on your cloud machine like so:
 ```
 experiments/spectrogram_model/[LATEST DATE OF TRAINING]/checkpoints/[LATEST DATE OF TRAINING]/step_[~150000].pt
 ```
-Do some investigating to find where the near 150,000th step .pt file exists.
+You'll likely want to grab a checkpoint near the convergence point to train the signal model. 
 
-Once you've settled on a spectrogram model checkpoint, you're ready to train! We pass `-t` arguments to tag our experiment and `-s` argument to pass the spectrogram model checkpoint.
+Once you've settled on a spectrogram model checkpoint, you're ready to train!
 
 ```bash
 cd /opt/wellsaid-labs/Text-to-Speech
@@ -151,17 +150,22 @@ screen
 # Activate the virtual environment
 . venv/bin/activate
 
-# Kill any existing processes (sometimes `src/bin/train/spectrogram_model/__main__.py` does not
+# Kill any existing processes (sometimes `src/bin/train/signal_model/__main__.py` does not
 # exit cleanly).
 pkill -9 python; nvidia-smi;
 
 PYTHONPATH=. python src/bin/train/signal_model/__main__.py \
-    --project_name your_comet_ml_project_name -t signal \
-    -s experiments/spectrogram_model/[LATEST DATE OF TRAINING]/checkpoints/[LATEST DATE OF TRAINING]/step_[~150000].pt
+    --project_name your_comet_ml_project_name --tags your_tag --tags your_tag_two \
+    --spectrogram_model_checkpoint experiments/spectrogram_model/[LATEST DATE OF TRAINING]/checkpoints/[LATEST DATE OF TRAINING]/step_[~150000].pt
 ```
 
-Again, keep your experiment running out past 150,000 steps. Monitor your experiment in Comet.ML and once it has surpassed 150,000 and you are satisfied with the data you've gathered, end your process!
+Finally, for the signal model, you'll want to train again to convergence which is around
+150,000 steps as of October 2019. See the '''Keeping Your VM Instance Alive''' section 
+to optimize your experiment running time and keep it running overnight! Lastly, monitor
+your experiment in [comet](comet.ml) and kill your process after it's converged.
 
+You'll want to kill your experiment after it's converged because it won't
+improve much more and it costs 6$ / hr per VM.
 
 ### (Optional) Keeping Your VM Instance Alive
 
