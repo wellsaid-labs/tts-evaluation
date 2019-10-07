@@ -50,7 +50,8 @@ echo $USER
 Note, by default our preconfigured VM(s) are set to be preemtible. This means that sometimes GCP
 will not have enough resources for us. In those cases, you may get a none-preemtible machine.
 
-Finally, you'll want to be able to write to this machine and update its dependencies. To pre-emptively resolve any permissions issues, run:
+Finally, you'll want to be able to write to this machine and update its dependencies. To
+pre-emptively resolve any permissions issues, run:
 
 ```
 sudo chmod -R a+rwx /opt/
@@ -109,8 +110,8 @@ Now that your experiment is running, you will want to detach from the process by
 `Ctrl-A` then `Ctrl-D`. This will detach your screen session but leave your process running.
 Finally, you can now log out of your instance with the bash command `exit`.
 
-You'll want to train your spectrogram model till convergence which as of 
-October 2019 is around 150,000 steps. See the '''Keeping Your VM Instance Alive''' section 
+You'll want to train your spectrogram model till convergence which as of
+October 2019 is around 150,000 steps. See the `Keeping Your VM Instance Alive` section
 to optimize your experiment running time and keep it running overnight! Lastly, monitor
 your experiment in [comet](comet.ml) and kill your process after it's converged.
 
@@ -119,20 +120,23 @@ You'll want to train the `signal_model` after you've trained the `spectrogram_mo
 ### 7. Training Signal Model
 
 For most use cases, you'll train your signal model with your spectrogram model. The spectrogram
-model can be passed as an argument to kick of signal model training. 
+model can be passed as an argument to kick of signal model training.
 
-The signal model training GCP VM instance requires:
+First, ensure that the signal model GCP VM has the right resources:
 
-- ''n1-highmem-32 (32 vCPU, 208 GB memory)'' machine type.
-- 8 ''NVIDIA Tesla V100'' GPUs. 
+- `n1-highmem-32 (32 vCPU, 208 GB memory)` machine type.
+- 8 `NVIDIA Tesla V100` GPUs.
 
 Note that in order to make changes to the GCP VM instance you'll need to stop your machine first.
 
-The spectrogram model checkpoint will be stored on your cloud machine like so:
-```
+Next you'll want to get a spectrogram model checkpoint which will be stored on your cloud machine
+like so:
+
+```bash
 experiments/spectrogram_model/[LATEST DATE OF TRAINING]/checkpoints/[LATEST DATE OF TRAINING]/step_[~150000].pt
 ```
-You'll likely want to grab a checkpoint near the convergence point to train the signal model. 
+
+You'll likely want to grab a checkpoint near the convergence point to train the signal model.
 
 Once you've settled on a spectrogram model checkpoint, you're ready to train!
 
@@ -160,7 +164,7 @@ PYTHONPATH=. python src/bin/train/signal_model/__main__.py \
 ```
 
 Finally, for the signal model, you'll want to train again to convergence which is around
-150,000 steps as of October 2019. See the '''Keeping Your VM Instance Alive''' section 
+150,000 steps as of October 2019. See the `Keeping Your VM Instance Alive` section
 to optimize your experiment running time and keep it running overnight! Lastly, monitor
 your experiment in [comet](comet.ml) and kill your process after it's converged.
 
