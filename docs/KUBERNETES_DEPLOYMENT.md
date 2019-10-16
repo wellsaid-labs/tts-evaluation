@@ -117,6 +117,7 @@ these deployment steps are loosely based on the below "New Cluster" guide.
 ## New Cluster
 
 These deployment steps are loosely based on these guides below:
+
 - https://cloud.google.com/kubernetes-engine/docs/tutorials/hello-app
 - https://cloud.google.com/kubernetes-engine/docs/tutorials/http-balancer
 
@@ -124,14 +125,13 @@ Refer to the above guides in case there are missing details in the below steps.
 
 1. A cluster consists of a pool of Compute Engine VM instances running Kubernetes, the open source
    cluster orchestration system that powers GKE. Create a cluster by following these steps:
-    1. Navigate to GCPs `Create a Kubernetes cluster` page.
-    1. Pick the `Standard cluster` template on the left hand side.
-    1. Ensure that the `Maintenance window` is set to 3:00am under
-       `Availability, networking, security, and additional features`.
-    1. Create a `Node pool` for worker (i.e. 'worker-pool') and master nodes (i.e. 'master-pool').
-       The worker and master likely do not need default 100GB disk size. The worker likely has an
-       optimized architecture that it runs most quickly on.
-    1. Pick the required computer resources for this deployment.
+   1. Navigate to GCPs `Create a Kubernetes cluster` page.
+   1. Pick the `Standard cluster` template on the left hand side.
+   1. Create a `Node pool` for worker (i.e. 'worker-pool') and master nodes (i.e. 'master-pool').
+      The worker and master likely do not need default 100GB disk size. The worker likely has an
+      optimized architecture that it runs most quickly on. The worker pool will need autoscaling
+      enabled with 1 node minimum and a maximum of 100 nodes.
+   1. Pick the required computer resources for this deployment.
 1. Assuming GKE is installed on your system. Log into your cluster via:
 
    ```bash
@@ -139,19 +139,20 @@ Refer to the above guides in case there are missing details in the below steps.
    ```
 
 1. Set up permissions via RBAC:
-    1. To run the next step, your account will need to be a `cluster-admin`:
 
-       ```bash
-       kubectl create clusterrolebinding your-name-cluster-admin-binding \
-           --clusterrole=cluster-admin \
-           --user=youremail
-       ```
+   1. To run the next step, your account will need to be a `cluster-admin`:
 
-    2. Give permission to the service to create `Pods` via:
+      ```bash
+      kubectl create clusterrolebinding your-name-cluster-admin-binding \
+          --clusterrole=cluster-admin \
+          --user=your@email.com
+      ```
 
-       ```bash
-       kubectl apply -f src/service/rbac.yaml
-       ```
+   2. Give permission to the service to create `Pods` via:
+
+      ```bash
+      kubectl apply -f src/service/rbac.yaml
+      ```
 
 1. Set up API Keys. Our API Keys are stored on Kubernetes as secrets. Create them via:
 
@@ -163,18 +164,22 @@ Refer to the above guides in case there are missing details in the below steps.
    ```
 
 1. Deploy the web application to Kubernetes.
-    1. Apply the deployment manifest, creating a `Deployment`.
 
-       ```bash
-       kubectl apply -f src/service/deployment.yaml
-       ```
+   1. Apply the deployment manifest, creating a `Deployment`.
 
-    1. Check that the deployment is working by inspecting logs like so:
+      ```bash
+      kubectl apply -f src/service/deployment.yaml
+      ```
 
-       ```bash
-       kubectl get pods
-       kubectl logs -f some_pod_name
-       ```
+   This command assumes that the required images were built and pushed similar to
+   `Update Container`.
+
+   1. Check that the deployment is working by inspecting logs like so:
+
+      ```bash
+      kubectl get pods
+      kubectl logs -f some_pod_name
+      ```
 
 1. Create a `Service` resource to make the web deployment reachable within your container cluster.
 
@@ -186,35 +191,37 @@ Refer to the above guides in case there are missing details in the below steps.
    routing external HTTP(S) traffic to internal services. On GKE, Ingress is implemented using
    Cloud Load Balancing. When you create an Ingress in your cluster, GKE creates an HTTP(S) load
    balancer and configures it to route traffic to your application.
-    1. Reserve a static address
-       [here](https://console.cloud.google.com/networking/addresses/add?project=mythical-runner-203817).
-       Ensure that the static IP address is of type "Global (to be used with Global forwarding
-       rules)".
-    1. Change `kubernetes.io/ingress.global-static-ip-name` in `src/service/ingress.yaml` to
-       your static IP address name.
-    1. Apply the ingress manifest, creating a `Ingress`.
 
-       ```bash
-       kubectl apply -f src/service/ingress.yaml
-       ```
+   1. Reserve a static address
+      [here](https://console.cloud.google.com/networking/addresses/add?project=mythical-runner-203817).
+      Ensure that the static IP address is of type "Global (to be used with Global forwarding
+      rules)".
+   1. Change `kubernetes.io/ingress.global-static-ip-name` in `src/service/ingress.yaml` to
+      your static IP address name.
+   1. Apply the ingress manifest, creating a `Ingress`.
 
-       Wait 30 minutes. On the GKE frontend, it'll display a status for ingress creation.
-    1. The speech API tends to run jobs that can take upwards of 15 minutes or more. By default,
-       the GKE load balancer has a timeout for requests that is much smaller. To adjust that you
-       need to:
-        1. On a web browser, navigate to the ingress service in the GKE frontend landing on a
-           page called "Ingress Details".
-        1. Within the details, there is a section titled "Ingress". Within the section, click the
-           link to the right of "Backend services".
-        1. On the top nav bar select "edit", edit the timeout to 3600 (1 hour).
-        1. Wait up to 10 minutes to the changes to take effect.
-    1. It is important to set up a secure HTTPS endpoint, here are the steps to do so:
-        1. On a web browser, navigate to the ingress service in the GKE frontend landing on a
-           page called "Ingress Details".
-        1. Within the details, there is a section titled "Ingress". Within the section, click the
-           link to the right of "Load balancer".
-        1. On the top nav bar select "edit", then on the left panel click "Frontend configuration".
-        1. On the right side click "+ Add Frontend IP and port".
-        1. Configure the "New Frontend IP and port" with 443 for port, HTTPS for the protocol,
-           some HTTPS certificate, and some IP address.
-        1. Wait up to 5 minutes to the changes to take effect.
+      ```bash
+      kubectl apply -f src/service/ingress.yaml
+      ```
+
+      Wait 30 minutes. On the GKE frontend, it'll display a status for ingress creation.
+
+   1. The speech API tends to run jobs that can take upwards of 15 minutes or more. By default,
+      the GKE load balancer has a timeout for requests that is much smaller. To adjust that you
+      need to:
+      1. On a web browser, navigate to the ingress service in the GKE frontend landing on a
+         page called "Ingress Details".
+      1. Within the details, there is a section titled "Ingress". Within the section, click the
+         link to the right of "Backend services".
+      1. On the top nav bar select "edit", edit the timeout to 3600 (1 hour).
+      1. Wait up to 10 minutes to the changes to take effect.
+   1. It is important to set up a secure HTTPS endpoint, here are the steps to do so:
+      1. On a web browser, navigate to the ingress service in the GKE frontend landing on a
+         page called "Ingress Details".
+      1. Within the details, there is a section titled "Ingress". Within the section, click the
+         link to the right of "Load balancer".
+      1. On the top nav bar select "edit", then on the left panel click "Frontend configuration".
+      1. On the right side click "+ Add Frontend IP and port".
+      1. Configure the "New Frontend IP and port" with 443 for port, HTTPS for the protocol,
+         some HTTPS certificate, and some IP address.
+      1. Wait up to 5 minutes to the changes to take effect.

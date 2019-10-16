@@ -1001,8 +1001,7 @@ const noReservationController = (() => {
 })();
 
 process.on('unhandledRejection', error => {
-  logger.error('Caught `unhandledRejection`.');
-  logger.error(error);
+  logger.error(`Caught unhandledRejection:\n${error}`);
   process.exit(1);
 });
 
