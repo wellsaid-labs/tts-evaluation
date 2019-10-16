@@ -563,7 +563,9 @@ class PodPool {
    */
   async fufillPodRequests() {
     this.logger.log(`PodPool.fufillPodRequests: Fufilling pod requests.`);
-    if (this.waiting.length > 0 && await Promise.race(this.pods.map(p => p.isReady()))) {
+    if (this.waiting.length > 0 &&
+      this.pods.length > 0 &&
+      await Promise.race(this.pods.map(p => p.isReady()))) {
       this.waiting.map(resolve => resolve());
     }
 
@@ -973,7 +975,8 @@ const noReservationController = (() => {
     podIndex %= podPool.pods.length;
     const pod = podPool.pods[podIndex];
     podIndex += 1;
-    logger.log(`noReservationController: Got Pod ${pod.name}.`);
+    logger.log(`noReservationController: Got Pod ${podIndex - 1} of ${podPool.pods.length} `
+      `named ${pod.name}.`);
     return pod;
   }
 
