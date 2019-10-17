@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
     '"It should be a new sentence." "(And the same with this one.)" ' +
     '(\'And this one!\')"(\'(And (this)) \'?)"').length == 5);
 
-  function requestAudio(version, payload, sectionElement, retry = 0, maxRetries = 3) {
+  function requestAudio(data, retry = 0, maxRetries = 3) {
     // Start stream
     let startTime = new Date().getTime();
     let queuingTime;
@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
     // Make request for stream
     request.open('POST', `${endpoint}/stream`);
     request.setRequestHeader('Content-Type', 'application/json');
-    request.setRequestHeader('Accept-Version', version);
+    request.setRequestHeader('Accept-Version', data.version);
     request.responseType = 'blob';
     request.addEventListener('progress', (event) => {
       if (event.lengthComputable) {
@@ -119,23 +119,23 @@ document.addEventListener('DOMContentLoaded', function (_) {
         estimatedTimeLeft = secondsToString(estimatedTimeLeft / 1000);
         percentage = Math.round(percentage * 100); // Decimals to percent
         const message = `${Math.round(percentage)}% Generated - ${estimatedTimeLeft} Left`
-        sectionElement.querySelector('.progress p').textContent = message;
+        data.sectionElement.querySelector('.progress p').textContent = message;
       }
     });
     request.addEventListener('error', (error) => {
       console.error(error);
-      sectionElement.querySelector('.progress p').textContent = `Network error.`;
+      data.sectionElement.querySelector('.progress p').textContent = `Network error.`;
     });
     request.addEventListener('timeout', () => {
-      sectionElement.querySelector('.progress p').textContent = `Request timed out.`;
+      data.sectionElement.querySelector('.progress p').textContent = `Request timed out.`;
     });
     request.addEventListener('abort', () => {
-      sectionElement.querySelector('.progress p').textContent = `Request aborted.`;
+      data.sectionElement.querySelector('.progress p').textContent = `Request aborted.`;
     });
     request.addEventListener('load', () => {
       if (request.status === 200) {
-        sectionElement.querySelector('.progress').style.display = 'none';
-        const audioElement = sectionElement.querySelector('audio');
+        data.sectionElement.querySelector('.progress').style.display = 'none';
+        const audioElement = data.sectionElement.querySelector('audio');
         const generatingTime = ((new Date().getTime()) - startTime) / 1000;
 
         // Add statistics to the footer on `audioElement` load.
@@ -144,7 +144,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
           const numSamples = (request.getResponseHeader("Content-Length") - 44) / 2;
           const generatingWaveTime = generatingTime - queuingTime;
           const samplesPerSecond = Math.round(numSamples / generatingWaveTime);
-          sectionElement.querySelector('footer p').innerHTML = ([
+          data.sectionElement.querySelector('footer p').innerHTML = ([
             `Audio Duration: ${Math.round(audioElement.duration * 100) / 100}s`,
             `Generation Timer: ${Math.round(generatingTime * 100) / 100}s`,
             `Queuing / Spectrogram Timer: ${Math.round(queuingTime * 100) / 100}s`,
@@ -155,23 +155,24 @@ document.addEventListener('DOMContentLoaded', function (_) {
 
         allAudio.push({
           'response': request.response,
-          'speakerId': payload.speaker_id,
-          'text': payload.text,
+          'speakerId': data.payload.speaker_id,
+          'text': data.payload.text,
+          'clipNumber': data.clipNumber,
         });
         audioElement.src = window.URL.createObjectURL(request.response);
         audioElement.load();
       } else {
         if (request.status === 502 && retry < maxRetries) {
-          sectionElement.querySelector('.progress p').textContent =
+          data.sectionElement.querySelector('.progress p').textContent =
             'Queuing / Generating Spectrogram';
-          requestAudio(version, payload, sectionElement, retry + 1);
+          requestAudio(data, retry + 1);
         } else {
           const message = `Status code ${request.status}.`;
-          sectionElement.querySelector('.progress p').textContent = message;
+          data.sectionElement.querySelector('.progress p').textContent = message;
         }
       }
     });
-    request.send(JSON.stringify(payload));
+    request.send(JSON.stringify(data.payload));
   };
 
   async function generate() {
@@ -186,9 +187,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
     const speakerId = parseInt(speakerElement.value);
     const version = versionElement.value;
     const apiKey = apiKeyInput.value.trim();
-    const payloads = [];
-    const sections = [];
-    const versions = [];
+    const requests = [];
 
     for (const text of corpus) {
       const payload = {
@@ -233,9 +232,12 @@ document.addEventListener('DOMContentLoaded', function (_) {
         if (!response.ok) {
           sectionElement.querySelector('.progress p').textContent = (await response.json()).message;
         } else {
-          sections.push(sectionElement);
-          payloads.push(payload);
-          versions.push(version);
+          requests.push({
+            version,
+            clipNumber: clipNumber - 1,
+            payload,
+            sectionElement,
+          });
         }
       } catch (error) {
         // TODO: Retry input validation a couple times if so.
@@ -244,10 +246,10 @@ document.addEventListener('DOMContentLoaded', function (_) {
       }
     }
 
-    for (const [version, payload, sectionElement] of zip(versions, payloads, sections)) {
+    for (const request of requests) {
       // NOTE: Chrome will only keep six connections open at a time:
       // https://stackoverflow.com/questions/29206067/understanding-chrome-network-log-stalled-state
-      requestAudio(version, payload, sectionElement);
+      requestAudio(request);
       // NOTE: Ensure that the requests are captured by the server in the right order. In the
       // future, this can be done more efficiently with a `Date` header. Learn more:
       // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Date
@@ -267,14 +269,15 @@ document.addEventListener('DOMContentLoaded', function (_) {
       response,
       speakerId,
       text,
+      clipNumber,
       maxTextLength = 50, // NOTE: There is a maximum length in various OSs for filenames.
-    }, i) {
+    }) {
       const speakerName = speakerSelect.options[speakerId].text;
       let partialText = text.trim();
       if (partialText.length > maxTextLength) {
         partialText = partialText.slice(0, maxTextLength) + '...';
       }
-      clips.file(i + ' - ' + speakerName.trim() + ' - ' + partialText + '.wav', response);
+      clips.file(clipNumber + ' - ' + speakerName.trim() + ' - ' + partialText + '.wav', response);
     });
     zip.generateAsync({
       type: "blob"
