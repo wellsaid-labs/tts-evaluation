@@ -732,7 +732,7 @@ class PodPool {
       main()
       bool = false;
       */
-      if (await pod.isDead() && this.pods.includes(pod) && !this.pod.isReserved()) {
+      if (await pod.isDead() && this.pods.includes(pod) && !pod.isReserved()) {
         this.logger.log(`PodPool.clean: Cleaning up Pod ${pod.name}.`);
         this.pods = this.pods.filter(p => p !== pod);
         await pod.destroy();
