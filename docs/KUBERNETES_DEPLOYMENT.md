@@ -87,11 +87,23 @@ these deployment steps are loosely based on the below "New Cluster" guide.
    kubectl config set-context --current --namespace=staging
    ```
 
-1. Follow the instructions in "New Cluster" to add secrets but first you'll need to update all their
-   `namespace` manifest configurations.
+1. Follow the instructions in "New Cluster" to add secrets for the new namespace.
 1. Follow the instructions in "New Cluster" to add permissions. For `Role` and `RoleBinding`
    resources, you'll need to update the `namespace` manifest configurations. For
-   `ClusterRoleBinding` resources, you'll need to add to the `subjects` configuration.
+   `ClusterRoleBinding` resources, you'll need to add to the `subjects` configuration, like so:
+
+   ```bash
+    subjects:
+    ...
+    - kind: ServiceAccount
+      name: default
+      namespace: staging
+    ...
+   ```
+
+1. Update `public/script.js` to remove any absolute paths to voice.wellsaidlabs.com or
+   voice2.wellsaidlabs.com in favor of relative paths.
+
 1. Update the deployment manifest `namespace` configuration in `src/service/deployment.yaml` to
    `staging`. Then apply the deployment manifest, creating a `Deployment`.
 
@@ -113,6 +125,17 @@ these deployment steps are loosely based on the below "New Cluster" guide.
 
    If the external IP address is shown as `<pending>`, wait for a minute and enter the same command
    again. Finally you can construct the URL like so: `http://<EXTERNAL-IP>:<PORT>/`.
+
+1. Delete the namespace after your done using it, like so:
+
+   ```bash
+   kubectl delete namespaces staging
+
+   # Reset the context
+   kubectl config set-context --current --namespace=default
+   ```
+
+   You may need to delete any remaining nodes separately because they are no tied to the namespace.
 
 ## New Cluster
 
