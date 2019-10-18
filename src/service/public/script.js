@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
     '"It should be a new sentence." "(And the same with this one.)" ' +
     '(\'And this one!\')"(\'(And (this)) \'?)"').length == 5);
 
-  function requestAudio(data, retry = 0, maxRetries = 3) {
+  function requestAudio(data) {
     // Start stream
     let startTime = new Date().getTime();
     let queuingTime;
@@ -162,14 +162,9 @@ document.addEventListener('DOMContentLoaded', function (_) {
         audioElement.src = window.URL.createObjectURL(request.response);
         audioElement.load();
       } else {
-        if (request.status === 502 && retry < maxRetries) {
-          data.sectionElement.querySelector('.progress p').textContent =
-            'Queuing / Generating Spectrogram';
-          requestAudio(data, retry + 1);
-        } else {
-          const message = `Status code ${request.status}.`;
-          data.sectionElement.querySelector('.progress p').textContent = message;
-        }
+
+        const message = `Status code ${request.status}.`;
+        data.sectionElement.querySelector('.progress p').textContent = message;
       }
     });
     request.send(JSON.stringify(data.payload));
