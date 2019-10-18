@@ -102,7 +102,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
     let hasProgress = false;
 
     // Make request for stream
-    request.open('POST', `${endpoint}/stream`);
+    request.open('POST', `https://voice.wellsaidlabs.com${endpoint}/stream`);
     request.setRequestHeader('Content-Type', 'application/json');
     request.setRequestHeader('Accept-Version', data.version);
     request.responseType = 'blob';
@@ -221,7 +221,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
       clipNumber += 1;
 
       try {
-        const response = await fetch(`${endpoint}/input_validated`, {
+        const response = await fetch(`https://voice2.wellsaidlabs.com${endpoint}/input_validated`, {
           method: 'POST',
           body: JSON.stringify(payload),
           headers: {
