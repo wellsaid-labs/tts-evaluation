@@ -42,6 +42,7 @@ const helmet = require('helmet');
 const path = require('path');
 const Request = require('kubernetes-client/backends/request');
 const uuidv4 = require('uuid/v4');
+const cors = require('cors');
 
 const {
   KubeConfig
@@ -993,7 +994,7 @@ const noReservationController = (() => {
     podIndex %= podPool.pods.length;
     const pod = podPool.pods[podIndex];
     podIndex += 1;
-    logger.log(`noReservationController: Got Pod ${podIndex - 1} of ${podPool.pods.length} `
+    logger.log(`noReservationController: Got Pod ${podIndex - 1} of ${podPool.pods.length} ` +
       `named ${pod.name}.`);
     return pod;
   }
@@ -1022,7 +1023,7 @@ const noReservationController = (() => {
 })();
 
 process.on('unhandledRejection', error => {
-  logger.error(`Caught unhandledRejection:\n${error}`);
+  logger.error(`Caught unhandledRejection:`, error);
   process.exit(1);
 });
 
@@ -1031,8 +1032,24 @@ const app = express();
 app.use(bodyParser.json());
 // NOTE: Recommened by:
 // https://blog.risingstack.com/node-js-security-checklist/
-//https://expressjs.com/en/advanced/best-practice-security.html
+// https://expressjs.com/en/advanced/best-practice-security.html
 app.use(helmet());
+
+
+// NOTE: Recommended by:
+// https://expressjs.com/en/resources/middleware/cors.html
+const whitelist = ['https://voice.wellsaidlabs.com', 'https://voice2.wellsaidlabs.com'];
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (whitelist.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS.'));
+    }
+  }
+}
+app.options('*', cors(corsOptions));
+app.use(cors(corsOptions));
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (_, response) => {
