@@ -1037,20 +1037,13 @@ app.use(bodyParser.json());
 app.use(helmet());
 
 
+// TODO: Setup more restrictive CORS options for security.
+// NOTE: The reason CORS isn't setup is because it's nontrivial to white list the auto
+// generated external IP address for our Kubernetes service.
 // NOTE: Recommended by:
 // https://expressjs.com/en/resources/middleware/cors.html
-const whitelist = ['https://voice.wellsaidlabs.com', 'https://voice2.wellsaidlabs.com'];
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (whitelist.indexOf(origin) !== -1 || !origin) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS.'));
-    }
-  }
-}
-app.options('*', cors(corsOptions));
-app.use(cors(corsOptions));
+app.options('*', cors());
+app.use(cors());
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (_, response) => {
