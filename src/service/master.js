@@ -541,7 +541,8 @@ class PodPool {
   waitTillReady() {
     return new Promise(async (resolve) => {
       this.logger.log(`PodPool.waitTillReady: Waiting till ready.`);
-      if (this.pods.length > 0 && await Promise.race(this.pods.map(p => p.isReady()))) {
+      if (this.pods.length >= parseInt(process.env.MINIMUM_WORKER_PODS, 10) &&
+        await Promise.race(this.pods.map(p => p.isReady()))) {
         resolve();
       } else {
         this.waiting.push(resolve);
@@ -1058,7 +1059,8 @@ app.get('/', (_, response) => {
   });
 });
 
-// TODO: Do not respond to `healthy` until PodPools are online with the minimum number of pods.
+// NOTE: The reason we're not waiting for the `PodPool.waitTillReady` is because that would cause
+// our resources to double with potentially two healthy masters during a transition.
 app.get('/healthy', (_, response) => {
   response.send('ok');
 });
