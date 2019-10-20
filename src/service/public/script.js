@@ -3,7 +3,7 @@
  * they only function to record audio while it's playing for the client:
  * https://zhirzh.github.io/2017/09/02/mediarecorder/
  */
-document.addEventListener('DOMContentLoaded', function (_) {
+document.addEventListener('DOMContentLoaded', async function (_) {
   let clipNumber = 1;
   // NOTE: This endpoint is backwards compatible.
   const endpoint = '/api/speech_synthesis/v1/text_to_speech';
@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
   const splitBySetencesInput = document.querySelector('#split-by-setences');
   const versionSelect = document.querySelector('#version');
   const allAudio = [];
+  const allRequests = [];
 
   versionSelect.onchange = () => {
     const version = versionSelect.value.toLowerCase();
@@ -94,84 +95,87 @@ document.addEventListener('DOMContentLoaded', function (_) {
     '"It should be a new sentence." "(And the same with this one.)" ' +
     '(\'And this one!\')"(\'(And (this)) \'?)"').length == 5);
 
-  function requestAudio(version, payload, sectionElement, retry = 0, maxRetries = 3) {
-    // Start stream
-    let startTime = new Date().getTime();
-    let queuingTime;
-    const request = new XMLHttpRequest();
-    let hasProgress = false;
+  function requestAudio(data) {
+    return new Promise((resolve) => {
+      // Start stream
+      let startTime = new Date().getTime();
+      let queuingTime;
+      const request = new XMLHttpRequest();
+      let hasProgress = false;
 
-    // Make request for stream
-    request.open('POST', `${endpoint}/stream`);
-    request.setRequestHeader('Content-Type', 'application/json');
-    request.setRequestHeader('Accept-Version', version);
-    request.responseType = 'blob';
-    request.addEventListener('progress', (event) => {
-      if (event.lengthComputable) {
-        if (!hasProgress && event.loaded > 0) {
-          hasProgress = true;
-          // The server sends first WAV headers, before generating the spectrogram.
-          queuingTime = ((new Date().getTime()) - startTime) / 1000;
+      // Make request for stream
+      request.open('POST', `https://voice.wellsaidlabs.com${endpoint}/stream`);
+      request.setRequestHeader('Content-Type', 'application/json');
+      request.setRequestHeader('Accept-Version', data.version);
+      request.responseType = 'blob';
+      request.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          if (!hasProgress && event.loaded > 0) {
+            hasProgress = true;
+            // The server sends first WAV headers, before generating the spectrogram.
+            queuingTime = ((new Date().getTime()) - startTime) / 1000;
+            resolve();
+          }
+          let percentage = event.loaded / event.total;
+          const now = new Date().getTime();
+          let estimatedTimeLeft = ((now - startTime) / percentage) * (1 - percentage);
+          estimatedTimeLeft = secondsToString(estimatedTimeLeft / 1000);
+          percentage = Math.round(percentage * 100); // Decimals to percent
+          const message = `${Math.round(percentage)}% Generated - ${estimatedTimeLeft} Left`
+          data.sectionElement.querySelector('.progress p').textContent = message;
         }
-        let percentage = event.loaded / event.total;
-        const now = new Date().getTime();
-        let estimatedTimeLeft = ((now - startTime) / percentage) * (1 - percentage);
-        estimatedTimeLeft = secondsToString(estimatedTimeLeft / 1000);
-        percentage = Math.round(percentage * 100); // Decimals to percent
-        const message = `${Math.round(percentage)}% Generated - ${estimatedTimeLeft} Left`
-        sectionElement.querySelector('.progress p').textContent = message;
-      }
-    });
-    request.addEventListener('error', (error) => {
-      console.error(error);
-      sectionElement.querySelector('.progress p').textContent = `Network error.`;
-    });
-    request.addEventListener('timeout', () => {
-      sectionElement.querySelector('.progress p').textContent = `Request timed out.`;
-    });
-    request.addEventListener('abort', () => {
-      sectionElement.querySelector('.progress p').textContent = `Request aborted.`;
-    });
-    request.addEventListener('load', () => {
-      if (request.status === 200) {
-        sectionElement.querySelector('.progress').style.display = 'none';
-        const audioElement = sectionElement.querySelector('audio');
-        const generatingTime = ((new Date().getTime()) - startTime) / 1000;
+      });
+      request.addEventListener('error', (error) => {
+        console.error(error);
+        data.sectionElement.querySelector('.progress p').textContent = `Network error.`;
+        resolve();
+      });
+      request.addEventListener('timeout', () => {
+        data.sectionElement.querySelector('.progress p').textContent = `Request timed out.`;
+        resolve();
+      });
+      request.addEventListener('abort', () => {
+        data.sectionElement.querySelector('.progress p').textContent = `Request aborted.`;
+        resolve();
+      });
+      request.addEventListener('load', () => {
+        if (request.status === 200) {
+          data.sectionElement.querySelector('.progress').style.display = 'none';
+          const audioElement = data.sectionElement.querySelector('audio');
+          const generatingTime = ((new Date().getTime()) - startTime) / 1000;
 
-        // Add statistics to the footer on `audioElement` load.
-        audioElement.addEventListener('loadedmetadata', () => {
-          // `numSamples` assumes the 16-bit audio and a 44-bit WAV header.
-          const numSamples = (request.getResponseHeader("Content-Length") - 44) / 2;
-          const generatingWaveTime = generatingTime - queuingTime;
-          const samplesPerSecond = Math.round(numSamples / generatingWaveTime);
-          sectionElement.querySelector('footer p').innerHTML = ([
-            `Audio Duration: ${Math.round(audioElement.duration * 100) / 100}s`,
-            `Generation Timer: ${Math.round(generatingTime * 100) / 100}s`,
-            `Queuing / Spectrogram Timer: ${Math.round(queuingTime * 100) / 100}s`,
-            `Waveform Timer: ${Math.round(generatingWaveTime * 100) / 100}s`,
-            `${Math.round(samplesPerSecond)} Samples Per Second`,
-          ].join('&nbsp;&nbsp;|&nbsp;&nbsp;'));
-        });
+          // Add statistics to the footer on `audioElement` load.
+          audioElement.addEventListener('loadedmetadata', () => {
+            // `numSamples` assumes the 16-bit audio and a 44-bit WAV header.
+            const numSamples = (request.getResponseHeader("Content-Length") - 44) / 2;
+            const generatingWaveTime = generatingTime - queuingTime;
+            const samplesPerSecond = Math.round(numSamples / generatingWaveTime);
+            data.sectionElement.querySelector('footer p').innerHTML = ([
+              `Audio Duration: ${Math.round(audioElement.duration * 100) / 100}s`,
+              `Generation Timer: ${Math.round(generatingTime * 100) / 100}s`,
+              `Queuing / Spectrogram Timer: ${Math.round(queuingTime * 100) / 100}s`,
+              `Waveform Timer: ${Math.round(generatingWaveTime * 100) / 100}s`,
+              `${Math.round(samplesPerSecond)} Samples Per Second`,
+            ].join('&nbsp;&nbsp;|&nbsp;&nbsp;'));
+          });
 
-        allAudio.push({
-          'response': request.response,
-          'speakerId': payload.speaker_id,
-          'text': payload.text,
-        });
-        audioElement.src = window.URL.createObjectURL(request.response);
-        audioElement.load();
-      } else {
-        if (request.status === 502 && retry < maxRetries) {
-          sectionElement.querySelector('.progress p').textContent =
-            'Queuing / Generating Spectrogram';
-          requestAudio(version, payload, sectionElement, retry + 1);
+          allAudio.push({
+            'response': request.response,
+            'speakerId': data.payload.speaker_id,
+            'text': data.payload.text,
+            'clipNumber': data.clipNumber,
+          });
+          audioElement.src = window.URL.createObjectURL(request.response);
+          audioElement.load();
+          resolve();
         } else {
           const message = `Status code ${request.status}.`;
-          sectionElement.querySelector('.progress p').textContent = message;
+          data.sectionElement.querySelector('.progress p').textContent = message;
+          resolve();
         }
-      }
+      });
+      request.send(JSON.stringify(data.payload));
     });
-    request.send(JSON.stringify(payload));
   };
 
   async function generate() {
@@ -186,9 +190,6 @@ document.addEventListener('DOMContentLoaded', function (_) {
     const speakerId = parseInt(speakerElement.value);
     const version = versionElement.value;
     const apiKey = apiKeyInput.value.trim();
-    const payloads = [];
-    const sections = [];
-    const versions = [];
 
     for (const text of corpus) {
       const payload = {
@@ -222,7 +223,7 @@ document.addEventListener('DOMContentLoaded', function (_) {
       clipNumber += 1;
 
       try {
-        const response = await fetch(`${endpoint}/input_validated`, {
+        const response = await fetch(`https://voice2.wellsaidlabs.com${endpoint}/input_validated`, {
           method: 'POST',
           body: JSON.stringify(payload),
           headers: {
@@ -233,25 +234,18 @@ document.addEventListener('DOMContentLoaded', function (_) {
         if (!response.ok) {
           sectionElement.querySelector('.progress p').textContent = (await response.json()).message;
         } else {
-          sections.push(sectionElement);
-          payloads.push(payload);
-          versions.push(version);
+          allRequests.push({
+            version,
+            clipNumber: clipNumber - 1,
+            payload,
+            sectionElement,
+          });
         }
       } catch (error) {
         // TODO: Retry input validation a couple times if so.
         console.error(error);
         sectionElement.querySelector('.progress p').textContent = 'Network error';
       }
-    }
-
-    for (const [version, payload, sectionElement] of zip(versions, payloads, sections)) {
-      // NOTE: Chrome will only keep six connections open at a time:
-      // https://stackoverflow.com/questions/29206067/understanding-chrome-network-log-stalled-state
-      requestAudio(version, payload, sectionElement);
-      // NOTE: Ensure that the requests are captured by the server in the right order. In the
-      // future, this can be done more efficiently with a `Date` header. Learn more:
-      // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Date
-      await sleep(100);
     }
   }
 
@@ -267,14 +261,15 @@ document.addEventListener('DOMContentLoaded', function (_) {
       response,
       speakerId,
       text,
+      clipNumber,
       maxTextLength = 50, // NOTE: There is a maximum length in various OSs for filenames.
-    }, i) {
+    }) {
       const speakerName = speakerSelect.options[speakerId].text;
       let partialText = text.trim();
       if (partialText.length > maxTextLength) {
         partialText = partialText.slice(0, maxTextLength) + '...';
       }
-      clips.file(i + ' - ' + speakerName.trim() + ' - ' + partialText + '.wav', response);
+      clips.file(clipNumber + ' - ' + speakerName.trim() + ' - ' + partialText + '.wav', response);
     });
     zip.generateAsync({
       type: "blob"
@@ -362,4 +357,16 @@ document.addEventListener('DOMContentLoaded', function (_) {
       return `${seconds}s`;
     }
   }
+
+  (async () => {
+    while (true) {
+      if (allRequests.length > 0) {
+        // NOTE: To ensure that requests are completed by the server, wait for a request to start
+        // streaming before requesting again. Otherwise, Chrome might timeout because it's been
+        // waiting on the request to complete for too long.
+        await requestAudio(allRequests.shift());
+      }
+      await sleep(100);
+    }
+  })();
 });

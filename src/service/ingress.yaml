@@ -6,7 +6,7 @@ metadata:
   name: speech-api-ingress
   namespace: default
   annotations:
-    kubernetes.io/ingress.global-static-ip-name: "speech-api-ip-v3"
+    kubernetes.io/ingress.global-static-ip-name: "text-to-speech"
 spec:
   backend:
     serviceName: speech-api

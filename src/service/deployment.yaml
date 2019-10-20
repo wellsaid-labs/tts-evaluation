@@ -23,34 +23,34 @@ spec:
             # This is the maximum time between recomputing the number of pods. This ensures that
             # pods are scaled down quickly if pods are no longer in-use.
             - name: AUTOSCALE_LOOP
-              value: '15000' # 15 seconds in milliseconds
+              value: "15000" # 15 seconds in milliseconds
             # This is the time we look into the past to compute the number of resources needed for
             # the next time period.
             - name: AUTOSCALE_WINDOW
-              value: '1800000' # 30 minutes in milliseconds
+              value: "1800000" # 30 minutes in milliseconds
             - name: MAXIMUM_PODS
-              value: '100'
+              value: "100"
             - name: V1_WORKER_POD_IMAGE
-              value: gcr.io/mythical-runner-203817/speech-api-worker:v1.06
+              value: gcr.io/voice-service-255602/speech-api-worker:v1.06
             - name: V2_WORKER_POD_IMAGE
-              value: gcr.io/mythical-runner-203817/speech-api-worker:v2.34
+              value: gcr.io/voice-service-255602/speech-api-worker:v2.34
             - name: WORKER_POD_EXPOSED_PORT # Port master communicates with its workers on
-              value: '8000'
+              value: "8000"
             - name: WORKER_POD_PREFIX
               value: speech-api-worker-pod
             - name: WORKER_NODE_POOL
               value: worker-pool
             - name: MINIMUM_WORKER_PODS
-              value: '1'
+              value: "1"
             # Number of extra additional pods for any spillover jobs. Also this caps the growth
             # rate of the long term scaling because it is capped by the maximum number of pods that
             # existed within the `AUTOSCALE_WINDOW` time period.
             - name: EXTRA_WORKER_PODS
-              value: '2'
+              value: "2"
             # Ensure there are enough resources for `COVERAGE`% of clips generated based on the
             # `AUTOSCALE_WINDOW`.
             - name: COVERAGE
-              value: '0.99'
+              value: "0.99"
             - name: API_KEY_SUFFIX # Pattern for discovering api keys
               value: _SPEECH_API_KEY
             - name: MATT_HOCKING_SPEECH_API_KEY # NOTE: Do not forget to create these secrets.
@@ -80,7 +80,7 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-          image: gcr.io/mythical-runner-203817/speech-api:v2.32
+          image: gcr.io/voice-service-255602/speech-api:v2.42
           ports:
             - containerPort: 8000
               protocol: TCP

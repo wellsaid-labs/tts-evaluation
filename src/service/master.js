@@ -42,6 +42,7 @@ const helmet = require('helmet');
 const path = require('path');
 const Request = require('kubernetes-client/backends/request');
 const uuidv4 = require('uuid/v4');
+const cors = require('cors');
 
 const {
   KubeConfig
@@ -563,7 +564,9 @@ class PodPool {
    */
   async fufillPodRequests() {
     this.logger.log(`PodPool.fufillPodRequests: Fufilling pod requests.`);
-    if (this.waiting.length > 0 && await Promise.race(this.pods.map(p => p.isReady()))) {
+    if (this.waiting.length > 0 &&
+      this.pods.length > 0 &&
+      await Promise.race(this.pods.map(p => p.isReady()))) {
       this.waiting.map(resolve => resolve());
     }
 
@@ -711,7 +714,25 @@ class PodPool {
   clean() {
     return Promise.all(this.pods.map(async (pod) => {
       this.logger.log(`PodPool.clean: Maybe cleaning up Pod ${pod.name}.`);
-      if (await pod.isDead() && this.pods.includes(pod)) {
+      // NOTE: The pod could be reserved after `isDead` is evaluated but before it returns.
+      // Run this example to return more:
+      /**
+      let bool = true;
+
+      async function func() {
+        console.log('func will return', bool)
+        return bool;
+      }
+
+      async function main() {
+        console.log('func returned', await func());
+        console.log('actual value is', bool);
+      }
+
+      main()
+      bool = false;
+      */
+      if (await pod.isDead() && this.pods.includes(pod) && !pod.isReserved()) {
         this.logger.log(`PodPool.clean: Cleaning up Pod ${pod.name}.`);
         this.pods = this.pods.filter(p => p !== pod);
         await pod.destroy();
@@ -936,10 +957,9 @@ function reservePodController(request, response, next) {
   let prefix = `reservePodController: `;
   logger.log(`${prefix}Got request.`);
 
-  // TODO: Chrome times out requests that when TTFB (time to first byte) exceeds 2 minutes.
-  // It may take longer than that to reserve a Pod under heavy load. To ensure Chrome does not
-  // timeout, try sending one byte before starting the process of reserving a Pod. Learn more about
-  // sending one byte: https://blog.cloudflare.com/ttfb-time-to-first-byte-considered-meaningles/
+  // NOTE: Chrome times out requests when TTFB (time to first byte) exceeds 2 minutes.
+  // It may take longer than that to reserve a Pod under heavy load. TTFB refers to the HTTP data
+  // and not the HTTP header.
 
   const podPool = getPodPool(request);
   const cancelReservation = podPool.reservePod(async (pod) => {
@@ -973,7 +993,8 @@ const noReservationController = (() => {
     podIndex %= podPool.pods.length;
     const pod = podPool.pods[podIndex];
     podIndex += 1;
-    logger.log(`noReservationController: Got Pod ${pod.name}.`);
+    logger.log(`noReservationController: Got Pod ${podIndex - 1} of ${podPool.pods.length} ` +
+      `named ${pod.name}.`);
     return pod;
   }
 
@@ -1001,8 +1022,7 @@ const noReservationController = (() => {
 })();
 
 process.on('unhandledRejection', error => {
-  logger.error('Caught `unhandledRejection`.');
-  logger.error(error);
+  logger.error(`Caught unhandledRejection:`, error);
   process.exit(1);
 });
 
@@ -1011,8 +1031,17 @@ const app = express();
 app.use(bodyParser.json());
 // NOTE: Recommened by:
 // https://blog.risingstack.com/node-js-security-checklist/
-//https://expressjs.com/en/advanced/best-practice-security.html
+// https://expressjs.com/en/advanced/best-practice-security.html
 app.use(helmet());
+
+
+// TODO: Setup more restrictive CORS options for security.
+// NOTE: The reason CORS isn't setup is because it's nontrivial to white list the auto
+// generated external IP address for our Kubernetes service.
+// NOTE: Recommended by:
+// https://expressjs.com/en/resources/middleware/cors.html
+app.options('*', cors());
+app.use(cors());
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (_, response) => {
@@ -1021,7 +1050,8 @@ app.get('/', (_, response) => {
   });
 });
 
-// TODO: Do not respond to `healthy` until PodPools are online with the minimum number of pods.
+// NOTE: The reason we're not waiting for the `PodPool.waitTillReady` is because that would cause
+// our resources to double with potentially two healthy masters during a transition.
 app.get('/healthy', (_, response) => {
   response.send('ok');
 });
