@@ -958,10 +958,9 @@ function reservePodController(request, response, next) {
   let prefix = `reservePodController: `;
   logger.log(`${prefix}Got request.`);
 
-  // TODO: Chrome times out requests that when TTFB (time to first byte) exceeds 2 minutes.
-  // It may take longer than that to reserve a Pod under heavy load. To ensure Chrome does not
-  // timeout, try sending one byte before starting the process of reserving a Pod. Learn more about
-  // sending one byte: https://blog.cloudflare.com/ttfb-time-to-first-byte-considered-meaningles/
+  // NOTE: Chrome times out requests when TTFB (time to first byte) exceeds 2 minutes.
+  // It may take longer than that to reserve a Pod under heavy load. TTFB refers to the HTTP data
+  // and not the HTTP header.
 
   const podPool = getPodPool(request);
   const cancelReservation = podPool.reservePod(async (pod) => {
