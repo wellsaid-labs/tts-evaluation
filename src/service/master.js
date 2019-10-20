@@ -541,8 +541,7 @@ class PodPool {
   waitTillReady() {
     return new Promise(async (resolve) => {
       this.logger.log(`PodPool.waitTillReady: Waiting till ready.`);
-      if (this.pods.length >= parseInt(process.env.MINIMUM_WORKER_PODS, 10) &&
-        await Promise.race(this.pods.map(p => p.isReady()))) {
+      if (this.pods.length > 0 && await Promise.race(this.pods.map(p => p.isReady()))) {
         resolve();
       } else {
         this.waiting.push(resolve);
