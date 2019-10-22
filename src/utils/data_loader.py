@@ -2,6 +2,7 @@ import logging
 import time
 
 from torch.multiprocessing import cpu_count
+from torchnlp.samplers import RepeatSampler
 from tqdm import tqdm
 
 import torch
@@ -65,8 +66,6 @@ class DataLoader(torch.utils.data.dataloader.DataLoader):
                  num_workers=0 if IS_TESTING_ENVIRONMENT else cpu_count(),
                  use_tqdm=False,
                  **kwargs):
-        from src.samplers import RepeatSampler  # NOTE: Prevent circular dependency
-
         super().__init__(
             dataset=_DataLoaderDataset(dataset, load_fn), num_workers=num_workers, **kwargs)
 

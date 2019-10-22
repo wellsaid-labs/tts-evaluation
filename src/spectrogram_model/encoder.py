@@ -1,10 +1,9 @@
 import torch
 
+from hparams import configurable
+from hparams import HParam
 from torch import nn
 from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
-
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
 
 
 class Encoder(nn.Module):
@@ -52,17 +51,17 @@ class Encoder(nn.Module):
     def __init__(self,
                  vocab_size,
                  num_speakers,
-                 out_dim=ConfiguredArg(),
-                 token_embedding_dim=ConfiguredArg(),
-                 speaker_embedding_dim=ConfiguredArg(),
-                 num_convolution_layers=ConfiguredArg(),
-                 num_convolution_filters=ConfiguredArg(),
-                 convolution_filter_size=ConfiguredArg(),
-                 convolution_dropout=ConfiguredArg(),
-                 lstm_hidden_size=ConfiguredArg(),
-                 lstm_layers=ConfiguredArg(),
-                 lstm_bidirectional=ConfiguredArg(),
-                 lstm_dropout=ConfiguredArg()):
+                 out_dim=HParam(),
+                 token_embedding_dim=HParam(),
+                 speaker_embedding_dim=HParam(),
+                 num_convolution_layers=HParam(),
+                 num_convolution_filters=HParam(),
+                 convolution_filter_size=HParam(),
+                 convolution_dropout=HParam(),
+                 lstm_hidden_size=HParam(),
+                 lstm_layers=HParam(),
+                 lstm_bidirectional=HParam(),
+                 lstm_dropout=HParam()):
 
         super().__init__()
 

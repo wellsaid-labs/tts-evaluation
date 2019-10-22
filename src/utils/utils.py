@@ -114,15 +114,6 @@ def get_average_norm(tensor, dim=0, mask=None, norm=2):
     return norm.mean().item()
 
 
-def get_total_parameters(model):
-    """ Return the total number of trainable parameters in ``model``.
-
-    Args:
-        model (torch.nn.Module)
-    """
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
 def load(path, device=torch.device('cpu')):
     """ Using ``torch.load`` load an object from ``path`` onto ``self.device``.
 
@@ -286,31 +277,6 @@ def sort_together(list_, sort_key):
         list: ``list_`` sorted with the sort key list ``sort_key``.
     """
     return [x for _, x in sorted(zip(sort_key, list_), key=lambda pair: pair[0])]
-
-
-def split_list(list_, splits):
-    """ Split ``list_`` using the ``splits`` ratio.
-
-    Args:
-        list_ (list): List to split.
-        splits (tuple): Tuple of decimals determining list splits summing up to 1.0.
-
-    Returns:
-        (list): Splits of the list.
-
-    Example:
-        >>> dataset = [1, 2, 3, 4, 5]
-        >>> split_list(dataset, splits=(.6, .2, .2))
-        [[1, 2, 3], [4], [5]]
-    """
-    assert sum(splits) == 1, 'Splits must sum to 1.0'
-    splits = [round(s * len(list_)) for s in splits]
-    lists = []
-    for split in splits[:-1]:
-        lists.append(list_[:split])
-        list_ = list_[split:]
-    lists.append(list_)
-    return lists
 
 
 def slice_by_cumulative_sum(list_, max_total_value, get_value=lambda x: x):

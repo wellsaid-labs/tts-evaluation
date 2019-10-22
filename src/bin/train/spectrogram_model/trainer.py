@@ -5,7 +5,11 @@ import logging
 import math
 import random
 
+from hparams import configurable
+from hparams import get_config
+from hparams import HParam
 from torch import nn
+from torchnlp.utils import get_total_parameters
 from torchnlp.utils import lengths_to_mask
 from torchnlp.utils import tensors_to
 
@@ -13,9 +17,6 @@ import torch
 
 from src.audio import griffin_lim
 from src.bin.train.spectrogram_model.data_loader import DataLoader
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
-from src.hparams import get_config
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.spectrogram_model import InputEncoder
@@ -24,7 +25,6 @@ from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
 from src.utils import evaluate
 from src.utils import get_average_norm
-from src.utils import get_total_parameters
 from src.utils import get_weighted_stdev
 from src.utils import log_runtime
 from src.utils import maybe_load_tensor
@@ -75,12 +75,12 @@ class Trainer():
                  train_dataset,
                  dev_dataset,
                  checkpoints_directory,
-                 train_batch_size=ConfiguredArg(),
-                 dev_batch_size=ConfiguredArg(),
-                 criterion_spectrogram=ConfiguredArg(),
-                 criterion_stop_token=ConfiguredArg(),
-                 optimizer=ConfiguredArg(),
-                 model=ConfiguredArg(),
+                 train_batch_size=HParam(),
+                 dev_batch_size=HParam(),
+                 criterion_spectrogram=HParam(),
+                 criterion_stop_token=HParam(),
+                 optimizer=HParam(),
+                 model=HParam(),
                  input_encoder=None,
                  step=0,
                  epoch=0):
@@ -265,17 +265,20 @@ class Trainer():
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
                 if infer:
-                    predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1])
+                    predictions = self.model(batch.text.tensor, batch.speaker.tensor,
+                                             batch.text.lengths)
                     # NOTE: `duration_gap` computes the average length of the predictions
                     # verus the average length of the original spectrograms.
-                    duration_gap = (predictions[-1].float() / batch.spectrogram[1].float()).mean()
+                    duration_gap = (predictions[-1].float() /
+                                    batch.spectrogram.lengths.float()).mean()
                     self.metrics['duration_gap'].update(duration_gap, predictions[-1].numel())
                 else:
-                    predictions = self.model(batch.text[0], batch.speaker[0], batch.text[1],
-                                             batch.spectrogram[0], batch.spectrogram[1])
+                    predictions = self.model(batch.text.tensor, batch.speaker.tensor,
+                                             batch.text.lengths, batch.spectrogram.tensor,
+                                             batch.spectrogram.lengths)
                     self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
-                spectrogram_lengths = predictions[-1] if infer else batch.spectrogram[1]
+                spectrogram_lengths = predictions[-1] if infer else batch.spectrogram.lengths
                 self._add_attention_metrics(predictions[3], spectrogram_lengths)
 
             if not train and not infer and i == random_batch:
@@ -315,10 +318,10 @@ class Trainer():
         # predicted_alignments [num_frames, batch_size, num_tokens]
         (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
          predicted_alignments) = predictions
-        spectrogram = batch.spectrogram[0]  # [num_frames, batch_size, frame_channels]
+        spectrogram = batch.spectrogram.tensor  # [num_frames, batch_size, frame_channels]
 
         # expanded_mask [num_frames, batch_size, frame_channels]
-        expanded_mask = batch.spectrogram_expanded_mask[0]
+        expanded_mask = batch.spectrogram_expanded_mask.tensor
         # pre_spectrogram_loss [num_frames, batch_size, frame_channels]
         pre_spectrogram_loss = self.criterion_spectrogram(predicted_pre_spectrogram, spectrogram)
         # [num_frames, batch_size, frame_channels] → [1]
@@ -329,9 +332,9 @@ class Trainer():
         # [num_frames, batch_size, frame_channels] → [1]
         post_spectrogram_loss = post_spectrogram_loss.masked_select(expanded_mask).mean()
 
-        mask = batch.spectrogram_mask[0]  # [num_frames, batch_size]
+        mask = batch.spectrogram_mask.tensor  # [num_frames, batch_size]
         # stop_token_loss [num_frames, batch_size]
-        stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, batch.stop_token[0])
+        stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, batch.stop_token.tensor)
         # [num_frames, batch_size] → [1]
         stop_token_loss = stop_token_loss.masked_select(mask).mean()
 
@@ -416,12 +419,12 @@ class Trainer():
          predicted_alignments) = predictions
         batch_size = predicted_post_spectrogram.shape[1]
         item = random.randint(0, batch_size - 1)
-        spectrogam_length = int(batch.spectrogram[1][0, item].item())
-        text_length = int(batch.text[1][0, item].item())
+        spectrogam_length = int(batch.spectrogram.lengths[0, item].item())
+        text_length = int(batch.text.lengths[0, item].item())
 
         predicted_post_spectrogram = predicted_post_spectrogram[:spectrogam_length, item]
         predicted_pre_spectrogram = predicted_pre_spectrogram[:spectrogam_length, item]
-        gold_spectrogram = batch.spectrogram[0][:spectrogam_length, item]
+        gold_spectrogram = batch.spectrogram.tensor[:spectrogam_length, item]
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
         predicted_delta = abs(gold_spectrogram - predicted_post_spectrogram)

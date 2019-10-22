@@ -1,10 +1,12 @@
 import math
 
+from hparams import add_config
+from hparams import HParams
+from torchnlp.random import fork_rng
+
 import torch
 import numpy
 
-from src.environment import fork_rng
-from src.hparams import add_config
 from src.spectrogram_model import SpectrogramModel
 
 
@@ -22,7 +24,7 @@ def test_spectrogram_model_inference__batch_size_sensativity():
     num_speakers = 7
 
     # Ensure that the model computes the full length
-    add_config({'src.spectrogram_model.model.SpectrogramModel._infer.stop_threshold': 1.0})
+    add_config({'src.spectrogram_model.model.SpectrogramModel._infer': HParams(stop_threshold=1.0)})
 
     model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels).eval()
 

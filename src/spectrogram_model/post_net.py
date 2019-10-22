@@ -1,7 +1,6 @@
+from hparams import configurable
+from hparams import HParam
 from torch import nn
-
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
 
 
 class PostNet(nn.Module):
@@ -38,10 +37,10 @@ class PostNet(nn.Module):
     @configurable
     def __init__(self,
                  frame_channels,
-                 num_convolution_layers=ConfiguredArg(),
-                 num_convolution_filters=ConfiguredArg(),
-                 convolution_filter_size=ConfiguredArg(),
-                 convolution_dropout=ConfiguredArg()):
+                 num_convolution_layers=HParam(),
+                 num_convolution_filters=HParam(),
+                 convolution_filter_size=HParam(),
+                 convolution_dropout=HParam()):
         super().__init__()
 
         # LEARN MORE:

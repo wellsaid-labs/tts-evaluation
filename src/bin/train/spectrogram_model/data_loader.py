@@ -7,18 +7,18 @@ import logging
 
 from torch.multiprocessing import cpu_count
 from torchnlp.encoders.text import stack_and_pad_tensors
+from torchnlp.samplers import BalancedSampler
+from torchnlp.samplers import BucketBatchSampler
+from torchnlp.samplers import DeterministicSampler
+from torchnlp.samplers import DistributedBatchSampler
+from torchnlp.samplers import get_number_of_elements
+from torchnlp.samplers import OomBatchSampler
 from torchnlp.utils import collate_tensors
 from torchnlp.utils import tensors_to
 
 import torch
 
 from src.environment import IS_TESTING_ENVIRONMENT
-from src.samplers import BalancedSampler
-from src.samplers import BucketBatchSampler
-from src.samplers import DeterministicSampler
-from src.samplers import DistributedBatchSampler
-from src.samplers import get_number_of_elements
-from src.samplers import OomBatchSampler
 from src.utils import DataLoader
 from src.utils import maybe_load_tensor
 
@@ -73,18 +73,19 @@ class DataLoader(DataLoader):
     Returns:
         Single-process or multi-process iterators over the dataset. Per iteration the batch returned
         includes: SpectrogramModelTrainingRow (
-            text (tuple(torch.LongTensor [num_tokens, batch_size],
+            text (BatchedSequences(torch.LongTensor [num_tokens, batch_size],
                         torch.LongTensor [1, batch_size]))
-            spectrogram (tuple(torch.FloatTensor [num_frames, batch_size, frame_channels],
-                               torch.LongTensor [1, batch_size]))
-            stop_token (tuple(torch.FloatTensor [num_frames, batch_size],
+            spectrogram (BatchedSequences(
+                          torch.FloatTensor [num_frames, batch_size, frame_channels],
+                          torch.LongTensor [1, batch_size]))
+            stop_token (BatchedSequences(torch.FloatTensor [num_frames, batch_size],
                               torch.LongTensor [1, batch_size]))
-            speaker (tuple(torch.LongTensor [1, batch_size],
+            speaker (BatchedSequences(torch.LongTensor [1, batch_size],
                            torch.LongTensor [1, batch_size]))
-            spectrogram_expanded_mask (tuple(torch.BoolTensor [num_frames, batch_size,
+            spectrogram_expanded_mask (BatchedSequences(torch.BoolTensor [num_frames, batch_size,
                                                                 frame_channels],
                                              torch.LongTensor [1, batch_size]))
-            spectrogram_mask (tuple(torch.BoolTensor [num_frames, batch_size],
+            spectrogram_mask (BatchedSequences(torch.BoolTensor [num_frames, batch_size],
                                     torch.LongTensor [1, batch_size]))
         )
     """

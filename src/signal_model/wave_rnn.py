@@ -3,13 +3,14 @@ from pathlib import Path
 import copy
 import logging
 
+from hparams import configurable
+from hparams import HParam
 from torch import nn
+
 import torch
 
 from src.audio import split_signal
 from src.environment import ROOT_PATH
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
 from src.signal_model.stripped_gru import StrippedGRU
 from src.signal_model.upsample import ConditionalFeaturesUpsample
 from src.utils import log_runtime
@@ -319,12 +320,12 @@ class WaveRNN(nn.Module):
 
     @configurable
     def __init__(self,
-                 hidden_size=ConfiguredArg(),
-                 bits=ConfiguredArg(),
-                 upsample_num_filters=ConfiguredArg(),
-                 upsample_kernels=ConfiguredArg(),
-                 upsample_repeat=ConfiguredArg(),
-                 local_features_size=ConfiguredArg()):
+                 hidden_size=HParam(),
+                 bits=HParam(),
+                 upsample_num_filters=HParam(),
+                 upsample_kernels=HParam(),
+                 upsample_repeat=HParam(),
+                 local_features_size=HParam()):
         super(WaveRNN, self).__init__()
 
         assert hidden_size % 2 == 0, "Hidden size must be even."

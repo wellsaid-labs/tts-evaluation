@@ -17,7 +17,6 @@ from src.utils.utils import flatten
 from src.utils.utils import flatten_parameters
 from src.utils.utils import get_average_norm
 from src.utils.utils import get_chunks
-from src.utils.utils import get_total_parameters
 from src.utils.utils import get_weighted_stdev
 from src.utils.utils import identity
 from src.utils.utils import load
@@ -28,15 +27,14 @@ from src.utils.utils import save
 from src.utils.utils import seconds_to_string
 from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
-from src.utils.utils import split_list
 from src.utils.utils import torch_cpp_extension_load
 
 __all__ = [
     'align_tokens', 'AnomalyDetector', 'Checkpoint', 'DataLoader', 'disk_cache', 'OnDiskTensor',
-    'dict_collapse', 'get_weighted_stdev', 'get_average_norm', 'get_total_parameters', 'load',
-    'save', 'flatten_parameters', 'maybe_get_model_devices', 'evaluate', 'identity',
-    'seconds_to_string', 'log_runtime', 'sort_together', 'split_list', 'slice_by_cumulative_sum',
-    'flatten', 'batch_predict_spectrograms', 'get_chunks', 'cache_on_disk_tensor_shapes',
-    'RecordStandardStreams', 'Pool', 'maybe_load_tensor', 'AveragedMetric',
-    'DistributedAveragedMetric', 'bash_time_label', 'torch_cpp_extension_load'
+    'dict_collapse', 'get_weighted_stdev', 'get_average_norm', 'load', 'save', 'flatten_parameters',
+    'maybe_get_model_devices', 'evaluate', 'identity', 'seconds_to_string', 'log_runtime',
+    'sort_together', 'slice_by_cumulative_sum', 'flatten', 'batch_predict_spectrograms',
+    'get_chunks', 'cache_on_disk_tensor_shapes', 'RecordStandardStreams', 'Pool',
+    'maybe_load_tensor', 'AveragedMetric', 'DistributedAveragedMetric', 'bash_time_label',
+    'torch_cpp_extension_load'
 ]

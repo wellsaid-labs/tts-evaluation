@@ -6,8 +6,12 @@ import json
 import logging
 import random
 
+from hparams import configurable
 from torch.multiprocessing import cpu_count
 from torch.utils.data.sampler import BatchSampler
+from torchnlp.samplers import BalancedSampler
+from torchnlp.samplers import DeterministicSampler
+from torchnlp.samplers import DistributedBatchSampler
 from torchnlp.utils import collate_tensors
 from torchnlp.utils import tensors_to
 
@@ -16,10 +20,6 @@ import torch
 from src.audio import combine_signal
 from src.audio import split_signal
 from src.environment import IS_TESTING_ENVIRONMENT
-from src.hparams import configurable
-from src.samplers import BalancedSampler
-from src.samplers import DeterministicSampler
-from src.samplers import DistributedBatchSampler
 from src.utils import maybe_load_tensor
 
 import src

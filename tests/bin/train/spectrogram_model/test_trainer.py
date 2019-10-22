@@ -1,5 +1,7 @@
 from unittest import mock
 
+from torchnlp.encoders.text import BatchedSequences
+
 import pytest
 import torch
 
@@ -64,10 +66,10 @@ def test__do_loss_and_maybe_backwards():
     batch = SpectrogramModelTrainingRow(
         text=None,
         speaker=None,
-        spectrogram=(torch.FloatTensor([[1, 1], [1, 1], [3, 3]]), [3]),
-        stop_token=(torch.FloatTensor([0, 1, 1]), [3]),
-        spectrogram_mask=(torch.BoolTensor([1, 1, 0]), [3]),
-        spectrogram_expanded_mask=(torch.BoolTensor([[1, 1], [1, 1], [0, 0]]), [3]))
+        spectrogram=BatchedSequences(torch.FloatTensor([[1, 1], [1, 1], [3, 3]]), [3]),
+        stop_token=BatchedSequences(torch.FloatTensor([0, 1, 1]), [3]),
+        spectrogram_mask=BatchedSequences(torch.BoolTensor([1, 1, 0]), [3]),
+        spectrogram_expanded_mask=BatchedSequences(torch.BoolTensor([[1, 1], [1, 1], [0, 0]]), [3]))
     predicted_pre_spectrogram = torch.FloatTensor([[1, 1], [1, 1], [1, 1]])
     predicted_post_spectrogram = torch.FloatTensor([[0.5, 0.5], [0.5, 0.5], [1, 1]])
     predicted_stop_tokens = torch.FloatTensor([0, 0.5, 0.5])

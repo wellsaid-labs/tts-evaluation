@@ -1,9 +1,9 @@
 import math
 
-import numpy as np
+from hparams import HParam
+from hparams import configurable
 
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
+import numpy as np
 
 
 class _ExponentiallyWeightedMovingAverage():
@@ -68,12 +68,7 @@ class AnomalyDetector(_ExponentiallyWeightedMovingAverage):
     # to be underestimated.
     # LEARN MORE: https://en.wikipedia.org/wiki/Unbiased_estimation_of_standard_deviation
     @configurable
-    def __init__(self,
-                 beta=ConfiguredArg(),
-                 sigma=ConfiguredArg(),
-                 type_=ConfiguredArg(),
-                 eps=10**-6,
-                 min_steps=10):
+    def __init__(self, beta=HParam(), sigma=HParam(), type_=HParam(), eps=10**-6, min_steps=10):
         super().__init__(beta=beta)
         self.sigma = sigma
         self.last_standard_deviation = 0.0

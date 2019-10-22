@@ -1,12 +1,12 @@
 import random
 
 from torch import nn
+from torchnlp.random import set_random_generator_state
 
 import torch
 
 from src.optimizers import Optimizer
 from src.utils.checkpoint import Checkpoint
-from src.environment import set_random_generator_state
 from src.environment import TEST_DATA_PATH
 
 TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'utils'
@@ -18,7 +18,7 @@ def test_load_most_recent_checkpoint():
     assert str(TEST_DATA_PATH_LOCAL / 'step_100.pt') in str(checkpoint.path)
 
     set_random_generator_state(checkpoint.random_generator_state)
-    assert 1419116234 == random.randint(1, 2**31)  # Checkpoint set random generator state
+    assert 819796839 == random.randint(1, 2**31)  # Checkpoint set random generator state
 
 
 def test_load_most_recent_checkpoint_none():

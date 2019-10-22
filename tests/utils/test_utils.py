@@ -10,14 +10,12 @@ from src.utils.utils import evaluate
 from src.utils.utils import flatten
 from src.utils.utils import flatten_parameters
 from src.utils.utils import get_average_norm
-from src.utils.utils import get_total_parameters
 from src.utils.utils import get_weighted_stdev
 from src.utils.utils import identity
 from src.utils.utils import log_runtime
 from src.utils.utils import ResetableTimer
 from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
-from src.utils.utils import split_list
 from src.utils.utils import get_chunks
 from src.utils.utils import bash_time_label
 
@@ -189,22 +187,6 @@ class MockModel(nn.Module):
         self.fc3 = nn.Linear(84, 10)
 
 
-def test_get_total_parameters():
-    assert 62006 == get_total_parameters(MockModel())
-
-
 def test_flatten_parameters__smoke_test():
     flatten_parameters(MockModel())
     flatten_parameters(nn.LSTM(10, 10))
-
-
-def test_split_list():
-    dataset = [1, 2, 3, 4, 5]
-    splits = (.6, .2, .2)
-    assert split_list(dataset, splits) == [[1, 2, 3], [4], [5]]
-
-
-def test_split_list_rounding():
-    dataset = [1]
-    splits = (.33, .33, .34)
-    assert split_list(dataset, splits) == [[], [], [1]]

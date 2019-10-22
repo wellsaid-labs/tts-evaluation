@@ -22,10 +22,11 @@ def main(speaker_id_to_speaker_id, spectrogram_model_checkpoint, signal_model_ch
     """
     # Ensure `speaker_id_to_speaker_id` invariants pass
     speaker_encoder = spectrogram_model_checkpoint.input_encoder.speaker_encoder
-    speaker_ids = list(speaker_encoder.stoi.values())
+    speaker_ids = list(speaker_encoder.token_to_index.values())
     assert all(i in speaker_ids for i in speaker_id_to_speaker_id.values()), (
         'All speaker ids were not found in `speaker_encoder`.')
-    logger.info('The available speakers are:\n%s', pretty_printer.pformat(speaker_encoder.stoi))
+    logger.info('The available speakers are:\n%s',
+                pretty_printer.pformat(speaker_encoder.token_to_index))
 
     # Cache ths signal model inferrer
     signal_model_checkpoint.model.to_inferrer()

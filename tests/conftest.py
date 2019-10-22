@@ -3,6 +3,7 @@
 import matplotlib
 matplotlib.use('Agg')
 
+from hparams import clear_config
 from torch.utils import cpp_extension
 
 # Fix this weird error: https://github.com/pytorch/pytorch/issues/2083
@@ -13,7 +14,6 @@ import pytest
 from src.environment import DEFAULT_TTS_DISK_CACHE
 from src.environment import set_basic_logging_config
 from src.environment import TEST_DATA_PATH
-from src.hparams import clear_config
 from src.hparams import set_hparams
 from src.utils.disk_cache_ import _DiskCache
 from tests._utils import create_disk_garbage_collection_fixture

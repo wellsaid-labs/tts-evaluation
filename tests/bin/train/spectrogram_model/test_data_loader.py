@@ -13,10 +13,10 @@ def test_data_loader():
 
     # Test collate
     samples = list(iterator)  # The iterator contains some randomness everytime it's sampled.
-    assert sum([r.spectrogram_mask[0].sum().item() for r in samples]) == (
+    assert sum([r.spectrogram_mask.tensor.sum().item() for r in samples]) == (
         sum([r.spectrogram[1].sum().item() for r in samples]))
-    assert sum([r.spectrogram_mask[0].sum().item() for r in samples]) == (
-        sum([r.spectrogram[0].sum(dim=2).nonzero().shape[0] for r in samples]))
+    assert sum([r.spectrogram_mask.tensor.sum().item() for r in samples]) == (
+        sum([r.spectrogram.tensor.sum(dim=2).nonzero().shape[0] for r in samples]))
     assert sum([r.spectrogram_expanded_mask[0].sum().item() for r in samples]) == (
-        sum([r.spectrogram[0].nonzero().shape[0] for r in samples]))
-    assert sum([r.stop_token[0].sum().item() for r in samples]) == len(samples) * batch_size
+        sum([r.spectrogram.tensor.nonzero().shape[0] for r in samples]))
+    assert sum([r.stop_token.tensor.sum().item() for r in samples]) == len(samples) * batch_size

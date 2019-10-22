@@ -13,6 +13,14 @@ import argparse
 import logging
 import warnings
 
+from hparams import add_config
+from hparams import configurable
+from hparams import HParam
+from hparams import HParams
+from hparams import parse_hparam_args
+from torchnlp.random import set_random_generator_state
+from torchnlp.random import set_seed
+
 # LEARN MORE:
 # https://stackoverflow.com/questions/40845304/runtimewarning-numpy-dtype-size-changed-may-indicate-binary-incompatibility
 warnings.filterwarnings('ignore', message='numpy.dtype size changed')
@@ -34,12 +42,6 @@ from src.datasets import add_spectrogram_column
 from src.environment import assert_enough_disk_space
 from src.environment import check_module_versions
 from src.environment import EXPERIMENTS_PATH
-from src.environment import set_random_generator_state
-from src.environment import set_seed
-from src.hparams import add_config
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
-from src.hparams import parse_hparam_args
 from src.hparams import set_hparams
 from src.utils import bash_time_label
 from src.utils import cache_on_disk_tensor_shapes
@@ -69,10 +71,11 @@ def _set_hparams(more_hparams, checkpoint, comet_ml_project_name=None,
         comet_ml_experiment_key if checkpoint is None else checkpoint.comet_ml_experiment_key)
 
     add_config({
-        'src.visualize.CometML': {
-            'project_name': comet_ml_project_name,
-            'experiment_key': comet_ml_experiment_key,
-        },
+        'src.visualize.CometML':
+            HParams(
+                project_name=comet_ml_project_name,
+                experiment_key=comet_ml_experiment_key,
+            ),
     })
     add_config(more_hparams)
 
@@ -83,7 +86,7 @@ def _set_hparams(more_hparams, checkpoint, comet_ml_project_name=None,
 
 
 @configurable
-def _get_dataset(dataset=ConfiguredArg()):
+def _get_dataset(dataset=HParam()):
     return dataset()
 
 
@@ -219,7 +222,7 @@ def main(run_name=None,
     recorder.update(run_root)
 
     comet = CometML()
-    add_config({'src.visualize.CometML.experiment_key': comet.get_key()})
+    add_config({'src.visualize.CometML': HParams(experiment_key=comet.get_key())})
     if run_name is not None:
         logger.info('Name: %s', run_name)
         comet.set_name(run_name)

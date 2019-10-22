@@ -1,5 +1,7 @@
 from unittest import mock
 
+from torchnlp.random import fork_rng
+
 import torch
 import numpy as np
 
@@ -7,7 +9,6 @@ from src.audio import combine_signal
 from src.audio import split_signal
 from src.bin.train.signal_model.data_loader import _get_slice
 from src.bin.train.signal_model.data_loader import DataLoader
-from src.environment import fork_rng
 from tests._utils import get_tts_mocks
 
 

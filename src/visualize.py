@@ -11,6 +11,8 @@ matplotlib.use('Agg', warn=False)
 from comet_ml import ExistingExperiment
 from comet_ml import Experiment
 from dotenv import load_dotenv
+from hparams import configurable
+from hparams import HParam
 from matplotlib import cm as colormap
 from matplotlib import pyplot
 from third_party import LazyLoader
@@ -20,8 +22,6 @@ import torch
 librosa_display = LazyLoader('librosa_display', globals(), 'librosa.display')
 
 from src.audio import write_audio
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
 from src.utils import log_runtime
 
 logger = logging.getLogger(__name__)
@@ -94,7 +94,7 @@ def spectrogram_to_image(spectrogram):
 
 
 @configurable
-def plot_waveform(signal, sample_rate=ConfiguredArg()):
+def plot_waveform(signal, sample_rate=HParam()):
     """ Save image of spectrogram to disk.
 
     Args:
@@ -119,11 +119,11 @@ def plot_waveform(signal, sample_rate=ConfiguredArg()):
 
 @configurable
 def plot_spectrogram(spectrogram,
-                     sample_rate=ConfiguredArg(),
-                     frame_hop=ConfiguredArg(),
-                     lower_hertz=ConfiguredArg(),
-                     upper_hertz=ConfiguredArg(),
-                     y_axis=ConfiguredArg()):
+                     sample_rate=HParam(),
+                     frame_hop=HParam(),
+                     lower_hertz=HParam(),
+                     upper_hertz=HParam(),
+                     y_axis=HParam()):
     """ Get image of log mel spectrogram.
 
     Args:
@@ -187,7 +187,7 @@ _BASE_HTML_STYLING = """
 
 @configurable
 @log_runtime
-def CometML(project_name=ConfiguredArg(),
+def CometML(project_name=HParam(),
             experiment_key=None,
             api_key=None,
             workspace=None,

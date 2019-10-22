@@ -5,14 +5,13 @@ from math import floor
 import itertools
 import math
 
+from hparams import configurable
+from hparams import HParam
 from third_party import get_parameter_norm
 
 import logging
 import numpy as np
 import torch
-
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +99,7 @@ class AutoOptimizer(Optimizer):
     """
 
     @configurable
-    def __init__(self, optim, window_size=ConfiguredArg()):
+    def __init__(self, optim, window_size=HParam()):
         super().__init__(optim)
         self.window_size = window_size
         self.window = []
@@ -249,6 +248,8 @@ class Lamb(torch.optim.Optimizer):
                 beta1, beta2 = group['betas']
 
                 state['step'] += 1
+                bias_correction1 = 1 - beta1**state['step']
+                bias_correction2 = 1 - beta2**state['step']
                 grad.add_(group['l2_regularization'], p.data)
 
                 # Decay the first and second moment running average coefficient
@@ -258,13 +259,11 @@ class Lamb(torch.optim.Optimizer):
                     # Maintains the maximum of all 2nd moment running avg. till now
                     torch.max(max_exp_avg_sq, exp_avg_sq, out=max_exp_avg_sq)
                     # Use the max. for normalizing running avg. of gradient
-                    denom = max_exp_avg_sq.sqrt().add_(group['eps'])
+                    denom = (max_exp_avg_sq.sqrt() / math.sqrt(bias_correction2)).add_(group['eps'])
                 else:
-                    denom = exp_avg_sq.sqrt().add_(group['eps'])
+                    denom = (exp_avg_sq.sqrt() / math.sqrt(bias_correction2)).add_(group['eps'])
 
-                bias_correction1 = 1 - beta1**state['step']
-                bias_correction2 = 1 - beta2**state['step']
-                step_size = group['lr'] * math.sqrt(bias_correction2) / bias_correction1
+                step_size = group['lr'] / bias_correction1
 
                 # References:
                 # https://github.com/pytorch/pytorch/issues/18414

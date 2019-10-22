@@ -4,10 +4,11 @@ import glob
 import logging
 import os
 
+from torchnlp.random import get_random_generator_state
+
 import torch
 import torch.utils.data
 
-from src.environment import get_random_generator_state
 from src.utils.utils import flatten_parameters
 from src.utils.utils import load
 from src.utils.utils import save
