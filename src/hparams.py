@@ -272,15 +272,15 @@ def _set_model_size(frame_channels, bits):
                         HParams(frame_channels=frame_channels),
                     '_infer':
                         HParams(
-                            # NOTE: Estimated loosely to be a multiple of the slowest speech observed in
-                            # one dataset. This threshhold is primarly intended to prevent recursion.
+                            # NOTE: Estimated loosely to be a multiple of the slowest speech
+                            # observed in one dataset. This threshhold is primarly intended to
+                            # prevent recursion.
                             max_frames_per_token=15,
 
                             # SOURCE (Tacotron 2):
                             # Specifically, generation completes at the first frame for which this
                             # probability exceeds a threshold of 0.5.
-                            stop_threshold=0.5,
-                        ),
+                            stop_threshold=0.5)
                 }
             },
             'signal_model.wave_rnn.WaveRNN.__init__':
@@ -467,8 +467,8 @@ def set_hparams():
                 # NOTE: This learning rate performed well on (tested on Comet in June 2019).
                 lr=2 * 10**-3,
                 max_trust_ratio=10,  # NOTE: Default value as suggested in the paper proposing LAMB.
-                # NOTE: This l2 regularization reduced audio artifacts without sacrificing performance
-                # (tested on Comet in August 2019).
+                # NOTE: This l2 regularization reduced audio artifacts without sacrificing
+                # performance (tested on Comet in August 2019).
                 l2_regularization=10**-7,
                 # NOTE: `weight_decay` was more sensistive than l2 regularization without providing
                 # much benefit (tested on Comet in August 2019).
@@ -495,8 +495,6 @@ def set_hparams():
 
     add_config({
         'src': {
-            'environment.get_initial_seed':
-                HParams(seed=seed),
             'spectrogram_model': {
                 'encoder.Encoder.__init__':
                     HParams(
@@ -527,10 +525,12 @@ def set_hparams():
                             HParams(
                                 # SOURCE: Tacotron 2
                                 # To train the feature prediction network, we apply the standard
-                                # maximum-likelihood training procedure (feeding in the correct output
-                                # instead of the predicted output on the decoder side, also referred to
-                                # as teacher-forcing) with a batch size of 64 on a single GPU.
-                                # NOTE: Parameters set after experimentation on a 2 Px100 GPU.
+                                # maximum-likelihood training procedure (feeding in the correct
+                                # output instead of the predicted output on the decoder side, also
+                                # referred to as teacher-forcing) with a batch size of 64 on a
+                                # single GPU.
+                                # NOTE: Parameters set after experimentation on a 2
+                                # Px100 GPU.
                                 train_batch_size=56,
                                 dev_batch_size=spectrogram_model_dev_batch_size,
 
@@ -543,8 +543,8 @@ def set_hparams():
                                 criterion_stop_token=BCEWithLogitsLoss,
 
                                 # SOURCE: Tacotron 2
-                                # We minimize the summed mean squared error (MSE) from before and after
-                                # the post-net to aid convergence.
+                                # We minimize the summed mean squared error (MSE) from before and
+                                # after the post-net to aid convergence.
                                 criterion_spectrogram=MSELoss,
 
                                 # Tacotron 2 like model with any changes documented via Comet.ml.
@@ -563,18 +563,18 @@ def set_hparams():
                                 train_batch_size=256,
                                 dev_batch_size=512,
 
-                                # `CrossEntropyLoss` is not directly mentioned in the paper; however is
-                                # a popular choice as of Jan 2019 for a classification task.
+                                # `CrossEntropyLoss` is not directly mentioned in the paper; however
+                                # is a popular choice as of Jan 2019 for a classification task.
                                 criterion=CrossEntropyLoss,
                                 optimizer=Lamb,
 
-                                # A similar schedule to used to train BERT; furthermore, experiments on
-                                # Comet show this schedule is effective along with the LAMB optimizer
-                                # and a large batch size.
+                                # A similar schedule to used to train BERT; furthermore, experiments
+                                # on Comet show this schedule is effective along with the LAMB
+                                # optimizer and a large batch size.
                                 lr_multiplier_schedule=signal_model_lr_multiplier_schedule,
 
-                                # WaveRNN from `Efficient Neural Audio Synthesis` is small, efficient,
-                                # and performant as a vocoder.
+                                # WaveRNN from `Efficient Neural Audio Synthesis` is small,
+                                # efficient, and performant as a vocoder.
                                 model=WaveRNN,
                             ),
                         'data_loader.DataLoader.__init__':
@@ -584,10 +584,11 @@ def set_hparams():
                                 spectrogram_slice_size=int(1800 / frame_hop),
                                 # TODO: This should depend on an upsample property.
                                 # TODO: It may be more appropriate to pad by 2 spectrogram frames
-                                # instead. Given that each frame aligns with 300 samples and each frame
-                                # is created from 1200 samples, then there is 900 samples of context for
-                                # each frame outside of the aligned samples. Then it makes sense to have
-                                # 450 samples of padding or 2 spectrogram frames.
+                                # instead. Given that each frame aligns with 300 samples and each
+                                # frame is created from 1200 samples, then there is 900 samples of
+                                # context for each frame outside of the aligned samples. Then it
+                                # makes sense to have 450 samples of padding or 2 spectrogram
+                                # frames.
                                 spectrogram_slice_pad=2,
                             ),
                     }

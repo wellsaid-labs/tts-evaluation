@@ -7,9 +7,6 @@ import os
 import subprocess
 import sys
 
-from hparams import configurable
-from hparams import HParam
-
 logger = logging.getLogger(__name__)
 
 ROOT_PATH = Path(__file__).parents[1].resolve()  # Repository root path
@@ -39,11 +36,6 @@ def set_basic_logging_config():
     logging.basicConfig(
         level=logging.INFO,
         format='\033[90m[%(asctime)s][%(process)d][%(name)s][%(levelname)s]\033[0m %(message)s')
-
-
-@configurable
-def get_initial_seed(seed=HParam()):
-    return seed
 
 
 def assert_enough_disk_space(min_space=0.2):
