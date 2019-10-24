@@ -161,12 +161,11 @@ def stream_text_to_speech_synthesis(signal_model_inferrer,
 
     # Compute spectrogram
     text, speaker = input_encoder.encode((text, speaker))
-    kwargs = {}
 
     logger.info('Generating spectrogram...')
     with torch.no_grad():
         spectrogram = spectrogram_model(
-            text, speaker, use_tqdm=True, max_frames_per_token=max_frames_per_token, **kwargs)[1]
+            text, speaker, use_tqdm=True, max_frames_per_token=max_frames_per_token)[1]
     logger.info('Generated spectrogram of shape %s for text of shape %s.', spectrogram.shape,
                 text.shape)
 

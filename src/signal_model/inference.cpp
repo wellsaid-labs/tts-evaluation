@@ -132,16 +132,74 @@ inline void addmv_relu_out(TA1D &res, const TA1D &b, const TA2D &m,
   }
 }
 
+// this keeps intermediate results of a logsumexp calculation as vectors
+// of floats.
+// the logsumexp (vector) of x is log(x.factor) + x.exponent at any time
+// "x += other" adds (i.e. x = logsumexp([x, other]))
+// fully_reduce gives the final result as a float
+struct LogSumExpVal
+{
+  LogSumExpVal(__m256 _factor, __m256 _exponent)
+      : factor(_factor), exponent(_exponent){};
+  LogSumExpVal()
+  {
+    factor = _mm256_set1_ps(0);
+    exponent = _mm256_set1_ps(-99999999); // avoid infinity - infinity
+  }
+  LogSumExpVal &operator+=(const LogSumExpVal other)
+  {
+    __m256 new_exponent = _mm256_max_ps(exponent, other.exponent);
+    __m256 conversion_factor =
+        Sleef_expf8_u10(_mm256_sub_ps(exponent, new_exponent));
+    factor = _mm256_mul_ps(factor, conversion_factor);
+    __m256 conversion_factor2 =
+        Sleef_expf8_u10(_mm256_sub_ps(other.exponent, new_exponent));
+    factor += _mm256_mul_ps(other.factor, conversion_factor2); // fma?
+    exponent = new_exponent;
+    return *this;
+  }
+  float fully_reduce()
+  {
+    float exponents[8];
+    float factors[8];
+    _mm256_store_ps(factors, factor);
+    _mm256_store_ps(exponents, exponent);
+    float max_exp = exponent[0];
+    for (int i = 1; i < 8; i++)
+    {
+      max_exp = std::max(max_exp, exponents[i]);
+    }
+    float res = 0.0;
+    for (int i = 0; i < 8; i++)
+    {
+      res += factors[i] * std::exp(exponents[i] - max_exp);
+    }
+    return std::log(res) + max_exp;
+  }
+  __m256 factor;
+  __m256 exponent;
+};
+
+// this defines a custom reduction for logsumexp in OMP, reducing from
+// one LogSumExpVal per thread to a single one with "+=".
+#pragma omp declare reduction(logsumexp      \
+                              : LogSumExpVal \
+                              : omp_out += omp_in)
+
 inline float addmv_exp_out(TA1D &res, const TA1D &b, const TA2D &m,
                            const TA1D &v)
 {
-  /** Computes res = exp(b + m.t() @ v)  (@ = matrix-vector product)
+  /** Computes res = b + m.t() @ v  (@ = matrix-vector product)
+   * Also computes the logsumexp in the same pass to save memory
+   * accesses. We previously took the exponential here, but it turned
+   * out that we need to keep the computation in log space for
+   * numerical accuracy.
    *
    * @param (output) res [n] 1d output
    * @param b [n]
    * @param m [k, t] NOTE: the n-stride is assumed to be contiguous!
    * @param v [k]
-   * @return sum of res
+   * @return logsumexp of res
    */
   float *lh_data = v.data();
   float *b1_data = b.data();
@@ -150,8 +208,9 @@ inline float addmv_exp_out(TA1D &res, const TA1D &b, const TA2D &m,
 
   int64_t h_size = v.size(0);
   int64_t b_size = b.size(0);
-  float the_sum = 0;
-#pragma omp parallel for reduction(+ \
+
+  LogSumExpVal the_sum;
+#pragma omp parallel for reduction(logsumexp \
                                    : the_sum)
   for (int64_t i = 0; i < b_size; i += 4 * (256 / 32) /*m256_size*/)
   {
@@ -172,42 +231,52 @@ inline float addmv_exp_out(TA1D &res, const TA1D &b, const TA2D &m,
       racc2 = _mm256_fmadd_ps(lh0, w1_2_0, racc2);
       racc3 = _mm256_fmadd_ps(lh0, w1_3_0, racc3);
     }
-    racc0 = Sleef_expf8_u10(racc0);
-    racc1 = Sleef_expf8_u10(racc1);
-    racc2 = Sleef_expf8_u10(racc2);
-    racc3 = Sleef_expf8_u10(racc3);
     _mm256_store_ps(r1_data + i + 0 * m256_size, racc0);
     _mm256_store_ps(r1_data + i + 1 * m256_size, racc1);
     _mm256_store_ps(r1_data + i + 2 * m256_size, racc2);
     _mm256_store_ps(r1_data + i + 3 * m256_size, racc3);
-    racc0 = racc0 + racc1 + racc2 + racc3;
-    // it would be better to split out the thread parallelism from the for
-    // loop...
-    the_sum += sum8(racc0);
+
+    __m256 max4 = _mm256_max_ps(racc0, racc1);
+    max4 = _mm256_max_ps(max4, racc2);
+    max4 = _mm256_max_ps(max4, racc3);
+
+    __m256 new_exponent = _mm256_max_ps(the_sum.exponent, max4);
+    __m256 conversion_factor =
+        Sleef_expf8_u10(_mm256_sub_ps(the_sum.exponent, new_exponent));
+    the_sum.factor = _mm256_mul_ps(the_sum.factor, conversion_factor);
+    the_sum.exponent = new_exponent;
+
+    the_sum.factor =
+        _mm256_add_ps(the_sum.factor, Sleef_expf8_u10(racc0 - new_exponent));
+    the_sum.factor =
+        _mm256_add_ps(the_sum.factor, Sleef_expf8_u10(racc1 - new_exponent));
+    the_sum.factor =
+        _mm256_add_ps(the_sum.factor, Sleef_expf8_u10(racc2 - new_exponent));
+    the_sum.factor =
+        _mm256_add_ps(the_sum.factor, Sleef_expf8_u10(racc3 - new_exponent));
   }
-  return the_sum;
+  return the_sum.fully_reduce();
 }
 
 static std::default_random_engine generator;
 static std::uniform_real_distribution<double> distribution(0.0, 1.0);
 
-int64_t sample_multinomial(const TA1D &unnorm_probs, float sum)
+int64_t sample_multinomial(const TA1D &unnorm_log_probs, float log_sum)
 {
   /** Samples from multinomial distribution.
    *
-   * @param unnorm_probs [bins] unnormed probability vector
-   * @param sum sum of unnorm_probs
+   * @param unnorm_log_probs [bins] unnormed log probability vector
+   * @param log_sum logsumexp of unnorm_log probs
    * @return random integer 0..bins-1, with sampled with probabilities
    *         given by unnormed_probs / sum
    */
   float cumsum = 0;
   float r = distribution(generator);
-  r *= sum;
-  float *probs = unnorm_probs.data();
-  auto n_bins = unnorm_probs.size(0);
+  float *log_probs = unnorm_log_probs.data();
+  auto n_bins = unnorm_log_probs.size(0);
   for (int64_t i = 0; i < n_bins; i++)
   {
-    cumsum += probs[i];
+    cumsum += std::exp(log_probs[i] - log_sum);
     if (cumsum > r)
     {
       return i;
@@ -332,7 +401,8 @@ inline void gate_calc_(const TA1D &input, const TA1D &hidden_projection,
                        const TA2D &input_projection_bias, int64_t i)
 {
   /** Run fused GRU gate calculations. Requires hidden_size to be divisible
-   by 8.
+   * by 8.
+   *
    *  With blocks being 1/3 of the size = 0.5 hidden_size
    *  ri = sigmoid(input_projection_weight[block0] @ input +
    input_projection_bias[i][block0] + hidden_projection[block0])
