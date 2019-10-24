@@ -1,13 +1,13 @@
 import logging
 
+from hparams import configurable
+from hparams import HParam
 from torch import nn
 from torchnlp.utils import lengths_to_mask
 from tqdm import tqdm
 
 import torch
 
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
 from src.spectrogram_model.decoder import AutoregressiveDecoder
 from src.spectrogram_model.encoder import Encoder
 from src.spectrogram_model.post_net import PostNet
@@ -78,7 +78,7 @@ class SpectrogramModel(nn.Module):
       """
 
     @configurable
-    def __init__(self, vocab_size, num_speakers, frame_channels=ConfiguredArg()):
+    def __init__(self, vocab_size, num_speakers, frame_channels=HParam()):
 
         super().__init__()
 
@@ -171,8 +171,8 @@ class SpectrogramModel(nn.Module):
                tokens_mask,
                num_tokens,
                is_unbatched=False,
-               max_frames_per_token=ConfiguredArg(),
-               stop_threshold=ConfiguredArg(),
+               max_frames_per_token=HParam(),
+               stop_threshold=HParam(),
                use_tqdm=False):
         """
         Args:

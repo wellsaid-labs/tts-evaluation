@@ -1,9 +1,9 @@
+from hparams import configurable
+from hparams import HParam
 from torch import nn
 
 import torch
 
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
 from src.spectrogram_model.attention import LocationSensitiveAttention
 from src.spectrogram_model.pre_net import PreNet
 
@@ -69,10 +69,10 @@ class AutoregressiveDecoder(nn.Module):
     @configurable
     def __init__(self,
                  frame_channels,
-                 pre_net_hidden_size=ConfiguredArg(),
-                 lstm_hidden_size=ConfiguredArg(),
-                 lstm_dropout=ConfiguredArg(),
-                 attention_hidden_size=ConfiguredArg()):
+                 pre_net_hidden_size=HParam(),
+                 lstm_hidden_size=HParam(),
+                 lstm_dropout=HParam(),
+                 attention_hidden_size=HParam()):
 
         super().__init__()
         self.attention_hidden_size = attention_hidden_size

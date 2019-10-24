@@ -32,9 +32,9 @@ def test_validate_and_unpack():
     input_encoder = mocks['input_encoder']
     example = mocks['dev_dataset'][0]
     speaker = example.speaker
-    speaker_id = input_encoder.speaker_encoder.stoi[example.speaker]
+    speaker_id = input_encoder.speaker_encoder.token_to_index[example.speaker]
     text = example.text
-    speaker_id_to_speaker_id = {i: i for i in input_encoder.speaker_encoder.stoi.values()}
+    speaker_id_to_speaker_id = {i: i for i in input_encoder.speaker_encoder.token_to_index.values()}
     args = {'speaker_id': speaker_id, 'text': text, 'api_key': 'abc'}
     api_keys = ['abc']
 

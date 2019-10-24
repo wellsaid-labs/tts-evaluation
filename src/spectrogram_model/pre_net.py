@@ -1,7 +1,6 @@
+from hparams import configurable
+from hparams import HParam
 from torch import nn
-
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
 
 # TODO: Integrate ``dropout_for_eval`` in the place of ``AlwaysDropout``.
 
@@ -38,11 +37,7 @@ class PreNet(nn.Module):
     """
 
     @configurable
-    def __init__(self,
-                 frame_channels,
-                 num_layers=ConfiguredArg(),
-                 hidden_size=ConfiguredArg(),
-                 dropout=ConfiguredArg()):
+    def __init__(self, frame_channels, num_layers=HParam(), hidden_size=HParam(), dropout=HParam()):
         super().__init__()
         self.layers = nn.Sequential(*tuple([
             nn.Sequential(

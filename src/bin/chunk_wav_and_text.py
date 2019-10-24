@@ -60,13 +60,13 @@ from google.api_core.retry import Retry
 from google.cloud import speech
 from google.cloud.speech import types
 from google.protobuf.json_format import MessageToDict
+from hparams import configurable
+from hparams import HParam
 from Levenshtein import distance as get_edit_distance
 
 from src.audio import normalize_audio
 from src.audio import read_audio
 from src.audio import write_audio
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
 from src.hparams import set_hparams
 from src.utils import align_tokens
 from src.utils import flatten
@@ -106,7 +106,7 @@ def natural_keys(text):
 
 
 @configurable
-def seconds_to_samples(seconds, sample_rate=ConfiguredArg()):
+def seconds_to_samples(seconds, sample_rate=HParam()):
     """
     Args:
         seconds (str or float): Number of seconds.
@@ -127,7 +127,7 @@ def seconds_to_samples(seconds, sample_rate=ConfiguredArg()):
 
 
 @configurable
-def samples_to_seconds(samples, sample_rate=ConfiguredArg()):
+def samples_to_seconds(samples, sample_rate=HParam()):
     """
     Args:
         samples (int): Number of samples.
@@ -428,10 +428,7 @@ def align_wav(sst_result, min_seconds_per_character):
 
 
 @configurable
-def align_wav_and_scripts(sst_results,
-                          scripts,
-                          min_seconds_per_character,
-                          sample_rate=ConfiguredArg()):
+def align_wav_and_scripts(sst_results, scripts, min_seconds_per_character, sample_rate=HParam()):
     """ Align an audio file with the scripts spoken in the audio.
 
     NOTE: SST stands for Speech-to-Text.
@@ -634,7 +631,7 @@ def average_silence_delimiter(alignment, next_alignment):
 def chunk_alignments(alignments,
                      script,
                      max_chunk_seconds,
-                     sample_rate=ConfiguredArg(),
+                     sample_rate=HParam(),
                      delimiter=average_silence_delimiter):
     """ Chunk audio and text to be less than ``max_chunk_seconds``.
 

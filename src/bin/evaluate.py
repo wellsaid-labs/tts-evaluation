@@ -32,6 +32,11 @@ import os
 import sys
 import time
 
+from hparams import configurable
+from hparams import HParam
+from hparams import log_config
+from torchnlp.random import fork_rng
+from torchnlp.samplers import BalancedSampler
 from torchnlp.utils import tensors_to
 
 import pandas
@@ -48,12 +53,7 @@ from src.audio import write_audio
 from src.datasets import add_predicted_spectrogram_column
 from src.datasets import add_spectrogram_column
 from src.datasets import TextSpeechRow
-from src.environment import fork_rng
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
-from src.hparams import log_config
 from src.hparams import set_hparams
-from src.samplers import BalancedSampler
 from src.utils import Checkpoint
 from src.utils import RecordStandardStreams
 
@@ -89,13 +89,13 @@ def _save(destination, tags, speaker, waveform, obscure=False):
 
 
 @configurable
-def _get_dev_dataset(dataset=ConfiguredArg()):
+def _get_dev_dataset(dataset=HParam()):
     _, dev = dataset()
     return dev
 
 
 @configurable
-def _get_sample_rate(sample_rate=ConfiguredArg()):
+def _get_sample_rate(sample_rate=HParam()):
     return sample_rate
 
 

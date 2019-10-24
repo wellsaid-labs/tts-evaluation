@@ -5,6 +5,8 @@ from pathlib import Path
 import logging
 import pprint
 
+from hparams import configurable
+from hparams import HParam
 from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 from tqdm import tqdm
@@ -23,8 +25,6 @@ from src.environment import DATA_PATH
 from src.environment import ROOT_PATH
 from src.environment import TEMP_PATH
 from src.environment import TTS_DISK_CACHE_NAME
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
 from src.utils import batch_predict_spectrograms
 from src.utils import OnDiskTensor
 from src.utils import Pool
@@ -37,7 +37,7 @@ pprint = pprint.PrettyPrinter(indent=4)
 def add_predicted_spectrogram_column(data,
                                      checkpoint,
                                      device,
-                                     batch_size=ConfiguredArg(),
+                                     batch_size=HParam(),
                                      on_disk=True,
                                      aligned=True,
                                      use_tqdm=True):

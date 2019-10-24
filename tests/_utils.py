@@ -6,7 +6,10 @@ from functools import lru_cache
 import shutil
 import urllib.request
 
-from torch.optim import Adam
+from hparams import add_config
+from hparams import HParams
+from third_party.adam import Adam
+from torchnlp.utils import split_list
 
 import torch
 import pytest
@@ -18,7 +21,6 @@ from src.datasets import m_ailabs_en_us_speech_dataset
 from src.datasets import normalize_audio_column
 from src.datasets.m_ailabs import DOROTHY_AND_WIZARD_OZ
 from src.environment import TEST_DATA_PATH
-from src.hparams import add_config
 from src.optimizers import Optimizer
 from src.signal_model import WaveRNN
 from src.spectrogram_model import InputEncoder
@@ -26,7 +28,6 @@ from src.spectrogram_model import SpectrogramModel
 from src.utils import AnomalyDetector
 from src.utils import Checkpoint
 from src.utils import OnDiskTensor
-from src.utils import split_list
 
 
 def create_disk_garbage_collection_fixture(root_directory, **kwargs):
@@ -205,7 +206,8 @@ def get_tts_mocks(add_spectrogram=False,
 
     def get_spectrogram_model():
         # NOTE: Configure the `SpectrogramModel` to stop iteration as soon as possible.
-        add_config({'src.spectrogram_model.model.SpectrogramModel._infer.stop_threshold': 0.0})
+        add_config(
+            {'src.spectrogram_model.model.SpectrogramModel._infer': HParams(stop_threshold=0.0)})
         return SpectrogramModel(return_['input_encoder'].text_encoder.vocab_size,
                                 return_['input_encoder'].speaker_encoder.vocab_size)
 

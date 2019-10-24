@@ -5,6 +5,8 @@ import math
 import struct
 import subprocess
 
+from hparams import configurable
+from hparams import HParam
 from third_party import LazyLoader
 from tqdm import tqdm
 
@@ -17,8 +19,6 @@ librosa = LazyLoader('librosa', globals(), 'librosa')
 scipy = LazyLoader('scipy', globals(), 'scipy')
 
 from src.environment import TTS_DISK_CACHE_NAME
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
 from src.utils import disk_cache
 from src.utils import get_chunks
 from src.utils import Pool
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 @configurable
-def read_audio(filename, assert_metadata=ConfiguredArg(), to_float=True):
+def read_audio(filename, assert_metadata=HParam(), to_float=True):
     """ Read an audio file.
 
     TODO: Rename considering the tighter specification.
@@ -71,7 +71,7 @@ def read_audio(filename, assert_metadata=ConfiguredArg(), to_float=True):
 
 
 @configurable
-def write_audio(filename, audio, sample_rate=ConfiguredArg()):
+def write_audio(filename, audio, sample_rate=HParam(int)):
     """ Write a numpy array as a WAV file.
 
     Args:
@@ -84,10 +84,10 @@ def write_audio(filename, audio, sample_rate=ConfiguredArg()):
 
 @configurable
 def _mel_filters(sample_rate,
-                 fft_length=ConfiguredArg(),
-                 num_mel_bins=ConfiguredArg(),
-                 lower_hertz=ConfiguredArg(),
-                 upper_hertz=ConfiguredArg()):
+                 fft_length=HParam(),
+                 num_mel_bins=HParam(),
+                 lower_hertz=HParam(),
+                 upper_hertz=HParam()):
     """ Create a Filterbank matrix to combine FFT bins into Mel-frequency bins.
 
     Reference:
@@ -123,12 +123,12 @@ def _mel_filters(sample_rate,
 
 @configurable
 def get_log_mel_spectrogram(signal,
-                            sample_rate=ConfiguredArg(),
-                            frame_size=ConfiguredArg(),
-                            frame_hop=ConfiguredArg(),
-                            fft_length=ConfiguredArg(),
-                            window=ConfiguredArg(),
-                            min_magnitude=ConfiguredArg()):
+                            sample_rate=HParam(),
+                            frame_size=HParam(),
+                            frame_hop=HParam(),
+                            fft_length=HParam(),
+                            window=HParam(),
+                            min_magnitude=HParam()):
     """ Compute a log-mel-scaled spectrogram from signal.
 
     Tacotron 2 Reference:
@@ -256,13 +256,13 @@ def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, sample_rate):
 
 @configurable
 def griffin_lim(log_mel_spectrogram,
-                sample_rate=ConfiguredArg(),
-                frame_size=ConfiguredArg(),
-                frame_hop=ConfiguredArg(),
-                fft_length=ConfiguredArg(),
-                window=ConfiguredArg(),
-                power=ConfiguredArg(),
-                iterations=ConfiguredArg(),
+                sample_rate=HParam(),
+                frame_size=HParam(),
+                frame_hop=HParam(),
+                fft_length=HParam(),
+                window=HParam(),
+                power=HParam(),
+                iterations=HParam(),
                 use_tqdm=False):
     """ Transform log mel spectrogram to waveform with the Griffin-Lim algorithm.
 
@@ -338,7 +338,7 @@ def griffin_lim(log_mel_spectrogram,
 
 @configurable
 def build_wav_header(num_frames,
-                     frame_rate=ConfiguredArg(),
+                     frame_rate=HParam(),
                      wav_format=0x0001,
                      num_channels=1,
                      sample_width=2):
@@ -382,7 +382,7 @@ def build_wav_header(num_frames,
 
 
 @configurable
-def split_signal(signal, bits=ConfiguredArg()):
+def split_signal(signal, bits=HParam()):
     """ Compute the coarse and fine components of the signal.
 
     Args:
@@ -407,7 +407,7 @@ def split_signal(signal, bits=ConfiguredArg()):
 
 
 @configurable
-def combine_signal(coarse, fine, bits=ConfiguredArg(), return_int=False):
+def combine_signal(coarse, fine, bits=HParam(), return_int=False):
     """ Compute the coarse and fine components of the signal.
 
     Args:
@@ -550,10 +550,10 @@ def cache_get_audio_metadata(paths):
 
 @configurable
 def normalize_audio(audio_path,
-                    sample_rate=ConfiguredArg(),
-                    bits=ConfiguredArg(),
-                    channels=ConfiguredArg(),
-                    encoding=ConfiguredArg()):
+                    sample_rate=HParam(),
+                    bits=HParam(),
+                    channels=HParam(),
+                    encoding=HParam()):
     """ Normalize audio on disk with the SoX library.
 
     Args:

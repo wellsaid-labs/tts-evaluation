@@ -2,10 +2,9 @@ import math
 
 import torch
 
+from hparams import configurable
+from hparams import HParam
 from torch import nn
-
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
 
 
 class LocationSensitiveAttention(nn.Module):
@@ -52,9 +51,9 @@ class LocationSensitiveAttention(nn.Module):
     @configurable
     def __init__(self,
                  query_hidden_size,
-                 hidden_size=ConfiguredArg(),
-                 num_convolution_filters=ConfiguredArg(),
-                 convolution_filter_size=ConfiguredArg()):
+                 hidden_size=HParam(),
+                 num_convolution_filters=HParam(),
+                 convolution_filter_size=HParam()):
 
         super().__init__()
         # LEARN MORE:

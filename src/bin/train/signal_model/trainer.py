@@ -21,23 +21,23 @@ import atexit
 import logging
 import random
 
+from hparams import configurable
+from hparams import get_config
+from hparams import HParam
 from torch.optim.lr_scheduler import LambdaLR
+from torchnlp.utils import get_total_parameters
 
 import torch
 
 from src.audio import combine_signal
 from src.audio import split_signal
 from src.bin.train.signal_model.data_loader import DataLoader
-from src.hparams import configurable
-from src.hparams import ConfiguredArg
-from src.hparams import get_config
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.utils import AnomalyDetector
 from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
-from src.utils import get_total_parameters
 from src.utils import log_runtime
 from src.utils import maybe_load_tensor
 from src.visualize import CometML
@@ -89,13 +89,13 @@ class Trainer():
                  train_dataset,
                  dev_dataset,
                  checkpoints_directory,
-                 train_batch_size=ConfiguredArg(),
-                 dev_batch_size=ConfiguredArg(),
-                 criterion=ConfiguredArg(),
-                 optimizer=ConfiguredArg(),
-                 min_rollback=ConfiguredArg(),
-                 lr_multiplier_schedule=ConfiguredArg(),
-                 model=ConfiguredArg(),
+                 train_batch_size=HParam(),
+                 dev_batch_size=HParam(),
+                 criterion=HParam(),
+                 optimizer=HParam(),
+                 min_rollback=HParam(),
+                 lr_multiplier_schedule=HParam(),
+                 model=HParam(),
                  spectrogram_model_checkpoint=None,
                  step=0,
                  epoch=0,
