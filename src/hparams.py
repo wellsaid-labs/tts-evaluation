@@ -500,6 +500,8 @@ def set_hparams():
                     HParams(
                         lstm_dropout=lstm_dropout,
                         convolution_dropout=convolution_dropout,
+                        # NOTE: This dropout performed well on Comet in August 2019.
+                        speaker_embedding_dropout=0.25,
                     ),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(lstm_dropout=lstm_dropout),
