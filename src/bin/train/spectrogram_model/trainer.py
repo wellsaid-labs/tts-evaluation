@@ -1,5 +1,3 @@
-from collections import defaultdict
-
 import atexit
 import logging
 import math
@@ -115,7 +113,14 @@ class Trainer():
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.optimizer.to(device)
 
-        self.metrics = defaultdict(DistributedAveragedMetric)
+        self.metrics = {
+            'attention_norm': DistributedAveragedMetric(),
+            'attention_std': DistributedAveragedMetric(),
+            'duration_gap': DistributedAveragedMetric(),
+            'post_spectrogram_loss': DistributedAveragedMetric(),
+            'pre_spectrogram_loss': DistributedAveragedMetric(),
+            'stop_token_loss': DistributedAveragedMetric(),
+        }
 
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)

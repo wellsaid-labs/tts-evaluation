@@ -12,7 +12,6 @@ Walking through the math, a real epoch for the Linda Joshon dataset would be abo
 
 Find stats on the Linda Johnson dataset here: https://keithito.com/LJ-Speech-Dataset/
 """
-from collections import defaultdict
 from collections import deque
 from collections import namedtuple
 from copy import deepcopy
@@ -134,7 +133,11 @@ class Trainer():
 
         self.criterion = criterion(reduction='none').to(device)
 
-        self.metrics = defaultdict(DistributedAveragedMetric)
+        self.metrics = {
+            'coarse_loss': DistributedAveragedMetric(),
+            'fine_loss': DistributedAveragedMetric(),
+            'orthogonal_loss': DistributedAveragedMetric(),
+        }
 
         # NOTE: Rollback `maxlen=min_rollback + 1` to store the current state of the model with
         # the additional rollbacks.

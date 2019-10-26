@@ -732,6 +732,7 @@ def normalize_text(text):
     text = text.strip()
     text = text.replace('\t', '  ')
     text = text.replace('®', '')
+    text = text.replace('™', '')
     # Remove HTML tags
     text = re.sub('<.*?>', '', text)
     # Fix for a missing space between end and beginning of a sentence.
@@ -911,6 +912,7 @@ def main(wav_pattern,
 
 if __name__ == "__main__":  # pragma: no cover
     # TODO: Consider accepting a list from bash glob.
+    # TODO: Rename `sst` to `stt` for 'speech-to-text'.
     parser = argparse.ArgumentParser(description='Align and chunk audio file and text scripts.')
     parser.add_argument('-w', '--wav', type=str, help='Path / Pattern to WAV file to chunk.')
     parser.add_argument('-c', '--csv', type=str, help='Path / Pattern to CSV file with scripts.')

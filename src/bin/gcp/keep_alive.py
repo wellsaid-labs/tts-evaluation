@@ -79,6 +79,10 @@ def get_available_instances(names=None):
                              (instance['name'], num_gpu, gpu, instance['status']))
             if response == 'Y':
                 filtered_instances.append(instance)
+
+    assert len(names) == len(
+        filtered_instances), 'Some of the instances you selected were not found.'
+
     return filtered_instances
 
 
