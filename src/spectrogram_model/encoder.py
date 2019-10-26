@@ -36,6 +36,7 @@ class Encoder(nn.Module):
         out_dim (int): Number of dimensions to output.
         token_embedding_dim (int): Size of the token embedding dimensions.
         speaker_embedding_dim (int): Size of the speaker embedding dimensions.
+        speaker_embedding_dropout (float): The speaker embedding net dropout.
         num_convolution_layers (int): Number of convolution layers to apply.
         num_convolution_filters (odd :clas:`int`): Number of dimensions (channels)
             produced by the convolution.
@@ -54,6 +55,7 @@ class Encoder(nn.Module):
                  out_dim=HParam(),
                  token_embedding_dim=HParam(),
                  speaker_embedding_dim=HParam(),
+                 speaker_embedding_dropout=HParam(),
                  num_convolution_layers=HParam(),
                  num_convolution_filters=HParam(),
                  convolution_filter_size=HParam(),
@@ -73,7 +75,11 @@ class Encoder(nn.Module):
             vocab_size, token_embedding_dim, padding_idx=DEFAULT_PADDING_INDEX)
         self.embed_speaker = None
         if num_speakers > 1:
-            self.embed_speaker = nn.Embedding(num_speakers, speaker_embedding_dim)
+            self.embed_speaker = nn.Sequential(
+                nn.Embedding(num_speakers, speaker_embedding_dim),
+                nn.Linear(speaker_embedding_dim, speaker_embedding_dim), nn.ReLU(),
+                nn.Dropout(speaker_embedding_dropout),
+                nn.Linear(speaker_embedding_dim, speaker_embedding_dim))
             self.project = nn.Linear(lstm_hidden_size + speaker_embedding_dim, out_dim)
         else:
             self.project = nn.Linear(lstm_hidden_size, out_dim)
