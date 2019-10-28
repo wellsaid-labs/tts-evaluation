@@ -29,7 +29,6 @@ from pathlib import Path
 import argparse
 import logging
 import os
-import sys
 import time
 
 from hparams import configurable
@@ -154,8 +153,6 @@ def main(dataset,
     destination.mkdir(exist_ok=False, parents=True)
 
     RecordStandardStreams(destination).start()
-
-    logger.info('The command line arguments are: %s', str(sys.argv))
 
     log_config()
 

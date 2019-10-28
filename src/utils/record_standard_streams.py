@@ -5,8 +5,11 @@ import os
 import sys
 import time
 import subprocess
+import logging
 
 from src.environment import TEMP_PATH
+
+logger = logging.getLogger(__name__)
 
 
 def _duplicate_stream(from_, to):
@@ -99,6 +102,9 @@ class RecordStandardStreams():
         """ Start recording `sys.stdout` and `sys.stderr`. """
         self.stop_stream_stdout = _duplicate_stream(sys.stdout, self.stdout_log_path)
         self.stop_stream_stderr = _duplicate_stream(sys.stderr, self.stderr_log_path)
+        # NOTE: This is unable to capture the command line arguments without explicitly logging
+        # them.
+        logger.info('The command line arguments are: %s', str(sys.argv))
         return self
 
     def stop(self):
