@@ -128,7 +128,6 @@ class Trainer():
         self.comet_ml = CometML(disabled=not src.distributed.is_master())
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
-        self.comet_ml.log_dataset_hash([self.train_dataset, self.dev_dataset])
         self.comet_ml.log_parameters(dict_collapse(get_config()))
         self.comet_ml.set_model_graph(str(self.model))
         total_train_text_length = sum([len(r.text) for r in self.train_dataset])
