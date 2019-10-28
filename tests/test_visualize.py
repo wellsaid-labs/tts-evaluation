@@ -15,7 +15,7 @@ from src.visualize import spectrogram_to_image
 
 def test_comet_ml():
     # Smoke tests
-    visualizer = CometML('', disabled=True, api_key='')
+    visualizer = CometML('', disabled=True)
     visualizer.set_step(0)
     visualizer.log_audio(
         tag='audio',

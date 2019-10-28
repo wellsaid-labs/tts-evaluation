@@ -31,7 +31,6 @@ yapf==0.28.0
 # Utils
 tqdm # Progress bar
 jupyter # Notebooks
-python-dotenv # Environment variables
 python-Levenshtein # Sequence alignment
 git+https://github.com/PetrochukM/HParams.git # Organize hyperparameters
 

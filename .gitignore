@@ -89,3 +89,6 @@ gcs_credentials.json
 
 # Python package `venv` directory
 /venv/
+
+# Comet.ml Config
+.comet.config

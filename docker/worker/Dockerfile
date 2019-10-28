@@ -60,7 +60,6 @@ RUN apt-get install -y --no-install-recommends git-core \
   # with PyTorch; however, we ran into issues while trying to do this:
   # https://github.com/pytorch/pytorch/issues/24844
   torch==1.2.0+cpu -f https://download.pytorch.org/whl/torch_stable.html \
-  python-dotenv \
   unidecode \
   tqdm \
   && venv/bin/pip install --no-cache-dir --no-dependencies \

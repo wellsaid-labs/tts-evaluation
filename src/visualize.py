@@ -1,8 +1,6 @@
 import io
 import logging
 import matplotlib
-import os
-import random
 import subprocess
 import time
 
@@ -10,7 +8,6 @@ matplotlib.use('Agg', warn=False)
 
 from comet_ml import ExistingExperiment
 from comet_ml import Experiment
-from dotenv import load_dotenv
 from hparams import configurable
 from hparams import HParam
 from matplotlib import cm as colormap
@@ -187,39 +184,19 @@ _BASE_HTML_STYLING = """
 
 @configurable
 @log_runtime
-def CometML(project_name=HParam(),
-            experiment_key=None,
-            api_key=None,
-            workspace=None,
-            log_git_patch=None,
-            **kwargs):
+def CometML(project_name=HParam(), experiment_key=None, log_git_patch=None, **kwargs):
     """
     Initiate a Comet.ml visualizer with several monkey patched methods.
 
     Args:
         project_name (str)
         experiment_key (str, optional): Comet.ml existing experiment identifier.
-        api_key (str, optional)
-        workspace (str, optional)
         log_git_patch (bool or None, optional): If ``True``
         **kwargs: Other kwargs to pass to comet `Experiment` or `ExistingExperiment`
 
     Returns:
         (Experiment or ExistingExperiment): Object for visualization with comet.
     """
-    load_dotenv()
-
-    # NOTE: We support multiple `COMET_ML_API_KEY`s in the environment. The comet team may give you
-    # extra API keys to ensure their system does not throttle you.
-    # TODO: Ideally, we'd assign this parameter based on the number of running experiments
-    # so that it's evenly distributed.
-    # NOTE: Use a random number generator that has not been seeded to avoid determinism.
-    generator = random.Random(int(time.time()))
-    api_key = (
-        os.getenv(generator.choice([key for key in os.environ if 'COMET_ML_API_KEY' in key]))
-        if api_key is None else api_key)
-    workspace = os.getenv('COMET_ML_WORKSPACE') if workspace is None else workspace
-
     # NOTE: Comet ensures reproducibility if all files are tracked via git.
     untracked_files = subprocess.check_output(
         'git ls-files --others --exclude-standard', shell=True).decode().strip()
@@ -227,11 +204,7 @@ def CometML(project_name=HParam(),
         raise ValueError(('Experiment is not reproducible, Comet does not track untracked files. '
                           'Please track these files via `git`:\n%s') % untracked_files)
 
-    kwargs.update({
-        'api_key': api_key,
-        'workspace': workspace,
-        'log_git_patch': log_git_patch,
-    })
+    kwargs.update({'log_git_patch': log_git_patch})
     if project_name is not None:
         kwargs.update({'project_name': project_name})
     if experiment_key is None:
