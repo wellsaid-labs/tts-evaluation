@@ -816,10 +816,19 @@ def main(wav_pattern,
     """
     # Setup the basic file structure
     destination = Path(destination)
-    # Save a record of the execution for future reference
-    RecordStandardStreams(destination).start()
     metadata_filename = destination / csv_metadata_name  # Filename to store CSV metadata
     wav_directory = destination / wav_directory_name  # Directory to store clips
+
+    if wav_directory.exists() or metadata_filename.exists() or len(list(
+            destination.glob('*.log'))) > 0:
+        raise ValueError(
+            ('Old existing files found in %s. ' +
+             'Please remove the `%s` file, log files and `%s` directory before proceeding. ' +
+             'The `%s` cache should be kept around unless it has been corrupted.') %
+            (destination, csv_metadata_name, wav_directory_name, sst_cache_name))
+
+    # Save a record of the execution for future reference
+    RecordStandardStreams(destination).start()
     sst_cache_directory = destination / sst_cache_name
     wav_directory.mkdir(parents=True, exist_ok=True)
     sst_cache_directory.mkdir(exist_ok=True)
