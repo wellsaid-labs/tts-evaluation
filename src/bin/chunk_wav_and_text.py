@@ -732,6 +732,7 @@ def normalize_text(text):
     text = text.strip()
     text = text.replace('\t', '  ')
     text = text.replace('®', '')
+    text = text.replace('™', '')
     # Remove HTML tags
     text = re.sub('<.*?>', '', text)
     # Fix for a missing space between end and beginning of a sentence.
@@ -815,10 +816,19 @@ def main(wav_pattern,
     """
     # Setup the basic file structure
     destination = Path(destination)
-    # Save a record of the execution for future reference
-    RecordStandardStreams(destination).start()
     metadata_filename = destination / csv_metadata_name  # Filename to store CSV metadata
     wav_directory = destination / wav_directory_name  # Directory to store clips
+
+    if wav_directory.exists() or metadata_filename.exists() or len(list(
+            destination.glob('*.log'))) > 0:
+        raise ValueError(
+            ('Old existing files found in %s. ' +
+             'Please remove the `%s` file, log files and `%s` directory before proceeding. ' +
+             'The `%s` cache should be kept around unless it has been corrupted.') %
+            (destination, csv_metadata_name, wav_directory_name, sst_cache_name))
+
+    # Save a record of the execution for future reference
+    RecordStandardStreams(destination).start()
     sst_cache_directory = destination / sst_cache_name
     wav_directory.mkdir(parents=True, exist_ok=True)
     sst_cache_directory.mkdir(exist_ok=True)
@@ -911,9 +921,10 @@ def main(wav_pattern,
 
 if __name__ == "__main__":  # pragma: no cover
     # TODO: Consider accepting a list from bash glob.
+    # TODO: Rename `sst` to `stt` for 'speech-to-text'.
     parser = argparse.ArgumentParser(description='Align and chunk audio file and text scripts.')
-    parser.add_argument('-w', '--wav', type=str, help='Path / Pattern to WAV file to chunk.')
-    parser.add_argument('-c', '--csv', type=str, help='Path / Pattern to CSV file with scripts.')
-    parser.add_argument('-d', '--destination', type=str, help='Path to save processed files.')
+    parser.add_argument('--wav', type=str, help='Path / Pattern to WAV file to chunk.')
+    parser.add_argument('--csv', type=str, help='Path / Pattern to CSV file with scripts.')
+    parser.add_argument('--destination', type=str, help='Path to save processed files.')
     args = parser.parse_args()
     main(args.wav, args.destination, args.csv)

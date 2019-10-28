@@ -8,18 +8,17 @@ Example:
              --command="screen -dm bash -c \
                   'cd /opt/wellsaid-labs/Text-to-Speech;
                   . venv/bin/activate
-                  PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py -c;'"
+                  PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py --checkpoint;'"
 """
 import argparse
 import json
 import logging
-import os
 import sched
 import subprocess
 import time
 
-from comet_ml import API as CometAPI
-from dotenv import load_dotenv
+from comet_ml.papi import API as CometAPI
+from comet_ml.config import get_config
 
 from src.utils import seconds_to_string
 
@@ -29,22 +28,7 @@ logger = logging.getLogger(__name__)
 
 INSTANCE_RUNNING = 'RUNNING'
 INSTANCE_STOPPED = 'TERMINATED'
-
-load_dotenv()
-
-COMET_ML_WORKSPACE = os.getenv('COMET_ML_WORKSPACE')
-COMET_ML_API_KEY = os.getenv('COMET_ML_API_KEY')
-COMET_ML_REST_API_KEY = os.getenv('COMET_ML_REST_API_KEY')
-
-
-def get_comet_ml_api():
-    """ Get an instance of `CometAPI`.
-
-    NOTE: Data received from `CometAPI` can be cached. To reset the cache, create a new instance.
-    Learn more: https://www.comet.ml/docs/python-sdk/Comet-REST-API/#utility-functions
-    """
-    return CometAPI(
-        api_key=os.getenv('COMET_ML_API_KEY'), rest_api_key=os.getenv('COMET_ML_REST_API_KEY'))
+COMET_WORKSPACE = get_config()['comet.workspace']
 
 
 def get_available_instances(names=None):
@@ -79,6 +63,10 @@ def get_available_instances(names=None):
                              (instance['name'], num_gpu, gpu, instance['status']))
             if response == 'Y':
                 filtered_instances.append(instance)
+
+    assert len(names) == len(
+        filtered_instances), 'Some of the instances you selected were not found.'
+
     return filtered_instances
 
 
@@ -93,8 +81,8 @@ def get_running_experiments(instances, comet_ml_project_name):
         (list): List of the most recently created experiments for each instance in `instances`.
     """
     logger.info('Getting comet experiment metadata.')
-    comet_ml_api = get_comet_ml_api()
-    experiments = comet_ml_api.get(COMET_ML_WORKSPACE, comet_ml_project_name)
+    comet_ml_api = CometAPI()
+    experiments = comet_ml_api.get(COMET_WORKSPACE, comet_ml_project_name)
 
     experiments = sorted(experiments, key=lambda e: e.data['start_server_timestamp'], reverse=True)
     get_hostname = lambda e: comet_ml_api.get_experiment_system_details(e.key)['hostname']
@@ -164,10 +152,10 @@ def keep_alive(comet_ml_project_name,
                         logger.exception('Fatal error caught while restarting instance.')
             elif status == INSTANCE_RUNNING:
                 # NOTE: Checks if an experiment has been halted for longer than `max_halt_time`.
-                logger.info('Checking on experiment %s/%s/%s', COMET_ML_WORKSPACE,
+                logger.info('Checking on experiment %s/%s/%s', COMET_WORKSPACE,
                             comet_ml_project_name, experiment.key)
-                updated_experiment = get_comet_ml_api().get(COMET_ML_WORKSPACE,
-                                                            comet_ml_project_name, experiment.key)
+                updated_experiment = CometAPI().get(COMET_WORKSPACE, comet_ml_project_name,
+                                                    experiment.key)
                 # NOTE: This API returns a `list` if the `experimet.key` is partial or invalid.
                 assert not isinstance(updated_experiment,
                                       list), 'The experiment key is no longer valid.'
@@ -197,15 +185,11 @@ def keep_alive(comet_ml_project_name,
 if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '-p', '--project_name', type=str, required=True, help='The comet.ml project name.')
+        '--project_name', type=str, required=True, help='The comet.ml project name.')
     parser.add_argument(
-        '-c',
-        '--command',
-        type=str,
-        required=True,
-        help='Command to run on GCP instance on its restart.')
+        '--command', type=str, required=True, help='Command to run on GCP instance on its restart.')
     parser.add_argument(
-        '-i', '--instance', default=None, action='append', help='A GCP instance to keep alive.')
+        '--instance', default=None, action='append', help='A GCP instance to keep alive.')
     args = parser.parse_args()
 
     instances = get_available_instances(args.instance)

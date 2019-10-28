@@ -29,7 +29,6 @@ from pathlib import Path
 import argparse
 import logging
 import os
-import sys
 import time
 
 from hparams import configurable
@@ -75,6 +74,8 @@ def _save(destination, tags, speaker, waveform, obscure=False):
     """
     speaker_name = speaker.name.lower().replace(' ', '_')
     filename = 'speaker=%s,%s' % (speaker_name, ','.join(tags))
+    # NOTE: The Python `hash` built-in is conditioned on the process; therefore, it generates
+    # unique hashes per process.
     filename = '%x' % hash(filename) if obscure else filename
     filename_with_suffix = str(filename) + '.wav'
     collision = 1
@@ -103,6 +104,7 @@ def main(dataset,
          signal_model_checkpoint,
          spectrogram_model_checkpoint,
          num_samples,
+         name='',
          get_sample_rate=_get_sample_rate,
          destination='samples/',
          metadata_filename='metadata.csv',
@@ -128,7 +130,8 @@ def main(dataset,
         spectrogram_model_checkpoint (str or None): Checkpoint used to generate spectrogram
             from text as input to the signal model.
         num_samples (int): Number of rows to evaluate.
-        get_sample_rate (callable): Get the number of samples in a clip per second.
+        name (str, optional): The name of this evaluation process to be included in the metadata.
+        get_sample_rate (callable, optional): Get the number of samples in a clip per second.
         destination (str, optional): Path to store results.
         metadata_filename (str, optional): The filename for a CSV file containing clip metadata.
         aligned (bool, optional): If `True`, predict a ground truth aligned spectrogram.
@@ -150,8 +153,6 @@ def main(dataset,
     destination.mkdir(exist_ok=False, parents=True)
 
     RecordStandardStreams(destination).start()
-
-    logger.info('The command line arguments are: %s', str(sys.argv))
 
     log_config()
 
@@ -178,6 +179,7 @@ def main(dataset,
         dict(
             **kwargs,
             text=example.text,
+            name=name,
             speaker=example.speaker.name,
             signal_model_checkpoint_path=(None if signal_model_checkpoint is None else
                                           signal_model_checkpoint.path),
@@ -257,6 +259,7 @@ def main(dataset,
 
 if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
+    parser.add_argument('--name', type=str, default='', help='A name for this evaluation process.')
     parser.add_argument(
         '--signal_model', type=str, default=None, help='Signal model checkpoint to evaluate.')
     parser.add_argument(
@@ -309,6 +312,7 @@ if __name__ == '__main__':  # pragma: no cover
 
     main(
         dataset=dataset,
+        name=args.name,
         spectrogram_model_checkpoint=args.spectrogram_model,
         signal_model_checkpoint=args.signal_model,
         balanced=callable(dataset),

@@ -1,4 +1,3 @@
-
 <p align="center"><img width="15%" src="logo.png" /></p>
 
 <h1 align="center">Text-to-Speech</h3>
@@ -85,17 +84,12 @@ Note that this installation will only work on Linux machines with an Intel CPU.
 
 This repository requires [Comet](https://www.comet.ml) for visualization. You'll need to ask
 a team member to create you an account. With your new account, you'll need to create
-a `.env` file with these keys:
+a `.comet.config` file with the `api_key`, `rest_api_key` and `workspace` configurations. Learn more
+on [this web page](https://www.comet.ml/docs/python-sdk/advanced/#python-configuration).
 
-```bash
-# NOTE: A list of workspaces can be found here: https://www.comet.ml/spaces
-COMET_ML_WORKSPACE=xx
-
-# NOTE: Both API keys can be found in your settings:
-# https://www.comet.ml/YOUR_COMET_USER_NAME/settings/account
-COMET_ML_API_KEY=xx
-COMET_ML_REST_API_KEY=xx
-```
+Note that this software tends to trigger Comet's throttling. We are in good standing
+with the Comet team; therefore, if you need you can ask for a second API key to ensure their
+system does not throttle you.
 
 ### You're Done
 

@@ -38,7 +38,6 @@ import os
 import sys
 import unidecode
 
-from dotenv import load_dotenv
 from flask import Flask
 from flask import jsonify
 from flask import request
@@ -60,7 +59,6 @@ from src.utils import Checkpoint
 app = Flask(__name__)
 set_basic_logging_config()
 logger = logging.getLogger(__name__)
-load_dotenv()
 DEVICE = torch.device('cpu')
 NO_CACHE_HEADERS = {
     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -287,8 +285,6 @@ def healthy():
 
 
 # NOTE: `/api/speech_synthesis/v1/` was added for backward compatibility.
-# TODO: Consider renaming `api.wellsaidlabs.com` to `tts.wellsaidlabs.com`. There already exists
-# an `wellsaidlabs.com/api` that's generic.
 
 
 @app.route('/api/speech_synthesis/v1/text_to_speech/input_validated', methods=['GET', 'POST'])

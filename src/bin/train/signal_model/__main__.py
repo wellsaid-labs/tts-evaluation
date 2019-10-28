@@ -228,7 +228,10 @@ def main(run_name=None,
         comet.set_name(run_name)
     logger.info('Tags: %s', run_tags)
     comet.add_tags(run_tags)
-    comet.log_other('directory', run_root)
+    comet.log_other('directory', str(run_root))
+    if spectrogram_model_checkpoint is not None:
+        comet.log_other('spectrogram_model_experiment_key',
+                        spectrogram_model_checkpoint.comet_ml_experiment_key)
 
     def _preprocess_data(data):
         data = add_spectrogram_column(data)
@@ -265,37 +268,34 @@ def main(run_name=None,
 if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '-c',
         '--checkpoint',
         const=True,
         type=str,
         default=None,
         action='store',
         nargs='?',
-        help='Without a value ``-c``, loads the most recent checkpoint; '
+        help='Without a value, this loads the most recent checkpoint; '
         'otherwise, expects a checkpoint file path.')
     parser.add_argument(
-        '-s',
         '--spectrogram_model_checkpoint',
         type=str,
         default=None,
         help=('Spectrogram model checkpoint path used to predicted spectrogram from '
               'text as input to the signal model.'))
     parser.add_argument(
-        '-t',
         '--tags',
         default=[
             'batch_size=256', 'lamb optimizer', 'lr=2 * 10**-3', 'rollback v5',
             'triangle LR schedule v3', 'l2_regularization=10**-7', 'no batchnorm', 'no shortcut',
             'filters=[10]', 'kernels=[(5,5)]', 'slice_size=1800', 'spectrogram_slice_pad=2'
         ],
-        action='append',
+        nargs='+',
         help='List of tags for the experiment.')
-    parser.add_argument('-n', '--name', type=str, default=None, help='Name of the experiment.')
+    parser.add_argument('--name', type=str, default=None, help='Name of the experiment.')
     parser.add_argument(
-        '-r', '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
+        '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
     parser.add_argument(
-        '-p', '--project_name', type=str, help='Comet.ML project for the experiment to use.')
+        '--project_name', type=str, help='Comet.ML project for the experiment to use.')
 
     args, unparsed_args = parser.parse_known_args()
 
