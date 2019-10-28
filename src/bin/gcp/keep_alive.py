@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 INSTANCE_RUNNING = 'RUNNING'
 INSTANCE_STOPPED = 'TERMINATED'
-COMET_CONFIG = get_config()
+COMET_WORKSPACE = get_config()['comet.workspace']
 
 
 def get_available_instances(names=None):
@@ -82,7 +82,7 @@ def get_running_experiments(instances, comet_ml_project_name):
     """
     logger.info('Getting comet experiment metadata.')
     comet_ml_api = CometAPI()
-    experiments = comet_ml_api.get(COMET_CONFIG['comet.workspace'], comet_ml_project_name)
+    experiments = comet_ml_api.get(COMET_WORKSPACE, comet_ml_project_name)
 
     experiments = sorted(experiments, key=lambda e: e.data['start_server_timestamp'], reverse=True)
     get_hostname = lambda e: comet_ml_api.get_experiment_system_details(e.key)['hostname']
@@ -152,10 +152,10 @@ def keep_alive(comet_ml_project_name,
                         logger.exception('Fatal error caught while restarting instance.')
             elif status == INSTANCE_RUNNING:
                 # NOTE: Checks if an experiment has been halted for longer than `max_halt_time`.
-                logger.info('Checking on experiment %s/%s/%s', COMET_CONFIG['comet.workspace'],
+                logger.info('Checking on experiment %s/%s/%s', COMET_WORKSPACE,
                             comet_ml_project_name, experiment.key)
-                updated_experiment = CometAPI().get(COMET_CONFIG['comet.workspace'],
-                                                    comet_ml_project_name, experiment.key)
+                updated_experiment = CometAPI().get(COMET_WORKSPACE, comet_ml_project_name,
+                                                    experiment.key)
                 # NOTE: This API returns a `list` if the `experimet.key` is partial or invalid.
                 assert not isinstance(updated_experiment,
                                       list), 'The experiment key is no longer valid.'
