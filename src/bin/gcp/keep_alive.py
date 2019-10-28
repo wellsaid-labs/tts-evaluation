@@ -8,7 +8,7 @@ Example:
              --command="screen -dm bash -c \
                   'cd /opt/wellsaid-labs/Text-to-Speech;
                   . venv/bin/activate
-                  PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py -c;'"
+                  PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py --checkpoint;'"
 """
 import argparse
 import json
@@ -201,15 +201,11 @@ def keep_alive(comet_ml_project_name,
 if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '-p', '--project_name', type=str, required=True, help='The comet.ml project name.')
+        '--project_name', type=str, required=True, help='The comet.ml project name.')
     parser.add_argument(
-        '-c',
-        '--command',
-        type=str,
-        required=True,
-        help='Command to run on GCP instance on its restart.')
+        '--command', type=str, required=True, help='Command to run on GCP instance on its restart.')
     parser.add_argument(
-        '-i', '--instance', default=None, action='append', help='A GCP instance to keep alive.')
+        '--instance', default=None, action='append', help='A GCP instance to keep alive.')
     args = parser.parse_args()
 
     instances = get_available_instances(args.instance)

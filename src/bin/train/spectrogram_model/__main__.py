@@ -256,26 +256,23 @@ def main(run_name=None,
 if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '-c',
         '--checkpoint',
         const=True,
         type=str,
         default=None,
         action='store',
         nargs='?',
-        help='Without a value ``-c``, loads the most recent checkpoint; '
+        help='Without a value, this loads the most recent checkpoint; '
         'otherwise, expects a checkpoint file path.')
-    parser.add_argument('-n', '--name', type=str, default=None, help='Name of the experiment.')
+    parser.add_argument('--name', type=str, default=None, help='Name of the experiment.')
     parser.add_argument(
-        '-p',
         '--project_name',
         type=str,
         default=None,
         help='Name of the comet.ml project to store a new experiment in.')
     # NOTE: The baseline tags summarize changes in the current repository.
     parser.add_argument(
-        '-t',
-        '--tags',
+        '--tag',
         default=[
             'detached post_net', 'masked conv', 'post_net dropout=0', 'weight_decay=10**-6',
             'no numbers'
@@ -283,7 +280,6 @@ if __name__ == '__main__':  # pragma: no cover
         action='append',
         help='List of tags for a new experiments.')
     parser.add_argument(
-        '-r',
         '--reset_optimizer',
         action='store_true',
         default=False,
