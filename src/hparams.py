@@ -1,8 +1,10 @@
-import logging
 import itertools
+import logging
+import os
 
 from hparams import add_config
 from hparams import configurable
+from hparams import HParam
 from hparams import HParams
 from third_party.adam import Adam
 from torch import nn
@@ -101,6 +103,7 @@ def _set_audio_processing():
 
     add_config({
         'src.bin.evaluate._get_sample_rate': HParams(sample_rate=sample_rate),
+        'src.hparams._filter_too_little_audio': HParams(sample_rate=sample_rate, bits=bits),
         'src.audio': {
             'read_audio':
                 HParams(
@@ -326,6 +329,28 @@ def _filter_audio_path_not_found(example):
     return True
 
 
+@configurable
+def _filter_too_little_audio(example,
+                             min_seconds_per_character=0.04,
+                             bits_per_byte=8,
+                             sample_rate=HParam(),
+                             bits=HParam()):
+    """ Filter out examples with too little audio per character.
+
+    NOTE: With `min_seconds_per_character=0.04`, then 300 characters must have at least 12 seconds
+    of audio.
+    """
+    bytes_per_second = sample_rate * (bits / bits_per_byte)
+    min_bytes_per_character = bytes_per_second * min_seconds_per_character
+
+    if len(example.text) * min_bytes_per_character > os.path.getsize(example.audio_path):
+        logger.warning('[%s] There is too much text and the audio is too short: %s',
+                       example.speaker, example.text)
+        return False
+
+    return True
+
+
 def _filter_no_text(example):
     """ Filter out examples with no text.
     """
@@ -407,6 +432,7 @@ def get_dataset():
         dataset = datasets.filter_(_filter_books, dataset)
         logger.info('Loaded %d dataset examples.', len(dataset))
         dataset = datasets.normalize_audio_column(dataset)
+        dataset = datasets.filter_(_filter_too_little_audio, dataset)
         random.shuffle(dataset)
         return split_list(dataset, splits=(0.8, 0.2))
 
