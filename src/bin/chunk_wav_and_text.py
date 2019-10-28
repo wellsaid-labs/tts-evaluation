@@ -734,7 +734,6 @@ def normalize_text(text):
     text = text.replace('®', '')
     # Remove HTML tags
     text = re.sub('<.*?>', '', text)
-    text = text.replace('™', '')
     # Fix for a missing space between end and beginning of a sentence.
     # Example match deliminated by <>:
     #   the cold w<ar.T>he term 'business ethics'
@@ -844,7 +843,7 @@ def main(wav_pattern,
         logger.info('Aligning WAV (%s)', wav_path)
         if csv_paths is not None:
             logger.info('Aligned WAV to CSV (%s)', csv_paths[i])
-            data_frame = pandas.read_csv(csv_paths[i], sep='\t')
+            data_frame = pandas.read_csv(csv_paths[i])
             # NOTE: Some CSV files include a unhelpful `Index` column.
             data_frame = data_frame.drop(columns=['Index'] if 'Index' in data_frame else [])
             data_frame[text_column] = data_frame[text_column].apply(normalize_text)
