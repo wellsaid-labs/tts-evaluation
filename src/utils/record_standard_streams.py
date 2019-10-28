@@ -69,7 +69,7 @@ def _duplicate_stream(from_, to):
 
 
 class RecordStandardStreams():
-    """ Record output `sys.stdout` and `sys.stderr` to log files.
+    """ Record output of `sys.stdout` and `sys.stderr` to log files over an entire Python process.
 
     Args:
         directory (Path or str): Directory to save log files in.
@@ -91,6 +91,7 @@ class RecordStandardStreams():
         self.stderr_log_path = directory / stderr_log_filename
         self.stop_stream_stdout = None
         self.stop_stream_stderr = None
+        self.first_start = True
 
     def _check_invariants(self, directory, stdout_log_filename, stderr_log_filename):
         assert directory.exists()
@@ -99,16 +100,24 @@ class RecordStandardStreams():
         assert not (directory / stderr_log_filename).exists()
 
     def start(self):
-        """ Start recording `sys.stdout` and `sys.stderr`. """
+        """ Start recording `sys.stdout` and `sys.stderr` at the start of the process. """
         self.stop_stream_stdout = _duplicate_stream(sys.stdout, self.stdout_log_path)
         self.stop_stream_stderr = _duplicate_stream(sys.stderr, self.stderr_log_path)
+
         # NOTE: This is unable to capture the command line arguments without explicitly logging
         # them.
-        logger.info('The command line arguments are: %s', str(sys.argv))
+        if self.first_start:
+            logger.info('The command line arguments are: %s', str(sys.argv))
+            self.first_start = False
+
         return self
 
-    def stop(self):
-        """ Stop recording `sys.stdout` and `sys.stderr`. """
+    def _stop(self):
+        """ Stop recording `sys.stdout` and `sys.stderr`.
+
+        NOTE: This is a private method because `RecordStandardStreams` is not intended to be
+        stopped outside of an exit event.
+        """
         if self.stop_stream_stdout is None or self.stop_stream_stderr is None:
             raise ValueError('Recording has already been stopped or has not been started.')
 
@@ -130,7 +139,7 @@ class RecordStandardStreams():
         """
         self._check_invariants(directory, stdout_log_filename, stderr_log_filename)
 
-        self.stop()
+        self._stop()
 
         self.stdout_log_path.replace(directory / stdout_log_filename)
         self.stderr_log_path.replace(directory / stderr_log_filename)
