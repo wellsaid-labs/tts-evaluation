@@ -110,6 +110,88 @@ def frank_speech_dataset(
     return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
 
 
+def alicia_speech_dataset(
+        extracted_name='Alicia Harris',
+        url='https://drive.google.com/uc?export=download&id=1zNiG6GOrkFltbQ9x7gakT9Ct-HCFj5De',
+        url_filename='Alicia Harris.tar.gz',
+        speaker=Speaker('Alicia Harris', Gender.FEMALE),
+        **kwargs):
+    return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
+
+
+def george_speech_dataset(
+        extracted_name='George Drake',
+        url='https://drive.google.com/uc?export=download&id=1ktZWjaeWoSvz8wckmcF4VGA_Ngrgfq3P',
+        url_filename='George Drake.tar.gz',
+        speaker=Speaker('George Drake', Gender.MALE),
+        **kwargs):
+    return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
+
+
+def megan_speech_dataset(
+        extracted_name='Megan Sinclair',
+        url='https://drive.google.com/uc?export=download&id=1mTr8vlUO_MrucWknIOLWX2_363aJDOzX',
+        url_filename='Megan Sinclair.tar.gz',
+        speaker=Speaker('Megan Sinclair', Gender.FEMALE),
+        **kwargs):
+    return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
+
+
+def nadine_speech_dataset(
+        extracted_name='Nadine Nagamatsu',
+        url='https://drive.google.com/uc?export=download&id=1fwW6oV7x3QYImSfG811vhfjp8jKXVMGZ',
+        url_filename='Nadine Nagamatsu.tar.gz',
+        speaker=Speaker('Nadine Nagamatsu', Gender.FEMALE),
+        **kwargs):
+    return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
+
+
+def elise_speech_dataset(
+        extracted_name='Elise Randall',
+        url='https://drive.google.com/uc?export=download&id=1-lbK0J2a9pr-G0NpyxZjcl8Jlz0lvgsc',
+        url_filename='EliseRandall.tar.gz',
+        speaker=Speaker('Elise Randall', Gender.FEMALE),
+        **kwargs):
+    return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
+
+
+def hanuman_speech_dataset(
+        extracted_name='Hanuman Welch',
+        url='https://drive.google.com/uc?export=download&id=1dU4USVsAd_0aZmjOVCvwmK2_mdQFratZ',
+        url_filename='HanumanWelch.tar.gz',
+        speaker=Speaker('Hanuman Welch', Gender.MALE),
+        **kwargs):
+    return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
+
+
+def jack_speech_dataset(
+        extracted_name='Jack Rutkowski',
+        url='https://drive.google.com/uc?export=download&id=1n5DhLuvK56Ge57R7maD7Rs4dXVBTBy3l',
+        url_filename='JackRutkowski.tar.gz',
+        speaker=Speaker('Jack Rutkowski', Gender.MALE),
+        **kwargs):
+    return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
+
+
+def mark_speech_dataset(
+        extracted_name='Mark Atherlay',
+        url='https://drive.google.com/uc?export=download&id=1qi2nRASZXQlzwsfykoaWXtmR_MYFISC5',
+        url_filename='Mark Atherlay.tar.gz',
+        speaker=Speaker('Mark Atherlay', Gender.MALE),
+        **kwargs):
+    return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
+
+
+def steven_speech_dataset(
+        extracted_name='Steven Wahlberg',
+        url='https://drive.google.com/uc?export=download&id=1osZFUK7_fcnw5zTrSVhGCb5WBZfnGYdT',
+        url_filename='StevenWahlberg.tar.gz',
+        speaker=Speaker('Steven Wahlberg', Gender.MALE),
+        **kwargs):
+    return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
+
+
+
 __all__ = [
     'Speaker', 'Gender', 'lj_speech_dataset', 'm_ailabs_en_us_speech_dataset',
     'm_ailabs_en_uk_speech_dataset', 'hilary_speech_dataset', 'heather_speech_dataset',

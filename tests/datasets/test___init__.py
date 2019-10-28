@@ -3,13 +3,22 @@ from unittest import mock
 import pandas
 
 from src.datasets import adrienne_speech_dataset
+from src.datasets import alicia_speech_dataset
 from src.datasets import beth_custom_speech_dataset
 from src.datasets import beth_speech_dataset
+from src.datasets import elise_speech_dataset
 from src.datasets import frank_speech_dataset
+from src.datasets import george_speech_dataset
+from src.datasets import hanuman_speech_dataset
 from src.datasets import heather_speech_dataset
 from src.datasets import hilary_speech_dataset
+from src.datasets import jack_speech_dataset
+from src.datasets import mark_speech_dataset
+from src.datasets import megan_speech_dataset
+from src.datasets import nadine_speech_dataset
 from src.datasets import sam_speech_dataset
 from src.datasets import sean_speech_dataset
+from src.datasets import steven_speech_dataset
 from src.datasets import susan_speech_dataset
 from src.environment import TEST_DATA_PATH
 from tests._utils import url_first_side_effect
@@ -33,7 +42,10 @@ def test_datasets(mock_read_csv, mock_download_file_maybe_extract):
 
     speech_datasets = [
         sam_speech_dataset, heather_speech_dataset, beth_custom_speech_dataset, beth_speech_dataset,
-        susan_speech_dataset, sean_speech_dataset, adrienne_speech_dataset, frank_speech_dataset
+        susan_speech_dataset, sean_speech_dataset, adrienne_speech_dataset, frank_speech_dataset,
+        alicia_speech_dataset, george_speech_dataset, megan_speech_dataset, nadine_speech_dataset,
+        elise_speech_dataset, hanuman_speech_dataset, jack_speech_dataset, mark_speech_dataset,
+        steven_speech_dataset
     ]
     for dataset in speech_datasets:
         # Check a row are parsed correctly
