@@ -228,7 +228,9 @@ def main(run_name=None,
         comet.set_name(run_name)
     logger.info('Tags: %s', run_tags)
     comet.add_tags(run_tags)
-    comet.log_other('directory', run_root)
+    comet.log_other('directory', str(run_root))
+    comet.log_other('spectrogram_model_experiment_key',
+                    spectrogram_model_checkpoint.comet_ml_experiment_key)
 
     def _preprocess_data(data):
         data = add_spectrogram_column(data)

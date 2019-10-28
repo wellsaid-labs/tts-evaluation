@@ -225,7 +225,7 @@ def main(run_name=None,
         comet.set_name(run_name)
     logger.info('Tags: %s', run_tags)
     comet.add_tags(run_tags)
-    comet.log_other('directory', run_root)
+    comet.log_other('directory', str(run_root))
 
     train_dataset, dev_dataset = _get_dataset()
     # NOTE: Preprocessing is faster to compute outside of distributed environment.
