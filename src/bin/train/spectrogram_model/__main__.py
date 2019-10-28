@@ -272,12 +272,12 @@ if __name__ == '__main__':  # pragma: no cover
         help='Name of the comet.ml project to store a new experiment in.')
     # NOTE: The baseline tags summarize changes in the current repository.
     parser.add_argument(
-        '--tag',
+        '--tags',
         default=[
             'detached post_net', 'masked conv', 'post_net dropout=0', 'weight_decay=10**-6',
             'no numbers'
         ],
-        action='append',
+        nargs='+',
         help='List of tags for a new experiments.')
     parser.add_argument(
         '--reset_optimizer',
