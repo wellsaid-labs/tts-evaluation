@@ -112,8 +112,8 @@ def frank_speech_dataset(
 
 def alicia_speech_dataset(
         extracted_name='Alicia Harris',
-        url='https://drive.google.com/uc?export=download&id=1zNiG6GOrkFltbQ9x7gakT9Ct-HCFj5De',
-        url_filename='Alicia Harris.tar.gz',
+        url='https://drive.google.com/uc?export=download&id=1x2_XGTTqrwXjSYWRDfGRsoV0aSWDHr6G',
+        url_filename='AliciaHarris.tar.gz',
         speaker=Speaker('Alicia Harris', Gender.FEMALE),
         **kwargs):
     return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
@@ -130,8 +130,8 @@ def george_speech_dataset(
 
 def megan_speech_dataset(
         extracted_name='Megan Sinclair',
-        url='https://drive.google.com/uc?export=download&id=1mTr8vlUO_MrucWknIOLWX2_363aJDOzX',
-        url_filename='Megan Sinclair.tar.gz',
+        url='https://drive.google.com/uc?export=download&id=1waUWeXvrgchFjeXMmfBs55obK9u6qr30',
+        url_filename='MeganSinclair.tar.gz',
         speaker=Speaker('Megan Sinclair', Gender.FEMALE),
         **kwargs):
     return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
