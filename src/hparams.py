@@ -17,6 +17,8 @@ from torchnlp.utils import split_list
 import random
 import torchnlp
 
+from src.datasets import HANUMAN_WELCH
+
 logger = logging.getLogger(__name__)
 
 
@@ -332,6 +334,7 @@ def _filter_audio_path_not_found(example):
 @configurable
 def _filter_too_little_audio(example,
                              min_seconds_per_character=0.04,
+                             min_seconds_per_character_for_hanuman=0.0375,
                              bits_per_byte=8,
                              sample_rate=HParam(),
                              bits=HParam()):
@@ -344,14 +347,31 @@ def _filter_too_little_audio(example,
     more than 300 characters in 12 seconds; therefore, there is likely a dataset error if
     more than 300 characters are paired with 12 seconds of audio. For example, the speaker
     may have no read some of the text.
+
+    Args:
+        example (TextSpeechRow)
+        min_seconds_per_character (float)
+        min_seconds_per_character_for_hanuman (float)
+        bits_per_byte (int)
+        sample_rate (int)
+        bits (int)
+
+    Returns:
+        (bool)
     """
+    if example.speaker == HANUMAN_WELCH:
+        min_seconds_per_character = min_seconds_per_character_for_hanuman
+
     bytes_per_second = sample_rate * (bits / bits_per_byte)
     min_bytes_per_character = bytes_per_second * min_seconds_per_character
 
     if len(example.text) * min_bytes_per_character > os.path.getsize(example.audio_path):
-        logger.warning(
-            '[%s] Likely some text was not spoken; therefore, this example was removed: %s',
-            example.speaker, example.text)
+        num_seconds = os.path.getsize(example.audio_path) / bytes_per_second
+        logger.warning(('[%s] Likely some text was not spoken; ' +
+                        'therefore, this example with %f seconds per character ' +
+                        '[%f second(s) / %d character(s)] at `%s` was removed.'),
+                       example.speaker, num_seconds / len(example.text), num_seconds,
+                       len(example.text), example.audio_path)
         return False
 
     return True
