@@ -33,6 +33,7 @@ tqdm # Progress bar
 jupyter # Notebooks
 python-Levenshtein # Sequence alignment
 git+https://github.com/PetrochukM/HParams.git # Organize hyperparameters
+pandas
 
 # Web
 flask
