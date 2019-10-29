@@ -339,13 +339,19 @@ def _filter_too_little_audio(example,
 
     NOTE: With `min_seconds_per_character=0.04`, then 300 characters must have at least 12 seconds
     of audio.
+
+    MOTIVATION: In October 2019, Rhyan and Michael observed that actors typically cannot speak
+    more than 300 characters in 12 seconds; therefore, there is likely a dataset error if
+    more than 300 characters are paired with 12 seconds of audio. For example, the speaker
+    may have no read some of the text.
     """
     bytes_per_second = sample_rate * (bits / bits_per_byte)
     min_bytes_per_character = bytes_per_second * min_seconds_per_character
 
     if len(example.text) * min_bytes_per_character > os.path.getsize(example.audio_path):
-        logger.warning('[%s] There is too much text and the audio is too short: %s',
-                       example.speaker, example.text)
+        logger.warning(
+            '[%s] Likely some text was not spoken; therefore, this example was removed: %s',
+            example.speaker, example.text)
         return False
 
     return True
