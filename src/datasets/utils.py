@@ -219,6 +219,7 @@ def _dataset_loader(
         extracted_name,
         url,
         speaker,
+        create_root=False,
         url_filename=None,
         check_files=['{metadata_filename}'],
         directory=DATA_PATH,
@@ -228,6 +229,8 @@ def _dataset_loader(
         metadata_audio_path='{directory}/{extracted_name}/wavs/{metadata_audio_column_value}',
         **kwargs):
     """ Load a standard speech dataset.
+
+    TODO: Rename `extracted_name`.
 
     A standard speech dataset has these invariants:
         - The file structure is similar to:
@@ -244,6 +247,8 @@ def _dataset_loader(
         extracted_name (str): Name of the extracted dataset directory.
         url (str): URL of the dataset file.
         speaker (src.datasets.Speaker): The dataset speaker.
+        create_root (bool, optional): If ``True`` extract tar into ``{directory}/{extracted_name}``.
+            The file is downloaded into ``{directory}/{extracted_name}``.
         check_files (list of str, optional): The download is considered successful, if these files
             exist.
         url_filename (str, optional): Name of the file downloaded; Otherwise, a filename is
@@ -265,9 +270,13 @@ def _dataset_loader(
     check_files = [
         str(Path(f.format(metadata_filename=metadata_filename)).absolute()) for f in check_files
     ]
+
+    if create_root:
+        (directory / extracted_name).mkdir(exist_ok=True)
+
     download_file_maybe_extract(
         url=url,
-        directory=str(directory.absolute()),
+        directory=str((directory / extracted_name if create_root else directory).absolute()),
         check_files=check_files,
         filename=url_filename)
     dataframe = pandas.read_csv(Path(metadata_filename), **kwargs)
