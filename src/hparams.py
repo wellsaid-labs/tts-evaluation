@@ -1,6 +1,9 @@
+from collections import Counter
+
 import itertools
 import logging
 import os
+import pprint
 
 from hparams import add_config
 from hparams import configurable
@@ -20,6 +23,7 @@ import torchnlp
 from src.datasets import HANUMAN_WELCH
 
 logger = logging.getLogger(__name__)
+pprint = pprint.PrettyPrinter(indent=4)
 
 
 def _set_anomaly_detection():
@@ -460,6 +464,8 @@ def get_dataset():
         dataset = datasets.normalize_audio_column(dataset)
         dataset = datasets.filter_(_filter_too_little_audio, dataset)
         random.shuffle(dataset)
+        logger.info('Loaded %d dataset examples with a speaker distribution of:\n%s', len(dataset),
+                    pprint.pformat(Counter([e.speaker for e in dataset])))
         return split_list(dataset, splits=(0.8, 0.2))
 
 
