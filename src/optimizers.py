@@ -45,6 +45,7 @@ class Optimizer(object):
         params = list(
             itertools.chain.from_iterable(
                 [group['params'] for group in self.optimizer.param_groups]))
+        # TODO: This runs on every step with a call to `.item()`. This may be slow down.
         parameter_norm = get_parameter_norm(params)
         parameter_norm_inf = get_parameter_norm(params, norm_type=math.inf)
 
