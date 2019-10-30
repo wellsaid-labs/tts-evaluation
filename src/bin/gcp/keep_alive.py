@@ -5,7 +5,7 @@ Example:
 
     $ python -m src.bin.gcp.keep_alive --project_name 'your_comet_ml_project_name' \
              --instance your_gcp_instance_name \
-             --command="screen -dm bash -c \
+             --command="screen -dmL bash -c \
                   'cd /opt/wellsaid-labs/Text-to-Speech;
                   . venv/bin/activate
                   PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py --checkpoint;'"
@@ -83,9 +83,9 @@ def get_running_experiments(instances, comet_ml_project_name):
     logger.info('Getting comet experiment metadata.')
     comet_ml_api = CometAPI()
     experiments = comet_ml_api.get(COMET_WORKSPACE, comet_ml_project_name)
-
-    experiments = sorted(experiments, key=lambda e: e.data['start_server_timestamp'], reverse=True)
-    get_hostname = lambda e: comet_ml_api.get_experiment_system_details(e.key)['hostname']
+    experiments = sorted(
+        experiments, key=lambda e: e.to_json()['start_server_timestamp'], reverse=True)
+    get_hostname = lambda e: e.get_system_details()['hostname']
     return [next(e for e in experiments if get_hostname(e) == i['name']) for i in instances]
 
 
@@ -153,13 +153,13 @@ def keep_alive(comet_ml_project_name,
             elif status == INSTANCE_RUNNING:
                 # NOTE: Checks if an experiment has been halted for longer than `max_halt_time`.
                 logger.info('Checking on experiment %s/%s/%s', COMET_WORKSPACE,
-                            comet_ml_project_name, experiment.key)
+                            comet_ml_project_name, experiment.id)
                 updated_experiment = CometAPI().get(COMET_WORKSPACE, comet_ml_project_name,
-                                                    experiment.key)
+                                                    experiment.id)
                 # NOTE: This API returns a `list` if the `experimet.key` is partial or invalid.
                 assert not isinstance(updated_experiment,
                                       list), 'The experiment key is no longer valid.'
-                elapsed = time.time() * 1000 - updated_experiment.data['end_server_timestamp']
+                elapsed = time.time() * 1000 - updated_experiment.to_json()['end_server_timestamp']
                 logger.info('The instance was heard from %s ago.',
                             seconds_to_string(elapsed / 1000))
                 if elapsed > max_halt_time:
