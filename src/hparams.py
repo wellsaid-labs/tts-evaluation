@@ -460,7 +460,6 @@ def get_dataset():
         dataset = datasets.filter_(_filter_elliot_miller, dataset)
         dataset = datasets.filter_(_filter_no_numbers, dataset)
         dataset = datasets.filter_(_filter_books, dataset)
-        logger.info('Loaded %d dataset examples.', len(dataset))
         dataset = datasets.normalize_audio_column(dataset)
         dataset = datasets.filter_(_filter_too_little_audio, dataset)
         random.shuffle(dataset)
