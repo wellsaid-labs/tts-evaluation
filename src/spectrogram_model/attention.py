@@ -51,7 +51,7 @@ class LocationSensitiveAttention(nn.Module):
     @configurable
     def __init__(self,
                  query_hidden_size,
-                 hidden_size=HParam(),
+                 hidden_size,
                  num_convolution_filters=HParam(),
                  convolution_filter_size=HParam()):
 

@@ -37,7 +37,7 @@ class PreNet(nn.Module):
     """
 
     @configurable
-    def __init__(self, frame_channels, num_layers=HParam(), hidden_size=HParam(), dropout=HParam()):
+    def __init__(self, frame_channels, hidden_size, num_layers=HParam(), dropout=HParam()):
         super().__init__()
         self.layers = nn.Sequential(*tuple([
             nn.Sequential(

@@ -234,11 +234,6 @@ def _set_model_size(frame_channels, bits):
                 'attention.LocationSensitiveAttention.__init__':
                     HParams(
                         # SOURCE (Tacotron 2):
-                        # Attention probabilities are computed after projecting inputs and location
-                        # features to 128-dimensional hidden representations.
-                        hidden_size=attention_hidden_size,
-
-                        # SOURCE (Tacotron 2):
                         # Location features are computed using 32 1-D convolution filters of length
                         # 31.
                         num_convolution_filters=32,
@@ -259,8 +254,7 @@ def _set_model_size(frame_channels, bits):
                         # SOURCE (Tacotron 2):
                         # The prediction from the previous time step is first passed through a small
                         # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
-                        num_layers=2,
-                        hidden_size=pre_net_hidden_size),
+                        num_layers=2),
                 'post_net.PostNet.__init__':
                     HParams(
                         # SOURCE (Tacotron 2):
