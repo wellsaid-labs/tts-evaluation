@@ -235,6 +235,7 @@ def seconds_to_string(seconds):
     Returns
         str
     """
+    assert seconds > 0, 'Seconds must be positive.'
     seconds, milliseconds = divmod(seconds, 1)
     milliseconds = round(milliseconds * 1000)
     days, seconds = divmod(seconds, 86400)
