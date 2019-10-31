@@ -115,7 +115,7 @@ def start_instance(name, zone):
 
 @retry(delay=15, tries=3)
 def run_command_on_instance(name, zone, command):
-    """ The runs a command on a GCP instance.
+    """ This runs a command on a GCP instance.
 
     Args:
         name (str): The GCP instance name.
