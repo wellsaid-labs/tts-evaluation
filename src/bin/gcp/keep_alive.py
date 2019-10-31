@@ -4,9 +4,9 @@ This script runs a loop to restart preetible servers or shutdown halted experime
 Example:
 
     $ python -m src.bin.gcp.keep_alive \
-        --project_name 'your_comet_ml_project_name' \
-        --instance your_other_gcp_instance_name \
+        --project_name your_comet_ml_project_name \
         --instance your_gcp_instance_name \
+        --instance your_other_gcp_instance_name \
         --command="screen -dmL bash -c \
                     'sudo chmod -R a+rwx /opt/;
                     cd /opt/wellsaid-labs/Text-to-Speech;
