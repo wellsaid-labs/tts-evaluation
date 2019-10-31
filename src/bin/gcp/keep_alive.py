@@ -125,7 +125,7 @@ def run_command_on_instance(name, zone, command):
     Returns:
         (str): The output of the command.
     """
-    logger.info('Running command on instance: %s', command)
+    logger.info('On instance "%s" in zone "%s" running command: %s', name, zone, command)
     output = subprocess.check_output(
         'gcloud compute ssh %s --zone=%s --command="%s"' % (name, zone, command), shell=True)
     logger.info('Command output:\n%s', output.decode('utf-8'))
