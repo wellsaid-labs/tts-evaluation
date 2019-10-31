@@ -255,8 +255,10 @@ def keep_alive(comet_ml_project_name,
                                                                      experiment)
                 halt_time = time.time() - max(last_start_time, last_message_time)
                 logger.info(
-                    'The instance "%s" has been halted for %s time while the max halt time is %s.',
-                    name, seconds_to_string(halt_time), seconds_to_string(max_halt_time))
+                    'The instance "%s" has been halted for %s of the maximum allowed %s. '
+                    'If this halts for more than `max_halt_time`, then the experiment has '
+                    'stopped or is stuck and needs to restarted.', name,
+                    seconds_to_string(halt_time), seconds_to_string(max_halt_time))
                 if halt_time > max_halt_time:
                     logger.info('Stopping instance %s because it has been halted longer than %s',
                                 name, seconds_to_string(max_halt_time))
