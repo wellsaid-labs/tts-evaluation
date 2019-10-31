@@ -1,5 +1,5 @@
 # Model Evaluation
-WellSaid Labs utilizes an industry standard of Mean Opinion Scores to gauge synthetic audio quality. We use MTurk to crowd source opinion scores of various audio samples and derive a MOS per synthetic voice. If this score passes the bar (4.2/5), it is approved for addition into our Editor Voice Library.
+WellSaid Labs utilizes an industry standard of Mean Opinion Scores to gauge synthetic audio quality. We use MTurk to crowd source opinion scores of various audio samples and derive a MOS per synthetic voice.
 
 This document outlines the process for creating the MTurk surveys to obtain these scores.
 
