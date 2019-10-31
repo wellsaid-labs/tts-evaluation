@@ -143,7 +143,7 @@ def stop_instance(name, zone):
     Returns:
         (str): The output of the command.
     """
-    logger.info('Stopping instance "%s" in zone "%s".')
+    logger.info('Stopping instance "%s" in zone "%s".', nane, zone)
     output = subprocess.check_output(
         'gcloud compute instances stop %s --zone=%s' % (name, zone), shell=True)
     logger.info('Stoppping instance output:\n%s', output.decode('utf-8'))
