@@ -182,7 +182,7 @@ def get_instance_last_started_time(name, id, zone):
         zone (str): The GCP instance zone.
 
     Returns:
-        (int): The Unix timestamp in milliseconds this instance was started.
+        (int): The Unix timestamp in seconds this instance was started.
     """
     logger.info('Checking start time of instance "%s" with id "%s" in zone "%s".', name, id, zone)
     output = json.loads(
@@ -192,9 +192,9 @@ def get_instance_last_started_time(name, id, zone):
              'jsonPayload.event_subtype:start\' --format json --limit 1') % (id,),
             shell=True))
     assert len(output) == 1, 'The proceeding code expects one output.'
-    last_start_time = int(output[0]['jsonPayload']['event_timestamp_us']) / 1000
+    last_start_time = int(output[0]['jsonPayload']['event_timestamp_us']) / 1000 / 1000
     logger.info('The instance was started %s ago.',
-                seconds_to_string(time.time() - last_start_time / 1000))
+                seconds_to_string(time.time() - last_start_time))
     return last_start_time
 
 
@@ -207,15 +207,15 @@ def get_experiment_last_message_time(comet_ml_project_name, experiment):
         experiment (comet.APIExperiment): The comet ml experiment.
 
     Returns:
-        (int): The Unix timestamp in milliseconds this experiment recieved a message.
+        (int): The Unix timestamp in seconds this experiment recieved a message.
     """
     logger.info('Checking on the Comet experiment\'s %s last message time.', experiment.url)
     updated_experiment = CometAPI().get(COMET_WORKSPACE, comet_ml_project_name, experiment.id)
     # NOTE: This API returns not a `list` if the `experimet.id` is partial or invalid.
     assert not isinstance(updated_experiment, list), 'The experiment key is no longer valid.'
-    last_message_time = updated_experiment.to_json()['end_server_timestamp']
+    last_message_time = updated_experiment.to_json()['end_server_timestamp'] / 1000
     logger.info('The Comet experiment recieved a message %s ago.',
-                seconds_to_string(time.time() - last_message_time / 1000))
+                seconds_to_string(time.time() - last_message_time))
     return last_message_time
 
 
@@ -253,11 +253,11 @@ def keep_alive(comet_ml_project_name,
                 last_start_time = get_instance_last_started_time(name, id, zone)
                 last_message_time = get_experiment_last_message_time(comet_ml_project_name,
                                                                      experiment)
-                halt_time = time.time() - max(last_start_time, last_message_time) / 1000
+                halt_time = time.time() - max(last_start_time, last_message_time)
                 logger.info(
                     'The instance "%s" has been halted for %s time while the max halt time is %s.',
                     name, seconds_to_string(halt_time), seconds_to_string(max_halt_time))
-                if halt_time > max_halt_time * 1000:
+                if halt_time > max_halt_time:
                     logger.info('Stopping instance %s because it has been halted longer than %s',
                                 name, seconds_to_string(max_halt_time))
                     stop_instance(name, zone)
