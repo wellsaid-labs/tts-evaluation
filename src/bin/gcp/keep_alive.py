@@ -152,7 +152,7 @@ def stop_instance(name, zone):
 
 @retry(delay=15, tries=3)
 def get_instance_status(name, zone):
-    """ This gets the GCP instance status.
+    """ This returns the GCP instance status.
 
     Args:
         name (str): The GCP instance name.
@@ -174,7 +174,7 @@ def get_instance_status(name, zone):
 
 @retry(delay=15, tries=3)
 def get_instance_last_started_time(name, id, zone):
-    """ This gets the last time this GCP instance was started.
+    """ This returns the last time this GCP instance was started.
 
     Args:
         name (str): The GCP instance name.
@@ -200,7 +200,7 @@ def get_instance_last_started_time(name, id, zone):
 
 @retry(delay=15, tries=3)
 def get_experiment_last_message_time(comet_ml_project_name, experiment):
-    """ This gets the last time this experiment recieved a message.
+    """ This returns the last time this experiment recieved a message.
 
     Args:
         comet_ml_project_name (str): The comet ml project name.
