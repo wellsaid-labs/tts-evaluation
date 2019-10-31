@@ -24,8 +24,8 @@ from comet_ml.config import get_config
 from comet_ml.papi import API as CometAPI
 from retry import retry
 
-from src.utils import seconds_to_string
 from src.environment import set_basic_logging_config
+from src.utils import seconds_to_string
 
 set_basic_logging_config()
 logger = logging.getLogger(__name__)
