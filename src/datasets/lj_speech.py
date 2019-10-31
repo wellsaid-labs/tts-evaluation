@@ -16,18 +16,18 @@ logger = logging.getLogger(__name__)
 LINDA_JOHNSON = Speaker('Linda Johnson', Gender.FEMALE)
 
 
-def lj_speech_dataset(
-        extracted_name='LJSpeech-1.1',
-        url='http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
-        speaker=LINDA_JOHNSON,
-        verbalize=True,
-        metadata_audio_column=0,
-        metadata_audio_path='{directory}/{extracted_name}/wavs/{metadata_audio_column_value}.wav',
-        metadata_text_column=1,
-        metadata_quoting=csv.QUOTE_NONE,
-        metadata_delimiter='|',
-        metadata_header=None,
-        **kwargs):
+def lj_speech_dataset(root_directory_name='LJSpeech-1.1',
+                      url='http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
+                      speaker=LINDA_JOHNSON,
+                      verbalize=True,
+                      metadata_audio_column=0,
+                      metadata_audio_path=('{directory}/{root_directory_name}/' +
+                                           'wavs/{metadata_audio_column_value}.wav'),
+                      metadata_text_column=1,
+                      metadata_quoting=csv.QUOTE_NONE,
+                      metadata_delimiter='|',
+                      metadata_header=None,
+                      **kwargs):
     """ Load the Linda Johnson (LJ) Speech dataset.
 
     This is a public domain speech dataset consisting of 13,100 short audio clips of a single
@@ -55,7 +55,7 @@ def lj_speech_dataset(
           the President's Commission on the Assassination of President Kennedy. 1964.
 
     Args:
-        extracted_name (str, optional): Name of the extracted dataset directory.
+        root_directory_name (str, optional): Name of the extracted dataset directory.
         url (str, optional): URL of the dataset `tar.gz` file.
         speaker (src.datasets.Speaker, optional)
         verbalize (bool, optional): Verbalize the text.
@@ -75,7 +75,7 @@ def lj_speech_dataset(
         >>> train, dev = lj_speech_dataset() # doctest: +SKIP
     """
     data = _dataset_loader(
-        extracted_name=extracted_name,
+        root_directory_name=root_directory_name,
         url=url,
         speaker=speaker,
         delimiter=metadata_delimiter,

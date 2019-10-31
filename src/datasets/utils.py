@@ -216,25 +216,23 @@ def filter_(function, dataset):
 
 
 def _dataset_loader(
-        extracted_name,
+        root_directory_name,
         url,
         speaker,
         url_filename=None,
         create_root=False,
         check_files=['{metadata_filename}'],
         directory=DATA_PATH,
-        metadata_filename='{directory}/{extracted_name}/metadata.csv',
+        metadata_filename='{directory}/{root_directory_name}/metadata.csv',
         metadata_text_column='Content',
         metadata_audio_column='WAV Filename',
-        metadata_audio_path='{directory}/{extracted_name}/wavs/{metadata_audio_column_value}',
+        metadata_audio_path='{directory}/{root_directory_name}/wavs/{metadata_audio_column_value}',
         **kwargs):
     """ Load a standard speech dataset.
 
-    TODO: Rename `extracted_name`.
-
     A standard speech dataset has these invariants:
         - The file structure is similar to:
-            dataset/
+            {root_directory_name}/
                 metadata.csv
                 wavs/
                     audio1.wav
@@ -244,11 +242,14 @@ def _dataset_loader(
         - The dataset is stored in a ``tar`` or ``zip`` at some url.
 
     Args:
-        extracted_name (str): Name of the extracted dataset directory.
+        root_directory_name (str): Name of the directory inside `directory` to store data. With
+            `create_root=False`, this assumes the directory will be created while extracting
+            `url`.
         url (str): URL of the dataset file.
         speaker (src.datasets.Speaker): The dataset speaker.
-        create_root (bool, optional): If ``True`` extract tar into ``{directory}/{extracted_name}``.
-            The file is downloaded into ``{directory}/{extracted_name}``.
+        create_root (bool, optional): If ``True`` extract tar into
+            ``{directory}/{root_directory_name}``. The file is downloaded into
+            ``{directory}/{root_directory_name}``.
         check_files (list of str, optional): The download is considered successful, if these files
             exist.
         url_filename (str, optional): Name of the file downloaded; Otherwise, a filename is
@@ -264,19 +265,20 @@ def _dataset_loader(
     Returns:
         list of TextSpeechRow: Dataset with audio filenames and text annotations.
     """
-    logger.info('Loading `%s` speech dataset', extracted_name)
+    logger.info('Loading `%s` speech dataset', root_directory_name)
     directory = Path(directory)
-    metadata_filename = metadata_filename.format(directory=directory, extracted_name=extracted_name)
+    metadata_filename = metadata_filename.format(
+        directory=directory, root_directory_name=root_directory_name)
     check_files = [
         str(Path(f.format(metadata_filename=metadata_filename)).absolute()) for f in check_files
     ]
 
     if create_root:
-        (directory / extracted_name).mkdir(exist_ok=True)
+        (directory / root_directory_name).mkdir(exist_ok=True)
 
     download_file_maybe_extract(
         url=url,
-        directory=str((directory / extracted_name if create_root else directory).absolute()),
+        directory=str((directory / root_directory_name if create_root else directory).absolute()),
         check_files=check_files,
         filename=url_filename)
     dataframe = pandas.read_csv(Path(metadata_filename), **kwargs)
@@ -286,7 +288,7 @@ def _dataset_loader(
             audio_path=Path(
                 metadata_audio_path.format(
                     directory=directory,
-                    extracted_name=extracted_name,
+                    root_directory_name=root_directory_name,
                     metadata_audio_column_value=row[metadata_audio_column])),
             speaker=speaker,
             metadata={
