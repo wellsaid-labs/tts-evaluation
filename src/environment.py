@@ -1,5 +1,3 @@
-""" Setup any global configurations like `logging`, `seed`, environment and disk configurations.
-"""
 from pathlib import Path
 
 import logging
@@ -13,20 +11,21 @@ ROOT_PATH = Path(__file__).parents[1].resolve()  # Repository root path
 
 IS_TESTING_ENVIRONMENT = 'pytest' in sys.modules
 
-TTS_DISK_CACHE_NAME = '.tts_cache'  # Directory name for any disk cache's created by this repository
+TTS_DISK_CACHE_NAME = '.tts_cache'  # Hidden directory stored in other directories for caching
+
+DISK_PATH = ROOT_PATH / 'disk'
 
 TEST_DATA_PATH = ROOT_PATH / 'tests' / '_test_data'
 
-DATA_PATH = ROOT_PATH / 'data'
+DATA_PATH = DISK_PATH / 'data'
 
-EXPERIMENTS_PATH = ROOT_PATH / 'experiments'
+EXPERIMENTS_PATH = DISK_PATH / 'experiments'
 
-DEFAULT_TTS_DISK_CACHE = (TEST_DATA_PATH
-                          if IS_TESTING_ENVIRONMENT else ROOT_PATH) / TTS_DISK_CACHE_NAME
+TEMP_PATH = DISK_PATH / 'temp'
 
-TEMP_PATH = DEFAULT_TTS_DISK_CACHE / 'tmp'
+DISK_CACHE_PATH = TEST_DATA_PATH / '_cache' if IS_TESTING_ENVIRONMENT else DISK_PATH / 'other'
 
-NINJA_BUILD_PATH = TEMP_PATH / 'ninja_build'
+NINJA_BUILD_PATH = DISK_CACHE_PATH / 'ninja_build'
 
 NINJA_BUILD_PATH.mkdir(exist_ok=True, parents=True)
 

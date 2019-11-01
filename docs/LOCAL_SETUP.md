@@ -1,18 +1,12 @@
-<p align="center"><img width="15%" src="logo.png" /></p>
+# Local Setup
 
-<h1 align="center">Text-to-Speech</h3>
+This document summarizes how to setup this repository locally for development.
 
-WellSaid Lab's TrueVoice deep neural network architecture.
-
-![PyPI - Python Version](https://img.shields.io/badge/python-3.6-blue.svg)
-
-## Get Started
-
-### Prerequisites
+## Prerequisites
 
 This repository only supports Python 3.6 or higher.
 
-### 1. Download The Repository
+## 1. Download The Repository
 
 Using `git` clone the repository onto your system:
 
@@ -24,7 +18,7 @@ The reason for using `--depth=1 --no-single-branch` is to reduce the size of the
 On May 20th, these flags would reduce the repository size by 80%
 (i.e. 58 megabytes to 12 megabytes).
 
-### 2. Install Python Dependencies
+## 2. Install Python Dependencies
 
 Install Python dependencies, like so:
 
@@ -38,7 +32,7 @@ python -m venv venv
 python -m pip install -r requirements.txt --upgrade
 ```
 
-### 3. Install Additional Dependencies
+## 3. Install Additional Dependencies
 
 This repository requires [SoX](http://sox.sourceforge.net/) (Sound eXchange) and
 [FFmpeg](https://ffmpeg.org/) for audio preprocessing. They can be installed like so:
@@ -68,7 +62,7 @@ or
 brew install ninja
 ```
 
-#### (Optional) [MKL](https://software.intel.com/en-us/mkl)
+### (Optional) [MKL](https://software.intel.com/en-us/mkl)
 
 For optimal signal model inference performance, install [MKL](https://software.intel.com/en-us/mkl)
 like so:
@@ -79,7 +73,7 @@ sudo bash src/bin/install_mkl.sh
 
 Note that this installation will only work on Linux machines with an Intel CPU.
 
-### 4. Configure Visualization Dependencies
+## 4. Configure Visualization Dependencies
 
 This repository requires [Comet](https://www.comet.ml) for visualization. You'll need to ask
 a team member to create you an account. With your new account, you'll need to create
@@ -90,16 +84,10 @@ Note that this software tends to trigger Comet's throttling. We are in good stan
 with the Comet team; therefore, if you need you can ask for a second API key to ensure their
 system does not throttle you.
 
-### You're Done
+## You're Done
 
 Verify that your installation was successful by running the test suite:
 
 ```bash
 python -m pytest
 ```
-
-### Other Documentation
-
-TODO: Add a table of contents here on the documentation.
-
-Additionally, further documentation (such as how to train a model) can be found [here](docs/).

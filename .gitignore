@@ -54,16 +54,8 @@ instance/
 # IPython Notebook
 .ipynb_checkpoints
 
-# Data
-data/**
-_data/**
-.data/**
-
 # Test Files
 .pytest_cache
-
-# Experiments
-experiments/
 
 # Various tmp files
 tmp/
@@ -75,14 +67,13 @@ tmp/
 *.patch
 *.zip
 
-# Default path for evaluation files
-results/
-
 # Local node modules
 node_modules/
 
 # Disk cache for this repo.
-/.tts_cache/
+disk/
+!README.md
+!.gitkeep
 
 # Google Cloud Storage credentials
 gcs_credentials.json
