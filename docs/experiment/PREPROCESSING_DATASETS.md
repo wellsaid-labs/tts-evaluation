@@ -58,9 +58,14 @@ the actors corresponding CSV and WAV files into a directory like so:
 - Update the transcript if you notice any significant errors
 
 ## Afterwards
+Zip up the metadata.csv, log files, and wavs directory into a TAR.
+```bash
+tar -czvf ActorName.tar.gz metadata.csv stderr.#####.log stdout.#####.log wavs
+```
 
-- Rename it per the actor name
--
+Navigate to the actor's folder on the WSL Google Drive and create a new folder called **(05) Processed**.
+Upload the TAR there.
+
 
 ## Note
 
