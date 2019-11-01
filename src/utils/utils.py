@@ -268,16 +268,17 @@ def log_runtime(function):
     return decorator
 
 
-def sort_together(list_, sort_key):
+def sort_together(list_, sort_key, **kwargs):
     """
     Args:
         list_ (list)
         sort_key (list)
+        **kwargs: Additional keyword arguments passed to `sorted`.
 
     Returns:
         list: ``list_`` sorted with the sort key list ``sort_key``.
     """
-    return [x for _, x in sorted(zip(sort_key, list_), key=lambda pair: pair[0])]
+    return [x for _, x in sorted(zip(sort_key, list_), key=lambda pair: pair[0], **kwargs)]
 
 
 def slice_by_cumulative_sum(list_, max_total_value, get_value=lambda x: x):
