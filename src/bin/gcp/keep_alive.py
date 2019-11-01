@@ -213,7 +213,8 @@ def get_experiment_last_message_time(comet_ml_project_name, experiment):
     updated_experiment = CometAPI().get(COMET_WORKSPACE, comet_ml_project_name, experiment.id)
     # NOTE: This API returns not a `list` if the `experimet.id` is partial or invalid.
     assert not isinstance(updated_experiment, list), 'The experiment key is no longer valid.'
-    last_message_time = updated_experiment.to_json()['end_server_timestamp'] / 1000
+    last_message_time = max(
+        [m['timestampCurrent'] for m in updated_experiment.get_metrics_summary()]) / 1000
     logger.info('The Comet experiment recieved a message %s ago.',
                 seconds_to_string(time.time() - last_message_time))
     return last_message_time
