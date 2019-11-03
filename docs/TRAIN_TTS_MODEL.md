@@ -46,12 +46,10 @@ on a GCP virtual machine.
    Pick the checkpoint with a step count that correlates with the lowest
    `dev_epoch/post_spectrogram_loss` value.
 
-7. Starting on creating a screen session, follow this [document](TRAIN_MODEL.md) to
-   train a signal model.
-
-   During the step where you run `python src/bin/train/signal_model/__main__.py` pass
-   in the checkpoint you found earlier like so
-   `--spectrogram_model_checkpoint=$SPECTROGRAM_CHECKPOINT`.
+7. From [this point](TRAIN_MODEL.md#on-the-vm-instance-1), continue following the instructions
+   to train your signal model. That said, during the step where you run
+   `python src/bin/train/signal_model/__main__.py` pass in the checkpoint you found earlier
+   to the command line parameter `--spectrogram_model_checkpoint`.
 
    Finally, you'll want to train the signal model until `dev_epoch/coarse_loss` and
    `dev_epoch/fine_loss` stop rapidly decreasing. This typically will happen within 1 or so days of
