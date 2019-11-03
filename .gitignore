@@ -47,7 +47,7 @@ cover/
 *.mo
 *.pot
 
-# Flask stuff:
+# Flask stuff
 instance/
 .webassets-cache
 
@@ -71,9 +71,10 @@ tmp/
 node_modules/
 
 # Disk cache for this repo.
-disk/
-!README.md
-!.gitkeep
+disk/*/**
+!disk/README.md
+!disk/*/.gitkeep
+
 
 # Google Cloud Storage credentials
 gcs_credentials.json
@@ -83,3 +84,4 @@ gcs_credentials.json
 
 # Comet.ml Config
 .comet.config
+
