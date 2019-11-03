@@ -84,10 +84,13 @@ Note that this software tends to trigger Comet's throttling. We are in good stan
 with the Comet team; therefore, if you need you can ask for a second API key to ensure their
 system does not throttle you.
 
+Note that if you need to file an issue with Comet please visit
+[this webpage](https://github.com/comet-ml/issue-tracking).
+
 ## You're Done
 
 Verify that your installation was successful by running the test suite:
 
 ```bash
-python -m pytest
+pytest
 ```
