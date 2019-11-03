@@ -13,6 +13,8 @@ IS_TESTING_ENVIRONMENT = 'pytest' in sys.modules
 
 TTS_DISK_CACHE_NAME = '.tts_cache'  # Hidden directory stored in other directories for caching
 
+# NOTE: These paths help namespace the disk files.
+
 TEST_DATA_PATH = ROOT_PATH / 'tests' / '_test_data'
 
 DISK_PATH = TEST_DATA_PATH / '_disk' if IS_TESTING_ENVIRONMENT else ROOT_PATH / 'disk'
@@ -21,13 +23,27 @@ DATA_PATH = DISK_PATH / 'data'
 
 EXPERIMENTS_PATH = DISK_PATH / 'experiments'
 
-DISK_CACHE_PATH = DISK_PATH / 'other'
+SIGNAL_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / 'signal_model'
+
+SIGNAL_MODEL_EXPERIMENTS_PATH.mkdir(exist_ok=True)
+
+SPECTROGRAM_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / 'spectrogram_model'
+
+SPECTROGRAM_MODEL_EXPERIMENTS_PATH.mkdir(exist_ok=True)
+
+OTHER_DISK_CACHE_PATH = DISK_PATH / 'other'
 
 TEMP_PATH = DISK_PATH / 'temp'
 
-NINJA_BUILD_PATH = DISK_CACHE_PATH / 'ninja_build'
+NINJA_BUILD_PATH = OTHER_DISK_CACHE_PATH / 'ninja_build'
 
-NINJA_BUILD_PATH.mkdir(exist_ok=True, parents=True)
+NINJA_BUILD_PATH.mkdir(exist_ok=True)
+
+DISK_CACHE_PATH = OTHER_DISK_CACHE_PATH / 'disk_cache'
+
+DISK_CACHE_PATH.mkdir(exist_ok=True)
+
+SAMPLES_PATH = DISK_PATH / 'samples'
 
 
 def set_basic_logging_config():

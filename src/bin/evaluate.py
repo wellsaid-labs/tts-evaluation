@@ -52,7 +52,9 @@ from src.audio import write_audio
 from src.datasets import add_predicted_spectrogram_column
 from src.datasets import add_spectrogram_column
 from src.datasets import TextSpeechRow
+from src.environment import SAMPLES_PATH
 from src.hparams import set_hparams
+from src.utils import bash_time_label
 from src.utils import Checkpoint
 from src.utils import RecordStandardStreams
 
@@ -106,7 +108,7 @@ def main(dataset,
          num_samples,
          name='',
          get_sample_rate=_get_sample_rate,
-         destination='samples/',
+         destination=SAMPLES_PATH / bash_time_label(),
          metadata_filename='metadata.csv',
          aligned=False,
          speakers=None,
@@ -150,7 +152,7 @@ def main(dataset,
             evaluated.
     """
     destination = Path(destination)
-    destination.mkdir(exist_ok=False, parents=True)
+    destination.mkdir(exist_ok=False)
 
     RecordStandardStreams(destination).start()
 

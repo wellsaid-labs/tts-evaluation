@@ -8,6 +8,7 @@ import subprocess
 import logging
 
 from src.environment import TEMP_PATH
+from src.utils import bash_time_label
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +82,8 @@ class RecordStandardStreams():
     # http://manpages.ubuntu.com/manpages/cosmic/man2/getpid.2.html
     def __init__(self,
                  directory=TEMP_PATH,
-                 stdout_log_filename='stdout.%s.log' % os.getpid(),
-                 stderr_log_filename='stderr.%d.log' % os.getpid()):
+                 stdout_log_filename='stdout_%s.log' % bash_time_label(),
+                 stderr_log_filename='stderr_%s.log' % bash_time_label()):
         directory = Path(directory)
 
         self._check_invariants(directory, stdout_log_filename, stderr_log_filename)

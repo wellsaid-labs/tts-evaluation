@@ -5,10 +5,8 @@ from src.bin.evaluate import main
 from src.datasets import Gender
 from src.datasets import Speaker
 from src.environment import TEMP_PATH
-from src.environment import TEST_DATA_PATH
+from src.environment import SAMPLES_PATH
 from tests._utils import get_tts_mocks
-
-LOCAL_TEST_DATA_PATH = TEST_DATA_PATH / 'bin' / 'test_evaluate'
 
 
 def test__save():
@@ -40,13 +38,11 @@ def test_main(capsys):
             signal_model_checkpoint=mocks['signal_model_checkpoint'],
             spectrogram_model_checkpoint=mocks['spectrogram_model_checkpoint'],
             num_samples=num_samples,
-            destination=str(LOCAL_TEST_DATA_PATH),
             metadata_filename=metadata_filename,
             spectrogram_model_device=mocks['device'])
-        assert LOCAL_TEST_DATA_PATH.exists()
-        assert (LOCAL_TEST_DATA_PATH / metadata_filename).exists()
-        assert len(list(LOCAL_TEST_DATA_PATH.glob('*.log'))) == 2
-        assert len(list(LOCAL_TEST_DATA_PATH.glob('*.wav'))) == num_samples * 3
+        assert (SAMPLES_PATH / metadata_filename).exists()
+        assert len(list(SAMPLES_PATH.glob('*.log'))) == 2
+        assert len(list(SAMPLES_PATH.glob('*.wav'))) == num_samples * 3
 
 
 def test_main__no_checkpoints(capsys):
@@ -61,12 +57,10 @@ def test_main__no_checkpoints(capsys):
             spectrogram_model_checkpoint=None,
             obscure=True,
             num_samples=num_samples,
-            destination=str(LOCAL_TEST_DATA_PATH),
             metadata_filename=metadata_filename)
-        assert LOCAL_TEST_DATA_PATH.exists()
-        assert (LOCAL_TEST_DATA_PATH / metadata_filename).exists()
-        assert len(list(LOCAL_TEST_DATA_PATH.glob('*.log'))) == 2
-        assert len(list(LOCAL_TEST_DATA_PATH.glob('*.wav'))) == num_samples
+        assert (SAMPLES_PATH / metadata_filename).exists()
+        assert len(list(SAMPLES_PATH.glob('*.log'))) == 2
+        assert len(list(SAMPLES_PATH.glob('*.wav'))) == num_samples
 
 
 def test_main__text_only_dataset(capsys):
@@ -81,9 +75,7 @@ def test_main__text_only_dataset(capsys):
             signal_model_checkpoint=mocks['signal_model_checkpoint'],
             spectrogram_model_checkpoint=mocks['spectrogram_model_checkpoint'],
             num_samples=num_samples,
-            destination=str(LOCAL_TEST_DATA_PATH),
             metadata_filename=metadata_filename)
-        assert LOCAL_TEST_DATA_PATH.exists()
-        assert (LOCAL_TEST_DATA_PATH / metadata_filename).exists()
-        assert len(list(LOCAL_TEST_DATA_PATH.glob('*.log'))) == 2
-        assert len(list(LOCAL_TEST_DATA_PATH.glob('*.wav'))) == num_samples * 2
+        assert (SAMPLES_PATH / metadata_filename).exists()
+        assert len(list(SAMPLES_PATH.glob('*.log'))) == 2
+        assert len(list(SAMPLES_PATH.glob('*.wav'))) == num_samples * 2
