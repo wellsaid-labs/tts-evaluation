@@ -10,7 +10,7 @@ These datasets were commissioned and created by WellSaid.
 - Adrienne Walker-Heller
 - Alicia Harris
 - Beth Cameron
-- Beth Cameron (Custom): Beth Cameron provided us with her past VO work along with transcripts.
+- Beth Cameron (Custom)
 - Elise Randall
 - Frank Bonacquisti
 - George Drake
@@ -29,8 +29,8 @@ These datasets were commissioned and created by WellSaid.
 
 These datasets were acquired through the research community and have permissive licenses:
 
-- Linda Johnson: Learn more about this dataset on [this webpage](https://keithito.com/LJ-Speech-Dataset/).
-- M-AILABS US / UK: Learn more about this dataset on [this webpage](http://www.m-ailabs.bayern/en/the-mailabs-speech-dataset/).
+- Linda Johnson
+- M-AILABS US / UK
   - Elizabeth Klett
   - Judy Bieber
   - Mary Ann
@@ -38,4 +38,4 @@ These datasets were acquired through the research community and have permissive 
 
 ## Private Datasets
 
-- Sean Hannity: This dataset was created by iHeartRadio. They maintain ownership over this dataset.
+- Sean Hannity

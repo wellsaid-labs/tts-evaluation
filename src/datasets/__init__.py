@@ -53,6 +53,8 @@ def beth_custom_speech_dataset(
         url_filename='Beth Cameron (Custom).tar.gz',
         speaker=Speaker('Beth Cameron (Custom)', Gender.FEMALE),
         **kwargs):
+    """ Note that this dataset was created from Beth's past VO work that she sent accross.
+    """
     return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
 
 
@@ -71,6 +73,8 @@ def sean_speech_dataset(
         url_filename='Sean Hannity.tar.gz',
         speaker=Speaker('Sean Hannity', Gender.MALE),
         **kwargs):
+    """ Note that this dataset is created and owned by iHeartRadio.
+    """
     return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
 
 
@@ -143,6 +147,8 @@ def nadine_speech_dataset(
         url_filename='Nadine Nagamatsu.tar.gz',
         speaker=Speaker('Nadine Nagamatsu', Gender.FEMALE),
         **kwargs):
+    """ Note that this dataset is compromised due to some audio recording issues.
+    """
     return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
 
 
@@ -179,6 +185,8 @@ def mark_speech_dataset(
         url_filename='Mark Atherlay.tar.gz',
         speaker=Speaker('Mark Atherlay', Gender.MALE),
         **kwargs):
+    """ Note that this dataset is only 5.5 hours.
+    """
     return _dataset_loader(extracted_name, url, speaker, url_filename, **kwargs)
 
 
