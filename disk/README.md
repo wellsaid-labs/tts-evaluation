@@ -1,11 +1,11 @@
 # Disk
 
-This directory is used by this repository to caches temporary files onto disk. The various
+This directory is used by this repository to cache temporary files onto disk. The various
 denominations include:
 
-- `other`: This is used to cache everything else.
 - `data`: This is used to download and cache datasets.
 - `experiments`: This is used to save experimental data.
+- `other`: This is used to cache everything else.
 - `samples`: This is used to save generated samples.
 - `temp`: This is used to save temporary files for the duration of the program.
 

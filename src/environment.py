@@ -13,17 +13,17 @@ IS_TESTING_ENVIRONMENT = 'pytest' in sys.modules
 
 TTS_DISK_CACHE_NAME = '.tts_cache'  # Hidden directory stored in other directories for caching
 
-DISK_PATH = ROOT_PATH / 'disk'
-
 TEST_DATA_PATH = ROOT_PATH / 'tests' / '_test_data'
+
+DISK_PATH = TEST_DATA_PATH / '_disk' if IS_TESTING_ENVIRONMENT else ROOT_PATH / 'disk'
 
 DATA_PATH = DISK_PATH / 'data'
 
 EXPERIMENTS_PATH = DISK_PATH / 'experiments'
 
-TEMP_PATH = DISK_PATH / 'temp'
+DISK_CACHE_PATH = DISK_PATH / 'other'
 
-DISK_CACHE_PATH = TEST_DATA_PATH / '_cache' if IS_TESTING_ENVIRONMENT else DISK_PATH / 'other'
+TEMP_PATH = DISK_PATH / 'temp'
 
 NINJA_BUILD_PATH = DISK_CACHE_PATH / 'ninja_build'
 
