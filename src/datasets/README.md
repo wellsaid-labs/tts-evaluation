@@ -5,7 +5,7 @@ The available datasets are:
 
 ## Commercial Datasets
 
-These datasets were commissioned and created by WellSaid.
+These datasets were commissioned and created by WellSaid. They are defined in `__init__.py`.
 
 - Adrienne Walker-Heller
 - Alicia Harris
@@ -29,8 +29,8 @@ These datasets were commissioned and created by WellSaid.
 
 These datasets were acquired through the research community and have permissive licenses:
 
-- Linda Johnson
-- M-AILABS US / UK
+- Linda Johnson, defined in `lj_speech.py`
+- M-AILABS US / UK, defined in `m_ailabs.py`
   - Elizabeth Klett
   - Judy Bieber
   - Mary Ann
@@ -38,4 +38,4 @@ These datasets were acquired through the research community and have permissive 
 
 ## Private Datasets
 
-- Sean Hannity
+- Sean Hannity, defined in `__init__.py`
