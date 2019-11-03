@@ -10,7 +10,7 @@ WellSaid Lab's TrueVoice deep neural network architecture.
 
 You might be interested in:
 
-- [Learn about our engineering processes](./docs/ENGINEERING_PROCESSES)
+- [Learn about our engineering processes](./docs/ENGINEERING_PROCESSES.md)
 - [Setup a local development environment](./docs/LOCAL_SETUP.md)
 - Run an experiment on the cloud:
   1. [Setup a Google Cloud VM](./docs/GCP_SETUP.md)
