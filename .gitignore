@@ -75,7 +75,6 @@ disk/*/**
 !disk/README.md
 !disk/*/.gitkeep
 
-
 # Google Cloud Storage credentials
 gcs_credentials.json
 
