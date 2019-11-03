@@ -284,7 +284,7 @@ def _set_model_size(frame_channels, bits):
                             # Specifically, generation completes at the first frame for which this
                             # probability exceeds a threshold of 0.5.
                             stop_threshold=0.5)
-                }
+                }  # noqa: E122
             },
             'signal_model.wave_rnn.WaveRNN.__init__':
                 HParams(

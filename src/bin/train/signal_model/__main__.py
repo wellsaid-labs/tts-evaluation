@@ -124,7 +124,6 @@ def _train(device_index,
         distributed_backend (str)
         distributed_init_method (str)
     """
-    # TODO: Consider naming the logs based on the time they are started for sorting.
     recorder = RecordStandardStreams().start()
     # Initiate distributed environment, learn more:
     # https://pytorch.org/tutorials/intermediate/dist_tuto.htm

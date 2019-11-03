@@ -8,7 +8,7 @@ import subprocess
 import logging
 
 from src.environment import TEMP_PATH
-from src.utils import bash_time_label
+from src.utils.utils import bash_time_label
 
 logger = logging.getLogger(__name__)
 

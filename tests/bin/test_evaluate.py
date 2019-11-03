@@ -4,8 +4,9 @@ from src.bin.evaluate import _save
 from src.bin.evaluate import main
 from src.datasets import Gender
 from src.datasets import Speaker
-from src.environment import TEMP_PATH
 from src.environment import SAMPLES_PATH
+from src.environment import TEMP_PATH
+from src.utils import bash_time_label
 from tests._utils import get_tts_mocks
 
 
@@ -33,16 +34,19 @@ def test_main(capsys):
         mocks = get_tts_mocks()
         num_samples = 2
         metadata_filename = 'metadata.csv'
+        directory = SAMPLES_PATH / bash_time_label()
         main(
+            destination=directory,
             dataset=mocks['dev_dataset'],
             signal_model_checkpoint=mocks['signal_model_checkpoint'],
             spectrogram_model_checkpoint=mocks['spectrogram_model_checkpoint'],
             num_samples=num_samples,
             metadata_filename=metadata_filename,
             spectrogram_model_device=mocks['device'])
-        assert (SAMPLES_PATH / metadata_filename).exists()
-        assert len(list(SAMPLES_PATH.glob('*.log'))) == 2
-        assert len(list(SAMPLES_PATH.glob('*.wav'))) == num_samples * 3
+        assert directory.exists()
+        assert (directory / metadata_filename).exists()
+        assert len(list(directory.glob('*.log'))) == 2
+        assert len(list(directory.glob('*.wav'))) == num_samples * 3
 
 
 def test_main__no_checkpoints(capsys):
@@ -51,16 +55,19 @@ def test_main__no_checkpoints(capsys):
         mocks = get_tts_mocks()
         num_samples = 2
         metadata_filename = 'metadata.csv'
+        directory = SAMPLES_PATH / bash_time_label()
         main(
+            destination=directory,
             dataset=mocks['dev_dataset'],
             signal_model_checkpoint=None,
             spectrogram_model_checkpoint=None,
             obscure=True,
             num_samples=num_samples,
             metadata_filename=metadata_filename)
-        assert (SAMPLES_PATH / metadata_filename).exists()
-        assert len(list(SAMPLES_PATH.glob('*.log'))) == 2
-        assert len(list(SAMPLES_PATH.glob('*.wav'))) == num_samples
+        assert directory.exists()
+        assert (directory / metadata_filename).exists()
+        assert len(list(directory.glob('*.log'))) == 2
+        assert len(list(directory.glob('*.wav'))) == num_samples
 
 
 def test_main__text_only_dataset(capsys):
@@ -70,12 +77,15 @@ def test_main__text_only_dataset(capsys):
         num_samples = 2
         metadata_filename = 'metadata.csv'
         dataset = [e._replace(audio_path=None) for e in mocks['dev_dataset']]
+        directory = SAMPLES_PATH / bash_time_label()
         main(
+            destination=directory,
             dataset=dataset,
             signal_model_checkpoint=mocks['signal_model_checkpoint'],
             spectrogram_model_checkpoint=mocks['spectrogram_model_checkpoint'],
             num_samples=num_samples,
             metadata_filename=metadata_filename)
-        assert (SAMPLES_PATH / metadata_filename).exists()
-        assert len(list(SAMPLES_PATH.glob('*.log'))) == 2
-        assert len(list(SAMPLES_PATH.glob('*.wav'))) == num_samples * 2
+        assert directory.exists()
+        assert (directory / metadata_filename).exists()
+        assert len(list(directory.glob('*.log'))) == 2
+        assert len(list(directory.glob('*.wav'))) == num_samples * 2
