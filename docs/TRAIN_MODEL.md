@@ -10,7 +10,7 @@ Related Documentation:
   [here](https://cloud.google.com/compute/docs/images/create-delete-deprecate-private-images).
 
 - Would you like to train a end-to-end TTS model? Please follow
-  [this documentation](./docs/TRAIN_TTS_MODEL.md) instead.
+  [this documentation](TRAIN_TTS_MODEL.md) instead.
 
 - You may want to learn more about the available VM configurations, you can learn more
   [here](https://console.cloud.google.com/compute/instancesAdd?project=voice-research-255602&organizationId=530338208816)
@@ -18,7 +18,7 @@ Related Documentation:
 
 ## Prerequisites
 
-1. Setup your local development environment by following [these instructions](docs/LOCAL_SETUP.md).
+1. Setup your local development environment by following [these instructions](LOCAL_SETUP.md).
 
 2. Install `gcloud compute` by following the instructions
    [here](https://cloud.google.com/compute/docs/gcloud-compute/)

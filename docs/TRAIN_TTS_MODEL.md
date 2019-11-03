@@ -5,7 +5,7 @@ on a GCP virtual machine.
 
 ## Train a Spectrogram Model
 
-1. Follow this document [docs/TRAIN_MODEL.md] to train a spectrogram model.
+1. Follow this [document](TRAIN_MODEL.md) to train a spectrogram model.
 
    You'll want to train the spectrogram model until `dev_epoch/post_spectrogram_loss` stops
    rapidly decreasing. This typically will happen within 3 or so days of training.
@@ -46,7 +46,7 @@ on a GCP virtual machine.
    Pick the checkpoint with a step count that correlates with the lowest
    `dev_epoch/post_spectrogram_loss` value.
 
-7. Starting on creating a screen session, follow this [document](docs/TRAIN_MODEL.md) to
+7. Starting on creating a screen session, follow this [document](TRAIN_MODEL.md) to
    train a signal model.
 
    During the step where you run `python src/bin/train/signal_model/__main__.py` pass
