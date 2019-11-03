@@ -4,7 +4,8 @@ This document summarizes how to setup this repository locally for development.
 
 ## Prerequisites
 
-This repository only supports Python 3.6 or higher.
+This repository only supports macOS with Python 3.6 or higher. You'll also need
+[brew](https://brew.sh/), a package manager for macOS.
 
 ## 1. Download The Repository
 
@@ -38,25 +39,15 @@ This repository requires [SoX](http://sox.sourceforge.net/) (Sound eXchange) and
 [FFmpeg](https://ffmpeg.org/) for audio preprocessing. They can be installed like so:
 
 ```bash
-apt-get install sox
-apt-get install ffmpeg
-```
-
-or
-
-```bash
 brew install sox
 brew install ffmpeg
 ```
 
+Note that we do not use `ffmpeg` directly instead it is used by one of our
+[dependencies](https://librosa.github.io/librosa/install.html#ffmpeg).
+
 This repository also requires [Ninja](https://ninja-build.org/) for compilation. It can be
 installed like so:
-
-```bash
-apt-get install ninja-build
-```
-
-or
 
 ```bash
 brew install ninja

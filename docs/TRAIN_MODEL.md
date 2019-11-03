@@ -1,95 +1,254 @@
-# Setting Up a Virtual Machine on Google Cloud Platform
+# Train a Model with Google Cloud Platform (GCP) Compute
 
-[TOC]
+This markdown will walk you through the steps required to train a model on a GCP virtual
+machine.
 
-## ...for Training a Spectrogram Model
+Related Documentation:
 
-1. Go to WellSaid Lab's [Google Cloud Platform](https://console.cloud.google.com/projectselector/compute/instances)
-2. Under 'Select or create a project', choose **Voice Research** from the drop-down and click 'Continue'
-3. Click **create instance** at the top
-4. You'll want to set up the machine with the following configuration:
-    * **Name**:  name your machine something descriptive, useful, and pertinent to your experiments
-    * **Region**:  us-west1(Oregon)  |  **Zone**: us-west1-b  | . 
-      * *Note: You may need to adjust the region and zone to find available resources. Choose a combination that allows for the rest of the outlined configuration below.*
-    * **Machine Configuration** | **Machine Type**: select *n1-standard-16 (16 vCPU, 60 GB memory)* from the drop-down
-    * Expand '*CPU platform and GPU*'
-      * **CPU platform**: Intel Skylake or later
-      * **GPUs** | **+Add GPU**:  **GPU type**: NVIDIA Tesla P100  |  **Number of GPUs**: 2
-    * **Boot disk**:  click 'Change'
-      * Select the *Ubuntu 18.04 LTS* OS image
-      * **Boot disk type**: Standard persistent disk  |  **Size (GB)**: 512
-      * Click 'Select'
-    * **Identity and API access** | **Access scopes**: Allow full access to all Cloud APIs
-    * Expand '*Management, security, disks, networking, sole tenancy*'
-      * **Availability policy** | **Preemptibility**: On
-          
-    Click 'Create'. Wait until machine is created. A green checkmark will appear next to the instance name when the creation process is finished and the machine is running.
-  
-5. From your local repository, ssh into your new VM instance:
+- During any point in this process, you may want to image the disk so that you don't have to start
+  from scratch every time. In order to do so, please follow the instructions
+  [here](https://cloud.google.com/compute/docs/images/create-delete-deprecate-private-images).
+
+- Would you like to train a end-to-end TTS model? Please follow
+  [this documentation](./docs/TRAIN_TTS_MODEL.md) instead.
+
+- You may want to learn more about the available VM configurations, you can learn more
+  [here](https://console.cloud.google.com/compute/instancesAdd?project=voice-research-255602&organizationId=530338208816)
+  and [here](https://cloud.google.com/sdk/gcloud/reference/compute/instances/create).
+
+## Prerequisites
+
+1. Setup your local development environment by following [these instructions](docs/LOCAL_SETUP.md).
+
+2. Install `gcloud compute` by following the instructions
+   [here](https://cloud.google.com/compute/docs/gcloud-compute/)
+
+3. Ask a team member to grant you access to our GCP project called "voice-research".
+
+4. Install these dependencies:
+
+   ```bash
+   brew install rsync
+   brew install lsyncd
+   ```
+
+## From your local repository
+
+5. Setup your environment variables
+
+   ... for training a spectrogram model
+
+   ```bash
+   VM_MACHINE_TYPE=n1-highmem-8
+   VM_ACCELERATOR_TYPE=nvidia-tesla-p100,count=2
+   ```
+
+   ... for training a signal model
+
+   ```bash
+   VM_MACHINE_TYPE=n1-highmem-16
+   VM_ACCELERATOR_TYPE=nvidia-tesla-v100,count=8
+   ```
+
+   Also set these ...
+
+   ```bash
+   VM_INSTANCE_NAME=your-vm-instance-name
+
+   # Pick a zone that supports your choosen `VM_ACCELERATOR_TYPE` using this chart:
+   # https://cloud.google.com/compute/docs/gpus/
+   # Note you'll want to spread your experiments out accross multiple zones to mitigate the risk of
+   # your experiments getting throttled.
+   VM_INSTANCE_ZONE=your-vm-instance-zone
+   ```
+
+6. Create your virtual machine, like so:
+
+   ```bash
+   gcloud compute --project=voice-research-255602 instances create $VM_INSTANCE_NAME \
+     # A zone with the required resources using this chart
+     # https://cloud.google.com/compute/docs/gpus/
+     --zone=$VM_INSTANCE_ZONE \
+
+     # Required resources
+     --min-cpu-platform="Intel Broadwell" \
+     --machine-type=$VM_MACHINE_TYPE \
+     --accelerator=type=$VM_ACCELERATOR_TYPE \
+     --boot-disk-size=512GB \
+     --boot-disk-type=pd-standard \
+
+     # Restarts are handled by `src/bin/gcp/keep_alive.py`
+     --preemptible \  # Preemtiple machines cost up to 50% less
+     --no-restart-on-failure \
+     --maintenance-policy=TERMINATE \
+
+     # Ensure machine can communicate with other VMs on GCP
+     --scopes=https://www.googleapis.com/auth/cloud-platform \
+
+     --image=ubuntu-1804-lts \
+     --image-project=ubuntu-os-cloud
+   ```
+
+7. From your local repository, ssh into your new VM instance, like so:
+
+   ```bash
+   . src/bin/gcp/ssh.sh $VM_INSTANCE_NAME
+   ```
+
+### On the VM instance
+
+8. Install these packages, like so:
+
+   ```bash
+   sudo apt-get update
+   sudo apt-get install python3-venv -y
+   sudo apt-get install python3-dev -y
+   sudo apt-get install gcc -y
+   sudo apt-get install sox -y
+   sudo apt-get install ffmpeg -y
+   sudo apt-get install ninja-build -y
+   ```
+
+9. Install GPU drivers on your VM by installing
+   [CUDA-10-0](https://developer.nvidia.com/cuda-10.0-download-archive?target_os=Linux&target_arch=x86_64&target_distro=Ubuntu&target_version=1804&target_type=debnetwork)
+   , like so:
+
+   ```bash
+   wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-repo-ubuntu1804_10.0.130-1_amd64.deb
+   sudo dpkg -i cuda-repo-ubuntu1804_10.0.130-1_amd64.deb
+   sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub
+   sudo apt-get update
+   sudo apt-get install cuda
+   ```
+
+10. Verify CUDA installed correctly by running and ensuring no error messages print.
+
 ```bash
-. src/bin/gcp/ssh.sh YOUR-VM-INSTANCE-NAME
+nvidia-smi
 ```
 
-### On the VM instance...
-6. Set up permissions, install packages, & create a wellsaid-labs directory:
+11. Create a directory for our software.
+
 ```bash
-sudo apt-get update
-sudo apt-get install python3-venv -y
-sudo apt-get install python3-dev -y
-sudo apt-get install gcc -y
-sudo apt-get install sox -y
-sudo apt-get install ffmpeg -y
-sudo apt-get install ninja-build -y
-```
-
-7. Install [CUDA-10-0](https://developer.nvidia.com/cuda-10.0-download-archive?target_os=Linux&target_arch=x86_64&target_distro=Ubuntu&target_version=1804&target_type=debnetwork) and Nvidia Cuda Toolkit
-```
-wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-repo-ubuntu1804_10.0.130-1_amd64.deb
-sudo dpkg -i cuda-repo-ubuntu1804_10.0.130-1_amd64.deb
-sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub
-sudo apt-get update
-sudo apt-get install cuda
-```
-
-Verify CUDA installed correctly by running `nvidia-smi` with no error messages occuring.
-
-8. Make a wellsaid-labs directory
-```bash
-cd /opt
-mkdir wellsaid-labs
-cd wellsaid-labs
+sudo chmod -R a+rwx /opt
+mkdir /opt/wellsaid-labs
+cd /opt/wellsaid-labs
 ```
 
 ### From your local repository
-9. Follow the instructions in the [ReadMe](https://github.com/wellsaid-labs/Text-to-Speech/blob/master/README.md#4-configure-visualization-dependencies) to setup your Comet configuration.
 
-10. Use lsync to copy your repo to your VM instance:
+12. Use `src.bin.gcp.lsyncd` to live sync your repository to your VM instance:
+
 ```bash
-python3 -m src.bin.gcp.lsyncd --instance YOUR-VM-INSTANCE-NAME \
-                              --source /Users/YOU/path/to/Text-to-Speech \
+VM_USER=$(gcloud compute ssh $VM_INSTANCE_NAME --command="echo $USER")
+python3 -m src.bin.gcp.lsyncd --instance $VM_INSTANCE_NAME \
+                              --source $(pwd) \
                               --destination /opt/wellsaid-labs/Text-to-Speech \
-                              --user YOUR-VM-USER
+                              --user $VM_USER
 ```
+
 When prompted, give your local sudo password for your laptop.
 
+Keep this process running on your local machine until you've started training, it'll
+allow you to make any hot-fixes to your code in case you run into an error.
+
 ### On the VM instance
-11. Navigate to the repository, activate a virtual environment, and install package requirements:
-```
-cd Text-to-Speech
 
-python3 -m venv venv
-. venv/bin/activate
+13. Navigate to the repository, activate a virtual environment, and install package requirements:
 
-python -m pip install wheel
-python -m pip install -r requirements.txt --upgrade
+    ```bash
+    cd /opt/wellsaid-labs/Text-to-Speech
 
-sudo bash src/bin/install_mkl.sh -y
-```
+    python3 -m venv venv
+    . venv/bin/activate
 
-12. Train a Spectrogram Model
-```bash
-screen
-. venv/bin/activate
+    python -m pip install wheel
+    python -m pip install -r requirements.txt --upgrade
 
-pkill -9 python; nvidia-smi; PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py     --project_name='YOUR-COMET-PROJECT'
-```
+    sudo bash src/bin/install_mkl.sh -y
+    ```
+
+14. Start a screen session:
+
+    ```bash
+    screen
+    ```
+
+15. Pick or create a comet project [here](https://www.comet.ml/wellsaid-labs). Afterwards set
+    this variable:
+
+    ```bash
+    COMET_PROJECT="your-comet-project"
+    ```
+
+16. Train your ...
+
+    ... spectrogram model
+
+    ```bash
+    pkill -9 python; \
+    nvidia-smi; \
+    PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py \
+        --project_name $COMET_PROJECT
+    ```
+
+    ... signal model
+
+    ```bash
+    pkill -9 python; \
+    nvidia-smi; \
+    PYTHONPATH=. python src/bin/train/signal_model/__main__.py --project_name $COMET_PROJECT
+    ```
+
+    We run `pkill -9 python` to kill any leftover processes from previous runs and `nvidia-smi`
+    to ensure the GPU has no runnining processes.
+
+17. Detach from your screen session by typing `Ctrl-A` then `Ctrl-D` and exit your VM with the
+    `exit` command.
+
+### From your local repository
+
+18. Kill your `lsyncd` process by typing `Ctrl-C`.
+
+19. Run this script until your experiment completes, it'll restart your machine in case it
+    is shutdown.
+
+    For a spectrogram model ...
+
+    ```bash
+    python -m src.bin.gcp.keep_alive \
+        --project_name $COMET_PROJECT \
+        --instance $VM_INSTANCE_NAME \
+        --command="screen -dmL bash -c \
+                    'sudo chmod -R a+rwx /opt/;
+                    cd /opt/wellsaid-labs/Text-to-Speech;
+                    . venv/bin/activate;
+                    PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py --checkpoint;'"
+    ```
+
+    For a signal model ...
+
+    ```bash
+    python -m src.bin.gcp.keep_alive \
+        --project_name $COMET_PROJECT \
+        --instance $VM_INSTANCE_NAME \
+        --command="screen -dmL bash -c \
+                    'sudo chmod -R a+rwx /opt/;
+                    cd /opt/wellsaid-labs/Text-to-Speech;
+                    . venv/bin/activate;
+                    PYTHONPATH=. python src/bin/train/signal_model/__main__.py --checkpoint;'"
+    ```
+
+20. Once training has finished ...
+
+    ... stop your VM
+
+    ```bash
+    gcloud compute instances stop $VM_INSTANCE_NAME --zone=$VM_INSTANCE_ZONE
+    ```
+
+    ... or delete your VM
+
+    ```bash
+    gcloud compute instances delete $VM_INSTANCE_NAME --zone=$VM_INSTANCE_ZONE
+    ```
