@@ -1,6 +1,9 @@
+from collections import Counter
+
 import itertools
 import logging
 import os
+import pprint
 
 from hparams import add_config
 from hparams import configurable
@@ -17,7 +20,10 @@ from torchnlp.utils import split_list
 import random
 import torchnlp
 
+from src.datasets import HANUMAN_WELCH
+
 logger = logging.getLogger(__name__)
+pprint = pprint.PrettyPrinter(indent=4)
 
 
 def _set_anomaly_detection():
@@ -228,11 +234,6 @@ def _set_model_size(frame_channels, bits):
                 'attention.LocationSensitiveAttention.__init__':
                     HParams(
                         # SOURCE (Tacotron 2):
-                        # Attention probabilities are computed after projecting inputs and location
-                        # features to 128-dimensional hidden representations.
-                        hidden_size=attention_hidden_size,
-
-                        # SOURCE (Tacotron 2):
                         # Location features are computed using 32 1-D convolution filters of length
                         # 31.
                         num_convolution_filters=32,
@@ -253,8 +254,7 @@ def _set_model_size(frame_channels, bits):
                         # SOURCE (Tacotron 2):
                         # The prediction from the previous time step is first passed through a small
                         # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
-                        num_layers=2,
-                        hidden_size=pre_net_hidden_size),
+                        num_layers=2),
                 'post_net.PostNet.__init__':
                     HParams(
                         # SOURCE (Tacotron 2):
@@ -332,6 +332,7 @@ def _filter_audio_path_not_found(example):
 @configurable
 def _filter_too_little_audio(example,
                              min_seconds_per_character=0.04,
+                             min_seconds_per_character_for_hanuman=0.0375,
                              bits_per_byte=8,
                              sample_rate=HParam(),
                              bits=HParam()):
@@ -344,14 +345,31 @@ def _filter_too_little_audio(example,
     more than 300 characters in 12 seconds; therefore, there is likely a dataset error if
     more than 300 characters are paired with 12 seconds of audio. For example, the speaker
     may have no read some of the text.
+
+    Args:
+        example (TextSpeechRow)
+        min_seconds_per_character (float)
+        min_seconds_per_character_for_hanuman (float)
+        bits_per_byte (int)
+        sample_rate (int)
+        bits (int)
+
+    Returns:
+        (bool)
     """
+    if example.speaker == HANUMAN_WELCH:
+        min_seconds_per_character = min_seconds_per_character_for_hanuman
+
     bytes_per_second = sample_rate * (bits / bits_per_byte)
     min_bytes_per_character = bytes_per_second * min_seconds_per_character
 
     if len(example.text) * min_bytes_per_character > os.path.getsize(example.audio_path):
-        logger.warning(
-            '[%s] Likely some text was not spoken; therefore, this example was removed: %s',
-            example.speaker, example.text)
+        num_seconds = os.path.getsize(example.audio_path) / bytes_per_second
+        logger.warning(('[%s] Likely some text was not spoken; ' +
+                        'therefore, this example with %f seconds per character ' +
+                        '[%f second(s) / %d character(s)] at `%s` was removed.'),
+                       example.speaker, num_seconds / len(example.text), num_seconds,
+                       len(example.text), example.audio_path)
         return False
 
     return True
@@ -436,10 +454,11 @@ def get_dataset():
         dataset = datasets.filter_(_filter_elliot_miller, dataset)
         dataset = datasets.filter_(_filter_no_numbers, dataset)
         dataset = datasets.filter_(_filter_books, dataset)
-        logger.info('Loaded %d dataset examples.', len(dataset))
         dataset = datasets.normalize_audio_column(dataset)
         dataset = datasets.filter_(_filter_too_little_audio, dataset)
         random.shuffle(dataset)
+        logger.info('Loaded %d dataset examples with a speaker distribution of:\n%s', len(dataset),
+                    pprint.pformat(Counter([e.speaker for e in dataset])))
         return split_list(dataset, splits=(0.8, 0.2))
 
 

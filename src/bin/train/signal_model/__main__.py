@@ -11,21 +11,20 @@ import argparse
 import logging
 import warnings
 
+# NOTE: Needs to be imported before torch
+import comet_ml  # noqa
+
 from hparams import add_config
 from hparams import configurable
 from hparams import HParam
 from hparams import HParams
 from hparams import parse_hparam_args
 from torchnlp.random import set_random_generator_state
-from torchnlp.random import set_seed
 
 # LEARN MORE:
 # https://stackoverflow.com/questions/40845304/runtimewarning-numpy-dtype-size-changed-may-indicate-binary-incompatibility
 warnings.filterwarnings('ignore', message='numpy.dtype size changed')
 warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
-
-# NOTE: Needs to be imported before torch
-import comet_ml  # noqa
 
 import torch
 
@@ -77,6 +76,7 @@ def _set_hparams(more_hparams, checkpoint, comet_ml_project_name=None,
     })
     add_config(more_hparams)
 
+    from torchnlp.random import set_seed
     set_seed()
 
     if checkpoint is not None and hasattr(checkpoint, 'random_generator_state'):

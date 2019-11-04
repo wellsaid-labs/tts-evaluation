@@ -74,6 +74,7 @@ def test_lamb_optimizer__amsgrad():
 
     # The first step for LAMB should have an Adam update
     for p1, p2 in zip(net_lamb.parameters(), net_adam.parameters()):
+        # TODO: This fails sometimes, fix this.
         numpy.testing.assert_allclose(p1.detach().numpy(), p2.detach().numpy(), rtol=1e-4)
 
 

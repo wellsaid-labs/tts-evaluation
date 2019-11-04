@@ -8,6 +8,7 @@ matplotlib.use('Agg', warn=False)
 
 from comet_ml import ExistingExperiment
 from comet_ml import Experiment
+from comet_ml.config import get_config
 from hparams import configurable
 from hparams import HParam
 from matplotlib import cm as colormap
@@ -182,8 +183,8 @@ _BASE_HTML_STYLING = """
 """
 
 
-@configurable
 @log_runtime
+@configurable
 def CometML(project_name=HParam(), experiment_key=None, log_git_patch=None, **kwargs):
     """
     Initiate a Comet.ml visualizer with several monkey patched methods.
@@ -204,7 +205,7 @@ def CometML(project_name=HParam(), experiment_key=None, log_git_patch=None, **kw
         raise ValueError(('Experiment is not reproducible, Comet does not track untracked files. '
                           'Please track these files via `git`:\n%s') % untracked_files)
 
-    kwargs.update({'log_git_patch': log_git_patch})
+    kwargs.update({'log_git_patch': log_git_patch, 'workspace': get_config()['comet.workspace']})
     if project_name is not None:
         kwargs.update({'project_name': project_name})
     if experiment_key is None:

@@ -25,7 +25,7 @@ def get_parameter_norm(parameters, norm_type=2):
     parameters = list(filter(lambda p: p.grad is not None, parameters))
     norm_type = float(norm_type)
     if norm_type == math.inf:
-        total_norm = max(p.grad.data.abs().max() for p in parameters)
+        total_norm = max(p.grad.data.abs().max().item() for p in parameters)
     else:
         total_norm = 0
         for p in parameters:

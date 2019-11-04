@@ -12,6 +12,7 @@ import torch.utils.data
 from src.utils.utils import flatten_parameters
 from src.utils.utils import load
 from src.utils.utils import save
+from src.utils.utils import sort_together
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,13 @@ class Checkpoint():
             logger.warning('No checkpoints found in %s' % pattern)
             return None
 
-        checkpoints = sorted(list(checkpoints), key=os.path.getctime, reverse=True)
+        modified_time = [os.path.getmtime(c) for c in checkpoints]
+        # NOTE: This should not occur during regular usage because checkpoints are not intended
+        # to be created at the same time. This may occur with `os.path.getctime` though, learn more:
+        # https://stackoverflow.com/questions/237079/how-to-get-file-creation-modification-date-times-in-python/237084
+        assert len(modified_time) == len(
+            set(modified_time)), 'Multiple checkpoints were created at the same time.'
+        checkpoints = sort_together(checkpoints, modified_time, reverse=True)
         for path in checkpoints:
             try:
                 return class_.from_path(path, **kwargs)
