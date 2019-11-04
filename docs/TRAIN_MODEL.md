@@ -123,17 +123,17 @@ Related Documentation:
 
 10. Verify CUDA installed correctly by running and ensuring no error messages print.
 
-```bash
-nvidia-smi
-```
+    ```bash
+    nvidia-smi
+    ```
 
 11. Create a directory for our software.
 
-```bash
-sudo chmod -R a+rwx /opt
-mkdir /opt/wellsaid-labs
-cd /opt/wellsaid-labs
-```
+    ```bash
+    sudo chmod -R a+rwx /opt
+    mkdir /opt/wellsaid-labs
+    cd /opt/wellsaid-labs
+    ```
 
 ### From your local repository
 
