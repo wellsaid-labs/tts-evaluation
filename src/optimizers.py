@@ -45,6 +45,8 @@ class Optimizer(object):
         params = list(
             itertools.chain.from_iterable(
                 [group['params'] for group in self.optimizer.param_groups]))
+        # TODO: This runs on every step with a call to `.item()` which forces the GPU and CPU
+        # to synchronize. We should investigate if this synchronization causes a bottleneck.
         parameter_norm = get_parameter_norm(params)
         parameter_norm_inf = get_parameter_norm(params, norm_type=math.inf)
 

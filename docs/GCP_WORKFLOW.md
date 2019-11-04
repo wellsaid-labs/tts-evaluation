@@ -182,7 +182,7 @@ to automatically restart your VM instances.
 ```bash
 python -m src.bin.gcp.keep_alive --project_name 'your_comet_ml_project_name' \
           --instance your_gcp_instance_name \
-          --command="screen -dm bash -c \
+          --command="screen -dmL bash -c \
               'cd /opt/wellsaid-labs/Text-to-Speech;
               . venv/bin/activate
               PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py --checkpoint;'"
