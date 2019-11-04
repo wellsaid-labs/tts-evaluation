@@ -10,4 +10,6 @@ denominations include:
 - `temp`: This is used to save temporary files for the duration of the program.
 
 This empty directories are committed to `git` with `.gitkeep` files that are explained in more
-details here: https://stackoverflow.com/questions/7229885/what-are-the-differences-between-gitignore-and-gitkeep
+details
+[here](https://stackoverflow.com/questions/7229885/what-are-the-differences-between-gitignore-and-gitkeep)
+.
