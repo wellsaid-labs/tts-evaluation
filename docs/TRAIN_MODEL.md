@@ -46,7 +46,7 @@ Related Documentation:
    ... for training a signal model
 
    ```bash
-   VM_MACHINE_TYPE=n1-highmem-16
+   VM_MACHINE_TYPE=n1-highmem-32
    VM_ACCELERATOR_TYPE=nvidia-tesla-v100,count=8
    ```
 
