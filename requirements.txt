@@ -35,6 +35,7 @@ python-Levenshtein # Sequence alignment
 git+https://github.com/PetrochukM/HParams.git # Organize hyperparameters
 pandas
 retry
+psutil # For comet logging: https://www.comet.ml/docs/python-sdk/releases/
 
 # Web
 flask
