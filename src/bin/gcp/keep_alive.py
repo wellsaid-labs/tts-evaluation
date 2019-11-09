@@ -229,11 +229,11 @@ def keep_alive(comet_ml_project_name,
                command,
                scheduler,
                repeat_every=60,
-               max_halt_time=60 * 15):
+               max_halt_time=60 * 45):
     """ This ensures that `experiments` on `instances` keep running.
 
-    NOTE: Our pipeline may take up to 6m and 45s to start; therefore, we set the max halt time
-    to be double that at 15 minutes.
+    NOTE: Our pipeline may take up to 20m to start; therefore, we set the max halt time
+    to be double that at ~45 minutes.
 
     Args:
         comet_ml_project_name (str)

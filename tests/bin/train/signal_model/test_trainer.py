@@ -32,7 +32,7 @@ def get_trainer(read_audio_mock, register_mock, comet_ml_mock, load_data=True):
         checkpoints_directory=TEMP_PATH,
         train_dataset=mocks['train_dataset'] if load_data else [],
         dev_dataset=mocks['dev_dataset'] if load_data else [],
-        spectrogram_model_checkpoint=mocks['spectrogram_model_checkpoint'],
+        spectrogram_model_checkpoint_path=mocks['spectrogram_model_checkpoint'].path,
         train_batch_size=1,
         dev_batch_size=1)
 
