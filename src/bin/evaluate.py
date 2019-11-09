@@ -314,6 +314,7 @@ if __name__ == '__main__':  # pragma: no cover
 
     main(
         dataset=dataset,
+        destination=SAMPLES_PATH / args.name if args.name else SAMPLES_PATH / bash_time_label(),
         name=args.name,
         spectrogram_model_checkpoint=args.spectrogram_model,
         signal_model_checkpoint=args.signal_model,
