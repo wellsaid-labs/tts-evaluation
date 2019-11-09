@@ -1,4 +1,4 @@
-<p align="center"><img width="15%" src="logo.png" /></p>
+<p align="center"><img width="15%" src="mark.svg" /></p>
 
 <h1 align="center">Text-to-Speech</h3>
 
