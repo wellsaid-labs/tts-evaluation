@@ -202,7 +202,12 @@ def main(dataset,
             for i, example in zip(indicies, dataset):
                 waveform = example.spectrogram_audio.cpu().numpy()
                 audio_path = _save_partial(i, ['type=gold'], example.speaker, waveform)
-                add_to_metadata(example, audio_path=audio_path, example_index=i, type='gold')
+                add_to_metadata(
+                    example,
+                    audio_length=waveform.shape[0] / num_samples,
+                    audio_path=audio_path,
+                    example_index=i,
+                    type='gold')
     else:
         logger.info('Skipping the writing of ground truth audio.')
 
@@ -221,7 +226,12 @@ def main(dataset,
             for i, example in zip(indicies, dataset):
                 waveform = griffin_lim(example.predicted_spectrogram.cpu().numpy())
                 audio_path = _save_partial(i, ['type=griffin_lim'], example.speaker, waveform)
-                add_to_metadata(example, audio_path=audio_path, example_index=i, type='griffin_lim')
+                add_to_metadata(
+                    example,
+                    audio_length=waveform.shape[0] / num_samples,
+                    audio_path=audio_path,
+                    example_index=i,
+                    type='griffin_lim')
     else:
         logger.info('Skipping the writing of griffin-lim predictions.')
 
@@ -251,7 +261,12 @@ def main(dataset,
                         (time.time() - start) / (waveform.shape[0] / sample_rate))
 
             audio_path = _save_partial(i, ['type=signal_model'], example.speaker, waveform)
-            add_to_metadata(example, audio_path=audio_path, example_index=i, type='signal_model')
+            add_to_metadata(
+                example,
+                audio_length_in_seconds=waveform.shape[0] / num_samples,
+                audio_path=audio_path,
+                example_index=i,
+                type='signal_model')
             logger.info('-' * 100)
     else:
         logger.info('Skipping the writing of neural vocoder predictions.')
