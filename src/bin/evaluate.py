@@ -204,7 +204,7 @@ def main(dataset,
                 audio_path = _save_partial(i, ['type=gold'], example.speaker, waveform)
                 add_to_metadata(
                     example,
-                    audio_length=waveform.shape[0] / num_samples,
+                    audio_length=waveform.shape[0] / sample_rate,
                     audio_path=audio_path,
                     example_index=i,
                     type='gold')
@@ -228,7 +228,7 @@ def main(dataset,
                 audio_path = _save_partial(i, ['type=griffin_lim'], example.speaker, waveform)
                 add_to_metadata(
                     example,
-                    audio_length=waveform.shape[0] / num_samples,
+                    audio_length=waveform.shape[0] / sample_rate,
                     audio_path=audio_path,
                     example_index=i,
                     type='griffin_lim')
@@ -263,7 +263,7 @@ def main(dataset,
             audio_path = _save_partial(i, ['type=signal_model'], example.speaker, waveform)
             add_to_metadata(
                 example,
-                audio_length_in_seconds=waveform.shape[0] / num_samples,
+                audio_length_in_seconds=waveform.shape[0] / sample_rate,
                 audio_path=audio_path,
                 example_index=i,
                 type='signal_model')
