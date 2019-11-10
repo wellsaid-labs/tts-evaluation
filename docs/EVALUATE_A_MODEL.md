@@ -52,9 +52,10 @@ def main(
 
 2. Setup your environment variables, once per model, like so:
 
-   ```python
-   SIGNAL_MODEL='experiments/signal_model/[DATE]-[PID]/runs/[DATE]-[PID]/checkpoints/step_XXXXXX.pt'
-   SPECTROGRAM_MODEL='experiments/spectrogram_model/[DATE]/runs/[DATE]/checkpoints/step_XXXXXX.pt'
+   ```bash
+   ROOT_PATH='/opt/wellsaid-labs/Text-to-Speech/disk/experiments'
+   SIGNAL_MODEL="$ROOT_PATH/signal_model/[DATE]-[PID]/runs/[DATE]-[PID]/checkpoints/step_XXXXXX.pt"
+   SPECTROGRAM_MODEL="$ROOT_PATH/spectrogram_model/[DATE]/runs/[DATE]/checkpoints/step_XXXXXX.pt"
    MODEL_NAME='your-model-name'
    NUM_SAMPLES=512
    ```
@@ -91,64 +92,73 @@ def main(
 
 ## From your local repository
 
-5. Setup your environment variables, like so:
+1. Setup your Python environment.
+
+   ```bash
+   . venv/bin/activate
+   ```
+
+2. Setup your environment variables, like so:
 
    ```bash
    VM_INSTANCE_NAME=''
-   VM_ZONE=$(gcloud compute instances list | grep "^$VM_INSTANCE_NAME\s" | awk '{ print $2 }')
-   VM_USER=$(gcloud compute ssh $VM_INSTANCE_NAME --command="echo $USER")
    ```
 
-6. Download your samples to `~/Downloads`.
+3. Download your samples to `~/Downloads`.
 
    ```bash
+   VM_ZONE=$(gcloud compute instances list | grep "^$VM_INSTANCE_NAME\s" | awk '{ print $2 }')
+   VM_USER=$(gcloud compute ssh $VM_INSTANCE_NAME --zone=$VM_ZONE --command="echo $USER")
    mkdir ~/Downloads/samples/
    gcloud compute scp \
       --recurse \
       --zone=$VM_ZONE \
-      $VM_USER@$VM_INSTANCE_NAME:/opt/wellsaid-labs/Text-to-Speech/disk/samples/* \
-      ~/Downloads/samples/
+      $VM_USER@$VM_INSTANCE_NAME:/opt/wellsaid-labs/Text-to-Speech/disk/samples/ \
+      ~/Downloads/
    ```
 
    If your working with multiple VMs, you'll want to rerun this step for each VM.
 
-7. Combine the the samples you generated into one batch, like so:
+4. Combine the the samples you generated into one batch, like so:
 
    ```bash
-   BATCH_NAME_PREFIX=$(date '+%Y-%m-%d')
-   BATCH_NAME="$BATCH_NAME_PREFIX\_$USER\_your-mturk-batch-name"
+   BATCH_NAME_SUFFIX=''
    ```
 
    ```bash
+   BATCH_NAME_PREFIX=$(date '+%Y-%m-%d')
+   BATCH_NAME="$BATCH_NAME_PREFIX"'_'"$USER"'_'"$BATCH_NAME_SUFFIX"
    BATCH_DIRECTORY=~/Downloads/samples/_mturk/$BATCH_NAME
    mkdir -p $BATCH_DIRECTORY
    python -m src.bin.combine_csv \
       --csvs ~/Downloads/samples/*/metadata.csv \
       --shuffle \
       --name "$BATCH_DIRECTORY/metadata.csv"
-   mv ~/Downloads/samples/*/*.wav $BATCH_DIRECTORY
+   cp ~/Downloads/samples/*/*.wav $BATCH_DIRECTORY
+   cp ~/Downloads/samples/*/*.log $BATCH_DIRECTORY
    ```
 
-8. Upload your batch to a publicly accessible host, like so:
+5. Upload your batch to a publicly accessible host, like so:
 
    ```bash
    gsutil -m cp -r ~/Downloads/samples/_mturk/$BATCH_NAME gs://mturk_samples
    ```
 
-9. Update your local metadata file with the new URL.
+6. Update your local metadata file with the new URL.
 
    ```bash
    python -m src.bin.csv_add_prefix \
       --csv "$BATCH_DIRECTORY/metadata.csv" \
       --column_name audio_path \
-      --prefix "https://storage.googleapis.com/mturk-samples/$BATCH_NAME/" \
-      --destination "$BATCH_DIRECTORY/metadata.csv"
+      --prefix "https://storage.googleapis.com/mturk_samples/$BATCH_NAME/" \
+      --destination "$BATCH_DIRECTORY/metadata_with_prefix.csv"
    ```
 
-10. Send the CSV to Michael until he figures out how to share access to our MTurk account. He'll
-    get the batch started. It'll take around 4 hours for the batch to be completed.
+7. Send the `metadata_with_prefix.csv` CSV to Michael until he figures out how to share access to
+   our MTurk account. He'll get the batch started. It'll take around 4 hours for the batch to be
+   completed.
 
-11. Michael will send you a CSV containing the results of the MTurk HITs.
-    Use `jupyter notebook` to open
-    [`notebooks/QA Datasets/Analyze MTurk MOS Scores.ipynb`](https://github.com/wellsaid-labs/Text-to-Speech/blob/master/notebooks/QA%20Datasets/Analyze%20MTurk%20MOS%20Scores.ipynb)
-    and analyze your results!
+8. Michael will send you a CSV containing the results of the MTurk HITs.
+   Use `jupyter notebook` to open
+   [`notebooks/QA Datasets/Analyze MTurk MOS Scores.ipynb`](https://github.com/wellsaid-labs/Text-to-Speech/blob/master/notebooks/QA%20Datasets/Analyze%20MTurk%20MOS%20Scores.ipynb)
+   and analyze your results!

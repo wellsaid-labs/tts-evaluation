@@ -23,7 +23,7 @@ def main(csvs, name, shuffle=False):
         df = df.append(pandas.read_csv(csv), ignore_index=True)
     if shuffle:
         df = df.iloc[np.random.permutation(len(df))]
-    df.to_csv(name)
+    df.to_csv(name, index=False)
 
 
 if __name__ == '__main__':  # pragma: no cover

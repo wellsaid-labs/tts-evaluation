@@ -23,8 +23,8 @@ def main(csv, column_name, prefix, destination):
         destination (str): The new CSV file.
     """
     df = pandas.read_csv(csv)
-    df[column_name].add_prefix('item_')
-    df.to_csv(destination)
+    df[column_name] = prefix + df[column_name].astype(str)
+    df.to_csv(destination, index=False)
 
 
 if __name__ == '__main__':  # pragma: no cover
