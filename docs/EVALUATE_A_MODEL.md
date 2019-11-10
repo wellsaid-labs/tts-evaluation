@@ -155,8 +155,8 @@ def main(
    ```
 
 7. Send the `metadata_with_prefix.csv` CSV to Michael until he figures out how to share access to
-   our MTurk account. He'll get the batch started. It'll take around 4 hours for the batch to be
-   completed.
+   our MTurk account. He'll get the batch started. It'll take around 20 minutes per 1000 samples
+   for the batch to be completed.
 
 8. Michael will send you a CSV containing the results of the MTurk HITs.
    Use `jupyter notebook` to open
