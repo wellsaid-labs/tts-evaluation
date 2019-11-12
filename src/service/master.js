@@ -698,6 +698,8 @@ class PodPool {
       try {
         const pod = await Pod.build(this.podImage);
         if (pod != null) {
+          this.logger.log(`PodPool.upscale: Adding Pod of type ` +
+            `${Object.prototype.toString.call(pod)}`);
           this.pods.push(pod);
           this.fufillPodRequests();
         }
@@ -991,10 +993,11 @@ const noReservationController = (() => {
    */
   function getPod(podPool) {
     podIndex %= podPool.pods.length;
+    logger.log(`noReservationController: Getting Pod ${podIndex} of ${podPool.pods.length}.`);
     const pod = podPool.pods[podIndex];
+    logger.log(`noReservationController: Got Pod of type ${Object.prototype.toString.call(pod)}.`);
     podIndex += 1;
-    logger.log(`noReservationController: Got Pod ${podIndex - 1} of ${podPool.pods.length} ` +
-      `named ${pod.name}.`);
+    logger.log(`noReservationController: Got Pod named ${pod.name}.`);
     return pod;
   }
 
