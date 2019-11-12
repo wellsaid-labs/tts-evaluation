@@ -30,7 +30,7 @@ this:
 │ │ │ ├── 01 Agreements - contains Actor contracts + agreements with WSL
 │ │ │ ├── 02 Scripts - contains the scripts in .docx for Actor use
 │ │ │ ├── 03 Recordings - contains the audio in .wav uploaded by the Actor
-│ │ │ ├── 04 Scripts (CSV) - contains the scripts in .csv for WSL processing
+└─└─└─└──  04 Scripts (CSV) - contains the scripts in .csv for WSL processing
 ```
 
 You're going to want to download the contents of **03 Recordings** and **04 Scripts (CSV)**, using a
@@ -61,8 +61,8 @@ corresponding CSV and WAV files into a directory like so:
 │   │   ...
 │   │   ├── ENTHUSIASTIC_Script-1.csv
 │   │   ├── ENTHUSIASTIC_Script-2.csv
-└── └── ...
-│   ├── /processed/
+│   │   ...
+└── └── /processed/
 ```
 
 Pay close attention to the following:

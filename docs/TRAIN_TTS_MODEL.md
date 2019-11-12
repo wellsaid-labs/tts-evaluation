@@ -1,6 +1,6 @@
 # Train a TTS Model with Google Cloud Platform (GCP) Compute
 
-This markdown will walk you through the steps to train a end-to-end text to speech model
+This markdown will walk you through the steps to train an end-to-end text-to-speech model
 on a GCP virtual machine.
 
 ## Train a Spectrogram Model
@@ -14,20 +14,20 @@ on a GCP virtual machine.
 
 ### From your local repository
 
-2. Now that you've finished training your spectrogram model, stop your VM instance, like so:
+1. Now that you've finished training your spectrogram model, stop your VM instance, like so:
 
    ```bash
    gcloud compute instances stop $VM_INSTANCE_NAME --zone=$VM_INSTANCE_ZONE
    ```
 
-3. Follow [this guide](https://cloud.google.com/compute/docs/instances/changing-machine-type-of-stopped-instance)
+2. Follow [this guide](https://cloud.google.com/compute/docs/instances/changing-machine-type-of-stopped-instance)
    to adjust the machine type from `n1-highmem-8` to `n1-highmem-16`.
 
-4. Follow "Adding or removing GPUs on existing instances" on
+3. Follow "Adding or removing GPUs on existing instances" on
    [this webpage](https://cloud.google.com/compute/docs/gpus/add-gpus) to adjust the number of
    GPUs from `nvidia-tesla-p100,count=2` to `nvidia-tesla-v100,count=8`.
 
-5. Start your VM instance, like so:
+4. Start your VM instance, like so:
 
    ```bash
    gcloud compute instances start $VM_INSTANCE_NAME --zone=$VM_INSTANCE_ZONE
@@ -35,18 +35,18 @@ on a GCP virtual machine.
 
 ### On the VM instance
 
-6. During the training of the spectrogram model, it saved a number of model checkpoints. Find
+1. During the training of the spectrogram model, it saved a number of model checkpoints. Find
    a checkpoint with a path similar to this one:
 
    ```bash
    SPECTROGRAM_CHECKPOINT="/opt/wellsaid-labs/Text-to-Speech/disk/experiments/" \
-                          "spectrogram_model/{your_experiment}/runs/{a_run}/checkpoints/step-*.pt`"
+                          "spectrogram_model/{your_experiment}/runs/{a_run}/checkpoints/step-*.pt"
    ```
 
-   Pick the checkpoint with a step count that correlates with the lowest
+   Pick the checkpoint with a step count that correlates with the point of covergence
    `dev_epoch/post_spectrogram_loss` value.
 
-7. From [this point](TRAIN_MODEL.md#on-the-vm-instance-1), continue following the instructions
+2. From [this point](TRAIN_MODEL.md#on-the-vm-instance-1), continue following the instructions
    to train your signal model. That said, during the step where you run
    `python src/bin/train/signal_model/__main__.py` pass in the checkpoint you found earlier
    to the command line parameter `--spectrogram_model_checkpoint`.

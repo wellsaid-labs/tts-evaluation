@@ -54,8 +54,8 @@ def main(
 
    ```bash
    ROOT_PATH='/opt/wellsaid-labs/Text-to-Speech/disk/experiments'
-   SIGNAL_MODEL="$ROOT_PATH/signal_model/[DATE]-[PID]/runs/[DATE]-[PID]/checkpoints/step_XXXXXX.pt"
-   SPECTROGRAM_MODEL="$ROOT_PATH/spectrogram_model/[DATE]/runs/[DATE]/checkpoints/step_XXXXXX.pt"
+   SIGNAL_MODEL="$ROOT_PATH/signal_model/[DATE]-[TIME]-[PID]/runs/[DATE]-[TIME]-[PID]/checkpoints/step_XXXXXX.pt"
+   SPECTROGRAM_MODEL="$ROOT_PATH/spectrogram_model/[DATE]-[TIME]-[PID]/runs/[DATE]-[TIME]-[PID]/checkpoints/step_XXXXXX.pt"
    MODEL_NAME='your-model-name'
    NUM_SAMPLES=512
    ```

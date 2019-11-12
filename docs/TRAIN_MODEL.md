@@ -34,7 +34,7 @@ Related Documentation:
 
 ## From your local repository
 
-5. Setup your environment variables
+1. Setup your environment variables
 
    ... for training a spectrogram model
 
@@ -62,7 +62,7 @@ Related Documentation:
    VM_INSTANCE_ZONE=your-vm-instance-zone
    ```
 
-6. Create your virtual machine, like so:
+2. Create your virtual machine, like so:
 
    ```bash
    gcloud compute --project=voice-research-255602 instances create $VM_INSTANCE_NAME \
@@ -89,7 +89,7 @@ Related Documentation:
      --image-project=ubuntu-os-cloud
    ```
 
-7. From your local repository, ssh into your new VM instance, like so:
+3. From your local repository, ssh into your new VM instance, like so:
 
    ```bash
    . src/bin/gcp/ssh.sh $VM_INSTANCE_NAME
@@ -97,7 +97,7 @@ Related Documentation:
 
 ### On the VM instance
 
-8. Install these packages, like so:
+1. Install these packages, like so:
 
    ```bash
    sudo apt-get update
@@ -109,7 +109,7 @@ Related Documentation:
    sudo apt-get install ninja-build -y
    ```
 
-9. Install GPU drivers on your VM by installing
+2. Install GPU drivers on your VM by installing
    [CUDA-10-0](https://developer.nvidia.com/cuda-10.0-download-archive?target_os=Linux&target_arch=x86_64&target_distro=Ubuntu&target_version=1804&target_type=debnetwork)
    , like so:
 
@@ -121,19 +121,19 @@ Related Documentation:
    sudo apt-get install cuda
    ```
 
-10. Verify CUDA installed correctly by running and ensuring no error messages print.
+3. Verify CUDA installed correctly by running and ensuring no error messages print.
 
-    ```bash
-    nvidia-smi
-    ```
+   ```bash
+   nvidia-smi
+   ```
 
-11. Create a directory for our software.
+4. Create a directory for our software.
 
-    ```bash
-    sudo chmod -R a+rwx /opt
-    mkdir /opt/wellsaid-labs
-    cd /opt/wellsaid-labs
-    ```
+   ```bash
+   sudo chmod -R a+rwx /opt
+   mkdir /opt/wellsaid-labs
+   cd /opt/wellsaid-labs
+   ```
 
 ### From your local repository
 
@@ -154,101 +154,105 @@ allow you to make any hot-fixes to your code in case you run into an error.
 
 ### On the VM instance
 
-13. Navigate to the repository, activate a virtual environment, and install package requirements:
+1. Start a screen session:
 
-    ```bash
-    cd /opt/wellsaid-labs/Text-to-Speech
+   ```bash
+   screen
+   ```
 
-    python3 -m venv venv
-    . venv/bin/activate
+2. Navigate to the repository, activate a virtual environment, and install package requirements:
 
-    python -m pip install wheel
-    python -m pip install -r requirements.txt --upgrade
+   ```bash
+   cd /opt/wellsaid-labs/Text-to-Speech
 
-    sudo bash src/bin/install_mkl.sh -y
-    ```
+   python3 -m venv venv
+   . venv/bin/activate
 
-14. Start a screen session:
+   python -m pip install wheel
+   python -m pip install -r requirements.txt --upgrade
 
-    ```bash
-    screen
-    ```
+   sudo bash src/bin/install_mkl.sh -y
+   ```
 
-15. Pick or create a comet project [here](https://www.comet.ml/wellsaid-labs). Afterwards set
-    this variable:
+3. Pick or create a comet project [here](https://www.comet.ml/wellsaid-labs). Afterwards set
+   this variable:
 
-    ```bash
-    COMET_PROJECT="your-comet-project"
-    ```
+   ```bash
+   COMET_PROJECT="your-comet-project"
+   ```
 
-16. Train your ...
+4. Train your ...
 
-    ... spectrogram model
+   ... spectrogram model
 
-    ```bash
-    pkill -9 python; \
-    nvidia-smi; \
-    PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py \
-        --project_name $COMET_PROJECT
-    ```
+   ```bash
+   pkill -9 python; \
+   nvidia-smi; \
+   PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py \
+       --project_name $COMET_PROJECT
+   ```
 
-    ... signal model
+   ... signal model
 
-    ```bash
-    pkill -9 python; \
-    nvidia-smi; \
-    PYTHONPATH=. python src/bin/train/signal_model/__main__.py --project_name $COMET_PROJECT
-    ```
+   ```bash
+   pkill -9 python; \
+   nvidia-smi; \
+   PYTHONPATH=. python src/bin/train/signal_model/__main__.py --project_name $COMET_PROJECT
+   ```
 
-    We run `pkill -9 python` to kill any leftover processes from previous runs and `nvidia-smi`
-    to ensure the GPU has no runnining processes.
+   We run `pkill -9 python` to kill any leftover processes from previous runs and `nvidia-smi`
+   to ensure the GPU has no running processes.
 
-17. Detach from your screen session by typing `Ctrl-A` then `Ctrl-D` and exit your VM with the
-    `exit` command.
+5. Detach from your screen session by typing `Ctrl-A` then `D` and exit your VM with the
+   `exit` command.
 
 ### From your local repository
 
-18. Kill your `lsyncd` process by typing `Ctrl-C`.
+1. Kill your `lsyncd` process by typing `Ctrl-C`.
 
-19. Run this script until your experiment completes, it'll restart your machine in case it
-    is shutdown.
+2. Run this script until your experiment completes, it'll restart your machine in case it
+   is shutdown.
 
-    For a spectrogram model ...
+   For a spectrogram model ...
 
-    ```bash
-    python -m src.bin.gcp.keep_alive \
-        --project_name $COMET_PROJECT \
-        --instance $VM_INSTANCE_NAME \
-        --command="screen -dmL bash -c \
-                    'sudo chmod -R a+rwx /opt/;
-                    cd /opt/wellsaid-labs/Text-to-Speech;
-                    . venv/bin/activate;
-                    PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py --checkpoint;'"
-    ```
+   ```bash
+   python -m src.bin.gcp.keep_alive \
+       --project_name $COMET_PROJECT \
+       --instance $VM_INSTANCE_NAME \
+       --command="screen -dmL bash -c \
+                   'sudo chmod -R a+rwx /opt/;
+                   cd /opt/wellsaid-labs/Text-to-Speech;
+                   . venv/bin/activate;
+                   PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py --checkpoint;'"
+   ```
 
-    For a signal model ...
+   For a signal model ...
 
-    ```bash
-    python -m src.bin.gcp.keep_alive \
-        --project_name $COMET_PROJECT \
-        --instance $VM_INSTANCE_NAME \
-        --command="screen -dmL bash -c \
-                    'sudo chmod -R a+rwx /opt/;
-                    cd /opt/wellsaid-labs/Text-to-Speech;
-                    . venv/bin/activate;
-                    PYTHONPATH=. python src/bin/train/signal_model/__main__.py --checkpoint;'"
-    ```
+   ```bash
+   python -m src.bin.gcp.keep_alive \
+       --project_name $COMET_PROJECT \
+       --instance $VM_INSTANCE_NAME \
+       --command="screen -dmL bash -c \
+                   'sudo chmod -R a+rwx /opt/;
+                   cd /opt/wellsaid-labs/Text-to-Speech;
+                   . venv/bin/activate;
+                   PYTHONPATH=. python src/bin/train/signal_model/__main__.py --checkpoint;'"
+   ```
 
-20. Once training has finished ...
+   If your running this script from your laptop, then we recommend you install
+   [Amphetamine](https://apps.apple.com/us/app/amphetamine/id937984704?mt=12) to keep your laptop
+   from sleeping and stopping the script.
 
-    ... stop your VM
+3. Once training has finished ...
 
-    ```bash
-    gcloud compute instances stop $VM_INSTANCE_NAME --zone=$VM_INSTANCE_ZONE
-    ```
+   ... stop your VM
 
-    ... or delete your VM
+   ```bash
+   gcloud compute instances stop $VM_INSTANCE_NAME --zone=$VM_INSTANCE_ZONE
+   ```
 
-    ```bash
-    gcloud compute instances delete $VM_INSTANCE_NAME --zone=$VM_INSTANCE_ZONE
-    ```
+   ... or delete your VM
+
+   ```bash
+   gcloud compute instances delete $VM_INSTANCE_NAME --zone=$VM_INSTANCE_ZONE
+   ```

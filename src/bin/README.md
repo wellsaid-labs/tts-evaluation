@@ -5,8 +5,8 @@ executed to accomplish a task.
 
 The various scripts and packages are:
 
-- `chunk_wav_and_text`: This script is used to chunk a continuous a paired audio file and
-  transcript into a compatible dataset for training.
+- `chunk_wav_and_text`: This script is used to align audio and text and divide the paired audio and
+  text into chunks compatible for training.
 - `combine_csv`: This script is used to combine multiple CSV files.
 - `evaluate`: This script is used to generate samples to evaluate.
 - `install_mkl`: This script is used to install the MKL dependency.
