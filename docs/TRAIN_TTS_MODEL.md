@@ -8,7 +8,7 @@ on a GCP virtual machine.
 1. Follow this [document](TRAIN_MODEL.md) to train a spectrogram model.
 
    You'll want to train the spectrogram model until `dev_epoch/post_spectrogram_loss` stops
-   rapidly decreasing. This typically will happen within 3 or so days of training.
+   rapidly decreasing. This typically will happen within 72 hours of training, or \~150,000 steps.
 
 ## Train a Signal Model
 
@@ -43,7 +43,7 @@ on a GCP virtual machine.
                           "spectrogram_model/{your_experiment}/runs/{a_run}/checkpoints/step-*.pt"
    ```
 
-   Pick the checkpoint with a step count that correlates with the point of covergence
+   Pick the checkpoint with a step count that correlates with the point of convergence
    `dev_epoch/post_spectrogram_loss` value.
 
 2. From [this point](TRAIN_MODEL.md#on-the-vm-instance-1), continue following the instructions
@@ -52,5 +52,5 @@ on a GCP virtual machine.
    to the command line parameter `--spectrogram_model_checkpoint`.
 
    Finally, you'll want to train the signal model until `dev_epoch/coarse_loss` and
-   `dev_epoch/fine_loss` stop rapidly decreasing. This typically will happen within 1 or so days of
+   `dev_epoch/fine_loss` stop rapidly decreasing. This typically will happen within 18-24 hours of
    training.

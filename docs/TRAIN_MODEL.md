@@ -137,7 +137,7 @@ Related Documentation:
 
 ### From your local repository
 
-12. Use `src.bin.gcp.lsyncd` to live sync your repository to your VM instance:
+1. Use `src.bin.gcp.lsyncd` to live sync your repository to your VM instance:
 
 ```bash
 VM_USER=$(gcloud compute ssh $VM_INSTANCE_NAME --command="echo $USER")
@@ -147,7 +147,7 @@ python3 -m src.bin.gcp.lsyncd --instance $VM_INSTANCE_NAME \
                               --user $VM_USER
 ```
 
-When prompted, give your local sudo password for your laptop.
+2. When prompted, give your local sudo password for your laptop.
 
 Keep this process running on your local machine until you've started training, it'll
 allow you to make any hot-fixes to your code in case you run into an error.
@@ -165,6 +165,7 @@ allow you to make any hot-fixes to your code in case you run into an error.
    ```bash
    cd /opt/wellsaid-labs/Text-to-Speech
 
+   # Note: You will always want to be in an active venv whenever you want to work with python.
    python3 -m venv venv
    . venv/bin/activate
 
@@ -197,21 +198,25 @@ allow you to make any hot-fixes to your code in case you run into an error.
    ```bash
    pkill -9 python; \
    nvidia-smi; \
-   PYTHONPATH=. python src/bin/train/signal_model/__main__.py --project_name $COMET_PROJECT
+   PYTHONPATH=. python src/bin/train/signal_model/__main__.py --project_name $COMET_PROJECT \
+   --spectrogram_model_checkpoint $SPECTROGRAM_CHECKPOINT
    ```
+   Note: the `--spectrogram_model_checkpoint` argument is optional (see [here](TRAIN_TTS_MODEL.md#on-the-vm-instance)).
 
    We run `pkill -9 python` to kill any leftover processes from previous runs and `nvidia-smi`
    to ensure the GPU has no running processes.
 
-5. Detach from your screen session by typing `Ctrl-A` then `D` and exit your VM with the
+5. Detach from your screen session by typing `Ctrl-A` then `D`. You can exit your VM with the
    `exit` command.
 
 ### From your local repository
 
 1. Kill your `lsyncd` process by typing `Ctrl-C`.
 
-2. Run this script until your experiment completes, it'll restart your machine in case it
-   is shutdown.
+2. Because we use preemptible cloud machines, they may occasionally be shut down, even mid-training.
+   The following script will check the status of your machine, restart it if necessary, and restart
+   the training process from the last recorded checkpoint. Keep this script running in order to keep
+   your training running smoothly!
 
    For a spectrogram model ...
 
@@ -239,7 +244,7 @@ allow you to make any hot-fixes to your code in case you run into an error.
                    PYTHONPATH=. python src/bin/train/signal_model/__main__.py --checkpoint;'"
    ```
 
-   If your running this script from your laptop, then we recommend you install
+   If you're running this script from your laptop, then we recommend you install
    [Amphetamine](https://apps.apple.com/us/app/amphetamine/id937984704?mt=12) to keep your laptop
    from sleeping and stopping the script.
 
