@@ -4,7 +4,7 @@ metadata:
   labels:
     run: speech-api
   name: speech-api
-  namespace: staging
+  namespace: default
 spec:
   replicas: 1
   selector:
