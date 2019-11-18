@@ -44,8 +44,10 @@ WORKDIR /app
 RUN python3 -m venv venv
 
 # NOTE: `COPY` experiment folder fist, so that this layer is reused the most.
-COPY disk/experiments/spectrogram_model/add-your-experiment-here/ disk/experiments/spectrogram_model/add-your-experiment-here/
-COPY disk/experiments/signal_model/add-your-experiment-here/ disk/experiments/signal_model/add-your-experiment-here/
+COPY disk/experiments/spectrogram_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/ \
+  disk/experiments/spectrogram_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/
+COPY disk/experiments/signal_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/ \
+  disk/experiments/signal_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/
 COPY src/ src/
 COPY third_party/ third_party/
 
@@ -65,6 +67,7 @@ RUN apt-get install -y --no-install-recommends git-core \
   tqdm \
   git+https://github.com/PetrochukM/HParams.git \
   git+https://github.com/PetrochukM/PyTorch-NLP.git \
+  && mkdir disk/other \
   && venv/bin/python -m src.service.worker_setup \
   && venv/bin/pip uninstall -y pip \
   && rm -rf venv/lib/python3.6/site-packages/torch/test \
