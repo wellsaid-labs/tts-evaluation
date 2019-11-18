@@ -32,10 +32,35 @@ NINJA_BUILD_PATH.mkdir(exist_ok=True, parents=True)
 
 
 def set_basic_logging_config():
-    """ Set up basic logging handlers. """
-    logging.basicConfig(
-        level=logging.INFO,
-        format='\033[90m[%(asctime)s][%(process)d][%(name)s][%(levelname)s]\033[0m %(message)s')
+    """
+    Inspired by: `logging.basicConfig`
+
+    Do basic configuration for the logging system.
+
+    This function does nothing if the root logger already has handlers
+    configured. It is a convenience method intended for use by simple scripts
+    to do one-shot configuration of the logging package.
+
+    The default behaviour is to create a `StreamHandler` which writes to
+    `sys.stdout` and `sys.stderr`, set a formatter, and
+    add the handler to the root logger.
+    """
+    root = logging.getLogger()
+    if len(root.handlers) == 0:
+        root.setLevel(logging.INFO)
+
+        formatter = logging.Formatter(
+            '\033[90m[%(asctime)s][%(process)d][%(name)s][%(levelname)s]\033[0m %(message)s')
+
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(logging.DEBUG)
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setLevel(logging.WARNING)
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
 
 
 def assert_enough_disk_space(min_space=0.2):

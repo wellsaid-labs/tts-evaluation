@@ -14,16 +14,24 @@ assert SIGNAL_MODEL_CHECKPOINT_PATH.is_file(), 'Signal model checkpoint cannot b
 assert SPECTROGRAM_MODEL_CHECKPOINT_PATH.is_file(), 'Spectrogram model checkpoint cannot be found.'
 
 SPEAKER_ID_TO_SPEAKER_ID = {
-    0: 4,  # Judy Bieber
-    1: 2,  # Mary Ann
-    2: 3,  # Linda Johnson
-    3: 5,  # Hilary Noriega
-    4: 0,  # Beth Cameron
-    5: 1,  # Beth Cameron (Custom)
-    6: 3,  # Linda Johnson
-    7: 6,  # Sam Scholl
-    8: 7,  # Adrienne Walker-Heller
+    0: 6,  # Judy Bieber
+    1: 13,  # Mary Ann
+    2: 14,  # Linda Johnson
+    3: 10,  # Hilary Noriega
+    4: 9,  # Beth Cameron
+    5: 3,  # Beth Cameron (Custom)
+    6: 14,  # Linda Johnson
+    7: 1,  # Sam Scholl
+    8: 18,  # Adrienne Walker-Heller
     9: 8,  # Frank Bonacquisti
-    10: 9,  # Susan Murphy
-    11: 10,  # Heather Doe
+    10: 5,  # Susan Murphy
+    11: 11,  # Heather Doe
+    12: 12,  # Alicia Harris
+    13: 2,  # George Drake
+    14: 4,  # Megan Sinclair
+    15: 15,  # Elise Randall
+    16: 7,  # Hanuman Welch
+    17: 16,  # Jack Rutkowski
+    18: 17,  # Mark Atherlay
+    19: 0,  # Steven Wahlberg
 }

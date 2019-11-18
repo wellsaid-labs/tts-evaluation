@@ -54,10 +54,6 @@ instance/
 # IPython Notebook
 .ipynb_checkpoints
 
-# Data
-data/**
-.data/**
-
 # Test Files
 .pytest_cache
 
@@ -74,9 +70,6 @@ tmp/
 # Local node modules
 node_modules/
 
-# Disk cache for this repo.
-/.tts_cache/
-
 # Google Cloud Storage credentials
 gcs_credentials.json
 
@@ -88,3 +81,9 @@ notebooks/**
 
 # `git` files can be large
 .git/**
+
+# Repository Disk Files
+disk/data/**
+disk/other/**
+disk/samples/**
+disk/temp/**

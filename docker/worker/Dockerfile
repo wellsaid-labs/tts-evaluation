@@ -44,7 +44,8 @@ WORKDIR /app
 RUN python3 -m venv venv
 
 # NOTE: `COPY` experiment folder fist, so that this layer is reused the most.
-COPY experiments/ experiments/
+COPY disk/experiments/spectrogram_model/add-your-experiment-here/ disk/experiments/spectrogram_model/add-your-experiment-here/
+COPY disk/experiments/signal_model/add-your-experiment-here/ disk/experiments/signal_model/add-your-experiment-here/
 COPY src/ src/
 COPY third_party/ third_party/
 
@@ -62,7 +63,7 @@ RUN apt-get install -y --no-install-recommends git-core \
   torch==1.2.0+cpu -f https://download.pytorch.org/whl/torch_stable.html \
   unidecode \
   tqdm \
-  && venv/bin/pip install --no-cache-dir --no-dependencies \
+  git+https://github.com/PetrochukM/HParams.git \
   git+https://github.com/PetrochukM/PyTorch-NLP.git \
   && venv/bin/python -m src.service.worker_setup \
   && venv/bin/pip uninstall -y pip \
@@ -108,5 +109,9 @@ RUN echo 'Top N largest directories\n' && du -h / | sort -rh | head -100
 # performance decrease.
 # Learn more about various `gunicorn` optimizations:
 # https://medium.com/building-the-system/gunicorn-3-means-of-concurrency-efbb547674b7
+# NOTE: `--access-logfile='-'` forces the access logs to go to stdout, learn more:
+# https://github.com/benoitc/gunicorn/issues/1184
+# https://github.com/fofanov/gunicorn/commit/e8ecc20cc547b614eaa1bed5b0bf5f3b4b4d0274
+# http://docs.gunicorn.org/en/stable/settings.html#logging
 CMD ["venv/bin/gunicorn", "src.service.worker:app", "--bind=0.0.0.0:8000", "--timeout=3600", \
-  "--keep-alive=300", "--workers=2"]
+  "--keep-alive=300", "--workers=2", "--access-logfile='-'"]

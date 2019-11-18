@@ -55,9 +55,9 @@ const {
 //   https://medium.com/google-cloud/understanding-and-profiling-gce-cold-boot-time-32c209fe86ab
 // - ~15 seconds for the cluster-autoscalar to trigger provisioning:
 //   https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#what-are-the-service-level-objectives-for-cluster-autoscaler
-// - ~10 seconds for the pod to start `gunicorn`, load checkpoints, and load docker container.
-// NOTE: Practically, the build time is around 85 seconds.
-const AVERAGE_POD_BUILD_TIME = 85 * 1000;
+// - ~30 seconds for the pod to start `gunicorn`, load checkpoints, and load docker container.
+// NOTE: Practically, the build time is around 105 seconds.
+const AVERAGE_POD_BUILD_TIME = 105 * 1000;
 // NOTE: This average assumes 5.5x real time processing for an average clip length of 7.147 seconds.
 // These numbers were computed based on the first ~5500 clips generated on our website.
 const AVERAGE_JOB_TIME = 5.5 * 7.147 * 1000;
@@ -177,12 +177,18 @@ class Pod {
    * @param {string} nodeName Name of the node created.
    * @param {string} ip IP address of this pod.
    * @param {number} port An exposed port on the pod that is accepting http requests.
+   * @param {number} isReadyTTL The time in milliseconds the `isReady` promise is cached.
    */
-  constructor(name, nodeName, ip, port) {
+  constructor(name, nodeName, ip, port, isReadyTTL = 5000) {
     this.name = name;
     this.nodeName = nodeName;
     this.freeSince = Date.now();
     this.createdAt = Date.now();
+    this.isReadyCache = {
+      contents: null,
+      ttl: isReadyTTL,
+      createdTime: null,
+    }
     this.ip = ip;
     this.port = port;
     this.isDestroyed = false;
@@ -191,17 +197,15 @@ class Pod {
   /**
    * Check if this Pod is ready for more requests.
    *
-   * NOTE (September, 2019): The worker should respond in at most ~1.5 seconds. The maximum response
-   * time occurs when the worker is aborted right after starting a new generation. The worker will
-   * not abort until it attempts to send some results.
+   * NOTE: In November 2019, it could take up to 15 seconds to load the checkpoints. This timeout
+   * was set to be double the expected response time, just in case.
    *
    * @param {string} name The pod name to request.
    * @param {string} host Host to make HTTP request to.
    * @param {number} port Port on host to query.
    * @param {number} timeout Timeout for the HTTP request.
    */
-  static async isReady(name, host, port, timeout = 5000) {
-    // TODO: For efficiency consider caching `isReady` for some seconds.
+  static async isReady(name, host, port, timeout = 30000) {
     try {
       const abortController = new AbortController();
       setTimeout(() => abortController.abort(), timeout);
@@ -223,7 +227,7 @@ class Pod {
       }
       return response.ok;
     } catch (error) {
-      logger.error(`[${name}] Pod.isReady Error: ${error.message}`);
+      logger.error(`[${name}] Pod.isReady Error:`, error);
       return false
     }
   }
@@ -233,9 +237,20 @@ class Pod {
       throw new Error(`Pod.isReady Error: Pod ${this.name} has already been destroyed.`);
     }
 
-    const isReady = await Pod.isReady(this.name, this.ip, this.port);
+    logger.log(`Pod.isReady: Checking if Pod ${this.name} is ready to serve requests.`);
+
+    if (!this.isReadyCache.createdTime ||
+      Date.now() - this.isReadyCache.createdTime > this.isReadyCache.ttl) {
+      this.isReadyCache.createdTime = Date.now();
+      this.isReadyCache.contents = Pod.isReady(this.name, this.ip, this.port);
+    } else {
+      logger.log(`Pod.isReady: Using Pod ${this.name} \`isReadyCache\`.`);
+    }
+
     // NOTE: This could be destroy during `await Pod.isReady`.
-    return isReady && !this.isDestroyed;
+    const isReady = await this.isReadyCache.contents && !this.isDestroyed;
+    logger.log(`Pod.isReady: Pod ${this.name} is ready - ${isReady}.`);
+    return isReady;
   }
 
   /**
@@ -378,16 +393,12 @@ class Pod {
    * @param {string} podImage The Kubernetes image for the pod.
    * @param {int} statusRetries Number of status checks before giving up on `Pod` creation.
    * @param {number} statusLoop Length in milliseconds between pod status checks.
-   * @param {number} timeToLive The maximum number of milliseconds this pod is allowed to live.
-   *    At minimum, this should a minute long because at minimum GCP charages for a minute
-   *    of usage. Learn more: https://cloud.google.com/compute/vm-instance-pricing
    * @throws Error if Pod is unavailable for work, after querying status `statusRetries` times.
    * @returns {Pod} Returns a `Pod`.
    */
   static async build(podImage, {
     statusRetries = Math.ceil((AVERAGE_POD_BUILD_TIME + MINIMUM_POD_TIME_TO_LIVE) / 2000),
     statusLoop = 2000,
-    timeToLive = Infinity,
   } = {}) {
     const name = `${process.env.WORKER_POD_PREFIX}-${uuidv4()}`;
     logger.log(`Pod.build: Creating pod named ${name}.`);
@@ -484,7 +495,7 @@ class Pod {
     }
 
     logger.log(`Pod.build: Pod ${name} is ready to recieve traffic at ${info.body.status.podIP}`);
-    return new Pod(name, info.body.spec.nodeName, info.body.status.podIP, podPort, timeToLive);
+    return new Pod(name, info.body.spec.nodeName, info.body.status.podIP, podPort);
   }
 }
 
@@ -507,7 +518,6 @@ class PodPool {
     this.numPodsBuilding = 0;
     this.podRequests = [];
     this.reservationLog = new EventLog(scalingWindow);
-    this.loop(scaleLoop);
     this.waiting = [];
     this.podImage = podImage;
 
@@ -518,6 +528,37 @@ class PodPool {
       warn: (...args) => logger.warn(`[${podImage}]`, ...args),
       error: (...args) => logger.error(`[${podImage}]`, ...args),
     }
+
+    this.addExistingPods();
+    this.loop(scaleLoop);
+  }
+
+  /**
+   * On restart of this `Pod`, this retrieves an existing workers pods and adds them back to the
+   * pool.
+   */
+  async addExistingPods() {
+    let existingPods = (await (await getClient()).pods.get()).body.items;
+    existingPods = existingPods.filter(pod =>
+      pod.metadata.ownerReferences[0].uid == process.env.THIS_POD_UID &&
+      pod.spec.containers[0].image == this.podImage);
+    this.logger.log(`PodPool.addExistingPods: Found ${existingPods.length} existing pods.`);
+    for (const existingPod of existingPods) {
+      const podName = existingPod.metadata.name;
+      const nodeName = existingPod.spec.nodeName;
+      if (existingPod.status.phase == 'Running') {
+        this.logger.log(`PodPool.addExistingPods: Adding existing Pod ${podName}.`);
+        this.pods.push(
+          new Pod(
+            podName,
+            nodeName,
+            existingPod.status.podIP,
+            existingPod.spec.containers[0].ports[0].containerPort));
+      } else {
+        Pod.destroy(podName, nodeName);
+      }
+    }
+    this.clean();
   }
 
   /**
@@ -541,7 +582,9 @@ class PodPool {
   waitTillReady() {
     return new Promise(async (resolve) => {
       this.logger.log(`PodPool.waitTillReady: Waiting till ready.`);
-      if (this.pods.length > 0 && await Promise.race(this.pods.map(p => p.isReady()))) {
+      if (this.pods.length > 0 &&
+        await Promise.race(this.pods.map(p => p.isReady())) &&
+        this.pods.length > 0) {
         resolve();
       } else {
         this.waiting.push(resolve);
@@ -566,7 +609,9 @@ class PodPool {
     this.logger.log(`PodPool.fufillPodRequests: Fufilling pod requests.`);
     if (this.waiting.length > 0 &&
       this.pods.length > 0 &&
-      await Promise.race(this.pods.map(p => p.isReady()))) {
+      await Promise.race(this.pods.map(p => p.isReady())) &&
+      this.waiting.length > 0 &&
+      this.pods.length > 0) {
       this.waiting.map(resolve => resolve());
     }
 
@@ -1024,11 +1069,6 @@ const noReservationController = (() => {
   };
 })();
 
-process.on('unhandledRejection', error => {
-  logger.error(`Caught unhandledRejection:`, error);
-  process.exit(1);
-});
-
 const app = express();
 
 app.use(bodyParser.json());
@@ -1086,25 +1126,36 @@ if (require.main === module) {
   app.locals.podPools = {
     v1: new PodPool(process.env.V1_WORKER_POD_IMAGE),
     v2: new PodPool(process.env.V2_WORKER_POD_IMAGE),
+    v3: new PodPool(process.env.V3_WORKER_POD_IMAGE),
   };
   app.locals.podPools.latest = app.locals.podPools.v2;
 
   const listener = app.listen(8000, '0.0.0.0', () => logger.log(`Listening on port ${8000}!`));
 
+  function closeHTTPServer() {
+    return new Promise(resolve => {
+      listener.close(() => {
+        console.log('HTTP server closed.');
+        resolve();
+      });
+    });
+  }
+
   // Shutdown `server` gracefully.
   // Learn more: https://expressjs.com/en/advanced/healthcheck-graceful-shutdown.html
   // Learn more: https://hackernoon.com/graceful-shutdown-in-nodejs-2f8f59d1c357
-  process.on('SIGTERM', () => {
+  process.on('SIGTERM', async () => {
     console.log('SIGTERM signal received, shutting down.');
-    listener.close(() => {
-      console.log('HTTP server closed.');
-      for (const podPool of Object.values(app.locals.podPools)) {
-        clearTimeout(podPool.loopTimeout);
-        // NOTE: There needs to be at least 1 `Pod` for GKE to function.
-        podPool.clean();
-        podPool.downscale(1);
-      }
-    });
+    await closeHTTPServer();
+    console.log('Exiting the process.');
+    process.exit(0);
+  });
+
+  process.on('unhandledRejection', async (error) => {
+    logger.error(`Caught unhandledRejection:`, error);
+    await closeHTTPServer();
+    console.log('Exiting the process.');
+    process.exit(1);
   });
 } else {
   module.exports = {

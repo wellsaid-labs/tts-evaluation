@@ -31,6 +31,8 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       speakers = [0, 1, 2, 3];
     } else if (version == "v2" || version == "latest") {
       speakers = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    } else if (version == "v3") {
+      speakers = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
     }
     speakerOptionElements.forEach(option => {
       option.disabled = !speakers.includes(parseInt(option.value));
