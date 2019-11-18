@@ -20,7 +20,8 @@ from src.datasets import lj_speech_dataset
 from src.datasets import m_ailabs_en_us_speech_dataset
 from src.datasets import normalize_audio_column
 from src.datasets.m_ailabs import DOROTHY_AND_WIZARD_OZ
-from src.environment import TEST_DATA_PATH
+from src.environment import SIGNAL_MODEL_EXPERIMENTS_PATH
+from src.environment import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 from src.optimizers import Optimizer
 from src.signal_model import WaveRNN
 from src.spectrogram_model import InputEncoder
@@ -152,17 +153,13 @@ class LazyDict(MutableMapping):
         return len(self._dict)
 
 
-TEST_DATA_PATH_UTILS = TEST_DATA_PATH / '_utils'
-
-
 @lru_cache()
 def _get_mock_data():
     """ Get a mock dataset for testing. """
     with mock.patch('urllib.request.urlretrieve') as mock_urlretrieve:
         mock_urlretrieve.side_effect = url_first_side_effect
-        data = m_ailabs_en_us_speech_dataset(
-            directory=TEST_DATA_PATH_UTILS / 'M-AILABS', all_books=[DOROTHY_AND_WIZARD_OZ])
-        data += lj_speech_dataset(directory=TEST_DATA_PATH_UTILS)
+        data = m_ailabs_en_us_speech_dataset(all_books=[DOROTHY_AND_WIZARD_OZ])
+        data += lj_speech_dataset()
     return data
 
 
@@ -217,11 +214,10 @@ def get_tts_mocks(add_spectrogram=False,
         parameters = return_['spectrogram_model'].parameters()
         spectrogram_model_optimizer = Optimizer(
             Adam(params=filter(lambda p: p.requires_grad, parameters)))
-        (TEST_DATA_PATH_UTILS / 'spectrogram_model').mkdir(exist_ok=True)
         checkpoint = Checkpoint(
             comet_ml_project_name='',
             comet_ml_experiment_key='',
-            directory=TEST_DATA_PATH_UTILS / 'spectrogram_model',
+            directory=SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
             model=return_['spectrogram_model'],
             optimizer=spectrogram_model_optimizer,
             epoch=0,
@@ -236,11 +232,10 @@ def get_tts_mocks(add_spectrogram=False,
     def get_signal_model_checkpoint():
         signal_model_optimizer = Optimizer(
             Adam(params=filter(lambda p: p.requires_grad, return_['signal_model'].parameters())))
-        (TEST_DATA_PATH_UTILS / 'signal_model').mkdir(exist_ok=True)
         checkpoint = Checkpoint(
             comet_ml_project_name='',
             comet_ml_experiment_key='',
-            directory=TEST_DATA_PATH_UTILS / 'signal_model',
+            directory=SIGNAL_MODEL_EXPERIMENTS_PATH,
             epoch=0,
             step=0,
             anomaly_detector=AnomalyDetector(),

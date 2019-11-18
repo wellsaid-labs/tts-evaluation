@@ -7,3 +7,6 @@ pytorch
 lsyncd
 relu
 tanh
+hyperparameters
+hparams
+ffmpeg

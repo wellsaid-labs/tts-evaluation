@@ -67,8 +67,8 @@ class Trainer():
         min_rollback (int): Minimum number of epochs to rollback in case of a loss anomaly.
         lr_multiplier_schedule (callable): Learning rate multiplier schedule.
         model (torch.nn.Module, optional): Model to train and evaluate.
-        spectrogram_model_checkpoint (str, optional): Checkpoint used to generate a spectrogram
-            from text as input to the signal model.
+        spectrogram_model_checkpoint_path (pathlib.Path or str, optional): Checkpoint path used to
+            generate a spectrogram from text as input to the signal model.
         step (int, optional): Starting step; typically, this parameter is useful when starting from
             a checkpoint.
         epoch (int, optional): Starting epoch; typically, this parameter is useful when starting
@@ -95,7 +95,7 @@ class Trainer():
                  min_rollback=HParam(),
                  lr_multiplier_schedule=HParam(),
                  model=HParam(),
-                 spectrogram_model_checkpoint=None,
+                 spectrogram_model_checkpoint_path=None,
                  step=0,
                  epoch=0,
                  num_rollbacks=0,
@@ -107,9 +107,8 @@ class Trainer():
         self.dev_batch_size = dev_batch_size
         self.num_rollbacks = num_rollbacks
         self.checkpoints_directory = checkpoints_directory
-        self.use_predicted = spectrogram_model_checkpoint is not None
-        self.spectrogram_model_checkpoint_path = (None if spectrogram_model_checkpoint is None else
-                                                  spectrogram_model_checkpoint.path)
+        self.use_predicted = spectrogram_model_checkpoint_path is not None
+        self.spectrogram_model_checkpoint_path = spectrogram_model_checkpoint_path
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
         self.dev_loader = None
@@ -137,6 +136,7 @@ class Trainer():
             'coarse_loss': DistributedAveragedMetric(),
             'fine_loss': DistributedAveragedMetric(),
             'orthogonal_loss': DistributedAveragedMetric(),
+            'data_queue_size': DistributedAveragedMetric(),
         }
 
         # NOTE: Rollback `maxlen=min_rollback + 1` to store the current state of the model with
@@ -197,9 +197,6 @@ class Trainer():
         Returns:
             (Trainer)
         """
-        spectrogram_model_checkpoint_path = checkpoint.spectrogram_model_checkpoint_path
-        spectrogram_model_checkpoint = (None if spectrogram_model_checkpoint_path is None else
-                                        Checkpoint.from_path(spectrogram_model_checkpoint_path))
         checkpoint_kwargs = {
             # NOTE: ``rollback`` is not checkpointed due to it's size.
             'model': checkpoint.model,
@@ -207,7 +204,7 @@ class Trainer():
             'epoch': checkpoint.epoch,
             'step': checkpoint.step,
             'anomaly_detector': checkpoint.anomaly_detector,
-            'spectrogram_model_checkpoint': spectrogram_model_checkpoint,
+            'spectrogram_model_checkpoint_path': checkpoint.spectrogram_model_checkpoint_path,
             'num_rollbacks': checkpoint.num_rollbacks
         }
         checkpoint_kwargs.update(kwargs)
@@ -344,6 +341,11 @@ class Trainer():
                     target_coarse=batch.target_signal_coarse.unsqueeze(2))
                 self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
+
+            # NOTE: This metric should increase over time as long as the `data_loader` is
+            # loading faster than steps are computed.
+            if hasattr(data_loader.iterator, 'data_queue'):
+                self.metrics['data_queue_size'].update(data_loader.iterator.data_queue.qsize())
 
             for name, metric in self.metrics.items():
                 self.comet_ml.log_metric('step/%s' % name, metric.sync().last_update())
