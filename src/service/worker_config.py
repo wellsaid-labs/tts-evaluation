@@ -17,6 +17,8 @@ if not IS_TESTING_ENVIRONMENT:
     assert SPECTROGRAM_MODEL_CHECKPOINT_PATH.is_file(
     ), 'Spectrogram model checkpoint cannot be found.'
 
+# NOTE: These value (not the keys) need to be updated based on the spectrogram model encoder.
+# The keys need to stay the same for backwards compatibility.
 SPEAKER_ID_TO_SPEAKER_ID = {
     0: 6,  # Judy Bieber
     1: 13,  # Mary Ann
