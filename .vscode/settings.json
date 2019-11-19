@@ -41,5 +41,6 @@
     "latex",
     "plaintext"
   ],
-  "python.pythonPath": "venv/bin/python"
+  "python.pythonPath": "venv/bin/python",
+  "python.dataScience.useNotebookEditor": false
 }
