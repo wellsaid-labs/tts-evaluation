@@ -135,7 +135,11 @@ these deployment steps are loosely based on the below "New Cluster" guide.
    kubectl config set-context --current --namespace=default
    ```
 
-   You may need to delete any remaining nodes separately because they are no tied to the namespace.
+   You may need to delete any remaining nodes separately because they are not tied to the namespace.
+
+   In order to bulk delete nodes, we recommend using the
+   [resize](https://cloud.google.com/kubernetes-engine/docs/how-to/resizing-a-cluster) feature
+   of GKE. It'll resize the cluster if possible while respecting the autoscaling settings.
 
 ## New Cluster
 
