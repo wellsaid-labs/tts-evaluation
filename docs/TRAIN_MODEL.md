@@ -201,7 +201,9 @@ allow you to make any hot-fixes to your code in case you run into an error.
    PYTHONPATH=. python src/bin/train/signal_model/__main__.py --project_name $COMET_PROJECT \
    --spectrogram_model_checkpoint $SPECTROGRAM_CHECKPOINT
    ```
-   Note: the `--spectrogram_model_checkpoint` argument is optional (see [here](TRAIN_TTS_MODEL.md#on-the-vm-instance)).
+
+   Note: the `--spectrogram_model_checkpoint` argument is optional
+   (for example, see [here](TRAIN_TTS_MODEL.md#on-the-vm-instance)).
 
    We run `pkill -9 python` to kill any leftover processes from previous runs and `nvidia-smi`
    to ensure the GPU has no running processes.
