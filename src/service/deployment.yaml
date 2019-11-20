@@ -52,7 +52,7 @@ spec:
             # Ensure there are enough resources for `COVERAGE`% of clips generated based on the
             # `AUTOSCALE_WINDOW`.
             - name: COVERAGE
-              value: "0.99"
+              value: "0.90"
             - name: API_KEY_SUFFIX # Pattern for discovering api keys
               value: _SPEECH_API_KEY
             - name: MATT_HOCKING_SPEECH_API_KEY # NOTE: Do not forget to create these secrets.
