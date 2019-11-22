@@ -12,7 +12,7 @@ import pickle
 import tempfile
 import weakref
 
-from src.environment import DEFAULT_TTS_DISK_CACHE
+from src.environment import DISK_CACHE_PATH
 from src.environment import IS_TESTING_ENVIRONMENT
 from src.environment import TEMP_PATH
 from src.utils.utils import ResetableTimer
@@ -339,7 +339,7 @@ class _DiskCache(_Cache):
 
 
 def disk_cache(function=None,
-               directory=DEFAULT_TTS_DISK_CACHE / 'disk_cache',
+               directory=DISK_CACHE_PATH,
                save_to_disk_delay=None if IS_TESTING_ENVIRONMENT else 180):
     """ Function decorator that caches all function calls and saves them to disk.
 

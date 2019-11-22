@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from src.environment import TEMP_PATH
+from src.environment import DISK_CACHE_PATH
 from src.utils.disk_cache_ import _Cache
 from src.utils.disk_cache_ import disk_cache
 
@@ -112,7 +112,7 @@ def test_cache__modify_iterator():
 def test_disk_cache(mock_replace):
     """ Test to ensure basic invariants of `_DiskCache` are met. """
     file_name = 'tests.utils.test_disk_cache_.test_disk_cache.<locals>.helper'
-    file_path = TEMP_PATH / '.disk_cache' / file_name
+    file_path = DISK_CACHE_PATH / file_name
 
     @disk_cache(directory=file_path.parent, save_to_disk_delay=0.1)
     def helper(arg):
@@ -141,7 +141,7 @@ def test_disk_cache__redundant_os_operations(mock_replace):
     """ Test to ensure that the `disk_cache` doesn't called `save` or `load` more times than needed.
     """
     file_name = 'tests.utils.test_disk_cache_.test_disk_cache.<locals>.helper'
-    file_path = TEMP_PATH / '.disk_cache' / file_name
+    file_path = DISK_CACHE_PATH / file_name
 
     @disk_cache(directory=file_path.parent, save_to_disk_delay=0.1)
     def helper(arg):
@@ -198,7 +198,7 @@ def test_disk_cache__delete_cache(mock_replace):
     """ Test to ensure that cache is able to handle the disk cache getting deleted.
     """
     file_name = 'tests.utils.test_disk_cache_.test_disk_cache.<locals>.helper'
-    file_path = TEMP_PATH / '.disk_cache' / file_name
+    file_path = DISK_CACHE_PATH / file_name
 
     @disk_cache(directory=file_path.parent, save_to_disk_delay=0.1)
     def helper(arg):

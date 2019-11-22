@@ -7,8 +7,6 @@ Example:
 NOTE: The distributed example does clean up Python processes well; therefore, we kill all
 ``python`` processes and check that ``nvidia-smi`` cache was cleared.
 """
-from pathlib import Path
-
 import argparse
 import logging
 import warnings
@@ -40,7 +38,7 @@ from src.datasets import add_predicted_spectrogram_column
 from src.datasets import add_spectrogram_column
 from src.environment import assert_enough_disk_space
 from src.environment import check_module_versions
-from src.environment import EXPERIMENTS_PATH
+from src.environment import SIGNAL_MODEL_EXPERIMENTS_PATH
 from src.hparams import set_hparams
 from src.utils import bash_time_label
 from src.utils import cache_on_disk_tensor_shapes
@@ -126,7 +124,6 @@ def _train(device_index,
         distributed_backend (str)
         distributed_init_method (str)
     """
-    # TODO: Consider naming the logs based on the time they are started for sorting.
     recorder = RecordStandardStreams().start()
     # Initiate distributed environment, learn more:
     # https://pytorch.org/tutorials/intermediate/dist_tuto.htm
@@ -188,8 +185,8 @@ def _train(device_index,
 def main(run_name=None,
          comet_ml_project_name=None,
          run_tags=[],
-         run_root=EXPERIMENTS_PATH / 'signal_model' / bash_time_label(),
-         checkpoints_directory=Path('checkpoints') / bash_time_label(),
+         run_root=SIGNAL_MODEL_EXPERIMENTS_PATH / bash_time_label() / 'runs',
+         checkpoints_directory_name='checkpoints',
          checkpoint=None,
          spectrogram_model_checkpoint=None,
          more_hparams={},
@@ -203,7 +200,7 @@ def main(run_name=None,
         comet_ml_project_name (str, optional): Project name to use with comet.ml.
         run_tags (list of str, optional): Comet.ml experiment tags.
         run_root (str, optional): Directory to save experiments, unless a checkpoint is loaded.
-        checkpoints_directory (str, optional): Directory to save checkpoints inside `run_root`.
+        checkpoints_directory_name (str, optional): Directory to save checkpoints inside `run_root`.
         checkpoint (src.utils.Checkpoint, optional): Checkpoint or None.
         spectrogram_model_checkpoint (str, optional): Checkpoint used to generate spectrogram
             from text as input to the signal model.
@@ -214,11 +211,14 @@ def main(run_name=None,
     _set_hparams(more_hparams, checkpoint, comet_ml_project_name)
 
     # Load `checkpoint`, setup `run_root`, and setup `checkpoints_directory`.
+    # NOTE: The folder structure is setup like so:
+    #   SIGNAL_MODEL_EXPERIMENTS_PATH / bash_time_label() / 'runs' / bash_time_label() /
+    #   'checkpoints' / 'checkpoint.pt'
     run_root = run_root if checkpoint is None else checkpoint.directory.parent.parent
-    if checkpoint is None:
-        run_root.mkdir(parents=True)
-    checkpoints_directory = run_root / checkpoints_directory
-    checkpoints_directory.mkdir(parents=True)
+    run_root = run_root / bash_time_label()
+    run_root.mkdir(parents=checkpoint is None)
+    checkpoints_directory = run_root / checkpoints_directory_name
+    checkpoints_directory.mkdir()
     recorder.update(run_root)
 
     comet = CometML()
@@ -306,7 +306,7 @@ if __name__ == '__main__':  # pragma: no cover
     if isinstance(args.checkpoint, str):
         args.checkpoint = Checkpoint.from_path(args.checkpoint)
     elif isinstance(args.checkpoint, bool) and args.checkpoint:
-        args.checkpoint = Checkpoint.most_recent(EXPERIMENTS_PATH / '**/*.pt')
+        args.checkpoint = Checkpoint.most_recent(SIGNAL_MODEL_EXPERIMENTS_PATH / '**/*.pt')
     else:
         args.checkpoint = None
 

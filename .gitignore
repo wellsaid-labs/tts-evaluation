@@ -47,23 +47,15 @@ cover/
 *.mo
 *.pot
 
-# Flask stuff:
+# Flask stuff
 instance/
 .webassets-cache
 
 # IPython Notebook
 .ipynb_checkpoints
 
-# Data
-data/**
-_data/**
-.data/**
-
 # Test Files
 .pytest_cache
-
-# Experiments
-experiments/
 
 # Various tmp files
 tmp/
@@ -75,14 +67,13 @@ tmp/
 *.patch
 *.zip
 
-# Default path for evaluation files
-results/
-
 # Local node modules
 node_modules/
 
 # Disk cache for this repo.
-/.tts_cache/
+disk/*/**
+!disk/README.md
+!disk/*/.gitkeep
 
 # Google Cloud Storage credentials
 gcs_credentials.json
@@ -92,3 +83,4 @@ gcs_credentials.json
 
 # Comet.ml Config
 .comet.config
+

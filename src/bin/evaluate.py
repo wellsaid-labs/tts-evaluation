@@ -52,7 +52,9 @@ from src.audio import write_audio
 from src.datasets import add_predicted_spectrogram_column
 from src.datasets import add_spectrogram_column
 from src.datasets import TextSpeechRow
+from src.environment import SAMPLES_PATH
 from src.hparams import set_hparams
+from src.utils import bash_time_label
 from src.utils import Checkpoint
 from src.utils import RecordStandardStreams
 
@@ -106,7 +108,7 @@ def main(dataset,
          num_samples,
          name='',
          get_sample_rate=_get_sample_rate,
-         destination='samples/',
+         destination=SAMPLES_PATH / bash_time_label(),
          metadata_filename='metadata.csv',
          aligned=False,
          speakers=None,
@@ -150,7 +152,7 @@ def main(dataset,
             evaluated.
     """
     destination = Path(destination)
-    destination.mkdir(exist_ok=False, parents=True)
+    destination.mkdir(exist_ok=False)
 
     RecordStandardStreams(destination).start()
 
@@ -200,7 +202,12 @@ def main(dataset,
             for i, example in zip(indicies, dataset):
                 waveform = example.spectrogram_audio.cpu().numpy()
                 audio_path = _save_partial(i, ['type=gold'], example.speaker, waveform)
-                add_to_metadata(example, audio_path=audio_path, example_index=i, type='gold')
+                add_to_metadata(
+                    example,
+                    audio_length=waveform.shape[0] / sample_rate,
+                    audio_path=audio_path,
+                    example_index=i,
+                    type='gold')
     else:
         logger.info('Skipping the writing of ground truth audio.')
 
@@ -219,7 +226,12 @@ def main(dataset,
             for i, example in zip(indicies, dataset):
                 waveform = griffin_lim(example.predicted_spectrogram.cpu().numpy())
                 audio_path = _save_partial(i, ['type=griffin_lim'], example.speaker, waveform)
-                add_to_metadata(example, audio_path=audio_path, example_index=i, type='griffin_lim')
+                add_to_metadata(
+                    example,
+                    audio_length=waveform.shape[0] / sample_rate,
+                    audio_path=audio_path,
+                    example_index=i,
+                    type='griffin_lim')
     else:
         logger.info('Skipping the writing of griffin-lim predictions.')
 
@@ -249,7 +261,12 @@ def main(dataset,
                         (time.time() - start) / (waveform.shape[0] / sample_rate))
 
             audio_path = _save_partial(i, ['type=signal_model'], example.speaker, waveform)
-            add_to_metadata(example, audio_path=audio_path, example_index=i, type='signal_model')
+            add_to_metadata(
+                example,
+                audio_length_in_seconds=waveform.shape[0] / sample_rate,
+                audio_path=audio_path,
+                example_index=i,
+                type='signal_model')
             logger.info('-' * 100)
     else:
         logger.info('Skipping the writing of neural vocoder predictions.')
@@ -312,6 +329,7 @@ if __name__ == '__main__':  # pragma: no cover
 
     main(
         dataset=dataset,
+        destination=SAMPLES_PATH / args.name if args.name else SAMPLES_PATH / bash_time_label(),
         name=args.name,
         spectrogram_model_checkpoint=args.spectrogram_model,
         signal_model_checkpoint=args.signal_model,
