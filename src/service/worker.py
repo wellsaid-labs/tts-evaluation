@@ -51,7 +51,7 @@ from src.audio import combine_signal
 from src.environment import set_basic_logging_config
 from src.hparams import set_hparams
 from src.service.worker_config import SIGNAL_MODEL_CHECKPOINT_PATH
-from src.service.worker_config import SPEAKER_ID_TO_SPEAKER_ID
+from src.service.worker_config import SPEAKER_ID_TO_SPEAKER
 from src.service.worker_config import SPECTROGRAM_MODEL_CHECKPOINT_PATH
 from src.utils import Checkpoint
 
@@ -203,7 +203,7 @@ def validate_and_unpack(request_args,
                         input_encoder,
                         max_characters=1000,
                         api_keys=API_KEYS,
-                        speaker_id_to_speaker_id=SPEAKER_ID_TO_SPEAKER_ID):
+                        speaker_id_to_speaker=SPEAKER_ID_TO_SPEAKER):
     """ Validate and unpack the request object.
 
     Args:
@@ -215,7 +215,7 @@ def validate_and_unpack(request_args,
         input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         max_characters (int, optional)
         api_keys (list of str, optional)
-        speaker_id_to_speaker_id (dict, optional)
+        speaker_id_to_speaker (dict, optional)
 
     Returns:
         speaker (src.datasets.Speaker)
@@ -259,11 +259,10 @@ def validate_and_unpack(request_args,
             'Text must be a string under %d characters and more than 0 characters.' %
             max_characters)
 
-    if not (speaker_id <= max(speaker_id_to_speaker_id.keys()) and
-            speaker_id >= min(speaker_id_to_speaker_id.keys())):
-        raise FlaskException(
-            'Speaker ID must be an integer between %d and %d.' %
-            (min(speaker_id_to_speaker_id.keys()), max(speaker_id_to_speaker_id.keys())))
+    if not (speaker_id <= max(speaker_id_to_speaker.keys()) and
+            speaker_id >= min(speaker_id_to_speaker.keys())):
+        raise FlaskException('Speaker ID must be an integer between %d and %d.' %
+                             (min(speaker_id_to_speaker.keys()), max(speaker_id_to_speaker.keys())))
 
     # NOTE: Normalize text similar to the normalization during dataset creation.
     text = unidecode.unidecode(text)
@@ -274,8 +273,7 @@ def validate_and_unpack(request_args,
         improper_characters = ', '.join(sorted(list(improper_characters)))
         raise FlaskException('Text cannot contain these characters: %s' % improper_characters)
 
-    speaker = input_encoder.speaker_encoder.vocab[speaker_id_to_speaker_id[speaker_id]]
-    return text, speaker
+    return text, speaker_id_to_speaker[speaker_id]
 
 
 @app.route('/healthy', methods=['GET'])
