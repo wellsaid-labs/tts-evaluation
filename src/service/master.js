@@ -197,7 +197,7 @@ class Pod {
   /**
    * Check if this Pod is ready for more requests.
    *
-   * NOTE: In November 2019, it could take up to 15 seconds to load the checkpoints. This timeout
+   * NOTE: In November 2019, it was observed it could take up to 15 seconds to load the checkpoints. This timeout
    * was set to be double the expected response time, just in case.
    *
    * @param {string} name The pod name to request.
