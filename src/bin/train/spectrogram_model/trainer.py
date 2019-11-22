@@ -120,6 +120,7 @@ class Trainer():
             'post_spectrogram_loss': DistributedAveragedMetric(),
             'pre_spectrogram_loss': DistributedAveragedMetric(),
             'stop_token_loss': DistributedAveragedMetric(),
+            'data_queue_size': DistributedAveragedMetric()
         }
 
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
@@ -284,6 +285,12 @@ class Trainer():
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
                 spectrogram_lengths = predictions[-1] if infer else batch.spectrogram.lengths
                 self._add_attention_metrics(predictions[3], spectrogram_lengths)
+
+            # NOTE: This metric should be a positive integer indicating that the `data_loader`
+            # is loading faster than the data is getting ingested; otherwise, the `data_loader`
+            # is bottlenecking training by loading too slowly.
+            if hasattr(data_loader.iterator, 'data_queue'):
+                self.metrics['data_queue_size'].update(data_loader.iterator.data_queue.qsize())
 
             if not train and not infer and i == random_batch:
                 self._visualize_predicted(batch, predictions)

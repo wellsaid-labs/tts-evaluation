@@ -225,6 +225,32 @@ def CometML(project_name=HParam(), experiment_key=None, log_git_patch=None, **kw
         subprocess.check_output('git log -1 --format=%cd', shell=True).decode().strip())
     experiment.log_parameter('num_gpu', torch.cuda.device_count())
 
+    last_step_time = None
+    last_step = None
+
+    other_set_step = experiment.set_step
+
+    def set_step(self, *args, **kwargs):
+        return_ = other_set_step(*args, **kwargs)
+
+        nonlocal last_step_time
+        nonlocal last_step
+
+        if last_step_time is not None and last_step is not None and self.curr_step > last_step:
+            seconds_per_step = (time.time() - last_step_time) / (self.curr_step - last_step)
+            last_step_time = time.time()
+            last_step = self.curr_step
+            # NOTE: Ensure that `last_step` is updated before `log_metric` to ensure that
+            # recursion is prevented via `self.curr_step > last_step`.
+            self.log_metric('step/seconds_per_step', seconds_per_step)
+        elif last_step_time is None and last_step is None:
+            last_step_time = time.time()
+            last_step = self.curr_step
+
+        return return_
+
+    experiment.set_step = set_step.__get__(experiment)
+
     start_epoch_time = None
     start_epoch_step = None
     first_epoch_time = None
