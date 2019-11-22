@@ -534,7 +534,7 @@ class PodPool {
   }
 
   /**
-   * On restart of this `Pod`, this retrieves an existing workers pods and adds them back to the
+   * On restart of this `Pod`, this retrieves any existing (running) worker's pods and adds them back to the
    * pool.
    */
   async addExistingPods() {
