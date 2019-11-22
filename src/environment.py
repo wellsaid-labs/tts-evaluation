@@ -1,5 +1,3 @@
-""" Setup any global configurations like `logging`, `seed`, environment and disk configurations.
-"""
 from pathlib import Path
 
 import logging
@@ -13,22 +11,39 @@ ROOT_PATH = Path(__file__).parents[1].resolve()  # Repository root path
 
 IS_TESTING_ENVIRONMENT = 'pytest' in sys.modules
 
-TTS_DISK_CACHE_NAME = '.tts_cache'  # Directory name for any disk cache's created by this repository
+TTS_DISK_CACHE_NAME = '.tts_cache'  # Hidden directory stored in other directories for caching
+
+# NOTE: These paths help namespace the disk files.
 
 TEST_DATA_PATH = ROOT_PATH / 'tests' / '_test_data'
 
-DATA_PATH = ROOT_PATH / 'data'
+DISK_PATH = TEST_DATA_PATH / '_disk' if IS_TESTING_ENVIRONMENT else ROOT_PATH / 'disk'
 
-EXPERIMENTS_PATH = ROOT_PATH / 'experiments'
+DATA_PATH = DISK_PATH / 'data'
 
-DEFAULT_TTS_DISK_CACHE = (TEST_DATA_PATH
-                          if IS_TESTING_ENVIRONMENT else ROOT_PATH) / TTS_DISK_CACHE_NAME
+EXPERIMENTS_PATH = DISK_PATH / 'experiments'
 
-TEMP_PATH = DEFAULT_TTS_DISK_CACHE / 'tmp'
+SIGNAL_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / 'signal_model'
 
-NINJA_BUILD_PATH = TEMP_PATH / 'ninja_build'
+SIGNAL_MODEL_EXPERIMENTS_PATH.mkdir(exist_ok=True)
 
-NINJA_BUILD_PATH.mkdir(exist_ok=True, parents=True)
+SPECTROGRAM_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / 'spectrogram_model'
+
+SPECTROGRAM_MODEL_EXPERIMENTS_PATH.mkdir(exist_ok=True)
+
+OTHER_DISK_CACHE_PATH = DISK_PATH / 'other'
+
+TEMP_PATH = DISK_PATH / 'temp'
+
+NINJA_BUILD_PATH = OTHER_DISK_CACHE_PATH / 'ninja_build'
+
+NINJA_BUILD_PATH.mkdir(exist_ok=True)
+
+DISK_CACHE_PATH = OTHER_DISK_CACHE_PATH / 'disk_cache'
+
+DISK_CACHE_PATH.mkdir(exist_ok=True)
+
+SAMPLES_PATH = DISK_PATH / 'samples'
 
 
 def set_basic_logging_config():

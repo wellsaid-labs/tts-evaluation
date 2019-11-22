@@ -6,10 +6,11 @@ TODO: These models should be uploaded online for so that everyone has access to 
 lose track of them.
 """
 from src.environment import IS_TESTING_ENVIRONMENT
-from src.environment import ROOT_PATH
+from src.environment import SIGNAL_MODEL_EXPERIMENTS_PATH
+from src.environment import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 
-SPECTROGRAM_MODEL_CHECKPOINT_PATH = ROOT_PATH / 'experiments/spectrogram_model/step_183968.pt'
-SIGNAL_MODEL_CHECKPOINT_PATH = ROOT_PATH / 'experiments/signal_model/step_165137.pt'
+SPECTROGRAM_MODEL_CHECKPOINT_PATH = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / 'MY_LOCAL_SPECTROGRAM.pt'
+SIGNAL_MODEL_CHECKPOINT_PATH = SIGNAL_MODEL_EXPERIMENTS_PATH / 'MY_LOCAL_SIGNAL.pt'
 
 if not IS_TESTING_ENVIRONMENT:
     assert SIGNAL_MODEL_CHECKPOINT_PATH.is_file(), 'Signal model checkpoint cannot be found.'

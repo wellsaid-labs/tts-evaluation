@@ -9,6 +9,7 @@ from unittest.mock import patch
 import hashlib
 import logging
 import logging.config
+import os
 import pickle
 import pprint
 import time
@@ -347,16 +348,19 @@ def Pool(*args, **kwargs):
 
 
 def bash_time_label():
-    """ Get a bash friendly string representing the time.
+    """ Get a bash friendly string representing the time and process.
 
     NOTE: This string is optimized for sorting by ordering units of time from largest to smallest.
     NOTE: This string avoids any special bash characters, learn more:
     https://unix.stackexchange.com/questions/270977/what-characters-are-required-to-be-escaped-in-command-line-arguments
+    NOTE: `os.getpid` is often used by routines that generate unique identifiers, learn more:
+    http://manpages.ubuntu.com/manpages/cosmic/man2/getpid.2.html
 
     Returns:
         (str)
     """
-    return str(time.strftime('%Y-%m-%d_%H-%M-%S', time.localtime())).lower()
+    return str(time.strftime('DATE=%Y-%m-%d_TIME=%H-%M-%S',
+                             time.localtime())).lower() + '_PID=%s' % str(os.getpid())
 
 
 def torch_cpp_extension_load(name, sources, build_directory=None, **kwargs):
