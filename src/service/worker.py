@@ -33,7 +33,6 @@ Example:
 """
 from functools import lru_cache
 
-import logging
 import os
 import sys
 import unidecode
@@ -52,13 +51,14 @@ from src.audio import combine_signal
 from src.environment import set_basic_logging_config
 from src.hparams import set_hparams
 from src.service.worker_config import SIGNAL_MODEL_CHECKPOINT_PATH
-from src.service.worker_config import SPEAKER_ID_TO_SPEAKER_ID
+from src.service.worker_config import SPEAKER_ID_TO_SPEAKER
 from src.service.worker_config import SPECTROGRAM_MODEL_CHECKPOINT_PATH
 from src.utils import Checkpoint
 
-app = Flask(__name__)
+# NOTE: Flask documentation requests that logging is configured before `app` is created.
 set_basic_logging_config()
-logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
 DEVICE = torch.device('cpu')
 NO_CACHE_HEADERS = {
     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -85,9 +85,9 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
     if 'NUM_CPU_THREADS' in os.environ:
         torch.set_num_threads(int(os.environ['NUM_CPU_THREADS']))
 
-    logger.info('PyTorch version: %s', torch.__version__)
-    logger.info('Found MKL: %s', torch.backends.mkl.is_available())
-    logger.info('Threads: %s', torch.get_num_threads())
+    app.logger.info('PyTorch version: %s', torch.__version__)
+    app.logger.info('Found MKL: %s', torch.backends.mkl.is_available())
+    app.logger.info('Threads: %s', torch.get_num_threads())
 
     set_hparams()
 
@@ -97,7 +97,7 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
 
     spectrogram_model = spectrogram_model_checkpoint.model
     input_encoder = spectrogram_model_checkpoint.input_encoder
-    logger.info('Loading speakers: %s', input_encoder.speaker_encoder.vocab)
+    app.logger.info('Loading speakers: %s', input_encoder.speaker_encoder.vocab)
     signal_model = signal_model_checkpoint.model.to_inferrer()
 
     return signal_model, spectrogram_model.eval(), input_encoder
@@ -122,7 +122,7 @@ class FlaskException(Exception):
     def to_dict(self):
         response = dict(self.payload or ())
         response['message'] = self.message
-        logger.info('Responding with warning: %s', self.message)
+        app.logger.info('Responding with warning: %s', self.message)
         return response
 
 
@@ -155,17 +155,17 @@ def stream_text_to_speech_synthesis(signal_model_inferrer,
         (int): Number of bytes to be returned in total by the generator.
     """
     # TODO (michael): Remove this log because it logs sensitive information.
-    logger.info('Requested stream conditioned on: "%s" and "%s".', speaker, text)
+    app.logger.info('Requested stream conditioned on: "%s" and "%s".', speaker, text)
 
     # Compute spectrogram
     text, speaker = input_encoder.encode((text, speaker))
 
-    logger.info('Generating spectrogram...')
+    app.logger.info('Generating spectrogram...')
     with torch.no_grad():
         spectrogram = spectrogram_model(
             text, speaker, use_tqdm=True, max_frames_per_token=max_frames_per_token)[1]
-    logger.info('Generated spectrogram of shape %s for text of shape %s.', spectrogram.shape,
-                text.shape)
+    app.logger.info('Generated spectrogram of shape %s for text of shape %s.', spectrogram.shape,
+                    text.shape)
 
     if spectrogram.shape[0] >= max_frames_per_token * text.shape[0]:
         # NOTE: Status code 508 is "The server detected an infinite loop while processing the
@@ -175,7 +175,7 @@ def stream_text_to_speech_synthesis(signal_model_inferrer,
     # TODO: If a loud sound is created, cut off the stream or consider rerendering.
     # TODO: Consider logging various events to stackdriver, to keep track.
 
-    logger.info('Generating waveform header...')
+    app.logger.info('Generating waveform header...')
     scale_factor = signal_model_inferrer.conditional_features_upsample.scale_factor
     wav_header, wav_file_size = build_wav_header(scale_factor * spectrogram.shape[0])
 
@@ -185,15 +185,15 @@ def stream_text_to_speech_synthesis(signal_model_inferrer,
         try:
             assert sys.byteorder == 'little', 'Ensure byte order is of little-endian format.'
             yield wav_header
-            logger.info('Generating waveform...')
+            app.logger.info('Generating waveform...')
             for coarse, fine, _ in signal_model_inferrer(spectrogram, generator=True):
                 waveform = combine_signal(coarse, fine, return_int=True).numpy()
-                logger.info('Waveform shape %s', waveform.shape)
+                app.logger.info('Waveform shape %s', waveform.shape)
                 yield waveform.tostring()
-            logger.info('Finished generating waveform.')
+            app.logger.info('Finished generating waveform.')
         # NOTE: Flask may abort this generator if the underlying request aborts.
         except Exception as error:
-            logging.exception('Finished generating waveform.')
+            app.logger.warning('Finished generating waveform with an exception.', exc_info=True)
             raise error
 
     return response, wav_file_size
@@ -203,7 +203,7 @@ def validate_and_unpack(request_args,
                         input_encoder,
                         max_characters=1000,
                         api_keys=API_KEYS,
-                        speaker_id_to_speaker_id=SPEAKER_ID_TO_SPEAKER_ID):
+                        speaker_id_to_speaker=SPEAKER_ID_TO_SPEAKER):
     """ Validate and unpack the request object.
 
     Args:
@@ -215,7 +215,7 @@ def validate_and_unpack(request_args,
         input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         max_characters (int, optional)
         api_keys (list of str, optional)
-        speaker_id_to_speaker_id (dict, optional)
+        speaker_id_to_speaker (dict, optional)
 
     Returns:
         speaker (src.datasets.Speaker)
@@ -259,11 +259,10 @@ def validate_and_unpack(request_args,
             'Text must be a string under %d characters and more than 0 characters.' %
             max_characters)
 
-    if not (speaker_id <= max(speaker_id_to_speaker_id.keys()) and
-            speaker_id >= min(speaker_id_to_speaker_id.keys())):
-        raise FlaskException(
-            'Speaker ID must be an integer between %d and %d.' %
-            (min(speaker_id_to_speaker_id.keys()), max(speaker_id_to_speaker_id.keys())))
+    if not (speaker_id <= max(speaker_id_to_speaker.keys()) and
+            speaker_id >= min(speaker_id_to_speaker.keys())):
+        raise FlaskException('Speaker ID must be an integer between %d and %d.' %
+                             (min(speaker_id_to_speaker.keys()), max(speaker_id_to_speaker.keys())))
 
     # NOTE: Normalize text similar to the normalization during dataset creation.
     text = unidecode.unidecode(text)
@@ -274,8 +273,7 @@ def validate_and_unpack(request_args,
         improper_characters = ', '.join(sorted(list(improper_characters)))
         raise FlaskException('Text cannot contain these characters: %s' % improper_characters)
 
-    speaker = input_encoder.speaker_encoder.vocab[speaker_id_to_speaker_id[speaker_id]]
-    return text, speaker
+    return text, speaker_id_to_speaker[speaker_id]
 
 
 @app.route('/healthy', methods=['GET'])

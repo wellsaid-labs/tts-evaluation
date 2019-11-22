@@ -5,6 +5,7 @@ This allows both `worker_setup.py` and `worker.py` to be run outside of Docker a
 TODO: These models should be uploaded online for so that everyone has access to them, and we do not
 lose track of them.
 """
+from src import datasets
 from src.environment import IS_TESTING_ENVIRONMENT
 from src.environment import SIGNAL_MODEL_EXPERIMENTS_PATH
 from src.environment import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
@@ -17,17 +18,27 @@ if not IS_TESTING_ENVIRONMENT:
     assert SPECTROGRAM_MODEL_CHECKPOINT_PATH.is_file(
     ), 'Spectrogram model checkpoint cannot be found.'
 
-SPEAKER_ID_TO_SPEAKER_ID = {
-    0: 4,  # Judy Bieber
-    1: 2,  # Mary Ann
-    2: 3,  # Linda Johnson
-    3: 5,  # Hilary Noriega
-    4: 0,  # Beth Cameron
-    5: 1,  # Beth Cameron (Custom)
-    6: 3,  # Linda Johnson
-    7: 6,  # Sam Scholl
-    8: 7,  # Adrienne Walker-Heller
-    9: 8,  # Frank Bonacquisti
-    10: 9,  # Susan Murphy
-    11: 10,  # Heather Doe
+# NOTE: These value (not the keys) need to be updated based on the spectrogram model encoder.
+# The keys need to stay the same for backwards compatibility.
+SPEAKER_ID_TO_SPEAKER = {
+    0: datasets.JUDY_BIEBER,
+    1: datasets.MARY_ANN,
+    2: datasets.LINDA_JOHNSON,
+    3: datasets.HILARY_NORIEGA,
+    4: datasets.BETH_CAMERON,
+    5: datasets.BETH_CAMERON_CUSTOM,
+    6: datasets.LINDA_JOHNSON,
+    7: datasets.SAM_SCHOLL,
+    8: datasets.ADRIENNE_WALKER_HELLER,
+    9: datasets.FRANK_BONACQUISTI,
+    10: datasets.SUSAN_MURPHY,
+    11: datasets.HEATHER_DOE,
+    12: datasets.ALICIA_HARRIS,
+    13: datasets.GEORGE_DRAKE,
+    14: datasets.MEGAN_SINCLAIR,
+    15: datasets.ELISE_RANDALL,
+    16: datasets.HANUMAN_WELCH,
+    17: datasets.JACK_RUTKOWSKI,
+    18: datasets.MARK_ATHERLAY,
+    19: datasets.STEVEN_WAHLBERG
 }

@@ -23,29 +23,29 @@ Refer to the above guides in case there are missing details in the below steps.
 
    ```bash
    PROJECT_ID="voice-service-255602"
-   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v2.45 .
-   docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v2.34 .
+   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v3.02 .
+   docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v3.02 .
    ```
 
 1. Push the build:
 
    ```bash
-   docker push gcr.io/${PROJECT_ID}/speech-api:v2.45
-   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v2.34
+   docker push gcr.io/${PROJECT_ID}/speech-api:v3.02
+   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v3.02
    ```
 
 1. Test the build:
 
    ```bash
    docker run --rm -p 8000:8000 -e "YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api-worker:v2.34
+      gcr.io/${PROJECT_ID}/speech-api-worker:v3.02
    ```
 
    Or:
 
    ```bash
    docker run --rm -p 8000:8000 -e "AUTOSCALE_LOOP=5000 YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api:v2.45
+      gcr.io/${PROJECT_ID}/speech-api:v3.02
    ```
 
 1. Update the Kubernetes deployment manifest (e.g. `src/service/deployment.yaml`) with the updated
@@ -65,7 +65,7 @@ Similar to the above, except:
 - For authentication reasons, the build should be pushed with the `gcloud` tool:
 
   ```bash
-  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v2.34
+  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v3.02
   ```
 
   Learn more here: https://cloud.google.com/container-registry/docs/advanced-authentication
@@ -135,7 +135,11 @@ these deployment steps are loosely based on the below "New Cluster" guide.
    kubectl config set-context --current --namespace=default
    ```
 
-   You may need to delete any remaining nodes separately because they are no tied to the namespace.
+   You may need to delete any remaining nodes separately because they are not tied to the namespace.
+
+   In order to bulk delete nodes, we recommend using the
+   [resize](https://cloud.google.com/kubernetes-engine/docs/how-to/resizing-a-cluster) feature
+   of GKE. It'll resize the cluster if possible while respecting the autoscaling settings.
 
 ## New Cluster
 

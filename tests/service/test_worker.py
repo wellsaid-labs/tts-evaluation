@@ -34,7 +34,9 @@ def test_validate_and_unpack():
     speaker = example.speaker
     speaker_id = input_encoder.speaker_encoder.token_to_index[example.speaker]
     text = example.text
-    speaker_id_to_speaker_id = {i: i for i in input_encoder.speaker_encoder.token_to_index.values()}
+    speaker_id_to_speaker = {
+        i: t for i, t in enumerate(input_encoder.speaker_encoder.index_to_token)
+    }
     args = {'speaker_id': speaker_id, 'text': text, 'api_key': 'abc'}
     api_keys = ['abc']
 
@@ -84,9 +86,6 @@ def test_validate_and_unpack():
     # `text` gets normalized and `speaker` is dereferenced
     request_args = {**args, 'text': 'é😁'}
     result_text, result_speaker = validate_and_unpack(
-        request_args,
-        input_encoder,
-        api_keys=api_keys,
-        speaker_id_to_speaker_id=speaker_id_to_speaker_id)
+        request_args, input_encoder, api_keys=api_keys, speaker_id_to_speaker=speaker_id_to_speaker)
     assert result_text == 'e'  # NOTE: The emoji is removed because there is no unicode equivilent.
     assert result_speaker == speaker

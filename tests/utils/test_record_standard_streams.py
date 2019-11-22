@@ -67,9 +67,6 @@ def test_save_standard_streams(capsys):
         assert 'Test Logger' in lines
         assert 'Test Update' in lines
 
-        # TODO: Investigate how `stderr` also ends up in the `stdout` and `stderr` logs.
-        # assert 'Error' not in lines
-
         # Nothing in stderr
         lines = set((TEST_DATA_PATH_LOCAL / new_stderr_name).read_text().strip().split('\n'))
         assert 'Error' in lines
