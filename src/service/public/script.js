@@ -28,11 +28,11 @@ document.addEventListener('DOMContentLoaded', async function (_) {
     // TODO: Share a configuration file between server and browser on the versions available
     // and the speakers available.
     if (version == "v1") {
-      speakers = [0, 1, 2, 3];
+      speakers = [...Array(4).keys()];
     } else if (version == "v2" || version == "latest") {
-      speakers = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+      speakers = [...Array(12).keys()];
     } else if (version == "v3") {
-      speakers = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+      speakers = [...Array(20).keys()];
     }
     speakerOptionElements.forEach(option => {
       option.disabled = !speakers.includes(parseInt(option.value));
