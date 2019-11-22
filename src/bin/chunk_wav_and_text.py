@@ -67,20 +67,17 @@ from Levenshtein import distance as get_edit_distance
 from src.audio import normalize_audio
 from src.audio import read_audio
 from src.audio import write_audio
+from src.environment import COLORS
 from src.hparams import set_hparams
 from src.utils import align_tokens
 from src.utils import flatten
 from src.utils import RecordStandardStreams
 from src.utils import seconds_to_string
 
-TERMINAL_COLOR_RESET = '\033[0m'
-TERMINAL_COLOR_RED = '\033[91m'
-TERMINAL_COLOR_BLUE = '\033[94m'
-TERMINAL_COLOR_PURPLE = '\033[95m'
 
 logging.basicConfig(
-    format='{}%(levelname)s:%(name)s:{} %(message)s'.format(TERMINAL_COLOR_PURPLE,
-                                                            TERMINAL_COLOR_RESET),
+    format='{}%(levelname)s:%(name)s:{} %(message)s'.format(COLORS['light_magenta'],
+                                                            COLORS['reset_all']),
     level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -320,7 +317,7 @@ def log_comparison_of_sst_to_transcript_tokens(transcript_tokens, sst_tokens):
     logger.info('The original transcript includes these characters: %s', transcript_characters)
 
 
-def format_list(list_, is_emphasized, emphasis_color=TERMINAL_COLOR_RED):
+def format_list(list_, is_emphasized, emphasis_color=COLORS['light_red']):
     """ Formats list as a string with some items emphasized via terminal colors.
 
     Args:
@@ -332,7 +329,7 @@ def format_list(list_, is_emphasized, emphasis_color=TERMINAL_COLOR_RED):
         (str)
     """
     return '[' + ', '.join([
-        emphasis_color + str(i) + TERMINAL_COLOR_RESET if is_emphasized(i) else str(i)
+        emphasis_color + str(i) + COLORS['reset_all'] if is_emphasized(i) else str(i)
         for i in list_
     ]) + ']'
 
@@ -588,15 +585,15 @@ def review_chunk_alignments(script, spans):
     num_unaligned_characters = sum([len(s) for s in unaligned_substrings])
     if num_unaligned_characters != 0:
         # NOTE: Insert largest to smallest index.
-        to_print = list(script) + [TERMINAL_COLOR_RESET]
+        to_print = list(script) + [COLORS['reset_all']]
         for span in reversed(spans):
             to_print.insert(
                 span['text'][1],
-                '%s»%s%s' % (TERMINAL_COLOR_BLUE, TERMINAL_COLOR_RESET, TERMINAL_COLOR_RED))
+                '%s»%s%s' % (COLORS['light_blue'], COLORS['reset_all'], COLORS['light_red']))
             to_print.insert(
                 span['text'][0],
-                '%s%s«%s' % (TERMINAL_COLOR_RESET, TERMINAL_COLOR_BLUE, TERMINAL_COLOR_RESET))
-        to_print = [TERMINAL_COLOR_RED] + to_print
+                '%s%s«%s' % (COLORS['reset_all'], COLORS['light_blue'], COLORS['reset_all']))
+        to_print = [COLORS['light_red']] + to_print
 
         # NOTE: Errors will only appear on the beginning or end of the script. The chunking
         # algorithm does not cut on words that won't align.
@@ -698,8 +695,8 @@ def chunk_alignments(alignments,
             chunks.append(max_chunk[max_silence_index + 1:])
         else:  # NOTE: If ``delimiter`` suggests no cuts, then we ignore ``max_chunk```
             max_chunk_text = script[max_chunk[0].start_text:max_chunk[-1].end_text]
-            logger.info('Unable to cut:\n%s%s%s', TERMINAL_COLOR_RED, max_chunk_text,
-                        TERMINAL_COLOR_RESET)
+            logger.info('Unable to cut:\n%s%s%s', COLORS['light_red'], max_chunk_text,
+                        COLORS['reset_all'])
 
         max_chunk = None  # NOTE: ``max_chunk``` has been processed.
 

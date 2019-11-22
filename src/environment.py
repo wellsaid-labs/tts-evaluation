@@ -45,8 +45,72 @@ DISK_CACHE_PATH.mkdir(exist_ok=True)
 
 SAMPLES_PATH = DISK_PATH / 'samples'
 
+# NOTE: You can experiment with these code in your console like so:
+# `echo -e '\033[43m \033[30m hi \033[0m'`
 
-def set_basic_logging_config():
+COLORS = {  # Inspired by: https://godoc.org/github.com/whitedevops/colors
+    'reset_all': '\033[0m',
+    'bold': '\033[1m',
+    'dim': '\033[2m',
+    'underlined': '\033[4m',
+    'blink': '\033[5m',
+    'reverse': '\033[7m',
+    'hidden': '\033[8m',
+    'reset_bold': '\033[21m',
+    'reset_dim': '\033[22m',
+    'reset_underlined': '\033[24m',
+    'reset_blink': '\033[25m',
+    'reset_reverse': '\033[27m',
+    'reset_hidden': '\033[28m',
+    'default': '\033[39m',
+    'black': '\033[30m',
+    'red': '\033[31m',
+    'green': '\033[32m',
+    'yellow': '\033[33m',
+    'blue': '\033[34m',
+    'magenta': '\033[35m',
+    'cyan': '\033[36m',
+    'light_gray': '\033[37m',
+    'dark_gray': '\033[90m',
+    'light_red': '\033[91m',
+    'light_green': '\033[92m',
+    'light_yellow': '\033[93m',
+    'light_blue': '\033[94m',
+    'light_magenta': '\033[95m',
+    'light_cyan': '\033[96m',
+    'white': '\033[97m',
+    'background_default': '\033[49m',
+    'background_black': '\033[40m',
+    'background_red': '\033[41m',
+    'background_green': '\033[42m',
+    'background_yellow': '\033[43m',
+    'background_blue': '\033[44m',
+    'background_magenta': '\033[45m',
+    'background_cyan': '\033[46m',
+    'background_lightgray': '\033[47m',
+    'background_darkgray': '\033[100m',
+    'background_lightred': '\033[101m',
+    'background_lightgreen': '\033[102m',
+    'background_lightyellow': '\033[103m',
+    'background_lightblue': '\033[104m',
+    'background_lightmagenta': '\033[105m',
+    'background_lightcyan': '\033[106m',
+    'background_white': '\033[107m',
+}
+
+
+def set_basic_logging_config(
+        id=os.getpid(),
+        color_rotation=[
+            COLORS['red'], COLORS['green'], COLORS['yellow'], COLORS['blue'], COLORS['magenta'],
+            COLORS['cyan'], COLORS['background_lightred'] + COLORS['black'],
+            COLORS['background_lightgreen'] + COLORS['black'],
+            COLORS['background_lightyellow'] + COLORS['black'],
+            COLORS['background_lightblue'] + COLORS['black'],
+            COLORS['background_lightmagenta'] + COLORS['black'],
+            COLORS['background_lightcyan'] + COLORS['black']
+        ],
+):
     """
     Inspired by: `logging.basicConfig`
 
@@ -59,13 +123,20 @@ def set_basic_logging_config():
     The default behaviour is to create a `StreamHandler` which writes to
     `sys.stdout` and `sys.stderr`, set a formatter, and
     add the handler to the root logger.
+
+    Args:
+        id (int, optional): An id to be printed along with all logs.
+        color_rotation (list, optional): A rotation of colors used to highlight the id.
     """
     root = logging.getLogger()
     if len(root.handlers) == 0:
         root.setLevel(logging.INFO)
 
-        formatter = logging.Formatter(
-            '\033[90m[%(asctime)s][%(process)d][%(name)s][%(levelname)s]\033[0m %(message)s')
+        process_id = COLORS['reset_all'] + color_rotation[
+            id % len(color_rotation)] + '[%s]' % id + COLORS['reset_all']
+        formatter = logging.Formatter(COLORS['dark_gray'] + '[%(asctime)s]' + process_id +
+                                      COLORS['dark_gray'] + '[%(name)s][%(levelname)s]' +
+                                      COLORS['reset_all'] + ' %(message)s')
 
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(logging.DEBUG)
