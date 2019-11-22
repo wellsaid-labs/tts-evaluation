@@ -45,7 +45,7 @@ DISK_CACHE_PATH.mkdir(exist_ok=True)
 
 SAMPLES_PATH = DISK_PATH / 'samples'
 
-# NOTE: You can experiment with these code in your console like so:
+# NOTE: You can experiment with these codes in your console like so:
 # `echo -e '\033[43m \033[30m hi \033[0m'`
 
 COLORS = {  # Inspired by: https://godoc.org/github.com/whitedevops/colors
