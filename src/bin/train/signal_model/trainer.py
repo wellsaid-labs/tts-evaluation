@@ -342,8 +342,9 @@ class Trainer():
                 self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
 
-            # NOTE: This metric should increase over time as long as the `data_loader` is
-            # loading faster than steps are computed.
+            # NOTE: This metric should be a positive integer indicating that the `data_loader`
+            # is loading faster than the data is getting ingested; otherwise, the `data_loader`
+            # is bottlenecking training by loading too slowly.
             if hasattr(data_loader.iterator, 'data_queue'):
                 self.metrics['data_queue_size'].update(data_loader.iterator.data_queue.qsize())
 

@@ -286,8 +286,9 @@ class Trainer():
                 spectrogram_lengths = predictions[-1] if infer else batch.spectrogram.lengths
                 self._add_attention_metrics(predictions[3], spectrogram_lengths)
 
-            # NOTE: This metric should increase over time as long as the `data_loader` is
-            # loading faster than steps are computed.
+            # NOTE: This metric should be a positive integer indicating that the `data_loader`
+            # is loading faster than the data is getting ingested; otherwise, the `data_loader`
+            # is bottlenecking training by loading too slowly.
             if hasattr(data_loader.iterator, 'data_queue'):
                 self.metrics['data_queue_size'].update(data_loader.iterator.data_queue.qsize())
 
