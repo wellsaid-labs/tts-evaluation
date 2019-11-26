@@ -28,13 +28,15 @@ def test_read_audio():
     assert integer.dtype == np.dtype('int16')
 
     float_ = read_audio(path, to_float=True)
-    assert float_.dtype == np.dtype('float32')
+    assert float_.dtype == np.dtype('float16')
 
-    np.testing.assert_almost_equal(integer / 2**(16 - 1), float_)
+    expected = (integer / 2**(16 - 1)).astype(np.dtype('float16'))
+
+    np.testing.assert_almost_equal(expected, float_)
 
     librosa_, _ = librosa.core.load(path, sr=None, mono=False)
 
-    np.testing.assert_almost_equal(librosa_, float_)
+    np.testing.assert_almost_equal(librosa_.astype(np.dtype('float16')), float_)
 
 
 def test_write_audio():
