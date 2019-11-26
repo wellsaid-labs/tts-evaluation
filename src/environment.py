@@ -103,10 +103,10 @@ class ColoredFormatter(logging.Formatter):
     """ Logging formatter with color.
 
     Args:
-        id (int): An id to be printed along with all logs.
+        id_ (int): An id to be printed along with all logs.
     """
 
-    ID_COLOR_ROTATION = [  # Used to color the logging `id`.
+    ID_COLOR_ROTATION = [
         COLORS['red'], COLORS['green'], COLORS['yellow'], COLORS['blue'], COLORS['magenta'],
         COLORS['cyan'], COLORS['background_lightred'] + COLORS['black'],
         COLORS['background_lightgreen'] + COLORS['black'],
@@ -116,13 +116,13 @@ class ColoredFormatter(logging.Formatter):
         COLORS['background_lightcyan'] + COLORS['black']
     ]
 
-    def __init__(self, id):
+    def __init__(self, id_):
         super().__init__()
 
-        process_id = COLORS['reset_all'] + ColoredFormatter.ID_COLOR_ROTATION[id % len(
-            ColoredFormatter.ID_COLOR_ROTATION)] + '%s' % id + COLORS['reset_all']
+        id_ = COLORS['reset_all'] + ColoredFormatter.ID_COLOR_ROTATION[id_ % len(
+            ColoredFormatter.ID_COLOR_ROTATION)] + '%s' % id_ + COLORS['reset_all']
         logging.Formatter.__init__(
-            self, COLORS['dark_gray'] + '[%(asctime)s][' + process_id + COLORS['dark_gray'] +
+            self, COLORS['dark_gray'] + '[%(asctime)s][' + id_ + COLORS['dark_gray'] +
             '][%(name)s][%(levelname)s' + COLORS['dark_gray'] + ']' + COLORS['reset_all'] +
             ' %(message)s')
 
@@ -149,7 +149,7 @@ class MaxLevelFilter(logging.Filter):
         return record.levelno < self.maxLevel
 
 
-def set_basic_logging_config(id=os.getpid()):
+def set_basic_logging_config(id_=os.getpid()):
     """
     Inspired by: `logging.basicConfig`
 
@@ -164,14 +164,14 @@ def set_basic_logging_config(id=os.getpid()):
     add the handler to the root logger.
 
     Args:
-        id (int, optional): An id to be printed along with all logs.
+        id_ (int, optional): An id to be printed along with all logs.
         color_rotation (list, optional): A rotation of colors used to highlight the id.
     """
     root = logging.getLogger()
     if len(root.handlers) == 0:
         root.setLevel(0)
 
-        formatter = ColoredFormatter(id)
+        formatter = ColoredFormatter(id_)
 
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(0)
