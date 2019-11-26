@@ -70,40 +70,34 @@ def _duplicate_stream(from_, to):
 
 
 class RecordStandardStreams():
-    """ Record output of `sys.stdout` and `sys.stderr` to log files over an entire Python process.
+    """ Record output of `sys.stdout` and `sys.stderr` to a log file over an entire Python process.
 
     Args:
         directory (Path or str): Directory to save log files in.
-        stdout_log_filename (str, optional)
-        stderr_log_filename (str, optional)
+        log_filename (str, optional)
     """
 
     # NOTE: `getpid` is often used by routines that generate unique temporary filenames, learn more:
     # http://manpages.ubuntu.com/manpages/cosmic/man2/getpid.2.html
-    def __init__(self,
-                 directory=TEMP_PATH,
-                 stdout_log_filename='stdout_%s.log' % bash_time_label(),
-                 stderr_log_filename='stderr_%s.log' % bash_time_label()):
+    def __init__(self, directory=TEMP_PATH, log_filename='%s.log' % bash_time_label()):
         directory = Path(directory)
 
-        self._check_invariants(directory, stdout_log_filename, stderr_log_filename)
+        self._check_invariants(directory, log_filename)
 
-        self.stdout_log_path = directory / stdout_log_filename
-        self.stderr_log_path = directory / stderr_log_filename
+        self.log_path = directory / log_filename
         self.stop_stream_stdout = None
         self.stop_stream_stderr = None
         self.first_start = True
 
-    def _check_invariants(self, directory, stdout_log_filename, stderr_log_filename):
+    def _check_invariants(self, directory, log_filename):
         assert directory.exists()
         # NOTE: Stream must be duplicated to a new file.
-        assert not (directory / stdout_log_filename).exists()
-        assert not (directory / stderr_log_filename).exists()
+        assert not (directory / log_filename).exists()
 
     def start(self):
         """ Start recording `sys.stdout` and `sys.stderr` at the start of the process. """
-        self.stop_stream_stdout = _duplicate_stream(sys.stdout, self.stdout_log_path)
-        self.stop_stream_stderr = _duplicate_stream(sys.stderr, self.stderr_log_path)
+        self.stop_stream_stdout = _duplicate_stream(sys.stdout, self.log_path)
+        self.stop_stream_stderr = _duplicate_stream(sys.stderr, self.log_path)
 
         # NOTE: This is unable to capture the command line arguments without explicitly logging
         # them.
@@ -127,25 +121,22 @@ class RecordStandardStreams():
 
         return self
 
-    def update(self,
-               directory,
-               stdout_log_filename='stdout.%s.log' % os.getpid(),
-               stderr_log_filename='stderr.%d.log' % os.getpid()):
+    def update(self, directory, log_filename=None):
         """ Update the recorder to use new log paths without losing any logs.
 
         Args:
             directory (Path or str): Directory to save log files in.
-            stdout_log_filename (str, optional)
-            stderr_log_filename (str, optional)
+            log_filename (str, optional)
         """
-        self._check_invariants(directory, stdout_log_filename, stderr_log_filename)
+        if log_filename is None:
+            log_filename = self.log_path.name
+
+        self._check_invariants(directory, log_filename)
 
         self._stop()
 
-        self.stdout_log_path.replace(directory / stdout_log_filename)
-        self.stderr_log_path.replace(directory / stderr_log_filename)
-        self.stdout_log_path = directory / stdout_log_filename
-        self.stderr_log_path = directory / stderr_log_filename
+        self.log_path.replace(directory / log_filename)
+        self.log_path = directory / log_filename
 
         self.start()
         return self

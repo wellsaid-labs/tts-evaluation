@@ -37,40 +37,28 @@ def test_save_standard_streams(capsys):
         handler.setLevel(logging.INFO)
         logger.addHandler(handler)
 
-        stdout_name = 'stdout.log'
-        stderr_name = 'stderr.log'
+        log_filename = 'test.log'
 
-        recorder = RecordStandardStreams(TEST_DATA_PATH_LOCAL, stdout_name, stderr_name).start()
+        recorder = RecordStandardStreams(TEST_DATA_PATH_LOCAL, log_filename).start()
 
         # Check if stdout gets captured
         print('Test')
         sys.stderr.write('Error\n')
         logger.info('Test Logger')
 
-        assert (TEST_DATA_PATH_LOCAL / stdout_name).is_file()
-        assert (TEST_DATA_PATH_LOCAL / stderr_name).is_file()
+        assert (TEST_DATA_PATH_LOCAL / log_filename).is_file()
 
-        new_stdout_name = 'stdout_new.log'
-        new_stderr_name = 'stderr_new.log'
-        recorder.update(TEST_DATA_PATH_LOCAL, new_stdout_name, new_stderr_name)
+        new_log_filename = 'new.log'
+        recorder.update(TEST_DATA_PATH_LOCAL, new_log_filename)
 
-        assert not (TEST_DATA_PATH_LOCAL / stdout_name).is_file()
-        assert not (TEST_DATA_PATH_LOCAL / stderr_name).is_file()
-        assert (TEST_DATA_PATH_LOCAL / new_stdout_name).is_file()
-        assert (TEST_DATA_PATH_LOCAL / new_stderr_name).is_file()
+        assert not (TEST_DATA_PATH_LOCAL / log_filename).is_file()
+        assert (TEST_DATA_PATH_LOCAL / new_log_filename).is_file()
 
         print('Test Update')
 
         # Just `Test` print in stdout
-        lines = set((TEST_DATA_PATH_LOCAL / new_stdout_name).read_text().strip().split('\n'))
+        lines = set((TEST_DATA_PATH_LOCAL / new_log_filename).read_text().strip().split('\n'))
         assert 'Test' in lines
         assert 'Test Logger' in lines
         assert 'Test Update' in lines
-
-        # Nothing in stderr
-        lines = set((TEST_DATA_PATH_LOCAL / new_stderr_name).read_text().strip().split('\n'))
         assert 'Error' in lines
-
-        assert 'Test Logger' not in lines
-        assert 'Test Update' not in lines
-        assert 'Test' not in lines
