@@ -169,12 +169,12 @@ def set_basic_logging_config(id_=os.getpid()):
     """
     root = logging.getLogger()
     if len(root.handlers) == 0:
-        root.setLevel(0)
+        root.setLevel(logging.INFO)
 
         formatter = ColoredFormatter(id_)
 
         handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(0)
+        handler.setLevel(logging.INFO)
         handler.setFormatter(formatter)
         handler.addFilter(MaxLevelFilter(logging.WARNING))
         root.addHandler(handler)
