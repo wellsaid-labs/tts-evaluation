@@ -99,18 +99,57 @@ COLORS = {  # Inspired by: https://godoc.org/github.com/whitedevops/colors
 }
 
 
-def set_basic_logging_config(
-        id=os.getpid(),
-        color_rotation=[
-            COLORS['red'], COLORS['green'], COLORS['yellow'], COLORS['blue'], COLORS['magenta'],
-            COLORS['cyan'], COLORS['background_lightred'] + COLORS['black'],
-            COLORS['background_lightgreen'] + COLORS['black'],
-            COLORS['background_lightyellow'] + COLORS['black'],
-            COLORS['background_lightblue'] + COLORS['black'],
-            COLORS['background_lightmagenta'] + COLORS['black'],
-            COLORS['background_lightcyan'] + COLORS['black']
-        ],
-):
+class ColoredFormatter(logging.Formatter):
+    """ Logging formatter with color.
+
+    Args:
+        id (int): An id to be printed along with all logs.
+    """
+
+    ID_COLOR_ROTATION = [  # Used to color the logging `id`.
+        COLORS['red'], COLORS['green'], COLORS['yellow'], COLORS['blue'], COLORS['magenta'],
+        COLORS['cyan'], COLORS['background_lightred'] + COLORS['black'],
+        COLORS['background_lightgreen'] + COLORS['black'],
+        COLORS['background_lightyellow'] + COLORS['black'],
+        COLORS['background_lightblue'] + COLORS['black'],
+        COLORS['background_lightmagenta'] + COLORS['black'],
+        COLORS['background_lightcyan'] + COLORS['black']
+    ]
+
+    def __init__(self, id):
+        super().__init__()
+
+        process_id = COLORS['reset_all'] + ColoredFormatter.ID_COLOR_ROTATION[id % len(
+            ColoredFormatter.ID_COLOR_ROTATION)] + '%s' % id + COLORS['reset_all']
+        logging.Formatter.__init__(
+            self, COLORS['dark_gray'] + '[%(asctime)s][' + process_id + COLORS['dark_gray'] +
+            '][%(name)s][%(levelname)s' + COLORS['dark_gray'] + ']' + COLORS['reset_all'] +
+            ' %(message)s')
+
+    def format(self, record):
+        if record.levelno > 30:  # Error
+            record.levelname = COLORS['red'] + record.levelname + COLORS['reset_all']
+        elif record.levelno > 20:  # Warning
+            record.levelname = COLORS['yellow'] + record.levelname + COLORS['reset_all']
+
+        return logging.Formatter.format(self, record)
+
+
+class MaxLevelFilter(logging.Filter):
+    """ Filter out logs above and equal to a certain level.
+
+    This is the opposite of `setLevel` which sets a mininum threshold.
+    """
+
+    def __init__(self, maxLevel):
+        super().__init__()
+        self.maxLevel = maxLevel
+
+    def filter(self, record):
+        return record.levelno < self.maxLevel
+
+
+def set_basic_logging_config(id=os.getpid()):
     """
     Inspired by: `logging.basicConfig`
 
@@ -130,17 +169,14 @@ def set_basic_logging_config(
     """
     root = logging.getLogger()
     if len(root.handlers) == 0:
-        root.setLevel(logging.INFO)
+        root.setLevel(0)
 
-        process_id = COLORS['reset_all'] + color_rotation[
-            id % len(color_rotation)] + '[%s]' % id + COLORS['reset_all']
-        formatter = logging.Formatter(COLORS['dark_gray'] + '[%(asctime)s]' + process_id +
-                                      COLORS['dark_gray'] + '[%(name)s][%(levelname)s]' +
-                                      COLORS['reset_all'] + ' %(message)s')
+        formatter = ColoredFormatter(id)
 
         handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(logging.DEBUG)
+        handler.setLevel(0)
         handler.setFormatter(formatter)
+        handler.addFilter(MaxLevelFilter(logging.WARNING))
         root.addHandler(handler)
 
         handler = logging.StreamHandler(sys.stderr)
