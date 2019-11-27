@@ -1,3 +1,4 @@
+from collections import defaultdict
 from collections import namedtuple
 from functools import partial
 
@@ -9,7 +10,7 @@ import random
 from hparams import configurable
 from torch.multiprocessing import cpu_count
 from torch.utils.data.sampler import BatchSampler
-from torchnlp.samplers import BalancedSampler
+from torchnlp._third_party.weighted_random_sampler import WeightedRandomSampler
 from torchnlp.samplers import DeterministicSampler
 from torchnlp.samplers import DistributedBatchSampler
 from torchnlp.utils import collate_tensors
@@ -30,6 +31,28 @@ logger = logging.getLogger(__name__)
 SignalModelTrainingRow = namedtuple('SignalModelTrainingRow', [
     'input_signal', 'input_spectrogram', 'target_signal_coarse', 'target_signal_fine', 'signal_mask'
 ])
+
+
+class _BalancedSampler(WeightedRandomSampler):
+    """ Weighted sampler with respect for an element's class.
+
+    Args:
+        data (iterable)
+        get_class (callable, optional): Get the class of an item relative to the entire dataset.
+        get_weight (callable, optional): Define a weight for each item other than one.
+        kwargs: Additional key word arguments passed onto `WeightedRandomSampler`.
+    """
+
+    def __init__(self, data_source, get_class, get_weight, **kwargs):
+        classified = [get_class(item) for item in data_source]
+        weighted = [float(get_weight(item)) for item in data_source]
+        totals = defaultdict(float)
+        count = defaultdict(int)
+        for class_, weight in zip(classified, weighted):
+            totals[class_] += weight**2
+            count[class_] += 1
+        weights = [(w / totals[c]) if w > 0 else 0.0 for c, w in zip(classified, weighted)]
+        super().__init__(weights=weights, **kwargs)
 
 
 def _get_slice(spectrogram, signal, split_signal_partial, spectrogram_slice_size,
@@ -152,6 +175,7 @@ class DataLoader(src.utils.DataLoader):
         device (torch.device): Device onto which to load data.
         use_predicted (bool): If ``True`` use predicted spectrogram as opposed to the real one.
         num_workers (int): Number of workers used to load data.
+        balance_speaker (bool): If `True` this equalizes the audio data sampled for each speaker.
         **kwargs (any): Other arguments to the data loader ``_load_fn``
 
     Returns:
@@ -187,7 +211,7 @@ class DataLoader(src.utils.DataLoader):
             src.distributed.assert_synced(
                 int(hash_, 16), 'This dataset does not match the master dataset.')
 
-        sampler = BalancedSampler(
+        sampler = _BalancedSampler(
             data,
             get_class=lambda e: e.speaker,
             get_weight=lambda e: (e.predicted_spectrogram

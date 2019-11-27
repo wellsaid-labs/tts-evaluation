@@ -1,15 +1,86 @@
+from collections import Counter
 from unittest import mock
 
 from torchnlp.random import fork_rng
+from torchnlp.random import fork_rng_wrap
 
-import torch
 import numpy as np
+import pytest
+import torch
 
 from src.audio import combine_signal
 from src.audio import split_signal
 from src.bin.train.signal_model.data_loader import _get_slice
+from src.bin.train.signal_model.data_loader import _BalancedSampler
 from src.bin.train.signal_model.data_loader import DataLoader
 from tests._utils import get_tts_mocks
+
+
+@fork_rng_wrap(seed=123)
+def test__balanced_sampler():
+    """ Ensure that balanced sampler is picking an equal amount of audio per speaker and
+    each example is weighted by the audio length.
+    """
+    # NOTE: For example, 'a' could be a speaker and 1 is the audio length.
+    data = [('a', 1), ('a', 200), ('b', 2), ('c', 1), ('d', 1), ('d', 2), ('d', 0)]
+    num_samples = 10000000
+    sampler = _BalancedSampler(
+        data,
+        replacement=True,
+        num_samples=num_samples,
+        get_class=lambda e: e[0],
+        get_weight=lambda e: e[1])
+    samples = [data[i] for i in sampler]
+    counts = Counter(samples)
+
+    # NOTE: In our example, this is the total audio in the data sample.
+    total = sum(counts[r] * r[1] for r in data)
+
+    # NOTE: In our example, this ensures that each speaker has had an equal amount of audio
+    # drawn.
+    assert (counts[data[0]] * data[0][1] + counts[data[1]] * data[1][1]) / total == pytest.approx(
+        .25, rel=1e-1)
+    assert (counts[data[2]] * data[2][1]) / total == pytest.approx(.25, rel=1e-1)
+    assert (counts[data[3]] * data[3][1]) / total == pytest.approx(.25, rel=1e-1)
+    assert (counts[data[4]] * data[4][1] + counts[data[5]] * data[5][1]) / total == pytest.approx(
+        .25, rel=1e-1)
+
+    # NOTE: In our example, within a particular speaker, each example is weighted by it's length;
+    # therefore, `('a', 200)` will be sampled 200x more times than `('a', 1)`.
+    assert counts[data[0]] / data[0][1] == pytest.approx(counts[data[1]] / data[1][1], rel=1e-1)
+    assert counts[data[4]] / data[4][1] == pytest.approx(counts[data[5]] / data[5][1], rel=1e-1)
+
+
+@fork_rng_wrap(seed=123)
+def test__balanced_sampler__dataset():
+    """ Ensure that `_BalancedSampler` works in a real dataset. """
+    data = get_tts_mocks(add_spectrogram=True)['dataset']
+    num_samples = 10000000
+    sampler = _BalancedSampler(
+        data,
+        replacement=True,
+        num_samples=num_samples,
+        get_class=lambda e: e.speaker,
+        get_weight=lambda e: e.spectrogram.shape[0])
+    samples = [data[i] for i in sampler]
+    counts = Counter(samples)
+
+    total_frames = sum(counts[e] * e.spectrogram.shape for e in data)
+    speakers = set([e.speaker for e in data])
+
+    for speaker in speakers:
+        # Ensure that there are an equal number of frames per speaker sampled.
+        samples_per_speaker = [e for e in samples if e.speaker == speaker]
+        num_frames = sum([e.spectrogram.shape for e in samples_per_speaker])
+        assert num_frames / total_frames == pytest.approx(1 / len(speakers), rel=1e-1)
+
+        # Ensure that every example has an equal probability.
+        counts_per_speaker = Counter(samples_per_speaker)
+        unique_examples_per_speaker = len(set(samples_per_speaker))
+        assert all([
+            c / len(samples_per_speaker) == 1 / unique_examples_per_speaker
+            for c in counts_per_speaker.values()
+        ])
 
 
 @mock.patch('src.bin.train.signal_model.data_loader.random.randint')
