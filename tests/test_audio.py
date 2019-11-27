@@ -24,6 +24,7 @@ TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'test_audio'
 
 
 def test_get_num_seconds():
+    """ Ensure `get_num_seconds` works regardless of the audio metadata like sample rate. """
     assert pytest.approx(7.5848, 0.0001) == get_num_seconds(TEST_DATA_PATH_LOCAL / 'lj_speech.wav')
     assert pytest.approx(7.5848, 0.0001) == get_num_seconds(TEST_DATA_PATH_LOCAL /
                                                             'rate(lj_speech,24000).wav')
