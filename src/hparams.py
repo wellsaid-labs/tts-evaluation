@@ -2,12 +2,10 @@ from collections import Counter
 
 import itertools
 import logging
-import os
 import pprint
 
 from hparams import add_config
 from hparams import configurable
-from hparams import HParam
 from hparams import HParams
 from third_party.adam import Adam
 from torch import nn
@@ -15,12 +13,17 @@ from torch.nn import BCEWithLogitsLoss
 from torch.nn import CrossEntropyLoss
 from torch.nn import MSELoss
 from torchnlp.random import fork_rng
-from torchnlp.utils import split_list
 
 import random
 import torchnlp
 
+from src import datasets
+from src.audio import get_num_seconds
+from src.datasets import filter_
 from src.datasets import HANUMAN_WELCH
+from src.datasets import normalize_audio_column
+from src.utils import seconds_to_string
+from src.utils import slice_by_cumulative_sum
 
 logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
@@ -109,7 +112,6 @@ def _set_audio_processing():
 
     add_config({
         'src.bin.evaluate._get_sample_rate': HParams(sample_rate=sample_rate),
-        'src.hparams._filter_too_little_audio': HParams(sample_rate=sample_rate, bits=bits),
         'src.audio': {
             'read_audio':
                 HParams(
@@ -329,13 +331,9 @@ def _filter_audio_path_not_found(example):
     return True
 
 
-@configurable
 def _filter_too_little_audio(example,
                              min_seconds_per_character=0.04,
-                             min_seconds_per_character_for_hanuman=0.0375,
-                             bits_per_byte=8,
-                             sample_rate=HParam(),
-                             bits=HParam()):
+                             min_seconds_per_character_for_hanuman=0.0375):
     """ Filter out examples with too little audio per character.
 
     NOTE: With `min_seconds_per_character=0.04`, then 300 characters must have at least 12 seconds
@@ -350,28 +348,21 @@ def _filter_too_little_audio(example,
         example (TextSpeechRow)
         min_seconds_per_character (float)
         min_seconds_per_character_for_hanuman (float)
-        bits_per_byte (int)
-        sample_rate (int)
-        bits (int)
 
     Returns:
         (bool)
     """
-    if example.speaker == HANUMAN_WELCH:
-        min_seconds_per_character = min_seconds_per_character_for_hanuman
-
-    bytes_per_second = sample_rate * (bits / bits_per_byte)
-    min_bytes_per_character = bytes_per_second * min_seconds_per_character
-
-    if len(example.text) * min_bytes_per_character > os.path.getsize(example.audio_path):
-        num_seconds = os.path.getsize(example.audio_path) / bytes_per_second
+    min_seconds_per_character = (
+        min_seconds_per_character_for_hanuman
+        if example.speaker == HANUMAN_WELCH else min_seconds_per_character)
+    num_seconds = get_num_seconds(example.audio_path)
+    if len(example.text) * min_seconds_per_character > num_seconds:
         logger.warning(('[%s] Likely some text was not spoken; ' +
                         'therefore, this example with %f seconds per character ' +
                         '[%f second(s) / %d character(s)] at `%s` was removed.'),
                        example.speaker, num_seconds / len(example.text), num_seconds,
                        len(example.text), example.audio_path)
         return False
-
     return True
 
 
@@ -422,6 +413,47 @@ def _filter_no_numbers(example):
     return True
 
 
+def _preprocess_dataset(dataset):
+    """ Preprocess a dataset.
+
+    Args:
+        dataset (iterable of TextSpeechRow)
+
+    Return:
+        dataset (iterable of TextSpeechRow)
+    """
+    dataset = filter_(_filter_audio_path_not_found, dataset)
+    dataset = filter_(_filter_no_text, dataset)
+    dataset = filter_(_filter_elliot_miller, dataset)
+    dataset = filter_(_filter_no_numbers, dataset)
+    dataset = filter_(_filter_books, dataset)
+    dataset = normalize_audio_column(dataset)
+    dataset = filter_(_filter_too_little_audio, dataset)
+    random.shuffle(dataset)
+    return dataset
+
+
+def _split_dataset(dataset, num_second_dev_set=60 * 60):
+    """ Split a dataset into a development and train set.
+
+    Args:
+        dataset (iterable of TextSpeechRow)
+        num_second_dev_set (int, optional): Number of seconds of audio data in the development set.
+
+    Return:
+        train (iterable of TextSpeechRow): The rest of the data.
+        dev (iterable of TextSpeechRow): Dataset with `num_second_dev_set` of data.
+    """
+    dev = slice_by_cumulative_sum(
+        dataset,
+        max_total_value=num_second_dev_set,
+        get_value=lambda e: get_num_seconds(e.audio_path))
+    train = dataset[len(dev):]
+    assert len(dev) > 0, 'The dev dataset has no examples.'
+    assert len(train) > 0, 'The train dataset has no examples.'
+    return train, dev
+
+
 def get_dataset():
     """ Define the dataset to train the text-to-speech models on.
 
@@ -429,37 +461,48 @@ def get_dataset():
         train (iterable)
         dev (iterable)
     """
-    # NOTE: Prevent circular dependency
-    from src import datasets
-
     # NOTE: This `seed` should never change; otherwise, the training and dev datasets may be
     # different from experiment to experiment.
     with fork_rng(seed=123):
         logger.info('Loading dataset...')
-        dataset = list(
-            itertools.chain.from_iterable([
+        train_dev_splits = [
+            _split_dataset(_preprocess_dataset(d)) for d in [
                 datasets.hilary_speech_dataset(),
-                datasets.lj_speech_dataset(),
-                datasets.m_ailabs_en_us_speech_dataset(),
                 datasets.beth_speech_dataset(),
-                datasets.beth_custom_speech_dataset(),
                 datasets.heather_speech_dataset(),
                 datasets.susan_speech_dataset(),
                 datasets.sam_speech_dataset(),
                 datasets.frank_speech_dataset(),
-                datasets.adrienne_speech_dataset()
-            ]))
-        dataset = datasets.filter_(_filter_audio_path_not_found, dataset)
-        dataset = datasets.filter_(_filter_no_text, dataset)
-        dataset = datasets.filter_(_filter_elliot_miller, dataset)
-        dataset = datasets.filter_(_filter_no_numbers, dataset)
-        dataset = datasets.filter_(_filter_books, dataset)
-        dataset = datasets.normalize_audio_column(dataset)
-        dataset = datasets.filter_(_filter_too_little_audio, dataset)
-        random.shuffle(dataset)
-        logger.info('Loaded %d dataset examples with a speaker distribution of:\n%s', len(dataset),
-                    pprint.pformat(Counter([e.speaker for e in dataset])))
-        return split_list(dataset, splits=(0.8, 0.2))
+                datasets.adrienne_speech_dataset(),
+                datasets.alicia_speech_dataset(),
+                datasets.george_speech_dataset(),
+                datasets.megan_speech_dataset(),
+                datasets.elise_speech_dataset(),
+                datasets.hanuman_speech_dataset(),
+                datasets.jack_speech_dataset(),
+                datasets.mark_speech_dataset(),
+                datasets.steven_speech_dataset()
+            ]
+        ]
+        dev = list(itertools.chain.from_iterable([s[1] for s in train_dev_splits]))
+        logger.info('Loaded %d dev dataset examples (%s) with a speaker distribution of:\n%s',
+                    len(dev), seconds_to_string(sum([get_num_seconds(e.audio_path) for e in dev])),
+                    pprint.pformat(Counter([e.speaker for e in dev])))
+
+        train = [s[0] for s in train_dev_splits]
+        train += [
+            _preprocess_dataset(d) for d in [
+                datasets.lj_speech_dataset(),
+                datasets.m_ailabs_en_us_speech_dataset(),
+                datasets.beth_custom_speech_dataset(),
+            ]
+        ]
+        train = list(itertools.chain.from_iterable(train))
+        logger.info('Loaded %d train dataset examples (%s) with a speaker distribution of:\n%s',
+                    len(train),
+                    seconds_to_string(sum([get_num_seconds(e.audio_path) for e in train])),
+                    pprint.pformat(Counter([e.speaker for e in train])))
+        return train, dev
 
 
 def signal_model_lr_multiplier_schedule(step, decay=80000, warmup=20000, min_lr_multiplier=.05):

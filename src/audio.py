@@ -2,6 +2,7 @@ from pathlib import Path
 
 import logging
 import math
+import os
 import struct
 import subprocess
 
@@ -24,6 +25,23 @@ from src.utils import get_chunks
 from src.utils import Pool
 
 logger = logging.getLogger(__name__)
+
+
+def get_num_seconds(audio_path):
+    """ Get the number of seconds for the audio file.
+
+    Args:
+        audio_path (str)
+    """
+    metadata = get_audio_metadata(Path(audio_path))
+    print(metadata)
+    BITS_PER_BYTE = 8
+    # `metadata['bits']` - The number of bits per sample
+    # `metadata['sample_rate']` - The number of samples per second
+    # `metadata['channels']` - The number of channels of audio
+    bytes_per_second = (metadata['sample_rate'] *
+                        (metadata['bits'] / BITS_PER_BYTE)) / metadata['channels']
+    return os.path.getsize(audio_path) / bytes_per_second
 
 
 @configurable
