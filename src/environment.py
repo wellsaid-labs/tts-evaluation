@@ -146,7 +146,7 @@ class MaxLevelFilter(logging.Filter):
         self.maxLevel = maxLevel
 
     def filter(self, record):
-        return record.levelno < self.maxLevel
+        return record.levelno <= self.maxLevel
 
 
 def set_basic_logging_config(id_=os.getpid()):
@@ -176,7 +176,7 @@ def set_basic_logging_config(id_=os.getpid()):
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(logging.INFO)
         handler.setFormatter(formatter)
-        handler.addFilter(MaxLevelFilter(logging.WARNING))
+        handler.addFilter(MaxLevelFilter(logging.INFO))
         root.addHandler(handler)
 
         handler = logging.StreamHandler(sys.stderr)
