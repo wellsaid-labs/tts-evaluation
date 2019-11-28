@@ -136,7 +136,7 @@ class ColoredFormatter(logging.Formatter):
 
 
 class MaxLevelFilter(logging.Filter):
-    """ Filter out logs above and equal to a certain level.
+    """ Filter out logs above a certain level.
 
     This is the opposite of `setLevel` which sets a mininum threshold.
     """
