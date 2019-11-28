@@ -50,10 +50,10 @@ def _get_slice(spectrogram, signal, split_signal_partial, spectrogram_slice_size
             side.
 
     Returns: (SignalModelTrainingRow) (
-        input_signal (torch.Tensor [signal_length, 2])
-        input_spectrogram (torch.Tensor [num_frames, channels])
-        target_signal_coarse (torch.Tensor [signal_length])
-        target_signal_fine (torch.Tensor [signal_length])
+        input_signal (torch.FloatTensor [signal_length, 2])
+        input_spectrogram (torch.FloatTensor [num_frames, channels])
+        target_signal_coarse (torch.LongTensor [signal_length])
+        target_signal_fine (torch.LongTensor [signal_length])
         signal_mask (torch.BoolTensor [signal_length])
     )
     """
