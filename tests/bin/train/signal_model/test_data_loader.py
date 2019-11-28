@@ -55,7 +55,7 @@ def test__balanced_sampler():
 def test__balanced_sampler__dataset():
     """ Ensure that `_BalancedSampler` works in a real dataset. """
     data = get_tts_mocks(add_spectrogram=True)['dataset']
-    num_samples = 10000000
+    num_samples = 10000
     sampler = _BalancedSampler(
         data,
         replacement=True,
@@ -63,23 +63,25 @@ def test__balanced_sampler__dataset():
         get_class=lambda e: e.speaker,
         get_weight=lambda e: e.spectrogram.shape[0])
     samples = [data[i] for i in sampler]
-    counts = Counter(samples)
+    get_key = lambda e: (e.speaker, e.text, e.spectrogram.shape[0])
+    counts = Counter([get_key(e) for e in samples])
 
-    total_frames = sum(counts[e] * e.spectrogram.shape for e in data)
+    total_frames = sum(counts[get_key(e)] * e.spectrogram.shape[0] for e in data)
     speakers = set([e.speaker for e in data])
 
     for speaker in speakers:
         # Ensure that there are an equal number of frames per speaker sampled.
         samples_per_speaker = [e for e in samples if e.speaker == speaker]
-        num_frames = sum([e.spectrogram.shape for e in samples_per_speaker])
+        num_frames = sum([e.spectrogram.shape[0] for e in samples_per_speaker])
         assert num_frames / total_frames == pytest.approx(1 / len(speakers), rel=1e-1)
 
-        # Ensure that every example has an equal probability.
-        counts_per_speaker = Counter(samples_per_speaker)
-        unique_examples_per_speaker = len(set(samples_per_speaker))
+        # Ensure that every example is sampled proportionally to it's size
+        counts_per_speaker = Counter([get_key(e) for e in samples_per_speaker])
+        total_frames_per_speaker = sum(
+            [e.spectrogram.shape[0] for e in data if e.speaker == speaker])
         assert all([
-            c / len(samples_per_speaker) == 1 / unique_examples_per_speaker
-            for c in counts_per_speaker.values()
+            c / len(samples_per_speaker) == pytest.approx(
+                e[2] / total_frames_per_speaker, rel=1e-1) for e, c in counts_per_speaker.items()
         ])
 
 
