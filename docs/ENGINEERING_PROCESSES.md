@@ -30,6 +30,11 @@ yapf src/ tests/ --recursive --in-place;
 You'll want to integrate `yapf` and `flake8` into your code editor, both of these tools are
 popular and there are many extensions written for them.
 
+## Legal
+
+To ensure we only use code we are allowed to use, please update [this markdown](./LICENSES.md)
+with any new repository dependencies.
+
 ## Reporting Bugs
 
 First, do [a quick search](https://github.com/wellsaid-labs/Text-to-Speech/issues) to see whether
