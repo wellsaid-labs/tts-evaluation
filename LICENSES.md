@@ -1,6 +1,6 @@
 # Licenses
 
-This markdown summarizes the licenses of this repositories dependencies.
+This markdown summarizes the licenses of this repository's dependencies.
 
 Before incorporating a dependency into this repository, please check if the license is
 compatible with commercial use. Learn more [here](https://opensource.guide/legal/).
