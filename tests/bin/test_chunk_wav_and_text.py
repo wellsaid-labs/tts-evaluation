@@ -333,7 +333,7 @@ def test_main__no_csv(capsys):
     assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_4.wav').exists()
     assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_0_chunk_5.wav').exists()
     assert (CHUNKS_PATH / 'metadata.csv').exists()
-    assert len(list(CHUNKS_PATH.glob('*.log'))) == 2
+    assert len(list(CHUNKS_PATH.glob('*.log'))) == 1
 
     assert ((CHUNKS_PATH / 'metadata.csv').read_text().strip() == """Content,WAV Filename
 The examination and testimony,"rate(lj_speech,24000)/script_0_chunk_0.wav"
@@ -373,7 +373,7 @@ def test_main(capsys):
     assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_1.wav').exists()
     assert (CHUNKS_PATH / 'wavs' / 'rate(lj_speech,24000)' / 'script_1_chunk_2.wav').exists()
     assert (CHUNKS_PATH / 'metadata.csv').exists()
-    assert len(list(CHUNKS_PATH.glob('*.log'))) == 2
+    assert len(list(CHUNKS_PATH.glob('*.log'))) == 1
 
     assert ((CHUNKS_PATH / 'metadata.csv').read_text().strip() == """Content,WAV Filename
 The examination and,"rate(lj_speech,24000)/script_0_chunk_0.wav"
