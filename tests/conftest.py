@@ -11,6 +11,8 @@ import torch  # noqa: F401
 
 import pytest
 
+from hparams import set_lazy_resolution
+
 from src.environment import set_basic_logging_config
 from src.environment import TEST_DATA_PATH
 from src.hparams import set_hparams
@@ -32,6 +34,7 @@ def run_before_test():
     # `torch.utils.cpp_extension.JIT_EXTENSION_VERSIONER`.
     cpp_extension.JIT_EXTENSION_VERSIONER = cpp_extension.ExtensionVersioner()
 
+    set_lazy_resolution(True)  # This helps performance for individual tests
     set_hparams()
 
     yield

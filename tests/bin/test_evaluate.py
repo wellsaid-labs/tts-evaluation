@@ -45,7 +45,7 @@ def test_main(capsys):
             spectrogram_model_device=mocks['device'])
         assert directory.exists()
         assert (directory / metadata_filename).exists()
-        assert len(list(directory.glob('*.log'))) == 2
+        assert len(list(directory.glob('*.log'))) == 1
         assert len(list(directory.glob('*.wav'))) == num_samples * 3
 
 
@@ -66,7 +66,7 @@ def test_main__no_checkpoints(capsys):
             metadata_filename=metadata_filename)
         assert directory.exists()
         assert (directory / metadata_filename).exists()
-        assert len(list(directory.glob('*.log'))) == 2
+        assert len(list(directory.glob('*.log'))) == 1
         assert len(list(directory.glob('*.wav'))) == num_samples
 
 
@@ -87,5 +87,5 @@ def test_main__text_only_dataset(capsys):
             metadata_filename=metadata_filename)
         assert directory.exists()
         assert (directory / metadata_filename).exists()
-        assert len(list(directory.glob('*.log'))) == 2
+        assert len(list(directory.glob('*.log'))) == 1
         assert len(list(directory.glob('*.wav'))) == num_samples * 2
