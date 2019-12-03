@@ -336,18 +336,18 @@ class Trainer():
         # pre_spectrogram_loss [num_frames, batch_size, frame_channels]
         pre_spectrogram_loss = self.criterion_spectrogram(predicted_pre_spectrogram, spectrogram)
         # [num_frames, batch_size, frame_channels] → [1]
-        pre_spectrogram_loss = pre_spectrogram_loss.masked_select(expanded_mask).mean()
+        pre_spectrogram_loss = (pre_spectrogram_loss * expanded_mask).sum() / expanded_mask.sum()
 
         # post_spectrogram_loss [num_frames, batch_size, frame_channels]
         post_spectrogram_loss = self.criterion_spectrogram(predicted_post_spectrogram, spectrogram)
         # [num_frames, batch_size, frame_channels] → [1]
-        post_spectrogram_loss = post_spectrogram_loss.masked_select(expanded_mask).mean()
+        post_spectrogram_loss = (post_spectrogram_loss * expanded_mask).sum() / expanded_mask.sum()
 
         mask = batch.spectrogram_mask.tensor  # [num_frames, batch_size]
         # stop_token_loss [num_frames, batch_size]
         stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, batch.stop_token.tensor)
         # [num_frames, batch_size] → [1]
-        stop_token_loss = stop_token_loss.masked_select(mask).mean()
+        stop_token_loss = (stop_token_loss * mask).sum() / mask.sum()
 
         if do_backwards:
             self.optimizer.zero_grad()

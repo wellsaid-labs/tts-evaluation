@@ -56,8 +56,8 @@ def _load_fn(row, input_encoder):
         speaker=speaker,
         stop_token=stop_token,
         spectrogram=spectrogram,
-        spectrogram_mask=torch.BoolTensor(spectrogram.shape[0]).fill_(1),
-        spectrogram_expanded_mask=torch.BoolTensor(*spectrogram.shape).fill_(1))
+        spectrogram_mask=torch.FloatTensor(spectrogram.shape[0]).fill_(1),
+        spectrogram_expanded_mask=torch.FloatTensor(*spectrogram.shape).fill_(1))
 
 
 class DataLoader(DataLoader):
@@ -82,10 +82,10 @@ class DataLoader(DataLoader):
                               torch.LongTensor [1, batch_size]))
             speaker (BatchedSequences(torch.LongTensor [1, batch_size],
                            torch.LongTensor [1, batch_size]))
-            spectrogram_expanded_mask (BatchedSequences(torch.BoolTensor [num_frames, batch_size,
+            spectrogram_expanded_mask (BatchedSequences(torch.FloatTensor [num_frames, batch_size,
                                                                 frame_channels],
                                              torch.LongTensor [1, batch_size]))
-            spectrogram_mask (BatchedSequences(torch.BoolTensor [num_frames, batch_size],
+            spectrogram_mask (BatchedSequences(torch.FloatTensor [num_frames, batch_size],
                                     torch.LongTensor [1, batch_size]))
         )
     """

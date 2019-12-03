@@ -54,7 +54,7 @@ def _get_slice(spectrogram, signal, split_signal_partial, spectrogram_slice_size
         input_spectrogram (torch.Tensor [num_frames, channels])
         target_signal_coarse (torch.Tensor [signal_length])
         target_signal_fine (torch.Tensor [signal_length])
-        signal_mask (torch.BoolTensor [signal_length])
+        signal_mask (torch.FloatTensor [signal_length])
     )
     """
     samples, num_frames = signal.shape[0], spectrogram.shape[0]
@@ -67,7 +67,7 @@ def _get_slice(spectrogram, signal, split_signal_partial, spectrogram_slice_size
     go_sample = signal.new_zeros(1)  # First sample passed in to start RNN
     source_signal = torch.cat((go_sample, signal), dim=0)
     target_signal = signal
-    signal_mask = torch.ones(signal.shape[0], dtype=torch.bool, device=signal.device)
+    signal_mask = torch.ones(signal.shape[0], dtype=torch.float, device=signal.device)
 
     # Pad spectrogram and signal
     spectrogram_zeros = spectrogram_slice_size - 1 + spectrogram_slice_pad
@@ -165,7 +165,7 @@ class DataLoader(src.utils.DataLoader):
                 [batch_size, spectrogram_slice_size * samples_per_frame])
             target_signal_fine (torch.LongTensor
                 [batch_size, spectrogram_slice_size * samples_per_frame])
-            signal_mask (torch.BoolTensor
+            signal_mask (torch.FloatTensor
                 [batch_size, spectrogram_slice_size * samples_per_frame])
         )
     """
