@@ -508,9 +508,11 @@ class PodPool {
    *   ensures that pods are scaled down quickly if pods are no longer in-use.
    * @param {number} scalingWindow This is the time we look into the past to compute the number of
    *   resources needed for the next time period.
+   * @param {number} minPods The minimum worker pods to keep online always.
    */
   constructor(
     podImage,
+    minPods = parseInt(process.env.MINIMUM_WORKER_PODS, 10),
     scaleLoop = parseInt(process.env.AUTOSCALE_LOOP, 10),
     scalingWindow = parseInt(process.env.AUTOSCALE_WINDOW, 10),
   ) {
@@ -520,6 +522,7 @@ class PodPool {
     this.reservationLog = new EventLog(scalingWindow);
     this.waiting = [];
     this.podImage = podImage;
+    this.minPods = minPods;
 
     // Learn more about `arguments` in a `class`:
     // https://stackoverflow.com/questions/48519484/uncaught-syntaxerror-unexpected-eval-or-arguments-in-strict-mode-window-gtag?rq=1
@@ -685,10 +688,11 @@ class PodPool {
     await this.clean();
     this.logger.log(`PodPool.scale: There are ${this.pods.length} pod(s).`);
     this.logger.log(`PodPool.scale: There are ${this.numPodsBuilding} pod(s) building.`);
+    this.logger.log(`PodPool.scale: There are ${this.waiting.length} requests waiting.`);
     const shortTermNumPodsDesired = PodPool.getNumShortTermPods(
-      this.podRequests.length, this.pods.length);
+      Math.max(this.podRequests.length, this.waiting.length), this.pods.length);
     this.logger.log(`PodPool.scale: This desires short term ${shortTermNumPodsDesired} pod(s).`);
-    const longTermNumPodsDesired = PodPool.getNumLongTermPods(this.reservationLog);
+    const longTermNumPodsDesired = PodPool.getNumLongTermPods(this.reservationLog, this.minPods);
     this.logger.log(`PodPool.scale: This desires long term ${longTermNumPodsDesired} pod(s).`);
     const numPodsDesired = Math.max(shortTermNumPodsDesired, longTermNumPodsDesired);
     this.logger.log(`PodPool.scale: This desires ${numPodsDesired} pod(s).`);
@@ -833,7 +837,7 @@ class PodPool {
    */
   static getNumLongTermPods(
     reservationLog,
-    minPods = parseInt(process.env.MINIMUM_WORKER_PODS, 10),
+    minPods,
     extraPods = parseInt(process.env.EXTRA_WORKER_PODS),
     percentile = parseFloat(process.env.COVERAGE),
   ) {
@@ -961,32 +965,21 @@ function proxyRequestToPod(prefix, pod, request, response, flushHeaders = false)
 }
 
 /**
- * Error with a status code attached.
- *
- * Inspired by: https://gist.github.com/justmoon/15511f92e5216fa2624b
- *
- * @param {number} status The HTTP status code to send.
- * @param {string} message The error message.
- */
-function HTTPError(status, message) {
-  Error.captureStackTrace(this, this.constructor);
-  this.name = this.constructor.name;
-  this.status = status;
-  this.message = message;
-};
-
-/**
  * Get a Pod Pool to serve requests based on the `Accept-Version` header.
  *
  * @param {express.Request} request
+ * @param {express.Response} response
  */
-function getPodPool(request) {
+function getPodPool(request, response) {
   const version = request.get('Accept-Version');
   logger.log(`getPodPool: Getting Pod Pool version ${version}.`);
   if (version && request.app.locals.podPools[version.toLowerCase()]) {
     return request.app.locals.podPools[version.toLowerCase()];
   } else if (version) {
-    throw HTTPError(404, 'Version not found.');
+    logger.log(`getPodPool: Version not found: ${version}.`);
+    response.status(404);
+    response.send('Version not found.');
+    throw new Error('Version not found.');
   }
   return request.app.locals.podPools.latest;
 }
@@ -1008,7 +1001,13 @@ function reservePodController(request, response, next) {
   // It may take longer than that to reserve a Pod under heavy load. TTFB refers to the HTTP data
   // and not the HTTP header.
 
-  const podPool = getPodPool(request);
+  let podPool;
+  try {
+    podPool = getPodPool(request, response);
+  } catch (error) {
+    next(error);
+    return;
+  }
   const cancelReservation = podPool.reservePod(async (pod) => {
     prefix = `reservePodController [${pod.name}]: `;
     try {
@@ -1055,7 +1054,13 @@ const noReservationController = (() => {
    */
   return async (request, response, next) => {
     logger.log(`noReservationController: Got request.`);
-    const podPool = getPodPool(request);
+    let podPool;
+    try {
+      podPool = getPodPool(request, response);
+    } catch (error) {
+      next(error);
+      return;
+    }
     await podPool.waitTillReady();
     let pod = getPod(podPool);
     while (!(await pod.isReady())) {
@@ -1109,14 +1114,14 @@ app.all('/api/*', noReservationController);
 // NOTE: Express requires all four parameters despite the `next` parameter being unused:
 // https://stackoverflow.com/questions/51826711/express-js-error-handler-doesnt-work-if-i-remove-next-parameter
 app.use((error, request, response, next) => {
-  logger.error(error);
+  logger.error('Catch-all error handler:', error);
 
   if (response.headersSent) {
     next(error);
     return;
   }
 
-  response.status(error instanceof HTTPError ? error.status : 500);
+  response.status(500);
   response.render('error', {
     error,
   });
@@ -1124,7 +1129,7 @@ app.use((error, request, response, next) => {
 
 if (require.main === module) {
   app.locals.podPools = {
-    v1: new PodPool(process.env.V1_WORKER_POD_IMAGE),
+    v1: new PodPool(process.env.V1_WORKER_POD_IMAGE, 0),
     v2: new PodPool(process.env.V2_WORKER_POD_IMAGE),
     v3: new PodPool(process.env.V3_WORKER_POD_IMAGE),
   };
