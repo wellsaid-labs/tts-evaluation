@@ -1,3 +1,4 @@
+from collections import defaultdict
 from collections import namedtuple
 from functools import partial
 
@@ -6,8 +7,8 @@ import json
 import logging
 
 from torch.multiprocessing import cpu_count
+from torchnlp._third_party.weighted_random_sampler import WeightedRandomSampler
 from torchnlp.encoders.text import stack_and_pad_tensors
-from torchnlp.samplers import BalancedSampler
 from torchnlp.samplers import BucketBatchSampler
 from torchnlp.samplers import DeterministicSampler
 from torchnlp.samplers import DistributedBatchSampler
@@ -29,6 +30,26 @@ logger = logging.getLogger(__name__)
 SpectrogramModelTrainingRow = namedtuple('SpectrogramModelTrainingRow', [
     'text', 'speaker', 'spectrogram', 'stop_token', 'spectrogram_mask', 'spectrogram_expanded_mask'
 ])
+
+
+class _BalancedSampler(WeightedRandomSampler):
+    """ Weighted sampler with respect for an element's class.
+
+    Args:
+        data (iterable)
+        get_class (callable): Get the class of an item relative to the entire dataset.
+        get_weight (callable): Define a weight for each item other than one.
+        kwargs: Additional key word arguments passed onto `WeightedRandomSampler`.
+    """
+
+    def __init__(self, data_source, get_class, get_weight, **kwargs):
+        classified = [get_class(item) for item in data_source]
+        weighted = [float(get_weight(item)) for item in data_source]
+        totals = defaultdict(float)
+        for class_, weight in zip(classified, weighted):
+            totals[class_] += weight
+        weights = [1 / totals[c] if w > 0 else 0.0 for c, w in zip(classified, weighted)]
+        super().__init__(weights=weights, **kwargs)
 
 
 def _load_fn(row, input_encoder):
@@ -107,8 +128,9 @@ class DataLoader(DataLoader):
 
         # NOTE: The training and development dataset distribution of speakers is arbitrary (i.e.
         # some audio books have more data and some have less). In order to ensure that no speaker
-        # is prioritized over another, we balance the number of examples for each speaker.
-        sampler = BalancedSampler(data, get_class=lambda e: e.speaker)
+        # is prioritized over another, we balance the number of spectrogram frames.
+        sampler = _BalancedSampler(
+            data, get_class=lambda e: e.speaker, get_weight=lambda e: e.spectrogram.shape[0])
         batch_sampler = BucketBatchSampler(
             sampler, batch_size, drop_last=True, sort_key=lambda i: data[i].spectrogram.shape[0])
         batch_sampler = OomBatchSampler(

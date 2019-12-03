@@ -81,6 +81,11 @@ def test__do_loss_and_maybe_backwards():
                    predicted_alignments)
     (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss, num_spectrogram_values,
      num_frames) = trainer._do_loss_and_maybe_backwards(batch, predictions, False)
+    print(pre_spectrogram_loss)
+    print(post_spectrogram_loss)
+    print(stop_token_loss)
+    print(num_spectrogram_values)
+    print(num_frames)
 
     assert pre_spectrogram_loss.item() == pytest.approx(0.0)
     assert post_spectrogram_loss.item() == pytest.approx(1.0 / 4)

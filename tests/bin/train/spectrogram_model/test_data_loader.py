@@ -1,3 +1,10 @@
+from collections import Counter
+
+import pytest
+
+from torchnlp.random import fork_rng_wrap
+
+from src.bin.train.spectrogram_model.data_loader import _BalancedSampler
 from src.bin.train.spectrogram_model.data_loader import DataLoader
 from tests._utils import get_tts_mocks
 
@@ -20,3 +27,37 @@ def test_data_loader():
     assert sum([r.spectrogram_expanded_mask[0].sum().item() for r in samples]) == (
         sum([r.spectrogram.tensor.nonzero().shape[0] for r in samples]))
     assert sum([r.stop_token.tensor.sum().item() for r in samples]) == len(samples) * batch_size
+
+
+@fork_rng_wrap(seed=123)
+def test__balanced_sampler():
+    """ Ensure that balanced sampler is picking an equal amount of audio per speaker and
+    each example afterwards has an equal chance of getting selected.
+    """
+    # NOTE: For example, 'a' could be a speaker and 1 is the audio length.
+    data = [('a', 1), ('a', 200), ('b', 2), ('c', 1)]
+    num_samples = 1000000
+    sampler = _BalancedSampler(
+        data,
+        replacement=True,
+        num_samples=num_samples,
+        get_class=lambda e: e[0],
+        get_weight=lambda e: e[1])
+    samples = [data[i] for i in sampler]
+    counts = Counter(samples)
+
+    # NOTE: In our example, this is the total audio in the data sample.
+    total = sum(counts[r] * r[1] for r in data)
+
+    # NOTE: In our example, this ensures that each speaker has had an equal amount of audio
+    # drawn.
+    assert (counts[data[0]] * data[0][1] + counts[data[1]] * data[1][1]) / total == pytest.approx(
+        .33, rel=1e-1)
+    assert (counts[data[2]] * data[2][1]) / total == pytest.approx(.33, rel=1e-1)
+    assert (counts[data[3]] * data[3][1]) / total == pytest.approx(.33, rel=1e-1)
+
+    # NOTE: In our example, within a particular speaker, each example is treated equally
+    # though regardless of length. This means that each unit of audio has an equal chance of
+    # getting sampled; therefore, this is assuming that any downstream service will also
+    # treat each unit of audio equally.
+    assert counts[data[0]] == pytest.approx(counts[data[1]], rel=1e-1)
