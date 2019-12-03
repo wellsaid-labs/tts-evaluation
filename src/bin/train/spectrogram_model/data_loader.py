@@ -128,7 +128,7 @@ class DataLoader(DataLoader):
 
         # NOTE: The training and development dataset distribution of speakers is arbitrary (i.e.
         # some audio books have more data and some have less). In order to ensure that no speaker
-        # is prioritized over another, we balance the number of spectrogram frames.
+        # is prioritized over another, we balance the number of spectrogram frames per speaker
         sampler = _BalancedSampler(
             data, get_class=lambda e: e.speaker, get_weight=lambda e: e.spectrogram.shape[0])
         batch_sampler = BucketBatchSampler(
