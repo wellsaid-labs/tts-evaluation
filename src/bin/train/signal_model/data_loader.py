@@ -47,10 +47,8 @@ class _BalancedSampler(WeightedRandomSampler):
         classified = [get_class(item) for item in data_source]
         weighted = [float(get_weight(item)) for item in data_source]
         totals = defaultdict(float)
-        count = defaultdict(int)
         for class_, weight in zip(classified, weighted):
             totals[class_] += weight**2
-            count[class_] += 1
         weights = [(w / totals[c]) if w > 0 else 0.0 for c, w in zip(classified, weighted)]
         super().__init__(weights=weights, **kwargs)
 
