@@ -42,8 +42,8 @@ def _get_slice(spectrogram, signal, split_signal_partial, spectrogram_slice_size
           the source signal is one timestep behind.
 
     Args:
-        spectrogram (torch.Tensor [num_frames, channels])
-        signal (torch.Tensor [signal_length])
+        spectrogram (torch.FloatTensor [num_frames, channels])
+        signal (torch.FloatTensor [signal_length])
         split_signal_partial (callable)
         spectrogram_slice_size (int): In spectrogram frames, size of slice.
         spectrogram_slice_pad (int): Pad the spectrogram slice with ``frame_pad`` frames on each
@@ -121,7 +121,7 @@ def _get_slice(spectrogram, signal, split_signal_partial, spectrogram_slice_size
 
 
 def _load_fn(row, use_predicted, split_signal_partial, combine_signal_partial, **kwargs):
-    """ Load function for loading a single row.
+    """ Load function for loading a single `SignalModelTrainingRow` row from `TextSpeechRow`.
 
     Args:
         row (TextSpeechRow)
