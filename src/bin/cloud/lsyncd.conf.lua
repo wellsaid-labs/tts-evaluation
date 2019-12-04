@@ -7,7 +7,7 @@ sync {
   default.rsyncssh, -- Uses the rsyncssh defaults, learn more here:
                     -- https://github.com/axkibe/lsyncd/blob/master/default-rsyncssh.lua
   source="{source}", -- Your source directory to watch
-  host="{user}@{ip}", -- The remote host (use hostname or IP)
+  host="{user}@{public_dns}", -- The remote host (use hostname or IP)
   targetdir="{destination}", -- The target dir on remote host, keep in mind this is absolute path
   delay = .2,
   delete = true,
@@ -16,7 +16,7 @@ sync {
                                        -- install via: `brew install rsync`
       -- NOTE: We disable SSH host key checking because GCP frequently changes it's remote
       -- host identification.
-      rsh = "ssh -i {home}/.ssh/google_compute_engine -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no",
+      rsh = "ssh -i {identity_file} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no",
       verbose = true,
       compress = true,
       -- Learn more:
