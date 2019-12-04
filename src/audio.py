@@ -32,13 +32,16 @@ def get_num_seconds(audio_path):
 
     Args:
         audio_path (str)
+
+    Returns:
+        (float): Thhe number of seconds in audio.
     """
     metadata = get_audio_metadata(Path(audio_path))
     BITS_PER_BYTE = 8
     # Learn more: http://www.topherlee.com/software/pcm-tut-wavformat.html
     WAV_HEADER_LENGTH_IN_BYTES = 44
     bytes_per_second = (metadata['sample_rate'] *
-                        (metadata['bits'] / BITS_PER_BYTE)) / metadata['channels']
+                        (metadata['bits'] / BITS_PER_BYTE)) * metadata['channels']
     return (os.path.getsize(audio_path) - WAV_HEADER_LENGTH_IN_BYTES) / bytes_per_second
 
 

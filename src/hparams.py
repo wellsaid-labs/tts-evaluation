@@ -451,6 +451,7 @@ def _split_dataset(dataset, num_second_dev_set=60 * 60):
     train = dataset[len(dev):]
     assert len(dev) > 0, 'The dev dataset has no examples.'
     assert len(train) > 0, 'The train dataset has no examples.'
+    assert len(dev) + len(train) == len(dataset), 'The `_split_dataset` lost an example.'
     return train, dev
 
 
@@ -484,11 +485,6 @@ def get_dataset():
                 datasets.steven_speech_dataset()
             ]
         ]
-        dev = list(itertools.chain.from_iterable([s[1] for s in train_dev_splits]))
-        logger.info('Loaded %d dev dataset examples (%s) with a speaker distribution of:\n%s',
-                    len(dev), seconds_to_string(sum([get_num_seconds(e.audio_path) for e in dev])),
-                    pprint.pformat(Counter([e.speaker for e in dev])))
-
         train = [s[0] for s in train_dev_splits]
         train += [
             _preprocess_dataset(d) for d in [
@@ -498,10 +494,18 @@ def get_dataset():
             ]
         ]
         train = list(itertools.chain.from_iterable(train))
+        random.shuffle(train)
         logger.info('Loaded %d train dataset examples (%s) with a speaker distribution of:\n%s',
                     len(train),
                     seconds_to_string(sum([get_num_seconds(e.audio_path) for e in train])),
                     pprint.pformat(Counter([e.speaker for e in train])))
+
+        dev = list(itertools.chain.from_iterable([s[1] for s in train_dev_splits]))
+        random.shuffle(dev)
+        logger.info('Loaded %d dev dataset examples (%s) with a speaker distribution of:\n%s',
+                    len(dev), seconds_to_string(sum([get_num_seconds(e.audio_path) for e in dev])),
+                    pprint.pformat(Counter([e.speaker for e in dev])))
+
         return train, dev
 
 
