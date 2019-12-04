@@ -136,6 +136,11 @@ def _set_audio_processing():
                     window=window,
                     fft_length=fft_length,
                     min_magnitude=min_magnitude,
+                    # SOURCE (Tacotron 2):
+                    # We transform the STFT magnitude to the mel scale using an 80 channel mel
+                    # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
+                    # compression.
+                    num_mel_bins=frame_channels,
                 ),
             'griffin_lim':
                 HParams(
@@ -154,14 +159,7 @@ def _set_audio_processing():
                     iterations=30,
                 ),
             '_mel_filters':
-                HParams(
-                    fft_length=fft_length,
-                    # SOURCE (Tacotron 2):
-                    # We transform the STFT magnitude to the mel scale using an 80 channel mel
-                    # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
-                    # compression.
-                    num_mel_bins=frame_channels,
-                    **hertz_bounds),
+                HParams(fft_length=fft_length, **hertz_bounds),
             'split_signal':
                 HParams(bits=bits),
             'combine_signal':
