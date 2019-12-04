@@ -34,7 +34,7 @@ def get_num_seconds(audio_path):
         audio_path (str)
 
     Returns:
-        (float): Thhe number of seconds in audio.
+        (float): The number of seconds in audio.
     """
     metadata = get_audio_metadata(Path(audio_path))
     BITS_PER_BYTE = 8
