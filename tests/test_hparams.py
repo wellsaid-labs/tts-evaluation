@@ -39,7 +39,7 @@ def test__split_dataset():
     train, dev = _split_dataset(get_tts_mocks()['dataset'], num_second_dev_set=num_second_dev_set)
     assert sum([get_num_seconds(d.audio_path) for d in dev]) < num_second_dev_set
     assert sum([get_num_seconds(d.audio_path)
-                for d in dev]) + get_num_seconds(train[0].audio_path) >= num_second_dev_set
+                for d in dev]) + get_num_seconds(train[0].audio_path) > num_second_dev_set
 
 
 def test__preprocess_dataset():
