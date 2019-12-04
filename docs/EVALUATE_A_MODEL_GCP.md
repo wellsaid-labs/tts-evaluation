@@ -20,7 +20,7 @@ in our Google Cloud Storage bucket.
    [here](https://cloud.google.com/compute/docs/gcloud-compute/)
 
 3. Use a VM that was setup to train a spectrogram or signal model with
-   [these instructions](TRAIN_MODEL.md).
+   [these instructions](TRAIN_MODEL_GCP.md).
 
 4. Ask a team member to grant you access to our GCP project called "voice-research".
 

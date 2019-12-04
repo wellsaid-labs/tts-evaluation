@@ -5,7 +5,7 @@ on a GCP virtual machine.
 
 ## Train a Spectrogram Model
 
-1. Follow this [document](TRAIN_MODEL.md) to train a spectrogram model.
+1. Follow this [document](TRAIN_MODEL_GCP.md) to train a spectrogram model.
 
    You'll want to train the spectrogram model until `dev_epoch/post_spectrogram_loss` stops
    rapidly decreasing. This typically will happen within 72 hours of training, or \~150,000 steps.
@@ -46,7 +46,7 @@ on a GCP virtual machine.
    Pick the checkpoint with a step count that correlates with the point of convergence
    `dev_epoch/post_spectrogram_loss` value.
 
-2. From [this point](TRAIN_MODEL.md#on-the-vm-instance-1), continue following the instructions
+2. From [this point](TRAIN_MODEL_GCP.md#on-the-vm-instance-1), continue following the instructions
    to train your signal model. That said, during the step where you run
    `python src/bin/train/signal_model/__main__.py` pass in the checkpoint you found earlier
    to the command line parameter `--spectrogram_model_checkpoint`.

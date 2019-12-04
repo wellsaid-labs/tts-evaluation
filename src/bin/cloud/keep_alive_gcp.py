@@ -6,7 +6,7 @@ Example:
     You can learn more about the below `screen` command here:
     https://superuser.com/questions/454907/how-to-execute-a-command-in-screen-and-detach
 
-    $ python -m src.bin.gcp.keep_alive \
+    $ python -m src.bin.cloud.keep_alive_gcp \
         --project_name your_comet_ml_project_name \
         --instance your_gcp_instance_name \
         --instance your_other_gcp_instance_name \
