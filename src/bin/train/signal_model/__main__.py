@@ -28,16 +28,12 @@ warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
 
 import torch
 
-# NOTE: Some modules log on import; therefore, we first setup logging.
-from src.environment import set_basic_logging_config
-
-set_basic_logging_config()
-
 from src.bin.train.signal_model.trainer import Trainer
 from src.datasets import add_predicted_spectrogram_column
 from src.datasets import add_spectrogram_column
 from src.environment import assert_enough_disk_space
 from src.environment import check_module_versions
+from src.environment import set_basic_logging_config
 from src.environment import SIGNAL_MODEL_EXPERIMENTS_PATH
 from src.hparams import set_hparams
 from src.utils import bash_time_label
@@ -121,6 +117,8 @@ def _train(device_index,
         distributed_backend (str)
         distributed_init_method (str)
     """
+    set_basic_logging_config(device_index)
+    logger = logging.getLogger(__name__)
     recorder = RecordStandardStreams().start()
     # Initiate distributed environment, learn more:
     # https://pytorch.org/tutorials/intermediate/dist_tuto.htm
@@ -194,6 +192,8 @@ def main(run_name=None,
         more_hparams (dict, optional): Hparams to override default hparams.
         device (torch.device): Primary device used for training.
     """
+    set_basic_logging_config()
+    logger = logging.getLogger(__name__)
     recorder = RecordStandardStreams().start()
     _set_hparams(more_hparams, checkpoint, comet_ml_project_name)
 
