@@ -32,14 +32,14 @@ def test__filter_too_little_audio():
 def test__split_dataset():
     """
     Ensure that `_split_dataset` splits the dev dataset to be less than `num_second_dev_set`
-    in length. So much so, that if the next training example was added, it'd be over
+    in length. So much so, that if the next training example was added to the dev dataset, it'd be over
     `num_second_dev_set`.
     """
     num_second_dev_set = 5
     train, dev = _split_dataset(get_tts_mocks()['dataset'], num_second_dev_set=num_second_dev_set)
     assert sum([get_num_seconds(d.audio_path) for d in dev]) < num_second_dev_set
     assert sum([get_num_seconds(d.audio_path)
-                for d in dev]) + get_num_seconds(train[0].audio_path) >= num_second_dev_set
+                for d in dev]) + get_num_seconds(train[0].audio_path) > num_second_dev_set
 
 
 def test__preprocess_dataset():
