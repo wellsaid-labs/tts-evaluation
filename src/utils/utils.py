@@ -359,8 +359,8 @@ def bash_time_label():
     Returns:
         (str)
     """
-    return str(time.strftime('DATE=%Y-%m-%d_TIME=%H-%M-%S',
-                             time.localtime())).lower() + '_PID=%s' % str(os.getpid())
+    return str(time.strftime('DATE-%Y-%m-%d_TIME-%H-%M-%S',
+                             time.localtime())).lower() + '_PID-%s' % str(os.getpid())
 
 
 def torch_cpp_extension_load(name, sources, build_directory=None, **kwargs):

@@ -25,10 +25,11 @@ def test_bash_time_label():
     https://unix.stackexchange.com/questions/270977/what-characters-are-required-to-be-escaped-in-command-line-arguments
     """
     label = bash_time_label()
-    # NOTE (michael p): `:` wasn't mentioned explicitly; however, in my shell it required an escape.
+    # NOTE (michael p): `:` and `=` wasn't mentioned explicitly; however, in my shell it required
+    # an escape.
     for character in ([
             '`', '~', '!', '#', '$', '&', '*', '(', ')', ' ', '\t', '\n', '{', '}', '[', ']', '|',
-            ';', '\'', '"', '<', '>', '?'
+            ';', '\'', '"', '<', '>', '?', '='
     ] + [':']):
         assert character not in label
 

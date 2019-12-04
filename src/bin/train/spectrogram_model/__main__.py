@@ -172,6 +172,7 @@ def _train(device_index,
             older_checkpoint = recent_checkpoint
             recent_checkpoint = trainer.save_checkpoint()
             if older_checkpoint is not None:
+                logger.info('Unlinking temporary checkpoint: %s', str(older_checkpoint))
                 older_checkpoint.unlink()
 
         if trainer.epoch % evaluate_aligned_every_n_epochs == 0 or is_trial_run:
