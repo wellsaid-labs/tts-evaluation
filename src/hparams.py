@@ -22,6 +22,7 @@ from src.audio import get_num_seconds
 from src.datasets import filter_
 from src.datasets import HANUMAN_WELCH
 from src.datasets import normalize_audio_column
+from src.utils import log_runtime
 from src.utils import seconds_to_string
 from src.utils import slice_by_cumulative_sum
 
@@ -526,6 +527,7 @@ def signal_model_lr_multiplier_schedule(step, decay=80000, warmup=20000, min_lr_
         return max(1 - ((step - warmup) / decay), min_lr_multiplier)
 
 
+@log_runtime
 def set_hparams():
     """ Using the ``configurable`` module set the hyperparameters for the source code.
     """
