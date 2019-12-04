@@ -153,7 +153,6 @@ def _train(device_index,
         trainer_kwargs['checkpoint'] = checkpoint
     trainer = (Trainer.from_checkpoint if checkpoint else Trainer)(**trainer_kwargs)
 
-    recent_checkpoint = None
     index = 0
     while True:
         is_trial_run = index == 0  # The first iteration is run as a ``trial_run``.
@@ -163,15 +162,6 @@ def _train(device_index,
 
         if index % save_checkpoint_every_n_evaluations == 0 and src.distributed.is_master():
             trainer.save_checkpoint()
-        elif src.distributed.is_master():
-            # TODO: Consider using the GCP shutdown scripts via
-            # https://haggainuchi.com/shutdown.html
-            # NOTE: GCP shutdowns do not trigger `atexit`; therefore, it's useful to always save
-            # a temporary checkpoint just in case.
-            older_checkpoint = recent_checkpoint
-            recent_checkpoint = trainer.save_checkpoint()
-            if older_checkpoint is not None:
-                older_checkpoint.unlink()  # Unlink only after `save_checkpoint` succeeds.
 
         trainer.run_epoch(train=False, trial_run=is_trial_run)
 

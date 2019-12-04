@@ -39,6 +39,7 @@ from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
 from src.utils import log_runtime
 from src.utils import maybe_load_tensor
+from src.utils import RepeatTimer
 from src.visualize import CometML
 from src.visualize import plot_spectrogram
 
@@ -76,6 +77,8 @@ class Trainer():
         num_rollbacks (int, optional): Number of rollbacks.
         anomaly_detector (AnomalyDetector, optional): Anomaly detector used to skip batches that
             result in an anomalous loss.
+        save_temp_checkpoint_every_n_seconds (int, optional): The number of seconds between
+            temporary checkpoint saves.
     """
 
     TRAIN_LABEL = 'train'
@@ -99,7 +102,8 @@ class Trainer():
                  step=0,
                  epoch=0,
                  num_rollbacks=0,
-                 anomaly_detector=None):
+                 anomaly_detector=None,
+                 save_temp_checkpoint_every_n_seconds=60):
         self.device = device
         self.step = step
         self.epoch = epoch
@@ -111,8 +115,6 @@ class Trainer():
         self.spectrogram_model_checkpoint_path = spectrogram_model_checkpoint_path
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
-        self.dev_loader = None
-        self.train_loader = None
 
         self.model = model if isinstance(model, torch.nn.Module) else model()
         self.model.to(device)
@@ -166,7 +168,21 @@ class Trainer():
         logger.info('Model:\n%s' % self.model)
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
+        self.timer = RepeatTimer(save_temp_checkpoint_every_n_seconds,
+                                 self._save_checkpoint_repeat_timer)
         atexit.register(self.save_checkpoint)
+
+    def _save_checkpoint_repeat_timer(self):
+        """ Save a checkpoint and delete the last checkpoint saved.
+        """
+        # NOTE: GCP shutdowns do not trigger `atexit`; therefore, it's useful to always save
+        # a temporary checkpoint just in case.
+        checkpoint_path = self.save_checkpoint()
+        if hasattr(self, '_last_repeat_timer_checkpoint'):
+            logger.info('Unlinking temporary checkpoint: %s',
+                        str(self._last_repeat_timer_checkpoint))
+            self._last_repeat_timer_checkpoint.unlink()
+        self._last_repeat_timer_checkpoint = checkpoint_path
 
     def _comet_ml_log_input_dev_data_hash(self, max_examples=10):
         """ Log to comet a basic hash of the predicted spectrogram data in `self.dev_dataset`.
@@ -215,7 +231,7 @@ class Trainer():
         """ Save a checkpoint.
 
         Returns:
-            (str): Path the checkpoint was saved to.
+            (pathlib.Path): Path the checkpoint was saved to.
         """
         if src.distributed.is_master():
             return Checkpoint(
@@ -326,12 +342,13 @@ class Trainer():
             self.comet_ml.log_current_epoch(self.epoch)
 
         loader_kwargs = {'device': self.device, 'use_predicted': self.use_predicted}
-        if train and self.train_loader is None:
-            self.train_loader = DataLoader(self.train_dataset, self.train_batch_size,
-                                           **loader_kwargs)
-        elif not train and self.dev_loader is None:
-            self.dev_loader = DataLoader(self.dev_dataset, self.dev_batch_size, **loader_kwargs)
-        data_loader = self.train_loader if train else self.dev_loader
+        if train and not hasattr(self, '_train_loader'):
+            # NOTE: We cache the `DataLoader` between epochs for performance.
+            self._train_loader = DataLoader(self.train_dataset, self.train_batch_size,
+                                            **loader_kwargs)
+        elif not train and not hasattr(self, '_dev_loader'):
+            self._dev_loader = DataLoader(self.dev_dataset, self.dev_batch_size, **loader_kwargs)
+        data_loader = self._train_loader if train else self._dev_loader
 
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):

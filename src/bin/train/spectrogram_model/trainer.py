@@ -26,6 +26,7 @@ from src.utils import get_average_norm
 from src.utils import get_weighted_stdev
 from src.utils import log_runtime
 from src.utils import maybe_load_tensor
+from src.utils import RepeatTimer
 from src.visualize import CometML
 from src.visualize import plot_attention
 from src.visualize import plot_spectrogram
@@ -61,6 +62,8 @@ class Trainer():
             a checkpoint.
         epoch (int, optional): Starting epoch; typically, this parameter is useful when starting
             from a checkpoint.
+        save_temp_checkpoint_every_n_seconds (int, optional): The number of seconds between
+            temporary checkpoint saves.
     """
 
     TRAIN_LABEL = 'train'
@@ -81,7 +84,8 @@ class Trainer():
                  model=HParam(),
                  input_encoder=None,
                  step=0,
-                 epoch=0):
+                 epoch=0,
+                 save_temp_checkpoint_every_n_seconds=60):
         self.device = device
         self.step = step
         self.epoch = epoch
@@ -90,8 +94,6 @@ class Trainer():
         self.train_dataset = train_dataset
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
-        self.dev_loader = None
-        self.train_loader = None
 
         # TODO: The `input_encoder` should not have any insight onto the `dev_dataset`. There
         # should be a process for dealing with unknown characters instead.
@@ -157,7 +159,21 @@ class Trainer():
         logger.info('Model:\n%s', self.model)
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
+        self.timer = RepeatTimer(save_temp_checkpoint_every_n_seconds,
+                                 self._save_checkpoint_repeat_timer)
         atexit.register(self.save_checkpoint)
+
+    def _save_checkpoint_repeat_timer(self):
+        """ Save a checkpoint and delete the last checkpoint saved.
+        """
+        # NOTE: GCP shutdowns do not trigger `atexit`; therefore, it's useful to always save
+        # a temporary checkpoint just in case.
+        checkpoint_path = self.save_checkpoint()
+        if hasattr(self, '_last_repeat_timer_checkpoint'):
+            logger.info('Unlinking temporary checkpoint: %s',
+                        str(self._last_repeat_timer_checkpoint))
+            self._last_repeat_timer_checkpoint.unlink()
+        self._last_repeat_timer_checkpoint = checkpoint_path
 
     def _comet_ml_log_input_dev_data_hash(self, max_examples=10):
         """ Log to comet a basic hash of the predicted spectrogram data in `self.dev_dataset`.
@@ -206,7 +222,7 @@ class Trainer():
         """ Save a checkpoint.
 
         Returns:
-            (str): Path the checkpoint was saved to.
+            (pathlib.Path): Path the checkpoint was saved to.
         """
         if src.distributed.is_master():
             return Checkpoint(
@@ -259,12 +275,13 @@ class Trainer():
         # are sampled from the same distribution via `self.dev_dataset`; therefore, it should be
         # comparable between experiments.
         loader_kwargs = {'device': self.device, 'input_encoder': self.input_encoder}
-        if train and self.train_loader is None:
-            self.train_loader = DataLoader(self.train_dataset, self.train_batch_size,
-                                           **loader_kwargs)
-        elif not train and self.dev_loader is None:
-            self.dev_loader = DataLoader(self.dev_dataset, self.dev_batch_size, **loader_kwargs)
-        data_loader = self.train_loader if train else self.dev_loader
+        if train and not hasattr(self, '_train_loader'):
+            # NOTE: We cache the `DataLoader` between epochs for performance.
+            self._train_loader = DataLoader(self.train_dataset, self.train_batch_size,
+                                            **loader_kwargs)
+        elif not train and not hasattr(self, '_dev_loader'):
+            self._dev_loader = DataLoader(self.dev_dataset, self.dev_batch_size, **loader_kwargs)
+        data_loader = self._train_loader if train else self._dev_loader
 
         random_batch = random.randint(0, len(data_loader) - 1)
         for i, batch in enumerate(data_loader):
