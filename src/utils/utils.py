@@ -304,6 +304,15 @@ def slice_by_cumulative_sum(list_, max_total_value, get_value=lambda x: x):
     return return_
 
 
+class RepeatTimer(Timer):
+    """ Similar to `Timer` but it repeats a function every `self.interval`.
+    """
+
+    def run(self):
+        while not self.finished.wait(self.interval):
+            self.function(*self.args, **self.kwargs)
+
+
 class ResetableTimer(Timer):
     """ Similar to `Timer` but with an included `reset` method.
     """

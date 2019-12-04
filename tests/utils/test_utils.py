@@ -5,19 +5,45 @@ from torch import nn
 import pytest
 import torch
 
+from src.utils.utils import bash_time_label
 from src.utils.utils import dict_collapse
 from src.utils.utils import evaluate
 from src.utils.utils import flatten
 from src.utils.utils import flatten_parameters
 from src.utils.utils import get_average_norm
+from src.utils.utils import get_chunks
 from src.utils.utils import get_weighted_stdev
 from src.utils.utils import identity
 from src.utils.utils import log_runtime
+from src.utils.utils import RepeatTimer
 from src.utils.utils import ResetableTimer
 from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
-from src.utils.utils import get_chunks
-from src.utils.utils import bash_time_label
+
+
+def test_repeat_timer():
+    """ Ensure the repeat timer continues to execute `func`. """
+    calls = 0
+
+    def func():
+        nonlocal calls
+        calls += 1
+
+    timer = RepeatTimer(0.1, func)
+    timer.start()
+    time.sleep(0.15)
+
+    assert calls == 1
+
+    time.sleep(0.5)
+
+    assert calls == 6
+
+    timer.cancel()
+
+    time.sleep(0.15)
+
+    assert calls == 6  # No more calls after `cancel`
 
 
 def test_bash_time_label():
