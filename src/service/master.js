@@ -585,13 +585,8 @@ class PodPool {
   waitTillReady() {
     return new Promise(async (resolve) => {
       this.logger.log(`PodPool.waitTillReady: Waiting till ready.`);
-      if (this.pods.length > 0 &&
-        await Promise.race(this.pods.map(p => p.isReady())) &&
-        this.pods.length > 0) {
-        resolve();
-      } else {
-        this.waiting.push(resolve);
-      }
+      this.waiting.push(resolve);
+      this.fufillPodRequests(); // Try to resolve right away
     });
   }
 
@@ -616,9 +611,10 @@ class PodPool {
       this.waiting.length > 0 &&
       this.pods.length > 0) {
       this.waiting.map(resolve => resolve());
+      this.waiting = [];
     }
 
-    while (this.podRequests.length > 0) {
+    while (this.podRequests.length > 0 && this.pods.length > 0) {
       // NOTE: Always re-sort and re-filter because `pod.isReady()` can take some time.
       const available = this.pods.filter(p => !p.isReserved());
       if (available.length == 0) {
@@ -635,6 +631,7 @@ class PodPool {
         this.logNumReservedPods();
       } else { // CASE: `pod` is dead.
         pod.release();
+        await this.cleanPod(pod);
       }
     }
     this.scale();
@@ -760,35 +757,40 @@ class PodPool {
   }
 
   /**
+   * Attempt to remove `pod`.
+   */
+  async cleanPod(pod) {
+    this.logger.log(`PodPool.clean: Maybe cleaning up Pod ${pod.name}.`);
+    // NOTE: The pod could be reserved after `isDead` is evaluated but before it returns.
+    // Run this example to return more:
+    /**
+    let bool = true;
+
+    async function func() {
+      console.log('func will return', bool)
+      return bool;
+    }
+
+    async function main() {
+      console.log('func returned', await func());
+      console.log('actual value is', bool);
+    }
+
+    main()
+    bool = false;
+    */
+    if (await pod.isDead() && this.pods.includes(pod) && !pod.isReserved()) {
+      this.logger.log(`PodPool.clean: Cleaning up Pod ${pod.name}.`);
+      this.pods = this.pods.filter(p => p !== pod);
+      pod.destroy();
+    }
+  }
+
+  /**
    * Remove any dead pods.
    */
   clean() {
-    return Promise.all(this.pods.map(async (pod) => {
-      this.logger.log(`PodPool.clean: Maybe cleaning up Pod ${pod.name}.`);
-      // NOTE: The pod could be reserved after `isDead` is evaluated but before it returns.
-      // Run this example to return more:
-      /**
-      let bool = true;
-
-      async function func() {
-        console.log('func will return', bool)
-        return bool;
-      }
-
-      async function main() {
-        console.log('func returned', await func());
-        console.log('actual value is', bool);
-      }
-
-      main()
-      bool = false;
-      */
-      if (await pod.isDead() && this.pods.includes(pod) && !pod.isReserved()) {
-        this.logger.log(`PodPool.clean: Cleaning up Pod ${pod.name}.`);
-        this.pods = this.pods.filter(p => p !== pod);
-        await pod.destroy();
-      }
-    }));
+    return Promise.all(this.pods.map(async (pod) => this.cleanPod(pod)));
   }
 
   /**
