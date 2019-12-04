@@ -331,30 +331,27 @@ def _filter_audio_path_not_found(example):
     return True
 
 
-def _filter_too_little_audio(example,
-                             min_seconds_per_character=0.04,
-                             min_seconds_per_character_for_hanuman=0.0375):
+def _filter_too_little_audio(example, min_seconds_per_character=0.0375):
     """ Filter out examples with too little audio per character.
-
-    NOTE: With `min_seconds_per_character=0.04`, then 300 characters must have at least 12 seconds
-    of audio.
 
     MOTIVATION: In October 2019, Rhyan and Michael observed that actors typically cannot speak
     more than 300 characters in 12 seconds; therefore, there is likely a dataset error if
     more than 300 characters are paired with 12 seconds of audio. For example, the speaker
     may have no read some of the text.
 
+    NOTE: With `min_seconds_per_character=0.04`, then 300 characters must have at least 12 seconds
+    of audio.
+
+    NOTE: We adjusted `min_seconds_per_character` to 0.0375 because some of our speakers spoke a
+    little faster than 0.04.
+
     Args:
         example (TextSpeechRow)
         min_seconds_per_character (float)
-        min_seconds_per_character_for_hanuman (float)
 
     Returns:
         (bool)
     """
-    min_seconds_per_character = (
-        min_seconds_per_character_for_hanuman
-        if example.speaker == HANUMAN_WELCH else min_seconds_per_character)
     num_seconds = get_num_seconds(example.audio_path)
     if len(example.text) * min_seconds_per_character > num_seconds:
         logger.warning(('[%s] Likely some text was not spoken; ' +
