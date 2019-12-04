@@ -20,7 +20,6 @@ import torchnlp
 from src import datasets
 from src.audio import get_num_seconds
 from src.datasets import filter_
-from src.datasets import HANUMAN_WELCH
 from src.datasets import normalize_audio_column
 from src.utils import log_runtime
 from src.utils import seconds_to_string
