@@ -76,9 +76,6 @@ def _set_hparams(more_hparams, checkpoint, comet_ml_project_name=None,
     })
     add_config(more_hparams)
 
-    from torchnlp.random import set_seed
-    set_seed()
-
     if checkpoint is not None and hasattr(checkpoint, 'random_generator_state'):
         set_random_generator_state(checkpoint.random_generator_state)
 

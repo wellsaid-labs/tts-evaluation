@@ -537,13 +537,12 @@ def set_hparams():
     spectrogram_model_dev_batch_size = 224
 
     seed = 1212212
+    torchnlp.random.set_seed(seed)
 
-    torchnlp.random.set_seed = configurable(torchnlp.random.set_seed)
     torchnlp.samplers.DeterministicSampler.__init__ = configurable(
         torchnlp.samplers.DeterministicSampler.__init__)
     add_config({
         'torchnlp.samplers.DeterministicSampler.__init__': HParams(random_seed=seed),
-        'torchnlp.random.set_seed': HParams(seed=seed),
     })
 
     add_config({
