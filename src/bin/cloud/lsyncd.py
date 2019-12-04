@@ -27,7 +27,7 @@ def main(source,
          public_dns,
          identity_file,
          user,
-         template=ROOT_PATH / 'src' / 'bin' / 'gcp' / 'lsyncd.conf.lua',
+         template=ROOT_PATH / 'src' / 'bin' / 'cloud' / 'lsyncd.conf.lua',
          tmp='/tmp/lsyncd.conf.lua'):
     """ Starts a lsyncd session.
 
