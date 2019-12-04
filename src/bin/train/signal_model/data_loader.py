@@ -133,6 +133,8 @@ def _load_fn(row, use_predicted, split_signal_partial, combine_signal_partial, *
         (SignalModelTrainingRow)
     """
     spectrogram = maybe_load_tensor(row.predicted_spectrogram if use_predicted else row.spectrogram)
+    # NOTE: `row.spectrogram_audio` is a `torch.HalfTensor` (16-bit floating point) while our model
+    # requires a `torch.FloatTensor` (32-bit floating point)
     spectrogram_audio = maybe_load_tensor(row.spectrogram_audio).float()
     spectrogram_audio = combine_signal_partial(*split_signal_partial(spectrogram_audio))
 
