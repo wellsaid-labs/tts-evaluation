@@ -175,6 +175,8 @@ class Trainer():
     def _save_checkpoint_repeat_timer(self):
         """ Save a checkpoint and delete the last checkpoint saved.
         """
+        # TODO: Consider using the GCP shutdown scripts via
+        # https://haggainuchi.com/shutdown.html
         # NOTE: GCP shutdowns do not trigger `atexit`; therefore, it's useful to always save
         # a temporary checkpoint just in case.
         checkpoint_path = self.save_checkpoint()
