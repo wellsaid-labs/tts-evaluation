@@ -83,3 +83,6 @@ gcs_credentials.json
 
 # Comet.ml Config
 .comet.config
+
+# SSH private key file
+*.pem
