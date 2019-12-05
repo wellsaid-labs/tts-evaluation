@@ -31,6 +31,7 @@ machine.
       For `awscli` to progrmatically access your AWS account run this..
 
       ```bash
+      mkdir ~/.aws
       echo "[default]
       aws_access_key_id=$AWS_ACCESS_KEY_ID
       aws_secret_access_key=$AWS_SECRET_ACCESS_KEY" >> ~/.aws/credentials
@@ -52,8 +53,8 @@ machine.
    VM_MACHINE_TYPE=g4dn.12xlarge
    VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
    VM_USER=ubuntu  # The default user name for the above image.
-   VM_INSTANCE_NAME=$USER"_your_experiment_name" # EXAMPE: michaelp_baseline
-   AWS_KEY_PAIR_NAME=$USER"_amazon_web_services" # EXAMPE: michaelp_amazon_web_services
+   VM_INSTANCE_NAME=$USER"_your_experiment_name" # EXAMPLE: michaelp_baseline
+   AWS_KEY_PAIR_NAME=$USER"_amazon_web_services" # EXAMPLE: michaelp_amazon_web_services
    ```
 
    Related Resources:
