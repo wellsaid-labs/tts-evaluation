@@ -159,9 +159,11 @@ class Trainer():
         logger.info('Model:\n%s', self.model)
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
-        self.timer = RepeatTimer(save_temp_checkpoint_every_n_seconds,
-                                 self._save_checkpoint_repeat_timer)
-        atexit.register(self.save_checkpoint)
+        if src.distributed.is_master():
+            self.timer = RepeatTimer(save_temp_checkpoint_every_n_seconds,
+                                     self._save_checkpoint_repeat_timer)
+            self.timer.start()
+            atexit.register(self.save_checkpoint)
 
     def _save_checkpoint_repeat_timer(self):
         """ Save a checkpoint and delete the last checkpoint saved.
@@ -169,7 +171,8 @@ class Trainer():
         # NOTE: GCP shutdowns do not trigger `atexit`; therefore, it's useful to always save
         # a temporary checkpoint just in case.
         checkpoint_path = self.save_checkpoint()
-        if hasattr(self, '_last_repeat_timer_checkpoint'):
+        if hasattr(self,
+                   '_last_repeat_timer_checkpoint') and self._last_repeat_timer_checkpoint.exists():
             logger.info('Unlinking temporary checkpoint: %s',
                         str(self._last_repeat_timer_checkpoint))
             self._last_repeat_timer_checkpoint.unlink()
