@@ -15,6 +15,7 @@ import torch
 
 from src.audio import griffin_lim
 from src.bin.train.spectrogram_model.data_loader import DataLoader
+from src.environment import IS_TESTING_ENVIRONMENT
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.spectrogram_model import InputEncoder
@@ -159,11 +160,16 @@ class Trainer():
         logger.info('Model:\n%s', self.model)
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
-        if src.distributed.is_master():
+        if src.distributed.is_master() and not IS_TESTING_ENVIRONMENT:
             self.timer = RepeatTimer(save_temp_checkpoint_every_n_seconds,
                                      self._save_checkpoint_repeat_timer)
             self.timer.start()
-            atexit.register(self.save_checkpoint)
+            atexit.register(self._atexit)
+
+    def _atexit(self):
+        """ This function is run on program exit. """
+        self.save_checkpoint()
+        self.timer.cancel()
 
     def _save_checkpoint_repeat_timer(self):
         """ Save a checkpoint and delete the last checkpoint saved.
