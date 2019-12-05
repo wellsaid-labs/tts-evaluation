@@ -103,7 +103,7 @@ class Trainer():
                  epoch=0,
                  num_rollbacks=0,
                  anomaly_detector=None,
-                 save_temp_checkpoint_every_n_seconds=60):
+                 save_temp_checkpoint_every_n_seconds=60 * 10):
         self.device = device
         self.step = step
         self.epoch = epoch

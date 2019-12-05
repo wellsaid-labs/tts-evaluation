@@ -85,7 +85,7 @@ class Trainer():
                  input_encoder=None,
                  step=0,
                  epoch=0,
-                 save_temp_checkpoint_every_n_seconds=60):
+                 save_temp_checkpoint_every_n_seconds=60 * 10):
         self.device = device
         self.step = step
         self.epoch = epoch
