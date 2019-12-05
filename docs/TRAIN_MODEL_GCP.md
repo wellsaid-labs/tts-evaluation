@@ -137,23 +137,23 @@ Related Documentation:
 
 ### From your local repository
 
-1. Use `src.bin.gcp.lsyncd` to live sync your repository to your VM instance:
+1. Use `src.bin.cloud.lsyncd` to live sync your repository to your VM instance:
 
-```bash
-VM_USER=$(gcloud compute ssh $VM_INSTANCE_NAME --command="echo $USER")
-VM_IP_ADDRESS=$(gcloud compute instances describe $VM_INSTANCE_NAME --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
-VM_IDENTITY_FILE=~/.ssh/google_compute_engine
-python3 -m src.bin.gcp.lsyncd --public_dns $VM_IP_ADDRESS \
-                              --identity_file $VM_IDENTITY_FILE
-                              --source $(pwd) \
-                              --destination /opt/wellsaid-labs/Text-to-Speech \
-                              --user $VM_USER
-```
+   ```bash
+   VM_USER=$(gcloud compute ssh $VM_INSTANCE_NAME --command="echo $USER")
+   VM_IP_ADDRESS=$(gcloud compute instances describe $VM_INSTANCE_NAME --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+   VM_IDENTITY_FILE=~/.ssh/google_compute_engine
+   python3 -m src.bin.cloud.lsyncd --public_dns $VM_IP_ADDRESS \
+                                 --identity_file $VM_IDENTITY_FILE
+                                 --source $(pwd) \
+                                 --destination /opt/wellsaid-labs/Text-to-Speech \
+                                 --user $VM_USER
+   ```
 
 2. When prompted, give your local sudo password for your laptop.
 
-Keep this process running on your local machine until you've started training, it'll
-allow you to make any hot-fixes to your code in case you run into an error.
+   Keep this process running on your local machine until you've started training, it'll
+   allow you to make any hot-fixes to your code in case you run into an error.
 
 ### On the VM instance
 
@@ -175,7 +175,7 @@ allow you to make any hot-fixes to your code in case you run into an error.
    python -m pip install wheel
    python -m pip install -r requirements.txt --upgrade
 
-   sudo bash src/bin/install_mkl.sh -y
+   sudo bash src/bin/install_mkl.sh
    ```
 
 3. Pick or create a comet project [here](https://www.comet.ml/wellsaid-labs). Afterwards set

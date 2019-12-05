@@ -5,7 +5,7 @@ NOTE: `rsync` must be installed on the remote machine for this to work.
 
 Example:
 
-    $ python -m src.bin.gcp.lsyncd --source $(pwd) \
+    $ python -m src.bin.cloud.lsyncd --source $(pwd) \
                                    --destination /opt/wellsaid-labs/Text-to-Speech \
                                    --user your_gcp_user_name \
                                    --instance your_gcp_instance_name
