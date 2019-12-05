@@ -128,24 +128,7 @@ machine.
 1. Install these packages, like so...
 
    ```bash
-   sudo apt-get update
-   sudo apt-get install python3-venv sox ffmpeg ninja-build -y
-   ```
-
-   You may get this error after running `sudo apt-get update`...
-
-   ```bash
-   E: Could not get lock /var/lib/dpkg/lock-frontend - open (11: Resource temporarily unavailable)
-   E: Unable to acquire the dpkg frontend lock (/var/lib/dpkg/lock-frontend), is another process using it?
-   ```
-
-   If so, just go ahead and run this...
-
-   ```bash
-   sudo rm /var/lib/dpkg/lock
-   sudo rm /var/lib/dpkg/lock-frontend
-   sudo rm /var/lib/dpkg/updates/0001
-   sudo dpkg --configure -a
+   sudo apt-get update && sudo apt-get install python3-venv sox ffmpeg ninja-build -y
    ```
 
 1. Create a directory for our software.
