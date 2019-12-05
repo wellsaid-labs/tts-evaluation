@@ -53,7 +53,7 @@ machine.
    VM_MACHINE_TYPE=g4dn.12xlarge
    VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
    VM_USER=ubuntu  # The default user name for the above image.
-   VM_INSTANCE_NAME=$USER"_your_experiment_name" # EXAMPE: michaelp_baseline
+   VM_INSTANCE_NAME=$USER"_your_experiment_name" # EXAMPLE: michaelp_baseline
    AWS_KEY_PAIR_NAME=$USER"_amazon_web_services" # EXAMPE: michaelp_amazon_web_services
    ```
 
