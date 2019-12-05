@@ -137,13 +137,19 @@ def load(path, device=torch.device('cpu')):
     return torch.load(str(path), map_location=remap)
 
 
-def save(path, data):
+def save(path, data, overwrite=False):
     """ Using ``torch.save`` to save an object to ``path``.
+
+    Raises:
+        (ValueError): If a file already exists at `path`.
 
     Args:
         path (Path or str): Filename to save to.
         data (any): Data to save into file.
+        overwrite (bool, optional): If `True` this allows for `path` to be overwritten.
     """
+    if not overwrite and Path(path).exists():
+        raise ValueError('A file already exists at %s' % path)
     torch.save(data, str(path))
     logger.info('Saved: %s', str(path))
 

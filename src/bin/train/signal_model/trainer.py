@@ -182,8 +182,9 @@ class Trainer():
         # NOTE: GCP shutdowns do not trigger `atexit`; therefore, it's useful to always save
         # a temporary checkpoint just in case.
         checkpoint_path = self.save_checkpoint()
-        if hasattr(self,
-                   '_last_repeat_timer_checkpoint') and self._last_repeat_timer_checkpoint.exists():
+        if (hasattr(self, '_last_repeat_timer_checkpoint') and
+                self._last_repeat_timer_checkpoint is not None and
+                self._last_repeat_timer_checkpoint.exists()):
             logger.info('Unlinking temporary checkpoint: %s',
                         str(self._last_repeat_timer_checkpoint))
             self._last_repeat_timer_checkpoint.unlink()
@@ -236,10 +237,11 @@ class Trainer():
         """ Save a checkpoint.
 
         Returns:
-            (pathlib.Path): Path the checkpoint was saved to.
+            (pathlib.Path or None): Path the checkpoint was saved to or None if checkpoint wasn't
+                saved.
         """
         if src.distributed.is_master():
-            return Checkpoint(
+            checkpoint = Checkpoint(
                 directory=self.checkpoints_directory,
                 step=self.step,
                 model=(self.model.module if src.distributed.is_initialized() else self.model),
@@ -249,7 +251,10 @@ class Trainer():
                 comet_ml_project_name=self.comet_ml.project_name,
                 comet_ml_experiment_key=self.comet_ml.get_key(),
                 spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
-                num_rollbacks=self.num_rollbacks).save()
+                num_rollbacks=self.num_rollbacks)
+            if checkpoint.path.exists():
+                return None
+            return checkpoint.save()
         else:
             return None
 
