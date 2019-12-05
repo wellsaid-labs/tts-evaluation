@@ -21,14 +21,14 @@ machine.
    1. Follow [this guide](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_CreateAccessKey)
       to create an access key.
 
-   1. Set these bash variables with your new access key:
+   1. Set these bash variables with your new access key...
 
       ```bash
       AWS_ACCESS_KEY_ID='your-aws-access-key-id'
       AWS_SECRET_ACCESS_KEY='your-aws-secret-access-key'
       ```
 
-      and run this... for `awscli` to progrmatically access your AWS account.
+      For `awscli` to progrmatically access your AWS account run this..
 
       ```bash
       echo "[default]
@@ -36,7 +36,7 @@ machine.
       aws_secret_access_key=$AWS_SECRET_ACCESS_KEY" >> ~/.aws/credentials
       ```
 
-1. You'll need an SSH key to use with your AWS account, you can create one like so:
+1. You'll need an SSH key to use with your AWS account, you can create one like so...
 
    ```bash
    AWS_KEY_PAIR_NAME=$USER"_amazon_web_services"
@@ -76,7 +76,7 @@ machine.
    ```
 
 1. Create a security group to restrict incoming and outgoing VM traffic to only allow SSH, like
-   so:
+   so...
 
    ```bash
    SECURITY_GROUP_NAME=only-ssh
@@ -125,7 +125,7 @@ machine.
 
 ### On the VM instance
 
-1. Install these packages, like so:
+1. Install these packages, like so...
 
    ```bash
    sudo apt-get update
@@ -181,7 +181,7 @@ machine.
    screen
    ```
 
-1. Navigate to the repository, activate a virtual environment, and install package requirements:
+1. Navigate to the repository, activate a virtual environment, and install package requirements...
 
    ```bash
    cd /opt/wellsaid-labs/Text-to-Speech
@@ -197,7 +197,7 @@ machine.
    ```
 
 1. Pick or create a comet project [here](https://www.comet.ml/wellsaid-labs). Afterwards set
-   this variable:
+   this variable...
 
    ```bash
    COMET_PROJECT="your-comet-project"
