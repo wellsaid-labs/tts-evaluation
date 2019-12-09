@@ -170,6 +170,8 @@ class Trainer():
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
         if src.distributed.is_master() and not IS_TESTING_ENVIRONMENT:
+            # TODO: `atexit` doesn't run when `pytest` closes; therefore, it doesn't stop
+            # the repeated timer. This needs to be investigated.
             self.timer = RepeatTimer(save_temp_checkpoint_every_n_seconds,
                                      self._save_checkpoint_repeat_timer)
             self.timer.start()
