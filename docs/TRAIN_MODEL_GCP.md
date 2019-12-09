@@ -95,6 +95,8 @@ Related Documentation:
    . src/bin/cloud/ssh_gcp.sh $VM_INSTANCE_NAME
    ```
 
+   You'll want to run this command multiple times until it works.
+
 ### On the VM instance
 
 1. Install these packages, like so:
