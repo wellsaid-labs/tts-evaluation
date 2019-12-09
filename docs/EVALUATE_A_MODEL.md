@@ -98,22 +98,47 @@ def main(
    . venv/bin/activate
    ```
 
-2. Setup your environment variables, like so:
+2. Setup your environment variables, like so...
+
+   ... for AWS:
+
+   ```bash
+   VM_REGION='your-vm-region'
+   VM_INSTANCE_NAME=$USER"_your_experiment_name"
+   AWS_KEY_PAIR_NAME=$USER"_amazon_web_services" # The default AWS key pair name
+   VM_USER=ubuntu  # The default user name for the default image.
+   ```
+
+   ```bash
+   VM_IDENTITY_FILE=~/.ssh/$AWS_KEY_PAIR_NAME
+   DESCRIBE_INSTANCES=$(aws --region=$VM_REGION ec2 describe-instances)
+   VM_INFO=$(echo $DESCRIBE_INSTANCES | jq \
+    ".Reservations[] \
+    | select(.Instances[0].Tags[0].Value==\"$VM_INSTANCE_NAME\") \
+    | select(.Instances[0].State.Name==\"running\") \
+    | .Instances[0]")
+   VM_PUBLIC_DNS=$(echo $VM_INFO | jq ".PublicDnsName" | xargs)
+   ```
+
+   ... for GCP:
 
    ```bash
    VM_INSTANCE_NAME=''
    ```
 
-3. Download your samples to `~/Downloads`.
-
    ```bash
    VM_ZONE=$(gcloud compute instances list | grep "^$VM_INSTANCE_NAME\s" | awk '{ print $2 }')
    VM_USER=$(gcloud compute ssh $VM_INSTANCE_NAME --zone=$VM_ZONE --command="echo $USER")
+   VM_IDENTITY_FILE=~/.ssh/google_compute_engine
+   VM_PUBLIC_DNS=$(gcloud compute instances describe $VM_INSTANCE_NAME --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+   ```
+
+3. Download your samples to `~/Downloads`.
+
+   ```bash
    mkdir ~/Downloads/samples/
-   gcloud compute scp \
-      --recurse \
-      --zone=$VM_ZONE \
-      $VM_USER@$VM_INSTANCE_NAME:/opt/wellsaid-labs/Text-to-Speech/disk/samples/ \
+   scp -rp -i $VM_IDENTITY_FILE \
+      $VM_USER@$VM_PUBLIC_DNS:/opt/wellsaid-labs/Text-to-Speech/disk/samples/ \
       ~/Downloads/
    ```
 
