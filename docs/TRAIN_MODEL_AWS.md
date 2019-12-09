@@ -7,6 +7,8 @@ machine.
 
 1. Setup your local development environment by following [these instructions](LOCAL_SETUP.md).
 
+1. Ask a team member to grant you access to our AWS account.
+
 1. Install these dependencies:
 
    ```bash
@@ -49,7 +51,7 @@ machine.
 1. Setup your environment variables...
 
    ```bash
-   VM_REGION='us-east-1'
+   VM_REGION='your-vm-region' # EXAMPLE: us-east-1
    VM_MACHINE_TYPE=g4dn.12xlarge
    VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
    VM_USER=ubuntu  # The default user name for the above image.
@@ -57,16 +59,22 @@ machine.
    AWS_KEY_PAIR_NAME=$USER"_amazon_web_services" # EXAMPLE: michaelp_amazon_web_services
    ```
 
+   If your training the signal model, you'll want instead...
+
+   ```bash
+   VM_MACHINE_TYPE=p3.16xlarge
+   ```
+
    Related Resources:
 
-   - Learn more about the available GPU instances for each region,
-     [here](https://aws.amazon.com/ec2/pricing/on-demand/).
    - Learn more about the available instance types, [here](https://aws.amazon.com/ec2/instance-types/).
-   - Get a list of all AWS regions, [here](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RegionsAndAvailabilityZones.html).
    - Learn more about the above "ami-0b98d7f73c7d1bb71" image, [here](https://aws.amazon.com/marketplace/pp/Amazon-Web-Services-AWS-Deep-Learning-Base-AMI-Ubu/B07Y3VDBNS).
    - During any point in this process, you may want to image the disk so that you don't have to start
      from scratch every time. In order to do so, please follow the instructions
      [here](https://docs.aws.amazon.com/cli/latest/reference/ec2/create-image.html).
+   - Learn more about the available GPU instances for each region,
+     [here](https://aws.amazon.com/ec2/pricing/on-demand/).
+   - Get a list of all AWS regions, [here](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RegionsAndAvailabilityZones.html).
 
 1. Upload your SSH key to the AWS region you plan to train in.
 
@@ -112,10 +120,14 @@ machine.
    VM_INFO=$(echo $DESCRIBE_INSTANCES | jq \
      ".Reservations[] \
      | select(.Instances[0].Tags[0].Value==\"$VM_INSTANCE_NAME\") \
-     | select(.Instances[0].State.Name==\"running\") \
      | .Instances[0]")
-   VM_PUBLIC_DNS=$(echo $VM_INFO | jq ".PublicDnsName" | xargs)
-   echo "Got a VM_PUBLIC_DNS of $VM_PUBLIC_DNS."
+   if [ -z "$VM_INFO" ]
+   then
+      echo "ERROR: The instance '$VM_INSTANCE_NAME' isn't running, yet."
+   else
+      VM_INSTANCE_ID=$(echo $VM_INFO | jq ".InstanceId" | xargs)
+      VM_PUBLIC_DNS=$(echo $VM_INFO | jq ".PublicDnsName" | xargs)
+   fi
    ```
 
 1. Finally, you can ssh into the instance...
@@ -219,3 +231,17 @@ machine.
 ### From your local repository
 
 1. Kill your `lsyncd` process by typing `Ctrl-C`.
+
+1. Once training has finished ...
+
+   ... stop your VM
+
+   ```bash
+   aws --region=$VM_REGION ec2 stop-instances --instance-ids $VM_INSTANCE_ID
+   ```
+
+   ... or delete your VM
+
+   ```bash
+   aws --region=$VM_REGION ec2 terminate-instances --instance-ids $VM_INSTANCE_ID
+   ```

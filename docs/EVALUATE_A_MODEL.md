@@ -115,7 +115,6 @@ def main(
    VM_INFO=$(echo $DESCRIBE_INSTANCES | jq \
     ".Reservations[] \
     | select(.Instances[0].Tags[0].Value==\"$VM_INSTANCE_NAME\") \
-    | select(.Instances[0].State.Name==\"running\") \
     | .Instances[0]")
    VM_PUBLIC_DNS=$(echo $VM_INFO | jq ".PublicDnsName" | xargs)
    ```
