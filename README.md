@@ -12,7 +12,9 @@ You might be interested in:
 
 - [Learning about our engineering processes](./docs/ENGINEERING_PROCESSES.md)
 - [Setting up a local development environment](./docs/LOCAL_SETUP.md)
-- [Training a spectrogram or signal model](./docs/TRAIN_MODEL_GCP.md)
-- [Training a TTS model](./docs/TRAIN_TTS_MODEL_GCP.md)
-- [Evaluating a TTS model](./docs/EVALUATE_A_MODEL_GCP.md)
+- [Training a spectrogram or signal model on GCP](./docs/TRAIN_MODEL_GCP.md)
+- [Training a TTS model on GCP](./docs/TRAIN_TTS_MODEL_GCP.md)
+- [Training a spectrogram or signal model on AWS](./docs/TRAIN_MODEL_AWS.md)
+- [Training a TTS model on AWS](./docs/TRAIN_TTS_MODEL_AWS.md)
+- [Evaluating a TTS model on GCP or AWS](./docs/EVALUATE_A_MODEL_GCP.md)
 - [Creating a new dataset](./docs/PREPROCESSING_DATASETS.md)
