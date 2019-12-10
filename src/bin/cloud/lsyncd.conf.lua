@@ -28,16 +28,12 @@ sync {
   },
   exclude = {
       ".ipynb_checkpoints/**", -- Jupyter files
-      "data/**",
-      "experiments/**",
-      "build/**",
       ".DS_Store", -- Macbook files
       "__pycache__**",
       "htmlcov/**", -- PyTest Coverage files
       ".coverage*", -- PyTest Coverage files
       "coverage/**", -- PyTest Coverage files
       "git_diff.patch", -- Comet ML patch
-      "*.wav",
       "*.py*.py", -- Odd temporary files
       -- Various compressed formats are typically slow to sync
       "*.zip",
@@ -45,10 +41,9 @@ sync {
       "*.tgz",
       "*.tar.gz",
       "*.gzip",
-      "_data/**",
       "tmp/**",
       "venv/**",
       "node_modules/**",
-      ".tts_cache"
+      "disk/**",
   }
 }
