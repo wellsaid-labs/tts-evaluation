@@ -173,21 +173,24 @@ def _train(device_index,
         logger.info('-' * 100)
 
 
-def main(run_name=None,
+def main(experiment_name=None,
          comet_ml_project_name=None,
-         run_tags=[],
-         run_root=SPECTROGRAM_MODEL_EXPERIMENTS_PATH / bash_time_label() / 'runs',
+         experiment_tags=[],
+         experiment_root=SPECTROGRAM_MODEL_EXPERIMENTS_PATH / bash_time_label() / 'runs',
+         run_name=bash_time_label(),
          checkpoints_directory_name='checkpoints',
          checkpoint=None,
          more_hparams={}):
     """ Main module that trains a the spectrogram model saving checkpoints incrementally.
 
     Args:
-        run_name (str, optional): Name of the experiment.
+        experiment_name (str, optional): Name of the experiment.
         comet_ml_project_name (str, optional): Project name to use with comet.ml.
-        run_tags (list of str, optional): Comet.ml experiment tags.
-        run_root (str, optional): Directory to save experiments, unless a checkpoint is loaded.
-        checkpoints_directory_name (str, optional): Directory to save checkpoints inside `run_root`.
+        experiment_tags (list of str, optional): Comet.ml experiment tags.
+        experiment_root (str, optional): Directory to save experiments, unless a checkpoint is
+            loaded.
+        run_name (str, optional): The name of the run.
+        checkpoints_directory_name (str, optional): The name of the checkpoint directory.
         checkpoint (src.utils.Checkpoint, optional): Checkpoint or None.
         more_hparams (dict, optional): Hparams to override default hparams.
     """
@@ -200,8 +203,8 @@ def main(run_name=None,
     # NOTE: The folder structure is setup like so:
     #   SPECTROGRAM_MODEL_EXPERIMENTS_PATH / bash_time_label() / 'runs' / bash_time_label() /
     #   'checkpoints' / 'checkpoint.pt'
-    run_root = run_root if checkpoint is None else checkpoint.directory.parent.parent
-    run_root = run_root / bash_time_label()
+    experiment_root = experiment_root if checkpoint is None else checkpoint.directory.parent.parent
+    run_root = experiment_root / run_name
     run_root.mkdir(parents=checkpoint is None)
     checkpoints_directory = run_root / checkpoints_directory_name
     checkpoints_directory.mkdir()
@@ -210,11 +213,11 @@ def main(run_name=None,
     # TODO: Consider ignoring ``add_tags`` if Checkpoint is loaded; or consider saving in the
     # checkpoint the ``name`` and ``tags``; or consider fetching tags from the Comet.ML API.
     comet = CometML()
-    if run_name is not None:
-        logger.info('Name: %s', run_name)
-        comet.set_name(run_name)
-    logger.info('Tags: %s', run_tags)
-    comet.add_tags(run_tags)
+    if experiment_name is not None:
+        logger.info('Name: %s', experiment_name)
+        comet.set_name(experiment_name)
+    logger.info('Tags: %s', experiment_tags)
+    comet.add_tags(experiment_tags)
     comet.log_other('directory', str(run_root))
 
     train_dataset, dev_dataset = _get_dataset()
@@ -293,8 +296,8 @@ if __name__ == '__main__':  # pragma: no cover
         args.project_name = args.checkpoint.comet_ml_project_name
 
     main(
-        run_name=args.name,
-        run_tags=args.tags,
+        experiment_name=args.name,
+        experiment_tags=args.tags,
         comet_ml_project_name=args.project_name,
         checkpoint=args.checkpoint,
         more_hparams=parse_hparam_args(unparsed_args))
