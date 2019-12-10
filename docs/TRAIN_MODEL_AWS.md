@@ -54,9 +54,9 @@ machine.
    VM_REGION='your-vm-region' # EXAMPLE: us-east-1
    VM_MACHINE_TYPE=g4dn.12xlarge
    VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
-   VM_USER=ubuntu  # The default user name for the above image.
-   VM_INSTANCE_NAME=$USER"_your_instance_name" # EXAMPLE: michaelp_baseline
-   AWS_KEY_PAIR_NAME=$USER"_amazon_web_services" # EXAMPLE: michaelp_amazon_web_services
+   VM_IMAGE_USER=ubuntu  # The default user name for the above image.
+   VM_NAME=$USER"_your_instance_name" # EXAMPLE: michaelp_baseline
+   KEY_PAIR_NAME=$USER"_amazon_web_services" # EXAMPLE: michaelp_amazon_web_services
    TRAIN_SCRIPT_PATH='src/bin/train/spectrogram_model/__main__.py'
    ```
 
@@ -102,37 +102,104 @@ machine.
 
    If the security group already exists, you can skip this step.
 
+1. Create an instance startup script that'll run every time this instance boots...
+
+   ```bash
+   USER_DATA=$(cat docs/train_model_aws_start_up.sh)
+   USER_DATA=${USER_DATA//'$VM_NAME'/\'$VM_NAME\'}
+   USER_DATA=${USER_DATA//'$VM_USER'/\'$VM_USER\'}
+   USER_DATA=${USER_DATA//'$VM_REGION'/\'$VM_REGION\'}
+   USER_DATA=${USER_DATA//'$TRAIN_SCRIPT_PATH'/\'$TRAIN_SCRIPT_PATH\'}
+   USER_DATA=${USER_DATA//'$AWS_CREDENTIALS'/\'$(cat ~/.aws/credentials)\'}
+   USER_DATA="Content-Type: multipart/mixed; boundary=\"//\"
+   MIME-Version: 1.0
+
+   --//
+   Content-Type: text/cloud-config; charset=\"us-ascii\"
+   MIME-Version: 1.0
+   Content-Transfer-Encoding: 7bit
+   Content-Disposition: attachment; filename=\"cloud-config.txt\"
+
+   #cloud-config
+   cloud_final_modules:
+   - [scripts-user, always]
+
+   --//
+   Content-Type: text/x-shellscript; charset=\"us-ascii\"
+   MIME-Version: 1.0
+   Content-Transfer-Encoding: 7bit
+   Content-Disposition: attachment; filename=\"userdata.txt\"
+
+   #!/bin/bash
+   $USER_DATA
+   --//"
+   USER_DATA=$(echo "$USER_DATA" | base64)
+   ```
+
+   Learn more about this approach
+   [here](https://aws.amazon.com/premiumsupport/knowledge-center/execute-user-data-ec2/).
+
 1. Create an EC2 instance for training.
 
    ```bash
-   aws --region=$VM_REGION ec2 run-instances \
-      --image-id $VM_IMAGE_ID \
-      --count 1 \
-      --instance-type $VM_MACHINE_TYPE \
-      --key-name $AWS_KEY_PAIR_NAME \
-      --tag-specifications="ResourceType=instance,Tags=[{Key=Name,Value=$VM_INSTANCE_NAME}]" \
-      --security-groups only-ssh \
-      --block-device-mappings 'DeviceName=/dev/sda1,Ebs={DeleteOnTermination=true,VolumeSize=512,VolumeType=gp2}'
+   echo '{
+      "SecurityGroups": ["only-ssh"],
+      "BlockDeviceMappings": [
+        {
+          "DeviceName": "/dev/sda1",
+          "Ebs": {
+            "DeleteOnTermination": true,
+            "VolumeSize": 512,
+            "VolumeType": "gp2"
+          }
+        }
+      ],
+      "ImageId": "'$VM_IMAGE_ID'",
+      "InstanceType": "'$VM_MACHINE_TYPE'",
+      "KeyName": "'$AWS_KEY_PAIR_NAME'",
+      "UserData": "'$USER_DATA'"
+   }' > /tmp/launch_specification.json
    ```
+
+   ```bash
+   SPOT_REQUEST_ID=$(aws --region=$REGION ec2 request-spot-instances \
+      --type "persistent" \
+      --launch-specification file:///tmp/launch_specification.json \
+      --instance-interruption-behavior "stop" | \
+      jq '.SpotInstanceRequests[0].SpotInstanceRequestId' | xargs)
+   aws --region=$VM_REGION ec2 create-tags \
+       --resources $SPOT_REQUEST_ID \
+       --tags Key=Name,Value=$VM_NAME
+   ```
+
+   By default, AWS will keep this instance alive for the next seven days.
 
 1. When the instance comes online, you'll be able to fetch a URL for SSH...
 
    ```bash
-   VM_INFO=$(aws --region=$VM_REGION ec2 describe-instances \
-      --filters Name=tag:Name,Values=$VM_INSTANCE_NAME | jq .Reservations[0].Instances[0])
-   if [ "$VM_INFO" == "null" ]
-   then
-      echo "ERROR: The instance '$VM_INSTANCE_NAME' isn't running, yet."
+   VM_ID=$(aws --region=$VM_REGION ec2 describe-instances \
+      --filters Name=tag:Name,Values=$VM_NAME \
+      --query 'Reservations[0].Instances[0].InstanceId' \
+      --output text)
+   VM_STATUS=$(aws --region=$VM_REGION ec2 describe-instance-status \
+      --instance-id $VM_ID | jq ".InstanceStatuses[0].InstanceState.Name" | xargs)
+   if [ "$VM_STATUS" == "running" ] ; then
+      VM_PUBLIC_DNS=$(aws --region=$VM_REGION ec2 describe-instances \
+          --filters Name=tag:Name,Values=$VM_NAME \
+          --query 'Reservations[0].Instances[0].PublicDnsName' \
+          --output text)
    else
-      VM_INSTANCE_ID=$(echo $VM_INFO | jq ".InstanceId" | xargs)
-      VM_PUBLIC_DNS=$(echo $VM_INFO | jq ".PublicDnsName" | xargs)
+      echo "ERROR: The instance '$VM_NAME' isn't running, yet."
    fi
    ```
 
 1. Finally, you can ssh into the instance...
 
    ```bash
-   ssh -i ~/.ssh/$AWS_KEY_PAIR_NAME -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no $VM_USER@$VM_PUBLIC_DNS
+   ssh -i ~/.ssh/$AWS_KEY_PAIR_NAME \
+      -o UserKnownHostsFile=/dev/null \
+      -o StrictHostKeyChecking=no \
+      $VM_IMAGE_USER@$VM_PUBLIC_DNS
    ```
 
    You'll want to run this command multiple times until it works.
@@ -179,7 +246,7 @@ machine.
                                  --identity_file ~/.ssh/$AWS_KEY_PAIR_NAME \
                                  --source $(pwd) \
                                  --destination /opt/wellsaid-labs/Text-to-Speech \
-                                 --user $VM_USER
+                                 --user $VM_IMAGE_USER
    ```
 
 1. When prompted, give your local sudo password for your laptop.
@@ -249,11 +316,11 @@ machine.
    ... stop your VM
 
    ```bash
-   aws --region=$VM_REGION ec2 stop-instances --instance-ids $VM_INSTANCE_ID
+   aws --region=$VM_REGION ec2 stop-instances --instance-ids $VM_ID
    ```
 
    ... or delete your VM
 
    ```bash
-   aws --region=$VM_REGION ec2 terminate-instances --instance-ids $VM_INSTANCE_ID
+   aws --region=$VM_REGION ec2 terminate-instances --instance-ids $VM_ID
    ```
