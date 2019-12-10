@@ -33,6 +33,7 @@ from src.datasets import add_spectrogram_column
 from src.environment import assert_enough_disk_space
 from src.environment import check_module_versions
 from src.environment import set_basic_logging_config
+from src.environment import set_seed
 from src.environment import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 from src.hparams import set_hparams
 from src.utils import bash_time_label
@@ -79,6 +80,8 @@ def _set_hparams(more_hparams, checkpoint, comet_ml_project_name=None,
             ),
     })
     add_config(more_hparams)
+
+    set_seed()
 
     if checkpoint is not None and hasattr(checkpoint, 'random_generator_state'):
         set_random_generator_state(checkpoint.random_generator_state)

@@ -5,6 +5,11 @@ import os
 import subprocess
 import sys
 
+from hparams import configurable
+from hparams import HParam
+
+import torchnlp
+
 logger = logging.getLogger(__name__)
 
 ROOT_PATH = Path(__file__).parents[1].resolve()  # Repository root path
@@ -216,3 +221,10 @@ def check_module_versions():
                 # NOTE: RuntimeError could cause ``Illegal seek`` while running PyTest.
                 raise RuntimeError('Versions are not compatible %s =/= %s' %
                                    (specification, installed[0]))
+
+
+@configurable
+def set_seed(seed=HParam()):
+    """ Set a process seed to help ensure consistency. """
+    logger.info('Setting process seed to be %d', seed)
+    torchnlp.random.set_seed(seed)

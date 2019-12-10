@@ -535,7 +535,6 @@ def set_hparams():
     spectrogram_model_dev_batch_size = 224
 
     seed = 1212212
-    torchnlp.random.set_seed(seed)
 
     torchnlp.samplers.DeterministicSampler.__init__ = configurable(
         torchnlp.samplers.DeterministicSampler.__init__)
@@ -653,5 +652,6 @@ def set_hparams():
             # "OSError: [Errno 9] Bad file descriptor". Gideon from Comet suggested this as a fix.
             'visualize.CometML':
                 HParams(auto_output_logging='simple'),
+            'environment.set_seed': HParams(seed=seed),
         }
     })
