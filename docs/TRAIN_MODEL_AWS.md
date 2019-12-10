@@ -56,7 +56,6 @@ machine.
    VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
    VM_USER=ubuntu  # The default user name for the above image.
    VM_INSTANCE_NAME=$USER"_your_instance_name" # EXAMPLE: michaelp_baseline
-   EXPERIMENT_NAME=$VM_INSTANCE_NAME
    AWS_KEY_PAIR_NAME=$USER"_amazon_web_services" # EXAMPLE: michaelp_amazon_web_services
    TRAIN_SCRIPT_PATH='src/bin/train/spectrogram_model/__main__.py'
    ```
@@ -219,6 +218,10 @@ machine.
    ```
 
 1. Train your model ...
+
+   ```bash
+   EXPERIMENT_NAME='your-experiment-name'
+   ```
 
    ```bash
    pkill -9 python; \
