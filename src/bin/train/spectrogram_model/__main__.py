@@ -194,7 +194,7 @@ def main(experiment_name=None,
         checkpoint (src.utils.Checkpoint, optional): Checkpoint or None.
         more_hparams (dict, optional): Hparams to override default hparams.
     """
-    set_basic_logging_config(src.distributed.get_master_rank())
+    set_basic_logging_config()
     logger = logging.getLogger(__name__)
     recorder = RecordStandardStreams().start()
     _set_hparams(more_hparams, checkpoint, comet_ml_project_name)
