@@ -23,11 +23,8 @@ on a AWS virtual machine.
    ```
 
    ```bash
-   DESCRIBE_INSTANCES=$(aws --region=$VM_REGION ec2 describe-instances)
-   VM_INFO=$(echo $DESCRIBE_INSTANCES | jq \
-     ".Reservations[] \
-     | select(.Instances[0].Tags[0].Value==\"$VM_INSTANCE_NAME\") \
-     | .Instances[0]")
+   VM_INFO=$(aws --region=$VM_REGION ec2 describe-instances \
+      --filters Name=tag:Name,Values=$VM_INSTANCE_NAME | jq .Reservations[0].Instances[0])
    VM_INSTANCE_ID=$(echo $VM_INFO | jq ".InstanceId" | xargs)
    ```
 

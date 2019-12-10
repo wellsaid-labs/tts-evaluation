@@ -116,12 +116,9 @@ machine.
 1. When the instance comes online, you'll be able to fetch a URL for SSH...
 
    ```bash
-   DESCRIBE_INSTANCES=$(aws --region=$VM_REGION ec2 describe-instances)
-   VM_INFO=$(echo $DESCRIBE_INSTANCES | jq \
-     ".Reservations[] \
-     | select(.Instances[0].Tags[0].Value==\"$VM_INSTANCE_NAME\") \
-     | .Instances[0]")
-   if [ -z "$VM_INFO" ]
+   VM_INFO=$(aws --region=$VM_REGION ec2 describe-instances \
+      --filters Name=tag:Name,Values=$VM_INSTANCE_NAME | jq .Reservations[0].Instances[0])
+   if [ "$VM_INFO" == "null" ]
    then
       echo "ERROR: The instance '$VM_INSTANCE_NAME' isn't running, yet."
    else
