@@ -55,7 +55,8 @@ machine.
    VM_MACHINE_TYPE=g4dn.12xlarge
    VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
    VM_USER=ubuntu  # The default user name for the above image.
-   VM_INSTANCE_NAME=$USER"_your_experiment_name" # EXAMPLE: michaelp_baseline
+   VM_INSTANCE_NAME=$USER"_your_instance_name" # EXAMPLE: michaelp_baseline
+   EXPERIMENT_NAME=$VM_INSTANCE_NAME
    AWS_KEY_PAIR_NAME=$USER"_amazon_web_services" # EXAMPLE: michaelp_amazon_web_services
    ```
 
@@ -223,7 +224,8 @@ machine.
    pkill -9 python; \
    nvidia-smi; \
    PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py \
-       --project_name $COMET_PROJECT
+       --project_name $COMET_PROJECT \
+       --name $EXPERIMENT_NAME
    ```
 
    ... signal model
@@ -232,7 +234,8 @@ machine.
    pkill -9 python; \
    nvidia-smi; \
    PYTHONPATH=. python src/bin/train/signal_model/__main__.py --project_name $COMET_PROJECT \
-   --spectrogram_model_checkpoint $SPECTROGRAM_CHECKPOINT
+      --spectrogram_model_checkpoint $SPECTROGRAM_CHECKPOINT \
+      --name $EXPERIMENT_NAME
    ```
 
    Note: the `--spectrogram_model_checkpoint` argument is optional
