@@ -108,7 +108,7 @@ machine.
       --count 1 \
       --instance-type $VM_MACHINE_TYPE \
       --key-name $AWS_KEY_PAIR_NAME \
-      --tag-specifications="ResourceType=instance,Tags=[{Key=name,Value=$VM_INSTANCE_NAME}]" \
+      --tag-specifications="ResourceType=instance,Tags=[{Key=Name,Value=$VM_INSTANCE_NAME}]" \
       --security-groups only-ssh \
       --block-device-mappings 'DeviceName=/dev/sda1,Ebs={DeleteOnTermination=true,VolumeSize=512,VolumeType=gp2}'
    ```
