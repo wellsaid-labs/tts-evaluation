@@ -181,7 +181,7 @@ class Trainer():
         checkpoint_path = self.save_checkpoint()
         if (hasattr(self, '_last_repeat_timer_checkpoint') and
                 self._last_repeat_timer_checkpoint is not None and
-                self._last_repeat_timer_checkpoint.exists()):
+                self._last_repeat_timer_checkpoint.exists() and checkpoint_path is not None):
             logger.info('Unlinking temporary checkpoint: %s',
                         str(self._last_repeat_timer_checkpoint))
             self._last_repeat_timer_checkpoint.unlink()
