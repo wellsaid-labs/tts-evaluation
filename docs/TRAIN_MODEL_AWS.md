@@ -36,7 +36,7 @@ machine.
       mkdir ~/.aws
       echo "[default]
       aws_access_key_id=$AWS_ACCESS_KEY_ID
-      aws_secret_access_key=$AWS_SECRET_ACCESS_KEY" >> ~/.aws/credentials
+      aws_secret_access_key=$AWS_SECRET_ACCESS_KEY" > ~/.aws/credentials
       ```
 
 1. You'll need an SSH key to use with your AWS account, you can create one like so...
@@ -58,12 +58,14 @@ machine.
    VM_INSTANCE_NAME=$USER"_your_instance_name" # EXAMPLE: michaelp_baseline
    EXPERIMENT_NAME=$VM_INSTANCE_NAME
    AWS_KEY_PAIR_NAME=$USER"_amazon_web_services" # EXAMPLE: michaelp_amazon_web_services
+   TRAIN_SCRIPT_PATH='src/bin/train/spectrogram_model/__main__.py'
    ```
 
    If your training the signal model, you'll want instead...
 
    ```bash
    VM_MACHINE_TYPE=p3.16xlarge
+   TRAIN_SCRIPT_PATH='src/bin/train/signal_model/__main__.py'
    ```
 
    Related Resources:
@@ -216,29 +218,17 @@ machine.
    COMET_PROJECT="your-comet-project"
    ```
 
-1. Train your ...
-
-   ... spectrogram model
+1. Train your model ...
 
    ```bash
    pkill -9 python; \
    nvidia-smi; \
-   PYTHONPATH=. python src/bin/train/spectrogram_model/__main__.py \
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH \
        --project_name $COMET_PROJECT \
        --name $EXPERIMENT_NAME
    ```
 
-   ... signal model
-
-   ```bash
-   pkill -9 python; \
-   nvidia-smi; \
-   PYTHONPATH=. python src/bin/train/signal_model/__main__.py --project_name $COMET_PROJECT \
-      --spectrogram_model_checkpoint $SPECTROGRAM_CHECKPOINT \
-      --name $EXPERIMENT_NAME
-   ```
-
-   Note: the `--spectrogram_model_checkpoint` argument is optional
+   Note: You can include an optional `--spectrogram_model_checkpoint` argument is optional
    (for example, see [here](TRAIN_TTS_MODEL_GCP.md#on-the-vm-instance)).
 
    We run `pkill -9 python` to kill any leftover processes from previous runs and `nvidia-smi`
