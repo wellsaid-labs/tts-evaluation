@@ -1,6 +1,7 @@
 import io
 import logging
 import matplotlib
+import os
 import subprocess
 import time
 
@@ -223,7 +224,23 @@ def CometML(project_name=HParam(), experiment_key=None, log_git_patch=None, **kw
     experiment.log_other(
         'last_git_commit',
         subprocess.check_output('git log -1 --format=%cd', shell=True).decode().strip())
+    experiment.log_other(
+        'list_gpus',
+        subprocess.check_output('nvidia-smi --list-gpus', shell=True).decode().strip())
+    experiment.log_other(
+        'list_disks',
+        subprocess.check_output('lshw -class disk -class storage', shell=True).decode().strip())
+    experiment.log_other(
+        'list_unique_cpus',
+        subprocess.check_output(
+            "awk '/model name/ {$1=$2=$3=\"\"; print $0}' /proc/cpuinfo | uniq",
+            shell=True).decode().strip())
     experiment.log_parameter('num_gpu', torch.cuda.device_count())
+    experiment.log_parameter('num_cpu', os.cpu_count())
+    experiment.log_parameter(
+        'total_physical_memory_in_kb',
+        subprocess.check_output("awk '/MemTotal/ {print $2}' /proc/meminfo",
+                                shell=True).decode().strip())
 
     last_step_time = None
     last_step = None
