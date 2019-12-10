@@ -235,6 +235,11 @@ def CometML(project_name=HParam(), experiment_key=None, log_git_patch=None, **kw
         subprocess.check_output(
             "awk '/model name/ {$1=$2=$3=\"\"; print $0}' /proc/cpuinfo | uniq",
             shell=True).decode().strip())
+    experiment.log_other(
+        'public_ip_address',
+        subprocess.check_output(
+            "dig TXT +short o-o.myaddr.l.google.com @ns1.google.com | awk -F'\"' '{ print $2}'",
+            shell=True).decode().strip())
     experiment.log_parameter('num_gpu', torch.cuda.device_count())
     experiment.log_parameter('num_cpu', os.cpu_count())
     experiment.log_parameter(
