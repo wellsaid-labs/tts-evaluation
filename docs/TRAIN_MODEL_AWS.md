@@ -62,7 +62,7 @@ machine.
    ```bash
    # Learn more about the AWS Deep Learning Base AMI here:
    # https://aws.amazon.com/marketplace/pp/Amazon-Web-Services-AWS-Deep-Learning-Base-AMI-Ubu/B07Y3VDBNS
-   VM_IMAGE_ID=ami-0a09445674fe33bfe
+   VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
    VM_IMAGE_USER=ubuntu
 
    AWS_KEY_PAIR_NAME=$USER"_amazon_web_services"
