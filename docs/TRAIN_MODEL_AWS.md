@@ -270,7 +270,7 @@ machine.
    this variable...
 
    ```bash
-   COMET_PROJECT="your-comet-project"
+   COMET_PROJECT='your-comet-project'
    ```
 
 1. Train your model ...
