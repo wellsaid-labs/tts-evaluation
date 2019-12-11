@@ -139,6 +139,9 @@ machine.
    Learn more about this approach
    [here](https://aws.amazon.com/premiumsupport/knowledge-center/execute-user-data-ec2/).
 
+   If you'd like to see the output of your startup script, you can check this file
+   `/var/log/cloud-init-output.log` when your on the VM.
+
 1. Create an EC2 instance for training.
 
    ```bash
