@@ -22,11 +22,19 @@ TTS_DISK_CACHE_NAME = '.tts_cache'  # Hidden directory stored in other directori
 
 TEST_DATA_PATH = ROOT_PATH / 'tests' / '_test_data'
 
+TEST_DATA_PATH.mkdir(exist_ok=True)
+
 DISK_PATH = TEST_DATA_PATH / '_disk' if IS_TESTING_ENVIRONMENT else ROOT_PATH / 'disk'
+
+DISK_PATH.mkdir(exist_ok=True)
 
 DATA_PATH = DISK_PATH / 'data'
 
+DATA_PATH.mkdir(exist_ok=True)
+
 EXPERIMENTS_PATH = DISK_PATH / 'experiments'
+
+EXPERIMENTS_PATH.mkdir(exist_ok=True)
 
 SIGNAL_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / 'signal_model'
 
@@ -38,7 +46,11 @@ SPECTROGRAM_MODEL_EXPERIMENTS_PATH.mkdir(exist_ok=True)
 
 OTHER_DISK_CACHE_PATH = DISK_PATH / 'other'
 
+OTHER_DISK_CACHE_PATH.mkdir(exist_ok=True)
+
 TEMP_PATH = DISK_PATH / 'temp'
+
+TEMP_PATH.mkdir(exist_ok=True)
 
 NINJA_BUILD_PATH = OTHER_DISK_CACHE_PATH / 'ninja_build'
 
@@ -49,6 +61,8 @@ DISK_CACHE_PATH = OTHER_DISK_CACHE_PATH / 'disk_cache'
 DISK_CACHE_PATH.mkdir(exist_ok=True)
 
 SAMPLES_PATH = DISK_PATH / 'samples'
+
+SAMPLES_PATH.mkdir(exist_ok=True)
 
 # NOTE: You can experiment with these codes in your console like so:
 # `echo -e '\033[43m \033[30m hi \033[0m'`
