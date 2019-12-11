@@ -51,7 +51,7 @@ machine.
 1. Setup your environment variables...
 
    ```bash
-   VM_REGION='us-east-1' # EXAMPLE: us-east-1
+   VM_REGION='your-vm-region' # EXAMPLE: us-east-1
    VM_MACHINE_TYPE=g4dn.12xlarge
    VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
    VM_IMAGE_USER=ubuntu  # The default user name for the above image.
@@ -267,7 +267,7 @@ machine.
    this variable...
 
    ```bash
-   COMET_PROJECT="0-stft-model-bases"
+   COMET_PROJECT="your-comet-project"
    ```
 
 1. Train your model ...
