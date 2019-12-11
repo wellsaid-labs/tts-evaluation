@@ -32,21 +32,21 @@ on a AWS virtual machine.
 1. Now that you've finished training your spectrogram model, stop your VM instance, like so:
 
    ```bash
-   aws --region=$VM_REGION ec2 stop-instances --instance-ids $VM_INSTANCE_ID
+   aws --region=$VM_REGION ec2 stop-instances --instance-ids $VM_ID
    ```
 
 1. Adjust the instance-type to the required type for the signal model...
 
    ```bash
    aws ec2 modify-instance-attribute \
-      --instance-id $VM_INSTANCE_ID \
+      --instance-id $VM_ID \
       --instance-type "Value=$VM_MACHINE_TYPE"
    ```
 
 1. Start your VM instance, like so:
 
    ```bash
-   aws --region=$VM_REGION ec2 start-instances --instance-ids $VM_INSTANCE_ID
+   aws --region=$VM_REGION ec2 start-instances --instance-ids $VM_ID
    ```
 
 ### On the VM instance

@@ -59,7 +59,7 @@ Related Documentation:
    # https://cloud.google.com/compute/docs/gpus/
    # Note you'll want to spread your experiments out accross multiple zones to mitigate the risk of
    # your experiments getting throttled.
-   VM_INSTANCE_ZONE=your-vm-instance-zone
+   VM_ZONE=your-vm-instance-zone
    ```
 
 2. Create your virtual machine, like so:
@@ -68,7 +68,7 @@ Related Documentation:
    gcloud compute --project=voice-research-255602 instances create $VM_NAME \
      # A zone with the required resources using this chart
      # https://cloud.google.com/compute/docs/gpus/
-     --zone=$VM_INSTANCE_ZONE \
+     --zone=$VM_ZONE \
 
      # Required resources
      --min-cpu-platform="Intel Broadwell" \
@@ -260,11 +260,11 @@ Related Documentation:
    ... stop your VM
 
    ```bash
-   gcloud compute instances stop $VM_NAME --zone=$VM_INSTANCE_ZONE
+   gcloud compute instances stop $VM_NAME --zone=$VM_ZONE
    ```
 
    ... or delete your VM
 
    ```bash
-   gcloud compute instances delete $VM_NAME --zone=$VM_INSTANCE_ZONE
+   gcloud compute instances delete $VM_NAME --zone=$VM_ZONE
    ```
