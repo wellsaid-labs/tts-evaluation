@@ -18,7 +18,7 @@ on a GCP virtual machine.
 
    ```bash
    VM_NAME=$USER"_your-experiment-name" # EXAMPLE: michaelp_baseline
-   VM_ZONE=$(gcloud compute instances list | grep "^$1\s" | awk '{ print $2 }')
+   VM_ZONE=$(gcloud compute instances list | grep "^$VM_NAME\s" | awk '{ print $2 }')
    ```
 
 1. Now that you've finished training your spectrogram model, stop your VM instance, like so:

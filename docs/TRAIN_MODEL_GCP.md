@@ -93,7 +93,7 @@ Related Documentation:
 1. From your local repository, ssh into your new VM instance, like so:
 
    ```bash
-   VM_ZONE=$(gcloud compute instances list | grep "^$1\s" | awk '{ print $2 }')
+   VM_ZONE=$(gcloud compute instances list | grep "^$VM_NAME\s" | awk '{ print $2 }')
    gcloud compute ssh --zone=$ZONE $VM_NAME
    ```
 
@@ -145,11 +145,13 @@ Related Documentation:
 1. Use `src.bin.cloud.lsyncd` to live sync your repository to your VM instance:
 
    ```bash
-   VM_USER=$(gcloud compute ssh $VM_NAME --command="echo $USER")
-   VM_IP_ADDRESS=$(gcloud compute instances describe $VM_NAME --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+   VM_ZONE=$(gcloud compute instances list | grep "^$VM_NAME\s" | awk '{ print $2 }')
+   VM_USER=$(gcloud compute ssh $VM_NAME --zone $VM_ZONE --command="echo $USER")
+   VM_IP_ADDRESS=$(gcloud compute instances describe --zone $VM_ZONE $VM_NAME \
+      --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
    IDENTITY_FILE=~/.ssh/google_compute_engine
    python3 -m src.bin.cloud.lsyncd --public_dns $VM_IP_ADDRESS \
-                                 --identity_file $IDENTITY_FILE
+                                 --identity_file $IDENTITY_FILE \
                                  --source $(pwd) \
                                  --destination /opt/wellsaid-labs/Text-to-Speech \
                                  --user $VM_USER
@@ -248,7 +250,7 @@ Related Documentation:
 
    ```bash
    VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
-   VM_ZONE=$(gcloud compute instances list | grep "^$1\s" | awk '{ print $2 }')
+   VM_ZONE=$(gcloud compute instances list | grep "^$VM_NAME\s" | awk '{ print $2 }')
    ```
 
 1. Once training has finished ...
