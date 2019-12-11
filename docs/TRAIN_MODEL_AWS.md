@@ -16,9 +16,9 @@ machine.
    python -m pip install awscli
    ```
 
-1. You'll first need programatic access to our AWS account.
+1. You'll need programatic access to our AWS account.
 
-   1. Ask a team member to create you an AWS user.
+   1. Ask a team member to create you an AWS IAM user and login to it.
 
    1. Follow [this guide](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_CreateAccessKey)
       to create an access key.
@@ -30,7 +30,7 @@ machine.
       AWS_SECRET_ACCESS_KEY='your-aws-secret-access-key'
       ```
 
-      For `awscli` to progrmatically access your AWS account run this..
+      and run this..
 
       ```bash
       mkdir ~/.aws
@@ -46,7 +46,9 @@ machine.
    ssh-keygen -t rsa -C $AWS_KEY_PAIR_NAME -f ~/.ssh/$AWS_KEY_PAIR_NAME -N ""
    ```
 
-## From your local repository
+## Train a Model with Amazon Web Services (AWS)
+
+### From your local repository
 
 1. Setup your environment variables...
 

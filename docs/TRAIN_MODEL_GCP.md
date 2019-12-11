@@ -32,7 +32,9 @@ Related Documentation:
    brew install lsyncd
    ```
 
-## From your local repository
+## Train a Model with Google Cloud Platform (GCP) Compute
+
+### From your local repository
 
 1. Setup your environment variables
 
