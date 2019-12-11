@@ -18,7 +18,7 @@ on a AWS virtual machine.
 
    ```bash
    VM_REGION='your-vm-region' # EXAMPLE: us-east-1
-   VM_INSTANCE_NAME=$USER"_your_experiment_name" # EXAMPLE: michaelp_baseline
+   VM_NAME=$USER"_your_experiment_name" # EXAMPLE: michaelp_baseline
    VM_MACHINE_TYPE=p3.16xlarge
    ```
 
