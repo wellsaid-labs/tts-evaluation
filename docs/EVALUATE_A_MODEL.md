@@ -103,24 +103,22 @@ def main(
    ... for AWS:
 
    ```bash
-   VM_REGION='your-vm-region'
-   VM_NAME=$USER"_your_experiment_name"
+   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
+   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
    AWS_KEY_PAIR_NAME=$USER"_amazon_web_services" # The default AWS key pair name
    VM_USER=ubuntu  # The default user name for the default image.
    ```
 
    ```bash
    VM_IDENTITY_FILE=~/.ssh/$AWS_KEY_PAIR_NAME
-   VM_PUBLIC_DNS=$(aws --region=$VM_REGION ec2 describe-instances \
-          --filters Name=tag:Name,Values=$VM_NAME \
-          --query 'Reservations[0].Instances[0].PublicDnsName' \
-          --output text)
+   VM_PUBLIC_DNS=$(aws ec2 describe-instances --filters Name=tag:Name,Values=$VM_NAME \
+     --query 'Reservations[0].Instances[0].PublicDnsName' --output text)
    ```
 
    ... for GCP:
 
    ```bash
-   VM_NAME=''
+   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
    ```
 
    ```bash
@@ -135,8 +133,7 @@ def main(
    ```bash
    mkdir ~/Downloads/samples/
    scp -rp -i $VM_IDENTITY_FILE \
-      $VM_USER@$VM_PUBLIC_DNS:/opt/wellsaid-labs/Text-to-Speech/disk/samples/ \
-      ~/Downloads/
+      $VM_USER@$VM_PUBLIC_DNS:/opt/wellsaid-labs/Text-to-Speech/disk/samples/ ~/Downloads/
    ```
 
    If your working with multiple VMs, you'll want to rerun this step for each VM.
@@ -144,7 +141,7 @@ def main(
 4. Combine the the samples you generated into one batch, like so:
 
    ```bash
-   BATCH_NAME_SUFFIX=''
+   BATCH_NAME_SUFFIX='your-evaluation-batch-name'
    ```
 
    ```bash

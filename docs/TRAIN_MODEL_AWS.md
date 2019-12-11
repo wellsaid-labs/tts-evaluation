@@ -220,7 +220,7 @@ machine.
 
 ### From your local repository
 
-1. In a new terminal window, setup your environment variables...
+1. In a new terminal window, setup your environment variables again...
 
    ```bash
    export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
@@ -305,7 +305,7 @@ machine.
 
 ### From your local repository
 
-1. Setup your environment variables...
+1. Setup your environment variables again...
 
    ```bash
    export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
