@@ -106,7 +106,7 @@ def _train(device_index,
         run_root (Path): Directory to save experiment.
         checkpoints_directory (Path): Directory to save checkpoints.
         checkpoint (src.utils.Checkpoint): Loaded `Checkpoint` or None.
-        spectrogram_model_checkpoint_path (pathlib.Path)
+        spectrogram_model_checkpoint_path (pathlib.Path or None)
         train_dataset (iterable)
         dev_dataset (iterable)
         comet_ml_project_name (str): Project name to use with comet.ml.
@@ -249,7 +249,7 @@ def main(experiment_name=None,
             run_root,
             checkpoints_directory,
             checkpoint,
-            spectrogram_model_checkpoint.path,
+            None if spectrogram_model_checkpoint is None else spectrogram_model_checkpoint.path,
             train_dataset,
             dev_dataset,
             comet_ml_project_name,
@@ -310,8 +310,10 @@ if __name__ == '__main__':  # pragma: no cover
         # TODO: Remove coupling between `Trainer` and `checkpoint`.
         args.checkpoint.optimizer = None if args.reset_optimizer else args.checkpoint.optimizer
         args.project_name = args.checkpoint.comet_ml_project_name
-        args.spectrogram_model_checkpoint = Checkpoint.from_path(
-            args.checkpoint.spectrogram_model_checkpoint_path)
+
+        if args.checkpoint.spectrogram_model_checkpoint_path is not None:
+            args.spectrogram_model_checkpoint = Checkpoint.from_path(
+                args.checkpoint.spectrogram_model_checkpoint_path)
 
     main(
         experiment_name=args.name,

@@ -146,9 +146,9 @@ Related Documentation:
    ```bash
    VM_USER=$(gcloud compute ssh $VM_NAME --command="echo $USER")
    VM_IP_ADDRESS=$(gcloud compute instances describe $VM_NAME --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
-   VM_IDENTITY_FILE=~/.ssh/google_compute_engine
+   IDENTITY_FILE=~/.ssh/google_compute_engine
    python3 -m src.bin.cloud.lsyncd --public_dns $VM_IP_ADDRESS \
-                                 --identity_file $VM_IDENTITY_FILE
+                                 --identity_file $IDENTITY_FILE
                                  --source $(pwd) \
                                  --destination /opt/wellsaid-labs/Text-to-Speech \
                                  --user $VM_USER

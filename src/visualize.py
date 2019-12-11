@@ -225,6 +225,8 @@ def CometML(project_name=HParam(), experiment_key=None, log_git_patch=None, **kw
     experiment.log_other(
         'last_git_commit',
         subprocess.check_output('git log -1 --format=%cd', shell=True).decode().strip())
+    # TODO: Instead of using different approaches for extracting CPU, GPU, and disk information
+    # consider standardizing to use `lshw` instead.
     if torch.cuda.is_available():
         experiment.log_other(
             'list_gpus',

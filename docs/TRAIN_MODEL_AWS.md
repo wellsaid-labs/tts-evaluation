@@ -53,16 +53,29 @@ machine.
 1. Setup your environment variables...
 
    ```bash
-   VM_REGION='your-vm-region' # EXAMPLE: us-east-1
+   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
+   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
+   ```
+
+   and these...
+
+   ```bash
+   # Learn more about the AWS Deep Learning Base AMI here:
+   # https://aws.amazon.com/marketplace/pp/Amazon-Web-Services-AWS-Deep-Learning-Base-AMI-Ubu/B07Y3VDBNS
+   VM_IMAGE_ID=ami-0a09445674fe33bfe
+   VM_IMAGE_USER=ubuntu
+
+   AWS_KEY_PAIR_NAME=$USER"_amazon_web_services"
+   ```
+
+   Set these variables for training the spectrogram model...
+
+   ```bash
    VM_MACHINE_TYPE=g4dn.12xlarge
-   VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
-   VM_IMAGE_USER=ubuntu  # The default user name for the above image.
-   VM_NAME=$USER"_your_instance_name" # EXAMPLE: michaelp_baseline
-   AWS_KEY_PAIR_NAME=$USER"_amazon_web_services" # EXAMPLE: michaelp_amazon_web_services
    TRAIN_SCRIPT_PATH='src/bin/train/spectrogram_model/__main__.py'
    ```
 
-   If your training the signal model, you'll want instead...
+   Set these variables for training the signal model...
 
    ```bash
    VM_MACHINE_TYPE=p3.16xlarge
@@ -72,7 +85,6 @@ machine.
    Related Resources:
 
    - Learn more about the available instance types, [here](https://aws.amazon.com/ec2/instance-types/).
-   - Learn more about the above "ami-0b98d7f73c7d1bb71" image, [here](https://aws.amazon.com/marketplace/pp/Amazon-Web-Services-AWS-Deep-Learning-Base-AMI-Ubu/B07Y3VDBNS).
    - During any point in this process, you may want to image the disk so that you don't have to start
      from scratch every time. In order to do so, please follow the instructions
      [here](https://docs.aws.amazon.com/cli/latest/reference/ec2/create-image.html).
@@ -83,34 +95,33 @@ machine.
 1. Upload your SSH key to the AWS region you plan to train in.
 
    ```bash
-   aws --region=$VM_REGION ec2 import-key-pair \
-        --key-name=$AWS_KEY_PAIR_NAME \
+   aws ec2 import-key-pair --key-name=$AWS_KEY_PAIR_NAME \
         --public-key-material=file://$HOME/.ssh/$AWS_KEY_PAIR_NAME.pub
    ```
 
-1. Create a security group to restrict incoming and outgoing VM traffic to only allow SSH, like
-   so...
+   Skip this step if the key pair already exists.
+
+1. Create a security group that only allows SSH traffic to the VM, like so...
 
    ```bash
    SECURITY_GROUP_NAME=only-ssh
-   aws --region=$VM_REGION ec2 create-security-group --group-name $SECURITY_GROUP_NAME \
+   aws ec2 create-security-group --group-name $SECURITY_GROUP_NAME \
       --description "Only allow SSH connections"
-   aws --region=$VM_REGION ec2 authorize-security-group-ingress \
-      --group-name $SECURITY_GROUP_NAME \
-      --protocol tcp \
-      --port 22 \
-      --cidr 0.0.0.0/0
+   aws ec2 authorize-security-group-ingress --group-name $SECURITY_GROUP_NAME --protocol tcp \
+      --port 22 --cidr 0.0.0.0/0
    ```
 
-   If the security group already exists, you can skip this step.
+   Skip this step if the security group already exists.
 
-1. Create an instance startup script that'll run every time this instance boots...
+1. Setup a startup script for the instance,
+   [similar to this](https://aws.amazon.com/premiumsupport/knowledge-center/execute-user-data-ec2/),
+   like so...
 
    ```bash
    USER_DATA=$(cat docs/train_model_aws_start_up.sh)
    USER_DATA=${USER_DATA//'$VM_NAME'/\'$VM_NAME\'}
-   USER_DATA=${USER_DATA//'$VM_USER'/\'$VM_USER\'}
-   USER_DATA=${USER_DATA//'$VM_REGION'/\'$VM_REGION\'}
+   USER_DATA=${USER_DATA//'$VM_USER'/\'$VM_IMAGE_USER\'}
+   USER_DATA=${USER_DATA//'$VM_REGION'/\'$AWS_DEFAULT_REGION\'}
    USER_DATA=${USER_DATA//'$TRAIN_SCRIPT_PATH'/\'$TRAIN_SCRIPT_PATH\'}
    USER_DATA=${USER_DATA//'$AWS_CREDENTIALS'/\'$(cat ~/.aws/credentials)\'}
    USER_DATA="Content-Type: multipart/mixed; boundary=\"//\"
@@ -138,13 +149,9 @@ machine.
    USER_DATA=$(echo "$USER_DATA" | base64)
    ```
 
-   Learn more about this approach
-   [here](https://aws.amazon.com/premiumsupport/knowledge-center/execute-user-data-ec2/).
+   The output of the startup script will be saved on the VM here: `/var/log/cloud-init-output.log`
 
-   If you'd like to see the output of your startup script, you can check this file
-   `/var/log/cloud-init-output.log` when your on the VM.
-
-1. Create an EC2 instance for training.
+1. Create an EC2 instance for training...
 
    ```bash
    echo '{
@@ -164,50 +171,33 @@ machine.
       "KeyName": "'$AWS_KEY_PAIR_NAME'",
       "UserData": "'$USER_DATA'"
    }' > /tmp/launch_specification.json
-   ```
-
-   ```bash
-   SPOT_REQUEST_ID=$(aws --region=$REGION ec2 request-spot-instances \
-      --type "persistent" \
+   SPOT_REQUEST_ID=$(aws ec2 request-spot-instances --type "persistent" \
       --launch-specification file:///tmp/launch_specification.json \
       --instance-interruption-behavior "stop" | \
       jq '.SpotInstanceRequests[0].SpotInstanceRequestId' | xargs)
-   aws --region=$VM_REGION ec2 create-tags \
-       --resources $SPOT_REQUEST_ID \
-       --tags Key=Name,Value=$VM_NAME
+   aws ec2 create-tags --resources $SPOT_REQUEST_ID --tags Key=Name,Value=$VM_NAME
    ```
 
-   By default, AWS will keep this instance alive for the next seven days.
+   This instance will stay online for seven days or until you cancel the spot request.
 
-1. When the instance comes online, you'll be able to fetch a URL for SSH...
+1. Wait for the instance status to be 'running'...
 
    ```bash
-   VM_ID=$(aws --region=$VM_REGION ec2 describe-instances \
-      --filters Name=tag:Name,Values=$VM_NAME \
-      --query 'Reservations[0].Instances[0].InstanceId' \
-      --output text)
-   VM_STATUS=$(aws --region=$VM_REGION ec2 describe-instance-status \
-      --instance-id $VM_ID | jq ".InstanceStatuses[0].InstanceState.Name" | xargs)
-   if [ "$VM_STATUS" == "running" ] ; then
-      VM_PUBLIC_DNS=$(aws --region=$VM_REGION ec2 describe-instances \
-          --filters Name=tag:Name,Values=$VM_NAME \
-          --query 'Reservations[0].Instances[0].PublicDnsName' \
-          --output text)
-   else
-      echo "ERROR: The instance '$VM_NAME' isn't running, yet."
-   fi
+   VM_STATUS=$(aws ec2 describe-instances --filters Name=tag:Name,Values=$VM_NAME \
+      --query 'Reservations[0].Instances[0].State.Name' --output text)
+   echo "The status of VM '$VM_NAME' is '$VM_STATUS'."
    ```
 
-1. Finally, you can ssh into the instance...
+1. SSH into the instance...
 
    ```bash
-   ssh -i ~/.ssh/$AWS_KEY_PAIR_NAME \
-      -o UserKnownHostsFile=/dev/null \
-      -o StrictHostKeyChecking=no \
-      $VM_IMAGE_USER@$VM_PUBLIC_DNS
+   VM_PUBLIC_DNS=$(aws ec2 describe-instances --filters Name=tag:Name,Values=$VM_NAME \
+     --query 'Reservations[0].Instances[0].PublicDnsName' --output text)
+   ssh -i ~/.ssh/$AWS_KEY_PAIR_NAME -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
+     $VM_IMAGE_USER@$VM_PUBLIC_DNS
    ```
 
-   You'll want to run this command multiple times until it works.
+   Continue to run this command until it succeeds.
 
 ### On the VM instance
 
@@ -218,9 +208,9 @@ machine.
    sudo apt-get install python3-venv sox ffmpeg ninja-build -y
    ```
 
-   If you get an error after running `sudo apt-get update`, wait a minute or so and try again.
+   If you get a `dkpg` error, wait a minute or so and try again.
 
-1. Create a directory for our software.
+1. Create a directory for our software...
 
    ```bash
    sudo chmod -R a+rwx /opt
@@ -230,24 +220,34 @@ machine.
 
 ### From your local repository
 
+1. In a new terminal window, setup your environment variables...
+
+   ```bash
+   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
+   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
+   ```
+
 1. Use `src.bin.cloud.lsyncd` to live sync your repository to your VM instance:
 
    ```bash
+   VM_PUBLIC_DNS=$(aws ec2 describe-instances --filters Name=tag:Name,Values=$VM_NAME \
+      --query 'Reservations[0].Instances[0].PublicDnsName' --output text)
+   VM_IMAGE_USER=ubuntu
    python3 -m src.bin.cloud.lsyncd --public_dns $VM_PUBLIC_DNS \
-                                 --identity_file ~/.ssh/$AWS_KEY_PAIR_NAME \
+                                 --identity_file ~/.ssh/$USER"_amazon_web_services" \
                                  --source $(pwd) \
                                  --destination /opt/wellsaid-labs/Text-to-Speech \
                                  --user $VM_IMAGE_USER
    ```
 
-1. When prompted, give your local sudo password for your laptop.
+   When prompted, enter your sudo password.
 
-   Keep this process running on your local machine until you've started training, it'll
-   allow you to make any hot-fixes to your code in case you run into an error.
+1. Leave this processing running until you've started training. This will allow you to make any
+   hot-fixes to your code in case you run into an error.
 
 ### On the VM instance
 
-1. Start a screen session:
+1. Start a `screen` session:
 
    ```bash
    screen
@@ -268,58 +268,70 @@ machine.
    sudo bash src/bin/install_mkl.sh
    ```
 
-1. Pick or create a comet project [here](https://www.comet.ml/wellsaid-labs). Afterwards set
-   this variable...
+1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
 
    ```bash
    COMET_PROJECT='your-comet-project'
-   ```
-
-1. Train your model ...
-
-   ```bash
    EXPERIMENT_NAME='your-experiment-name'
    ```
 
+1. Start training...
+
    ```bash
-   pkill -9 python; \
-   nvidia-smi; \
-   PYTHONPATH=. python $TRAIN_SCRIPT_PATH \
-       --project_name $COMET_PROJECT \
-       --name $EXPERIMENT_NAME
+   TRAIN_SCRIPT_PATH='your-choosen-training-script-from-earlier'
+
+   # Kill any leftover processes from other runs...
+   pkill -9 python; sleep 5s; nvidia-smi; \
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH --project_name $COMET_PROJECT --name $EXPERIMENT_NAME;
    ```
 
-   Note: You can include an optional `--spectrogram_model_checkpoint` argument is optional
-   (for example, see [here](TRAIN_TTS_MODEL_GCP.md#on-the-vm-instance)).
-
-   We run `pkill -9 python` to kill any leftover processes from previous runs and `nvidia-smi`
-   to ensure the GPU has no running processes.
+   💡 TIP: You may want to include the optional `--spectrogram_model_checkpoint` argument.
 
 1. Detach from your screen session by typing `Ctrl-A` then `D`.
 
-1. To ensure that your VM restarts from the latest checkpoint, in the case of an interruption,
-   run this command:
+1. Set a flag to restart training if the instance is rebooted...
 
    ```bash
    touch /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
    ```
 
-1. You can exit your VM with the `exit` command.
+1. You can now exit your VM with the `exit` command.
 
 ### From your local repository
 
 1. Kill your `lsyncd` process by typing `Ctrl-C`.
 
-1. Once training has finished ...
+## Post Training Clean Up
 
-   ... stop your VM
+### From your local repository
+
+1. Setup your environment variables...
 
    ```bash
-   aws --region=$VM_REGION ec2 stop-instances --instance-ids $VM_ID
+   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
+   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
+
+   SPOT_REQUEST_ID=$(aws ec2 describe-spot-instance-requests \qaq
+      --filters Name=tag:Name,Values=$VM_NAME \
+      --query 'SpotInstanceRequests[0].SpotInstanceRequestId' --output text)
+   VM_ID=$(aws ec2 describe-instances --filters Name=tag:Name,Values=$VM_NAME \
+                --query 'Reservations[0].Instances[0].InstanceId' --output text)
    ```
 
-   ... or delete your VM
+1. Cancel your spot instance request...
 
    ```bash
-   aws --region=$VM_REGION ec2 terminate-instances --instance-ids $VM_ID
+   aws ec2 cancel-spot-instance-requests --spot-instance-request-ids $SPOT_REQUEST_ID
+   ```
+
+1. Stop your instance...
+
+   ```bash
+   aws ec2 stop-instances --instance-ids $VM_ID
+   ```
+
+   or delete your instance...
+
+   ```bash
+   aws ec2 terminate-instances --instance-ids $VM_ID
    ```

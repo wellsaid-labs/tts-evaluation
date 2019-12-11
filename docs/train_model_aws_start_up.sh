@@ -1,3 +1,5 @@
+echo 'Running startup script...'
+
 echo 'Adding credentials to AWS instance...'
 mkdir ~/.aws
 echo $AWS_CREDENTIALS > ~/.aws/credentials
