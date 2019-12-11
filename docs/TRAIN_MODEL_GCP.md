@@ -53,7 +53,7 @@ Related Documentation:
    Also set these ...
 
    ```bash
-   VM_INSTANCE_NAME=your-vm-instance-name
+   VM_NAME=your-vm-instance-name
 
    # Pick a zone that supports your choosen `VM_ACCELERATOR_TYPE` using this chart:
    # https://cloud.google.com/compute/docs/gpus/
@@ -65,7 +65,7 @@ Related Documentation:
 2. Create your virtual machine, like so:
 
    ```bash
-   gcloud compute --project=voice-research-255602 instances create $VM_INSTANCE_NAME \
+   gcloud compute --project=voice-research-255602 instances create $VM_NAME \
      # A zone with the required resources using this chart
      # https://cloud.google.com/compute/docs/gpus/
      --zone=$VM_INSTANCE_ZONE \
@@ -92,7 +92,7 @@ Related Documentation:
 3. From your local repository, ssh into your new VM instance, like so:
 
    ```bash
-   . src/bin/cloud/ssh_gcp.sh $VM_INSTANCE_NAME
+   . src/bin/cloud/ssh_gcp.sh $VM_NAME
    ```
 
    You'll want to run this command multiple times until it works.
@@ -142,8 +142,8 @@ Related Documentation:
 1. Use `src.bin.cloud.lsyncd` to live sync your repository to your VM instance:
 
    ```bash
-   VM_USER=$(gcloud compute ssh $VM_INSTANCE_NAME --command="echo $USER")
-   VM_IP_ADDRESS=$(gcloud compute instances describe $VM_INSTANCE_NAME --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+   VM_USER=$(gcloud compute ssh $VM_NAME --command="echo $USER")
+   VM_IP_ADDRESS=$(gcloud compute instances describe $VM_NAME --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
    VM_IDENTITY_FILE=~/.ssh/google_compute_engine
    python3 -m src.bin.cloud.lsyncd --public_dns $VM_IP_ADDRESS \
                                  --identity_file $VM_IDENTITY_FILE
@@ -230,7 +230,7 @@ Related Documentation:
    ```bash
    python -m src.bin.cloud.keep_alive_gcp \
        --project_name $COMET_PROJECT \
-       --instance $VM_INSTANCE_NAME \
+       --instance $VM_NAME \
        --command="screen -dmL bash -c \
                    'sudo chmod -R a+rwx /opt/;
                    cd /opt/wellsaid-labs/Text-to-Speech;
@@ -243,7 +243,7 @@ Related Documentation:
    ```bash
    python -m src.bin.cloud.keep_alive_gcp \
        --project_name $COMET_PROJECT \
-       --instance $VM_INSTANCE_NAME \
+       --instance $VM_NAME \
        --command="screen -dmL bash -c \
                    'sudo chmod -R a+rwx /opt/;
                    cd /opt/wellsaid-labs/Text-to-Speech;
@@ -260,11 +260,11 @@ Related Documentation:
    ... stop your VM
 
    ```bash
-   gcloud compute instances stop $VM_INSTANCE_NAME --zone=$VM_INSTANCE_ZONE
+   gcloud compute instances stop $VM_NAME --zone=$VM_INSTANCE_ZONE
    ```
 
    ... or delete your VM
 
    ```bash
-   gcloud compute instances delete $VM_INSTANCE_NAME --zone=$VM_INSTANCE_ZONE
+   gcloud compute instances delete $VM_NAME --zone=$VM_INSTANCE_ZONE
    ```

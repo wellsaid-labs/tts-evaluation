@@ -17,7 +17,7 @@ on a GCP virtual machine.
 1. Now that you've finished training your spectrogram model, stop your VM instance, like so:
 
    ```bash
-   gcloud compute instances stop $VM_INSTANCE_NAME --zone=$VM_INSTANCE_ZONE
+   gcloud compute instances stop $VM_NAME --zone=$VM_INSTANCE_ZONE
    ```
 
 2. Follow [this guide](https://cloud.google.com/compute/docs/instances/changing-machine-type-of-stopped-instance)
@@ -30,7 +30,7 @@ on a GCP virtual machine.
 4. Start your VM instance, like so:
 
    ```bash
-   gcloud compute instances start $VM_INSTANCE_NAME --zone=$VM_INSTANCE_ZONE
+   gcloud compute instances start $VM_NAME --zone=$VM_INSTANCE_ZONE
    ```
 
 ### On the VM instance

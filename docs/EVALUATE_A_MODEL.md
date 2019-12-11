@@ -104,7 +104,7 @@ def main(
 
    ```bash
    VM_REGION='your-vm-region'
-   VM_INSTANCE_NAME=$USER"_your_experiment_name"
+   VM_NAME=$USER"_your_experiment_name"
    AWS_KEY_PAIR_NAME=$USER"_amazon_web_services" # The default AWS key pair name
    VM_USER=ubuntu  # The default user name for the default image.
    ```
@@ -120,14 +120,14 @@ def main(
    ... for GCP:
 
    ```bash
-   VM_INSTANCE_NAME=''
+   VM_NAME=''
    ```
 
    ```bash
-   VM_ZONE=$(gcloud compute instances list | grep "^$VM_INSTANCE_NAME\s" | awk '{ print $2 }')
-   VM_USER=$(gcloud compute ssh $VM_INSTANCE_NAME --zone=$VM_ZONE --command="echo $USER")
+   VM_ZONE=$(gcloud compute instances list | grep "^$VM_NAME\s" | awk '{ print $2 }')
+   VM_USER=$(gcloud compute ssh $VM_NAME --zone=$VM_ZONE --command="echo $USER")
    VM_IDENTITY_FILE=~/.ssh/google_compute_engine
-   VM_PUBLIC_DNS=$(gcloud compute instances describe $VM_INSTANCE_NAME --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+   VM_PUBLIC_DNS=$(gcloud compute instances describe $VM_NAME --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
    ```
 
 3. Download your samples to `~/Downloads`.
