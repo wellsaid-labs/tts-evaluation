@@ -23,9 +23,10 @@ on a AWS virtual machine.
    ```
 
    ```bash
-   VM_INFO=$(aws --region=$VM_REGION ec2 describe-instances \
-      --filters Name=tag:Name,Values=$VM_INSTANCE_NAME | jq .Reservations[0].Instances[0])
-   VM_INSTANCE_ID=$(echo $VM_INFO | jq ".InstanceId" | xargs)
+   VM_ID=$(aws --region=$VM_REGION ec2 describe-instances \
+      --filters Name=tag:Name,Values=$VM_NAME \
+      --query 'Reservations[0].Instances[0].InstanceId' \
+      --output text)
    ```
 
 1. Now that you've finished training your spectrogram model, stop your VM instance, like so:

@@ -111,9 +111,10 @@ def main(
 
    ```bash
    VM_IDENTITY_FILE=~/.ssh/$AWS_KEY_PAIR_NAME
-   VM_INFO=$(aws --region=$VM_REGION ec2 describe-instances \
-      --filters Name=tag:Name,Values=$VM_INSTANCE_NAME | jq .Reservations[0].Instances[0])
-   VM_PUBLIC_DNS=$(echo $VM_INFO | jq ".PublicDnsName" | xargs)
+   VM_PUBLIC_DNS=$(aws --region=$VM_REGION ec2 describe-instances \
+          --filters Name=tag:Name,Values=$VM_NAME \
+          --query 'Reservations[0].Instances[0].PublicDnsName' \
+          --output text)
    ```
 
    ... for GCP:
