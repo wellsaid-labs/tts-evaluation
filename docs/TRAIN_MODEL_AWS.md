@@ -56,7 +56,7 @@ machine.
    VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
    VM_IMAGE_USER=ubuntu  # The default user name for the above image.
    VM_NAME=$USER"_your_instance_name" # EXAMPLE: michaelp_baseline
-   KEY_PAIR_NAME=$USER"_amazon_web_services" # EXAMPLE: michaelp_amazon_web_services
+   AWS_KEY_PAIR_NAME=$USER"_amazon_web_services" # EXAMPLE: michaelp_amazon_web_services
    TRAIN_SCRIPT_PATH='src/bin/train/spectrogram_model/__main__.py'
    ```
 
