@@ -28,9 +28,9 @@ def test_get_num_seconds():
 
     TODO: The number of seconds for both files is not exactly the same. Look into that.
     """
-    assert pytest.approx(7.5848, 0.0001) == get_num_seconds(TEST_DATA_PATH_LOCAL / 'lj_speech.wav')
-    assert pytest.approx(7.5848, 0.0001) == get_num_seconds(TEST_DATA_PATH_LOCAL /
-                                                            'rate(lj_speech,24000).wav')
+    assert pytest.approx(7.58, 0.01) == get_num_seconds(TEST_DATA_PATH_LOCAL / 'lj_speech.wav')
+    assert pytest.approx(7.58, 0.01) == get_num_seconds(TEST_DATA_PATH_LOCAL /
+                                                        'rate(lj_speech,24000).wav')
 
 
 def test_read_audio():
