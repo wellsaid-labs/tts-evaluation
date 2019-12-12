@@ -66,3 +66,8 @@ directories. If so try this command:
 ```bash
 du --human-readable  | sort --human-numeric-sort
 ```
+
+## Scroll inside a screen session
+
+It's useful to be able to scroll through your logs in a screen session, you can do so by following
+the instructions [here](https://unix.stackexchange.com/a/40243).
