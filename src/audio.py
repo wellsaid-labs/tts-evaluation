@@ -2,6 +2,7 @@ from pathlib import Path
 
 import logging
 import math
+import os
 import struct
 import subprocess
 
@@ -24,6 +25,24 @@ from src.utils import get_chunks
 from src.utils import Pool
 
 logger = logging.getLogger(__name__)
+
+
+def get_num_seconds(audio_path):
+    """ Get the number of seconds for a WAV audio file.
+
+    Args:
+        audio_path (str)
+
+    Returns:
+        (float): The number of seconds in audio.
+    """
+    metadata = get_audio_metadata(Path(audio_path))
+    BITS_PER_BYTE = 8
+    # Learn more: http://www.topherlee.com/software/pcm-tut-wavformat.html
+    WAV_HEADER_LENGTH_IN_BYTES = 44
+    bytes_per_second = (metadata['sample_rate'] *
+                        (metadata['bits'] / BITS_PER_BYTE)) * metadata['channels']
+    return (os.path.getsize(audio_path) - WAV_HEADER_LENGTH_IN_BYTES) / bytes_per_second
 
 
 @configurable
