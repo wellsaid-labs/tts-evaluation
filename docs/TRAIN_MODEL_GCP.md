@@ -105,7 +105,7 @@ Related Documentation:
 
    ```bash
    sudo apt-get update
-   sudo apt-get install python3-venv python3-dev gcc sox ffmpeg ninja-build -y
+   sudo apt-get install python3-venv python3-dev gcc g++ sox ffmpeg ninja-build -y
    ```
 
 1. Install GPU drivers on your VM by installing
