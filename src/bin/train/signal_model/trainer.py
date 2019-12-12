@@ -502,7 +502,7 @@ class Trainer():
         example = random.sample(self.dev_dataset, 1)[0]
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
         spectrogram = maybe_load_tensor(spectrogram)  # [num_frames, frame_channels]
-        target_signal = maybe_load_tensor(example.spectrogram_audio)  # [signal_length]
+        target_signal = maybe_load_tensor(example.spectrogram_audio).float()  # [signal_length]
         spectrogram = spectrogram.to(torch.device('cpu'))
 
         logger.info('Running inference on %d spectrogram frames with %d threads.',
