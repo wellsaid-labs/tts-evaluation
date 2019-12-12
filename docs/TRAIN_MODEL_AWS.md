@@ -84,13 +84,17 @@ machine.
 
    Related Resources:
 
-   - Learn more about the available instance types, [here](https://aws.amazon.com/ec2/instance-types/).
-   - During any point in this process, you may want to image the disk so that you don't have to start
-     from scratch every time. In order to do so, please follow the instructions
+   - Learn more about our benchmarks for the available machine types,
+     [here](./TRAIN_MODEL_AWS_BENCHMARKS.md).
+   - Learn more about the available instance types,
+     [here](https://aws.amazon.com/ec2/instance-types/).
+   - During any point in this process, you may want to image the disk so that you don't have to
+     start from scratch every time. In order to do so, please follow the instructions
      [here](https://docs.aws.amazon.com/cli/latest/reference/ec2/create-image.html).
    - Learn more about the available GPU instances for each region,
      [here](https://aws.amazon.com/ec2/pricing/on-demand/).
-   - Get a list of all AWS regions, [here](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RegionsAndAvailabilityZones.html).
+   - Get a list of all AWS regions,
+     [here](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RegionsAndAvailabilityZones.html).
 
 1. Upload your SSH key to the AWS region you plan to train in.
 

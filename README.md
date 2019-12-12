@@ -18,3 +18,4 @@ You might be interested in:
 - [Training a TTS model on AWS](./docs/TRAIN_TTS_MODEL_AWS.md)
 - [Evaluating a TTS model on GCP or AWS](./docs/EVALUATE_A_MODEL_GCP.md)
 - [Creating a new dataset](./docs/PREPROCESSING_DATASETS.md)
+- [See some tips and tricks that we've learning](./docs/TIPS_AND_TRICKS.md)
