@@ -122,8 +122,6 @@ class OnDiskTensor():
         if torch.is_tensor(tensor):
             tensor = tensor.cpu().numpy()
 
-        logger.info('Saving tensor of `shape` `%s` and `dtype` `%s`.', tensor.shape, tensor.dtype)
-
         # This storage was picked using this benchmark:
         # https://github.com/mverleg/array_storage_benchmark
         np.save(str(path), tensor, allow_pickle=allow_pickle)
