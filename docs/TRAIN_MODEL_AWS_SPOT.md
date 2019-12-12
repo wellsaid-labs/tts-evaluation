@@ -1,4 +1,4 @@
-# Train a Model with Amazon Web Services (AWS)
+# Train a Model with Amazon Web Services (AWS) Spot Instances
 
 This markdown will walk you through the steps required to train a model on a AWS virtual
 machine.
@@ -88,9 +88,6 @@ machine.
      [here](./TRAIN_MODEL_AWS_BENCHMARKS.md).
    - Learn more about the available instance types,
      [here](https://aws.amazon.com/ec2/instance-types/).
-   - During any point in this process, you may want to image the disk so that you don't have to
-     start from scratch every time. In order to do so, please follow the instructions
-     [here](https://docs.aws.amazon.com/cli/latest/reference/ec2/create-image.html).
    - Learn more about the available GPU instances for each region,
      [here](https://aws.amazon.com/ec2/pricing/on-demand/).
    - Get a list of all AWS regions,
@@ -122,7 +119,7 @@ machine.
    like so...
 
    ```bash
-   USER_DATA=$(cat docs/train_model_aws_start_up.sh)
+   USER_DATA=$(cat docs/train_model_aws_spot_start_up.sh)
    USER_DATA=${USER_DATA//'$VM_NAME'/\'$VM_NAME\'}
    USER_DATA=${USER_DATA//'$VM_USER'/\'$VM_IMAGE_USER\'}
    USER_DATA=${USER_DATA//'$VM_REGION'/\'$AWS_DEFAULT_REGION\'}
