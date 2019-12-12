@@ -210,8 +210,10 @@ def filter_(function, dataset):
     positive = [e for i, e in enumerate(dataset) if bools[i]]
     negative = [e for i, e in enumerate(dataset) if not bools[i]]
     speaker_distribution = Counter([example.speaker for example in negative])
-    logger.info('Filtered out %d examples via ``%s`` with a speaker distribution of:\n%s',
-                len(negative), function.__name__, pprint.pformat(speaker_distribution))
+    print_statement = ('.' if len(negative) == 0 else ' with a speaker distribution of:\n%s' %
+                       pprint.pformat(speaker_distribution))
+    logger.info('Filtered out %d examples via ``%s``%s', len(negative), function.__name__,
+                print_statement)
     return positive
 
 
