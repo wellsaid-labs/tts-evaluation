@@ -1,4 +1,4 @@
-# Train a Model with Amazon Web Services (AWS)
+# Train a Model with Amazon Web Services (AWS) Spot Instances
 
 This markdown will walk you through the steps required to train a model on a AWS virtual
 machine.
@@ -88,9 +88,6 @@ machine.
      [here](./TRAIN_MODEL_AWS_BENCHMARKS.md).
    - Learn more about the available instance types,
      [here](https://aws.amazon.com/ec2/instance-types/).
-   - During any point in this process, you may want to image the disk so that you don't have to
-     start from scratch every time. In order to do so, please follow the instructions
-     [here](https://docs.aws.amazon.com/cli/latest/reference/ec2/create-image.html).
    - Learn more about the available GPU instances for each region,
      [here](https://aws.amazon.com/ec2/pricing/on-demand/).
    - Get a list of all AWS regions,
@@ -122,10 +119,12 @@ machine.
    like so...
 
    ```bash
-   USER_DATA=$(cat docs/train_model_aws_start_up.sh)
+   USER_DATA=$(cat docs/train_model_aws_spot_start_up.sh)
    USER_DATA=${USER_DATA//'$VM_NAME'/\'$VM_NAME\'}
    USER_DATA=${USER_DATA//'$VM_USER'/\'$VM_IMAGE_USER\'}
+   USER_DATA=${USER_DATA//'$VM_REGION'/\'$AWS_DEFAULT_REGION\'}
    USER_DATA=${USER_DATA//'$TRAIN_SCRIPT_PATH'/\'$TRAIN_SCRIPT_PATH\'}
+   USER_DATA=${USER_DATA//'$AWS_CREDENTIALS'/\'$(cat ~/.aws/credentials)\'}
    USER_DATA="Content-Type: multipart/mixed; boundary=\"//\"
    MIME-Version: 1.0
 
@@ -148,7 +147,7 @@ machine.
    #!/bin/bash
    $USER_DATA
    --//"
-   echo "$USER_DATA" > /tmp/user_data.json
+   USER_DATA=$(echo "$USER_DATA" | base64)
    ```
 
    The output of the startup script will be saved on the VM here: `/var/log/cloud-init-output.log`
@@ -156,16 +155,31 @@ machine.
 1. Create an EC2 instance for training...
 
    ```bash
-   aws ec2 run-instances \
-      --image-id $VM_IMAGE_ID \
-      --count 1 \
-      --instance-type $VM_MACHINE_TYPE \
-      --key-name $AWS_KEY_PAIR_NAME \
-      --user-data file:///tmp/user_data.json \
-      --tag-specifications="ResourceType=instance,Tags=[{Key=Name,Value=$VM_NAME}]" \
-      --security-groups only-ssh \
-      --block-device-mappings 'DeviceName=/dev/sda1,Ebs={DeleteOnTermination=true,VolumeSize=512,VolumeType=gp2}'
+   echo '{
+      "SecurityGroups": ["only-ssh"],
+      "BlockDeviceMappings": [
+        {
+          "DeviceName": "/dev/sda1",
+          "Ebs": {
+            "DeleteOnTermination": true,
+            "VolumeSize": 512,
+            "VolumeType": "gp2"
+          }
+        }
+      ],
+      "ImageId": "'$VM_IMAGE_ID'",
+      "InstanceType": "'$VM_MACHINE_TYPE'",
+      "KeyName": "'$AWS_KEY_PAIR_NAME'",
+      "UserData": "'$USER_DATA'"
+   }' > /tmp/launch_specification.json
+   SPOT_REQUEST_ID=$(aws ec2 request-spot-instances --type "persistent" \
+      --launch-specification file:///tmp/launch_specification.json \
+      --instance-interruption-behavior "stop" | \
+      jq '.SpotInstanceRequests[0].SpotInstanceRequestId' | xargs)
+   aws ec2 create-tags --resources $SPOT_REQUEST_ID --tags Key=Name,Value=$VM_NAME
    ```
+
+   This instance will stay online for seven days or until you cancel the spot request.
 
 1. Wait for the instance status to be 'running'...
 
@@ -276,6 +290,12 @@ machine.
 
 1. Detach from your screen session by typing `Ctrl-A` then `D`.
 
+1. Set a flag to restart training if the instance is rebooted...
+
+   ```bash
+   touch /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
+   ```
+
 1. You can now exit your VM with the `exit` command.
 
 ### From your local repository
@@ -292,8 +312,17 @@ machine.
    export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
    VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
 
+   SPOT_REQUEST_ID=$(aws ec2 describe-spot-instance-requests \qaq
+      --filters Name=tag:Name,Values=$VM_NAME \
+      --query 'SpotInstanceRequests[0].SpotInstanceRequestId' --output text)
    VM_ID=$(aws ec2 describe-instances --filters Name=tag:Name,Values=$VM_NAME \
                 --query 'Reservations[0].Instances[0].InstanceId' --output text)
+   ```
+
+1. Cancel your spot instance request...
+
+   ```bash
+   aws ec2 cancel-spot-instance-requests --spot-instance-request-ids $SPOT_REQUEST_ID
    ```
 
 1. Stop your instance...

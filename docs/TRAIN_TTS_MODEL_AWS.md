@@ -1,11 +1,11 @@
-# Train a TTS Model with Amazon Web Services (AWS)
+# Train a TTS Model with Amazon Web Services (AWS) Spot Instances
 
 This markdown will walk you through the steps to train an end-to-end text-to-speech model
 on a AWS virtual machine.
 
 ## Train a Spectrogram Model
 
-1. Follow this [document](TRAIN_MODEL_AWS.md) to train a spectrogram model.
+1. Follow this [document](TRAIN_MODEL_AWS_SPOT.md) to train a spectrogram model.
 
 1. Wait until the `dev_epoch/post_spectrogram_loss` in your Comet experiment stops decreasing. This
    typically will happen within 72 hours of training, or \~150,000 steps.
@@ -55,8 +55,8 @@ on a AWS virtual machine.
    Pick the checkpoint with a step count that correlates with the point of convergence
    `dev_epoch/post_spectrogram_loss` value.
 
-1. From [this point](TRAIN_MODEL_AWS.md#on-the-vm-instance-1), continue following the instructions
-   to train your signal model.
+1. From [this point](TRAIN_MODEL_AWS_SPOT.md#on-the-vm-instance-1), continue following the
+   instructions to train your signal model.
 
    ❗IMPORTANT: Include the optional `--spectrogram_model_checkpoint=$SPECTROGRAM_CHECKPOINT`
    argument to start training.
