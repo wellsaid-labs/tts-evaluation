@@ -178,6 +178,7 @@ class Trainer():
         """
         # NOTE: GCP shutdowns do not trigger `atexit`; therefore, it's useful to always save
         # a temporary checkpoint just in case.
+        logger.info('Saving temporary checkpoint...')
         checkpoint_path = self.save_checkpoint()
         if (hasattr(self, '_last_repeat_timer_checkpoint') and
                 self._last_repeat_timer_checkpoint is not None and
