@@ -123,7 +123,6 @@ def _add_spectrogram_column(example, on_disk=True):
         # Compute and save to disk the spectrogram and audio
         assert audio_path.is_file(), 'Audio path must be a file %s' % audio_path
         signal = read_audio(audio_path)
-        signal = librosa.effects.trim(signal)[0]
 
         _, trim = librosa.effects.trim(signal.astype(numpy.float32))
         signal = signal[trim[0]:trim[1]]
