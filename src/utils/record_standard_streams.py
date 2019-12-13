@@ -77,8 +77,8 @@ class RecordStandardStreams():
         log_filename (str, optional)
     """
 
-    # NOTE: `getpid` is often used by routines that generate unique temporary filenames, learn more:
-    # http://manpages.ubuntu.com/manpages/cosmic/man2/getpid.2.html
+    # TODO: Ensure `bash_time_label()` is executed when `start` is called so that the time
+    # is accurate.
     def __init__(self, directory=TEMP_PATH, log_filename='%s.log' % bash_time_label()):
         directory = Path(directory)
 
@@ -94,6 +94,8 @@ class RecordStandardStreams():
         # NOTE: Stream must be duplicated to a new file.
         assert not (directory / log_filename).exists()
 
+    # TODO: Add `directory` and `log_filename` parameters to `start` so that it's consistent with
+    # `update`.
     def start(self):
         """ Start recording `sys.stdout` and `sys.stderr` at the start of the process. """
         self.stop_stream_stdout = _duplicate_stream(sys.stdout, self.log_path)

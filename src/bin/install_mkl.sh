@@ -10,9 +10,11 @@ apt-get update
 # NOTE: This is the most recent update based on:
 # https://software.intel.com/en-us/articles/installing-intel-free-libs-and-python-apt-repo
 # Install Intel® Math Kernel Library (Intel® MKL)
-apt-get install --no-install-recommends intel-mkl-2019.4-070
+apt-get install --no-install-recommends intel-mkl-2019.4-070 -y
 
 # Configure dynamic linker run-time bindings
 echo "/opt/intel/lib/intel64"     >  /etc/ld.so.conf.d/mkl.conf
 echo "/opt/intel/mkl/lib/intel64" >> /etc/ld.so.conf.d/mkl.conf
 ldconfig
+
+rm GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB

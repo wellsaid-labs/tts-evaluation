@@ -1,3 +1,4 @@
+from collections import defaultdict
 from collections import namedtuple
 from functools import partial
 
@@ -9,7 +10,7 @@ import random
 from hparams import configurable
 from torch.multiprocessing import cpu_count
 from torch.utils.data.sampler import BatchSampler
-from torchnlp.samplers import BalancedSampler
+from torchnlp._third_party.weighted_random_sampler import WeightedRandomSampler
 from torchnlp.samplers import DeterministicSampler
 from torchnlp.samplers import DistributedBatchSampler
 from torchnlp.utils import collate_tensors
@@ -32,6 +33,26 @@ SignalModelTrainingRow = namedtuple('SignalModelTrainingRow', [
 ])
 
 
+class _BalancedSampler(WeightedRandomSampler):
+    """ Weighted sampler with respect for an element's class.
+
+    Args:
+        data (iterable)
+        get_class (callable, optional): Get the class of an item relative to the entire dataset.
+        get_weight (callable, optional): Define a weight for each item other than one.
+        kwargs: Additional key word arguments passed onto `WeightedRandomSampler`.
+    """
+
+    def __init__(self, data_source, get_class, get_weight, **kwargs):
+        classified = [get_class(item) for item in data_source]
+        weighted = [float(get_weight(item)) for item in data_source]
+        totals = defaultdict(float)
+        for class_, weight in zip(classified, weighted):
+            totals[class_] += weight**2
+        weights = [(w / totals[c]) if w > 0 else 0.0 for c, w in zip(classified, weighted)]
+        super().__init__(weights=weights, **kwargs)
+
+
 def _get_slice(spectrogram, signal, split_signal_partial, spectrogram_slice_size,
                spectrogram_slice_pad):
     """ Slice the data into bite sized chunks that fit onto GPU memory for training.
@@ -42,18 +63,18 @@ def _get_slice(spectrogram, signal, split_signal_partial, spectrogram_slice_size
           the source signal is one timestep behind.
 
     Args:
-        spectrogram (torch.Tensor [num_frames, channels])
-        signal (torch.Tensor [signal_length])
+        spectrogram (torch.FloatTensor [num_frames, channels])
+        signal (torch.FloatTensor [signal_length])
         split_signal_partial (callable)
         spectrogram_slice_size (int): In spectrogram frames, size of slice.
         spectrogram_slice_pad (int): Pad the spectrogram slice with ``frame_pad`` frames on each
             side.
 
     Returns: (SignalModelTrainingRow) (
-        input_signal (torch.Tensor [signal_length, 2])
-        input_spectrogram (torch.Tensor [num_frames, channels])
-        target_signal_coarse (torch.Tensor [signal_length])
-        target_signal_fine (torch.Tensor [signal_length])
+        input_signal (torch.FloatTensor [signal_length, 2])
+        input_spectrogram (torch.FloatTensor [num_frames, channels])
+        target_signal_coarse (torch.LongTensor [signal_length])
+        target_signal_fine (torch.LongTensor [signal_length])
         signal_mask (torch.FloatTensor [signal_length])
     )
     """
@@ -121,7 +142,7 @@ def _get_slice(spectrogram, signal, split_signal_partial, spectrogram_slice_size
 
 
 def _load_fn(row, use_predicted, split_signal_partial, combine_signal_partial, **kwargs):
-    """ Load function for loading a single row.
+    """ Load function for loading a single `SignalModelTrainingRow` row from `TextSpeechRow`.
 
     Args:
         row (TextSpeechRow)
@@ -133,7 +154,9 @@ def _load_fn(row, use_predicted, split_signal_partial, combine_signal_partial, *
         (SignalModelTrainingRow)
     """
     spectrogram = maybe_load_tensor(row.predicted_spectrogram if use_predicted else row.spectrogram)
-    spectrogram_audio = maybe_load_tensor(row.spectrogram_audio)
+    # NOTE: `row.spectrogram_audio` is a `torch.HalfTensor` (16-bit floating point) while our model
+    # requires a `torch.FloatTensor` (32-bit floating point)
+    spectrogram_audio = maybe_load_tensor(row.spectrogram_audio).float()
     spectrogram_audio = combine_signal_partial(*split_signal_partial(spectrogram_audio))
 
     # Check invariants
@@ -152,6 +175,7 @@ class DataLoader(src.utils.DataLoader):
         device (torch.device): Device onto which to load data.
         use_predicted (bool): If ``True`` use predicted spectrogram as opposed to the real one.
         num_workers (int): Number of workers used to load data.
+        balance_speaker (bool): If `True` this equalizes the audio data sampled for each speaker.
         **kwargs (any): Other arguments to the data loader ``_load_fn``
 
     Returns:
@@ -187,7 +211,7 @@ class DataLoader(src.utils.DataLoader):
             src.distributed.assert_synced(
                 int(hash_, 16), 'This dataset does not match the master dataset.')
 
-        sampler = BalancedSampler(
+        sampler = _BalancedSampler(
             data,
             get_class=lambda e: e.speaker,
             get_weight=lambda e: (e.predicted_spectrogram
