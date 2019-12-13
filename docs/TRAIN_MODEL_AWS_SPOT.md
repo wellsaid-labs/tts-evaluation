@@ -279,6 +279,12 @@ machine.
    sudo bash src/bin/install_mkl.sh
    ```
 
+1. Set a flag to restart training if the instance is rebooted...
+
+   ```bash
+   touch /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
+   ```
+
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
 
    ```bash
@@ -299,12 +305,6 @@ machine.
    💡 TIP: You may want to include the optional `--spectrogram_model_checkpoint` argument.
 
 1. Detach from your screen session by typing `Ctrl-A` then `D`.
-
-1. Set a flag to restart training if the instance is rebooted...
-
-   ```bash
-   touch /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
-   ```
 
 1. You can now exit your VM with the `exit` command.
 
