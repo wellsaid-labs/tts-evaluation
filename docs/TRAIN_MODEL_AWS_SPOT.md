@@ -281,7 +281,7 @@ machine.
 
    ```bash
    COMET_PROJECT='your-comet-project'
-   EXPERIMENT_NAME='your-experiment-name'
+   EXPERIMENT_NAME='Your experiment name'
    ```
 
 1. Start training...
@@ -291,7 +291,7 @@ machine.
 
    # Kill any leftover processes from other runs...
    pkill -9 python; sleep 5s; nvidia-smi; \
-   PYTHONPATH=. python $TRAIN_SCRIPT_PATH --project_name $COMET_PROJECT --name $EXPERIMENT_NAME;
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH --project_name $COMET_PROJECT --name "$EXPERIMENT_NAME";
    ```
 
    💡 TIP: You may want to include the optional `--spectrogram_model_checkpoint` argument.
