@@ -84,6 +84,8 @@ machine.
 
    Related Resources:
 
+   - Use this link to pick a region with the lowest interruption rate for your spot request,
+     [here](https://aws.amazon.com/ec2/spot/instance-advisor/).
    - Learn more about our benchmarks for the available machine types,
      [here](./TRAIN_MODEL_AWS_BENCHMARKS.md).
    - Learn more about the available instance types,
