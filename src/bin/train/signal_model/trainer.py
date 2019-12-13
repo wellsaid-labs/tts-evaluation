@@ -31,6 +31,7 @@ import torch
 from src.audio import combine_signal
 from src.audio import split_signal
 from src.bin.train.signal_model.data_loader import DataLoader
+from src.environment import IS_TESTING_ENVIRONMENT
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.utils import AnomalyDetector
@@ -39,6 +40,7 @@ from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
 from src.utils import log_runtime
 from src.utils import maybe_load_tensor
+from src.utils import RepeatTimer
 from src.visualize import CometML
 from src.visualize import plot_spectrogram
 
@@ -76,6 +78,8 @@ class Trainer():
         num_rollbacks (int, optional): Number of rollbacks.
         anomaly_detector (AnomalyDetector, optional): Anomaly detector used to skip batches that
             result in an anomalous loss.
+        save_temp_checkpoint_every_n_seconds (int, optional): The number of seconds between
+            temporary checkpoint saves.
     """
 
     TRAIN_LABEL = 'train'
@@ -99,7 +103,8 @@ class Trainer():
                  step=0,
                  epoch=0,
                  num_rollbacks=0,
-                 anomaly_detector=None):
+                 anomaly_detector=None,
+                 save_temp_checkpoint_every_n_seconds=60 * 10):
         self.device = device
         self.step = step
         self.epoch = epoch
@@ -111,8 +116,6 @@ class Trainer():
         self.spectrogram_model_checkpoint_path = spectrogram_model_checkpoint_path
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
-        self.dev_loader = None
-        self.train_loader = None
 
         self.model = model if isinstance(model, torch.nn.Module) else model()
         self.model.to(device)
@@ -166,7 +169,34 @@ class Trainer():
         logger.info('Model:\n%s' % self.model)
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
-        atexit.register(self.save_checkpoint)
+        if src.distributed.is_master() and not IS_TESTING_ENVIRONMENT:
+            # TODO: `atexit` doesn't run when `pytest` closes; therefore, it doesn't stop
+            # the repeated timer. This needs to be investigated.
+            self.timer = RepeatTimer(save_temp_checkpoint_every_n_seconds,
+                                     self._save_checkpoint_repeat_timer)
+            self.timer.start()
+            atexit.register(self._atexit)
+
+    def _atexit(self):
+        """ This function is run on program exit. """
+        self.save_checkpoint()
+        self.timer.cancel()
+
+    def _save_checkpoint_repeat_timer(self):
+        """ Save a checkpoint and delete the last checkpoint saved.
+        """
+        # TODO: Consider using the GCP shutdown scripts via
+        # https://haggainuchi.com/shutdown.html
+        # NOTE: GCP shutdowns do not trigger `atexit`; therefore, it's useful to always save
+        # a temporary checkpoint just in case.
+        checkpoint_path = self.save_checkpoint()
+        if (hasattr(self, '_last_repeat_timer_checkpoint') and
+                self._last_repeat_timer_checkpoint is not None and
+                self._last_repeat_timer_checkpoint.exists() and checkpoint_path is not None):
+            logger.info('Unlinking temporary checkpoint: %s',
+                        str(self._last_repeat_timer_checkpoint))
+            self._last_repeat_timer_checkpoint.unlink()
+        self._last_repeat_timer_checkpoint = checkpoint_path
 
     def _comet_ml_log_input_dev_data_hash(self, max_examples=10):
         """ Log to comet a basic hash of the predicted spectrogram data in `self.dev_dataset`.
@@ -215,10 +245,11 @@ class Trainer():
         """ Save a checkpoint.
 
         Returns:
-            (str): Path the checkpoint was saved to.
+            (pathlib.Path or None): Path the checkpoint was saved to or None if checkpoint wasn't
+                saved.
         """
         if src.distributed.is_master():
-            return Checkpoint(
+            checkpoint = Checkpoint(
                 directory=self.checkpoints_directory,
                 step=self.step,
                 model=(self.model.module if src.distributed.is_initialized() else self.model),
@@ -228,7 +259,10 @@ class Trainer():
                 comet_ml_project_name=self.comet_ml.project_name,
                 comet_ml_experiment_key=self.comet_ml.get_key(),
                 spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
-                num_rollbacks=self.num_rollbacks).save()
+                num_rollbacks=self.num_rollbacks)
+            if checkpoint.path.exists():
+                return None
+            return checkpoint.save()
         else:
             return None
 
@@ -326,12 +360,13 @@ class Trainer():
             self.comet_ml.log_current_epoch(self.epoch)
 
         loader_kwargs = {'device': self.device, 'use_predicted': self.use_predicted}
-        if train and self.train_loader is None:
-            self.train_loader = DataLoader(self.train_dataset, self.train_batch_size,
-                                           **loader_kwargs)
-        elif not train and self.dev_loader is None:
-            self.dev_loader = DataLoader(self.dev_dataset, self.dev_batch_size, **loader_kwargs)
-        data_loader = self.train_loader if train else self.dev_loader
+        if train and not hasattr(self, '_train_loader'):
+            # NOTE: We cache the `DataLoader` between epochs for performance.
+            self._train_loader = DataLoader(self.train_dataset, self.train_batch_size,
+                                            **loader_kwargs)
+        elif not train and not hasattr(self, '_dev_loader'):
+            self._dev_loader = DataLoader(self.dev_dataset, self.dev_batch_size, **loader_kwargs)
+        data_loader = self._train_loader if train else self._dev_loader
 
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
@@ -468,7 +503,7 @@ class Trainer():
         example = random.sample(self.dev_dataset, 1)[0]
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
         spectrogram = maybe_load_tensor(spectrogram)  # [num_frames, frame_channels]
-        target_signal = maybe_load_tensor(example.spectrogram_audio)  # [signal_length]
+        target_signal = maybe_load_tensor(example.spectrogram_audio).float()  # [signal_length]
         spectrogram = spectrogram.to(torch.device('cpu'))
 
         logger.info('Running inference on %d spectrogram frames with %d threads.',
