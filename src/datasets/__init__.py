@@ -163,7 +163,7 @@ GEORGE_DRAKE = Speaker('George Drake', Gender.MALE)
 
 def george_speech_dataset(
         extracted_name='George Drake, Jr. ',
-        url='https://drive.google.com/uc?export=download&id=1ktZWjaeWoSvz8wckmcF4VGA_Ngrgfq3P',
+        url='https://drive.google.com/uc?export=download&id=1WkpmekXdgFN3dc42Oo_O2lPcsblFegHH',
         url_filename='George Drake.tar.gz',
         speaker=GEORGE_DRAKE,
         **kwargs):

@@ -88,9 +88,14 @@ machine.
      [here](./TRAIN_MODEL_AWS_BENCHMARKS.md).
    - Learn more about the available instance types,
      [here](https://aws.amazon.com/ec2/instance-types/).
-   - During any point in this process, you may want to image the disk so that you don't have to
-     start from scratch every time. In order to do so, please follow the instructions
+   - During any point in this process, you may want to image (AMI) the disk so that you don't have
+     to start from scratch every time. In order to do so, please follow the instructions
      [here](https://docs.aws.amazon.com/cli/latest/reference/ec2/create-image.html).
+
+     Note that every AMI is created with a corresponding snapshot. If your curious about the AMI
+     progress, you can find that information by viewing the corresponding AMI snapshot. Recently,
+     this process took 1.5 hours.
+
    - Learn more about the available GPU instances for each region,
      [here](https://aws.amazon.com/ec2/pricing/on-demand/).
    - Get a list of all AWS regions,
