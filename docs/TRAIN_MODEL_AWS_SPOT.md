@@ -53,13 +53,6 @@ machine.
 1. Setup your environment variables...
 
    ```bash
-   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
-   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
-   ```
-
-   and these...
-
-   ```bash
    # Learn more about the AWS Deep Learning Base AMI here:
    # https://aws.amazon.com/marketplace/pp/Amazon-Web-Services-AWS-Deep-Learning-Base-AMI-Ubu/B07Y3VDBNS
    VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
@@ -80,6 +73,19 @@ machine.
    ```bash
    VM_MACHINE_TYPE=p3.16xlarge
    TRAIN_SCRIPT_PATH='src/bin/train/signal_model/__main__.py'
+   ```
+
+   Finally, run this script to determine the region with the least spot instance interruptions...
+
+   ```bash
+   python3 docs/train_model_aws_best_region.py --machine_type=$VM_MACHINE_TYPE
+   ```
+
+   Then, set these environment variables...
+
+   ```bash
+   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
+   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
    ```
 
    Related Resources:
@@ -277,6 +283,12 @@ machine.
    sudo bash src/bin/install_mkl.sh
    ```
 
+1. Set a flag to restart training if the instance is rebooted...
+
+   ```bash
+   touch /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
+   ```
+
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
 
    ```bash
@@ -297,12 +309,6 @@ machine.
    💡 TIP: You may want to include the optional `--spectrogram_model_checkpoint` argument.
 
 1. Detach from your screen session by typing `Ctrl-A` then `D`.
-
-1. Set a flag to restart training if the instance is rebooted...
-
-   ```bash
-   touch /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
-   ```
 
 1. You can now exit your VM with the `exit` command.
 
