@@ -59,7 +59,6 @@ class AutoregressiveDecoder(nn.Module):
     Args:
         frame_channels (int): Number of channels in each frame (sometimes refered to
             as "Mel-frequency bins" or "FFT bins" or "FFT bands")
-        num_speakers (int)
         speaker_embedding_dim (int): Size of the speaker embedding dimensions.
         pre_net_hidden_size (int): Hidden size of the pre-net to use.
         lstm_hidden_size (int): Hidden size of both LSTM layers to use.
@@ -71,7 +70,6 @@ class AutoregressiveDecoder(nn.Module):
     @configurable
     def __init__(self,
                  frame_channels,
-                 num_speakers,
                  speaker_embedding_dim,
                  pre_net_hidden_size=HParam(),
                  lstm_hidden_size=HParam(),
@@ -83,8 +81,7 @@ class AutoregressiveDecoder(nn.Module):
         self.frame_channels = frame_channels
         self.pre_net = PreNet(hidden_size=pre_net_hidden_size, frame_channels=frame_channels)
         self.lstm_layer_one = nn.LSTMCell(
-            input_size=pre_net_hidden_size + self.attention_hidden_size +
-            (0 if num_speakers == 1 else speaker_embedding_dim),
+            input_size=pre_net_hidden_size + self.attention_hidden_size + speaker_embedding_dim,
             hidden_size=lstm_hidden_size)
         self.lstm_layer_one_dropout = nn.Dropout(p=lstm_dropout)
         self.lstm_hidden_size = lstm_hidden_size
@@ -171,7 +168,7 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
                 Batched set of encoded sequences.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask where one's
                 represent padding in ``encoded_tokens``.
-            speaker (torch.LongTensor [batch_size, speaker_embedding_dim] or None): Batched speaker
+            speaker (torch.LongTensor [batch_size, speaker_embedding_dim]): Batched speaker
                 encoding.
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
                 optional): During training, ground truth frames for teacher-forcing.
@@ -215,18 +212,13 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
             frame = frames.pop(0).squeeze(0)
 
             # [batch_size, pre_net_hidden_size] (concat)
+            # [batch_size, speaker_embedding_dim] (concat)
             # [batch_size, attention_hidden_size] →
-            # [batch_size, pre_net_hidden_size + attention_hidden_size]
-            frame = torch.cat([frame, last_attention_context], dim=1)
-
-            if speaker is not None:
-                # [batch_size, pre_net_hidden_size + attention_hidden_size] (concat)
-                # [batch_size, speaker_embedding_dim] →
-                # [batch_size, pre_net_hidden_size + attention_hidden_size + speaker_embedding_dim]
-                frame = torch.cat([frame, speaker], dim=1)
+            # [batch_size, pre_net_hidden_size + attention_hidden_size + speaker_embedding_dim]
+            frame = torch.cat([frame, last_attention_context, speaker], dim=1)
 
             # frame [batch (batch_size),
-            # input_size (pre_net_hidden_size + attention_hidden_size +? speaker_embedding_dim)]  →
+            # input_size (pre_net_hidden_size + attention_hidden_size + speaker_embedding_dim)]  →
             # [batch_size, lstm_hidden_size]
             lstm_one_hidden_state = self.lstm_layer_one(frame, lstm_one_hidden_state)
             frame = lstm_one_hidden_state[0]

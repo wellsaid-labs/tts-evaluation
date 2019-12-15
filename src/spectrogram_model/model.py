@@ -91,19 +91,14 @@ class SpectrogramModel(nn.Module):
 
         self.encoder = Encoder(vocab_size)
         self.decoder = AutoregressiveDecoder(
-            frame_channels=frame_channels,
-            num_speakers=num_speakers,
-            speaker_embedding_dim=speaker_embedding_dim)
+            frame_channels=frame_channels, speaker_embedding_dim=speaker_embedding_dim)
         self.post_net = PostNet(frame_channels=frame_channels)
         self.stop_sigmoid = nn.Sigmoid()
-
-        self.embed_speaker = None
-        if num_speakers > 1:
-            self.embed_speaker = nn.Sequential(
-                nn.Embedding(num_speakers, speaker_embedding_dim),
-                nn.Linear(speaker_embedding_dim, speaker_embedding_dim), nn.ReLU(),
-                nn.Dropout(speaker_embedding_dropout),
-                nn.Linear(speaker_embedding_dim, speaker_embedding_dim))
+        self.embed_speaker = nn.Sequential(
+            nn.Embedding(num_speakers, speaker_embedding_dim),
+            nn.Linear(speaker_embedding_dim, speaker_embedding_dim), nn.ReLU(),
+            nn.Dropout(speaker_embedding_dropout),
+            nn.Linear(speaker_embedding_dim, speaker_embedding_dim))
 
     def _get_stopped_indexes(self, predictions, stop_threshold):
         """ Get a list of indices that predicted stop.
@@ -165,7 +160,7 @@ class SpectrogramModel(nn.Module):
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
             tokens_mask (torch.BoolTensor [batch_size, num_tokens])
-            speaker (torch.LongTensor [batch_size, speaker_embedding_dim] or None): Batched speaker
+            speaker (torch.LongTensor [batch_size, speaker_embedding_dim]): Batched speaker
                 encoding.
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
             target_lengths (torch.LongTensor [batch_size]): The number of frames in each sequence.
@@ -200,7 +195,7 @@ class SpectrogramModel(nn.Module):
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
             tokens_mask (torch.BoolTensor [batch_size, num_tokens])
-            speaker (torch.LongTensor [batch_size, speaker_embedding_dim] or None): Batched speaker
+            speaker (torch.LongTensor [batch_size, speaker_embedding_dim]): Batched speaker
                 encoding.
             num_tokens (torch.LongTensor [batch_size]): The number of tokens in each sequence.
             max_frames_per_token (int, optional): The maximum sequential predictions to make before
@@ -357,7 +352,7 @@ class SpectrogramModel(nn.Module):
         encoded_tokens = self.encoder(tokens, tokens_mask)
 
         # [batch_size] → [batch_size, speaker_embedding_dim]
-        speaker = None if self.embed_speaker is None else self.embed_speaker(speaker)
+        speaker = self.embed_speaker(speaker)
 
         if target_frames is None:
             return self._infer(encoded_tokens, tokens_mask, speaker, num_tokens, is_unbatched,

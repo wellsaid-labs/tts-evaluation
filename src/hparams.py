@@ -272,7 +272,8 @@ def _set_model_size(frame_channels, bits):
 
                             # SOURCE (Transfer Learning from Speaker Verification to Multispeaker
                             #         Text-To-Speech Synthesis):
-                            # The paper mentions their proposed model uses a 256 dimension embedding.
+                            # The paper mentions their proposed model uses a 256 dimension
+                            # embedding.
                             speaker_embedding_dim=256),
                     '_infer':
                         HParams(
