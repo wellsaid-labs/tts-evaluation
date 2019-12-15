@@ -24,7 +24,7 @@ import subprocess
 import time
 
 from comet_ml.config import get_config
-from comet_ml.papi import API as CometAPI
+from comet_ml.api import API
 from retry import retry
 
 from src.environment import set_basic_logging_config
@@ -90,7 +90,7 @@ def get_running_experiments(instances, comet_ml_project_name):
             instance in `instances`.
     """
     logger.info('Getting comet experiment metadata.')
-    comet_ml_api = CometAPI()
+    comet_ml_api = API()
     experiments = comet_ml_api.get(COMET_WORKSPACE, comet_ml_project_name)
     experiments = sorted(
         experiments, key=lambda e: e.to_json()['start_server_timestamp'], reverse=True)
@@ -213,7 +213,7 @@ def get_experiment_last_message_time(comet_ml_project_name, experiment):
         (int): The Unix timestamp in seconds this experiment recieved a message.
     """
     logger.info('Checking on the Comet experiment\'s %s last message time.', experiment.url)
-    updated_experiment = CometAPI().get(COMET_WORKSPACE, comet_ml_project_name, experiment.id)
+    updated_experiment = API().get(COMET_WORKSPACE, comet_ml_project_name, experiment.id)
     # NOTE: This API returns not a `list` if the `experimet.id` is partial or invalid.
     assert not isinstance(updated_experiment, list), 'The experiment key is no longer valid.'
     last_message_time = max(
