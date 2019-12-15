@@ -443,10 +443,10 @@ class Trainer():
 
         # [num_frames, frame_channels] → [num_frames]
         post_spectrogram_loss_per_frame = self.criterion_spectrogram(predicted_post_spectrogram,
-                                                                     gold_spectrogram).mean(dim=2)
+                                                                     gold_spectrogram).mean(dim=1)
         # [num_frames, frame_channels] → [num_frames]
         pre_spectrogram_loss_per_frame = self.criterion_spectrogram(predicted_pre_spectrogram,
-                                                                    gold_spectrogram).mean(dim=2)
+                                                                    gold_spectrogram).mean(dim=1)
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
         predicted_delta = abs(gold_spectrogram - predicted_post_spectrogram)
