@@ -41,7 +41,6 @@ from src.utils import DistributedAveragedMetric
 from src.utils import log_runtime
 from src.utils import maybe_load_tensor
 from src.utils import RepeatTimer
-from src.visualize import CometML
 from src.visualize import plot_spectrogram
 
 import src.distributed
@@ -62,6 +61,7 @@ class Trainer():
         train_dataset (iterable of TextSpeechRow): Train dataset used to optimize the model.
         dev_dataset (iterable of TextSpeechRow): Dev dataset used to evaluate the model.
         checkpoints_directory (str or Path): Directory to store checkpoints in.
+        comet_ml (Experiment or ExistingExperiment): Object for visualization with comet.
         train_batch_size (int): Batch size used for training.
         dev_batch_size (int): Batch size used for evaluation.
         criterion (callable): Loss function used to score signal predictions.
@@ -92,6 +92,7 @@ class Trainer():
                  train_dataset,
                  dev_dataset,
                  checkpoints_directory,
+                 comet_ml,
                  train_batch_size=HParam(),
                  dev_batch_size=HParam(),
                  criterion=HParam(),
@@ -147,7 +148,7 @@ class Trainer():
         self._rollback_states = deque([self._make_partial_rollback_state()],
                                       maxlen=min_rollback + 1)
 
-        self.comet_ml = CometML(disabled=not src.distributed.is_master())
+        self.comet_ml = comet_ml
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_parameters(dict_collapse(get_config()))
