@@ -3,6 +3,11 @@
 This markdown will walk you through the steps required to train a model on a AWS virtual
 machine.
 
+Related Documentation:
+
+- Would you like to train a end-to-end TTS model? Please follow
+  [this documentation](TRAIN_TTS_MODEL_AWS.md) instead.
+
 ## Prerequisites
 
 1. Setup your local development environment by following [these instructions](LOCAL_SETUP.md).
@@ -53,20 +58,14 @@ machine.
 1. Setup your environment variables...
 
    ```bash
-   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
-   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
-   ```
-
-   and these...
-
-   ```bash
-   # Learn more about the AWS Deep Learning Base AMI here:
-   # https://aws.amazon.com/marketplace/pp/Amazon-Web-Services-AWS-Deep-Learning-Base-AMI-Ubu/B07Y3VDBNS
    VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
    VM_IMAGE_USER=ubuntu
 
    AWS_KEY_PAIR_NAME=$USER"_amazon_web_services"
    ```
+
+   ❓ LEARN MORE: About the default image "ami-0b98d7f73c7d1bb71",
+   [here](https://aws.amazon.com/marketplace/pp/Amazon-Web-Services-AWS-Deep-Learning-Base-AMI-Ubu/B07Y3VDBNS)
 
    Set these variables for training the spectrogram model...
 
@@ -82,24 +81,22 @@ machine.
    TRAIN_SCRIPT_PATH='src/bin/train/signal_model/__main__.py'
    ```
 
-   Related Resources:
+   ❓ LEARN MORE: See our machine type benchmarks [here](./TRAIN_MODEL_AWS_BENCHMARKS.md).
 
-   - Learn more about our benchmarks for the available machine types,
-     [here](./TRAIN_MODEL_AWS_BENCHMARKS.md).
-   - Learn more about the available instance types,
-     [here](https://aws.amazon.com/ec2/instance-types/).
-   - During any point in this process, you may want to image (AMI) the disk so that you don't have
-     to start from scratch every time. In order to do so, please follow the instructions
-     [here](https://docs.aws.amazon.com/cli/latest/reference/ec2/create-image.html).
+   Also set these environment variables...
 
-     Note that every AMI is created with a corresponding snapshot. If your curious about the AMI
-     progress, you can find that information by viewing the corresponding AMI snapshot. Recently,
-     this process took 1.5 hours.
+   ```bash
 
-   - Learn more about the available GPU instances for each region,
-     [here](https://aws.amazon.com/ec2/pricing/on-demand/).
-   - Get a list of all AWS regions,
-     [here](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RegionsAndAvailabilityZones.html).
+   VM_STATUS=$(aws ec2 describe-spot-instance-requests --filters Name=tag:Name,Values=$VM_NAME \
+      --query 'SpotInstanceRequests[0].State' --output text)
+   if [[ "$VM_STATUS" != "None" ]]; then echo -e '\033[;31mERROR:\033[0m That VM name has already been taken!'; fi;
+   ```
+
+   💡 TIP: Run this script to find regions with the least spot instance interruptions...
+   `python3 docs/train_model_aws_best_region.py --machine_type=$VM_MACHINE_TYPE`
+
+   💡 TIP: Don't place all your spot instances in the same region, just in case one region
+   runs out of capacity.
 
 1. Upload your SSH key to the AWS region you plan to train in.
 
@@ -189,6 +186,9 @@ machine.
 
    This instance will stay online for seven days or until you cancel the spot request.
 
+   💡 TIP: "Spot request cannot be fulfilled due to invalid availability zone" can
+   be resolved by setting the availability zone in the launch specifications.
+
 1. Wait for the instance status to be 'running'...
 
    ```bash
@@ -219,6 +219,12 @@ machine.
 
    If you get a `dkpg` error, wait a minute or so and try again.
 
+   💡 TIP: After setting up your VM, you may want to
+   [create an Amazon Machine Image (AMI)](https://docs.aws.amazon.com/cli/latest/reference/ec2/create-image.html)
+   so you don't need to setup your VM from scratch again. Your first AMI for a particular setup may
+   take a long time to create (1 hour or more) but it'll take less time for subsequent AMIs. You
+   can see the AMI creation progress in the AWS console by viewing the AMIs corresponding snapshot.
+
 1. Create a directory for our software...
 
    ```bash
@@ -232,11 +238,11 @@ machine.
 1. In a new terminal window, setup your environment variables again...
 
    ```bash
-   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
+   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-west-2
    VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
    ```
 
-1. Use `src.bin.cloud.lsyncd` to live sync your repository to your VM instance:
+1. Use `src.bin.cloud.lsyncd` to live sync your repository to your VM instance...
 
    ```bash
    VM_PUBLIC_DNS=$(aws ec2 describe-instances --filters Name=tag:Name,Values=$VM_NAME \
@@ -256,7 +262,7 @@ machine.
 
 ### On the VM instance
 
-1. Start a `screen` session:
+1. Start a `screen` session...
 
    ```bash
    screen
@@ -277,11 +283,17 @@ machine.
    sudo bash src/bin/install_mkl.sh
    ```
 
+1. Set a flag to restart training if the instance is rebooted...
+
+   ```bash
+   touch /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
+   ```
+
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
 
    ```bash
    COMET_PROJECT='your-comet-project'
-   EXPERIMENT_NAME='your-experiment-name'
+   EXPERIMENT_NAME='Your experiment name'
    ```
 
 1. Start training...
@@ -291,18 +303,12 @@ machine.
 
    # Kill any leftover processes from other runs...
    pkill -9 python; sleep 5s; nvidia-smi; \
-   PYTHONPATH=. python $TRAIN_SCRIPT_PATH --project_name $COMET_PROJECT --name $EXPERIMENT_NAME;
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH --project_name $COMET_PROJECT --name "$EXPERIMENT_NAME";
    ```
 
    💡 TIP: You may want to include the optional `--spectrogram_model_checkpoint` argument.
 
 1. Detach from your screen session by typing `Ctrl-A` then `D`.
-
-1. Set a flag to restart training if the instance is rebooted...
-
-   ```bash
-   touch /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
-   ```
 
 1. You can now exit your VM with the `exit` command.
 
@@ -317,7 +323,7 @@ machine.
 1. Setup your environment variables again...
 
    ```bash
-   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
+   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-west-2
    VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
 
    SPOT_REQUEST_ID=$(aws ec2 describe-spot-instance-requests \qaq

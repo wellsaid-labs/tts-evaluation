@@ -48,33 +48,16 @@ import src.distributed
 logger = logging.getLogger(__name__)
 
 
-def _set_hparams(more_hparams, checkpoint, comet_ml_project_name=None,
-                 comet_ml_experiment_key=None):
+def _set_hparams(more_hparams, checkpoint):
     """ Set hyperparameters for signal model training.
 
     Args:
         more_harpams (dict): Additional hyperparameters to set.
         checkpoint (src.utils.Checkpoint or None): Checkpoint to load random generator state from.
-        comet_ml_project_name (str or None, optional)
     """
     set_hparams()
-
-    comet_ml_project_name = (
-        comet_ml_project_name if checkpoint is None else checkpoint.comet_ml_project_name)
-    comet_ml_experiment_key = (
-        comet_ml_experiment_key if checkpoint is None else checkpoint.comet_ml_experiment_key)
-
-    add_config({
-        'src.visualize.CometML':
-            HParams(
-                project_name=comet_ml_project_name,
-                experiment_key=comet_ml_experiment_key,
-            ),
-    })
     add_config(more_hparams)
-
     set_seed()
-
     if checkpoint is not None and hasattr(checkpoint, 'random_generator_state'):
         set_random_generator_state(checkpoint.random_generator_state)
 
@@ -94,9 +77,9 @@ def _train(device_index,
            comet_ml_project_name,
            comet_ml_experiment_key,
            more_hparams,
-           evaluate_every_n_epochs=9,
+           evaluate_every_n_epochs=5,
            generate_every_n_evaluations=1,
-           save_checkpoint_every_n_evaluations=5,
+           save_checkpoint_every_n_evaluations=3,
            distributed_backend='nccl',
            distributed_init_method='tcp://127.0.0.1:29500'):
     """ Loop for training and periodically evaluating the model.
@@ -122,7 +105,11 @@ def _train(device_index,
     """
     set_basic_logging_config(device_index)
     logger = logging.getLogger(__name__)
-    recorder = RecordStandardStreams().start()
+    comet = CometML(
+        project_name=comet_ml_project_name,
+        experiment_key=comet_ml_experiment_key,
+        disabled=not src.distributed.is_master(),
+        auto_output_logging=False)
     # Initiate distributed environment, learn more:
     # https://pytorch.org/tutorials/intermediate/dist_tuto.htm
     # https://github.com/pytorch/examples/blob/master/imagenet/main.py
@@ -137,13 +124,13 @@ def _train(device_index,
     logger.info('Worker %d started.', torch.distributed.get_rank())
 
     _set_hparams(more_hparams, checkpoint, comet_ml_project_name, comet_ml_experiment_key)
-    recorder.update(run_root)
 
     trainer_kwargs = {
         'device': device,
         'train_dataset': train_dataset,
         'dev_dataset': dev_dataset,
-        'checkpoints_directory': checkpoints_directory
+        'checkpoints_directory': checkpoints_directory,
+        'comet_ml': comet,
     }
     if spectrogram_model_checkpoint_path is not None:
         trainer_kwargs['spectrogram_model_checkpoint_path'] = spectrogram_model_checkpoint_path
@@ -171,10 +158,11 @@ def _train(device_index,
 
 
 def main(experiment_name=None,
+         comet_ml_experiment_key=None,
          comet_ml_project_name=None,
          experiment_tags=[],
-         experiment_root=SIGNAL_MODEL_EXPERIMENTS_PATH / bash_time_label() / 'runs',
-         run_name=bash_time_label(),
+         experiment_root=SIGNAL_MODEL_EXPERIMENTS_PATH / bash_time_label(),
+         run_name='RUN_' + bash_time_label(add_pid=False),
          checkpoints_directory_name='checkpoints',
          checkpoint=None,
          spectrogram_model_checkpoint=None,
@@ -186,6 +174,7 @@ def main(experiment_name=None,
 
     Args:
         experiment_name (str, optional): Name of the experiment.
+        comet_ml_experiment_key (str, optional): Experiment key to use with comet.ml.
         comet_ml_project_name (str, optional): Project name to use with comet.ml.
         experiment_tags (list of str, optional): Comet.ml experiment tags.
         experiment_root (str, optional): Directory to save experiments, unless a checkpoint is
@@ -200,21 +189,19 @@ def main(experiment_name=None,
     """
     set_basic_logging_config()
     logger = logging.getLogger(__name__)
+    comet = CometML(project_name=comet_ml_project_name, experiment_key=comet_ml_experiment_key)
     recorder = RecordStandardStreams().start()
-    _set_hparams(more_hparams, checkpoint, comet_ml_project_name)
+    _set_hparams(more_hparams, checkpoint)
 
     # Load `checkpoint`, setup `run_root`, and setup `checkpoints_directory`.
-    # NOTE: The folder structure is setup like so:
-    #   SIGNAL_MODEL_EXPERIMENTS_PATH / bash_time_label() / 'runs' / bash_time_label() /
-    #   'checkpoints' / 'checkpoint.pt'
     experiment_root = experiment_root if checkpoint is None else checkpoint.directory.parent.parent
     run_root = experiment_root / run_name
     run_root.mkdir(parents=checkpoint is None)
     checkpoints_directory = run_root / checkpoints_directory_name
     checkpoints_directory.mkdir()
     recorder.update(run_root)
+    recorder.update(run_root, log_filename='run.log')
 
-    comet = CometML()
     add_config({'src.visualize.CometML': HParams(experiment_key=comet.get_key())})
     if experiment_name is not None:
         logger.info('Name: %s', experiment_name)
@@ -306,10 +293,12 @@ if __name__ == '__main__':  # pragma: no cover
     if args.spectrogram_model_checkpoint is not None:
         args.spectrogram_model_checkpoint = Checkpoint.from_path(args.spectrogram_model_checkpoint)
 
+    comet_ml_experiment_key = None
     if args.checkpoint is not None:
         # TODO: Remove coupling between `Trainer` and `checkpoint`.
         args.checkpoint.optimizer = None if args.reset_optimizer else args.checkpoint.optimizer
         args.project_name = args.checkpoint.comet_ml_project_name
+        comet_ml_experiment_key = args.checkpoint.comet_ml_experiment_key
 
         if args.checkpoint.spectrogram_model_checkpoint_path is not None:
             args.spectrogram_model_checkpoint = Checkpoint.from_path(
@@ -318,6 +307,7 @@ if __name__ == '__main__':  # pragma: no cover
     main(
         experiment_name=args.name,
         experiment_tags=args.tags,
+        comet_ml_experiment_key=comet_ml_experiment_key,
         comet_ml_project_name=args.project_name,
         checkpoint=args.checkpoint,
         spectrogram_model_checkpoint=args.spectrogram_model_checkpoint,
