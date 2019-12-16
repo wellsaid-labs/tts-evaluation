@@ -86,6 +86,8 @@ Related Documentation:
    Also set these environment variables...
 
    ```bash
+   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-west-2
+   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
 
    VM_STATUS=$(aws ec2 describe-spot-instance-requests --filters Name=tag:Name,Values=$VM_NAME \
       --query 'SpotInstanceRequests[0].State' --output text)
