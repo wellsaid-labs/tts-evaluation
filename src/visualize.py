@@ -207,8 +207,7 @@ _BASE_HTML_STYLING = """
 
 
 @log_runtime
-@configurable
-def CometML(project_name=HParam(), experiment_key=None, log_git_patch=None, **kwargs):
+def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
     """
     Initiate a Comet.ml visualizer with several monkey patched methods.
 

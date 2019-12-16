@@ -3,6 +3,11 @@
 This markdown will walk you through the steps required to train a model on a AWS virtual
 machine.
 
+Related Documentation:
+
+- Would you like to train a end-to-end TTS model? Please follow
+  [this documentation](TRAIN_TTS_MODEL_AWS.md) instead.
+
 ## Prerequisites
 
 1. Setup your local development environment by following [these instructions](LOCAL_SETUP.md).
@@ -78,11 +83,13 @@ machine.
 
    ❓ LEARN MORE: See our machine type benchmarks [here](./TRAIN_MODEL_AWS_BENCHMARKS.md).
 
-   Set these environment variables...
+   Also set these environment variables...
 
    ```bash
-   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-west-2
-   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
+
+   VM_STATUS=$(aws ec2 describe-spot-instance-requests --filters Name=tag:Name,Values=$VM_NAME \
+      --query 'SpotInstanceRequests[0].State' --output text)
+   if [[ "$VM_STATUS" != "None" ]]; then echo -e '\033[;31mERROR:\033[0m That VM name has already been taken!'; fi;
    ```
 
    💡 TIP: Run this script to find regions with the least spot instance interruptions...
@@ -179,6 +186,9 @@ machine.
 
    This instance will stay online for seven days or until you cancel the spot request.
 
+   💡 TIP: "Spot request cannot be fulfilled due to invalid availability zone" can
+   be resolved by setting the availability zone in the launch specifications.
+
 1. Wait for the instance status to be 'running'...
 
    ```bash
@@ -232,7 +242,7 @@ machine.
    VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
    ```
 
-1. Use `src.bin.cloud.lsyncd` to live sync your repository to your VM instance:
+1. Use `src.bin.cloud.lsyncd` to live sync your repository to your VM instance...
 
    ```bash
    VM_PUBLIC_DNS=$(aws ec2 describe-instances --filters Name=tag:Name,Values=$VM_NAME \
@@ -252,7 +262,7 @@ machine.
 
 ### On the VM instance
 
-1. Start a `screen` session:
+1. Start a `screen` session...
 
    ```bash
    screen
