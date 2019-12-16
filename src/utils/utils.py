@@ -362,7 +362,7 @@ def Pool(*args, **kwargs):
     pool.join()  # Waits for workers to exit.
 
 
-def bash_time_label():
+def bash_time_label(add_pid=True):
     """ Get a bash friendly string representing the time and process.
 
     NOTE: This string is optimized for sorting by ordering units of time from largest to smallest.
@@ -371,11 +371,18 @@ def bash_time_label():
     NOTE: `os.getpid` is often used by routines that generate unique identifiers, learn more:
     http://manpages.ubuntu.com/manpages/cosmic/man2/getpid.2.html
 
+    Args:
+        add_pid (bool, optional): If `True` add the process PID to the label.
+
     Returns:
         (str)
     """
-    return str(time.strftime('DATE-%Y-%m-%d_TIME-%H-%M-%S',
-                             time.localtime())).lower() + '_PID-%s' % str(os.getpid())
+    label = str(time.strftime('DATE-%Yy%mm%dd-%Hh%Mm%Ss', time.localtime()))
+
+    if add_pid:
+        label += '_PID-%s' % str(os.getpid())
+
+    return label
 
 
 def torch_cpp_extension_load(name, sources, build_directory=None, **kwargs):

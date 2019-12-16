@@ -5,10 +5,6 @@ machine.
 
 Related Documentation:
 
-- During any point in this process, you may want to image the disk so that you don't have to start
-  from scratch every time. In order to do so, please follow the instructions
-  [here](https://cloud.google.com/compute/docs/images/create-delete-deprecate-private-images).
-
 - Would you like to train a end-to-end TTS model? Please follow
   [this documentation](TRAIN_TTS_MODEL_GCP.md) instead.
 
@@ -35,23 +31,23 @@ Related Documentation:
 
 ### From your local repository
 
-1. Setup your environment variables
+1. Setup your environment variables...
 
-   ... for training a spectrogram model
+   Set these variables for training the spectrogram model...
 
    ```bash
    VM_MACHINE_TYPE=n1-highmem-8
    VM_ACCELERATOR_TYPE=nvidia-tesla-p100,count=2
    ```
 
-   ... for training a signal model
+   Set these variables for training the signal model...
 
    ```bash
    VM_MACHINE_TYPE=n1-highmem-32
    VM_ACCELERATOR_TYPE=nvidia-tesla-v100,count=8
    ```
 
-   Also set these ...
+   Also set these environment variables...
 
    ```bash
    VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
@@ -101,12 +97,16 @@ Related Documentation:
 
 ### On the VM instance
 
-1. Install these packages, like so:
+1. Install these packages, like so...
 
    ```bash
    sudo apt-get update
    sudo apt-get install python3-venv python3-dev gcc g++ sox ffmpeg ninja-build -y
    ```
+
+   💡 TIP: After setting up your VM, you may want to
+   [create an image](https://cloud.google.com/compute/docs/images/create-delete-deprecate-private-images
+   so you don't need to setup your VM from scratch again.
 
 1. Install GPU drivers on your VM by installing
    [CUDA-10-0](https://developer.nvidia.com/cuda-10.0-download-archive?target_os=Linux&target_arch=x86_64&target_distro=Ubuntu&target_version=1804&target_type=debnetwork)
@@ -126,7 +126,7 @@ Related Documentation:
    nvidia-smi
    ```
 
-1. Create a directory for our software.
+1. Create a directory for our software...
 
    ```bash
    sudo chmod -R a+rwx /opt
@@ -142,7 +142,7 @@ Related Documentation:
    VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
    ```
 
-1. Use `src.bin.cloud.lsyncd` to live sync your repository to your VM instance:
+1. Use `src.bin.cloud.lsyncd` to live sync your repository to your VM instance...
 
    ```bash
    VM_ZONE=$(gcloud compute instances list | grep "^$VM_NAME\s" | awk '{ print $2 }')
@@ -164,13 +164,13 @@ Related Documentation:
 
 ### On the VM instance
 
-1. Start a screen session:
+1. Start a `screen` session...
 
    ```bash
    screen
    ```
 
-1. Navigate to the repository, activate a virtual environment, and install package requirements:
+1. Navigate to the repository, activate a virtual environment, and install package requirements...
 
    ```bash
    cd /opt/wellsaid-labs/Text-to-Speech
@@ -238,7 +238,7 @@ Related Documentation:
                    PYTHONPATH=. python $TRAIN_SCRIPT_PATH --checkpoint;'"
    ```
 
-   If you're running this script from your laptop, then we recommend you install
+   💡 TIP: If you're running this script from your laptop, then we recommend you install
    [Amphetamine](https://apps.apple.com/us/app/amphetamine/id937984704?mt=12) to keep your laptop
    from sleeping and stopping the script.
 
@@ -253,15 +253,13 @@ Related Documentation:
    VM_ZONE=$(gcloud compute instances list | grep "^$VM_NAME\s" | awk '{ print $2 }')
    ```
 
-1. Once training has finished ...
-
-   ... stop your VM ...
+1. Stop your instance...
 
    ```bash
    gcloud compute instances stop $VM_NAME --zone=$VM_ZONE
    ```
 
-   ... or delete your VM ...
+   or delete your instance...
 
    ```bash
    gcloud compute instances delete $VM_NAME --zone=$VM_ZONE
