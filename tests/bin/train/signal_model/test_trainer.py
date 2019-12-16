@@ -12,22 +12,21 @@ from tests._utils import get_tts_mocks
 from tests._utils import MockCometML
 
 
-@mock.patch('src.bin.train.signal_model.trainer.CometML')
 @mock.patch('src.bin.train.signal_model.trainer.atexit.register')
 @mock.patch('src.datasets.utils.read_audio')
-def get_trainer(read_audio_mock, register_mock, comet_ml_mock, load_data=True):
+def get_trainer(read_audio_mock, register_mock, load_data=True):
     """
     Args:
         load_data (bool, optional): If `False` do not load any data for faster instantiation.
     """
     mocks = get_tts_mocks(add_predicted_spectrogram=load_data, add_spectrogram=load_data)
 
-    comet_ml_mock.return_value = MockCometML()
     register_mock.return_value = None
     # NOTE: Decrease the audio size for test performance.
     read_audio_mock.side_effect = lambda *args, **kwargs: read_audio(*args, **kwargs)[:900]
 
     return Trainer(
+        comet_ml=MockCometML(),
         device=mocks['device'],
         checkpoints_directory=TEMP_PATH,
         train_dataset=mocks['train_dataset'] if load_data else [],
@@ -48,17 +47,16 @@ def test__get_sample_density_gap():
         torch.tensor([32760, 0, 0, 0], dtype=torch.int16), 0.9)
 
 
-@mock.patch('src.bin.train.signal_model.trainer.CometML')
 @mock.patch('src.bin.train.signal_model.trainer.atexit.register')
-def test_checkpoint(register_mock, comet_ml_mock):
+def test_checkpoint(register_mock):
     """ Ensure checkpoint can be saved and loaded from. """
     trainer = get_trainer(load_data=False)
 
-    comet_ml_mock.return_value = MockCometML()
     register_mock.return_value = None
 
     checkpoint_path = trainer.save_checkpoint()
     Trainer.from_checkpoint(
+        comet_ml=MockCometML(),
         checkpoint=Checkpoint.from_path(checkpoint_path),
         device=torch.device('cpu'),
         checkpoints_directory=trainer.checkpoints_directory,
