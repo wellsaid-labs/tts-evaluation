@@ -94,9 +94,9 @@ def _train(device_index,
            comet_ml_project_name,
            comet_ml_experiment_key,
            more_hparams,
-           evaluate_every_n_epochs=9,
+           evaluate_every_n_epochs=5,
            generate_every_n_evaluations=1,
-           save_checkpoint_every_n_evaluations=5,
+           save_checkpoint_every_n_evaluations=3,
            distributed_backend='nccl',
            distributed_init_method='tcp://127.0.0.1:29500'):
     """ Loop for training and periodically evaluating the model.
