@@ -250,7 +250,7 @@ if __name__ == '__main__':  # pragma: no cover
         '--tags',
         default=[
             'detached post_net', 'masked conv', 'post_net dropout=0', 'weight_decay=10**-6',
-            'no numbers', 'decoder speaker embedding net'
+            'no numbers', 'decoder speaker embedding net', 'encoder layer norm'
         ],
         nargs='+',
         help='List of tags for a new experiments.')
