@@ -30,6 +30,7 @@ from src.utils import maybe_load_tensor
 from src.utils import RepeatTimer
 from src.visualize import CometML
 from src.visualize import plot_attention
+from src.visualize import plot_loss_per_frame
 from src.visualize import plot_spectrogram
 from src.visualize import plot_stop_token
 
@@ -467,9 +468,19 @@ class Trainer():
         spectrogam_length = int(batch.spectrogram.lengths[0, item].item())
         text_length = int(batch.text.lengths[0, item].item())
 
+        # predicted_post_spectrogram [num_frames, frame_channels]
         predicted_post_spectrogram = predicted_post_spectrogram[:spectrogam_length, item]
+        # predicted_pre_spectrogram [num_frames, frame_channels]
         predicted_pre_spectrogram = predicted_pre_spectrogram[:spectrogam_length, item]
+        # gold_spectrogram [num_frames, frame_channels]
         gold_spectrogram = batch.spectrogram.tensor[:spectrogam_length, item]
+
+        # [num_frames, frame_channels] → [num_frames]
+        post_spectrogram_loss_per_frame = self.criterion_spectrogram(predicted_post_spectrogram,
+                                                                     gold_spectrogram).mean(dim=1)
+        # [num_frames, frame_channels] → [num_frames]
+        pre_spectrogram_loss_per_frame = self.criterion_spectrogram(predicted_pre_spectrogram,
+                                                                    gold_spectrogram).mean(dim=1)
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
         predicted_delta = abs(gold_spectrogram - predicted_post_spectrogram)
@@ -482,6 +493,8 @@ class Trainer():
             'single/attention_std': get_weighted_stdev(predicted_alignments, dim=1),
         })
         self.comet_ml.log_figures({
+            'post_spectrogram_loss_per_frame': plot_loss_per_frame(post_spectrogram_loss_per_frame),
+            'pre_spectrogram_loss_per_frame': plot_loss_per_frame(pre_spectrogram_loss_per_frame),
             'final_spectrogram': plot_spectrogram(predicted_post_spectrogram),
             'residual_spectrogram': plot_spectrogram(predicted_residual),
             'delta_spectrogram': plot_spectrogram(predicted_delta),
