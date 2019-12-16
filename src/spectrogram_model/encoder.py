@@ -65,7 +65,8 @@ class Encoder(nn.Module):
 
         self.embed_token = nn.Embedding(
             vocab_size, token_embedding_dim, padding_idx=DEFAULT_PADDING_INDEX)
-        self.project = nn.Linear(lstm_hidden_size, out_dim)
+        self.embed_layer_norm = nn.LayerNorm(token_embedding_dim)
+        self.project = nn.Sequential(nn.Linear(lstm_hidden_size, out_dim), nn.LayerNorm(out_dim))
 
         self.convolution_layers = nn.ModuleList([
             nn.Sequential(
@@ -73,10 +74,12 @@ class Encoder(nn.Module):
                     in_channels=num_convolution_filters if i != 0 else token_embedding_dim,
                     out_channels=num_convolution_filters,
                     kernel_size=convolution_filter_size,
-                    padding=int((convolution_filter_size - 1) / 2)),
-                nn.BatchNorm1d(num_features=num_convolution_filters), nn.ReLU(inplace=True),
+                    padding=int((convolution_filter_size - 1) / 2)), nn.ReLU(inplace=True),
                 nn.Dropout(p=convolution_dropout)) for i in range(num_convolution_layers)
         ])
+
+        self.normalization_layers = nn.ModuleList(
+            [nn.LayerNorm(num_convolution_filters) for i in range(num_convolution_layers)])
 
         if lstm_bidirectional:
             assert lstm_hidden_size % 2 == 0, '`lstm_hidden_size` must be divisable by 2'
@@ -86,6 +89,7 @@ class Encoder(nn.Module):
             hidden_size=lstm_hidden_size // 2 if lstm_bidirectional else lstm_hidden_size,
             num_layers=lstm_layers,
             bidirectional=lstm_bidirectional)
+        self.lstm_layer_norm = nn.LayerNorm(lstm_hidden_size)
 
         # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunately, Zoneout or any LSTM state
         # dropout in PyTorch forces us to unroll the LSTM and slow down this component x3 to x4. For
@@ -114,6 +118,7 @@ class Encoder(nn.Module):
         """
         # [batch_size, num_tokens] → [batch_size, num_tokens, token_embedding_dim]
         tokens = self.embed_token(tokens)
+        tokens = self.embed_layer_norm(tokens)
 
         # Our input is expected to have shape `[batch_size, num_tokens, token_embedding_dim]`.  The
         # convolution layers expect input of shape
@@ -125,9 +130,13 @@ class Encoder(nn.Module):
         tokens_mask = tokens_mask.unsqueeze(1)
 
         # [batch_size, num_convolution_filters, num_tokens]
-        for conv in self.convolution_layers:
+        for conv, normalization_layer in zip(self.convolution_layers, self.normalization_layers):
             tokens = tokens.masked_fill(~tokens_mask, 0)
             tokens = conv(tokens)
+            tokens = tokens.masked_fill(~tokens_mask, 0)
+            tokens = tokens.transpose(1, 2)
+            tokens = normalization_layer(tokens)
+            tokens = tokens.transpose(1, 2)
 
         # Our input is expected to have shape `[batch_size, num_convolution_filters, num_tokens]`.
         # The lstm layers expect input of shape
@@ -139,6 +148,7 @@ class Encoder(nn.Module):
         # [num_tokens, batch_size, lstm_hidden_size]
         encoded_tokens, _ = self.lstm(tokens)
         out = self.lstm_dropout(encoded_tokens)
+        out = self.lstm_layer_norm(out.masked_fill(~tokens_mask, 0))
 
         # [num_tokens, batch_size, lstm_hidden_size] →
         # [num_tokens, batch_size, out_dim]

@@ -542,10 +542,14 @@ def set_hparams():
     Adam.__init__ = configurable(Adam.__init__)
     nn.modules.batchnorm._BatchNorm.__init__ = configurable(
         nn.modules.batchnorm._BatchNorm.__init__)
+    nn.LayerNorm.__init__ = configurable(
+        nn.LayerNorm.__init__)
     add_config({
         # NOTE: `momentum=0.01` to match Tensorflow defaults
         'torch.nn.modules.batchnorm._BatchNorm.__init__':
             HParams(momentum=0.01),
+        'torch.nn.nn.LayerNorm.__init__':
+            HParams(eps=1e-12),
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
         'third_party.adam.Adam.__init__':
