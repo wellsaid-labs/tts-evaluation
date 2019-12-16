@@ -28,7 +28,6 @@ from src.utils import get_weighted_stdev
 from src.utils import log_runtime
 from src.utils import maybe_load_tensor
 from src.utils import RepeatTimer
-from src.visualize import CometML
 from src.visualize import plot_attention
 from src.visualize import plot_spectrogram
 from src.visualize import plot_stop_token
@@ -51,6 +50,7 @@ class Trainer():
         train_dataset (iterable of TextSpeechRow): Train dataset used to optimize the model.
         dev_dataset (iterable of TextSpeechRow): Dev dataset used to evaluate the model.
         checkpoints_directory (str or Path): Directory to store checkpoints in.
+        comet_ml (Experiment or ExistingExperiment): Object for visualization with comet.
         train_batch_size (int): Batch size used for training.
         dev_batch_size (int): Batch size used for evaluation.
         criterion_spectrogram (callable): Loss function used to score frame predictions.
@@ -77,6 +77,7 @@ class Trainer():
                  train_dataset,
                  dev_dataset,
                  checkpoints_directory,
+                 comet_ml,
                  train_batch_size=HParam(),
                  dev_batch_size=HParam(),
                  criterion_spectrogram=HParam(),
@@ -129,7 +130,7 @@ class Trainer():
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
 
-        self.comet_ml = CometML(disabled=not src.distributed.is_master(), auto_output_logging=False)
+        self.comet_ml = comet_ml
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_parameters(dict_collapse(get_config()))

@@ -3,11 +3,6 @@
 This markdown will walk you through the steps required to train a model on a AWS virtual
 machine.
 
-Related Documentation:
-
-- Would you like to train a end-to-end TTS model? Please follow
-  [this documentation](TRAIN_TTS_MODEL_AWS.md) instead.
-
 ## Prerequisites
 
 1. Setup your local development environment by following [these instructions](LOCAL_SETUP.md).
@@ -88,6 +83,10 @@ Related Documentation:
    ```bash
    export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-west-2
    VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
+
+   VM_STATUS=$(aws ec2 describe-instances --filters Name=tag:Name,Values=$VM_NAME \
+      --query 'Reservations[0].Instances[0].State.Name' --output text)
+   if [[ "$VM_STATUS" != "None" ]]; then echo -e '\033[;31mERROR:\033[0m That VM name has already been taken!'; fi;
    ```
 
 1. Upload your SSH key to the AWS region you plan to train in.
