@@ -53,13 +53,14 @@ machine.
 1. Setup your environment variables...
 
    ```bash
-   # Learn more about the AWS Deep Learning Base AMI here:
-   # https://aws.amazon.com/marketplace/pp/Amazon-Web-Services-AWS-Deep-Learning-Base-AMI-Ubu/B07Y3VDBNS
    VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
    VM_IMAGE_USER=ubuntu
 
    AWS_KEY_PAIR_NAME=$USER"_amazon_web_services"
    ```
+
+   ❓ LEARN MORE: About the default image "ami-0b98d7f73c7d1bb71",
+   [here](https://aws.amazon.com/marketplace/pp/Amazon-Web-Services-AWS-Deep-Learning-Base-AMI-Ubu/B07Y3VDBNS)
 
    Set these variables for training the spectrogram model...
 
@@ -75,37 +76,20 @@ machine.
    TRAIN_SCRIPT_PATH='src/bin/train/signal_model/__main__.py'
    ```
 
-   Finally, run this script to determine the region with the least spot instance interruptions...
+   ❓ LEARN MORE: See our machine type benchmarks [here](./TRAIN_MODEL_AWS_BENCHMARKS.md).
+
+   Set these environment variables...
 
    ```bash
-   python3 docs/train_model_aws_best_region.py --machine_type=$VM_MACHINE_TYPE
-   ```
-
-   Then, set these environment variables...
-
-   ```bash
-   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
+   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-west-2
    VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
    ```
 
-   Related Resources:
+   💡 TIP: Run this script to find regions with the least spot instance interruptions...
+   `python3 docs/train_model_aws_best_region.py --machine_type=$VM_MACHINE_TYPE`
 
-   - Learn more about our benchmarks for the available machine types,
-     [here](./TRAIN_MODEL_AWS_BENCHMARKS.md).
-   - Learn more about the available instance types,
-     [here](https://aws.amazon.com/ec2/instance-types/).
-   - During any point in this process, you may want to image (AMI) the disk so that you don't have
-     to start from scratch every time. In order to do so, please follow the instructions
-     [here](https://docs.aws.amazon.com/cli/latest/reference/ec2/create-image.html).
-
-     Note that every AMI is created with a corresponding snapshot. If your curious about the AMI
-     progress, you can find that information by viewing the corresponding AMI snapshot. Recently,
-     this process took 1.5 hours.
-
-   - Learn more about the available GPU instances for each region,
-     [here](https://aws.amazon.com/ec2/pricing/on-demand/).
-   - Get a list of all AWS regions,
-     [here](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RegionsAndAvailabilityZones.html).
+   💡 TIP: Don't place all your spot instances in the same region, just in case one region
+   runs out of capacity.
 
 1. Upload your SSH key to the AWS region you plan to train in.
 
@@ -225,6 +209,12 @@ machine.
 
    If you get a `dkpg` error, wait a minute or so and try again.
 
+   💡 TIP: After setting up your VM, you may want to
+   [create an Amazon Machine Image (AMI)](https://docs.aws.amazon.com/cli/latest/reference/ec2/create-image.html)
+   so you don't need to setup your VM from scratch again. Your first AMI for a particular setup may
+   take a long time to create (1 hour or more) but it'll take less time for subsequent AMIs. You
+   can see the AMI creation progress in the AWS console by viewing the AMIs corresponding snapshot.
+
 1. Create a directory for our software...
 
    ```bash
@@ -238,7 +228,7 @@ machine.
 1. In a new terminal window, setup your environment variables again...
 
    ```bash
-   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
+   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-west-2
    VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
    ```
 
@@ -323,7 +313,7 @@ machine.
 1. Setup your environment variables again...
 
    ```bash
-   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
+   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-west-2
    VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
 
    SPOT_REQUEST_ID=$(aws ec2 describe-spot-instance-requests \qaq

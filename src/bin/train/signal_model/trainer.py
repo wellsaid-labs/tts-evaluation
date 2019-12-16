@@ -147,7 +147,7 @@ class Trainer():
         self._rollback_states = deque([self._make_partial_rollback_state()],
                                       maxlen=min_rollback + 1)
 
-        self.comet_ml = CometML(disabled=not src.distributed.is_master())
+        self.comet_ml = CometML(disabled=not src.distributed.is_master(), auto_output_logging=False)
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_parameters(dict_collapse(get_config()))

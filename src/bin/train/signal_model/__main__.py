@@ -122,7 +122,6 @@ def _train(device_index,
     """
     set_basic_logging_config(device_index)
     logger = logging.getLogger(__name__)
-    recorder = RecordStandardStreams().start()
     # Initiate distributed environment, learn more:
     # https://pytorch.org/tutorials/intermediate/dist_tuto.htm
     # https://github.com/pytorch/examples/blob/master/imagenet/main.py
@@ -137,7 +136,6 @@ def _train(device_index,
     logger.info('Worker %d started.', torch.distributed.get_rank())
 
     _set_hparams(more_hparams, checkpoint, comet_ml_project_name, comet_ml_experiment_key)
-    recorder.update(run_root)
 
     trainer_kwargs = {
         'device': device,
@@ -173,8 +171,8 @@ def _train(device_index,
 def main(experiment_name=None,
          comet_ml_project_name=None,
          experiment_tags=[],
-         experiment_root=SIGNAL_MODEL_EXPERIMENTS_PATH / bash_time_label() / 'runs',
-         run_name=bash_time_label(),
+         experiment_root=SIGNAL_MODEL_EXPERIMENTS_PATH,
+         run_name='RUN_' + bash_time_label(add_pid=False),
          checkpoints_directory_name='checkpoints',
          checkpoint=None,
          spectrogram_model_checkpoint=None,
@@ -204,15 +202,15 @@ def main(experiment_name=None,
     _set_hparams(more_hparams, checkpoint, comet_ml_project_name)
 
     # Load `checkpoint`, setup `run_root`, and setup `checkpoints_directory`.
-    # NOTE: The folder structure is setup like so:
-    #   SIGNAL_MODEL_EXPERIMENTS_PATH / bash_time_label() / 'runs' / bash_time_label() /
-    #   'checkpoints' / 'checkpoint.pt'
+    experiment_root = experiment_root / (
+        bash_time_label() + '_' + 'NAME-' + experiment_name.replace(' ', '-'))
     experiment_root = experiment_root if checkpoint is None else checkpoint.directory.parent.parent
     run_root = experiment_root / run_name
     run_root.mkdir(parents=checkpoint is None)
     checkpoints_directory = run_root / checkpoints_directory_name
     checkpoints_directory.mkdir()
     recorder.update(run_root)
+    recorder.update(run_root, log_filename='run.log')
 
     comet = CometML()
     add_config({'src.visualize.CometML': HParams(experiment_key=comet.get_key())})
