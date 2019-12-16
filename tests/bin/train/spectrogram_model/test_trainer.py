@@ -13,18 +13,17 @@ from tests._utils import get_tts_mocks
 from tests._utils import MockCometML
 
 
-@mock.patch('src.bin.train.spectrogram_model.trainer.CometML')
 @mock.patch('src.bin.train.signal_model.trainer.atexit.register')
-def get_trainer(register_mock, comet_ml_mock, load_data=True):
+def get_trainer(register_mock, load_data=True):
     """
     Args:
         load_data (bool, optional): If `False` do not load any data for faster instantiation.
     """
-    comet_ml_mock.return_value = MockCometML()
     register_mock.return_value = None
 
     mocks = get_tts_mocks(add_spectrogram=True)
     trainer = Trainer(
+        comet_ml=MockCometML(disabled=True),
         device=mocks['device'],
         train_dataset=mocks['train_dataset'] if load_data else [],
         dev_dataset=mocks['dev_dataset'] if load_data else [],
@@ -35,17 +34,16 @@ def get_trainer(register_mock, comet_ml_mock, load_data=True):
     return trainer
 
 
-@mock.patch('src.bin.train.spectrogram_model.trainer.CometML')
 @mock.patch('src.bin.train.signal_model.trainer.atexit.register')
-def test_checkpoint(register_mock, comet_ml_mock):
+def test_checkpoint(register_mock):
     """ Ensure checkpoint can be saved and loaded from. """
-    comet_ml_mock.return_value = MockCometML()
     register_mock.return_value = None
 
     trainer = get_trainer(load_data=False)
 
     checkpoint_path = trainer.save_checkpoint()
     Trainer.from_checkpoint(
+        comet_ml=MockCometML(disabled=True),
         checkpoint=Checkpoint.from_path(checkpoint_path),
         device=torch.device('cpu'),
         checkpoints_directory=TEMP_PATH,

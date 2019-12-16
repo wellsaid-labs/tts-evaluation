@@ -107,11 +107,7 @@ def _train(device_index,
     """
     set_basic_logging_config(device_index)
     logger = logging.getLogger(__name__)
-    comet = CometML(
-        project_name=comet_ml_project_name,
-        experiment_key=comet_ml_experiment_key,
-        disabled=not src.distributed.is_master(),
-        auto_output_logging=False)
+
     # Initiate distributed environment, learn more:
     # https://pytorch.org/tutorials/intermediate/dist_tuto.htm
     # https://github.com/pytorch/examples/blob/master/imagenet/main.py
@@ -122,6 +118,12 @@ def _train(device_index,
         init_method=distributed_init_method)
     device = torch.device('cuda', device_index)
     torch.cuda.set_device(device)
+
+    comet = CometML(
+        project_name=comet_ml_project_name,
+        experiment_key=comet_ml_experiment_key,
+        disabled=not src.distributed.is_master(),
+        auto_output_logging=False)
 
     logger.info('Worker %d started.', torch.distributed.get_rank())
 

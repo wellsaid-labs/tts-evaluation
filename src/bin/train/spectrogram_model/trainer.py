@@ -328,7 +328,7 @@ class Trainer():
             if hasattr(data_loader.iterator, 'data_queue'):
                 self.metrics['data_queue_size'].update(data_loader.iterator.data_queue.qsize())
 
-            if not train and not infer and i == random_batch:
+            if not train and not infer and (i == random_batch or trial_run):
                 self._visualize_predicted(batch, predictions)
 
             for name, metric in self.metrics.items():
