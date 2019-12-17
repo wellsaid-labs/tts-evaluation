@@ -595,10 +595,7 @@ def set_hparams():
         'src': {
             'spectrogram_model': {
                 'encoder.Encoder.__init__':
-                    HParams(
-                        lstm_dropout=lstm_dropout,
-                        convolution_dropout=convolution_dropout,
-                    ),
+                    HParams(lstm_dropout=lstm_dropout, convolution_dropout=convolution_dropout),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(lstm_dropout=lstm_dropout),
                 # SOURCE (Tacotron 2):
