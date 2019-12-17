@@ -97,7 +97,8 @@ class AutoregressiveDecoder(nn.Module):
         self.linear_out = nn.Linear(
             in_features=lstm_hidden_size + self.attention_hidden_size, out_features=frame_channels)
         self.linear_stop_token = nn.Linear(
-            in_features=lstm_hidden_size + self.attention_hidden_size, out_features=1)
+            in_features=lstm_hidden_size + self.attention_hidden_size + self.attention_hidden_size,
+            out_features=1)
 
     def _get_initial_state(self,
                            batch_size,
@@ -159,13 +160,19 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
         return (last_frame, lstm_one_hidden_state, lstm_two_hidden_state, last_attention_context,
                 cumulative_alignment)
 
-    def forward(self, encoded_tokens, tokens_mask, target_frames=None, hidden_state=None):
+    def forward(self,
+                encoded_tokens,
+                tokens_mask,
+                last_token,
+                target_frames=None,
+                hidden_state=None):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, attention_hidden_size]):
                 Batched set of encoded sequences.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask where one's
                 represent padding in ``encoded_tokens``.
+            last_token (torch.FloatTensor [batch_size, attention_hidden_size])
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
                 optional): During training, ground truth frames for teacher-forcing.
             hidden_state (AutoregressiveDecoderHiddenState): For sequential prediction, decoder
@@ -269,9 +276,10 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
         del attention_contexts  # Clear Memory
 
         # Predict the stop token
-        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size] →
-        # [num_frames, batch_size, 1]
-        stop_token = self.linear_stop_token(frames)
+        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size + attention_hidden_size]
+        # → [num_frames, batch_size, 1]
+        last_token = last_token.unsqueeze(0).expand(frames.shape[0], -1, -1)
+        stop_token = self.linear_stop_token(torch.cat([frames, last_token], dim=2))
         # Remove singleton dimension
         # [num_frames, batch_size, 1] → [num_frames, batch_size]
         stop_token = stop_token.squeeze(2)
