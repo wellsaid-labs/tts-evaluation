@@ -63,18 +63,18 @@ def _get_slice(spectrogram, signal, split_signal_partial, spectrogram_slice_size
           the source signal is one timestep behind.
 
     Args:
-        spectrogram (torch.Tensor [num_frames, channels])
-        signal (torch.Tensor [signal_length])
+        spectrogram (torch.FloatTensor [num_frames, channels])
+        signal (torch.FloatTensor [signal_length])
         split_signal_partial (callable)
         spectrogram_slice_size (int): In spectrogram frames, size of slice.
         spectrogram_slice_pad (int): Pad the spectrogram slice with ``frame_pad`` frames on each
             side.
 
     Returns: (SignalModelTrainingRow) (
-        input_signal (torch.Tensor [signal_length, 2])
-        input_spectrogram (torch.Tensor [num_frames, channels])
-        target_signal_coarse (torch.Tensor [signal_length])
-        target_signal_fine (torch.Tensor [signal_length])
+        input_signal (torch.FloatTensor [signal_length, 2])
+        input_spectrogram (torch.FloatTensor [num_frames, channels])
+        target_signal_coarse (torch.LongTensor [signal_length])
+        target_signal_fine (torch.LongTensor [signal_length])
         signal_mask (torch.BoolTensor [signal_length])
     )
     """
@@ -142,7 +142,7 @@ def _get_slice(spectrogram, signal, split_signal_partial, spectrogram_slice_size
 
 
 def _load_fn(row, use_predicted, split_signal_partial, combine_signal_partial, **kwargs):
-    """ Load function for loading a single row.
+    """ Load function for loading a single `SignalModelTrainingRow` row from `TextSpeechRow`.
 
     Args:
         row (TextSpeechRow)
@@ -154,7 +154,9 @@ def _load_fn(row, use_predicted, split_signal_partial, combine_signal_partial, *
         (SignalModelTrainingRow)
     """
     spectrogram = maybe_load_tensor(row.predicted_spectrogram if use_predicted else row.spectrogram)
-    spectrogram_audio = maybe_load_tensor(row.spectrogram_audio)
+    # NOTE: `row.spectrogram_audio` is a `torch.HalfTensor` (16-bit floating point) while our model
+    # requires a `torch.FloatTensor` (32-bit floating point)
+    spectrogram_audio = maybe_load_tensor(row.spectrogram_audio).float()
     spectrogram_audio = combine_signal_partial(*split_signal_partial(spectrogram_audio))
 
     # Check invariants
