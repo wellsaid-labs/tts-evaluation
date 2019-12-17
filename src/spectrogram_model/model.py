@@ -197,7 +197,7 @@ class SpectrogramModel(nn.Module):
         stopped = set()
         hidden_state = None
         alignments, frames, stop_tokens = [], [], []
-        lengths = (num_tokens * max_frames_per_token).long().tolist()
+        lengths = (num_tokens.float() * max_frames_per_token).long().tolist()
         if use_tqdm:
             progress_bar = tqdm(leave=True, unit='frame(s)')
         while len(stopped) != batch_size and len(frames) < max(lengths):

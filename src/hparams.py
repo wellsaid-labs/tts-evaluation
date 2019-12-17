@@ -226,7 +226,6 @@ def _set_model_size(frame_channels, bits):
                         # direction) to generate the encoded features.
                         lstm_hidden_size=512,
                         lstm_layers=1,
-                        lstm_bidirectional=True,
 
                         # SOURCE (Tacotron 2)
                         # Attention probabilities are computed after projecting inputs and location
