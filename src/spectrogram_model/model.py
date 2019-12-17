@@ -197,7 +197,7 @@ class SpectrogramModel(nn.Module):
         stopped = set()
         hidden_state = None
         alignments, frames, stop_tokens = [], [], []
-        lengths = (num_tokens * max_frames_per_token).long().tolist()
+        lengths = (num_tokens.float() * max_frames_per_token).long().tolist()
         if use_tqdm:
             progress_bar = tqdm(leave=True, unit='frame(s)')
         while len(stopped) != batch_size and len(frames) < max(lengths):
@@ -280,8 +280,10 @@ class SpectrogramModel(nn.Module):
         if num_tokens is not None:
             num_tokens = num_tokens.view(batch_size)  # [batch_size]
         elif num_tokens is None and batch_size == 1:
-            num_tokens = torch.full((batch_size,), tokens.shape[1],
-                                    device=tokens.device)  # [batch_size]
+            num_tokens = torch.full((batch_size,),
+                                    tokens.shape[1],
+                                    device=tokens.device,
+                                    dtype=torch.long)  # [batch_size]
 
         assert num_tokens is not None, 'Must provide `num_tokens` unless batch size is 1.'
         return tokens, speaker, num_tokens, target_frames, target_lengths
