@@ -42,7 +42,7 @@ def test_spectrogram_model_inference__batch_size_sensativity():
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     speaker = torch.randint(1, num_speakers, (1, batch_size))
-    batched_num_tokens = torch.full((batch_size,), num_tokens, dtype=torch.long)
+    batched_num_tokens = torch.full((batch_size,), num_tokens)
 
     # frames [num_frames, batch_size, frame_channels]
     # frames_with_residual [num_frames, batch_size, frame_channels]
@@ -156,7 +156,7 @@ def test_spectrogram_model():
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     speaker = torch.LongTensor(1, batch_size).fill_(0)
-    batched_num_tokens = torch.full((batch_size,), num_tokens, dtype=torch.long)
+    batched_num_tokens = torch.full((batch_size,), num_tokens)
 
     frames, frames_with_residual, stop_token, alignment, lengths = model(
         input_,
@@ -228,7 +228,7 @@ def test_spectrogram_model_target():
     speaker = torch.LongTensor(1, batch_size).fill_(0)
     target_frames = torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1)
     target_lengths = torch.full((batch_size,), num_frames)
-    batched_num_tokens = torch.full((batch_size,), num_tokens).long()
+    batched_num_tokens = torch.full((batch_size,), num_tokens)
     frames, frames_with_residual, stop_token, alignment = model(
         input_,
         speaker,
