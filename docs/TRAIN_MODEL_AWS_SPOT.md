@@ -95,7 +95,7 @@ Related Documentation:
    ```
 
    💡 TIP: Run this script to find regions with the least spot instance interruptions...
-   `python3 docs/train_model_aws_best_region.py --machine_type=$VM_MACHINE_TYPE`
+   `python3 docs/train_model_aws_spot_interruption.py --machine_type=$VM_MACHINE_TYPE`
 
    💡 TIP: Don't place all your spot instances in the same region, just in case one region
    runs out of capacity.
