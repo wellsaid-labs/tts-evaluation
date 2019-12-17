@@ -3,7 +3,7 @@ for `machine_type` / `os` across all regions.
 
 Example:
 
-    python docs/train_model_aws_best_region.py \
+    python docs/train_model_aws_spot_interruption.py \
         --machine_type g4dn.12xlarge \
         --os Linux
 
