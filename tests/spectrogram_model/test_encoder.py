@@ -8,6 +8,7 @@ from src.spectrogram_model.encoder import MaskedBackwardLSTM
 
 
 def test_masked_backward_lstm_uneven_mask():
+    """ Test if masked backward LSTM is able to handle an uneven LSTM mask on the end. """
     input_size = 1
     lstm_hidden_size = 5
     num_layers = 2
@@ -37,6 +38,8 @@ def test_masked_backward_lstm_uneven_mask():
 
 
 def test_masked_backward_lstm():
+    """ Test is masked backward LSTM is able to handle a basic case with a random tensor and
+    padding. """
     batch_size = 2
     seq_len = 3
     input_size = 4

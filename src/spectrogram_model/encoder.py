@@ -7,6 +7,11 @@ from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
 
 
 class MaskedBackwardLSTM(nn.Module):
+    """ An LSTM that processes it's input backwards accounting for any padding on the ends of
+    the input.
+
+    TODO: Expand this module to have the same interface as a regular LSTM.
+    """
 
     def __init__(self, **kwargs):
         super().__init__()
@@ -23,9 +28,10 @@ class MaskedBackwardLSTM(nn.Module):
             encoded_tokens (torch.FloatTensor [seq_len, batch_size, input_size])
         """
         tokens = tokens.masked_fill(~tokens_mask, 0)
-        # Ex. tokens = [1, 2, 3, 0, 0]
-        # Ex. length = 3
-        # Ex. tokens.shape[0] = 5
+        # Ex. Assume we are dealing with a one dimensional input, like this:
+        # tokens = [1, 2, 3, 0, 0]
+        # length = 3
+        # tokens.shape[0] = 5
         reversed_tokens = torch.zeros(tokens.shape, dtype=tokens.dtype)
         lengths = tokens_mask.int().sum(0)
         iterator = lambda: zip(range(tokens.shape[1]), list(lengths))
