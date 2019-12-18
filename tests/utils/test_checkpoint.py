@@ -4,6 +4,7 @@ from torch import nn
 from torchnlp.random import set_random_generator_state
 
 import torch
+import pytest
 
 from src.optimizers import Optimizer
 from src.utils.checkpoint import Checkpoint
@@ -33,6 +34,10 @@ def test_load_save_checkpoint():
     checkpoint = Checkpoint(
         directory=TEST_DATA_PATH_LOCAL, model=model, step=1000, optimizer=optimizer)
     filename = checkpoint.save()
+
+    with pytest.raises(ValueError):  # Detects overwrite
+        checkpoint.save()
+
     assert filename.is_file()
 
     # Smoke test

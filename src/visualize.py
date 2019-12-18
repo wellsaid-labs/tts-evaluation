@@ -1,6 +1,8 @@
 import io
 import logging
 import matplotlib
+import os
+import platform
 import subprocess
 import time
 
@@ -45,6 +47,27 @@ def plot_attention(alignment):
     figure.colorbar(im, ax=axis, orientation='horizontal')
     pyplot.xlabel('Decoder timestep')
     pyplot.ylabel('Encoder timestep')
+    pyplot.close(figure)
+    return figure
+
+
+def plot_loss_per_frame(loss_per_frame):
+    """ Plot the loss for each frame.
+
+    Args:
+        loss_per_frame (numpy.array or torch.Tensor [num_frames]): The loss for each frame.
+
+    Returns:
+        (matplotlib.figure.Figure): Matplotlib figure representing the plot.
+    """
+    if torch.is_tensor(loss_per_frame):
+        loss_per_frame = loss_per_frame.detach().cpu().numpy()
+
+    pyplot.style.use('ggplot')
+    figure = pyplot.figure()
+    pyplot.plot(list(range(len(loss_per_frame))), loss_per_frame, marker='.', linestyle='solid')
+    pyplot.ylabel('Loss')
+    pyplot.xlabel('Frame')
     pyplot.close(figure)
     return figure
 
@@ -184,8 +207,7 @@ _BASE_HTML_STYLING = """
 
 
 @log_runtime
-@configurable
-def CometML(project_name=HParam(), experiment_key=None, log_git_patch=None, **kwargs):
+def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
     """
     Initiate a Comet.ml visualizer with several monkey patched methods.
 
@@ -223,7 +245,29 @@ def CometML(project_name=HParam(), experiment_key=None, log_git_patch=None, **kw
     experiment.log_other(
         'last_git_commit',
         subprocess.check_output('git log -1 --format=%cd', shell=True).decode().strip())
+    # TODO: Instead of using different approaches for extracting CPU, GPU, and disk information
+    # consider standardizing to use `lshw` instead.
+    if torch.cuda.is_available():
+        experiment.log_other(
+            'list_gpus',
+            subprocess.check_output('nvidia-smi --list-gpus', shell=True).decode().strip())
+    if platform.system() == 'Linux':
+        experiment.log_other(
+            'list_disks',
+            subprocess.check_output('lshw -class disk -class storage', shell=True).decode().strip())
+    if platform.system() == 'Linux':
+        experiment.log_other(
+            'list_unique_cpus',
+            subprocess.check_output(
+                "awk '/model name/ {$1=$2=$3=\"\"; print $0}' /proc/cpuinfo | uniq",
+                shell=True).decode().strip())
     experiment.log_parameter('num_gpu', torch.cuda.device_count())
+    experiment.log_parameter('num_cpu', os.cpu_count())
+    if platform.system() == 'Linux':
+        experiment.log_parameter(
+            'total_physical_memory_in_kb',
+            subprocess.check_output("awk '/MemTotal/ {print $2}' /proc/meminfo",
+                                    shell=True).decode().strip())
 
     last_step_time = None
     last_step = None

@@ -95,5 +95,5 @@ class PostNet(nn.Module):
         """
         for layer in self.layers:
             frames = frames.masked_fill(~mask.unsqueeze(1), 0)
-            frames = layer(frames)
+            frames = layer(frames)  # frames [batch_size, frame_channels, num_frames]
         return frames.masked_fill(~mask.unsqueeze(1), 0)

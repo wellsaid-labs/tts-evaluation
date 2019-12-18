@@ -1,5 +1,3 @@
-import torch
-
 from hparams import configurable
 from hparams import HParam
 from torch import nn
@@ -81,11 +79,8 @@ class Encoder(nn.Module):
 
     Args:
         vocab_size (int): Maximum size of the vocabulary used to encode ``tokens``.
-        num_speakers (int)
         out_dim (int): Number of dimensions to output.
         token_embedding_dim (int): Size of the token embedding dimensions.
-        speaker_embedding_dim (int): Size of the speaker embedding dimensions.
-        speaker_embedding_dropout (float): The speaker embedding net dropout.
         num_convolution_layers (int): Number of convolution layers to apply.
         num_convolution_filters (odd :clas:`int`): Number of dimensions (channels)
             produced by the convolution.
@@ -99,11 +94,8 @@ class Encoder(nn.Module):
     @configurable
     def __init__(self,
                  vocab_size,
-                 num_speakers,
                  out_dim=HParam(),
                  token_embedding_dim=HParam(),
-                 speaker_embedding_dim=HParam(),
-                 speaker_embedding_dropout=HParam(),
                  num_convolution_layers=HParam(),
                  num_convolution_filters=HParam(),
                  convolution_filter_size=HParam(),
@@ -120,16 +112,7 @@ class Encoder(nn.Module):
 
         self.embed_token = nn.Embedding(
             vocab_size, token_embedding_dim, padding_idx=DEFAULT_PADDING_INDEX)
-        self.embed_speaker = None
-        if num_speakers > 1:
-            self.embed_speaker = nn.Sequential(
-                nn.Embedding(num_speakers, speaker_embedding_dim),
-                nn.Linear(speaker_embedding_dim, speaker_embedding_dim), nn.ReLU(),
-                nn.Dropout(speaker_embedding_dropout),
-                nn.Linear(speaker_embedding_dim, speaker_embedding_dim))
-            self.project = nn.Linear(lstm_hidden_size + speaker_embedding_dim, out_dim)
-        else:
-            self.project = nn.Linear(lstm_hidden_size, out_dim)
+        self.project = nn.Linear(lstm_hidden_size, out_dim)
 
         self.convolution_layers = nn.ModuleList([
             nn.Sequential(
@@ -164,7 +147,7 @@ class Encoder(nn.Module):
             if isinstance(module, nn.Conv1d):
                 nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
 
-    def forward(self, tokens, tokens_mask, speaker):
+    def forward(self, tokens, tokens_mask):
         """
         NOTE: The results for the spectrogram model are different depending on the batch size due
         to the backwards LSTM needing to consider variable padding.
@@ -173,7 +156,6 @@ class Encoder(nn.Module):
             tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask applied on
                 tokens.
-            speaker (torch.LongTensor [batch_size]): Batched speaker encoding.
 
         Returns:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, out_dim]): Batched set of
@@ -211,20 +193,6 @@ class Encoder(nn.Module):
         encoded_tokens = torch.cat([forward_encoded_tokens, backward_encoded_tokens], dim=2)
         out = self.lstm_dropout(encoded_tokens)
 
-        if self.embed_speaker is not None:
-            # [batch_size] → [batch_size, speaker_embedding_dim]
-            speaker = self.embed_speaker(speaker)
-
-            # [batch_size, speaker_embedding_dim] → [1, batch_size, speaker_embedding_dim]
-            speaker = speaker.unsqueeze(0)
-
-            # [1, batch_size, speaker_embedding_dim] →
-            # [num_tokens, batch_size, speaker_embedding_dim]
-            speaker = speaker.expand(out.size()[0], -1, -1)
-
-            # [num_tokens, batch_size, speaker_embedding_dim + lstm_hidden_size]
-            out = torch.cat((out, speaker), dim=2)
-
-        # [num_tokens, batch_size, lstm_hidden_size +? speaker_embedding_dim] →
+        # [num_tokens, batch_size, lstm_hidden_size] →
         # [num_tokens, batch_size, out_dim]
         return self.project(out).masked_fill(~tokens_mask, 0)

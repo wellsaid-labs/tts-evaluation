@@ -5,7 +5,7 @@ NOTE: `rsync` must be installed on the remote machine for this to work.
 
 Example:
 
-    $ python -m src.bin.gcp.lsyncd --source $(pwd) \
+    $ python -m src.bin.cloud.lsyncd --source $(pwd) \
                                    --destination /opt/wellsaid-labs/Text-to-Speech \
                                    --user your_gcp_user_name \
                                    --instance your_gcp_instance_name
@@ -13,10 +13,8 @@ Example:
 from pathlib import Path
 
 import argparse
-import json
 import logging
 import os
-import subprocess
 
 from src.environment import ROOT_PATH
 
@@ -24,39 +22,20 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def get_ip(instance_name):
-    """ Get the IP address of an instance
-
-    TODO: Remove all invocations of the `shell` due to this:
-    https://stackoverflow.com/questions/3172470/actual-meaning-of-shell-true-in-subprocess
-
-    Args:
-        instance_name (str): Name of GCP instance
-
-    Returns:
-        (str): IP address of GCP instance
-    """
-    instances = json.loads(
-        subprocess.check_output('gcloud compute instances list --format json',
-                                shell=True).decode("utf-8"))
-    instances = [i for i in instances if i['name'] == instance_name]
-    assert len(instances) == 1, ('The `gcloud` instances cannot be found or there is a '
-                                 'duplicate instance with the same name.')
-    return instances[0]['networkInterfaces'][0]['accessConfigs'][0]['natIP']
-
-
 def main(source,
          destination,
-         instance,
+         public_dns,
+         identity_file,
          user,
-         template=ROOT_PATH / 'src' / 'bin' / 'gcp' / 'lsyncd.conf.lua',
+         template=ROOT_PATH / 'src' / 'bin' / 'cloud' / 'lsyncd.conf.lua',
          tmp='/tmp/lsyncd.conf.lua'):
     """ Starts a lsyncd session.
 
     Args:
         source (str): Path on local machine to sync.
         destination (str): Path on remote machine to sync.
-        instance (str): Name of remote GCP instance.
+        public_dns (str): Name of remote GCP instance.
+        identity_file (str): File from which the identity (private key) for authentication is read.
         user (str): Username on remote machine.
         template (Path): Template configuration for lsyncd.
         tmp (str): Tmp filename to save configuration.
@@ -65,8 +44,8 @@ def main(source,
     config = config.replace('{source}', source)
     config = config.replace('{user}', user)
     config = config.replace('{destination}', destination)
-    config = config.replace('{ip}', get_ip(instance))
-    config = config.replace('{home}', os.environ['HOME'])
+    config = config.replace('{public_dns}', public_dns)
+    config = config.replace('{identity_file}', identity_file)
     tmp = Path(tmp)
     tmp.write_text(config)
     os.execvp('sudo', ['sudo', 'lsyncd', tmp])
@@ -74,12 +53,16 @@ def main(source,
 
 if __name__ == '__main__':  # pragma: no cover
     parser = argparse.ArgumentParser()
+    parser.add_argument('--source', type=str, required=True, help='Path on local machine to sync')
     parser.add_argument(
-        '-s', '--source', type=str, required=True, help='Path on local machine to sync')
+        '--destination', type=str, required=True, help='Path on remote machine to sync')
     parser.add_argument(
-        '-d', '--destination', type=str, required=True, help='Path on remote machine to sync')
+        '--public_dns', type=str, required=True, help='The public DNS of the instance')
     parser.add_argument(
-        '-i', '--instance', type=str, required=True, help='Name of remote GCP instance')
-    parser.add_argument('-u', '--user', type=str, required=True, help='Username on remote machine')
+        '--identity_file',
+        type=str,
+        required=True,
+        help='File from which the identity (private key) for authentication is read.')
+    parser.add_argument('--user', type=str, required=True, help='Username on remote machine')
     args = parser.parse_args()
     main(**vars(args))
