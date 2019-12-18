@@ -1,6 +1,6 @@
 # Train a Model with Amazon Web Services (AWS) Spot Instances
 
-This markdown will walk you through the steps required to train a model on a AWS virtual
+This markdown will walk you through the steps required to train a model on an AWS virtual
 machine.
 
 Related Documentation:
@@ -57,24 +57,14 @@ Related Documentation:
 
 1. Setup your environment variables...
 
-   ```bash
-   VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
-   VM_IMAGE_USER=ubuntu
-
-   AWS_KEY_PAIR_NAME=$USER"_amazon_web_services"
-   ```
-
-   ❓ LEARN MORE: About the default image "ami-0b98d7f73c7d1bb71",
-   [here](https://aws.amazon.com/marketplace/pp/Amazon-Web-Services-AWS-Deep-Learning-Base-AMI-Ubu/B07Y3VDBNS)
-
-   Set these variables for training the spectrogram model...
+   ... for training the spectrogram model...
 
    ```bash
    VM_MACHINE_TYPE=g4dn.12xlarge
    TRAIN_SCRIPT_PATH='src/bin/train/spectrogram_model/__main__.py'
    ```
 
-   Set these variables for training the signal model...
+   ... for training the signal model...
 
    ```bash
    VM_MACHINE_TYPE=p3.16xlarge
@@ -91,8 +81,22 @@ Related Documentation:
 
    VM_STATUS=$(aws ec2 describe-spot-instance-requests --filters Name=tag:Name,Values=$VM_NAME \
       --query 'SpotInstanceRequests[0].State' --output text)
-   if [[ "$VM_STATUS" != "None" ]]; then echo -e '\033[;31mERROR:\033[0m That VM name has already been taken!'; fi;
+   if [[ "$VM_STATUS" != "None" ]]; then echo -e '\033[;31mERROR:\033[0m The region you provided' \
+      'is invalid or the VM name you provided has already been taken!'; fi;
+
+   VM_IMAGE_NAME='Deep Learning Base AMI (Ubuntu 18.04) Version 21.0'
+   VM_IMAGE_ID=$(aws ec2 describe-images \
+    --owners amazon \
+    --filters "Name=name,Values=$VM_IMAGE_NAME" \
+    --query 'sort_by(Images, &CreationDate)[-1].[ImageId]' \
+    --output 'text')
+   VM_IMAGE_USER=ubuntu
+
+   AWS_KEY_PAIR_NAME=$USER"_amazon_web_services"
    ```
+
+   ❓ LEARN MORE: About the default image
+   [here](https://aws.amazon.com/marketplace/pp/Amazon-Web-Services-AWS-Deep-Learning-Base-AMI-Ubu/B07Y3VDBNS)
 
    💡 TIP: Run this script to find regions with the least spot instance interruptions...
    `python3 docs/train_model_aws_spot_interruption.py --machine_type=$VM_MACHINE_TYPE`
