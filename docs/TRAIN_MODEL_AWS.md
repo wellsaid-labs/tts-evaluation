@@ -52,24 +52,14 @@ machine.
 
 1. Setup your environment variables...
 
-   ```bash
-   VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
-   VM_IMAGE_USER=ubuntu
-
-   AWS_KEY_PAIR_NAME=$USER"_amazon_web_services"
-   ```
-
-   ❓ LEARN MORE: About the default image "ami-0b98d7f73c7d1bb71",
-   [here](https://aws.amazon.com/marketplace/pp/Amazon-Web-Services-AWS-Deep-Learning-Base-AMI-Ubu/B07Y3VDBNS)
-
-   Set these variables for training the spectrogram model...
+   ... for training the spectrogram model...
 
    ```bash
    VM_MACHINE_TYPE=g4dn.12xlarge
    TRAIN_SCRIPT_PATH='src/bin/train/spectrogram_model/__main__.py'
    ```
 
-   Set these variables for training the signal model...
+   ... for training the signal model...
 
    ```bash
    VM_MACHINE_TYPE=p3.16xlarge
@@ -81,13 +71,26 @@ machine.
    Also set these environment variables...
 
    ```bash
-   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-west-2
+   export AWS_DEFAULT_REGION='us-west-2' # EXAMPLE: us-west-2
    VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
 
    VM_STATUS=$(aws ec2 describe-instances --filters Name=tag:Name,Values=$VM_NAME \
-      --query 'Reservations[0].Instances[0].State.Name' --output text)
+     --query 'Reservations[0].Instances[0].State.Name' --output text)
    if [[ "$VM_STATUS" != "None" ]]; then echo -e '\033[;31mERROR:\033[0m That VM name has already been taken!'; fi;
+
+   VM_IMAGE_NAME='Deep Learning Base AMI (Ubuntu 18.04) Version 21.0'
+   VM_IMAGE_ID=$(aws ec2 describe-images \
+   --owners amazon \
+   --filters "Name=name,Values=$VM_IMAGE_NAME" \
+   --query 'sort_by(Images, &CreationDate)[-1].[ImageId]' \
+   --output 'text')
+   VM_IMAGE_USER=ubuntu
+
+   AWS_KEY_PAIR_NAME=$USER"_amazon_web_services"
    ```
+
+   ❓ LEARN MORE: About the default image
+   [here](https://aws.amazon.com/marketplace/pp/Amazon-Web-Services-AWS-Deep-Learning-Base-AMI-Ubu/B07Y3VDBNS)
 
 1. Upload your SSH key to the AWS region you plan to train in.
 
