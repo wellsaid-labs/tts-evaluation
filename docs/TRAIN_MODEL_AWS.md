@@ -1,6 +1,6 @@
 # Train a Model with Amazon Web Services (AWS)
 
-This markdown will walk you through the steps required to train a model on a AWS virtual
+This markdown will walk you through the steps required to train a model on an AWS virtual
 machine.
 
 ## Prerequisites

@@ -1,6 +1,6 @@
 # Train a Model with Google Cloud Platform (GCP) Compute
 
-This markdown will walk you through the steps required to train a model on a GCP virtual
+This markdown will walk you through the steps required to train a model on an GCP virtual
 machine.
 
 Related Documentation:
