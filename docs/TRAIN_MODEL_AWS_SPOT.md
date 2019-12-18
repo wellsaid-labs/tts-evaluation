@@ -58,13 +58,17 @@ Related Documentation:
 1. Setup your environment variables...
 
    ```bash
-   VM_IMAGE_ID=ami-0b98d7f73c7d1bb71
+   VM_IMAGE_NAME='Deep Learning Base AMI (Ubuntu 18.04) Version 21.0'
+   VM_IMAGE_ID=$(aws ec2 describe-images \
+    --owners amazon \
+    --filters "Name=name,Values=$VM_IMAGE_NAME" \
+    --query 'sort_by(Images, &CreationDate)[-1].[ImageId]' \
+    --output 'text')
    VM_IMAGE_USER=ubuntu
-
    AWS_KEY_PAIR_NAME=$USER"_amazon_web_services"
    ```
 
-   ❓ LEARN MORE: About the default image "ami-0b98d7f73c7d1bb71",
+   ❓ LEARN MORE: About the default image
    [here](https://aws.amazon.com/marketplace/pp/Amazon-Web-Services-AWS-Deep-Learning-Base-AMI-Ubu/B07Y3VDBNS)
 
    Set these variables for training the spectrogram model...
