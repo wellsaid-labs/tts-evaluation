@@ -137,6 +137,11 @@ def _set_audio_processing():
                     window=window,
                     fft_length=fft_length,
                     min_magnitude=min_magnitude,
+                    # SOURCE (Tacotron 2):
+                    # We transform the STFT magnitude to the mel scale using an 80 channel mel
+                    # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
+                    # compression.
+                    num_mel_bins=frame_channels,
                 ),
             'griffin_lim':
                 HParams(
@@ -155,14 +160,7 @@ def _set_audio_processing():
                     iterations=30,
                 ),
             '_mel_filters':
-                HParams(
-                    fft_length=fft_length,
-                    # SOURCE (Tacotron 2):
-                    # We transform the STFT magnitude to the mel scale using an 80 channel mel
-                    # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
-                    # compression.
-                    num_mel_bins=frame_channels,
-                    **hertz_bounds),
+                HParams(fft_length=fft_length, **hertz_bounds),
             'split_signal':
                 HParams(bits=bits),
             'combine_signal':
@@ -581,12 +579,10 @@ def set_hparams():
 
     seed = 1212212
 
-    torchnlp.random.set_seed = configurable(torchnlp.random.set_seed)
     torchnlp.samplers.DeterministicSampler.__init__ = configurable(
         torchnlp.samplers.DeterministicSampler.__init__)
     add_config({
         'torchnlp.samplers.DeterministicSampler.__init__': HParams(random_seed=seed),
-        'torchnlp.random.set_seed': HParams(seed=seed),
     })
 
     add_config({
@@ -695,9 +691,6 @@ def set_hparams():
             # NOTE: Window size smoothing parameter is not super sensative.
             'optimizers.AutoOptimizer.__init__':
                 HParams(window_size=128),
-            # NOTE: Train the spectrogram model would cause CometML to error with
-            # "OSError: [Errno 9] Bad file descriptor". Gideon from Comet suggested this as a fix.
-            'visualize.CometML':
-                HParams(auto_output_logging='simple'),
+            'environment.set_seed': HParams(seed=seed),
         }
     })

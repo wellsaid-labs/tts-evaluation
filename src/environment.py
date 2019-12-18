@@ -5,6 +5,11 @@ import os
 import subprocess
 import sys
 
+from hparams import configurable
+from hparams import HParam
+
+import torchnlp
+
 logger = logging.getLogger(__name__)
 
 ROOT_PATH = Path(__file__).parents[1].resolve()  # Repository root path
@@ -17,11 +22,19 @@ TTS_DISK_CACHE_NAME = '.tts_cache'  # Hidden directory stored in other directori
 
 TEST_DATA_PATH = ROOT_PATH / 'tests' / '_test_data'
 
+TEST_DATA_PATH.mkdir(exist_ok=True)
+
 DISK_PATH = TEST_DATA_PATH / '_disk' if IS_TESTING_ENVIRONMENT else ROOT_PATH / 'disk'
+
+DISK_PATH.mkdir(exist_ok=True)
 
 DATA_PATH = DISK_PATH / 'data'
 
+DATA_PATH.mkdir(exist_ok=True)
+
 EXPERIMENTS_PATH = DISK_PATH / 'experiments'
+
+EXPERIMENTS_PATH.mkdir(exist_ok=True)
 
 SIGNAL_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / 'signal_model'
 
@@ -33,7 +46,11 @@ SPECTROGRAM_MODEL_EXPERIMENTS_PATH.mkdir(exist_ok=True)
 
 OTHER_DISK_CACHE_PATH = DISK_PATH / 'other'
 
+OTHER_DISK_CACHE_PATH.mkdir(exist_ok=True)
+
 TEMP_PATH = DISK_PATH / 'temp'
+
+TEMP_PATH.mkdir(exist_ok=True)
 
 NINJA_BUILD_PATH = OTHER_DISK_CACHE_PATH / 'ninja_build'
 
@@ -44,6 +61,8 @@ DISK_CACHE_PATH = OTHER_DISK_CACHE_PATH / 'disk_cache'
 DISK_CACHE_PATH.mkdir(exist_ok=True)
 
 SAMPLES_PATH = DISK_PATH / 'samples'
+
+SAMPLES_PATH.mkdir(exist_ok=True)
 
 # NOTE: You can experiment with these codes in your console like so:
 # `echo -e '\033[43m \033[30m hi \033[0m'`
@@ -107,13 +126,12 @@ class ColoredFormatter(logging.Formatter):
     """
 
     ID_COLOR_ROTATION = [
-        COLORS['red'], COLORS['green'], COLORS['yellow'], COLORS['blue'], COLORS['magenta'],
-        COLORS['cyan'], COLORS['background_lightred'] + COLORS['black'],
+        COLORS['background_white'] + COLORS['black'],
         COLORS['background_lightgreen'] + COLORS['black'],
-        COLORS['background_lightyellow'] + COLORS['black'],
         COLORS['background_lightblue'] + COLORS['black'],
         COLORS['background_lightmagenta'] + COLORS['black'],
-        COLORS['background_lightcyan'] + COLORS['black']
+        COLORS['background_lightcyan'] + COLORS['black'], COLORS['green'], COLORS['blue'],
+        COLORS['magenta'], COLORS['cyan']
     ]
 
     def __init__(self, id_):
@@ -216,3 +234,10 @@ def check_module_versions():
                 # NOTE: RuntimeError could cause ``Illegal seek`` while running PyTest.
                 raise RuntimeError('Versions are not compatible %s =/= %s' %
                                    (specification, installed[0]))
+
+
+@configurable
+def set_seed(seed=HParam()):
+    """ Set a process seed to help ensure consistency. """
+    logger.info('Setting process seed to be %d', seed)
+    torchnlp.random.set_seed(seed)

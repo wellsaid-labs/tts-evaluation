@@ -104,8 +104,8 @@ def write_audio(filename, audio, sample_rate=HParam(int)):
 
 @configurable
 def _mel_filters(sample_rate,
+                 num_mel_bins,
                  fft_length=HParam(),
-                 num_mel_bins=HParam(),
                  lower_hertz=HParam(),
                  upper_hertz=HParam()):
     """ Create a Filterbank matrix to combine FFT bins into Mel-frequency bins.
@@ -116,9 +116,9 @@ def _mel_filters(sample_rate,
 
     Args:
         sample_rate (int): The sample rate of the signal.
+        num_mel_bins (int): Number of Mel bands to generate.
         fft_length (int): The size of the FFT to apply. If not provided, uses the smallest
             power of 2 enclosing `frame_length`.
-        num_mel_bins (int): Number of Mel bands to generate.
         lower_hertz (int): Lower bound on the frequencies to be included in the mel
             spectrum. This corresponds to the lower edge of the lowest triangular band.
         upper_hertz (int): The desired top edge of the highest frequency band.
@@ -148,7 +148,8 @@ def get_log_mel_spectrogram(signal,
                             frame_hop=HParam(),
                             fft_length=HParam(),
                             window=HParam(),
-                            min_magnitude=HParam()):
+                            min_magnitude=HParam(),
+                            num_mel_bins=HParam()):
     """ Compute a log-mel-scaled spectrogram from signal.
 
     Tacotron 2 Reference:
@@ -203,6 +204,7 @@ def get_log_mel_spectrogram(signal,
             frame. See the full specification for window at ``librosa.filters.get_window``.
         min_magnitude (float): Stabilizing minimum to avoid high dynamic ranges caused by
             the singularity at zero in the mel spectrograms.
+        num_mel_bins (int): Number of Mel bands to generate.
 
     Returns:
         log_mel_spectrograms (np.ndarray [frames, num_mel_bins]): Log mel spectrogram.
@@ -238,7 +240,7 @@ def get_log_mel_spectrogram(signal,
     # SOURCE (Tacotron 2):
     # We transform the STFT magnitude to the mel scale using an 80 channel mel filterbank
     # spanning 125 Hz to 7.6 kHz, followed by log dynamic range compression.
-    mel_basis = _mel_filters(sample_rate)
+    mel_basis = _mel_filters(sample_rate, num_mel_bins)
     mel_spectrogram = np.dot(mel_basis, magnitude_spectrogram).transpose()
 
     # SOURCE (Tacotron 2):
@@ -267,7 +269,7 @@ def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, sample_rate):
     """
     mel_spectrogram = np.exp(log_mel_spectrogram)
     num_mel_bins = mel_spectrogram.shape[1]
-    mel_basis = _mel_filters(sample_rate, num_mel_bins=num_mel_bins)
+    mel_basis = _mel_filters(sample_rate, num_mel_bins)
 
     # ``np.linalg.pinv`` creates approximate inverse matrix of ``mel_basis``
     inverse_mel_basis = np.linalg.pinv(mel_basis)

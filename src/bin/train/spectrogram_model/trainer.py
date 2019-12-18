@@ -15,6 +15,7 @@ import torch
 
 from src.audio import griffin_lim
 from src.bin.train.spectrogram_model.data_loader import DataLoader
+from src.environment import IS_TESTING_ENVIRONMENT
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.spectrogram_model import InputEncoder
@@ -26,7 +27,7 @@ from src.utils import get_average_norm
 from src.utils import get_weighted_stdev
 from src.utils import log_runtime
 from src.utils import maybe_load_tensor
-from src.visualize import CometML
+from src.utils import RepeatTimer
 from src.visualize import plot_attention
 from src.visualize import plot_loss_per_frame
 from src.visualize import plot_spectrogram
@@ -50,6 +51,7 @@ class Trainer():
         train_dataset (iterable of TextSpeechRow): Train dataset used to optimize the model.
         dev_dataset (iterable of TextSpeechRow): Dev dataset used to evaluate the model.
         checkpoints_directory (str or Path): Directory to store checkpoints in.
+        comet_ml (Experiment or ExistingExperiment): Object for visualization with comet.
         train_batch_size (int): Batch size used for training.
         dev_batch_size (int): Batch size used for evaluation.
         criterion_spectrogram (callable): Loss function used to score frame predictions.
@@ -62,6 +64,8 @@ class Trainer():
             a checkpoint.
         epoch (int, optional): Starting epoch; typically, this parameter is useful when starting
             from a checkpoint.
+        save_temp_checkpoint_every_n_seconds (int, optional): The number of seconds between
+            temporary checkpoint saves.
     """
 
     TRAIN_LABEL = 'train'
@@ -74,6 +78,7 @@ class Trainer():
                  train_dataset,
                  dev_dataset,
                  checkpoints_directory,
+                 comet_ml,
                  train_batch_size=HParam(),
                  dev_batch_size=HParam(),
                  criterion_spectrogram=HParam(),
@@ -82,7 +87,8 @@ class Trainer():
                  model=HParam(),
                  input_encoder=None,
                  step=0,
-                 epoch=0):
+                 epoch=0,
+                 save_temp_checkpoint_every_n_seconds=60 * 10):
         self.device = device
         self.step = step
         self.epoch = epoch
@@ -91,8 +97,6 @@ class Trainer():
         self.train_dataset = train_dataset
         self.train_batch_size = train_batch_size
         self.dev_batch_size = dev_batch_size
-        self.dev_loader = None
-        self.train_loader = None
 
         # TODO: The `input_encoder` should not have any insight onto the `dev_dataset`. There
         # should be a process for dealing with unknown characters instead.
@@ -127,7 +131,7 @@ class Trainer():
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
         self.criterion_stop_token = criterion_stop_token(reduction='none').to(self.device)
 
-        self.comet_ml = CometML(disabled=not src.distributed.is_master())
+        self.comet_ml = comet_ml
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_parameters(dict_collapse(get_config()))
@@ -158,7 +162,33 @@ class Trainer():
         logger.info('Model:\n%s', self.model)
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
-        atexit.register(self.save_checkpoint)
+        if src.distributed.is_master() and not IS_TESTING_ENVIRONMENT:
+            # TODO: `atexit` doesn't run when `pytest` closes; therefore, it doesn't stop
+            # the repeated timer. This needs to be investigated.
+            self.timer = RepeatTimer(save_temp_checkpoint_every_n_seconds,
+                                     self._save_checkpoint_repeat_timer)
+            self.timer.start()
+            atexit.register(self._atexit)
+
+    def _atexit(self):
+        """ This function is run on program exit. """
+        self.save_checkpoint()
+        self.timer.cancel()
+
+    def _save_checkpoint_repeat_timer(self):
+        """ Save a checkpoint and delete the last checkpoint saved.
+        """
+        # NOTE: GCP shutdowns do not trigger `atexit`; therefore, it's useful to always save
+        # a temporary checkpoint just in case.
+        logger.info('Saving temporary checkpoint...')
+        checkpoint_path = self.save_checkpoint()
+        if (hasattr(self, '_last_repeat_timer_checkpoint') and
+                self._last_repeat_timer_checkpoint is not None and
+                self._last_repeat_timer_checkpoint.exists() and checkpoint_path is not None):
+            logger.info('Unlinking temporary checkpoint: %s',
+                        str(self._last_repeat_timer_checkpoint))
+            self._last_repeat_timer_checkpoint.unlink()
+        self._last_repeat_timer_checkpoint = checkpoint_path
 
     def _comet_ml_log_input_dev_data_hash(self, max_examples=10):
         """ Log to comet a basic hash of the predicted spectrogram data in `self.dev_dataset`.
@@ -207,10 +237,11 @@ class Trainer():
         """ Save a checkpoint.
 
         Returns:
-            (str): Path the checkpoint was saved to.
+            (pathlib.Path or None): Path the checkpoint was saved to or None if checkpoint wasn't
+                saved.
         """
         if src.distributed.is_master():
-            return Checkpoint(
+            checkpoint = Checkpoint(
                 comet_ml_project_name=self.comet_ml.project_name,
                 directory=self.checkpoints_directory,
                 model=(self.model.module if src.distributed.is_initialized() else self.model),
@@ -218,7 +249,10 @@ class Trainer():
                 input_encoder=self.input_encoder,
                 epoch=self.epoch,
                 step=self.step,
-                comet_ml_experiment_key=self.comet_ml.get_key()).save()
+                comet_ml_experiment_key=self.comet_ml.get_key())
+            if checkpoint.path.exists():
+                return None
+            return checkpoint.save()
         else:
             return None
 
@@ -260,12 +294,13 @@ class Trainer():
         # are sampled from the same distribution via `self.dev_dataset`; therefore, it should be
         # comparable between experiments.
         loader_kwargs = {'device': self.device, 'input_encoder': self.input_encoder}
-        if train and self.train_loader is None:
-            self.train_loader = DataLoader(self.train_dataset, self.train_batch_size,
-                                           **loader_kwargs)
-        elif not train and self.dev_loader is None:
-            self.dev_loader = DataLoader(self.dev_dataset, self.dev_batch_size, **loader_kwargs)
-        data_loader = self.train_loader if train else self.dev_loader
+        if train and not hasattr(self, '_train_loader'):
+            # NOTE: We cache the `DataLoader` between epochs for performance.
+            self._train_loader = DataLoader(self.train_dataset, self.train_batch_size,
+                                            **loader_kwargs)
+        elif not train and not hasattr(self, '_dev_loader'):
+            self._dev_loader = DataLoader(self.dev_dataset, self.dev_batch_size, **loader_kwargs)
+        data_loader = self._train_loader if train else self._dev_loader
 
         random_batch = random.randint(0, len(data_loader) - 1)
         for i, batch in enumerate(data_loader):
@@ -293,7 +328,7 @@ class Trainer():
             if hasattr(data_loader.iterator, 'data_queue'):
                 self.metrics['data_queue_size'].update(data_loader.iterator.data_queue.qsize())
 
-            if not train and not infer and i == random_batch:
+            if not train and not infer and (i == random_batch or trial_run):
                 self._visualize_predicted(batch, predictions)
 
             for name, metric in self.metrics.items():
