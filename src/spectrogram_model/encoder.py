@@ -1,7 +1,58 @@
+import torch
+
 from hparams import configurable
 from hparams import HParam
 from torch import nn
 from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
+
+
+class MaskedBackwardLSTM(nn.Module):
+    """ An LSTM that processes it's input backwards accounting for any padding on the ends of
+    the input.
+
+    TODO: Expand this module to have the same interface as a regular LSTM.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__()
+        self.backward_lstm = nn.LSTM(**kwargs)
+
+    def forward(self, tokens, tokens_mask):
+        """
+        Args:
+            tokens (torch.FloatTensor [seq_len, batch_size, input_size]): Batched set of sequences.
+            tokens_mask (torch.BoolTensor [seq_len, batch_size, 1 or input_size]): Binary mask
+                applied on tokens.
+
+        Returns:
+            encoded_tokens (torch.FloatTensor [seq_len, batch_size, input_size])
+        """
+        tokens = tokens.masked_fill(~tokens_mask, 0)
+        # Ex. Assume we are dealing with a one dimensional input, like this:
+        # tokens = [1, 2, 3, 0, 0]
+        # length = 3
+        # tokens.shape[0] = 5
+        reversed_tokens = torch.zeros(tokens.shape, dtype=tokens.dtype, device=tokens.device)
+        lengths = tokens_mask.int().sum(0)
+        iterator = lambda: zip(range(tokens.shape[1]), list(lengths))
+        for i, length in iterator():
+            # Ex. [1, 2, 3, 0, 0] → [0, 0, 1, 2, 3]
+            reversed_tokens[-length:, i] = tokens[:length, i]
+
+        # Ex. [0, 0, 1, 2, 3] → [3, 2, 1, 0, 0]
+        reversed_tokens = reversed_tokens.flip(0)
+
+        lstm_results, _ = self.backward_lstm(reversed_tokens)
+
+        # Ex. [3, 2, 1, 0, 0] → [0, 0, 1, 2, 3]
+        lstm_results = lstm_results.flip(0)
+
+        results = torch.zeros(lstm_results.shape, dtype=tokens.dtype, device=tokens.device)
+        for i, length in iterator():
+            # Ex. [0, 0, 1, 2, 3] → [1, 2, 3, 0, 0]
+            results[:length, i] = lstm_results[-length:, i]
+
+        return results.masked_fill(~tokens_mask, 0)
 
 
 class Encoder(nn.Module):
@@ -40,7 +91,6 @@ class Encoder(nn.Module):
             an even integer if ``lstm_bidirectional`` is ``True``. The hidden size of the final
             hidden feature representation.
         lstm_layers (int): Number of recurrent LSTM layers.
-        lstm_bidirectional (bool): If ``True``, becomes a bidirectional LSTM.
     """
 
     @configurable
@@ -54,7 +104,6 @@ class Encoder(nn.Module):
                  convolution_dropout=HParam(),
                  lstm_hidden_size=HParam(),
                  lstm_layers=HParam(),
-                 lstm_bidirectional=HParam(),
                  lstm_dropout=HParam()):
 
         super().__init__()
@@ -81,15 +130,16 @@ class Encoder(nn.Module):
         self.normalization_layers = nn.ModuleList(
             [nn.LayerNorm(num_convolution_filters) for i in range(num_convolution_layers)])
 
-        if lstm_bidirectional:
-            assert lstm_hidden_size % 2 == 0, '`lstm_hidden_size` must be divisable by 2'
+        assert lstm_hidden_size % 2 == 0, '`lstm_hidden_size` must be divisable by 2'
 
-        self.lstm = nn.LSTM(
+        self.forward_lstm = nn.LSTM(
             input_size=num_convolution_filters,
-            hidden_size=lstm_hidden_size // 2 if lstm_bidirectional else lstm_hidden_size,
-            num_layers=lstm_layers,
-            bidirectional=lstm_bidirectional)
-        self.lstm_layer_norm = nn.LayerNorm(lstm_hidden_size)
+            hidden_size=lstm_hidden_size // 2,
+            num_layers=lstm_layers)
+        self.backward_lstm = MaskedBackwardLSTM(
+            input_size=num_convolution_filters,
+            hidden_size=lstm_hidden_size // 2,
+            num_layers=lstm_layers)
 
         # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunately, Zoneout or any LSTM state
         # dropout in PyTorch forces us to unroll the LSTM and slow down this component x3 to x4. For
@@ -133,7 +183,6 @@ class Encoder(nn.Module):
         for conv, normalization_layer in zip(self.convolution_layers, self.normalization_layers):
             tokens = tokens.masked_fill(~tokens_mask, 0)
             tokens = conv(tokens)
-            tokens = tokens.masked_fill(~tokens_mask, 0)
             tokens = tokens.transpose(1, 2)
             tokens = normalization_layer(tokens)
             tokens = tokens.transpose(1, 2)
@@ -145,8 +194,12 @@ class Encoder(nn.Module):
         tokens = tokens.permute(2, 0, 1)
         tokens_mask = tokens_mask.permute(2, 0, 1)
 
+        # [num_tokens, batch_size, lstm_hidden_size // 2]
+        forward_encoded_tokens = self.forward_lstm(tokens)[0]
+        # [num_tokens, batch_size, lstm_hidden_size // 2]
+        backward_encoded_tokens = self.backward_lstm(tokens, tokens_mask)
         # [num_tokens, batch_size, lstm_hidden_size]
-        encoded_tokens, _ = self.lstm(tokens)
+        encoded_tokens = torch.cat([forward_encoded_tokens, backward_encoded_tokens], dim=2)
         out = self.lstm_dropout(encoded_tokens)
         out = self.lstm_layer_norm(out.masked_fill(~tokens_mask, 0))
 

@@ -1,6 +1,87 @@
+import numpy
 import torch
 
+from torchnlp.random import fork_rng
+
 from src.spectrogram_model.encoder import Encoder
+from src.spectrogram_model.encoder import MaskedBackwardLSTM
+
+
+def test_masked_backward_lstm_uneven_mask():
+    """ Test if masked backward LSTM is able to handle an uneven LSTM mask on the end. """
+    input_size = 1
+    lstm_hidden_size = 5
+    num_layers = 2
+
+    transform = lambda t: t.transpose(0, 1).unsqueeze(2)
+
+    tokens = transform(torch.tensor([[1, 2, 3, 0, 0], [1, 2, 0, 0, 0]])).float()
+    tokens_mask = transform(torch.tensor([[1, 1, 1, 0, 0], [1, 1, 0, 0, 0]])).bool()
+
+    with fork_rng(123):
+        backward_lstm = MaskedBackwardLSTM(
+            input_size=input_size, hidden_size=lstm_hidden_size, num_layers=num_layers)
+
+    with fork_rng(123):
+        lstm = torch.nn.LSTM(
+            input_size=input_size, hidden_size=lstm_hidden_size, num_layers=num_layers)
+
+    one = transform(torch.tensor([[1, 2, 3]])).float()
+    two = transform(torch.tensor([[1, 2]])).float()
+    expected_one = lstm(one.flip(0))[0].flip(0)
+    expected_two = lstm(two.flip(0))[0].flip(0)
+
+    result = backward_lstm(tokens, tokens_mask)
+
+    numpy.testing.assert_almost_equal((expected_one.sum() + expected_two.sum()).detach().numpy(),
+                                      result.sum().detach().numpy())
+
+
+def test_masked_backward_lstm():
+    """ Test is masked backward LSTM is able to handle a basic case with a random tensor and
+    padding. """
+    batch_size = 2
+    seq_len = 3
+    input_size = 4
+    lstm_hidden_size = 5
+    padding_len = 2
+    tokens = torch.randn(seq_len, batch_size, input_size)
+    padding = torch.zeros(padding_len, batch_size, input_size)
+    padded_tokens = torch.cat([tokens, padding], dim=0)
+    tokens_mask = torch.cat(
+        [torch.ones(seq_len, batch_size, 1),
+         torch.zeros(padding_len, batch_size, 1)], dim=0).bool()
+
+    with fork_rng(123):
+        backward_lstm = MaskedBackwardLSTM(
+            input_size=input_size, hidden_size=lstm_hidden_size, num_layers=1)
+
+    with fork_rng(123):
+        lstm = torch.nn.LSTM(input_size=input_size, hidden_size=lstm_hidden_size, num_layers=1)
+
+    expected = lstm(tokens.flip(0))[0].flip(0)
+    result = backward_lstm(padded_tokens, tokens_mask)
+    assert torch.equal(expected, result[:-padding_len])
+    assert result[-padding_len:].sum().item() == 0
+    numpy.testing.assert_almost_equal(
+        expected.sum().detach().numpy(), result.sum().detach().numpy(), decimal=4)
+    assert result.sum().item() != 0
+
+
+def test_masked_backward_lstm_backwards():
+    """ Test if `MaskedBackwardLSTM` can compute a gradient. """
+    batch_size = 2
+    seq_len = 3
+    input_size = 4
+    lstm_hidden_size = 5
+    tokens = torch.randn(seq_len, batch_size, input_size)
+    tokens_mask = torch.ones(seq_len, batch_size, 1).bool()
+
+    backward_lstm = MaskedBackwardLSTM(
+        input_size=input_size, hidden_size=lstm_hidden_size, num_layers=1)
+
+    backward_lstm(tokens, tokens_mask).sum().backward()
+
 
 encoder_params = {
     'batch_size': 4,
@@ -8,7 +89,6 @@ encoder_params = {
     'vocab_size': 10,
     'lstm_hidden_size': 64,
     'token_embedding_dim': 32,
-    'lstm_bidirectional': True,
     'out_dim': 8,
 }
 
@@ -18,7 +98,6 @@ def test_encoder():
         encoder_params['vocab_size'],
         out_dim=encoder_params['out_dim'],
         lstm_hidden_size=encoder_params['lstm_hidden_size'],
-        lstm_bidirectional=encoder_params['lstm_bidirectional'],
         token_embedding_dim=encoder_params['token_embedding_dim'])
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
@@ -41,7 +120,6 @@ def test_encoder_filter_size():
             encoder_params['vocab_size'],
             out_dim=encoder_params['out_dim'],
             lstm_hidden_size=encoder_params['lstm_hidden_size'],
-            lstm_bidirectional=encoder_params['lstm_bidirectional'],
             token_embedding_dim=encoder_params['token_embedding_dim'],
             convolution_filter_size=filter_size)
 
@@ -56,3 +134,51 @@ def test_encoder_filter_size():
         assert output.type() == 'torch.FloatTensor'
         assert output.shape == (encoder_params['num_tokens'], encoder_params['batch_size'],
                                 encoder_params['out_dim'])
+
+
+def test_encoder_padding_invariance():
+    """ Ensure that the encoder results don't change with more padding. """
+    # NOTE: Dropout result change in response to `BatchSize` because the dropout is computed
+    # all together. For example:
+    # >>> import torch
+    # >>> torch.manual_seed(123)
+    # >>> batch_dropout = torch.nn.functional.dropout(torch.ones(5, 5))
+    # >>> torch.manual_seed(123)
+    # >>> dropout = torch.nn.functional.dropout(torch.ones(5))
+    # >>> batch_dropout[0] != dropout
+    encoder = Encoder(
+        encoder_params['vocab_size'],
+        out_dim=encoder_params['out_dim'],
+        lstm_hidden_size=encoder_params['lstm_hidden_size'],
+        token_embedding_dim=encoder_params['token_embedding_dim'],
+        convolution_dropout=0,
+        lstm_dropout=0,
+        lstm_layers=1)
+
+    expected = None
+    expected_grad = None
+    for padding_len in range(10):
+        with fork_rng(123):
+            tokens = torch.LongTensor(encoder_params['batch_size'],
+                                      encoder_params['num_tokens']).random_(
+                                          1, encoder_params['vocab_size'])
+
+        tokens_mask = torch.full((encoder_params['batch_size'], encoder_params['num_tokens']),
+                                 1).bool()
+        padding = torch.zeros(encoder_params['batch_size'], padding_len)
+
+        tokens = torch.cat([tokens, padding.long()], dim=1)
+        tokens_mask = torch.cat([tokens_mask, padding.bool()], dim=1)
+
+        result = encoder(tokens, tokens_mask).sum()
+        result.backward()
+        result_grad = encoder.embed_token.weight.grad
+        encoder.zero_grad()
+
+        if expected is None and expected_grad is None:
+            expected = result.detach().numpy()
+            expected_grad = result_grad.detach().numpy()
+        else:
+            numpy.testing.assert_almost_equal(
+                result_grad.detach().numpy(), expected_grad, decimal=4)
+            numpy.testing.assert_almost_equal(result.detach().numpy(), expected, decimal=4)
