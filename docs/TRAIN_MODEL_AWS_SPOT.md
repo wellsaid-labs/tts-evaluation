@@ -95,7 +95,7 @@ Related Documentation:
 
    VM_STATUS=$(aws ec2 describe-spot-instance-requests --filters Name=tag:Name,Values=$VM_NAME \
       --query 'SpotInstanceRequests[0].State' --output text)
-   if [[ "$VM_STATUS" != "None" ]]; then echo -e '\033[;31mERROR:\033[0m That VM name has already been taken!'; fi;
+   if [[ "$VM_STATUS" != "None" ]]; then echo -e '\033[;31mERROR:\033[0m The region you provided is invalid or the VM name you provided has already been taken!'; fi;
    ```
 
    💡 TIP: Run this script to find regions with the least spot instance interruptions...
