@@ -1,3 +1,5 @@
+import torch
+
 from hparams import configurable
 from hparams import HParam
 from torch import nn
