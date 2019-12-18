@@ -197,7 +197,7 @@ class SpectrogramModel(nn.Module):
         stopped = set()
         hidden_state = None
         alignments, frames, stop_tokens = [], [], []
-        lengths = (num_tokens * max_frames_per_token).long().tolist()
+        lengths = (num_tokens.float() * max_frames_per_token).long().tolist()
         if use_tqdm:
             progress_bar = tqdm(leave=True, unit='frame(s)')
         while len(stopped) != batch_size and len(frames) < max(lengths):
@@ -264,24 +264,38 @@ class SpectrogramModel(nn.Module):
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels] or None)
             target_lengths (torch.LongTensor [batch_size] or None)
         """
+        if tokens.dtype != torch.long:
+            raise ValueError('The `tokens` dtype must be a `torch.long`.')
+        if speaker.dtype != torch.long:
+            raise ValueError('The `speaker` dtype must be a `torch.long`.')
+
         batch_size = tokens.shape[1] if len(tokens.shape) == 2 else 1
-        tokens = tokens.view(tokens.shape[0], batch_size).transpose(0,
-                                                                    1)  # [batch_size, num_tokens]
+
+        # [num_tokens, batch_size] or [num_tokens] → [batch_size, num_tokens]
+        tokens = tokens.view(tokens.shape[0], batch_size).transpose(0, 1)
 
         if target_frames is not None:
+            if target_frames.dtype != torch.float:
+                raise ValueError('The `target_frames` dtype must be a `torch.float`.')
             # [num_frames, batch_size, frame_channels]
             target_frames = target_frames.view(target_frames.shape[0], batch_size, -1)
 
         speaker = speaker.view(batch_size)  # [batch_size]
 
         if target_lengths is not None:
+            if target_lengths.dtype != torch.long:
+                raise ValueError('The `target_lengths` dtype must be a `torch.long`.')
             target_lengths = target_lengths.view(batch_size)  # [batch_size]
 
         if num_tokens is not None:
+            if num_tokens.dtype != torch.long:
+                raise ValueError('The `num_tokens` dtype must be a `torch.long`.')
             num_tokens = num_tokens.view(batch_size)  # [batch_size]
         elif num_tokens is None and batch_size == 1:
-            num_tokens = torch.full((batch_size,), tokens.shape[1],
-                                    device=tokens.device)  # [batch_size]
+            num_tokens = torch.full((batch_size,),
+                                    tokens.shape[1],
+                                    device=tokens.device,
+                                    dtype=torch.long)  # [batch_size]
 
         assert num_tokens is not None, 'Must provide `num_tokens` unless batch size is 1.'
         return tokens, speaker, num_tokens, target_frames, target_lengths
