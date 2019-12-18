@@ -122,10 +122,12 @@ class Encoder(nn.Module):
                     in_channels=num_convolution_filters if i != 0 else token_embedding_dim,
                     out_channels=num_convolution_filters,
                     kernel_size=convolution_filter_size,
-                    padding=int((convolution_filter_size - 1) / 2)),
-                nn.BatchNorm1d(num_features=num_convolution_filters), nn.ReLU(inplace=True),
+                    padding=int((convolution_filter_size - 1) / 2)), nn.ReLU(inplace=True),
                 nn.Dropout(p=convolution_dropout)) for i in range(num_convolution_layers)
         ])
+
+        self.normalization_layers = nn.ModuleList(
+            [nn.LayerNorm(num_convolution_filters) for i in range(num_convolution_layers)])
 
         assert lstm_hidden_size % 2 == 0, '`lstm_hidden_size` must be divisable by 2'
 
@@ -176,9 +178,12 @@ class Encoder(nn.Module):
         tokens_mask = tokens_mask.unsqueeze(1)
 
         # [batch_size, num_convolution_filters, num_tokens]
-        for conv in self.convolution_layers:
+        for conv, normalization_layer in zip(self.convolution_layers, self.normalization_layers):
             tokens = tokens.masked_fill(~tokens_mask, 0)
             tokens = conv(tokens)
+            tokens = tokens.transpose(1, 2)
+            tokens = normalization_layer(tokens)
+            tokens = tokens.transpose(1, 2)
 
         # Our input is expected to have shape `[batch_size, num_convolution_filters, num_tokens]`.
         # The lstm layers expect input of shape
