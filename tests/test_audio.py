@@ -29,9 +29,9 @@ def test_get_num_seconds():
 
     TODO: The number of seconds for both files is not exactly the same. Look into that.
     """
-    assert pytest.approx(7.584, 0.001) == get_num_seconds(TEST_DATA_PATH_LOCAL / 'lj_speech.wav')
-    assert pytest.approx(7.584, 0.001) == get_num_seconds(TEST_DATA_PATH_LOCAL /
-                                                          'rate(lj_speech,24000).wav')
+    assert pytest.approx(7.5839, 0.0001) == get_num_seconds(TEST_DATA_PATH_LOCAL / 'lj_speech.wav')
+    assert pytest.approx(7.5839, 0.0001) == get_num_seconds(TEST_DATA_PATH_LOCAL /
+                                                            'rate(lj_speech,24000).wav')
     assert pytest.approx(2.070, 0.001) == get_num_seconds(
         DATA_PATH / 'M-AILABS/en_US/by_book/female/judy_bieber/' /
         'dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav')
