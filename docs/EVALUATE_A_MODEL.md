@@ -19,8 +19,8 @@ in our Google Cloud Storage bucket.
 2. Install `gcloud compute` by following the instructions
    [here](https://cloud.google.com/compute/docs/gcloud-compute/)
 
-3. Use a VM that was setup to train a spectrogram or signal model with
-   [these instructions](TRAIN_MODEL_GCP.md).
+3. Use a VM that was setup to train a spectrogram or signal model for [GCP](TRAIN_MODEL_GCP.md) or
+   [AWS](TRAIN_MODEL_AWS.md).
 
 4. Ask a team member to grant you access to our GCP project called "voice-research".
 

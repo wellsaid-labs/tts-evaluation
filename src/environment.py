@@ -126,13 +126,12 @@ class ColoredFormatter(logging.Formatter):
     """
 
     ID_COLOR_ROTATION = [
-        COLORS['red'], COLORS['green'], COLORS['yellow'], COLORS['blue'], COLORS['magenta'],
-        COLORS['cyan'], COLORS['background_lightred'] + COLORS['black'],
+        COLORS['background_white'] + COLORS['black'],
         COLORS['background_lightgreen'] + COLORS['black'],
-        COLORS['background_lightyellow'] + COLORS['black'],
         COLORS['background_lightblue'] + COLORS['black'],
         COLORS['background_lightmagenta'] + COLORS['black'],
-        COLORS['background_lightcyan'] + COLORS['black']
+        COLORS['background_lightcyan'] + COLORS['black'], COLORS['green'], COLORS['blue'],
+        COLORS['magenta'], COLORS['cyan']
     ]
 
     def __init__(self, id_):

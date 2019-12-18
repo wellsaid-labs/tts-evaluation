@@ -72,10 +72,9 @@ def test_lamb_optimizer__amsgrad():
     output_adam.sum().backward()
     adam.step()
 
-    # The first step for LAMB should have an Adam update
+    # NOTE: The first step for LAMB should have an Adam update
     for p1, p2 in zip(net_lamb.parameters(), net_adam.parameters()):
-        # TODO: This fails sometimes, fix this.
-        numpy.testing.assert_allclose(p1.detach().numpy(), p2.detach().numpy(), rtol=1e-4)
+        numpy.testing.assert_almost_equal(p1.detach().numpy(), p2.detach().numpy(), decimal=5)
 
 
 def test_lamb_optimizer__adam_w():  # Smoke test
@@ -110,7 +109,7 @@ def test_lamb_optimizer__adam_w():  # Smoke test
 
     # The first step for LAMB should have an Adam update
     for p1, p2 in zip(net_lamb.parameters(), net_adam.parameters()):
-        numpy.testing.assert_allclose(p1.detach().numpy(), p2.detach().numpy(), rtol=5e-4)
+        numpy.testing.assert_almost_equal(p1.detach().numpy(), p2.detach().numpy(), decimal=5)
 
 
 class TestOptimizer(unittest.TestCase):
