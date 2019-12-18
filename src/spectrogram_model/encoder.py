@@ -32,7 +32,7 @@ class MaskedBackwardLSTM(nn.Module):
         # tokens = [1, 2, 3, 0, 0]
         # length = 3
         # tokens.shape[0] = 5
-        reversed_tokens = torch.zeros(tokens.shape, dtype=tokens.dtype)
+        reversed_tokens = torch.zeros(tokens.shape, dtype=tokens.dtype, device=tokens.device)
         lengths = tokens_mask.int().sum(0)
         iterator = lambda: zip(range(tokens.shape[1]), list(lengths))
         for i, length in iterator():
@@ -47,7 +47,7 @@ class MaskedBackwardLSTM(nn.Module):
         # Ex. [3, 2, 1, 0, 0] → [0, 0, 1, 2, 3]
         lstm_results = lstm_results.flip(0)
 
-        results = torch.zeros(lstm_results.shape, dtype=tokens.dtype)
+        results = torch.zeros(lstm_results.shape, dtype=tokens.dtype, device=tokens.device)
         for i, length in iterator():
             # Ex. [0, 0, 1, 2, 3] → [1, 2, 3, 0, 0]
             results[:length, i] = lstm_results[-length:, i]
