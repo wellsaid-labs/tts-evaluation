@@ -448,7 +448,7 @@ def _split_dataset(dataset, num_second_dev_set=60 * 60):
     train = dataset[len(dev):]
     assert len(dev) > 0, 'The dev dataset has no examples.'
     assert len(train) > 0, 'The train dataset has no examples.'
-    assert len(dev) + len(train) == len(dataset), 'The `_split_dataset` lost an example.'
+    assert len(dev) + len(train) == len(dataset), 'The `_split_dataset` lost at least 1 example.'
     return train, dev
 
 
