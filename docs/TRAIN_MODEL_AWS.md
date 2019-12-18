@@ -71,12 +71,13 @@ machine.
    Also set these environment variables...
 
    ```bash
-   export AWS_DEFAULT_REGION='us-west-2' # EXAMPLE: us-west-2
+   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-west-2
    VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
 
    VM_STATUS=$(aws ec2 describe-instances --filters Name=tag:Name,Values=$VM_NAME \
      --query 'Reservations[0].Instances[0].State.Name' --output text)
-   if [[ "$VM_STATUS" != "None" ]]; then echo -e '\033[;31mERROR:\033[0m That VM name has already been taken!'; fi;
+   if [[ "$VM_STATUS" != "None" ]]; then echo -e '\033[;31mERROR:\033[0m The region you provided' \
+      'is invalid or the VM name you provided has already been taken!'; fi;
 
    VM_IMAGE_NAME='Deep Learning Base AMI (Ubuntu 18.04) Version 21.0'
    VM_IMAGE_ID=$(aws ec2 describe-images \

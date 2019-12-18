@@ -81,7 +81,8 @@ Related Documentation:
 
    VM_STATUS=$(aws ec2 describe-spot-instance-requests --filters Name=tag:Name,Values=$VM_NAME \
       --query 'SpotInstanceRequests[0].State' --output text)
-   if [[ "$VM_STATUS" != "None" ]]; then echo -e '\033[;31mERROR:\033[0m That VM name has already been taken!'; fi;
+   if [[ "$VM_STATUS" != "None" ]]; then echo -e '\033[;31mERROR:\033[0m The region you provided' \
+      'is invalid or the VM name you provided has already been taken!'; fi;
 
    VM_IMAGE_NAME='Deep Learning Base AMI (Ubuntu 18.04) Version 21.0'
    VM_IMAGE_ID=$(aws ec2 describe-images \
