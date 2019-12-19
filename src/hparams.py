@@ -205,20 +205,25 @@ def _set_model_size(frame_channels, bits):
                         # SOURCE (Tacotron 2):
                         # Input characters are represented using a learned 512-dimensional character
                         # embedding
-                        token_embedding_dim=512,
+                        # ...
+                        # which are passed through a stack of 3 convolutional layers each containing
+                        # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
+                        # ...
+                        # The output of the final convolutional layer is passed into a single
+                        # bi-directional [19] LSTM [20] layer containing 512 units (256) in each
+                        # direction) to generate the encoded features.
+                        hidden_size=512,
 
                         # SOURCE (Tacotron 2):
                         # which are passed through a stack of 3 convolutional layers each containing
                         # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
                         num_convolution_layers=3,
-                        num_convolution_filters=512,
                         convolution_filter_size=5,
 
                         # SOURCE (Tacotron 2)
                         # The output of the final convolutional layer is passed into a single
                         # bi-directional [19] LSTM [20] layer containing 512 units (256) in each
                         # direction) to generate the encoded features.
-                        lstm_hidden_size=512,
                         lstm_layers=1,
 
                         # SOURCE (Tacotron 2)
@@ -574,12 +579,6 @@ def set_hparams():
                 weight_decay=0.0),
     })
 
-    # SOURCE (Tacotron 2):
-    # The convolutional layers in the network are regularized using dropout [25] with probability
-    # 0.5, and LSTM layers are regularized using zoneout [26] with probability 0.1
-    convolution_dropout = 0.5
-    lstm_dropout = 0.1
-
     spectrogram_model_dev_batch_size = 224
 
     seed = 1212212
@@ -593,10 +592,16 @@ def set_hparams():
     add_config({
         'src': {
             'spectrogram_model': {
+                # SOURCE (Tacotron 2):
+                # The convolutional layers in the network are regularized using dropout [25] with
+                # probability 0.5, and LSTM layers are regularized using zoneout [26] with
+                # probability 0.1
+                # NOTE: On the contrary, we found out that in our new BERT like encoder architecture
+                # dropout hurt performance slightly.
                 'encoder.Encoder.__init__':
-                    HParams(lstm_dropout=lstm_dropout, convolution_dropout=convolution_dropout),
+                    HParams(convolution_dropout=0.0),
                 'decoder.AutoregressiveDecoder.__init__':
-                    HParams(lstm_dropout=lstm_dropout),
+                    HParams(lstm_dropout=0.1),
                 # SOURCE (Tacotron 2):
                 # In order to introduce output variation at inference time, dropout with
                 # probability 0.5 is applied only to layers in the pre-net of the
