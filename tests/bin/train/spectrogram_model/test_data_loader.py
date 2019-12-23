@@ -1,6 +1,8 @@
 from collections import Counter
+from collections import namedtuple
 
 import pytest
+import torch
 
 from torchnlp.random import fork_rng_wrap
 
@@ -27,6 +29,17 @@ def test_data_loader():
     assert sum([r.spectrogram_expanded_mask[0].sum().item() for r in samples]) == (
         sum([r.spectrogram.tensor.nonzero().shape[0] for r in samples]))
     assert sum([r.stop_token.tensor.sum().item() for r in samples]) == len(samples) * batch_size
+
+
+def test__data_loader__expected_average_spectrogram_length():
+    """ Given that the data loader loads an equal amount of audio per speaker, check that the
+    expected spectrogram length is computed correctly.
+    """
+    MockExample = namedtuple('MockExample', ('spectrogram', 'speaker'))
+    data = [MockExample(torch.zeros(5), 'a'), MockExample(torch.zeros(2), 'b')]
+    expected = 5 * (1 / 3.5) + 2 * ((5 / 2) / 3.5)
+    iterator = DataLoader(data, 1, torch.device('cpu'))
+    assert iterator.expected_average_spectrogram_length.item() == pytest.approx(expected)
 
 
 @fork_rng_wrap(seed=123)

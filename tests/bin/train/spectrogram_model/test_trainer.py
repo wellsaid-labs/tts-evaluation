@@ -81,8 +81,8 @@ def test__do_loss_and_maybe_backwards():
      num_frames) = trainer._do_loss_and_maybe_backwards(batch, predictions, False)
 
     assert pre_spectrogram_loss.item() == pytest.approx(0.0)
-    assert post_spectrogram_loss.item() == pytest.approx(1.0 / 4)
-    assert stop_token_loss.item() == pytest.approx(0.5836120843887329)
+    assert post_spectrogram_loss.item() == pytest.approx(1.0)
+    assert stop_token_loss.item() == pytest.approx(1.1672241687774658)
     assert num_spectrogram_values == 4
     assert num_frames == 2
 

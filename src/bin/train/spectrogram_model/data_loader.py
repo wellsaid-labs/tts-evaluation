@@ -33,7 +33,10 @@ SpectrogramModelTrainingRow = namedtuple('SpectrogramModelTrainingRow', [
 
 
 class _BalancedSampler(WeightedRandomSampler):
-    """ Weighted sampler with respect for an element's class.
+    """ Ensure each class is sampled uniformly from.
+
+    For example: If `get_weight` is equal to the audio length and `get_class` is equal to the
+    speaker, in a TTS dataset, this ensures that an equal amount of audio is sampled per speaker.
 
     Args:
         data (iterable)
@@ -85,7 +88,7 @@ class DataLoader(DataLoader):
     """ Get a batch iterator over the ``data``.
 
     Args:
-        data (iterable): Data to iterate over.
+        data (TextSpeechRow): Data to iterate over.
         batch_size (int): Iteration batch size.
         device (torch.device): Device onto which to load data.
         num_workers (int, optional): Number of workers for data loading.
@@ -140,6 +143,15 @@ class DataLoader(DataLoader):
         if src.distributed.is_initialized():
             num_workers = int(num_workers / torch.distributed.get_world_size())
             batch_sampler = DistributedBatchSampler(batch_sampler)
+
+        # NOTE: Ensure all weights add up to 1.0
+        normalized_weights = sampler.weights / sampler.weights.sum()
+        # NOTE: The average spectrogram length of the loaded data.
+        self.expected_average_spectrogram_length = sum(
+            [d.spectrogram.shape[0] * w for d, w in zip(data, normalized_weights)])
+
+        logger.info('The expected average spectrogram length is: %f',
+                    self.expected_average_spectrogram_length)
 
         super().__init__(
             data,
