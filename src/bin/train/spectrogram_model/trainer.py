@@ -387,7 +387,7 @@ class Trainer():
 
         if do_backwards:
             self.optimizer.zero_grad()
-            # NOTE: We sum over the `num_frames` dimension to ensure that don't bias based on
+            # NOTE: We sum over the `num_frames` dimension to ensure that we don't bias based on
             # `num_frames`. For example, a larger `num_frames` means that the average denominator
             # is larger; therefore, the loss value for each element is smaller.
             # NOTE: We average accross `batch_size` and `frame_channels` so that the loss
