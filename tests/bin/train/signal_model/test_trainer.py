@@ -72,7 +72,7 @@ def test__do_loss_and_maybe_backwards():
         input_spectrogram=None,
         target_signal_coarse=torch.LongTensor([[0, 0, 1]]),
         target_signal_fine=torch.LongTensor([[1, 1, 1]]),
-        signal_mask=torch.FloatTensor([[1, 1, 0]]))
+        signal_mask=torch.BoolTensor([[1, 1, 0]]))
     predicted_coarse = torch.FloatTensor([[[1, 0], [1, 0], [1, 0]]])
     predicted_fine = torch.FloatTensor([[[1, 0], [1, 0], [1, 0]]])
 

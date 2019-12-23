@@ -437,12 +437,11 @@ class Trainer():
 
         # coarse_loss [batch_size, signal_length]
         coarse_loss = self.criterion(predicted_coarse, batch.target_signal_coarse)
-        coarse_loss = (coarse_loss *
-                       batch.signal_mask).sum() / batch.signal_mask.sum()  # coarse_loss [1]
+        coarse_loss = coarse_loss.masked_select(batch.signal_mask).mean()  # coarse_loss [1]
 
         # fine_loss [batch_size, signal_length]
         fine_loss = self.criterion(predicted_fine, batch.target_signal_fine)
-        fine_loss = (fine_loss * batch.signal_mask).sum() / batch.signal_mask.sum()  # fine_loss [1]
+        fine_loss = fine_loss.masked_select(batch.signal_mask).mean()  # fine_loss [1]
 
         orthogonal_loss = self._get_gru_orthogonal_loss()  # orthogonal_loss [1]
 

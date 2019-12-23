@@ -130,8 +130,7 @@ def test__get_slice__padding(randint_mock):
     source_signal = combine_signal(slice_.input_signal[:, 0], slice_.input_signal[:, 1])
     np.testing.assert_array_almost_equal(
         source_signal.numpy(), torch.tensor([.2, .3, .3, 0.0]).numpy(), decimal=4)
-    np.testing.assert_array_almost_equal(
-        slice_.signal_mask, torch.tensor([1.0, 1.0, 0.0, 0.0]), decimal=4)
+    np.testing.assert_array_almost_equal(slice_.signal_mask, torch.tensor([1, 1, 0, 0]), decimal=4)
 
 
 def test_data_loader():

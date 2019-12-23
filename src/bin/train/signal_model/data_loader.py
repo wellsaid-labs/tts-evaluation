@@ -88,7 +88,7 @@ def _get_slice(spectrogram, signal, split_signal_partial, spectrogram_slice_size
     go_sample = signal.new_zeros(1)  # First sample passed in to start RNN
     source_signal = torch.cat((go_sample, signal), dim=0)
     target_signal = signal
-    signal_mask = torch.ones(signal.shape[0], dtype=torch.float, device=signal.device)
+    signal_mask = torch.ones(signal.shape[0], dtype=torch.bool, device=signal.device)
 
     # Pad spectrogram and signal
     spectrogram_zeros = spectrogram_slice_size - 1 + spectrogram_slice_pad
