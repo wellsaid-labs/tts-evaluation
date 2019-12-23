@@ -387,13 +387,14 @@ class Trainer():
 
         if do_backwards:
             self.optimizer.zero_grad()
-
-            # NOTE: We average accross `batch_size` and `frame_channels` so that the loss per
-            # example stays around the same value regardless of the `batch_size` or
-            # `frame_channels`. This should help normalize the loss value between experiments with
-            # different `batch_size` and `frame_channels`. Similarly, we average accross
-            # `num_frames` with the `expected_average_spectrogram_length` so that the loss per
-            # example stays consistent from dataset to dataset.
+            # NOTE: We sum over the `num_frames` dimension to ensure that we don't bias based on
+            # `num_frames`. For example, a larger `num_frames` means that the average denominator
+            # is larger; therefore, the loss value for each element is smaller.
+            # NOTE: We average accross `batch_size` and `frame_channels` so that the loss
+            # stays around the same value regardless of the `batch_size`. This should not
+            # affect convergence because both of these are constant values; however, this should
+            # help normalize the loss value between experiments with different `batch_size` and
+            # `frame_channels`.
 
             # pre_spectrogram_loss [num_frames, batch_size, frame_channels] → [1]
             # post_spectrogram_loss [num_frames, batch_size, frame_channels] → [1]
