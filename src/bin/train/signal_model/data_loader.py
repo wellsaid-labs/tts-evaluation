@@ -75,7 +75,7 @@ def _get_slice(spectrogram, signal, split_signal_partial, spectrogram_slice_size
         input_spectrogram (torch.FloatTensor [num_frames, channels])
         target_signal_coarse (torch.LongTensor [signal_length])
         target_signal_fine (torch.LongTensor [signal_length])
-        signal_mask (torch.FloatTensor [signal_length])
+        signal_mask (torch.BoolTensor [signal_length])
     )
     """
     samples, num_frames = signal.shape[0], spectrogram.shape[0]
@@ -189,7 +189,7 @@ class DataLoader(src.utils.DataLoader):
                 [batch_size, spectrogram_slice_size * samples_per_frame])
             target_signal_fine (torch.LongTensor
                 [batch_size, spectrogram_slice_size * samples_per_frame])
-            signal_mask (torch.FloatTensor
+            signal_mask (torch.BoolTensor
                 [batch_size, spectrogram_slice_size * samples_per_frame])
         )
     """
