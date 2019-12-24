@@ -123,8 +123,11 @@ def _add_spectrogram_column(example, on_disk=True):
         # Compute and save to disk the spectrogram and audio
         assert audio_path.is_file(), 'Audio path must be a file %s' % audio_path
         signal = read_audio(audio_path)
-        signal = librosa.effects.trim(signal)[0]
-        log_mel_spectrogram, padding = get_log_mel_spectrogram(signal)
+
+        _, trim = librosa.effects.trim(signal.astype(numpy.float32))
+        signal = signal[trim[0]:trim[1]]
+
+        log_mel_spectrogram, padding = get_log_mel_spectrogram(signal.astype(numpy.float32))
         log_mel_spectrogram = torch.from_numpy(log_mel_spectrogram)
 
         # Pad so: ``log_mel_spectrogram.shape[0] % signal.shape[0] == frame_hop``
@@ -210,8 +213,9 @@ def filter_(function, dataset):
     positive = [e for i, e in enumerate(dataset) if bools[i]]
     negative = [e for i, e in enumerate(dataset) if not bools[i]]
     speaker_distribution = Counter([example.speaker for example in negative])
-    logger.info('Filtered out %d examples via ``%s`` with a speaker distribution of:\n%s',
-                len(negative), function.__name__, pprint.pformat(speaker_distribution))
+    if len(negative) != 0:
+        logger.info('Filtered out %d examples via ``%s`` with a speaker distribution of:\n%s',
+                    len(negative), function.__name__, pprint.pformat(speaker_distribution))
     return positive
 
 

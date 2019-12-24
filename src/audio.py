@@ -2,6 +2,7 @@ from pathlib import Path
 
 import logging
 import math
+import os
 import struct
 import subprocess
 
@@ -16,7 +17,7 @@ import torch
 # NOTE: `LazyLoader` allows for this repository to run without these dependancies. Also,
 # it side-steps this issue: https://github.com/librosa/librosa/issues/924.
 librosa = LazyLoader('librosa', globals(), 'librosa')
-scipy = LazyLoader('scipy', globals(), 'scipy')
+scipy_wavfile = LazyLoader('scipy_wavfile', globals(), 'scipy.io.wavfile')
 
 from src.environment import TTS_DISK_CACHE_NAME
 from src.utils import disk_cache
@@ -24,6 +25,24 @@ from src.utils import get_chunks
 from src.utils import Pool
 
 logger = logging.getLogger(__name__)
+
+
+def get_num_seconds(audio_path):
+    """ Get the number of seconds for a WAV audio file.
+
+    Args:
+        audio_path (str)
+
+    Returns:
+        (float): The number of seconds in audio.
+    """
+    metadata = get_audio_metadata(Path(audio_path))
+    BITS_PER_BYTE = 8
+    # Learn more: http://www.topherlee.com/software/pcm-tut-wavformat.html
+    WAV_HEADER_LENGTH_IN_BYTES = 44
+    bytes_per_second = (metadata['sample_rate'] *
+                        (metadata['bits'] / BITS_PER_BYTE)) * metadata['channels']
+    return (os.path.getsize(audio_path) - WAV_HEADER_LENGTH_IN_BYTES) / bytes_per_second
 
 
 @configurable
@@ -52,7 +71,7 @@ def read_audio(filename, assert_metadata=HParam(), to_float=True):
     Args:
         filename (Path or str): Name of the file to load.
         assert_metadata (dict): Assert this metadata for any audio file read.
-        to_float (bool, optional): Convert the audio file to a `np.float32` array from [-1, 1].
+        to_float (bool, optional): Convert the audio file to a `np.float` array from [-1, 1].
 
     Returns:
         (numpy.ndarray [n,]): Audio time series.
@@ -60,11 +79,12 @@ def read_audio(filename, assert_metadata=HParam(), to_float=True):
     metadata = get_audio_metadata(Path(filename))
     assert metadata == assert_metadata, (
         "The filename (%s) metadata does not match `assert_metadata`." % filename)
-    _, signal = scipy.io.wavfile.read(str(filename))
+    _, signal = scipy_wavfile.read(str(filename))
     assert len(signal) > 0, ("Signal (%s) length is zero." % filename)
     if to_float:
         assert metadata['bits'] % 8 == 0, "A valid bits value must be a multiple of 8."
-        signal = librosa.util.buf_to_float(signal, n_bytes=int(metadata['bits'] / 8))
+        signal = librosa.util.buf_to_float(
+            signal, n_bytes=int(metadata['bits'] / 8), dtype=np.dtype('float%d' % metadata['bits']))
         assert np.max(signal) <= 1 and np.min(signal) >= -1, (
             "Signal (%s) must be in range [-1, 1]." % filename)
     return signal
@@ -79,7 +99,7 @@ def write_audio(filename, audio, sample_rate=HParam(int)):
         audio (np.ndarray): A 1-D or 2-D numpy array of either integer or float data-type.
         sample_rate (int, optional): The sample rate (in samples/sec).
     """
-    return scipy.io.wavfile.write(filename, sample_rate, audio)
+    return scipy_wavfile.write(filename, sample_rate, audio)
 
 
 @configurable

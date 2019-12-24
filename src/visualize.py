@@ -51,6 +51,27 @@ def plot_attention(alignment):
     return figure
 
 
+def plot_loss_per_frame(loss_per_frame):
+    """ Plot the loss for each frame.
+
+    Args:
+        loss_per_frame (numpy.array or torch.Tensor [num_frames]): The loss for each frame.
+
+    Returns:
+        (matplotlib.figure.Figure): Matplotlib figure representing the plot.
+    """
+    if torch.is_tensor(loss_per_frame):
+        loss_per_frame = loss_per_frame.detach().cpu().numpy()
+
+    pyplot.style.use('ggplot')
+    figure = pyplot.figure()
+    pyplot.plot(list(range(len(loss_per_frame))), loss_per_frame, marker='.', linestyle='solid')
+    pyplot.ylabel('Loss')
+    pyplot.xlabel('Frame')
+    pyplot.close(figure)
+    return figure
+
+
 def plot_stop_token(stop_token):
     """ Plot probability of the stop token over time.
 
