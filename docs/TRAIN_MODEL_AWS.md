@@ -119,7 +119,9 @@ machine.
    like so...
 
    ```bash
-   USER_DATA=$(cat docs/train_model_aws_start_up.sh)
+   STARTUP_SCRIPT=docs/train_model_aws_start_up.sh
+   [ ! -f $STARTUP_SCRIPT ] && echo -e '\033[;31mERROR:\033[0m Cannot find: '$STARTUP_SCRIPT;
+   USER_DATA=$(cat $STARTUP_SCRIPT)
    USER_DATA=${USER_DATA//'$VM_NAME'/\'$VM_NAME\'}
    USER_DATA=${USER_DATA//'$VM_USER'/\'$VM_IMAGE_USER\'}
    USER_DATA=${USER_DATA//'$TRAIN_SCRIPT_PATH'/\'$TRAIN_SCRIPT_PATH\'}
@@ -268,8 +270,6 @@ machine.
 1. Start training...
 
    ```bash
-   TRAIN_SCRIPT_PATH='your-choosen-training-script-from-earlier'
-
    # Kill any leftover processes from other runs...
    pkill -9 python; sleep 5s; nvidia-smi; \
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH --project_name $COMET_PROJECT --name "$EXPERIMENT_NAME";

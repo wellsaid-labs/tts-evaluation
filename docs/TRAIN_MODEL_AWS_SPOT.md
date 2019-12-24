@@ -289,11 +289,8 @@ Related Documentation:
    python -m pip install -r requirements.txt --upgrade
 
    sudo bash src/bin/install_mkl.sh
-   ```
 
-1. Set a flag to restart training if the instance is rebooted...
-
-   ```bash
+   # Set a flag to restart training if the instance is rebooted
    touch /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
    ```
 
@@ -307,8 +304,6 @@ Related Documentation:
 1. Start training...
 
    ```bash
-   TRAIN_SCRIPT_PATH='your-choosen-training-script-from-earlier'
-
    # Kill any leftover processes from other runs...
    pkill -9 python; sleep 5s; nvidia-smi; \
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH --project_name $COMET_PROJECT --name "$EXPERIMENT_NAME";
