@@ -130,7 +130,9 @@ Related Documentation:
    like so...
 
    ```bash
-   USER_DATA=$(cat docs/train_model_aws_spot_start_up.sh)
+   STARTUP_SCRIPT=docs/train_model_aws_spot_start_up.sh
+   [ ! -f $STARTUP_SCRIPT ] && echo -e '\033[;31mERROR:\033[0m Cannot find: '$STARTUP_SCRIPT;
+   USER_DATA=$(cat $STARTUP_SCRIPT)
    USER_DATA=${USER_DATA//'$VM_NAME'/\'$VM_NAME\'}
    USER_DATA=${USER_DATA//'$VM_USER'/\'$VM_IMAGE_USER\'}
    USER_DATA=${USER_DATA//'$VM_REGION'/\'$AWS_DEFAULT_REGION\'}
