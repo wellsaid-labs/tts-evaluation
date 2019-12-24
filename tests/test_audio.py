@@ -4,6 +4,7 @@ from scipy.io import wavfile
 
 import librosa
 import numpy as np
+import pytest
 import torch
 
 from src.audio import build_wav_header
@@ -11,14 +12,29 @@ from src.audio import cache_get_audio_metadata
 from src.audio import combine_signal
 from src.audio import get_audio_metadata
 from src.audio import get_log_mel_spectrogram
+from src.audio import get_num_seconds
 from src.audio import griffin_lim
 from src.audio import normalize_audio
 from src.audio import read_audio
 from src.audio import split_signal
 from src.audio import write_audio
+from src.environment import DATA_PATH
 from src.environment import TEST_DATA_PATH
 
 TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'test_audio'
+
+
+def test_get_num_seconds():
+    """ Ensure `get_num_seconds` works regardless of the audio metadata like sample rate.
+
+    TODO: The number of seconds for both files is not exactly the same. Look into that.
+    """
+    assert pytest.approx(7.5839, 0.0001) == get_num_seconds(TEST_DATA_PATH_LOCAL / 'lj_speech.wav')
+    assert pytest.approx(7.5839, 0.0001) == get_num_seconds(TEST_DATA_PATH_LOCAL /
+                                                            'rate(lj_speech,24000).wav')
+    assert pytest.approx(2.070, 0.0001) == get_num_seconds(
+        DATA_PATH / 'M-AILABS/en_US/by_book/female/judy_bieber/' /
+        'dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav')
 
 
 def test_read_audio():
