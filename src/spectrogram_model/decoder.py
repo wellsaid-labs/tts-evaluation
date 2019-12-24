@@ -75,8 +75,8 @@ class AutoregressiveDecoder(nn.Module):
                  lstm_hidden_size=HParam(),
                  lstm_dropout=HParam(),
                  attention_hidden_size=HParam()):
-
         super().__init__()
+
         self.attention_hidden_size = attention_hidden_size
         self.frame_channels = frame_channels
         self.pre_net = PreNet(hidden_size=pre_net_hidden_size, frame_channels=frame_channels)
@@ -84,11 +84,8 @@ class AutoregressiveDecoder(nn.Module):
             input_size=pre_net_hidden_size + self.attention_hidden_size + speaker_embedding_dim,
             hidden_size=lstm_hidden_size)
         self.lstm_layer_one_dropout = nn.Dropout(p=lstm_dropout)
-        self.lstm_hidden_size = lstm_hidden_size
-        self.lstm_layer_two = nn.LSTM(
-            input_size=lstm_hidden_size + self.attention_hidden_size,
-            hidden_size=lstm_hidden_size,
-            num_layers=1)
+        hidden_size = lstm_hidden_size + self.attention_hidden_size + speaker_embedding_dim
+        self.lstm_layer_two = nn.LSTM(input_size=hidden_size, hidden_size=lstm_hidden_size)
         # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunately, Zoneout or any LSTM state
         # dropout in PyTorch forces us to unroll the LSTM and slow down this component x3 to x4. For
         # right now, we will not be using state dropout on the LSTM. We are applying dropout onto
@@ -96,10 +93,8 @@ class AutoregressiveDecoder(nn.Module):
         self.lstm_layer_two_dropout = nn.Dropout(p=lstm_dropout)
         self.attention = LocationSensitiveAttention(
             query_hidden_size=lstm_hidden_size, hidden_size=attention_hidden_size)
-        self.linear_out = nn.Linear(
-            in_features=lstm_hidden_size + self.attention_hidden_size, out_features=frame_channels)
-        self.linear_stop_token = nn.Linear(
-            in_features=lstm_hidden_size + self.attention_hidden_size, out_features=1)
+        self.linear_out = nn.Linear(in_features=hidden_size, out_features=frame_channels)
+        self.linear_stop_token = nn.Linear(in_features=hidden_size, out_features=1)
 
     def _get_initial_state(self,
                            batch_size,
@@ -198,6 +193,8 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
              hidden_state=hidden_state,
              device=encoded_tokens.device)
 
+        num_frames, _, _ = frames.shape
+
         # [num_frames, batch_size, frame_channels] →
         # [num_frames, batch_size, pre_net_hidden_size]
         frames = self.pre_net(frames)
@@ -255,10 +252,18 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
         # [num_frames, batch_size, attention_hidden_size]
         attention_contexts = torch.stack(attention_contexts, dim=0)
 
+        # [batch_size, speaker_embedding_dim] →
+        # [1, batch_size, speaker_embedding_dim]
+        speaker = speaker.unsqueeze(0)
+
+        # [1, batch_size, speaker_embedding_dim] →
+        # [num_frames, batch_size, speaker_embedding_dim]
+        speaker = speaker.expand(num_frames, -1, -1)
+
         # [num_frames, batch_size, lstm_hidden_size] (concat)
         # [num_frames, batch_size, attention_hidden_size] →
-        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size]
-        frames = torch.cat([frames, attention_contexts], dim=2)
+        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size + speaker_embedding_dim]
+        frames = torch.cat([frames, attention_contexts, speaker], dim=2)
 
         # frames [seq_len (num_frames), batch (batch_size),
         # input_size (lstm_hidden_size + attention_hidden_size)] →
@@ -268,8 +273,8 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
 
         # [num_frames, batch_size, lstm_hidden_size] (concat)
         # [num_frames, batch_size, attention_hidden_size] →
-        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size]
-        frames = torch.cat([frames, attention_contexts], dim=2)
+        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size + speaker_embedding_dim]
+        frames = torch.cat([frames, attention_contexts, speaker], dim=2)
 
         del attention_contexts  # Clear Memory
 

@@ -274,7 +274,7 @@ def _set_model_size(frame_channels, bits):
                             #         Text-To-Speech Synthesis):
                             # The paper mentions their proposed model uses a 256 dimension
                             # embedding.
-                            speaker_embedding_dim=256),
+                            speaker_embedding_dim=64),
                     '_infer':
                         HParams(
                             # NOTE: Estimated loosely to be a multiple of the slowest speech
