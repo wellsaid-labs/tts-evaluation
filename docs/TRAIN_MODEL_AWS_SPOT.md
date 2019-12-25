@@ -130,7 +130,9 @@ Related Documentation:
    like so...
 
    ```bash
-   USER_DATA=$(cat docs/train_model_aws_spot_start_up.sh)
+   STARTUP_SCRIPT=docs/train_model_aws_spot_start_up.sh
+   [ ! -f $STARTUP_SCRIPT ] && echo -e '\033[;31mERROR:\033[0m Cannot find: '$STARTUP_SCRIPT;
+   USER_DATA=$(cat $STARTUP_SCRIPT)
    USER_DATA=${USER_DATA//'$VM_NAME'/\'$VM_NAME\'}
    USER_DATA=${USER_DATA//'$VM_USER'/\'$VM_IMAGE_USER\'}
    USER_DATA=${USER_DATA//'$VM_REGION'/\'$AWS_DEFAULT_REGION\'}
@@ -287,11 +289,8 @@ Related Documentation:
    python -m pip install -r requirements.txt --upgrade
 
    sudo bash src/bin/install_mkl.sh
-   ```
 
-1. Set a flag to restart training if the instance is rebooted...
-
-   ```bash
+   # Set a flag to restart training if the instance is rebooted
    touch /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
    ```
 
@@ -305,8 +304,6 @@ Related Documentation:
 1. Start training...
 
    ```bash
-   TRAIN_SCRIPT_PATH='your-choosen-training-script-from-earlier'
-
    # Kill any leftover processes from other runs...
    pkill -9 python; sleep 5s; nvidia-smi; \
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH --project_name $COMET_PROJECT --name "$EXPERIMENT_NAME";

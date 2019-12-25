@@ -245,6 +245,9 @@ def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
     experiment.log_other(
         'last_git_commit',
         subprocess.check_output('git log -1 --format=%cd', shell=True).decode().strip())
+    experiment.log_other(
+        'git_branch',
+        subprocess.check_output('git rev-parse --abbrev-ref HEAD', shell=True).decode().strip())
     # TODO: Instead of using different approaches for extracting CPU, GPU, and disk information
     # consider standardizing to use `lshw` instead.
     if torch.cuda.is_available():
