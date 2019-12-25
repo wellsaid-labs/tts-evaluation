@@ -29,6 +29,8 @@ from src.utils.utils import seconds_to_string
 from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
 from src.utils.utils import torch_cpp_extension_load
+from src.utils.utils import mean
+from src.utils.utils import random_sample
 
 __all__ = [
     'align_tokens', 'AnomalyDetector', 'Checkpoint', 'DataLoader', 'disk_cache', 'OnDiskTensor',
@@ -37,5 +39,5 @@ __all__ = [
     'sort_together', 'slice_by_cumulative_sum', 'flatten', 'batch_predict_spectrograms',
     'get_chunks', 'cache_on_disk_tensor_shapes', 'RecordStandardStreams', 'Pool',
     'maybe_load_tensor', 'AveragedMetric', 'DistributedAveragedMetric', 'bash_time_label',
-    'torch_cpp_extension_load', 'RepeatTimer'
+    'torch_cpp_extension_load', 'RepeatTimer', 'mean', 'random_sample'
 ]
