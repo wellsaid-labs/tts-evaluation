@@ -26,6 +26,6 @@ if [ -f /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT ]; then
 fi
 
 echo "Setting environment variables..."
-echo "TRAIN_SCRIPT_PATH='$TRAIN_SCRIPT_PATH'" >>/etc/environment
+echo "TRAIN_SCRIPT_PATH=$TRAIN_SCRIPT_PATH" >>/etc/environment
 
 echo 'Finished startup script! :)'
