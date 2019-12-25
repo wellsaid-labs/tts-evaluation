@@ -1,6 +1,8 @@
 import time
+import math
 
 from torch import nn
+from torchnlp.random import fork_rng
 
 import pytest
 import torch
@@ -19,6 +21,19 @@ from src.utils.utils import RepeatTimer
 from src.utils.utils import ResetableTimer
 from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
+from src.utils.utils import mean
+from src.utils.utils import random_sample
+
+
+def test_mean():
+    assert mean(range(3)) == 1
+    assert mean([]) is math.nan
+
+
+def test_random_sample():
+    assert random_sample([], 5) == []
+    with fork_rng(seed=1234):
+        assert random_sample([1, 2, 3], 5) == [2, 1, 3]
 
 
 def test_repeat_timer():
