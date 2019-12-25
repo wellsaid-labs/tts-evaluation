@@ -211,9 +211,11 @@ class Trainer():
         Returns:
             (float): Mean of the sum of a sample of spectrograms from `dataset`.
         """
-        with fork_rng(seed=123):
-            sample = random_sample(dataset, sample_size)
-            return mean(maybe_load_tensor(r.spectrogram).sum().item() for r in sample)
+        if src.distributed.is_master():
+            with fork_rng(seed=123):
+                sample = random_sample(dataset, sample_size)
+                return mean(maybe_load_tensor(r.spectrogram).sum().item() for r in sample)
+        return None
 
     @classmethod
     def from_checkpoint(class_, checkpoint, **kwargs):
