@@ -66,8 +66,9 @@ def test__do_loss_and_maybe_backwards():
         speaker=None,
         spectrogram=BatchedSequences(torch.FloatTensor([[1, 1], [1, 1], [3, 3]]), [3]),
         stop_token=BatchedSequences(torch.FloatTensor([0, 1, 1]), [3]),
-        spectrogram_mask=BatchedSequences(torch.BoolTensor([1, 1, 0]), [3]),
-        spectrogram_expanded_mask=BatchedSequences(torch.BoolTensor([[1, 1], [1, 1], [0, 0]]), [3]))
+        spectrogram_mask=BatchedSequences(torch.FloatTensor([1, 1, 0]), [3]),
+        spectrogram_expanded_mask=BatchedSequences(
+            torch.FloatTensor([[1, 1], [1, 1], [0, 0]]), [3]))
     predicted_pre_spectrogram = torch.FloatTensor([[1, 1], [1, 1], [1, 1]])
     predicted_post_spectrogram = torch.FloatTensor([[0.5, 0.5], [0.5, 0.5], [1, 1]])
     predicted_stop_tokens = torch.FloatTensor([0, 0.5, 0.5])
@@ -80,8 +81,8 @@ def test__do_loss_and_maybe_backwards():
      num_frames) = trainer._do_loss_and_maybe_backwards(batch, predictions, False)
 
     assert pre_spectrogram_loss.item() == pytest.approx(0.0)
-    assert post_spectrogram_loss.item() == pytest.approx(1.0 / 4)
-    assert stop_token_loss.item() == pytest.approx(0.5836120843887329)
+    assert post_spectrogram_loss.item() == pytest.approx(1.0)
+    assert stop_token_loss.item() == pytest.approx(1.1672241687774658)
     assert num_spectrogram_values == 4
     assert num_frames == 2
 

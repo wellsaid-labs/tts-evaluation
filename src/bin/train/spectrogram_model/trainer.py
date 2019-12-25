@@ -374,32 +374,51 @@ class Trainer():
         expanded_mask = batch.spectrogram_expanded_mask.tensor
         # pre_spectrogram_loss [num_frames, batch_size, frame_channels]
         pre_spectrogram_loss = self.criterion_spectrogram(predicted_pre_spectrogram, spectrogram)
-        # [num_frames, batch_size, frame_channels] → [1]
-        pre_spectrogram_loss = pre_spectrogram_loss.masked_select(expanded_mask).mean()
+        # [num_frames, batch_size, frame_channels] → [num_frames, batch_size, frame_channels]
+        pre_spectrogram_loss = pre_spectrogram_loss * expanded_mask
 
         # post_spectrogram_loss [num_frames, batch_size, frame_channels]
         post_spectrogram_loss = self.criterion_spectrogram(predicted_post_spectrogram, spectrogram)
-        # [num_frames, batch_size, frame_channels] → [1]
-        post_spectrogram_loss = post_spectrogram_loss.masked_select(expanded_mask).mean()
+        # [num_frames, batch_size, frame_channels] → [num_frames, batch_size, frame_channels]
+        post_spectrogram_loss = post_spectrogram_loss * expanded_mask
 
         mask = batch.spectrogram_mask.tensor  # [num_frames, batch_size]
         # stop_token_loss [num_frames, batch_size]
         stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, batch.stop_token.tensor)
-        # [num_frames, batch_size] → [1]
-        stop_token_loss = stop_token_loss.masked_select(mask).mean()
+        # [num_frames, batch_size] → [num_frames, batch_size]
+        stop_token_loss = stop_token_loss * mask
 
         if do_backwards:
             self.optimizer.zero_grad()
-            (pre_spectrogram_loss + post_spectrogram_loss + stop_token_loss).backward()
+            # NOTE: We sum over the `num_frames` dimension to ensure that we don't bias based on
+            # `num_frames`. For example, a larger `num_frames` means that the average denominator
+            # is larger; therefore, the loss value for each element is smaller.
+            # NOTE: We average accross `batch_size` and `frame_channels` so that the loss
+            # stays around the same value regardless of the `batch_size`. This should not
+            # affect convergence because both of these are constant values; however, this should
+            # help normalize the loss value between experiments with different `batch_size` and
+            # `frame_channels`.
+
+            # pre_spectrogram_loss [num_frames, batch_size, frame_channels] → [1]
+            # post_spectrogram_loss [num_frames, batch_size, frame_channels] → [1]
+            # stop_token_loss [num_frames, batch_size] → [1]
+            expected_average_spectrogram_length = (
+                self._train_loader.expected_average_spectrogram_length)
+            ((pre_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() +
+             (post_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() +
+             (stop_token_loss.sum(dim=0) / expected_average_spectrogram_length).mean()).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
 
+        # NOTE: These metrics track the average loss per tensor element.
         # NOTE: These losses are from the original Tacotron 2 paper.
-        self.metrics['pre_spectrogram_loss'].update(pre_spectrogram_loss, expanded_mask.sum())
-        self.metrics['post_spectrogram_loss'].update(post_spectrogram_loss, expanded_mask.sum())
-        self.metrics['stop_token_loss'].update(stop_token_loss, mask.sum())
+        self.metrics['pre_spectrogram_loss'].update(pre_spectrogram_loss.mean(),
+                                                    expanded_mask.sum())
+        self.metrics['post_spectrogram_loss'].update(post_spectrogram_loss.mean(),
+                                                     expanded_mask.sum())
+        self.metrics['stop_token_loss'].update(stop_token_loss.mean(), mask.sum())
 
-        return (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss, expanded_mask.sum(),
-                mask.sum())
+        return (pre_spectrogram_loss.sum(), post_spectrogram_loss.sum(), stop_token_loss.sum(),
+                expanded_mask.sum(), mask.sum())
 
     def _add_attention_metrics(self, predicted_alignments, lengths):
         """ Compute and report attention metrics.
