@@ -202,6 +202,7 @@ class Trainer():
             self._last_repeat_timer_checkpoint.unlink()
         self._last_repeat_timer_checkpoint = checkpoint_path
 
+    @log_runtime
     def _get_expected_average_spectrogram_sum(self, dataset, sample_size):
         """
         Args:
