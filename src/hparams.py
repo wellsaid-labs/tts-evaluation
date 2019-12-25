@@ -552,6 +552,8 @@ def set_hparams():
         # NOTE: `momentum=0.01` to match Tensorflow defaults
         'torch.nn.modules.batchnorm._BatchNorm.__init__':
             HParams(momentum=0.01),
+        # NOTE: BERT uses `eps=1e-12` for `LayerNorm`, see here:
+        # https://github.com/huggingface/transformers/blob/master/src/transformers/configuration_bert.py
         'torch.nn.LayerNorm.__init__':
             HParams(eps=1e-12),
         # SOURCE (Tacotron 2):
@@ -596,8 +598,6 @@ def set_hparams():
                 # The convolutional layers in the network are regularized using dropout [25] with
                 # probability 0.5, and LSTM layers are regularized using zoneout [26] with
                 # probability 0.1
-                # NOTE: On the contrary, we found out that in our new BERT like encoder architecture
-                # dropout hurt performance slightly.
                 'encoder.Encoder.__init__':
                     HParams(convolution_dropout=0.0),
                 'decoder.AutoregressiveDecoder.__init__':
