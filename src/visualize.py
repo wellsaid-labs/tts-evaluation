@@ -241,36 +241,27 @@ def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
     # fails to upload.
     experiment._upload_git_patch()
 
+    check_output = lambda *a, **k: subprocess.check_output(*a, shell=True, **k).decode().strip()
+
     # Log the last git commit date
-    experiment.log_other(
-        'last_git_commit',
-        subprocess.check_output('git log -1 --format=%cd', shell=True).decode().strip())
-    experiment.log_other(
-        'git_branch',
-        subprocess.check_output('git rev-parse --abbrev-ref HEAD', shell=True).decode().strip())
+    experiment.log_other('last_git_commit', check_output('git log -1 --format=%cd'))
+    experiment.log_other('git_branch', check_output('git rev-parse --abbrev-ref HEAD'))
+    experiment.log_other('has_git_patch', str(len(check_output('git status --porcelain')) > 0))
     # TODO: Instead of using different approaches for extracting CPU, GPU, and disk information
     # consider standardizing to use `lshw` instead.
     if torch.cuda.is_available():
-        experiment.log_other(
-            'list_gpus',
-            subprocess.check_output('nvidia-smi --list-gpus', shell=True).decode().strip())
+        experiment.log_other('list_gpus', check_output('nvidia-smi --list-gpus'))
     if platform.system() == 'Linux':
-        experiment.log_other(
-            'list_disks',
-            subprocess.check_output('lshw -class disk -class storage', shell=True).decode().strip())
+        experiment.log_other('list_disks', check_output('lshw -class disk -class storage'))
     if platform.system() == 'Linux':
         experiment.log_other(
             'list_unique_cpus',
-            subprocess.check_output(
-                "awk '/model name/ {$1=$2=$3=\"\"; print $0}' /proc/cpuinfo | uniq",
-                shell=True).decode().strip())
+            check_output("awk '/model name/ {$1=$2=$3=\"\"; print $0}' /proc/cpuinfo | uniq"))
     experiment.log_parameter('num_gpu', torch.cuda.device_count())
     experiment.log_parameter('num_cpu', os.cpu_count())
     if platform.system() == 'Linux':
-        experiment.log_parameter(
-            'total_physical_memory_in_kb',
-            subprocess.check_output("awk '/MemTotal/ {print $2}' /proc/meminfo",
-                                    shell=True).decode().strip())
+        experiment.log_parameter('total_physical_memory_in_kb',
+                                 check_output("awk '/MemTotal/ {print $2}' /proc/meminfo",))
 
     last_step_time = None
     last_step = None
