@@ -219,7 +219,7 @@ class SpectrogramModel(nn.Module):
         hidden_state = None
         alignments, frames, stop_tokens = [], [], []
         max_lengths = (num_tokens.float() * max_frames_per_token).long()
-        lengths = max_lengths.tolist()
+        lengths = max_lengths.clone().tolist()
         if use_tqdm:
             progress_bar = tqdm(leave=True, unit='frame(s)')
         while len(stopped) != batch_size and len(frames) < max(lengths):
@@ -248,19 +248,15 @@ class SpectrogramModel(nn.Module):
         if use_tqdm:
             progress_bar.close()
 
-        reached_max = 0
-        for i, length in enumerate(lengths):
-            if max_lengths[i] == length:
-                reached_max += 1
-
-        if reached_max > 0:
-            logger.warning('%d sequences reached max frames', reached_max)
-
         alignments = torch.stack(alignments, dim=0)
         frames = torch.stack(frames, dim=0)
         stop_tokens = torch.stack(stop_tokens, dim=0)
         lengths = torch.tensor(lengths, device=frames.device).unsqueeze(0)
         frames_with_residual = self._add_residual(frames, lengths)
+
+        reached_max = (lengths == max_lengths).sum().item()
+        if reached_max > 0:
+            logger.warning('%d sequences reached max frames', reached_max)
 
         if is_unbatched:
             return (frames.squeeze(1), frames_with_residual.squeeze(1), stop_tokens.squeeze(1),
