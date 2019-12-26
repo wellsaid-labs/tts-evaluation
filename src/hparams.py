@@ -283,7 +283,7 @@ def _set_model_size(frame_channels, bits):
                             # NOTE: Estimated loosely to be a multiple of the slowest speech
                             # observed in one dataset. This threshhold is primarly intended to
                             # prevent recursion.
-                            max_frames_per_token=15,
+                            max_frames_per_token=30,
                             stop_threshold=stop_threshold)
                 }  # noqa: E122
             },

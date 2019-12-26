@@ -190,6 +190,8 @@ class SpectrogramModel(nn.Module):
             stop_token (torch.FloatTensor [num_frames, batch_size])
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
             lengths (torch.LongTensor [1, batch_size] or [1])
+            reached_max (int or bool): The number of spectrogram frames in batch that reached the
+                maximum number of frames.
         """
         # [num_tokens, batch_size, hidden_size]
         _, batch_size, _ = encoded_tokens.shape
@@ -228,7 +230,7 @@ class SpectrogramModel(nn.Module):
 
         reached_max = 0
         for i, length in enumerate(lengths):
-            if num_tokens[i] * max_frames_per_token == length:
+            if num_tokens[i].float() * max_frames_per_token == length:
                 reached_max += 1
 
         if reached_max > 0:
@@ -242,9 +244,9 @@ class SpectrogramModel(nn.Module):
 
         if is_unbatched:
             return (frames.squeeze(1), frames_with_residual.squeeze(1), stop_tokens.squeeze(1),
-                    alignments.squeeze(1), lengths.squeeze(1))
+                    alignments.squeeze(1), lengths.squeeze(1), bool(reached_max))
 
-        return frames, frames_with_residual, stop_tokens, alignments, lengths
+        return frames, frames_with_residual, stop_tokens, alignments, lengths, reached_max
 
     def _normalize_shape(self, tokens, speaker, num_tokens, target_frames, target_lengths):
         """ Normalize the shape of the forward inputs.
@@ -332,8 +334,12 @@ class SpectrogramModel(nn.Module):
                 stopping at each frame.
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens] or [num_frames,
                 num_tokens]): Attention alignments.
+
+        Additionally, inference returns:
             lengths (torch.LongTensor [1, batch_size] or [1]): Number of frames predicted for each
                 sequence in the batch.
+            reached_max (int or bool): The number of spectrogram frames in batch that reached the
+                maximum number of frames.
         """
         is_unbatched = len(tokens.shape) == 1
 

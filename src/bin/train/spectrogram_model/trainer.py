@@ -127,12 +127,13 @@ class Trainer():
         self.metrics = {
             'attention_norm': DistributedAveragedMetric(),
             'attention_std': DistributedAveragedMetric(),
+            'data_queue_size': DistributedAveragedMetric(),
             'duration_gap': DistributedAveragedMetric(),
             'post_spectrogram_loss': DistributedAveragedMetric(),
             'pre_spectrogram_loss': DistributedAveragedMetric(),
-            'stop_token_loss': DistributedAveragedMetric(),
+            'reached_max_frames': DistributedAveragedMetric(),
             'stop_token_accuracy': DistributedAveragedMetric(),
-            'data_queue_size': DistributedAveragedMetric()
+            'stop_token_loss': DistributedAveragedMetric(),
         }
 
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
@@ -311,22 +312,26 @@ class Trainer():
 
         random_batch = random.randint(0, len(data_loader) - 1)
         for i, batch in enumerate(data_loader):
+            batch_size = batch.text.lengths.numel()
             with torch.set_grad_enabled(train):
                 if infer:
                     predictions = self.model(batch.text.tensor, batch.speaker.tensor,
                                              batch.text.lengths)
                     # NOTE: `duration_gap` computes the average length of the predictions
                     # verus the average length of the original spectrograms.
-                    duration_gap = (predictions[-1].float() /
+                    duration_gap = (predictions[-2].float() /
                                     batch.spectrogram.lengths.float()).mean()
-                    self.metrics['duration_gap'].update(duration_gap, predictions[-1].numel())
+
+                    self.metrics['duration_gap'].update(duration_gap, batch_size)
+                    self.metrics['reached_max_frames'].update(predictions[-1] / batch_size,
+                                                              batch_size)
                 else:
                     predictions = self.model(batch.text.tensor, batch.speaker.tensor,
                                              batch.text.lengths, batch.spectrogram.tensor,
                                              batch.spectrogram.lengths)
                     self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
-                spectrogram_lengths = predictions[-1] if infer else batch.spectrogram.lengths
+                spectrogram_lengths = predictions[-2] if infer else batch.spectrogram.lengths
                 self._add_attention_metrics(predictions[3], spectrogram_lengths)
 
             # NOTE: This metric should be a positive integer indicating that the `data_loader`
@@ -451,7 +456,7 @@ class Trainer():
         with evaluate(model, device=self.device):
             logger.info('Running inference...')
             (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
-             predicted_alignments, _) = model(text, speaker)
+             predicted_alignments, _, _) = model(text, speaker)
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
 

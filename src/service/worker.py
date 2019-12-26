@@ -133,12 +133,8 @@ def handle_invalid_usage(error):  # Register an error response
     return response
 
 
-def stream_text_to_speech_synthesis(signal_model_inferrer,
-                                    spectrogram_model,
-                                    input_encoder,
-                                    text,
-                                    speaker,
-                                    max_frames_per_token=30):
+def stream_text_to_speech_synthesis(signal_model_inferrer, spectrogram_model, input_encoder, text,
+                                    speaker):
     """ Helper function for starting a speech synthesis stream.
 
     Args:
@@ -147,8 +143,6 @@ def stream_text_to_speech_synthesis(signal_model_inferrer,
         input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         text (str)
         speaker (src.datasets.Speaker)
-        max_frames_per_token (int): Maximum frames generated per token before erroring. This
-            parameter is tunned based on the slowests speaking rate of our speakers.
 
     Returns:
         (callable): Callable that returns a generator incrementally returning a WAV file.
@@ -162,12 +156,11 @@ def stream_text_to_speech_synthesis(signal_model_inferrer,
 
     app.logger.info('Generating spectrogram...')
     with torch.no_grad():
-        spectrogram = spectrogram_model(
-            text, speaker, use_tqdm=True, max_frames_per_token=max_frames_per_token)[1]
+        _, spectrogram, _, _, _, is_max_frames = spectrogram_model(text, speaker, use_tqdm=True)
     app.logger.info('Generated spectrogram of shape %s for text of shape %s.', spectrogram.shape,
                     text.shape)
 
-    if spectrogram.shape[0] >= max_frames_per_token * text.shape[0]:
+    if is_max_frames:
         # NOTE: Status code 508 is "The server detected an infinite loop while processing the
         # request". Learn more here: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
         raise FlaskException('Failed to render, try again.', status_code=508)
