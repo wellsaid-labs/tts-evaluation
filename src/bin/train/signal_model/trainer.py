@@ -189,6 +189,7 @@ class Trainer():
             self.timer.start()
             atexit.register(self._atexit)
 
+    @log_runtime
     def _get_expected_average_spectrogram_sum(self, dataset, sample_size):
         """
         Args:
@@ -198,11 +199,15 @@ class Trainer():
         Returns:
             (float): Mean of the sum of a sample of spectrograms from `dataset`.
         """
-        with fork_rng(seed=123):
-            sample = random_sample(dataset, sample_size)
-            use_predicted = self.use_predicted
-            sample = [r.predicted_spectrogram if use_predicted else r.spectrogram for r in sample]
-            return mean(maybe_load_tensor(r).sum().item() for r in sample)
+        if src.distributed.is_master():
+            with fork_rng(seed=123):
+                sample = random_sample(dataset, sample_size)
+                use_predicted = self.use_predicted
+                sample = [
+                    r.predicted_spectrogram if use_predicted else r.spectrogram for r in sample
+                ]
+                return mean(maybe_load_tensor(r).sum().item() for r in sample)
+        return None
 
     def _atexit(self):
         """ This function is run on program exit. """
