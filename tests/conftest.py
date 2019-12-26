@@ -37,7 +37,8 @@ def run_before_test():
     set_lazy_resolution(True)  # This helps performance for individual tests
     set_hparams()
 
-    yield
+    with torch.autograd.detect_anomaly():
+        yield
 
     # NOTE: We need to invalidate caching after the test because of delayed writes.
     for cache in _DiskCache.get_instances():

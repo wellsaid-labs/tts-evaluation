@@ -19,7 +19,7 @@ def test_conditional_features_upsample():
         num_filters=[64, 64, 32, upsample_learned],
         kernels=[(5, 5), (3, 3), (3, 3), (3, 3)])  # Padding of 2 + 1 + 1 + 1 = 5 on either side
 
-    local_features = torch.FloatTensor(batch_size, length + 10, in_channels)
+    local_features = torch.randn(batch_size, length + 10, in_channels)
     upsampled = net(local_features)
 
     assert upsampled.shape == (batch_size, out_channels, signal_length)

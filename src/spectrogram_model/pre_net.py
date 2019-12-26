@@ -27,8 +27,8 @@ class PreNet(nn.Module):
     Args:
         frame_channels (int): Number of channels in each frame (sometimes refered to
             as "Mel-frequency bins" or "FFT bins" or "FFT bands").
-        num_layers (int): Number of fully connected layers of ReLU units.
         hidden_size (int): Number of hidden units in each layer.
+        num_layers (int): Number of fully connected layers of ReLU units.
         dropout (float): Probability of an element to be zeroed.
 
     Reference:

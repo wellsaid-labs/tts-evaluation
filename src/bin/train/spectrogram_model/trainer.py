@@ -127,11 +127,13 @@ class Trainer():
         self.metrics = {
             'attention_norm': DistributedAveragedMetric(),
             'attention_std': DistributedAveragedMetric(),
+            'data_queue_size': DistributedAveragedMetric(),
             'duration_gap': DistributedAveragedMetric(),
             'post_spectrogram_loss': DistributedAveragedMetric(),
             'pre_spectrogram_loss': DistributedAveragedMetric(),
+            'reached_max_frames': DistributedAveragedMetric(),
+            'stop_token_accuracy': DistributedAveragedMetric(),
             'stop_token_loss': DistributedAveragedMetric(),
-            'data_queue_size': DistributedAveragedMetric()
         }
 
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
@@ -202,6 +204,7 @@ class Trainer():
             self._last_repeat_timer_checkpoint.unlink()
         self._last_repeat_timer_checkpoint = checkpoint_path
 
+    @log_runtime
     def _get_expected_average_spectrogram_sum(self, dataset, sample_size):
         """
         Args:
@@ -211,9 +214,11 @@ class Trainer():
         Returns:
             (float): Mean of the sum of a sample of spectrograms from `dataset`.
         """
-        with fork_rng(seed=123):
-            sample = random_sample(dataset, sample_size)
-            return mean(maybe_load_tensor(r.spectrogram).sum().item() for r in sample)
+        if src.distributed.is_master():
+            with fork_rng(seed=123):
+                sample = random_sample(dataset, sample_size)
+                return mean(maybe_load_tensor(r.spectrogram).sum().item() for r in sample)
+        return None
 
     @classmethod
     def from_checkpoint(class_, checkpoint, **kwargs):
@@ -307,22 +312,26 @@ class Trainer():
 
         random_batch = random.randint(0, len(data_loader) - 1)
         for i, batch in enumerate(data_loader):
+            batch_size = batch.text.lengths.numel()
             with torch.set_grad_enabled(train):
                 if infer:
                     predictions = self.model(batch.text.tensor, batch.speaker.tensor,
                                              batch.text.lengths)
                     # NOTE: `duration_gap` computes the average length of the predictions
                     # verus the average length of the original spectrograms.
-                    duration_gap = (predictions[-1].float() /
+                    duration_gap = (predictions[-2].float() /
                                     batch.spectrogram.lengths.float()).mean()
-                    self.metrics['duration_gap'].update(duration_gap, predictions[-1].numel())
+
+                    self.metrics['duration_gap'].update(duration_gap, batch_size)
+                    self.metrics['reached_max_frames'].update(predictions[-1] / batch_size,
+                                                              batch_size)
                 else:
                     predictions = self.model(batch.text.tensor, batch.speaker.tensor,
                                              batch.text.lengths, batch.spectrogram.tensor,
                                              batch.spectrogram.lengths)
                     self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
-                spectrogram_lengths = predictions[-1] if infer else batch.spectrogram.lengths
+                spectrogram_lengths = predictions[-2] if infer else batch.spectrogram.lengths
                 self._add_attention_metrics(predictions[3], spectrogram_lengths)
 
             # NOTE: This metric should be a positive integer indicating that the `data_loader`
@@ -352,7 +361,12 @@ class Trainer():
             if train:
                 self.epoch += 1
 
-    def _do_loss_and_maybe_backwards(self, batch, predictions, do_backwards):
+    @configurable
+    def _do_loss_and_maybe_backwards(self,
+                                     batch,
+                                     predictions,
+                                     do_backwards,
+                                     stop_threshold=HParam()):
         """ Compute the losses and maybe do backwards.
 
         TODO: Consider logging seperate metrics per speaker.
@@ -361,6 +375,7 @@ class Trainer():
             batch (SpectrogramModelTrainingRow)
             predictions (any): Return value from ``self.model.forwards``.
             do_backwards (bool): If ``True`` backward propogate the loss.
+            stop_threshold (float): The threshold probability for deciding to stop.
         """
         # predicted_pre_spectrogram, predicted_post_spectrogram
         # [num_frames, batch_size, frame_channels]
@@ -409,6 +424,10 @@ class Trainer():
              (stop_token_loss.sum(dim=0) / expected_average_spectrogram_length).mean()).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
 
+        expected_stop_token = (batch.stop_token.tensor > stop_threshold).masked_select(mask > 0)
+        predicted_stop_token = (torch.nn.functional.sigmoid(predicted_stop_tokens) >
+                                stop_threshold).masked_select(mask > 0)
+
         # NOTE: These metrics track the average loss per tensor element.
         # NOTE: These losses are from the original Tacotron 2 paper.
         self.metrics['pre_spectrogram_loss'].update(pre_spectrogram_loss.mean(),
@@ -416,6 +435,9 @@ class Trainer():
         self.metrics['post_spectrogram_loss'].update(post_spectrogram_loss.mean(),
                                                      expanded_mask.sum())
         self.metrics['stop_token_loss'].update(stop_token_loss.mean(), mask.sum())
+
+        self.metrics['stop_token_accuracy'].update(
+            (expected_stop_token == predicted_stop_token).float().mean(), mask.sum())
 
         return (pre_spectrogram_loss.sum(), post_spectrogram_loss.sum(), stop_token_loss.sum(),
                 expanded_mask.sum(), mask.sum())
@@ -453,7 +475,7 @@ class Trainer():
         with evaluate(model, device=self.device):
             logger.info('Running inference...')
             (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
-             predicted_alignments, _) = model(text, speaker)
+             predicted_alignments, _, _) = model(text, speaker)
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
 
