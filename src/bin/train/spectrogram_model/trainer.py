@@ -131,6 +131,7 @@ class Trainer():
             'post_spectrogram_loss': DistributedAveragedMetric(),
             'pre_spectrogram_loss': DistributedAveragedMetric(),
             'stop_token_loss': DistributedAveragedMetric(),
+            'stop_token_accuracy': DistributedAveragedMetric(),
             'data_queue_size': DistributedAveragedMetric()
         }
 
@@ -355,7 +356,12 @@ class Trainer():
             if train:
                 self.epoch += 1
 
-    def _do_loss_and_maybe_backwards(self, batch, predictions, do_backwards):
+    @configurable
+    def _do_loss_and_maybe_backwards(self,
+                                     batch,
+                                     predictions,
+                                     do_backwards,
+                                     stop_threshold=HParam()):
         """ Compute the losses and maybe do backwards.
 
         TODO: Consider logging seperate metrics per speaker.
@@ -364,6 +370,7 @@ class Trainer():
             batch (SpectrogramModelTrainingRow)
             predictions (any): Return value from ``self.model.forwards``.
             do_backwards (bool): If ``True`` backward propogate the loss.
+            stop_threshold (float): The threshold probability for deciding to stop.
         """
         # predicted_pre_spectrogram, predicted_post_spectrogram
         # [num_frames, batch_size, frame_channels]
@@ -396,10 +403,17 @@ class Trainer():
             (pre_spectrogram_loss + post_spectrogram_loss + stop_token_loss).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
 
+        expected_stop_token = (batch.stop_token.tensor > stop_threshold).masked_select(mask)
+        predicted_stop_token = (torch.nn.functional.sigmoid(predicted_stop_tokens) >
+                                stop_threshold).masked_select(mask)
+
         # NOTE: These losses are from the original Tacotron 2 paper.
         self.metrics['pre_spectrogram_loss'].update(pre_spectrogram_loss, expanded_mask.sum())
         self.metrics['post_spectrogram_loss'].update(post_spectrogram_loss, expanded_mask.sum())
         self.metrics['stop_token_loss'].update(stop_token_loss, mask.sum())
+
+        self.metrics['stop_token_accuracy'].update(
+            (expected_stop_token == predicted_stop_token).float().mean(), mask.sum())
 
         return (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss, expanded_mask.sum(),
                 mask.sum())

@@ -197,6 +197,11 @@ def _set_model_size(frame_channels, bits):
     # features to 128-dimensional hidden representations.
     attention_hidden_size = 128
 
+    # SOURCE (Tacotron 2):
+    # Specifically, generation completes at the first frame for which this
+    # probability exceeds a threshold of 0.5.
+    stop_threshold = 0.5
+
     add_config({
         'src': {
             'spectrogram_model': {
@@ -279,13 +284,11 @@ def _set_model_size(frame_channels, bits):
                             # observed in one dataset. This threshhold is primarly intended to
                             # prevent recursion.
                             max_frames_per_token=15,
-
-                            # SOURCE (Tacotron 2):
-                            # Specifically, generation completes at the first frame for which this
-                            # probability exceeds a threshold of 0.5.
-                            stop_threshold=0.5)
+                            stop_threshold=stop_threshold)
                 }  # noqa: E122
             },
+            'bin.train.spectrogram_model.trainer.Trainer._do_loss_and_maybe_backwards':
+                HParams(stop_threshold=stop_threshold),
             'signal_model.wave_rnn.WaveRNN.__init__':
                 HParams(
                     local_features_size=frame_channels,
@@ -691,6 +694,7 @@ def set_hparams():
             # NOTE: Window size smoothing parameter is not super sensative.
             'optimizers.AutoOptimizer.__init__':
                 HParams(window_size=128),
-            'environment.set_seed': HParams(seed=seed),
+            'environment.set_seed':
+                HParams(seed=seed),
         }
     })
