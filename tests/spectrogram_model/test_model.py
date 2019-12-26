@@ -20,7 +20,7 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
     padding_len = 2
 
     # Ensure that the model computes the full length
-    add_config({'src.spectrogram_model.model.SpectrogramModel._infer': HParams(stop_threshold=1.1)})
+    add_config({'src.spectrogram_model.model.SpectrogramModel._infer': HParams(stop_threshold=1.0)})
 
     # NOTE: The random generator for dropout varies based on the tensor size; therefore, it's
     # dependent on the `BatchSize` and we need to disable it. For example:
