@@ -52,7 +52,13 @@ class _BalancedSampler(WeightedRandomSampler):
         for class_, weight in zip(classified, weighted):
             totals[class_] += weight
         weights = [1 / totals[c] if w > 0 else 0.0 for c, w in zip(classified, weighted)]
+
         super().__init__(weights=weights, **kwargs)
+
+        # NOTE: Ensure all weights add up to 1.0
+        normalized_weights = self.weights / self.weights.sum()
+        # NOTE: The average weight of the loaded data.
+        self.expected_weight = sum([w * n for w, n in zip(weighted, normalized_weights)])
 
 
 def _load_fn(row, input_encoder):
@@ -144,11 +150,7 @@ class DataLoader(DataLoader):
             num_workers = int(num_workers / torch.distributed.get_world_size())
             batch_sampler = DistributedBatchSampler(batch_sampler)
 
-        # NOTE: Ensure all weights add up to 1.0
-        normalized_weights = sampler.weights / sampler.weights.sum()
-        # NOTE: The average spectrogram length of the loaded data.
-        self.expected_average_spectrogram_length = sum(
-            [d.spectrogram.shape[0] * w for d, w in zip(data, normalized_weights)])
+        self.expected_average_spectrogram_length = sampler.expected_weight
 
         logger.info('The expected average spectrogram length is: %f',
                     self.expected_average_spectrogram_length)
