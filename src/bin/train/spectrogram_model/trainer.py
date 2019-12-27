@@ -425,7 +425,7 @@ class Trainer():
             self.optimizer.step(comet_ml=self.comet_ml)
 
         expected_stop_token = (batch.stop_token.tensor > stop_threshold).masked_select(mask > 0)
-        predicted_stop_token = (torch.nn.functional.sigmoid(predicted_stop_tokens) >
+        predicted_stop_token = (torch.sigmoid(predicted_stop_tokens) >
                                 stop_threshold).masked_select(mask > 0)
 
         # NOTE: These metrics track the average loss per tensor element.

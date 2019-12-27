@@ -120,12 +120,13 @@ class DataLoader(DataLoader):
         )
     """
 
-    def __init__(self,
-                 data,
-                 batch_size,
-                 device,
-                 num_workers=0 if IS_TESTING_ENVIRONMENT else cpu_count(),
-                 **kwargs):
+    def __init__(self, data, batch_size, device, num_workers=None, **kwargs):
+        if num_workers is None:
+            world_size = (
+                torch.distributed.get_world_size() if src.distributed.is_initialized() else 1)
+            # NOTE: This default was set based on the 7b7af914fde844cab49cd1bbb6702315 experiment
+            num_workers = 0 if IS_TESTING_ENVIRONMENT else min(cpu_count(), 4 * world_size)
+
         if src.distributed.is_initialized():
             # NOTE: `DistributedBatchSampler` assumes that the workers and master have the same
             # sampling; therefore, the same data.
@@ -142,6 +143,7 @@ class DataLoader(DataLoader):
             data, get_class=lambda e: e.speaker, get_weight=lambda e: e.spectrogram.shape[0])
         batch_sampler = BucketBatchSampler(
             sampler, batch_size, drop_last=True, sort_key=lambda i: data[i].spectrogram.shape[0])
+        # TODO: `get_number_of_elements` is not compatible with `OnDiskTensor`, fix that.
         batch_sampler = OomBatchSampler(
             batch_sampler, get_item_size=lambda i: get_number_of_elements(data[i]))
         batch_sampler = DeterministicSampler(batch_sampler)
