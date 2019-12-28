@@ -19,33 +19,38 @@ on a AWS virtual machine.
    ```bash
    export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
    VM_NAME=$USER"_your-experiment-name" # EXAMPLE: michaelp_baseline
-   VM_MACHINE_TYPE=p3.16xlarge
    VM_ID=$(aws ec2 describe-instances --filters Name=tag:Name,Values=$VM_NAME \
-      --query 'Reservations[0].Instances[0].InstanceId' --output text)
+                --query 'Reservations[0].Instances[0].InstanceId' --output text)
+   COMET_EXPERIMENT_KEY='Your experiment id'
    ```
 
-1. Now that you've finished training your spectrogram model, stop your VM instance, like so:
+1. Now that you've finished training your spectrogram model, image your VM instance, like so:
 
    ```bash
-   aws ec2 stop-instances --instance-ids $VM_ID
+   VM_IMAGE_ID=$(aws ec2 create-image --instance-id $VM_ID \
+      --name "Experiment $COMET_EXPERIMENT_KEY" \
+      --description "An image of the Comet experiment " \
+      "https://www.comet.ml/api/experiment/redirect?experimentKey=$COMET_EXPERIMENT_KEY." | \
+      jq '.ImageId' | xargs)
    ```
 
-1. Update the instance type to be compatible with signal model training...
+1. You can monitor the creation of your image, here:
 
    ```bash
-   aws ec2 modify-instance-attribute --instance-id $VM_ID --instance-type "Value=$VM_MACHINE_TYPE"
-   ```
-
-1. Start your VM instance like so...
-
-   ```bash
-   aws --region=$VM_REGION ec2 start-instances --instance-ids $VM_ID
+   open https://$AWS_DEFAULT_REGION.console.aws.amazon.com/ec2/v2/home?region=$AWS_DEFAULT_REGION#Snapshots:sort=startTime
    ```
 
 ### On the VM instance
 
-1. During the training of the spectrogram model, it saved a number of model checkpoints. Find
-   a checkpoint with a path similar to this one:
+1. Follow this [document](TRAIN_MODEL_AWS_SPOT.md) to train a signal model.
+
+   ❗IMPORTANT: Include the optional `--spectrogram_model_checkpoint=$SPECTROGRAM_CHECKPOINT`
+   argument to start training.
+
+   ❗IMPORTANT: Set the `VM_IMAGE_ID` parameter to the new image you created earlier.
+
+   💡 TIP: In order to set the `--spectrogram_model_checkpoint` argument, find a checkpoint with a
+   path similar to this one:
 
    ```bash
    SPECTROGRAM_CHECKPOINT="/opt/wellsaid-labs/Text-to-Speech/disk/experiments/" \
@@ -54,12 +59,6 @@ on a AWS virtual machine.
 
    Pick the checkpoint with a step count that correlates with the point of convergence
    `dev_epoch/post_spectrogram_loss` value.
-
-1. From [this point](TRAIN_MODEL_AWS_SPOT.md#on-the-vm-instance-1), continue following the
-   instructions to train your signal model.
-
-   ❗IMPORTANT: Include the optional `--spectrogram_model_checkpoint=$SPECTROGRAM_CHECKPOINT`
-   argument to start training.
 
 1. Wait until `dev_epoch/coarse_loss` and `dev_epoch/fine_loss` stop rapidly
    decreasing. This typically will happen within 18-24 hours of training, or \~150,000 steps.
