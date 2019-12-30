@@ -417,9 +417,11 @@ class Trainer():
             # pre_spectrogram_loss [num_frames, batch_size, frame_channels] → [1]
             # post_spectrogram_loss [num_frames, batch_size, frame_channels] → [1]
             # stop_token_loss [num_frames, batch_size] → [1]
-            ((pre_spectrogram_loss.sum(dim=0).mean() + post_spectrogram_loss.sum(dim=0).mean() +
-              stop_token_loss.sum(dim=0).mean()) /
-             self._train_loader.expected_average_spectrogram_length).backward()
+            expected_average_spectrogram_length = (
+                self._train_loader.expected_average_spectrogram_length)
+            ((pre_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() +
+             (post_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() +
+             (stop_token_loss.sum(dim=0) / expected_average_spectrogram_length).mean()).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
 
         expected_stop_token = (batch.stop_token.tensor > stop_threshold).masked_select(mask > 0)
