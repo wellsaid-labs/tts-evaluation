@@ -360,6 +360,9 @@ class Trainer():
                 self.comet_ml.log_metric('epoch/%s' % name, metric.sync().reset())
             if train:
                 self.epoch += 1
+        else:
+            for _, metric in self.metrics.items():
+                metric.reset()
 
     @configurable
     def _do_loss_and_maybe_backwards(self,

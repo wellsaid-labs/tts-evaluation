@@ -99,7 +99,9 @@ class Trainer():
                  checkpoints_directory,
                  comet_ml,
                  train_batch_size=HParam(),
+                 train_spectrogram_slice_size=HParam(),
                  dev_batch_size=HParam(),
+                 dev_spectrogram_slice_size=HParam(),
                  criterion=HParam(),
                  optimizer=HParam(),
                  min_rollback=HParam(),
@@ -116,7 +118,9 @@ class Trainer():
         self.step = step
         self.epoch = epoch
         self.train_batch_size = train_batch_size
+        self.train_spectrogram_slice_size = train_spectrogram_slice_size
         self.dev_batch_size = dev_batch_size
+        self.dev_spectrogram_slice_size = dev_spectrogram_slice_size
         self.num_rollbacks = num_rollbacks
         self.checkpoints_directory = checkpoints_directory
         self.use_predicted = spectrogram_model_checkpoint_path is not None
@@ -376,10 +380,17 @@ class Trainer():
         loader_kwargs = {'device': self.device, 'use_predicted': self.use_predicted}
         if train and not hasattr(self, '_train_loader'):
             # NOTE: We cache the `DataLoader` between epochs for performance.
-            self._train_loader = DataLoader(self.train_dataset, self.train_batch_size,
-                                            **loader_kwargs)
+            self._train_loader = DataLoader(
+                self.train_dataset,
+                self.train_batch_size,
+                spectrogram_slice_size=self.train_spectrogram_slice_size,
+                **loader_kwargs)
         elif not train and not hasattr(self, '_dev_loader'):
-            self._dev_loader = DataLoader(self.dev_dataset, self.dev_batch_size, **loader_kwargs)
+            self._dev_loader = DataLoader(
+                self.dev_dataset,
+                self.dev_batch_size,
+                spectrogram_slice_size=self.dev_spectrogram_slice_size,
+                **loader_kwargs)
         data_loader = self._train_loader if train else self._dev_loader
 
         for i, batch in enumerate(data_loader):
