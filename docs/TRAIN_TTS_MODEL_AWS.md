@@ -17,11 +17,14 @@ on a AWS virtual machine.
 1. Setup your environment variables...
 
    ```bash
-   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
+   export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-west-2
    VM_NAME=$USER"_your-experiment-name" # EXAMPLE: michaelp_baseline
+   COMET_EXPERIMENT_KEY='Your experiment id' # EXAMPLE: 28c3b1e63ff04f5aaefb4c2033ac4dae
+   COMET_EXPERIMENT_STEPS='Number of steps completed' # EXAMPLE: 150k
+
    VM_ID=$(aws ec2 describe-instances --filters Name=tag:Name,Values=$VM_NAME \
                 --query 'Reservations[0].Instances[0].InstanceId' --output text)
-   COMET_EXPERIMENT_KEY='Your experiment id'
+   COMET_EXPERIMENT_LINK="https://www.comet.ml/api/experiment/redirect?experimentKey=$COMET_EXPERIMENT_KEY"
    ```
 
 1. Now that you've finished training your spectrogram model, image your VM instance, like so:
@@ -29,10 +32,15 @@ on a AWS virtual machine.
    ```bash
    VM_IMAGE_ID=$(aws ec2 create-image --instance-id $VM_ID \
       --name "Experiment $COMET_EXPERIMENT_KEY" \
-      --description "An image of the Comet experiment " \
-      "https://www.comet.ml/api/experiment/redirect?experimentKey=$COMET_EXPERIMENT_KEY." | \
+      --description "An image of a Comet experiment at $COMET_EXPERIMENT_STEPS steps." \
+      "Learn more: $COMET_EXPERIMENT_LINK" | \
       jq '.ImageId' | xargs)
    ```
+
+   💡 TIP: You can image an experiment at any time, it'll continue training after the image
+   has been created.
+
+   ❗IMPORTANT: This process can take from a couple minutes to an hour and a half.
 
 1. You can monitor the creation of your image, here:
 
