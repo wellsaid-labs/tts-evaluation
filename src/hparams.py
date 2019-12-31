@@ -667,7 +667,14 @@ def set_hparams():
                                 # 0.999, eps = 10−8 and a fixed learning rate of 10−4
                                 # NOTE: Parameters set after experimentation on a 8 V100 GPUs.
                                 train_batch_size=256,
-                                dev_batch_size=512,
+                                # SOURCE: Efficient Neural Audio Synthesis
+                                # The WaveRNN models are trained on sequences of 960 audio samples.
+                                # NOTE: We were able to get better results with 1800 audio samples
+                                # in Comet in August, 2019.
+                                train_spectrogram_slice_size=int(1800 / frame_hop),
+
+                                dev_batch_size=256,
+                                dev_spectrogram_slice_size=int(24000 / frame_hop),
 
                                 # `CrossEntropyLoss` is not directly mentioned in the paper; however
                                 # is a popular choice as of Jan 2019 for a classification task.
@@ -685,9 +692,6 @@ def set_hparams():
                             ),
                         'data_loader.DataLoader.__init__':
                             HParams(
-                                # SOURCE: Efficient Neural Audio Synthesis
-                                # The WaveRNN models are trained on sequences of 960 audio samples
-                                spectrogram_slice_size=int(1800 / frame_hop),
                                 # TODO: This should depend on an upsample property.
                                 # TODO: It may be more appropriate to pad by 2 spectrogram frames
                                 # instead. Given that each frame aligns with 300 samples and each
