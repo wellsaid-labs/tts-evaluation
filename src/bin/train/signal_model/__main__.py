@@ -204,7 +204,6 @@ def main(experiment_name=None,
     recorder.update(run_root)
     recorder.update(run_root, log_filename='run.log')
 
-    add_config({'src.visualize.CometML': HParams(experiment_key=comet.get_key())})
     if experiment_name is not None:
         logger.info('Name: %s', experiment_name)
         comet.set_name(experiment_name)
