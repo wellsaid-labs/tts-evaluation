@@ -17,7 +17,6 @@ import comet_ml  # noqa
 from hparams import add_config
 from hparams import configurable
 from hparams import HParam
-from hparams import HParams
 from hparams import parse_hparam_args
 from torchnlp.random import set_random_generator_state
 
@@ -125,7 +124,7 @@ def _train(device_index,
 
     logger.info('Worker %d started.', torch.distributed.get_rank())
 
-    _set_hparams(more_hparams, checkpoint, comet_ml_project_name, comet_ml_experiment_key)
+    _set_hparams(more_hparams, checkpoint)
 
     trainer_kwargs = {
         'device': device,
