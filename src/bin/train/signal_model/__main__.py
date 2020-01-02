@@ -125,7 +125,7 @@ def _train(device_index,
 
     logger.info('Worker %d started.', torch.distributed.get_rank())
 
-    _set_hparams(more_hparams, checkpoint, comet_ml_project_name, comet_ml_experiment_key)
+    _set_hparams(more_hparams, checkpoint)
 
     trainer_kwargs = {
         'device': device,
@@ -204,7 +204,6 @@ def main(experiment_name=None,
     recorder.update(run_root)
     recorder.update(run_root, log_filename='run.log')
 
-    add_config({'src.visualize.CometML': HParams(experiment_key=comet.get_key())})
     if experiment_name is not None:
         logger.info('Name: %s', experiment_name)
         comet.set_name(experiment_name)
