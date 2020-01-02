@@ -248,17 +248,7 @@ if __name__ == '__main__':  # pragma: no cover
         default=None,
         help='Name of the comet.ml project to store a new experiment in.')
     # NOTE: The baseline tags summarize changes in the current repository.
-    parser.add_argument(
-        '--tags',
-        default=[
-            'detached post_net', 'masked conv', 'post_net dropout=0', 'weight_decay=10**-6',
-            'no numbers', 'decoder speaker embedding net v2', 'encoder bert layer norm',
-            'encoder no dropout', 'masked backward lstm', 'post_net batch to layer norm',
-            'post_net no norm on last layer', 'post_net relu nonlinearity', 'post_net residuals',
-            'sum sequence loss normalized'
-        ],
-        nargs='+',
-        help='List of tags for a new experiments.')
+    parser.add_argument('--tags', default=[], nargs='+', help='List of tags for a new experiments.')
     parser.add_argument(
         '--reset_optimizer',
         action='store_true',

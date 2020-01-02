@@ -157,7 +157,7 @@ def test_griffin_lim_large_numbers():
 def test_griffin_lim_small_size():
     """ Test if small array will error out griffin lim.
     """
-    griffin_lim(np.random.uniform(low=-200, high=200, size=(1, 1)), 24000)
+    griffin_lim(np.random.uniform(low=-1, high=1, size=(1, 1)), 24000)
 
 
 def test_split_signal():
