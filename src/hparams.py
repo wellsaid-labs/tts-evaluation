@@ -673,7 +673,7 @@ def set_hparams():
                                 # in Comet in August, 2019.
                                 train_spectrogram_slice_size=int(1800 / frame_hop),
 
-                                dev_batch_size=256,
+                                dev_batch_size=32,
                                 dev_spectrogram_slice_size=int(24000 / frame_hop),
 
                                 # `CrossEntropyLoss` is not directly mentioned in the paper; however
