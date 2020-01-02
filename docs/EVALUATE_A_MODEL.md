@@ -112,7 +112,7 @@ def main(
    ```bash
    VM_IDENTITY_FILE=~/.ssh/$AWS_KEY_PAIR_NAME
    VM_PUBLIC_DNS=$(aws ec2 describe-instances --filters Name=tag:Name,Values=$VM_NAME \
-     --query 'Reservations[0].Instances[0].PublicDnsName' --output text)
+      --query 'Reservations[0].Instances[0].PublicDnsName' --output text)
    ```
 
    ... for GCP:
@@ -132,8 +132,9 @@ def main(
 
    ```bash
    mkdir ~/Downloads/samples/
-   scp -rp -i $VM_IDENTITY_FILE \
-      $VM_USER@$VM_PUBLIC_DNS:/opt/wellsaid-labs/Text-to-Speech/disk/samples/ ~/Downloads/
+   rsync -avzhe "ssh -i $VM_IDENTITY_FILE -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" \
+      $VM_USER@$VM_PUBLIC_DNS:/opt/wellsaid-labs/Text-to-Speech/disk/samples/* \
+      ~/Downloads/samples/
    ```
 
    If your working with multiple VMs, you'll want to rerun this step for each VM.
