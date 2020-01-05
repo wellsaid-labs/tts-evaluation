@@ -122,9 +122,6 @@ def main(dataset,
          random_seed=os.getpid()):
     """ Generate random samples of the `dataset`.
 
-    NOTE: Padding can affect the output of the signal and spectrogram model; therefore, it's
-    recommended to use a `batch_size` of one to ensure similar results as the deployed product.
-
     Args:
         dataset (callable): Callable that returns an iterable of `dict`.
         signal_model_checkpoint (str or None): Checkpoint used to predict a raw waveform
