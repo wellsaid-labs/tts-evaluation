@@ -14,6 +14,8 @@ import numpy as np
 
 def main(csvs, name, shuffle=False):
     """
+    NOTE: This module also adds an additional "__csv" column to preserve the row origin.
+
     Args:
         csvs (list of str): List of CSV filenames.
         name (str): Output filename.
