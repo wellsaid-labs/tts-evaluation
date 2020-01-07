@@ -104,7 +104,7 @@ def main(
 
    ```bash
    export AWS_DEFAULT_REGION='your-vm-region' # EXAMPLE: us-east-1
-   VM_NAME=$USER"_weight_init" # EXAMPLE: michaelp_baseline
+   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
    AWS_KEY_PAIR_NAME=$USER"_amazon_web_services" # The default AWS key pair name
    VM_USER=ubuntu  # The default user name for the default image.
    ```
@@ -154,7 +154,8 @@ def main(
       --csvs ~/Downloads/samples/*/metadata.csv \
       --shuffle \
       --name "$BATCH_DIRECTORY/metadata.csv"
-   rsync -rv --include='*.wav' --include='*.log' ~/Downloads/samples/*/. $BATCH_DIRECTORY
+   cp ~/Downloads/samples/*/*.wav $BATCH_DIRECTORY
+   cp ~/Downloads/samples/*/*.log $BATCH_DIRECTORY
    ```
 
 5. Upload your batch to a publicly accessible host, like so:
