@@ -19,8 +19,11 @@ def main(csvs, name, shuffle=False):
         name (str): Output filename.
     """
     df = pandas.read_csv(csvs[0])
+    df['__csv'] = csvs[0]
     for csv in csvs[1:]:
-        df = df.append(pandas.read_csv(csv), ignore_index=True)
+        df_csv = pandas.read_csv(csv)
+        df_csv['__csv'] = csv
+        df = df.append(df_csv, ignore_index=True)
     if shuffle:
         df = df.iloc[np.random.permutation(len(df))]
     df.to_csv(name, index=False)
