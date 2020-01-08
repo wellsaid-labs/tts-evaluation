@@ -586,7 +586,7 @@ class PodPool {
     return new Promise(async (resolve) => {
       this.logger.log(`PodPool.waitTillReady: Waiting till ready.`);
       this.waiting.push(resolve);
-      this.fufillPodRequests(); // Try to resolve right away
+      this.fulfillPodRequests(); // Try to resolve right away
     });
   }
 
@@ -603,8 +603,8 @@ class PodPool {
   /**
    * Fulfill the next pod reservation request in `this.podRequests` and `this.waiting`.
    */
-  async fufillPodRequests() {
-    this.logger.log(`PodPool.fufillPodRequests: Fufilling pod requests.`);
+  async fulfillPodRequests() {
+    this.logger.log(`PodPool.fulfillPodRequests: fulfilling pod requests.`);
     if (this.waiting.length > 0 &&
       this.pods.length > 0 &&
       await Promise.race(this.pods.map(p => p.isReady())) &&
@@ -651,7 +651,7 @@ class PodPool {
       return reservedPodCallback(pod);
     };
     this.podRequests.push(callback);
-    this.fufillPodRequests(); // Attempt to immediately fufill the pod request.
+    this.fulfillPodRequests(); // Attempt to immediately fulfill the pod request.
     return () => {
       if (this.podRequests.includes(callback)) {
         this.logger.log(`PodPool.reservePod: Canceling one Pod request from ` +
@@ -672,7 +672,7 @@ class PodPool {
     pod.release();
     this.logger.log(`PodPool.releasePod: Released ${pod.name}.`);
     this.logNumReservedPods();
-    this.fufillPodRequests();
+    this.fulfillPodRequests();
   }
 
   /**
@@ -747,7 +747,7 @@ class PodPool {
           this.logger.log(`PodPool.upscale: Adding Pod of type ` +
             `${Object.prototype.toString.call(pod)}`);
           this.pods.push(pod);
-          this.fufillPodRequests();
+          this.fulfillPodRequests();
         }
       } catch (error) {
         this.logger.warn(`PodPool.upscale Error: Pod build failed: ${error}`);
@@ -828,7 +828,7 @@ class PodPool {
    * Get the number of pods consistently used over a period of time.
    *
    * Note this computes the weighted median of the number of pods reserved in the `reservationLog`.
-   * This means that we'll have enough resources to fufill customer needs immediately most of the
+   * This means that we'll have enough resources to fulfill customer needs immediately most of the
    * time as a baseline.
    *
    * @param {EventLog} reservationLog  A log of the number of reservations over a period of time.
@@ -981,7 +981,7 @@ function getPodPool(request, response) {
     logger.log(`getPodPool: Version not found: ${version}.`);
     response.status(404);
     response.send('Version not found.');
-    throw new Error('Version not found.');
+    return;
   }
   return request.app.locals.podPools.latest;
 }
@@ -1003,13 +1003,11 @@ function reservePodController(request, response, next) {
   // It may take longer than that to reserve a Pod under heavy load. TTFB refers to the HTTP data
   // and not the HTTP header.
 
-  let podPool;
-  try {
-    podPool = getPodPool(request, response);
-  } catch (error) {
-    next(error);
+  const podPool = getPodPool(request, response);
+  if (response.headersSent) {
     return;
   }
+
   const cancelReservation = podPool.reservePod(async (pod) => {
     prefix = `reservePodController [${pod.name}]: `;
     try {
@@ -1056,11 +1054,8 @@ const noReservationController = (() => {
    */
   return async (request, response, next) => {
     logger.log(`noReservationController: Got request.`);
-    let podPool;
-    try {
-      podPool = getPodPool(request, response);
-    } catch (error) {
-      next(error);
+    const podPool = getPodPool(request, response);
+    if (response.headersSent) {
       return;
     }
     await podPool.waitTillReady();
@@ -1134,6 +1129,7 @@ if (require.main === module) {
     v1: new PodPool(process.env.V1_WORKER_POD_IMAGE, 0),
     v2: new PodPool(process.env.V2_WORKER_POD_IMAGE),
     v3: new PodPool(process.env.V3_WORKER_POD_IMAGE),
+    v4: new PodPool(process.env.V4_WORKER_POD_IMAGE),
   };
   app.locals.podPools.latest = app.locals.podPools.v2;
 
