@@ -263,32 +263,35 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
         speaker = speaker.expand(num_frames, -1, -1)
 
         # [num_frames, batch_size, lstm_hidden_size] (concat)
-        # [num_frames, batch_size, attention_hidden_size] →
+        # [num_frames, batch_size, attention_hidden_size] (concat)
+        # [num_frames, batch_size, speaker_embedding_dim] →
         # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size + speaker_embedding_dim]
         frames = torch.cat([frames, attention_contexts, speaker], dim=2)
 
         # frames [seq_len (num_frames), batch (batch_size),
-        # input_size (lstm_hidden_size + attention_hidden_size)] →
+        # input_size (lstm_hidden_size + attention_hidden_size + speaker_embedding_dim)] →
         # [num_frames, batch_size, lstm_hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
         frames = self.lstm_layer_two_dropout(frames)
 
         # [num_frames, batch_size, lstm_hidden_size] (concat)
-        # [num_frames, batch_size, attention_hidden_size] →
+        # [num_frames, batch_size, attention_hidden_size] (concat)
+        # [num_frames, batch_size, speaker_embedding_dim] →
         # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size + speaker_embedding_dim]
         frames = torch.cat([frames, attention_contexts, speaker], dim=2)
 
         del attention_contexts  # Clear Memory
 
-        # Predict the stop token
-        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size] →
+        # [num_frames, batch_size,
+        #  lstm_hidden_size + attention_hidden_size + speaker_embedding_dim] →
         # [num_frames, batch_size, 1]
-        stop_token = self.linear_stop_token(frames)
+        stop_token = self.linear_stop_token(frames)  # Predict the stop token
         # Remove singleton dimension
         # [num_frames, batch_size, 1] → [num_frames, batch_size]
         stop_token = stop_token.squeeze(2)
 
-        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size] →
+        # [num_frames, batch_size,
+        #  lstm_hidden_size + attention_hidden_size + speaker_embedding_dim] →
         # [num_frames, batch_size, frame_channels]
         frames = self.linear_out(frames)  # Predicted Mel-Spectrogram
 

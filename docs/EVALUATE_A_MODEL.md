@@ -161,7 +161,7 @@ def main(
 5. Upload your batch to a publicly accessible host, like so:
 
    ```bash
-   gsutil -m cp -r ~/Downloads/samples/_mturk/$BATCH_NAME gs://mturk_samples
+   gsutil -m rsync -r ~/Downloads/samples/_mturk/$BATCH_NAME gs://mturk_samples/$BATCH_NAME
    ```
 
 6. Update your local metadata file with the new URL.
