@@ -604,7 +604,7 @@ class PodPool {
    * Fulfill the next pod reservation request in `this.podRequests` and `this.waiting`.
    */
   async fulfillPodRequests() {
-    this.logger.log(`PodPool.fulfillPodRequests: fulfilling pod requests.`);
+    this.logger.log(`PodPool.fulfillPodRequests: Fulfilling pod requests.`);
     if (this.waiting.length > 0 &&
       this.pods.length > 0 &&
       await Promise.race(this.pods.map(p => p.isReady())) &&
