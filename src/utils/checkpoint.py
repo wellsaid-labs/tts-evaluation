@@ -95,8 +95,12 @@ class Checkpoint():
 
         raise ValueError('Unable to load recent checkpoint.')
 
-    def save(self):
-        """ Save a checkpoint. """
+    def save(self, **kwargs):
+        """ Save a checkpoint.
+
+        Args:
+            **kwargs: Key-word arguments passed onto `src.utils.save`.
+        """
         self.random_generator_state = get_random_generator_state()
-        save(self.path, self)
+        save(self.path, self, **kwargs)
         return self.path

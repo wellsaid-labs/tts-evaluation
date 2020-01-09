@@ -23,6 +23,7 @@ from src.utils.utils import load
 from src.utils.utils import log_runtime
 from src.utils.utils import maybe_get_model_devices
 from src.utils.utils import Pool
+from src.utils.utils import RepeatTimer
 from src.utils.utils import save
 from src.utils.utils import seconds_to_string
 from src.utils.utils import slice_by_cumulative_sum
@@ -36,5 +37,5 @@ __all__ = [
     'sort_together', 'slice_by_cumulative_sum', 'flatten', 'batch_predict_spectrograms',
     'get_chunks', 'cache_on_disk_tensor_shapes', 'RecordStandardStreams', 'Pool',
     'maybe_load_tensor', 'AveragedMetric', 'DistributedAveragedMetric', 'bash_time_label',
-    'torch_cpp_extension_load'
+    'torch_cpp_extension_load', 'RepeatTimer'
 ]

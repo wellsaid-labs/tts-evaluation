@@ -1,6 +1,8 @@
 import io
 import logging
 import matplotlib
+import os
+import platform
 import subprocess
 import time
 
@@ -205,8 +207,7 @@ _BASE_HTML_STYLING = """
 
 
 @log_runtime
-@configurable
-def CometML(project_name=HParam(), experiment_key=None, log_git_patch=None, **kwargs):
+def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
     """
     Initiate a Comet.ml visualizer with several monkey patched methods.
 
@@ -244,7 +245,29 @@ def CometML(project_name=HParam(), experiment_key=None, log_git_patch=None, **kw
     experiment.log_other(
         'last_git_commit',
         subprocess.check_output('git log -1 --format=%cd', shell=True).decode().strip())
+    # TODO: Instead of using different approaches for extracting CPU, GPU, and disk information
+    # consider standardizing to use `lshw` instead.
+    if torch.cuda.is_available():
+        experiment.log_other(
+            'list_gpus',
+            subprocess.check_output('nvidia-smi --list-gpus', shell=True).decode().strip())
+    if platform.system() == 'Linux':
+        experiment.log_other(
+            'list_disks',
+            subprocess.check_output('lshw -class disk -class storage', shell=True).decode().strip())
+    if platform.system() == 'Linux':
+        experiment.log_other(
+            'list_unique_cpus',
+            subprocess.check_output(
+                "awk '/model name/ {$1=$2=$3=\"\"; print $0}' /proc/cpuinfo | uniq",
+                shell=True).decode().strip())
     experiment.log_parameter('num_gpu', torch.cuda.device_count())
+    experiment.log_parameter('num_cpu', os.cpu_count())
+    if platform.system() == 'Linux':
+        experiment.log_parameter(
+            'total_physical_memory_in_kb',
+            subprocess.check_output("awk '/MemTotal/ {print $2}' /proc/meminfo",
+                                    shell=True).decode().strip())
 
     last_step_time = None
     last_step = None

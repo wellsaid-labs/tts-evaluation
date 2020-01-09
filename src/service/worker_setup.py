@@ -41,8 +41,8 @@ def main(speaker_id_to_speaker, spectrogram_model_checkpoint, signal_model_check
     spectrogram_model_checkpoint.comet_ml_experiment_key = None
 
     # NOTE: This overwrites the previous checkpoint.
-    spectrogram_model_checkpoint.save()
-    signal_model_checkpoint.save()
+    spectrogram_model_checkpoint.save(overwrite=True)
+    signal_model_checkpoint.save(overwrite=True)
 
 
 if __name__ == '__main__':

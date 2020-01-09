@@ -137,13 +137,19 @@ def load(path, device=torch.device('cpu')):
     return torch.load(str(path), map_location=remap)
 
 
-def save(path, data):
+def save(path, data, overwrite=False):
     """ Using ``torch.save`` to save an object to ``path``.
+
+    Raises:
+        (ValueError): If a file already exists at `path`.
 
     Args:
         path (Path or str): Filename to save to.
         data (any): Data to save into file.
+        overwrite (bool, optional): If `True` this allows for `path` to be overwritten.
     """
+    if not overwrite and Path(path).exists():
+        raise ValueError('A file already exists at %s' % path)
     torch.save(data, str(path))
     logger.info('Saved: %s', str(path))
 
@@ -304,6 +310,15 @@ def slice_by_cumulative_sum(list_, max_total_value, get_value=lambda x: x):
     return return_
 
 
+class RepeatTimer(Timer):
+    """ Similar to `Timer` but it repeats a function every `self.interval`.
+    """
+
+    def run(self):
+        while not self.finished.wait(self.interval):
+            self.function(*self.args, **self.kwargs)
+
+
 class ResetableTimer(Timer):
     """ Similar to `Timer` but with an included `reset` method.
     """
@@ -347,7 +362,7 @@ def Pool(*args, **kwargs):
     pool.join()  # Waits for workers to exit.
 
 
-def bash_time_label():
+def bash_time_label(add_pid=True):
     """ Get a bash friendly string representing the time and process.
 
     NOTE: This string is optimized for sorting by ordering units of time from largest to smallest.
@@ -356,11 +371,18 @@ def bash_time_label():
     NOTE: `os.getpid` is often used by routines that generate unique identifiers, learn more:
     http://manpages.ubuntu.com/manpages/cosmic/man2/getpid.2.html
 
+    Args:
+        add_pid (bool, optional): If `True` add the process PID to the label.
+
     Returns:
         (str)
     """
-    return str(time.strftime('DATE=%Y-%m-%d_TIME=%H-%M-%S',
-                             time.localtime())).lower() + '_PID=%s' % str(os.getpid())
+    label = str(time.strftime('DATE-%Yy%mm%dd-%Hh%Mm%Ss', time.localtime()))
+
+    if add_pid:
+        label += '_PID-%s' % str(os.getpid())
+
+    return label
 
 
 def torch_cpp_extension_load(name, sources, build_directory=None, **kwargs):
