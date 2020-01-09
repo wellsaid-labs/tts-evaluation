@@ -361,6 +361,7 @@ def griffin_lim(log_mel_spectrogram,
     # TODO: Be more specific with the cases that this is capturing so that we don't have silent
     # failures for invalid inputs.
     except:
+        logger.warning('Griffin lim encountered an issue and was unable to render audio.')
         # NOTE: Return no audio for valid inputs that fail due to an overflow error or a small
         # spectrogram.
         return np.array([])
