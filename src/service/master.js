@@ -1035,14 +1035,19 @@ const noReservationController = (() => {
    *
    * @returns {Pod}
    */
-  function getPod(podPool) {
+  async function getPod(podPool) {
+    await podPool.waitTillReady();
     podIndex %= podPool.pods.length;
     logger.log(`noReservationController: Getting Pod ${podIndex} of ${podPool.pods.length}.`);
     const pod = podPool.pods[podIndex];
     logger.log(`noReservationController: Got Pod of type ${Object.prototype.toString.call(pod)}.`);
     podIndex += 1;
     logger.log(`noReservationController: Got Pod named ${pod.name}.`);
-    return pod;
+    if (await pod.isReady()) {
+      return pod;
+    } else {
+      return getPod(podPool);
+    }
   }
 
   /**
@@ -1058,11 +1063,7 @@ const noReservationController = (() => {
     if (response.headersSent) {
       return;
     }
-    await podPool.waitTillReady();
-    let pod = getPod(podPool);
-    while (!(await pod.isReady())) {
-      pod = getPod(podPool);
-    }
+    const pod = await getPod(podPool);
     try {
       await proxyRequestToPod(`noReservationController [${pod.name}]: `, pod, request, response);
     } catch (error) {
