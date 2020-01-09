@@ -17,7 +17,6 @@ import comet_ml  # noqa
 from hparams import add_config
 from hparams import configurable
 from hparams import HParam
-from hparams import HParams
 from hparams import parse_hparam_args
 from torchnlp.random import set_random_generator_state
 

@@ -415,13 +415,13 @@ class Trainer():
         predicted_stop_token = (torch.sigmoid(predicted_stop_tokens) >
                                 stop_threshold).masked_select(mask)
 
+        self.metrics['stop_token_accuracy'].update(
+            (expected_stop_token == predicted_stop_token).float().mean(), mask.sum())
+
         # NOTE: These losses are from the original Tacotron 2 paper.
         self.metrics['pre_spectrogram_loss'].update(pre_spectrogram_loss, expanded_mask.sum())
         self.metrics['post_spectrogram_loss'].update(post_spectrogram_loss, expanded_mask.sum())
         self.metrics['stop_token_loss'].update(stop_token_loss, mask.sum())
-
-        self.metrics['stop_token_accuracy'].update(
-            (expected_stop_token == predicted_stop_token).float().mean(), mask.sum())
 
         return (pre_spectrogram_loss, post_spectrogram_loss, stop_token_loss, expanded_mask.sum(),
                 mask.sum())
