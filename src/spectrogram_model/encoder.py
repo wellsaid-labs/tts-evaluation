@@ -1,7 +1,105 @@
+import torch
+
 from hparams import configurable
 from hparams import HParam
 from torch import nn
 from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
+
+
+class RightMaskedBiLSTM(nn.Module):
+    """ A bidirectional LSTM that ignores any masked input on the right side of the sequence.
+
+    Unfortunatly, this LSTM does not return the hidden state due to related performance
+    implications. Similarly, it does not properly handle left side masking due to performance
+    implications.
+    """
+
+    def __init__(self, input_size, hidden_size, num_layers=1, bias=True):
+        super().__init__()
+
+        self.lstm_layers = nn.ModuleList([
+            nn.ModuleList([
+                nn.LSTM(
+                    input_size=input_size if i == 0 else hidden_size * 2,
+                    hidden_size=hidden_size,
+                    bias=bias),
+                nn.LSTM(
+                    input_size=input_size if i == 0 else hidden_size * 2,
+                    hidden_size=hidden_size,
+                    bias=bias)
+            ]) for i in range(num_layers)
+        ])
+
+    def _backward_pass(self, backward_lstm, tokens, tokens_mask):
+        """ Compute the backwards LSTM pass.
+
+        Args:
+            backward_lstm (nn.Module)
+            tokens (torch.FloatTensor [seq_len, batch_size, backward_lstm.input_size]): Batched set
+                of sequences.
+            tokens_mask (torch.BoolTensor [seq_len, batch_size]): Binary mask applied on tokens.
+
+        Returns:
+            (torch.FloatTensor [seq_len, batch_size, hidden_size]): Output features predicted
+                by the LSTM.
+        """
+        # Ex. Assume we are dealing with a one dimensional input, like this:
+        # tokens = [1, 2, 3, 0, 0]
+        # tokens_mask = [1, 1, 1, 0, 0]
+        # lengths = [3]
+        # tokens.shape[0] = 5
+        reversed_tokens = torch.zeros(tokens.shape, dtype=tokens.dtype, device=tokens.device)
+        lengths = tokens_mask.int().sum(0)
+        iterator = lambda: zip(range(tokens.shape[1]), list(lengths))
+        for i, length in iterator():
+            # Ex. [1, 2, 3, 0, 0] → [0, 0, 1, 2, 3]
+            reversed_tokens[-length:, i] = tokens[:length, i]
+
+        # Ex. [0, 0, 1, 2, 3] → [3, 2, 1, 0, 0]
+        reversed_tokens = reversed_tokens.flip(0)
+
+        lstm_results, _ = backward_lstm(reversed_tokens)
+
+        # Ex. [3, 2, 1, 0, 0] → [0, 0, 1, 2, 3]
+        lstm_results = lstm_results.flip(0)
+
+        results = torch.zeros(lstm_results.shape, dtype=tokens.dtype, device=tokens.device)
+        for i, length in iterator():
+            # Ex. [0, 0, 1, 2, 3] → [1, 2, 3, 0, 0]
+            results[:length, i] = lstm_results[-length:, i]
+
+        return results
+
+    def forward(self, tokens, tokens_mask):
+        """ Compute the LSTM pass.
+
+        Args:
+            tokens (torch.FloatTensor [seq_len, batch_size, input_size]): Batched set of sequences.
+            tokens_mask (torch.BoolTensor [seq_len, batch_size] or [seq_len, batch_size, 1]): Binary
+                mask applied on tokens.
+
+        Returns:
+            (torch.FloatTensor [seq_len, batch_size, hidden_size * 2]): Output features predicted
+                by the LSTM.
+        """
+        output = tokens
+        tokens_mask_expanded = tokens_mask if len(
+            tokens_mask.shape) == 3 else tokens_mask.unsqueeze(2)
+        tokens_mask = tokens_mask.view(tokens_mask.shape[0], tokens_mask.shape[1])
+        for forward_lstm, backward_lstm in self.lstm_layers:
+            # [seq_len, batch_size, input_size or hidden_size * 2] →
+            # [seq_len, batch_size, hidden_size * 2]
+            forward_output, _ = forward_lstm(output)
+
+            # [seq_len, batch_size, input_size or hidden_size * 2] →
+            # [seq_len, batch_size, hidden_size * 2]
+            backward_output = self._backward_pass(backward_lstm, output, tokens_mask)
+
+            # [seq_len, batch_size, hidden_size] (concat) [seq_len, batch_size, hidden_size] →
+            # [seq_len, batch_size, hidden_size * 2]
+            output = torch.cat([forward_output, backward_output],
+                               dim=2).masked_fill(~tokens_mask_expanded, 0)
+        return output
 
 
 class Encoder(nn.Module):
@@ -31,115 +129,98 @@ class Encoder(nn.Module):
     Args:
         vocab_size (int): Maximum size of the vocabulary used to encode ``tokens``.
         out_dim (int): Number of dimensions to output.
-        token_embedding_dim (int): Size of the token embedding dimensions.
+        hidden_size (int): The hidden size for internal RNN, embedding, and convolution features.
+            This hidden size must be even.
         num_convolution_layers (int): Number of convolution layers to apply.
-        num_convolution_filters (odd :clas:`int`): Number of dimensions (channels)
-            produced by the convolution.
         convolution_filter_size (int): Size of the convolving kernel.
-        lstm_hidden_size (int): The number of features in the LSTM hidden state. Must be
-            an even integer if ``lstm_bidirectional`` is ``True``. The hidden size of the final
-            hidden feature representation.
+        convolution_dropout (float): The dropout applied after each convolution.
         lstm_layers (int): Number of recurrent LSTM layers.
-        lstm_bidirectional (bool): If ``True``, becomes a bidirectional LSTM.
     """
 
     @configurable
     def __init__(self,
                  vocab_size,
                  out_dim=HParam(),
-                 token_embedding_dim=HParam(),
+                 hidden_size=HParam(),
                  num_convolution_layers=HParam(),
-                 num_convolution_filters=HParam(),
                  convolution_filter_size=HParam(),
                  convolution_dropout=HParam(),
-                 lstm_hidden_size=HParam(),
-                 lstm_layers=HParam(),
-                 lstm_bidirectional=HParam(),
-                 lstm_dropout=HParam()):
+                 lstm_layers=HParam()):
 
         super().__init__()
 
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, ('`convolution_filter_size` must be odd')
+        assert hidden_size % 2 == 0, '`hidden_size` must be divisable by even'
 
-        self.embed_token = nn.Embedding(
-            vocab_size, token_embedding_dim, padding_idx=DEFAULT_PADDING_INDEX)
-        self.project = nn.Linear(lstm_hidden_size, out_dim)
+        self.embed_token = nn.Sequential(
+            nn.Embedding(vocab_size, hidden_size, padding_idx=DEFAULT_PADDING_INDEX),
+            nn.LayerNorm(hidden_size))
 
         self.convolution_layers = nn.ModuleList([
             nn.Sequential(
                 nn.Conv1d(
-                    in_channels=num_convolution_filters if i != 0 else token_embedding_dim,
-                    out_channels=num_convolution_filters,
+                    in_channels=hidden_size,
+                    out_channels=hidden_size,
                     kernel_size=convolution_filter_size,
-                    padding=int((convolution_filter_size - 1) / 2)),
-                nn.BatchNorm1d(num_features=num_convolution_filters), nn.ReLU(inplace=True),
+                    padding=int((convolution_filter_size - 1) / 2)), nn.ReLU(),
                 nn.Dropout(p=convolution_dropout)) for i in range(num_convolution_layers)
         ])
 
-        if lstm_bidirectional:
-            assert lstm_hidden_size % 2 == 0, '`lstm_hidden_size` must be divisable by 2'
-
-        self.lstm = nn.LSTM(
-            input_size=num_convolution_filters,
-            hidden_size=lstm_hidden_size // 2 if lstm_bidirectional else lstm_hidden_size,
-            num_layers=lstm_layers,
-            bidirectional=lstm_bidirectional)
-
-        # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunately, Zoneout or any LSTM state
-        # dropout in PyTorch forces us to unroll the LSTM and slow down this component x3 to x4. For
-        # right now, we will not be using state dropout on the LSTM. We are applying dropout onto
-        # the LSTM output instead.
-        self.lstm_dropout = nn.Dropout(p=lstm_dropout)
-
-        # Initialize weights
         for module in self.convolution_layers.modules():
             if isinstance(module, nn.Conv1d):
                 nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
 
+        self.normalization_layers = nn.ModuleList(
+            [nn.LayerNorm(hidden_size) for i in range(num_convolution_layers)])
+
+        self.lstm = RightMaskedBiLSTM(
+            input_size=hidden_size, hidden_size=hidden_size // 2, num_layers=lstm_layers)
+        self.lstm_layer_norm = nn.LayerNorm(hidden_size)
+
+        self.project_out = nn.Sequential(nn.Linear(hidden_size, out_dim), nn.LayerNorm(out_dim))
+
     def forward(self, tokens, tokens_mask):
         """
-        NOTE: The results for the spectrogram model are different depending on the batch size due
-        to the backwards LSTM needing to consider variable padding.
-
         Args:
             tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask applied on
                 tokens.
 
         Returns:
-            encoded_tokens (torch.FloatTensor [num_tokens, batch_size, out_dim]): Batched set of
-                encoded sequences.
+            output (torch.FloatTensor [num_tokens, batch_size, out_dim]): Batched set of encoded
+                sequences.
         """
-        # [batch_size, num_tokens] → [batch_size, num_tokens, token_embedding_dim]
+        # [batch_size, num_tokens] → [batch_size, num_tokens, hidden_size]
         tokens = self.embed_token(tokens)
 
-        # Our input is expected to have shape `[batch_size, num_tokens, token_embedding_dim]`.  The
+        # Our input is expected to have shape `[batch_size, num_tokens, hidden_size]`.  The
         # convolution layers expect input of shape
-        # `[batch_size, in_channels (token_embedding_dim), sequence_length (num_tokens)]`. We thus
+        # `[batch_size, in_channels (hidden_size), sequence_length (num_tokens)]`. We thus
         # need to transpose the tensor first.
         tokens = tokens.transpose(1, 2)
 
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
         tokens_mask = tokens_mask.unsqueeze(1)
 
-        # [batch_size, num_convolution_filters, num_tokens]
-        for conv in self.convolution_layers:
+        for conv, normalization_layer in zip(self.convolution_layers, self.normalization_layers):
             tokens = tokens.masked_fill(~tokens_mask, 0)
-            tokens = conv(tokens)
+            tokens = conv(tokens) + tokens
+            tokens = tokens.transpose(1, 2)
+            tokens = normalization_layer(tokens)
+            tokens = tokens.transpose(1, 2)
 
-        # Our input is expected to have shape `[batch_size, num_convolution_filters, num_tokens]`.
+        # Our input is expected to have shape `[batch_size, hidden_size, num_tokens]`.
         # The lstm layers expect input of shape
-        # `[seq_len (num_tokens), batch_size, input_size (num_convolution_filters)]`. We thus need
+        # `[seq_len (num_tokens), batch_size, input_size (hidden_size)]`. We thus need
         # to permute the tensor first.
         tokens = tokens.permute(2, 0, 1)
         tokens_mask = tokens_mask.permute(2, 0, 1)
 
-        # [num_tokens, batch_size, lstm_hidden_size]
-        encoded_tokens, _ = self.lstm(tokens)
-        out = self.lstm_dropout(encoded_tokens)
+        tokens = self.lstm(tokens, tokens_mask) + tokens
+        tokens = self.lstm_layer_norm(tokens)
 
-        # [num_tokens, batch_size, lstm_hidden_size] →
+        # [num_tokens, batch_size, hidden_size] →
         # [num_tokens, batch_size, out_dim]
-        return self.project(out).masked_fill(~tokens_mask, 0)
+        return self.project_out(tokens).masked_fill(~tokens_mask, 0)

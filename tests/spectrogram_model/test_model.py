@@ -10,18 +10,14 @@ import numpy
 from src.spectrogram_model import SpectrogramModel
 
 
-def test_spectrogram_model_inference__batch_size_sensativity():
-    """
-    NOTE: This batch size sensativity does not test variable padding associated typically different
-    batch sizes.
-    TODO: Consider testing the training batch size sensativity.
-    """
+def test_spectrogram_model_inference__batch_size_sensitivity():
     batch_size = 5
     num_tokens = 6
     frame_channels = 20
     vocab_size = 20
     num_frames = 3
     num_speakers = 7
+    padding_len = 2
 
     # Ensure that the model computes the full length
     add_config({'src.spectrogram_model.model.SpectrogramModel._infer': HParams(stop_threshold=1.0)})
@@ -40,8 +36,13 @@ def test_spectrogram_model_inference__batch_size_sensativity():
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
+    input_[-padding_len:, 0] = 0
+
     speaker = torch.randint(1, num_speakers, (1, batch_size))
-    batched_num_tokens = torch.full((batch_size,), num_tokens, dtype=torch.long)
+
+    batched_num_tokens = torch.randint(1, num_tokens, (batch_size,))
+    batched_num_tokens[1] = num_tokens  # NOTE: One of the lengths must be at max length
+    batched_num_tokens[0] = num_tokens - padding_len
 
     # frames [num_frames, batch_size, frame_channels]
     # frames_with_residual [num_frames, batch_size, frame_channels]
@@ -58,7 +59,7 @@ def test_spectrogram_model_inference__batch_size_sensativity():
 
     with fork_rng(seed=123):
         frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
-            input_[:, :1], speaker[:, :1], max_frames_per_token=num_frames / num_tokens)
+            input_[:-padding_len, :1], speaker[:, :1], max_frames_per_token=num_frames / num_tokens)
         assert reached_max
 
     assert_almost_equal = lambda a, b: numpy.testing.assert_almost_equal(
@@ -71,40 +72,50 @@ def test_spectrogram_model_inference__batch_size_sensativity():
     assert_almost_equal(lengths, lengths[:1])
 
 
-def test_spectrogram_model_train__batch_size_sensativity():
-    """
-    NOTE: This batch size sensativity does not test variable padding associated typically
-    different batch sizes.
-    """
+def test_spectrogram_model_train__batch_size_sensitivity():
     batch_size = 5
     num_tokens = 6
     frame_channels = 20
     vocab_size = 20
     num_frames = 3
     num_speakers = 7
+    padding_len = 2
 
-    # NOTE: Dropout result change in response to `BatchSize` because the dropout is computed
-    # all together. For example:
+    # NOTE: The random generator for dropout varies based on the tensor size; therefore, it's
+    # dependent on the `BatchSize` and we need to disable it. For example:
     # >>> import torch
     # >>> torch.manual_seed(123)
     # >>> batch_dropout = torch.nn.functional.dropout(torch.ones(5, 5))
     # >>> torch.manual_seed(123)
     # >>> dropout = torch.nn.functional.dropout(torch.ones(5))
     # >>> batch_dropout[0] != dropout
-    add_config({'src.spectrogram_model.pre_net.PreNet.__init__': HParams(dropout=0.0)})
+    add_config({
+        'src.spectrogram_model': {
+            'encoder.Encoder.__init__': HParams(convolution_dropout=0.0),
+            'decoder.AutoregressiveDecoder.__init__': HParams(lstm_dropout=0.0),
+            'pre_net.PreNet.__init__': HParams(dropout=0.0),
+            'post_net.PostNet.__init__': HParams(convolution_dropout=0.0)
+        },
+    })
 
-    # TODO: Remove `eval()` because it doesn't actually test training. At the moment, it disables
-    # `BatchNorm` and `dropout` which are both affected by the batch size.
-    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels).eval()
+    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels)
 
-    # NOTE: 1-index to avoid using 0 typically associated with padding
+    # NOTE: 1-index in `random_` to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
+    input_[-padding_len:, 0] = 0  # Add padding on the end
+
     speaker = torch.randint(1, num_speakers, (1, batch_size))
+
     target_frames = torch.randn(num_frames, batch_size, frame_channels)
+    target_frames[-padding_len:] = 0  # Add padding on the end
+
     batched_num_tokens = torch.randint(1, num_tokens, (batch_size,))
-    batched_num_tokens[0] = num_tokens  # NOTE: One of the lengths must be at max length
+    batched_num_tokens[1] = num_tokens  # NOTE: One of the lengths must be at max length
+    batched_num_tokens[0] = num_tokens - padding_len
+
     batched_num_frames = torch.randint(1, num_frames, (batch_size,))
-    batched_num_frames[0] = num_frames  # NOTE: One of the lengths must be at max length
+    batched_num_frames[1] = num_frames  # NOTE: One of the lengths must be at max length
+    batched_num_frames[0] = num_frames - padding_len
 
     # frames [num_frames, batch_size, frame_channels]
     # frames_with_residual [num_frames, batch_size, frame_channels]
@@ -118,14 +129,21 @@ def test_spectrogram_model_train__batch_size_sensativity():
              num_tokens=batched_num_tokens,
              target_lengths=batched_num_frames,
              target_frames=target_frames)
+        (batched_frames_with_residual[:, :2].sum() + batched_stop_token[:, :2].sum()).backward()
+        batched_embedding_grad = model.encoder.embed_token[0].weight.grad
+        model.zero_grad()
 
     with fork_rng(seed=123):
         frames, frames_with_residual, stop_token, alignment = model(
-            input_[:, :1],
+            input_[:-padding_len, :1],
             speaker[:, :1],
-            target_frames=target_frames[:, :1],
+            target_frames=target_frames[:-padding_len, :1],
             num_tokens=batched_num_tokens[:1],
             target_lengths=batched_num_frames[:1])
+        (frames_with_residual.sum() + stop_token.sum()).backward()
+        # TODO: Consider checking the gradient on every parameter in the model.
+        embedding_grad = model.encoder.embed_token[0].weight.grad
+        model.zero_grad()
 
     assert_almost_equal = lambda a, b: numpy.testing.assert_almost_equal(
         a.detach().numpy(), b.detach().numpy(), decimal=5)
@@ -136,6 +154,7 @@ def test_spectrogram_model_train__batch_size_sensativity():
     assert_almost_equal(stop_token, batched_stop_token[:batched_num_frames[0], :1])
     assert_almost_equal(alignment,
                         batched_alignment[:batched_num_frames[0], :1, :int(batched_num_tokens[0])])
+    assert_almost_equal(embedding_grad, batched_embedding_grad)
 
 
 def test_spectrogram_model():

@@ -1,3 +1,4 @@
+from collections import defaultdict
 from collections import namedtuple
 from functools import partial
 
@@ -6,8 +7,8 @@ import json
 import logging
 
 from torch.multiprocessing import cpu_count
+from torchnlp._third_party.weighted_random_sampler import WeightedRandomSampler
 from torchnlp.encoders.text import stack_and_pad_tensors
-from torchnlp.samplers import BalancedSampler
 from torchnlp.samplers import BucketBatchSampler
 from torchnlp.samplers import DeterministicSampler
 from torchnlp.samplers import DistributedBatchSampler
@@ -29,6 +30,35 @@ logger = logging.getLogger(__name__)
 SpectrogramModelTrainingRow = namedtuple('SpectrogramModelTrainingRow', [
     'text', 'speaker', 'spectrogram', 'stop_token', 'spectrogram_mask', 'spectrogram_expanded_mask'
 ])
+
+
+class _BalancedSampler(WeightedRandomSampler):
+    """ Ensure each class is sampled uniformly from.
+
+    For example: If `get_weight` is equal to the audio length and `get_class` is equal to the
+    speaker, in a TTS dataset, this ensures that an equal amount of audio is sampled per speaker.
+
+    Args:
+        data (iterable)
+        get_class (callable): Get the class of an item relative to the entire dataset.
+        get_weight (callable): Define a weight for each item.
+        kwargs: Additional key word arguments passed onto `WeightedRandomSampler`.
+    """
+
+    def __init__(self, data_source, get_class, get_weight, **kwargs):
+        classified = [get_class(item) for item in data_source]
+        weighted = [float(get_weight(item)) for item in data_source]
+        totals = defaultdict(float)
+        for class_, weight in zip(classified, weighted):
+            totals[class_] += weight
+        weights = [1 / totals[c] if w > 0 else 0.0 for c, w in zip(classified, weighted)]
+
+        super().__init__(weights=weights, **kwargs)
+
+        # NOTE: Ensure all weights add up to 1.0
+        normalized_weights = self.weights / self.weights.sum()
+        # NOTE: The average weight of the loaded data.
+        self.expected_weight = sum([w * n for w, n in zip(weighted, normalized_weights)])
 
 
 def _load_fn(row, input_encoder):
@@ -56,15 +86,15 @@ def _load_fn(row, input_encoder):
         speaker=speaker,
         stop_token=stop_token,
         spectrogram=spectrogram,
-        spectrogram_mask=torch.BoolTensor(spectrogram.shape[0]).fill_(1),
-        spectrogram_expanded_mask=torch.BoolTensor(*spectrogram.shape).fill_(1))
+        spectrogram_mask=torch.FloatTensor(spectrogram.shape[0]).fill_(1),
+        spectrogram_expanded_mask=torch.FloatTensor(*spectrogram.shape).fill_(1))
 
 
 class DataLoader(DataLoader):
     """ Get a batch iterator over the ``data``.
 
     Args:
-        data (iterable): Data to iterate over.
+        data (iterable of TextSpeechRow): Data to iterate over.
         batch_size (int): Iteration batch size.
         device (torch.device): Device onto which to load data.
         num_workers (int, optional): Number of workers for data loading.
@@ -84,10 +114,10 @@ class DataLoader(DataLoader):
                               torch.LongTensor [1, batch_size]))
             speaker (BatchedSequences(torch.LongTensor [1, batch_size],
                            torch.LongTensor [1, batch_size]))
-            spectrogram_expanded_mask (BatchedSequences(torch.BoolTensor [num_frames, batch_size,
+            spectrogram_expanded_mask (BatchedSequences(torch.FloatTensor [num_frames, batch_size,
                                                                 frame_channels],
                                              torch.LongTensor [1, batch_size]))
-            spectrogram_mask (BatchedSequences(torch.BoolTensor [num_frames, batch_size],
+            spectrogram_mask (BatchedSequences(torch.FloatTensor [num_frames, batch_size],
                                     torch.LongTensor [1, batch_size]))
         )
     """
@@ -113,8 +143,9 @@ class DataLoader(DataLoader):
 
         # NOTE: The training and development dataset distribution of speakers is arbitrary (i.e.
         # some audio books have more data and some have less). In order to ensure that no speaker
-        # is prioritized over another, we balance the number of examples for each speaker.
-        sampler = BalancedSampler(data, get_class=lambda e: e.speaker)
+        # is prioritized over another, we balance the number of spectrogram frames per speaker
+        sampler = _BalancedSampler(
+            data, get_class=lambda e: e.speaker, get_weight=lambda e: e.spectrogram.shape[0])
         batch_sampler = BucketBatchSampler(
             sampler, batch_size, drop_last=True, sort_key=lambda i: data[i].spectrogram.shape[0])
         # TODO: `get_number_of_elements` is not compatible with `OnDiskTensor`, fix that.
@@ -125,6 +156,11 @@ class DataLoader(DataLoader):
         if src.distributed.is_initialized():
             num_workers = int(num_workers / torch.distributed.get_world_size())
             batch_sampler = DistributedBatchSampler(batch_sampler)
+
+        self.expected_average_spectrogram_length = sampler.expected_weight
+
+        logger.info('The expected average spectrogram length is: %f',
+                    self.expected_average_spectrogram_length)
 
         super().__init__(
             data,
