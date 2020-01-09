@@ -90,7 +90,7 @@ Related Documentation:
 
    ```bash
    VM_ZONE=$(gcloud compute instances list | grep "^$VM_NAME\s" | awk '{ print $2 }')
-   gcloud compute ssh --zone=$ZONE $VM_NAME
+   gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
    Continue to run this command until it succeeds.
@@ -131,7 +131,6 @@ Related Documentation:
    ```bash
    sudo chmod -R a+rwx /opt
    mkdir /opt/wellsaid-labs
-   cd /opt/wellsaid-labs
    ```
 
 ### From your local repository
@@ -212,7 +211,8 @@ Related Documentation:
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH --project_name $COMET_PROJECT --name "$EXPERIMENT_NAME";
    ```
 
-   💡 TIP: You may want to include the optional `--spectrogram_model_checkpoint` argument.
+   💡 TIP: You may want to include the optional `--spectrogram_model_checkpoint=your-checkpoint.pt`
+   argument.
 
 1. Detach from your screen session by typing `Ctrl-A` then `D`.
 

@@ -18,7 +18,7 @@ machine.
 
 1. You'll need programatic access to our AWS account.
 
-   1. Ask a team member to create you an AWS IAM user and login to it.
+   1. Ask a team member to create you an AWS IAM user and log into it.
 
    1. Follow [this guide](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_CreateAccessKey)
       to create an access key.
@@ -200,14 +200,13 @@ machine.
    [create an Amazon Machine Image (AMI)](https://docs.aws.amazon.com/cli/latest/reference/ec2/create-image.html)
    so you don't need to setup your VM from scratch again. Your first AMI for a particular setup may
    take a long time to create (1 hour or more) but it'll take less time for subsequent AMIs. You
-   can see the AMI creation progress in the AWS console by viewing the AMIs corresponding snapshot.
+   can see the AMI creation progress in the AWS console by viewing the AMI's corresponding snapshot.
 
 1. Create a directory for our software...
 
    ```bash
    sudo chmod -R a+rwx /opt
    mkdir /opt/wellsaid-labs
-   cd /opt/wellsaid-labs
    ```
 
 ### From your local repository
@@ -275,7 +274,8 @@ machine.
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH --project_name $COMET_PROJECT --name "$EXPERIMENT_NAME";
    ```
 
-   💡 TIP: You may want to include the optional `--spectrogram_model_checkpoint` argument.
+   💡 TIP: You may want to include the optional `--spectrogram_model_checkpoint=your-checkpoint.pt`
+   argument.
 
 1. Detach from your screen session by typing `Ctrl-A` then `D`.
 

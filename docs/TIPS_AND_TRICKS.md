@@ -28,7 +28,7 @@ Learn more about the above script
 ## Deleting the TTS cache
 
 During training this program will cache a number of items to disk. You can delete these various
-cache's.
+caches.
 
 - Delete the cache'd dataset preprocessing, like so:
 
