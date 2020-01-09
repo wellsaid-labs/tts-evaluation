@@ -52,7 +52,7 @@ class PostNet(nn.Module):
                 # SOURCE (Tacotron 2): Each post-net layer is comprised of 512 filters with shape
                 # 5 × 1 with batch normalization, followed by tanh activations on all but the
                 # final layer.
-                # NOTE: We learned in Comet experiments in December 2019 that RELu + LayerNorm
+                # NOTE: We learned in Comet experiments in December 2019 that RELu & LayerNorm
                 # combination was more effective.
                 nn.Conv1d(
                     in_channels=num_convolution_filters if i != 0 else frame_channels,
@@ -74,7 +74,9 @@ class PostNet(nn.Module):
 
         # SOURCE: (Tacotron 2):
         # followed by tanh activations on all but the final layer.
-        # NOTE: Last Layer without ``nn.Tanh`` and different number of ``out_channels``
+        # NOTE: Last Layer without `nn.RELu` and different number of `out_channels`.
+        # NOTE: We learned in Comet experiments in December 2019 that RELu & LayerNorm
+        # combination was more effective.
         self.last_layer = nn.Sequential(
             nn.Conv1d(
                 in_channels=num_convolution_filters,

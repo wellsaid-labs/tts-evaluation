@@ -94,7 +94,7 @@ class DataLoader(DataLoader):
     """ Get a batch iterator over the ``data``.
 
     Args:
-        data (TextSpeechRow): Data to iterate over.
+        data (iterable of TextSpeechRow): Data to iterate over.
         batch_size (int): Iteration batch size.
         device (torch.device): Device onto which to load data.
         num_workers (int, optional): Number of workers for data loading.
