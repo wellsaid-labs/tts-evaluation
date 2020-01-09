@@ -358,6 +358,7 @@ def griffin_lim(log_mel_spectrogram,
         if large_values > 0:
             logger.warning('Griffin-lim waveform clipped %d samples.', large_values)
         return np.clip(waveform, -1, 1)
+
     # TODO: Be more specific with the cases that this is capturing so that we don't have silent
     # failures for invalid inputs.
     except:
