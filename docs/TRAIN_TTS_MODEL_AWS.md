@@ -14,7 +14,7 @@ on a AWS virtual machine.
 
 ### From your local repository
 
-1. Setup your environment variables...
+1. Setup your Comet experiment key...
 
    ```bash
    EXPERIMENT_KEY='' # Example: 16721307e95742cab096accb43cf3177
@@ -34,11 +34,17 @@ on a AWS virtual machine.
    EXPERIMENT_STEPS=$(curl --silent $COMET_REST_API/parameters?experimentKey=$EXPERIMENT_KEY \
      -H"Authorization: $COMET_API_KEY" |
      jq '.values[] | select(.name == "train_curr_step") | .valueCurrent' | xargs)
-   IMAGE_DESCRIPTION="An image of a Comet experiment at $EXPERIMENT_STEPS steps. Link to experiment: $EXPERIMENT_LINK"
+   EXPERIMENT_NAME=$(curl --silent $COMET_REST_API/metadata?experimentKey=$EXPERIMENT_KEY \
+     -H"Authorization: $COMET_API_KEY" | jq '.experimentName' | xargs)
+   PROJECT_NAME=$(curl --silent $COMET_REST_API/metadata?experimentKey=$EXPERIMENT_KEY \
+     -H"Authorization: $COMET_API_KEY" | jq '.projectName' | xargs)
+   IMAGE_NAME="VM '$VM_NAME' - Name '$EXPERIMENT_NAME' - Step $EXPERIMENT_STEPS - Project '$PROJECT_NAME'"
+
+   echo 'CREATING IMAGE: "'$IMAGE_NAME'"'
 
    VM_IMAGE_ID=$(aws ec2 create-image --instance-id $VM_ID \
-     --name "Experiment $EXPERIMENT_KEY at $EXPERIMENT_STEPS steps" \
-     --description "$IMAGE_DESCRIPTION" |
+     --name "$IMAGE_NAME" \
+     --description "Link to experiment: $EXPERIMENT_LINK" |
      jq '.ImageId' | xargs)
    ```
 
