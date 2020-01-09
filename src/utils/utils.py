@@ -30,11 +30,15 @@ pprint = pprint.PrettyPrinter(indent=4)
 
 
 def random_sample(list_, sample_size):
+    """ Random sample function like `random.sample` that doesn't error if `list_` is smaller than
+        `sample_size`.
+    """
     # NOTE: `random.sample` returns an error for a list smaller than `sample_size`
     return random.sample(list_, min(len(list_), sample_size))
 
 
 def mean(list_):
+    """ Mean function like `statistics.mean` that does not return an error if `list_` is empty. """
     list_ = list(list_)
     if len(list_) == 0:
         return math.nan

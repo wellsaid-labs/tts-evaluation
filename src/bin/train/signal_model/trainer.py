@@ -419,9 +419,13 @@ class Trainer():
             if trial_run:
                 break
 
-        self._end_epoch()
-        if train and not trial_run:
-            self.epoch += 1
+        if not trial_run:
+            self._end_epoch()
+            if train:
+                self.epoch += 1
+        else:
+            for _, metric in self.metrics.items():
+                metric.reset()
 
     def _get_gru_orthogonal_loss(self):
         """ Get the orthogonal loss for the hidden-to-hidden matrix in our GRUs.
