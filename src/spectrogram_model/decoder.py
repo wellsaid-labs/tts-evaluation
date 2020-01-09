@@ -59,6 +59,7 @@ class AutoregressiveDecoder(nn.Module):
     Args:
         frame_channels (int): Number of channels in each frame (sometimes refered to
             as "Mel-frequency bins" or "FFT bins" or "FFT bands")
+        speaker_embedding_dim (int): Size of the speaker embedding dimensions.
         pre_net_hidden_size (int): Hidden size of the pre-net to use.
         lstm_hidden_size (int): Hidden size of both LSTM layers to use.
         lstm_dropout (float): If non-zero, introduces a Dropout layer on the
@@ -71,24 +72,22 @@ class AutoregressiveDecoder(nn.Module):
     @configurable
     def __init__(self,
                  frame_channels,
+                 speaker_embedding_dim,
                  pre_net_hidden_size=HParam(),
                  lstm_hidden_size=HParam(),
                  lstm_dropout=HParam(),
                  attention_hidden_size=HParam()):
-
         super().__init__()
+
         self.attention_hidden_size = attention_hidden_size
         self.frame_channels = frame_channels
         self.pre_net = PreNet(hidden_size=pre_net_hidden_size, frame_channels=frame_channels)
         self.lstm_layer_one = nn.LSTMCell(
-            input_size=pre_net_hidden_size + self.attention_hidden_size,
+            input_size=pre_net_hidden_size + self.attention_hidden_size + speaker_embedding_dim,
             hidden_size=lstm_hidden_size)
         self.lstm_layer_one_dropout = nn.Dropout(p=lstm_dropout)
-        self.lstm_hidden_size = lstm_hidden_size
-        self.lstm_layer_two = nn.LSTM(
-            input_size=lstm_hidden_size + self.attention_hidden_size,
-            hidden_size=lstm_hidden_size,
-            num_layers=1)
+        hidden_size = lstm_hidden_size + self.attention_hidden_size + speaker_embedding_dim
+        self.lstm_layer_two = nn.LSTM(input_size=hidden_size, hidden_size=lstm_hidden_size)
         # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunately, Zoneout or any LSTM state
         # dropout in PyTorch forces us to unroll the LSTM and slow down this component x3 to x4. For
         # right now, we will not be using state dropout on the LSTM. We are applying dropout onto
@@ -96,10 +95,8 @@ class AutoregressiveDecoder(nn.Module):
         self.lstm_layer_two_dropout = nn.Dropout(p=lstm_dropout)
         self.attention = LocationSensitiveAttention(
             query_hidden_size=lstm_hidden_size, hidden_size=attention_hidden_size)
-        self.linear_out = nn.Linear(
-            in_features=lstm_hidden_size + self.attention_hidden_size, out_features=frame_channels)
-        self.linear_stop_token = nn.Linear(
-            in_features=lstm_hidden_size + self.attention_hidden_size, out_features=1)
+        self.linear_out = nn.Linear(in_features=hidden_size, out_features=frame_channels)
+        self.linear_stop_token = nn.Linear(in_features=hidden_size, out_features=1)
 
     def _get_initial_state(self,
                            batch_size,
@@ -161,13 +158,15 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
         return (last_frame, lstm_one_hidden_state, lstm_two_hidden_state, last_attention_context,
                 cumulative_alignment)
 
-    def forward(self, encoded_tokens, tokens_mask, target_frames=None, hidden_state=None):
+    def forward(self, encoded_tokens, tokens_mask, speaker, target_frames=None, hidden_state=None):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, attention_hidden_size]):
                 Batched set of encoded sequences.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask where zero's
                 represent padding in ``encoded_tokens``.
+            speaker (torch.LongTensor [batch_size, speaker_embedding_dim]): Batched speaker
+                encoding.
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
                 optional): During training, ground truth frames for teacher-forcing.
             hidden_state (AutoregressiveDecoderHiddenState): For sequential prediction, decoder
@@ -196,6 +195,8 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
              hidden_state=hidden_state,
              device=encoded_tokens.device)
 
+        num_frames, _, _ = frames.shape
+
         # [num_frames, batch_size, frame_channels] →
         # [num_frames, batch_size, pre_net_hidden_size]
         frames = self.pre_net(frames)
@@ -210,12 +211,13 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
             frame = frames.pop(0).squeeze(0)
 
             # [batch_size, pre_net_hidden_size] (concat)
+            # [batch_size, speaker_embedding_dim] (concat)
             # [batch_size, attention_hidden_size] →
-            # [batch_size, pre_net_hidden_size + attention_hidden_size]
-            frame = torch.cat([frame, last_attention_context], dim=1)
+            # [batch_size, pre_net_hidden_size + attention_hidden_size + speaker_embedding_dim]
+            frame = torch.cat([frame, last_attention_context, speaker], dim=1)
 
             # frame [batch (batch_size),
-            # input_size (pre_net_hidden_size + attention_hidden_size)]  →
+            # input_size (pre_net_hidden_size + attention_hidden_size + speaker_embedding_dim)]  →
             # [batch_size, lstm_hidden_size]
             lstm_one_hidden_state = self.lstm_layer_one(frame, lstm_one_hidden_state)
             frame = lstm_one_hidden_state[0]
@@ -252,33 +254,44 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
         # [num_frames, batch_size, attention_hidden_size]
         attention_contexts = torch.stack(attention_contexts, dim=0)
 
+        # [batch_size, speaker_embedding_dim] →
+        # [1, batch_size, speaker_embedding_dim]
+        speaker = speaker.unsqueeze(0)
+
+        # [1, batch_size, speaker_embedding_dim] →
+        # [num_frames, batch_size, speaker_embedding_dim]
+        speaker = speaker.expand(num_frames, -1, -1)
+
         # [num_frames, batch_size, lstm_hidden_size] (concat)
-        # [num_frames, batch_size, attention_hidden_size] →
-        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size]
-        frames = torch.cat([frames, attention_contexts], dim=2)
+        # [num_frames, batch_size, attention_hidden_size] (concat)
+        # [num_frames, batch_size, speaker_embedding_dim] →
+        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size + speaker_embedding_dim]
+        frames = torch.cat([frames, attention_contexts, speaker], dim=2)
 
         # frames [seq_len (num_frames), batch (batch_size),
-        # input_size (lstm_hidden_size + attention_hidden_size)] →
+        # input_size (lstm_hidden_size + attention_hidden_size + speaker_embedding_dim)] →
         # [num_frames, batch_size, lstm_hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
         frames = self.lstm_layer_two_dropout(frames)
 
         # [num_frames, batch_size, lstm_hidden_size] (concat)
-        # [num_frames, batch_size, attention_hidden_size] →
-        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size]
-        frames = torch.cat([frames, attention_contexts], dim=2)
+        # [num_frames, batch_size, attention_hidden_size] (concat)
+        # [num_frames, batch_size, speaker_embedding_dim] →
+        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size + speaker_embedding_dim]
+        frames = torch.cat([frames, attention_contexts, speaker], dim=2)
 
         del attention_contexts  # Clear Memory
 
-        # Predict the stop token
-        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size] →
+        # [num_frames, batch_size,
+        #  lstm_hidden_size + attention_hidden_size + speaker_embedding_dim] →
         # [num_frames, batch_size, 1]
-        stop_token = self.linear_stop_token(frames)
+        stop_token = self.linear_stop_token(frames)  # Predict the stop token
         # Remove singleton dimension
         # [num_frames, batch_size, 1] → [num_frames, batch_size]
         stop_token = stop_token.squeeze(2)
 
-        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size] →
+        # [num_frames, batch_size,
+        #  lstm_hidden_size + attention_hidden_size + speaker_embedding_dim] →
         # [num_frames, batch_size, frame_channels]
         frames = self.linear_out(frames)  # Predicted Mel-Spectrogram
 

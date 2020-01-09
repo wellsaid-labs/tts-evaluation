@@ -212,11 +212,6 @@ def _set_model_size(frame_channels, bits):
                         # embedding
                         token_embedding_dim=512,
 
-                        # SOURCE (Transfer Learning from Speaker Verification to Multispeaker
-                        #         Text-To-Speech Synthesis):
-                        # The paper mentions their proposed model uses a 256 dimension embedding.
-                        speaker_embedding_dim=256,
-
                         # SOURCE (Tacotron 2):
                         # which are passed through a stack of 3 convolutional layers each containing
                         # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
@@ -277,7 +272,14 @@ def _set_model_size(frame_channels, bits):
                     ),
                 'model.SpectrogramModel': {
                     '__init__':
-                        HParams(frame_channels=frame_channels),
+                        HParams(
+                            frame_channels=frame_channels,
+
+                            # SOURCE (Transfer Learning from Speaker Verification to Multispeaker
+                            #         Text-To-Speech Synthesis):
+                            # The paper mentions their proposed model uses a 256 dimension
+                            # embedding.
+                            speaker_embedding_dim=64),
                     '_infer':
                         HParams(
                             # NOTE: Estimated loosely to be a multiple of the slowest speech
@@ -592,12 +594,7 @@ def set_hparams():
         'src': {
             'spectrogram_model': {
                 'encoder.Encoder.__init__':
-                    HParams(
-                        lstm_dropout=lstm_dropout,
-                        convolution_dropout=convolution_dropout,
-                        # NOTE: This dropout performed well on Comet in August 2019.
-                        speaker_embedding_dropout=0.25,
-                    ),
+                    HParams(lstm_dropout=lstm_dropout, convolution_dropout=convolution_dropout),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(lstm_dropout=lstm_dropout),
                 # SOURCE (Tacotron 2):
@@ -607,7 +604,11 @@ def set_hparams():
                 'pre_net.PreNet.__init__':
                     HParams(dropout=0.5),
                 'post_net.PostNet.__init__':
-                    HParams(convolution_dropout=0.0)
+                    HParams(convolution_dropout=0.0),
+                'model.SpectrogramModel.__init__':
+                    HParams(
+                        # NOTE: This dropout performed well on Comet in August 2019.
+                        speaker_embedding_dropout=0.25)
             },
             # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
             'datasets.utils.add_predicted_spectrogram_column':
