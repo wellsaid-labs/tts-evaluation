@@ -47,7 +47,7 @@ def test__balanced_sampler():
     """ Ensure that balanced sampler is picking an equal amount of audio per speaker and
     each example afterwards has an equal chance of getting selected.
     """
-    # NOTE: For example, 'a' could be a speaker and 1 is the audio length.
+    # NOTE: For example, 'a' could be a speaker and 1 could be the audio length.
     data = [('a', 1), ('a', 200), ('b', 2), ('c', 1)]
     num_samples = 1000000
     sampler = _BalancedSampler(
@@ -70,7 +70,7 @@ def test__balanced_sampler():
     assert (counts[data[3]] * data[3][1]) / total == pytest.approx(.33, rel=1e-1)
 
     # NOTE: In our example, within a particular speaker, each example is treated equally
-    # though regardless of length. This means that each unit of audio has an equal chance of
+    # regardless of audio length. This means that each unit of audio has an equal chance of
     # getting sampled; therefore, this is assuming that any downstream service will also
     # treat each unit of audio equally.
     assert counts[data[0]] == pytest.approx(counts[data[1]], rel=1e-1)

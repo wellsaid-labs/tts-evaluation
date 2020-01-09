@@ -173,7 +173,7 @@ def test_encoder_filter_size():
 def test_encoder_padding_invariance():
     """ Ensure that the encoder results are not affected by padding. """
 
-    # NOTE: Dropout result change in response to `BatchSize` because the dropout is computed
+    # NOTE: Dropout results change in response to `BatchSize` because the dropout is computed
     # all together. For example:
     # >>> import torch
     # >>> torch.manual_seed(123)
