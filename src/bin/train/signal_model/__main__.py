@@ -17,7 +17,6 @@ import comet_ml  # noqa
 from hparams import add_config
 from hparams import configurable
 from hparams import HParam
-from hparams import HParams
 from hparams import parse_hparam_args
 from torchnlp.random import set_random_generator_state
 
@@ -77,9 +76,9 @@ def _train(device_index,
            comet_ml_project_name,
            comet_ml_experiment_key,
            more_hparams,
-           evaluate_every_n_epochs=5,
+           evaluate_every_n_epochs=10,
            generate_every_n_evaluations=1,
-           save_checkpoint_every_n_evaluations=3,
+           save_checkpoint_every_n_evaluations=1,
            distributed_backend='nccl',
            distributed_init_method='tcp://127.0.0.1:29500'):
     """ Loop for training and periodically evaluating the model.
@@ -125,7 +124,7 @@ def _train(device_index,
 
     logger.info('Worker %d started.', torch.distributed.get_rank())
 
-    _set_hparams(more_hparams, checkpoint, comet_ml_project_name, comet_ml_experiment_key)
+    _set_hparams(more_hparams, checkpoint)
 
     trainer_kwargs = {
         'device': device,
@@ -204,7 +203,6 @@ def main(experiment_name=None,
     recorder.update(run_root)
     recorder.update(run_root, log_filename='run.log')
 
-    add_config({'src.visualize.CometML': HParams(experiment_key=comet.get_key())})
     if experiment_name is not None:
         logger.info('Name: %s', experiment_name)
         comet.set_name(experiment_name)
@@ -264,15 +262,7 @@ if __name__ == '__main__':  # pragma: no cover
         default=None,
         help=('Spectrogram model checkpoint path used to predicted spectrogram from '
               'text as input to the signal model.'))
-    parser.add_argument(
-        '--tags',
-        default=[
-            'batch_size=256', 'lamb optimizer', 'lr=2 * 10**-3', 'rollback v5',
-            'triangle LR schedule v3', 'l2_regularization=10**-7', 'no batchnorm', 'no shortcut',
-            'filters=[10]', 'kernels=[(5,5)]', 'slice_size=1800', 'spectrogram_slice_pad=2'
-        ],
-        nargs='+',
-        help='List of tags for the experiment.')
+    parser.add_argument('--tags', default=[], nargs='+', help='List of tags for the experiment.')
     parser.add_argument('--name', type=str, default=None, help='Name of the experiment.')
     parser.add_argument(
         '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')

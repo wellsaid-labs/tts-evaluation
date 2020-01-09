@@ -42,5 +42,8 @@
     "plaintext"
   ],
   "python.pythonPath": "venv/bin/python3",
-  "python.dataScience.useNotebookEditor": false
+  "python.dataScience.useNotebookEditor": false,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": true
+  }
 }

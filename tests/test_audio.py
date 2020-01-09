@@ -148,6 +148,18 @@ def test_griffin_lim_smoke():
     assert len(waveform) > 0
 
 
+def test_griffin_lim_large_numbers():
+    """ Test if large numbers will error out griffin lim.
+    """
+    griffin_lim(np.random.uniform(low=-200, high=200, size=(50, 50)), 24000)
+
+
+def test_griffin_lim_small_size():
+    """ Test if small array will error out griffin lim.
+    """
+    griffin_lim(np.random.uniform(low=-1, high=1, size=(1, 1)), 24000)
+
+
 def test_split_signal():
     signal = torch.FloatTensor([1.0, -1.0, 0, 2**-7, 2**-8])
     coarse, fine = split_signal(signal, 16)

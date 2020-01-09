@@ -9,9 +9,12 @@ from unittest.mock import patch
 import hashlib
 import logging
 import logging.config
+import math
 import os
 import pickle
 import pprint
+import random
+import statistics
 import time
 
 from torch import multiprocessing
@@ -24,6 +27,23 @@ from src.environment import NINJA_BUILD_PATH
 
 logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
+
+
+def random_sample(list_, sample_size):
+    """ Random sample function like `random.sample` that doesn't error if `list_` is smaller than
+        `sample_size`.
+    """
+    # NOTE: `random.sample` returns an error for a list smaller than `sample_size`
+    return random.sample(list_, min(len(list_), sample_size))
+
+
+def mean(list_):
+    """ Mean function like `statistics.mean` that does not return an error if `list_` is empty. """
+    list_ = list(list_)
+    if len(list_) == 0:
+        return math.nan
+    # NOTE: `statistics.mean` returns an error for an empty list
+    return statistics.mean(list_)
 
 
 def get_chunks(list_, n):

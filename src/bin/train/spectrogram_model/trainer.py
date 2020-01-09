@@ -7,6 +7,7 @@ from hparams import configurable
 from hparams import get_config
 from hparams import HParam
 from torch import nn
+from torchnlp.random import fork_rng
 from torchnlp.utils import get_total_parameters
 from torchnlp.utils import lengths_to_mask
 from torchnlp.utils import tensors_to
@@ -27,6 +28,8 @@ from src.utils import get_average_norm
 from src.utils import get_weighted_stdev
 from src.utils import log_runtime
 from src.utils import maybe_load_tensor
+from src.utils import mean
+from src.utils import random_sample
 from src.utils import RepeatTimer
 from src.visualize import plot_attention
 from src.visualize import plot_loss_per_frame
@@ -66,6 +69,8 @@ class Trainer():
             from a checkpoint.
         save_temp_checkpoint_every_n_seconds (int, optional): The number of seconds between
             temporary checkpoint saves.
+        dataset_sample_size (int, optional): The number of samples to compute expensive dataset
+            statistics.
     """
 
     TRAIN_LABEL = 'train'
@@ -88,7 +93,8 @@ class Trainer():
                  input_encoder=None,
                  step=0,
                  epoch=0,
-                 save_temp_checkpoint_every_n_seconds=60 * 10):
+                 save_temp_checkpoint_every_n_seconds=60 * 10,
+                 dataset_sample_size=50):
         self.device = device
         self.step = step
         self.epoch = epoch
@@ -121,11 +127,13 @@ class Trainer():
         self.metrics = {
             'attention_norm': DistributedAveragedMetric(),
             'attention_std': DistributedAveragedMetric(),
+            'data_queue_size': DistributedAveragedMetric(),
             'duration_gap': DistributedAveragedMetric(),
             'post_spectrogram_loss': DistributedAveragedMetric(),
             'pre_spectrogram_loss': DistributedAveragedMetric(),
+            'reached_max_frames': DistributedAveragedMetric(),
+            'stop_token_accuracy': DistributedAveragedMetric(),
             'stop_token_loss': DistributedAveragedMetric(),
-            'data_queue_size': DistributedAveragedMetric()
         }
 
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
@@ -136,10 +144,7 @@ class Trainer():
         self.comet_ml.log_current_epoch(epoch)
         self.comet_ml.log_parameters(dict_collapse(get_config()))
         self.comet_ml.set_model_graph(str(self.model))
-        total_train_text_length = sum([len(r.text) for r in self.train_dataset])
-        total_train_spectrogram_length = sum([r.spectrogram.shape[0] for r in self.train_dataset])
-        _average = lambda sum_: None if len(self.train_dataset) == 0 else sum_ / len(self.
-                                                                                     train_dataset)
+
         self.comet_ml.log_parameters({
             'num_parameter': get_total_parameters(self.model),
             'num_training_row': len(self.train_dataset),
@@ -148,10 +153,19 @@ class Trainer():
             'vocab': sorted(self.input_encoder.text_encoder.vocab),
             'num_speakers': self.input_encoder.speaker_encoder.vocab_size,
             'speakers': sorted([str(v) for v in self.input_encoder.speaker_encoder.vocab]),
-            'average_train_text_length': _average(total_train_text_length),
-            'average_train_spectrogram_length': _average(total_train_spectrogram_length),
+            'average_train_text_length': mean(len(r.text) for r in self.train_dataset),
+            'average_dev_text_length': mean(len(r.text) for r in self.dev_dataset),
         })
-        self._comet_ml_log_input_dev_data_hash()
+        self.comet_ml.log_parameters({
+            'average_train_spectrogram_length':
+                mean(r.spectrogram.shape[0] for r in self.train_dataset),
+            'average_dev_spectrogram_length':
+                mean(r.spectrogram.shape[0] for r in self.dev_dataset),
+            'expected_average_train_spectrogram_sum':
+                self._get_expected_average_spectrogram_sum(self.train_dataset, dataset_sample_size),
+            'expected_average_dev_spectrogram_sum':
+                self._get_expected_average_spectrogram_sum(self.dev_dataset, dataset_sample_size)
+        })
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step: %d', self.step)
@@ -190,27 +204,21 @@ class Trainer():
             self._last_repeat_timer_checkpoint.unlink()
         self._last_repeat_timer_checkpoint = checkpoint_path
 
-    def _comet_ml_log_input_dev_data_hash(self, max_examples=10):
-        """ Log to comet a basic hash of the predicted spectrogram data in `self.dev_dataset`.
-
-        The predicted spectrogram data varies with the random state and checkpoint; therefore, the
-        hash helps differentiate between different datasets.
-
-        Args:
-            max_examples (int): The max number of examples to consider for computing the hash. This
-                is limited to a small number of elements for faster performance.
+    @log_runtime
+    def _get_expected_average_spectrogram_sum(self, dataset, sample_size):
         """
-        # NOTE: On different GPUs this may produce different results. For example, a V100 computed
-        # this value as -63890.96875 while a P100 computed -63890.9625.
-        sample = self.dev_dataset[:min(len(self.dev_dataset), max_examples)]
-        sum_ = sum([maybe_load_tensor(e.spectrogram).sum() for e in sample])
-        average = sum_.item() / len(sample) if len(sample) > 0 else 0.0
-        self.comet_ml.log_other('input_dev_data_hash', average)
+        Args:
+            dataset (iterable of TextSpeechRow)
+            sample_size (int)
 
-        # NOTE: Unlike the above hash, this hash should stay stable but will have less variance.
-        text_sum = sum([len(e.text) for e in sample])
-        text_average = text_sum / len(sample) if len(sample) > 0 else 0.0
-        self.comet_ml.log_other('input_dev_text_data_hash', text_average)
+        Returns:
+            (float): Mean of the sum of a sample of spectrograms from `dataset`.
+        """
+        if src.distributed.is_master():
+            with fork_rng(seed=123):
+                sample = random_sample(dataset, sample_size)
+                return mean(maybe_load_tensor(r.spectrogram).sum().item() for r in sample)
+        return None
 
     @classmethod
     def from_checkpoint(class_, checkpoint, **kwargs):
@@ -304,22 +312,26 @@ class Trainer():
 
         random_batch = random.randint(0, len(data_loader) - 1)
         for i, batch in enumerate(data_loader):
+            batch_size = batch.text.lengths.numel()
             with torch.set_grad_enabled(train):
                 if infer:
                     predictions = self.model(batch.text.tensor, batch.speaker.tensor,
                                              batch.text.lengths)
                     # NOTE: `duration_gap` computes the average length of the predictions
                     # verus the average length of the original spectrograms.
-                    duration_gap = (predictions[-1].float() /
+                    duration_gap = (predictions[-2].float() /
                                     batch.spectrogram.lengths.float()).mean()
-                    self.metrics['duration_gap'].update(duration_gap, predictions[-1].numel())
+
+                    self.metrics['duration_gap'].update(duration_gap, batch_size)
+                    self.metrics['reached_max_frames'].update(predictions[-1] / batch_size,
+                                                              batch_size)
                 else:
                     predictions = self.model(batch.text.tensor, batch.speaker.tensor,
                                              batch.text.lengths, batch.spectrogram.tensor,
                                              batch.spectrogram.lengths)
                     self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
-                spectrogram_lengths = predictions[-1] if infer else batch.spectrogram.lengths
+                spectrogram_lengths = predictions[-2] if infer else batch.spectrogram.lengths
                 self._add_attention_metrics(predictions[3], spectrogram_lengths)
 
             # NOTE: This metric should be a positive integer indicating that the `data_loader`
@@ -348,8 +360,16 @@ class Trainer():
                 self.comet_ml.log_metric('epoch/%s' % name, metric.sync().reset())
             if train:
                 self.epoch += 1
+        else:
+            for _, metric in self.metrics.items():
+                metric.reset()
 
-    def _do_loss_and_maybe_backwards(self, batch, predictions, do_backwards):
+    @configurable
+    def _do_loss_and_maybe_backwards(self,
+                                     batch,
+                                     predictions,
+                                     do_backwards,
+                                     stop_threshold=HParam()):
         """ Compute the losses and maybe do backwards.
 
         TODO: Consider logging seperate metrics per speaker.
@@ -358,6 +378,7 @@ class Trainer():
             batch (SpectrogramModelTrainingRow)
             predictions (any): Return value from ``self.model.forwards``.
             do_backwards (bool): If ``True`` backward propogate the loss.
+            stop_threshold (float): The threshold probability for deciding to stop.
         """
         # predicted_pre_spectrogram, predicted_post_spectrogram
         # [num_frames, batch_size, frame_channels]
@@ -389,6 +410,13 @@ class Trainer():
             self.optimizer.zero_grad()
             (pre_spectrogram_loss + post_spectrogram_loss + stop_token_loss).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
+
+        expected_stop_token = (batch.stop_token.tensor > stop_threshold).masked_select(mask)
+        predicted_stop_token = (torch.sigmoid(predicted_stop_tokens) >
+                                stop_threshold).masked_select(mask)
+
+        self.metrics['stop_token_accuracy'].update(
+            (expected_stop_token == predicted_stop_token).float().mean(), mask.sum())
 
         # NOTE: These losses are from the original Tacotron 2 paper.
         self.metrics['pre_spectrogram_loss'].update(pre_spectrogram_loss, expanded_mask.sum())
@@ -431,7 +459,7 @@ class Trainer():
         with evaluate(model, device=self.device):
             logger.info('Running inference...')
             (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
-             predicted_alignments, _) = model(text, speaker)
+             predicted_alignments, _, _) = model(text, speaker)
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
 
@@ -441,7 +469,7 @@ class Trainer():
             text=example.text,
             speaker=example.speaker,
             predicted_audio=griffin_lim(predicted_post_spectrogram.cpu().numpy()),
-            gold_audio=maybe_load_tensor(example.spectrogram_audio))
+            gold_audio=maybe_load_tensor(example.spectrogram_audio).float())
         self.comet_ml.log_metrics({  # [num_frames, num_tokens] → scalar
             'single/attention_norm': get_average_norm(predicted_alignments, dim=1, norm=math.inf),
             'single/attention_std': get_weighted_stdev(predicted_alignments, dim=1),

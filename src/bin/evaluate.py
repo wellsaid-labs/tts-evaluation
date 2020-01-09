@@ -200,11 +200,11 @@ def main(dataset,
         dataset = add_spectrogram_column(dataset, on_disk=False)
         if not no_target_audio:
             for i, example in zip(indicies, dataset):
-                waveform = example.spectrogram_audio.cpu().numpy()
+                waveform = example.spectrogram_audio.cpu().float().numpy()
                 audio_path = _save_partial(i, ['type=gold'], example.speaker, waveform)
                 add_to_metadata(
                     example,
-                    audio_length=waveform.shape[0] / sample_rate,
+                    audio_length_in_seconds=waveform.shape[0] / sample_rate,
                     audio_path=audio_path,
                     example_index=i,
                     type='gold')
@@ -228,7 +228,7 @@ def main(dataset,
                 audio_path = _save_partial(i, ['type=griffin_lim'], example.speaker, waveform)
                 add_to_metadata(
                     example,
-                    audio_length=waveform.shape[0] / sample_rate,
+                    audio_length_in_seconds=waveform.shape[0] / sample_rate,
                     audio_path=audio_path,
                     example_index=i,
                     type='griffin_lim')

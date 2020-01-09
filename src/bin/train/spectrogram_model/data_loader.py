@@ -68,6 +68,8 @@ class DataLoader(DataLoader):
         batch_size (int): Iteration batch size.
         device (torch.device): Device onto which to load data.
         num_workers (int, optional): Number of workers for data loading.
+        max_workers_per_process (int, optional): The maximum workers per process used for data
+            loading. This default was set based on the 7b7af914fde844cab49cd1bbb6702315 experiment.
         **kwargs (any): Other arguments to the data loader ``_load_fn``
 
     Returns:
@@ -95,7 +97,11 @@ class DataLoader(DataLoader):
                  batch_size,
                  device,
                  num_workers=0 if IS_TESTING_ENVIRONMENT else cpu_count(),
+                 max_workers_per_process=4,
                  **kwargs):
+        world_size = torch.distributed.get_world_size() if src.distributed.is_initialized() else 1
+        num_workers = min(num_workers, max_workers_per_process * world_size)
+
         if src.distributed.is_initialized():
             # NOTE: `DistributedBatchSampler` assumes that the workers and master have the same
             # sampling; therefore, the same data.
@@ -111,6 +117,7 @@ class DataLoader(DataLoader):
         sampler = BalancedSampler(data, get_class=lambda e: e.speaker)
         batch_sampler = BucketBatchSampler(
             sampler, batch_size, drop_last=True, sort_key=lambda i: data[i].spectrogram.shape[0])
+        # TODO: `get_number_of_elements` is not compatible with `OnDiskTensor`, fix that.
         batch_sampler = OomBatchSampler(
             batch_sampler, get_item_size=lambda i: get_number_of_elements(data[i]))
         batch_sampler = DeterministicSampler(batch_sampler)

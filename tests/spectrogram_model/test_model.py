@@ -26,23 +26,22 @@ def test_spectrogram_model_inference__batch_size_sensativity():
     # Ensure that the model computes the full length
     add_config({'src.spectrogram_model.model.SpectrogramModel._infer': HParams(stop_threshold=1.0)})
 
-    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels).eval()
-
-    # NOTE: Dropout result change in response to `BatchSize` because the dropout is computed
-    # all together. For example:
+    # NOTE: The random generator for dropout varies based on the tensor size; therefore, it's
+    # dependent on the `BatchSize` and we need to disable it. For example:
     # >>> import torch
     # >>> torch.manual_seed(123)
     # >>> batch_dropout = torch.nn.functional.dropout(torch.ones(5, 5))
     # >>> torch.manual_seed(123)
     # >>> dropout = torch.nn.functional.dropout(torch.ones(5))
     # >>> batch_dropout[0] != dropout
-    model.decoder.pre_net.layers[0][2].p = 0
-    model.decoder.pre_net.layers[1][2].p = 0
+    add_config({'src.spectrogram_model.pre_net.PreNet.__init__': HParams(dropout=0.0)})
+
+    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels).eval()
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     speaker = torch.randint(1, num_speakers, (1, batch_size))
-    batched_num_tokens = torch.full((batch_size,), num_tokens)
+    batched_num_tokens = torch.full((batch_size,), num_tokens, dtype=torch.long)
 
     # frames [num_frames, batch_size, frame_channels]
     # frames_with_residual [num_frames, batch_size, frame_channels]
@@ -50,27 +49,26 @@ def test_spectrogram_model_inference__batch_size_sensativity():
     # alignment [num_frames, batch_size, num_tokens]
     with fork_rng(seed=123):
         (batched_frames, batched_frames_with_residual, batched_stop_token, batched_alignment,
-         batched_lengths) = model(
+         batched_lengths, batched_reached_max) = model(
              input_,
              speaker,
              num_tokens=batched_num_tokens,
              max_frames_per_token=num_frames / num_tokens)
+        assert batched_reached_max == batch_size
 
     with fork_rng(seed=123):
-        frames, frames_with_residual, stop_token, alignment, lengths = model(
+        frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
             input_[:, :1], speaker[:, :1], max_frames_per_token=num_frames / num_tokens)
+        assert reached_max
 
-    numpy.testing.assert_almost_equal(
-        frames.detach().numpy(), batched_frames[:, :1].detach().numpy(), decimal=6)
-    numpy.testing.assert_almost_equal(
-        frames_with_residual.detach().numpy(),
-        batched_frames_with_residual[:, :1].detach().numpy(),
-        decimal=6)
-    numpy.testing.assert_almost_equal(
-        stop_token.detach().numpy(), batched_stop_token[:, :1].detach().numpy(), decimal=6)
-    numpy.testing.assert_almost_equal(
-        alignment.detach().numpy(), batched_alignment[:, :1].detach().numpy(), decimal=6)
-    numpy.testing.assert_almost_equal(lengths.numpy(), lengths[:1].numpy(), decimal=6)
+    assert_almost_equal = lambda a, b: numpy.testing.assert_almost_equal(
+        a.detach().numpy(), b.detach().numpy(), decimal=5)
+
+    assert_almost_equal(frames, batched_frames[:lengths[0], :1])
+    assert_almost_equal(frames_with_residual, batched_frames_with_residual[:lengths[0], :1])
+    assert_almost_equal(stop_token, batched_stop_token[:lengths[0], :1])
+    assert_almost_equal(alignment, batched_alignment[:lengths[0], :1, :int(batched_num_tokens[0])])
+    assert_almost_equal(lengths, lengths[:1])
 
 
 def test_spectrogram_model_train__batch_size_sensativity():
@@ -85,8 +83,6 @@ def test_spectrogram_model_train__batch_size_sensativity():
     num_frames = 3
     num_speakers = 7
 
-    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels).eval()
-
     # NOTE: Dropout result change in response to `BatchSize` because the dropout is computed
     # all together. For example:
     # >>> import torch
@@ -95,8 +91,11 @@ def test_spectrogram_model_train__batch_size_sensativity():
     # >>> torch.manual_seed(123)
     # >>> dropout = torch.nn.functional.dropout(torch.ones(5))
     # >>> batch_dropout[0] != dropout
-    model.decoder.pre_net.layers[0][2].p = 0
-    model.decoder.pre_net.layers[1][2].p = 0
+    add_config({'src.spectrogram_model.pre_net.PreNet.__init__': HParams(dropout=0.0)})
+
+    # TODO: Remove `eval()` because it doesn't actually test training. At the moment, it disables
+    # `BatchNorm` and `dropout` which are both affected by the batch size.
+    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels).eval()
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
@@ -128,16 +127,15 @@ def test_spectrogram_model_train__batch_size_sensativity():
             num_tokens=batched_num_tokens[:1],
             target_lengths=batched_num_frames[:1])
 
-    numpy.testing.assert_almost_equal(
-        frames.detach().numpy(), batched_frames[:, :1].detach().numpy(), decimal=6)
-    numpy.testing.assert_almost_equal(
-        frames_with_residual.detach().numpy(),
-        batched_frames_with_residual[:, :1].detach().numpy(),
-        decimal=6)
-    numpy.testing.assert_almost_equal(
-        stop_token.detach().numpy(), batched_stop_token[:, :1].detach().numpy(), decimal=6)
-    numpy.testing.assert_almost_equal(
-        alignment.detach().numpy(), batched_alignment[:, :1].detach().numpy(), decimal=6)
+    assert_almost_equal = lambda a, b: numpy.testing.assert_almost_equal(
+        a.detach().numpy(), b.detach().numpy(), decimal=5)
+
+    assert_almost_equal(frames, batched_frames[:batched_num_frames[0], :1])
+    assert_almost_equal(frames_with_residual,
+                        batched_frames_with_residual[:batched_num_frames[0], :1])
+    assert_almost_equal(stop_token, batched_stop_token[:batched_num_frames[0], :1])
+    assert_almost_equal(alignment,
+                        batched_alignment[:batched_num_frames[0], :1, :int(batched_num_tokens[0])])
 
 
 def test_spectrogram_model():
@@ -156,13 +154,16 @@ def test_spectrogram_model():
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     speaker = torch.LongTensor(1, batch_size).fill_(0)
-    batched_num_tokens = torch.full((batch_size,), num_tokens)
+    batched_num_tokens = torch.full((batch_size,), num_tokens, dtype=torch.long)
 
-    frames, frames_with_residual, stop_token, alignment, lengths = model(
+    frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
         input_,
         speaker,
         num_tokens=batched_num_tokens,
         max_frames_per_token=num_frames / num_tokens)
+
+    assert isinstance(reached_max, int)
+    assert reached_max == batch_size
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, batch_size, frame_channels)
@@ -198,8 +199,13 @@ def test_spectrogram_model_unbatched():
     input_ = torch.LongTensor(num_tokens).random_(1, vocab_size)
     speaker = torch.LongTensor(1, 1).fill_(0)
 
-    frames, frames_with_residual, stop_token, alignment, _ = model(
+    frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
         input_, speaker, max_frames_per_token=num_frames / num_tokens)
+
+    assert isinstance(reached_max, bool)
+    assert reached_max
+
+    assert torch.equal(lengths, torch.tensor([num_frames]))
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, frame_channels)
@@ -227,8 +233,8 @@ def test_spectrogram_model_target():
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     speaker = torch.LongTensor(1, batch_size).fill_(0)
     target_frames = torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1)
-    target_lengths = torch.full((batch_size,), num_frames)
-    batched_num_tokens = torch.full((batch_size,), num_tokens)
+    target_lengths = torch.full((batch_size,), num_frames, dtype=torch.long)
+    batched_num_tokens = torch.full((batch_size,), num_tokens, dtype=torch.long)
     frames, frames_with_residual, stop_token, alignment = model(
         input_,
         speaker,
@@ -263,7 +269,7 @@ def test_spectrogram_model_target_unbatched():
     input_ = torch.LongTensor(num_tokens).random_(1, vocab_size)
     speaker = torch.LongTensor(1, 1).fill_(0)
     target_frames = torch.FloatTensor(num_frames, frame_channels).uniform_(0, 1)
-    target_lengths = torch.tensor(num_frames)
+    target_lengths = torch.tensor(num_frames, dtype=torch.long)
     frames, frames_with_residual, stop_token, alignment = model(
         input_, speaker, target_frames=target_frames, target_lengths=target_lengths)
 

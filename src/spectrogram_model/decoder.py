@@ -61,9 +61,11 @@ class AutoregressiveDecoder(nn.Module):
             as "Mel-frequency bins" or "FFT bins" or "FFT bands")
         pre_net_hidden_size (int): Hidden size of the pre-net to use.
         lstm_hidden_size (int): Hidden size of both LSTM layers to use.
-        lstm_variational_dropout (float): If non-zero, introduces a Dropout layer on the
+        lstm_dropout (float): If non-zero, introduces a Dropout layer on the
             outputs of each LSTM layer except the last layer, with dropout probability equal to
             dropout.
+        attention_hidden_size (int): The size of the attention context returned by the attention
+            module.
     """
 
     @configurable
@@ -164,7 +166,7 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, attention_hidden_size]):
                 Batched set of encoded sequences.
-            tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask where one's
+            tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask where zero's
                 represent padding in ``encoded_tokens``.
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
                 optional): During training, ground truth frames for teacher-forcing.

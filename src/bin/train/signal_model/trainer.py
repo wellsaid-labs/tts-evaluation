@@ -24,6 +24,7 @@ from hparams import configurable
 from hparams import get_config
 from hparams import HParam
 from torch.optim.lr_scheduler import LambdaLR
+from torchnlp.random import fork_rng
 from torchnlp.utils import get_total_parameters
 
 import torch
@@ -40,6 +41,8 @@ from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
 from src.utils import log_runtime
 from src.utils import maybe_load_tensor
+from src.utils import mean
+from src.utils import random_sample
 from src.utils import RepeatTimer
 from src.visualize import plot_spectrogram
 
@@ -80,6 +83,8 @@ class Trainer():
             result in an anomalous loss.
         save_temp_checkpoint_every_n_seconds (int, optional): The number of seconds between
             temporary checkpoint saves.
+        dataset_sample_size (int, optional): The number of samples to compute expensive dataset
+            statistics.
     """
 
     TRAIN_LABEL = 'train'
@@ -94,7 +99,9 @@ class Trainer():
                  checkpoints_directory,
                  comet_ml,
                  train_batch_size=HParam(),
+                 train_spectrogram_slice_size=HParam(),
                  dev_batch_size=HParam(),
+                 dev_spectrogram_slice_size=HParam(),
                  criterion=HParam(),
                  optimizer=HParam(),
                  min_rollback=HParam(),
@@ -105,12 +112,15 @@ class Trainer():
                  epoch=0,
                  num_rollbacks=0,
                  anomaly_detector=None,
-                 save_temp_checkpoint_every_n_seconds=60 * 10):
+                 save_temp_checkpoint_every_n_seconds=60 * 10,
+                 dataset_sample_size=50):
         self.device = device
         self.step = step
         self.epoch = epoch
         self.train_batch_size = train_batch_size
+        self.train_spectrogram_slice_size = train_spectrogram_slice_size
         self.dev_batch_size = dev_batch_size
+        self.dev_spectrogram_slice_size = dev_spectrogram_slice_size
         self.num_rollbacks = num_rollbacks
         self.checkpoints_directory = checkpoints_directory
         self.use_predicted = spectrogram_model_checkpoint_path is not None
@@ -158,9 +168,14 @@ class Trainer():
             'num_training_row': len(self.train_dataset),
             'num_dev_row': len(self.dev_dataset),
         })
+        self.comet_ml.log_parameters({
+            'expected_average_train_spectrogram_sum':
+                self._get_expected_average_spectrogram_sum(self.train_dataset, dataset_sample_size),
+            'expected_average_dev_spectrogram_sum':
+                self._get_expected_average_spectrogram_sum(self.dev_dataset, dataset_sample_size)
+        })
         self.comet_ml.log_other('spectrogram_model_checkpoint_path',
                                 str(self.spectrogram_model_checkpoint_path))
-        self._comet_ml_log_input_dev_data_hash()
 
         logger.info('Training on %d GPUs', torch.cuda.device_count())
         logger.info('Step: %d', self.step)
@@ -177,6 +192,26 @@ class Trainer():
                                      self._save_checkpoint_repeat_timer)
             self.timer.start()
             atexit.register(self._atexit)
+
+    @log_runtime
+    def _get_expected_average_spectrogram_sum(self, dataset, sample_size):
+        """
+        Args:
+            dataset (iterable of TextSpeechRow)
+            sample_size (int)
+
+        Returns:
+            (float): Mean of the sum of a sample of spectrograms from `dataset`.
+        """
+        if src.distributed.is_master():
+            with fork_rng(seed=123):
+                sample = random_sample(dataset, sample_size)
+                use_predicted = self.use_predicted
+                sample = [
+                    r.predicted_spectrogram if use_predicted else r.spectrogram for r in sample
+                ]
+                return mean(maybe_load_tensor(r).sum().item() for r in sample)
+        return None
 
     def _atexit(self):
         """ This function is run on program exit. """
@@ -198,24 +233,6 @@ class Trainer():
                         str(self._last_repeat_timer_checkpoint))
             self._last_repeat_timer_checkpoint.unlink()
         self._last_repeat_timer_checkpoint = checkpoint_path
-
-    def _comet_ml_log_input_dev_data_hash(self, max_examples=10):
-        """ Log to comet a basic hash of the predicted spectrogram data in `self.dev_dataset`.
-
-        The predicted spectrogram data varies with the random state and checkpoint; therefore, the
-        hash helps differentiate between different datasets.
-
-        Args:
-            max_examples (int): The max number of examples to consider for computing the hash. This
-                is limited to a small number of elements for faster performance.
-        """
-        sum_ = torch.tensor(0.0)
-        sample = self.dev_dataset[:min(len(self.dev_dataset), max_examples)]
-        for example in sample:
-            use_predicted = self.use_predicted
-            spectrogram = example.predicted_spectrogram if use_predicted else example.spectrogram
-            sum_ += maybe_load_tensor(spectrogram).sum()
-        self.comet_ml.log_other('input_dev_data_hash', (sum_ / len(sample)).item())
 
     @classmethod
     def from_checkpoint(class_, checkpoint, **kwargs):
@@ -363,10 +380,17 @@ class Trainer():
         loader_kwargs = {'device': self.device, 'use_predicted': self.use_predicted}
         if train and not hasattr(self, '_train_loader'):
             # NOTE: We cache the `DataLoader` between epochs for performance.
-            self._train_loader = DataLoader(self.train_dataset, self.train_batch_size,
-                                            **loader_kwargs)
+            self._train_loader = DataLoader(
+                self.train_dataset,
+                self.train_batch_size,
+                spectrogram_slice_size=self.train_spectrogram_slice_size,
+                **loader_kwargs)
         elif not train and not hasattr(self, '_dev_loader'):
-            self._dev_loader = DataLoader(self.dev_dataset, self.dev_batch_size, **loader_kwargs)
+            self._dev_loader = DataLoader(
+                self.dev_dataset,
+                self.dev_batch_size,
+                spectrogram_slice_size=self.dev_spectrogram_slice_size,
+                **loader_kwargs)
         data_loader = self._train_loader if train else self._dev_loader
 
         for i, batch in enumerate(data_loader):
@@ -395,9 +419,13 @@ class Trainer():
             if trial_run:
                 break
 
-        self._end_epoch()
-        if train and not trial_run:
-            self.epoch += 1
+        if not trial_run:
+            self._end_epoch()
+            if train:
+                self.epoch += 1
+        else:
+            for _, metric in self.metrics.items():
+                metric.reset()
 
     def _get_gru_orthogonal_loss(self):
         """ Get the orthogonal loss for the hidden-to-hidden matrix in our GRUs.

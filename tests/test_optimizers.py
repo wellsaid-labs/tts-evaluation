@@ -27,10 +27,11 @@ def test_lamb_optimizer__adam():
         params=net_lamb.parameters(),
         amsgrad=False,
         lr=10**-3,
+        eps=1e-8,
         min_trust_ratio=1,
         max_trust_ratio=1,
         l2_regularization=0.01)
-    adam = Adam(params=net_adam.parameters(), amsgrad=False, lr=10**-3, weight_decay=0.01)
+    adam = Adam(params=net_adam.parameters(), amsgrad=False, lr=10**-3, weight_decay=0.01, eps=1e-8)
 
     input_ = torch.randn(5, 3, 10, requires_grad=False)
 
@@ -57,8 +58,13 @@ def test_lamb_optimizer__amsgrad():
 
     # `trust_ratio=1.0` ensures equality with AdamW (similar to Adam with a different weight decay).
     lamb = Lamb(
-        params=net_lamb.parameters(), amsgrad=True, lr=10**-3, min_trust_ratio=1, max_trust_ratio=1)
-    adam = Adam(params=net_adam.parameters(), lr=10**-3, amsgrad=True)
+        params=net_lamb.parameters(),
+        amsgrad=True,
+        lr=10**-3,
+        min_trust_ratio=1,
+        max_trust_ratio=1,
+        eps=1e-8)
+    adam = Adam(params=net_adam.parameters(), lr=10**-3, amsgrad=True, eps=1e-8)
 
     input_ = torch.randn(5, 3, 10, requires_grad=False)
 
@@ -72,10 +78,9 @@ def test_lamb_optimizer__amsgrad():
     output_adam.sum().backward()
     adam.step()
 
-    # The first step for LAMB should have an Adam update
+    # NOTE: The first step for LAMB should have an Adam update
     for p1, p2 in zip(net_lamb.parameters(), net_adam.parameters()):
-        # TODO: This fails sometimes, fix this.
-        numpy.testing.assert_allclose(p1.detach().numpy(), p2.detach().numpy(), rtol=1e-4)
+        numpy.testing.assert_almost_equal(p1.detach().numpy(), p2.detach().numpy(), decimal=5)
 
 
 def test_lamb_optimizer__adam_w():  # Smoke test
@@ -91,10 +96,12 @@ def test_lamb_optimizer__adam_w():  # Smoke test
         params=net_lamb.parameters(),
         amsgrad=False,
         lr=10**-3,
+        eps=1e-8,
         min_trust_ratio=1,
         max_trust_ratio=1,
         weight_decay=0.01)
-    adam = AdamW(params=net_adam.parameters(), amsgrad=False, lr=10**-3, weight_decay=0.01)
+    adam = AdamW(
+        params=net_adam.parameters(), amsgrad=False, lr=10**-3, weight_decay=0.01, eps=1e-8)
 
     input_ = torch.randn(5, 3, 10, requires_grad=False)
 
@@ -110,7 +117,7 @@ def test_lamb_optimizer__adam_w():  # Smoke test
 
     # The first step for LAMB should have an Adam update
     for p1, p2 in zip(net_lamb.parameters(), net_adam.parameters()):
-        numpy.testing.assert_allclose(p1.detach().numpy(), p2.detach().numpy(), rtol=5e-4)
+        numpy.testing.assert_almost_equal(p1.detach().numpy(), p2.detach().numpy(), decimal=5)
 
 
 class TestOptimizer(unittest.TestCase):

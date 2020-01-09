@@ -197,6 +197,11 @@ def _set_model_size(frame_channels, bits):
     # features to 128-dimensional hidden representations.
     attention_hidden_size = 128
 
+    # SOURCE (Tacotron 2):
+    # Specifically, generation completes at the first frame for which this
+    # probability exceeds a threshold of 0.5.
+    stop_threshold = 0.5
+
     add_config({
         'src': {
             'spectrogram_model': {
@@ -278,14 +283,12 @@ def _set_model_size(frame_channels, bits):
                             # NOTE: Estimated loosely to be a multiple of the slowest speech
                             # observed in one dataset. This threshhold is primarly intended to
                             # prevent recursion.
-                            max_frames_per_token=15,
-
-                            # SOURCE (Tacotron 2):
-                            # Specifically, generation completes at the first frame for which this
-                            # probability exceeds a threshold of 0.5.
-                            stop_threshold=0.5)
+                            max_frames_per_token=30,
+                            stop_threshold=stop_threshold)
                 }  # noqa: E122
             },
+            'bin.train.spectrogram_model.trainer.Trainer._do_loss_and_maybe_backwards':
+                HParams(stop_threshold=stop_threshold),
             'signal_model.wave_rnn.WaveRNN.__init__':
                 HParams(
                     local_features_size=frame_channels,
@@ -655,7 +658,14 @@ def set_hparams():
                                 # 0.999, eps = 10−8 and a fixed learning rate of 10−4
                                 # NOTE: Parameters set after experimentation on a 8 V100 GPUs.
                                 train_batch_size=256,
-                                dev_batch_size=512,
+                                # SOURCE: Efficient Neural Audio Synthesis
+                                # The WaveRNN models are trained on sequences of 960 audio samples.
+                                # NOTE: We were able to get better results with 1800 audio samples
+                                # in Comet in August, 2019.
+                                train_spectrogram_slice_size=int(1800 / frame_hop),
+
+                                dev_batch_size=32,
+                                dev_spectrogram_slice_size=int(24000 / frame_hop),
 
                                 # `CrossEntropyLoss` is not directly mentioned in the paper; however
                                 # is a popular choice as of Jan 2019 for a classification task.
@@ -673,9 +683,6 @@ def set_hparams():
                             ),
                         'data_loader.DataLoader.__init__':
                             HParams(
-                                # SOURCE: Efficient Neural Audio Synthesis
-                                # The WaveRNN models are trained on sequences of 960 audio samples
-                                spectrogram_slice_size=int(1800 / frame_hop),
                                 # TODO: This should depend on an upsample property.
                                 # TODO: It may be more appropriate to pad by 2 spectrogram frames
                                 # instead. Given that each frame aligns with 300 samples and each
@@ -691,6 +698,7 @@ def set_hparams():
             # NOTE: Window size smoothing parameter is not super sensative.
             'optimizers.AutoOptimizer.__init__':
                 HParams(window_size=128),
-            'environment.set_seed': HParams(seed=seed),
+            'environment.set_seed':
+                HParams(seed=seed),
         }
     })
