@@ -41,7 +41,7 @@ class _BalancedSampler(WeightedRandomSampler):
     Args:
         data (iterable)
         get_class (callable): Get the class of an item relative to the entire dataset.
-        get_weight (callable): Define a weight for each item other than one.
+        get_weight (callable): Define a weight for each item.
         kwargs: Additional key word arguments passed onto `WeightedRandomSampler`.
     """
 

@@ -601,6 +601,8 @@ def set_hparams():
                 # The convolutional layers in the network are regularized using dropout [25] with
                 # probability 0.5, and LSTM layers are regularized using zoneout [26] with
                 # probability 0.1
+                # NOTE: We found in our Comet experiments December 2019 that encoder probability
+                # wasn't helpful to the model.
                 'encoder.Encoder.__init__':
                     HParams(convolution_dropout=0.0),
                 'decoder.AutoregressiveDecoder.__init__':
