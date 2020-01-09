@@ -207,7 +207,6 @@ machine.
    ```bash
    sudo chmod -R a+rwx /opt
    mkdir /opt/wellsaid-labs
-   cd /opt/wellsaid-labs
    ```
 
 ### From your local repository
@@ -275,7 +274,8 @@ machine.
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH --project_name $COMET_PROJECT --name "$EXPERIMENT_NAME";
    ```
 
-   💡 TIP: You may want to include the optional `--spectrogram_model_checkpoint` argument.
+   💡 TIP: You may want to include the optional `--spectrogram_model_checkpoint=your-checkpoint.pt`
+   argument.
 
 1. Detach from your screen session by typing `Ctrl-A` then `D`.
 
