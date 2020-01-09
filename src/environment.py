@@ -22,7 +22,8 @@ TTS_DISK_CACHE_NAME = '.tts_cache'  # Hidden directory stored in other directori
 
 TEST_DATA_PATH = ROOT_PATH / 'tests' / '_test_data'
 
-TEST_DATA_PATH.mkdir(exist_ok=True)
+if IS_TESTING_ENVIRONMENT:
+    TEST_DATA_PATH.mkdir(exist_ok=True)
 
 DISK_PATH = TEST_DATA_PATH / '_disk' if IS_TESTING_ENVIRONMENT else ROOT_PATH / 'disk'
 
