@@ -90,7 +90,7 @@ Related Documentation:
 
    ```bash
    VM_ZONE=$(gcloud compute instances list | grep "^$VM_NAME\s" | awk '{ print $2 }')
-   gcloud compute ssh --zone=$ZONE $VM_NAME
+   gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
    Continue to run this command until it succeeds.
