@@ -38,22 +38,22 @@ structure outlined in the following example.
 
 Note: Check the file size of each wav stored in `03 Recordings` and verify they are appropriate
 size (a good check is that all files in the directory are _similar_ in size and appropriate for the
-length of the script text.) Due the size of these files, the `03 Recordings` directory will most
+length of the script text.) Due to the size of these files, the `03 Recordings` directory will most
 likely download as _multiple zip files_. Don't forget to unzip _each_ and move the contents into the
 structure outlined!
 
-Suppose that the actor we're working with is called "Jack Rutkowski". Please download the actor's
+Suppose that the actor we're working with is called "Actor Shmactor". Please download the actor's
 corresponding CSV and WAV files into a directory like so:
 
 ```bash
 .
-├── /jack_rutkowski/
+├── /actor_shmactor/
 │   ├── /wavs/
-│   │   ├── WSL_JackRutkowski_Script-DIPHONE-1.wav
-│   │   ├── WSL_JackRutkowski_Script-DIPHONE-2.wav
+│   │   ├── WSL_ActorShmactor_Script-DIPHONE-1.wav
+│   │   ├── WSL_ActorShmactor_Script-DIPHONE-2.wav
 │   │   ...
-│   │   ├── WSL_JackRutkowski_ENTHUSIASTIC_Script 1.wav
-│   │   ├── WSL_JackRutkowski_ENTHUSIASTIC_Script 2.wav
+│   │   ├── WSL_ActorShmactor_ENTHUSIASTIC_Script 1.wav
+│   │   ├── WSL_ActorShmactor_ENTHUSIASTIC_Script 2.wav
 │   │   ...
 │   ├── /csvs/
 │   │   ├── DIPHONE_Script-1.csv
@@ -89,22 +89,22 @@ The output of the script will be stored in the `/processed/` directory like this
 .
 ├── /processed/
 │   ├── /.sst/
-│   │   ├── bits(rate(WSL_JackRutkowski_ENTHUSIASTIC_Script 22,24000),16).json
-│   │   ├── bits(rate(WSL_JackRutkowski_ENTHUSIASTIC_Script 23,24000),16).json
+│   │   ├── bits(rate(WSL_ActorShmactor_ENTHUSIASTIC_Script 22,24000),16).json
+│   │   ├── bits(rate(WSL_ActorShmactor_ENTHUSIASTIC_Script 23,24000),16).json
 │   │   ...
-│   │   ├── rate(WSL_JackRutkowski_ENTHUSIASTIC_Script 59,24000).json
-│   │   ├── rate(WSL_JackRutkowski_ENTHUSIASTIC_Script-60,24000).json
+│   │   ├── rate(WSL_ActorShmactor_ENTHUSIASTIC_Script 59,24000).json
+│   │   ├── rate(WSL_ActorShmactor_ENTHUSIASTIC_Script-60,24000).json
 │   │   ...
 │   ├── /wavs/
-│   │   ├── /bits(rate(WSL_JackRutkowski_ENTHUSIASTIC_Script-22,24000),16)/
+│   │   ├── /bits(rate(WSL_ActorShmactor_ENTHUSIASTIC_Script-22,24000),16)/
 │   │   │   ├── script_0_chunk_0.wav
 │   │   │   ├── script_0_chunk_1.wav
 │   │   │   ├── ...
 │   │   │   ├── script_19_chunk_4.wav
-│   │   ├── /bits(rate(WSL_JackRutkowski_ENTHUSIASTIC_Script-23,24000),16)/
+│   │   ├── /bits(rate(WSL_ActorShmactor_ENTHUSIASTIC_Script-23,24000),16)/
 │   │   ...
-│   │   ├── /rate(WSL_JackRutkowski_ENTHUSIASTIC_Script-59,24000)/
-│   │   ├── /rate(WSL_JackRutkowski_ENTHUSIASTIC_Script-60,24000)/
+│   │   ├── /rate(WSL_ActorShmactor_ENTHUSIASTIC_Script-59,24000)/
+│   │   ├── /rate(WSL_ActorShmactor_ENTHUSIASTIC_Script-60,24000)/
 └── └── ...
 │   ├── metadata.csv
 │   ├── stderr*.log
@@ -143,13 +143,13 @@ In order to mitigate these errors, please check:
 - [ ] The script reports less than 0.5% "unaligned characters"; otherwise, the transcript likely
       doesn't match the audio.
 - [ ] The dataset created is of a reasonable length. For example, the script should log that
-      the final Jack dataset is ~14 hours in length.
+      the final Actor Shmactor dataset is ~14 hours in length.
 - [ ] The longest "unaligned substring" is small; otherwise, the transcript likely doesn't match
       the audio.
 - [ ] The `/processed/wavs/` files are named consistently; otherwise, the audio formats of the
       original files are not the same. This could mean that the audio was recorded inconsistently.
-      For example, some of Jacks audio files required a `bits` normalization and others required
-      a `rate` normalization.
+      For example, some of Actor Shmactor's audio files required a `bits` normalization and others 
+      required a `rate` normalization.
 - [ ] The metadata has the same number of entries as the number of audio files; otherwise, the
       script may have been run in a compromised state.
 - [ ] There are only two logs files; otherwise, the script may have been run in a compromised state.
@@ -174,7 +174,7 @@ scripts. In the end, we want to have an accurate transcript, audio files, and pr
 Zip up the `metadata.csv`, log files, and wavs directory into a TAR, like so:
 
 ```bash
-ACTOR_NAME='JackRutkowski'
+ACTOR_NAME='ActorShmactor'
 tar -czvf "$ACTOR_NAME.tar.gz" metadata.csv *.log wavs
 ```
 
