@@ -1,18 +1,22 @@
 from collections import Counter
 from functools import partial
+from itertools import groupby
 from pathlib import Path
 
 import logging
+import os
 import pprint
 
 from hparams import configurable
 from hparams import HParam
+from phonemizer.phonemize import phonemize
 from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 from tqdm import tqdm
 
 import numpy
 import torch
+
 librosa = LazyLoader('librosa', globals(), 'librosa')
 pandas = LazyLoader('pandas', globals(), 'pandas')
 
@@ -200,6 +204,96 @@ def normalize_audio_column(data):
     cache_get_audio_metadata([e.audio_path for e in return_])
 
     return return_
+
+
+def phonemize_data(dataset, nlp):
+    """
+    Convert graphemes to phonemes in all rows in data.
+
+    Args:
+        dataset (iterable of TextSpeechRow)
+        nlp (Language): spaCy Language object for tokenizing text
+
+    Returns:
+        dataset (iterable of TextSpeechRow)
+    """
+
+    logger.info('Phonemizing dataset...')
+
+    list_of_tokenized_texts = [_phonemize_text(r.text, nlp=nlp) for r in dataset]
+
+    phrase_pos = []
+    to_phonemize = []
+    for i, row in enumerate(list_of_tokenized_texts):
+        for j, token in enumerate(row):
+            if isinstance(token, tuple):
+                pos = (i, j)
+                phrase_pos.append(pos)
+                to_phonemize.append(token[1])
+
+    phonemes = _phonemize_phrases(to_phonemize)
+    assert len(to_phonemize) == len(phonemes)
+
+    for i, row in enumerate(list_of_tokenized_texts):
+        for j, token in enumerate(row):
+            if (i, j) in phrase_pos:
+                list_of_tokenized_texts[i][j] = phonemes.pop(0)
+
+    return [r._replace(text=''.join(l)) for r, l in zip(dataset, list_of_tokenized_texts)]
+
+
+def _phonemize_text(text, nlp, pos_filter='PUNCT', **kwargs):
+    """
+    Tokenize text, phonemize phrases between punctuations, concatenate back together with
+    punctuations, return tokenized representation of text with tuples ready to be converted
+    to phonemes.
+
+    Args:
+        text (str): Text string from TextSpeechRow
+        nlp (Language): spaCy Language object for tokenizing text
+        pos_filter (str): spaCy part of speech filter
+        language (str): Translation language rules to apply to phonemizer
+        **kwargs: Utility arguments passed to phonemizer.phonemize
+
+    Returns:
+        tokenized (list): List of tokenized text, each element either a string or tuple.
+    """
+
+    tokens = nlp(text)
+    assert len(tokens) > 0, 'Zero tokens were found in text: %s' % text
+    assert text == ''.join(t.text_with_ws for t in tokens), 'Detokenization failed: %s' % text
+
+    phrase = ''
+    tokenized = []
+    for in_pos_filter, group in groupby(tokens, lambda t: t.pos_ == pos_filter or '\n' in t.text):
+        phrase = ''.join([t.text_with_ws for t in group])
+        if in_pos_filter or not phrase.split():
+            tokenized.append(phrase)
+        else:
+            tokenized.append(('phrase_to_phonemize', phrase))
+            if phrase[-1:] == ' ':
+                tokenized.append(' ')
+
+    return tokenized
+
+
+def _phonemize_phrases(phrases, language='en-us', **kwargs):
+    """
+    Convert graphemes of a phrase to phonemes.
+
+    Args:
+        phrase (str)
+        language (str): Translation language rules to apply to `phonemizer`, e.g. 'en-us'
+        **kwargs: Utility arguments passed to `phonemizer.phonemize`
+
+    Returns:
+        ph (str) Phonemic representation of phrase
+    """
+
+    ph = phonemize(
+        phrases, **kwargs, strip=True, njobs=os.cpu_count(), backend='espeak', language=language)
+
+    return ph
 
 
 def filter_(function, dataset):

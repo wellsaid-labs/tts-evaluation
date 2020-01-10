@@ -3,6 +3,7 @@ from collections import Counter
 import itertools
 import logging
 import pprint
+import spacy
 
 from hparams import add_config
 from hparams import configurable
@@ -21,11 +22,13 @@ from src import datasets
 from src.audio import get_num_seconds
 from src.datasets import filter_
 from src.datasets import normalize_audio_column
+from src.datasets import phonemize_data
 from src.utils import log_runtime
 from src.utils import seconds_to_string
 from src.utils import slice_by_cumulative_sum
 
 logger = logging.getLogger(__name__)
+nlp = spacy.load('en_core_web_lg')
 pprint = pprint.PrettyPrinter(indent=4)
 
 
@@ -440,6 +443,7 @@ def _preprocess_dataset(dataset):
     dataset = filter_(_filter_books, dataset)
     dataset = normalize_audio_column(dataset)
     dataset = filter_(_filter_too_little_audio, dataset)
+    dataset = phonemize_data(dataset, nlp)
     random.shuffle(dataset)
     return dataset
 

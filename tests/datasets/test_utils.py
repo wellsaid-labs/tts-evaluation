@@ -1,3 +1,4 @@
+import spacy
 import torch
 
 from src.datasets import Gender
@@ -6,6 +7,8 @@ from src.datasets import TextSpeechRow
 from src.datasets.utils import add_predicted_spectrogram_column
 from src.datasets.utils import add_spectrogram_column
 from src.datasets.utils import filter_
+from src.datasets.utils import phonemize_data
+from src.datasets.utils import _phonemize_text
 from tests._utils import get_tts_mocks
 
 
@@ -65,3 +68,42 @@ def test_add_spectrogram_column():
     # On disk and cached from the previous execution
     cached = add_spectrogram_column(mocks['dev_dataset'], on_disk=True)
     assert cached == processed
+
+
+nlp = spacy.load('en_core_web_sm')  # Must load small EN core to use in testing.
+
+
+def test_phonemize_data():
+    mocks = get_tts_mocks()
+    dataset = mocks['dataset']
+
+    curr_text = [r.text for r in dataset]
+    phonemized = phonemize_data(dataset, nlp)
+
+    for i, p in enumerate(phonemized):
+        assert curr_text[i] != p.text
+
+    text = 'Eureka walks on the air all right.'
+    phonemes = 'juːɹiːkɐ wɔːks ɑːnðɪ ɛɹ ɔːl ɹaɪt.'
+    phonemized_text = [p.text for p in phonemized]
+
+    assert text in curr_text
+    assert phonemes in phonemized_text
+
+
+def test_phonemize_text__spaces__punctuation():
+    """ Test `_phonemize_phrases` and `_phonemize_text` on strange spaces and punctuation from
+    some of our datasets.
+    """
+    text = """  of 5 stages:
+
+(i) preparation,
+ (ii) incubation,
+(iii) intimation,
+(iv) illumination"""
+    expected = [('phrase_to_phonemize', '  of 5 stages'), ':\n\n(',
+                ('phrase_to_phonemize', 'i'), ') ', ('phrase_to_phonemize', 'preparation'), ',\n (',
+                ('phrase_to_phonemize', 'ii'), ') ', ('phrase_to_phonemize', 'incubation'), ',\n(',
+                ('phrase_to_phonemize', 'iii'), ') ', ('phrase_to_phonemize', 'intimation'), ',\n(',
+                ('phrase_to_phonemize', 'iv'), ') ', ('phrase_to_phonemize', 'illumination')]
+    assert expected == _phonemize_text(text, nlp)
