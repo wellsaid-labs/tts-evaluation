@@ -1128,11 +1128,11 @@ app.use((error, request, response, next) => {
 if (require.main === module) {
   app.locals.podPools = {
     v1: new PodPool(process.env.V1_WORKER_POD_IMAGE, 0),
-    v2: new PodPool(process.env.V2_WORKER_POD_IMAGE),
-    v3: new PodPool(process.env.V3_WORKER_POD_IMAGE),
+    v2: new PodPool(process.env.V2_WORKER_POD_IMAGE, 0),
+    v3: new PodPool(process.env.V3_WORKER_POD_IMAGE, 0),
     v4: new PodPool(process.env.V4_WORKER_POD_IMAGE),
   };
-  app.locals.podPools.latest = app.locals.podPools.v2;
+  app.locals.podPools.latest = app.locals.podPools.v4;
 
   const listener = app.listen(8000, '0.0.0.0', () => logger.log(`Listening on port ${8000}!`));
 
