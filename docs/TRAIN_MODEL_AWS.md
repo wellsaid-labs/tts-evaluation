@@ -62,7 +62,7 @@ machine.
    ... for training the signal model...
 
    ```bash
-   VM_MACHINE_TYPE=p3.16xlarge
+   VM_MACHINE_TYPE=g4dn.12xlarge
    TRAIN_SCRIPT_PATH='src/bin/train/signal_model/__main__.py'
    ```
 

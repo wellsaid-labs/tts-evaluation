@@ -573,8 +573,7 @@ def set_hparams():
                 # NOTE: `amsgrad` caused substantially lower performance (tested on Comet in August
                 # 2019).
                 amsgrad=False,
-                # NOTE: This learning rate performed well on (tested on Comet in June 2019).
-                lr=2 * 10**-3,
+                lr=10**-3,
                 max_trust_ratio=10,  # NOTE: Default value as suggested in the paper proposing LAMB.
                 # NOTE: This l2 regularization reduced audio artifacts without sacrificing
                 # performance (tested on Comet in August 2019).
@@ -668,14 +667,14 @@ def set_hparams():
                                 # synchronous updates, using the Adam optimizer with β1 = 0.9, β2 =
                                 # 0.999, eps = 10−8 and a fixed learning rate of 10−4
                                 # NOTE: Parameters set after experimentation on a 8 V100 GPUs.
-                                train_batch_size=256,
+                                train_batch_size=128,
                                 # SOURCE: Efficient Neural Audio Synthesis
                                 # The WaveRNN models are trained on sequences of 960 audio samples.
                                 # NOTE: We were able to get better results with 1800 audio samples
                                 # in Comet in August, 2019.
-                                train_spectrogram_slice_size=int(1800 / frame_hop),
+                                train_spectrogram_slice_size=int(900 / frame_hop),
 
-                                dev_batch_size=32,
+                                dev_batch_size=16,
                                 dev_spectrogram_slice_size=int(24000 / frame_hop),
 
                                 # `CrossEntropyLoss` is not directly mentioned in the paper; however
