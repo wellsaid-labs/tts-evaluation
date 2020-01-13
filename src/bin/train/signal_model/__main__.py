@@ -262,7 +262,7 @@ if __name__ == '__main__':  # pragma: no cover
         default=None,
         help=('Spectrogram model checkpoint path used to predicted spectrogram from '
               'text as input to the signal model.'))
-    parser.add_argument('--tags', default=[], nargs='+', help='List of tags for the experiment.')
+    parser.add_argument('--tags', default=['batch_size=128', 'slice_size=900'], nargs='+', help='List of tags for the experiment.')
     parser.add_argument('--name', type=str, default=None, help='Name of the experiment.')
     parser.add_argument(
         '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
