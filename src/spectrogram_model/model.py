@@ -218,10 +218,11 @@ class SpectrogramModel(nn.Module):
         hidden_state = None
         alignments, frames, stop_tokens = [], [], []
         max_lengths = (num_tokens.float() * max_frames_per_token).long()
+        max_length = max_lengths.max().item()
         lengths = max_lengths.clone().tolist()
         if use_tqdm:
             progress_bar = tqdm(leave=True, unit='frame(s)')
-        while len(stopped) != batch_size and len(frames) < max(lengths):
+        while len(stopped) < batch_size and len(frames) < max_length:
             frame, stop_token, hidden_state, alignment = self.decoder(
                 encoded_tokens, tokens_mask, speaker, hidden_state=hidden_state)
             stop_token = self.stop_sigmoid(stop_token)
