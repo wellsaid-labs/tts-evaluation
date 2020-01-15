@@ -168,6 +168,109 @@ def test_spectrogram_model_train__batch_size_sensitivity():
     numpy.isclose(gradient_sum, batched_gradient_sum)
 
 
+class MockSigmoid(torch.nn.Module):
+
+    def forward(self, tensor):
+        return torch.rand(*tensor.shape, device=tensor.device)
+
+
+def test_spectrogram_model__filter_reached_max():
+    batch_size = 64
+    num_tokens = 6
+    frame_channels = 20
+    vocab_size = 20
+    num_frames = 3
+    num_speakers = 1
+
+    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels)
+    model.stop_sigmoid = MockSigmoid()
+
+    # NOTE: 1-index to avoid using 0 typically associated with padding
+    input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
+    speaker = torch.LongTensor(1, batch_size).fill_(0)
+    batched_num_tokens = torch.full((batch_size,), num_tokens,
+                                    dtype=torch.long).random_(1, num_tokens)
+    batched_num_tokens[0] = num_tokens
+
+    frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
+        input_,
+        speaker,
+        num_tokens=batched_num_tokens,
+        max_frames_per_token=num_frames / num_tokens,
+        filter_reached_max=True)
+
+    assert reached_max.type() == 'torch.BoolTensor'
+    assert reached_max.sum().item() >= 0
+
+    num_reached_max = reached_max.sum().item()
+    max_length = lengths.max().item()
+
+    assert frames.type() == 'torch.FloatTensor'
+    assert frames.shape == (max_length, batch_size - num_reached_max, frame_channels)
+
+    assert frames_with_residual.type() == 'torch.FloatTensor'
+    assert frames_with_residual.shape == (max_length, batch_size - num_reached_max, frame_channels)
+
+    assert stop_token.type() == 'torch.FloatTensor'
+    assert stop_token.shape == (max_length, batch_size - num_reached_max)
+
+    assert alignment.type() == 'torch.FloatTensor'
+    assert alignment.shape == (max_length, batch_size - num_reached_max, num_tokens)
+
+    assert lengths.shape == (1, batch_size - num_reached_max)
+
+    for length in lengths[0].tolist():
+        assert length > 0
+        assert length <= max_length
+
+
+def test_spectrogram_model__random_sigmoid():
+    batch_size = 64
+    num_tokens = 6
+    frame_channels = 20
+    vocab_size = 20
+    num_frames = 3
+    num_speakers = 1
+    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels)
+
+    model.stop_sigmoid = MockSigmoid()
+
+    # NOTE: 1-index to avoid using 0 typically associated with padding
+    input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
+    speaker = torch.LongTensor(1, batch_size).fill_(0)
+    batched_num_tokens = torch.full((batch_size,), num_tokens,
+                                    dtype=torch.long).random_(1, num_tokens)
+    batched_num_tokens[0] = num_tokens
+
+    frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
+        input_,
+        speaker,
+        num_tokens=batched_num_tokens,
+        max_frames_per_token=num_frames / num_tokens)
+
+    max_length = lengths.max().item()
+
+    assert reached_max.type() == 'torch.BoolTensor'
+    assert reached_max.sum().item() >= 0
+
+    assert frames.type() == 'torch.FloatTensor'
+    assert frames.shape == (max_length, batch_size, frame_channels)
+
+    assert frames_with_residual.type() == 'torch.FloatTensor'
+    assert frames_with_residual.shape == (max_length, batch_size, frame_channels)
+
+    assert stop_token.type() == 'torch.FloatTensor'
+    assert stop_token.shape == (max_length, batch_size)
+
+    assert alignment.type() == 'torch.FloatTensor'
+    assert alignment.shape == (max_length, batch_size, num_tokens)
+
+    assert lengths.shape == (1, batch_size)
+    for length in lengths[0].tolist():
+        assert length > 0
+        assert length <= max_length
+
+
 def test_spectrogram_model():
     batch_size = 5
     num_tokens = 6
@@ -184,7 +287,9 @@ def test_spectrogram_model():
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     speaker = torch.LongTensor(1, batch_size).fill_(0)
-    batched_num_tokens = torch.full((batch_size,), num_tokens, dtype=torch.long)
+    batched_num_tokens = torch.full((batch_size,), num_tokens,
+                                    dtype=torch.long).random_(1, num_tokens)
+    batched_num_tokens[0] = num_tokens
 
     frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
         input_,

@@ -307,29 +307,23 @@ class Trainer():
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
                 if infer:
-                    predictions = self.model(batch.text.tensor, batch.speaker.tensor,
-                                             batch.text.lengths)
-
-                    # NOTE: Remove predictions that diverged as to not skew other metrics. We
-                    # count these sequences seperatly with `reached_max_frames`.
-                    reached_max = predictions[-1].squeeze(0)
-                    predictions = tuple([p[:, ~reached_max] for p in predictions])
+                    # NOTE: Remove predictions that diverged (reached max) as to not skew other
+                    # metrics. We count these sequences seperatly with `reached_max_frames`.
+                    predictions = self.model(
+                        batch.text.tensor,
+                        batch.speaker.tensor,
+                        batch.text.lengths,
+                        filter_reached_max=True)
 
                     if predictions[-2].numel() > 0:
-                        # NOTE: We need to remove any excess padding after we removed some of
-                        # the rows.
-                        max_len = predictions[-2].max()
-                        predictions = tuple(
-                            [p[:max_len] if p.dim() > 2 else p for p in predictions])
-
                         # NOTE: `duration_gap` computes the average length of the predictions
                         # verus the average length of the original spectrograms.
-                        duration_gap = (predictions[-2].float() /
-                                        batch.spectrogram.lengths[:, ~reached_max].float()).mean()
+                        original_lengths = batch.spectrogram.lengths[:, ~predictions[-1].squeeze()]
+                        duration_gap = (predictions[-2].float() / original_lengths.float()).mean()
                         self.metrics['duration_gap'].update(duration_gap, predictions[-2].numel())
 
-                    self.metrics['reached_max_frames'].update(reached_max.float().mean(),
-                                                              reached_max.numel())
+                    self.metrics['reached_max_frames'].update(predictions[-1].float().mean(),
+                                                              predictions[-1].numel())
                 else:
                     predictions = self.model(batch.text.tensor, batch.speaker.tensor,
                                              batch.text.lengths, batch.spectrogram.tensor,

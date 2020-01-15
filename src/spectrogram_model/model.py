@@ -201,7 +201,8 @@ class SpectrogramModel(nn.Module):
                is_unbatched=False,
                max_frames_per_token=HParam(),
                stop_threshold=HParam(),
-               use_tqdm=False):
+               use_tqdm=False,
+               filter_reached_max=False):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
@@ -213,6 +214,8 @@ class SpectrogramModel(nn.Module):
                 quitting; Used for testing and defensive design.
             stop_threshold (float, optional): The threshold probability for deciding to stop.
             use_tqdm (bool, optional): If ``True`` attach a progress bar to iterator.
+            filter_reached_max (bool, optional): If `True` this filters the batch, removing
+                any sequences that reached the max frames.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
@@ -229,12 +232,11 @@ class SpectrogramModel(nn.Module):
         stopped = set()
         hidden_state = None
         alignments, frames, stop_tokens = [], [], []
-        max_lengths = (num_tokens.float() * max_frames_per_token).long()
-        max_length = max_lengths.max().item()
+        max_lengths = torch.max((num_tokens.float() * max_frames_per_token).long(), torch.tensor(1))
         lengths = max_lengths.clone().tolist()
         if use_tqdm:
             progress_bar = tqdm(leave=True, unit='frame(s)')
-        while len(stopped) < batch_size and len(frames) < max_length:
+        while len(stopped) < batch_size and len(frames) < max(lengths):
             frame, stop_token, hidden_state, alignment = self.decoder(
                 encoded_tokens, tokens_mask, speaker, hidden_state=hidden_state)
             stop_token = self.stop_sigmoid(stop_token)
@@ -268,9 +270,16 @@ class SpectrogramModel(nn.Module):
         frames_with_residual = self._add_residual(frames, lengths)
 
         reached_max = (lengths == max_lengths).view(1, batch_size)
-        reached_max_sum = reached_max.sum().item()
-        if reached_max_sum > 0:
-            logger.warning('%d sequences reached max frames', reached_max_sum)
+        if reached_max.sum() > 0:
+            logger.warning('%d sequences reached max frames', reached_max.sum())
+
+        if filter_reached_max:
+            filter_ = ~reached_max.squeeze(0)
+            lengths = lengths[:, filter_]
+            frames, frames_with_residual, stop_tokens, alignments = tuple([
+                t[:lengths.squeeze().max(), filter_] if len(lengths) > 0 else t[:, filter_]
+                for t in [frames, frames_with_residual, stop_tokens, alignments]
+            ])
 
         if is_unbatched:
             return (frames.squeeze(1), frames_with_residual.squeeze(1), stop_tokens.squeeze(1),
