@@ -120,7 +120,7 @@ class AutoregressiveDecoder(nn.Module):
             "Either the decoder is"
             "conditioned on ``target_frames`` or the ``hidden_state`` but not both.")
 
-        num_tokens, batch_size, _ = encoded_tokens.shape
+        _, batch_size, _ = encoded_tokens.shape
         device = encoded_tokens.device
 
         hidden_state = AutoregressiveDecoderHiddenState(
