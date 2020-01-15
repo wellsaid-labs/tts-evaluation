@@ -110,7 +110,6 @@ class SpectrogramModel(nn.Module):
         Returns:
             (list) Indices that predicted stop.
         """
-        predictions = self.stop_sigmoid(predictions)
         stopped = predictions.data.view(-1).ge(stop_threshold).nonzero()
         if stopped.dim() > 1:
             return stopped.squeeze(1).tolist()
@@ -209,8 +208,8 @@ class SpectrogramModel(nn.Module):
             stop_token (torch.FloatTensor [num_frames, batch_size])
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
             lengths (torch.LongTensor [1, batch_size] or [1])
-            reached_max (int or bool): The number of spectrogram frames in batch that reached the
-                maximum number of frames.
+            reached_max (torch.BoolTensor [1, batch_size] or [1]): The spectrogram frames that
+                reached the maximum number of frames.
         """
         # [num_tokens, batch_size, hidden_size]
         _, batch_size, _ = encoded_tokens.shape
@@ -225,6 +224,7 @@ class SpectrogramModel(nn.Module):
         while len(stopped) != batch_size and len(frames) < max(lengths):
             frame, stop_token, hidden_state, alignment = self.decoder(
                 encoded_tokens, tokens_mask, speaker, hidden_state=hidden_state)
+            stop_token = self.stop_sigmoid(stop_token)
             to_stop = self._get_stopped_indexes(stop_token, stop_threshold=stop_threshold)
 
             # Zero out stopped frames
@@ -254,13 +254,14 @@ class SpectrogramModel(nn.Module):
         lengths = torch.tensor(lengths, device=frames.device).unsqueeze(0)
         frames_with_residual = self._add_residual(frames, lengths)
 
-        reached_max = (lengths == max_lengths).sum().item()
-        if reached_max > 0:
-            logger.warning('%d sequences reached max frames', reached_max)
+        reached_max = (lengths == max_lengths).view(1, batch_size)
+        reached_max_sum = reached_max.sum().item()
+        if reached_max_sum > 0:
+            logger.warning('%d sequences reached max frames', reached_max_sum)
 
         if is_unbatched:
             return (frames.squeeze(1), frames_with_residual.squeeze(1), stop_tokens.squeeze(1),
-                    alignments.squeeze(1), lengths.squeeze(1), bool(reached_max))
+                    alignments.squeeze(1), lengths.squeeze(1), reached_max.squeeze(1))
 
         return frames, frames_with_residual, stop_tokens, alignments, lengths, reached_max
 
@@ -354,8 +355,8 @@ class SpectrogramModel(nn.Module):
         Additionally, inference returns:
             lengths (torch.LongTensor [1, batch_size] or [1]): Number of frames predicted for each
                 sequence in the batch.
-            reached_max (int or bool): The number of spectrogram frames in batch that reached the
-                maximum number of frames.
+            reached_max (torch.BoolTensor [1, batch_size] or [1]): The spectrogram frames that
+                reached the maximum number of frames.
         """
         is_unbatched = len(tokens.shape) == 1
 

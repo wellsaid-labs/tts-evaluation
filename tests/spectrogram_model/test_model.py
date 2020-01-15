@@ -55,7 +55,7 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
              speaker,
              num_tokens=batched_num_tokens,
              max_frames_per_token=num_frames / num_tokens)
-        assert batched_reached_max == batch_size
+        assert batched_reached_max.sum() == batch_size
 
     with fork_rng(seed=123):
         frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
@@ -181,8 +181,8 @@ def test_spectrogram_model():
         num_tokens=batched_num_tokens,
         max_frames_per_token=num_frames / num_tokens)
 
-    assert isinstance(reached_max, int)
-    assert reached_max == batch_size
+    assert reached_max.type() == 'torch.BoolTensor'
+    assert reached_max.sum().item() == batch_size
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, batch_size, frame_channels)
@@ -221,7 +221,7 @@ def test_spectrogram_model_unbatched():
     frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
         input_, speaker, max_frames_per_token=num_frames / num_tokens)
 
-    assert isinstance(reached_max, bool)
+    assert reached_max.type() == 'torch.BoolTensor'
     assert reached_max
 
     assert torch.equal(lengths, torch.tensor([num_frames]))

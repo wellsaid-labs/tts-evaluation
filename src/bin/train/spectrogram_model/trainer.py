@@ -317,13 +317,18 @@ class Trainer():
                 if infer:
                     predictions = self.model(batch.text.tensor, batch.speaker.tensor,
                                              batch.text.lengths)
+
+                    # NOTE: Remove predictions that diverged as to not skew other metrics. We
+                    # count these sequences seperatly with `reached_max_frames`.
+                    reached_max = predictions[-1]
+                    predictions = tuple([p[:, ~reached_max.squeeze(0)] for p in predictions])
+
                     # NOTE: `duration_gap` computes the average length of the predictions
                     # verus the average length of the original spectrograms.
                     duration_gap = (predictions[-2].float() /
                                     batch.spectrogram.lengths.float()).mean()
-
                     self.metrics['duration_gap'].update(duration_gap, batch_size)
-                    self.metrics['reached_max_frames'].update(predictions[-1] / batch_size,
+                    self.metrics['reached_max_frames'].update(reached_max.float().mean(),
                                                               batch_size)
                 else:
                     predictions = self.model(batch.text.tensor, batch.speaker.tensor,
@@ -452,6 +457,9 @@ class Trainer():
             predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
             lengths (torch.LongTensor [batch_size])
         """
+        if lengths.numel() == 0:
+            return  # No need to update our metrics
+
         # lengths [batch_size] → mask [batch_size, num_frames]
         mask = lengths_to_mask(lengths, device=predicted_alignments.device)
         # mask [batch_size, num_frames] → [num_frames, batch_size]
