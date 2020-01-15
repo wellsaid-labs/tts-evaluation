@@ -34,6 +34,12 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
 
     model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels).eval()
 
+    # Ensure `LayerNorm` perturbs the input instead of being just an identity.
+    for module in model.modules():
+        if isinstance(module, torch.nn.LayerNorm):
+            torch.nn.init.uniform_(module.weight)
+            torch.nn.init.uniform_(module.bias)
+
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     input_[-padding_len:, 0] = 0
@@ -100,6 +106,12 @@ def test_spectrogram_model_train__batch_size_sensitivity():
 
     model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels)
 
+    # Ensure `LayerNorm` perturbs the input instead of being just an identity.
+    for module in model.modules():
+        if isinstance(module, torch.nn.LayerNorm):
+            torch.nn.init.uniform_(module.weight)
+            torch.nn.init.uniform_(module.bias)
+
     # NOTE: 1-index in `random_` to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
     input_[-padding_len:, 0] = 0  # Add padding on the end
@@ -129,8 +141,8 @@ def test_spectrogram_model_train__batch_size_sensitivity():
              num_tokens=batched_num_tokens,
              target_lengths=batched_num_frames,
              target_frames=target_frames)
-        (batched_frames_with_residual[:, :2].sum() + batched_stop_token[:, :2].sum()).backward()
-        batched_embedding_grad = model.encoder.embed_token[0].weight.grad
+        (batched_frames_with_residual[:, :1].sum() + batched_stop_token[:, :1].sum()).backward()
+        batched_gradient_sum = sum([p.grad.sum() for p in model.parameters() if p.grad is not None])
         model.zero_grad()
 
     with fork_rng(seed=123):
@@ -141,8 +153,7 @@ def test_spectrogram_model_train__batch_size_sensitivity():
             num_tokens=batched_num_tokens[:1],
             target_lengths=batched_num_frames[:1])
         (frames_with_residual.sum() + stop_token.sum()).backward()
-        # TODO: Consider checking the gradient on every parameter in the model.
-        embedding_grad = model.encoder.embed_token[0].weight.grad
+        gradient_sum = sum([p.grad.sum() for p in model.parameters() if p.grad is not None])
         model.zero_grad()
 
     assert_almost_equal = lambda a, b: numpy.testing.assert_almost_equal(
@@ -154,7 +165,7 @@ def test_spectrogram_model_train__batch_size_sensitivity():
     assert_almost_equal(stop_token, batched_stop_token[:batched_num_frames[0], :1])
     assert_almost_equal(alignment,
                         batched_alignment[:batched_num_frames[0], :1, :int(batched_num_tokens[0])])
-    assert_almost_equal(embedding_grad, batched_embedding_grad)
+    numpy.isclose(gradient_sum, batched_gradient_sum)
 
 
 def test_spectrogram_model():
@@ -250,8 +261,8 @@ def test_spectrogram_model_target():
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
-    speaker = torch.LongTensor(1, batch_size).fill_(0)
-    target_frames = torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1)
+    speaker = torch.zeros(1, batch_size, dtype=torch.long)
+    target_frames = torch.rand(num_frames, batch_size, frame_channels)
     target_lengths = torch.full((batch_size,), num_frames, dtype=torch.long)
     batched_num_tokens = torch.full((batch_size,), num_tokens, dtype=torch.long)
     frames, frames_with_residual, stop_token, alignment = model(
@@ -286,8 +297,8 @@ def test_spectrogram_model_target_unbatched():
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens).random_(1, vocab_size)
-    speaker = torch.LongTensor(1, 1).fill_(0)
-    target_frames = torch.FloatTensor(num_frames, frame_channels).uniform_(0, 1)
+    speaker = torch.zeros(1, 1, dtype=torch.long)
+    target_frames = torch.rand(num_frames, frame_channels)
     target_lengths = torch.tensor(num_frames, dtype=torch.long)
     frames, frames_with_residual, stop_token, alignment = model(
         input_, speaker, target_frames=target_frames, target_lengths=target_lengths)

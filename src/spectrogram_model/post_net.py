@@ -45,7 +45,7 @@ class PostNet(nn.Module):
 
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
-        assert convolution_filter_size % 2 == 1, ('``convolution_filter_size`` must be odd')
+        assert convolution_filter_size % 2 == 1, '`convolution_filter_size` must be odd'
 
         self.layers = nn.ModuleList([
             nn.Sequential(

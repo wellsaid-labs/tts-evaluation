@@ -283,11 +283,13 @@ def _set_model_size(frame_channels, bits):
                             #         Text-To-Speech Synthesis):
                             # The paper mentions their proposed model uses a 256 dimension
                             # embedding.
+                            # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to
+                            # learn more about this parameter.
                             speaker_embedding_dim=64),
                     '_infer':
                         HParams(
                             # NOTE: Estimated loosely to be a multiple of the slowest speech
-                            # observed in one dataset. This threshhold is primarly intended to
+                            # observed in one dataset. This threshhold is primarily intended to
                             # prevent recursion.
                             max_frames_per_token=30,
                             stop_threshold=stop_threshold)

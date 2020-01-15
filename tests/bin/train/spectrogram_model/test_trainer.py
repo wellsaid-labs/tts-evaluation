@@ -72,7 +72,7 @@ def test__do_loss_and_maybe_backwards():
     predicted_pre_spectrogram = torch.FloatTensor([[[1, 1]], [[1, 1]], [[1, 1]]])
     predicted_post_spectrogram = torch.FloatTensor([[[0.5, 0.5]], [[0.5, 0.5]], [[1, 1]]])
     predicted_stop_tokens = torch.FloatTensor([[0], [0.5], [0.5]])
-    predicted_alignments = torch.FloatTensor(3, 1, 5).fill_(0.0)
+    predicted_alignments = torch.zeros(3, 1, 5)
     predicted_alignments[:, 0, 0].fill_(1.0)
 
     predictions = (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,

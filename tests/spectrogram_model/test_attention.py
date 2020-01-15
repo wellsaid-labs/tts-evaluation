@@ -13,8 +13,8 @@ def test_location_sensative_attention():
         query_hidden_size=query_hidden_size, hidden_size=attention_hidden_size)
     tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
     tokens_mask[:, -1].fill_(0)
-    encoded_tokens = torch.FloatTensor(num_tokens, batch_size, attention_hidden_size).uniform_(0, 1)
-    query = torch.FloatTensor(batch_size, query_hidden_size).uniform_(0, 1)
+    encoded_tokens = torch.rand(num_tokens, batch_size, attention_hidden_size)
+    query = torch.rand(batch_size, query_hidden_size)
 
     cumulative_alignment = None
     for j in range(3):
