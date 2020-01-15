@@ -320,14 +320,16 @@ class Trainer():
 
                     # NOTE: Remove predictions that diverged as to not skew other metrics. We
                     # count these sequences seperatly with `reached_max_frames`.
-                    reached_max = predictions[-1]
-                    predictions = tuple([p[:, ~reached_max.squeeze(0)] for p in predictions])
+                    reached_max = predictions[-1].squeeze(0)
+                    predictions = tuple([p[:, ~reached_max] for p in predictions])
 
                     # NOTE: `duration_gap` computes the average length of the predictions
                     # verus the average length of the original spectrograms.
-                    duration_gap = (predictions[-2].float() /
-                                    batch.spectrogram.lengths.float()).mean()
-                    self.metrics['duration_gap'].update(duration_gap, batch_size)
+                    if predictions[-2].numel() > 0:
+                        duration_gap = (predictions[-2].float() /
+                                        batch.spectrogram.lengths[:, ~reached_max].float()).mean()
+                        self.metrics['duration_gap'].update(duration_gap, batch_size)
+
                     self.metrics['reached_max_frames'].update(reached_max.float().mean(),
                                                               batch_size)
                 else:
