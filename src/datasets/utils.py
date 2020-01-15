@@ -124,6 +124,9 @@ def _add_spectrogram_column(example, on_disk=True):
         assert audio_path.is_file(), 'Audio path must be a file %s' % audio_path
         signal = read_audio(audio_path)
 
+        # TODO: The RMS function that trim usesn mentions that it's likely better to use a
+        # spectrogram if it's available:
+        # https://librosa.github.io/librosa/generated/librosa.feature.rms.html?highlight=rms#librosa.feature.rms
         _, trim = librosa.effects.trim(signal.astype(numpy.float32))
         signal = signal[trim[0]:trim[1]]
 

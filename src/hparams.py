@@ -97,6 +97,8 @@ def _set_audio_processing():
                     hop_length=frame_hop,
                     # NOTE: Manually determined to be a adequate cutoff for Linda Johnson via:
                     # ``notebooks/Stripping Silence.ipynb``
+                    # TODO: Given the number of new datasets that we acquired, this value
+                    # should be reevaluated.
                     top_db=50,
                 ),
         })
