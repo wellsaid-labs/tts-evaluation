@@ -549,8 +549,7 @@ def set_hparams():
     Adam.__init__ = configurable(Adam.__init__)
     nn.modules.batchnorm._BatchNorm.__init__ = configurable(
         nn.modules.batchnorm._BatchNorm.__init__)
-    nn.LayerNorm.__init__ = configurable(
-        nn.LayerNorm.__init__)
+    nn.LayerNorm.__init__ = configurable(nn.LayerNorm.__init__)
     add_config({
         # NOTE: `momentum=0.01` to match Tensorflow defaults
         'torch.nn.modules.batchnorm._BatchNorm.__init__':
@@ -674,7 +673,6 @@ def set_hparams():
                                 # NOTE: We were able to get better results with 1800 audio samples
                                 # in Comet in August, 2019.
                                 train_spectrogram_slice_size=int(1800 / frame_hop),
-
                                 dev_batch_size=32,
                                 dev_spectrogram_slice_size=int(24000 / frame_hop),
 
@@ -701,8 +699,7 @@ def set_hparams():
                                 # context for each frame outside of the aligned samples. Then it
                                 # makes sense to have 450 samples of padding or 2 spectrogram
                                 # frames.
-                                spectrogram_slice_pad=2,
-                            ),
+                                spectrogram_slice_pad=2,),
                     }
                 },
             },
