@@ -76,14 +76,15 @@ def plot_stop_token(stop_token):
     """ Plot probability of the stop token over time.
 
     Args:
-        stop_token (numpy.array or torch.Tensor [decoder_timestep]): Stop token probablity per
+        stop_token (numpy.array or torch.Tensor [decoder_timestep]): Stop token logits per
             decoder timestep.
 
     Returns:
         (matplotlib.figure.Figure): Matplotlib figure representing the plot.
     """
-    if torch.is_tensor(stop_token):
-        stop_token = stop_token.detach().cpu().numpy()
+    stop_token = torch.tensor(stop_token)
+    stop_token = torch.sigmoid(stop_token)
+    stop_token = stop_token.detach().cpu().numpy()
 
     pyplot.style.use('ggplot')
     figure = pyplot.figure()

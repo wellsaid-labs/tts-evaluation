@@ -224,6 +224,52 @@ def test_spectrogram_model__filter_reached_max():
         assert length <= max_length
 
 
+def test_spectrogram_model__filter_all():
+    batch_size = 64
+    num_tokens = 6
+    frame_channels = 20
+    vocab_size = 20
+    num_frames = 3
+    num_speakers = 1
+
+    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels)
+
+    # Make sure that stop-token is not predicted; therefore, reaching ``max_frames_per_token``
+    torch.nn.init.constant_(model.decoder.linear_stop_token.weight, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token.bias, -math.inf)
+
+    # NOTE: 1-index to avoid using 0 typically associated with padding
+    input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
+    speaker = torch.LongTensor(1, batch_size).fill_(0)
+    batched_num_tokens = torch.full((batch_size,), num_tokens,
+                                    dtype=torch.long).random_(1, num_tokens)
+    batched_num_tokens[0] = num_tokens
+
+    frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
+        input_,
+        speaker,
+        num_tokens=batched_num_tokens,
+        max_frames_per_token=num_frames / num_tokens,
+        filter_reached_max=True)
+
+    assert reached_max.type() == 'torch.BoolTensor'
+    assert reached_max.sum().item() == batch_size
+
+    assert frames.type() == 'torch.FloatTensor'
+    assert frames.shape == (num_frames, 0, frame_channels)
+
+    assert frames_with_residual.type() == 'torch.FloatTensor'
+    assert frames_with_residual.shape == (num_frames, 0, frame_channels)
+
+    assert stop_token.type() == 'torch.FloatTensor'
+    assert stop_token.shape == (num_frames, 0)
+
+    assert alignment.type() == 'torch.FloatTensor'
+    assert alignment.shape == (num_frames, 0, num_tokens)
+
+    assert lengths.shape == (1, 0)
+
+
 def test_spectrogram_model__random_sigmoid():
     batch_size = 64
     num_tokens = 6

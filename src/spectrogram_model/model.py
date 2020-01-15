@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 
 # TODO: Update our weight initialization to best practices like these:
 # - https://github.com/pytorch/pytorch/issues/18182
-# - https://web.stanford.edu/class/archive/cs/cs224n/cs224n.1184/lectures/lecture9.pdf (Gated RNN init)
+# - Gated RNN init on last slide:
+# https://web.stanford.edu/class/archive/cs/cs224n/cs224n.1184/lectures/lecture9.pdf
 # - Kaiming init for RELu instead of Xavier:
 # https://towardsdatascience.com/weight-initialization-in-neural-networks-a-journey-from-the-basics-to-kaiming-954fb9b47c79
 # - Block orthogonal LSTM initilization:
@@ -122,6 +123,7 @@ class SpectrogramModel(nn.Module):
         Returns:
             (list) Indices that predicted stop.
         """
+        predictions = self.stop_sigmoid(predictions)
         stopped = predictions.data.view(-1).ge(stop_threshold).nonzero()
         if stopped.dim() > 1:
             return stopped.squeeze(1).tolist()
@@ -239,7 +241,6 @@ class SpectrogramModel(nn.Module):
         while len(stopped) < batch_size and len(frames) < max(lengths):
             frame, stop_token, hidden_state, alignment = self.decoder(
                 encoded_tokens, tokens_mask, speaker, hidden_state=hidden_state)
-            stop_token = self.stop_sigmoid(stop_token)
             to_stop = self._get_stopped_indexes(stop_token, stop_threshold=stop_threshold)
 
             # Zero out stopped frames
@@ -277,7 +278,7 @@ class SpectrogramModel(nn.Module):
             filter_ = ~reached_max.squeeze(0)
             lengths = lengths[:, filter_]
             frames, frames_with_residual, stop_tokens, alignments = tuple([
-                t[:lengths.squeeze().max(), filter_] if len(lengths) > 0 else t[:, filter_]
+                t[:lengths.squeeze().max(), filter_] if lengths.numel() > 0 else t[:, filter_]
                 for t in [frames, frames_with_residual, stop_tokens, alignments]
             ])
 
