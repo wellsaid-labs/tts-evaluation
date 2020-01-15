@@ -312,7 +312,6 @@ class Trainer():
 
         random_batch = random.randint(0, len(data_loader) - 1)
         for i, batch in enumerate(data_loader):
-            batch_size = batch.text.lengths.numel()
             with torch.set_grad_enabled(train):
                 if infer:
                     predictions = self.model(batch.text.tensor, batch.speaker.tensor,
@@ -328,10 +327,10 @@ class Trainer():
                     if predictions[-2].numel() > 0:
                         duration_gap = (predictions[-2].float() /
                                         batch.spectrogram.lengths[:, ~reached_max].float()).mean()
-                        self.metrics['duration_gap'].update(duration_gap, batch_size)
+                        self.metrics['duration_gap'].update(duration_gap, predictions[-2].numel())
 
                     self.metrics['reached_max_frames'].update(reached_max.float().mean(),
-                                                              batch_size)
+                                                              reached_max.numel())
                 else:
                     predictions = self.model(batch.text.tensor, batch.speaker.tensor,
                                              batch.text.lengths, batch.spectrogram.tensor,
