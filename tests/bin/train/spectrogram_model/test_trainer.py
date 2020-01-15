@@ -13,7 +13,7 @@ from tests._utils import get_tts_mocks
 from tests._utils import MockCometML
 
 
-@mock.patch('src.bin.train.signal_model.trainer.atexit.register')
+@mock.patch('src.bin.train.spectrogram_model.trainer.atexit.register')
 def get_trainer(register_mock, load_data=True):
     """
     Args:
@@ -34,7 +34,7 @@ def get_trainer(register_mock, load_data=True):
     return trainer
 
 
-@mock.patch('src.bin.train.signal_model.trainer.atexit.register')
+@mock.patch('src.bin.train.spectrogram_model.trainer.atexit.register')
 def test_checkpoint(register_mock):
     """ Ensure checkpoint can be saved and loaded from. """
     register_mock.return_value = None

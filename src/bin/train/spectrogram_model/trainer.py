@@ -322,9 +322,15 @@ class Trainer():
                     reached_max = predictions[-1].squeeze(0)
                     predictions = tuple([p[:, ~reached_max] for p in predictions])
 
-                    # NOTE: `duration_gap` computes the average length of the predictions
-                    # verus the average length of the original spectrograms.
                     if predictions[-2].numel() > 0:
+                        # NOTE: We need to remove any excess padding after we removed some of
+                        # the rows.
+                        max_len = predictions[-2].max()
+                        predictions = tuple(
+                            [p[:max_len] if p.dim() > 2 else p for p in predictions])
+
+                        # NOTE: `duration_gap` computes the average length of the predictions
+                        # verus the average length of the original spectrograms.
                         duration_gap = (predictions[-2].float() /
                                         batch.spectrogram.lengths[:, ~reached_max].float()).mean()
                         self.metrics['duration_gap'].update(duration_gap, predictions[-2].numel())
