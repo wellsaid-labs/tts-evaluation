@@ -14,6 +14,18 @@ from src.spectrogram_model.post_net import PostNet
 
 logger = logging.getLogger(__name__)
 
+# TODO: Update our weight initialization to best practices like these:
+# - https://github.com/pytorch/pytorch/issues/18182
+# - https://web.stanford.edu/class/archive/cs/cs224n/cs224n.1184/lectures/lecture9.pdf (Gated RNN init)
+# - Kaiming init for RELu instead of Xavier:
+# https://towardsdatascience.com/weight-initialization-in-neural-networks-a-journey-from-the-basics-to-kaiming-954fb9b47c79
+# - Block orthogonal LSTM initilization:
+# https://github.com/allenai/allennlp/pull/158
+# - Kaiming and Xavier both assume the input has a mean of 0 and std of 1; therefore, the embeddings
+# should be initialized with a normal distribution.
+# - The PyTorch init has little backing:
+# https://twitter.com/jeremyphoward/status/1107869607677681664
+
 
 class SpectrogramModel(nn.Module):
     """ Character sequence consumed to predict a spectrogram.
