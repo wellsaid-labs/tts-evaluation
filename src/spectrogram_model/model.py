@@ -234,7 +234,8 @@ class SpectrogramModel(nn.Module):
         stopped = set()
         hidden_state = None
         alignments, frames, stop_tokens = [], [], []
-        max_lengths = torch.max((num_tokens.float() * max_frames_per_token).long(), torch.tensor(1))
+        max_lengths = torch.max((num_tokens.float() * max_frames_per_token).long(),
+                                torch.tensor(1, device=num_tokens.device))
         lengths = max_lengths.clone().tolist()
         if use_tqdm:
             progress_bar = tqdm(leave=True, unit='frame(s)')
