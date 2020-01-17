@@ -103,8 +103,6 @@ class DistributedAveragedMetric(AveragedMetric):
         if src.distributed.is_initialized():
             torch_ = torch.cuda if torch.cuda.is_available() else torch
             packed = torch_.FloatTensor([self.total_value, self.total_count])
-            logger.info('Running `torch.distributed.reduce` with %s',
-                        str(packed))  # TODO: Remove this.
             torch.distributed.reduce(packed, dst=src.distributed.get_master_rank())
             self.post_sync_total_value, self.post_sync_total_count = tuple(packed.tolist())
         else:
