@@ -92,7 +92,8 @@ class AutoregressiveDecoder(nn.Module):
         self.attention = LocationSensitiveAttention(
             query_hidden_size=lstm_hidden_size, hidden_size=attention_hidden_size)
         self.linear_out = nn.Linear(in_features=hidden_size, out_features=frame_channels)
-        self.linear_stop_token = nn.Linear(in_features=hidden_size, out_features=1)
+        self.linear_stop_token = nn.Linear(
+            in_features=hidden_size - self.attention_hidden_size, out_features=1)
 
     def forward(self, encoded_tokens, tokens_mask, speaker, target_frames=None, hidden_state=None):
         """
@@ -127,7 +128,10 @@ class AutoregressiveDecoder(nn.Module):
             last_attention_context=torch.zeros(
                 batch_size, self.attention_hidden_size, device=device),
             cumulative_alignment=None,
-            last_frame=torch.zeros(1, batch_size, self.frame_channels, device=device),
+            # TODO: Parameterize the mininum mel spectrogram magnitude
+            last_frame=torch.full((1, batch_size, self.frame_channels),
+                                  fill_value=torch.log(torch.tensor(0.01, device=device)),
+                                  device=device),
             lstm_one_hidden_state=None,
             lstm_two_hidden_state=None) if hidden_state is None else hidden_state
 
@@ -222,22 +226,16 @@ class AutoregressiveDecoder(nn.Module):
         # [num_frames, batch_size, attention_hidden_size] (concat)
         # [num_frames, batch_size, speaker_embedding_dim] →
         # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size + speaker_embedding_dim]
-        frames = torch.cat([frames, attention_contexts, speaker], dim=2)
-
-        del attention_contexts  # Clear Memory
 
         # [num_frames, batch_size,
         #  lstm_hidden_size + attention_hidden_size + speaker_embedding_dim] →
         # [num_frames, batch_size, 1]
-        stop_token = self.linear_stop_token(frames)  # Predict the stop token
-        # Remove singleton dimension
-        # [num_frames, batch_size, 1] → [num_frames, batch_size]
-        stop_token = stop_token.squeeze(2)
+        stop_token = self.linear_stop_token(torch.cat([frames, speaker], dim=2)).squeeze(2)
 
         # [num_frames, batch_size,
         #  lstm_hidden_size + attention_hidden_size + speaker_embedding_dim] →
         # [num_frames, batch_size, frame_channels]
-        frames = self.linear_out(frames)  # Predicted Mel-Spectrogram
+        frames = self.linear_out(torch.cat([frames, attention_contexts, speaker], dim=2))
 
         new_hidden_state = AutoregressiveDecoderHiddenState(
             last_attention_context=last_attention_context,

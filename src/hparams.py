@@ -287,7 +287,7 @@ def _set_model_size(frame_channels, bits):
                             # embedding.
                             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to
                             # learn more about this parameter.
-                            speaker_embedding_dim=64),
+                            speaker_embedding_dim=128),
                     '_infer':
                         HParams(
                             # NOTE: Estimated loosely to be a multiple of the slowest speech

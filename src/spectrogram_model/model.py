@@ -109,9 +109,7 @@ class SpectrogramModel(nn.Module):
         self.stop_sigmoid = nn.Sigmoid()
         self.embed_speaker = nn.Sequential(
             nn.Embedding(num_speakers, speaker_embedding_dim),
-            nn.Linear(speaker_embedding_dim, speaker_embedding_dim), nn.ReLU(),
-            nn.Dropout(speaker_embedding_dropout),
-            nn.Linear(speaker_embedding_dim, speaker_embedding_dim))
+            nn.Dropout(speaker_embedding_dropout))
 
     def _get_stopped_indexes(self, predictions, stop_threshold):
         """ Get a list of indices that predicted stop.

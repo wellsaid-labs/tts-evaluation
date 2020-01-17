@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 
+from scipy import ndimage
 from torch.multiprocessing import cpu_count
 from torchnlp._third_party.weighted_random_sampler import WeightedRandomSampler
 from torchnlp.encoders.text import stack_and_pad_tensors
@@ -17,6 +18,7 @@ from torchnlp.samplers import OomBatchSampler
 from torchnlp.utils import collate_tensors
 from torchnlp.utils import tensors_to
 
+import numpy as np
 import torch
 
 from src.environment import IS_TESTING_ENVIRONMENT
@@ -30,6 +32,11 @@ logger = logging.getLogger(__name__)
 SpectrogramModelTrainingRow = namedtuple('SpectrogramModelTrainingRow', [
     'text', 'speaker', 'spectrogram', 'stop_token', 'spectrogram_mask', 'spectrogram_expanded_mask'
 ])
+
+# TODO: Parameterize this kernel with HParams
+gaussian_kernel = ndimage.gaussian_filter1d(np.float_([0, 0, 0, 0, 0, 0, 0, 1]), 2)
+gaussian_kernel = gaussian_kernel / gaussian_kernel.max()
+gaussian_kernel = torch.tensor(gaussian_kernel)
 
 
 class _BalancedSampler(WeightedRandomSampler):
@@ -73,7 +80,9 @@ def _load_fn(row, input_encoder):
     """
     spectrogram = maybe_load_tensor(row.spectrogram)
     stop_token = spectrogram.new_zeros((spectrogram.shape[0],))
-    stop_token[-1] = 1
+
+    max_len = min(len(stop_token), len(gaussian_kernel))
+    stop_token[-max_len:] = gaussian_kernel[-max_len:]
 
     # Check invariants
     assert len(row.text) > 0
