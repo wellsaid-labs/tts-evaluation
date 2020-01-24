@@ -82,7 +82,7 @@ def plot_stop_token(stop_token):
     Returns:
         (matplotlib.figure.Figure): Matplotlib figure representing the plot.
     """
-    stop_token = torch.tensor(stop_token)
+    stop_token = stop_token if torch.is_tensor(stop_token) else torch.tensor(stop_token)
     stop_token = torch.sigmoid(stop_token)
     stop_token = stop_token.detach().cpu().numpy()
 

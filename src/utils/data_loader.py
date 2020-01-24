@@ -69,6 +69,9 @@ class DataLoader(torch.utils.data.dataloader.DataLoader):
         super().__init__(
             dataset=_DataLoaderDataset(dataset, load_fn), num_workers=num_workers, **kwargs)
 
+        # NOTE: At the moment, zero batches will cause an infinite loop.
+        assert len(self.batch_sampler) > 0, 'There must be at least one batch.'
+
         logger.info('Launching with %d workers', self.num_workers)
         self.post_processing_fn = post_processing_fn
         self.batch_sampler = RepeatSampler(self.batch_sampler)
