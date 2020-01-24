@@ -7,11 +7,11 @@ import pprint
 from hparams import add_config
 from hparams import configurable
 from hparams import HParams
-from third_party.adam import Adam
 from torch import nn
 from torch.nn import BCEWithLogitsLoss
 from torch.nn import CrossEntropyLoss
 from torch.nn import MSELoss
+from torch.optim import Adam
 from torchnlp.random import fork_rng
 
 import random
@@ -561,7 +561,7 @@ def set_hparams():
             HParams(eps=1e-12),
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
-        'third_party.adam.Adam.__init__':
+        'torch.optim.adam.Adam.__init__':
             HParams(
                 betas=(0.9, 0.999),
                 amsgrad=True,

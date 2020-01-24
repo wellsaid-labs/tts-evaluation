@@ -342,13 +342,7 @@ Related Documentation:
    aws ec2 cancel-spot-instance-requests --spot-instance-request-ids $SPOT_REQUEST_ID
    ```
 
-1. Stop your instance...
-
-   ```bash
-   aws ec2 stop-instances --instance-ids $VM_ID
-   ```
-
-   or delete your instance...
+1. Delete your instance...
 
    ```bash
    aws ec2 terminate-instances --instance-ids $VM_ID

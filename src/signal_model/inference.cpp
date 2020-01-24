@@ -535,7 +535,7 @@ void check_aligned(const torch::ArrayRef<Tensor> ts)
   // checks alignment requirements for data
   for (const auto &t : ts)
   {
-    TORCH_CHECK((((uintptr_t)t.data<float>()) & 0x1f) == 0, "Tensor is not aligned to 32-byte boundaries.");
+    TORCH_CHECK((((uintptr_t)t.data_ptr<float>()) & 0x1f) == 0, "Tensor is not aligned to 32-byte boundaries.");
     TORCH_CHECK(t.is_contiguous(), "Tensor is not contiguous.");
   }
 }
@@ -604,12 +604,12 @@ std::vector<Tensor> inference(
   auto opt = torch::TensorOptions().dtype(at::kLong);
   auto coarse_signal = torch::zeros(sequence_length, opt);
   auto fine_signal = torch::zeros(sequence_length, opt);
-  int64_t *coarse_signal_data = coarse_signal.data<int64_t>();
-  int64_t *fine_signal_data = fine_signal.data<int64_t>();
+  int64_t *coarse_signal_data = coarse_signal.data_ptr<int64_t>();
+  int64_t *fine_signal_data = fine_signal.data_ptr<int64_t>();
 
   auto inverse_bins = 1.0 / ((bins - 1.0) / 2.0);
   auto input = torch::zeros({3}); // [last_coarse, last_fine, coarse]
-  float *input_data = input.data<float>();
+  float *input_data = input.data_ptr<float>();
   input[0] = last_coarse[0];
   input[1] = last_fine[0];
   input.mul_(inverse_bins).sub_(1);

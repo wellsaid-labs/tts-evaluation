@@ -8,7 +8,7 @@ import urllib.request
 
 from hparams import add_config
 from hparams import HParams
-from third_party.adam import Adam
+from torch.optim import Adam
 from torchnlp.utils import split_list
 
 import torch
