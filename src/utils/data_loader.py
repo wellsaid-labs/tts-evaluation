@@ -71,7 +71,8 @@ class DataLoader(torch.utils.data.dataloader.DataLoader):
 
         logger.info('Launching with %d workers', self.num_workers)
         self.post_processing_fn = post_processing_fn
-        self.batch_sampler = RepeatSampler(self.batch_sampler)
+        # LEARN MORE: https://github.com/pytorch/pytorch/issues/15849#issuecomment-557668847
+        object.__setattr__(self, 'batch_sampler', RepeatSampler(self.batch_sampler))
         self.use_tqdm = use_tqdm
         self.iterator = super().__iter__()
 

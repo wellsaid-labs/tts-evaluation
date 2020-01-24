@@ -4,8 +4,8 @@ from unittest import mock
 import math
 import unittest
 
-from third_party.adam import Adam
-from third_party.adam import AdamW
+from torch.optim import Adam
+from torch.optim import AdamW
 
 import torch
 import numpy

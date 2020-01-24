@@ -58,7 +58,7 @@ def _set_hparams(more_hparams, checkpoint):
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999, eps = 10−6
         # learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
-        'third_party.adam.Adam.__init__': HParams(eps=10**-6, weight_decay=10**-6, lr=10**-3)
+        'torch.optim.adam.Adam.__init__': HParams(eps=10**-6, weight_decay=10**-6, lr=10**-3)
     })
     add_config(more_hparams)
     set_seed()
