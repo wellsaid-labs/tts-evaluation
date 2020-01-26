@@ -3,6 +3,7 @@ from collections import Counter
 import itertools
 import logging
 import pprint
+import random
 
 from hparams import add_config
 from hparams import configurable
@@ -14,7 +15,7 @@ from torch.nn import MSELoss
 from torch.optim import Adam
 from torchnlp.random import fork_rng
 
-import random
+import torch
 import torchnlp
 
 from src import datasets
@@ -58,6 +59,7 @@ def _set_audio_processing():
     frame_size = int(50 * sample_rate / 1000)  # NOTE: Frame size in samples
     frame_hop = int(12.5 * sample_rate / 1000)
     window = 'hann'
+    window_fn = torch.hann_window
 
     fft_length = 2048
 
@@ -129,6 +131,16 @@ def _set_audio_processing():
             # number of channels, scaling linearly per channel.
             'build_wav_header':
                 HParams(frame_rate=sample_rate),
+            'SignalToLogMelSpectrogram.__init__':
+                HParams(
+                    sample_rate=sample_rate,
+                    frame_size=frame_size,
+                    frame_hop=frame_hop,
+                    window_fn=window_fn,
+                    fft_length=fft_length,
+                    min_magnitude=min_magnitude,
+                    num_mel_bins=frame_channels,
+                ),
             'get_log_mel_spectrogram':
                 HParams(
                     sample_rate=sample_rate,
@@ -137,10 +149,6 @@ def _set_audio_processing():
                     window=window,
                     fft_length=fft_length,
                     min_magnitude=min_magnitude,
-                    # SOURCE (Tacotron 2):
-                    # We transform the STFT magnitude to the mel scale using an 80 channel mel
-                    # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
-                    # compression.
                     num_mel_bins=frame_channels,
                 ),
             'griffin_lim':
