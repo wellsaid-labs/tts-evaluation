@@ -96,9 +96,13 @@ def write_audio(filename, audio, sample_rate=HParam(int)):
 
     Args:
         filename (Path or str or open file handle): Name of the file to load.
-        audio (np.ndarray): A 1-D or 2-D numpy array of either integer or float data-type.
+        audio (np.ndarray or torch.Tensor): A 1-D or 2-D matrix of either integer or float
+            data-type.
         sample_rate (int, optional): The sample rate (in samples/sec).
     """
+    if torch.is_tensor(audio):
+        audio = audio.detach().cpu().numpy()
+
     return scipy_wavfile.write(filename, sample_rate, audio)
 
 
