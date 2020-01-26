@@ -177,6 +177,8 @@ class DataLoader(src.utils.DataLoader):
         device (torch.device): Device onto which to load data.
         use_predicted (bool): If ``True`` use predicted spectrogram as opposed to the real one.
         num_workers (int): Number of workers used to load data.
+        max_workers_per_process (int, optional): The maximum workers per process used for data
+            loading.
         balance_speaker (bool): If `True` this equalizes the audio data sampled for each speaker.
         **kwargs (any): Other arguments to the data loader ``_load_fn``
 
@@ -202,7 +204,11 @@ class DataLoader(src.utils.DataLoader):
                  device,
                  use_predicted,
                  num_workers=0 if IS_TESTING_ENVIRONMENT else cpu_count(),
+                 max_workers_per_process=6,
                  **kwargs):
+        world_size = torch.distributed.get_world_size() if src.distributed.is_initialized() else 1
+        num_workers = min(num_workers, max_workers_per_process * world_size)
+
         if src.distributed.is_initialized():
             # NOTE: `DistributedBatchSampler` assumes that the workers and master have the same
             # sampling; therefore, the same data.
