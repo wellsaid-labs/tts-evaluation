@@ -149,7 +149,8 @@ def get_log_mel_spectrogram(signal,
                             fft_length=HParam(),
                             window=HParam(),
                             min_magnitude=HParam(),
-                            num_mel_bins=HParam()):
+                            num_mel_bins=HParam(),
+                            center=True):
     """ Compute a log-mel-scaled spectrogram from signal.
 
     Tacotron 2 Reference:
@@ -205,33 +206,49 @@ def get_log_mel_spectrogram(signal,
         min_magnitude (float): Stabilizing minimum to avoid high dynamic ranges caused by
             the singularity at zero in the mel spectrograms.
         num_mel_bins (int): Number of Mel bands to generate.
+        center (bool, optional): Return a spectrogram and audio that are aligned.
 
     Returns:
         log_mel_spectrograms (np.ndarray [frames, num_mel_bins]): Log mel spectrogram.
-        pad (tuple): Number of zeros to pad the left and right of the signal, such that:
-            ``(signal.shape[0] + pad) / frame_hop == log_mel_spectrograms.shape[0]``
+        signal (np.ndarray): Returns if `center` is `True` a `signal` with padding such that:
+            `(signal.shape[0] + pad) / frame_hop == log_mel_spectrograms.shape[0]`
     """
-    # NOTE: Check ``notebooks/Comparing Mel Spectrogram to Signal.ipynb`` for the correctness
-    # of this padding algorithm.
-    # NOTE: Pad signal so that is divisable by ``frame_hop``
-    remainder = frame_hop - signal.shape[0] % frame_hop
-    padding = (math.ceil(remainder / 2), math.floor(remainder / 2))
-    padded_signal = np.pad(signal, padding, mode='constant', constant_values=0)
-    assert padded_signal.shape[0] % frame_hop == 0
+    if center:
+        # NOTE: Check ``notebooks/Signal_to_Spectrogram_Consistency.ipynb`` for the correctness
+        # of this padding algorithm.
+        # NOTE: Pad signal so that is divisable by ``frame_hop``
+        remainder = frame_hop - signal.shape[0] % frame_hop
+        padding = (math.ceil(remainder / 2), math.floor(remainder / 2))
+        padded_signal = np.pad(signal, padding, mode='constant', constant_values=0)
+        assert padded_signal.shape[0] % frame_hop == 0
+
+        # NOTE: Center the signal such that the resulting spectrogram and audio are aligned. Learn
+        # more here: https://librosa.github.io/librosa/_modules/librosa/core/spectrum.html#stft
+        padded_signal = np.pad(
+            padded_signal, int(fft_length // 2), mode='constant', constant_values=0)
+    else:
+        padded_signal = signal
 
     # NOTE: The number of spectrogram frames generated is, with ``center=True``:
-    # ``(padded_signal.shape[0] + frame_hop) // frame_hop``.
-    # Otherewise, it's: ``(padded_signal.shape[0] - frame_size + frame_hop) // frame_hop``
+    # ``(maybe_padded_signal.shape[0] + frame_hop) // frame_hop``.
+    # Otherewise, it's: ``(maybe_padded_signal.shape[0] - frame_size + frame_hop) // frame_hop``
     spectrogram = librosa.stft(
-        padded_signal, n_fft=fft_length, hop_length=frame_hop, win_length=frame_size, window=window)
+        padded_signal.astype(np.float32),
+        n_fft=fft_length,
+        hop_length=frame_hop,
+        win_length=frame_size,
+        window=window,
+        center=False)
 
-    # NOTE: Return number of padding needed to pad signal such that
-    # ``spectrogram.shape[0] * num_frames == signal.shape[0]``
-    # This is padding is partly determined by ``center=True`` librosa padding.
-    ret_pad = frame_hop + remainder
-    assert ret_pad <= frame_size
-    assert (signal.shape[0] + ret_pad) % frame_hop == 0
-    ret_pad = (math.ceil(ret_pad / 2), math.floor(ret_pad / 2))
+    if center:
+        # NOTE: Return number of padding needed to pad signal such that
+        # ``spectrogram.shape[0] * num_frames == signal.shape[0]``
+        # This is padding is partly determined by ``center=True`` librosa padding.
+        ret_pad = frame_hop + remainder
+        assert ret_pad <= frame_size
+        assert (signal.shape[0] + ret_pad) % frame_hop == 0
+        ret_pad = (math.ceil(ret_pad / 2), math.floor(ret_pad / 2))
+        ret_signal = np.pad(signal, ret_pad, mode='constant', constant_values=0)
 
     # SOURCE (Tacotron 2):
     # "STFT magnitude"
@@ -254,7 +271,10 @@ def get_log_mel_spectrogram(signal,
 
     log_mel_spectrogram = log_mel_spectrogram.astype(np.float32)  # ``np.float64`` → ``np.float32``
 
-    return log_mel_spectrogram, ret_pad
+    if center:
+        return log_mel_spectrogram, ret_signal
+    else:
+        return log_mel_spectrogram
 
 
 def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, sample_rate, fft_length):

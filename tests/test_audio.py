@@ -123,13 +123,13 @@ def test_log_mel_spectrogram_smoke():
         'channels': 1,
         'encoding': 'signed-integer'
     })
-    log_mel_spectrogram, padding = get_log_mel_spectrogram(
+    log_mel_spectrogram, padded_signal = get_log_mel_spectrogram(
         signal, sample_rate, frame_size=frame_size, frame_hop=frame_hop)
 
     assert log_mel_spectrogram.dtype == np.float32
     assert len(log_mel_spectrogram.shape) == 2
-    assert len(signal.shape) == 1
-    assert int(signal.shape[0] + sum(padding)) / int(log_mel_spectrogram.shape[0]) == frame_hop
+    assert len(padded_signal.shape) == 1
+    assert int(padded_signal.shape[0]) / int(log_mel_spectrogram.shape[0]) == frame_hop
 
 
 def test_griffin_lim_smoke():

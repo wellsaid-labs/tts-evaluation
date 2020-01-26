@@ -127,12 +127,8 @@ def _add_spectrogram_column(example, on_disk=True):
         _, trim = librosa.effects.trim(signal.astype(numpy.float32))
         signal = signal[trim[0]:trim[1]]
 
-        log_mel_spectrogram, padding = get_log_mel_spectrogram(signal.astype(numpy.float32))
+        log_mel_spectrogram, padded_signal = get_log_mel_spectrogram(signal)
         log_mel_spectrogram = torch.from_numpy(log_mel_spectrogram)
-
-        # Pad so: ``log_mel_spectrogram.shape[0] % signal.shape[0] == frame_hop``
-        # This property is required for the vocoder.
-        padded_signal = numpy.pad(signal, padding, mode='constant', constant_values=0)
         padded_signal = torch.from_numpy(padded_signal)
 
         if on_disk:
