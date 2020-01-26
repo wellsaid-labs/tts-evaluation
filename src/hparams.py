@@ -160,7 +160,7 @@ def _set_audio_processing():
                     iterations=30,
                 ),
             '_mel_filters':
-                HParams(fft_length=fft_length, **hertz_bounds),
+                HParams(**hertz_bounds),
             'split_signal':
                 HParams(bits=bits),
             'combine_signal':

@@ -107,11 +107,7 @@ def write_audio(filename, audio, sample_rate=HParam(int)):
 
 
 @configurable
-def _mel_filters(sample_rate,
-                 num_mel_bins,
-                 fft_length=HParam(),
-                 lower_hertz=HParam(),
-                 upper_hertz=HParam()):
+def _mel_filters(sample_rate, num_mel_bins, fft_length, lower_hertz=HParam(), upper_hertz=HParam()):
     """ Create a Filterbank matrix to combine FFT bins into Mel-frequency bins.
 
     Reference:
@@ -244,7 +240,7 @@ def get_log_mel_spectrogram(signal,
     # SOURCE (Tacotron 2):
     # We transform the STFT magnitude to the mel scale using an 80 channel mel filterbank
     # spanning 125 Hz to 7.6 kHz, followed by log dynamic range compression.
-    mel_basis = _mel_filters(sample_rate, num_mel_bins)
+    mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=fft_length)
     mel_spectrogram = np.dot(mel_basis, magnitude_spectrogram).transpose()
 
     # SOURCE (Tacotron 2):
@@ -261,19 +257,21 @@ def get_log_mel_spectrogram(signal,
     return log_mel_spectrogram, ret_pad
 
 
-def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, sample_rate):
+def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, sample_rate, fft_length):
     """ Transform log mel spectrogram to spectrogram (lossy).
 
     Args:
         log_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
         sample_rate (int): Sample rate of the ``log_mel_spectrogram``.
+        fft_length (int): The size of the FFT to apply. If not provided, uses the smallest
+            power of 2 enclosing `frame_length`.
 
     Returns:
         (np.ndarray [frames, num_spectrogram_bins]): Spectrogram.
     """
     mel_spectrogram = np.exp(log_mel_spectrogram)
     num_mel_bins = mel_spectrogram.shape[1]
-    mel_basis = _mel_filters(sample_rate, num_mel_bins)
+    mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=fft_length)
 
     # ``np.linalg.pinv`` creates approximate inverse matrix of ``mel_basis``
     inverse_mel_basis = np.linalg.pinv(mel_basis)
@@ -330,7 +328,7 @@ def griffin_lim(log_mel_spectrogram,
     try:
         logger.info('Running Griffin-Lim....')
         spectrogram = _log_mel_spectrogram_to_spectrogram(
-            log_mel_spectrogram=log_mel_spectrogram, sample_rate=sample_rate)
+            log_mel_spectrogram=log_mel_spectrogram, sample_rate=sample_rate, fft_length=fft_length)
 
         # SOURCE (Tacotron 1):
         # We found that raising the predicted magnitudes by a power of 1.2 before feeding to
