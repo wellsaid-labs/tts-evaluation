@@ -519,6 +519,7 @@ class Trainer():
                     spectrogram.shape[0], torch.get_num_threads())
 
         predicted, _ = model(spectrogram)
+        predicted = predicted.detach().cpu()
 
         self.comet_ml.log_metrics({
             'single/%s_sample_density_gap' % str(int(n * 100)):
@@ -530,4 +531,4 @@ class Trainer():
             speaker=str(example.speaker),
             gold_audio=target_signal,
             predicted_audio=predicted)
-        self.comet_ml.log_figure('spectrogram', plot_spectrogram(spectrogram))
+        self.comet_ml.log_figure('spectrogram', plot_spectrogram(spectrogram.detach().cpu()))

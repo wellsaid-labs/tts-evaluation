@@ -187,7 +187,7 @@ class SignalToMelSpectrogram(torch.nn.Module):
             window=self.window,
             center=False)
         real_part, imag_part = spectrogram.unbind(-1)
-        magnitude_spectrogram = torch.sqrt(real_part**2 + imag_part**2)
+        magnitude_spectrogram = torch.sqrt(real_part**2 + imag_part**2 + 1e-8)
         mel_spectrogram = torch.matmul(self.mel_basis, magnitude_spectrogram).transpose(0, 1)
         return torch.max(self.min_magnitude, mel_spectrogram).permute(1, 2, 0).squeeze()
 
@@ -742,8 +742,9 @@ class MelSpectrogramLoss(torch.nn.Module):
         predicted_mel_spectrogram = self.signal_to_mel_spectrogram(predicted)
         target_mel_spectrogram = self.signal_to_mel_spectrogram(target)
 
-        spectral_convergence_loss = torch.norm(
-            target_mel_spectrogram - predicted_mel_spectrogram) / torch.norm(target_mel_spectrogram)
+        spectral_convergence_loss = torch.norm(target_mel_spectrogram -
+                                               predicted_mel_spectrogram) / (
+                                                   torch.norm(target_mel_spectrogram) + 1e-8)
 
         log_mel_spectrogram_magnitude_loss = torch.nn.functional.l1_loss(
             torch.log(predicted_mel_spectrogram), torch.log(target_mel_spectrogram))
