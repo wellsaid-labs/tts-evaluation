@@ -702,3 +702,97 @@ def normalize_audio(audio_path,
     subprocess.run(commands, check=True)
 
     return destination
+
+
+class MelSpectrogramLoss(torch.nn.Module):
+    """ Compute loss comparing two Mel Spectrograms.
+
+    TODO: There are a number of interesting loss functions for spectrograms defined, here:
+    - Power loss from the Parallel WaveNet paper https://arxiv.org/pdf/1711.10433.pdf
+    - "Fast Spectrogram Inversion using Multi-head Convolutional Neural Networks"
+      https://arxiv.org/pdf/1808.06719.pdf
+
+    Args:
+        fft_length (int): The window size used by the fourier transform.
+        frame_hop (int): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
+        window (torch.FloatTensor [window_length]): Window function to be applied to each frame.
+    """
+
+    def __init__(self, fft_length, frame_hop, window):
+        super(MelSpectrogramLoss, self).__init__()
+
+        self.fft_length = fft_length
+        self.frame_hop = frame_hop
+        self.window = window
+
+        self.signal_to_mel_spectrogram = SignalToMelSpectrogram(
+            fft_length=fft_length, frame_hop=frame_hop, window=window)
+
+    def forward(self, predicted, target):
+        """
+
+        Args:
+            predicted (torch.FloatTensor [batch_size, signal_length])
+            target (torch.FloatTensor [batch_size, signal_length])
+
+        Returns:
+            torch.FloatTensor: Spectral convergence loss value.
+            torch.FloatTensor: Log STFT magnitude loss value.
+        """
+        predicted_mel_spectrogram = self.signal_to_mel_spectrogram(predicted)
+        target_mel_spectrogram = self.signal_to_mel_spectrogram(target)
+
+        spectral_convergence_loss = torch.norm(
+            target_mel_spectrogram - predicted_mel_spectrogram) / torch.norm(target_mel_spectrogram)
+
+        log_mel_spectrogram_magnitude_loss = torch.nn.functional.l1_loss(
+            torch.log(predicted_mel_spectrogram), torch.log(target_mel_spectrogram))
+
+        return spectral_convergence_loss, log_mel_spectrogram_magnitude_loss
+
+
+class MultiResolutionMelSpectrogramLoss(torch.nn.Module):
+    """ Multi resolution STFT loss criterion.
+
+    Similar to the one described here: https://arxiv.org/abs/1910.11480
+
+    Args:
+        get_stft_losses (lambda: list of STFTLoss)
+    """
+
+    def __init__(self,
+                 get_stft_losses=lambda: [
+                     MelSpectrogramLoss(512, 50, torch.hann_window(300)),
+                     MelSpectrogramLoss(1024, 150, torch.hann_window(600)),
+                     MelSpectrogramLoss(2048, 300, torch.hann_window(1200))
+                 ]):
+        super(MultiResolutionMelSpectrogramLoss, self).__init__()
+
+        self.stft_losses = torch.nn.ModuleList(get_stft_losses())
+
+    def forward(self, predicted, target):
+        """ Calculate forward propagation.
+
+        TODO: Support masking the loss by aligning a signal mask with a spectrogram.
+
+        Args:
+            predicted (torch.FloatTensor [batch_size, signal_length])
+            target (torch.FloatTensor [batch_size, signal_length])
+
+        Returns:
+            torch.FloatTensor: Multi resolution spectral convergence loss value.
+            torch.FloatTensor: Multi resolution log STFT magnitude loss value.
+        """
+        spectral_convergence_loss_total = torch.tensor(0.0, device=predicted.device)
+        log_mel_spectrogram_magnitude_loss_total = torch.tensor(0.0, device=predicted.device)
+
+        for module in self.stft_losses:
+            spectral_convergence_loss, log_mel_spectrogram_magnitude_loss = module(
+                predicted, target)
+            spectral_convergence_loss_total += spectral_convergence_loss
+            log_mel_spectrogram_magnitude_loss_total += log_mel_spectrogram_magnitude_loss
+
+        spectral_convergence_loss_total /= len(self.stft_losses)
+        log_mel_spectrogram_magnitude_loss_total /= len(self.stft_losses)
+
+        return spectral_convergence_loss_total, log_mel_spectrogram_magnitude_loss_total
