@@ -352,7 +352,7 @@ def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, sample_rate, fft_le
 
     # ``np.linalg.pinv`` creates approximate inverse matrix of ``mel_basis``
     inverse_mel_basis = np.linalg.pinv(mel_basis)
-    return np.dot(inverse_mel_basis, mel_spectrogram.transpose())
+    return np.dot(inverse_mel_basis, mel_spectrogram.transpose()).transpose()
 
 
 @configurable
@@ -406,42 +406,23 @@ def griffin_lim(log_mel_spectrogram,
         logger.info('Running Griffin-Lim....')
         spectrogram = _log_mel_spectrogram_to_spectrogram(
             log_mel_spectrogram=log_mel_spectrogram, sample_rate=sample_rate, fft_length=fft_length)
-
-        # SOURCE (Tacotron 1):
-        # We found that raising the predicted magnitudes by a power of 1.2 before feeding to
-        # Griffin-Lim reduces artifacts, likely due to its harmonic enhancement effect.
-        magnitude_spectrogram = np.abs(spectrogram)
-        magnitude_spectrogram = np.power(magnitude_spectrogram, power)
-
-        len_samples = int((magnitude_spectrogram.shape[1] - 1) * frame_hop)
-        waveform = np.random.uniform(size=(len_samples,))
-        iterator = range(iterations)
-        if use_tqdm:
-            iterator = tqdm(iterator)
-        for i in iterator:
-            reconstruction_spectrogram = librosa.stft(
-                waveform,
-                n_fft=fft_length,
-                hop_length=frame_hop,
-                win_length=frame_size,
-                window=window)
-            reconstruction_angle = np.angle(reconstruction_spectrogram).astype(np.complex64)
-            # Discard magnitude part of the reconstruction and use the supplied magnitude
-            # spectrogram instead.
-            proposal_spectrogram = magnitude_spectrogram * np.exp(1j * reconstruction_angle)
-            waveform = librosa.istft(
-                proposal_spectrogram, hop_length=frame_hop, win_length=frame_size, window=window)
-
-        waveform = np.real(waveform)
+        spectrogram = spectrogram.transpose()
+        waveform = librosa.core.griffinlim(
+            spectrogram,
+            n_iter=iterations,
+            hop_length=frame_hop,
+            win_length=frame_size,
+            window=window)
+        # NOTE: Pad to ensure spectrogram and waveform align.
+        waveform = np.pad(waveform, int(frame_hop // 2), mode='constant', constant_values=0)
         large_values = (waveform < -1).sum() + (waveform > 1).sum()
         if large_values > 0:
             logger.warning('Griffin-lim waveform clipped %d samples.', large_values)
         return np.clip(waveform, -1, 1)
-
     # TODO: Be more specific with the cases that this is capturing so that we don't have silent
     # failures for invalid inputs.
-    except:
-        logger.warning('Griffin lim encountered an issue and was unable to render audio.')
+    except Exception:
+        logger.warning('Griffin-lim encountered an issue and was unable to render audio.')
         # NOTE: Return no audio for valid inputs that fail due to an overflow error or a small
         # spectrogram.
         return np.array([])
