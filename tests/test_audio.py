@@ -16,12 +16,49 @@ from src.audio import get_num_seconds
 from src.audio import griffin_lim
 from src.audio import normalize_audio
 from src.audio import read_audio
+from src.audio import SignalToLogMelSpectrogram
 from src.audio import split_signal
 from src.audio import write_audio
 from src.environment import DATA_PATH
 from src.environment import TEST_DATA_PATH
 
 TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'test_audio'
+
+
+def test_signal_to_log_mel_spectrogram():
+    path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
+    sample_rate = 24000
+    signal = read_audio(path, {
+        'sample_rate': sample_rate,
+        'bits': 16,
+        'channels': 1,
+        'encoding': 'signed-integer'
+    })
+    log_mel_spectrogram = get_log_mel_spectrogram(signal, sample_rate, center=False)
+    module = SignalToLogMelSpectrogram(sample_rate=sample_rate)
+    other_log_mel_spectrogram = module(torch.tensor(signal)).detach().numpy()
+    assert log_mel_spectrogram.shape == other_log_mel_spectrogram.shape
+    # NOTE: Numpy does it's computations in 64-bit while PyTorch does it's in 32-bit. This causes
+    # some error.
+    # NOTE: Numpy can be more accurate than PyTorch, for example:
+    # https://github.com/pytorch/pytorch/issues/19164
+    np.testing.assert_almost_equal(log_mel_spectrogram, other_log_mel_spectrogram, decimal=3)
+
+
+def test_signal_to_log_mel_spectrogram_backward():
+    """ Ensure `SignalToLogMelSpectrogram` is differentiable. """
+    tensor = torch.nn.Parameter(torch.randn(2400))
+    module = SignalToLogMelSpectrogram()
+    module(tensor).sum().backward()
+
+
+def test_signal_to_log_mel_spectrogram_batch_invariance():
+    """ Ensure `SignalToLogMelSpectrogram` is batch invariant. """
+    tensor = torch.nn.Parameter(torch.randn(10, 2400))
+    module = SignalToLogMelSpectrogram()
+    results = module(tensor)
+    result = module(tensor[0])
+    np.testing.assert_almost_equal(results[0].detach().numpy(), result.detach().numpy(), decimal=5)
 
 
 def test_get_num_seconds():

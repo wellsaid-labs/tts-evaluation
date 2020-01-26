@@ -141,6 +141,61 @@ def _mel_filters(sample_rate, num_mel_bins, fft_length, lower_hertz=HParam(), up
         htk=True)
 
 
+class SignalToLogMelSpectrogram(torch.nn.Module):
+    """ Compute a log-mel-scaled spectrogram from signal.
+
+    This function guarantees similar results to `get_log_mel_spectrogram`; however, it's implemented
+    in PyTorch, is differentiable, and can batch process.
+    """
+
+    @configurable
+    def __init__(self,
+                 fft_length=HParam(),
+                 frame_hop=HParam(),
+                 frame_size=HParam(),
+                 sample_rate=HParam(),
+                 num_mel_bins=HParam(),
+                 window_fn=HParam(),
+                 min_magnitude=HParam()):
+        super().__init__()
+
+        window = window_fn(frame_size).float()
+        mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=fft_length)
+        mel_basis = torch.from_numpy(mel_basis).float()
+
+        self.register_buffer('mel_basis', mel_basis)
+        self.register_buffer('window', window)
+        self.register_buffer('min_magnitude', torch.tensor(min_magnitude).float())
+
+        self.fft_length = fft_length
+        self.frame_hop = frame_hop
+        self.frame_size = frame_size
+        self.sample_rate = sample_rate
+        self.num_mel_bins = num_mel_bins
+
+    def forward(self, signal):
+        """
+        Args:
+            signal (torch.Tensor [batch_size, signal_length])
+
+        Returns:
+            log_mel_spectrogram (torch.Tensor [batch_size, num_frames, num_mel_bins])
+        """
+        signal = signal.view(-1, signal.shape[-1])
+        spectrogram = torch.stft(
+            signal.float(),
+            n_fft=self.fft_length,
+            hop_length=self.frame_hop,
+            win_length=self.frame_size,
+            window=self.window,
+            center=False)
+        real_part, imag_part = spectrogram.unbind(-1)
+        magnitude_spectrogram = torch.sqrt(real_part**2 + imag_part**2)
+        mel_spectrogram = torch.matmul(self.mel_basis, magnitude_spectrogram).transpose(0, 1)
+        mel_spectrogram = torch.max(self.min_magnitude, mel_spectrogram)
+        return torch.log(mel_spectrogram).permute(1, 2, 0).squeeze()
+
+
 @configurable
 def get_log_mel_spectrogram(signal,
                             sample_rate=HParam(),
@@ -152,6 +207,8 @@ def get_log_mel_spectrogram(signal,
                             num_mel_bins=HParam(),
                             center=True):
     """ Compute a log-mel-scaled spectrogram from signal.
+
+    TODO: Remove this in favor of `SignalToLogMelSpectrogram`.
 
     Tacotron 2 Reference:
         As in Tacotron, mel spectrograms are computed through a shorttime Fourier transform (STFT)
