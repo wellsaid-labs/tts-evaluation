@@ -10,7 +10,6 @@ from hparams import configurable
 from hparams import HParams
 from torch import nn
 from torch.nn import BCEWithLogitsLoss
-from torch.nn import CrossEntropyLoss
 from torch.nn import MSELoss
 from torch.optim import Adam
 from torchnlp.random import fork_rng
@@ -20,6 +19,7 @@ import torchnlp
 
 from src import datasets
 from src.audio import get_num_seconds
+from src.audio import MultiResolutionMelSpectrogramLoss
 from src.datasets import filter_
 from src.datasets import normalize_audio_column
 from src.utils import log_runtime
@@ -686,7 +686,7 @@ def set_hparams():
 
                                 # `CrossEntropyLoss` is not directly mentioned in the paper; however
                                 # is a popular choice as of Jan 2019 for a classification task.
-                                criterion=CrossEntropyLoss,
+                                criterion=MultiResolutionMelSpectrogramLoss,
                                 optimizer=Lamb,
 
                                 # A similar schedule to used to train BERT; furthermore, experiments

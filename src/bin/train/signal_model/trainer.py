@@ -29,10 +29,7 @@ from torchnlp.utils import get_total_parameters
 
 import torch
 
-from src.audio import combine_signal
-from src.audio import split_signal
 from src.bin.train.signal_model.data_loader import DataLoader
-from src.environment import IS_TESTING_ENVIRONMENT
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.utils import AnomalyDetector
@@ -144,11 +141,11 @@ class Trainer():
         self.anomaly_detector = anomaly_detector if isinstance(
             anomaly_detector, AnomalyDetector) else AnomalyDetector()
 
-        self.criterion = criterion(reduction='none').to(device)
+        self.criterion = criterion().to(device)
 
         self.metrics = {
-            'coarse_loss': DistributedAveragedMetric(),
-            'fine_loss': DistributedAveragedMetric(),
+            'spectral_convergence_loss': DistributedAveragedMetric(),
+            'log_mel_spectrogram_magnitude_loss': DistributedAveragedMetric(),
             'orthogonal_loss': DistributedAveragedMetric(),
             'data_queue_size': DistributedAveragedMetric(),
         }
@@ -389,10 +386,7 @@ class Trainer():
 
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
-                predictions = self.model(
-                    batch.input_spectrogram,
-                    input_signal=batch.input_signal,
-                    target_coarse=batch.target_signal_coarse.unsqueeze(2))
+                predictions = self.model(batch.spectrogram)
                 self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
 
@@ -435,7 +429,7 @@ class Trainer():
         """
         total = torch.tensor(0.0).to(self.device)
         for name, parameter in self.model.named_parameters():
-            if 'gru.weight_hh' in name:
+            if 'weight_hh' in name:
                 splits = parameter.chunk(3)
                 for split in splits:
                     eye = torch.eye(split.shape[0], device=self.device)
@@ -451,28 +445,19 @@ class Trainer():
             predictions (any): Return value from ``self.model.forwards``.
             do_backwards (bool): If ``True`` backward propogate the loss.
         """
-        (predicted_coarse, predicted_fine, _) = predictions
+        predicted_signal, _ = predictions
 
-        # [batch_size, signal_length, bins] → [batch_size, bins, signal_length]
-        predicted_fine = predicted_fine.transpose(1, 2)
-        predicted_coarse = predicted_coarse.transpose(1, 2)
-
-        # coarse_loss [batch_size, signal_length]
-        coarse_loss = self.criterion(predicted_coarse, batch.target_signal_coarse)
-        coarse_loss = coarse_loss.masked_select(batch.signal_mask).mean()  # coarse_loss [1]
-
-        # fine_loss [batch_size, signal_length]
-        fine_loss = self.criterion(predicted_fine, batch.target_signal_fine)
-        fine_loss = fine_loss.masked_select(batch.signal_mask).mean()  # fine_loss [1]
+        spectral_convergence_loss, log_mel_spectrogram_magnitude_loss = self.criterion(
+            predicted_signal, batch.target_signal)
 
         orthogonal_loss = self._get_gru_orthogonal_loss()  # orthogonal_loss [1]
 
         if do_backwards:
             self.optimizer.zero_grad()
-            (coarse_loss + fine_loss).backward()
+            (spectral_convergence_loss + log_mel_spectrogram_magnitude_loss).backward()
             grad_norm = self.optimizer.step(comet_ml=self.comet_ml)
 
-            grad_norm = torch.tensor(grad_norm, device=coarse_loss.device)
+            grad_norm = torch.tensor(grad_norm, device=predicted_signal.device)
             torch.distributed.all_reduce(grad_norm)
             grad_norm = (grad_norm / torch.distributed.get_world_size()).cpu().item()
             if self.anomaly_detector.step(grad_norm):
@@ -485,32 +470,34 @@ class Trainer():
 
         # Learn more about `coarse_loss` and `fine_loss` in the "Efficient Neural Audio Synthesis"
         # paper.
-        self.metrics['coarse_loss'].update(coarse_loss, batch.signal_mask.sum())
-        self.metrics['fine_loss'].update(fine_loss, batch.signal_mask.sum())
+        # TODO: Consider using the spectrogram length instead of batch size
+        self.metrics['spectral_convergence_loss'].update(spectral_convergence_loss,
+                                                         batch.target_signal.shape[0])
+        self.metrics['log_mel_spectrogram_magnitude_loss'].update(
+            log_mel_spectrogram_magnitude_loss, batch.target_signal.shape[0])
         self.metrics['orthogonal_loss'].update(orthogonal_loss)
 
-        return coarse_loss, fine_loss, batch.signal_mask.sum()
+        return (spectral_convergence_loss, log_mel_spectrogram_magnitude_loss,
+                batch.signal_mask.sum())
 
-    def _get_sample_density_gap(self, predicted_signal, target_signal, greater_than):
+    def _get_sample_density_gap(self, predicted_signal, signal, greater_than):
         """ Measure the relative difference in sample density inside a specified range.
 
         Args:
-            predicted_signal (torch.IntTensor [predicted_signal_length])
-            target_signal (torch.IntTensor [target_signal_length])
+            predicted_signal (torch.FloatTensor [predicted_signal_length])
+            signal (torch.FloatTensor [signal_length])
             greater_than (float): Defines the amplitude range.
 
         Returns:
             (float): The density margin between the predicted and target signals.
         """
 
-        def get_density(unnormalized_signal):
-            maximum = torch.iinfo(unnormalized_signal.dtype).max
-            normalized = unnormalized_signal.float() / maximum
+        def get_density(normalized):
             num_selected_samples = (normalized.abs() >= greater_than).sum()
-            total_samples = unnormalized_signal.numel()
+            total_samples = normalized.numel()
             return num_selected_samples.float() / total_samples
 
-        return (get_density(predicted_signal) - get_density(target_signal)).item()
+        return (get_density(predicted_signal) - get_density(signal)).item()
 
     @log_runtime
     def visualize_inferred(self):
@@ -521,31 +508,26 @@ class Trainer():
 
         self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
         model = self.model.module if src.distributed.is_initialized() else self.model
-
+        model = model.eval()
         example = random.sample(self.dev_dataset, 1)[0]
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
         spectrogram = maybe_load_tensor(spectrogram)  # [num_frames, frame_channels]
         target_signal = maybe_load_tensor(example.spectrogram_audio).float()  # [signal_length]
-        spectrogram = spectrogram.to(torch.device('cpu'))
+        spectrogram = spectrogram.to(self.device)
 
         logger.info('Running inference on %d spectrogram frames with %d threads.',
                     spectrogram.shape[0], torch.get_num_threads())
 
-        inferrer = model.to_inferrer()
-        predicted_coarse, predicted_fine, _ = inferrer(spectrogram)
-        predicted = combine_signal(predicted_coarse, predicted_fine, return_int=True)
-
-        # NOTE: Introduce quantization noise similar to the model outputs and inputs.
-        target = combine_signal(*split_signal(target_signal), return_int=True)
+        predicted, _ = model(spectrogram)
 
         self.comet_ml.log_metrics({
             'single/%s_sample_density_gap' % str(int(n * 100)):
-            self._get_sample_density_gap(predicted, target, n) for n in [0.99, 0.95, 0.90]
+            self._get_sample_density_gap(predicted, target_signal, n) for n in [0.99, 0.95, 0.90]
         })
         self.comet_ml.log_audio(
             tag=self.DEV_INFERRED_LABEL,
             text=example.text,
             speaker=str(example.speaker),
-            gold_audio=target,
+            gold_audio=target_signal,
             predicted_audio=predicted)
         self.comet_ml.log_figure('spectrogram', plot_spectrogram(spectrogram))

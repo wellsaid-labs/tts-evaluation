@@ -108,7 +108,10 @@ def _get_slice(spectrogram, signal, spectrogram_slice_size, spectrogram_slice_pa
     # With each number represented twice.
     start_frame = random.randint(-spectrogram_slice_size + 1, num_frames - 1)
     # TODO: Remove after we figure out how to add padding to the loss function
-    start_frame = random.randint(0, num_frames - spectrogram_slice_size)
+    if spectrogram_slice_size < num_frames:
+        start_frame = random.randint(0, num_frames - spectrogram_slice_size)
+    else:
+        start_frame = 0
     end_frame = (start_frame + spectrogram_slice_size)
 
     # Get slices from the padded tensors

@@ -68,24 +68,23 @@ def test__do_loss_and_maybe_backwards():
     """ Test that the correct loss values are computed and back propagated. """
     trainer = get_trainer(load_data=False)
     batch = SignalModelTrainingRow(
-        input_signal=None,
-        input_spectrogram=None,
-        target_signal_coarse=torch.LongTensor([[0, 0, 1]]),
-        target_signal_fine=torch.LongTensor([[1, 1, 1]]),
-        signal_mask=torch.BoolTensor([[1, 1, 0]]))
-    predicted_coarse = torch.FloatTensor([[[1, 0], [1, 0], [1, 0]]])
-    predicted_fine = torch.FloatTensor([[[1, 0], [1, 0], [1, 0]]])
+        spectrogram_mask=None,
+        spectrogram=None,
+        target_signal=torch.FloatTensor([[0, 1, 0, -1, 0, 1, 0, -1, 0]]),
+        source_signal=None,
+        signal_mask=torch.BoolTensor([[1, 1, 1, 1, 1, 1, 1, 1, 1]]))
+    predicted_signal = torch.FloatTensor([[0, 1, 0, -1, 0, 1, 0, -1, 0]])
 
-    (coarse_loss, fine_loss, num_predictions) = trainer._do_loss_and_maybe_backwards(
-        batch, (predicted_coarse, predicted_fine, None), False)
-    assert coarse_loss.item() == pytest.approx(0.3132616)
-    assert fine_loss.item() == pytest.approx(1.3132616)
+    (spectral_convergence_loss, log_mel_spectrogram_magnitude_loss,
+     num_predictions) = trainer._do_loss_and_maybe_backwards(batch, (predicted_signal, None), False)
+    assert spectral_convergence_loss.item() == pytest.approx(0.3132616)
+    assert log_mel_spectrogram_magnitude_loss.item() == pytest.approx(1.3132616)
     assert num_predictions == 2
 
 
 def test__get_gru_orthogonal_loss():
     trainer = get_trainer(load_data=False)
-    assert trainer._get_gru_orthogonal_loss().item() > 0
+    assert trainer._get_gru_orthogonal_loss().item() >= 0
 
 
 def test__partial_rollback():
