@@ -59,7 +59,7 @@ def _set_audio_processing():
     frame_size = int(50 * sample_rate / 1000)  # NOTE: Frame size in samples
     frame_hop = int(12.5 * sample_rate / 1000)
     window = 'hann'
-    window_fn = torch.hann_window
+    window_tensor = torch.hann_window(frame_size)
 
     fft_length = 2048
 
@@ -131,12 +131,11 @@ def _set_audio_processing():
             # number of channels, scaling linearly per channel.
             'build_wav_header':
                 HParams(frame_rate=sample_rate),
-            'SignalToLogMelSpectrogram.__init__':
+            'SignalToMelSpectrogram.__init__':
                 HParams(
                     sample_rate=sample_rate,
-                    frame_size=frame_size,
                     frame_hop=frame_hop,
-                    window_fn=window_fn,
+                    window=window_tensor,
                     fft_length=fft_length,
                     min_magnitude=min_magnitude,
                     num_mel_bins=frame_channels,

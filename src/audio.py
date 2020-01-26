@@ -141,7 +141,7 @@ def _mel_filters(sample_rate, num_mel_bins, fft_length, lower_hertz=HParam(), up
         htk=True)
 
 
-class SignalToLogMelSpectrogram(torch.nn.Module):
+class SignalToMelSpectrogram(torch.nn.Module):
     """ Compute a log-mel-scaled spectrogram from signal.
 
     This function guarantees similar results to `get_log_mel_spectrogram`; however, it's implemented
@@ -152,14 +152,12 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
     def __init__(self,
                  fft_length=HParam(),
                  frame_hop=HParam(),
-                 frame_size=HParam(),
                  sample_rate=HParam(),
                  num_mel_bins=HParam(),
-                 window_fn=HParam(),
+                 window=HParam(),
                  min_magnitude=HParam()):
         super().__init__()
 
-        window = window_fn(frame_size).float()
         mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=fft_length)
         mel_basis = torch.from_numpy(mel_basis).float()
 
@@ -169,7 +167,6 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
 
         self.fft_length = fft_length
         self.frame_hop = frame_hop
-        self.frame_size = frame_size
         self.sample_rate = sample_rate
         self.num_mel_bins = num_mel_bins
 
@@ -186,14 +183,19 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
             signal.float(),
             n_fft=self.fft_length,
             hop_length=self.frame_hop,
-            win_length=self.frame_size,
+            win_length=self.window.shape[0],
             window=self.window,
             center=False)
         real_part, imag_part = spectrogram.unbind(-1)
         magnitude_spectrogram = torch.sqrt(real_part**2 + imag_part**2)
         mel_spectrogram = torch.matmul(self.mel_basis, magnitude_spectrogram).transpose(0, 1)
-        mel_spectrogram = torch.max(self.min_magnitude, mel_spectrogram)
-        return torch.log(mel_spectrogram).permute(1, 2, 0).squeeze()
+        return torch.max(self.min_magnitude, mel_spectrogram).permute(1, 2, 0).squeeze()
+
+
+class SignalToLogMelSpectrogram(SignalToMelSpectrogram):
+
+    def forward(self, signal):
+        return torch.log(super().forward(signal))
 
 
 @configurable
