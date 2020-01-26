@@ -185,13 +185,12 @@ class Trainer():
         logger.info('Model:\n%s' % self.model)
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
-        if src.distributed.is_master() and not IS_TESTING_ENVIRONMENT:
-            # TODO: `atexit` doesn't run when `pytest` closes; therefore, it doesn't stop
-            # the repeated timer. This needs to be investigated.
+        if src.distributed.is_master():
             self.timer = RepeatTimer(save_temp_checkpoint_every_n_seconds,
                                      self._save_checkpoint_repeat_timer)
+            self.timer.daemon = True
             self.timer.start()
-            atexit.register(self._atexit)
+            atexit.register(self.save_checkpoint)
 
     @log_runtime
     def _get_expected_average_spectrogram_sum(self, dataset, sample_size):
@@ -212,11 +211,6 @@ class Trainer():
                 ]
                 return mean(maybe_load_tensor(r).sum().item() for r in sample)
         return None
-
-    def _atexit(self):
-        """ This function is run on program exit. """
-        self.save_checkpoint()
-        self.timer.cancel()
 
     def _save_checkpoint_repeat_timer(self):
         """ Save a checkpoint and delete the last checkpoint saved.

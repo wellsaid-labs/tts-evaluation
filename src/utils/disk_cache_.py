@@ -321,6 +321,7 @@ class _DiskCache(_Cache):
                 self._write_timer.reset()
             else:
                 self._write_timer = ResetableTimer(self.save_to_disk_delay, self._write_timer_save)
+                self._write_timer.daemon = True
                 self._write_timer.start()
 
         return super().set(args=args, kwargs=kwargs, return_=return_)
