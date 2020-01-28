@@ -742,9 +742,19 @@ class MelSpectrogramLoss(torch.nn.Module):
         predicted_mel_spectrogram = self.signal_to_mel_spectrogram(predicted)
         target_mel_spectrogram = self.signal_to_mel_spectrogram(target)
 
-        spectral_convergence_loss = torch.norm(target_mel_spectrogram -
-                                               predicted_mel_spectrogram) / (
-                                                   torch.norm(target_mel_spectrogram) + 1e-8)
+        # [batch_size, num_frames, frame_channels]
+        predicted_mel_spectrogram = predicted_mel_spectrogram.view(
+            -1, *predicted_mel_spectrogram.shape[-2:])
+
+        target_mel_spectrogram = target_mel_spectrogram.view(-1, *target_mel_spectrogram.shape[-2:])
+
+        # NOTE: Frobenius matrix norm is not supported in CUDA. For a matrix, the Frobenius matrix
+        # norm is equal to the L2 norm.
+        spectral_convergence_loss = torch.norm(
+            target_mel_spectrogram - predicted_mel_spectrogram, dim=(1, 2), p=2)
+        spectral_convergence_loss = spectral_convergence_loss / (
+            torch.norm(target_mel_spectrogram, dim=(1, 2), p=2) + 1e-8)
+        spectral_convergence_loss = spectral_convergence_loss.mean()
 
         log_mel_spectrogram_magnitude_loss = torch.nn.functional.l1_loss(
             torch.log(predicted_mel_spectrogram), torch.log(target_mel_spectrogram))
