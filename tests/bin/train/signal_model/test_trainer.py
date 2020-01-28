@@ -76,7 +76,7 @@ def test__do_loss_and_maybe_backwards():
     predicted_signal = torch.FloatTensor([[0, 1, 0, -1, 0, 1, 0, -1, 0]])
 
     (spectral_convergence_loss, log_mel_spectrogram_magnitude_loss,
-     num_predictions) = trainer._do_loss_and_maybe_backwards(batch, (predicted_signal, None), False)
+     num_predictions) = trainer._do_loss_and_maybe_backwards(batch, predicted_signal, False)
     assert spectral_convergence_loss.item() == pytest.approx(0.3132616)
     assert log_mel_spectrogram_magnitude_loss.item() == pytest.approx(1.3132616)
     assert num_predictions == 2

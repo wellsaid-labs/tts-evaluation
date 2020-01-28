@@ -386,9 +386,8 @@ class Trainer():
 
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
-                predictions = self.model(batch.spectrogram)
-                self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
-                predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
+                predicted_signal = self.model(batch.spectrogram)
+                self._do_loss_and_maybe_backwards(batch, predicted_signal, do_backwards=train)
 
             # NOTE: This metric should be a positive integer indicating that the `data_loader`
             # is loading faster than the data is getting ingested; otherwise, the `data_loader`
@@ -437,36 +436,22 @@ class Trainer():
                     total += torch.nn.functional.mse_loss(torch.mm(torch.t(split), split), eye)
         return total
 
-    def _do_loss_and_maybe_backwards(self, batch, predictions, do_backwards):
+    def _do_loss_and_maybe_backwards(self, batch, predicted_signal, do_backwards):
         """ Compute the losses and maybe do backwards.
 
         Args:
             batch (SignalModelTrainingRow)
-            predictions (any): Return value from ``self.model.forwards``.
+            predicted_signal (torch.FloatTensor [batch_size, signal_length])
             do_backwards (bool): If ``True`` backward propogate the loss.
         """
-        predicted_signal, _ = predictions
-
+        assert batch.target_signal.shape == predicted_signal.shape
         spectral_convergence_loss, log_mel_spectrogram_magnitude_loss = self.criterion(
             predicted_signal, batch.target_signal)
-
-        orthogonal_loss = self._get_gru_orthogonal_loss()  # orthogonal_loss [1]
 
         if do_backwards:
             self.optimizer.zero_grad()
             (spectral_convergence_loss + log_mel_spectrogram_magnitude_loss).backward()
-            grad_norm = self.optimizer.step(comet_ml=self.comet_ml)
-
-            grad_norm = torch.tensor(grad_norm, device=predicted_signal.device)
-            torch.distributed.all_reduce(grad_norm)
-            grad_norm = (grad_norm / torch.distributed.get_world_size()).cpu().item()
-            if self.anomaly_detector.step(grad_norm):
-                logger.warning('Rolling back, detected an anomaly #%d (%f > %f ± %f)',
-                               self.num_rollbacks, grad_norm, self.anomaly_detector.last_average,
-                               self.anomaly_detector.max_deviation)
-                self._partial_rollback()
-            else:
-                self._rollback_states.append(self._make_partial_rollback_state())
+            self.optimizer.step(comet_ml=self.comet_ml)
 
         # Learn more about `coarse_loss` and `fine_loss` in the "Efficient Neural Audio Synthesis"
         # paper.
@@ -475,7 +460,6 @@ class Trainer():
                                                          batch.target_signal.shape[0])
         self.metrics['log_mel_spectrogram_magnitude_loss'].update(
             log_mel_spectrogram_magnitude_loss, batch.target_signal.shape[0])
-        self.metrics['orthogonal_loss'].update(orthogonal_loss)
 
         return (spectral_convergence_loss, log_mel_spectrogram_magnitude_loss,
                 batch.signal_mask.sum())
@@ -518,8 +502,8 @@ class Trainer():
         logger.info('Running inference on %d spectrogram frames with %d threads.',
                     spectrogram.shape[0], torch.get_num_threads())
 
-        predicted, _ = model(spectrogram)
-        predicted = predicted.detach().cpu()
+        # TODO: Parameterize the padding the model requires.
+        predicted = model(torch.nn.functional.pad(spectrogram, (0, 0, 3, 3))).detach().cpu()
 
         self.comet_ml.log_metrics({
             'single/%s_sample_density_gap' % str(int(n * 100)):

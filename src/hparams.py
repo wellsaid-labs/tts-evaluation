@@ -56,12 +56,12 @@ def _set_audio_processing():
     # SOURCE (Tacotron 2):
     # mel spectrograms are computed through a shorttime Fourier transform (STFT)
     # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
-    frame_size = int(50 * sample_rate / 1000)  # NOTE: Frame size in samples
-    frame_hop = int(12.5 * sample_rate / 1000)
+    frame_size = 1024  # NOTE: Frame size in samples
+    frame_hop = 256
     window = 'hann'
     window_tensor = torch.hann_window(frame_size)
 
-    fft_length = 2048
+    fft_length = 1024
 
     # SOURCE (Tacotron 2):
     # Prior to log compression, the filterbank output magnitudes are clipped to a
@@ -520,24 +520,16 @@ def get_dataset():
         return train, dev
 
 
-def signal_model_lr_multiplier_schedule(step, decay=80000, warmup=20000, min_lr_multiplier=.05):
+def signal_model_lr_multiplier_schedule(step):
     """ Learning rate multiplier schedule.
-
-    NOTE: BERT uses a similar learning rate: https://github.com/google-research/bert/issues/425
 
     Args:
         step (int): The current step.
-        decay (int, optional): The total number of steps to decay the learning rate.
-        warmup (int, optional): The total number of steps to warm up the learning rate.
-        min_lr_multiplier (int, optional): The minimum learning rate at the end of the decay.
 
     Returns:
         (float): Multiplier on the base learning rate.
     """
-    if step < warmup:
-        return step / warmup
-    else:
-        return max(1 - ((step - warmup) / decay), min_lr_multiplier)
+    return 1.0
 
 
 @log_runtime
@@ -546,7 +538,7 @@ def set_hparams():
     """
     # NOTE: Prevent circular dependency
     from src.optimizers import Lamb
-    from src.signal_model import WaveRNN
+    from src.signal_model.mel_gan import Generator
     from src.spectrogram_model import SpectrogramModel
 
     frame_channels, frame_hop, bits = _set_audio_processing()
@@ -584,7 +576,7 @@ def set_hparams():
                 max_trust_ratio=10,  # NOTE: Default value as suggested in the paper proposing LAMB.
                 # NOTE: This l2 regularization reduced audio artifacts without sacrificing
                 # performance (tested on Comet in August 2019).
-                l2_regularization=10**-7,
+                l2_regularization=0,
                 # NOTE: `weight_decay` was more sensistive than l2 regularization without providing
                 # much benefit (tested on Comet in August 2019).
                 weight_decay=0.0),
@@ -679,10 +671,10 @@ def set_hparams():
                                 # The WaveRNN models are trained on sequences of 960 audio samples.
                                 # NOTE: We were able to get better results with 1800 audio samples
                                 # in Comet in August, 2019.
-                                train_spectrogram_slice_size=int(900 / frame_hop),
+                                train_spectrogram_slice_size=int(8192 / frame_hop),
 
                                 dev_batch_size=16,
-                                dev_spectrogram_slice_size=int(24000 / frame_hop),
+                                dev_spectrogram_slice_size=int(32768 / frame_hop),
 
                                 # `CrossEntropyLoss` is not directly mentioned in the paper; however
                                 # is a popular choice as of Jan 2019 for a classification task.
@@ -696,7 +688,7 @@ def set_hparams():
 
                                 # WaveRNN from `Efficient Neural Audio Synthesis` is small,
                                 # efficient, and performant as a vocoder.
-                                model=WaveRNN,
+                                model=Generator,
                             ),
                         'data_loader.DataLoader.__init__':
                             HParams(
@@ -707,7 +699,7 @@ def set_hparams():
                                 # context for each frame outside of the aligned samples. Then it
                                 # makes sense to have 450 samples of padding or 2 spectrogram
                                 # frames.
-                                spectrogram_slice_pad=2,
+                                spectrogram_slice_pad=3,
                             ),
                     }
                 },
