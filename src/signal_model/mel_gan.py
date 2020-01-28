@@ -3,6 +3,43 @@ from torch.nn.utils import weight_norm
 import numpy as np
 
 
+class PixelShuffle1d(nn.Module):
+
+    def __init__(self, upscale_factor):
+        super().__init__()
+
+        self.upscale_factor = upscale_factor
+
+    def forward(self, tensor):
+        """
+        Inspired by: https://gist.github.com/davidaknowles/6e95a643adaf3960d1648a6b369e9d0b
+
+        Example:
+            >>> t = torch.arange(0, 12).view(1, 3, 4).transpose(1, 2)
+            >>> t
+            tensor([[[ 0,  4,  8],
+                    [ 1,  5,  9],
+                    [ 2,  6, 10],
+                    [ 3,  7, 11]]])
+            >>> t[0, :, 0] # First frame
+            tensor([0, 1, 2, 3])
+            >>> pixel_shuffle_1d(t, 4)
+            tensor([[[ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11]]])
+
+        Args:
+            tensor (torch.Tensor [batch_size, channels, sequence_length])
+
+        Returns:
+            tensor (torch.Tensor [batch_size, channels // self.upscale_factor,
+                sequence_length * self.upscale_factor])
+        """
+        batch_size, channels, steps = tensor.size()
+        channels //= self.upscale_factor
+        input_view = tensor.contiguous().view(batch_size, channels, self.upscale_factor, steps)
+        shuffle_out = input_view.permute(0, 1, 3, 2).contiguous()
+        return shuffle_out.view(batch_size, channels, steps * self.upscale_factor)
+
+
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find("Conv") != -1:
@@ -26,9 +63,9 @@ class ResnetBlock(nn.Module):
         super().__init__()
         self.dilation = dilation
         self.block = nn.Sequential(
-            nn.LeakyReLU(0.2),
+            nn.GELU(),
             WNConv1d(dim, dim, kernel_size=3, dilation=dilation),
-            nn.LeakyReLU(0.2),
+            nn.GELU(),
             WNConv1d(dim, dim, kernel_size=1),
         )
         self.shortcut = WNConv1d(dim, dim, kernel_size=1)
@@ -39,7 +76,7 @@ class ResnetBlock(nn.Module):
 
 class Generator(nn.Module):
 
-    def __init__(self, input_size=128, ngf=32, n_residual_layers=3, padding=5):
+    def __init__(self, input_size=128, ngf=32, n_residual_layers=3, padding=7):
         super().__init__()
         ratios = [8, 8, 2, 2]
         self.hop_length = np.prod(ratios)
@@ -54,15 +91,14 @@ class Generator(nn.Module):
         # Upsample to raw audio scale
         for i, r in enumerate(ratios):
             model += [
-                nn.LeakyReLU(0.2),
-                WNConvTranspose1d(
+                nn.GELU(),
+                WNConv1d(
                     mult * ngf,
-                    mult * ngf // 2,
-                    kernel_size=r * 2,
-                    stride=r,
-                    padding=r // 2 + r % 2,
-                    output_padding=r % 2,
+                    (mult * ngf // 2) * r,
+                    kernel_size=3,
+                    padding=0,
                 ),
+                PixelShuffle1d(r)
             ]
 
             for j in range(n_residual_layers):
@@ -71,7 +107,7 @@ class Generator(nn.Module):
             mult //= 2
 
         model += [
-            nn.LeakyReLU(0.2),
+            nn.GELU(),
             WNConv1d(ngf, 1, kernel_size=7, padding=0),
             nn.Tanh(),
         ]
@@ -108,5 +144,6 @@ class Generator(nn.Module):
         assert excess_padding % 2 == 0  # Invariant
         # signal [batch_size, num_frames * self.hop_length]
         signal = signal[:, excess_padding // 2:-excess_padding // 2]
+        assert signal.shape == (batch_size, self.hop_length * num_frames)
 
         return signal if has_batch_dim else signal.squeeze(0)

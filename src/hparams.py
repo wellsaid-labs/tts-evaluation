@@ -537,7 +537,6 @@ def set_hparams():
     """ Using the ``configurable`` module set the hyperparameters for the source code.
     """
     # NOTE: Prevent circular dependency
-    from src.optimizers import Lamb
     from src.signal_model.mel_gan import Generator
     from src.spectrogram_model import SpectrogramModel
 
@@ -563,7 +562,7 @@ def set_hparams():
         'torch.optim.adam.Adam.__init__':
             HParams(
                 betas=(0.9, 0.999),
-                amsgrad=True,
+                amsgrad=False,
                 lr=10**-3,
             ),
         'src.optimizers.Lamb.__init__':
@@ -679,7 +678,7 @@ def set_hparams():
                                 # `CrossEntropyLoss` is not directly mentioned in the paper; however
                                 # is a popular choice as of Jan 2019 for a classification task.
                                 criterion=MultiResolutionMelSpectrogramLoss,
-                                optimizer=Lamb,
+                                optimizer=Adam,
 
                                 # A similar schedule to used to train BERT; furthermore, experiments
                                 # on Comet show this schedule is effective along with the LAMB
@@ -699,7 +698,7 @@ def set_hparams():
                                 # context for each frame outside of the aligned samples. Then it
                                 # makes sense to have 450 samples of padding or 2 spectrogram
                                 # frames.
-                                spectrogram_slice_pad=5,
+                                spectrogram_slice_pad=7,
                             ),
                     }
                 },
