@@ -264,7 +264,10 @@ if __name__ == '__main__':  # pragma: no cover
               'text as input to the signal model.'))
     parser.add_argument(
         '--tags',
-        default=['fix_spectral_convergence', 'no_synthetic_padding', 'no_lr_schedule'],
+        default=[
+            'fix_spectral_convergence', 'no_synthetic_padding', 'no_lr_schedule', 'adam_optimizer',
+            'gelu_activation', 'pixel_shuffle_upsample'
+        ],
         nargs='+',
         help='List of tags for the experiment.')
     parser.add_argument('--name', type=str, default=None, help='Name of the experiment.')
