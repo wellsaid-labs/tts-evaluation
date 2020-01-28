@@ -24,9 +24,9 @@ class ResnetBlock(nn.Module):
 
     def __init__(self, dim, dilation=1):
         super().__init__()
+        self.dilation = dilation
         self.block = nn.Sequential(
             nn.LeakyReLU(0.2),
-            nn.ReflectionPad1d(dilation),
             WNConv1d(dim, dim, kernel_size=3, dilation=dilation),
             nn.LeakyReLU(0.2),
             WNConv1d(dim, dim, kernel_size=1),
@@ -34,15 +34,17 @@ class ResnetBlock(nn.Module):
         self.shortcut = WNConv1d(dim, dim, kernel_size=1)
 
     def forward(self, x):
-        return self.shortcut(x) + self.block(x)
+        return self.shortcut(x)[:, :, self.dilation:-self.dilation] + self.block(x)
 
 
 class Generator(nn.Module):
 
-    def __init__(self, input_size=128, ngf=32, n_residual_layers=3):
+    def __init__(self, input_size=128, ngf=32, n_residual_layers=3, padding=5):
         super().__init__()
         ratios = [8, 8, 2, 2]
         self.hop_length = np.prod(ratios)
+        self.padding = padding
+        self.pad = nn.ConstantPad1d(padding, 0.0)
         mult = int(2**len(ratios))
 
         model = [
@@ -70,7 +72,6 @@ class Generator(nn.Module):
 
         model += [
             nn.LeakyReLU(0.2),
-            nn.ReflectionPad1d(3),
             WNConv1d(ngf, 1, kernel_size=7, padding=0),
             nn.Tanh(),
         ]
@@ -78,11 +79,32 @@ class Generator(nn.Module):
         self.model = nn.Sequential(*model)
         self.apply(weights_init)
 
-    def forward(self, x):
-        is_batched = len(x.shape) == 3
-        # spectrogram [batch_size, num_frames, frame_channels]
-        x = x.view(-1, x.shape[-2], x.shape[-1])
-        x = self.model(x.transpose(1, 2)).transpose(1, 2).squeeze(2)
-        if not is_batched:
-            return x.squeeze(0)
-        return x
+    def forward(self, spectrogram, pad_input=True):
+        """
+        Args:
+            spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
+
+        Args:
+            signal (torch.FloatTensor [batch_size, signal_length])
+        """
+        has_batch_dim = len(spectrogram.shape) == 3
+
+        # [batch_size, num_frames, frame_channels]
+        spectrogram = spectrogram.view(-1, spectrogram.shape[-2], spectrogram.shape[-1])
+        batch_size, num_frames, frame_channels = spectrogram.shape
+
+        # [batch_size, num_frames, frame_channels] → [batch_size, frame_channels, num_frames]
+        spectrogram = spectrogram.transpose(1, 2)
+
+        spectrogram = self.pad(spectrogram) if pad_input else spectrogram
+        num_frames = num_frames if pad_input else num_frames - self.padding * 2
+
+        # [batch_size, frame_channels, num_frames] → [batch_size, signal_length + excess_padding]
+        signal = self.model(spectrogram).squeeze(1)
+
+        excess_padding = signal.shape[1] - num_frames * self.hop_length
+        assert excess_padding > 0 and excess_padding % 2 == 0
+        # signal [batch_size, num_frames * self.hop_length]
+        signal = signal[:, excess_padding // 2:-excess_padding // 2]
+
+        return signal if has_batch_dim else signal.squeeze(0)

@@ -386,7 +386,7 @@ class Trainer():
 
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
-                predicted_signal = self.model(batch.spectrogram)
+                predicted_signal = self.model(batch.spectrogram, pad_input=False)
                 self._do_loss_and_maybe_backwards(batch, predicted_signal, do_backwards=train)
 
             # NOTE: This metric should be a positive integer indicating that the `data_loader`
@@ -502,8 +502,7 @@ class Trainer():
         logger.info('Running inference on %d spectrogram frames with %d threads.',
                     spectrogram.shape[0], torch.get_num_threads())
 
-        # TODO: Parameterize the padding the model requires.
-        predicted = model(torch.nn.functional.pad(spectrogram, (0, 0, 3, 3))).detach().cpu()
+        predicted = model(spectrogram).detach().cpu()
 
         self.comet_ml.log_metrics({
             'single/%s_sample_density_gap' % str(int(n * 100)):

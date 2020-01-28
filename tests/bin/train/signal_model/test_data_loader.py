@@ -141,7 +141,7 @@ def test_data_loader():
     assert len(loader) == (len(data) // batch_size)
 
     # Ensure that sampled batches are different each time.
-    with fork_rng(seed=123):
+    with fork_rng(seed=124):
         samples = list(loader)
         assert len(set([s.spectrogram[0].sum().item() for s in samples])) == len(samples)
         more_samples = list(loader)
