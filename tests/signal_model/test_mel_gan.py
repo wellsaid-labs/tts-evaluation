@@ -18,7 +18,7 @@ def test_mel_gan():
     )
 
     assert out.max() <= 1.0
-    assert out.min() >= 1.0
+    assert out.min() >= -1.0
 
     out.sum().backward()
 
@@ -34,6 +34,6 @@ def test_mel_gan__no_batch():
     assert out.shape == (generator.hop_length * num_frames,)
 
     assert out.max() <= 1.0
-    assert out.min() >= 1.0
+    assert out.min() >= -1.0
 
     out.sum().backward()
