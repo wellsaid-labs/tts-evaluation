@@ -33,7 +33,7 @@ write_audio('disk/temp/original_signal.wav', signal)
 step = 0
 while True:
     example = collate_tensors([_get_slice(log_mel_spectrogram, signal, 64, 0) for _ in range(8)])
-    predicted_signal = model(example.spectrogram.transpose(1, 2)).transpose(1, 2).squeeze()
+    predicted_signal = model(example.spectrogram)
     spectral_convergence_loss, log_stft_magnitude_loss = criterion(predicted_signal,
                                                                    example.target_signal)
     optimizer.zero_grad()
@@ -46,12 +46,11 @@ while True:
     print('log_stft_magnitude_loss', log_stft_magnitude_loss)
     print('-' * 100)
 
-    if step % 50 == 0:
+    if step % 10 == 0:
         write_audio('disk/temp/predicted_signal_%d.wav' % step, predicted_signal[0])
         write_audio('disk/temp/original_signal_%d.wav' % step, example.target_signal[0])
         plot_spectrogram(example.spectrogram[0]).savefig('disk/temp/original_spectrogram_%d.png' %
                                                          step)
 
-        predicted_signal = model(log_mel_spectrogram.unsqueeze(0).transpose(1, 2)).transpose(
-            1, 2).squeeze()
+        predicted_signal = model(log_mel_spectrogram.unsqueeze(0))
         write_audio('disk/temp/new_full_predicted_signal_%d.wav' % step, predicted_signal)
