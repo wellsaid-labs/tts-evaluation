@@ -1,6 +1,7 @@
 import torch.nn as nn
-from torch.nn.utils import weight_norm
 import numpy as np
+from torch.nn.utils import weight_norm
+import torch
 
 
 class PixelShuffle1d(nn.Module):
@@ -43,36 +44,66 @@ class PixelShuffle1d(nn.Module):
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find("Conv") != -1:
-        m.weight.data.normal_(0.0, 0.02)
-    elif classname.find("BatchNorm2d") != -1:
-        m.weight.data.normal_(1.0, 0.02)
-        m.bias.data.fill_(0)
+        torch.nn.init.orthogonal_(m.weight)
 
 
 def WNConv1d(*args, **kwargs):
     return weight_norm(nn.Conv1d(*args, **kwargs))
 
 
-class ResnetBlock(nn.Module):
+def trim_padding(x, y):
+    """ Trim the `x` and `y` so that their shapes match in the third dimension. """
+    # [batch_size, frame_channels, num_frames]
+    excess_padding = abs(x.shape[2] - y.shape[2])
+    assert excess_padding > 0  # Not too little padding
+    assert excess_padding % 2 == 0  # Invariant
+    if x.shape[2] > y.shape[2]:
+        return x[:, :, excess_padding // 2:-excess_padding // 2], y
+    return x, y[:, :, excess_padding // 2:-excess_padding // 2]
 
-    def __init__(self, dim, dilation=1):
+
+class GBlock(nn.Module):
+
+    def __init__(self, in_channels, out_channels, scale_factor, dilation=1):
         super().__init__()
         self.dilation = dilation
+        self.shortcut = nn.Sequential(
+            WNConv1d(
+                in_channels,
+                out_channels * scale_factor,
+                kernel_size=1,
+            ), PixelShuffle1d(scale_factor))
         self.block = nn.Sequential(
             nn.GELU(),
-            WNConv1d(dim, dim, kernel_size=3, dilation=dilation),
+            WNConv1d(
+                in_channels,
+                out_channels * scale_factor,
+                kernel_size=3,
+            ),
+            PixelShuffle1d(scale_factor),
             nn.GELU(),
-            WNConv1d(dim, dim, kernel_size=1),
+            WNConv1d(out_channels, out_channels, kernel_size=3, dilation=2),
         )
-        self.shortcut = WNConv1d(dim, dim, kernel_size=1)
+        self.other_block = nn.Sequential(
+            nn.GELU(),
+            WNConv1d(
+                out_channels,
+                out_channels,
+                kernel_size=3,
+                dilation=4,
+            ),
+            nn.GELU(),
+            WNConv1d(out_channels, out_channels, kernel_size=3, dilation=8),
+        )
 
     def forward(self, x):
-        return self.shortcut(x)[:, :, self.dilation:-self.dilation] + self.block(x)
+        x = torch.add(*trim_padding(self.shortcut(x), self.block(x)))
+        return torch.add(*trim_padding(x, self.other_block(x)))
 
 
 class Generator(nn.Module):
 
-    def __init__(self, input_size=128, ngf=32, n_residual_layers=3, padding=7):
+    def __init__(self, input_size=128, ngf=32, padding=35):
         super().__init__()
         ratios = [8, 8, 2, 2]
         self.hop_length = np.prod(ratios)
@@ -81,30 +112,19 @@ class Generator(nn.Module):
         mult = int(2**len(ratios))
 
         model = [
-            WNConv1d(input_size, mult * ngf, kernel_size=7, padding=0),
+            WNConv1d(input_size, mult * ngf, kernel_size=3, padding=0),
+            GBlock(mult * ngf, mult * ngf, scale_factor=1),
+            GBlock(mult * ngf, mult * ngf, scale_factor=1),
         ]
 
         # Upsample to raw audio scale
         for i, r in enumerate(ratios):
-            model += [
-                nn.GELU(),
-                WNConv1d(
-                    mult * ngf,
-                    (mult * ngf // 2) * r,
-                    kernel_size=3,
-                    padding=0,
-                ),
-                PixelShuffle1d(r)
-            ]
-
-            for j in range(n_residual_layers):
-                model += [ResnetBlock(mult * ngf // 2, dilation=3**j)]
+            model += [GBlock(mult * ngf, mult * ngf // 2, scale_factor=r)]
 
             mult //= 2
 
         model += [
-            nn.GELU(),
-            WNConv1d(ngf, 1, kernel_size=7, padding=0),
+            WNConv1d(ngf, 1, kernel_size=3, padding=0),
             nn.Tanh(),
         ]
 
