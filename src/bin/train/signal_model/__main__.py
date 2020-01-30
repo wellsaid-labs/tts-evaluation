@@ -266,7 +266,7 @@ if __name__ == '__main__':  # pragma: no cover
         '--tags',
         default=[
             'fix_spectral_convergence', 'no_synthetic_padding', 'no_lr_schedule', 'adam_optimizer',
-            'gelu_activation', 'pixel_shuffle_upsample'
+            'gelu_activation', 'pixel_shuffle_upsample', 'gan_tts_architecture', 'mu_law_output'
         ],
         nargs='+',
         help='List of tags for the experiment.')
