@@ -6,10 +6,12 @@ from pathlib import Path
 import logging
 import os
 import pprint
+import string
 
 from hparams import configurable
 from hparams import HParam
 from phonemizer.phonemize import phonemize
+from phonemizer.separator import Separator
 from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 from tqdm import tqdm
@@ -206,6 +208,54 @@ def normalize_audio_column(data):
     return return_
 
 
+def normalize_text_clean_punctuation(dataset):
+    """ Clean up texts missing spaces.
+
+        In February 2020, it was discovered that many phrases were experiencing common typos
+        throughout our datasets. The datasets should be cleaned before training, but in the interim
+        this simple clean function will fix the following issues:
+
+        ."Management
+        ."Companies
+        ."Critical
+        ."Therefore
+        ."Human
+        ."More
+        ."There
+
+        .Other
+        .People
+        .Sameer
+        .The
+        .Value
+        .There
+
+    """
+
+    typos = ['."', ' .', ' -', ' --']
+    replacements = ['." ', '. ', ' - ', ' -- ']
+
+    for row, example in enumerate(dataset):
+        for t, r in zip(typos, replacements):
+            i = example.text.find(t)
+            if i > -1 and i + len(t) < len(
+                    example.text) and example.text[i + len(t)] not in string.punctuation + ' \n':
+                logger.info('Normalizing text from:\t%s' % example.text)
+                dataset[row] = example._replace(text=example.text.replace(t, r))
+                logger.info('Normalized text to:\t\t%s' % dataset[row].text)
+
+            if example.text[0] in ['.', '-'] and len(example.text) > 1:
+                if example.text[1] not in string.punctuation + ' \n':
+                    logger.info('Normalizing text from:\t%s' % example.text)
+                    dataset[row] = example._replace(text=example.text[1:])
+                    logger.info('Normalized text to:\t\t%s' % dataset[row].text)
+    return dataset
+
+
+_separator_token = 'PHONE_SEPARATOR'
+_separator = Separator(phone=_separator_token)
+
+
 def phonemize_data(dataset, nlp):
     """
     Convert graphemes to phonemes in all rows in data.
@@ -217,6 +267,9 @@ def phonemize_data(dataset, nlp):
     Returns:
         dataset (iterable of TextSpeechRow)
     """
+
+    assert _separator_token not in ''.join(
+        r.text for r in dataset), 'WARNING! Phone separator is not unique.'
 
     logger.info('Phonemizing dataset...')
 
@@ -268,7 +321,14 @@ def _phonemize_text(text, nlp, pos_filter='PUNCT', **kwargs):
     for in_pos_filter, group in groupby(tokens, lambda t: t.pos_ == pos_filter or '\n' in t.text):
         phrase = ''.join([t.text_with_ws for t in group])
         if in_pos_filter or not phrase.split():
-            tokenized.append(phrase)
+            for is_punct, chars in groupby(phrase, lambda t: t in string.punctuation + ' \n'):
+                phrase = ''.join([c for c in chars])
+                if is_punct:
+                    tokenized.append(phrase)
+                else:
+                    tokenized.append(('phrase_to_phonemize', phrase))
+                    if phrase[-1:] == ' ':
+                        tokenized.append(' ')
         else:
             tokenized.append(('phrase_to_phonemize', phrase))
             if phrase[-1:] == ' ':
@@ -291,7 +351,13 @@ def _phonemize_phrases(phrases, language='en-us', **kwargs):
     """
 
     ph = phonemize(
-        phrases, **kwargs, strip=True, njobs=os.cpu_count(), backend='espeak', language=language)
+        phrases,
+        **kwargs,
+        separator=_separator,
+        strip=True,
+        njobs=os.cpu_count(),
+        backend='espeak',
+        language=language)
 
     return ph
 
