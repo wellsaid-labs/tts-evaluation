@@ -161,10 +161,11 @@ class Generator(nn.Module):
 
         excess_padding = signal.shape[1] - num_frames * self.hop_length
         assert excess_padding < self.hop_length * 2  # Not too much padding
-        assert excess_padding > 0  # Not too little padding
+        assert excess_padding >= 0  # Not too little padding
         assert excess_padding % 2 == 0  # Invariant
         # signal [batch_size, num_frames * self.hop_length]
-        signal = signal[:, excess_padding // 2:-excess_padding // 2]
+        if excess_padding > 0:
+            signal = signal[:, excess_padding // 2:-excess_padding // 2]
         assert signal.shape == (batch_size, self.hop_length * num_frames)
 
         # Mu-law expantion, learn more here:
