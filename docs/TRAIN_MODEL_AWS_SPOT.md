@@ -308,7 +308,7 @@ Related Documentation:
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH --project_name $COMET_PROJECT --name "$EXPERIMENT_NAME";
    ```
 
-   💡 TIP: You may want to include the optional `--spectrogram_model_checkpoint=your-checkpoint.pt`
+   💡 TIP: You may want to include the optional `--spectrogram_model_checkpoint=$SPECTROGRAM_CHECKPOINT`
    argument.
 
 1. Detach from your screen session by typing `Ctrl-A` then `D`.
