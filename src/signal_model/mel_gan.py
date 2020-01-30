@@ -1,7 +1,9 @@
-import torch.nn as nn
 import numpy as np
+
 from torch.nn.utils import weight_norm
+
 import torch
+import torch.nn as nn
 
 
 class PixelShuffle1d(nn.Module):
@@ -131,10 +133,13 @@ class Generator(nn.Module):
         self.model = nn.Sequential(*model)
         self.apply(weights_init)
 
-    def forward(self, spectrogram, pad_input=True):
+    def forward(self, spectrogram, pad_input=True, mu=255):
         """
         Args:
             spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
+            padding (bool, optional)
+            mu (int, optional): Mu for the u-law scaling. Learn more:
+                https://en.wikipedia.org/wiki/%CE%9C-law_algorithm.
 
         Args:
             signal (torch.FloatTensor [batch_size, signal_length])
@@ -161,5 +166,9 @@ class Generator(nn.Module):
         # signal [batch_size, num_frames * self.hop_length]
         signal = signal[:, excess_padding // 2:-excess_padding // 2]
         assert signal.shape == (batch_size, self.hop_length * num_frames)
+
+        # Mu-law expantion, learn more here:
+        # https://librosa.github.io/librosa/_modules/librosa/core/audio.html#mu_expand
+        signal = torch.sign(signal) / mu * (torch.pow(1 + mu, torch.abs(signal)) - 1)
 
         return signal if has_batch_dim else signal.squeeze(0)
