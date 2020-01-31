@@ -16,13 +16,12 @@ from src.signal_model.mel_gan import Generator
 set_hparams()
 signal = read_audio('tests/_test_data/bin/test_chunk_wav_and_text/rate(lj_speech,24000).wav')
 
-model = Generator(128, 32, 3)
+model = Generator()
 
 optimizer = AutoOptimizer(Adam(params=filter(lambda p: p.requires_grad, model.parameters())))
 criterion = MultiResolutionMelSpectrogramLoss()
 
-log_mel_spectrogram, signal = get_log_mel_spectrogram(
-    signal.astype(numpy.float32), frame_size=1024, frame_hop=256, fft_length=1024)
+log_mel_spectrogram, signal = get_log_mel_spectrogram(signal.astype(numpy.float32))
 
 log_mel_spectrogram = torch.from_numpy(log_mel_spectrogram)
 signal = torch.from_numpy(signal)
@@ -32,8 +31,7 @@ write_audio('disk/temp/original_signal.wav', signal)
 
 step = 0
 while True:
-    example = collate_tensors([_get_slice(log_mel_spectrogram, signal, 64, 0) for _ in range(8)])
-    predicted_signal = model(example.spectrogram)
+    predicted_signal = model(example.spectrogram, pad_input=False)
     spectral_convergence_loss, log_stft_magnitude_loss = criterion(predicted_signal,
                                                                    example.target_signal)
     optimizer.zero_grad()
