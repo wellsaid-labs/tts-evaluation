@@ -31,6 +31,7 @@ write_audio('disk/temp/original_signal.wav', signal)
 
 step = 0
 while True:
+    example = collate_tensors([_get_slice(log_mel_spectrogram, signal, 64, 0) for _ in range(8)])
     predicted_signal = model(example.spectrogram, pad_input=False)
     spectral_convergence_loss, log_stft_magnitude_loss = criterion(predicted_signal,
                                                                    example.target_signal)
