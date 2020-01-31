@@ -50,5 +50,5 @@ while True:
         plot_spectrogram(example.spectrogram[0]).savefig('disk/temp/original_spectrogram_%d.png' %
                                                          step)
 
-        predicted_signal = model(log_mel_spectrogram.unsqueeze(0))
+        predicted_signal = model(log_mel_spectrogram)
         write_audio('disk/temp/new_full_predicted_signal_%d.wav' % step, predicted_signal)
