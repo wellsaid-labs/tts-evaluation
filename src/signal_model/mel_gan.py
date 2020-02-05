@@ -160,13 +160,13 @@ class Generator(nn.Module):
         signal = self.model(spectrogram).squeeze(1)
 
         excess_padding = signal.shape[1] - num_frames * self.hop_length
-        assert excess_padding < self.hop_length * 2  # Not too much padding
-        assert excess_padding >= 0  # Not too little padding
-        assert excess_padding % 2 == 0  # Invariant
+        assert excess_padding < self.hop_length * 2, excess_padding  # Not too much padding
+        assert excess_padding >= 0, excess_padding  # Not too little padding
+        assert excess_padding % 2 == 0, excess_padding  # Invariant
         # signal [batch_size, num_frames * self.hop_length]
         if excess_padding > 0:
             signal = signal[:, excess_padding // 2:-excess_padding // 2]
-        assert signal.shape == (batch_size, self.hop_length * num_frames)
+        assert signal.shape == (batch_size, self.hop_length * num_frames), signal.shape
 
         # Mu-law expantion, learn more here:
         # https://librosa.github.io/librosa/_modules/librosa/core/audio.html#mu_expand
