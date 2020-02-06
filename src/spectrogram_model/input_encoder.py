@@ -68,6 +68,7 @@ class PhonesEncoder(StaticTokenizerEncoder):
     def __init__(self, text_samples, *args, **kwargs):
         all_punctuation = chain([re.findall(r'\W+', t) for t in text_samples])
         self._punctuation = set([p for punct in all_punctuation for p in punct])
+        self.stress_chars = 'ˈˌ'
 
         if 'tokenize' in kwargs:
             raise TypeError('``PhonesEncoder`` does not take keyword argument ``tokenize``.')
@@ -107,7 +108,7 @@ class PhonesEncoder(StaticTokenizerEncoder):
         # Group by whitespace characters, punctuation characters, and remaining phoneme
         # characters representing whole words
         for (contains_spaces, contains_punctuation), word_characters in groupby(
-                s, lambda c: (c.isspace(), c in self._punctuation)):
+                s, lambda c: (c.isspace(), c in self._punctuation + self.stress_chars)):
             if contains_spaces:
                 # ``word_characters`` could contain any number of white spaces; append them each
                 tokens.extend([c for c in word_characters])
@@ -119,10 +120,6 @@ class PhonesEncoder(StaticTokenizerEncoder):
                 # and append each phoneme syllable
                 tokens.extend(list(text) if contains_punctuation else text.split(_separator_token))
 
-        unexpected = ['For', 'Itɛ', 'and', 'gett', 'promote']
-        for u in unexpected:
-            if u in tokens:
-                print('############# FOUND UNEXPECTED TOKEN!\t%s\t%s' % (u, s))
         return tokens
 
     def _detokenize(self, s):
@@ -145,10 +142,11 @@ class PhonesEncoder(StaticTokenizerEncoder):
 
         """
         detokenized = ''
+
         # Group by whitespace characters, punctuation characters, and remaining phoneme
         # characters representing whole words
         for (contains_spaces, contains_punctuation), word_characters in groupby(
-                s, lambda c: (c.isspace(), c in self._punctuation)):
+                s, lambda c: (c.isspace(), c in self._punctuation + self.stress_chars)):
             if contains_spaces:
                 # Concatenate all whitespace characters
                 detokenized += ''.join([c for c in word_characters])

@@ -355,6 +355,7 @@ def _phonemize_phrases(phrases, language='en-us', **kwargs):
         **kwargs,
         separator=_separator,
         strip=True,
+        with_stress=True,
         njobs=os.cpu_count(),
         backend='espeak',
         language=language)
