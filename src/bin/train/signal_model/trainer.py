@@ -446,7 +446,7 @@ class Trainer():
         """
         assert batch.target_signal.shape == predicted_signal.shape, (
             'The shapes do not match %s =!= %s' %
-            (batch.target_signal.shape == predicted_signal.shape))
+            (batch.target_signal.shape, predicted_signal.shape))
 
         spectral_convergence_loss, log_mel_spectrogram_magnitude_loss = self.criterion(
             predicted_signal, batch.target_signal)
