@@ -264,6 +264,19 @@ def steven_speech_dataset(
     return _dataset_loader(extracted_name, url, speaker, url_filename, create_root, **kwargs)
 
 
+LINCOLN_CUSTOM = Speaker('Lincoln (Custom)', Gender.MALE)
+
+
+def lincoln_speech_dataset(
+        extracted_name='Lincoln_custom_ma',
+        url='https://drive.google.com/uc?export=download&id=1NJkVrPyxiNLKhc1Pj-ssCFhx_Mxzervf',
+        url_filename='Lincoln_custom_ma.tar.gz',
+        speaker=LINCOLN_CUSTOM,
+        create_root=True,
+        **kwargs):
+    return _dataset_loader(extracted_name, url, speaker, url_filename, create_root, **kwargs)
+
+
 __all__ = [
     'Speaker', 'Gender', 'lj_speech_dataset', 'm_ailabs_en_us_speech_dataset',
     'm_ailabs_en_uk_speech_dataset', 'hilary_speech_dataset', 'heather_speech_dataset',
@@ -274,5 +287,5 @@ __all__ = [
     'ELISE_RANDALL', 'NADINE_NAGAMATSU', 'MEGAN_SINCLAIR', 'GEORGE_DRAKE', 'ALICIA_HARRIS',
     'FRANK_BONACQUISTI', 'ADRIENNE_WALKER_HELLER', 'SUSAN_MURPHY', 'SAM_SCHOLL', 'SEAN_HANNITY',
     'BETH_CAMERON', 'BETH_CAMERON_CUSTOM', 'HEATHER_DOE', 'HILARY_NORIEGA', 'MARY_ANN',
-    'JUDY_BIEBER', 'ELLIOT_MILLER', 'ELIZABETH_KLETT', 'LINDA_JOHNSON'
+    'JUDY_BIEBER', 'ELLIOT_MILLER', 'ELIZABETH_KLETT', 'LINDA_JOHNSON', 'LINCOLN_CUSTOM'
 ]

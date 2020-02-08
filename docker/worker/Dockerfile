@@ -44,10 +44,10 @@ WORKDIR /app
 RUN python3 -m venv venv
 
 # NOTE: `COPY` experiment folder fist, so that this layer is reused the most.
-COPY disk/experiments/spectrogram_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/ \
-  disk/experiments/spectrogram_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/
-COPY disk/experiments/signal_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/ \
-  disk/experiments/signal_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/
+COPY disk/experiments/spectrogram_model/rhyan_viacom_poc_ALL_TRANSFER_LEARNING_36k_experiments_spectrogram_model_DATE-2020y01m27d-06h16m55s_PID-32774_RUN_DATE-2020y01m27d-06h16m55s_checkpoints_step_36736.pt \
+  disk/experiments/spectrogram_model/rhyan_viacom_poc_ALL_TRANSFER_LEARNING_36k_experiments_spectrogram_model_DATE-2020y01m27d-06h16m55s_PID-32774_RUN_DATE-2020y01m27d-06h16m55s_checkpoints_step_36736.pt
+COPY disk/experiments/signal_model/rhyan_viacom_poc_ALL_TRANSFER_LEARNING_36k_experiments_signal_model_standard_learning_DATE-2020y02m05d-02h37m24s_PID-28231_RUN_DATE-2020y02m05d-02h37m24s_checkpoints_step_169079.pt \
+  disk/experiments/signal_model/rhyan_viacom_poc_ALL_TRANSFER_LEARNING_36k_experiments_signal_model_standard_learning_DATE-2020y02m05d-02h37m24s_PID-28231_RUN_DATE-2020y02m05d-02h37m24s_checkpoints_step_169079.pt
 COPY src/ src/
 COPY third_party/ third_party/
 

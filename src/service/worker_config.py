@@ -10,8 +10,8 @@ from src.environment import IS_TESTING_ENVIRONMENT
 from src.environment import SIGNAL_MODEL_EXPERIMENTS_PATH
 from src.environment import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 
-SPECTROGRAM_MODEL_CHECKPOINT_PATH = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / 'MY_LOCAL_SPECTROGRAM.pt'
-SIGNAL_MODEL_CHECKPOINT_PATH = SIGNAL_MODEL_EXPERIMENTS_PATH / 'MY_LOCAL_SIGNAL.pt'
+SPECTROGRAM_MODEL_CHECKPOINT_PATH = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / 'rhyan_viacom_poc_ALL_TRANSFER_LEARNING_36k_experiments_spectrogram_model_DATE-2020y01m27d-06h16m55s_PID-32774_RUN_DATE-2020y01m27d-06h16m55s_checkpoints_step_36736.pt'
+SIGNAL_MODEL_CHECKPOINT_PATH = SIGNAL_MODEL_EXPERIMENTS_PATH / 'rhyan_viacom_poc_ALL_TRANSFER_LEARNING_36k_experiments_signal_model_standard_learning_DATE-2020y02m05d-02h37m24s_PID-28231_RUN_DATE-2020y02m05d-02h37m24s_checkpoints_step_169079.pt'
 
 if not IS_TESTING_ENVIRONMENT:
     assert SIGNAL_MODEL_CHECKPOINT_PATH.is_file(), 'Signal model checkpoint cannot be found.'
@@ -40,5 +40,8 @@ SPEAKER_ID_TO_SPEAKER = {
     16: datasets.HANUMAN_WELCH,
     17: datasets.JACK_RUTKOWSKI,
     18: datasets.MARK_ATHERLAY,
-    19: datasets.STEVEN_WAHLBERG
+    19: datasets.STEVEN_WAHLBERG,
+
+    # NOTE: Custom voice IDs are random numbers larger than 10,000 and less than 20,000.
+    11541: datasets.LINCOLN_CUSTOM
 }

@@ -22,22 +22,27 @@ document.addEventListener('DOMContentLoaded', async function (_) {
   const allAudio = [];
   const allRequests = [];
 
-  versionSelect.onchange = () => {
+  function filterSpeakers() {
     const version = versionSelect.value.toLowerCase();
     let speakers;
     // TODO: Share a configuration file between server and browser on the versions available
     // and the speakers available.
     if (version == "v1") {
       speakers = [...Array(4).keys()];
-    } else if (version == "v2" || version == "latest") {
+    } else if (version == "v2") {
       speakers = [...Array(12).keys()];
-    } else if (version == "v3") {
+    } else if (version == "v3" || version == "v4" || version == "latest") {
       speakers = [...Array(20).keys()];
+    } else if (version == "lincoln.v1") {
+      speakers = [11541];
     }
     speakerOptionElements.forEach(option => {
       option.disabled = !speakers.includes(parseInt(option.value));
     });
   }
+
+  filterSpeakers(); // Initial filter
+  versionSelect.onchange = filterSpeakers;
 
   // `zip` function similar to python.
   const zip = (...args) => args[0].map((_, i) => args.map(arg => arg[i]));
