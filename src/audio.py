@@ -186,8 +186,10 @@ class SignalToMelSpectrogram(torch.nn.Module):
             win_length=self.window.shape[0],
             window=self.window,
             center=False)
-        real_part, imag_part = spectrogram.unbind(-1)
-        magnitude_spectrogram = torch.sqrt(real_part**2 + imag_part**2 + 1e-8)
+        # NOTE: The below `norm` line is equal to a numerically stable version of the below...
+        # >>> real_part, imag_part = spectrogram.unbind(-1)
+        # >>> magnitude_spectrogram = torch.sqrt(real_part**2 + imag_part**2)
+        magnitude_spectrogram = torch.norm(spectrogram, dim=-1)
         mel_spectrogram = torch.matmul(self.mel_basis, magnitude_spectrogram).transpose(0, 1)
         return torch.max(self.min_magnitude, mel_spectrogram).permute(1, 2, 0).squeeze()
 

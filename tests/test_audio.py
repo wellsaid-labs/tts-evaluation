@@ -155,6 +155,7 @@ def test_log_mel_spectrogram_smoke():
     frame_hop = 300
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     sample_rate = 24000
+    fft_length = 2048
     signal = read_audio(path, {
         'sample_rate': sample_rate,
         'bits': 16,
@@ -162,7 +163,7 @@ def test_log_mel_spectrogram_smoke():
         'encoding': 'signed-integer'
     })
     log_mel_spectrogram, padded_signal = get_log_mel_spectrogram(
-        signal, sample_rate, frame_size=frame_size, frame_hop=frame_hop)
+        signal, sample_rate, frame_size=frame_size, frame_hop=frame_hop, fft_length=fft_length)
 
     assert log_mel_spectrogram.dtype == np.float32
     assert len(log_mel_spectrogram.shape) == 2
