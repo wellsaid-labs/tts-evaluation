@@ -36,8 +36,6 @@ def _set_anomaly_detection():
     from src.utils import AnomalyDetector
 
     add_config({
-        'src.bin.train.signal_model.trainer.Trainer.__init__':
-            HParams(min_rollback=64),
         'src.utils.anomaly_detector.AnomalyDetector.__init__':
             HParams(
                 # NOTE: Based on ``notebooks/Detecting Anomalies.ipynb``. The current usage requires

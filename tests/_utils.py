@@ -241,7 +241,6 @@ def get_tts_mocks(add_spectrogram=False,
             anomaly_detector=AnomalyDetector(),
             optimizer=signal_model_optimizer,
             model=return_['signal_model'],
-            num_rollbacks=0,
             spectrogram_model_checkpoint_path=return_['spectrogram_model_checkpoint'].path)
         checkpoint.save()
         return checkpoint

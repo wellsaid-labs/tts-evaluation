@@ -36,17 +36,6 @@ def get_trainer(read_audio_mock, register_mock, load_data=True):
         dev_batch_size=1)
 
 
-def test__get_sample_density_gap():
-    trainer = get_trainer(load_data=False)
-    assert 0.0 == trainer._get_sample_density_gap(
-        torch.tensor([10, 0, 10]), torch.tensor([10, 0, 10]), 0.0)
-    assert 0.0 == trainer._get_sample_density_gap(
-        torch.tensor([10, 0, 10]), torch.tensor([10, 0, 10]), 1.0)
-    assert 0.25 == trainer._get_sample_density_gap(
-        torch.tensor([-120, 0, 120, 0], dtype=torch.int8),
-        torch.tensor([32760, 0, 0, 0], dtype=torch.int16), 0.9)
-
-
 @mock.patch('src.bin.train.signal_model.trainer.atexit.register')
 def test_checkpoint(register_mock):
     """ Ensure checkpoint can be saved and loaded from. """
@@ -79,21 +68,6 @@ def test__do_loss_and_maybe_backwards():
         batch, predicted_signal, False)
     assert log_mel_spectrogram_magnitude_loss.item() == pytest.approx(0.0)
     assert num_predictions == 8192
-
-
-def test__get_gru_orthogonal_loss():
-    trainer = get_trainer(load_data=False)
-    assert trainer._get_gru_orthogonal_loss().item() >= 0
-
-
-def test__partial_rollback():
-    trainer = get_trainer(load_data=False)
-    assert trainer.step == 0
-    assert trainer.num_rollbacks == 0
-    trainer.step += 1
-    trainer._partial_rollback()
-    assert trainer.step == 0
-    assert trainer.num_rollbacks == 1
 
 
 def test_visualize_inferred():

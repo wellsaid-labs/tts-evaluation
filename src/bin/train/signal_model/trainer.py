@@ -12,10 +12,6 @@ Walking through the math, a real epoch for the Linda Joshon dataset would be abo
 
 Find stats on the Linda Johnson dataset here: https://keithito.com/LJ-Speech-Dataset/
 """
-from collections import deque
-from collections import namedtuple
-from copy import deepcopy
-
 import atexit
 import logging
 import random
@@ -34,7 +30,6 @@ from src.audio import SignalToLogMelSpectrogram
 from src.bin.train.signal_model.data_loader import DataLoader
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
-from src.utils import AnomalyDetector
 from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
@@ -48,11 +43,6 @@ from src.visualize import plot_spectrogram
 import src.distributed
 
 logger = logging.getLogger(__name__)
-
-_RollbackTrainerState = namedtuple('_RollbackTrainerState', [
-    'step', 'epoch', 'optimizer_state_dict', 'model_state_dict', 'scheduler_state_dict',
-    'anomaly_detector'
-])
 
 
 class Trainer():
@@ -68,7 +58,6 @@ class Trainer():
         dev_batch_size (int): Batch size used for evaluation.
         criterion (callable): Loss function used to score signal predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
-        min_rollback (int): Minimum number of epochs to rollback in case of a loss anomaly.
         lr_multiplier_schedule (callable): Learning rate multiplier schedule.
         model (torch.nn.Module, optional): Model to train and evaluate.
         spectrogram_model_checkpoint_path (pathlib.Path or str, optional): Checkpoint path used to
@@ -77,9 +66,6 @@ class Trainer():
             a checkpoint.
         epoch (int, optional): Starting epoch; typically, this parameter is useful when starting
             from a checkpoint.
-        num_rollbacks (int, optional): Number of rollbacks.
-        anomaly_detector (AnomalyDetector, optional): Anomaly detector used to skip batches that
-            result in an anomalous loss.
         save_temp_checkpoint_every_n_seconds (int, optional): The number of seconds between
             temporary checkpoint saves.
         dataset_sample_size (int, optional): The number of samples to compute expensive dataset
@@ -103,14 +89,11 @@ class Trainer():
                  dev_spectrogram_slice_size=HParam(),
                  criterion=HParam(),
                  optimizer=HParam(),
-                 min_rollback=HParam(),
                  lr_multiplier_schedule=HParam(),
                  model=HParam(),
                  spectrogram_model_checkpoint_path=None,
                  step=0,
                  epoch=0,
-                 num_rollbacks=0,
-                 anomaly_detector=None,
                  save_temp_checkpoint_every_n_seconds=60 * 10,
                  dataset_sample_size=50):
         self.device = device
@@ -120,7 +103,6 @@ class Trainer():
         self.train_spectrogram_slice_size = train_spectrogram_slice_size
         self.dev_batch_size = dev_batch_size
         self.dev_spectrogram_slice_size = dev_spectrogram_slice_size
-        self.num_rollbacks = num_rollbacks
         self.checkpoints_directory = checkpoints_directory
         self.use_predicted = spectrogram_model_checkpoint_path is not None
         self.spectrogram_model_checkpoint_path = spectrogram_model_checkpoint_path
@@ -140,9 +122,6 @@ class Trainer():
         self.scheduler = LambdaLR(
             self.optimizer.optimizer, lr_multiplier_schedule, last_epoch=step - 1)
 
-        self.anomaly_detector = anomaly_detector if isinstance(
-            anomaly_detector, AnomalyDetector) else AnomalyDetector()
-
         self.criterion = criterion(reduction='none').to(device)
         self.to_spectrograms = [
             SignalToLogMelSpectrogram(fft_length=512, frame_hop=50, window=torch.hann_window(300)),
@@ -159,14 +138,8 @@ class Trainer():
             'log_mel_2048_spectrogram_magnitude_loss': DistributedAveragedMetric(),
             'log_mel_1024_spectrogram_magnitude_loss': DistributedAveragedMetric(),
             'log_mel_512_spectrogram_magnitude_loss': DistributedAveragedMetric(),
-            'orthogonal_loss': DistributedAveragedMetric(),
             'data_queue_size': DistributedAveragedMetric(),
         }
-
-        # NOTE: Rollback `maxlen=min_rollback + 1` to store the current state of the model with
-        # the additional rollbacks.
-        self._rollback_states = deque([self._make_partial_rollback_state()],
-                                      maxlen=min_rollback + 1)
 
         self.comet_ml = comet_ml
         self.comet_ml.set_step(step)
@@ -250,14 +223,11 @@ class Trainer():
             (Trainer)
         """
         checkpoint_kwargs = {
-            # NOTE: ``rollback`` is not checkpointed due to it's size.
             'model': checkpoint.model,
             'optimizer': checkpoint.optimizer,
             'epoch': checkpoint.epoch,
             'step': checkpoint.step,
-            'anomaly_detector': checkpoint.anomaly_detector,
             'spectrogram_model_checkpoint_path': checkpoint.spectrogram_model_checkpoint_path,
-            'num_rollbacks': checkpoint.num_rollbacks
         }
         checkpoint_kwargs.update(kwargs)
         return class_(**checkpoint_kwargs)
@@ -277,78 +247,14 @@ class Trainer():
                 model=(self.model.module if src.distributed.is_initialized() else self.model),
                 optimizer=self.optimizer,
                 epoch=self.epoch,
-                anomaly_detector=self.anomaly_detector,
                 comet_ml_project_name=self.comet_ml.project_name,
                 comet_ml_experiment_key=self.comet_ml.get_key(),
-                spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
-                num_rollbacks=self.num_rollbacks)
+                spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path)
             if checkpoint.path.exists():
                 return None
             return checkpoint.save()
         else:
             return None
-
-    def _make_partial_rollback_state(self):
-        """ Make a state for rolling back to.
-
-        The rollback includes:
-           * Model weights
-           * Optimizer weights
-           * Step counter `self.step`
-           * Epoch counter `self.epoch`
-
-        The rollback does not include:
-           * Number of rollbacks `self.num_rollbacks`.
-           * Comet_ml `self.comet_ml`. Comet ML does not have a mechanism for rolling back state
-             https://github.com/comet-ml/issue-tracking/issues/137.
-           * Metrics `self.metrics`. Any metrics are reset during a rollback and a rollback is
-             treated as the start of a new epoch.
-           * Random Generators. We do not make an effort to perserve the global state of the random
-             generators in `torch`, `numpy` and `random` modules.
-
-        Returns:
-            (_RollbackTrainerState)
-        """
-        # TODO: Test to ensure PyTorch operations do not change the state as a result of tensor
-        # side effects.
-        # NOTE: In PyTorch, unless we ``deepcopy``, ``state_dict`` continues to update.
-        return _RollbackTrainerState(
-            step=self.step,
-            epoch=self.epoch,
-            optimizer_state_dict=deepcopy(self.optimizer.state_dict()),
-            model_state_dict=deepcopy(self.model.state_dict()),
-            scheduler_state_dict=deepcopy(self.scheduler.state_dict()),
-            anomaly_detector=deepcopy(self.anomaly_detector))
-
-    def _partial_rollback(self):
-        """ Rollback to the earliest state available `self.rollback[0]` and restart the epoch.
-        """
-        self._end_epoch()
-
-        state = self._rollback_states[0]
-        logger.info('Rolling back from step %d to %d and from epoch %d to %d', self.step,
-                    state.step, self.epoch, state.epoch)
-        self.num_rollbacks += 1
-        self.comet_ml.log_metric('num_rollback', self.num_rollbacks)
-
-        self.model.load_state_dict(state.model_state_dict)
-        self.optimizer.load_state_dict(state.optimizer_state_dict)
-        self.scheduler.load_state_dict(state.scheduler_state_dict)
-        self.optimizer.zero_grad()
-        self.anomaly_detector = state.anomaly_detector
-        self.step = state.step
-        self.epoch = state.epoch
-        self.comet_ml.set_step(self.step)
-
-        self._rollback_states.clear()  # Clear the future states
-        self._rollback_states.append(state)
-
-    def _end_epoch(self):
-        """ Reset the trainer state from the current epoch.
-        """
-        self.comet_ml.log_epoch_end(self.epoch)
-        for name, metric in self.metrics.items():
-            self.comet_ml.log_metric('epoch/%s' % name, metric.sync().reset())
 
     @log_runtime
     def run_epoch(self, train=False, trial_run=False):
@@ -356,9 +262,6 @@ class Trainer():
 
         The specification of an "epoch" is loose in rare circumstances:
 
-            - The trainer allows for partial rollbacks of state during training. There doesn't
-              exist effective mechanisms to capture the state of all modules and rollback like the
-              `DataLoader` and `comet_ml`.
             - `DataLoader`'s specification allows it to drop data via `drop_last`. Therefore,
               there is not always the same number of batches for each epoch.
             - `trial_run` runs only on row of data.
@@ -420,34 +323,14 @@ class Trainer():
                 break
 
         if not trial_run:
-            self._end_epoch()
+            self.comet_ml.log_epoch_end(self.epoch)
+            for name, metric in self.metrics.items():
+                self.comet_ml.log_metric('epoch/%s' % name, metric.sync().reset())
             if train:
                 self.epoch += 1
         else:
             for _, metric in self.metrics.items():
                 metric.reset()
-
-    def _get_gru_orthogonal_loss(self):
-        """ Get the orthogonal loss for the hidden-to-hidden matrix in our GRUs.
-
-        Papers describing the loss:
-        https://papers.nips.cc/paper/7680-can-we-gain-more-from-orthogonality-regularizations-in-training-deep-networks.pdf
-        https://github.com/pytorch/pytorch/issues/2421#issuecomment-355534285
-        http://mathworld.wolfram.com/FrobeniusNorm.html
-        https://github.com/MingtaoGuo/BigGAN-tensorflow/blob/7e531cd875236544866f54248aa397f9176296b6/ops.py#L111
-
-        Returns:
-            (torch.FloatTensor [1])
-        """
-        total = torch.tensor(0.0).to(self.device)
-        for name, parameter in self.model.named_parameters():
-            if 'weight_hh' in name:
-                splits = parameter.chunk(3)
-                for split in splits:
-                    eye = torch.eye(split.shape[0], device=self.device)
-                    total += torch.nn.functional.mse_loss(torch.mm(split, torch.t(split)), eye)
-                    total += torch.nn.functional.mse_loss(torch.mm(torch.t(split), split), eye)
-        return total
 
     def _do_loss_and_maybe_backwards(self, batch, predicted_signal, do_backwards):
         """ Compute the losses and maybe do backwards.
@@ -480,25 +363,6 @@ class Trainer():
                                                                   batch.target_signal.shape[0])
 
         return total_spectrogram_loss, batch.signal_mask.sum()
-
-    def _get_sample_density_gap(self, predicted_signal, signal, greater_than):
-        """ Measure the relative difference in sample density inside a specified range.
-
-        Args:
-            predicted_signal (torch.FloatTensor [predicted_signal_length])
-            signal (torch.FloatTensor [signal_length])
-            greater_than (float): Defines the amplitude range.
-
-        Returns:
-            (float): The density margin between the predicted and target signals.
-        """
-
-        def get_density(normalized):
-            num_selected_samples = (normalized.abs() >= greater_than).sum()
-            total_samples = normalized.numel()
-            return num_selected_samples.float() / total_samples
-
-        return (get_density(predicted_signal) - get_density(signal)).item()
 
     @log_runtime
     def visualize_inferred(self):
@@ -550,10 +414,6 @@ class Trainer():
 
         self.comet_ml.log_metrics(
             {'single/log_mel_spectrogram_magnitude_loss': total_spectrogram_loss})
-        self.comet_ml.log_metrics({
-            'single/%s_sample_density_gap' % str(int(n * 100)):
-            self._get_sample_density_gap(predicted, target_signal, n) for n in [0.99, 0.95, 0.90]
-        })
         self.comet_ml.log_audio(
             tag=self.DEV_INFERRED_LABEL,
             text=example.text,
