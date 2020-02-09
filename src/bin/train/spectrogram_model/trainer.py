@@ -487,6 +487,7 @@ class Trainer():
             tag=self.DEV_INFERRED_LABEL,
             text=example.text,
             speaker=example.speaker,
+            # TODO: Run griffin lim on the gold audio as well for a fair comparison.
             predicted_audio=griffin_lim(predicted_post_spectrogram.cpu().numpy()),
             gold_audio=maybe_load_tensor(example.spectrogram_audio))
         self.comet_ml.log_metrics({  # [num_frames, num_tokens] → scalar

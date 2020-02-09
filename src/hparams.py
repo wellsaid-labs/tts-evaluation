@@ -11,6 +11,7 @@ from hparams import HParams
 from torch import nn
 from torch.nn import BCEWithLogitsLoss
 from torch.nn import MSELoss
+from torch.nn import L1Loss
 from torch.optim import Adam
 from torchnlp.random import fork_rng
 
@@ -19,7 +20,6 @@ import torchnlp
 
 from src import datasets
 from src.audio import get_num_seconds
-from src.audio import MultiResolutionMelSpectrogramLoss
 from src.audio import WavFileMetadata
 from src.datasets import filter_
 from src.datasets import normalize_audio_column
@@ -132,7 +132,7 @@ def _set_audio_processing():
             # number of channels, scaling linearly per channel.
             'build_wav_header':
                 HParams(frame_rate=sample_rate),
-            'SignalToMelSpectrogram.__init__':
+            'SignalToLogMelSpectrogram.__init__':
                 HParams(
                     sample_rate=sample_rate,
                     frame_hop=frame_hop,
@@ -676,7 +676,7 @@ def set_hparams():
 
                                 # `CrossEntropyLoss` is not directly mentioned in the paper; however
                                 # is a popular choice as of Jan 2019 for a classification task.
-                                criterion=MultiResolutionMelSpectrogramLoss,
+                                criterion=L1Loss,
                                 optimizer=Adam,
 
                                 # A similar schedule to used to train BERT; furthermore, experiments

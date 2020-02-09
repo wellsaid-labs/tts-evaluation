@@ -30,6 +30,7 @@ from torchnlp.utils import get_total_parameters
 import torch
 
 from src.audio import integer_to_floating_point_pcm
+from src.audio import SignalToLogMelSpectrogram
 from src.bin.train.signal_model.data_loader import DataLoader
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
@@ -142,11 +143,22 @@ class Trainer():
         self.anomaly_detector = anomaly_detector if isinstance(
             anomaly_detector, AnomalyDetector) else AnomalyDetector()
 
-        self.criterion = criterion().to(device)
+        self.criterion = criterion(reduction='none').to(device)
+        self.to_spectrograms = [
+            SignalToLogMelSpectrogram(fft_length=512, frame_hop=50, window=torch.hann_window(300)),
+            SignalToLogMelSpectrogram(
+                fft_length=1024, frame_hop=150, window=torch.hann_window(600)),
+            SignalToLogMelSpectrogram(
+                fft_length=2048, frame_hop=300, window=torch.hann_window(1200))
+        ]
 
+        # TODO: Remove redundancy between `self.to_spectrograms` and `self.metrics`.
+        # TODO: Consider naming the metrics more precisely from the spectrogram parameters.
         self.metrics = {
-            'spectral_convergence_loss': DistributedAveragedMetric(),
             'log_mel_spectrogram_magnitude_loss': DistributedAveragedMetric(),
+            'log_mel_2048_spectrogram_magnitude_loss': DistributedAveragedMetric(),
+            'log_mel_1024_spectrogram_magnitude_loss': DistributedAveragedMetric(),
+            'log_mel_512_spectrogram_magnitude_loss': DistributedAveragedMetric(),
             'orthogonal_loss': DistributedAveragedMetric(),
             'data_queue_size': DistributedAveragedMetric(),
         }
@@ -449,24 +461,25 @@ class Trainer():
             'The shapes do not match %s =!= %s' %
             (batch.target_signal.shape, predicted_signal.shape))
 
-        spectral_convergence_loss, log_mel_spectrogram_magnitude_loss = self.criterion(
-            predicted_signal, batch.target_signal)
+        total_spectrogram_loss = torch.tensor(0.0, device=predicted_signal.device)
+        for to_spectrogram in self.to_spectrograms:
+            spectrogram_loss = self.criterion(
+                to_spectrogram(predicted_signal), to_spectrogram(batch.target_signal)).mean()
+            total_spectrogram_loss += spectrogram_loss / len(self.to_spectrograms)
+            self.metrics['log_mel_%d_spectrogram_magnitude_loss' %
+                         to_spectrogram.fft_length].update(spectrogram_loss,
+                                                           batch.target_signal.shape[0])
 
         if do_backwards:
             self.optimizer.zero_grad()
-            (spectral_convergence_loss + log_mel_spectrogram_magnitude_loss).backward()
+            total_spectrogram_loss.backward()
             self.optimizer.step(comet_ml=self.comet_ml)
 
-        # Learn more about `coarse_loss` and `fine_loss` in the "Efficient Neural Audio Synthesis"
-        # paper.
         # TODO: Consider using the spectrogram length instead of batch size
-        self.metrics['spectral_convergence_loss'].update(spectral_convergence_loss,
-                                                         batch.target_signal.shape[0])
-        self.metrics['log_mel_spectrogram_magnitude_loss'].update(
-            log_mel_spectrogram_magnitude_loss, batch.target_signal.shape[0])
+        self.metrics['log_mel_spectrogram_magnitude_loss'].update(total_spectrogram_loss,
+                                                                  batch.target_signal.shape[0])
 
-        return (spectral_convergence_loss, log_mel_spectrogram_magnitude_loss,
-                batch.signal_mask.sum())
+        return total_spectrogram_loss, batch.signal_mask.sum()
 
     def _get_sample_density_gap(self, predicted_signal, signal, greater_than):
         """ Measure the relative difference in sample density inside a specified range.
@@ -494,6 +507,10 @@ class Trainer():
         if not src.distributed.is_master():
             return
 
+        # TODO: Consider running the algorithm end-to-end with the spectrogram model on CPU to
+        # have a end-to-end comparison.
+        # TODO: Consider transfer learning the signal model from ground truth to a particular
+        # spectrogram model.
         self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
         model = self.model.module if src.distributed.is_initialized() else self.model
         model = model.eval()
@@ -509,6 +526,30 @@ class Trainer():
 
         predicted = model(spectrogram).detach().cpu()
 
+        total_spectrogram_loss = torch.tensor(0.0)
+        for to_spectrogram in self.to_spectrograms:
+            predicted_spectrogram = to_spectrogram(predicted)
+            target_spectrogram = to_spectrogram(target_signal)
+            spectrogram_loss = self.criterion(predicted_spectrogram, target_spectrogram)
+            total_spectrogram_loss += spectrogram_loss.mean() / len(self.to_spectrograms)
+            self.comet_ml.log_metrics({
+                'single/log_mel_%d_spectrogram_magnitude_loss' % to_spectrogram.fft_length:
+                    spectrogram_loss.mean()
+            })
+            # TODO: Consider ensuring that the `target_spectrogram` is the same as the
+            # `input_spectrogram` at least for one of the configurations.
+            self.comet_ml.log_figure(
+                'target_log_mel_%d_spectrogram_magnitude' % to_spectrogram.fft_length,
+                plot_spectrogram(target_spectrogram))
+            self.comet_ml.log_figure(
+                'predicted_log_mel_%d_spectrogram_magnitude' % to_spectrogram.fft_length,
+                plot_spectrogram(predicted_spectrogram))
+            self.comet_ml.log_figure(
+                'log_mel_%d_spectrogram_magnitude_loss' % to_spectrogram.fft_length,
+                plot_spectrogram(spectrogram_loss))
+
+        self.comet_ml.log_metrics(
+            {'single/log_mel_spectrogram_magnitude_loss': total_spectrogram_loss})
         self.comet_ml.log_metrics({
             'single/%s_sample_density_gap' % str(int(n * 100)):
             self._get_sample_density_gap(predicted, target_signal, n) for n in [0.99, 0.95, 0.90]
@@ -518,5 +559,6 @@ class Trainer():
             text=example.text,
             speaker=str(example.speaker),
             gold_audio=target_signal,
-            predicted_audio=predicted)
-        self.comet_ml.log_figure('spectrogram', plot_spectrogram(spectrogram.detach().cpu()))
+            predicted_audio=predicted,
+            log_mel_spectrogram_magnitude_loss=total_spectrogram_loss)
+        self.comet_ml.log_figure('input_spectrogram', plot_spectrogram(spectrogram.detach().cpu()))

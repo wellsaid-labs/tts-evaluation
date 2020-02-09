@@ -16,7 +16,6 @@ from src.audio import get_log_mel_spectrogram
 from src.audio import get_num_seconds
 from src.audio import griffin_lim
 from src.audio import integer_to_floating_point_pcm
-from src.audio import MultiResolutionMelSpectrogramLoss
 from src.audio import normalize_audio
 from src.audio import read_audio
 from src.audio import SignalToLogMelSpectrogram
@@ -291,51 +290,3 @@ def test_normalize_audio__not_normalized():
     normalized_audio_path = normalize_audio(
         path, bits=16, sample_rate=24000, channels=1, encoding='signed-integer')
     assert path == normalized_audio_path
-
-
-def test_multi_resolution_stft_loss_griffin_lim():
-    path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
-    sample_rate = 24000
-    signal = integer_to_floating_point_pcm(
-        read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer')))
-    criterion = MultiResolutionMelSpectrogramLoss()
-
-    log_mel_spectrogram, signal = get_log_mel_spectrogram(signal, sample_rate=sample_rate)
-    worse_waveform = griffin_lim(log_mel_spectrogram, sample_rate, iterations=5)
-    better_waveform = griffin_lim(log_mel_spectrogram, sample_rate, iterations=15)
-
-    spectral_convergence_loss, log_mel_spectrogram_magnitude_loss = criterion(
-        torch.tensor(worse_waveform), torch.tensor(signal))
-    better_spectral_convergence_loss, better_log_mel_spectrogram_magnitude_loss = criterion(
-        torch.tensor(better_waveform), torch.tensor(signal))
-
-    assert log_mel_spectrogram_magnitude_loss > better_log_mel_spectrogram_magnitude_loss
-    assert spectral_convergence_loss > better_spectral_convergence_loss
-
-
-def test_multi_resolution_stft_loss_zero():
-    signal = torch.normal(0, 1, size=(5, 3600))
-    criterion = MultiResolutionMelSpectrogramLoss()
-    spectral_convergence_loss, log_stft_magnitude_loss = criterion(signal, signal)
-    assert spectral_convergence_loss == 0
-    assert log_stft_magnitude_loss == 0
-
-
-def test_multi_resolution_stft_loss_batch_invariance():
-    signal = torch.normal(0, 1, size=(1, 3600))
-    target = torch.normal(0, 1, size=(1, 3600))
-
-    batched_signal = torch.cat([signal, signal, signal])
-    batched_target = torch.cat([target, target, target])
-
-    criterion = MultiResolutionMelSpectrogramLoss()
-
-    spectral_convergence_loss, log_stft_magnitude_loss = criterion(signal, target)
-    batched_spectral_convergence_loss, batched_log_stft_magnitude_loss = criterion(
-        batched_signal, batched_target)
-
-    assert_almost_equal = lambda a, b: np.testing.assert_almost_equal(
-        a.detach().numpy(), b.detach().numpy(), decimal=5)
-
-    assert_almost_equal(spectral_convergence_loss, batched_spectral_convergence_loss)
-    assert_almost_equal(log_stft_magnitude_loss, batched_log_stft_magnitude_loss)

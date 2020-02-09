@@ -23,7 +23,7 @@ def get_trainer(read_audio_mock, register_mock, load_data=True):
 
     register_mock.return_value = None
     # NOTE: Decrease the audio size for test performance.
-    read_audio_mock.side_effect = lambda *args, **kwargs: read_audio(*args, **kwargs)[:900]
+    read_audio_mock.side_effect = lambda *args, **kwargs: read_audio(*args, **kwargs)[:4096]
 
     return Trainer(
         comet_ml=MockCometML(),
@@ -70,16 +70,15 @@ def test__do_loss_and_maybe_backwards():
     batch = SignalModelTrainingRow(
         spectrogram_mask=None,
         spectrogram=None,
-        target_signal=torch.FloatTensor([[0, 1, 0, -1, 0, 1, 0, -1, 0]]),
+        target_signal=torch.zeros(2, 4096),
         source_signal=None,
-        signal_mask=torch.BoolTensor([[1, 1, 1, 1, 1, 1, 1, 1, 1]]))
-    predicted_signal = torch.FloatTensor([[0, 1, 0, -1, 0, 1, 0, -1, 0]])
+        signal_mask=torch.ones(2, 4096))
+    predicted_signal = torch.zeros(2, 4096)
 
-    (spectral_convergence_loss, log_mel_spectrogram_magnitude_loss,
-     num_predictions) = trainer._do_loss_and_maybe_backwards(batch, predicted_signal, False)
-    assert spectral_convergence_loss.item() == pytest.approx(0.3132616)
-    assert log_mel_spectrogram_magnitude_loss.item() == pytest.approx(1.3132616)
-    assert num_predictions == 2
+    log_mel_spectrogram_magnitude_loss, num_predictions = trainer._do_loss_and_maybe_backwards(
+        batch, predicted_signal, False)
+    assert log_mel_spectrogram_magnitude_loss.item() == pytest.approx(0.0)
+    assert num_predictions == 8192
 
 
 def test__get_gru_orthogonal_loss():
@@ -99,14 +98,8 @@ def test__partial_rollback():
 
 def test_visualize_inferred():
     """ Smoke test to ensure that `visualize_inferred` runs without failure. """
-    signal_length = 16
     trainer = get_trainer()
-    infer_pass_return = (torch.LongTensor(signal_length).zero_(),
-                         torch.LongTensor(signal_length).zero_(), None)
-
-    with mock.patch('src.signal_model.wave_rnn._WaveRNNInferrer.forward') as mock_forward:
-        mock_forward.return_value = infer_pass_return
-        trainer.visualize_inferred()
+    trainer.visualize_inferred()
 
 
 def test_run_epoch():
