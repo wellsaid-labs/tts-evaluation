@@ -13,6 +13,7 @@ unidecode
 
 # Audio Library
 librosa
+torchaudio
 
 # Visualization Library
 matplotlib
