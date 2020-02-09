@@ -187,8 +187,10 @@ def _mel_filters(sample_rate, num_mel_bins, fft_length, lower_hertz=HParam(), up
 class SignalToLogMelSpectrogram(torch.nn.Module):
     """ Compute a log-mel-scaled spectrogram from signal.
 
-    This function guarantees similar results to `get_log_mel_spectrogram`; however, it's implemented
-    in PyTorch, is differentiable, and can batch process.
+    NOTE: The results are slightly different than `get_log_mel_spectrogram`. The differences are:
+    - This function adds `min_magnitude` instead of using a `max` operation to ensure. This
+      ensures there are no discontinuities in the gradient.
+    - The function takes the `10 * log10(mel_spectrogram)` to appropriately compute loudness.
     """
 
     @configurable
@@ -198,7 +200,8 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
                  sample_rate=HParam(),
                  num_mel_bins=HParam(),
                  window=HParam(),
-                 min_magnitude=HParam()):
+                 min_magnitude=HParam(),
+                 power=1.0):
         super().__init__()
 
         mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=fft_length)
@@ -207,6 +210,7 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
         self.register_buffer('mel_basis', mel_basis)
         self.register_buffer('window', window)
         self.register_buffer('min_magnitude', torch.tensor(min_magnitude).float())
+        self.register_buffer('power', torch.tensor(power).float())
 
         self.fft_length = fft_length
         self.frame_hop = frame_hop
@@ -232,10 +236,10 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
         # NOTE: The below `norm` line is equal to a numerically stable version of the below...
         # >>> real_part, imag_part = spectrogram.unbind(-1)
         # >>> magnitude_spectrogram = torch.sqrt(real_part**2 + imag_part**2)
-        magnitude_spectrogram = torch.norm(spectrogram, dim=-1)
+        magnitude_spectrogram = torch.norm(spectrogram, dim=-1)**self.power
         mel_spectrogram = torch.matmul(self.mel_basis, magnitude_spectrogram).transpose(0, 1)
-        mel_spectrogram = torch.max(self.min_magnitude, mel_spectrogram).permute(1, 2, 0).squeeze()
-        return torch.log(mel_spectrogram)
+        mel_spectrogram = (self.min_magnitude + mel_spectrogram).permute(1, 2, 0).squeeze()
+        return torch.log10(mel_spectrogram) * 10
 
 
 def _get_spectrogram(signal, sample_rate, frame_size, frame_hop, fft_length, window, center=True):

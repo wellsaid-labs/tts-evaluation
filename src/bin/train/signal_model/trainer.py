@@ -123,13 +123,55 @@ class Trainer():
             self.optimizer.optimizer, lr_multiplier_schedule, last_epoch=step - 1)
 
         self.criterion = criterion(reduction='none').to(device)
+        # NOTE: The spectrograms we use to tabulate the loss are based in human perception.
+
+        # NOTE: We use a "loudness spectrogram" for computing the loss. A "loudness spectrogram" is
+        # a psychoacoustic model of loudness versus time and frequency.
+        #
+        # We follow these processing steps: (Similar)
+        # 1. We compute a multiresolution STFT. The corresponding window lengths in
+        #    milliseconds are 50ms, 25ms, and 12.5ms. The hop lengths are choosen to given a
+        #    standard 75% overlap. The window is a standard "hann window".
+        # 2. We apply the mel scale via a mel filter bank to mimic the the non-linear human ear
+        #    perception of sound, by being more discriminative at lower frequencies and less
+        #    discriminative at higher frequencies.
+        # 3. Perceived loudness (for example, the sone scale) corresponds fairly well to the dB
+        #    scale, suggesting that human perception of loudness is roughly logarithmic with
+        #    intensity. We convert the "amplitude spectrogram" to a decibel spectrogram. Since we
+        #    use a L1 loss, we foregoe any constant callibrations to the decible units.
+        #
+        # Sources:
+        # - Loudness Spectrogram:
+        #   https://www.dsprelated.com/freebooks/sasp/Loudness_Spectrogram_Examples.html
+        # - Loudness Spectrogram: https://ccrma.stanford.edu/~jos/sasp/Loudness_Spectrogram.html
+        # - MFCC Preprocessing Steps: https://en.wikipedia.org/wiki/Mel-frequency_cepstrum
+        # - MFCC Preprocessing Steps:
+        #   https://haythamfayek.com/2016/04/21/speech-processing-for-machine-learning.html
+        # - Perceptual Loss: https://github.com/magenta/ddsp/issues/12
+        # - Compute Loudness: https://github.com/librosa/librosa/issues/463
+        # - Compute Loudness: https://github.com/magenta/ddsp/blob/master/ddsp/spectral_ops.py#L171
+        # - Ampltidue To DB:
+        #   https://librosa.github.io/librosa/generated/librosa.core.amplitude_to_db.html
+        # - Into To Speech Science: http://www.cas.usf.edu/~frisch/SPA3011_L07.html
         self.to_spectrograms = [
-            SignalToLogMelSpectrogram(fft_length=512, frame_hop=50,
-                                      window=torch.hann_window(300)).to(device),
             SignalToLogMelSpectrogram(
-                fft_length=1024, frame_hop=150, window=torch.hann_window(600)).to(device),
+                fft_length=512,
+                frame_hop=50,
+                window=torch.hann_window(300),
+                num_mel_bins=32,
+                power=2.0).to(device),
             SignalToLogMelSpectrogram(
-                fft_length=2048, frame_hop=300, window=torch.hann_window(1200)).to(device)
+                fft_length=1024,
+                frame_hop=150,
+                window=torch.hann_window(600),
+                num_mel_bins=64,
+                power=2.0).to(device),
+            SignalToLogMelSpectrogram(
+                fft_length=2048,
+                frame_hop=300,
+                window=torch.hann_window(1200),
+                num_mel_bins=128,
+                power=2.0).to(device)
         ]
 
         # TODO: Remove redundancy between `self.to_spectrograms` and `self.metrics`.
