@@ -113,8 +113,8 @@ class Generator(nn.Module):
         self.hop_length = np.prod(ratios)
         self.padding = padding
         self.pad = nn.ConstantPad1d(padding, 0.0)
-        self.oversample = oversample
-        self.sample_rate = sample_rate
+        self.register_buffer('sample_rate', torch.tensor(sample_rate))
+        self.register_buffer('oversample', torch.tensor(oversample))
         mult = int(2**len(ratios))
 
         model = [
