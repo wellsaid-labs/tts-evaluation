@@ -89,6 +89,12 @@ def test_integer_to_floating_point_pcm():
     np.testing.assert_almost_equal(
         integer_to_floating_point_pcm(int16), (int16.astype(np.float32) / 2**15))
 
+    assert integer_to_floating_point_pcm(int32).max() <= 1.0
+    assert integer_to_floating_point_pcm(int32).min() >= -1.0
+
+    assert integer_to_floating_point_pcm(int16).max() <= 1.0
+    assert integer_to_floating_point_pcm(int16).min() >= -1.0
+
 
 def test_integer_to_floating_point_pcm__real_audio():
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
@@ -101,11 +107,22 @@ def test_integer_to_floating_point_pcm__real_audio():
 
 
 def test_write_audio__invalid():
+    # Ensure invalid audio files cannot be written
     with pytest.raises(AssertionError):
         write_audio('invalid.wav', np.array([0.0, 0.0, 0.5, -0.5], dtype=np.float64), 24000)
 
     with pytest.raises(AssertionError):
         write_audio('invalid.wav', np.array([1.1, 1.2, -3.0, -2.0], dtype=np.float32), 24000)
+
+    # Ensure files cannot be overwritten
+    with pytest.raises(ValueError):
+        write_audio(TEST_DATA_PATH_LOCAL / 'lj_speech.wav',
+                    np.array([0.0, 0.0, 0.0], dtype=np.float32), 24000)
+
+    with pytest.raises(ValueError):
+        write_audio(
+            str(TEST_DATA_PATH_LOCAL / 'lj_speech.wav'), np.array([0.0, 0.0, 0.0],
+                                                                  dtype=np.float32), 24000)
 
 
 def test_write_audio():
