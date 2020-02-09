@@ -153,25 +153,33 @@ class Trainer():
         # - Ampltidue To DB:
         #   https://librosa.github.io/librosa/generated/librosa.core.amplitude_to_db.html
         # - Into To Speech Science: http://www.cas.usf.edu/~frisch/SPA3011_L07.html
+        # NOTE: Tested on Hilary / Linda Johnson. This ensures there are roughly 80 - 90 DB of
+        # dynamic range available. This is slightly higher than Tacotron that set their min
+        # magntiude to the equivalent of .0001. For context, a 16-bit audio file has a maximum
+        # dynamic range of 96 DB.
+        min_magnitude = 0.00001
         self.to_spectrograms = [
             SignalToLogMelSpectrogram(
-                fft_length=512,
-                frame_hop=50,
-                window=torch.hann_window(300),
-                num_mel_bins=32,
+                fft_length=2048,
+                frame_hop=300,
+                window=torch.hann_window(1200),
+                num_mel_bins=128,
+                min_magnitude=min_magnitude,
                 power=2.0).to(device),
             SignalToLogMelSpectrogram(
                 fft_length=1024,
                 frame_hop=150,
                 window=torch.hann_window(600),
                 num_mel_bins=64,
+                min_magnitude=min_magnitude,
                 power=2.0).to(device),
             SignalToLogMelSpectrogram(
-                fft_length=2048,
-                frame_hop=300,
-                window=torch.hann_window(1200),
-                num_mel_bins=128,
-                power=2.0).to(device)
+                fft_length=512,
+                frame_hop=50,
+                window=torch.hann_window(300),
+                num_mel_bins=32,
+                min_magnitude=min_magnitude,
+                power=2.0).to(device),
         ]
 
         # TODO: Remove redundancy between `self.to_spectrograms` and `self.metrics`.
