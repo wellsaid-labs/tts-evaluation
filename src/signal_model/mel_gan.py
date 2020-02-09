@@ -4,6 +4,7 @@ from torch.nn.utils import weight_norm
 
 import torch
 import torch.nn as nn
+import torchaudio
 
 
 class PixelShuffle1d(nn.Module):
@@ -106,12 +107,14 @@ class GBlock(nn.Module):
 
 class Generator(nn.Module):
 
-    def __init__(self, input_size=128, ngf=32, padding=35):
+    def __init__(self, input_size=128, ngf=32, padding=35, oversample=4, sample_rate=24000):
         super().__init__()
-        ratios = [8, 8, 2, 2]
+        ratios = [8, 8, 4, 4]
         self.hop_length = np.prod(ratios)
         self.padding = padding
         self.pad = nn.ConstantPad1d(padding, 0.0)
+        self.oversample = oversample
+        self.sample_rate = sample_rate
         mult = int(2**len(ratios))
 
         model = [
@@ -172,5 +175,10 @@ class Generator(nn.Module):
         # Mu-law expantion, learn more here:
         # https://librosa.github.io/librosa/_modules/librosa/core/audio.html#mu_expand
         signal = torch.sign(signal) / mu * (torch.pow(1 + mu, torch.abs(signal)) - 1)
+
+        # Downsample
+        signal = torchaudio.compliance.kaldi.resample_waveform(signal,
+                                                               self.sample_rate * self.oversample,
+                                                               self.sample_rate)
 
         return signal if has_batch_dim else signal.squeeze(0)

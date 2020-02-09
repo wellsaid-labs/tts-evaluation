@@ -12,7 +12,7 @@ def test_mel_gan():
     spectrogram = torch.randn([batch_size, num_frames, frame_channels])
     out = generator(spectrogram)
 
-    assert out.shape == (batch_size, generator.hop_length * num_frames)
+    assert out.shape == (batch_size, generator.hop_length * num_frames // generator.oversample)
 
     assert out.max() <= 1.0
     assert out.min() >= -1.0
@@ -28,7 +28,7 @@ def test_mel_gan__no_batch():
     spectrogram = torch.randn([num_frames, frame_channels])
     out = generator(spectrogram)
 
-    assert out.shape == (generator.hop_length * num_frames,)
+    assert out.shape == (generator.hop_length * num_frames // generator.oversample,)
 
     assert out.max() <= 1.0
     assert out.min() >= -1.0
