@@ -103,7 +103,10 @@ def test_integer_to_floating_point_pcm__real_audio():
 
 def test_write_audio__invalid():
     with pytest.raises(AssertionError):
-        write_audio('invalid.wav', np.random.normal(size=10000), 24000)
+        write_audio('invalid.wav', np.array([0.0, 0.0, 0.5, -0.5], dtype=np.float64), 24000)
+
+    with pytest.raises(AssertionError):
+        write_audio('invalid.wav', np.array([1.1, 1.2, -3.0, -2.0], dtype=np.float32), 24000)
 
 
 def test_write_audio():
