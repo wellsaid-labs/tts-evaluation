@@ -60,7 +60,8 @@ class _Cache(object):
     def set(self, key, value):
         if key in self._storage:
             if value != self._storage[key]:
-                raise ValueError('Overriding values in a cache is not permitted.')
+                raise ValueError('Overriding value `%s` with `%s` for `%s` is not permitted.' %
+                                 (self._storage[key], value, key))
             return
 
         with self._write_lock:

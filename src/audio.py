@@ -112,7 +112,7 @@ def integer_to_floating_point_pcm(signal):
     signal = signal.detach().cpu().numpy() if is_tensor else signal
 
     if signal.dtype != np.float32:
-        assert signal.dtype in (np.int32, np.int16)
+        assert signal.dtype in (np.int32, np.int16), '`%s` `dtype` is not supported' % signal.dtype
         scale = 1. / float(1 << ((8 * signal.dtype.itemsize) - 1))  # Invert the scale of the data
         signal = scale * np.frombuffer(signal, '<i{:d}'.format(signal.dtype.itemsize)).astype(
             np.float32)
@@ -701,8 +701,8 @@ def cache_get_audio_metadata(paths):
                 get_audio_metadata.disk_cache.set(make_arg_key(function, audio_path), metadata)
                 progress_bar.update()
 
-        for result in tqdm(pool.imap_unordered(get_file_metadata, paths), total=len(paths)):
-            get_audio_metadata.__wrapped__.assert_no_overwritten_files_cache.set(audio_path, result)
+        for i, result in tqdm(enumerate(pool.imap(get_file_metadata, paths)), total=len(paths)):
+            get_audio_metadata.__wrapped__.assert_no_overwritten_files_cache.set(paths[i], result)
 
     get_audio_metadata.__wrapped__.assert_no_overwritten_files_cache.save()
     get_audio_metadata.disk_cache.save()

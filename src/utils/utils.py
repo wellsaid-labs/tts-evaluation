@@ -68,8 +68,10 @@ def assert_no_overwritten_files(function=None):
                 metadata = get_file_metadata(arg)
                 if arg in file_metadata_cache:
                     assert file_metadata_cache.get(arg) == metadata, (
-                        'Function `%s` does not allow files to be '
-                        'overwritten between executions.' % function.__qualname__)
+                        'Function `%s` does not allow file %s to be '
+                        'overwritten between executions. The original '
+                        'metadata was `%s` and the new metadata is `%s`.' %
+                        (function.__qualname__, arg, file_metadata_cache.get(arg), metadata))
                 else:
                     file_metadata_cache.set(arg, metadata)
 
