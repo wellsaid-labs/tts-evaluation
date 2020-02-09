@@ -363,7 +363,7 @@ def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
         assert step is not None
         items = ['<p><b>Step:</b> {}</p>'.format(step)]
         for key, value in kwargs.items():
-            items.append('<p><b>{}:</b> {}</p>'.format(key.title(), value))
+            items.append('<p><b>{}:</b> {}</p>'.format(key.title().replace('_', ' '), value))
         if gold_audio is not None:
             url = _write_wav('gold.wav', gold_audio)
             items.append('<p><b>Gold Audio:</b></p>')

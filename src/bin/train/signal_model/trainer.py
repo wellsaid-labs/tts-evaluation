@@ -124,11 +124,12 @@ class Trainer():
 
         self.criterion = criterion(reduction='none').to(device)
         self.to_spectrograms = [
-            SignalToLogMelSpectrogram(fft_length=512, frame_hop=50, window=torch.hann_window(300)),
+            SignalToLogMelSpectrogram(fft_length=512, frame_hop=50,
+                                      window=torch.hann_window(300)).to(device),
             SignalToLogMelSpectrogram(
-                fft_length=1024, frame_hop=150, window=torch.hann_window(600)),
+                fft_length=1024, frame_hop=150, window=torch.hann_window(600)).to(device),
             SignalToLogMelSpectrogram(
-                fft_length=2048, frame_hop=300, window=torch.hann_window(1200))
+                fft_length=2048, frame_hop=300, window=torch.hann_window(1200)).to(device)
         ]
 
         # TODO: Remove redundancy between `self.to_spectrograms` and `self.metrics`.
@@ -382,15 +383,15 @@ class Trainer():
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
         spectrogram = maybe_load_tensor(spectrogram)  # [num_frames, frame_channels]
         target_signal = integer_to_floating_point_pcm(maybe_load_tensor(
-            example.spectrogram_audio))  # [signal_length]
+            example.spectrogram_audio)).to(self.device)  # [signal_length]
         spectrogram = spectrogram.to(self.device)
 
         logger.info('Running inference on %d spectrogram frames with %d threads.',
                     spectrogram.shape[0], torch.get_num_threads())
 
-        predicted = model(spectrogram).detach().cpu()
+        predicted = model(spectrogram)
 
-        total_spectrogram_loss = torch.tensor(0.0)
+        total_spectrogram_loss = torch.tensor(0.0, device=self.device)
         for to_spectrogram in self.to_spectrograms:
             predicted_spectrogram = to_spectrogram(predicted)
             target_spectrogram = to_spectrogram(target_signal)
@@ -398,7 +399,7 @@ class Trainer():
             total_spectrogram_loss += spectrogram_loss.mean() / len(self.to_spectrograms)
             self.comet_ml.log_metrics({
                 'single/log_mel_%d_spectrogram_magnitude_loss' % to_spectrogram.fft_length:
-                    spectrogram_loss.mean()
+                    spectrogram_loss.mean().item()
             })
             # TODO: Consider ensuring that the `target_spectrogram` is the same as the
             # `input_spectrogram` at least for one of the configurations.
@@ -413,12 +414,12 @@ class Trainer():
                 plot_spectrogram(spectrogram_loss))
 
         self.comet_ml.log_metrics(
-            {'single/log_mel_spectrogram_magnitude_loss': total_spectrogram_loss})
+            {'single/log_mel_spectrogram_magnitude_loss': total_spectrogram_loss.item()})
         self.comet_ml.log_audio(
             tag=self.DEV_INFERRED_LABEL,
             text=example.text,
             speaker=str(example.speaker),
             gold_audio=target_signal,
             predicted_audio=predicted,
-            log_mel_spectrogram_magnitude_loss=total_spectrogram_loss)
+            log_mel_spectrogram_magnitude_loss=total_spectrogram_loss.item())
         self.comet_ml.log_figure('input_spectrogram', plot_spectrogram(spectrogram.detach().cpu()))
