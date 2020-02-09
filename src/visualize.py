@@ -343,9 +343,6 @@ def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
         Returns:
             (str): String url to the asset.
         """
-        if torch.is_tensor(data):
-            data = data.numpy()
-
         file_ = io.BytesIO()
         write_audio(file_, data)
         asset = experiment.log_asset(file_, file_name=file_name)

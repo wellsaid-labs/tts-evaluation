@@ -133,7 +133,8 @@ def write_audio(filename, audio, sample_rate=HParam(int), overwrite=False):
     Returns:
         See `scipy.io.wavfile.write`.
     """
-    if not overwrite and Path(filename).exists():
+    if not overwrite and (isinstance(filename, str) or
+                          isinstance(filename, Path)) and Path(filename).exists():
         raise ValueError('A file already exists at %s' % filename)
 
     if torch.is_tensor(audio):
