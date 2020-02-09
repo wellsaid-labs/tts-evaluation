@@ -12,7 +12,7 @@ from tests._utils import get_tts_mocks
 
 def test__save():
     filename = _save(TEMP_PATH, ['tag_1', 'tag_2'], Speaker('First Last', Gender.FEMALE),
-                     np.array([0, 0.5, 0, -0.5]))
+                     np.array([0, 0.5, 0, -0.5], dtype=np.float32))
     expected_filename = 'speaker=first_last,tag_1,tag_2.wav'
     assert filename == expected_filename
     assert (TEMP_PATH / expected_filename).exists()
@@ -22,7 +22,7 @@ def test__save_obscure():
     filename = _save(
         TEMP_PATH, ['tag_1', 'tag_2'],
         Speaker('First Last', Gender.FEMALE),
-        np.array([0, 0.5, 0, -0.5]),
+        np.array([0, 0.5, 0, -0.5], dtype=np.float32),
         obscure=True)
     expected_filename = 'speaker=first_last,tag_1,tag_2'
     assert filename == '%x.wav' % hash(expected_filename)

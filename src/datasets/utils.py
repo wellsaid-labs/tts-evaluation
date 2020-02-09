@@ -11,7 +11,6 @@ from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 from tqdm import tqdm
 
-import numpy
 import torch
 librosa = LazyLoader('librosa', globals(), 'librosa')
 pandas = LazyLoader('pandas', globals(), 'pandas')
@@ -19,6 +18,7 @@ pandas = LazyLoader('pandas', globals(), 'pandas')
 from src.audio import cache_get_audio_metadata
 from src.audio import get_log_mel_spectrogram
 from src.audio import normalize_audio
+from src.audio import integer_to_floating_point_pcm
 from src.audio import read_audio
 from src.datasets.constants import TextSpeechRow
 from src.environment import DATA_PATH
@@ -124,7 +124,7 @@ def _add_spectrogram_column(example, on_disk=True):
         assert audio_path.is_file(), 'Audio path must be a file %s' % audio_path
         signal = read_audio(audio_path)
 
-        _, trim = librosa.effects.trim(signal.astype(numpy.float32))
+        _, trim = librosa.effects.trim(integer_to_floating_point_pcm(signal))
         signal = signal[trim[0]:trim[1]]
 
         log_mel_spectrogram, padded_signal = get_log_mel_spectrogram(signal)

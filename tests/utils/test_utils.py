@@ -1,5 +1,6 @@
-import time
 import math
+import pathlib
+import time
 
 from torch import nn
 from torchnlp.random import fork_rng
@@ -7,6 +8,7 @@ from torchnlp.random import fork_rng
 import pytest
 import torch
 
+from src.utils.utils import assert_no_overwritten_files
 from src.utils.utils import bash_time_label
 from src.utils.utils import dict_collapse
 from src.utils.utils import evaluate
@@ -17,12 +19,27 @@ from src.utils.utils import get_chunks
 from src.utils.utils import get_weighted_stdev
 from src.utils.utils import identity
 from src.utils.utils import log_runtime
+from src.utils.utils import mean
+from src.utils.utils import random_sample
 from src.utils.utils import RepeatTimer
 from src.utils.utils import ResetableTimer
 from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
-from src.utils.utils import mean
-from src.utils.utils import random_sample
+
+
+def test_assert_no_overwritten_files():
+
+    @assert_no_overwritten_files
+    def _helper(path):
+        pass
+
+    path_ = pathlib.Path('tests/_test_data/test_assert_no_overwritten_files.txt')
+    path_.write_text('blah')
+    _helper(path_)
+    path_.write_text('blah')
+
+    with pytest.raises(AssertionError):
+        _helper(path_)
 
 
 def test_mean():

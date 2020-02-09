@@ -488,7 +488,7 @@ class Trainer():
             text=example.text,
             speaker=example.speaker,
             predicted_audio=griffin_lim(predicted_post_spectrogram.cpu().numpy()),
-            gold_audio=maybe_load_tensor(example.spectrogram_audio).float())
+            gold_audio=maybe_load_tensor(example.spectrogram_audio))
         self.comet_ml.log_metrics({  # [num_frames, num_tokens] → scalar
             'single/attention_norm': get_average_norm(predicted_alignments, dim=1, norm=math.inf),
             'single/attention_std': get_weighted_stdev(predicted_alignments, dim=1),

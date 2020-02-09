@@ -1,3 +1,4 @@
+from collections import namedtuple
 from pathlib import Path
 
 import logging
@@ -22,7 +23,9 @@ scipy_wavfile = LazyLoader('scipy_wavfile', globals(), 'scipy.io.wavfile')
 from src.environment import TTS_DISK_CACHE_NAME
 from src.utils import disk_cache
 from src.utils import get_chunks
+from src.utils import make_arg_key
 from src.utils import Pool
+from src.utils import assert_no_overwritten_files
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +43,12 @@ def get_num_seconds(audio_path):
     BITS_PER_BYTE = 8
     # Learn more: http://www.topherlee.com/software/pcm-tut-wavformat.html
     WAV_HEADER_LENGTH_IN_BYTES = 44
-    bytes_per_second = (metadata['sample_rate'] *
-                        (metadata['bits'] / BITS_PER_BYTE)) * metadata['channels']
+    bytes_per_second = (metadata.sample_rate * (metadata.bits / BITS_PER_BYTE)) * metadata.channels
     return (os.path.getsize(audio_path) - WAV_HEADER_LENGTH_IN_BYTES) / bytes_per_second
 
 
 @configurable
-def read_audio(filename, assert_metadata=HParam(), to_float=True):
+def read_audio(filename, assert_metadata=HParam()):
     """ Read an audio file.
 
     TODO: Rename considering the tighter specification.
@@ -70,28 +72,55 @@ def read_audio(filename, assert_metadata=HParam(), to_float=True):
 
     Args:
         filename (Path or str): Name of the file to load.
-        assert_metadata (dict): Assert this metadata for any audio file read.
-        to_float (bool, optional): Convert the audio file to a `np.float` array from [-1, 1].
+        assert_metadata (WavFileMetadata): Assert this metadata for any audio file read.
 
     Returns:
-        (numpy.ndarray [n,]): Audio time series.
+        See the second return value of `scipy.io.wavfile.read`.
     """
     metadata = get_audio_metadata(Path(filename))
     assert metadata == assert_metadata, (
-        "The filename (%s) metadata does not match `assert_metadata`." % filename)
+        "The filename (%s) metadata `%s` does not match `assert_metadata` `%s`." %
+        (filename, metadata, assert_metadata))
     _, signal = scipy_wavfile.read(str(filename))
-    assert len(signal) > 0, ("Signal (%s) length is zero." % filename)
-    if to_float:
-        assert metadata['bits'] % 8 == 0, "A valid bits value must be a multiple of 8."
-        signal = librosa.util.buf_to_float(
-            signal, n_bytes=int(metadata['bits'] / 8), dtype=np.dtype('float%d' % metadata['bits']))
-        assert np.max(signal) <= 1 and np.min(signal) >= -1, (
-            "Signal (%s) must be in range [-1, 1]." % filename)
+    assert len(signal) > 0, "Signal (%s) length is zero." % filename
     return signal
 
 
+def integer_to_floating_point_pcm(signal):
+    """ Convert a `int32` or `int16` PCM signal representation to a `float32`
+    PCM representation.
+
+    Learn more about the common data types:
+    https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.wavfile.read.html#r7015bff88555-1
+
+    Implementation inspired by:
+    https://librosa.github.io/librosa/_modules/librosa/util/utils.html#buf_to_float
+
+    Args:
+        signal (np.ndarry or torch.Tensor): Signal with a dtype of `float32`, `int32` or
+          `int16`.
+
+    Returns:
+        (np.ndarray or torch.Tensor): Signal with a dtype of `float32` with a range of [-1.0, 1.0].
+    """
+    is_tensor = torch.is_tensor(signal)
+
+    if is_tensor and signal.dtype == torch.float32:
+        return signal
+
+    signal = signal.detach().cpu().numpy() if is_tensor else signal
+
+    if signal.dtype != np.float32:
+        assert signal.dtype in (np.int32, np.int16)
+        scale = 1. / float(1 << ((8 * signal.dtype.itemsize) - 1))  # Invert the scale of the data
+        signal = scale * np.frombuffer(signal, '<i{:d}'.format(signal.dtype.itemsize)).astype(
+            np.float32)
+
+    return torch.tensor(signal) if is_tensor else signal
+
+
 @configurable
-def write_audio(filename, audio, sample_rate=HParam(int)):
+def write_audio(filename, audio, sample_rate=HParam(int), overwrite=False):
     """ Write a numpy array as a WAV file.
 
     Args:
@@ -99,9 +128,21 @@ def write_audio(filename, audio, sample_rate=HParam(int)):
         audio (np.ndarray or torch.Tensor): A 1-D or 2-D matrix of either integer or float
             data-type.
         sample_rate (int, optional): The sample rate (in samples/sec).
+        overwrite (bool, optional): If `True` this allows for `path` to be overwritten.
+
+    Returns:
+        See `scipy.io.wavfile.write`.
     """
+    if not overwrite and Path(filename).exists():
+        raise ValueError('A file already exists at %s' % filename)
+
     if torch.is_tensor(audio):
         audio = audio.detach().cpu().numpy()
+
+    assert audio.dtype in (np.int32, np.int16, np.uint8, np.float32)
+    if audio.dtype == np.float32 and audio.shape[0] > 0:
+        assert np.max(audio) <= 1.0 and np.min(audio) >= -1.0, (
+            "Signal (%s) must be in range [-1, 1]." % filename)
 
     return scipy_wavfile.write(filename, sample_rate, audio)
 
@@ -173,14 +214,14 @@ class SignalToMelSpectrogram(torch.nn.Module):
     def forward(self, signal):
         """
         Args:
-            signal (torch.Tensor [batch_size, signal_length])
+            signal (torch.FloatTensor [batch_size, signal_length])
 
         Returns:
-            log_mel_spectrogram (torch.Tensor [batch_size, num_frames, num_mel_bins])
+            log_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins])
         """
         signal = signal.view(-1, signal.shape[-1])
         spectrogram = torch.stft(
-            signal.float(),
+            signal,
             n_fft=self.fft_length,
             hop_length=self.frame_hop,
             win_length=self.window.shape[0],
@@ -198,6 +239,51 @@ class SignalToLogMelSpectrogram(SignalToMelSpectrogram):
 
     def forward(self, signal):
         return torch.log(super().forward(signal))
+
+
+def _get_spectrogram(signal, sample_rate, frame_size, frame_hop, fft_length, window, center=True):
+    """ Helper function for `get_log_mel_spectrogram`. """
+    if center:
+        # NOTE: Check ``notebooks/Signal_to_Spectrogram_Consistency.ipynb`` for the correctness
+        # of this padding algorithm.
+        # NOTE: Pad signal so that is divisable by ``frame_hop``
+        remainder = frame_hop - signal.shape[0] % frame_hop
+        padding = (math.ceil(remainder / 2), math.floor(remainder / 2))
+        padded_signal = np.pad(signal, padding, mode='constant', constant_values=0)
+        assert padded_signal.shape[0] % frame_hop == 0
+
+        # NOTE: Center the signal such that the resulting spectrogram and audio are aligned. Learn
+        # more here: https://librosa.github.io/librosa/_modules/librosa/core/spectrum.html#stft
+        padded_signal = np.pad(
+            padded_signal, int(fft_length // 2), mode='constant', constant_values=0)
+    else:
+        padded_signal = signal
+
+    # NOTE: The number of spectrogram frames generated is, with ``center=True``:
+    # ``(maybe_padded_signal.shape[0] + frame_hop) // frame_hop``.
+    # Otherewise, it's: ``(maybe_padded_signal.shape[0] - frame_size + frame_hop) // frame_hop``
+    spectrogram = librosa.stft(
+        integer_to_floating_point_pcm(padded_signal),
+        n_fft=fft_length,
+        hop_length=frame_hop,
+        win_length=frame_size,
+        window=window,
+        center=False)
+
+    if center:
+        # NOTE: Return number of padding needed to pad signal such that
+        # ``spectrogram.shape[0] * num_frames == signal.shape[0]``
+        # This is padding is partly determined by ``center=True`` librosa padding.
+        ret_pad = frame_hop + remainder
+        assert ret_pad <= frame_size
+        assert (signal.shape[0] + ret_pad) % frame_hop == 0
+        ret_pad = (math.ceil(ret_pad / 2), math.floor(ret_pad / 2))
+        ret_signal = np.pad(signal, ret_pad, mode='constant', constant_values=0)
+
+    if center:
+        return spectrogram, ret_signal
+    else:
+        return spectrogram
 
 
 @configurable
@@ -256,8 +342,8 @@ def get_log_mel_spectrogram(signal,
           https://www.tensorflow.org/api_guides/python/contrib.signal
 
     Args:
-        signal (np.array [signal_length]): A batch of float32 time-domain signals in the range
-            [-1, 1].
+        signal (np.array [signal_length]): `float32`, `int32` or `int16 time-domain
+            signal in the range [-1, 1].
         sample_rate (int): Sample rate for the signal.
         frame_size (int): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
         frame_hop (int): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
@@ -275,41 +361,11 @@ def get_log_mel_spectrogram(signal,
             `(signal.shape[0] + pad) / frame_hop == log_mel_spectrograms.shape[0]`
     """
     if center:
-        # NOTE: Check ``notebooks/Signal_to_Spectrogram_Consistency.ipynb`` for the correctness
-        # of this padding algorithm.
-        # NOTE: Pad signal so that is divisable by ``frame_hop``
-        remainder = frame_hop - signal.shape[0] % frame_hop
-        padding = (math.ceil(remainder / 2), math.floor(remainder / 2))
-        padded_signal = np.pad(signal, padding, mode='constant', constant_values=0)
-        assert padded_signal.shape[0] % frame_hop == 0
-
-        # NOTE: Center the signal such that the resulting spectrogram and audio are aligned. Learn
-        # more here: https://librosa.github.io/librosa/_modules/librosa/core/spectrum.html#stft
-        padded_signal = np.pad(
-            padded_signal, int(fft_length // 2), mode='constant', constant_values=0)
+        spectrogram, ret_signal = _get_spectrogram(
+            signal, sample_rate, frame_size, frame_hop, fft_length, window, center=center)
     else:
-        padded_signal = signal
-
-    # NOTE: The number of spectrogram frames generated is, with ``center=True``:
-    # ``(maybe_padded_signal.shape[0] + frame_hop) // frame_hop``.
-    # Otherewise, it's: ``(maybe_padded_signal.shape[0] - frame_size + frame_hop) // frame_hop``
-    spectrogram = librosa.stft(
-        padded_signal.astype(np.float32),
-        n_fft=fft_length,
-        hop_length=frame_hop,
-        win_length=frame_size,
-        window=window,
-        center=False)
-
-    if center:
-        # NOTE: Return number of padding needed to pad signal such that
-        # ``spectrogram.shape[0] * num_frames == signal.shape[0]``
-        # This is padding is partly determined by ``center=True`` librosa padding.
-        ret_pad = frame_hop + remainder
-        assert ret_pad <= frame_size
-        assert (signal.shape[0] + ret_pad) % frame_hop == 0
-        ret_pad = (math.ceil(ret_pad / 2), math.floor(ret_pad / 2))
-        ret_signal = np.pad(signal, ret_pad, mode='constant', constant_values=0)
+        spectrogram = _get_spectrogram(
+            signal, sample_rate, frame_size, frame_hop, fft_length, window, center=center)
 
     # SOURCE (Tacotron 2):
     # "STFT magnitude"
@@ -422,14 +478,14 @@ def griffin_lim(log_mel_spectrogram,
         large_values = (waveform < -1).sum() + (waveform > 1).sum()
         if large_values > 0:
             logger.warning('Griffin-lim waveform clipped %d samples.', large_values)
-        return np.clip(waveform, -1, 1)
+        return np.clip(waveform, -1, 1).astype(np.float32)
     # TODO: Be more specific with the cases that this is capturing so that we don't have silent
     # failures for invalid inputs.
     except Exception:
         logger.warning('Griffin-lim encountered an issue and was unable to render audio.')
         # NOTE: Return no audio for valid inputs that fail due to an overflow error or a small
         # spectrogram.
-        return np.array([])
+        return np.array([], dtype=np.float32)
 
 
 @configurable
@@ -530,6 +586,16 @@ def combine_signal(coarse, fine, bits=HParam(), return_int=False):
     return signal.float() / 2**(bits - 1)  # Scale to [-1, 1] range.
 
 
+# Args:
+#   sample_rate (int): The sample rate of the audio.
+#   bits (int): The bit depth of the audio.
+#   channels (int): The number of audio channels in the audio file.
+#   encoding (str): The encoding of the audio file: ['signed-integer', 'unsigned-integer',
+#     'floating-point']. The encoding options are based off SoX's encoding options. Learn more:
+#     http://sox.sourceforge.net/sox.html
+WavFileMetadata = namedtuple('WavFileMetadata', ['sample_rate', 'bits', 'channels', 'encoding'])
+
+
 def _parse_audio_metadata(metadata):
     """ Parse audio metadata returned by `sox --i`.
 
@@ -548,14 +614,14 @@ def _parse_audio_metadata(metadata):
         >>> str(_parse_audio_metadata(metadata)[0])
         'data/Heather Doe/03 Recordings/Heather_4-21.wav'
         >>> _parse_audio_metadata(metadata)[1]
-        {'channels': 1, 'bits': 24, 'sample_rate': 44100, 'encoding': 'signed-integer'}
+        WavFileMetadata(sample_rate=44100, bits=24, channels=1, encoding='signed-integer')
 
     Args:
         metadata (str)
 
     Returns:
         (Path): The audio path of the parsed `metadata`.
-        (dict): The parsed `metadata`.
+        (WavFileMetadata): The parsed `metadata`.
     """
     # NOTE: Parse the output of `sox --i` instead individual requests like `sox --i -r` and
     # `sox --i -b` to conserve on the number  of requests made via `subprocess`.
@@ -563,19 +629,18 @@ def _parse_audio_metadata(metadata):
     audio_path = str(metadata[0][1:-1])
     channels = int(metadata[1])
     sample_rate = int(metadata[2])
-    assert metadata[3][-4:] == '-bit', metadata
-    bits = int(metadata[3][:-4])
-    encoding = metadata[-1].replace(metadata[3], '').replace('PCM', '')
-    encoding = encoding.lower().strip().replace(' ', '-')
-
-    return Path(audio_path), {
-        'channels': channels,
-        'bits': bits,
-        'sample_rate': sample_rate,
-        'encoding': encoding,
-    }
+    encoding = metadata[-1].split()
+    bits = encoding[0]
+    assert bits[-4:] == '-bit', 'Unexpected format.'
+    bits = int(bits[:-4])
+    assert encoding[-1] == 'PCM', 'Unexpected format.'
+    encoding = '-'.join(encoding[1:-1]).lower().strip()
+    assert encoding in ['signed-integer', 'unsigned-integer',
+                        'floating-point'], 'Unexpected format.'
+    return Path(audio_path), WavFileMetadata(sample_rate, bits, channels, encoding)
 
 
+@assert_no_overwritten_files
 @disk_cache
 def get_audio_metadata(audio_path):
     """ Get metadata on `audio_path`.
@@ -585,13 +650,8 @@ def get_audio_metadata(audio_path):
     Args:
         audio_path (Path): WAV audio file to get metadata on.
 
-    Returns: (dict) {
-        channels (int): The number of audio channels in the audio file.
-        bits (int): The bit depth of the audio.
-        sample_rate (int): The sample rate of the audio.
-        encoding (str): The encoding of the audio file: ['signed-integer', 'unsigned-integer',
-          'floating-point'].
-    }
+    Returns:
+        WavFileMetadata
     """
     assert isinstance(audio_path, Path), '`audio_path` must be a Path for caching.'
     # NOTE: `sox --i` behaves like `soxi`
@@ -613,7 +673,7 @@ def _cache_get_audio_metadata_helper(chunk):
 
 
 def cache_get_audio_metadata(paths):
-    """ Cache all `paths` in `_get_audio_metadata.cache`.
+    """ Cache all `paths` in `_get_audio_metadata.disk_cache`.
 
     NOTE: This method is more performant due to batching than calling `get_audio_metadata` the same
     number of times for the same paths.
@@ -621,8 +681,11 @@ def cache_get_audio_metadata(paths):
     Args:
         paths (iterable): List of `Path`s to cache.
     """
+    function = get_audio_metadata.__wrapped__.__wrapped__
     paths = sorted(list(paths))
-    paths = [p for p in paths if {'audio_path': Path(p)} not in get_audio_metadata.cache]
+    paths = [
+        p for p in paths if make_arg_key(function, Path(p)) not in get_audio_metadata.disk_cache
+    ]
     if len(paths) == 0:
         return
 
@@ -638,10 +701,10 @@ def cache_get_audio_metadata(paths):
     with Pool() as pool:
         for result in pool.imap_unordered(_cache_get_audio_metadata_helper, chunks):
             for audio_path, metadata in result:
-                get_audio_metadata.cache.set(args=(audio_path,), return_=metadata)
+                get_audio_metadata.disk_cache.set(make_arg_key(function, audio_path), metadata)
                 progress_bar.update()
 
-    get_audio_metadata.cache.save()
+    get_audio_metadata.disk_cache.save()
 
 
 @configurable
@@ -670,10 +733,10 @@ def normalize_audio(audio_path,
     # TODO: Consider adding support for `--show-progress`.
     metadata = get_audio_metadata(audio_path)
 
-    _channels = None if metadata['channels'] == channels else channels
-    _sample_rate = None if metadata['sample_rate'] == sample_rate else sample_rate
-    _bits = None if metadata['bits'] == bits else bits
-    _encoding = None if metadata['encoding'] == encoding else encoding
+    _channels = None if metadata.channels == channels else channels
+    _sample_rate = None if metadata.sample_rate == sample_rate else sample_rate
+    _bits = None if metadata.bits == bits else bits
+    _encoding = None if metadata.encoding == encoding else encoding
 
     stem = audio_path.stem
     stem = stem if _sample_rate is None else ('rate(%s,%d)' % (stem, _sample_rate))

@@ -21,12 +21,13 @@ class PixelShuffle1d(nn.Module):
             >>> t = torch.arange(0, 12).view(1, 3, 4).transpose(1, 2)
             >>> t
             tensor([[[ 0,  4,  8],
-                    [ 1,  5,  9],
-                    [ 2,  6, 10],
-                    [ 3,  7, 11]]])
+                     [ 1,  5,  9],
+                     [ 2,  6, 10],
+                     [ 3,  7, 11]]])
             >>> t[0, :, 0] # First frame
             tensor([0, 1, 2, 3])
-            >>> pixel_shuffle_1d(t, 4)
+            >>> module = PixelShuffle1d(4)
+            >>> module(t)
             tensor([[[ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11]]])
 
         Args:

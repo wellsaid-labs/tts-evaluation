@@ -29,6 +29,7 @@ from torchnlp.utils import get_total_parameters
 
 import torch
 
+from src.audio import integer_to_floating_point_pcm
 from src.bin.train.signal_model.data_loader import DataLoader
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
@@ -499,7 +500,8 @@ class Trainer():
         example = random.sample(self.dev_dataset, 1)[0]
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
         spectrogram = maybe_load_tensor(spectrogram)  # [num_frames, frame_channels]
-        target_signal = maybe_load_tensor(example.spectrogram_audio).float()  # [signal_length]
+        target_signal = integer_to_floating_point_pcm(maybe_load_tensor(
+            example.spectrogram_audio))  # [signal_length]
         spectrogram = spectrogram.to(self.device)
 
         logger.info('Running inference on %d spectrogram frames with %d threads.',

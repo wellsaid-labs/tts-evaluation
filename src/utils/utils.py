@@ -1,3 +1,4 @@
+from collections import namedtuple
 from contextlib import contextmanager
 from functools import wraps
 from math import isclose
@@ -7,6 +8,8 @@ from threading import Timer
 from unittest.mock import patch
 
 import hashlib
+import inspect
+import itertools
 import logging
 import logging.config
 import math
@@ -23,10 +26,53 @@ from torch.utils import cpp_extension
 import torch
 import torch.utils.data
 
+from src.environment import DISK_CACHE_PATH
 from src.environment import NINJA_BUILD_PATH
+from src.utils.disk_cache_ import DiskCache
 
 logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
+
+# Args:
+#   creation_time (int): See `os.path.getctime`.
+#   modification_time (int): See `os.path.getmtime`.
+#   byte_size (int): See `os.path.getsize`.
+FileMetadata = namedtuple('FileMetadata', ['creation_time', 'modification_time', 'byte_size'])
+
+
+def assert_no_overwritten_files(function=None):
+    """ Ensure that all file paths passed to function were not overwritten since the last function
+    execution.
+
+    Args:
+        function (callable): Function to decorate.
+
+    Returns:
+        (callable)
+    """
+    if not function:
+        return assert_no_overwritten_files
+
+    file_metadata_cache = DiskCache(DISK_CACHE_PATH /
+                                    (inspect.getmodule(assert_no_overwritten_files).__name__ + '.' +
+                                     assert_no_overwritten_files.__qualname__))
+
+    @wraps(function)
+    def decorator(*args, **kwargs):
+        for arg in itertools.chain(args, kwargs.values()):
+            if isinstance(arg, Path):
+                metadata = FileMetadata(
+                    os.path.getctime(arg), os.path.getmtime(arg), os.path.getsize(arg))
+                if arg in file_metadata_cache:
+                    assert file_metadata_cache.get(arg) == metadata, (
+                        'Function `%s` does not allow files to be '
+                        'overwritten between executions.' % function.__qualname__)
+                else:
+                    file_metadata_cache.set(arg, metadata)
+
+        return function(*args, **kwargs)
+
+    return decorator
 
 
 def random_sample(list_, sample_size):
@@ -170,6 +216,7 @@ def save(path, data, overwrite=False):
     """
     if not overwrite and Path(path).exists():
         raise ValueError('A file already exists at %s' % path)
+
     torch.save(data, str(path))
     logger.info('Saved: %s', str(path))
 

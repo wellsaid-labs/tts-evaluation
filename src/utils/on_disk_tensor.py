@@ -10,6 +10,7 @@ import torch
 import torch.utils.data
 
 from src.utils.disk_cache_ import disk_cache
+from src.utils.disk_cache_ import make_arg_key
 from src.utils.utils import log_runtime
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,10 @@ def _get_on_disk_tensor_shape(path):
 
 @log_runtime
 def cache_on_disk_tensor_shapes(tensors):
-    tensors = [t for t in tensors if {'path': t.path} not in _get_on_disk_tensor_shape.cache]
+    tensors = [
+        t for t in tensors if make_arg_key(_get_on_disk_tensor_shape.__wrapped__, t.path) not in
+        _get_on_disk_tensor_shape.disk_cache
+    ]
     if len(tensors) == 0:
         return
 
@@ -43,7 +47,7 @@ def cache_on_disk_tensor_shapes(tensors):
         iterator = tqdm(iterator, total=len(tensors))
         list(iterator)
 
-    _get_on_disk_tensor_shape.cache.save()
+    _get_on_disk_tensor_shape.disk_cache.save()
 
 
 def maybe_load_tensor(tensor):

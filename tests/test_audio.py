@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import torch
 
+from src.audio import _get_spectrogram
 from src.audio import build_wav_header
 from src.audio import cache_get_audio_metadata
 from src.audio import combine_signal
@@ -14,14 +15,17 @@ from src.audio import get_audio_metadata
 from src.audio import get_log_mel_spectrogram
 from src.audio import get_num_seconds
 from src.audio import griffin_lim
+from src.audio import integer_to_floating_point_pcm
 from src.audio import MultiResolutionMelSpectrogramLoss
 from src.audio import normalize_audio
 from src.audio import read_audio
 from src.audio import SignalToLogMelSpectrogram
 from src.audio import split_signal
+from src.audio import WavFileMetadata
 from src.audio import write_audio
 from src.environment import DATA_PATH
 from src.environment import TEST_DATA_PATH
+from src.utils import make_arg_key
 
 TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'test_audio'
 
@@ -29,12 +33,8 @@ TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'test_audio'
 def test_signal_to_log_mel_spectrogram():
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     sample_rate = 24000
-    signal = read_audio(path, {
-        'sample_rate': sample_rate,
-        'bits': 16,
-        'channels': 1,
-        'encoding': 'signed-integer'
-    })
+    signal = integer_to_floating_point_pcm(
+        read_audio(path, WavFileMetadata(sample_rate, 16, 1, 'signed-integer')))
     log_mel_spectrogram = get_log_mel_spectrogram(signal, sample_rate, center=False)
     module = SignalToLogMelSpectrogram(sample_rate=sample_rate)
     other_log_mel_spectrogram = module(torch.tensor(signal)).detach().numpy()
@@ -77,20 +77,33 @@ def test_get_num_seconds():
 
 def test_read_audio():
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
+    integer = read_audio(path)
+    assert integer.dtype == np.int16
 
-    integer = read_audio(path, to_float=False)
-    assert integer.dtype == np.dtype('int16')
 
-    float_ = read_audio(path, to_float=True)
-    assert float_.dtype == np.dtype('float16')
+def test_integer_to_floating_point_pcm():
+    int16 = np.random.randint(-2**15, 2**15, size=10000, dtype=np.int16)
+    int32 = np.random.randint(-2**31, 2**31, size=10000, dtype=np.int32)
 
-    expected = (integer / 2**15).astype(np.dtype('float16'))
+    np.testing.assert_almost_equal(
+        integer_to_floating_point_pcm(int32), (int32.astype(np.float32) / 2**31))
+    np.testing.assert_almost_equal(
+        integer_to_floating_point_pcm(int16), (int16.astype(np.float32) / 2**15))
 
-    np.testing.assert_almost_equal(expected, float_)
 
-    librosa_, _ = librosa.core.load(path, sr=None, mono=False)
+def test_integer_to_floating_point_pcm__real_audio():
+    path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
+    integer = read_audio(path)
+    assert integer.dtype == np.int16
+    floating = integer_to_floating_point_pcm(integer)
+    assert floating.dtype == np.float32
+    expected = integer.astype(np.float32) / 2**15
+    np.testing.assert_almost_equal(expected, floating)
 
-    np.testing.assert_almost_equal(librosa_.astype(np.dtype('float16')), float_)
+
+def test_write_audio__invalid():
+    with pytest.raises(AssertionError):
+        write_audio('invalid.wav', np.random.normal(size=10000), 24000)
 
 
 def test_write_audio():
@@ -105,10 +118,27 @@ def test_write_audio():
     assert metadata == new_metadata  # Ensure the metadata stays the same
 
 
-def test_write_audio__read_audio():
+def test_read_audio_and_write_audio():
+    sample_rate = 24000
+    filename = 'test_read_audio_and_write_audio.wav'
+    uint8 = np.random.randint(0, 256, size=10000, dtype=np.uint8)
+    int16 = np.random.randint(-2**15, 2**15, size=10000, dtype=np.int16)
+    int32 = np.random.randint(-2**31, 2**31, size=10000, dtype=np.int32)
+    float32 = np.clip(np.random.normal(size=10000), -1.0, 1.0).astype(np.float32)
+    encodings = ['unsigned-integer', 'signed-integer', 'signed-integer', 'floating-point']
+
+    for signal, encoding in zip([uint8, int16, int32, float32], encodings):
+        path = TEST_DATA_PATH_LOCAL / (str(signal.dtype) + '_' + filename)
+        metadata = WavFileMetadata(sample_rate, signal.dtype.itemsize * 8, 1, encoding)
+        write_audio(path, signal, sample_rate)
+        loaded_signal = read_audio(path, metadata)
+        np.testing.assert_almost_equal(signal, loaded_signal)
+
+
+def test_write_audio_and_read_audio__real_file():
     filename = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     metadata = get_audio_metadata(filename)
-    signal = read_audio(str(filename), to_float=False)
+    signal = read_audio(str(filename))
 
     new_filename = TEST_DATA_PATH_LOCAL / 'clone(rate(lj_speech,24000)).wav'
     write_audio(new_filename, signal, 24000)
@@ -120,22 +150,14 @@ def test_write_audio__read_audio():
 def test_cache_get_audio_metadata():
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     cache_get_audio_metadata([path])
-    assert get_audio_metadata.cache.get(kwargs={'audio_path': path}) == {
-        'sample_rate': 24000,
-        'bits': 16,
-        'channels': 1,
-        'encoding': 'signed-integer'
-    }
+    assert get_audio_metadata.disk_cache.get(
+        make_arg_key(get_audio_metadata.__wrapped__.__wrapped__,
+                     path)) == WavFileMetadata(24000, 16, 1, 'signed-integer')
 
 
 def test_get_audio_metadata():
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
-    assert {
-        'sample_rate': 24000,
-        'bits': 16,
-        'channels': 1,
-        'encoding': 'signed-integer'
-    } == get_audio_metadata(path)
+    assert get_audio_metadata(path) == WavFileMetadata(24000, 16, 1, 'signed-integer')
 
 
 def test_build_wav_header():
@@ -148,7 +170,7 @@ def test_build_wav_header():
     assert expected_header == wav_header
 
 
-def test_log_mel_spectrogram_smoke():
+def test_log_mel_spectrogram():
     """ Smoke test to ensure everything runs.
     """
     frame_size = 1200
@@ -156,12 +178,7 @@ def test_log_mel_spectrogram_smoke():
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     sample_rate = 24000
     fft_length = 2048
-    signal = read_audio(path, {
-        'sample_rate': sample_rate,
-        'bits': 16,
-        'channels': 1,
-        'encoding': 'signed-integer'
-    })
+    signal = read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer'))
     log_mel_spectrogram, padded_signal = get_log_mel_spectrogram(
         signal, sample_rate, frame_size=frame_size, frame_hop=frame_hop, fft_length=fft_length)
 
@@ -171,17 +188,38 @@ def test_log_mel_spectrogram_smoke():
     assert int(padded_signal.shape[0]) / int(log_mel_spectrogram.shape[0]) == frame_hop
 
 
+def test_get_spectrogram__inverse():
+    """ Ensure that the signal and spectrogram are aligned by running the inverse stft function.
+    """
+    frame_size = 1200
+    frame_hop = 300
+    path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
+    sample_rate = 24000
+    fft_length = 2048
+    signal = integer_to_floating_point_pcm(
+        read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer')))
+    spectrogram, padded_signal = _get_spectrogram(
+        signal,
+        sample_rate=sample_rate,
+        frame_size=frame_size,
+        frame_hop=frame_hop,
+        fft_length=fft_length,
+        window='hann',
+        center=True)
+    reconstructed_signal = librosa.core.istft(
+        spectrogram, frame_hop, win_length=frame_size, window='hann',
+        center=False)[(fft_length - frame_hop) // 2:-(fft_length - frame_hop) // 2]
+    assert reconstructed_signal.shape == padded_signal.shape
+    np.testing.assert_almost_equal(padded_signal, reconstructed_signal)
+    np.testing.assert_almost_equal(padded_signal.sum(), reconstructed_signal.sum(), decimal=5)
+
+
 def test_griffin_lim_smoke():
     """ Smoke test to ensure everything runs.
     """
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     sample_rate = 24000
-    signal = read_audio(path, {
-        'sample_rate': sample_rate,
-        'channels': 1,
-        'bits': 16,
-        'encoding': 'signed-integer',
-    })
+    signal = read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer'))
     log_mel_spectrogram, _ = get_log_mel_spectrogram(signal, sample_rate)
     waveform = griffin_lim(log_mel_spectrogram, sample_rate)
     assert len(waveform) > 0
@@ -242,12 +280,7 @@ def test_normalize_audio():
     assert (new_audio_path.stem ==
             'encoding(channels(bits(rate(lj_speech,24000),8),2),unsigned-integer)')
     assert new_audio_path.exists()
-    assert {
-        'bits': 8,
-        'sample_rate': 24000,
-        'channels': 2,
-        'encoding': 'unsigned-integer'
-    } == get_audio_metadata(new_audio_path)
+    assert get_audio_metadata(new_audio_path) == WavFileMetadata(24000, 8, 2, 'unsigned-integer')
 
 
 def test_normalize_audio__not_normalized():
@@ -260,12 +293,8 @@ def test_normalize_audio__not_normalized():
 def test_multi_resolution_stft_loss_griffin_lim():
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     sample_rate = 24000
-    signal = read_audio(path, {
-        'sample_rate': sample_rate,
-        'bits': 16,
-        'channels': 1,
-        'encoding': 'signed-integer'
-    })
+    signal = integer_to_floating_point_pcm(
+        read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer')))
     criterion = MultiResolutionMelSpectrogramLoss()
 
     log_mel_spectrogram, signal = get_log_mel_spectrogram(signal, sample_rate=sample_rate)

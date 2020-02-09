@@ -74,7 +74,6 @@ from src.utils import flatten
 from src.utils import RecordStandardStreams
 from src.utils import seconds_to_string
 
-
 logging.basicConfig(
     format='{}%(levelname)s:%(name)s:{} %(message)s'.format(COLORS['light_magenta'],
                                                             COLORS['reset_all']),
@@ -329,8 +328,7 @@ def format_list(list_, is_emphasized, emphasis_color=COLORS['light_red']):
         (str)
     """
     return '[' + ', '.join([
-        emphasis_color + str(i) + COLORS['reset_all'] if is_emphasized(i) else str(i)
-        for i in list_
+        emphasis_color + str(i) + COLORS['reset_all'] if is_emphasized(i) else str(i) for i in list_
     ]) + ']'
 
 
@@ -869,7 +867,7 @@ def main(wav_pattern,
         logger.info('Chunking and writing...')
         audio_chunk_directory = wav_directory / wav_path.stem
         audio_chunk_directory.mkdir(exist_ok=True)
-        audio = read_audio(wav_path, to_float=False)
+        audio = read_audio(wav_path)
         to_write = []  # Metadata such as text to write in `metadata_filename`
         for j, (alignment, row) in enumerate(zip(alignments, data_frame.to_dict('records'))):
             script = row[text_column]

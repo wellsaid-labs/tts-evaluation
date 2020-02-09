@@ -16,7 +16,7 @@ from hparams import set_lazy_resolution
 from src.environment import set_basic_logging_config
 from src.environment import TEST_DATA_PATH
 from src.hparams import set_hparams
-from src.utils.disk_cache_ import _DiskCache
+from src.utils.disk_cache_ import DiskCache
 from tests._utils import create_disk_garbage_collection_fixture
 
 set_basic_logging_config()
@@ -26,7 +26,7 @@ set_basic_logging_config()
 def run_before_test():
     # Invalidate cache before each test.
     clear_config()
-    for cache in _DiskCache.get_instances():
+    for cache in DiskCache.get_instances():
         cache.purge()
 
     # NOTE: `torch.utils.cpp_extension` assumes that within the same process that the temp
@@ -41,7 +41,7 @@ def run_before_test():
         yield
 
     # NOTE: We need to invalidate caching after the test because of delayed writes.
-    for cache in _DiskCache.get_instances():
+    for cache in DiskCache.get_instances():
         cache.purge()
 
 

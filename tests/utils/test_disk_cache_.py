@@ -9,88 +9,66 @@ import pytest
 from src.environment import DISK_CACHE_PATH
 from src.utils.disk_cache_ import _Cache
 from src.utils.disk_cache_ import disk_cache
+from src.utils.disk_cache_ import make_arg_key
+
+
+def test_make_arg_key():
+    function = lambda a, b, c: 'd'
+    assert make_arg_key(function, 'a', 'b', c='c') == make_arg_key(function, 'a', 'b', 'c')
+    assert make_arg_key(function, 'a', 'b', c='c') == make_arg_key(function, a='a', b='b', c='c')
 
 
 def test_cache():
     """ Test to ensure basic invariants of `_Cache` are met. """
-    cache = _Cache(lambda a, b, c: 'd')
-    cache.set(args=('a', 'b'), kwargs={'c': 'c'}, return_='d')
+    cache = _Cache()
+    cache.set(1, 'a')
 
     # `__eq__` basic invariant
     assert cache == cache
 
     # `__contains__` and `contains` works
-    assert ('a', 'b', 'c') in cache
-    assert {'a': 'a', 'b': 'b', 'c': 'c'} in cache
-    assert cache.contains(args=('a', 'b'), kwargs={'c': 'c'})
+    assert 1 in cache
 
-    assert cache.get(kwargs={'a': 'a', 'b': 'b', 'c': 'c'}) == 'd'
+    assert cache.get(1) == 'a'
 
     assert len(cache) == 1
     assert len(list(iter(cache))) == 1
 
     # Overwrite fails
     with pytest.raises(ValueError):
-        cache.set(args=('a', 'b'), kwargs={'c': 'c'}, return_='e')
+        cache.set(1, 'b')
 
     cache.purge()
 
     # Purge works
     assert len(cache) == 0
     assert len(list(iter(cache))) == 0
-    cache.set(args=('a', 'b'), kwargs={'c': 'c'}, return_='e')
+    cache.set(1, 'b')
 
     assert cache in _Cache.get_instances()
 
 
 def test_cache__update():
     """ Ensure that `update` works """
-    function = lambda a, b, c: 'd'
+    cache = _Cache()
+    cache.set(1, 'a')
 
-    cache = _Cache(function)
-    cache.set(args=('a', 'b'), kwargs={'c': 'c'}, return_='d')
-
-    other_cache = _Cache(function)
-    other_cache.set(args=('a', 'b'), kwargs={'c': None}, return_='d')
+    other_cache = _Cache()
+    other_cache.set(2, 'b')
 
     cache.update(other_cache)
     assert len(cache) == 2
-    assert ('a', 'b', 'c') in cache
-    assert ('a', 'b', None) in cache
-
-
-def test_cache__not_equal():
-    """ Ensure that not `equal` works. """
-    function = lambda a, b, c: 'd'
-    other_function = lambda a, c: 'd'
-
-    assert _Cache(function) != _Cache(other_function)
-
-
-def test_cache__update__invalid():
-    """ Ensure that `update` works. """
-    function = lambda a, b, c: 'd'
-    other_function = lambda a, c: 'd'
-
-    cache = _Cache(function)
-    cache.set(args=('a', 'b'), kwargs={'c': 'c'}, return_='d')
-
-    other_cache = _Cache(other_function)
-    other_cache.set(args=('a', 'b'), return_='d')
-
-    with pytest.raises(ValueError):
-        cache.update(other_cache)
+    assert 1 in cache
+    assert 2 in cache
 
 
 def test_cache__update__overwrite_fails():
-    """ Ensure that `update` works """
-    function = lambda a, b, c: 'd'
+    """ Ensure that `update` fails to overwrite. """
+    cache = _Cache()
+    cache.set(1, 'a')
 
-    cache = _Cache(function)
-    cache.set(args=('a', 'b'), kwargs={'c': 'c'}, return_='d')
-
-    other_cache = _Cache(function)
-    other_cache.set(args=('a', 'b'), kwargs={'c': 'c'}, return_='e')
+    other_cache = _Cache()
+    other_cache.set(1, 'b')
 
     with pytest.raises(ValueError):
         cache.update(other_cache)
@@ -98,68 +76,63 @@ def test_cache__update__overwrite_fails():
 
 def test_cache__modify_iterator():
     """ Test that the iterator cannot be modified while iterating. """
-    function = lambda a, b, c: 'd'
-    cache = _Cache(function)
-    cache.set(args=('a', 'b'), kwargs={'c': 'c'}, return_='d')
-    cache.set(args=('a', 'b'), kwargs={'d': 'd'}, return_='d')
+    cache = _Cache()
+    cache.set(1, 'a')
+    cache.set(2, 'b')
 
     with pytest.raises(RuntimeError):
         for key in cache:
-            cache.set(args=('a', 'b'), kwargs={'e': 'e'}, return_='d')
+            cache.set(3, 'c')
 
 
 @patch('src.utils.disk_cache_.os.replace', wraps=os.replace)
 def test_disk_cache(mock_replace):
-    """ Test to ensure basic invariants of `_DiskCache` are met. """
-    file_name = 'tests.utils.test_disk_cache_.test_disk_cache.<locals>.helper'
-    file_path = DISK_CACHE_PATH / file_name
+    """ Test to ensure basic invariants of `DiskCache` are met. """
 
-    @disk_cache(directory=file_path.parent, save_to_disk_delay=0.1)
+    @disk_cache(directory=DISK_CACHE_PATH, save_to_disk_delay=0.1)
     def helper(arg):
         return arg
 
     helper('a')
     helper('b')  # Test timer reset
 
-    assert not file_path.exists()
+    assert not helper.disk_cache.filename.exists()
 
     time.sleep(0.2)
 
-    assert file_path.exists()
+    assert helper.disk_cache.filename.exists()
     mock_replace.assert_called_once()
-    assert len(helper.cache) == 2
-    assert helper.cache.get(kwargs={'arg': 'a'}) == 'a'
-    assert helper.cache.get(kwargs={'arg': 'b'}) == 'b'
+    assert len(helper.disk_cache) == 2
+    assert helper.disk_cache.get(make_arg_key(helper.__wrapped__, 'a')) == 'a'
+    assert helper.disk_cache.get(make_arg_key(helper.__wrapped__, 'b')) == 'b'
 
     # Load cache from disk into another decorator instance
-    other_helper = disk_cache(helper.__wrapped__, directory=file_path.parent)
-    assert other_helper.cache == helper.cache
+    other_helper = disk_cache(helper.__wrapped__, directory=DISK_CACHE_PATH)
+    assert other_helper.disk_cache == helper.disk_cache
 
 
 @patch('src.utils.disk_cache_.os.replace', wraps=os.replace)
 def test_disk_cache__redundant_os_operations(mock_replace):
     """ Test to ensure that the `disk_cache` doesn't called `save` or `load` more times than needed.
     """
-    file_name = 'tests.utils.test_disk_cache_.test_disk_cache.<locals>.helper'
-    file_path = DISK_CACHE_PATH / file_name
 
-    @disk_cache(directory=file_path.parent, save_to_disk_delay=0.1)
+    @disk_cache(directory=DISK_CACHE_PATH, save_to_disk_delay=0.1)
     def helper(arg):
         return arg
 
-    other_helper = disk_cache(helper.__wrapped__, directory=file_path.parent)
+    other_helper = disk_cache(helper.__wrapped__, directory=DISK_CACHE_PATH)
 
     with patch.object(
-            Path, 'read_bytes', wraps=helper.cache._file_path.read_bytes) as mock_read_bytes:
+            Path, 'read_bytes', wraps=helper.disk_cache.filename.read_bytes) as mock_read_bytes:
         for i in range(100):  # Ensure that `save_to_disk_delay` works.
             helper('a' * i)
 
-        helper.cache.save()  # Cancel the write timer and save.
+        helper.disk_cache.save()  # Cancel the write timer and save.
         time.sleep(0.2)  # Enough time for `save_to_disk_delay` to expire.
-        helper.cache.save()  # Try multiple saves in a row.
+        helper.disk_cache.save()  # Try multiple saves in a row.
         assert mock_replace.call_count == 1
 
-        helper.cache.load()
+        helper.disk_cache.load()
         assert mock_read_bytes.call_count == 0
 
         helper('a')  # Test if redundant call triggers a save, it shouldn't.
@@ -172,23 +145,25 @@ def test_disk_cache__redundant_os_operations(mock_replace):
         assert mock_read_bytes.call_count == 0
 
     with patch.object(
-            Path, 'read_bytes', wraps=other_helper.cache._file_path.read_bytes) as mock_read_bytes:
-        assert other_helper.cache == helper.cache
+            Path, 'read_bytes',
+            wraps=other_helper.disk_cache.filename.read_bytes) as mock_read_bytes:
+        assert other_helper.disk_cache == helper.disk_cache
         assert mock_read_bytes.call_count == 1
 
     with patch.object(
-            Path, 'read_bytes', wraps=helper.cache._file_path.read_bytes) as mock_read_bytes:
+            Path, 'read_bytes', wraps=helper.disk_cache.filename.read_bytes) as mock_read_bytes:
         other_helper('c')
-        other_helper.cache.save()
+        other_helper.disk_cache.save()
         assert mock_replace.call_count == 3
-        helper.cache.save()  # Loads new data from `other_helper`.
+        helper.disk_cache.save()  # Loads new data from `other_helper`.
         assert mock_read_bytes.call_count == 1
 
-        helper.cache.purge()
+        helper.disk_cache.purge()
 
     with patch.object(
-            Path, 'read_bytes', wraps=other_helper.cache._file_path.read_bytes) as mock_read_bytes:
-        other_helper.cache.save()
+            Path, 'read_bytes',
+            wraps=other_helper.disk_cache.filename.read_bytes) as mock_read_bytes:
+        other_helper.disk_cache.save()
         assert mock_replace.call_count == 4
         assert mock_read_bytes.call_count == 0
 
@@ -197,18 +172,16 @@ def test_disk_cache__redundant_os_operations(mock_replace):
 def test_disk_cache__delete_cache(mock_replace):
     """ Test to ensure that cache is able to handle the disk cache getting deleted.
     """
-    file_name = 'tests.utils.test_disk_cache_.test_disk_cache.<locals>.helper'
-    file_path = DISK_CACHE_PATH / file_name
 
-    @disk_cache(directory=file_path.parent, save_to_disk_delay=0.1)
+    @disk_cache(directory=DISK_CACHE_PATH, save_to_disk_delay=0.1)
     def helper(arg):
         return arg
 
     helper('a')
-    helper.cache.save()
+    helper.disk_cache.save()
     assert mock_replace.call_count == 1
-    helper.cache.save()
+    helper.disk_cache.save()
     assert mock_replace.call_count == 1
-    helper.cache._file_path.unlink()
-    helper.cache.save()
+    helper.disk_cache.filename.unlink()
+    helper.disk_cache.save()
     assert mock_replace.call_count == 2

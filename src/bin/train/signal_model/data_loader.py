@@ -18,6 +18,7 @@ from torchnlp.utils import tensors_to
 
 import torch
 
+from src.audio import integer_to_floating_point_pcm
 from src.environment import IS_TESTING_ENVIRONMENT
 from src.utils import maybe_load_tensor
 
@@ -157,9 +158,9 @@ def _load_fn(row, use_predicted, **kwargs):
         (SignalModelTrainingRow)
     """
     spectrogram = maybe_load_tensor(row.predicted_spectrogram if use_predicted else row.spectrogram)
-    # NOTE: `row.spectrogram_audio` is a `torch.HalfTensor` (16-bit floating point) while our model
+    # NOTE: `row.spectrogram_audio` is a `torch.ShortTensor` (16-bit integer) while our model
     # requires a `torch.FloatTensor` (32-bit floating point)
-    spectrogram_audio = maybe_load_tensor(row.spectrogram_audio).float()
+    spectrogram_audio = integer_to_floating_point_pcm(maybe_load_tensor(row.spectrogram_audio))
 
     # Check invariants
     assert spectrogram.shape[0] > 0
