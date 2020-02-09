@@ -40,6 +40,10 @@ pprint = pprint.PrettyPrinter(indent=4)
 FileMetadata = namedtuple('FileMetadata', ['creation_time', 'modification_time', 'byte_size'])
 
 
+def get_file_metadata(path):
+    return FileMetadata(os.path.getctime(path), os.path.getmtime(path), os.path.getsize(path))
+
+
 def assert_no_overwritten_files(function=None):
     """ Ensure that all file paths passed to function were not overwritten since the last function
     execution.
@@ -61,8 +65,7 @@ def assert_no_overwritten_files(function=None):
     def decorator(*args, **kwargs):
         for arg in itertools.chain(args, kwargs.values()):
             if isinstance(arg, Path):
-                metadata = FileMetadata(
-                    os.path.getctime(arg), os.path.getmtime(arg), os.path.getsize(arg))
+                metadata = get_file_metadata(arg)
                 if arg in file_metadata_cache:
                     assert file_metadata_cache.get(arg) == metadata, (
                         'Function `%s` does not allow files to be '
@@ -72,6 +75,7 @@ def assert_no_overwritten_files(function=None):
 
         return function(*args, **kwargs)
 
+    function.assert_no_overwritten_files_cache = file_metadata_cache
     return decorator
 
 

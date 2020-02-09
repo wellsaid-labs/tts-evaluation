@@ -26,6 +26,7 @@ from src.utils import get_chunks
 from src.utils import make_arg_key
 from src.utils import Pool
 from src.utils import assert_no_overwritten_files
+from src.utils import get_file_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -700,6 +701,10 @@ def cache_get_audio_metadata(paths):
                 get_audio_metadata.disk_cache.set(make_arg_key(function, audio_path), metadata)
                 progress_bar.update()
 
+        for result in tqdm(pool.imap_unordered(get_file_metadata, paths), total=len(paths)):
+            get_audio_metadata.__wrapped__.assert_no_overwritten_files_cache.set(audio_path, result)
+
+    get_audio_metadata.__wrapped__.assert_no_overwritten_files_cache.save()
     get_audio_metadata.disk_cache.save()
 
 

@@ -20,6 +20,7 @@ from src.utils.utils import flatten
 from src.utils.utils import flatten_parameters
 from src.utils.utils import get_average_norm
 from src.utils.utils import get_chunks
+from src.utils.utils import get_file_metadata
 from src.utils.utils import get_weighted_stdev
 from src.utils.utils import identity
 from src.utils.utils import load
@@ -43,5 +44,5 @@ __all__ = [
     'get_chunks', 'cache_on_disk_tensor_shapes', 'RecordStandardStreams', 'Pool',
     'maybe_load_tensor', 'AveragedMetric', 'DistributedAveragedMetric', 'bash_time_label',
     'torch_cpp_extension_load', 'RepeatTimer', 'mean', 'random_sample', 'make_arg_key', 'DiskCache',
-    'assert_no_overwritten_files'
+    'assert_no_overwritten_files', 'get_file_metadata'
 ]
