@@ -15,6 +15,7 @@ Find stats on the Linda Johnson dataset here: https://keithito.com/LJ-Speech-Dat
 import atexit
 import logging
 import random
+import warnings
 
 from hparams import configurable
 from hparams import get_config
@@ -157,30 +158,36 @@ class Trainer():
         # dynamic range available. This is slightly higher than Tacotron that set their min
         # magntiude to the equivalent of .0001. For context, a 16-bit audio file has a maximum
         # dynamic range of 96 DB.
+        # NOTE: This issue with regards to picking the number of mel bins:
+        # https://stackoverflow.com/questions/56929874/what-is-the-warning-empty-filters-detected-in-mel-frequency-basis-about
         min_magnitude = 0.00001
-        self.to_spectrograms = [
-            SignalToLogMelSpectrogram(
-                fft_length=2048,
-                frame_hop=300,
-                window=torch.hann_window(1200),
-                num_mel_bins=128,
-                min_magnitude=min_magnitude,
-                power=2.0).to(device),
-            SignalToLogMelSpectrogram(
-                fft_length=1024,
-                frame_hop=150,
-                window=torch.hann_window(600),
-                num_mel_bins=64,
-                min_magnitude=min_magnitude,
-                power=2.0).to(device),
-            SignalToLogMelSpectrogram(
-                fft_length=512,
-                frame_hop=50,
-                window=torch.hann_window(300),
-                num_mel_bins=32,
-                min_magnitude=min_magnitude,
-                power=2.0).to(device),
-        ]
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                'ignore', module='hparams', message='Overwriting configured argument')
+            self.to_spectrograms = [
+                SignalToLogMelSpectrogram(
+                    fft_length=2048,
+                    frame_hop=300,
+                    window=torch.hann_window(1200),
+                    num_mel_bins=128,
+                    min_magnitude=min_magnitude,
+                    power=2.0).to(device),
+                SignalToLogMelSpectrogram(
+                    fft_length=1024,
+                    frame_hop=150,
+                    window=torch.hann_window(600),
+                    num_mel_bins=64,
+                    min_magnitude=min_magnitude,
+                    power=2.0).to(device),
+                SignalToLogMelSpectrogram(
+                    fft_length=512,
+                    frame_hop=75,
+                    window=torch.hann_window(300),
+                    num_mel_bins=32,
+                    min_magnitude=min_magnitude,
+                    power=2.0).to(device),
+            ]
 
         # TODO: Remove redundancy between `self.to_spectrograms` and `self.metrics`.
         # TODO: Consider naming the metrics more precisely from the spectrogram parameters.
@@ -453,15 +460,18 @@ class Trainer():
             })
             # TODO: Consider ensuring that the `target_spectrogram` is the same as the
             # `input_spectrogram` at least for one of the configurations.
-            self.comet_ml.log_figure(
-                'target_log_mel_%d_spectrogram_magnitude' % to_spectrogram.fft_length,
-                plot_spectrogram(target_spectrogram))
-            self.comet_ml.log_figure(
-                'predicted_log_mel_%d_spectrogram_magnitude' % to_spectrogram.fft_length,
-                plot_spectrogram(predicted_spectrogram))
-            self.comet_ml.log_figure(
-                'log_mel_%d_spectrogram_magnitude_loss' % to_spectrogram.fft_length,
-                plot_spectrogram(spectrogram_loss))
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    'ignore', module='hparams', message='Overwriting configured argument')
+                self.comet_ml.log_figure(
+                    'target_log_mel_%d_spectrogram_magnitude' % to_spectrogram.fft_length,
+                    plot_spectrogram(target_spectrogram, frame_hop=to_spectrogram.frame_hop))
+                self.comet_ml.log_figure(
+                    'predicted_log_mel_%d_spectrogram_magnitude' % to_spectrogram.fft_length,
+                    plot_spectrogram(predicted_spectrogram, frame_hop=to_spectrogram.frame_hop))
+                self.comet_ml.log_figure(
+                    'log_mel_%d_spectrogram_magnitude_loss' % to_spectrogram.fft_length,
+                    plot_spectrogram(spectrogram_loss, frame_hop=to_spectrogram.frame_hop))
 
         self.comet_ml.log_metrics(
             {'single/log_mel_spectrogram_magnitude_loss': total_spectrogram_loss.item()})
