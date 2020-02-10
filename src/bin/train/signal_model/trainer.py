@@ -167,7 +167,7 @@ class Trainer():
         # https://stackoverflow.com/questions/56929874/what-is-the-warning-empty-filters-detected-in-mel-frequency-basis-about
         with warnings.catch_warnings():
             warnings.filterwarnings(
-                'ignore', module='hparams', message='Overwriting configured argument')
+                'ignore', module=r'.*hparams', message=r'.*Overwriting configured argument.*')
             self.to_spectrograms = [
                 SignalToLogMelSpectrogram(
                     fft_length=2048,
@@ -465,7 +465,7 @@ class Trainer():
             # `input_spectrogram` at least for one of the configurations.
             with warnings.catch_warnings():
                 warnings.filterwarnings(
-                    'ignore', module='hparams', message='Overwriting configured argument')
+                    'ignore', module=r'.*hparams', message=r'.*Overwriting configured argument.*')
                 self.comet_ml.log_figure(
                     'target_log_mel_%d_spectrogram_magnitude' % to_spectrogram.fft_length,
                     plot_spectrogram(target_spectrogram, frame_hop=to_spectrogram.frame_hop))
