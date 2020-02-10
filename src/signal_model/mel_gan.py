@@ -177,8 +177,10 @@ class Generator(nn.Module):
         signal = torch.sign(signal) / mu * (torch.pow(1 + mu, torch.abs(signal)) - 1)
 
         # Downsample
-        signal = torchaudio.compliance.kaldi.resample_waveform(signal,
-                                                               self.sample_rate * self.oversample,
-                                                               self.sample_rate)
+        # TODO: Consider logging the clipping due to resampling
+        signal = torch.clamp(
+            torchaudio.compliance.kaldi.resample_waveform(signal,
+                                                          self.sample_rate * self.oversample,
+                                                          self.sample_rate), -1.0, 1.0)
 
         return signal if has_batch_dim else signal.squeeze(0)
