@@ -695,7 +695,7 @@ def set_hparams():
                                 # context for each frame outside of the aligned samples. Then it
                                 # makes sense to have 450 samples of padding or 2 spectrogram
                                 # frames.
-                                spectrogram_slice_pad=35,),
+                                spectrogram_slice_pad=30),
                     }
                 },
             },

@@ -1,103 +1,52 @@
+import itertools
+import logging
+
+from torchnlp.utils import get_total_parameters
+
 import numpy as np
-
-from torch.nn.utils import weight_norm
-
 import torch
-import torch.nn as nn
 import torchaudio
 
-
-class PixelShuffle1d(nn.Module):
-
-    def __init__(self, upscale_factor):
-        super().__init__()
-
-        self.upscale_factor = upscale_factor
-
-    def forward(self, tensor):
-        """
-        Inspired by: https://gist.github.com/davidaknowles/6e95a643adaf3960d1648a6b369e9d0b
-
-        Example:
-            >>> t = torch.arange(0, 12).view(1, 3, 4).transpose(1, 2)
-            >>> t
-            tensor([[[ 0,  4,  8],
-                     [ 1,  5,  9],
-                     [ 2,  6, 10],
-                     [ 3,  7, 11]]])
-            >>> t[0, :, 0] # First frame
-            tensor([0, 1, 2, 3])
-            >>> module = PixelShuffle1d(4)
-            >>> module(t)
-            tensor([[[ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11]]])
-
-        Args:
-            tensor (torch.Tensor [batch_size, channels, sequence_length])
-
-        Returns:
-            tensor (torch.Tensor [batch_size, channels // self.upscale_factor,
-                sequence_length * self.upscale_factor])
-        """
-        batch_size, channels, steps = tensor.size()
-        channels //= self.upscale_factor
-        input_view = tensor.contiguous().view(batch_size, channels, self.upscale_factor, steps)
-        shuffle_out = input_view.permute(0, 1, 3, 2).contiguous()
-        return shuffle_out.view(batch_size, channels, steps * self.upscale_factor)
-
-
-def weights_init(m):
-    classname = m.__class__.__name__
-    if classname.find("Conv") != -1:
-        torch.nn.init.orthogonal_(m.weight)
-
-
-def WNConv1d(*args, **kwargs):
-    return weight_norm(nn.Conv1d(*args, **kwargs))
+logger = logging.getLogger(__name__)
 
 
 def trim_padding(x, y):
     """ Trim the `x` and `y` so that their shapes match in the third dimension. """
     # [batch_size, frame_channels, num_frames]
     excess_padding = abs(x.shape[2] - y.shape[2])
-    assert excess_padding > 0  # Not too little padding
-    assert excess_padding % 2 == 0  # Invariant
+    assert excess_padding % 2 == 0, 'Uneven padding, %d' % excess_padding
     if x.shape[2] > y.shape[2]:
         return x[:, :, excess_padding // 2:-excess_padding // 2], y
     return x, y[:, :, excess_padding // 2:-excess_padding // 2]
 
 
-class GBlock(nn.Module):
+class Block(torch.nn.Module):
 
-    def __init__(self, in_channels, out_channels, scale_factor, dilation=1):
+    def __init__(self, in_channels, out_channels, scale_factor):
         super().__init__()
-        self.dilation = dilation
-        self.shortcut = nn.Sequential(
-            WNConv1d(
-                in_channels,
-                out_channels * scale_factor,
-                kernel_size=1,
-            ), PixelShuffle1d(scale_factor))
-        self.block = nn.Sequential(
-            nn.GELU(),
-            WNConv1d(
-                in_channels,
-                out_channels * scale_factor,
-                kernel_size=3,
-            ),
-            PixelShuffle1d(scale_factor),
-            nn.GELU(),
-            WNConv1d(out_channels, out_channels, kernel_size=3, dilation=2),
+
+        self.shortcut = torch.nn.Sequential(
+            torch.nn.ConvTranspose1d(
+                in_channels, out_channels, kernel_size=scale_factor * 2, stride=scale_factor))
+
+        self.block = torch.nn.Sequential(
+            torch.nn.GELU(),
+            torch.nn.ConvTranspose1d(
+                in_channels, out_channels, kernel_size=scale_factor * 2, stride=scale_factor),
+            torch.nn.GELU(),
+            torch.nn.Conv1d(out_channels, out_channels, kernel_size=3, dilation=2),
         )
-        self.other_block = nn.Sequential(
-            nn.GELU(),
-            WNConv1d(
+
+        self.other_block = torch.nn.Sequential(
+            torch.nn.GELU(),
+            torch.nn.Conv1d(
                 out_channels,
                 out_channels,
                 kernel_size=3,
                 dilation=4,
             ),
-            nn.GELU(),
-            WNConv1d(out_channels, out_channels, kernel_size=3, dilation=8),
+            torch.nn.GELU(),
+            torch.nn.Conv1d(out_channels, out_channels, kernel_size=3, dilation=8),
         )
 
     def forward(self, x):
@@ -105,37 +54,75 @@ class GBlock(nn.Module):
         return torch.add(*trim_padding(x, self.other_block(x)))
 
 
-class Generator(nn.Module):
+class Generator(torch.nn.Module):
 
-    def __init__(self, input_size=128, ngf=32, padding=35, oversample=4, sample_rate=24000):
+    def __init__(self,
+                 input_size=128,
+                 hidden_size=32,
+                 padding=30,
+                 oversample=4,
+                 sample_rate=24000,
+                 ratios=[8, 8, 4, 4]):
         super().__init__()
-        ratios = [8, 8, 4, 4]
-        self.hop_length = np.prod(ratios)
+
+        self.scale_factor = np.prod(ratios) // oversample
         self.padding = padding
-        self.pad = nn.ConstantPad1d(padding, 0.0)
+        self.pad = torch.nn.ConstantPad1d(padding, 0.0)
         self.register_buffer('sample_rate', torch.tensor(sample_rate))
         self.register_buffer('oversample', torch.tensor(oversample))
-        mult = int(2**len(ratios))
+        self.ratios = ratios
+        self.hidden_size = hidden_size
 
-        model = [
-            WNConv1d(input_size, mult * ngf, kernel_size=3, padding=0),
-            GBlock(mult * ngf, mult * ngf, scale_factor=1),
-            GBlock(mult * ngf, mult * ngf, scale_factor=1),
-        ]
+        self.model = torch.nn.Sequential(*itertools.chain([
+            torch.nn.Conv1d(input_size, self.get_channel_size(0), kernel_size=3, padding=0),
+            Block(self.get_channel_size(0), self.get_channel_size(0), scale_factor=1),
+            Block(self.get_channel_size(0), self.get_channel_size(0), scale_factor=1),
+        ], [
+            Block(self.get_channel_size(i), self.get_channel_size(i + 1), scale_factor=r)
+            for i, r in enumerate(ratios)
+        ], [
+            torch.nn.Conv1d(hidden_size, 1, kernel_size=3, padding=0),
+            torch.nn.Tanh(),
+        ]))
 
-        # Upsample to raw audio scale
-        for i, r in enumerate(ratios):
-            model += [GBlock(mult * ngf, mult * ngf // 2, scale_factor=r)]
+        self.reset_parameters()
 
-            mult //= 2
+        # NOTE: We initialize the convolution parameters weight norm factorizes them.
+        for module in self.get_weight_norm_modules():
+            torch.nn.utils.weight_norm(module)
 
-        model += [
-            WNConv1d(ngf, 1, kernel_size=3, padding=0),
-            nn.Tanh(),
-        ]
+        logger.info('Number of parameters is: %d', get_total_parameters(self))
+        logger.info('Initialized model: %s', self)
 
-        self.model = nn.Sequential(*model)
-        self.apply(weights_init)
+    def get_weight_norm_modules(self):
+        for module in self.modules():
+            if isinstance(module, torch.nn.Conv1d) or isinstance(module, torch.nn.ConvTranspose1d):
+                yield module
+
+    def reset_parameters(self):
+        for module in self.modules():
+            if isinstance(module, torch.nn.Conv1d) or isinstance(module, torch.nn.ConvTranspose1d):
+                assert isinstance(module.weight, torch.nn.Parameter)
+                torch.nn.init.orthogonal_(module.weight)
+                assert isinstance(module.bias, torch.nn.Parameter)
+                torch.nn.init.zeros_(module.bias)
+            elif get_total_parameters(module) > 0:
+                # TODO: Use a recursive approach to filter out modules where all children parameters
+                # were set, and only pass up legitmate messages.
+                logger.warning('%s module parameters may have not been set.', type(module))
+
+    def get_channel_size(self, i):
+        """ Get the hidden size of layer `i` based on the final hidden size `self.hidden_size`.
+
+        Args:
+            i (int): The index of the layer.
+
+        Returns:
+            (int): The number of units.
+        """
+        assert i <= len(self.ratios)
+
+        return (int(2**len(self.ratios)) * self.hidden_size) // 2**i
 
     def forward(self, spectrogram, pad_input=True, mu=255):
         """
@@ -163,24 +150,30 @@ class Generator(nn.Module):
         # [batch_size, frame_channels, num_frames] → [batch_size, signal_length + excess_padding]
         signal = self.model(spectrogram).squeeze(1)
 
-        excess_padding = signal.shape[1] - num_frames * self.hop_length
-        assert excess_padding < self.hop_length * 2, excess_padding  # Not too much padding
-        assert excess_padding >= 0, excess_padding  # Not too little padding
-        assert excess_padding % 2 == 0, excess_padding  # Invariant
-        # signal [batch_size, num_frames * self.hop_length]
-        if excess_padding > 0:
-            signal = signal[:, excess_padding // 2:-excess_padding // 2]
-        assert signal.shape == (batch_size, self.hop_length * num_frames), signal.shape
-
         # Mu-law expantion, learn more here:
         # https://librosa.github.io/librosa/_modules/librosa/core/audio.html#mu_expand
         signal = torch.sign(signal) / mu * (torch.pow(1 + mu, torch.abs(signal)) - 1)
 
-        # Downsample
-        # TODO: Consider logging the clipping due to resampling
-        signal = torch.clamp(
-            torchaudio.compliance.kaldi.resample_waveform(signal,
-                                                          self.sample_rate * self.oversample,
-                                                          self.sample_rate), -1.0, 1.0)
+        # TODO: Add a parameter to `resample_waveform` to not pad the signal.
+        # NOTE: Ensure there is enough padding for `resample_waveform`.
+        assert signal.shape[1] - num_frames * self.scale_factor > 24
+
+        signal = torchaudio.compliance.kaldi.resample_waveform(signal,
+                                                               self.sample_rate * self.oversample,
+                                                               self.sample_rate)
+
+        excess_padding = signal.shape[1] - num_frames * self.scale_factor
+        assert excess_padding < self.scale_factor * 2, 'Too much padding, %d' % excess_padding
+        assert excess_padding >= 0, 'Too little padding, %d' % excess_padding
+        assert excess_padding % 2 == 0, 'Uneven padding, %d' % excess_padding
+        if excess_padding > 0:  # [batch_size, num_frames * self.scale_factor]
+            signal = signal[:, excess_padding // 2:-excess_padding // 2]
+        assert signal.shape == (batch_size, self.scale_factor * num_frames), signal.shape
+
+        num_clipped_samples = ((signal > 1.0) | (signal < -1.0)).sum().item()
+        if num_clipped_samples > 0:
+            logger.warning('%d samples clipped.', num_clipped_samples)
+
+        signal = torch.clamp(signal, -1.0, 1.0)
 
         return signal if has_batch_dim else signal.squeeze(0)
