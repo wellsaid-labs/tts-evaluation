@@ -124,22 +124,24 @@ class Trainer():
             self.optimizer.optimizer, lr_multiplier_schedule, last_epoch=step - 1)
 
         self.criterion = criterion(reduction='none').to(device)
-        # NOTE: The spectrograms we use to tabulate the loss are based in human perception.
 
-        # NOTE: We use a "loudness spectrogram" for computing the loss. A "loudness spectrogram" is
-        # a psychoacoustic model of loudness versus time and frequency.
+        # NOTE: This uses a "loudness spectrogram" for computing the loss. A "loudness spectrogram"
+        # is a psychoacoustic model of loudness versus time and frequency.
         #
-        # We follow these processing steps: (Similar)
-        # 1. We compute a multiresolution STFT. The corresponding window lengths in
-        #    milliseconds are 50ms, 25ms, and 12.5ms. The hop lengths are choosen to given a
-        #    standard 75% overlap. The window is a standard "hann window".
-        # 2. We apply the mel scale via a mel filter bank to mimic the the non-linear human ear
+        # The "loudness spectrogram" is created, like so:
+        # 1. STFTs are computed at multiple resonsolutions, with these standard parameters:
+        #    - Window lengths of 50ms, 25ms, and 12.5ms.
+        #    - The hop lengths are 25% of the window length, so that there is a 75% overlap.
+        #    - The window is a "hann window".
+        # 2. The mel scale is applied to mimic the the non-linear human ear
         #    perception of sound, by being more discriminative at lower frequencies and less
-        #    discriminative at higher frequencies.
+        #    discriminative at higher frequencies. The number of mel bins is decreased
+        #    proportionally to the window length.
         # 3. Perceived loudness (for example, the sone scale) corresponds fairly well to the dB
         #    scale, suggesting that human perception of loudness is roughly logarithmic with
-        #    intensity. We convert the "amplitude spectrogram" to a decibel spectrogram. Since we
-        #    use a L1 loss, we foregoe any constant callibrations to the decible units.
+        #    intensity; therefore, we convert our "ampltitude spectrogram" to the dB scale. Since we
+        #    use a L1 loss, we foregoe any constant callibrations to the decible units such as
+        #    A-weighting.
         #
         # Sources:
         # - Loudness Spectrogram:
@@ -151,17 +153,18 @@ class Trainer():
         # - Perceptual Loss: https://github.com/magenta/ddsp/issues/12
         # - Compute Loudness: https://github.com/librosa/librosa/issues/463
         # - Compute Loudness: https://github.com/magenta/ddsp/blob/master/ddsp/spectral_ops.py#L171
-        # - Ampltidue To DB:
+        # - Ampltidue To dB:
         #   https://librosa.github.io/librosa/generated/librosa.core.amplitude_to_db.html
         # - Into To Speech Science: http://www.cas.usf.edu/~frisch/SPA3011_L07.html
-        # NOTE: Tested on Hilary / Linda Johnson. This ensures there are roughly 80 - 90 DB of
-        # dynamic range available. This is slightly higher than Tacotron that set their min
-        # magntiude to the equivalent of .0001. For context, a 16-bit audio file has a maximum
-        # dynamic range of 96 DB.
-        # NOTE: This issue with regards to picking the number of mel bins:
-        # https://stackoverflow.com/questions/56929874/what-is-the-warning-empty-filters-detected-in-mel-frequency-basis-about
+
+        # NOTE: The `min_magnitude` is set to ensure there is no more than 80 - 90 dB of dynanmic
+        # range. `0.00001` is slightly lower than Tacotron 2 used; however, it worked best for
+        # our Linda and Hilary datasets based on two audio samples. Furthermore, we'd like to
+        # match the 96 dB dynamic range of a 16-bit audio file.
         min_magnitude = 0.00001
 
+        # NOTE: The `num_mel_bins` must be proportional to `fft_length`, learn more:
+        # https://stackoverflow.com/questions/56929874/what-is-the-warning-empty-filters-detected-in-mel-frequency-basis-about
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 'ignore', module='hparams', message='Overwriting configured argument')
