@@ -156,12 +156,9 @@ class Trainer():
         # - Ampltidue To dB:
         #   https://librosa.github.io/librosa/generated/librosa.core.amplitude_to_db.html
         # - Into To Speech Science: http://www.cas.usf.edu/~frisch/SPA3011_L07.html
-
-        # NOTE: The `min_magnitude` is set to ensure there is no more than 80 - 90 dB of dynanmic
-        # range. `0.00001` is slightly lower than Tacotron 2 used; however, it worked best for
-        # our Linda and Hilary datasets based on two audio samples. Furthermore, we'd like to
-        # match the 96 dB dynamic range of a 16-bit audio file.
-        min_magnitude = 0.00001
+        # - Frequency Scales:
+        # https://www.researchgate.net/figure/Comparison-between-Mel-Bark-ERB-and-linear-frequency-scales-Since-the-units-of-the_fig4_283044643
+        # - Frequency Scales: https://www.vocal.com/noise-reduction/perceptual-noise-reduction/
 
         # NOTE: The `num_mel_bins` must be proportional to `fft_length`, learn more:
         # https://stackoverflow.com/questions/56929874/what-is-the-warning-empty-filters-detected-in-mel-frequency-basis-about
@@ -173,23 +170,13 @@ class Trainer():
                     fft_length=2048,
                     frame_hop=300,
                     window=torch.hann_window(1200),
-                    num_mel_bins=128,
-                    min_magnitude=min_magnitude,
-                    power=2.0).to(device),
+                    num_mel_bins=128).to(device),
                 SignalToLogMelSpectrogram(
-                    fft_length=1024,
-                    frame_hop=150,
-                    window=torch.hann_window(600),
-                    num_mel_bins=64,
-                    min_magnitude=min_magnitude,
-                    power=2.0).to(device),
+                    fft_length=1024, frame_hop=150, window=torch.hann_window(600),
+                    num_mel_bins=64).to(device),
                 SignalToLogMelSpectrogram(
-                    fft_length=512,
-                    frame_hop=75,
-                    window=torch.hann_window(300),
-                    num_mel_bins=32,
-                    min_magnitude=min_magnitude,
-                    power=2.0).to(device),
+                    fft_length=512, frame_hop=75, window=torch.hann_window(300),
+                    num_mel_bins=32).to(device),
             ]
 
         # TODO: Remove redundancy between `self.to_spectrograms` and `self.metrics`.
@@ -468,7 +455,7 @@ class Trainer():
                 warnings.filterwarnings(
                     'ignore', module=r'.*hparams', message=r'.*Overwriting configured argument.*')
                 _plot_spectrogram = lambda s: plot_spectrogram(
-                    s, frame_hop=to_spectrogram.frame_hop)
+                    s, frame_hop=to_spectrogram.frame_hop, lower_hertz=to_spectrogram.lower_hertz)
                 self.comet_ml.log_figure(
                     'target_log_mel_%d_spectrogram_magnitude' % to_spectrogram.fft_length,
                     _plot_spectrogram(target_spectrogram))

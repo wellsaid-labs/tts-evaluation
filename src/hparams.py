@@ -20,6 +20,7 @@ import torchnlp
 
 from src import datasets
 from src.audio import get_num_seconds
+from src.audio import iso226_weighting
 from src.audio import WavFileMetadata
 from src.datasets import filter_
 from src.datasets import normalize_audio_column
@@ -136,8 +137,24 @@ def _set_audio_processing():
                     frame_hop=frame_hop,
                     window=window_tensor,
                     fft_length=fft_length,
-                    min_magnitude=min_magnitude,
                     num_mel_bins=frame_channels,
+                    # NOTE: This value is standard when transforming from ampltidues to decibels.
+                    power=2.0,
+                    # NOTE: The `min_decibel` is set to ensure there is around 80 - 90 dB of
+                    # dynamic range, allowing us to make the most use of the maximum 96 dB dynamic
+                    # range a 16-bit audio file can provide. This value is sligtly lower than
+                    # Tacotron 2's equivalent  of 0.01 (~ -40 dB); however, it worked best for our
+                    # Linda and Hilary datasets based on two audio samples.
+                    min_decibel=-50.0,
+                    # NOTE: ISO226 is defined from 20hz to 20khz and humans typically can only hear
+                    # from 20hz to 20khz, learn more: https://en.wikipedia.org/wiki/Hearing_range
+                    lower_hertz=20,
+                    # NOTE: ISO226 is one of the latest standards for determining loudness:
+                    # https://www.iso.org/standard/34222.html. It does have some issues though:
+                    # http://www.lindos.co.uk/cgi-bin/FlexiData.cgi?SOURCE=Articles&VIEW=full&id=2
+                    get_weighting=iso226_weighting,
+                    # NOTE: This just has to be small enough to prevent a `log(0)` discontinuity.
+                    amin=1e-10,
                 ),
             'get_log_mel_spectrogram':
                 HParams(

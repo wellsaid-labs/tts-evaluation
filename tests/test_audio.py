@@ -22,6 +22,7 @@ from src.audio import SignalToLogMelSpectrogram
 from src.audio import split_signal
 from src.audio import WavFileMetadata
 from src.audio import write_audio
+from src.audio import iso226_weighting
 from src.environment import DATA_PATH
 from src.environment import TEST_DATA_PATH
 from src.utils import make_arg_key
@@ -29,20 +30,68 @@ from src.utils import make_arg_key
 TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'test_audio'
 
 
-def test_signal_to_log_mel_spectrogram():
-    path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
+def test_iso226_weighting():
+    """ Test ISO226 weighting based off these charts:
+    https://en.wikipedia.org/wiki/A-weighting#/media/File:Lindos3.svg
+    https://github.com/wellsaid-labs/Text-to-Speech/blob/adc1f28864c9515a5d33b876b135d2e95da73faf/weights.png
+    """
+    np.testing.assert_almost_equal([-59.843877, 0.0, -59.843877],
+                                   iso226_weighting(np.array([20, 1000, 20000])))
+
+
+def test_signal_to_log_mel_spectrogram_against_librosa():
+    n_fft = 2048
+    win_length = 2048
+    hop_length = 512
+    amin = 1e-10
+    power = 2.0
+    n_mels = 128
+    min_decibel = -50.0
     sample_rate = 24000
-    signal = integer_to_floating_point_pcm(
-        read_audio(path, WavFileMetadata(sample_rate, 16, 1, 'signed-integer')))
-    log_mel_spectrogram = get_log_mel_spectrogram(signal, sample_rate, center=False)
-    module = SignalToLogMelSpectrogram(sample_rate=sample_rate)
-    other_log_mel_spectrogram = module(torch.tensor(signal)).detach().numpy()
-    assert log_mel_spectrogram.shape == other_log_mel_spectrogram.shape
-    # NOTE: Numpy does it's computations in 64-bit while PyTorch does it's in 32-bit. This causes
-    # some error.
-    # NOTE: Numpy can be more accurate than PyTorch, for example:
-    # https://github.com/pytorch/pytorch/issues/19164
-    np.testing.assert_almost_equal(log_mel_spectrogram, other_log_mel_spectrogram, decimal=3)
+
+    path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
+    metadata = WavFileMetadata(sample_rate, 16, 1, 'signed-integer')
+    signal = integer_to_floating_point_pcm(read_audio(path, metadata))
+
+    # Learn more about this algorithm here:
+    # https://github.com/librosa/librosa/issues/463#issuecomment-265165830
+    S = librosa.stft(
+        signal,
+        n_fft=n_fft,
+        win_length=win_length,
+        hop_length=hop_length,
+        center=False,
+        window='hann')
+    S = np.abs(S).astype(np.float32)**power
+    log_S = librosa.perceptual_weighting(
+        S, librosa.fft_frequencies(sr=sample_rate, n_fft=n_fft), amin=amin,
+        top_db=None).astype(np.float32)
+    melspec = librosa.feature.melspectrogram(
+        S=librosa.db_to_power(log_S),
+        sr=sample_rate,
+        n_fft=n_fft,
+        htk=True,
+        norm=None,
+        fmax=None,
+        fmin=0.0)
+    melspec = librosa.power_to_db(melspec, amin=amin, top_db=None)
+    melspec = np.maximum(melspec, min_decibel).transpose()
+
+    module = SignalToLogMelSpectrogram(
+        fft_length=n_fft,
+        frame_hop=hop_length,
+        sample_rate=sample_rate,
+        num_mel_bins=n_mels,
+        window=torch.hann_window(win_length),
+        power=power,
+        amin=amin,
+        min_decibel=min_decibel,
+        get_weighting=librosa.A_weighting,
+        lower_hertz=0)
+
+    other_mel_spectrogram = module(torch.tensor(signal)).detach().numpy()
+    assert melspec.shape == other_mel_spectrogram.shape
+    np.testing.assert_almost_equal(melspec, other_mel_spectrogram, decimal=2)
 
 
 def test_signal_to_log_mel_spectrogram_backward():
