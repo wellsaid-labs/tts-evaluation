@@ -453,8 +453,9 @@ class Trainer():
 
         total_spectrogram_loss = torch.tensor(0.0, device=self.device)
         for to_spectrogram in self.to_spectrograms:
-            predicted_spectrogram = to_spectrogram(predicted)
-            target_spectrogram = to_spectrogram(target_signal)
+            predicted_spectrogram = to_spectrogram(predicted)  # [num_frames, frame_channels]
+            target_spectrogram = to_spectrogram(target_signal)  # [num_frames, frame_channels]
+            assert predicted_spectrogram.dim() == 2
             spectrogram_loss = self.criterion(predicted_spectrogram, target_spectrogram)
             total_spectrogram_loss += spectrogram_loss.mean() / len(self.to_spectrograms)
             self.comet_ml.log_metrics({
@@ -466,15 +467,20 @@ class Trainer():
             with warnings.catch_warnings():
                 warnings.filterwarnings(
                     'ignore', module=r'.*hparams', message=r'.*Overwriting configured argument.*')
+                _plot_spectrogram = lambda s: plot_spectrogram(
+                    s, frame_hop=to_spectrogram.frame_hop)
                 self.comet_ml.log_figure(
                     'target_log_mel_%d_spectrogram_magnitude' % to_spectrogram.fft_length,
-                    plot_spectrogram(target_spectrogram, frame_hop=to_spectrogram.frame_hop))
+                    _plot_spectrogram(target_spectrogram))
                 self.comet_ml.log_figure(
                     'predicted_log_mel_%d_spectrogram_magnitude' % to_spectrogram.fft_length,
-                    plot_spectrogram(predicted_spectrogram, frame_hop=to_spectrogram.frame_hop))
+                    _plot_spectrogram(predicted_spectrogram))
                 self.comet_ml.log_figure(
                     'log_mel_%d_spectrogram_magnitude_loss' % to_spectrogram.fft_length,
-                    plot_spectrogram(spectrogram_loss, frame_hop=to_spectrogram.frame_hop))
+                    _plot_spectrogram(spectrogram_loss))
+                self.comet_ml.log_figure(
+                    'averaged_log_mel_%d_spectrogram_magnitude_loss' % to_spectrogram.fft_length,
+                    _plot_spectrogram(spectrogram_loss.mean(dim=0, keepdim=True)))
 
         self.comet_ml.log_metrics(
             {'single/log_mel_spectrogram_magnitude_loss': total_spectrogram_loss.item()})
