@@ -264,7 +264,10 @@ if __name__ == '__main__':  # pragma: no cover
               'text as input to the signal model.'))
     parser.add_argument(
         '--tags',
-        default=['transposed_conv_upsampling', 'downsample_with_real_padding', 'fix_weight_init'],
+        default=[
+            'transposed_conv_upsampling', 'downsample_with_real_padding', 'fix_weight_init',
+            '20hz_min', 'dB_mel_spectrogram'
+        ],
         nargs='+',
         help='List of tags for the experiment.')
     parser.add_argument('--name', type=str, default=None, help='Name of the experiment.')
