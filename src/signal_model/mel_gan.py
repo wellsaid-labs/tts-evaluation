@@ -155,6 +155,7 @@ class Generator(torch.nn.Module):
         signal = torch.sign(signal) / mu * (torch.pow(1 + mu, torch.abs(signal)) - 1)
 
         # TODO: Add a parameter to `resample_waveform` to not pad the signal.
+        # TODO: Look into what happens with signal is not an exact multiple.
         # NOTE: Ensure there is enough padding for `resample_waveform`.
         assert signal.shape[1] - num_frames * self.scale_factor > 24, signal.shape[
             1] - num_frames * self.scale_factor
