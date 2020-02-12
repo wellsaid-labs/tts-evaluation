@@ -156,8 +156,10 @@ class Generator(torch.nn.Module):
 
         # TODO: Add a parameter to `resample_waveform` to not pad the signal.
         # NOTE: Ensure there is enough padding for `resample_waveform`.
-        assert signal.shape[1] - num_frames * self.scale_factor > 24
+        assert signal.shape[1] - num_frames * self.scale_factor > 24, signal.shape[
+            1] - num_frames * self.scale_factor
 
+        assert signal.shape[1] % self.oversample.item() == 0, signal.shape[1] % self.oversample
         signal = torchaudio.compliance.kaldi.resample_waveform(signal,
                                                                self.sample_rate * self.oversample,
                                                                self.sample_rate)
