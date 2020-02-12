@@ -34,19 +34,14 @@ class Block(torch.nn.Module):
             torch.nn.ConvTranspose1d(
                 in_channels, out_channels, kernel_size=scale_factor * 2, stride=scale_factor),
             torch.nn.GELU(),
-            torch.nn.Conv1d(out_channels, out_channels, kernel_size=3, dilation=2),
+            torch.nn.Conv1d(out_channels, out_channels, kernel_size=3),
         )
 
         self.other_block = torch.nn.Sequential(
             torch.nn.GELU(),
-            torch.nn.Conv1d(
-                out_channels,
-                out_channels,
-                kernel_size=3,
-                dilation=4,
-            ),
+            torch.nn.Conv1d(out_channels, out_channels, kernel_size=3),
             torch.nn.GELU(),
-            torch.nn.Conv1d(out_channels, out_channels, kernel_size=3, dilation=8),
+            torch.nn.Conv1d(out_channels, out_channels, kernel_size=3),
         )
 
     def forward(self, x):
@@ -81,6 +76,7 @@ class Generator(torch.nn.Module):
             Block(self.get_channel_size(i), self.get_channel_size(i + 1), scale_factor=r)
             for i, r in enumerate(ratios)
         ], [
+            torch.nn.GELU(),
             torch.nn.Conv1d(hidden_size, 1, kernel_size=3, padding=0),
             torch.nn.Tanh(),
         ]))
