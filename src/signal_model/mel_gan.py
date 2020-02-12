@@ -159,7 +159,8 @@ class Generator(torch.nn.Module):
         assert signal.shape[1] - num_frames * self.scale_factor > 24, signal.shape[
             1] - num_frames * self.scale_factor
 
-        assert signal.shape[1] % self.oversample.item() == 0, signal.shape[1] % self.oversample
+        assert signal.shape[1] % self.oversample.item() == 0, (
+            signal.shape[1] % self.oversample.item())
         signal = torchaudio.compliance.kaldi.resample_waveform(signal,
                                                                self.sample_rate * self.oversample,
                                                                self.sample_rate)
