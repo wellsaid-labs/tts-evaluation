@@ -5,6 +5,7 @@ import torch
 
 from src.audio import read_audio
 from src.bin.train.signal_model.data_loader import SignalModelTrainingRow
+from src.bin.train.signal_model.trainer import ExponentialMovingParameterAverage
 from src.bin.train.signal_model.trainer import Trainer
 from src.environment import TEMP_PATH
 from src.utils import Checkpoint
@@ -34,6 +35,63 @@ def get_trainer(read_audio_mock, register_mock, load_data=True):
         spectrogram_model_checkpoint_path=mocks['spectrogram_model_checkpoint'].path,
         train_batch_size=1,
         dev_batch_size=1)
+
+
+def test_exponential_moving_parameter_average__identity():
+
+    class Module(torch.nn.Module):
+
+        def __init__(self):
+            super().__init__()
+            self.parameter = torch.nn.Parameter(torch.zeros(1))
+
+    module = Module()
+    exponential_moving_parameter_average = ExponentialMovingParameterAverage(module, beta=0)
+
+    module.parameter.data[0] = 1.0
+    exponential_moving_parameter_average.update()
+    exponential_moving_parameter_average.apply_shadow()
+    assert module.parameter.data[0] == 1.0
+    exponential_moving_parameter_average.restore()
+
+    module.parameter.data[0] = 2.0
+    exponential_moving_parameter_average.update()
+    exponential_moving_parameter_average.apply_shadow()
+    assert module.parameter.data[0] == 2.0
+    exponential_moving_parameter_average.restore()
+
+
+def test_exponential_moving_parameter_average():
+    """ Test bias correction implementation via this video:
+    https://pt.coursera.org/lecture/deep-neural-network/www.deeplearning.ai-XjuhD
+    """
+    values = [1.0, 2.0]
+
+    class Module(torch.nn.Module):
+
+        def __init__(self):
+            super().__init__()
+            self.parameter = torch.nn.Parameter(torch.full((2,), values[0]))
+
+    module = Module()
+    exponential_moving_parameter_average = ExponentialMovingParameterAverage(module, beta=0.98)
+
+    module.parameter.data = torch.tensor([values[1], values[1]])
+
+    exponential_moving_parameter_average.update()
+
+    assert module.parameter.data[0] == values[1]
+    assert module.parameter.data[1] == values[1]
+
+    exponential_moving_parameter_average.apply_shadow()
+
+    assert module.parameter.data[0] == (0.0196 * values[0] + 0.02 * values[1]) / 0.0396
+    assert module.parameter.data[1] == (0.0196 * values[0] + 0.02 * values[1]) / 0.0396
+
+    exponential_moving_parameter_average.restore()
+
+    assert module.parameter.data[0] == values[1]
+    assert module.parameter.data[1] == values[1]
 
 
 @mock.patch('src.bin.train.signal_model.trainer.atexit.register')

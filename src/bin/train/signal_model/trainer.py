@@ -46,6 +46,62 @@ import src.distributed
 logger = logging.getLogger(__name__)
 
 
+class ExponentialMovingParameterAverage():
+    """ Average the model parameters over time.
+
+    Inspired by: http://www.programmersought.com/article/28492072406/
+
+    TODO: Consider moving this into the signal model as part of it's evaluation mode.
+
+    Learn more about EMA, here: https://arxiv.org/abs/1806.04498
+
+    Args:
+        model (torch.nn.Module): The model w/ parameters to average.
+        beta (float): Beta used to weight the exponential mean.
+    """
+
+    def __init__(self, model, beta=0.9999):
+        self.model = model
+        self.beta = beta
+        self.shadow = {}
+        self.backup = {}
+        self.step = 1
+
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                self.shadow[name] = param.data.clone().detach() * (1.0 - self.beta)
+
+    def update(self):
+        """ Update the parameter average.
+        """
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                new_average = (1.0 - self.beta) * param.data + self.beta * self.shadow[name]
+                self.shadow[name] = new_average.clone().detach()
+        self.step += 1
+
+    def apply_shadow(self):
+        """ Replace the model with it's averaged parameters.
+        """
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                # The initial 0.0 average values introduce bias that is corrected, learn more:
+                # https://www.coursera.org/lecture/deep-neural-network/bias-correction-in-exponentially-weighted-averages-XjuhD
+                self.backup[name] = param.data
+                param.data = self.shadow[name] / (1 - self.beta**(self.step))
+
+    def restore(self):
+        """ Restore the model's old parameters.
+        """
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.backup
+                param.data = self.backup[name]
+        self.backup = {}
+
+
 class Trainer():
     """ Trainer defines a simple interface for training the ``SignalModel``.
 
@@ -91,6 +147,7 @@ class Trainer():
                  criterion=HParam(),
                  optimizer=HParam(),
                  lr_multiplier_schedule=HParam(),
+                 exponential_moving_parameter_average=ExponentialMovingParameterAverage,
                  model=HParam(),
                  spectrogram_model_checkpoint_path=None,
                  step=0,
@@ -115,6 +172,11 @@ class Trainer():
         if src.distributed.is_initialized():
             self.model = torch.nn.parallel.DistributedDataParallel(
                 self.model, device_ids=[device], output_device=device, dim=1)
+        self.exponential_moving_parameter_average = (
+            exponential_moving_parameter_average
+            if isinstance(exponential_moving_parameter_average, ExponentialMovingParameterAverage)
+            else exponential_moving_parameter_average(self.model))
+        self.exponential_moving_parameter_average.model = self.model
 
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
@@ -276,6 +338,7 @@ class Trainer():
             'epoch': checkpoint.epoch,
             'step': checkpoint.step,
             'spectrogram_model_checkpoint_path': checkpoint.spectrogram_model_checkpoint_path,
+            'exponential_moving_parameter_average': checkpoint.exponential_moving_parameter_average,
         }
         checkpoint_kwargs.update(kwargs)
         return class_(**checkpoint_kwargs)
@@ -297,7 +360,8 @@ class Trainer():
                 epoch=self.epoch,
                 comet_ml_project_name=self.comet_ml.project_name,
                 comet_ml_experiment_key=self.comet_ml.get_key(),
-                spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path)
+                spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
+                exponential_moving_parameter_average=self.exponential_moving_parameter_average)
             if checkpoint.path.exists():
                 return None
             return checkpoint.save()
@@ -348,6 +412,9 @@ class Trainer():
                 **loader_kwargs)
         data_loader = self._train_loader if train else self._dev_loader
 
+        if not train:
+            self.exponential_moving_parameter_average.apply_shadow()
+
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
                 predicted_signal = self.model(batch.spectrogram, pad_input=False)
@@ -369,6 +436,9 @@ class Trainer():
 
             if trial_run:
                 break
+
+        if not train:
+            self.exponential_moving_parameter_average.restore()
 
         if not trial_run:
             self.comet_ml.log_epoch_end(self.epoch)
@@ -405,6 +475,7 @@ class Trainer():
             self.optimizer.zero_grad()
             total_spectrogram_loss.backward()
             self.optimizer.step(comet_ml=self.comet_ml)
+            self.exponential_moving_parameter_average.update()
 
         # TODO: Consider using the spectrogram length instead of batch size
         self.metrics['log_mel_spectrogram_magnitude_loss'].update(total_spectrogram_loss,
@@ -436,7 +507,9 @@ class Trainer():
         logger.info('Running inference on %d spectrogram frames with %d threads.',
                     spectrogram.shape[0], torch.get_num_threads())
 
+        self.exponential_moving_parameter_average.apply_shadow()
         predicted = model(spectrogram)
+        self.exponential_moving_parameter_average.restore()
 
         total_spectrogram_loss = torch.tensor(0.0, device=self.device)
         for to_spectrogram in self.to_spectrograms:
