@@ -266,7 +266,8 @@ if __name__ == '__main__':  # pragma: no cover
         '--tags',
         default=[
             'transposed_conv_upsampling', 'downsample_with_real_padding', 'fix_weight_init',
-            '20hz_min', 'dB_mel_spectrogram', 'no_dilations', 'gelu_before_output'
+            '20hz_min', 'dB_mel_spectrogram', 'no_dilations', 'gelu_before_output',
+            'exponential_moving_average', 'conv1x1_before_gelu'
         ],
         nargs='+',
         help='List of tags for the experiment.')
