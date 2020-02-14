@@ -64,12 +64,6 @@ def _set_audio_processing():
     fft_length = 1024
 
     # SOURCE (Tacotron 2):
-    # Prior to log compression, the filterbank output magnitudes are clipped to a
-    # minimum value of 0.01 in order to limit dynamic range in the logarithmic
-    # domain.
-    min_magnitude = 0.01
-
-    # SOURCE (Tacotron 2):
     # We transform the STFT magnitude to the mel scale using an 80 channel mel
     # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
     # compression.
@@ -140,6 +134,10 @@ def _set_audio_processing():
                     num_mel_bins=frame_channels,
                     # NOTE: This value is standard when transforming from ampltidues to decibels.
                     power=2.0,
+                    # SOURCE (Tacotron 2):
+                    # Prior to log compression, the filterbank output magnitudes are clipped to a
+                    # minimum value of 0.01 in order to limit dynamic range in the logarithmic
+                    # domain.
                     # NOTE: The `min_decibel` is set to ensure there is around 80 - 90 dB of
                     # dynamic range, allowing us to make the most use of the maximum 96 dB dynamic
                     # range a 16-bit audio file can provide. This value is sligtly lower than
@@ -155,16 +153,6 @@ def _set_audio_processing():
                     get_weighting=iso226_weighting,
                     # NOTE: This just has to be small enough to prevent a `log(0)` discontinuity.
                     amin=1e-10,
-                ),
-            'get_log_mel_spectrogram':
-                HParams(
-                    sample_rate=sample_rate,
-                    frame_size=frame_size,
-                    frame_hop=frame_hop,
-                    window=window,
-                    fft_length=fft_length,
-                    min_magnitude=min_magnitude,
-                    num_mel_bins=frame_channels,
                 ),
             'griffin_lim':
                 HParams(

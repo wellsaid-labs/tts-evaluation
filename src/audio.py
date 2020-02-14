@@ -1,4 +1,5 @@
 from collections import namedtuple
+from functools import lru_cache
 from pathlib import Path
 
 import logging
@@ -200,16 +201,13 @@ def iso226_weighting(frequencies):
     return -interpolator(frequencies) + interpolator(np.array([1000]))
 
 
+@lru_cache()
+def get_signal_to_log_mel_spectrogram(*args, **kwargs):
+    return SignalToLogMelSpectrogram(*args, **kwargs)
+
+
 class SignalToLogMelSpectrogram(torch.nn.Module):
     """ Compute a log-mel-scaled spectrogram from signal.
-
-    NOTE: The results are slightly different than `get_log_mel_spectrogram`. The differences are:
-    - This function uses `min_decibel` instead of `min_magnitude` because it's more interpretable.
-    - This function takes the `10 * log10(mel_spectrogram)` to be more consistent with the
-      decibel scale instead of `ln`.
-    - This function weights the decibel scale to ensure equal loudness with `weighting`.
-    - The function can bound the `lower_hertz` to 20hz knowing that 20hz is the lowest
-      frequency a human can hear: https://en.wikipedia.org/wiki/Hearing_range
 
     Args:
         fft_length (int): See `n_fft` here: https://pytorch.org/docs/stable/torch.html#torch.stft
@@ -238,11 +236,16 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
                  amin=HParam(),
                  min_decibel=HParam(),
                  lower_hertz=HParam(),
-                 get_weighting=HParam()):
+                 get_weighting=HParam(),
+                 upper_hertz=None):
         super().__init__()
 
         mel_basis = _mel_filters(
-            sample_rate, num_mel_bins, fft_length=fft_length, lower_hertz=lower_hertz)
+            sample_rate,
+            num_mel_bins,
+            fft_length=fft_length,
+            lower_hertz=lower_hertz,
+            upper_hertz=upper_hertz)
 
         # https://librosa.github.io/librosa/generated/librosa.core.fft_frequencies.html#librosa.core.
         # https://musicinformationretrieval.com/magnitude_scaling.html
@@ -299,8 +302,27 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
         return decibel_spectrogram if has_batch_dim else decibel_spectrogram.squeeze(0)
 
 
-def _get_spectrogram(signal, sample_rate, frame_size, frame_hop, fft_length, window, center=True):
-    """ Helper function for `get_log_mel_spectrogram`. """
+def get_log_mel_spectrogram(signal, center=True, scalar=1 / 50, **kwargs):
+    """ Compute a log-mel-scaled spectrogram from signal.
+
+    Args:
+        signal (np.array [signal_length]): `float32`, `int32` or `int16 time-domain
+            signal in the range [-1, 1].
+        center (bool, optional): Return a spectrogram and audio that are aligned.
+        scalar (float, optional): Scale the output by this constant so that's in the ballpark
+            of [-1, 1] range.
+        **kwargs
+
+    Returns:
+        log_mel_spectrograms (np.ndarray [frames, num_mel_bins]): Log mel spectrogram.
+        signal (np.ndarray): Returns if `center` is `True` a `signal` with padding such that:
+            `(signal.shape[0] + pad) / frame_hop == log_mel_spectrograms.shape[0]`
+    """
+    signal_to_log_mel_spectrogram = get_signal_to_log_mel_spectrogram(**kwargs)
+    frame_hop = signal_to_log_mel_spectrogram.frame_hop
+    fft_length = signal_to_log_mel_spectrogram.fft_length
+    frame_size = signal_to_log_mel_spectrogram.window.shape[0]
+
     if center:
         # NOTE: Check ``notebooks/Signal_to_Spectrogram_Consistency.ipynb`` for the correctness
         # of this padding algorithm.
@@ -320,13 +342,8 @@ def _get_spectrogram(signal, sample_rate, frame_size, frame_hop, fft_length, win
     # NOTE: The number of spectrogram frames generated is, with ``center=True``:
     # ``(maybe_padded_signal.shape[0] + frame_hop) // frame_hop``.
     # Otherewise, it's: ``(maybe_padded_signal.shape[0] - frame_size + frame_hop) // frame_hop``
-    spectrogram = librosa.stft(
-        integer_to_floating_point_pcm(padded_signal),
-        n_fft=fft_length,
-        hop_length=frame_hop,
-        win_length=frame_size,
-        window=window,
-        center=False)
+    padded_signal = torch.from_numpy(integer_to_floating_point_pcm(padded_signal))
+    spectrogram = signal_to_log_mel_spectrogram(padded_signal).numpy() * scalar
 
     if center:
         # NOTE: Return number of padding needed to pad signal such that
@@ -342,114 +359,6 @@ def _get_spectrogram(signal, sample_rate, frame_size, frame_hop, fft_length, win
         return spectrogram, ret_signal
     else:
         return spectrogram
-
-
-@configurable
-def get_log_mel_spectrogram(signal,
-                            sample_rate=HParam(),
-                            frame_size=HParam(),
-                            frame_hop=HParam(),
-                            fft_length=HParam(),
-                            window=HParam(),
-                            min_magnitude=HParam(),
-                            num_mel_bins=HParam(),
-                            center=True):
-    """ Compute a log-mel-scaled spectrogram from signal.
-
-    TODO: Remove this in favor of `SignalToLogMelSpectrogram`.
-
-    Tacotron 2 Reference:
-        As in Tacotron, mel spectrograms are computed through a shorttime Fourier transform (STFT)
-        using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
-
-        We transform the STFT magnitude to the mel scale using an 80 channel mel filterbank
-        spanning 125 Hz to 7.6 kHz, followed by log dynamic range compression. Prior to log
-        compression, the filterbank output magnitudes are clipped to a minimum value of 0.01 in
-        order to limit dynamic range in the logarithmic domain.
-
-    Tacotron 1 Reference:
-        We use log magnitude spectrogram  with Hann windowing, 50 ms frame length, 12.5 ms frame
-        shift, and 2048-point Fourier transform. We also found pre-emphasis (0.97) to be helpful.
-        We use 24 kHz sampling rate for all experiments.
-
-    Librosa vs Tensorflow:
-        * ``n_fft`` for Tensorflow STFT is rounded to the closests power of two while for Librosa
-          it defaults to ``frame_size``.
-        * Bugs filed against Tensorflow STFT comparing it librosa:
-          https://github.com/tensorflow/tensorflow/issues/16465
-          https://github.com/tensorflow/tensorflow/issues/15134
-        * Librosa normalizes the mel back filter; therefore, then range of the mel basis is between
-          ~(0, 0.03) while for Tensorflow it is between ~(0, 0.99) unnormalized.
-        * Frames are segmented in Tensorflow with a frame size of ``frame_size`` while librosa uses
-        ``fft_length``.
-
-    Reference:
-        * DSP MFCC Tutorial:
-          http://haythamfayek.com/2016/04/21/speech-processing-for-machine-learning.html
-        * Tacotron Paper:
-          https://arxiv.org/pdf/1703.10135.pdf
-        * Tacotron 2 Paper:
-          https://arxiv.org/pdf/1712.05884.pdf
-        * Tacotron 2 Author Spectrogram Code:
-          https://github.com/tensorflow/tensorflow/blob/r1.7/tensorflow/contrib/signal/python/ops/spectral_ops.py
-        * Tacotron 2 Authors:
-          https://github.com/rryan
-        * Tensorflow Commits by Tacotron 2 Authors:
-          https://github.com/tensorflow/tensorflow/commits?author=rryan
-        * Tacotron 2 Author Spectrogram Guide:
-          https://www.tensorflow.org/api_guides/python/contrib.signal
-
-    Args:
-        signal (np.array [signal_length]): `float32`, `int32` or `int16 time-domain
-            signal in the range [-1, 1].
-        sample_rate (int): Sample rate for the signal.
-        frame_size (int): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
-        frame_hop (int): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
-        fft_length (int): The window size used by the fourier transform.
-        window (str, tuple, number, callable): Window function to be applied to each
-            frame. See the full specification for window at ``librosa.filters.get_window``.
-        min_magnitude (float): Stabilizing minimum to avoid high dynamic ranges caused by
-            the singularity at zero in the mel spectrograms.
-        num_mel_bins (int): Number of Mel bands to generate.
-        center (bool, optional): Return a spectrogram and audio that are aligned.
-
-    Returns:
-        log_mel_spectrograms (np.ndarray [frames, num_mel_bins]): Log mel spectrogram.
-        signal (np.ndarray): Returns if `center` is `True` a `signal` with padding such that:
-            `(signal.shape[0] + pad) / frame_hop == log_mel_spectrograms.shape[0]`
-    """
-    if center:
-        spectrogram, ret_signal = _get_spectrogram(
-            signal, sample_rate, frame_size, frame_hop, fft_length, window, center=center)
-    else:
-        spectrogram = _get_spectrogram(
-            signal, sample_rate, frame_size, frame_hop, fft_length, window, center=center)
-
-    # SOURCE (Tacotron 2):
-    # "STFT magnitude"
-    magnitude_spectrogram = np.abs(spectrogram)
-
-    # SOURCE (Tacotron 2):
-    # We transform the STFT magnitude to the mel scale using an 80 channel mel filterbank
-    # spanning 125 Hz to 7.6 kHz, followed by log dynamic range compression.
-    mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=fft_length)
-    mel_spectrogram = np.dot(mel_basis, magnitude_spectrogram).transpose()
-
-    # SOURCE (Tacotron 2):
-    # Prior to log compression, the filterbank output magnitudes are clipped to a minimum value of
-    # 0.01 in order to limit dynamic range in the logarithmic domain.
-    mel_spectrogram = np.maximum(0.01, mel_spectrogram)
-
-    # SOURCE (Tacotron 2):
-    # followed by log dynamic range compression.
-    log_mel_spectrogram = np.log(mel_spectrogram)
-
-    log_mel_spectrogram = log_mel_spectrogram.astype(np.float32)  # ``np.float64`` → ``np.float32``
-
-    if center:
-        return log_mel_spectrogram, ret_signal
-    else:
-        return log_mel_spectrogram
 
 
 def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, sample_rate, fft_length):

@@ -11,6 +11,7 @@ from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 from tqdm import tqdm
 
+import hparams
 import torch
 librosa = LazyLoader('librosa', globals(), 'librosa')
 pandas = LazyLoader('pandas', globals(), 'pandas')
@@ -99,7 +100,7 @@ def add_predicted_spectrogram_column(data,
     return [e._replace(predicted_spectrogram=t) for e, t in zip(data, tensors)]
 
 
-def _add_spectrogram_column(example, on_disk=True):
+def _add_spectrogram_column(example, config, on_disk=True):
     """ Adds spectrogram to ``example``.
 
     Args:
@@ -111,6 +112,7 @@ def _add_spectrogram_column(example, on_disk=True):
         (TextSpeechRow): Row of text and speech aligned data with spectrogram data.
     """
     audio_path = example.audio_path
+    hparams.hparams._configuration = config
 
     if on_disk:
         parent = audio_path.parent
@@ -157,7 +159,7 @@ def add_spectrogram_column(data, on_disk=True):
             data.
     """
     logger.info('Adding a spectrogram column to dataset.')
-    partial_ = partial(_add_spectrogram_column, on_disk=on_disk)
+    partial_ = partial(_add_spectrogram_column, on_disk=on_disk, config=hparams.get_config())
     with Pool() as pool:
         # NOTE: `chunksize` with `imap` is more performant while allowing us to measure progress.
         # TODO: Consider using `imap_unordered` instead of `imap` because it is more performant,
@@ -167,7 +169,9 @@ def add_spectrogram_column(data, on_disk=True):
         return list(tqdm(pool.imap(partial_, data, chunksize=128), total=len(data)))
 
 
-def _normalize_audio_column_helper(example):
+def _normalize_audio_column_helper(example, config):
+    # TODO: Don't use private variable
+    hparams.hparams._configuration = config
     return example._replace(audio_path=normalize_audio(example.audio_path))
 
 
@@ -182,11 +186,14 @@ def normalize_audio_column(data):
     """
     cache_get_audio_metadata([e.audio_path for e in data])
 
+    _normalize_audio_column_helper_partial = partial(
+        _normalize_audio_column_helper, config=hparams.get_config())
+
     logger.info('Normalizing dataset audio using SoX.')
     with Pool() as pool:
         # NOTE: `chunksize` allows `imap` to be much more performant while allowing us to measure
         # progress.
-        iterator = pool.imap(_normalize_audio_column_helper, data, chunksize=1024)
+        iterator = pool.imap(_normalize_audio_column_helper_partial, data, chunksize=1024)
         return_ = list(tqdm(iterator, total=len(data)))
 
     # NOTE: `cache_get_audio_metadata` for any new normalized audio paths.

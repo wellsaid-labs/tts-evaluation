@@ -429,7 +429,11 @@ def Pool(*args, **kwargs):
     context manager calls `terminate` rather than `close` followed by `join`.
     """
     # Learn more: https://pytest-cov.readthedocs.io/en/latest/subprocess-support.html
-    pool = multiprocessing.Pool(*args, **kwargs)
+    # Learn more about `forkserver` / `spawn` / `fork`:
+    # https://github.com/pytorch/pytorch/issues/2245
+    # https://codewithoutrules.com/2018/09/04/python-multiprocessing/
+    # https://pythontic.com/multiprocessing/multiprocessing/introduction
+    pool = multiprocessing.get_context('spawn').Pool(*args, **kwargs)
     yield pool
     pool.close()  # Marks the pool as closed.
     pool.join()  # Waits for workers to exit.

@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 import torch
 
-from src.audio import _get_spectrogram
 from src.audio import build_wav_header
 from src.audio import cache_get_audio_metadata
 from src.audio import combine_signal
@@ -16,13 +15,13 @@ from src.audio import get_log_mel_spectrogram
 from src.audio import get_num_seconds
 from src.audio import griffin_lim
 from src.audio import integer_to_floating_point_pcm
+from src.audio import iso226_weighting
 from src.audio import normalize_audio
 from src.audio import read_audio
 from src.audio import SignalToLogMelSpectrogram
 from src.audio import split_signal
 from src.audio import WavFileMetadata
 from src.audio import write_audio
-from src.audio import iso226_weighting
 from src.environment import DATA_PATH
 from src.environment import TEST_DATA_PATH
 from src.utils import make_arg_key
@@ -248,38 +247,16 @@ def test_log_mel_spectrogram():
     fft_length = 2048
     signal = read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer'))
     log_mel_spectrogram, padded_signal = get_log_mel_spectrogram(
-        signal, sample_rate, frame_size=frame_size, frame_hop=frame_hop, fft_length=fft_length)
+        signal,
+        sample_rate=sample_rate,
+        window=torch.hann_window(frame_size),
+        frame_hop=frame_hop,
+        fft_length=fft_length)
 
     assert log_mel_spectrogram.dtype == np.float32
     assert len(log_mel_spectrogram.shape) == 2
     assert len(padded_signal.shape) == 1
     assert int(padded_signal.shape[0]) / int(log_mel_spectrogram.shape[0]) == frame_hop
-
-
-def test_get_spectrogram__inverse():
-    """ Ensure that the signal and spectrogram are aligned by running the inverse stft function.
-    """
-    frame_size = 1200
-    frame_hop = 300
-    path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
-    sample_rate = 24000
-    fft_length = 2048
-    signal = integer_to_floating_point_pcm(
-        read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer')))
-    spectrogram, padded_signal = _get_spectrogram(
-        signal,
-        sample_rate=sample_rate,
-        frame_size=frame_size,
-        frame_hop=frame_hop,
-        fft_length=fft_length,
-        window='hann',
-        center=True)
-    reconstructed_signal = librosa.core.istft(
-        spectrogram, frame_hop, win_length=frame_size, window='hann',
-        center=False)[(fft_length - frame_hop) // 2:-(fft_length - frame_hop) // 2]
-    assert reconstructed_signal.shape == padded_signal.shape
-    np.testing.assert_almost_equal(padded_signal, reconstructed_signal)
-    np.testing.assert_almost_equal(padded_signal.sum(), reconstructed_signal.sum(), decimal=5)
 
 
 def test_griffin_lim_smoke():
@@ -288,7 +265,7 @@ def test_griffin_lim_smoke():
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     sample_rate = 24000
     signal = read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer'))
-    log_mel_spectrogram, _ = get_log_mel_spectrogram(signal, sample_rate)
+    log_mel_spectrogram, _ = get_log_mel_spectrogram(signal, sample_rate=sample_rate)
     waveform = griffin_lim(log_mel_spectrogram, sample_rate)
     assert len(waveform) > 0
 
