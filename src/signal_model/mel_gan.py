@@ -114,18 +114,19 @@ class Generator(torch.nn.Module):
                 # were set, and only pass up legitmate messages.
                 logger.warning('%s module parameters may have not been set.', type(module))
 
-    def get_channel_size(self, i):
+    def get_channel_size(self, i, max_size=512):
         """ Get the hidden size of layer `i` based on the final hidden size `self.hidden_size`.
 
         Args:
             i (int): The index of the layer.
+            max_size (int, optional): Max channel size.
 
         Returns:
             (int): The number of units.
         """
         assert i <= len(self.ratios)
 
-        return (int(2**len(self.ratios)) * self.hidden_size) // 2**i
+        return min((int(2**len(self.ratios)) * self.hidden_size) // 2**i, max_size)
 
     def forward(self, spectrogram, pad_input=True, mu=255, input_scalar=5.0):
         """
