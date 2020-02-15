@@ -27,13 +27,15 @@ class Block(torch.nn.Module):
 
         self.shortcut = torch.nn.Sequential(
             torch.nn.ConvTranspose1d(
-                in_channels, out_channels, kernel_size=scale_factor * 2, stride=scale_factor))
+                in_channels, out_channels, kernel_size=scale_factor * 2, stride=scale_factor
+            ) if scale_factor != 1 else torch.nn.Conv1d(in_channels, out_channels, kernel_size=1))
 
         self.block = torch.nn.Sequential(
             torch.nn.Conv1d(in_channels, in_channels, kernel_size=1),
             torch.nn.GELU(),
             torch.nn.ConvTranspose1d(
-                in_channels, out_channels, kernel_size=scale_factor * 2, stride=scale_factor),
+                in_channels, out_channels, kernel_size=scale_factor * 2, stride=scale_factor)
+            if scale_factor != 1 else torch.nn.Conv1d(in_channels, out_channels, kernel_size=3),
             torch.nn.GELU(),
             torch.nn.Conv1d(out_channels, out_channels, kernel_size=3),
         )
@@ -47,8 +49,11 @@ class Block(torch.nn.Module):
         )
 
     def forward(self, x):
+        shape = x.shape  # [batch_size, frame_channels, num_frames]
         x = torch.add(*trim_padding(self.shortcut(x), self.block(x)))
-        return torch.add(*trim_padding(x, self.other_block(x)))
+        x = torch.add(*trim_padding(x, self.other_block(x)))
+        assert (shape[2] - x.shape[2]) % 2 == 0
+        return x
 
 
 class Generator(torch.nn.Module):
@@ -56,7 +61,7 @@ class Generator(torch.nn.Module):
     def __init__(self,
                  input_size=128,
                  hidden_size=32,
-                 padding=6,
+                 padding=9,
                  oversample=4,
                  sample_rate=24000,
                  ratios=[8, 8, 4, 4]):
@@ -164,7 +169,7 @@ class Generator(torch.nn.Module):
         assert signal.shape[1] - num_frames * self.scale_factor > 24, signal.shape[
             1] - num_frames * self.scale_factor
 
-        # NOTE: Ensure that `signal.shape[1] % self.oversample.item() == 0`.
+        # NOTE: Ensure that there even padding after the downsample.
         signal = signal[:, 2:-2]
 
         assert signal.shape[1] % self.oversample.item() == 0, (
