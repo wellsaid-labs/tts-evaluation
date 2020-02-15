@@ -352,6 +352,7 @@ class Trainer():
                 saved.
         """
         if src.distributed.is_master():
+            self.exponential_moving_parameter_average.model = None
             checkpoint = Checkpoint(
                 directory=self.checkpoints_directory,
                 step=self.step,
@@ -362,6 +363,7 @@ class Trainer():
                 comet_ml_experiment_key=self.comet_ml.get_key(),
                 spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
                 exponential_moving_parameter_average=self.exponential_moving_parameter_average)
+            self.exponential_moving_parameter_average.model = self.model
             if checkpoint.path.exists():
                 return None
             return checkpoint.save()

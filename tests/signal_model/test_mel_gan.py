@@ -21,7 +21,7 @@ def test_mel_gan():
 
 
 def test_mel_gan__no_batch():
-    num_frames = 8
+    num_frames = 9  # Test odd number of frames
     frame_channels = 128
 
     generator = Generator(input_size=frame_channels)
