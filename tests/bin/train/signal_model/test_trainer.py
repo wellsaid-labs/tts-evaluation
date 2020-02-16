@@ -46,7 +46,8 @@ def test_exponential_moving_parameter_average__identity():
             self.parameter = torch.nn.Parameter(torch.zeros(1))
 
     module = Module()
-    exponential_moving_parameter_average = ExponentialMovingParameterAverage(module, beta=0)
+    exponential_moving_parameter_average = ExponentialMovingParameterAverage(
+        module.parameters(), beta=0)
 
     module.parameter.data[0] = 1.0
     exponential_moving_parameter_average.update()
@@ -74,7 +75,8 @@ def test_exponential_moving_parameter_average():
             self.parameter = torch.nn.Parameter(torch.full((2,), values[0]))
 
     module = Module()
-    exponential_moving_parameter_average = ExponentialMovingParameterAverage(module, beta=0.98)
+    exponential_moving_parameter_average = ExponentialMovingParameterAverage(
+        module.parameters(), beta=0.98)
 
     assert module.parameter.data[0] == values[0]
     assert module.parameter.data[1] == values[0]

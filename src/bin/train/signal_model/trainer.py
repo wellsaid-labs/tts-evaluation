@@ -60,46 +60,36 @@ class ExponentialMovingParameterAverage():
         beta (float): Beta used to weight the exponential mean.
     """
 
-    def __init__(self, model, beta=0.9999):
-        self.model = model
+    def __init__(self, parameters, beta=0.9999):
+        self.parameters = list(parameters)
         self.beta = beta
-        self.shadow = {}
-        self.backup = {}
+        self.shadow = [param.clone().detach() * (1.0 - self.beta) for param in self.parameters]
         self.step = 1
-
-        for name, param in self.model.named_parameters():
-            if param.requires_grad:
-                self.shadow[name] = param.data.clone().detach() * (1.0 - self.beta)
 
     def update(self):
         """ Update the parameter average.
         """
-        for name, param in self.model.named_parameters():
-            if param.requires_grad:
-                assert name in self.shadow
-                new_average = (1.0 - self.beta) * param.data + self.beta * self.shadow[name]
-                self.shadow[name] = new_average.clone().detach()
+        for i, param in enumerate(self.parameters):
+            self.shadow[i] = (1.0 - self.beta) * param.clone().detach() + self.beta * self.shadow[i]
         self.step += 1
 
     def apply_shadow(self):
         """ Replace the model with it's averaged parameters.
         """
-        for name, param in self.model.named_parameters():
-            if param.requires_grad:
-                assert name in self.shadow
-                # The initial 0.0 average values introduce bias that is corrected, learn more:
-                # https://www.coursera.org/lecture/deep-neural-network/bias-correction-in-exponentially-weighted-averages-XjuhD
-                self.backup[name] = param.data
-                param.data = self.shadow[name] / (1 - self.beta**(self.step))
+        self.backup = [param.clone().detach() for param in self.parameters]
+        for param, shadow in zip(self.parameters, self.shadow):
+            # The initial 0.0 average values introduce bias that is corrected, learn more:
+            # https://www.coursera.org/lecture/deep-neural-network/bias-correction-in-exponentially-weighted-averages-XjuhD
+            with torch.no_grad():
+                param.copy_(shadow / (1 - self.beta**(self.step)))
 
     def restore(self):
         """ Restore the model's old parameters.
         """
-        for name, param in self.model.named_parameters():
-            if param.requires_grad:
-                assert name in self.backup
-                param.data = self.backup[name]
-        self.backup = {}
+        assert hasattr(self, 'backup')
+        for param, backup in zip(self.parameters, self.backup):
+            with torch.no_grad():
+                param.copy_(backup)
 
 
 class Trainer():
@@ -175,8 +165,8 @@ class Trainer():
         self.exponential_moving_parameter_average = (
             exponential_moving_parameter_average
             if isinstance(exponential_moving_parameter_average, ExponentialMovingParameterAverage)
-            else exponential_moving_parameter_average(self.model))
-        self.exponential_moving_parameter_average.model = self.model
+            else exponential_moving_parameter_average(
+                filter(lambda p: p.requires_grad, self.model.parameters())))
 
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
@@ -352,7 +342,6 @@ class Trainer():
                 saved.
         """
         if src.distributed.is_master():
-            self.exponential_moving_parameter_average.model = None
             checkpoint = Checkpoint(
                 directory=self.checkpoints_directory,
                 step=self.step,
@@ -363,7 +352,6 @@ class Trainer():
                 comet_ml_experiment_key=self.comet_ml.get_key(),
                 spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
                 exponential_moving_parameter_average=self.exponential_moving_parameter_average)
-            self.exponential_moving_parameter_average.model = self.model
             if checkpoint.path.exists():
                 return None
             return checkpoint.save()
