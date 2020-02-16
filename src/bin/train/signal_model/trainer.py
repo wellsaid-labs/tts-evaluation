@@ -64,6 +64,7 @@ class ExponentialMovingParameterAverage():
         self.parameters = list(parameters)
         self.beta = beta
         self.shadow = [param.clone().detach() * (1.0 - self.beta) for param in self.parameters]
+        self.backup = []
         self.step = 1
 
     def update(self):
@@ -86,10 +87,21 @@ class ExponentialMovingParameterAverage():
     def restore(self):
         """ Restore the model's old parameters.
         """
-        assert hasattr(self, 'backup')
         for param, backup in zip(self.parameters, self.backup):
             with torch.no_grad():
                 param.copy_(backup)
+        self.backup = []
+
+    def to(self, device):
+        """ Move the state to ``device``.
+
+        Args:
+            device (torch.device)
+        """
+        for list_ in [self.parameters, self.shadow, self.backup]:
+            for i, param in enumerate(list_):
+                list_[i] = param.to(device)
+        return self
 
 
 class Trainer():
@@ -162,11 +174,13 @@ class Trainer():
         if src.distributed.is_initialized():
             self.model = torch.nn.parallel.DistributedDataParallel(
                 self.model, device_ids=[device], output_device=device, dim=1)
+
         self.exponential_moving_parameter_average = (
             exponential_moving_parameter_average
             if isinstance(exponential_moving_parameter_average, ExponentialMovingParameterAverage)
             else exponential_moving_parameter_average(
                 filter(lambda p: p.requires_grad, self.model.parameters())))
+        self.exponential_moving_parameter_average.to(device)
 
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))

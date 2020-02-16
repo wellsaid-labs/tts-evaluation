@@ -37,6 +37,56 @@ def get_trainer(read_audio_mock, register_mock, load_data=True):
         dev_batch_size=1)
 
 
+class TestExponentialMovingParameterAverageCheckpointModule(torch.nn.Module):
+
+    def __init__(self, value):
+        super().__init__()
+        self.parameter = torch.nn.Parameter(torch.full((1,), value))
+
+
+def test_exponential_moving_parameter_average__checkpoint():
+    """ Test to ensure that the state is saved correctly during checkpointing. """
+
+    values = [1.0, 2.0]
+
+    module = TestExponentialMovingParameterAverageCheckpointModule(values[0])
+    exponential_moving_parameter_average = ExponentialMovingParameterAverage(
+        module.parameters(), beta=0.98)
+
+    checkpoint = Checkpoint(
+        directory=TEMP_PATH,
+        step=0,
+        model=module,
+        exponential_moving_parameter_average=exponential_moving_parameter_average)
+    checkpoint_path = checkpoint.save()
+
+    del checkpoint
+
+    checkpoint = Checkpoint.from_path(checkpoint_path)
+
+    del exponential_moving_parameter_average
+    del module
+
+    exponential_moving_parameter_average = checkpoint.exponential_moving_parameter_average
+    module = checkpoint.model
+
+    # Ensure that `apply_shadow` is set to `values[0]`
+    exponential_moving_parameter_average.apply_shadow()
+    assert module.parameter.data[0] == values[0]
+    exponential_moving_parameter_average.restore()
+
+    # Ensure that `update` / `apply_shadow` responds to the parameter update from the model loaded
+    # from disk
+    module.parameter.data = torch.tensor([values[1]])
+    exponential_moving_parameter_average.update()
+    exponential_moving_parameter_average.apply_shadow()
+    assert module.parameter.data[0] == (0.0196 * values[0] + 0.02 * values[1]) / 0.0396
+
+    # Ensure that `restore` is able to restore the model loaded from disk
+    exponential_moving_parameter_average.restore()
+    assert module.parameter.data[0] == values[1]
+
+
 def test_exponential_moving_parameter_average__identity():
 
     class Module(torch.nn.Module):
