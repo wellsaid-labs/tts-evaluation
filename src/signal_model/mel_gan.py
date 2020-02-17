@@ -20,20 +20,62 @@ def trim_padding(x, y):
     return x, y[:, :, excess_padding // 2:-excess_padding // 2]
 
 
+class PixelShuffle1d(torch.nn.Module):
+
+    def __init__(self, upscale_factor):
+        super().__init__()
+
+        self.upscale_factor = upscale_factor
+
+    def forward(self, tensor):
+        """
+        Inspired by: https://gist.github.com/davidaknowles/6e95a643adaf3960d1648a6b369e9d0b
+        Example:
+            >>> t = torch.arange(0, 12).view(1, 3, 4).transpose(1, 2)
+            >>> t
+            tensor([[[ 0,  4,  8],
+                     [ 1,  5,  9],
+                     [ 2,  6, 10],
+                     [ 3,  7, 11]]])
+            >>> t[0, :, 0] # First frame
+            tensor([0, 1, 2, 3])
+            >>> module = PixelShuffle1d(4)
+            >>> module(t)
+            tensor([[[ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11]]])
+        Args:
+            tensor (torch.Tensor [batch_size, channels, sequence_length])
+        Returns:
+            tensor (torch.Tensor [batch_size, channels // self.upscale_factor,
+                sequence_length * self.upscale_factor])
+        """
+        batch_size, channels, steps = tensor.size()
+        channels //= self.upscale_factor
+        input_view = tensor.contiguous().view(batch_size, channels, self.upscale_factor, steps)
+        shuffle_out = input_view.permute(0, 1, 3, 2).contiguous()
+        return shuffle_out.view(batch_size, channels, steps * self.upscale_factor)
+
+
 class Block(torch.nn.Module):
 
     def __init__(self, in_channels, out_channels, scale_factor):
         super().__init__()
 
         self.shortcut = torch.nn.Sequential(
-            torch.nn.ConvTranspose1d(
-                in_channels, out_channels, kernel_size=scale_factor * 2, stride=scale_factor))
+            torch.nn.Conv1d(
+                in_channels,
+                out_channels * scale_factor,
+                kernel_size=1,
+            ), PixelShuffle1d(scale_factor))
 
         self.block = torch.nn.Sequential(
             torch.nn.Conv1d(in_channels, in_channels, kernel_size=1),
             torch.nn.GELU(),
-            torch.nn.ConvTranspose1d(
-                in_channels, out_channels, kernel_size=scale_factor * 2, stride=scale_factor),
+            torch.nn.Conv1d(
+                in_channels,
+                out_channels * scale_factor,
+                kernel_size=3,
+            ),
+            PixelShuffle1d(scale_factor),
             torch.nn.GELU(),
             torch.nn.Conv1d(out_channels, out_channels, kernel_size=3),
         )
@@ -46,12 +88,13 @@ class Block(torch.nn.Module):
             torch.nn.Conv1d(out_channels, out_channels, kernel_size=3),
         )
 
+        self.scale_factor = scale_factor
+
     def forward(self, x):
-        # shape = x.shape  # [batch_size, frame_channels, num_frames]
+        shape = x.shape  # [batch_size, frame_channels, num_frames]
         x = torch.add(*trim_padding(self.shortcut(x), self.block(x)))
         x = torch.add(*trim_padding(x, self.other_block(x)))
-        # TODO: Fix this...
-        # assert (shape[2] - x.shape[2]) % 2 == 0
+        assert (shape[2] * self.scale_factor - x.shape[2]) % 2 == 0
         return x
 
 
@@ -60,7 +103,7 @@ class Generator(torch.nn.Module):
     def __init__(self,
                  input_size=128,
                  hidden_size=32,
-                 padding=6,
+                 padding=11,
                  oversample=4,
                  sample_rate=24000,
                  ratios=[8, 8, 4, 4]):
@@ -99,12 +142,12 @@ class Generator(torch.nn.Module):
 
     def get_weight_norm_modules(self):
         for module in self.modules():
-            if isinstance(module, torch.nn.Conv1d) or isinstance(module, torch.nn.ConvTranspose1d):
+            if isinstance(module, torch.nn.Conv1d):
                 yield module
 
     def reset_parameters(self):
         for module in self.modules():
-            if isinstance(module, torch.nn.Conv1d) or isinstance(module, torch.nn.ConvTranspose1d):
+            if isinstance(module, torch.nn.Conv1d):
                 assert isinstance(module.weight, torch.nn.Parameter)
                 torch.nn.init.orthogonal_(module.weight)
                 assert isinstance(module.bias, torch.nn.Parameter)
@@ -168,9 +211,6 @@ class Generator(torch.nn.Module):
         # NOTE: Ensure there is enough padding for `resample_waveform`.
         assert signal.shape[1] - num_frames * self.scale_factor > 24, signal.shape[
             1] - num_frames * self.scale_factor
-
-        # NOTE: Ensure that there even padding after the downsample.
-        signal = signal[:, 2:-2]
 
         assert signal.shape[1] % self.oversample.item() == 0, (
             signal.shape[1] % self.oversample.item())
