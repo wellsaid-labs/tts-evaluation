@@ -35,12 +35,13 @@ TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'test_audio'
 
 def test_amplitude_to_db():
     t = torch.abs(torch.randn(100))
-    np.testing.assert_almost_equal(db_to_amplitude(amplitude_to_db(t)).numpy(), t.numpy())
+    np.testing.assert_almost_equal(
+        db_to_amplitude(amplitude_to_db(t)).numpy(), t.numpy(), decimal=5)
 
 
 def test_power_to_db():
     t = torch.abs(torch.randn(100))
-    np.testing.assert_almost_equal(db_to_power(power_to_db(t)).numpy(), t.numpy())
+    np.testing.assert_almost_equal(db_to_power(power_to_db(t)).numpy(), t.numpy(), decimal=5)
 
 
 def test_iso226_weighting():

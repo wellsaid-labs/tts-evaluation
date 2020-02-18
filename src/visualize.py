@@ -298,6 +298,7 @@ def plot_spectrogram(spectrogram,
                      cmap='turbo',
                      y_axis='linear',
                      x_axis='time',
+                     fmax=None,
                      **kwargs):
     """ Get image of a spectrogram.
 
@@ -316,6 +317,7 @@ def plot_spectrogram(spectrogram,
     if torch.is_tensor(spectrogram):
         spectrogram = spectrogram.detach().cpu().numpy()
     spectrogram = spectrogram.transpose()
+    fmax = fmax if fmax is None else min(fmax, float(sample_rate) / 2)
     librosa_display.specshow(
         spectrogram,
         hop_length=frame_hop,
@@ -323,6 +325,7 @@ def plot_spectrogram(spectrogram,
         cmap=cmap,
         y_axis=y_axis,
         x_axis=x_axis,
+        fmax=fmax,
         **kwargs)
     pyplot.colorbar(format='%.2f')
     pyplot.close(figure)

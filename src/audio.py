@@ -313,7 +313,8 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
 
         if intermediate:
             # TODO: Can we simplify the `tranpose` and `squeeze`s?
-            db_spectrogram = power_to_db(power_spectrogram).transpose(-2, -1)
+            db_spectrogram = torch.max(self.min_decibel,
+                                       power_to_db(power_spectrogram).transpose(-2, -1))
             spectrogram = spectrogram.transpose(-2, -1)
             db_spectrogram = db_spectrogram if has_batch_dim else db_spectrogram.squeeze(0)
             spectrogram = spectrogram if has_batch_dim else spectrogram.squeeze(0)
