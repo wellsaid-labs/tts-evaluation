@@ -305,21 +305,21 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
         # NOTE: A "weighting" can we added to the dB scale such as A-weighting to adjust it so
         # that it more representative of the human perception of loudness.
         # NOTE: A multiplication is equal to an addition in the log space / dB space.
-        power_spectrogam = spectrogram**2 * self.weighting
-        power_mel_spectrogam = torch.matmul(self.mel_basis, power_spectrogam)
-        db_mel_spectrogam = power_to_db(power_mel_spectrogam, eps=self.eps)
-        db_mel_spectrogam = torch.max(self.min_decibel, db_mel_spectrogam).transpose(-2, -1)
-        db_mel_spectrogam = db_mel_spectrogam if has_batch_dim else db_mel_spectrogam.squeeze(0)
+        power_spectrogram = spectrogram**2 * self.weighting
+        power_mel_spectrogram = torch.matmul(self.mel_basis, power_spectrogram)
+        db_mel_spectrogram = power_to_db(power_mel_spectrogram, eps=self.eps)
+        db_mel_spectrogram = torch.max(self.min_decibel, db_mel_spectrogram).transpose(-2, -1)
+        db_mel_spectrogram = db_mel_spectrogram if has_batch_dim else db_mel_spectrogram.squeeze(0)
 
         if intermediate:
             # TODO: Can we simplify the `tranpose` and `squeeze`s?
-            db_spectrogram = power_to_db(power_spectrogam).transpose(-2, -1)
+            db_spectrogram = power_to_db(power_spectrogram).transpose(-2, -1)
             spectrogram = spectrogram.transpose(-2, -1)
             db_spectrogram = db_spectrogram if has_batch_dim else db_spectrogram.squeeze(0)
             spectrogram = spectrogram if has_batch_dim else spectrogram.squeeze(0)
-            return db_mel_spectrogam, db_spectrogram, spectrogram
+            return db_mel_spectrogram, db_spectrogram, spectrogram
         else:
-            return db_mel_spectrogam
+            return db_mel_spectrogram
 
 
 # Learn more:

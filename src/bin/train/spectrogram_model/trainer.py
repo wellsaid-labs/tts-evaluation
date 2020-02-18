@@ -514,15 +514,15 @@ class Trainer():
          predicted_alignments) = predictions
         batch_size = predicted_post_spectrogram.shape[1]
         item = random.randint(0, batch_size - 1)
-        spectrogam_length = int(batch.spectrogram.lengths[0, item].item())
+        spectrogram_length = int(batch.spectrogram.lengths[0, item].item())
         text_length = int(batch.text.lengths[0, item].item())
 
         # predicted_post_spectrogram [num_frames, frame_channels]
-        predicted_post_spectrogram = predicted_post_spectrogram[:spectrogam_length, item]
+        predicted_post_spectrogram = predicted_post_spectrogram[:spectrogram_length, item]
         # predicted_pre_spectrogram [num_frames, frame_channels]
-        predicted_pre_spectrogram = predicted_pre_spectrogram[:spectrogam_length, item]
+        predicted_pre_spectrogram = predicted_pre_spectrogram[:spectrogram_length, item]
         # gold_spectrogram [num_frames, frame_channels]
-        gold_spectrogram = batch.spectrogram.tensor[:spectrogam_length, item]
+        gold_spectrogram = batch.spectrogram.tensor[:spectrogram_length, item]
 
         # [num_frames, frame_channels] → [num_frames]
         post_spectrogram_loss_per_frame = self.criterion_spectrogram(predicted_post_spectrogram,
@@ -534,8 +534,8 @@ class Trainer():
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
         predicted_delta = abs(gold_spectrogram - predicted_post_spectrogram)
 
-        predicted_alignments = predicted_alignments[:spectrogam_length, item, :text_length]
-        predicted_stop_tokens = predicted_stop_tokens[:spectrogam_length, item]
+        predicted_alignments = predicted_alignments[:spectrogram_length, item, :text_length]
+        predicted_stop_tokens = predicted_stop_tokens[:spectrogram_length, item]
 
         self.comet_ml.log_metrics({  # [num_frames, num_tokens] → scalar
             'single/attention_norm': get_average_norm(predicted_alignments, dim=1, norm=math.inf),

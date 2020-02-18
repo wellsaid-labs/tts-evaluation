@@ -162,14 +162,14 @@ class SpectrogramLoss(torch.nn.Module):
         predicted_signal = predicted_signal.view(-1, predicted_signal.shape[-1])
         target_signal = target_signal.view(-1, target_signal.shape[-1])
 
-        (predicted_db_mel_spectrogam, predicted_db_spectrogram,
+        (predicted_db_mel_spectrogram, predicted_db_spectrogram,
          predicted_spectrogram) = self.signal_to_spectrogram(
              predicted_signal, intermediate=True)
-        (target_db_mel_spectrogam, target_db_spectrogram,
+        (target_db_mel_spectrogram, target_db_spectrogram,
          target_spectrogram) = self.signal_to_spectrogram(
              target_signal, intermediate=True)
-        db_mel_spectrogam_loss = self.criterion(predicted_db_mel_spectrogam,
-                                                target_db_mel_spectrogam)
+        db_mel_spectrogram_loss = self.criterion(predicted_db_mel_spectrogram,
+                                                 target_db_mel_spectrogram)
 
         if comet_ml:
             with warnings.catch_warnings():
@@ -179,10 +179,10 @@ class SpectrogramLoss(torch.nn.Module):
                 random_item = random.randint(0, batch_size - 1)
                 comet_ml.log_figure(
                     self.get_name('predicted'),
-                    self.plot_mel_spectrogram(predicted_db_mel_spectrogam[random_item]))
+                    self.plot_mel_spectrogram(predicted_db_mel_spectrogram[random_item]))
                 comet_ml.log_figure(
                     self.get_name('target'),
-                    self.plot_mel_spectrogram(target_db_mel_spectrogam[random_item]))
+                    self.plot_mel_spectrogram(target_db_mel_spectrogram[random_item]))
                 comet_ml.log_figure(
                     self.get_name('predicted', is_mel_scale=False),
                     self.plot_spectrogram(predicted_db_spectrogram[random_item]))
@@ -196,13 +196,13 @@ class SpectrogramLoss(torch.nn.Module):
                     self.get_name('target', is_mel_scale=False, is_decibels=False),
                     self.plot_spectrogram(target_spectrogram[random_item]))
                 comet_ml.log_figure('%s(%s)' % (self.criterion.__class__.__name__, self.get_name()),
-                                    self.plot_mel_spectrogram(db_mel_spectrogam_loss[random_item]))
+                                    self.plot_mel_spectrogram(db_mel_spectrogram_loss[random_item]))
                 comet_ml.log_figure(
                     'mean(%s(%s))' % (self.criterion.__class__.__name__, self.get_name()),
-                    self.plot_mel_spectrogram(db_mel_spectrogam_loss[random_item].mean(
+                    self.plot_mel_spectrogram(db_mel_spectrogram_loss[random_item].mean(
                         dim=0, keepdim=True)))
 
-        return db_mel_spectrogam_loss.mean()
+        return db_mel_spectrogram_loss.mean()
 
 
 class Trainer():
