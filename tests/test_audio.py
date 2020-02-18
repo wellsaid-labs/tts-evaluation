@@ -25,8 +25,22 @@ from src.audio import write_audio
 from src.environment import DATA_PATH
 from src.environment import TEST_DATA_PATH
 from src.utils import make_arg_key
+from src.audio import power_to_db
+from src.audio import db_to_power
+from src.audio import amplitude_to_db
+from src.audio import db_to_amplitude
 
 TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'test_audio'
+
+
+def test_amplitude_to_db():
+    t = torch.abs(torch.randn(100))
+    np.testing.assert_almost_equal(db_to_amplitude(amplitude_to_db(t)).numpy(), t.numpy())
+
+
+def test_power_to_db():
+    t = torch.abs(torch.randn(100))
+    np.testing.assert_almost_equal(db_to_power(power_to_db(t)).numpy(), t.numpy())
 
 
 def test_iso226_weighting():
@@ -43,7 +57,6 @@ def test_signal_to_log_mel_spectrogram_against_librosa():
     win_length = 2048
     hop_length = 512
     amin = 1e-10
-    power = 2.0
     n_mels = 128
     min_decibel = -50.0
     sample_rate = 24000
@@ -61,7 +74,7 @@ def test_signal_to_log_mel_spectrogram_against_librosa():
         hop_length=hop_length,
         center=False,
         window='hann')
-    S = np.abs(S).astype(np.float32)**power
+    S = np.abs(S).astype(np.float32)**2.0
     log_S = librosa.perceptual_weighting(
         S, librosa.fft_frequencies(sr=sample_rate, n_fft=n_fft), amin=amin,
         top_db=None).astype(np.float32)
@@ -82,11 +95,10 @@ def test_signal_to_log_mel_spectrogram_against_librosa():
         sample_rate=sample_rate,
         num_mel_bins=n_mels,
         window=torch.hann_window(win_length),
-        power=power,
-        amin=amin,
         min_decibel=min_decibel,
         get_weighting=librosa.A_weighting,
-        lower_hertz=0)
+        lower_hertz=0,
+        eps=amin)
 
     other_mel_spectrogram = module(torch.tensor(signal)).detach().numpy()
     assert melspec.shape == other_mel_spectrogram.shape
@@ -107,6 +119,17 @@ def test_signal_to_log_mel_spectrogram_batch_invariance():
     results = module(tensor)
     result = module(tensor[0])
     np.testing.assert_almost_equal(results[0].detach().numpy(), result.detach().numpy(), decimal=5)
+
+
+def test_signal_to_log_mel_spectrogram_intermediate():
+    """ Ensure `SignalToLogMelSpectrogram` is can returns intermediate values. """
+    batch_size = 10
+    n_fft = 2048
+    tensor = torch.nn.Parameter(torch.randn(batch_size, 2400))
+    module = SignalToLogMelSpectrogram(fft_length=n_fft)
+    db_mel_spectrogram, db_spectrogram, spectrogram = module(tensor, intermediate=True)
+    assert spectrogram.shape == (batch_size, db_mel_spectrogram.shape[1], n_fft // 2 + 1)
+    assert db_spectrogram.shape == (batch_size, db_mel_spectrogram.shape[1], n_fft // 2 + 1)
 
 
 def test_get_num_seconds():

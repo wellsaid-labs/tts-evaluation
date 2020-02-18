@@ -9,6 +9,7 @@ from src.visualize import CometML
 from src.visualize import plot_attention
 from src.visualize import plot_loss_per_frame
 from src.visualize import plot_spectrogram
+from src.visualize import plot_mel_spectrogram
 from src.visualize import plot_stop_token
 from src.visualize import plot_waveform
 from src.visualize import spectrogram_to_image
@@ -36,6 +37,13 @@ def test_comet_ml():
 def test_plot_spectrogram():
     arr = torch.rand(5, 6)
     figure = plot_spectrogram(arr)
+    assert isinstance(figure, matplotlib.figure.Figure)
+    pyplot.close(figure)
+
+
+def test_plot_mel_spectrogram():
+    arr = torch.rand(5, 6)
+    figure = plot_mel_spectrogram(arr)
     assert isinstance(figure, matplotlib.figure.Figure)
     pyplot.close(figure)
 

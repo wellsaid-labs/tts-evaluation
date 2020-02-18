@@ -270,21 +270,42 @@ def plot_waveform(signal, sample_rate=HParam()):
 
 
 @configurable
+def plot_mel_spectrogram(spectrogram,
+                         lower_hertz=HParam(),
+                         upper_hertz=HParam(),
+                         y_axis='mel',
+                         **kwargs):
+    """ Get image of a mel spectrogram.
+
+    Args:
+        spectrogram (numpy.array or torch.FloatTensor [frames, num_mel_bins])
+        lower_hertz (int): Lower bound on the frequencies to be included in the mel spectrum. This
+            corresponds to the lower edge of the lowest triangular band.
+        upper_hertz (int): The desired top edge of the highest frequency band.
+        **kwargs: Any additional keyword arguments are passed onto `src.visualize.plot_spectrogram`.
+
+    Returns:
+        (matplotlib.figure.Figure): Matplotlib figure representing the plot.
+    """
+    return plot_spectrogram(
+        spectrogram, fmin=lower_hertz, fmax=upper_hertz, y_axis=y_axis, **kwargs)
+
+
+@configurable
 def plot_spectrogram(spectrogram,
                      sample_rate=HParam(),
                      frame_hop=HParam(),
-                     lower_hertz=HParam(),
-                     upper_hertz=HParam(),
-                     y_axis=HParam()):
-    """ Get image of log mel spectrogram.
+                     cmap='turbo',
+                     y_axis='linear',
+                     x_axis='time',
+                     **kwargs):
+    """ Get image of a spectrogram.
 
     Args:
         spectrogram (numpy.array or torch.FloatTensor [frames, num_mel_bins])
         sample_rate (int): Sample rate for the signal.
         frame_hop (int): The frame hop in samples.
-        lower_hertz (int): Lower bound on the frequencies to be included in the mel spectrum. This
-            corresponds to the lower edge of the lowest triangular band.
-        upper_hertz (int): The desired top edge of the highest frequency band.
+        **kwargs: Any additional keyword arguments are passed onto `librosa_display.specshow`.
 
     Returns:
         (matplotlib.figure.Figure): Matplotlib figure representing the plot.
@@ -299,11 +320,10 @@ def plot_spectrogram(spectrogram,
         spectrogram,
         hop_length=frame_hop,
         sr=sample_rate,
-        fmin=lower_hertz,
-        fmax=upper_hertz,
-        cmap='turbo',
+        cmap=cmap,
         y_axis=y_axis,
-        x_axis='time')
+        x_axis=x_axis,
+        **kwargs)
     pyplot.colorbar(format='%.2f')
     pyplot.close(figure)
     return figure

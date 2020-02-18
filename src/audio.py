@@ -176,6 +176,7 @@ def _mel_filters(sample_rate, num_mel_bins, fft_length, lower_hertz=HParam(), up
     # norm and had to set their minimum to 10**-5 to compensate.
     # NOTE: ``htk=True`` because normalization of the mel filterbank is from Slaney's algorithm.
     lower_hertz = 0.0 if lower_hertz is None else lower_hertz
+    upper_hertz = min(upper_hertz, float(sample_rate) / 2)
     return librosa.filters.mel(
         sample_rate,
         fft_length,
@@ -209,20 +210,41 @@ def get_signal_to_log_mel_spectrogram(*args, **kwargs):
 class SignalToLogMelSpectrogram(torch.nn.Module):
     """ Compute a log-mel-scaled spectrogram from signal.
 
+    Learn more:
+    - Loudness Spectrogram:
+      https://www.dsprelated.com/freebooks/sasp/Loudness_Spectrogram_Examples.html
+    - Loudness Spectrogram: https://ccrma.stanford.edu/~jos/sasp/Loudness_Spectrogram.html
+    - MFCC Preprocessing Steps: https://en.wikipedia.org/wiki/Mel-frequency_cepstrum
+    - MFCC Preprocessing Steps:
+      https://haythamfayek.com/2016/04/21/speech-processing-for-machine-learning.html
+    - Perceptual Loss: https://github.com/magenta/ddsp/issues/12
+    - Compute Loudness: https://github.com/librosa/librosa/issues/463
+    - Compute Loudness: https://github.com/magenta/ddsp/blob/master/ddsp/spectral_ops.py#L171
+    - Ampltidue To dB:
+      https://librosa.github.io/librosa/generated/librosa.core.amplitude_to_db.html
+    - Into To Speech Science: http://www.cas.usf.edu/~frisch/SPA3011_L07.html
+    - Frequency Scales:
+    https://www.researchgate.net/figure/Comparison-between-Mel-Bark-ERB-and-linear-frequency-scales-Since-the-units-of-the_fig4_283044643
+    - Frequency Scales: https://www.vocal.com/noise-reduction/perceptual-noise-reduction/
+
     Args:
         fft_length (int): See `n_fft` here: https://pytorch.org/docs/stable/torch.html#torch.stft
         frame_hop (int): See `hop_length` here:
             https://pytorch.org/docs/stable/torch.html#torch.stft
         sample_rate (int): The sample rate of the audio.
-        num_mel_bins (int): See `src.audio._mel_filters`.
+        num_mel_bins (int): See `src.audio._mel_filters`. The mel scale is applied to mimic the the
+            non-linear human ear perception of sound, by being more discriminative at lower
+            frequencies and less discriminative at higher frequencies.
         window (torch.FloatTensor): See `window` here:
             https://pytorch.org/docs/stable/torch.html#torch.stft
-        power (float): Raises the spectrogram to the `power` of.
-        amin (float): A minimum number to avoid a `log(0)` discontinuty.
-        min_decibel (float): The minimum decible to limit the lower range of the `log`, similar to
-            `amin`.
-        lower_hertz (int): The minimum hertz to be considered.
-        get_weighting (callable): For each frequency, returns a constant bias.
+        min_decibel (float): The minimum decible to limit the lower range. Since decibel's is on
+            the log scale, the lower range can extend to −∞ as the amplitude gets closer to 0.
+        get_weighting (callable): Given a `np.ndarray` of frequencies this returns a weighting in
+            decibels. Weighting in an effort to account for the relative loudness perceived by the
+            human ear, as the ear is less sensitive to low audio frequencies.
+        eps (float): The minimum amplitude to `log` avoiding the discontinuity at `log(0)`. This
+            is similar to `min_decibel` but it operates on the amplitude scale.
+        **kwargs: Additional arguments passed to `_mel_filters`.
     """
 
     @configurable
@@ -232,43 +254,32 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
                  sample_rate=HParam(),
                  num_mel_bins=HParam(),
                  window=HParam(),
-                 power=HParam(),
-                 amin=HParam(),
                  min_decibel=HParam(),
-                 lower_hertz=HParam(),
                  get_weighting=HParam(),
-                 upper_hertz=None):
+                 eps=1e-10,
+                 **kwargs):
         super().__init__()
 
-        mel_basis = _mel_filters(
-            sample_rate,
-            num_mel_bins,
-            fft_length=fft_length,
-            lower_hertz=lower_hertz,
-            upper_hertz=upper_hertz)
-
-        # https://librosa.github.io/librosa/generated/librosa.core.fft_frequencies.html#librosa.core.
-        # https://musicinformationretrieval.com/magnitude_scaling.html
-        frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=fft_length)
-
-        self.register_buffer('mel_basis', torch.tensor(mel_basis).float())
         self.register_buffer('window', window)
         self.register_buffer('min_decibel', torch.tensor(min_decibel).float())
-        self.register_buffer('power', torch.tensor(power).float())
-        self.register_buffer('amin', torch.tensor(amin))
-        self.register_buffer('equal_loudness_weights',
-                             torch.tensor(get_weighting(frequencies)).float().view(-1, 1))
-
-        self.lower_hertz = lower_hertz
+        self.register_buffer('eps', torch.tensor(eps).float())
         self.fft_length = fft_length
         self.frame_hop = frame_hop
         self.sample_rate = sample_rate
-        self.num_mel_bins = num_mel_bins
 
-    def forward(self, signal):
+        mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=self.fft_length, **kwargs)
+        frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=self.fft_length)
+        weighting = torch.tensor(get_weighting(frequencies)).float().view(-1, 1)
+        weighting = db_to_power(weighting)
+        self.register_buffer('mel_basis', torch.tensor(mel_basis).float())
+        self.register_buffer('weighting', weighting)
+
+    def forward(self, signal, intermediate=False):
         """
         Args:
             signal (torch.FloatTensor [batch_size, signal_length])
+            intermediate (bool, optional): If `True`, along with a `db_mel_spectrogram`, this
+              returns a `db_spectrogram` and `spectrogram`.
 
         Returns:
             log_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins])
@@ -286,20 +297,91 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
         # NOTE: The below `norm` line is equal to a numerically stable version of the below...
         # >>> real_part, imag_part = spectrogram.unbind(-1)
         # >>> magnitude_spectrogram = torch.sqrt(real_part**2 + imag_part**2)
+        # spectrogram [batch_size, fft_length // 2 + 1, num_frames]
         spectrogram = torch.norm(spectrogram, dim=-1)
+        # NOTE: Perceived loudness (for example, the sone scale) corresponds fairly well to the dB
+        # scale, suggesting that human perception of loudness is roughly logarithmic with
+        # intensity; therefore, we convert our "ampltitude spectrogram" to the dB scale.
+        # NOTE: A "weighting" can we added to the dB scale such as A-weighting to adjust it so
+        # that it more representative of the human perception of loudness.
+        # NOTE: A multiplication is equal to an addition in the log space / dB space.
+        power_spectrogam = spectrogram**2 * self.weighting
+        power_mel_spectrogam = torch.matmul(self.mel_basis, power_spectrogam)
+        db_mel_spectrogam = power_to_db(power_mel_spectrogam, eps=self.eps)
+        db_mel_spectrogam = torch.max(self.min_decibel, db_mel_spectrogam).transpose(-2, -1)
+        db_mel_spectrogam = db_mel_spectrogam if has_batch_dim else db_mel_spectrogam.squeeze(0)
 
-        # NOTE: Learn more about amplitude to decibel conversion:
-        # http://msp.ucsd.edu/techniques/v0.08/book-html/node6.html
-        decibel_spectrogram = self.power * 10.0 * torch.log10(torch.max(self.amin, spectrogram))
-        perceptual_spectrogram = decibel_spectrogram + self.equal_loudness_weights
-        power_spectrogram = 10.0**(perceptual_spectrogram / 10)
+        if intermediate:
+            # TODO: Can we simplify the `tranpose` and `squeeze`s?
+            db_spectrogram = power_to_db(power_spectrogam).transpose(-2, -1)
+            spectrogram = spectrogram.transpose(-2, -1)
+            db_spectrogram = db_spectrogram if has_batch_dim else db_spectrogram.squeeze(0)
+            spectrogram = spectrogram if has_batch_dim else spectrogram.squeeze(0)
+            return db_mel_spectrogam, db_spectrogram, spectrogram
+        else:
+            return db_mel_spectrogam
 
-        power_mel_spectrogram = torch.matmul(self.mel_basis, power_spectrogram)
-        decibel_spectrogram = 10 * torch.log10(torch.max(self.amin, power_mel_spectrogram))
 
-        # decibel_spectrogram [batch_size, num_mel_bins, num_frames]
-        decibel_spectrogram = torch.max(self.min_decibel, decibel_spectrogram).transpose(-2, -1)
-        return decibel_spectrogram if has_batch_dim else decibel_spectrogram.squeeze(0)
+# Learn more:
+#   - A just-noticeable difference (JND) in amplitude level is on the order of a quarter dB.
+#     (https://www.dsprelated.com/freebooks/mdft/Decibels.html)
+#   - https://librosa.github.io/librosa/generated/librosa.core.amplitude_to_db.html
+#   - The human perception of the intensity of sound and light approximates the logarithm of
+#     intensity rather than a linear relationship (Weber–Fechner law), making the dB scale a useful
+#     measure. (https://en.wikipedia.org/wiki/Decibel)
+#   - http://msp.ucsd.edu/techniques/v0.08/book-html/node6.html
+
+
+def power_to_db(tensor, eps=1e-10):
+    """ Convert power (https://www.dsprelated.com/freebooks/mdft/Decibels.html) units to decibel
+    units.
+
+    Args:
+        tensor (torch.FloatTensor)
+        eps (float): The minimum amplitude to `log` avoiding the discontinuity at `log(0)`.
+
+    Returns:
+        (torch.FloatTensor)
+    """
+    eps = torch.tensor(eps, device=tensor.device)
+    return 10.0 * torch.log10(torch.max(eps, tensor))
+
+
+def amplitude_to_db(tensor, **kwargs):
+    """ Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to decibel units.
+
+    Args:
+        tensor (torch.FloatTensor)
+        **kwargs: Other keyword arguments passed to `power_to_db`.
+
+    Returns:
+        (torch.FloatTensor)
+    """
+    return power_to_db(tensor, **kwargs) * 2
+
+
+def db_to_power(tensor):
+    """ Convert decibel units to power units.
+
+    Args:
+        tensor (torch.FloatTensor)
+
+    Returns:
+        (torch.FloatTensor)
+    """
+    return 10**(tensor / 10.0)
+
+
+def db_to_amplitude(tensor):
+    """ Convert decibel units to amplitude units.
+
+    Args:
+        tensor (torch.FloatTensor)
+
+    Returns:
+        (torch.FloatTensor)
+    """
+    return db_to_power(tensor / 2)
 
 
 def get_log_mel_spectrogram(signal, center=True, scalar=1 / 50, **kwargs):

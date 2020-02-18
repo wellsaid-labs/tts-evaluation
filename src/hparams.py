@@ -11,7 +11,6 @@ from hparams import HParams
 from torch import nn
 from torch.nn import BCEWithLogitsLoss
 from torch.nn import MSELoss
-from torch.nn import L1Loss
 from torch.optim import Adam
 from torchnlp.random import fork_rng
 
@@ -56,9 +55,15 @@ def _set_audio_processing():
     # SOURCE (Tacotron 2):
     # mel spectrograms are computed through a shorttime Fourier transform (STFT)
     # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
+    # NOTE: A hop length of 25% the window size is standard practice in DSP, allowing for a 75%
+    # overlap between windows.
+    # NOTE: Parameterizing frame sizes in milliseconds can help ensure that your code is invariant
+    # to the sample rate.
     frame_size = 1024  # NOTE: Frame size in samples
     frame_hop = 256
     window = 'hann'
+    # NOTE: A "hann window" is standard for calculating an FFT, it's even mentioned as a "popular
+    # window" on Wikipedia (https://en.wikipedia.org/wiki/Window_function).
     window_tensor = torch.hann_window(frame_size)
 
     fft_length = 1024
@@ -70,7 +75,9 @@ def _set_audio_processing():
     # SOURCE (Tacotron 2 Author):
     # Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
     frame_channels = 128
-    hertz_bounds = {'lower_hertz': None, 'upper_hertz': None}
+    # The human range is commonly given as 20 to 20,000 Hz
+    # (https://en.wikipedia.org/wiki/Hearing_range).
+    hertz_bounds = {'lower_hertz': 20, 'upper_hertz': 20000}
 
     # SOURCE: Efficient Neural Audio Synthesis
     # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
@@ -132,8 +139,6 @@ def _set_audio_processing():
                     window=window_tensor,
                     fft_length=fft_length,
                     num_mel_bins=frame_channels,
-                    # NOTE: This value is standard when transforming from ampltidues to decibels.
-                    power=2.0,
                     # SOURCE (Tacotron 2):
                     # Prior to log compression, the filterbank output magnitudes are clipped to a
                     # minimum value of 0.01 in order to limit dynamic range in the logarithmic
@@ -141,18 +146,12 @@ def _set_audio_processing():
                     # NOTE: The `min_decibel` is set to ensure there is around 80 - 90 dB of
                     # dynamic range, allowing us to make the most use of the maximum 96 dB dynamic
                     # range a 16-bit audio file can provide. This value is sligtly lower than
-                    # Tacotron 2's equivalent  of 0.01 (~ -40 dB); however, it worked best for our
-                    # Linda and Hilary datasets based on two audio samples.
+                    # Tacotron 2's equivalent  of 0.01 (~ -40 dB).
                     min_decibel=-50.0,
-                    # NOTE: ISO226 is defined from 20hz to 20khz and humans typically can only hear
-                    # from 20hz to 20khz, learn more: https://en.wikipedia.org/wiki/Hearing_range
-                    lower_hertz=20,
                     # NOTE: ISO226 is one of the latest standards for determining loudness:
                     # https://www.iso.org/standard/34222.html. It does have some issues though:
                     # http://www.lindos.co.uk/cgi-bin/FlexiData.cgi?SOURCE=Articles&VIEW=full&id=2
                     get_weighting=iso226_weighting,
-                    # NOTE: This just has to be small enough to prevent a `log(0)` discontinuity.
-                    amin=1e-10,
                 ),
             'griffin_lim':
                 HParams(
@@ -183,7 +182,9 @@ def _set_audio_processing():
             'plot_waveform':
                 HParams(sample_rate=sample_rate),
             'plot_spectrogram':
-                HParams(sample_rate=sample_rate, frame_hop=frame_hop, y_axis='mel', **hertz_bounds)
+                HParams(sample_rate=sample_rate, frame_hop=frame_hop),
+            'plot_mel_spectrogram':
+                HParams(sample_rate=sample_rate, frame_hop=frame_hop, **hertz_bounds)
         },
         'src.bin.chunk_wav_and_text': {
             'seconds_to_samples': HParams(sample_rate=sample_rate),
@@ -676,10 +677,6 @@ def set_hparams():
                                 train_spectrogram_slice_size=int(8192 / frame_hop),
                                 dev_batch_size=16,
                                 dev_spectrogram_slice_size=int(32768 / frame_hop),
-
-                                # `CrossEntropyLoss` is not directly mentioned in the paper; however
-                                # is a popular choice as of Jan 2019 for a classification task.
-                                criterion=L1Loss,
                                 optimizer=Adam,
 
                                 # A similar schedule to used to train BERT; furthermore, experiments

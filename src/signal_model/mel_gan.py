@@ -30,6 +30,7 @@ class PixelShuffle1d(torch.nn.Module):
     def forward(self, tensor):
         """
         Inspired by: https://gist.github.com/davidaknowles/6e95a643adaf3960d1648a6b369e9d0b
+
         Example:
             >>> t = torch.arange(0, 12).view(1, 3, 4).transpose(1, 2)
             >>> t
@@ -42,8 +43,10 @@ class PixelShuffle1d(torch.nn.Module):
             >>> module = PixelShuffle1d(4)
             >>> module(t)
             tensor([[[ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11]]])
+
         Args:
             tensor (torch.Tensor [batch_size, channels, sequence_length])
+
         Returns:
             tensor (torch.Tensor [batch_size, channels // self.upscale_factor,
                 sequence_length * self.upscale_factor])

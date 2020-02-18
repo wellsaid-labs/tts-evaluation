@@ -39,6 +39,7 @@ from src.utils import maybe_load_tensor
 from src.utils import mean
 from src.utils import random_sample
 from src.utils import RepeatTimer
+from src.visualize import plot_mel_spectrogram
 from src.visualize import plot_spectrogram
 
 import src.distributed
@@ -104,6 +105,104 @@ class ExponentialMovingParameterAverage():
         return self
 
 
+class SpectrogramLoss(torch.nn.Module):
+    """ Compute a loss based in the time / frequency domain.
+
+    TODO: Incorperate `HParams` for parameterizing the loss.
+
+    Args:
+        criterion (torch.nn.Module): The loss function for comparing two spectrograms.
+        **kwargs: Additional key word arguments passed to `SignalToLogMelSpectrogram`.
+    """
+
+    @configurable
+    def __init__(self, criterion=torch.nn.L1Loss, **kwargs):
+        super().__init__()
+
+        self.signal_to_spectrogram = SignalToLogMelSpectrogram(**kwargs)
+        self.fft_length = self.signal_to_spectrogram.fft_length
+        self.frame_hop = self.signal_to_spectrogram.frame_hop
+        self.sample_rate = self.signal_to_spectrogram.sample_rate
+
+        self.criterion = criterion(reduction='none')
+        self.plot_spectrogram = lambda spectrogram: plot_spectrogram(
+            spectrogram, frame_hop=self.frame_hop, sample_rate=self.sample_rate)
+        self.plot_mel_spectrogram = lambda spectrogram: plot_mel_spectrogram(
+            spectrogram, frame_hop=self.frame_hop, sample_rate=self.sample_rate)
+
+    def get_name(self, signal_name=None, is_mel_scale=True, is_decibels=True, is_magnitude=True):
+        """
+        Args:
+            signal_name (str): The same of the signal.
+            is_mel_scale (str): If `True` the signal spectrogram was fit to the mel scale.
+            is_decibels (str): If `True` the signal spectrogram is on the decibel scale.
+            is_magnitude (str): If `True` the signal spectrogram is a magnitude spectrogram.
+
+        Returns:
+            (str): A string representing the data type.
+        """
+        name = '' if signal_name is None else '%s,' % signal_name
+        name = 'spectrogram(%sfft_length=%d,frame_hop=%d)' % (name, self.fft_length, self.frame_hop)
+        name = 'abs(%s)' % name if is_magnitude else name
+        name = 'db(%s)' % name if is_decibels else name
+        name = 'mel(%s)' % name if is_mel_scale else name
+        return name
+
+    def forward(self, predicted_signal, target_signal, comet_ml=None):
+        """
+        Args:
+            predicted_signal (torch.FloatTensor [batch_size (optional), signal_length])
+            target_signal (torch.FloatTensor [batch_size (optional), signal_length])
+            comet_ml (None or Experiment): If this value is passed, then this logs figures to
+                comet. If the batch size is larger than one, then a random item from the
+                batch is picked to be logged.
+
+        Returns:
+            torch.FloatTensor: The loss.
+        """
+        predicted_signal = predicted_signal.view(-1, predicted_signal.shape[-1])
+        target_signal = target_signal.view(-1, target_signal.shape[-1])
+
+        (predicted_db_mel_spectrogam, predicted_db_spectrogram,
+         predicted_spectrogram) = self.signal_to_spectrogram(
+             predicted_signal, intermediate=True)
+        (target_db_mel_spectrogam, target_db_spectrogram,
+         target_spectrogram) = self.signal_to_spectrogram(
+             target_signal, intermediate=True)
+        db_mel_spectrogam_loss = self.criterion(predicted_db_mel_spectrogam,
+                                                target_db_mel_spectrogam)
+
+        if comet_ml:
+            batch_size = predicted_signal.shape[0]
+            random_item = random.randint(0, batch_size - 1)
+            comet_ml.log_figure(
+                self.get_name('predicted'),
+                self.plot_mel_spectrogram(predicted_db_mel_spectrogam[random_item]))
+            comet_ml.log_figure(
+                self.get_name('target'),
+                self.plot_mel_spectrogram(target_db_mel_spectrogam[random_item]))
+            comet_ml.log_figure(
+                self.get_name('predicted', is_mel_scale=False),
+                self.plot_spectrogram(predicted_db_spectrogram[random_item]))
+            comet_ml.log_figure(
+                self.get_name('target', is_mel_scale=False),
+                self.plot_spectrogram(target_db_spectrogram[random_item]))
+            comet_ml.log_figure(
+                self.get_name('predicted', is_mel_scale=False, is_decibels=False),
+                self.plot_spectrogram(predicted_spectrogram[random_item]))
+            comet_ml.log_figure(
+                self.get_name('target', is_mel_scale=False, is_decibels=False),
+                self.plot_spectrogram(target_spectrogram[random_item]))
+            comet_ml.log_figure('%s(%s)' % (self.criterion.__class__.__name__, self.get_name()),
+                                self.plot_mel_spectrogram(db_mel_spectrogam_loss[random_item]))
+            comet_ml.log_figure(
+                'mean(%s(%s))' % (self.criterion.__class__.__name__, self.get_name()),
+                self.plot_mel_spectrogram(db_mel_spectrogam_loss[random_item].mean(
+                    dim=0, keepdim=True)))
+
+        return db_mel_spectrogam_loss.mean()
+
+
 class Trainer():
     """ Trainer defines a simple interface for training the ``SignalModel``.
 
@@ -146,7 +245,6 @@ class Trainer():
                  train_spectrogram_slice_size=HParam(),
                  dev_batch_size=HParam(),
                  dev_spectrogram_slice_size=HParam(),
-                 criterion=HParam(),
                  optimizer=HParam(),
                  lr_multiplier_schedule=HParam(),
                  exponential_moving_parameter_average=ExponentialMovingParameterAverage,
@@ -189,63 +287,28 @@ class Trainer():
         self.scheduler = LambdaLR(
             self.optimizer.optimizer, lr_multiplier_schedule, last_epoch=step - 1)
 
-        self.criterion = criterion(reduction='none').to(device)
-
-        # NOTE: This uses a "loudness spectrogram" for computing the loss. A "loudness spectrogram"
-        # is a psychoacoustic model of loudness versus time and frequency.
-        #
-        # The "loudness spectrogram" is created, like so:
-        # 1. STFTs are computed at multiple resonsolutions, with these standard parameters:
-        #    - Window lengths of 50ms, 25ms, and 12.5ms.
-        #    - The hop lengths are 25% of the window length, so that there is a 75% overlap.
-        #    - The window is a "hann window".
-        # 2. The mel scale is applied to mimic the the non-linear human ear
-        #    perception of sound, by being more discriminative at lower frequencies and less
-        #    discriminative at higher frequencies. The number of mel bins is decreased
-        #    proportionally to the window length.
-        # 3. Perceived loudness (for example, the sone scale) corresponds fairly well to the dB
-        #    scale, suggesting that human perception of loudness is roughly logarithmic with
-        #    intensity; therefore, we convert our "ampltitude spectrogram" to the dB scale. Since we
-        #    use a L1 loss, we foregoe any constant callibrations to the decible units such as
-        #    A-weighting.
-        #
-        # Sources:
-        # - Loudness Spectrogram:
-        #   https://www.dsprelated.com/freebooks/sasp/Loudness_Spectrogram_Examples.html
-        # - Loudness Spectrogram: https://ccrma.stanford.edu/~jos/sasp/Loudness_Spectrogram.html
-        # - MFCC Preprocessing Steps: https://en.wikipedia.org/wiki/Mel-frequency_cepstrum
-        # - MFCC Preprocessing Steps:
-        #   https://haythamfayek.com/2016/04/21/speech-processing-for-machine-learning.html
-        # - Perceptual Loss: https://github.com/magenta/ddsp/issues/12
-        # - Compute Loudness: https://github.com/librosa/librosa/issues/463
-        # - Compute Loudness: https://github.com/magenta/ddsp/blob/master/ddsp/spectral_ops.py#L171
-        # - Ampltidue To dB:
-        #   https://librosa.github.io/librosa/generated/librosa.core.amplitude_to_db.html
-        # - Into To Speech Science: http://www.cas.usf.edu/~frisch/SPA3011_L07.html
-        # - Frequency Scales:
-        # https://www.researchgate.net/figure/Comparison-between-Mel-Bark-ERB-and-linear-frequency-scales-Since-the-units-of-the_fig4_283044643
-        # - Frequency Scales: https://www.vocal.com/noise-reduction/perceptual-noise-reduction/
+        self.criterion = SpectrogramLoss().to(device)
 
         # NOTE: The `num_mel_bins` must be proportional to `fft_length`, learn more:
         # https://stackoverflow.com/questions/56929874/what-is-the-warning-empty-filters-detected-in-mel-frequency-basis-about
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 'ignore', module=r'.*hparams', message=r'.*Overwriting configured argument.*')
-            self.to_spectrograms = [
-                SignalToLogMelSpectrogram(
+            self.criterions = [
+                SpectrogramLoss(
                     fft_length=2048,
                     frame_hop=300,
                     window=torch.hann_window(1200),
                     num_mel_bins=128).to(device),
-                SignalToLogMelSpectrogram(
+                SpectrogramLoss(
                     fft_length=1024, frame_hop=150, window=torch.hann_window(600),
                     num_mel_bins=64).to(device),
-                SignalToLogMelSpectrogram(
+                SpectrogramLoss(
                     fft_length=512, frame_hop=75, window=torch.hann_window(300),
                     num_mel_bins=32).to(device),
             ]
 
-        # TODO: Remove redundancy between `self.to_spectrograms` and `self.metrics`.
+        # TODO: Remove redundancy between `self.criterions` and `self.metrics`.
         # TODO: Consider naming the metrics more precisely from the spectrogram parameters.
         self.metrics = {
             'log_mel_spectrogram_magnitude_loss': DistributedAveragedMetric(),
@@ -454,26 +517,28 @@ class Trainer():
             for _, metric in self.metrics.items():
                 metric.reset()
 
-    def _do_loss_and_maybe_backwards(self, batch, predicted_signal, do_backwards):
+    def _do_loss_and_maybe_backwards(self, batch, predicted_signal, do_backwards, log_figure=False):
         """ Compute the losses and maybe do backwards.
 
         Args:
             batch (SignalModelTrainingRow)
             predicted_signal (torch.FloatTensor [batch_size, signal_length])
             do_backwards (bool): If ``True`` backward propogate the loss.
+            log_figure (bool): If `True` this logs figures.
         """
         assert batch.target_signal.shape == predicted_signal.shape, (
             'The shapes do not match %s =!= %s' %
             (batch.target_signal.shape, predicted_signal.shape))
 
         total_spectrogram_loss = torch.tensor(0.0, device=predicted_signal.device)
-        for to_spectrogram in self.to_spectrograms:
-            spectrogram_loss = self.criterion(
-                to_spectrogram(predicted_signal), to_spectrogram(batch.target_signal)).mean()
-            total_spectrogram_loss += spectrogram_loss / len(self.to_spectrograms)
-            self.metrics['log_mel_%d_spectrogram_magnitude_loss' %
-                         to_spectrogram.fft_length].update(spectrogram_loss,
-                                                           batch.target_signal.shape[0])
+        for criterion in self.criterions:
+            spectrogram_loss = criterion(
+                predicted_signal,
+                batch.target_signal,
+                comet_ml=self.comet_ml if log_figure else None)
+            total_spectrogram_loss += spectrogram_loss / len(self.criterions)
+            self.metrics['log_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length].update(
+                spectrogram_loss, batch.target_signal.shape[0])
 
         if do_backwards:
             self.optimizer.zero_grad()
@@ -516,35 +581,13 @@ class Trainer():
         self.exponential_moving_parameter_average.restore()
 
         total_spectrogram_loss = torch.tensor(0.0, device=self.device)
-        for to_spectrogram in self.to_spectrograms:
-            predicted_spectrogram = to_spectrogram(predicted)  # [num_frames, frame_channels]
-            target_spectrogram = to_spectrogram(target_signal)  # [num_frames, frame_channels]
-            assert predicted_spectrogram.dim() == 2
-            spectrogram_loss = self.criterion(predicted_spectrogram, target_spectrogram)
-            total_spectrogram_loss += spectrogram_loss.mean() / len(self.to_spectrograms)
+        for criterion in self.criterions:
+            spectrogram_loss = criterion(predicted, target_signal, comet_ml=self.comet_ml)
+            total_spectrogram_loss += spectrogram_loss / len(self.criterions)
             self.comet_ml.log_metrics({
-                'single/log_mel_%d_spectrogram_magnitude_loss' % to_spectrogram.fft_length:
-                    spectrogram_loss.mean().item()
+                'single/log_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length:
+                    spectrogram_loss
             })
-            # TODO: Consider ensuring that the `target_spectrogram` is the same as the
-            # `input_spectrogram` at least for one of the configurations.
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    'ignore', module=r'.*hparams', message=r'.*Overwriting configured argument.*')
-                _plot_spectrogram = lambda s: plot_spectrogram(
-                    s, frame_hop=to_spectrogram.frame_hop, lower_hertz=to_spectrogram.lower_hertz)
-                self.comet_ml.log_figure(
-                    'target_log_mel_%d_spectrogram_magnitude' % to_spectrogram.fft_length,
-                    _plot_spectrogram(target_spectrogram))
-                self.comet_ml.log_figure(
-                    'predicted_log_mel_%d_spectrogram_magnitude' % to_spectrogram.fft_length,
-                    _plot_spectrogram(predicted_spectrogram))
-                self.comet_ml.log_figure(
-                    'log_mel_%d_spectrogram_magnitude_loss' % to_spectrogram.fft_length,
-                    _plot_spectrogram(spectrogram_loss))
-                self.comet_ml.log_figure(
-                    'averaged_log_mel_%d_spectrogram_magnitude_loss' % to_spectrogram.fft_length,
-                    _plot_spectrogram(spectrogram_loss.mean(dim=0, keepdim=True)))
 
         self.comet_ml.log_metrics(
             {'single/log_mel_spectrogram_magnitude_loss': total_spectrogram_loss.item()})

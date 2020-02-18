@@ -6,6 +6,7 @@ import torch
 from src.audio import read_audio
 from src.bin.train.signal_model.data_loader import SignalModelTrainingRow
 from src.bin.train.signal_model.trainer import ExponentialMovingParameterAverage
+from src.bin.train.signal_model.trainer import SpectrogramLoss
 from src.bin.train.signal_model.trainer import Trainer
 from src.environment import TEMP_PATH
 from src.utils import Checkpoint
@@ -35,6 +36,46 @@ def get_trainer(read_audio_mock, register_mock, load_data=True):
         spectrogram_model_checkpoint_path=mocks['spectrogram_model_checkpoint'].path,
         train_batch_size=1,
         dev_batch_size=1)
+
+
+def test_spectrogram_loss():
+    spectrogram_loss = SpectrogramLoss()
+    predicted = torch.randn(1, 24000)
+    target = torch.randn(1, 24000)
+    loss = spectrogram_loss(predicted, target, comet_ml=MockCometML(disabled=True))
+    assert loss.shape == tuple([])
+    assert loss.dtype == torch.float32
+
+
+def test_spectrogram_loss__get_name():
+    fft_length = 2048
+    frame_hop = 512
+    spectrogram_loss = SpectrogramLoss(fft_length=fft_length, frame_hop=frame_hop)
+
+    assert spectrogram_loss.get_name(
+        is_mel_scale=True, is_decibels=True,
+        is_magnitude=True) == 'mel(db(abs(spectrogram(fft_length=%d,frame_hop=%d))))' % (fft_length,
+                                                                                         frame_hop)
+
+    assert spectrogram_loss.get_name(
+        'target', is_mel_scale=True, is_decibels=True,
+        is_magnitude=True) == 'mel(db(abs(spectrogram(target,fft_length=%d,frame_hop=%d))))' % (
+            fft_length, frame_hop)
+
+    assert spectrogram_loss.get_name(
+        'target', is_mel_scale=False, is_decibels=True,
+        is_magnitude=True) == 'db(abs(spectrogram(target,fft_length=%d,frame_hop=%d)))' % (
+            fft_length, frame_hop)
+
+    assert spectrogram_loss.get_name(
+        'target', is_mel_scale=True, is_decibels=False,
+        is_magnitude=True) == 'mel(abs(spectrogram(target,fft_length=%d,frame_hop=%d)))' % (
+            fft_length, frame_hop)
+
+    assert spectrogram_loss.get_name(
+        'target', is_mel_scale=True, is_decibels=True,
+        is_magnitude=False) == 'mel(db(spectrogram(target,fft_length=%d,frame_hop=%d)))' % (
+            fft_length, frame_hop)
 
 
 class TestExponentialMovingParameterAverageCheckpointModule(torch.nn.Module):
@@ -178,7 +219,7 @@ def test__do_loss_and_maybe_backwards():
     predicted_signal = torch.zeros(2, 4096)
 
     log_mel_spectrogram_magnitude_loss, num_predictions = trainer._do_loss_and_maybe_backwards(
-        batch, predicted_signal, False)
+        batch, predicted_signal, False, True)
     assert log_mel_spectrogram_magnitude_loss.item() == pytest.approx(0.0)
     assert num_predictions == 8192
 
