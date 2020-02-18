@@ -115,7 +115,6 @@ class SpectrogramLoss(torch.nn.Module):
         **kwargs: Additional key word arguments passed to `SignalToLogMelSpectrogram`.
     """
 
-    @configurable
     def __init__(self, criterion=torch.nn.L1Loss, **kwargs):
         super().__init__()
 
@@ -173,32 +172,35 @@ class SpectrogramLoss(torch.nn.Module):
                                                 target_db_mel_spectrogam)
 
         if comet_ml:
-            batch_size = predicted_signal.shape[0]
-            random_item = random.randint(0, batch_size - 1)
-            comet_ml.log_figure(
-                self.get_name('predicted'),
-                self.plot_mel_spectrogram(predicted_db_mel_spectrogam[random_item]))
-            comet_ml.log_figure(
-                self.get_name('target'),
-                self.plot_mel_spectrogram(target_db_mel_spectrogam[random_item]))
-            comet_ml.log_figure(
-                self.get_name('predicted', is_mel_scale=False),
-                self.plot_spectrogram(predicted_db_spectrogram[random_item]))
-            comet_ml.log_figure(
-                self.get_name('target', is_mel_scale=False),
-                self.plot_spectrogram(target_db_spectrogram[random_item]))
-            comet_ml.log_figure(
-                self.get_name('predicted', is_mel_scale=False, is_decibels=False),
-                self.plot_spectrogram(predicted_spectrogram[random_item]))
-            comet_ml.log_figure(
-                self.get_name('target', is_mel_scale=False, is_decibels=False),
-                self.plot_spectrogram(target_spectrogram[random_item]))
-            comet_ml.log_figure('%s(%s)' % (self.criterion.__class__.__name__, self.get_name()),
-                                self.plot_mel_spectrogram(db_mel_spectrogam_loss[random_item]))
-            comet_ml.log_figure(
-                'mean(%s(%s))' % (self.criterion.__class__.__name__, self.get_name()),
-                self.plot_mel_spectrogram(db_mel_spectrogam_loss[random_item].mean(
-                    dim=0, keepdim=True)))
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    'ignore', module=r'.*hparams', message=r'.*Overwriting configured argument.*')
+                batch_size = predicted_signal.shape[0]
+                random_item = random.randint(0, batch_size - 1)
+                comet_ml.log_figure(
+                    self.get_name('predicted'),
+                    self.plot_mel_spectrogram(predicted_db_mel_spectrogam[random_item]))
+                comet_ml.log_figure(
+                    self.get_name('target'),
+                    self.plot_mel_spectrogram(target_db_mel_spectrogam[random_item]))
+                comet_ml.log_figure(
+                    self.get_name('predicted', is_mel_scale=False),
+                    self.plot_spectrogram(predicted_db_spectrogram[random_item]))
+                comet_ml.log_figure(
+                    self.get_name('target', is_mel_scale=False),
+                    self.plot_spectrogram(target_db_spectrogram[random_item]))
+                comet_ml.log_figure(
+                    self.get_name('predicted', is_mel_scale=False, is_decibels=False),
+                    self.plot_spectrogram(predicted_spectrogram[random_item]))
+                comet_ml.log_figure(
+                    self.get_name('target', is_mel_scale=False, is_decibels=False),
+                    self.plot_spectrogram(target_spectrogram[random_item]))
+                comet_ml.log_figure('%s(%s)' % (self.criterion.__class__.__name__, self.get_name()),
+                                    self.plot_mel_spectrogram(db_mel_spectrogam_loss[random_item]))
+                comet_ml.log_figure(
+                    'mean(%s(%s))' % (self.criterion.__class__.__name__, self.get_name()),
+                    self.plot_mel_spectrogram(db_mel_spectrogam_loss[random_item].mean(
+                        dim=0, keepdim=True)))
 
         return db_mel_spectrogam_loss.mean()
 
@@ -586,7 +588,7 @@ class Trainer():
             total_spectrogram_loss += spectrogram_loss / len(self.criterions)
             self.comet_ml.log_metrics({
                 'single/log_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length:
-                    spectrogram_loss
+                    spectrogram_loss.item()
             })
 
         self.comet_ml.log_metrics(
