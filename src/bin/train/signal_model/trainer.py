@@ -176,7 +176,7 @@ class SpectrogramLoss(torch.nn.Module):
                 warnings.filterwarnings(
                     'ignore', module=r'.*hparams', message=r'.*Overwriting configured argument.*')
                 batch_size = predicted_signal.shape[0]
-                random_item = random.randint(0, batch_size - 1)
+                random_item = random.randint(0, batch_size - 1) if batch_size > 1 else 0
                 comet_ml.log_figure(
                     self.get_name('predicted'),
                     self.plot_mel_spectrogram(predicted_db_mel_spectrogram[random_item]))
