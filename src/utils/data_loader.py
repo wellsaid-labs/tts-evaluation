@@ -63,7 +63,7 @@ class DataLoader(torch.utils.data.dataloader.DataLoader):
                  dataset,
                  load_fn=identity,
                  post_processing_fn=identity,
-                 num_workers=0 if IS_TESTING_ENVIRONMENT else cpu_count(),
+                 num_workers=0 if IS_TESTING_ENVIRONMENT else min(cpu_count(), 6),
                  use_tqdm=False,
                  **kwargs):
         super().__init__(
