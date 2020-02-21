@@ -583,57 +583,7 @@ def build_wav_header(num_frames,
     return header, file_size
 
 
-@configurable
-def split_signal(signal, bits=HParam()):
-    """ Compute the coarse and fine components of the signal.
 
-    Args:
-        signal (torch.FloatTensor): Signal with values ranging from [-1, 1]
-        bits (int): Total number of bits to encode signal in.
-
-    Returns:
-        coarse (torch.LongTensor): Top bits of the signal.
-        fine (torch.LongTensor): Bottom bits of the signal.
-    """
-    assert torch.min(signal) >= -1.0 and torch.max(signal) <= 1.0
-    assert (bits %
-            2 == 0), 'To support an even split between coarse and fine, use an even number of bits'
-    range_ = int((2**(bits - 1)))
-    signal = torch.round(signal * range_)
-    signal = torch.clamp(signal, -1 * range_, range_ - 1)
-    unsigned = signal + range_  # Move range minimum to 0
-    bins = int(2**(bits / 2))
-    coarse = torch.floor(unsigned / bins)
-    fine = unsigned % bins
-    return coarse.long(), fine.long()
-
-
-@configurable
-def combine_signal(coarse, fine, bits=HParam(), return_int=False):
-    """ Compute the coarse and fine components of the signal.
-
-    Args:
-        coarse (torch.LongTensor): Top bits of the signal.
-        fine (torch.LongTensor): Bottom bits of the signal.
-        bits (int): Total number of bits to encode signal in.
-        return_int (bool, optional): Return in the range of integer min to max instead of [-1, 1].
-
-    Returns:
-        signal (torch.FloatTensor): Signal with values ranging from [-1, 1] if ``return_int`` is
-            ``False``; Otherwise, return an integer value from integer min to max.
-    """
-    bins = int(2**(bits / 2))
-    assert torch.min(coarse) >= 0 and torch.max(coarse) < bins
-    assert torch.min(fine) >= 0 and torch.max(fine) < bins
-    signal = coarse * bins + fine - 2**(bits - 1)
-
-    if return_int:
-        if bits == 16:
-            return signal.type(torch.int16)
-        else:
-            raise ValueError('Only 16-bit fidelity is supported.')
-
-    return signal.float() / 2**(bits - 1)  # Scale to [-1, 1] range.
 
 
 # Args:

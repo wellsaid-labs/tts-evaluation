@@ -24,7 +24,7 @@ def main(speaker_id_to_speaker, spectrogram_model_checkpoint, signal_model_check
         'All speaker ids were not found in `speaker_encoder`.')
 
     # Cache ths signal model inferrer
-    signal_model_checkpoint.model.to_inferrer()
+    signal_model_checkpoint.model
 
     # TODO: The below checkpoint attributes should be statically defined somewhere so that there is
     # some guarantee that these attributes exist.

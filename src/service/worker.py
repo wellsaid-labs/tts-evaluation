@@ -47,7 +47,6 @@ from flask import send_from_directory
 import torch
 
 from src.audio import build_wav_header
-from src.audio import combine_signal
 from src.environment import set_basic_logging_config
 from src.hparams import set_hparams
 from src.service.worker_config import SIGNAL_MODEL_CHECKPOINT_PATH
@@ -98,7 +97,7 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
     spectrogram_model = spectrogram_model_checkpoint.model
     input_encoder = spectrogram_model_checkpoint.input_encoder
     app.logger.info('Loading speakers: %s', input_encoder.speaker_encoder.vocab)
-    signal_model = signal_model_checkpoint.model.to_inferrer()
+    signal_model = signal_model_checkpoint.model
 
     return signal_model, spectrogram_model.eval(), input_encoder
 
@@ -133,8 +132,7 @@ def handle_invalid_usage(error):  # Register an error response
     return response
 
 
-def stream_text_to_speech_synthesis(signal_model_inferrer, spectrogram_model, input_encoder, text,
-                                    speaker):
+def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encoder, text, speaker):
     """ Helper function for starting a speech synthesis stream.
 
     Args:
@@ -169,7 +167,7 @@ def stream_text_to_speech_synthesis(signal_model_inferrer, spectrogram_model, in
     # TODO: Consider logging various events to stackdriver, to keep track.
 
     app.logger.info('Generating waveform header...')
-    scale_factor = signal_model_inferrer.conditional_features_upsample.scale_factor
+    scale_factor = signal_model.scale_factor
     wav_header, wav_file_size = build_wav_header(scale_factor * spectrogram.shape[0])
 
     def response():
@@ -179,8 +177,7 @@ def stream_text_to_speech_synthesis(signal_model_inferrer, spectrogram_model, in
             assert sys.byteorder == 'little', 'Ensure byte order is of little-endian format.'
             yield wav_header
             app.logger.info('Generating waveform...')
-            for coarse, fine, _ in signal_model_inferrer(spectrogram, generator=True):
-                waveform = combine_signal(coarse, fine, return_int=True).numpy()
+            for waveform in signal_model(spectrogram, generator=True):
                 app.logger.info('Waveform shape %s', waveform.shape)
                 yield waveform.tostring()
             app.logger.info('Finished generating waveform.')
@@ -320,11 +317,10 @@ def get_stream():
         `audio/wav` streamed in chunks given that the arguments are valid.
     """
     request_args = request.get_json() if request.method == 'POST' else request.args
-    signal_model_inferrer, spectrogram_model, input_encoder = load_checkpoints()
+    signal_model, spectrogram_model, input_encoder = load_checkpoints()
     text, speaker = validate_and_unpack(request_args, input_encoder)
-    response, content_length = stream_text_to_speech_synthesis(signal_model_inferrer,
-                                                               spectrogram_model, input_encoder,
-                                                               text, speaker)
+    response, content_length = stream_text_to_speech_synthesis(signal_model, spectrogram_model,
+                                                               input_encoder, text, speaker)
     headers = NO_CACHE_HEADERS.copy()
     headers['Content-Length'] = content_length
     return Response(response(), headers=headers, mimetype='audio/wav')

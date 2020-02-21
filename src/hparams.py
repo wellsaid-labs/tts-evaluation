@@ -171,10 +171,6 @@ def _set_audio_processing():
                 ),
             '_mel_filters':
                 HParams(**hertz_bounds),
-            'split_signal':
-                HParams(bits=bits),
-            'combine_signal':
-                HParams(bits=bits),
             'normalize_audio':
                 HParams(bits=bits, sample_rate=sample_rate, channels=channels, encoding=encoding)
         },
@@ -307,34 +303,6 @@ def _set_model_size(frame_channels, bits):
             },
             'bin.train.spectrogram_model.trainer.Trainer._do_loss_and_maybe_backwards':
                 HParams(stop_threshold=stop_threshold),
-            'signal_model.wave_rnn.WaveRNN.__init__':
-                HParams(
-                    local_features_size=frame_channels,
-
-                    # SOURCE: Efficient Neural Audio Synthesis
-                    # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
-                    # designed to efficiently predict 16-bit raw audio samples.
-                    bits=bits,
-
-                    # SOURCE: Efficient Neural Audio Synthesis
-                    # We see that the WaveRNN with 896 units achieves NLL scores comparable to
-                    # those of the largest WaveNet model
-                    hidden_size=896,
-
-                    # SOURCE: Efficient Neural Audio Synthesis Author
-                    # The author suggested adding 3 - 5 convolutions on top of WaveRNN.
-                    # SOURCE:
-                    # https://github.com/pytorch/examples/blob/master/super_resolution/model.py
-                    # Upsampling layer is inspired by super resolution
-                    upsample_kernels=[(5, 5)],
-
-                    # SOURCE: Tacotron 2
-                    # only 2 upsampling layers are used in the conditioning stack instead of 3
-                    # layers.
-                    # SOURCE: Tacotron 2 Author Google Chat
-                    # We upsample 4x with the layers and then repeat each value 75x
-                    upsample_num_filters=[10],
-                    upsample_repeat=30),
         }
     })
 
@@ -525,15 +493,19 @@ def get_dataset():
         return train, dev
 
 
-def signal_model_lr_multiplier_schedule(step):
+def signal_model_lr_multiplier_schedule(step, warmup=500):
     """ Learning rate multiplier schedule.
 
     Args:
         step (int): The current step.
+        warmup (int): The number of warmup steps.
 
     Returns:
         (float): Multiplier on the base learning rate.
     """
+    if step < warmup:
+        return step / warmup
+
     return 1.0
 
 
@@ -542,7 +514,7 @@ def set_hparams():
     """ Using the ``configurable`` module set the hyperparameters for the source code.
     """
     # NOTE: Prevent circular dependency
-    from src.signal_model.mel_gan import Generator
+    from src.signal_model import SignalModel
     from src.spectrogram_model import SpectrogramModel
 
     frame_channels, frame_hop, bits = _set_audio_processing()
@@ -686,7 +658,7 @@ def set_hparams():
 
                                 # WaveRNN from `Efficient Neural Audio Synthesis` is small,
                                 # efficient, and performant as a vocoder.
-                                model=Generator,
+                                model=SignalModel,
                             ),
                         'data_loader.DataLoader.__init__':
                             HParams(
@@ -697,7 +669,7 @@ def set_hparams():
                                 # context for each frame outside of the aligned samples. Then it
                                 # makes sense to have 450 samples of padding or 2 spectrogram
                                 # frames.
-                                spectrogram_slice_pad=11),
+                                spectrogram_slice_pad=14),
                     }
                 },
             },

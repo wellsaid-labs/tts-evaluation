@@ -265,9 +265,9 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '--tags',
         default=[
-            'phase_shuffle_conv_upsampling', 'downsample_with_real_padding', 'fix_weight_init',
-            '20hz_min', 'dB_mel_spectrogram', 'no_dilations', 'gelu_before_output',
-            'exponential_moving_average', 'conv1x1_before_gelu', 'sync_in_out'
+            'phase_shuffle_conv_upsampling', 'fix_weight_init', '20hz_min', 'dB_mel_spectrogram',
+            'no_dilations', 'gelu_before_output', 'exponential_moving_average',
+            'conv1x1_before_gelu', 'sync_in_out', '2x8_ratios', 'no_oversample', '500_step_warmup'
         ],
         nargs='+',
         help='List of tags for the experiment.')

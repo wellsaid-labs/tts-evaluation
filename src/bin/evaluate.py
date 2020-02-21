@@ -46,7 +46,6 @@ from src.environment import set_basic_logging_config
 
 set_basic_logging_config()
 
-from src.audio import combine_signal
 from src.audio import griffin_lim
 from src.audio import write_audio
 from src.datasets import add_predicted_spectrogram_column
@@ -237,7 +236,7 @@ def main(dataset,
             has_target_audio or spectrogram_model_checkpoint is not None):
         logger.info('The signal model path is: %s', signal_model_checkpoint.path)
         logger.info('Running inference with %d threads.', torch.get_num_threads())
-        signal_model = signal_model_checkpoint.model.to_inferrer()
+        signal_model = signal_model_checkpoint.model
         use_predicted = spectrogram_model_checkpoint is not None
 
         # NOTE: Sort by spectrogram lengths to batch similar sized outputs together
@@ -252,8 +251,7 @@ def main(dataset,
             logger.info('Predicting signal from spectrogram of size %s.', spectrogram.shape)
             start = time.time()
             # [local_length, local_features_size] → [signal_length]
-            predicted_coarse, predicted_fine, _ = signal_model(spectrogram)
-            waveform = combine_signal(predicted_coarse, predicted_fine, return_int=True).numpy()
+            waveform = signal_model(spectrogram)
             logger.info('Processed in %fx real time.',
                         (time.time() - start) / (waveform.shape[0] / sample_rate))
 

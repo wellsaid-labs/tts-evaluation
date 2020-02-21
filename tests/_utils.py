@@ -23,7 +23,7 @@ from src.datasets.m_ailabs import DOROTHY_AND_WIZARD_OZ
 from src.environment import SIGNAL_MODEL_EXPERIMENTS_PATH
 from src.environment import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 from src.optimizers import Optimizer
-from src.signal_model import WaveRNN
+from src.signal_model import SignalModel
 from src.spectrogram_model import InputEncoder
 from src.spectrogram_model import SpectrogramModel
 from src.utils import AnomalyDetector
@@ -227,7 +227,7 @@ def get_tts_mocks(add_spectrogram=False,
         return checkpoint
 
     return_['spectrogram_model_checkpoint'] = get_spectrogram_model_checkpoint
-    return_['signal_model'] = lambda: WaveRNN()
+    return_['signal_model'] = lambda: SignalModel()
 
     def get_signal_model_checkpoint():
         signal_model_optimizer = Optimizer(

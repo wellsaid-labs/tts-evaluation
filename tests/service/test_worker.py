@@ -11,7 +11,7 @@ def test_load_checkpoints():
     mocks = get_tts_mocks()
     signal_model, spectrogram_model, input_encoder = load_checkpoints(
         mocks['spectrogram_model_checkpoint'].path, mocks['signal_model_checkpoint'].path)
-    assert type(mocks['signal_model'].to_inferrer()) == type(signal_model)
+    assert type(mocks['signal_model']) == type(signal_model)
     assert type(mocks['spectrogram_model']) == type(spectrogram_model)
     assert type(mocks['input_encoder']) == type(input_encoder)
 
@@ -19,7 +19,7 @@ def test_load_checkpoints():
 def test_stream_text_to_speech_synthesis():
     mocks = get_tts_mocks()
     example = mocks['dev_dataset'][0]
-    generator, file_size = stream_text_to_speech_synthesis(mocks['signal_model'].to_inferrer(),
+    generator, file_size = stream_text_to_speech_synthesis(mocks['signal_model'],
                                                            mocks['spectrogram_model'].eval(),
                                                            mocks['input_encoder'], example.text,
                                                            example.speaker)
