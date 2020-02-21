@@ -118,6 +118,12 @@ class Block(torch.nn.Module):
         return input_
 
 
+class LayerNorm(torch.nn.LayerNorm):
+
+    def forward(self, tensor):
+        return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
+
+
 class SignalModel(torch.nn.Module):
     """
     Args:
@@ -139,6 +145,7 @@ class SignalModel(torch.nn.Module):
 
         self.network = torch.nn.Sequential(*tuple([
             torch.nn.Conv1d(input_size, self.get_layer_size(0), kernel_size=3, padding=0),
+            LayerNorm(self.get_layer_size(0)),
             Block(self.get_layer_size(0), self.get_layer_size(0)),
             Block(self.get_layer_size(0), self.get_layer_size(0))
         ] + [
