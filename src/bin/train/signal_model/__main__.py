@@ -267,7 +267,8 @@ if __name__ == '__main__':  # pragma: no cover
         default=[
             'phase_shuffle_conv_upsampling', 'fix_weight_init', '20hz_min', 'dB_mel_spectrogram',
             'no_dilations', 'gelu_before_output', 'exponential_moving_average',
-            'conv1x1_before_gelu', 'sync_in_out', '2x8_ratios', 'no_oversample', '500_step_warmup'
+            'conv1x1_before_gelu', 'sync_in_out', '2x8_ratios', 'no_oversample', '500_step_warmup',
+            'no_input_scalar'
         ],
         nargs='+',
         help='List of tags for the experiment.')

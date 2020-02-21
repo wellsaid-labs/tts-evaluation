@@ -191,26 +191,21 @@ class SignalModel(torch.nn.Module):
 
         return min((int(2**(len(self.ratios) // 2)) * self.hidden_size) // 2**(i // 2), max_size)
 
-    def forward(self, spectrogram, pad_input=True, mu=255, input_scalar=5.0):
+    def forward(self, spectrogram, pad_input=True, mu=255):
         """
         Args:
             spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
             padding (bool, optional)
             mu (int, optional): Mu for the u-law scaling. Learn more:
                 https://en.wikipedia.org/wiki/%CE%9C-law_algorithm.
-            input_scalar (int, optional): This scales the input so that it's within a suitable
-                range.
 
         Args:
             signal (torch.FloatTensor [batch_size, signal_length])
         """
         has_batch_dim = len(spectrogram.shape) == 3
 
-        # TODO: Remove `input_scalar` and instead ensure the spectrogram initially
-        # is corrected.
         # [batch_size, num_frames, frame_channels]
-        spectrogram = spectrogram.view(-1, spectrogram.shape[-2],
-                                       spectrogram.shape[-1]) * input_scalar
+        spectrogram = spectrogram.view(-1, spectrogram.shape[-2], spectrogram.shape[-1])
         batch_size, num_frames, frame_channels = spectrogram.shape
 
         # [batch_size, num_frames, frame_channels] → [batch_size, frame_channels, num_frames]
