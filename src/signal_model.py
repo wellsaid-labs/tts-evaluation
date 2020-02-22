@@ -154,8 +154,7 @@ class SignalModel(torch.nn.Module):
         ] + [
             torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=1),
             torch.nn.GELU(),
-            torch.nn.Conv1d(hidden_size, 1, kernel_size=3, padding=0),
-            torch.nn.Tanh(),
+            torch.nn.Conv1d(hidden_size, 2, kernel_size=3, padding=0)
         ]))
 
         self.reset_parameters()
@@ -221,8 +220,9 @@ class SignalModel(torch.nn.Module):
         spectrogram = self.pad(spectrogram) if pad_input else spectrogram
         num_frames = num_frames if pad_input else num_frames - self.padding * 2
 
-        # [batch_size, frame_channels, num_frames] → [batch_size, signal_length + excess_padding]
-        signal = self.network(spectrogram).squeeze(1)
+        # [batch_size, frame_channels, num_frames] → [batch_size, 2, signal_length + excess_padding]
+        signal = self.network(spectrogram)
+        signal = torch.sigmoid(signal[:, 0]) * torch.tanh(signal[:, 1])
 
         # Mu-law expantion, learn more here:
         # https://librosa.github.io/librosa/_modules/librosa/core/audio.html#mu_expand
