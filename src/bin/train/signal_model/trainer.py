@@ -61,7 +61,7 @@ class ExponentialMovingParameterAverage():
         beta (float): Beta used to weight the exponential mean.
     """
 
-    def __init__(self, parameters, beta=0.9999):
+    def __init__(self, parameters, beta=0.999):
         self.parameters = list(parameters)
         self.beta = beta
         self.shadow = [param.clone().detach() * (1.0 - self.beta) for param in self.parameters]
