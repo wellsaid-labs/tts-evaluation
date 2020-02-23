@@ -268,7 +268,7 @@ if __name__ == '__main__':  # pragma: no cover
             'phase_shuffle_conv_upsampling', 'fix_weight_init', '20hz_min', 'dB_mel_spectrogram',
             'no_dilations', 'gelu_before_output', 'exponential_moving_average',
             'conv1x1_before_gelu', 'sync_in_out', '2x8_ratios', 'no_oversample', '500_step_warmup',
-            'no_input_scalar', 'tanh_sigmoid_out', 'ema_999'
+            'no_input_scalar', 'tanh_sigmoid_out', 'ema_999', 'concat_conditional'
         ],
         nargs='+',
         help='List of tags for the experiment.')

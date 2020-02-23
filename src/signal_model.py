@@ -23,6 +23,35 @@ def trim(*args, dim=2):
     return (a.narrow(dim, (a.shape[dim] - minimum) // 2, minimum) for a in args)
 
 
+class ConditionalConcat(torch.nn.Module):
+    """ Concat's conditional features injected by a parent module.
+
+    Args:
+        size (int)
+        scale_factor (int): Scale factor used to upsample the features before applying them.
+    """
+
+    def __init__(self, size, scale_factor):
+        super().__init__()
+
+        self.concat = None
+        self.size = size
+        self.scale_factor = scale_factor
+
+    def forward(self, in_):
+        """
+        Args:
+            in_ (torch.FloatTensor [batch_size, frame_channels, num_frames])
+
+        Returns:
+            torch.FloatTensor [batch_size, frame_channels + self.size, num_frames]
+        """
+        concat = torch.nn.functional.upsample(self.concat, scale_factor=self.scale_factor)
+        assert concat.shape[1] == self.size
+        self.concat = None  # NOTE: Don't use conditioning twice
+        return torch.cat(list(trim(in_, concat)), dim=1)
+
+
 class PixelShuffle1d(torch.nn.Module):
 
     def __init__(self, upscale_factor):
@@ -70,7 +99,7 @@ class Block(torch.nn.Module):
         scale_factor (int): The upsample to scale the input.
     """
 
-    def __init__(self, in_channels, out_channels, scale_factor=1):
+    def __init__(self, in_channels, out_channels, scale_factor=1, input_scale=1):
         super().__init__()
 
         self.shortcut = torch.nn.Sequential(
@@ -81,7 +110,8 @@ class Block(torch.nn.Module):
             ), PixelShuffle1d(scale_factor))
 
         self.block = torch.nn.Sequential(
-            torch.nn.Conv1d(in_channels, in_channels, kernel_size=1),
+            ConditionalConcat(in_channels, input_scale),
+            torch.nn.Conv1d(in_channels * 2, in_channels, kernel_size=1),
             torch.nn.GELU(),
             torch.nn.Conv1d(
                 in_channels,
@@ -94,7 +124,8 @@ class Block(torch.nn.Module):
         )
 
         self.other_block = torch.nn.Sequential(
-            torch.nn.Conv1d(out_channels, out_channels, kernel_size=1),
+            ConditionalConcat(out_channels, input_scale * scale_factor),
+            torch.nn.Conv1d(out_channels * 2, out_channels, kernel_size=1),
             torch.nn.GELU(),
             torch.nn.Conv1d(out_channels, out_channels, kernel_size=3),
             torch.nn.GELU(),
@@ -143,13 +174,14 @@ class SignalModel(torch.nn.Module):
         self.scale_factor = np.prod(ratios)
         self.pad = torch.nn.ConstantPad1d(padding, 0.0)
 
-        self.network = torch.nn.Sequential(*tuple([
+        self.pre_net = torch.nn.Sequential(
             torch.nn.Conv1d(input_size, self.get_layer_size(0), kernel_size=3, padding=0),
-            LayerNorm(self.get_layer_size(0)),
+            LayerNorm(self.get_layer_size(0)))
+        self.network = torch.nn.Sequential(*tuple([
             Block(self.get_layer_size(0), self.get_layer_size(0)),
             Block(self.get_layer_size(0), self.get_layer_size(0))
         ] + [
-            Block(self.get_layer_size(i), self.get_layer_size(i + 1), r)
+            Block(self.get_layer_size(i), self.get_layer_size(i + 1), r, np.prod(ratios[:i]))
             for i, r in enumerate(ratios)
         ] + [
             torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=1),
@@ -157,11 +189,16 @@ class SignalModel(torch.nn.Module):
             torch.nn.Conv1d(hidden_size, 2, kernel_size=3, padding=0)
         ]))
 
+        self.conditionals = [m for m in self.modules() if isinstance(m, ConditionalConcat)]
+        self.condition = torch.nn.Conv1d(
+            self.get_layer_size(0), sum([m.size for m in self.conditionals]), kernel_size=1)
+
         self.reset_parameters()
 
         # NOTE: We initialize the convolution parameters weight norm factorizes them.
         for module in self.get_weight_norm_modules():
             torch.nn.utils.weight_norm(module)
+        torch.nn.utils.remove_weight_norm(self.condition)
 
         logger.info('Number of parameters is: %d', get_total_parameters(self))
         logger.info('Initialized model: %s', self)
@@ -219,6 +256,16 @@ class SignalModel(torch.nn.Module):
 
         spectrogram = self.pad(spectrogram) if pad_input else spectrogram
         num_frames = num_frames if pad_input else num_frames - self.padding * 2
+
+        # [batch_size, frame_channels, num_frames] → [batch_size, signal_length + excess_padding]
+        spectrogram = self.pre_net(spectrogram)
+
+        # Set the `bias` for all the `ConditionalBias` modules.
+        conditioning = self.condition(spectrogram)  # [batch_size, *, num_frames]
+        conditioning = conditioning.split([m.size for m in self.conditionals], dim=1)
+        # TODO: Consider just concating the raw `spectrogram`.
+        for module, tensor in zip(self.conditionals, conditioning):
+            module.concat = tensor
 
         # [batch_size, frame_channels, num_frames] → [batch_size, 2, signal_length + excess_padding]
         signal = self.network(spectrogram)
