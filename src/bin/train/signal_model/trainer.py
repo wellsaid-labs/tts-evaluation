@@ -432,7 +432,7 @@ class Trainer():
         Returns:
             (torch.FloatTensor [1])
         """
-        total = torch.tensor(0.0).to(self.device)
+        total = torch.tensor(0.0, device=self.device)
         for name, parameter in self.model.named_parameters():
             if 'gru.weight_hh' in name:
                 splits = parameter.chunk(3)
