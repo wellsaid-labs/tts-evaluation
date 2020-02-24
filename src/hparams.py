@@ -181,6 +181,9 @@ def _set_audio_processing():
             'samples_to_seconds': HParams(sample_rate=sample_rate),
             'chunk_alignments': HParams(sample_rate=sample_rate),
             'align_wav_and_scripts': HParams(sample_rate=sample_rate),
+        },
+        'src.spectrogram_model.decoder.AutoregressiveDecoder': {
+            '__init__': HParams(min_spectrogram_magnitude=min_magnitude),
         }
     })
 
@@ -287,7 +290,7 @@ def _set_model_size(frame_channels, bits):
                             # embedding.
                             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to
                             # learn more about this parameter.
-                            speaker_embedding_dim=64),
+                            speaker_embedding_dim=128),
                     '_infer':
                         HParams(
                             # NOTE: Estimated loosely to be a multiple of the slowest speech
@@ -601,23 +604,11 @@ def set_hparams():
         'src': {
             'spectrogram_model': {
                 # SOURCE (Tacotron 2):
-                # The convolutional layers in the network are regularized using dropout [25] with
-                # probability 0.5, and LSTM layers are regularized using zoneout [26] with
-                # probability 0.1
-                # NOTE: We found in our Comet experiments December 2019 that encoder probability
-                # wasn't helpful to the model.
-                'encoder.Encoder.__init__':
-                    HParams(convolution_dropout=0.0),
-                'decoder.AutoregressiveDecoder.__init__':
-                    HParams(lstm_dropout=0.1),
-                # SOURCE (Tacotron 2):
                 # In order to introduce output variation at inference time, dropout with
                 # probability 0.5 is applied only to layers in the pre-net of the
                 # autoregressive decoder.
                 'pre_net.PreNet.__init__':
                     HParams(dropout=0.5),
-                'post_net.PostNet.__init__':
-                    HParams(convolution_dropout=0.0),
                 'model.SpectrogramModel.__init__':
                     HParams(
                         # NOTE: This dropout performed well on Comet in August 2019.
@@ -660,6 +651,14 @@ def set_hparams():
 
                                 # Tacotron 2 like model with any changes documented via Comet.ml.
                                 model=SpectrogramModel),
+                        'data_loader.get_normalized_half_gaussian':
+                            HParams(
+                                # NOTE: We approximated the uncertainty in the stop token by viewing
+                                # the stop token predictions by a fully trained model without
+                                # this smoothing. We found that a fully trained model would
+                                # learn a similar curve over 4 - 8 frames in January 2020, on Comet.
+                                length=8,
+                                standard_deviation=2),
                     },
                     'signal_model': {
                         '__main__._get_dataset':
@@ -703,7 +702,7 @@ def set_hparams():
                                 # context for each frame outside of the aligned samples. Then it
                                 # makes sense to have 450 samples of padding or 2 spectrogram
                                 # frames.
-                                spectrogram_slice_pad=2,),
+                                spectrogram_slice_pad=2,)
                     }
                 },
             },

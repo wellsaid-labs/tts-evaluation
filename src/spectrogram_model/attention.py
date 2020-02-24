@@ -65,7 +65,9 @@ class LocationSensitiveAttention(nn.Module):
             out_channels=num_convolution_filters,
             kernel_size=convolution_filter_size,
             padding=int((convolution_filter_size - 1) / 2))
-        self.project_query = nn.Linear(query_hidden_size, hidden_size)
+        self.project_query = nn.Sequential(
+            nn.Linear(query_hidden_size, hidden_size), nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size))
         self.project_alignment = nn.Linear(num_convolution_filters, hidden_size, bias=False)
         self.project_scores = nn.Linear(hidden_size, 1, bias=False)
         self.softmax = nn.Softmax(dim=1)
@@ -97,7 +99,7 @@ class LocationSensitiveAttention(nn.Module):
 
         # score [num_tokens, batch_size, hidden_size]
         # ei,j = w * tanh(W * si−1 + V * hj + U * fi,j + b)
-        score = (encoded_tokens + query + location_features).tanh_()
+        score = (query + location_features).tanh_()
 
         del location_features  # Clear memory
         del query  # Clear memory

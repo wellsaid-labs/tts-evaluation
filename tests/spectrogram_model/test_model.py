@@ -97,10 +97,7 @@ def test_spectrogram_model_train__batch_size_sensitivity():
     # >>> batch_dropout[0] != dropout
     add_config({
         'src.spectrogram_model': {
-            'encoder.Encoder.__init__': HParams(convolution_dropout=0.0),
-            'decoder.AutoregressiveDecoder.__init__': HParams(lstm_dropout=0.0),
             'pre_net.PreNet.__init__': HParams(dropout=0.0),
-            'post_net.PostNet.__init__': HParams(convolution_dropout=0.0)
         },
     })
 

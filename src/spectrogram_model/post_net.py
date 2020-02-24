@@ -27,7 +27,6 @@ class PostNet(nn.Module):
         num_convolution_filters (odd :clas:`int`): Number of dimensions (channels)
             produced by the convolution.
         convolution_filter_size (int): Size of the convolving kernel.
-        convolution_dropout (float): Probability of an element to be zeroed.
 
     Reference:
         * Tacotron 2 Paper:
@@ -39,8 +38,7 @@ class PostNet(nn.Module):
                  frame_channels,
                  num_convolution_layers=HParam(),
                  num_convolution_filters=HParam(),
-                 convolution_filter_size=HParam(),
-                 convolution_dropout=HParam()):
+                 convolution_filter_size=HParam()):
         super().__init__()
 
         # LEARN MORE:
@@ -59,8 +57,7 @@ class PostNet(nn.Module):
                     out_channels=num_convolution_filters,
                     kernel_size=convolution_filter_size,
                     padding=int((convolution_filter_size - 1) / 2)),
-                nn.ReLU(),
-                nn.Dropout(p=convolution_dropout)) for i in range(num_convolution_layers - 1)
+                nn.ReLU()) for i in range(num_convolution_layers - 1)
         ])
 
         self.normalization_layers = nn.ModuleList(
@@ -77,12 +74,11 @@ class PostNet(nn.Module):
         # NOTE: Last Layer without `nn.RELu` and different number of `out_channels`.
         # NOTE: We learned in Comet experiments in December 2019 that RELu & LayerNorm
         # combination was more effective.
-        self.last_layer = nn.Sequential(
-            nn.Conv1d(
-                in_channels=num_convolution_filters,
-                out_channels=frame_channels,
-                kernel_size=convolution_filter_size,
-                padding=int((convolution_filter_size - 1) / 2)), nn.Dropout(p=convolution_dropout))
+        self.last_layer = nn.Conv1d(
+            in_channels=num_convolution_filters,
+            out_channels=frame_channels,
+            kernel_size=convolution_filter_size,
+            padding=int((convolution_filter_size - 1) / 2))
 
     def forward(self, frames, mask):
         """
