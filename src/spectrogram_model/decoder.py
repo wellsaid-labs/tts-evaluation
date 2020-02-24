@@ -208,18 +208,12 @@ class AutoregressiveDecoder(nn.Module):
         # [num_frames, batch_size, lstm_hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
 
-        # [num_frames, batch_size, lstm_hidden_size] (concat)
-        # [num_frames, batch_size, attention_hidden_size] (concat)
-        # [num_frames, batch_size, speaker_embedding_dim] →
-        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size + speaker_embedding_dim]
-
-        # [num_frames, batch_size,
-        #  lstm_hidden_size + attention_hidden_size + speaker_embedding_dim] →
+        # [num_frames, batch_size, lstm_hidden_size (concat) speaker_embedding_dim] →
         # [num_frames, batch_size, 1]
         stop_token = self.linear_stop_token(torch.cat([frames, speaker], dim=2)).squeeze(2)
 
         # [num_frames, batch_size,
-        #  lstm_hidden_size + attention_hidden_size + speaker_embedding_dim] →
+        #  lstm_hidden_size (concat) attention_hidden_size (concat) speaker_embedding_dim] →
         # [num_frames, batch_size, frame_channels]
         frames = self.linear_out(torch.cat([frames, attention_contexts, speaker], dim=2))
 
