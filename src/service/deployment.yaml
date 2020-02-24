@@ -20,6 +20,8 @@ spec:
       containers:
         - name: speech-api
           env:
+            - name: NODE_ENV
+              value: production
             # This is the maximum time between recomputing the number of pods. This ensures that
             # pods are scaled down quickly if pods are no longer in-use.
             - name: AUTOSCALE_LOOP

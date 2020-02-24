@@ -113,15 +113,17 @@ class FlaskException(Exception):
         payload (dict): Additional context to send.
     """
 
-    def __init__(self, message, status_code=400, payload=None):
+    def __init__(self, message, status_code=400, code='BAD_REQUEST', payload=None):
         Exception.__init__(self)
         self.message = message
         self.status_code = status_code
         self.payload = payload
+        self.code = code
 
     def to_dict(self):
         response = dict(self.payload or ())
         response['message'] = self.message
+        response['code'] = self.code
         app.logger.info('Responding with warning: %s', self.message)
         return response
 
@@ -163,7 +165,7 @@ def stream_text_to_speech_synthesis(signal_model_inferrer, spectrogram_model, in
     if is_max_frames:
         # NOTE: Status code 508 is "The server detected an infinite loop while processing the
         # request". Learn more here: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
-        raise FlaskException('Failed to render, try again.', status_code=508)
+        raise FlaskException('Failed to render, try again.', status_code=508, code='RENDER_FAILED')
 
     # TODO: If a loud sound is created, cut off the stream or consider rerendering.
     # TODO: Consider logging various events to stackdriver, to keep track.
@@ -216,7 +218,7 @@ def validate_and_unpack(request_args,
         api_key (str)
     """
     if 'api_key' not in request_args:
-        raise FlaskException('API key was not provided.', status_code=401)
+        raise FlaskException('API key was not provided.', status_code=401, code='MISSING_ARGUMENT')
 
     # TODO: Consider using the authorization header instead of a parameter ``api_key``.
     api_key = request_args.get('api_key')
@@ -228,34 +230,41 @@ def validate_and_unpack(request_args,
         raise FlaskException(
             'API key must be a string between %d and %d characters.' %
             (min_api_key_length, max_api_key_length),
-            status_code=401)
+            status_code=401,
+            code='INVALID_API_KEY')
 
     if api_key not in api_keys:
-        raise FlaskException('API key is not valid.', status_code=401)
+        raise FlaskException('API key is not valid.', status_code=401, code='INVALID_API_KEY')
 
     if not ('speaker_id' in request_args and 'text' in request_args):
-        raise FlaskException('Must call with keys `speaker_id` and `text`.')
+        raise FlaskException(
+            'Must call with keys `speaker_id` and `text`.', code='MISSING_ARGUMENT')
 
     speaker_id = request_args.get('speaker_id')
     text = request_args.get('text')
 
     if not isinstance(speaker_id, (str, int)):
-        raise FlaskException('Speaker ID must be either an integer or string.')
+        raise FlaskException(
+            'Speaker ID must be either an integer or string.', code='INVALID_SPEAKER_ID')
 
     if isinstance(speaker_id, str) and not speaker_id.isdigit():
-        raise FlaskException('Speaker ID string must only consist of the symbols 0 - 9.')
+        raise FlaskException(
+            'Speaker ID string must only consist of the symbols 0 - 9.', code='INVALID_SPEAKER_ID')
 
     speaker_id = int(speaker_id)
 
     if not (isinstance(text, str) and len(text) < max_characters and len(text) > 0):
         raise FlaskException(
             'Text must be a string under %d characters and more than 0 characters.' %
-            max_characters)
+            max_characters,
+            code='INVALID_TEXT_LENGTH_EXCEEDED')
 
     if not (speaker_id <= max(speaker_id_to_speaker.keys()) and
             speaker_id >= min(speaker_id_to_speaker.keys())):
-        raise FlaskException('Speaker ID must be an integer between %d and %d.' %
-                             (min(speaker_id_to_speaker.keys()), max(speaker_id_to_speaker.keys())))
+        raise FlaskException(
+            'Speaker ID must be an integer between %d and %d.' %
+            (min(speaker_id_to_speaker.keys()), max(speaker_id_to_speaker.keys())),
+            code='INVALID_SPEAKER_ID')
 
     # NOTE: Normalize text similar to the normalization during dataset creation.
     text = unidecode.unidecode(text)
@@ -264,7 +273,8 @@ def validate_and_unpack(request_args,
     if processed_text != text:
         improper_characters = set(text).difference(set(processed_text))
         improper_characters = ', '.join(sorted(list(improper_characters)))
-        raise FlaskException('Text cannot contain these characters: %s' % improper_characters)
+        raise FlaskException(
+            'Text cannot contain these characters: %s' % improper_characters, code='INVALID_TEXT')
 
     return text, speaker_id_to_speaker[speaker_id]
 

@@ -69,6 +69,8 @@ const AVERAGE_JOB_TIME = 5.5 * 7.147 * 1000;
 // Learn more: https://cloud.google.com/compute/docs/autoscaler/understanding-autoscaler-decisions
 const MINIMUM_POD_TIME_TO_LIVE = 10 * 60 * 1000;
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
 const API_KEYS = Object.entries(process.env).filter(item =>
   item[0].includes(process.env.API_KEY_SUFFIX)
 );
@@ -988,7 +990,10 @@ function getPodPool(request, response) {
   } else if (version) {
     logger.log(`getPodPool: Version not found: ${version}.`);
     response.status(404);
-    response.send('Version not found.');
+    response.json({
+      'code': 'NOT_FOUND',
+      'message': 'Version not found.',
+    });
     return;
   }
   return request.app.locals.podPools.latest;
@@ -1132,8 +1137,9 @@ app.use((error, request, response, next) => {
   }
 
   response.status(500);
-  response.render('error', {
-    error,
+  response.json({
+    'code': 'INTERNAL_ERROR',
+    'message': IS_PRODUCTION ? 'Internal Error. Please contact michael@wellsaidlabs.com.' : error,
   });
 });
 
