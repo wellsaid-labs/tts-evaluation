@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 # - The PyTorch init has little backing:
 # https://twitter.com/jeremyphoward/status/1107869607677681664
 
+# TODO: Write a test ensuring that given a input with std 1.0 the output of the network also has
+# an std of 1.0, following Kaiming's popular weight initialization approach:
+# https://towardsdatascience.com/weight-initialization-in-neural-networks-a-journey-from-the-basics-to-kaiming-954fb9b47c79
+
 
 class SpectrogramModel(nn.Module):
     """ Character sequence consumed to predict a spectrogram.
