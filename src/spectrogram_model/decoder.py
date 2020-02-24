@@ -58,9 +58,6 @@ class AutoregressiveDecoder(nn.Module):
         speaker_embedding_dim (int): Size of the speaker embedding dimensions.
         pre_net_hidden_size (int): Hidden size of the pre-net to use.
         lstm_hidden_size (int): Hidden size of both LSTM layers to use.
-        lstm_dropout (float): If non-zero, introduces a Dropout layer on the
-            outputs of each LSTM layer except the last layer, with dropout probability equal to
-            dropout.
         attention_hidden_size (int): The size of the attention context returned by the attention
             module.
     """
@@ -71,24 +68,19 @@ class AutoregressiveDecoder(nn.Module):
                  speaker_embedding_dim,
                  pre_net_hidden_size=HParam(),
                  lstm_hidden_size=HParam(),
-                 lstm_dropout=HParam(),
-                 attention_hidden_size=HParam()):
+                 attention_hidden_size=HParam(),
+                 min_spectrogram_magnitude=HParam()):
         super().__init__()
 
         self.attention_hidden_size = attention_hidden_size
         self.frame_channels = frame_channels
+        self.min_spectrogram_magnitude = min_spectrogram_magnitude
         self.pre_net = PreNet(hidden_size=pre_net_hidden_size, frame_channels=frame_channels)
         self.lstm_layer_one = nn.LSTMCell(
             input_size=pre_net_hidden_size + self.attention_hidden_size + speaker_embedding_dim,
             hidden_size=lstm_hidden_size)
-        self.lstm_layer_one_dropout = nn.Dropout(p=lstm_dropout)
         hidden_size = lstm_hidden_size + self.attention_hidden_size + speaker_embedding_dim
         self.lstm_layer_two = nn.LSTM(input_size=hidden_size, hidden_size=lstm_hidden_size)
-        # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunately, Zoneout or any LSTM state
-        # dropout in PyTorch forces us to unroll the LSTM and slow down this component x3 to x4. For
-        # right now, we will not be using state dropout on the LSTM. We are applying dropout onto
-        # the LSTM output instead.
-        self.lstm_layer_two_dropout = nn.Dropout(p=lstm_dropout)
         self.attention = LocationSensitiveAttention(
             query_hidden_size=lstm_hidden_size, hidden_size=attention_hidden_size)
         self.linear_out = nn.Linear(in_features=hidden_size, out_features=frame_channels)
@@ -128,10 +120,10 @@ class AutoregressiveDecoder(nn.Module):
             last_attention_context=torch.zeros(
                 batch_size, self.attention_hidden_size, device=device),
             cumulative_alignment=None,
-            # TODO: Parameterize the mininum mel spectrogram magnitude
-            last_frame=torch.full((1, batch_size, self.frame_channels),
-                                  fill_value=torch.log(torch.tensor(0.01, device=device)),
-                                  device=device),
+            last_frame=torch.full(
+                (1, batch_size, self.frame_channels),
+                fill_value=torch.log(torch.tensor(self.min_spectrogram_magnitude, device=device)),
+                device=device),
             lstm_one_hidden_state=None,
             lstm_two_hidden_state=None) if hidden_state is None else hidden_state
 
@@ -169,11 +161,6 @@ class AutoregressiveDecoder(nn.Module):
             # [batch_size, lstm_hidden_size]
             lstm_one_hidden_state = self.lstm_layer_one(frame, lstm_one_hidden_state)
             frame = lstm_one_hidden_state[0]
-
-            # Apply dropout to the LSTM Cell State and Hidden State
-            lstm_one_hidden_state = list(lstm_one_hidden_state)
-            lstm_one_hidden_state[0] = self.lstm_layer_one_dropout(lstm_one_hidden_state[0])
-            lstm_one_hidden_state[1] = self.lstm_layer_one_dropout(lstm_one_hidden_state[1])
 
             # Initial attention alignment, sometimes refered to as attention weights.
             # attention_context [batch_size, attention_hidden_size]
@@ -220,7 +207,6 @@ class AutoregressiveDecoder(nn.Module):
         # input_size (lstm_hidden_size + attention_hidden_size + speaker_embedding_dim)] →
         # [num_frames, batch_size, lstm_hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
-        frames = self.lstm_layer_two_dropout(frames)
 
         # [num_frames, batch_size, lstm_hidden_size] (concat)
         # [num_frames, batch_size, attention_hidden_size] (concat)

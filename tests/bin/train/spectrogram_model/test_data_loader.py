@@ -8,6 +8,7 @@ from torchnlp.random import fork_rng_wrap
 
 from src.bin.train.spectrogram_model.data_loader import _BalancedSampler
 from src.bin.train.spectrogram_model.data_loader import DataLoader
+from src.bin.train.spectrogram_model.data_loader import get_normalized_half_gaussian
 from tests._utils import get_tts_mocks
 
 
@@ -28,7 +29,8 @@ def test_data_loader():
         sum([r.spectrogram.tensor.sum(dim=2).nonzero().shape[0] for r in samples]))
     assert sum([r.spectrogram_expanded_mask[0].sum().item() for r in samples]) == (
         sum([r.spectrogram.tensor.nonzero().shape[0] for r in samples]))
-    assert sum([r.stop_token.tensor.sum().item() for r in samples]) == len(samples) * batch_size
+    assert sum([r.stop_token.tensor.sum().item() for r in samples]) == pytest.approx(
+        len(samples) * batch_size * get_normalized_half_gaussian().sum().item())
 
 
 def test__data_loader__expected_average_spectrogram_length():
