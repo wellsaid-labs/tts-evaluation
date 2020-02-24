@@ -1,3 +1,5 @@
+from collections import namedtuple
+
 from hparams import configurable
 from hparams import HParam
 from torch import nn
@@ -7,28 +9,22 @@ import torch
 from src.spectrogram_model.attention import LocationSensitiveAttention
 from src.spectrogram_model.pre_net import PreNet
 
-
-class AutoregressiveDecoderHiddenState(object):
-
-    def __init__(self, last_attention_context, cumulative_alignment, last_frame,
-                 lstm_one_hidden_state, lstm_two_hidden_state):
-        """ For sequential prediction, decoder hidden state used to predict the next frame.
-
-        Args:
-            last_attention_context (torch.FloatTensor [batch_size, attention_hidden_size]): The
-                last predicted attention context.
-            cumulative_alignment (torch.FloatTensor [batch_size, num_tokens]): The last
-                predicted attention alignment.
-            last_frame (torch.FloatTensor [1, batch_size, frame_channels], optional): The last
-                predicted frame.
-            lstm_one_hidden_state (tuple): The last hidden state of the first LSTM in Tacotron.
-            lstm_two_hidden_state (tuple): The last hidden state of the second LSTM in Tacotron.
-        """
-        self.cumulative_alignment = cumulative_alignment
-        self.last_attention_context = last_attention_context
-        self.last_frame = last_frame
-        self.lstm_one_hidden_state = lstm_one_hidden_state
-        self.lstm_two_hidden_state = lstm_two_hidden_state
+# For sequential prediction, decoder hidden state used to predict the next frame.
+#
+# Args:
+#     last_attention_context (torch.FloatTensor [batch_size, attention_hidden_size]): The
+#         last predicted attention context.
+#     cumulative_alignment (torch.FloatTensor [batch_size, num_tokens]): The last
+#         predicted attention alignment.
+#     last_frame (torch.FloatTensor [1, batch_size, frame_channels], optional): The last
+#         predicted frame.
+#     lstm_one_hidden_state (tuple): The last hidden state of the first LSTM in Tacotron.
+#     lstm_two_hidden_state (tuple): The last hidden state of the second LSTM in Tacotron.
+#
+AutoregressiveDecoderHiddenState = namedtuple('AutoregressiveDecoderHiddenState', [
+    'last_attention_context', 'cumulative_alignment', 'last_frame', 'lstm_one_hidden_state',
+    'lstm_two_hidden_state'
+])
 
 
 class AutoregressiveDecoder(nn.Module):
@@ -62,9 +58,6 @@ class AutoregressiveDecoder(nn.Module):
         speaker_embedding_dim (int): Size of the speaker embedding dimensions.
         pre_net_hidden_size (int): Hidden size of the pre-net to use.
         lstm_hidden_size (int): Hidden size of both LSTM layers to use.
-        lstm_dropout (float): If non-zero, introduces a Dropout layer on the
-            outputs of each LSTM layer except the last layer, with dropout probability equal to
-            dropout.
         attention_hidden_size (int): The size of the attention context returned by the attention
             module.
     """
@@ -75,88 +68,24 @@ class AutoregressiveDecoder(nn.Module):
                  speaker_embedding_dim,
                  pre_net_hidden_size=HParam(),
                  lstm_hidden_size=HParam(),
-                 lstm_dropout=HParam(),
-                 attention_hidden_size=HParam()):
+                 attention_hidden_size=HParam(),
+                 min_spectrogram_magnitude=HParam()):
         super().__init__()
 
         self.attention_hidden_size = attention_hidden_size
         self.frame_channels = frame_channels
+        self.min_spectrogram_magnitude = min_spectrogram_magnitude
         self.pre_net = PreNet(hidden_size=pre_net_hidden_size, frame_channels=frame_channels)
         self.lstm_layer_one = nn.LSTMCell(
             input_size=pre_net_hidden_size + self.attention_hidden_size + speaker_embedding_dim,
             hidden_size=lstm_hidden_size)
-        self.lstm_layer_one_dropout = nn.Dropout(p=lstm_dropout)
         hidden_size = lstm_hidden_size + self.attention_hidden_size + speaker_embedding_dim
         self.lstm_layer_two = nn.LSTM(input_size=hidden_size, hidden_size=lstm_hidden_size)
-        # NOTE: Tacotron 2 authors mentioned using Zoneout; unfortunately, Zoneout or any LSTM state
-        # dropout in PyTorch forces us to unroll the LSTM and slow down this component x3 to x4. For
-        # right now, we will not be using state dropout on the LSTM. We are applying dropout onto
-        # the LSTM output instead.
-        self.lstm_layer_two_dropout = nn.Dropout(p=lstm_dropout)
         self.attention = LocationSensitiveAttention(
             query_hidden_size=lstm_hidden_size, hidden_size=attention_hidden_size)
         self.linear_out = nn.Linear(in_features=hidden_size, out_features=frame_channels)
-        self.linear_stop_token = nn.Linear(in_features=hidden_size, out_features=1)
-
-    def _get_initial_state(self,
-                           batch_size,
-                           num_tokens,
-                           is_cuda,
-                           hidden_state=None,
-                           target_frames=None,
-                           **kwargs):
-        """ Get an initial LSTM hidden state.
-
-        Args:
-            batch_size (int): Batch size for the forward pass; used to shape initital tensor.
-            num_tokens (int): Number of tokens for the forward pass; used to shape initital tensor.
-            is_cuda (bool): If ``True``, move the tensors to CUDA memory.
-            target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels],
-                optional): Ground truth frames for teacher-forcing.
-            hidden_state (AutoregressiveDecoderHiddenState): For sequential prediction, decoder
-                hidden state used to predict the next frame.
-
-        Returns:
-            frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Ground truth frames
-                shifted back one timestep if ``target_frames is not None``; otherwise, the
-                initial or last frame is returned.
-            lstm_one_hidden_state (tuple): Hidden state for lstm.
-            lstm_two_hidden_state (tuple): Hidden state for lstm.
-            last_attention_context (torch.FloatTensor [batch_size, attention_hidden_size]):
-                Last attention context to condition the decoder.
-            cumulative_alignment (torch.FloatTensor [batch_size, num_tokens]): The last
-                predicted attention alignment.
-        """
-        assert target_frames is None or hidden_state is None, ("""Either the decoder is
-conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
-
-        if hidden_state is None:
-            # Tacotron 2 authors confirmed that initially the decoder is conditioned on a fixed zero
-            # initial vectors.
-            initial_lstm_one_hidden_state = None
-            initial_lstm_two_hidden_state = None
-            initial_alignment = torch.zeros(batch_size, num_tokens, **kwargs)
-            initial_attention_context = torch.zeros(batch_size, self.attention_hidden_size,
-                                                    **kwargs)
-            initial_frames = torch.zeros(1, batch_size, self.frame_channels, **kwargs)
-
-            # Tacotron 2 authors use teacher-forcing on the ground truth during training.
-            # To use the ``initial_frame`` we concat it onto the beginning; furthermore, it does not
-            # need to use the very last frame of the ``target_frames`` so we remove it.
-            if target_frames is not None:
-                initial_frames = torch.cat([initial_frames, target_frames[0:-1]])
-
-            return (initial_frames, initial_lstm_one_hidden_state, initial_lstm_two_hidden_state,
-                    initial_attention_context, initial_alignment)
-
-        lstm_one_hidden_state = hidden_state.lstm_one_hidden_state
-        lstm_two_hidden_state = hidden_state.lstm_two_hidden_state
-        cumulative_alignment = hidden_state.cumulative_alignment
-        last_attention_context = hidden_state.last_attention_context
-        last_frame = hidden_state.last_frame
-
-        return (last_frame, lstm_one_hidden_state, lstm_two_hidden_state, last_attention_context,
-                cumulative_alignment)
+        self.linear_stop_token = nn.Linear(
+            in_features=hidden_size - self.attention_hidden_size, out_features=1)
 
     def forward(self, encoded_tokens, tokens_mask, speaker, target_frames=None, hidden_state=None):
         """
@@ -180,22 +109,34 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention
                 alignment for every frame, stored for visualization and debugging.
         """
-        assert target_frames is None or hidden_state is None, ("""Either the decoder is
-conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
+        assert target_frames is None or hidden_state is None, (
+            "Either the decoder is"
+            "conditioned on ``target_frames`` or the ``hidden_state`` but not both.")
 
-        num_tokens, batch_size, _ = encoded_tokens.shape
-        is_cuda = encoded_tokens.is_cuda
+        _, batch_size, _ = encoded_tokens.shape
+        device = encoded_tokens.device
 
-        (frames, lstm_one_hidden_state, lstm_two_hidden_state, last_attention_context,
-         cumulative_alignment) = self._get_initial_state(
-             num_tokens=num_tokens,
-             batch_size=batch_size,
-             is_cuda=is_cuda,
-             target_frames=target_frames,
-             hidden_state=hidden_state,
-             device=encoded_tokens.device)
+        hidden_state = AutoregressiveDecoderHiddenState(
+            last_attention_context=torch.zeros(
+                batch_size, self.attention_hidden_size, device=device),
+            cumulative_alignment=None,
+            last_frame=torch.full(
+                (1, batch_size, self.frame_channels),
+                fill_value=torch.log(torch.tensor(self.min_spectrogram_magnitude, device=device)),
+                device=device),
+            lstm_one_hidden_state=None,
+            lstm_two_hidden_state=None) if hidden_state is None else hidden_state
+
+        # NOTE: Shift target frames backwards one step to be the source frames
+        frames = hidden_state.last_frame if target_frames is None else torch.cat(
+            [hidden_state.last_frame, target_frames[0:-1]])
 
         num_frames, _, _ = frames.shape
+
+        (last_attention_context, cumulative_alignment, _, lstm_one_hidden_state,
+         lstm_two_hidden_state) = hidden_state
+
+        del hidden_state
 
         # [num_frames, batch_size, frame_channels] →
         # [num_frames, batch_size, pre_net_hidden_size]
@@ -206,9 +147,8 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
         updated_frames = []
         attention_contexts = []
         alignments = []
-        frames = list(frames.split(1, dim=0))
-        while len(frames) > 0:
-            frame = frames.pop(0).squeeze(0)
+        for frame in frames.split(1, dim=0):
+            frame = frame.squeeze(0)
 
             # [batch_size, pre_net_hidden_size] (concat)
             # [batch_size, speaker_embedding_dim] (concat)
@@ -221,11 +161,6 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
             # [batch_size, lstm_hidden_size]
             lstm_one_hidden_state = self.lstm_layer_one(frame, lstm_one_hidden_state)
             frame = lstm_one_hidden_state[0]
-
-            # Apply dropout to the LSTM Cell State and Hidden State
-            lstm_one_hidden_state = list(lstm_one_hidden_state)
-            lstm_one_hidden_state[0] = self.lstm_layer_one_dropout(lstm_one_hidden_state[0])
-            lstm_one_hidden_state[1] = self.lstm_layer_one_dropout(lstm_one_hidden_state[1])
 
             # Initial attention alignment, sometimes refered to as attention weights.
             # attention_context [batch_size, attention_hidden_size]
@@ -272,28 +207,15 @@ conditioned on ``target_frames`` or the ``hidden_state`` but not both.""")
         # input_size (lstm_hidden_size + attention_hidden_size + speaker_embedding_dim)] →
         # [num_frames, batch_size, lstm_hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
-        frames = self.lstm_layer_two_dropout(frames)
 
-        # [num_frames, batch_size, lstm_hidden_size] (concat)
-        # [num_frames, batch_size, attention_hidden_size] (concat)
-        # [num_frames, batch_size, speaker_embedding_dim] →
-        # [num_frames, batch_size, lstm_hidden_size + attention_hidden_size + speaker_embedding_dim]
-        frames = torch.cat([frames, attention_contexts, speaker], dim=2)
-
-        del attention_contexts  # Clear Memory
-
-        # [num_frames, batch_size,
-        #  lstm_hidden_size + attention_hidden_size + speaker_embedding_dim] →
+        # [num_frames, batch_size, lstm_hidden_size (concat) speaker_embedding_dim] →
         # [num_frames, batch_size, 1]
-        stop_token = self.linear_stop_token(frames)  # Predict the stop token
-        # Remove singleton dimension
-        # [num_frames, batch_size, 1] → [num_frames, batch_size]
-        stop_token = stop_token.squeeze(2)
+        stop_token = self.linear_stop_token(torch.cat([frames, speaker], dim=2)).squeeze(2)
 
         # [num_frames, batch_size,
-        #  lstm_hidden_size + attention_hidden_size + speaker_embedding_dim] →
+        #  lstm_hidden_size (concat) attention_hidden_size (concat) speaker_embedding_dim] →
         # [num_frames, batch_size, frame_channels]
-        frames = self.linear_out(frames)  # Predicted Mel-Spectrogram
+        frames = self.linear_out(torch.cat([frames, attention_contexts, speaker], dim=2))
 
         new_hidden_state = AutoregressiveDecoderHiddenState(
             last_attention_context=last_attention_context,

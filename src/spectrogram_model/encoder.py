@@ -133,7 +133,6 @@ class Encoder(nn.Module):
             This hidden size must be even.
         num_convolution_layers (int): Number of convolution layers to apply.
         convolution_filter_size (int): Size of the convolving kernel.
-        convolution_dropout (float): The dropout applied after each convolution.
         lstm_layers (int): Number of recurrent LSTM layers.
     """
 
@@ -144,7 +143,6 @@ class Encoder(nn.Module):
                  hidden_size=HParam(),
                  num_convolution_layers=HParam(),
                  convolution_filter_size=HParam(),
-                 convolution_dropout=HParam(),
                  lstm_layers=HParam()):
 
         super().__init__()
@@ -164,8 +162,8 @@ class Encoder(nn.Module):
                     in_channels=hidden_size,
                     out_channels=hidden_size,
                     kernel_size=convolution_filter_size,
-                    padding=int((convolution_filter_size - 1) / 2)), nn.ReLU(),
-                nn.Dropout(p=convolution_dropout)) for i in range(num_convolution_layers)
+                    padding=int((convolution_filter_size - 1) / 2)), nn.ReLU())
+            for i in range(num_convolution_layers)
         ])
 
         for module in self.convolution_layers.modules():

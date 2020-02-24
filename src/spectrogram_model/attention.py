@@ -58,21 +58,22 @@ class LocationSensitiveAttention(nn.Module):
         super().__init__()
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
-        assert convolution_filter_size % 2 == 1, ('`convolution_filter_size` must be odd')
+        assert convolution_filter_size % 2 == 1, '`convolution_filter_size` must be odd'
 
         self.alignment_conv = nn.Conv1d(
             in_channels=1,
             out_channels=num_convolution_filters,
             kernel_size=convolution_filter_size,
             padding=int((convolution_filter_size - 1) / 2))
-        self.project_query = nn.Linear(query_hidden_size, hidden_size)
-        self.project_alignment = nn.Linear(num_convolution_filters, hidden_size)
-        self.score_weights = nn.Parameter(torch.FloatTensor(1, hidden_size, 1))
-        self.score_bias = nn.Parameter(torch.FloatTensor(1, 1, hidden_size).zero_())
+        self.project_query = nn.Sequential(
+            nn.Linear(query_hidden_size, hidden_size), nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size))
+        self.project_alignment = nn.Linear(num_convolution_filters, hidden_size, bias=False)
+        self.project_scores = nn.Linear(hidden_size, 1, bias=False)
         self.softmax = nn.Softmax(dim=1)
 
         # Initialize Weights
-        nn.init.xavier_uniform_(self.score_weights, gain=nn.init.calculate_gain('linear'))
+        nn.init.xavier_uniform_(self.project_scores.weight, gain=nn.init.calculate_gain('linear'))
 
     def score(self, encoded_tokens, tokens_mask, query, location_features):
         """ Compute addative attention score with location features.
@@ -96,33 +97,18 @@ class LocationSensitiveAttention(nn.Module):
         # [1, batch_size, hidden_size] → [num_tokens, batch_size, hidden_size]
         query = query.expand(num_tokens, batch_size, hidden_size)
 
-        # [1, 1, hidden_size] → [num_tokens, batch_size, hidden_size]
-        score_bias = self.score_bias.expand(num_tokens, batch_size, hidden_size)
-
         # score [num_tokens, batch_size, hidden_size]
         # ei,j = w * tanh(W * si−1 + V * hj + U * fi,j + b)
-        score = (encoded_tokens + query + location_features + score_bias).tanh_()
+        score = (query + location_features).tanh_()
 
         del location_features  # Clear memory
         del query  # Clear memory
 
-        # [1, hidden_size, 1] →
-        # [batch_size, hidden_size, 1]
-        score_weights = self.score_weights.expand(batch_size, hidden_size, 1)
-
         # [num_tokens, batch_size, hidden_size] → [batch_size, num_tokens, hidden_size]
         score = score.transpose(0, 1)
 
-        # [batch_size (b), num_tokens (n), hidden_size (m)] (bmm)
-        # [batch_size (b), hidden_size (m), 1 (p)] →
-        # [batch_size (b), num_tokens (n), 1 (p)]
-        score = torch.bmm(score, score_weights)
-
-        del score_weights  # Clear memory
-
-        # Squeeze extra single dimension
-        # [batch_size, num_tokens, 1] → [batch_size, num_tokens]
-        score = score.squeeze(2)
+        # [batch_size, num_tokens, hidden_size] → [batch_size, num_tokens]
+        score = self.project_scores(score).squeeze(2)
 
         # Mask encoded tokens padding
         score.data.masked_fill_(~tokens_mask, -math.inf)
@@ -157,10 +143,10 @@ class LocationSensitiveAttention(nn.Module):
         """
         num_tokens, batch_size, _ = encoded_tokens.shape
 
-        if cumulative_alignment is None:
-            # Attention alignment, sometimes refered to as attention weights.
-            tensor = torch.cuda.FloatTensor if encoded_tokens.is_cuda else torch.FloatTensor
-            cumulative_alignment = tensor(batch_size, num_tokens).zero_()
+        # NOTE: Attention alignment is sometimes refered to as attention weights.
+        cumulative_alignment = torch.zeros(
+            batch_size, num_tokens, dtype=torch.float,
+            device=encoded_tokens.device) if cumulative_alignment is None else cumulative_alignment
 
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
         location_features = cumulative_alignment.unsqueeze(1)
