@@ -16,7 +16,6 @@ import torch
 
 from src.audio import griffin_lim
 from src.bin.train.spectrogram_model.data_loader import DataLoader
-from src.environment import IS_TESTING_ENVIRONMENT
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.spectrogram_model import InputEncoder
@@ -176,18 +175,12 @@ class Trainer():
         logger.info('Model:\n%s', self.model)
         logger.info('Is Comet ML disabled? %s', 'True' if self.comet_ml.disabled else 'False')
 
-        if src.distributed.is_master() and not IS_TESTING_ENVIRONMENT:
-            # TODO: `atexit` doesn't run when `pytest` closes; therefore, it doesn't stop
-            # the repeated timer. This needs to be investigated.
+        if src.distributed.is_master():
             self.timer = RepeatTimer(save_temp_checkpoint_every_n_seconds,
                                      self._save_checkpoint_repeat_timer)
+            self.timer.daemon = True
             self.timer.start()
-            atexit.register(self._atexit)
-
-    def _atexit(self):
-        """ This function is run on program exit. """
-        self.save_checkpoint()
-        self.timer.cancel()
+            atexit.register(self.save_checkpoint)
 
     def _save_checkpoint_repeat_timer(self):
         """ Save a checkpoint and delete the last checkpoint saved.
@@ -312,19 +305,25 @@ class Trainer():
 
         random_batch = random.randint(0, len(data_loader) - 1)
         for i, batch in enumerate(data_loader):
-            batch_size = batch.text.lengths.numel()
             with torch.set_grad_enabled(train):
                 if infer:
-                    predictions = self.model(batch.text.tensor, batch.speaker.tensor,
-                                             batch.text.lengths)
-                    # NOTE: `duration_gap` computes the average length of the predictions
-                    # verus the average length of the original spectrograms.
-                    duration_gap = (predictions[-2].float() /
-                                    batch.spectrogram.lengths.float()).mean()
+                    # NOTE: Remove predictions that diverged (reached max) as to not skew other
+                    # metrics. We count these sequences seperatly with `reached_max_frames`.
+                    predictions = self.model(
+                        batch.text.tensor,
+                        batch.speaker.tensor,
+                        batch.text.lengths,
+                        filter_reached_max=True)
 
-                    self.metrics['duration_gap'].update(duration_gap, batch_size)
-                    self.metrics['reached_max_frames'].update(predictions[-1] / batch_size,
-                                                              batch_size)
+                    if predictions[-2].numel() > 0:
+                        # NOTE: `duration_gap` computes the average length of the predictions
+                        # verus the average length of the original spectrograms.
+                        original_lengths = batch.spectrogram.lengths[:, ~predictions[-1].squeeze()]
+                        duration_gap = (predictions[-2].float() / original_lengths.float()).mean()
+                        self.metrics['duration_gap'].update(duration_gap, predictions[-2].numel())
+
+                    self.metrics['reached_max_frames'].update(predictions[-1].float().mean(),
+                                                              predictions[-1].numel())
                 else:
                     predictions = self.model(batch.text.tensor, batch.speaker.tensor,
                                              batch.text.lengths, batch.spectrogram.tensor,
@@ -452,6 +451,9 @@ class Trainer():
             predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
             lengths (torch.LongTensor [batch_size])
         """
+        if lengths.numel() == 0:
+            return  # No need to update our metrics
+
         # lengths [batch_size] → mask [batch_size, num_frames]
         mask = lengths_to_mask(lengths, device=predicted_alignments.device)
         # mask [batch_size, num_frames] → [num_frames, batch_size]

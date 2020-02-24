@@ -97,6 +97,8 @@ def _set_audio_processing():
                     hop_length=frame_hop,
                     # NOTE: Manually determined to be a adequate cutoff for Linda Johnson via:
                     # ``notebooks/Stripping Silence.ipynb``
+                    # TODO: Given the number of new datasets that we acquired, this value
+                    # should be reevaluated.
                     top_db=50,
                 ),
         })
@@ -283,11 +285,13 @@ def _set_model_size(frame_channels, bits):
                             #         Text-To-Speech Synthesis):
                             # The paper mentions their proposed model uses a 256 dimension
                             # embedding.
+                            # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to
+                            # learn more about this parameter.
                             speaker_embedding_dim=64),
                     '_infer':
                         HParams(
                             # NOTE: Estimated loosely to be a multiple of the slowest speech
-                            # observed in one dataset. This threshhold is primarly intended to
+                            # observed in one dataset. This threshhold is primarily intended to
                             # prevent recursion.
                             max_frames_per_token=30,
                             stop_threshold=stop_threshold)
@@ -549,8 +553,7 @@ def set_hparams():
     Adam.__init__ = configurable(Adam.__init__)
     nn.modules.batchnorm._BatchNorm.__init__ = configurable(
         nn.modules.batchnorm._BatchNorm.__init__)
-    nn.LayerNorm.__init__ = configurable(
-        nn.LayerNorm.__init__)
+    nn.LayerNorm.__init__ = configurable(nn.LayerNorm.__init__)
     add_config({
         # NOTE: `momentum=0.01` to match Tensorflow defaults
         'torch.nn.modules.batchnorm._BatchNorm.__init__':
@@ -674,7 +677,6 @@ def set_hparams():
                                 # NOTE: We were able to get better results with 1800 audio samples
                                 # in Comet in August, 2019.
                                 train_spectrogram_slice_size=int(1800 / frame_hop),
-
                                 dev_batch_size=32,
                                 dev_spectrogram_slice_size=int(24000 / frame_hop),
 
@@ -701,8 +703,7 @@ def set_hparams():
                                 # context for each frame outside of the aligned samples. Then it
                                 # makes sense to have 450 samples of padding or 2 spectrogram
                                 # frames.
-                                spectrogram_slice_pad=2,
-                            ),
+                                spectrogram_slice_pad=2,),
                     }
                 },
             },

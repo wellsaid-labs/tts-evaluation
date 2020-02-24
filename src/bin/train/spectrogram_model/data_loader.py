@@ -86,8 +86,8 @@ def _load_fn(row, input_encoder):
         speaker=speaker,
         stop_token=stop_token,
         spectrogram=spectrogram,
-        spectrogram_mask=torch.FloatTensor(spectrogram.shape[0]).fill_(1),
-        spectrogram_expanded_mask=torch.FloatTensor(*spectrogram.shape).fill_(1))
+        spectrogram_mask=torch.ones(spectrogram.shape[0]),
+        spectrogram_expanded_mask=torch.ones(*spectrogram.shape))
 
 
 class DataLoader(DataLoader):
