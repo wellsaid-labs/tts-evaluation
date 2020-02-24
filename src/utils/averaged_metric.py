@@ -1,7 +1,12 @@
+import logging
+import math
+
 import torch
 import torch.utils.data
 
 import src.distributed
+
+logger = logging.getLogger(__name__)
 
 
 class AveragedMetric():
@@ -20,7 +25,7 @@ class AveragedMetric():
         if hasattr(self, 'total_value') and hasattr(self, 'total_count') and self.total_count > 0:
             average = self.total_value / self.total_count
         else:
-            average = None
+            average = math.nan
 
         self.last_update_value = 0
         self.last_update_count = 0
@@ -61,7 +66,7 @@ class AveragedMetric():
             (float): The average value of the last measurement.
         """
         if self.last_update_count == 0:
-            return None
+            return math.nan
 
         return self.last_update_value / self.last_update_count
 
@@ -80,7 +85,7 @@ class DistributedAveragedMetric(AveragedMetric):
                 self.post_sync_total_count > 0):
             average = self.post_sync_total_value / self.post_sync_total_count
         else:
-            average = None
+            average = math.nan
 
         self.post_sync_total_value = 0
         self.post_sync_total_count = 0

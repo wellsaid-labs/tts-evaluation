@@ -37,9 +37,7 @@ def plot_attention(alignment):
     Returns:
         (matplotlib.figure.Figure): Matplotlib figure representing the plot.
     """
-    if torch.is_tensor(alignment):
-        alignment = alignment.detach().cpu().numpy()
-
+    alignment = alignment.detach().cpu().numpy() if torch.is_tensor(alignment) else alignment
     alignment = np.transpose(alignment)
     pyplot.style.use('ggplot')
     figure, axis = pyplot.subplots()
@@ -60,9 +58,8 @@ def plot_loss_per_frame(loss_per_frame):
     Returns:
         (matplotlib.figure.Figure): Matplotlib figure representing the plot.
     """
-    if torch.is_tensor(loss_per_frame):
-        loss_per_frame = loss_per_frame.detach().cpu().numpy()
-
+    loss_per_frame = loss_per_frame.detach().cpu().numpy() if torch.is_tensor(
+        loss_per_frame) else loss_per_frame
     pyplot.style.use('ggplot')
     figure = pyplot.figure()
     pyplot.plot(list(range(len(loss_per_frame))), loss_per_frame, marker='.', linestyle='solid')
@@ -76,15 +73,15 @@ def plot_stop_token(stop_token):
     """ Plot probability of the stop token over time.
 
     Args:
-        stop_token (numpy.array or torch.Tensor [decoder_timestep]): Stop token probablity per
+        stop_token (numpy.array or torch.Tensor [decoder_timestep]): Stop token logits per
             decoder timestep.
 
     Returns:
         (matplotlib.figure.Figure): Matplotlib figure representing the plot.
     """
-    if torch.is_tensor(stop_token):
-        stop_token = stop_token.detach().cpu().numpy()
-
+    stop_token = stop_token if torch.is_tensor(stop_token) else torch.tensor(stop_token)
+    stop_token = torch.sigmoid(stop_token)
+    stop_token = stop_token.detach().cpu().numpy()
     pyplot.style.use('ggplot')
     figure = pyplot.figure()
     pyplot.plot(list(range(len(stop_token))), stop_token, marker='.', linestyle='solid')
@@ -104,9 +101,8 @@ def spectrogram_to_image(spectrogram):
     Returns:
         image (numpy.array [width, height, 3]): Spectrogram image.
     """
-    if torch.is_tensor(spectrogram):
-        spectrogram = spectrogram.detach().cpu().numpy()
-
+    spectrogram = spectrogram.detach().cpu().numpy() if torch.is_tensor(
+        spectrogram) else spectrogram
     spectrogram = (spectrogram - np.min(spectrogram)) / (np.max(spectrogram) - np.min(spectrogram))
     spectrogram = np.flip(spectrogram, axis=1)  # flip against freq axis
     spectrogram = np.uint8(colormap.viridis(spectrogram.T) * 255)
@@ -125,9 +121,7 @@ def plot_waveform(signal, sample_rate=HParam()):
     Returns:
         (matplotlib.figure.Figure): Matplotlib figure representing the plot.
     """
-    if torch.is_tensor(signal):
-        signal = signal.detach().cpu().numpy()
-
+    signal = signal.detach().cpu().numpy() if torch.is_tensor(signal) else signal
     pyplot.style.use('ggplot')
     figure = pyplot.figure()
     librosa_display.waveplot(signal, sr=sample_rate)
@@ -161,8 +155,8 @@ def plot_spectrogram(spectrogram,
     assert len(spectrogram.shape) == 2, 'Log mel spectrogram must be 2D.'
     figure = pyplot.figure()
     pyplot.style.use('ggplot')
-    if torch.is_tensor(spectrogram):
-        spectrogram = spectrogram.detach().cpu().numpy()
+    spectrogram = spectrogram.detach().cpu().numpy() if torch.is_tensor(
+        spectrogram) else spectrogram
     spectrogram = spectrogram.transpose()
     librosa_display.specshow(
         spectrogram,

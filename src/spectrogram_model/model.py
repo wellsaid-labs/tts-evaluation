@@ -14,6 +14,23 @@ from src.spectrogram_model.post_net import PostNet
 
 logger = logging.getLogger(__name__)
 
+# TODO: Update our weight initialization to best practices like these:
+# - https://github.com/pytorch/pytorch/issues/18182
+# - Gated RNN init on last slide:
+# https://web.stanford.edu/class/archive/cs/cs224n/cs224n.1184/lectures/lecture9.pdf
+# - Kaiming init for RELu instead of Xavier:
+# https://towardsdatascience.com/weight-initialization-in-neural-networks-a-journey-from-the-basics-to-kaiming-954fb9b47c79
+# - Block orthogonal LSTM initilization:
+# https://github.com/allenai/allennlp/pull/158
+# - Kaiming and Xavier both assume the input has a mean of 0 and std of 1; therefore, the embeddings
+# should be initialized with a normal distribution.
+# - The PyTorch init has little backing:
+# https://twitter.com/jeremyphoward/status/1107869607677681664
+
+# TODO: Write a test ensuring that given a input with std 1.0 the output of the network also has
+# an std of 1.0, following Kaiming's popular weight initialization approach:
+# https://towardsdatascience.com/weight-initialization-in-neural-networks-a-journey-from-the-basics-to-kaiming-954fb9b47c79
+
 
 class SpectrogramModel(nn.Module):
     """ Character sequence consumed to predict a spectrogram.
@@ -96,9 +113,7 @@ class SpectrogramModel(nn.Module):
         self.stop_sigmoid = nn.Sigmoid()
         self.embed_speaker = nn.Sequential(
             nn.Embedding(num_speakers, speaker_embedding_dim),
-            nn.Linear(speaker_embedding_dim, speaker_embedding_dim), nn.ReLU(),
-            nn.Dropout(speaker_embedding_dropout),
-            nn.Linear(speaker_embedding_dim, speaker_embedding_dim))
+            nn.Dropout(speaker_embedding_dropout))
 
     def _get_stopped_indexes(self, predictions, stop_threshold):
         """ Get a list of indices that predicted stop.
@@ -190,7 +205,8 @@ class SpectrogramModel(nn.Module):
                is_unbatched=False,
                max_frames_per_token=HParam(),
                stop_threshold=HParam(),
-               use_tqdm=False):
+               use_tqdm=False,
+               filter_reached_max=False):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
@@ -202,6 +218,8 @@ class SpectrogramModel(nn.Module):
                 quitting; Used for testing and defensive design.
             stop_threshold (float, optional): The threshold probability for deciding to stop.
             use_tqdm (bool, optional): If ``True`` attach a progress bar to iterator.
+            filter_reached_max (bool, optional): If `True` this filters the batch, removing
+                any sequences that reached the max frames.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
@@ -209,8 +227,8 @@ class SpectrogramModel(nn.Module):
             stop_token (torch.FloatTensor [num_frames, batch_size])
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
             lengths (torch.LongTensor [1, batch_size] or [1])
-            reached_max (int or bool): The number of spectrogram frames in batch that reached the
-                maximum number of frames.
+            reached_max (torch.BoolTensor [1, batch_size] or [1]): The spectrogram frames that
+                reached the maximum number of frames.
         """
         # [num_tokens, batch_size, hidden_size]
         _, batch_size, _ = encoded_tokens.shape
@@ -218,11 +236,12 @@ class SpectrogramModel(nn.Module):
         stopped = set()
         hidden_state = None
         alignments, frames, stop_tokens = [], [], []
-        max_lengths = (num_tokens.float() * max_frames_per_token).long()
+        max_lengths = torch.max((num_tokens.float() * max_frames_per_token).long(),
+                                torch.tensor(1, device=num_tokens.device))
         lengths = max_lengths.clone().tolist()
         if use_tqdm:
             progress_bar = tqdm(leave=True, unit='frame(s)')
-        while len(stopped) != batch_size and len(frames) < max(lengths):
+        while len(stopped) < batch_size and len(frames) < max(lengths):
             frame, stop_token, hidden_state, alignment = self.decoder(
                 encoded_tokens, tokens_mask, speaker, hidden_state=hidden_state)
             to_stop = self._get_stopped_indexes(stop_token, stop_threshold=stop_threshold)
@@ -254,13 +273,21 @@ class SpectrogramModel(nn.Module):
         lengths = torch.tensor(lengths, device=frames.device).unsqueeze(0)
         frames_with_residual = self._add_residual(frames, lengths)
 
-        reached_max = (lengths == max_lengths).sum().item()
-        if reached_max > 0:
-            logger.warning('%d sequences reached max frames', reached_max)
+        reached_max = (lengths == max_lengths).view(1, batch_size)
+        if reached_max.sum() > 0:
+            logger.warning('%d sequences reached max frames', reached_max.sum())
+
+        if filter_reached_max:
+            filter_ = ~reached_max.squeeze(0)
+            lengths = lengths[:, filter_]
+            frames, frames_with_residual, stop_tokens, alignments = tuple([
+                t[:lengths.squeeze().max(), filter_] if lengths.numel() > 0 else t[:, filter_]
+                for t in [frames, frames_with_residual, stop_tokens, alignments]
+            ])
 
         if is_unbatched:
             return (frames.squeeze(1), frames_with_residual.squeeze(1), stop_tokens.squeeze(1),
-                    alignments.squeeze(1), lengths.squeeze(1), bool(reached_max))
+                    alignments.squeeze(1), lengths.squeeze(1), reached_max.squeeze(1))
 
         return frames, frames_with_residual, stop_tokens, alignments, lengths, reached_max
 
@@ -354,8 +381,8 @@ class SpectrogramModel(nn.Module):
         Additionally, inference returns:
             lengths (torch.LongTensor [1, batch_size] or [1]): Number of frames predicted for each
                 sequence in the batch.
-            reached_max (int or bool): The number of spectrogram frames in batch that reached the
-                maximum number of frames.
+            reached_max (torch.BoolTensor [1, batch_size] or [1]): The spectrogram frames that
+                reached the maximum number of frames.
         """
         is_unbatched = len(tokens.shape) == 1
 

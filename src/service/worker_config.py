@@ -40,5 +40,8 @@ SPEAKER_ID_TO_SPEAKER = {
     16: datasets.HANUMAN_WELCH,
     17: datasets.JACK_RUTKOWSKI,
     18: datasets.MARK_ATHERLAY,
-    19: datasets.STEVEN_WAHLBERG
+    19: datasets.STEVEN_WAHLBERG,
+
+    # NOTE: Custom voice IDs are random numbers larger than 10,000 and less than 20,000.
+    11541: datasets.LINCOLN_CUSTOM
 }
