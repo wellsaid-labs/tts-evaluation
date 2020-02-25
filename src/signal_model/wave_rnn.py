@@ -18,6 +18,16 @@ from src.utils import torch_cpp_extension_load
 
 logger = logging.getLogger(__name__)
 
+# TODO: Consider applying weight normalization for training because it can be effective
+# at preventing gradient blow ups:
+# https://papers.nips.cc/paper/8954-normalization-helps-training-of-quantized-lstm.pdf
+# This is how you might go about doing so:
+# https://github.com/pytorch/pytorch/issues/2343
+# Lyrebird found weight normalization to be effective for them:
+# https://arxiv.org/pdf/1910.06711.pdf
+# Parallel WavGAN also found weight normalization to be effective:
+# https://arxiv.org/abs/1910.11480
+
 
 class _WaveRNNInferrer(nn.Module):
     """ `_WaveRNNInferrer` for computing fast inference on a CPU.

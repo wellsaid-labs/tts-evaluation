@@ -1,11 +1,15 @@
 from collections import defaultdict
 from collections import namedtuple
+from functools import lru_cache
 from functools import partial
 
 import hashlib
 import json
 import logging
 
+from hparams import configurable
+from hparams import HParam
+from scipy import ndimage
 from torch.multiprocessing import cpu_count
 from torchnlp._third_party.weighted_random_sampler import WeightedRandomSampler
 from torchnlp.encoders.text import stack_and_pad_tensors
@@ -17,6 +21,7 @@ from torchnlp.samplers import OomBatchSampler
 from torchnlp.utils import collate_tensors
 from torchnlp.utils import tensors_to
 
+import numpy as np
 import torch
 
 from src.environment import IS_TESTING_ENVIRONMENT
@@ -30,6 +35,23 @@ logger = logging.getLogger(__name__)
 SpectrogramModelTrainingRow = namedtuple('SpectrogramModelTrainingRow', [
     'text', 'speaker', 'spectrogram', 'stop_token', 'spectrogram_mask', 'spectrogram_expanded_mask'
 ])
+
+
+@configurable
+@lru_cache()
+def get_normalized_half_gaussian(length=HParam(), standard_deviation=HParam()):
+    """ Get a normalized half guassian distribution.
+
+    Learn more:
+    https://en.wikipedia.org/wiki/Half-normal_distribution
+
+    Returns:
+        (torch.FloatTensor [length,])
+    """
+    gaussian_kernel = ndimage.gaussian_filter1d(
+        np.float_([0] * (length - 1) + [1]), sigma=standard_deviation)
+    gaussian_kernel = gaussian_kernel / gaussian_kernel.max()
+    return torch.tensor(gaussian_kernel)
 
 
 class _BalancedSampler(WeightedRandomSampler):
@@ -73,7 +95,20 @@ def _load_fn(row, input_encoder):
     """
     spectrogram = maybe_load_tensor(row.spectrogram)
     stop_token = spectrogram.new_zeros((spectrogram.shape[0],))
-    stop_token[-1] = 1
+
+    # NOTE: The exact stop token distribution is uncertain because there are multiple valid
+    # stopping points after someone has finished speaking. For example, the audio can be cutoff
+    # 1 second or 2 seconds after someone has finished speaking. In order to address this
+    # uncertainty, we naively apply a normal distribution as the stop token ground truth.
+    # NOTE: This strategy was found to be effective via Comet in January 2020.
+    # TODO: In the future, it'd likely be more accurate to base the probability for stopping
+    # based on the loudness of each frame. The maximum loudness is based on a full-scale sine wave
+    # and the minimum loudness would be -96 Db or so. The probability for stopping is the loudness
+    # relative to the minimum and maximum loudness. This is assuming that at the end of an audio
+    # clip it gets progressively quieter.
+    gaussian_kernel = get_normalized_half_gaussian()
+    max_len = min(len(stop_token), len(gaussian_kernel))
+    stop_token[-max_len:] = gaussian_kernel[-max_len:]
 
     # Check invariants
     assert len(row.text) > 0
@@ -86,8 +121,8 @@ def _load_fn(row, input_encoder):
         speaker=speaker,
         stop_token=stop_token,
         spectrogram=spectrogram,
-        spectrogram_mask=torch.FloatTensor(spectrogram.shape[0]).fill_(1),
-        spectrogram_expanded_mask=torch.FloatTensor(*spectrogram.shape).fill_(1))
+        spectrogram_mask=torch.ones(spectrogram.shape[0]),
+        spectrogram_expanded_mask=torch.ones(*spectrogram.shape))
 
 
 class DataLoader(DataLoader):

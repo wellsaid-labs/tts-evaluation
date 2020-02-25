@@ -173,27 +173,18 @@ def test_encoder_filter_size():
 def test_encoder_padding_invariance():
     """ Ensure that the encoder results are not affected by padding. """
 
-    # NOTE: Dropout results change in response to `BatchSize` because the dropout is computed
-    # all together. For example:
-    # >>> import torch
-    # >>> torch.manual_seed(123)
-    # >>> batch_dropout = torch.nn.functional.dropout(torch.ones(5, 5))
-    # >>> torch.manual_seed(123)
-    # >>> dropout = torch.nn.functional.dropout(torch.ones(5))
-    # >>> batch_dropout[0] != dropout
-
     encoder = Encoder(
         encoder_params['vocab_size'],
         out_dim=encoder_params['out_dim'],
         hidden_size=encoder_params['hidden_size'],
-        convolution_dropout=0,
         num_convolution_layers=2,
         lstm_layers=2)
 
-    # Ensure `LayerNorm` perturbs the input
+    # Ensure `LayerNorm` perturbs the input instead of being just an identity.
     for module in encoder.modules():
         if isinstance(module, torch.nn.LayerNorm):
             torch.nn.init.uniform_(module.weight)
+            torch.nn.init.uniform_(module.bias)
 
     tokens = torch.randint(1, encoder_params['vocab_size'],
                            (encoder_params['batch_size'], encoder_params['num_tokens']))
@@ -209,15 +200,12 @@ def test_encoder_padding_invariance():
 
         result = encoder(padded_tokens, padded_tokens_mask).sum()
         result.backward()
-        # NOTE: Check the gradient on the first weight matrix to ensure everything propagated
-        # correctly.
-        result_grad = encoder.embed_token[0].weight.grad
+        result_grad = sum([p.grad.sum() for p in encoder.parameters() if p.grad is not None])
         encoder.zero_grad()
 
         if expected is None and expected_grad is None:
             expected = result.detach().numpy()
             expected_grad = result_grad.detach().numpy()
         else:
-            numpy.testing.assert_almost_equal(
-                result_grad.detach().numpy(), expected_grad, decimal=4)
-            numpy.testing.assert_almost_equal(result.detach().numpy(), expected, decimal=4)
+            numpy.testing.assert_almost_equal(result.detach().numpy(), expected, decimal=5)
+            numpy.isclose(result_grad.detach().numpy(), expected_grad)

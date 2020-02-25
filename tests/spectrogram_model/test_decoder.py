@@ -15,9 +15,9 @@ def test_autoregressive_decoder():
         frame_channels=frame_channels,
         attention_hidden_size=attention_hidden_size)
 
-    encoded_tokens = torch.FloatTensor(num_tokens, batch_size, attention_hidden_size).uniform_(0, 1)
+    encoded_tokens = torch.rand(num_tokens, batch_size, attention_hidden_size)
     tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
-    speaker = torch.FloatTensor(batch_size, speaker_embedding_dim).fill_(0)
+    speaker = torch.zeros(batch_size, speaker_embedding_dim)
 
     hidden_state = None
     for _ in range(3):
@@ -51,10 +51,10 @@ def test_autoregressive_decoder_target():
         attention_hidden_size=attention_hidden_size,
         frame_channels=frame_channels)
 
-    encoded_tokens = torch.FloatTensor(num_tokens, batch_size, attention_hidden_size).uniform_(0, 1)
+    encoded_tokens = torch.rand(num_tokens, batch_size, attention_hidden_size)
     tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
-    target_frames = torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1)
-    speaker = torch.FloatTensor(batch_size, speaker_embedding_dim).fill_(0)
+    target_frames = torch.rand(num_frames, batch_size, frame_channels)
+    speaker = torch.zeros(batch_size, speaker_embedding_dim)
 
     frames, stop_token, hidden_state, alignment = decoder(
         encoded_tokens=encoded_tokens,

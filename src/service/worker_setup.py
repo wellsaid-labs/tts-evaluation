@@ -20,8 +20,8 @@ def main(speaker_id_to_speaker, spectrogram_model_checkpoint, signal_model_check
     """
     # Ensure `speaker_id_to_speaker` invariants pass
     speaker_encoder = spectrogram_model_checkpoint.input_encoder.speaker_encoder
-    assert all(s in speaker_encoder.vocab for s in speaker_id_to_speaker.values()), (
-        'All speaker ids were not found in `speaker_encoder`.')
+    assert all(s in set(speaker_id_to_speaker.values()) for s in speaker_encoder.vocab), (
+        'All speaker ids were not found in `speaker_id_to_speaker`.')
 
     # Cache ths signal model inferrer
     signal_model_checkpoint.model.to_inferrer()

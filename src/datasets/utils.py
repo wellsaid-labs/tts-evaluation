@@ -124,6 +124,9 @@ def _add_spectrogram_column(example, on_disk=True):
         assert audio_path.is_file(), 'Audio path must be a file %s' % audio_path
         signal = read_audio(audio_path)
 
+        # TODO: The RMS function that trim uses mentions that it's likely better to use a
+        # spectrogram if it's available:
+        # https://librosa.github.io/librosa/generated/librosa.feature.rms.html?highlight=rms#librosa.feature.rms
         _, trim = librosa.effects.trim(signal.astype(numpy.float32))
         signal = signal[trim[0]:trim[1]]
 
@@ -220,18 +223,19 @@ def filter_(function, dataset):
 
 
 def _dataset_loader(
-        root_directory_name,
-        url,
-        speaker,
-        url_filename=None,
-        create_root=False,
-        check_files=['{metadata_filename}'],
-        directory=DATA_PATH,
-        metadata_filename='{directory}/{root_directory_name}/metadata.csv',
-        metadata_text_column='Content',
-        metadata_audio_column='WAV Filename',
-        metadata_audio_path='{directory}/{root_directory_name}/wavs/{metadata_audio_column_value}',
-        **kwargs):
+    root_directory_name,
+    url,
+    speaker,
+    url_filename=None,
+    create_root=False,
+    check_files=['{metadata_filename}'],
+    directory=DATA_PATH,
+    metadata_filename='{directory}/{root_directory_name}/metadata.csv',
+    metadata_text_column='Content',
+    metadata_audio_column='WAV Filename',
+    metadata_audio_path='{directory}/{root_directory_name}/wavs/{metadata_audio_column_value}',
+    **kwargs,
+):
     """ Load a standard speech dataset.
 
     A standard speech dataset has these invariants:

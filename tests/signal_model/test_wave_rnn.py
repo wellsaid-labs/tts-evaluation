@@ -116,7 +116,7 @@ def test_wave_rnn_infer__basic():
     signal_length = local_length * upsample_learned * upsample_repeat
 
     # TODO: With out ``fill_(1)`` there are strange runtime errors, investigate
-    local_features = torch.FloatTensor(local_length, local_features_size).fill_(1)
+    local_features = torch.ones(local_length, local_features_size)
 
     net = WaveRNN(
         hidden_size=64,

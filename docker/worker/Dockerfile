@@ -52,7 +52,8 @@ COPY src/ src/
 COPY third_party/ third_party/
 
 # Install Python Dependencies
-RUN apt-get install -y --no-install-recommends git-core \
+RUN apt-get update --fix-missing \
+  && apt-get install -y --no-install-recommends git-core \
   && apt-get install -y ninja-build g++ \
   # TODO: Consider the ideas here to reduce the size of numpy installation:
   # https://towardsdatascience.com/how-to-shrink-numpy-scipy-pandas-and-matplotlib-for-your-data-product-4ec8d7e86ee4
