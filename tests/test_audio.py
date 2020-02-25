@@ -10,14 +10,14 @@ import torch
 from src.audio import build_wav_header
 from src.audio import cache_get_audio_metadata
 from src.audio import get_audio_metadata
-from src.audio import get_log_mel_spectrogram
+from src.audio import get_db_mel_spectrogram
 from src.audio import get_num_seconds
 from src.audio import griffin_lim
 from src.audio import integer_to_floating_point_pcm
 from src.audio import iso226_weighting
 from src.audio import normalize_audio
 from src.audio import read_audio
-from src.audio import SignalToLogMelSpectrogram
+from src.audio import SignalTodBMelSpectrogram
 from src.audio import WavFileMetadata
 from src.audio import write_audio
 from src.environment import DATA_PATH
@@ -51,7 +51,7 @@ def test_iso226_weighting():
                                    iso226_weighting(np.array([20, 1000, 20000])))
 
 
-def test_signal_to_log_mel_spectrogram_against_librosa():
+def test_signal_to_db_mel_spectrogram_against_librosa():
     n_fft = 2048
     win_length = 2048
     hop_length = 512
@@ -88,7 +88,7 @@ def test_signal_to_log_mel_spectrogram_against_librosa():
     melspec = librosa.power_to_db(melspec, amin=amin, top_db=None)
     melspec = np.maximum(melspec, min_decibel).transpose()
 
-    module = SignalToLogMelSpectrogram(
+    module = SignalTodBMelSpectrogram(
         fft_length=n_fft,
         frame_hop=hop_length,
         sample_rate=sample_rate,
@@ -104,28 +104,28 @@ def test_signal_to_log_mel_spectrogram_against_librosa():
     np.testing.assert_almost_equal(melspec, other_mel_spectrogram, decimal=2)
 
 
-def test_signal_to_log_mel_spectrogram_backward():
-    """ Ensure `SignalToLogMelSpectrogram` is differentiable. """
+def test_signal_to_db_mel_spectrogram_backward():
+    """ Ensure `SignalTodBMelSpectrogram` is differentiable. """
     tensor = torch.nn.Parameter(torch.randn(2400))
-    module = SignalToLogMelSpectrogram()
+    module = SignalTodBMelSpectrogram()
     module(tensor).sum().backward()
 
 
-def test_signal_to_log_mel_spectrogram_batch_invariance():
-    """ Ensure `SignalToLogMelSpectrogram` is batch invariant. """
+def test_signal_to_db_mel_spectrogram_batch_invariance():
+    """ Ensure `SignalTodBMelSpectrogram` is batch invariant. """
     tensor = torch.nn.Parameter(torch.randn(10, 2400))
-    module = SignalToLogMelSpectrogram()
+    module = SignalTodBMelSpectrogram()
     results = module(tensor)
     result = module(tensor[0])
     np.testing.assert_almost_equal(results[0].detach().numpy(), result.detach().numpy(), decimal=5)
 
 
-def test_signal_to_log_mel_spectrogram_intermediate():
-    """ Ensure `SignalToLogMelSpectrogram` is can returns intermediate values. """
+def test_signal_to_db_mel_spectrogram_intermediate():
+    """ Ensure `SignalTodBMelSpectrogram` is can returns intermediate values. """
     batch_size = 10
     n_fft = 2048
     tensor = torch.nn.Parameter(torch.randn(batch_size, 2400))
-    module = SignalToLogMelSpectrogram(fft_length=n_fft)
+    module = SignalTodBMelSpectrogram(fft_length=n_fft)
     db_mel_spectrogram, db_spectrogram, spectrogram = module(tensor, intermediate=True)
     assert spectrogram.shape == (batch_size, db_mel_spectrogram.shape[1], n_fft // 2 + 1)
     assert db_spectrogram.shape == (batch_size, db_mel_spectrogram.shape[1], n_fft // 2 + 1)
@@ -259,7 +259,7 @@ def test_build_wav_header():
     assert expected_header == wav_header
 
 
-def test_log_mel_spectrogram():
+def test_db_mel_spectrogram():
     """ Smoke test to ensure everything runs.
     """
     frame_size = 1200
@@ -268,17 +268,17 @@ def test_log_mel_spectrogram():
     sample_rate = 24000
     fft_length = 2048
     signal = read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer'))
-    log_mel_spectrogram, padded_signal = get_log_mel_spectrogram(
+    db_mel_spectrogram, padded_signal = get_db_mel_spectrogram(
         signal,
         sample_rate=sample_rate,
         window=torch.hann_window(frame_size),
         frame_hop=frame_hop,
         fft_length=fft_length)
 
-    assert log_mel_spectrogram.dtype == np.float32
-    assert len(log_mel_spectrogram.shape) == 2
+    assert db_mel_spectrogram.dtype == np.float32
+    assert len(db_mel_spectrogram.shape) == 2
     assert len(padded_signal.shape) == 1
-    assert int(padded_signal.shape[0]) / int(log_mel_spectrogram.shape[0]) == frame_hop
+    assert int(padded_signal.shape[0]) / int(db_mel_spectrogram.shape[0]) == frame_hop
 
 
 def test_griffin_lim_smoke():
@@ -287,8 +287,8 @@ def test_griffin_lim_smoke():
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     sample_rate = 24000
     signal = read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer'))
-    log_mel_spectrogram, _ = get_log_mel_spectrogram(signal, sample_rate=sample_rate)
-    waveform = griffin_lim(log_mel_spectrogram, sample_rate)
+    db_mel_spectrogram, _ = get_db_mel_spectrogram(signal, sample_rate=sample_rate)
+    waveform = griffin_lim(db_mel_spectrogram, sample_rate)
     assert len(waveform) > 0
 
 

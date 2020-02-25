@@ -218,9 +218,9 @@ def test__do_loss_and_maybe_backwards():
         signal_mask=torch.ones(2, 4096))
     predicted_signal = torch.zeros(2, 4096)
 
-    log_mel_spectrogram_magnitude_loss, num_predictions = trainer._do_loss_and_maybe_backwards(
+    db_mel_spectrogram_magnitude_loss, num_predictions = trainer._do_loss_and_maybe_backwards(
         batch, predicted_signal, False, True)
-    assert log_mel_spectrogram_magnitude_loss.item() == pytest.approx(0.0)
+    assert db_mel_spectrogram_magnitude_loss.item() == pytest.approx(0.0)
     assert num_predictions == 8192
 
 

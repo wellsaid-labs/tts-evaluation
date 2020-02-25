@@ -195,20 +195,24 @@ def iso226_weighting(frequencies):
     https://commons.wikimedia.org/wiki/File:A-weighting,_ISO_226_and_ITU-R_468.svg
     https://en.wikipedia.org/wiki/A-weighting
     https://github.com/wellsaid-labs/Text-to-Speech/pull/287
+
+    Returns:
+        np.ndarray [*frequencies.shape]: The weighting for each frequency.
     """
     interpolator = iso226_spl_itpl(hfe=True)
-    # NOTE: The offsets ensure the normalisation to 0 dB at 1000 Hz. Learn more:
+    # NOTE: Offset so that 1000 Hz is weighted 0 dB. Learn more:
     # https://en.wikipedia.org/wiki/A-weighting
     return -interpolator(frequencies) + interpolator(np.array([1000]))
 
 
 @lru_cache()
-def get_signal_to_log_mel_spectrogram(*args, **kwargs):
-    return SignalToLogMelSpectrogram(*args, **kwargs)
+def get_signal_to_db_mel_spectrogram(*args, **kwargs):
+    """ Get cached `SignalTodBMelSpectrogram` module. """
+    return SignalTodBMelSpectrogram(*args, **kwargs)
 
 
-class SignalToLogMelSpectrogram(torch.nn.Module):
-    """ Compute a log-mel-scaled spectrogram from signal.
+class SignalTodBMelSpectrogram(torch.nn.Module):
+    """ Compute a dB-mel-scaled spectrogram from signal.
 
     Learn more:
     - Loudness Spectrogram:
@@ -226,6 +230,13 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
     - Frequency Scales:
     https://www.researchgate.net/figure/Comparison-between-Mel-Bark-ERB-and-linear-frequency-scales-Since-the-units-of-the_fig4_283044643
     - Frequency Scales: https://www.vocal.com/noise-reduction/perceptual-noise-reduction/
+    - A just-noticeable difference (JND) in amplitude level is on the order of a quarter dB.
+      (https://www.dsprelated.com/freebooks/mdft/Decibels.html)
+    - https://librosa.github.io/librosa/generated/librosa.core.amplitude_to_db.html
+    - The human perception of the intensity of sound and light approximates the logarithm of
+      intensity rather than a linear relationship (Weber–Fechner law), making the dB scale a useful
+      measure. (https://en.wikipedia.org/wiki/Decibel)
+    - http://msp.ucsd.edu/techniques/v0.08/book-html/node6.html
 
     Args:
         fft_length (int): See `n_fft` here: https://pytorch.org/docs/stable/torch.html#torch.stft
@@ -274,18 +285,46 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
         self.register_buffer('mel_basis', torch.tensor(mel_basis).float())
         self.register_buffer('weighting', weighting)
 
-    def forward(self, signal, intermediate=False):
-        """
+    def forward(self, signal, intermediate=False, aligned=False):
+        """ Compute a dB-mel-scaled spectrogram from signal.
+
         Args:
             signal (torch.FloatTensor [batch_size, signal_length])
             intermediate (bool, optional): If `True`, along with a `db_mel_spectrogram`, this
               returns a `db_spectrogram` and `spectrogram`.
+            aligned (bool, optional): If `True` the returned spectrogram is aligned to the signal
+              such that `signal.shape[1] / self.frame_hop == db_mel_spectrogram.shape[1]`
 
         Returns:
-            log_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins])
+            db_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins]): A
+                spectrogram with the mel scale for frequency, decibel scale for power, and a regular
+                time scale.
+            db_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins]): This is only
+                returned iff `intermediate=True`.
+            spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins]): This is only
+                returned iff `intermediate=True`.
         """
         has_batch_dim = signal.dim() == 2
         signal = signal.view(-1, signal.shape[-1])
+
+        assert signal.dtype == torch.float32, 'Invalid argument.'
+
+        if aligned:  # TODO: Test this
+            assert signal.shape[1] % self.frame_hop == 0, (
+                'The signal must be a multiple of `frame_hop` to be aligned to the spectrogram.')
+            assert (self.fft_length - self.frame_hop) % 2 == 0, (
+                '`self.fft_length - self.frame_hop` must be even for the signal '
+                'to be aligned to the spectrogram.')
+            # NOTE: Check ``notebooks/Signal_to_Spectrogram_Consistency.ipynb`` for the correctness
+            # of this padding algorithm.
+            # NOTE: Center the signal such that the resulting spectrogram and audio are aligned.
+            # Learn more here:
+            # https://librosa.github.io/librosa/_modules/librosa/core/spectrum.html#stft
+            # NOTE: The number of spectrogram frames generated is:
+            # `(signal.shape[1] - frame_size + frame_hop) // frame_hop`
+            signal = np.pad(
+                signal, (self.fft_length - self.frame_hop) // 2, mode='constant', constant_values=0)
+
         spectrogram = torch.stft(
             signal,
             n_fft=self.fft_length,
@@ -293,6 +332,9 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
             win_length=self.window.shape[0],
             window=self.window,
             center=False)
+
+        if aligned:
+            assert spectrogram.shape[-1] / self.frame_hop == signal.shape[1], 'Invariant failure.'
 
         # NOTE: The below `norm` line is equal to a numerically stable version of the below...
         # >>> real_part, imag_part = spectrogram.unbind(-1)
@@ -312,25 +354,15 @@ class SignalToLogMelSpectrogram(torch.nn.Module):
         db_mel_spectrogram = db_mel_spectrogram if has_batch_dim else db_mel_spectrogram.squeeze(0)
 
         if intermediate:
-            # TODO: Can we simplify the `tranpose` and `squeeze`s?
-            db_spectrogram = torch.max(self.min_decibel,
-                                       power_to_db(power_spectrogram).transpose(-2, -1))
+            # TODO: Simplify the `tranpose` and `squeeze`s.
+            db_spectrogram = power_to_db(power_spectrogram).transpose(-2, -1)
+            db_spectrogram = torch.max(self.min_decibel, db_spectrogram)
             spectrogram = spectrogram.transpose(-2, -1)
             db_spectrogram = db_spectrogram if has_batch_dim else db_spectrogram.squeeze(0)
             spectrogram = spectrogram if has_batch_dim else spectrogram.squeeze(0)
             return db_mel_spectrogram, db_spectrogram, spectrogram
         else:
             return db_mel_spectrogram
-
-
-# Learn more:
-#   - A just-noticeable difference (JND) in amplitude level is on the order of a quarter dB.
-#     (https://www.dsprelated.com/freebooks/mdft/Decibels.html)
-#   - https://librosa.github.io/librosa/generated/librosa.core.amplitude_to_db.html
-#   - The human perception of the intensity of sound and light approximates the logarithm of
-#     intensity rather than a linear relationship (Weber–Fechner law), making the dB scale a useful
-#     measure. (https://en.wikipedia.org/wiki/Decibel)
-#   - http://msp.ucsd.edu/techniques/v0.08/book-html/node6.html
 
 
 def power_to_db(tensor, eps=1e-10):
@@ -385,88 +417,61 @@ def db_to_amplitude(tensor):
     return db_to_power(tensor / 2)
 
 
-def get_log_mel_spectrogram(signal, center=True, scalar=1 / 50, **kwargs):
-    """ Compute a log-mel-scaled spectrogram from signal.
+def pad_remainder(signal, multiple, **kwargs):
+    """ Pad signal such that `signal.shape[0] % multiple == 0`.
+
+    TODO: Test this.
 
     Args:
-        signal (np.array [signal_length]): `float32`, `int32` or `int16 time-domain
-            signal in the range [-1, 1].
-        center (bool, optional): Return a spectrogram and audio that are aligned.
-        scalar (float, optional): Scale the output by this constant so that's in the ballpark
-            of [-1, 1] range.
-        **kwargs
+        signal (np.array [signal_length]): One-dimensional signal to pad.
+        multiple (int): The returned signal shape is divisible by `multiple`.
 
     Returns:
-        log_mel_spectrograms (np.ndarray [frames, num_mel_bins]): Log mel spectrogram.
-        signal (np.ndarray): Returns if `center` is `True` a `signal` with padding such that:
-            `(signal.shape[0] + pad) / frame_hop == log_mel_spectrograms.shape[0]`
+        np.array [padded_signal_length]
     """
-    signal_to_log_mel_spectrogram = get_signal_to_log_mel_spectrogram(**kwargs)
-    frame_hop = signal_to_log_mel_spectrogram.frame_hop
-    fft_length = signal_to_log_mel_spectrogram.fft_length
-    frame_size = signal_to_log_mel_spectrogram.window.shape[0]
-
-    if center:
-        # NOTE: Check ``notebooks/Signal_to_Spectrogram_Consistency.ipynb`` for the correctness
-        # of this padding algorithm.
-        # NOTE: Pad signal so that is divisable by ``frame_hop``
-        remainder = frame_hop - signal.shape[0] % frame_hop
-        padding = (math.ceil(remainder / 2), math.floor(remainder / 2))
-        padded_signal = np.pad(signal, padding, mode='constant', constant_values=0)
-        assert padded_signal.shape[0] % frame_hop == 0
-
-        # NOTE: Center the signal such that the resulting spectrogram and audio are aligned. Learn
-        # more here: https://librosa.github.io/librosa/_modules/librosa/core/spectrum.html#stft
-        padded_signal = np.pad(
-            padded_signal, int(fft_length // 2), mode='constant', constant_values=0)
-    else:
-        padded_signal = signal
-
-    # NOTE: The number of spectrogram frames generated is, with ``center=True``:
-    # ``(maybe_padded_signal.shape[0] + frame_hop) // frame_hop``.
-    # Otherewise, it's: ``(maybe_padded_signal.shape[0] - frame_size + frame_hop) // frame_hop``
-    padded_signal = torch.from_numpy(integer_to_floating_point_pcm(padded_signal))
-    spectrogram = signal_to_log_mel_spectrogram(padded_signal).numpy() * scalar
-
-    if center:
-        # NOTE: Return number of padding needed to pad signal such that
-        # ``spectrogram.shape[0] * num_frames == signal.shape[0]``
-        # This is padding is partly determined by ``center=True`` librosa padding.
-        ret_pad = frame_hop + remainder
-        assert ret_pad <= frame_size
-        assert (signal.shape[0] + ret_pad) % frame_hop == 0
-        ret_pad = (math.ceil(ret_pad / 2), math.floor(ret_pad / 2))
-        ret_signal = np.pad(signal, ret_pad, mode='constant', constant_values=0)
-
-    if center:
-        return spectrogram, ret_signal
-    else:
-        return spectrogram
+    remainder = multiple - signal.shape[0] % multiple
+    padding = (math.ceil(remainder / 2), math.floor(remainder / 2))
+    padded_signal = np.pad(signal, padding, **kwargs)
+    assert padded_signal.shape[0] % multiple == 0
+    return padded_signal
 
 
-def _log_mel_spectrogram_to_spectrogram(log_mel_spectrogram, sample_rate, fft_length):
-    """ Transform log mel spectrogram to spectrogram (lossy).
+@configurable
+def _db_mel_spectrogram_to_spectrogram(db_mel_spectrogram,
+                                       sample_rate,
+                                       fft_length,
+                                       get_weighting=HParam()):
+    """ Transform dB mel spectrogram to spectrogram (lossy).
+
+    TODO: Test this function.
+    TODO: Configure this function.
 
     Args:
-        log_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
-        sample_rate (int): Sample rate of the ``log_mel_spectrogram``.
-        fft_length (int): The size of the FFT to apply. If not provided, uses the smallest
-            power of 2 enclosing `frame_length`.
+        db_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
+        sample_rate (int): Sample rate of the `db_mel_spectrogram`.
+        fft_length (int): The size of the FFT to apply.
 
     Returns:
         (np.ndarray [frames, num_spectrogram_bins]): Spectrogram.
     """
-    mel_spectrogram = np.exp(log_mel_spectrogram)
-    num_mel_bins = mel_spectrogram.shape[1]
-    mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=fft_length)
+    num_mel_bins = db_mel_spectrogram.shape[1]
+    power_mel_spectrogram = db_to_power(db_mel_spectrogram)
 
-    # ``np.linalg.pinv`` creates approximate inverse matrix of ``mel_basis``
+    mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=fft_length)
+    frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=fft_length)
+    weighting = get_weighting(frequencies)
+    weighting = db_to_power(weighting)
+
+    # TODO: Instead consider using a solution like this:
+    # https://github.com/pytorch/audio/issues/351
+    # NOTE: ``np.linalg.pinv`` creates approximate inverse matrix of ``mel_basis``
     inverse_mel_basis = np.linalg.pinv(mel_basis)
-    return np.dot(inverse_mel_basis, mel_spectrogram.transpose()).transpose()
+    power_spectrogram = np.dot(inverse_mel_basis, power_mel_spectrogram.transpose()).transpose()
+    return (power_spectrogram / weighting).sqrt()
 
 
 @configurable
-def griffin_lim(log_mel_spectrogram,
+def griffin_lim(db_mel_spectrogram,
                 sample_rate=HParam(),
                 frame_size=HParam(),
                 frame_hop=HParam(),
@@ -475,7 +480,7 @@ def griffin_lim(log_mel_spectrogram,
                 power=HParam(),
                 iterations=HParam(),
                 use_tqdm=False):
-    """ Transform log mel spectrogram to waveform with the Griffin-Lim algorithm.
+    """ Transform dB mel spectrogram to waveform with the Griffin-Lim algorithm.
 
     Given a magnitude spectrogram as input, reconstruct the audio signal and return it using the
     Griffin-Lim algorithm from the paper:
@@ -497,12 +502,11 @@ def griffin_lim(log_mel_spectrogram,
           https://ieeexplore.ieee.org/document/1164317/?reload=true
 
     Args:
-        log_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
+        db_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
         sample_rate (int): Sample rate of the spectrogram and the resulting wav file.
         frame_size (int): The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
         frame_hop (int): The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
-        fft_length (int): The size of the FFT to apply. If not provided, uses the smallest
-            power of 2 enclosing `frame_length`.
+        fft_length (int): The size of the FFT to apply.
         window (str, tuple, number, callable): Window function to be applied to each
             frame. See the full specification for window at ``librosa.filters.get_window``.
         power (float): Amplification float used to reduce artifacts.
@@ -514,8 +518,8 @@ def griffin_lim(log_mel_spectrogram,
     """
     try:
         logger.info('Running Griffin-Lim....')
-        spectrogram = _log_mel_spectrogram_to_spectrogram(
-            log_mel_spectrogram=log_mel_spectrogram, sample_rate=sample_rate, fft_length=fft_length)
+        spectrogram = _db_mel_spectrogram_to_spectrogram(
+            db_mel_spectrogram=db_mel_spectrogram, sample_rate=sample_rate, fft_length=fft_length)
         spectrogram = spectrogram.transpose()
         waveform = librosa.core.griffinlim(
             spectrogram,
@@ -581,9 +585,6 @@ def build_wav_header(num_frames,
     header += b'data'  # Data chunk identifier
     header += struct.pack('<I', data_length)  # Data chunk length
     return header, file_size
-
-
-
 
 
 # Args:

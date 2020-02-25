@@ -17,7 +17,7 @@ librosa = LazyLoader('librosa', globals(), 'librosa')
 pandas = LazyLoader('pandas', globals(), 'pandas')
 
 from src.audio import cache_get_audio_metadata
-from src.audio import get_log_mel_spectrogram
+from src.audio import get_db_mel_spectrogram
 from src.audio import normalize_audio
 from src.audio import integer_to_floating_point_pcm
 from src.audio import read_audio
@@ -132,17 +132,18 @@ def _add_spectrogram_column(example, config, on_disk=True):
         _, trim = librosa.effects.trim(integer_to_floating_point_pcm(signal))
         signal = signal[trim[0]:trim[1]]
 
-        log_mel_spectrogram, padded_signal = get_log_mel_spectrogram(signal)
-        log_mel_spectrogram = torch.from_numpy(log_mel_spectrogram)
+        # TODO: Consider computing batches of spectrograms.
+        db_mel_spectrogram, padded_signal = get_db_mel_spectrogram(signal)
+        db_mel_spectrogram = torch.from_numpy(db_mel_spectrogram)
         padded_signal = torch.from_numpy(padded_signal)
 
         if on_disk:
             parent.mkdir(exist_ok=True)
             return example._replace(
                 spectrogram_audio=OnDiskTensor.from_tensor(spectrogram_audio_path, padded_signal),
-                spectrogram=OnDiskTensor.from_tensor(spectrogram_path, log_mel_spectrogram))
+                spectrogram=OnDiskTensor.from_tensor(spectrogram_path, db_mel_spectrogram))
 
-        return example._replace(spectrogram_audio=padded_signal, spectrogram=log_mel_spectrogram)
+        return example._replace(spectrogram_audio=padded_signal, spectrogram=db_mel_spectrogram)
 
     return example._replace(
         spectrogram_audio=OnDiskTensor(spectrogram_audio_path),

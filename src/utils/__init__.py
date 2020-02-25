@@ -1,5 +1,4 @@
 from src.utils.align_tokens import align_tokens
-from src.utils.anomaly_detector import AnomalyDetector
 from src.utils.averaged_metric import AveragedMetric
 from src.utils.averaged_metric import DistributedAveragedMetric
 from src.utils.batch_predict_spectrograms import batch_predict_spectrograms
@@ -36,12 +35,12 @@ from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
 
 __all__ = [
-    'align_tokens', 'AnomalyDetector', 'Checkpoint', 'DataLoader', 'disk_cache', 'OnDiskTensor',
-    'dict_collapse', 'get_weighted_stdev', 'get_average_norm', 'load', 'save', 'flatten_parameters',
+    'align_tokens', 'Checkpoint', 'DataLoader', 'disk_cache', 'OnDiskTensor', 'dict_collapse',
+    'get_weighted_stdev', 'get_average_norm', 'load', 'save', 'flatten_parameters',
     'maybe_get_model_devices', 'evaluate', 'identity', 'seconds_to_string', 'log_runtime',
     'sort_together', 'slice_by_cumulative_sum', 'flatten', 'batch_predict_spectrograms',
     'get_chunks', 'cache_on_disk_tensor_shapes', 'RecordStandardStreams', 'Pool',
     'maybe_load_tensor', 'AveragedMetric', 'DistributedAveragedMetric', 'bash_time_label',
- 'RepeatTimer', 'mean', 'random_sample', 'make_arg_key', 'DiskCache',
+    'RepeatTimer', 'mean', 'random_sample', 'make_arg_key', 'DiskCache',
     'assert_no_overwritten_files', 'get_file_metadata'
 ]

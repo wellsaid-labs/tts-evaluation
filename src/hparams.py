@@ -31,22 +31,6 @@ logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
 
 
-def _set_anomaly_detection():
-    # NOTE: Prevent circular dependency
-    from src.utils import AnomalyDetector
-
-    add_config({
-        'src.utils.anomaly_detector.AnomalyDetector.__init__':
-            HParams(
-                # NOTE: Based on ``notebooks/Detecting Anomalies.ipynb``. The current usage requires
-                # modeling gradient norm that has a lot of variation requiring a large `sigma`.
-                sigma=1024,
-                beta=0.98,
-                type_=AnomalyDetector.TYPE_HIGH,
-            )
-    })
-
-
 def _set_audio_processing():
     # SOURCE (Tacotron 1):
     # We use 24 kHz sampling rate for all experiments.
@@ -134,7 +118,7 @@ def _set_audio_processing():
             # number of channels, scaling linearly per channel.
             'build_wav_header':
                 HParams(frame_rate=sample_rate),
-            'SignalToLogMelSpectrogram.__init__':
+            'SignalTodBMelSpectrogram.__init__':
                 HParams(
                     sample_rate=sample_rate,
                     frame_hop=frame_hop,
@@ -145,10 +129,11 @@ def _set_audio_processing():
                     # Prior to log compression, the filterbank output magnitudes are clipped to a
                     # minimum value of 0.01 in order to limit dynamic range in the logarithmic
                     # domain.
-                    # NOTE: The `min_decibel` is set to ensure there is around 80 - 90 dB of
+                    # NOTE: The `min_decibel` is set to ensure there is around 100 dB of
                     # dynamic range, allowing us to make the most use of the maximum 96 dB dynamic
-                    # range a 16-bit audio file can provide. This value is sligtly lower than
-                    # Tacotron 2's equivalent  of 0.01 (~ -40 dB).
+                    # range a 16-bit audio file can provide. This is assuming that a full-scale
+                    # 997 Hz sine wave is the maximum dB which would be around ~47 dB. Tacotron 2's
+                    # equivalent  of 0.01 (~ -40 dB).
                     min_decibel=-50.0,
                     # NOTE: ISO226 is one of the latest standards for determining loudness:
                     # https://www.iso.org/standard/34222.html. It does have some issues though:

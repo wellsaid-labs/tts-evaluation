@@ -26,7 +26,6 @@ from src.optimizers import Optimizer
 from src.signal_model import SignalModel
 from src.spectrogram_model import InputEncoder
 from src.spectrogram_model import SpectrogramModel
-from src.utils import AnomalyDetector
 from src.utils import Checkpoint
 from src.utils import OnDiskTensor
 
@@ -238,7 +237,6 @@ def get_tts_mocks(add_spectrogram=False,
             directory=SIGNAL_MODEL_EXPERIMENTS_PATH,
             epoch=0,
             step=0,
-            anomaly_detector=AnomalyDetector(),
             optimizer=signal_model_optimizer,
             model=return_['signal_model'],
             spectrogram_model_checkpoint_path=return_['spectrogram_model_checkpoint'].path)

@@ -27,7 +27,7 @@ from torchnlp.utils import get_total_parameters
 import torch
 
 from src.audio import integer_to_floating_point_pcm
-from src.audio import SignalToLogMelSpectrogram
+from src.audio import SignalTodBMelSpectrogram
 from src.bin.train.signal_model.data_loader import DataLoader
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
@@ -112,13 +112,13 @@ class SpectrogramLoss(torch.nn.Module):
 
     Args:
         criterion (torch.nn.Module): The loss function for comparing two spectrograms.
-        **kwargs: Additional key word arguments passed to `SignalToLogMelSpectrogram`.
+        **kwargs: Additional key word arguments passed to `SignalTodBMelSpectrogram`.
     """
 
     def __init__(self, criterion=torch.nn.L1Loss, **kwargs):
         super().__init__()
 
-        self.signal_to_spectrogram = SignalToLogMelSpectrogram(**kwargs)
+        self.signal_to_spectrogram = SignalTodBMelSpectrogram(**kwargs)
         self.fft_length = self.signal_to_spectrogram.fft_length
         self.frame_hop = self.signal_to_spectrogram.frame_hop
         self.sample_rate = self.signal_to_spectrogram.sample_rate
@@ -313,10 +313,10 @@ class Trainer():
         # TODO: Remove redundancy between `self.criterions` and `self.metrics`.
         # TODO: Consider naming the metrics more precisely from the spectrogram parameters.
         self.metrics = {
-            'log_mel_spectrogram_magnitude_loss': DistributedAveragedMetric(),
-            'log_mel_2048_spectrogram_magnitude_loss': DistributedAveragedMetric(),
-            'log_mel_1024_spectrogram_magnitude_loss': DistributedAveragedMetric(),
-            'log_mel_512_spectrogram_magnitude_loss': DistributedAveragedMetric(),
+            'db_mel_spectrogram_magnitude_loss': DistributedAveragedMetric(),
+            'db_mel_2048_spectrogram_magnitude_loss': DistributedAveragedMetric(),
+            'db_mel_1024_spectrogram_magnitude_loss': DistributedAveragedMetric(),
+            'db_mel_512_spectrogram_magnitude_loss': DistributedAveragedMetric(),
             'data_queue_size': DistributedAveragedMetric(),
         }
 
@@ -539,7 +539,7 @@ class Trainer():
                 batch.target_signal,
                 comet_ml=self.comet_ml if log_figure else None)
             total_spectrogram_loss += spectrogram_loss / len(self.criterions)
-            self.metrics['log_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length].update(
+            self.metrics['db_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length].update(
                 spectrogram_loss, batch.target_signal.shape[0])
 
         if do_backwards:
@@ -549,8 +549,8 @@ class Trainer():
             self.exponential_moving_parameter_average.update()
 
         # TODO: Consider using the spectrogram length instead of batch size
-        self.metrics['log_mel_spectrogram_magnitude_loss'].update(total_spectrogram_loss,
-                                                                  batch.target_signal.shape[0])
+        self.metrics['db_mel_spectrogram_magnitude_loss'].update(total_spectrogram_loss,
+                                                                 batch.target_signal.shape[0])
 
         return total_spectrogram_loss, batch.signal_mask.sum()
 
@@ -587,17 +587,17 @@ class Trainer():
             spectrogram_loss = criterion(predicted, target_signal, comet_ml=self.comet_ml)
             total_spectrogram_loss += spectrogram_loss / len(self.criterions)
             self.comet_ml.log_metrics({
-                'single/log_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length:
+                'single/db_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length:
                     spectrogram_loss.item()
             })
 
         self.comet_ml.log_metrics(
-            {'single/log_mel_spectrogram_magnitude_loss': total_spectrogram_loss.item()})
+            {'single/db_mel_spectrogram_magnitude_loss': total_spectrogram_loss.item()})
         self.comet_ml.log_audio(
             tag=self.DEV_INFERRED_LABEL,
             text=example.text,
             speaker=str(example.speaker),
             gold_audio=target_signal,
             predicted_audio=predicted,
-            log_mel_spectrogram_magnitude_loss=total_spectrogram_loss.item())
+            db_mel_spectrogram_magnitude_loss=total_spectrogram_loss.item())
         self.comet_ml.log_figure('input_spectrogram', plot_spectrogram(spectrogram.detach().cpu()))
