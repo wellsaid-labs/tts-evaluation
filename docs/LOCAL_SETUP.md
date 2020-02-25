@@ -46,13 +46,6 @@ brew install ffmpeg
 Note that we do not use `ffmpeg` directly instead it is used by one of our
 [dependencies](https://librosa.github.io/librosa/install.html#ffmpeg).
 
-This repository also requires [Ninja](https://ninja-build.org/) for compilation. It can be
-installed like so:
-
-```bash
-brew install ninja
-```
-
 ### (Optional) [MKL](https://software.intel.com/en-us/mkl)
 
 For optimal signal model inference performance, install [MKL](https://software.intel.com/en-us/mkl)

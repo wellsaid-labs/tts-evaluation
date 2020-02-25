@@ -36,12 +36,6 @@ caches.
   find disk/data -name '.tts_cache' -type d -exec rm -rf {} \;
   ```
 
-- Delete the signal model build files, like so:
-
-  ```bash
-  rm -rf disk/other/ninja_build
-  ```
-
 - Delete various function disk caches for functions. For example, in the below command
   we delete the disk cache for `src.audio.get_audio_metadata`:
 

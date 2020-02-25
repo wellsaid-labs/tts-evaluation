@@ -5,29 +5,24 @@ from math import isclose
 from pathlib import Path
 from threading import Lock
 from threading import Timer
-from unittest.mock import patch
 
-import hashlib
 import inspect
 import itertools
 import logging
 import logging.config
 import math
 import os
-import pickle
 import pprint
 import random
 import statistics
 import time
 
 from torch import multiprocessing
-from torch.utils import cpp_extension
 
 import torch
 import torch.utils.data
 
 from src.environment import DISK_CACHE_PATH
-from src.environment import NINJA_BUILD_PATH
 from src.utils.disk_cache_ import DiskCache
 
 logger = logging.getLogger(__name__)

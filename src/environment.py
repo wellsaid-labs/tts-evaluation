@@ -53,10 +53,6 @@ TEMP_PATH = DISK_PATH / 'temp'
 
 TEMP_PATH.mkdir(exist_ok=True)
 
-NINJA_BUILD_PATH = OTHER_DISK_CACHE_PATH / 'ninja_build'
-
-NINJA_BUILD_PATH.mkdir(exist_ok=True)
-
 DISK_CACHE_PATH = OTHER_DISK_CACHE_PATH / 'disk_cache'
 
 DISK_CACHE_PATH.mkdir(exist_ok=True)
