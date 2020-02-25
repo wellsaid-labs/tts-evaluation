@@ -19,9 +19,4 @@ train the spectrogram model without making any code changes.
 
 ## Signal Model Training
 
-| Comet                            | Machine Type | GPU  | # GPUs | GPU RAM | Spot Request \$/hr | train_epoch/steps_per_second | \$/step |
-| -------------------------------- | ------------ | ---- | ------ | ------- | ------------------ | ---------------------------- | ------- |
-| dffd2fe8db114c5eaa631a5764fd1b76 | p3.16xlarge  | V100 | 8      | 128     | 7.344              | 2.11                         | 0.00096 |
-
-The GPUs that we evaluated all had at least 128 gigabytes of RAM, the minimum required to
-train the signal model without making any code changes.
+TODO

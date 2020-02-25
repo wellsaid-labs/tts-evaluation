@@ -1,123 +1,15 @@
-from copy import deepcopy
 from unittest import mock
 
 import math
 import unittest
 
 from torch.optim import Adam
-from torch.optim import AdamW
 
 import torch
-import numpy
 
 from src.optimizers import AutoOptimizer
-from src.optimizers import Lamb
 from src.optimizers import Optimizer
 from tests._utils import MockCometML
-
-
-def test_lamb_optimizer__adam():
-    net_lamb = torch.nn.LSTM(10, 20, 2)
-    net_adam = torch.nn.LSTM(10, 20, 2)
-
-    net_adam.load_state_dict(deepcopy(net_lamb.state_dict()))  # Same weights as `net_lamb`
-
-    # `trust_ratio=1.0` ensures equality with AdamW (similar to Adam with a different weight decay).
-    lamb = Lamb(
-        params=net_lamb.parameters(),
-        amsgrad=False,
-        lr=10**-3,
-        eps=1e-8,
-        min_trust_ratio=1,
-        max_trust_ratio=1,
-        l2_regularization=0.01)
-    adam = Adam(params=net_adam.parameters(), amsgrad=False, lr=10**-3, weight_decay=0.01, eps=1e-8)
-
-    input_ = torch.randn(5, 3, 10, requires_grad=False)
-
-    output_lamb, _ = net_lamb(input_)
-    lamb.zero_grad()
-    output_lamb.sum().backward()
-    lamb.step()
-
-    output_adam, _ = net_adam(input_)
-    adam.zero_grad()
-    output_adam.sum().backward()
-    adam.step()
-
-    # The first step for LAMB should have an Adam update
-    for p1, p2 in zip(net_lamb.parameters(), net_adam.parameters()):
-        numpy.testing.assert_allclose(p1.detach().numpy(), p2.detach().numpy(), rtol=1e-3)
-
-
-def test_lamb_optimizer__amsgrad():
-    net_lamb = torch.nn.LSTM(10, 20, 2)
-    net_adam = torch.nn.LSTM(10, 20, 2)
-
-    net_adam.load_state_dict(deepcopy(net_lamb.state_dict()))  # Same weights as `net_lamb`
-
-    # `trust_ratio=1.0` ensures equality with AdamW (similar to Adam with a different weight decay).
-    lamb = Lamb(
-        params=net_lamb.parameters(),
-        amsgrad=True,
-        lr=10**-3,
-        min_trust_ratio=1,
-        max_trust_ratio=1,
-        eps=1e-8)
-    adam = Adam(params=net_adam.parameters(), lr=10**-3, amsgrad=True, eps=1e-8)
-
-    input_ = torch.randn(5, 3, 10, requires_grad=False)
-
-    output_lamb, _ = net_lamb(input_)
-    lamb.zero_grad()
-    output_lamb.sum().backward()
-    lamb.step()
-
-    output_adam, _ = net_adam(input_)
-    adam.zero_grad()
-    output_adam.sum().backward()
-    adam.step()
-
-    # NOTE: The first step for LAMB should have an Adam update
-    for p1, p2 in zip(net_lamb.parameters(), net_adam.parameters()):
-        numpy.testing.assert_almost_equal(p1.detach().numpy(), p2.detach().numpy(), decimal=5)
-
-
-def test_lamb_optimizer__adam_w():  # Smoke test
-    net_lamb = torch.nn.LSTM(10, 20, 2)
-    net_adam = torch.nn.LSTM(10, 20, 2)
-
-    net_adam.load_state_dict(deepcopy(net_lamb.state_dict()))  # Same weights as `net_lamb`
-
-    # `trust_ratio=1.0` ensures equality with AdamW (similar to Adam with a different weight decay).
-    # NOTE: Our implementation includes bias correction in `AdamW` while `AdamW`
-    # doesn't.
-    lamb = Lamb(
-        params=net_lamb.parameters(),
-        amsgrad=False,
-        lr=10**-3,
-        eps=1e-8,
-        min_trust_ratio=1,
-        max_trust_ratio=1,
-        weight_decay=0.01)
-    adam = AdamW(
-        params=net_adam.parameters(), amsgrad=False, lr=10**-3, weight_decay=0.01, eps=1e-8)
-
-    input_ = torch.randn(5, 3, 10, requires_grad=False)
-
-    output_lamb, _ = net_lamb(input_)
-    lamb.zero_grad()
-    output_lamb.sum().backward()
-    lamb.step()
-
-    output_adam, _ = net_adam(input_)
-    adam.zero_grad()
-    output_adam.sum().backward()
-    adam.step()
-
-    # The first step for LAMB should have an Adam update
-    for p1, p2 in zip(net_lamb.parameters(), net_adam.parameters()):
-        numpy.testing.assert_almost_equal(p1.detach().numpy(), p2.detach().numpy(), decimal=5)
 
 
 class TestOptimizer(unittest.TestCase):

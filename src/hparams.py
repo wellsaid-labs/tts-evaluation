@@ -534,34 +534,17 @@ def set_hparams():
     nn.LayerNorm.__init__ = configurable(nn.LayerNorm.__init__)
     add_config({
         # NOTE: `momentum=0.01` to match Tensorflow defaults
-        'torch.nn.modules.batchnorm._BatchNorm.__init__':
-            HParams(momentum=0.01),
+        'torch.nn.modules.batchnorm._BatchNorm.__init__': HParams(momentum=0.01),
         # NOTE: BERT uses `eps=1e-12` for `LayerNorm`, see here:
         # https://github.com/huggingface/transformers/blob/master/src/transformers/configuration_bert.py
-        'torch.nn.LayerNorm.__init__':
-            HParams(eps=1e-12),
+        'torch.nn.LayerNorm.__init__': HParams(eps=1e-12),
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
-        'torch.optim.adam.Adam.__init__':
-            HParams(
-                betas=(0.9, 0.999),
-                amsgrad=False,
-                lr=10**-3,
-            ),
-        'src.optimizers.Lamb.__init__':
-            HParams(
-                betas=(0.9, 0.999),  # NOTE: Default value as suggested in the paper proposing Adam.
-                # NOTE: `amsgrad` caused substantially lower performance (tested on Comet in August
-                # 2019).
-                amsgrad=False,
-                lr=10**-3,
-                max_trust_ratio=10,  # NOTE: Default value as suggested in the paper proposing LAMB.
-                # NOTE: This l2 regularization reduced audio artifacts without sacrificing
-                # performance (tested on Comet in August 2019).
-                l2_regularization=0,
-                # NOTE: `weight_decay` was more sensistive than l2 regularization without providing
-                # much benefit (tested on Comet in August 2019).
-                weight_decay=0.0),
+        'torch.optim.adam.Adam.__init__': HParams(
+            betas=(0.9, 0.999),
+            amsgrad=False,
+            lr=10**-3,
+        )
     })
 
     spectrogram_model_dev_batch_size = 224
@@ -654,9 +637,8 @@ def set_hparams():
                                 dev_spectrogram_slice_size=int(32768 / frame_hop),
                                 optimizer=Adam,
 
-                                # A similar schedule to used to train BERT; furthermore, experiments
-                                # on Comet show this schedule is effective along with the LAMB
-                                # optimizer and a large batch size.
+                                # NOTE: We employ a small warmup because the model can be unstable
+                                # at the start of it's training.
                                 lr_multiplier_schedule=signal_model_lr_multiplier_schedule,
 
                                 # WaveRNN from `Efficient Neural Audio Synthesis` is small,
