@@ -196,7 +196,7 @@ def stream_text_to_speech_synthesis(signal_model_inferrer, spectrogram_model, in
 
 def validate_and_unpack(request_args,
                         input_encoder,
-                        max_characters=1000,
+                        max_characters=10000,
                         api_keys=API_KEYS,
                         speaker_id_to_speaker=SPEAKER_ID_TO_SPEAKER):
     """ Validate and unpack the request object.

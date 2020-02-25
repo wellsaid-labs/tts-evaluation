@@ -74,8 +74,8 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const API_KEYS = Object.entries(process.env).filter(item =>
   item[0].includes(process.env.API_KEY_SUFFIX)
 );
-const FRONTEND_USERS = Object.assign({}, ...API_KEYS.map(([_, v]) => ({
-  'admin': v
+const FRONTEND_USERS = Object.assign({}, ...API_KEYS.map(([k, v]) => ({
+  [k.toLowerCase()]: v
 })));
 
 const logger = {
@@ -1150,6 +1150,7 @@ if (require.main === module) {
     v3: new PodPool(process.env.V3_WORKER_POD_IMAGE, 0),
     v4: new PodPool(process.env.V4_WORKER_POD_IMAGE, 2),
     "lincoln.v1": new PodPool(process.env.LINCOLN_V1_WORKER_POD_IMAGE),
+    v5: new PodPool(process.env.V5_WORKER_POD_IMAGE, 1),
   };
   app.locals.podPools.latest = app.locals.podPools.v4;
 
