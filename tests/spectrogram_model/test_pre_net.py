@@ -11,7 +11,7 @@ def test_pre_net():
     pre_net = PreNet(hidden_size=hidden_size, frame_channels=frame_channels)
 
     # NOTE: spectrogram frames are around the range of 0 to 1
-    input_ = torch.FloatTensor(num_frames, batch_size, frame_channels).uniform_(0, 1)
+    input_ = torch.rand(num_frames, batch_size, frame_channels)
     output = pre_net(input_)
 
     assert output.type() == 'torch.FloatTensor'

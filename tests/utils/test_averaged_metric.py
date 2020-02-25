@@ -1,3 +1,5 @@
+import math
+
 from unittest import mock
 
 import torch
@@ -13,7 +15,7 @@ def test_averaged_metric():
 
     assert metric.last_update() == 0.25
     assert metric.reset() == 0.4
-    assert metric.last_update() is None
+    assert math.isnan(metric.last_update())
 
 
 @mock.patch('torch.distributed')
@@ -28,7 +30,7 @@ def test_distributed_average_metric(mock_distributed):
     assert metric.last_update() == 0.25
     assert metric.sync().last_update() == 0.4
     assert metric.reset() == 0.4
-    assert metric.last_update() is None
+    assert math.isnan(metric.last_update())
 
 
 def test_distributed_average_metric__not_initialized():
@@ -39,4 +41,4 @@ def test_distributed_average_metric__not_initialized():
     assert metric.last_update() == 0.25
     assert metric.sync().last_update() == 0.4
     assert metric.reset() == 0.4
-    assert metric.last_update() is None
+    assert math.isnan(metric.last_update())

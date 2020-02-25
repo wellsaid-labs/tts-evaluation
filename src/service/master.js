@@ -34,15 +34,16 @@
  * TODO: Consider implementing rate limiting to mitigate DDOS or brute force attacks.
  */
 const AbortController = require('abort-controller');
+const basicAuth = require('express-basic-auth');
 const bodyParser = require('body-parser');
 const Client = require('kubernetes-client').Client;
+const cors = require('cors');
 const express = require('express');
 const fetch = require('node-fetch');
 const helmet = require('helmet');
 const path = require('path');
 const Request = require('kubernetes-client/backends/request');
 const uuidv4 = require('uuid/v4');
-const cors = require('cors');
 
 const {
   KubeConfig
@@ -67,6 +68,15 @@ const AVERAGE_JOB_TIME = 5.5 * 7.147 * 1000;
 // NOTE: Unfortunately, due to the auto-scaler, the minimum time a pod is online is 10 minutes.
 // Learn more: https://cloud.google.com/compute/docs/autoscaler/understanding-autoscaler-decisions
 const MINIMUM_POD_TIME_TO_LIVE = 10 * 60 * 1000;
+
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+const API_KEYS = Object.entries(process.env).filter(item =>
+  item[0].includes(process.env.API_KEY_SUFFIX)
+);
+const FRONTEND_USERS = Object.assign({}, ...API_KEYS.map(([k, v]) => ({
+  [k.toLowerCase()]: v
+})));
 
 const logger = {
   log: (...arguments) => console.log(`[${(new Date()).toISOString()}]`, ...arguments),
@@ -980,7 +990,10 @@ function getPodPool(request, response) {
   } else if (version) {
     logger.log(`getPodPool: Version not found: ${version}.`);
     response.status(404);
-    response.send('Version not found.');
+    response.json({
+      'code': 'NOT_FOUND',
+      'message': 'Version not found.',
+    });
     return;
   }
   return request.app.locals.podPools.latest;
@@ -1089,13 +1102,6 @@ app.use(helmet());
 app.options('*', cors());
 app.use(cors());
 
-app.use(express.static(path.join(__dirname, 'public')));
-app.get('/', (_, response) => {
-  response.sendFile('public/index.html', {
-    root: __dirname
-  });
-});
-
 // NOTE: The reason we're not waiting for the `PodPool.waitTillReady` is because that would cause
 // our resources to double with potentially two healthy masters during a transition.
 app.get('/healthy', (_, response) => {
@@ -1106,6 +1112,17 @@ app.get('/healthy', (_, response) => {
 app.all('/api/text_to_speech/stream', reservePodController);
 app.all('/api/speech_synthesis/v1/text_to_speech/stream', reservePodController);
 app.all('/api/*', noReservationController);
+
+app.use(basicAuth({
+  users: FRONTEND_USERS,
+  challenge: true,
+}));
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (_, response) => {
+  response.sendFile('public/index.html', {
+    root: __dirname
+  });
+});
 
 // Catch-all error handler similar to:
 // https://expressjs.com/en/guide/error-handling.html
@@ -1120,8 +1137,9 @@ app.use((error, request, response, next) => {
   }
 
   response.status(500);
-  response.render('error', {
-    error,
+  response.json({
+    'code': 'INTERNAL_ERROR',
+    'message': IS_PRODUCTION ? 'Internal Error. Please contact michael@wellsaidlabs.com.' : error,
   });
 });
 
@@ -1130,7 +1148,9 @@ if (require.main === module) {
     v1: new PodPool(process.env.V1_WORKER_POD_IMAGE, 0),
     v2: new PodPool(process.env.V2_WORKER_POD_IMAGE, 0),
     v3: new PodPool(process.env.V3_WORKER_POD_IMAGE, 0),
-    v4: new PodPool(process.env.V4_WORKER_POD_IMAGE),
+    v4: new PodPool(process.env.V4_WORKER_POD_IMAGE, 2),
+    "lincoln.v1": new PodPool(process.env.LINCOLN_V1_WORKER_POD_IMAGE),
+    v5: new PodPool(process.env.V5_WORKER_POD_IMAGE, 1),
   };
   app.locals.podPools.latest = app.locals.podPools.v4;
 
