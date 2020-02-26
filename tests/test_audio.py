@@ -23,6 +23,8 @@ from src.audio import pad_remainder
 from src.audio import power_to_db
 from src.audio import read_audio
 from src.audio import SignalTodBMelSpectrogram
+from src.audio import WAVE_FORMAT_IEEE_FLOAT
+from src.audio import WAVE_FORMAT_PCM
 from src.audio import WavFileMetadata
 from src.audio import write_audio
 from src.environment import DATA_PATH
@@ -290,13 +292,50 @@ def test_get_audio_metadata():
     assert get_audio_metadata(path) == WavFileMetadata(24000, 16, 1, 'signed-integer')
 
 
-def test_build_wav_header():
+def test_build_wav_header__float32():
+    """ Test to ensure the header matches `wavfile.write`. """
+    sample_rate = 16000
+    file_ = io.BytesIO()
+    wavfile.write(file_, sample_rate, np.float32([]))
+    expected_header = file_.getvalue()
+    wav_header, header_length = build_wav_header(
+        0, sample_rate, wav_format=WAVE_FORMAT_IEEE_FLOAT, sample_width=4, num_channels=1)
+    assert len(wav_header) == header_length
+    assert expected_header == wav_header
+
+
+def test_build_wav_header__float32__multiple_channels():
+    """ Test to ensure the header matches `wavfile.write`. """
+    sample_rate = 16000
+    file_ = io.BytesIO()
+    wavfile.write(file_, sample_rate, np.float32([]).reshape((0, 2)))
+    expected_header = file_.getvalue()
+    wav_header, header_length = build_wav_header(
+        0, sample_rate, wav_format=WAVE_FORMAT_IEEE_FLOAT, sample_width=4, num_channels=2)
+    assert len(wav_header) == header_length
+    assert expected_header == wav_header
+
+
+def test_build_wav_header__int16():
     """ Test to ensure the header matches `wavfile.write`. """
     sample_rate = 16000
     file_ = io.BytesIO()
     wavfile.write(file_, sample_rate, np.int16([]))
     expected_header = file_.getvalue()
-    wav_header, header_length = build_wav_header(0, sample_rate)
+    wav_header, header_length = build_wav_header(
+        0, sample_rate, wav_format=WAVE_FORMAT_PCM, sample_width=2, num_channels=1)
+    assert len(wav_header) == header_length
+    assert expected_header == wav_header
+
+
+def test_build_wav_header__int8():
+    """ Test to ensure the header matches `wavfile.write`. """
+    sample_rate = 16000
+    file_ = io.BytesIO()
+    wavfile.write(file_, sample_rate, np.int8([]))
+    expected_header = file_.getvalue()
+    wav_header, header_length = build_wav_header(
+        0, sample_rate, wav_format=WAVE_FORMAT_PCM, sample_width=1, num_channels=1)
     assert len(wav_header) == header_length
     assert expected_header == wav_header
 

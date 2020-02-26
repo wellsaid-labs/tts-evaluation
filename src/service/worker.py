@@ -52,6 +52,7 @@ from src.hparams import set_hparams
 from src.service.worker_config import SIGNAL_MODEL_CHECKPOINT_PATH
 from src.service.worker_config import SPEAKER_ID_TO_SPEAKER
 from src.service.worker_config import SPECTROGRAM_MODEL_CHECKPOINT_PATH
+from src.signal_model import generate_waveform
 from src.utils import Checkpoint
 
 # NOTE: Flask documentation requests that logging is configured before `app` is created.
@@ -169,8 +170,8 @@ def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encod
     # TODO: Consider logging various events to stackdriver, to keep track.
 
     app.logger.info('Generating waveform header...')
-    scale_factor = signal_model.scale_factor
-    wav_header, wav_file_size = build_wav_header(scale_factor * spectrogram.shape[0])
+    upscale_factor = signal_model.upscale_factor
+    wav_header, wav_file_size = build_wav_header(upscale_factor * spectrogram.shape[0])
 
     def response():
         """ Generator incrementally generating a WAV file.
@@ -179,7 +180,8 @@ def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encod
             assert sys.byteorder == 'little', 'Ensure byte order is of little-endian format.'
             yield wav_header
             app.logger.info('Generating waveform...')
-            for waveform in signal_model(spectrogram, generator=True):
+            for waveform in generate_waveform(signal_model, spectrogram):
+                waveform = waveform.numpy()
                 app.logger.info('Waveform shape %s', waveform.shape)
                 yield waveform.tostring()
             app.logger.info('Finished generating waveform.')

@@ -158,6 +158,51 @@ class LayerNorm(torch.nn.LayerNorm):
         return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
 
 
+def generate_waveform(model, spectrogram, split_size=64, generator=True):
+    """
+    Args:
+        model (SignalModel): The model to synthesize the waveform with.
+        spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
+        split_size (int or None, optional): Number of frames to synthesize at a time.
+        generator (bool, optional): If `True` this returns results incrementally.
+
+    Returns:
+        signal (torch.FloatTensor [batch_size, signal_length])
+    """
+    has_batch_dim = len(spectrogram.shape) == 3
+
+    # [batch_size, num_frames, frame_channels]
+    spectrogram = spectrogram.view(-1, spectrogram.shape[-2], spectrogram.shape[-1])
+    batch_size, num_frames, frame_channels = spectrogram.shape
+
+    # [batch_size, num_frames, frame_channels] → [batch_size, frame_channels, num_frames]
+    spectrogram = spectrogram.transpose(1, 2)
+
+    num_frames = spectrogram.shape[-1]
+    spectrogram = model.pad(spectrogram)
+
+    padding = model.padding
+    split_size = min(num_frames if split_size is None else split_size, num_frames)
+    iterator = range(padding, spectrogram.shape[2] - padding, split_size)
+    splits = [spectrogram[:, :, i - padding:i + split_size + padding] for i in iterator]
+    assert sum([s.shape[2] - padding * 2 for s in splits]) == num_frames, 'Invariant failed.'
+
+    def _generate():
+        # TODO: During evaluation, we should convert the `float32` output back to
+        # `int16` to match the dataset fidelity. That also means we'll want to dither the
+        # output; however, we should consider the model already learned this on it's own with
+        # the help of the discriminator.
+        with torch.no_grad():
+            for split in splits:
+                waveform = model(split.transpose(1, 2), pad_input=False)
+                yield waveform if has_batch_dim else waveform.squeeze(0)
+
+    if not generator:
+        return torch.cat(list(_generate()), dim=-1)
+
+    return _generate()
+
+
 class SignalModel(torch.nn.Module):
     """ Predicts a signal given a spectrogram.
 

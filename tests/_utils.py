@@ -22,6 +22,7 @@ from src.datasets import normalize_audio_column
 from src.datasets.m_ailabs import DOROTHY_AND_WIZARD_OZ
 from src.environment import SIGNAL_MODEL_EXPERIMENTS_PATH
 from src.environment import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
+from src.optimizers import ExponentialMovingParameterAverage
 from src.optimizers import Optimizer
 from src.signal_model import SignalModel
 from src.spectrogram_model import InputEncoder
@@ -231,10 +232,13 @@ def get_tts_mocks(add_spectrogram=False,
     def get_signal_model_checkpoint():
         signal_model_optimizer = Optimizer(
             Adam(params=filter(lambda p: p.requires_grad, return_['signal_model'].parameters())))
+        signal_model_ema = ExponentialMovingParameterAverage(
+            filter(lambda p: p.requires_grad, return_['signal_model'].parameters()))
         checkpoint = Checkpoint(
             comet_ml_project_name='',
             comet_ml_experiment_key='',
             directory=SIGNAL_MODEL_EXPERIMENTS_PATH,
+            exponential_moving_parameter_average=signal_model_ema,
             epoch=0,
             step=0,
             optimizer=signal_model_optimizer,

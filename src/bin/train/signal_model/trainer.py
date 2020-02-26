@@ -32,6 +32,7 @@ from src.bin.train.signal_model.data_loader import DataLoader
 from src.optimizers import AutoOptimizer
 from src.optimizers import ExponentialMovingParameterAverage
 from src.optimizers import Optimizer
+from src.signal_model import generate_waveform
 from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
@@ -252,6 +253,7 @@ class Trainer():
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
         lr_multiplier_schedule (callable): Learning rate multiplier schedule.
         model (torch.nn.Module, optional): Model to train and evaluate.
+        criterions (list of callables, optional): List of callables to initialize criterions.
         spectrogram_model_checkpoint_path (pathlib.Path or str, optional): Checkpoint path used to
             generate a spectrogram from text as input to the signal model.
         step (int, optional): Starting step; typically, this parameter is useful when starting from
@@ -283,6 +285,7 @@ class Trainer():
                  lr_multiplier_schedule=HParam(),
                  exponential_moving_parameter_average=ExponentialMovingParameterAverage,
                  model=HParam(),
+                 criterions=HParam(),
                  spectrogram_model_checkpoint_path=None,
                  step=0,
                  epoch=0,
@@ -321,24 +324,7 @@ class Trainer():
         self.scheduler = LambdaLR(
             self.optimizer.optimizer, lr_multiplier_schedule, last_epoch=step - 1)
 
-        # NOTE: The `num_mel_bins` must be proportional to `fft_length`, learn more:
-        # https://stackoverflow.com/questions/56929874/what-is-the-warning-empty-filters-detected-in-mel-frequency-basis-about
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                'ignore', module=r'.*hparams', message=r'.*Overwriting configured argument.*')
-            self.criterions = [
-                SpectrogramLoss(
-                    fft_length=2048,
-                    frame_hop=300,
-                    window=torch.hann_window(1200),
-                    num_mel_bins=128).to(device),
-                SpectrogramLoss(
-                    fft_length=1024, frame_hop=150, window=torch.hann_window(600),
-                    num_mel_bins=64).to(device),
-                SpectrogramLoss(
-                    fft_length=512, frame_hop=75, window=torch.hann_window(300),
-                    num_mel_bins=32).to(device),
-            ]
+        self.criterions = [c().to(device) for c in criterions]
 
         self.metrics = {
             'data_queue_size': DistributedAveragedMetric(),
@@ -478,13 +464,7 @@ class Trainer():
 
     @log_runtime
     def run_epoch(self, train=False, trial_run=False):
-        """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
-
-        The specification of an "epoch" is loose in rare circumstances:
-
-            - `DataLoader`'s specification allows it to drop data via `drop_last`. Therefore,
-              there is not always the same number of batches for each epoch.
-            - `trial_run` runs only on row of data.
+        """ Iterate over a dataset with `self.model`, computing the loss function every iteration.
 
         Args:
             train (bool, optional): If ``True`` the model will additionally take steps along the
@@ -633,7 +613,7 @@ class Trainer():
                     spectrogram.shape[0], torch.get_num_threads())
 
         self.exponential_moving_parameter_average.apply_shadow()
-        predicted = model(spectrogram)
+        predicted = generate_waveform(model, spectrogram, generator=False)
         self.exponential_moving_parameter_average.restore()
 
         total_spectrogram_loss = torch.tensor(0.0, device=self.device)

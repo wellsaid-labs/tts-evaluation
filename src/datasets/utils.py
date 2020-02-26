@@ -113,6 +113,8 @@ def _add_spectrogram_column(example, config, on_disk=True):
         (TextSpeechRow): Row of text and speech aligned data with spectrogram data.
     """
     audio_path = example.audio_path
+    # TODO: Add a method for transfering global configuration between processes without private
+    # variables.
     hparams.hparams._configuration = config
 
     if on_disk:
@@ -136,7 +138,7 @@ def _add_spectrogram_column(example, config, on_disk=True):
         # TODO: Compute batches of spectrograms, it'd be faster.
         padded_signal = pad_remainder(signal)
         db_mel_spectrogram = get_signal_to_db_mel_spectrogram()(
-            torch.from_numpy(integer_to_floating_point_pcm(padded_signal)), aligned=True)
+            torch.from_numpy(integer_to_floating_point_pcm(padded_signal)), aligned=True).detach()
         padded_signal = torch.from_numpy(padded_signal)
 
         if on_disk:
@@ -176,7 +178,8 @@ def add_spectrogram_column(data, on_disk=True):
 
 
 def _normalize_audio_column_helper(example, config):
-    # TODO: Don't use private variable
+    # TODO: Add a method for transfering global configuration between processes without private
+    # variables.
     hparams.hparams._configuration = config
     return example._replace(audio_path=normalize_audio(example.audio_path))
 

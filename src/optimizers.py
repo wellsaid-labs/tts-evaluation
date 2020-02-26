@@ -143,8 +143,6 @@ class ExponentialMovingParameterAverage():
 
     Inspired by: http://www.programmersought.com/article/28492072406/
 
-    TODO: Consider moving this into the signal model as part of it's evaluation mode.
-
     Learn more about EMA, here: https://arxiv.org/abs/1806.04498
 
     Args:
@@ -152,7 +150,8 @@ class ExponentialMovingParameterAverage():
         beta (float): Beta used to weight the exponential mean.
     """
 
-    def __init__(self, parameters, beta=0.999):
+    @configurable
+    def __init__(self, parameters, beta=HParam()):
         self.parameters = list(parameters)
         self.beta = beta
         self.shadow = [param.clone().detach() * (1.0 - self.beta) for param in self.parameters]

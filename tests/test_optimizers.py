@@ -15,7 +15,7 @@ from src.utils import Checkpoint
 from tests._utils import MockCometML
 
 
-class TestExponentialMovingParameterAverageCheckpointModule(torch.nn.Module):
+class _TestExponentialMovingParameterAverageCheckpointModule(torch.nn.Module):
 
     def __init__(self, value):
         super().__init__()
@@ -27,7 +27,7 @@ def test_exponential_moving_parameter_average__checkpoint():
 
     values = [1.0, 2.0]
 
-    module = TestExponentialMovingParameterAverageCheckpointModule(values[0])
+    module = _TestExponentialMovingParameterAverageCheckpointModule(values[0])
     exponential_moving_parameter_average = ExponentialMovingParameterAverage(
         module.parameters(), beta=0.98)
 

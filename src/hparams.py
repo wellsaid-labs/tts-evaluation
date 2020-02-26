@@ -21,7 +21,9 @@ import torchnlp
 from src import datasets
 from src.audio import get_num_seconds
 from src.audio import iso226_weighting
+from src.audio import WAVE_FORMAT_IEEE_FLOAT
 from src.audio import WavFileMetadata
+from src.bin.train.signal_model.trainer import SpectrogramLoss
 from src.datasets import filter_
 from src.datasets import normalize_audio_column
 from src.utils import log_runtime
@@ -68,8 +70,7 @@ def _set_audio_processing():
     # Based on SoX this encoding is commonly used with a 16 or 24−bit encoding size. Learn more:
     # http://sox.sourceforge.net/sox.html
     encoding = 'signed-integer'
-    # SOURCE: Parallel WaveNet: Fast High-Fidelity Speech Synthesis
-    # We increased the fidelity by modelling 16-bit audio.
+    # TODO: Now that the model predicts audio in 32-bits, consider normalizing to 32-bits.
     bits = 16
 
     try:
@@ -648,7 +649,29 @@ def set_hparams():
                                 # at the start of it's training.
                                 lr_multiplier_schedule=signal_model_lr_multiplier_schedule,
                                 model=SignalModel,
-                            ),
+                                # NOTE: The `num_mel_bins` must be proportional to `fft_length`,
+                                # learn more:
+                                # https://stackoverflow.com/questions/56929874/what-is-the-warning-empty-filters-detected-in-mel-frequency-basis-about
+                                criterions=[
+                                    partial(
+                                        SpectrogramLoss,
+                                        fft_length=2048,
+                                        frame_hop=300,
+                                        window=torch.hann_window(1200),
+                                        num_mel_bins=128),
+                                    partial(
+                                        SpectrogramLoss,
+                                        fft_length=1024,
+                                        frame_hop=150,
+                                        window=torch.hann_window(600),
+                                        num_mel_bins=64),
+                                    partial(
+                                        SpectrogramLoss,
+                                        fft_length=512,
+                                        frame_hop=75,
+                                        window=torch.hann_window(300),
+                                        num_mel_bins=32),
+                                ]),
                         'trainer.SpectrogramLoss.__init__':
                             HParams(
                                 criterion=torch.nn.L1Loss,
@@ -667,9 +690,15 @@ def set_hparams():
                     }
                 },
             },
+            # NOTE: The expected signal model output is 32-bit float.
+            'audio.build_wav_header':
+                HParams(wav_format=WAVE_FORMAT_IEEE_FLOAT, num_channels=1, sample_width=4),
             # NOTE: Window size smoothing parameter is not super sensative.
             'optimizers.AutoOptimizer.__init__':
                 HParams(window_size=128),
+            # NOTE: The `beta` parameter is not super sensative.
+            'optimizers.ExponentialMovingParameterAverage.__init__':
+                HParams(beta=0.999),
             'environment.set_seed':
                 HParams(seed=seed),
         }
