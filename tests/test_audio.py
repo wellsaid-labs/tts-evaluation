@@ -7,15 +7,20 @@ import numpy as np
 import pytest
 import torch
 
+from src.audio import amplitude_to_db
 from src.audio import build_wav_header
 from src.audio import cache_get_audio_metadata
+from src.audio import db_to_amplitude
+from src.audio import db_to_power
 from src.audio import get_audio_metadata
-from src.audio import get_db_mel_spectrogram
 from src.audio import get_num_seconds
+from src.audio import get_signal_to_db_mel_spectrogram
 from src.audio import griffin_lim
 from src.audio import integer_to_floating_point_pcm
 from src.audio import iso226_weighting
 from src.audio import normalize_audio
+from src.audio import pad_remainder
+from src.audio import power_to_db
 from src.audio import read_audio
 from src.audio import SignalTodBMelSpectrogram
 from src.audio import WavFileMetadata
@@ -23,10 +28,6 @@ from src.audio import write_audio
 from src.environment import DATA_PATH
 from src.environment import TEST_DATA_PATH
 from src.utils import make_arg_key
-from src.audio import power_to_db
-from src.audio import db_to_power
-from src.audio import amplitude_to_db
-from src.audio import db_to_amplitude
 
 TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'test_audio'
 
@@ -49,6 +50,13 @@ def test_iso226_weighting():
     """
     np.testing.assert_almost_equal([-59.843877, 0.0, -59.843877],
                                    iso226_weighting(np.array([20, 1000, 20000])))
+
+
+def test_pad_remainder():
+    """ Test to ensure signal is padded correctly for even and odd cases. """
+    assert pad_remainder(np.random.normal(size=256), 256).shape[0] == 256
+    assert pad_remainder(np.random.normal(size=255), 256).shape[0] == 256
+    assert pad_remainder(np.random.normal(size=254), 256).shape[0] == 256
 
 
 def test_signal_to_db_mel_spectrogram_against_librosa():
@@ -121,7 +129,7 @@ def test_signal_to_db_mel_spectrogram_batch_invariance():
 
 
 def test_signal_to_db_mel_spectrogram_intermediate():
-    """ Ensure `SignalTodBMelSpectrogram` is can returns intermediate values. """
+    """ Ensure `SignalTodBMelSpectrogram` returns intermediate values of the right shape. """
     batch_size = 10
     n_fft = 2048
     tensor = torch.nn.Parameter(torch.randn(batch_size, 2400))
@@ -129,6 +137,30 @@ def test_signal_to_db_mel_spectrogram_intermediate():
     db_mel_spectrogram, db_spectrogram, spectrogram = module(tensor, intermediate=True)
     assert spectrogram.shape == (batch_size, db_mel_spectrogram.shape[1], n_fft // 2 + 1)
     assert db_spectrogram.shape == (batch_size, db_mel_spectrogram.shape[1], n_fft // 2 + 1)
+
+
+def test_signal_to_db_mel_spectrogram__alignment():
+    """ Smoke test to ensure everything runs.
+    """
+    frame_size = 1200
+    frame_hop = 300
+    path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
+    sample_rate = 24000
+    fft_length = 2048
+    signal = read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer'))
+    signal = integer_to_floating_point_pcm(signal)
+    signal = pad_remainder(signal, frame_hop, mode='constant', constant_values=0)
+    module = get_signal_to_db_mel_spectrogram(
+        sample_rate=sample_rate,
+        window=torch.hann_window(frame_size),
+        frame_hop=frame_hop,
+        fft_length=fft_length)
+    db_mel_spectrogram = module(torch.tensor(signal), aligned=True).numpy()
+
+    assert db_mel_spectrogram.dtype == np.float32
+    assert len(db_mel_spectrogram.shape) == 2
+    assert len(signal.shape) == 1
+    assert int(signal.shape[0]) / int(db_mel_spectrogram.shape[0]) == frame_hop
 
 
 def test_get_num_seconds():
@@ -145,12 +177,15 @@ def test_get_num_seconds():
 
 
 def test_read_audio():
+    """ Test that the audio is read into the correct format with the correct metadata. """
+    metadata = WavFileMetadata(24000, 16, 1, 'signed-integer')
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
-    integer = read_audio(path)
+    integer = read_audio(path, metadata)
     assert integer.dtype == np.int16
 
 
 def test_integer_to_floating_point_pcm():
+    """ Test that `np.int16` and `np.int32` get converted correctly to `np.float32`. """
     int16 = np.random.randint(-2**15, 2**15, size=10000, dtype=np.int16)
     int32 = np.random.randint(-2**31, 2**31, size=10000, dtype=np.int32)
 
@@ -167,6 +202,7 @@ def test_integer_to_floating_point_pcm():
 
 
 def test_integer_to_floating_point_pcm__real_audio():
+    """ Enusre that the `integer_to_floating_point_pcm` conversion works on real audio. """
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     integer = read_audio(path)
     assert integer.dtype == np.int16
@@ -195,19 +231,8 @@ def test_write_audio__invalid():
                                                                   dtype=np.float32), 24000)
 
 
-def test_write_audio():
-    filename = TEST_DATA_PATH_LOCAL / 'lj_speech.wav'
-    metadata = get_audio_metadata(filename)
-    sample_rate, signal = wavfile.read(str(filename))
-
-    new_filename = TEST_DATA_PATH_LOCAL / 'lj_speech_two.wav'
-    write_audio(new_filename, signal, sample_rate)
-    new_metadata = get_audio_metadata(new_filename)
-
-    assert metadata == new_metadata  # Ensure the metadata stays the same
-
-
 def test_read_audio_and_write_audio():
+    """ Test to ensure that files of all types can be read and written without data loss. """
     sample_rate = 24000
     filename = 'test_read_audio_and_write_audio.wav'
     uint8 = np.random.randint(0, 256, size=10000, dtype=np.uint8)
@@ -225,6 +250,7 @@ def test_read_audio_and_write_audio():
 
 
 def test_write_audio_and_read_audio__real_file():
+    """ Test to ensure a file and be read and written back while maintaining the same metadata. """
     filename = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     metadata = get_audio_metadata(filename)
     signal = read_audio(str(filename))
@@ -236,7 +262,21 @@ def test_write_audio_and_read_audio__real_file():
     assert metadata == new_metadata  # Ensure the metadata stays the same
 
 
+def test_write_audio__second_real_file():
+    """ Test to ensure a file and be read and written back while maintaining the same metadata. """
+    filename = TEST_DATA_PATH_LOCAL / 'lj_speech.wav'
+    metadata = get_audio_metadata(filename)
+    sample_rate, signal = wavfile.read(str(filename))
+
+    new_filename = TEST_DATA_PATH_LOCAL / 'lj_speech_two.wav'
+    write_audio(new_filename, signal, sample_rate)
+    new_metadata = get_audio_metadata(new_filename)
+
+    assert metadata == new_metadata  # Ensure the metadata stays the same
+
+
 def test_cache_get_audio_metadata():
+    """ Test to ensure that the audio metadata is cached. """
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     cache_get_audio_metadata([path])
     assert get_audio_metadata.disk_cache.get(
@@ -245,11 +285,13 @@ def test_cache_get_audio_metadata():
 
 
 def test_get_audio_metadata():
+    """ Test to ensure that `get_audio_metadata` returns the right metadata. """
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     assert get_audio_metadata(path) == WavFileMetadata(24000, 16, 1, 'signed-integer')
 
 
 def test_build_wav_header():
+    """ Test to ensure the header matches `wavfile.write`. """
     sample_rate = 16000
     file_ = io.BytesIO()
     wavfile.write(file_, sample_rate, np.int16([]))
@@ -259,35 +301,16 @@ def test_build_wav_header():
     assert expected_header == wav_header
 
 
-def test_db_mel_spectrogram():
-    """ Smoke test to ensure everything runs.
-    """
-    frame_size = 1200
-    frame_hop = 300
-    path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
-    sample_rate = 24000
-    fft_length = 2048
-    signal = read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer'))
-    db_mel_spectrogram, padded_signal = get_db_mel_spectrogram(
-        signal,
-        sample_rate=sample_rate,
-        window=torch.hann_window(frame_size),
-        frame_hop=frame_hop,
-        fft_length=fft_length)
-
-    assert db_mel_spectrogram.dtype == np.float32
-    assert len(db_mel_spectrogram.shape) == 2
-    assert len(padded_signal.shape) == 1
-    assert int(padded_signal.shape[0]) / int(db_mel_spectrogram.shape[0]) == frame_hop
-
-
 def test_griffin_lim_smoke():
     """ Smoke test to ensure everything runs.
     """
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     sample_rate = 24000
     signal = read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer'))
-    db_mel_spectrogram, _ = get_db_mel_spectrogram(signal, sample_rate=sample_rate)
+    signal = integer_to_floating_point_pcm(signal)
+    signal = pad_remainder(signal)
+    module = get_signal_to_db_mel_spectrogram(sample_rate=sample_rate)
+    db_mel_spectrogram = module(torch.tensor(signal), aligned=True).numpy()
     waveform = griffin_lim(db_mel_spectrogram, sample_rate)
     assert len(waveform) > 0
 

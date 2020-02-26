@@ -41,16 +41,15 @@ def _set_audio_processing():
     # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
     # NOTE: A hop length of 25% the window size is standard practice in DSP, allowing for a 75%
     # overlap between windows.
-    # NOTE: Parameterizing frame sizes in milliseconds can help ensure that your code is invariant
+    # TODO: Parameterizing frame sizes in milliseconds can help ensure that your code is invariant
     # to the sample rate.
     frame_size = 1024  # NOTE: Frame size in samples
+    fft_length = frame_size
     frame_hop = 256
     window = 'hann'
     # NOTE: A "hann window" is standard for calculating an FFT, it's even mentioned as a "popular
     # window" on Wikipedia (https://en.wikipedia.org/wiki/Window_function).
     window_tensor = torch.hann_window(frame_size)
-
-    fft_length = 1024
 
     # SOURCE (Tacotron 2):
     # We transform the STFT magnitude to the mel scale using an 80 channel mel
@@ -59,7 +58,7 @@ def _set_audio_processing():
     # SOURCE (Tacotron 2 Author):
     # Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
     frame_channels = 128
-    # The human range is commonly given as 20 to 20,000 Hz
+    # NOTE: The human range is commonly given as 20 to 20,000 Hz
     # (https://en.wikipedia.org/wiki/Hearing_range).
     hertz_bounds = {'lower_hertz': 20, 'upper_hertz': 20000}
 
@@ -102,6 +101,10 @@ def _set_audio_processing():
     add_config({
         'src.bin.evaluate._get_sample_rate': HParams(sample_rate=sample_rate),
         'src.audio': {
+            '_db_mel_spectrogram_to_spectrogram':
+                HParams(get_weighting=iso226_weighting),
+            'pad_remainder':
+                HParams(multiple=frame_hop, mode='constant', constant_values=0.0),
             'read_audio':
                 HParams(
                     assert_metadata=WavFileMetadata(
@@ -175,9 +178,6 @@ def _set_audio_processing():
             'chunk_alignments': HParams(sample_rate=sample_rate),
             'align_wav_and_scripts': HParams(sample_rate=sample_rate),
         },
-        'src.spectrogram_model.decoder.AutoregressiveDecoder': {
-            '__init__': HParams(min_spectrogram_magnitude=min_magnitude),
-        }
     })
 
     return frame_channels, frame_hop, bits
@@ -510,7 +510,6 @@ def set_hparams():
     from src.spectrogram_model import SpectrogramModel
 
     frame_channels, frame_hop, bits = _set_audio_processing()
-    _set_anomaly_detection()
     _set_model_size(frame_channels, bits)
 
     Adam.__init__ = configurable(Adam.__init__)

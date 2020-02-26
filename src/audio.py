@@ -23,12 +23,12 @@ librosa = LazyLoader('librosa', globals(), 'librosa')
 scipy_wavfile = LazyLoader('scipy_wavfile', globals(), 'scipy.io.wavfile')
 
 from src.environment import TTS_DISK_CACHE_NAME
+from src.utils import assert_no_overwritten_files
 from src.utils import disk_cache
 from src.utils import get_chunks
+from src.utils import get_file_metadata
 from src.utils import make_arg_key
 from src.utils import Pool
-from src.utils import assert_no_overwritten_files
-from src.utils import get_file_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +309,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
 
         assert signal.dtype == torch.float32, 'Invalid argument.'
 
-        if aligned:  # TODO: Test this
+        if aligned:
             assert signal.shape[1] % self.frame_hop == 0, (
                 'The signal must be a multiple of `frame_hop` to be aligned to the spectrogram.')
             assert (self.fft_length - self.frame_hop) % 2 == 0, (
@@ -322,11 +322,14 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             # https://librosa.github.io/librosa/_modules/librosa/core/spectrum.html#stft
             # NOTE: The number of spectrogram frames generated is:
             # `(signal.shape[1] - frame_size + frame_hop) // frame_hop`
-            signal = np.pad(
-                signal, (self.fft_length - self.frame_hop) // 2, mode='constant', constant_values=0)
+            padding = (self.fft_length - self.frame_hop) // 2
+            padded_signal = torch.nn.functional.pad(
+                signal, (padding, padding), mode='constant', value=0)
+        else:
+            padded_signal = signal
 
         spectrogram = torch.stft(
-            signal,
+            padded_signal,
             n_fft=self.fft_length,
             hop_length=self.frame_hop,
             win_length=self.window.shape[0],
@@ -334,7 +337,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             center=False)
 
         if aligned:
-            assert spectrogram.shape[-1] / self.frame_hop == signal.shape[1], 'Invariant failure.'
+            assert spectrogram.shape[-2] * self.frame_hop == signal.shape[1], 'Invariant failure.'
 
         # NOTE: The below `norm` line is equal to a numerically stable version of the below...
         # >>> real_part, imag_part = spectrogram.unbind(-1)
@@ -371,12 +374,13 @@ def power_to_db(tensor, eps=1e-10):
 
     Args:
         tensor (torch.FloatTensor)
-        eps (float): The minimum amplitude to `log` avoiding the discontinuity at `log(0)`.
+        eps (float or torch.FloatTensor): The minimum amplitude to `log` avoiding the discontinuity
+            at `log(0)`.
 
     Returns:
         (torch.FloatTensor)
     """
-    eps = torch.tensor(eps, device=tensor.device)
+    eps = eps if torch.is_tensor(eps) else torch.tensor(eps, device=tensor.device)
     return 10.0 * torch.log10(torch.max(eps, tensor))
 
 
@@ -417,21 +421,23 @@ def db_to_amplitude(tensor):
     return db_to_power(tensor / 2)
 
 
-def pad_remainder(signal, multiple, **kwargs):
+@configurable
+def pad_remainder(signal, multiple=HParam(), mode=HParam(), constant_values=HParam(), **kwargs):
     """ Pad signal such that `signal.shape[0] % multiple == 0`.
-
-    TODO: Test this.
 
     Args:
         signal (np.array [signal_length]): One-dimensional signal to pad.
         multiple (int): The returned signal shape is divisible by `multiple`.
+        **kwargs: Key word arguments passed to `np.pad`.
 
     Returns:
         np.array [padded_signal_length]
     """
-    remainder = multiple - signal.shape[0] % multiple
+    assert isinstance(signal, np.ndarray)
+    remainder = signal.shape[0] % multiple
+    remainder = multiple - remainder if remainder != 0 else remainder
     padding = (math.ceil(remainder / 2), math.floor(remainder / 2))
-    padded_signal = np.pad(signal, padding, **kwargs)
+    padded_signal = np.pad(signal, padding, mode=mode, constant_values=constant_values, **kwargs)
     assert padded_signal.shape[0] % multiple == 0
     return padded_signal
 
@@ -440,34 +446,29 @@ def pad_remainder(signal, multiple, **kwargs):
 def _db_mel_spectrogram_to_spectrogram(db_mel_spectrogram,
                                        sample_rate,
                                        fft_length,
-                                       get_weighting=HParam()):
+                                       get_weighting=HParam(),
+                                       **kwargs):
     """ Transform dB mel spectrogram to spectrogram (lossy).
-
-    TODO: Test this function.
-    TODO: Configure this function.
 
     Args:
         db_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
         sample_rate (int): Sample rate of the `db_mel_spectrogram`.
         fft_length (int): The size of the FFT to apply.
+        **kwargs: Additional arguments passed to `_mel_filters`.
 
     Returns:
-        (np.ndarray [frames, num_spectrogram_bins]): Spectrogram.
+        (np.ndarray [frames, fft_length // 2 + 1]): Spectrogram.
     """
     num_mel_bins = db_mel_spectrogram.shape[1]
-    power_mel_spectrogram = db_to_power(db_mel_spectrogram)
-
-    mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=fft_length)
+    mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=fft_length, **kwargs)
     frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=fft_length)
     weighting = get_weighting(frequencies)
     weighting = db_to_power(weighting)
-
-    # TODO: Instead consider using a solution like this:
-    # https://github.com/pytorch/audio/issues/351
-    # NOTE: ``np.linalg.pinv`` creates approximate inverse matrix of ``mel_basis``
-    inverse_mel_basis = np.linalg.pinv(mel_basis)
+    inverse_mel_basis = np.linalg.pinv(mel_basis)  # NOTE: Approximate inverse matrix of `mel_basis`
+    power_mel_spectrogram = db_to_power(db_mel_spectrogram)
     power_spectrogram = np.dot(inverse_mel_basis, power_mel_spectrogram.transpose()).transpose()
-    return (power_spectrogram / weighting).sqrt()
+    power_spectrogram = np.maximum(0.0, power_spectrogram)
+    return np.sqrt(power_spectrogram / weighting)
 
 
 @configurable
@@ -518,6 +519,7 @@ def griffin_lim(db_mel_spectrogram,
     """
     try:
         logger.info('Running Griffin-Lim....')
+        assert isinstance(db_mel_spectrogram, np.ndarray)
         spectrogram = _db_mel_spectrogram_to_spectrogram(
             db_mel_spectrogram=db_mel_spectrogram, sample_rate=sample_rate, fft_length=fft_length)
         spectrogram = spectrogram.transpose()
@@ -536,7 +538,7 @@ def griffin_lim(db_mel_spectrogram,
     # TODO: Be more specific with the cases that this is capturing so that we don't have silent
     # failures for invalid inputs.
     except Exception:
-        logger.warning('Griffin-lim encountered an issue and was unable to render audio.')
+        logger.exception('Griffin-lim encountered an issue and was unable to render audio.')
         # NOTE: Return no audio for valid inputs that fail due to an overflow error or a small
         # spectrogram.
         return np.array([], dtype=np.float32)

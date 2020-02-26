@@ -68,13 +68,11 @@ class AutoregressiveDecoder(nn.Module):
                  speaker_embedding_dim,
                  pre_net_hidden_size=HParam(),
                  lstm_hidden_size=HParam(),
-                 attention_hidden_size=HParam(),
-                 min_spectrogram_magnitude=HParam()):
+                 attention_hidden_size=HParam()):
         super().__init__()
 
         self.attention_hidden_size = attention_hidden_size
         self.frame_channels = frame_channels
-        self.min_spectrogram_magnitude = min_spectrogram_magnitude
         self.pre_net = PreNet(hidden_size=pre_net_hidden_size, frame_channels=frame_channels)
         self.lstm_layer_one = nn.LSTMCell(
             input_size=pre_net_hidden_size + self.attention_hidden_size + speaker_embedding_dim,
@@ -86,6 +84,7 @@ class AutoregressiveDecoder(nn.Module):
         self.linear_out = nn.Linear(in_features=hidden_size, out_features=frame_channels)
         self.linear_stop_token = nn.Linear(
             in_features=hidden_size - self.attention_hidden_size, out_features=1)
+        self.get_initial_frame = nn.Linear(speaker_embedding_dim, frame_channels)
 
     def forward(self, encoded_tokens, tokens_mask, speaker, target_frames=None, hidden_state=None):
         """
@@ -120,10 +119,7 @@ class AutoregressiveDecoder(nn.Module):
             last_attention_context=torch.zeros(
                 batch_size, self.attention_hidden_size, device=device),
             cumulative_alignment=None,
-            last_frame=torch.full(
-                (1, batch_size, self.frame_channels),
-                fill_value=torch.log(torch.tensor(self.min_spectrogram_magnitude, device=device)),
-                device=device),
+            last_frame=self.get_initial_frame(speaker).unsqueeze(0),
             lstm_one_hidden_state=None,
             lstm_two_hidden_state=None) if hidden_state is None else hidden_state
 

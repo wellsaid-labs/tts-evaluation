@@ -17,9 +17,10 @@ librosa = LazyLoader('librosa', globals(), 'librosa')
 pandas = LazyLoader('pandas', globals(), 'pandas')
 
 from src.audio import cache_get_audio_metadata
-from src.audio import get_db_mel_spectrogram
-from src.audio import normalize_audio
+from src.audio import get_signal_to_db_mel_spectrogram
 from src.audio import integer_to_floating_point_pcm
+from src.audio import normalize_audio
+from src.audio import pad_remainder
 from src.audio import read_audio
 from src.datasets.constants import TextSpeechRow
 from src.environment import DATA_PATH
@@ -132,8 +133,10 @@ def _add_spectrogram_column(example, config, on_disk=True):
         _, trim = librosa.effects.trim(integer_to_floating_point_pcm(signal))
         signal = signal[trim[0]:trim[1]]
 
-        # TODO: Consider computing batches of spectrograms.
-        db_mel_spectrogram, padded_signal = get_db_mel_spectrogram(signal)
+        # TODO: Compute batches of spectrograms, it'd be faster.
+        padded_signal = pad_remainder(signal)
+        db_mel_spectrogram = get_signal_to_db_mel_spectrogram()(
+            integer_to_floating_point_pcm(padded_signal))
         db_mel_spectrogram = torch.from_numpy(db_mel_spectrogram)
         padded_signal = torch.from_numpy(padded_signal)
 
