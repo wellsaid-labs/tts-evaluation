@@ -21,7 +21,7 @@ With this ecosystem, the only simple solution is to stream WAV files directly.
 
 CONS:
 - No additional context can be returned to the client. For example, this prevents us from sending
-  the WaveRNN hidden state used by the client to restart generation.
+  the model hidden state used by the client to restart generation.
 - The request for the stream must be a GET request. This prevents us, for example, from sending a
   Spectrogram used to condition the speech synthesis.
 
