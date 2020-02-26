@@ -277,6 +277,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         self.fft_length = fft_length
         self.frame_hop = frame_hop
         self.sample_rate = sample_rate
+        self.num_mel_bins = num_mel_bins
 
         mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=self.fft_length, **kwargs)
         frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=self.fft_length)
@@ -291,18 +292,18 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         Args:
             signal (torch.FloatTensor [batch_size, signal_length])
             intermediate (bool, optional): If `True`, along with a `db_mel_spectrogram`, this
-              returns a `db_spectrogram` and `spectrogram`.
+                returns a `db_spectrogram` and `spectrogram`.
             aligned (bool, optional): If `True` the returned spectrogram is aligned to the signal
-              such that `signal.shape[1] / self.frame_hop == db_mel_spectrogram.shape[1]`
+                such that `signal.shape[1] / self.frame_hop == db_mel_spectrogram.shape[1]`
 
         Returns:
             db_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins]): A
                 spectrogram with the mel scale for frequency, decibel scale for power, and a regular
                 time scale.
-            db_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins]): This is only
-                returned iff `intermediate=True`.
-            spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins]): This is only
-                returned iff `intermediate=True`.
+            db_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1]): This
+                is only  returned iff `intermediate=True`.
+            spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1]): This is
+                only returned iff `intermediate=True`.
         """
         has_batch_dim = signal.dim() == 2
         signal = signal.view(-1, signal.shape[-1])
