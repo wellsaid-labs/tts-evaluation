@@ -81,5 +81,5 @@ on a AWS virtual machine.
    Pick the checkpoint with a step count that correlates with the point of convergence
    `dev_epoch/post_spectrogram_loss` value.
 
-1. Wait until `dev_epoch/coarse_loss` and `dev_epoch/fine_loss` stop rapidly
-   decreasing. This typically will happen within 18-24 hours of training, or \~150,000 steps.
+1. Wait until TODO stop rapidly
+   decreasing. This typically will happen within TODO hours of training, or TODO steps.

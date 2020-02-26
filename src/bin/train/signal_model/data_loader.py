@@ -28,8 +28,7 @@ import src.distributed
 logger = logging.getLogger(__name__)
 
 SignalModelTrainingRow = namedtuple(
-    'SignalModelTrainingRow',
-    ['spectrogram', 'spectrogram_mask', 'target_signal', 'source_signal', 'signal_mask'])
+    'SignalModelTrainingRow', ['spectrogram', 'spectrogram_mask', 'target_signal', 'signal_mask'])
 
 
 class _BalancedSampler(WeightedRandomSampler):
@@ -57,8 +56,7 @@ def _get_slice(spectrogram, signal, spectrogram_slice_size, spectrogram_slice_pa
 
     Notes:
         * Frames batch needs to line up with the target signal. Each frame, is used to predict
-          the target. The source signal is inputted to predict the target signal; therefore,
-          the source signal is one timestep behind.
+          the target.
 
     Args:
         spectrogram (torch.FloatTensor [num_frames, channels])
@@ -70,7 +68,6 @@ def _get_slice(spectrogram, signal, spectrogram_slice_size, spectrogram_slice_pa
     Returns: (SignalModelTrainingRow) (
         spectrogram (torch.FloatTensor [num_frames, channels])
         spectrogram_mask (torch.BoolTensor [num_frames])
-        source_signal (torch.FloatTensor [signal_length])
         target_signal (torch.FloatTensor [signal_length])
         signal_mask (torch.BoolTensor [signal_length])
     )
@@ -81,10 +78,6 @@ def _get_slice(spectrogram, signal, spectrogram_slice_size, spectrogram_slice_pa
     # Signal model requires that there is a scaling factor between the signal and frames
     assert samples % num_frames == 0
 
-    # Get a source sample slice shifted back one and target signal
-    go_sample = signal.new_zeros(1)  # First sample passed in to start RNN
-    source_signal = torch.cat((go_sample, signal), dim=0)
-    target_signal = signal
     signal_mask = torch.ones(signal.shape[0], dtype=torch.bool, device=signal.device)
     spectrogram_mask = torch.ones(spectrogram.shape[0], dtype=torch.bool, device=spectrogram.device)
 
@@ -97,8 +90,7 @@ def _get_slice(spectrogram, signal, spectrogram_slice_size, spectrogram_slice_pa
     assert spectrogram_mask.shape[0] == spectrogram.shape[0]
 
     signal_zeros = (spectrogram_slice_size - 1) * samples_per_frame
-    target_signal = torch.nn.functional.pad(target_signal, (signal_zeros, signal_zeros))
-    source_signal = torch.nn.functional.pad(source_signal, (signal_zeros, signal_zeros - 1))
+    target_signal = torch.nn.functional.pad(signal, (signal_zeros, signal_zeros))
     signal_mask = torch.nn.functional.pad(signal_mask, (signal_zeros, signal_zeros))
 
     # Get a spectrogram slice
@@ -126,23 +118,18 @@ def _get_slice(spectrogram, signal, spectrogram_slice_size, spectrogram_slice_pa
     # Change units from frames to signals and offset with `signal_zeros`
     signal_slice = slice(start_frame * samples_per_frame + signal_zeros,
                          end_frame * samples_per_frame + signal_zeros)
-    source_signal_slice = source_signal[signal_slice]
     target_signal_slice = target_signal[signal_slice]
     signal_mask_slice = signal_mask[signal_slice]
 
-    assert source_signal_slice.shape[0] / samples_per_frame == spectrogram_slice_size
     assert target_signal_slice.shape[0] / samples_per_frame == spectrogram_slice_size
     assert spectrogram_slice.shape[0] == spectrogram_slice_size + spectrogram_slice_pad * 2
     assert spectrogram_mask_slice.shape[0] == spectrogram_slice.shape[0]
-    # Source is shifted one back from target
-    assert torch.equal(source_signal[1:], target_signal[:-1])
     assert target_signal_slice.shape == signal_mask_slice.shape
 
     return SignalModelTrainingRow(
         spectrogram=spectrogram_slice,
         spectrogram_mask=spectrogram_mask_slice,
         target_signal=target_signal_slice,
-        source_signal=source_signal_slice,
         signal_mask=signal_mask_slice)
 
 
@@ -191,8 +178,6 @@ class DataLoader(src.utils.DataLoader):
             spectrogram_mask (torch.BoolTensor
                 [batch_size, spectrogram_slice_size + spectrogram_slice_pad])
             target_signal (torch.FloatTensor
-                [batch_size, spectrogram_slice_size * samples_per_frame])
-            source_signal (torch.FloatTensor
                 [batch_size, spectrogram_slice_size * samples_per_frame])
             signal_mask (torch.BoolTensor [batch_size, spectrogram_slice_size * samples_per_frame])
         )

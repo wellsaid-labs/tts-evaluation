@@ -59,5 +59,5 @@ on a GCP virtual machine.
    ❗IMPORTANT: Include the optional `--spectrogram_model_checkpoint=$SPECTROGRAM_CHECKPOINT`
    argument to start training.
 
-1. Wait until `dev_epoch/coarse_loss` and `dev_epoch/fine_loss` stop rapidly
-   decreasing. This typically will happen within 18-24 hours of training, or \~150,000 steps.
+1. Wait until TODO stop rapidly
+   decreasing. This typically will happen within TODO hours of training, or TODO steps.

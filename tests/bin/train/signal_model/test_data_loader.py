@@ -97,7 +97,6 @@ def test__get_slice(randint_mock):
     assert slice_.spectrogram.shape == (slice_size + slice_pad * 2, spectrogram_channels)
     assert slice_.spectrogram_mask.shape == (slice_size + slice_pad * 2,)
     assert slice_.target_signal.shape == (slice_size * samples_per_frame,)
-    assert slice_.source_signal.shape == (slice_size * samples_per_frame,)
     assert slice_.signal_mask.shape == (slice_size * samples_per_frame,)
 
 
@@ -116,7 +115,6 @@ def test__get_slice__padding(randint_mock):
     assert torch.equal(slice_.spectrogram_mask,
                        torch.tensor([0, 0, 1, 1, 1, 0, 0, 0], dtype=torch.bool))
     assert torch.equal(slice_.target_signal, torch.tensor([0.2, 0.2, 0.3, 0.3]))
-    assert torch.equal(slice_.source_signal, torch.tensor([0.1, 0.2, 0.2, 0.3]))
     assert torch.equal(slice_.signal_mask, torch.tensor([1, 1, 1, 1], dtype=torch.bool))
 
 

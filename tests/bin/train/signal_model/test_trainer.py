@@ -214,7 +214,6 @@ def test__do_loss_and_maybe_backwards():
         spectrogram_mask=None,
         spectrogram=None,
         target_signal=torch.zeros(2, 4096),
-        source_signal=None,
         signal_mask=torch.ones(2, 4096))
     predicted_signal = torch.zeros(2, 4096)
 
