@@ -168,6 +168,8 @@ class ExponentialMovingParameterAverage():
 
     def apply_shadow(self):
         """ Replace the model with it's averaged parameters.
+
+        TODO: Investigate implementing this as a context manager.
         """
         self.backup = [param.clone().detach() for param in self.parameters]
         for param, shadow in zip(self.parameters, self.shadow):

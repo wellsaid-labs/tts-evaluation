@@ -305,10 +305,10 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1]): This is
                 only returned iff `intermediate=True`.
         """
+        assert signal.dtype == torch.float32, 'Invalid argument.'
+
         has_batch_dim = signal.dim() == 2
         signal = signal.view(-1, signal.shape[-1])
-
-        assert signal.dtype == torch.float32, 'Invalid argument.'
 
         if aligned:
             assert signal.shape[1] % self.frame_hop == 0, (

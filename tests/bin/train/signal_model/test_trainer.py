@@ -5,7 +5,6 @@ import torch
 
 from src.audio import read_audio
 from src.bin.train.signal_model.data_loader import SignalModelTrainingRow
-from src.bin.train.signal_model.trainer import ExponentialMovingParameterAverage
 from src.bin.train.signal_model.trainer import SpectrogramLoss
 from src.bin.train.signal_model.trainer import Trainer
 from src.environment import TEMP_PATH
@@ -38,13 +37,18 @@ def get_trainer(read_audio_mock, register_mock, load_data=True):
         dev_batch_size=1)
 
 
-def test_spectrogram_loss():
+def test_spectrogram_loss__smoke_test():
     spectrogram_loss = SpectrogramLoss()
     predicted = torch.randn(1, 24000)
     target = torch.randn(1, 24000)
-    loss = spectrogram_loss(predicted, target, comet_ml=MockCometML(disabled=True))
+    loss, other_loss, accuracy = spectrogram_loss(
+        predicted, target, comet_ml=MockCometML(disabled=True))
     assert loss.shape == tuple([])
     assert loss.dtype == torch.float32
+    assert other_loss.shape == tuple([])
+    assert other_loss.dtype == torch.float32
+    assert accuracy.shape == tuple([])
+    assert accuracy.dtype == torch.float32
 
 
 def test_spectrogram_loss__get_name():

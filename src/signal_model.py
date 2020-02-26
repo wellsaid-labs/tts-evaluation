@@ -1,5 +1,7 @@
 import logging
 
+from hparams import configurable
+from hparams import HParam
 from torchnlp.utils import get_total_parameters
 
 import numpy as np
@@ -12,7 +14,7 @@ def trim(*args, dim=2):
     """ Trim such that all tensors sizes match on `dim`.
 
     Args:
-        *args (torch.Tensor)
+        *args (torch.Tensor): A list of tensors.
         dim (int): The dimension to trim.
 
     Returns:
@@ -27,8 +29,8 @@ class ConditionalConcat(torch.nn.Module):
     """ Concat's conditional features injected by a parent module.
 
     Args:
-        size (int)
-        scale_factor (int): Scale factor used to upsample the features before applying them.
+        size (int): The hidden size of the conditional.
+        scale_factor (int): Scale factor used to interpolate the features before applying them.
     """
 
     def __init__(self, size, scale_factor):
@@ -46,13 +48,14 @@ class ConditionalConcat(torch.nn.Module):
         Returns:
             torch.FloatTensor [batch_size, frame_channels + self.size, num_frames]
         """
-        concat = torch.nn.functional.upsample(self.concat, scale_factor=self.scale_factor)
+        concat = torch.nn.functional.interpolate(self.concat, scale_factor=self.scale_factor)
         assert concat.shape[1] == self.size
         self.concat = None  # NOTE: Don't use conditioning twice
         return torch.cat(list(trim(in_, concat)), dim=1)
 
 
 class PixelShuffle1d(torch.nn.Module):
+    """ The 1d version to PyTorch's `torch.nn.PixelShuffle`. """
 
     def __init__(self, upscale_factor):
         super().__init__()
@@ -91,23 +94,23 @@ class PixelShuffle1d(torch.nn.Module):
 
 
 class Block(torch.nn.Module):
-    """ Building block for the model.
+    """ Building block for `SignalModel`.
 
     Args:
-        in_channels (int)
-        out_channels (int)
-        scale_factor (int): The upsample to scale the input.
+        in_channels (int): The input channel size.
+        out_channels (int): The output channel size.
+        upscale_factor (int): The upsample to scale the input.
     """
 
-    def __init__(self, in_channels, out_channels, scale_factor=1, input_scale=1):
+    def __init__(self, in_channels, out_channels, upscale_factor=1, input_scale=1):
         super().__init__()
 
         self.shortcut = torch.nn.Sequential(
             torch.nn.Conv1d(
                 in_channels,
-                out_channels * scale_factor,
+                out_channels * upscale_factor,
                 kernel_size=1,
-            ), PixelShuffle1d(scale_factor))
+            ), PixelShuffle1d(upscale_factor))
 
         self.block = torch.nn.Sequential(
             ConditionalConcat(in_channels, input_scale),
@@ -115,16 +118,16 @@ class Block(torch.nn.Module):
             torch.nn.GELU(),
             torch.nn.Conv1d(
                 in_channels,
-                out_channels * scale_factor,
+                out_channels * upscale_factor,
                 kernel_size=3,
             ),
-            PixelShuffle1d(scale_factor),
+            PixelShuffle1d(upscale_factor),
             torch.nn.GELU(),
             torch.nn.Conv1d(out_channels, out_channels, kernel_size=3),
         )
 
         self.other_block = torch.nn.Sequential(
-            ConditionalConcat(out_channels, input_scale * scale_factor),
+            ConditionalConcat(out_channels, input_scale * upscale_factor),
             torch.nn.Conv1d(out_channels * 2, out_channels, kernel_size=1),
             torch.nn.GELU(),
             torch.nn.Conv1d(out_channels, out_channels, kernel_size=3),
@@ -132,7 +135,7 @@ class Block(torch.nn.Module):
             torch.nn.Conv1d(out_channels, out_channels, kernel_size=3),
         )
 
-        self.scale_factor = scale_factor
+        self.upscale_factor = upscale_factor
 
     def forward(self, input_):
         """
@@ -140,12 +143,12 @@ class Block(torch.nn.Module):
             input_ (torch.FloatTensor [batch_size, frame_channels, ~num_frames])
 
         Returns:
-            torch.FloatTensor [batch_size, frame_channels, ~num_frames * scale_factor]
+            torch.FloatTensor [batch_size, frame_channels, ~num_frames * upscale_factor]
         """
         shape = input_.shape  # [batch_size, frame_channels, num_frames]
         input_ = torch.add(*trim(self.shortcut(input_), self.block(input_)))
         input_ = torch.add(*trim(input_, self.other_block(input_)))
-        assert (shape[2] * self.scale_factor - input_.shape[2]) % 2 == 0
+        assert (shape[2] * self.upscale_factor - input_.shape[2]) % 2 == 0
         return input_
 
 
@@ -156,22 +159,35 @@ class LayerNorm(torch.nn.LayerNorm):
 
 
 class SignalModel(torch.nn.Module):
-    """
+    """ Predicts a signal given a spectrogram.
+
     Args:
         input_size (int): The channel size of the input.
         hidden_size (int): The input size of the final convolution. The rest of the convolution
             sizes are a multiple of `hidden_size`.
         padding (int): The input padding required.
         ratios (list of int): A list of scale factors for upsampling.
+        max_channel_size (int): The maximum convolution channel size.
+        mu (int): Mu for the u-law scaling. Learn more:
+            https://en.wikipedia.org/wiki/%CE%9C-law_algorithm.
     """
 
-    def __init__(self, input_size=128, hidden_size=32, padding=14, ratios=[2] * 8):
+    @configurable
+    def __init__(self,
+                 input_size=HParam(),
+                 hidden_size=HParam(),
+                 padding=HParam(),
+                 ratios=HParam(),
+                 max_channel_size=HParam(),
+                 mu=HParam()):
         super().__init__()
 
         self.padding = padding
         self.ratios = ratios
         self.hidden_size = hidden_size
-        self.scale_factor = np.prod(ratios)
+        self.max_channel_size = max_channel_size
+        self.mu = mu
+        self.upscale_factor = np.prod(ratios)
         self.pad = torch.nn.ConstantPad1d(padding, 0.0)
 
         self.pre_net = torch.nn.Sequential(
@@ -191,19 +207,18 @@ class SignalModel(torch.nn.Module):
 
         self.conditionals = [m for m in self.modules() if isinstance(m, ConditionalConcat)]
         self.condition = torch.nn.Conv1d(
-            self.get_layer_size(0), sum([m.size for m in self.conditionals]), kernel_size=1)
+            self.get_layer_size(0), max([m.size for m in self.conditionals]), kernel_size=1)
 
         self.reset_parameters()
 
         # NOTE: We initialize the convolution parameters weight norm factorizes them.
         for module in self.get_weight_norm_modules():
             torch.nn.utils.weight_norm(module)
+        # TODO: Experiment with adding back `weight_norm` to `self.condition`.
         torch.nn.utils.remove_weight_norm(self.condition)
 
-        logger.info('Number of parameters is: %d', get_total_parameters(self))
-        logger.info('Initialized model: %s', self)
-
     def get_weight_norm_modules(self):
+        # TODO: For performance, remove weight normalization before serving the model.
         for module in self.modules():
             if isinstance(module, torch.nn.Conv1d):
                 yield module
@@ -220,27 +235,25 @@ class SignalModel(torch.nn.Module):
                 # were set, and only pass up legitmate messages.
                 logger.warning('%s module parameters may have not been set.', type(module))
 
-    def get_layer_size(self, i, max_size=512):
+    def get_layer_size(self, i):
         """ Get the hidden size of layer `i` based on the final hidden size `self.hidden_size`.
 
         Args:
             i (int): The index of the layer.
-            max_size (int, optional): Max channel size.
 
         Returns:
             (int): The number of units.
         """
         assert i <= len(self.ratios)
 
-        return min((int(2**(len(self.ratios) // 2)) * self.hidden_size) // 2**(i // 2), max_size)
+        return min((int(2**(len(self.ratios) // 2)) * self.hidden_size) // 2**(i // 2),
+                   self.max_channel_size)
 
-    def forward(self, spectrogram, pad_input=True, mu=255):
+    def forward(self, spectrogram, pad_input=True):
         """
         Args:
             spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
-            padding (bool, optional)
-            mu (int, optional): Mu for the u-law scaling. Learn more:
-                https://en.wikipedia.org/wiki/%CE%9C-law_algorithm.
+            padding (bool, optional): If `True` padding is applied to the input.
 
         Args:
             signal (torch.FloatTensor [batch_size, signal_length])
@@ -257,35 +270,81 @@ class SignalModel(torch.nn.Module):
         spectrogram = self.pad(spectrogram) if pad_input else spectrogram
         num_frames = num_frames if pad_input else num_frames - self.padding * 2
 
-        # [batch_size, frame_channels, num_frames] → [batch_size, signal_length + excess_padding]
+        # [batch_size, frame_channels, num_frames] →
+        # [batch_size, self.get_layer_size(0), num_frames]
         spectrogram = self.pre_net(spectrogram)
 
-        # Set the `bias` for all the `ConditionalBias` modules.
         conditioning = self.condition(spectrogram)  # [batch_size, *, num_frames]
-        conditioning = conditioning.split([m.size for m in self.conditionals], dim=1)
-        # TODO: Consider just concating the raw `spectrogram`.
-        for module, tensor in zip(self.conditionals, conditioning):
-            module.concat = tensor
+        for module in self.conditionals:
+            module.concat = conditioning[:, :module.size]
 
         # [batch_size, frame_channels, num_frames] → [batch_size, 2, signal_length + excess_padding]
         signal = self.network(spectrogram)
+
+        # [batch_size, 2, signal_length + excess_padding] →
+        # [batch_size, signal_length + excess_padding]
         signal = torch.sigmoid(signal[:, 0]) * torch.tanh(signal[:, 1])
 
         # Mu-law expantion, learn more here:
         # https://librosa.github.io/librosa/_modules/librosa/core/audio.html#mu_expand
-        signal = torch.sign(signal) / mu * (torch.pow(1 + mu, torch.abs(signal)) - 1)
+        signal = torch.sign(signal) / self.mu * (torch.pow(1 + self.mu, torch.abs(signal)) - 1)
 
-        excess_padding = signal.shape[1] - num_frames * self.scale_factor
-        assert excess_padding < self.scale_factor * 2, 'Too much padding, %d' % excess_padding
+        # Remove `excess_padding` and error if `padding` was set incorrectly
+        excess_padding = signal.shape[1] - num_frames * self.upscale_factor
+        assert excess_padding < self.upscale_factor * 2, 'Too much padding, %d' % excess_padding
         assert excess_padding >= 0, 'Too little padding, %d' % excess_padding
         assert excess_padding % 2 == 0, 'Uneven padding, %d' % excess_padding
-        if excess_padding > 0:  # [batch_size, num_frames * self.scale_factor]
+        if excess_padding > 0:  # [batch_size, num_frames * self.upscale_factor]
             signal = signal[:, excess_padding // 2:-excess_padding // 2]
-        assert signal.shape == (batch_size, self.scale_factor * num_frames), signal.shape
+        assert signal.shape == (batch_size, self.upscale_factor * num_frames), signal.shape
 
+        # Remove clipped samples
         num_clipped_samples = ((signal > 1.0) | (signal < -1.0)).sum().item()
         if num_clipped_samples > 0:
             logger.warning('%d samples clipped.', num_clipped_samples)
         signal = torch.clamp(signal, -1.0, 1.0)
 
         return signal if has_batch_dim else signal.squeeze(0)
+
+
+class SpectrogramDiscriminator(torch.nn.Module):
+    """ Discriminates between predicted and real spectrograms.
+
+    Args:
+        fft_length (int)
+        num_mel_bins (int)
+        hidden_size (int): The size of the hidden layers.
+    """
+
+    @configurable
+    def __init__(self, fft_length, num_mel_bins, hidden_size=HParam()):
+        super().__init__()
+
+        weight_norm = torch.nn.utils.weight_norm
+        input_size = fft_length + num_mel_bins + 2
+
+        # TODO: Experiment with initializing these convolution layers to orthogonal.
+        # TODO: Experiment with using the `GELU` activation function.
+
+        self.layers = torch.nn.Sequential(
+            weight_norm(torch.nn.Conv1d(input_size, hidden_size, kernel_size=3, padding=1)),
+            torch.nn.ReLU(),
+            weight_norm(torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1)),
+            torch.nn.ReLU(),
+            weight_norm(torch.nn.Conv1d(hidden_size, 1, kernel_size=3, padding=1)),
+        )
+
+    def forward(self, spectrogram, db_spectrogram, db_mel_spectrogram):
+        """
+        Args:
+            spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
+            db_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
+            db_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins])
+
+        Returns:
+            (torch.FloatTensor [batch_size]): A score that discriminates between predicted and
+                real spectrogram.
+        """
+        features = torch.cat([spectrogram, db_spectrogram, db_mel_spectrogram], dim=2)
+        features = features.transpose(-1, -2)
+        return self.layers(features).squeeze(1).mean(dim=-1)

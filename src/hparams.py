@@ -1,4 +1,5 @@
 from collections import Counter
+from functools import partial
 
 import itertools
 import logging
@@ -62,16 +63,14 @@ def _set_audio_processing():
     # (https://en.wikipedia.org/wiki/Hearing_range).
     hertz_bounds = {'lower_hertz': 20, 'upper_hertz': 20000}
 
-    # SOURCE: Efficient Neural Audio Synthesis
-    # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
-    # designed to efficiently predict 16-bit raw audio samples.
-    bits = 16
-
     # NOTE: The prior work only considers mono audio.
     channels = 1
     # Based on SoX this encoding is commonly used with a 16 or 24−bit encoding size. Learn more:
     # http://sox.sourceforge.net/sox.html
     encoding = 'signed-integer'
+    # SOURCE: Parallel WaveNet: Fast High-Fidelity Speech Synthesis
+    # We increased the fidelity by modelling 16-bit audio.
+    bits = 16
 
     try:
         import librosa
@@ -180,10 +179,10 @@ def _set_audio_processing():
         },
     })
 
-    return frame_channels, frame_hop, bits
+    return frame_channels, frame_hop
 
 
-def _set_model_size(frame_channels, bits):
+def _set_model_size(frame_channels):
 
     # SOURCE (Tacotron 2):
     # The prediction from the previous time step is first passed through a small
@@ -199,6 +198,10 @@ def _set_model_size(frame_channels, bits):
     # Specifically, generation completes at the first frame for which this
     # probability exceeds a threshold of 0.5.
     stop_threshold = 0.5
+
+    # NOTE: This parameter is determined manually by running `signal_model` tests until they pass.
+    # There needs to be enough padding such that the output shape is valid.
+    signal_model_padding = 14
 
     add_config({
         'src': {
@@ -293,10 +296,27 @@ def _set_model_size(frame_channels, bits):
                             stop_threshold=stop_threshold)
                 }  # noqa: E122
             },
+            'signal_model': {
+                'SignalModel.__init__':
+                    HParams(
+                        input_size=frame_channels,
+                        hidden_size=32,
+                        max_channel_size=512,
+                        padding=signal_model_padding,
+                        ratios=[2] * 8,
+                        # SOURCE https://en.wikipedia.org/wiki/%CE%9C-law_algorithm:
+                        # For a given input x, the equation for μ-law encoding is where μ = 255 in
+                        # the North American and Japanese standards.
+                        mu=255),
+                'SpectrogramDiscriminator.__init__':
+                    HParams(hidden_size=128),
+            },
             'bin.train.spectrogram_model.trainer.Trainer._do_loss_and_maybe_backwards':
                 HParams(stop_threshold=stop_threshold),
         }
     })
+
+    return signal_model_padding
 
 
 def _filter_audio_path_not_found(example):
@@ -507,10 +527,11 @@ def set_hparams():
     """
     # NOTE: Prevent circular dependency
     from src.signal_model import SignalModel
+    from src.signal_model import SpectrogramDiscriminator
     from src.spectrogram_model import SpectrogramModel
 
-    frame_channels, frame_hop, bits = _set_audio_processing()
-    _set_model_size(frame_channels, bits)
+    frame_channels, frame_hop = _set_audio_processing()
+    signal_model_padding = _set_model_size(frame_channels)
 
     Adam.__init__ = configurable(Adam.__init__)
     nn.modules.batchnorm._BatchNorm.__init__ = configurable(
@@ -614,8 +635,10 @@ def set_hparams():
                                 train_batch_size=128,
                                 # SOURCE: Efficient Neural Audio Synthesis
                                 # The WaveRNN models are trained on sequences of 960 audio samples.
-                                # NOTE: We were able to get better results with 1800 audio samples
-                                # in Comet in August, 2019.
+                                # SOURCE: Parallel WaveNet: Fast High-Fidelity Speech Synthesis
+                                # The teacher WaveNet network was trained for 1,000,000 steps with
+                                # the ADAM optimiser [14] with a minibatch size of 32 audio clips,
+                                # each containing 7,680 timesteps (roughly 320ms).
                                 train_spectrogram_slice_size=int(8192 / frame_hop),
                                 dev_batch_size=16,
                                 dev_spectrogram_slice_size=int(32768 / frame_hop),
@@ -624,21 +647,23 @@ def set_hparams():
                                 # NOTE: We employ a small warmup because the model can be unstable
                                 # at the start of it's training.
                                 lr_multiplier_schedule=signal_model_lr_multiplier_schedule,
-
-                                # WaveRNN from `Efficient Neural Audio Synthesis` is small,
-                                # efficient, and performant as a vocoder.
                                 model=SignalModel,
                             ),
-                        'data_loader.DataLoader.__init__':
+                        'trainer.SpectrogramLoss.__init__':
                             HParams(
-                                # TODO: This should depend on an upsample property.
-                                # TODO: It may be more appropriate to pad by 2 spectrogram frames
-                                # instead. Given that each frame aligns with 300 samples and each
-                                # frame is created from 1200 samples, then there is 900 samples of
-                                # context for each frame outside of the aligned samples. Then it
-                                # makes sense to have 450 samples of padding or 2 spectrogram
-                                # frames.
-                                spectrogram_slice_pad=14),
+                                criterion=torch.nn.L1Loss,
+                                # NOTE: This discriminator approach is largely based on:
+                                # https://pytorch.org/tutorials/beginner/dcgan_faces_tutorial.html
+                                # NOTE: This approach proved successful in Comet experiment
+                                # f590fe3c51a04130ad65736f8aa5fd81 run in February 2020.
+                                discriminator=SpectrogramDiscriminator,
+                                discriminator_optimizer=partial(torch.optim.Adam, lr=0.00001),
+                                discriminator_criterion=torch.nn.BCEWithLogitsLoss,
+                            ),
+                        # NOTE: The `DataLoader` pads the data before hand so that the model
+                        # trains on real padding instead of zero padding.
+                        'data_loader.DataLoader.__init__':
+                            HParams(spectrogram_slice_pad=signal_model_padding),
                     }
                 },
             },

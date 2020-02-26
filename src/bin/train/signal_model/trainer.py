@@ -30,6 +30,7 @@ from src.audio import integer_to_floating_point_pcm
 from src.audio import SignalTodBMelSpectrogram
 from src.bin.train.signal_model.data_loader import DataLoader
 from src.optimizers import AutoOptimizer
+from src.optimizers import ExponentialMovingParameterAverage
 from src.optimizers import Optimizer
 from src.utils import Checkpoint
 from src.utils import dict_collapse
@@ -47,81 +48,31 @@ import src.distributed
 logger = logging.getLogger(__name__)
 
 
-class ExponentialMovingParameterAverage():
-    """ Average the model parameters over time.
-
-    Inspired by: http://www.programmersought.com/article/28492072406/
-
-    TODO: Consider moving this into the signal model as part of it's evaluation mode.
-
-    Learn more about EMA, here: https://arxiv.org/abs/1806.04498
-
-    Args:
-        model (torch.nn.Module): The model w/ parameters to average.
-        beta (float): Beta used to weight the exponential mean.
-    """
-
-    def __init__(self, parameters, beta=0.999):
-        self.parameters = list(parameters)
-        self.beta = beta
-        self.shadow = [param.clone().detach() * (1.0 - self.beta) for param in self.parameters]
-        self.backup = []
-        self.step = 1
-
-    def update(self):
-        """ Update the parameter average.
-        """
-        for i, param in enumerate(self.parameters):
-            self.shadow[i] = (1.0 - self.beta) * param.clone().detach() + self.beta * self.shadow[i]
-        self.step += 1
-
-    def apply_shadow(self):
-        """ Replace the model with it's averaged parameters.
-        """
-        self.backup = [param.clone().detach() for param in self.parameters]
-        for param, shadow in zip(self.parameters, self.shadow):
-            # The initial 0.0 average values introduce bias that is corrected, learn more:
-            # https://www.coursera.org/lecture/deep-neural-network/bias-correction-in-exponentially-weighted-averages-XjuhD
-            with torch.no_grad():
-                param.copy_(shadow / (1 - self.beta**(self.step)))
-
-    def restore(self):
-        """ Restore the model's old parameters.
-        """
-        for param, backup in zip(self.parameters, self.backup):
-            with torch.no_grad():
-                param.copy_(backup)
-        self.backup = []
-
-    def to(self, device):
-        """ Move the state to ``device``.
-
-        Args:
-            device (torch.device)
-        """
-        for list_ in [self.parameters, self.shadow, self.backup]:
-            for i, param in enumerate(list_):
-                list_[i] = param.to(device)
-        return self
-
-
 class SpectrogramLoss(torch.nn.Module):
     """ Compute a loss based in the time / frequency domain.
 
-    TODO: Incorperate `HParams` for parameterizing the loss.
-
     Args:
         criterion (torch.nn.Module): The loss function for comparing two spectrograms.
+        discriminator (torch.nn.Module): The model used to discriminate between two spectrograms.
+        discriminator_optimizer (torch.nn.Module)
+        discriminator_criterion (torch.nn.Module)
         **kwargs: Additional key word arguments passed to `SignalTodBMelSpectrogram`.
     """
 
-    def __init__(self, criterion=torch.nn.L1Loss, **kwargs):
+    @configurable
+    def __init__(self,
+                 criterion=HParam(),
+                 discriminator=HParam(),
+                 discriminator_optimizer=HParam(),
+                 discriminator_criterion=HParam(),
+                 **kwargs):
         super().__init__()
 
         self.signal_to_spectrogram = SignalTodBMelSpectrogram(**kwargs)
         self.fft_length = self.signal_to_spectrogram.fft_length
         self.frame_hop = self.signal_to_spectrogram.frame_hop
         self.sample_rate = self.signal_to_spectrogram.sample_rate
+        self.num_mel_bins = self.signal_to_spectrogram.num_mel_bins
 
         self.criterion = criterion(reduction='none')
         self.plot_spectrogram = lambda spectrogram: plot_spectrogram(
@@ -129,8 +80,22 @@ class SpectrogramLoss(torch.nn.Module):
         self.plot_mel_spectrogram = lambda spectrogram: plot_mel_spectrogram(
             spectrogram, frame_hop=self.frame_hop, sample_rate=self.sample_rate)
 
+        self.discriminator = discriminator(self.fft_length, self.num_mel_bins)
+        discriminator_optimizer = discriminator_optimizer(
+            params=filter(lambda p: p.requires_grad, self.discriminator.parameters()))
+        self.discriminator_optimizer = Optimizer(discriminator_optimizer)
+        self.discriminator_criterion = discriminator_criterion()
+
+    def to(self, device):
+        self.discriminator_optimizer = self.discriminator_optimizer.to(device)
+        self.discriminator_criterion = self.discriminator_criterion.to(device)
+        self.discriminator = self.discriminator.to(device)
+        self.signal_to_spectrogram = self.signal_to_spectrogram.to(device)
+        return self
+
     def get_name(self, signal_name=None, is_mel_scale=True, is_decibels=True, is_magnitude=True):
-        """
+        """ Get a interpretable label for logging a spectrogram.
+
         Args:
             signal_name (str): The same of the signal.
             is_mel_scale (str): If `True` the signal spectrogram was fit to the mel scale.
@@ -147,7 +112,61 @@ class SpectrogramLoss(torch.nn.Module):
         name = 'mel(%s)' % name if is_mel_scale else name
         return name
 
-    def forward(self, predicted_signal, target_signal, comet_ml=None):
+    def discriminate(self,
+                     predicted_spectrogram,
+                     predicted_db_spectrogram,
+                     predicted_db_mel_spectrogram,
+                     target_spectrogram,
+                     target_db_spectrogram,
+                     target_db_mel_spectrogram,
+                     do_backwards=False):
+        """ Discriminate between predicted and real spectrograms.
+
+        Learn more about this approach:
+        https://pytorch.org/tutorials/beginner/dcgan_faces_tutorial.html
+
+        Args:
+            predicted_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
+            predicted_db_spectrogram (torch.FloatTensor
+                [batch_size, num_frames, fft_length // 2 + 1])
+            predicted_db_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins])
+            target_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
+            target_db_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
+            target_db_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins])
+            do_backwards (bool, optional): If `True` this updates the discriminator weights.
+
+        Returns:
+            (torch.FloatTensor): The disciminators loss on `predicted`.
+            (torch.FloatTensor): The accuracy of the discriminator on `predicted` and `target`.
+        """
+        batch_size = predicted_spectrogram.shape[0]
+        device = predicted_spectrogram.device
+
+        labels_target = torch.full((batch_size,), 1.0, device=device)
+        labels_predicted = torch.full((batch_size,), 0.0, device=device)
+        labels = torch.cat([labels_target, labels_predicted])
+
+        # NOTE: `detach` to avoid updating the generator.
+        db_mel_spectrogram = [target_db_mel_spectrogram, predicted_db_mel_spectrogram.detach()]
+        db_mel_spectrogram = torch.cat(db_mel_spectrogram)
+        db_spectrogram = torch.cat([target_db_spectrogram, predicted_db_spectrogram.detach()])
+        spectrogram = torch.cat([target_spectrogram, predicted_spectrogram.detach()])
+
+        predictions = self.discriminator(spectrogram, db_spectrogram, db_mel_spectrogram)
+        loss = self.discriminator_criterion(predictions, labels)
+        accuracy = ((labels > 0.5) == (torch.sigmoid(predictions) > 0.5)).float().mean()
+
+        if do_backwards:
+            self.discriminator.zero_grad()
+            loss.backward()
+            self.discriminator_optimizer.step()
+
+        # NOTE: Use target labels instead of predicted to flip the gradient for the generator.
+        predictions = self.discriminator(predicted_spectrogram, predicted_db_spectrogram,
+                                         predicted_db_mel_spectrogram)
+        return self.discriminator_criterion(predictions, labels_target), accuracy
+
+    def forward(self, predicted_signal, target_signal, comet_ml=None, do_backwards=False):
         """
         Args:
             predicted_signal (torch.FloatTensor [batch_size (optional), signal_length])
@@ -155,6 +174,7 @@ class SpectrogramLoss(torch.nn.Module):
             comet_ml (None or Experiment): If this value is passed, then this logs figures to
                 comet. If the batch size is larger than one, then a random item from the
                 batch is picked to be logged.
+            do_backwards (bool, optional): If `True` this updates the discriminator weights.
 
         Returns:
             torch.FloatTensor: The loss.
@@ -162,14 +182,26 @@ class SpectrogramLoss(torch.nn.Module):
         predicted_signal = predicted_signal.view(-1, predicted_signal.shape[-1])
         target_signal = target_signal.view(-1, target_signal.shape[-1])
 
+        assert target_signal.shape == predicted_signal.shape
+
         (predicted_db_mel_spectrogram, predicted_db_spectrogram,
          predicted_spectrogram) = self.signal_to_spectrogram(
              predicted_signal, intermediate=True)
         (target_db_mel_spectrogram, target_db_spectrogram,
          target_spectrogram) = self.signal_to_spectrogram(
              target_signal, intermediate=True)
+
         db_mel_spectrogram_loss = self.criterion(predicted_db_mel_spectrogram,
                                                  target_db_mel_spectrogram)
+
+        discriminator_loss, disciminator_accuracy = self.discriminate(
+            predicted_spectrogram,
+            predicted_db_spectrogram,
+            predicted_db_mel_spectrogram,
+            target_spectrogram,
+            target_db_spectrogram,
+            target_db_mel_spectrogram,
+            do_backwards=do_backwards)
 
         if comet_ml:
             with warnings.catch_warnings():
@@ -202,7 +234,7 @@ class SpectrogramLoss(torch.nn.Module):
                     self.plot_mel_spectrogram(db_mel_spectrogram_loss[random_item].mean(
                         dim=0, keepdim=True)))
 
-        return db_mel_spectrogram_loss.mean()
+        return db_mel_spectrogram_loss.mean(), discriminator_loss, disciminator_accuracy
 
 
 class Trainer():
@@ -289,8 +321,6 @@ class Trainer():
         self.scheduler = LambdaLR(
             self.optimizer.optimizer, lr_multiplier_schedule, last_epoch=step - 1)
 
-        self.criterion = SpectrogramLoss().to(device)
-
         # NOTE: The `num_mel_bins` must be proportional to `fft_length`, learn more:
         # https://stackoverflow.com/questions/56929874/what-is-the-warning-empty-filters-detected-in-mel-frequency-basis-about
         with warnings.catch_warnings():
@@ -310,15 +340,24 @@ class Trainer():
                     num_mel_bins=32).to(device),
             ]
 
-        # TODO: Remove redundancy between `self.criterions` and `self.metrics`.
-        # TODO: Consider naming the metrics more precisely from the spectrogram parameters.
         self.metrics = {
-            'db_mel_spectrogram_magnitude_loss': DistributedAveragedMetric(),
-            'db_mel_2048_spectrogram_magnitude_loss': DistributedAveragedMetric(),
-            'db_mel_1024_spectrogram_magnitude_loss': DistributedAveragedMetric(),
-            'db_mel_512_spectrogram_magnitude_loss': DistributedAveragedMetric(),
             'data_queue_size': DistributedAveragedMetric(),
+            'db_mel_spectrogram_magnitude_loss': DistributedAveragedMetric(),
+            'spectrogram_discriminator_accuracy': DistributedAveragedMetric(),
+            'spectrogram_discriminator_loss': DistributedAveragedMetric(),
         }
+        self.metrics.update({
+            '%d_spectrogram_discriminator_loss' % c.fft_length: DistributedAveragedMetric()
+            for c in self.criterions
+        })
+        self.metrics.update({
+            '%d_spectrogram_discriminator_accuracy' % c.fft_length: DistributedAveragedMetric()
+            for c in self.criterions
+        })
+        self.metrics.update({
+            'db_mel_%d_spectrogram_magnitude_loss' % c.fft_length: DistributedAveragedMetric()
+            for c in self.criterions
+        })
 
         self.comet_ml = comet_ml
         self.comet_ml.set_step(step)
@@ -533,24 +572,39 @@ class Trainer():
             (batch.target_signal.shape, predicted_signal.shape))
 
         total_spectrogram_loss = torch.tensor(0.0, device=predicted_signal.device)
+        total_discriminator_loss = torch.tensor(0.0, device=predicted_signal.device)
+        total_discriminator_accuracy = torch.tensor(0.0, device=predicted_signal.device)
         for criterion in self.criterions:
-            spectrogram_loss = criterion(
+            spectrogram_loss, discriminator_loss, discriminator_accuracy = criterion(
                 predicted_signal,
                 batch.target_signal,
-                comet_ml=self.comet_ml if log_figure else None)
+                comet_ml=self.comet_ml if log_figure else None,
+                do_backwards=do_backwards)
+
             total_spectrogram_loss += spectrogram_loss / len(self.criterions)
+            total_discriminator_loss += discriminator_loss / len(self.criterions)
+            total_discriminator_accuracy += discriminator_accuracy / len(self.criterions)
+
             self.metrics['db_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length].update(
                 spectrogram_loss, batch.target_signal.shape[0])
+            self.metrics['%d_spectrogram_discriminator_loss' % criterion.fft_length].update(
+                discriminator_loss, batch.target_signal.shape[0])
+            self.metrics['%d_spectrogram_discriminator_accuracy' % criterion.fft_length].update(
+                discriminator_accuracy, batch.target_signal.shape[0])
 
         if do_backwards:
             self.optimizer.zero_grad()
-            total_spectrogram_loss.backward()
+            (total_discriminator_loss + total_spectrogram_loss).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
             self.exponential_moving_parameter_average.update()
 
         # TODO: Consider using the spectrogram length instead of batch size
         self.metrics['db_mel_spectrogram_magnitude_loss'].update(total_spectrogram_loss,
                                                                  batch.target_signal.shape[0])
+        self.metrics['spectrogram_discriminator_loss'].update(total_discriminator_loss,
+                                                              batch.target_signal.shape[0])
+        self.metrics['spectrogram_discriminator_accuracy'].update(total_discriminator_accuracy,
+                                                                  batch.target_signal.shape[0])
 
         return total_spectrogram_loss, batch.signal_mask.sum()
 
@@ -583,16 +637,30 @@ class Trainer():
         self.exponential_moving_parameter_average.restore()
 
         total_spectrogram_loss = torch.tensor(0.0, device=self.device)
+        total_discriminator_loss = torch.tensor(0.0, device=self.device)
+        total_discriminator_accuracy = torch.tensor(0.0, device=self.device)
         for criterion in self.criterions:
-            spectrogram_loss = criterion(predicted, target_signal, comet_ml=self.comet_ml)
+            spectrogram_loss, discriminator_loss, discriminator_accuracy = criterion(
+                predicted, target_signal, comet_ml=self.comet_ml)
+
             total_spectrogram_loss += spectrogram_loss / len(self.criterions)
+            total_discriminator_loss += discriminator_loss / len(self.criterions)
+            total_discriminator_accuracy += discriminator_accuracy / len(self.criterions)
+
             self.comet_ml.log_metrics({
+                'single/%d_spectrogram_discriminator_accuracy' % criterion.fft_length:
+                    discriminator_accuracy.item(),
+                'single/%d_spectrogram_discriminator_loss' % criterion.fft_length:
+                    discriminator_loss.item(),
                 'single/db_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length:
                     spectrogram_loss.item()
             })
 
-        self.comet_ml.log_metrics(
-            {'single/db_mel_spectrogram_magnitude_loss': total_spectrogram_loss.item()})
+        self.comet_ml.log_metrics({
+            'single/db_mel_spectrogram_magnitude_loss': total_spectrogram_loss.item(),
+            'single/spectrogram_discriminator_accuracy': total_discriminator_accuracy.item(),
+            'single/spectrogram_discriminator_loss': total_discriminator_loss.item()
+        })
         self.comet_ml.log_audio(
             tag=self.DEV_INFERRED_LABEL,
             text=example.text,

@@ -136,8 +136,7 @@ def _add_spectrogram_column(example, config, on_disk=True):
         # TODO: Compute batches of spectrograms, it'd be faster.
         padded_signal = pad_remainder(signal)
         db_mel_spectrogram = get_signal_to_db_mel_spectrogram()(
-            integer_to_floating_point_pcm(padded_signal))
-        db_mel_spectrogram = torch.from_numpy(db_mel_spectrogram)
+            torch.from_numpy(integer_to_floating_point_pcm(padded_signal)), aligned=True)
         padded_signal = torch.from_numpy(padded_signal)
 
         if on_disk:
