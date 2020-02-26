@@ -136,3 +136,61 @@ class AutoOptimizer(Optimizer):
                 self.max_grad_norm = (self.sorted_window[half] + self.sorted_window[half - 1]) / 2
 
         return parameter_norm
+
+
+class ExponentialMovingParameterAverage():
+    """ Average the model parameters over time.
+
+    Inspired by: http://www.programmersought.com/article/28492072406/
+
+    TODO: Consider moving this into the signal model as part of it's evaluation mode.
+
+    Learn more about EMA, here: https://arxiv.org/abs/1806.04498
+
+    Args:
+        model (torch.nn.Module): The model w/ parameters to average.
+        beta (float): Beta used to weight the exponential mean.
+    """
+
+    def __init__(self, parameters, beta=0.999):
+        self.parameters = list(parameters)
+        self.beta = beta
+        self.shadow = [param.clone().detach() * (1.0 - self.beta) for param in self.parameters]
+        self.backup = []
+        self.step = 1
+
+    def update(self):
+        """ Update the parameter average.
+        """
+        for i, param in enumerate(self.parameters):
+            self.shadow[i] = (1.0 - self.beta) * param.clone().detach() + self.beta * self.shadow[i]
+        self.step += 1
+
+    def apply_shadow(self):
+        """ Replace the model with it's averaged parameters.
+        """
+        self.backup = [param.clone().detach() for param in self.parameters]
+        for param, shadow in zip(self.parameters, self.shadow):
+            # The initial 0.0 average values introduce bias that is corrected, learn more:
+            # https://www.coursera.org/lecture/deep-neural-network/bias-correction-in-exponentially-weighted-averages-XjuhD
+            with torch.no_grad():
+                param.copy_(shadow / (1 - self.beta**(self.step)))
+
+    def restore(self):
+        """ Restore the model's old parameters.
+        """
+        for param, backup in zip(self.parameters, self.backup):
+            with torch.no_grad():
+                param.copy_(backup)
+        self.backup = []
+
+    def to(self, device):
+        """ Move the state to ``device``.
+
+        Args:
+            device (torch.device)
+        """
+        for list_ in [self.parameters, self.shadow, self.backup]:
+            for i, param in enumerate(list_):
+                list_[i] = param.to(device)
+        return self
