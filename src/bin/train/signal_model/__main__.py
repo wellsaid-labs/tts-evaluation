@@ -262,16 +262,7 @@ if __name__ == '__main__':  # pragma: no cover
         default=None,
         help=('Spectrogram model checkpoint path used to predicted spectrogram from '
               'text as input to the signal model.'))
-    parser.add_argument(
-        '--tags',
-        default=[
-            'phase_shuffle_conv_upsampling', 'fix_weight_init', '20hz_min', 'dB_mel_spectrogram',
-            'no_dilations', 'gelu_before_output', 'exponential_moving_average',
-            'conv1x1_before_gelu', 'sync_in_out', '2x8_ratios', 'no_oversample', '500_step_warmup',
-            'no_input_scalar', 'tanh_sigmoid_out', 'ema_999', 'concat_conditional'
-        ],
-        nargs='+',
-        help='List of tags for the experiment.')
+    parser.add_argument('--tags', default=[], nargs='+', help='List of tags for the experiment.')
     parser.add_argument('--name', type=str, default=None, help='Name of the experiment.')
     parser.add_argument(
         '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')
