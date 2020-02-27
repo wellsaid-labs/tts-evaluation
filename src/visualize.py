@@ -6,14 +6,16 @@ import platform
 import subprocess
 import time
 
-matplotlib.use('Agg', warn=False)
+# Learn more:
+# https://stackoverflow.com/questions/4931376/generating-matplotlib-graphs-without-a-running-x-server
+if platform.system() == 'Linux':
+    matplotlib.use('Agg', warn=False)
 
 from comet_ml import ExistingExperiment
 from comet_ml import Experiment
 from comet_ml.config import get_config
 from hparams import configurable
 from hparams import HParam
-from matplotlib import cm as colormap
 from matplotlib import pyplot
 from matplotlib.colors import ListedColormap
 from third_party import LazyLoader
@@ -172,7 +174,14 @@ def plot_attention(alignment):
     alignment = np.transpose(alignment)
     pyplot.style.use('ggplot')
     figure, axis = pyplot.subplots()
-    im = axis.imshow(alignment, aspect='auto', origin='lower', interpolation='none', vmin=0, vmax=1)
+    im = axis.imshow(
+        alignment,
+        cmap='turbo',
+        aspect='auto',
+        origin='lower',
+        interpolation='none',
+        vmin=0,
+        vmax=1)
     figure.colorbar(im, ax=axis, orientation='horizontal')
     pyplot.xlabel('Decoder timestep')
     pyplot.ylabel('Encoder timestep')
@@ -222,25 +231,6 @@ def plot_stop_token(stop_token):
     return figure
 
 
-def spectrogram_to_image(spectrogram):
-    """ Create an image array form a spectrogram.
-
-    Args:
-        spectrogram (torch.Tensor or numpy.array): A ``[frames, num_mel_bins]`` ``Tensor`` of
-            ``complex64`` STFT values.
-
-    Returns:
-        image (numpy.array [width, height, 3]): Spectrogram image.
-    """
-    spectrogram = spectrogram.detach().cpu().numpy() if torch.is_tensor(
-        spectrogram) else spectrogram
-    spectrogram = (spectrogram - np.min(spectrogram)) / (np.max(spectrogram) - np.min(spectrogram))
-    spectrogram = np.flip(spectrogram, axis=1)  # flip against freq axis
-    spectrogram = np.uint8(colormap.viridis(spectrogram.T) * 255)
-    spectrogram = spectrogram[:, :, :-1]  # RGBA → RGB
-    return spectrogram
-
-
 @configurable
 def plot_waveform(signal, sample_rate=HParam()):
     """ Save image of spectrogram to disk.
@@ -259,6 +249,7 @@ def plot_waveform(signal, sample_rate=HParam()):
     pyplot.ylabel('Energy')
     pyplot.xlabel('Time')
     pyplot.ylim(-1, 1)
+    # Learn more: https://stackoverflow.com/questions/21884271/warning-about-too-many-open-figures
     pyplot.close(figure)
     return figure
 

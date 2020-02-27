@@ -1,27 +1,40 @@
+from functools import partial
+
 import io
 
 from scipy.io import wavfile
 
 import librosa
 import numpy as np
+import pyloudnorm
 import pytest
 import torch
 
+from src.audio import a_weighting
 from src.audio import amplitude_to_db
+from src.audio import amplitude_to_power
 from src.audio import build_wav_header
 from src.audio import cache_get_audio_metadata
 from src.audio import db_to_amplitude
 from src.audio import db_to_power
+from src.audio import framed_root_mean_square_from_power_spectrogram
+from src.audio import framed_root_mean_square_from_signal
+from src.audio import full_scale_sine_wave
+from src.audio import full_scale_square_wave
 from src.audio import get_audio_metadata
 from src.audio import get_num_seconds
 from src.audio import get_signal_to_db_mel_spectrogram
 from src.audio import griffin_lim
 from src.audio import integer_to_floating_point_pcm
 from src.audio import iso226_weighting
+from src.audio import k_weighting
 from src.audio import normalize_audio
 from src.audio import pad_remainder
+from src.audio import power_to_amplitude
 from src.audio import power_to_db
 from src.audio import read_audio
+from src.audio import REFERENCE_FREQUENCY
+from src.audio import root_mean_square_from_signal
 from src.audio import SignalTodBMelSpectrogram
 from src.audio import WAVE_FORMAT_IEEE_FLOAT
 from src.audio import WAVE_FORMAT_PCM
@@ -32,6 +45,123 @@ from src.environment import TEST_DATA_PATH
 from src.utils import make_arg_key
 
 TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'test_audio'
+
+
+def test_root_mean_square_from_signal__full_scale_square_wave():
+    """ Test computing the root mean square of a 0 dBFS signal. """
+    assert root_mean_square_from_signal(full_scale_square_wave()) == pytest.approx(1.0)
+    assert amplitude_to_db(torch.tensor(root_mean_square_from_signal(
+        full_scale_square_wave()))).item() == pytest.approx(0.0)
+
+
+def test_root_mean_square_from_signal__full_scale_sine_wave():
+    """ Test computing the root mean square of a -3.01 dBFS signal. """
+    assert root_mean_square_from_signal(full_scale_sine_wave()) == pytest.approx(0.70710677)
+    assert amplitude_to_db(torch.tensor(root_mean_square_from_signal(
+        full_scale_sine_wave()))).item() == pytest.approx(-3.0103)
+
+
+def test_framed_root_mean_square_from_signal__full_scale_square_wave():
+    """ Test computing the framed root mean square of a 0 dBFS signal, this is slightly
+    inaccurate in computing a global RMS.
+    """
+    frame_rms = framed_root_mean_square_from_signal(full_scale_square_wave())
+    assert np.sqrt((frame_rms**2).mean()) == pytest.approx(1.0)
+
+
+def test_framed_root_mean_square_from_signal__full_scale_sine_wave():
+    """ Test computing the framed root mean square of a -3.01 dBFS signal, this is slightly
+    inaccurate in computing a global RMS due to the overlapping frames.
+    """
+    frame_rms = framed_root_mean_square_from_signal(full_scale_sine_wave())
+    assert np.sqrt((frame_rms**2).mean()) == pytest.approx(0.70711106)
+
+
+def test_framed_root_mean_square_from_power_spectrogram__full_scale_square_wave():
+    """ Test computing the root mean square of a 0 dBFS signal from a spectrogram. """
+    window = torch.ones(1024)
+    signal = torch.tensor(full_scale_square_wave())
+    spectrogram = torch.stft(
+        signal, n_fft=1024, hop_length=256, win_length=1024, window=window, center=False)
+    spectrogram = torch.norm(spectrogram, dim=-1)
+    power_spectrogram = amplitude_to_power(spectrogram).transpose(0, 1)
+    frame_rms = framed_root_mean_square_from_power_spectrogram(power_spectrogram, window=window)
+    assert frame_rms.pow(2).mean().sqrt().item() == pytest.approx(1.0)
+
+
+def test_framed_root_mean_square_from_power_spectrogram__full_scale_sine_wave():
+    """ Test computing the root mean square of a 0 dBFS signal from a spectrogram with hann window.
+    """
+    window = torch.hann_window(2048)
+    signal = torch.tensor(full_scale_sine_wave())
+    spectrogram = torch.stft(
+        signal, n_fft=2048, hop_length=512, win_length=2048, window=window, center=False)
+    spectrogram = torch.norm(spectrogram, dim=-1)
+    power_spectrogram = amplitude_to_power(spectrogram).transpose(0, 1)
+    frame_rms = framed_root_mean_square_from_power_spectrogram(power_spectrogram, window=window)
+    assert frame_rms.pow(2).mean().sqrt().item() == pytest.approx(0.70710677)
+
+
+def test_loudness():
+    """ Despite not officially implementing all the components of ITU-R BS.1770-4, test if
+    spectrogram approach appropriately represents loudnesss.
+    """
+
+    def db_spectrogram_to_loudness(db_spectrogram, window):
+        power_spectrogram = db_to_power(db_spectrogram)
+        loudness = framed_root_mean_square_from_power_spectrogram(power_spectrogram, window=window)
+
+        loudness = torch.tensor([l for l in loudness if amplitude_to_db(l) >= -70])
+        if len(loudness) == 0:
+            return -70.0
+        relative_gate = power_to_db(loudness.pow(2).mean()) - 10
+        loudness = torch.tensor([l for l in loudness if amplitude_to_db(l) >= relative_gate])
+
+        return power_to_db(loudness.pow(2).mean()).item()
+
+    audio_files = [
+        'beth.wav', 'elise.wav', 'frank.wav', 'george.wav', 'hanuman.wav', 'heather.wav',
+        'hilary.wav', 'mark.wav', 'megan.wav', 'steven.wav', 'susan.wav'
+    ]
+    sample_rate = 24000
+    metadata = WavFileMetadata(sample_rate, 32, 1, 'floating-point')
+
+    fft_length = int(sample_rate * 0.4)
+    window = torch.ones(fft_length)
+    signal_to_db_spectrogram = SignalTodBMelSpectrogram(
+        fft_length=fft_length,
+        frame_hop=fft_length // 4,
+        sample_rate=sample_rate,
+        num_mel_bins=128,
+        window=window,
+        min_decibel=float('-inf'),
+        get_weighting=partial(k_weighting, sample_rate=sample_rate, offset=-0.691),
+        eps=1e-10,
+        lower_hertz=0,
+        upper_hertz=20000)
+
+    # NOTE: Our K-Weighting implementation is also based off DeMan's work.
+    meter = pyloudnorm.Meter(sample_rate, 'DeMan')
+
+    for filename in audio_files:
+        path = TEST_DATA_PATH_LOCAL / filename
+        signal = read_audio(path, metadata)
+        db_mel_spectrogram, db_spectrogram, spectrogram = signal_to_db_spectrogram(
+            torch.tensor(signal), intermediate=True)
+
+        # Test mel dB spectrogram
+        loudness = db_spectrogram_to_loudness(db_mel_spectrogram, window)
+        assert abs(loudness - meter.integrated_loudness(signal)) < 0.005
+
+        # Test regular dB spectrogram
+        loudness = db_spectrogram_to_loudness(db_spectrogram, window)
+        assert abs(loudness - meter.integrated_loudness(signal)) < 0.005
+
+
+def test_power_to_amplitude():
+    t = torch.abs(torch.randn(100))
+    np.testing.assert_almost_equal(
+        power_to_amplitude(amplitude_to_power(t)).numpy(), t.numpy(), decimal=5)
 
 
 def test_amplitude_to_db():
@@ -50,8 +180,18 @@ def test_iso226_weighting():
     https://en.wikipedia.org/wiki/A-weighting#/media/File:Lindos3.svg
     https://github.com/wellsaid-labs/Text-to-Speech/blob/adc1f28864c9515a5d33b876b135d2e95da73faf/weights.png
     """
-    np.testing.assert_almost_equal([-59.843877, 0.0, -59.843877],
-                                   iso226_weighting(np.array([20, 1000, 20000])))
+    np.testing.assert_almost_equal([-59.8563292, 0.0, -59.8563292],
+                                   iso226_weighting(np.array([20, REFERENCE_FREQUENCY, 20000])))
+
+
+def test_a_weighting():
+    np.testing.assert_almost_equal([-50.3856623, 0.0, -9.3315703],
+                                   a_weighting(np.array([20, REFERENCE_FREQUENCY, 20000])))
+
+
+def test_k_weighting():
+    np.testing.assert_almost_equal([-13.9492132, 0.0, 3.3104297],
+                                   k_weighting(np.array([20, REFERENCE_FREQUENCY, 20000]), 24000))
 
 
 def test_pad_remainder():
@@ -135,10 +275,17 @@ def test_signal_to_db_mel_spectrogram_intermediate():
     batch_size = 10
     n_fft = 2048
     tensor = torch.nn.Parameter(torch.randn(batch_size, 2400))
-    module = SignalTodBMelSpectrogram(fft_length=n_fft)
+    module = SignalTodBMelSpectrogram(fft_length=n_fft, min_decibel=float('-inf'), lower_hertz=0)
     db_mel_spectrogram, db_spectrogram, spectrogram = module(tensor, intermediate=True)
+
     assert spectrogram.shape == (batch_size, db_mel_spectrogram.shape[1], n_fft // 2 + 1)
     assert db_spectrogram.shape == (batch_size, db_mel_spectrogram.shape[1], n_fft // 2 + 1)
+
+    # Test to ensure the mel scale perserves the total frame power.
+    np.testing.assert_allclose(
+        db_to_power(db_mel_spectrogram).sum(dim=-1).detach().numpy(),
+        db_to_power(db_spectrogram).sum(dim=-1).detach().numpy(),
+        rtol=1e-2)
 
 
 def test_signal_to_db_mel_spectrogram__alignment():

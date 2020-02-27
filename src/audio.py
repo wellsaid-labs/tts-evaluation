@@ -15,6 +15,7 @@ from third_party.iso226 import iso226_spl_itpl
 from tqdm import tqdm
 
 import numpy as np
+import scipy.signal
 import torch
 
 # NOTE: `LazyLoader` allows for this repository to run without these dependancies. Also,
@@ -90,8 +91,7 @@ def read_audio(filename, assert_metadata=HParam()):
 
 
 def integer_to_floating_point_pcm(signal):
-    """ Convert a `int32` or `int16` PCM signal representation to a `float32`
-    PCM representation.
+    """ Convert a `int32` or `int16` PCM signal representation to a `float32` PCM representation.
 
     Learn more about the common data types:
     https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.wavfile.read.html#r7015bff88555-1
@@ -112,6 +112,8 @@ def integer_to_floating_point_pcm(signal):
         return signal
 
     signal = signal.detach().cpu().numpy() if is_tensor else signal
+
+    assert signal.ndim == 1
 
     if signal.dtype != np.float32:
         assert signal.dtype in (np.int32, np.int16), '`%s` `dtype` is not supported' % signal.dtype
@@ -187,22 +189,161 @@ def _mel_filters(sample_rate, num_mel_bins, fft_length, lower_hertz=HParam(), up
         htk=True)
 
 
+# Learn more with regards to `full_scale_sine_wave`, `full_scale_square_wave` and
+# `REFERENCE_FREQUENCY`:
+# - Wikipedia describing decibels relative to full scale (dBFS) -
+#   https://en.wikipedia.org/wiki/DBFS
+# - Definition of decibels relative to full scale (dBFS) -
+#   http://www.digitizationguidelines.gov/term.php?term=decibelsrelativetofullscale
+#   http://www.prismsound.com/define.php?term=Full-scale_amplitude
+#   https://github.com/dechamps/audiotools (Opinionated)
+# - Question on generating a 0 dBFS full scale sine-wave -
+#   https://sound.stackexchange.com/questions/44910/how-do-i-generate-a-0-dbfs-sine-wave-in-sox-output-clipped-warning
+
+REFERENCE_FREQUENCY = 997
+REFERENCE_SAMPLE_RATE = 48000
+
+
+def full_scale_sine_wave(sample_rate=REFERENCE_SAMPLE_RATE, frequency=REFERENCE_FREQUENCY):
+    """ Full-scale sine wave is used to define the maximum peak level for a dBFS unit.
+
+    Learn more:
+    https://stackoverflow.com/questions/22566692/python-how-to-plot-graph-sine-wave/34442729
+    https://github.com/makermovement/3.5-Sensor2Phone/blob/master/generate_any_audio.py
+
+    Args:
+        sample_rate (int)
+        frequency (int)
+
+    Returns:
+        np.ndarray: Array of length `sample_rate`
+    """
+    x = np.arange(sample_rate)
+    return np.sin(2 * np.pi * frequency * (x / sample_rate)).astype(np.float32)
+
+
+def full_scale_square_wave(sample_rate=REFERENCE_SAMPLE_RATE, frequency=REFERENCE_FREQUENCY):
+    """ Full-scale square wave is also used to define the maximum peak level for a dBFS unit.
+
+    Args:
+        sample_rate (int)
+        frequency (int)
+
+    Returns:
+        np.ndarray: Array of length `sample_rate`
+    """
+    x = np.arange(sample_rate)
+    return scipy.signal.square(2 * np.pi * frequency * (x / sample_rate)).astype(np.float32)
+
+
+def _k_weighting(frequencies, fs):
+    # pre-filter 1
+    f0 = 1681.9744509555319
+    G = 3.99984385397
+    Q = 0.7071752369554193
+    K = np.tan(np.pi * f0 / fs)
+    Vh = np.power(10.0, G / 20.0)
+    Vb = np.power(Vh, 0.499666774155)
+    a0_ = 1.0 + K / Q + K * K
+    b0 = (Vh + Vb * K / Q + K * K) / a0_
+    b1 = 2.0 * (K * K - Vh) / a0_
+    b2 = (Vh - Vb * K / Q + K * K) / a0_
+    a0 = 1.0
+    a1 = 2.0 * (K * K - 1.0) / a0_
+    a2 = (1.0 - K / Q + K * K) / a0_
+
+    h1 = scipy.signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]
+    h1 = 20 * np.log10(abs(h1))
+
+    # pre-filter 2
+    f0 = 38.13547087613982
+    Q = 0.5003270373253953
+    K = np.tan(np.pi * f0 / fs)
+    a0 = 1.0
+    a1 = 2.0 * (K * K - 1.0) / (1.0 + K / Q + K * K)
+    a2 = (1.0 - K / Q + K * K) / (1.0 + K / Q + K * K)
+    b0 = 1.0
+    b1 = -2.0
+    b2 = 1.0
+
+    h2 = scipy.signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]
+    h2 = 20 * np.log10(abs(h2))
+
+    return h1 + h2
+
+
+def k_weighting(frequencies, sample_rate, offset=None):
+    """ K-Weighting as specified in EBU R-128 / ITU BS.1770-4.
+
+    Learn more:
+    - Original implementation of sample rate independent EBU R128 / ITU-R BS.1770 -
+      https://github.com/BrechtDeMan/loudness.py
+    - Python loudness library with implementation of EBU R128 / ITU-R BS.1770 -
+      https://www.christiansteinmetz.com/projects-blog/pyloudnorm
+      https://github.com/csteinmetz1/pyloudnorm
+    - Original document describing ITU-R BS.1770 -
+      https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.1770-4-201510-I!!PDF-E.pdf
+    - MATLAB implementation of K-Weighting -
+      https://www.mathworks.com/help/audio/ref/weightingfilter-system-object.html
+    - Wikipedia describing different weightings -
+      https://en.wikipedia.org/wiki/Weighting_filter
+    - Google TTS on LUFS / EBU R128 / ITU-R BS.1770 -
+      https://developers.google.com/assistant/tools/audio-loudness
+
+    This implementation is largely borrowed from https://github.com/BrechtDeMan/loudness.py.
+
+    Args:
+        frequencies (np.ndarray [*]): Frequencies for which to get weights.
+        sample_rate (int)
+        offset (optional, float)
+
+    Returns:
+        np.ndarray [*frequencies.shape]: Weighting for each frequency.
+    """
+    # SOURCE (ITU-R BS.1770):
+    # The constant −0.691 in equation (2) cancels out the K-weighting gain for 997 Hz.
+    offset = -_k_weighting(np.array([REFERENCE_FREQUENCY]),
+                           sample_rate) if offset is None else offset
+    return _k_weighting(frequencies, sample_rate) + offset
+
+
+def a_weighting(frequencies):
+    """ Wrapper around `librosa.core.A_weighting`.
+
+    Learn more:
+    - Wikipedia describing A-weighting -
+      https://en.wikipedia.org/wiki/A-weighting
+
+    Args:
+        frequencies (np.ndarray [*]): Frequencies for which to get weights.
+
+    Returns:
+        np.ndarray [*frequencies.shape]: Weighting for each frequency.
+    """
+    return librosa.core.A_weighting(
+        frequencies, min_db=None) - librosa.core.A_weighting(
+            np.array([REFERENCE_FREQUENCY]), min_db=None)
+
+
 def iso226_weighting(frequencies):
     """ Get the ISO226 weights for `frequencies`.
 
     Learn more:
-    https://en.wikipedia.org/wiki/Equal-loudness_contour
-    https://commons.wikimedia.org/wiki/File:A-weighting,_ISO_226_and_ITU-R_468.svg
-    https://en.wikipedia.org/wiki/A-weighting
-    https://github.com/wellsaid-labs/Text-to-Speech/pull/287
+    - Wikipedia describing the purposes of weighting -
+      https://en.wikipedia.org/wiki/Equal-loudness_contour
+    - Wikipedia graphic compared ISO 226 with A-Weighting -
+      https://commons.wikimedia.org/wiki/File:A-weighting,_ISO_226_and_ITU-R_468.svg
+
+    Args:
+        frequencies (np.ndarray [*]): Frequencies for which to get weights.
 
     Returns:
-        np.ndarray [*frequencies.shape]: The weighting for each frequency.
+        np.ndarray [*frequencies.shape]: Weighting for each frequency.
     """
     interpolator = iso226_spl_itpl(hfe=True)
-    # NOTE: Offset so that 1000 Hz is weighted 0 dB. Learn more:
-    # https://en.wikipedia.org/wiki/A-weighting
-    return -interpolator(frequencies) + interpolator(np.array([1000]))
+    # SOURCE: https://en.wikipedia.org/wiki/A-weighting
+    # The offsets ensure the normalisation to 0 dB at 1000 Hz.
+    return -interpolator(frequencies) + interpolator(np.array([REFERENCE_FREQUENCY]))
 
 
 @lru_cache()
@@ -345,13 +486,16 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         # >>> magnitude_spectrogram = torch.sqrt(real_part**2 + imag_part**2)
         # spectrogram [batch_size, fft_length // 2 + 1, num_frames]
         spectrogram = torch.norm(spectrogram, dim=-1)
+
         # NOTE: Perceived loudness (for example, the sone scale) corresponds fairly well to the dB
         # scale, suggesting that human perception of loudness is roughly logarithmic with
         # intensity; therefore, we convert our "ampltitude spectrogram" to the dB scale.
         # NOTE: A "weighting" can we added to the dB scale such as A-weighting to adjust it so
         # that it more representative of the human perception of loudness.
         # NOTE: A multiplication is equal to an addition in the log space / dB space.
+        # power_spectrogram [batch_size, fft_length // 2 + 1, num_frames]
         power_spectrogram = spectrogram**2 * self.weighting
+        # power_mel_spectrogram [batch_size, num_mel_bins, num_frames]
         power_mel_spectrogram = torch.matmul(self.mel_basis, power_spectrogram)
         db_mel_spectrogram = power_to_db(power_mel_spectrogram, eps=self.eps)
         db_mel_spectrogram = torch.max(self.min_decibel, db_mel_spectrogram).transpose(-2, -1)
@@ -367,6 +511,81 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             return db_mel_spectrogram, db_spectrogram, spectrogram
         else:
             return db_mel_spectrogram
+
+
+def root_mean_square_from_signal(signal):
+    """ Compute the root mean square from a signal.
+
+    Learn more:
+    - Implementations of RMS:
+      https://librosa.github.io/librosa/_modules/librosa/feature/spectral.html#rms
+      https://github.com/endolith/waveform_analysis/blob/master/waveform_analysis/_common.py#L116
+    - Wikipedia on RMS:
+      https://en.wikipedia.org/wiki/Root_mean_square
+
+    Args:
+        signal (np.ndarray [signal_length])
+
+    Returns:
+        np.ndarray [1]
+    """
+    return np.sqrt(np.mean(np.abs(signal)**2))
+
+
+@configurable
+def framed_root_mean_square_from_signal(signal, frame_length=HParam(), hop_length=HParam()):
+    """ Compute the framed root mean square from a signal.
+
+    Args:
+        signal (np.ndarray [signal_length])
+        frame_length (int)
+        hop_length (int)
+
+    Returns:
+        np.ndarray [1]
+    """
+    frames = librosa.util.frame(signal, frame_length=frame_length, hop_length=hop_length)
+    return np.sqrt(np.mean(np.abs(frames**2), axis=0))
+
+
+@configurable
+def framed_root_mean_square_from_power_spectrogram(power_spectrogram, window=HParam()):
+    """ Compute the root mean square from a spectrogram.
+
+    Learn more:
+    - Implementations of RMS:
+      https://librosa.github.io/librosa/_modules/librosa/feature/spectral.html#rms
+    - Opinionated discussion between LUFS and RMS:
+      https://www.gearslutz.com/board/mastering-forum/1142602-lufs-really-better-than-rms-measure-loudness.html
+      Also, see `test_loudness` in `test_audio.py` that replicates LUFS via RMS.
+    - Compare LUFS to Decibels:
+      https://backtracks.fm/blog/whats-the-difference-between-decibels-and-lufs/
+
+    Args:
+        power_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
+        window (torch.FloatTensor [window_size])
+
+    Returns:
+        (torch.FloatTensor [batch_size, num_frames])
+    """
+    has_batch_dim = power_spectrogram.dim() == 3
+    power_spectrogram = power_spectrogram.view(-1, *power_spectrogram.shape[-2:])
+
+    # Learn more:
+    # https://community.sw.siemens.com/s/article/window-correction-factors
+    # https://www.mathworks.com/matlabcentral/answers/372516-calculate-windowing-correction-factor
+    window_correction_factor = (
+        torch.ones(*window.shape).pow(2).mean().sqrt() / window.pow(2).mean().sqrt())
+
+    # Adjust the DC and half sample rate component
+    power_spectrogram[:, :, 0] *= 0.5
+    if window.shape[0] % 2 == 0:
+        power_spectrogram[:, :, -1] *= 0.5
+
+    # Calculate power
+    power = 2 * power_spectrogram.sum(dim=-1) / window.shape[0]**2
+    frame_rms = power.sqrt() * window_correction_factor
+    return frame_rms if has_batch_dim else frame_rms.squeeze(0)
 
 
 def power_to_db(tensor, eps=1e-10):
@@ -396,6 +615,30 @@ def amplitude_to_db(tensor, **kwargs):
         (torch.FloatTensor)
     """
     return power_to_db(tensor, **kwargs) * 2
+
+
+def amplitude_to_power(tensor, **kwargs):
+    """ Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to power units.
+
+    Args:
+        tensor (torch.FloatTensor)
+
+    Returns:
+        (torch.FloatTensor)
+    """
+    return tensor**2
+
+
+def power_to_amplitude(tensor, **kwargs):
+    """ Convert power units to amplitude units.
+
+    Args:
+        tensor (torch.FloatTensor)
+
+    Returns:
+        (torch.FloatTensor)
+    """
+    return tensor.sqrt()
 
 
 def db_to_power(tensor):

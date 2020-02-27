@@ -101,6 +101,10 @@ def _set_audio_processing():
     add_config({
         'src.bin.evaluate._get_sample_rate': HParams(sample_rate=sample_rate),
         'src.audio': {
+            'framed_root_mean_square_from_power_spectrogram':
+                HParams(window=window_tensor),
+            'framed_root_mean_square_from_signal':
+                HParams(frame_length=frame_size, hop_length=frame_hop),
             '_db_mel_spectrogram_to_spectrogram':
                 HParams(get_weighting=iso226_weighting),
             'pad_remainder':
