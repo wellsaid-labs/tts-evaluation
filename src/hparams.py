@@ -101,9 +101,9 @@ def _set_audio_processing():
     add_config({
         'src.bin.evaluate._get_sample_rate': HParams(sample_rate=sample_rate),
         'src.audio': {
-            'framed_root_mean_square_from_power_spectrogram':
+            'framed_rms_from_power_spectrogram':
                 HParams(window=window_tensor),
-            'framed_root_mean_square_from_signal':
+            'framed_rms_from_signal':
                 HParams(frame_length=frame_size, hop_length=frame_hop),
             '_db_mel_spectrogram_to_spectrogram':
                 HParams(get_weighting=iso226_weighting),
@@ -184,7 +184,7 @@ def _set_audio_processing():
         },
     })
 
-    return frame_channels, frame_hop
+    return frame_channels, frame_hop, sample_rate
 
 
 def _set_model_size(frame_channels):
@@ -293,12 +293,7 @@ def _set_model_size(frame_channels):
                             # learn more about this parameter.
                             speaker_embedding_dim=128),
                     '_infer':
-                        HParams(
-                            # NOTE: Estimated loosely to be a multiple of the slowest speech
-                            # observed in one dataset. This threshhold is primarily intended to
-                            # prevent recursion.
-                            max_frames_per_token=30,
-                            stop_threshold=stop_threshold)
+                        HParams(stop_threshold=stop_threshold)
                 }  # noqa: E122
             },
             'signal_model': {
@@ -335,7 +330,7 @@ def _filter_audio_path_not_found(example):
     return True
 
 
-def _filter_too_little_audio(example, min_seconds_per_character=0.0375):
+def _filter_too_little_audio_per_character(example, min_seconds_per_character=0.0375):
     """ Filter out examples with too little audio per character.
 
     MOTIVATION: In October 2019, Rhyan and Michael observed that actors typically cannot speak
@@ -367,21 +362,75 @@ def _filter_too_little_audio(example, min_seconds_per_character=0.0375):
     return True
 
 
+def _filter_too_little_characters(example, min_characters=3):
+    """ There was likely an error in the dataset creation if an example contains 2 or 1 characters.
+
+    NOTE: This rule was developed with the help of `QA_Datasets/Sample_Dataset.ipynb`.
+    """
+    if min_characters > len(example.text):
+        logger.warning('[%s] Hardly any text "%s" in this example, skipping %s', example.speaker,
+                       example.text, example.audio_path)
+        return False
+    return True
+
+
+def _filter_too_little_audio(example, min_audio=0.25):
+    """ There was likely an error in the dataset creation if an example contains less than 0.25
+    seconds of audio.
+
+    NOTE: This rule was developed with the help of `QA_Datasets/Sample_Dataset.ipynb`.
+    """
+    num_seconds = get_num_seconds(example.audio_path)
+    if min_audio > num_seconds:
+        logger.warning('[%s] Hardly any audio (%ss) in this example, skipping %s', example.speaker,
+                       num_seconds, example.audio_path)
+        return False
+    return True
+
+
+def _filter_too_much_audio_per_character(example, min_seconds=3.0, max_seconds_per_character=0.11):
+    """ Filter out examples with too much audio per character.
+
+    NOTE: This rule was developed with the help of `QA_Datasets/Sample_Dataset.ipynb`.
+
+    While `max_seconds_per_character` cutoff isn't perfect, it does remove more bad data than
+    good data based on the dataset as of Feburary 2020. This cutoff relies on the
+    "Law of large numbers" for that reason it doesn't apply well to clips under 3 seconds in length
+    which can go up to 0.20 seconds per character.
+
+    Args:
+        example (TextSpeechRow)
+        min_seconds (float): The mininum number of seconds before this rule goes into affect.
+        max_seconds_per_character (float): The maximum number of seconds per character before
+          filtering out the example.
+
+    Returns:
+        (bool)
+    """
+    num_seconds = get_num_seconds(example.audio_path)
+    if len(example.text) * max_seconds_per_character < num_seconds and min_seconds < num_seconds:
+        logger.warning(('[%s] Likely some text was repeated or the actor took a break; Example' +
+                        ' "%s" with %f seconds per character ' +
+                        '[%f second(s) / %d character(s)] at `%s` was removed.'),
+                       example.speaker, example.text, num_seconds / len(example.text), num_seconds,
+                       len(example.text), example.audio_path)
+        return False
+    return True
+
+
 def _filter_no_text(example):
     """ Filter out examples with no text.
     """
     if len(example.text) == 0:
         logger.warning('[%s] Text is absent, skipping: %s', example.speaker, example.audio_path)
         return False
-
     return True
 
 
 def _filter_books(example):
     """ Filter out examples originating from various audiobooks.
     """
-    # NOTE: Prevent circular dependency
-    from src import datasets
+    from src import datasets  # NOTE: Prevent circular dependency
 
     # Filter our particular books from M-AILABS dataset due:
     # - Inconsistent acoustic setup compared to other samples from the same speaker
@@ -396,12 +445,9 @@ def _filter_books(example):
 def _filter_elliot_miller(example):
     """ Filter examples with the actor Elliot Miller due to his unannotated character portrayals.
     """
-    # NOTE: Prevent circular dependency
-    from src import datasets
-
+    from src import datasets  # NOTE: Prevent circular dependency
     if example.speaker == datasets.m_ailabs.ELLIOT_MILLER:
         return False
-
     return True
 
 
@@ -410,7 +456,6 @@ def _filter_no_numbers(example):
     """
     if len(set(example.text).intersection(set('0123456789'))) > 0:
         return False
-
     return True
 
 
@@ -428,8 +473,13 @@ def _preprocess_dataset(dataset):
     dataset = filter_(_filter_elliot_miller, dataset)
     dataset = filter_(_filter_no_numbers, dataset)
     dataset = filter_(_filter_books, dataset)
+    # TODO: Investigate trimming audio silences during normalization to assist the following rules
+    # that dependent on the length of the audio.
     dataset = normalize_audio_column(dataset)
     dataset = filter_(_filter_too_little_audio, dataset)
+    dataset = filter_(_filter_too_little_characters, dataset)
+    dataset = filter_(_filter_too_little_audio_per_character, dataset)
+    dataset = filter_(_filter_too_much_audio_per_character, dataset)
     random.shuffle(dataset)
     return dataset
 
@@ -535,7 +585,7 @@ def set_hparams():
     from src.signal_model import SpectrogramDiscriminator
     from src.spectrogram_model import SpectrogramModel
 
-    frame_channels, frame_hop = _set_audio_processing()
+    frame_channels, frame_hop, sample_rate = _set_audio_processing()
     signal_model_padding = _set_model_size(frame_channels)
 
     Adam.__init__ = configurable(Adam.__init__)
@@ -579,7 +629,16 @@ def set_hparams():
                 'model.SpectrogramModel.__init__':
                     HParams(
                         # NOTE: This dropout performed well on Comet in August 2019.
-                        speaker_embedding_dropout=0.25)
+                        speaker_embedding_dropout=0.25,
+
+                        # NOTE: This is based on one of the slowest legitimate example in the
+                        # dataset:
+                        # "rate(WSL_SMurphyScript34-39,24000)/script_52_chunk_9.wav"
+                        # NOTE: This configuration is related to the dataset preprocessing step:
+                        # `_filter_too_much_audio_per_character`
+                        # NOTE: This number was configured with the help of:
+                        # `QA_Datasets/Sample_Dataset.ipynb`
+                        max_frames_per_token=0.2 / (frame_hop / sample_rate))
             },
             # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
             'datasets.utils.add_predicted_spectrogram_column':

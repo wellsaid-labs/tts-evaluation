@@ -37,8 +37,15 @@ SpectrogramModelTrainingRow = namedtuple('SpectrogramModelTrainingRow', [
 ])
 
 
-@configurable
 @lru_cache()
+def _get_normalized_half_gaussian(length, standard_deviation):
+    gaussian_kernel = ndimage.gaussian_filter1d(
+        np.float_([0] * (length - 1) + [1]), sigma=standard_deviation)
+    gaussian_kernel = gaussian_kernel / gaussian_kernel.max()
+    return torch.tensor(gaussian_kernel)
+
+
+@configurable
 def get_normalized_half_gaussian(length=HParam(), standard_deviation=HParam()):
     """ Get a normalized half guassian distribution.
 
@@ -48,10 +55,7 @@ def get_normalized_half_gaussian(length=HParam(), standard_deviation=HParam()):
     Returns:
         (torch.FloatTensor [length,])
     """
-    gaussian_kernel = ndimage.gaussian_filter1d(
-        np.float_([0] * (length - 1) + [1]), sigma=standard_deviation)
-    gaussian_kernel = gaussian_kernel / gaussian_kernel.max()
-    return torch.tensor(gaussian_kernel)
+    return _get_normalized_half_gaussian(length, standard_deviation)
 
 
 class _BalancedSampler(WeightedRandomSampler):

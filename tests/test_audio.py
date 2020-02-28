@@ -17,8 +17,8 @@ from src.audio import build_wav_header
 from src.audio import cache_get_audio_metadata
 from src.audio import db_to_amplitude
 from src.audio import db_to_power
-from src.audio import framed_root_mean_square_from_power_spectrogram
-from src.audio import framed_root_mean_square_from_signal
+from src.audio import framed_rms_from_power_spectrogram
+from src.audio import framed_rms_from_signal
 from src.audio import full_scale_sine_wave
 from src.audio import full_scale_square_wave
 from src.audio import get_audio_metadata
@@ -34,7 +34,7 @@ from src.audio import power_to_amplitude
 from src.audio import power_to_db
 from src.audio import read_audio
 from src.audio import REFERENCE_FREQUENCY
-from src.audio import root_mean_square_from_signal
+from src.audio import rms_from_signal
 from src.audio import SignalTodBMelSpectrogram
 from src.audio import WAVE_FORMAT_IEEE_FLOAT
 from src.audio import WAVE_FORMAT_PCM
@@ -47,37 +47,37 @@ from src.utils import make_arg_key
 TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'test_audio'
 
 
-def test_root_mean_square_from_signal__full_scale_square_wave():
+def test_rms_from_signal__full_scale_square_wave():
     """ Test computing the root mean square of a 0 dBFS signal. """
-    assert root_mean_square_from_signal(full_scale_square_wave()) == pytest.approx(1.0)
-    assert amplitude_to_db(torch.tensor(root_mean_square_from_signal(
+    assert rms_from_signal(full_scale_square_wave()) == pytest.approx(1.0)
+    assert amplitude_to_db(torch.tensor(rms_from_signal(
         full_scale_square_wave()))).item() == pytest.approx(0.0)
 
 
-def test_root_mean_square_from_signal__full_scale_sine_wave():
+def test_rms_from_signal__full_scale_sine_wave():
     """ Test computing the root mean square of a -3.01 dBFS signal. """
-    assert root_mean_square_from_signal(full_scale_sine_wave()) == pytest.approx(0.70710677)
-    assert amplitude_to_db(torch.tensor(root_mean_square_from_signal(
+    assert rms_from_signal(full_scale_sine_wave()) == pytest.approx(0.70710677)
+    assert amplitude_to_db(torch.tensor(rms_from_signal(
         full_scale_sine_wave()))).item() == pytest.approx(-3.0103)
 
 
-def test_framed_root_mean_square_from_signal__full_scale_square_wave():
+def test_framed_rms_from_signal__full_scale_square_wave():
     """ Test computing the framed root mean square of a 0 dBFS signal, this is slightly
     inaccurate in computing a global RMS.
     """
-    frame_rms = framed_root_mean_square_from_signal(full_scale_square_wave())
+    frame_rms = framed_rms_from_signal(full_scale_square_wave())
     assert np.sqrt((frame_rms**2).mean()) == pytest.approx(1.0)
 
 
-def test_framed_root_mean_square_from_signal__full_scale_sine_wave():
+def test_framed_rms_from_signal__full_scale_sine_wave():
     """ Test computing the framed root mean square of a -3.01 dBFS signal, this is slightly
     inaccurate in computing a global RMS due to the overlapping frames.
     """
-    frame_rms = framed_root_mean_square_from_signal(full_scale_sine_wave())
+    frame_rms = framed_rms_from_signal(full_scale_sine_wave())
     assert np.sqrt((frame_rms**2).mean()) == pytest.approx(0.70711106)
 
 
-def test_framed_root_mean_square_from_power_spectrogram__full_scale_square_wave():
+def test_framed_rms_from_power_spectrogram__full_scale_square_wave():
     """ Test computing the root mean square of a 0 dBFS signal from a spectrogram. """
     window = torch.ones(1024)
     signal = torch.tensor(full_scale_square_wave())
@@ -85,11 +85,11 @@ def test_framed_root_mean_square_from_power_spectrogram__full_scale_square_wave(
         signal, n_fft=1024, hop_length=256, win_length=1024, window=window, center=False)
     spectrogram = torch.norm(spectrogram, dim=-1)
     power_spectrogram = amplitude_to_power(spectrogram).transpose(0, 1)
-    frame_rms = framed_root_mean_square_from_power_spectrogram(power_spectrogram, window=window)
+    frame_rms = framed_rms_from_power_spectrogram(power_spectrogram, window=window)
     assert frame_rms.pow(2).mean().sqrt().item() == pytest.approx(1.0)
 
 
-def test_framed_root_mean_square_from_power_spectrogram__full_scale_sine_wave():
+def test_framed_rms_from_power_spectrogram__full_scale_sine_wave():
     """ Test computing the root mean square of a 0 dBFS signal from a spectrogram with hann window.
     """
     window = torch.hann_window(2048)
@@ -98,8 +98,25 @@ def test_framed_root_mean_square_from_power_spectrogram__full_scale_sine_wave():
         signal, n_fft=2048, hop_length=512, win_length=2048, window=window, center=False)
     spectrogram = torch.norm(spectrogram, dim=-1)
     power_spectrogram = amplitude_to_power(spectrogram).transpose(0, 1)
-    frame_rms = framed_root_mean_square_from_power_spectrogram(power_spectrogram, window=window)
+    frame_rms = framed_rms_from_power_spectrogram(power_spectrogram, window=window)
     assert frame_rms.pow(2).mean().sqrt().item() == pytest.approx(0.70710677)
+
+
+def test_framed_rms_from_power_spectrogram__batched():
+    """ Test computing the root mean square of a 0 dBFS signal from a batched spectrogram with hann
+    window.
+    """
+    window = torch.hann_window(2048)
+    batched_signal = torch.stack(
+        [torch.tensor(full_scale_sine_wave()),
+         torch.tensor(full_scale_square_wave())])
+    batched_spectrogram = torch.stft(
+        batched_signal, n_fft=2048, hop_length=512, win_length=2048, window=window, center=False)
+    batched_spectrogram = torch.norm(batched_spectrogram, dim=-1)
+    batched_power_spectrogram = amplitude_to_power(batched_spectrogram).transpose(1, 2)
+    frame_rms = framed_rms_from_power_spectrogram(batched_power_spectrogram, window=window)
+    assert frame_rms[0].pow(2).mean().sqrt().item() == pytest.approx(0.70710677)
+    assert frame_rms[1].pow(2).mean().sqrt().item() == pytest.approx(1.0)
 
 
 def test_loudness():
@@ -109,7 +126,7 @@ def test_loudness():
 
     def db_spectrogram_to_loudness(db_spectrogram, window):
         power_spectrogram = db_to_power(db_spectrogram)
-        loudness = framed_root_mean_square_from_power_spectrogram(power_spectrogram, window=window)
+        loudness = framed_rms_from_power_spectrogram(power_spectrogram, window=window)
 
         loudness = torch.tensor([l for l in loudness if amplitude_to_db(l) >= -70])
         if len(loudness) == 0:

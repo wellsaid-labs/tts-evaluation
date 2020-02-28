@@ -1,4 +1,5 @@
 import atexit
+import itertools
 import logging
 import math
 import random
@@ -14,13 +15,15 @@ from torchnlp.utils import tensors_to
 
 import torch
 
+from src.audio import db_to_power
+from src.audio import framed_rms_from_power_spectrogram
 from src.audio import griffin_lim
+from src.audio import power_to_db
 from src.bin.train.spectrogram_model.data_loader import DataLoader
 from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.spectrogram_model import InputEncoder
 from src.utils import Checkpoint
-from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
 from src.utils import evaluate
 from src.utils import get_average_norm
@@ -32,7 +35,7 @@ from src.utils import random_sample
 from src.utils import RepeatTimer
 from src.visualize import plot_attention
 from src.visualize import plot_loss_per_frame
-from src.visualize import plot_spectrogram
+from src.visualize import plot_mel_spectrogram
 from src.visualize import plot_stop_token
 
 import src.distributed
@@ -105,8 +108,8 @@ class Trainer():
 
         # TODO: The `input_encoder` should not have any insight onto the `dev_dataset`. There
         # should be a process for dealing with unknown characters instead.
-        corpus = [r.text for r in self.train_dataset] + [r.text for r in self.dev_dataset]
-        speakers = [r.speaker for r in self.train_dataset] + [r.speaker for r in self.dev_dataset]
+        corpus = [r.text for r in itertools.chain(self.train_dataset, self.dev_dataset)]
+        speakers = [r.speaker for r in itertools.chain(self.train_dataset, self.dev_dataset)]
         self.input_encoder = (
             InputEncoder(corpus, speakers) if input_encoder is None else input_encoder)
 
@@ -127,12 +130,16 @@ class Trainer():
             'attention_norm': DistributedAveragedMetric(),
             'attention_std': DistributedAveragedMetric(),
             'data_queue_size': DistributedAveragedMetric(),
-            'duration_gap': DistributedAveragedMetric(),
+            'average_relative_speed': DistributedAveragedMetric(),
             'post_spectrogram_loss': DistributedAveragedMetric(),
             'pre_spectrogram_loss': DistributedAveragedMetric(),
             'reached_max_frames': DistributedAveragedMetric(),
             'stop_token_accuracy': DistributedAveragedMetric(),
             'stop_token_loss': DistributedAveragedMetric(),
+        }
+        self.loudness_metrics = {
+            'average_target_loudness': DistributedAveragedMetric(),
+            'average_predicted_loudness': DistributedAveragedMetric(),
         }
 
         self.criterion_spectrogram = criterion_spectrogram(reduction='none').to(self.device)
@@ -141,7 +148,7 @@ class Trainer():
         self.comet_ml = comet_ml
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
-        self.comet_ml.log_parameters(dict_collapse(get_config()))
+        self.comet_ml.log_parameters(get_config())
         self.comet_ml.set_model_graph(str(self.model))
 
         self.comet_ml.log_parameters({
@@ -316,11 +323,18 @@ class Trainer():
                         filter_reached_max=True)
 
                     if predictions[-2].numel() > 0:
-                        # NOTE: `duration_gap` computes the average length of the predictions
-                        # verus the average length of the original spectrograms.
-                        original_lengths = batch.spectrogram.lengths[:, ~predictions[-1].squeeze()]
-                        duration_gap = (predictions[-2].float() / original_lengths.float()).mean()
-                        self.metrics['duration_gap'].update(duration_gap, predictions[-2].numel())
+                        # NOTE: `average_relative_speed` computes the total length of all predicted
+                        # audio over the total length of ground truth audio. In effect, it measures
+                        # the model's average speed relative to the original lengths.
+                        reached_max_filter = ~predictions[-1].squeeze()
+                        lengths = batch.spectrogram.lengths[:, reached_max_filter]
+                        self.metrics['average_relative_speed'].update(
+                            predictions[-2].sum() / lengths.sum(), lengths.sum())
+
+                        self._update_loudness_metrics(
+                            batch.spectrogram.tensor[:, reached_max_filter], predictions[1],
+                            batch.spectrogram_mask.tensor[:, reached_max_filter],
+                            lengths_to_mask(predictions[-2], device=predictions[-2].device))
 
                     self.metrics['reached_max_frames'].update(predictions[-1].float().mean(),
                                                               predictions[-1].numel())
@@ -344,6 +358,7 @@ class Trainer():
 
             for name, metric in self.metrics.items():
                 self.comet_ml.log_metric('step/%s' % name, metric.sync().last_update())
+            self._log_loudness_metrics('step/', lambda m: m.sync().last_update())
 
             if train:
                 self.step += 1
@@ -357,11 +372,70 @@ class Trainer():
             self.comet_ml.log_epoch_end(self.epoch)
             for name, metric in self.metrics.items():
                 self.comet_ml.log_metric('epoch/%s' % name, metric.sync().reset())
+            self._log_loudness_metrics('epoch/', lambda m: m.sync().reset())
             if train:
                 self.epoch += 1
         else:
-            for _, metric in self.metrics.items():
+            for _, metric in itertools.chain(self.metrics.items(), self.loudness_metrics.items()):
                 metric.reset()
+
+    def _get_loudness(self, spectrogram, mask=None, **kwargs):
+        """ Compute the loudness from a spectrogram.
+
+        Args:
+            spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
+            mask (torch.FloatTensor [num_frames, batch_size])
+            **kwargs: Additional key word arguments passed to `framed_rms_from_power_spectrogram`.
+
+        Returns:
+            torch.FloatTensor [1]: The loudness in decibels of the spectrogram.
+        """
+        device = spectrogram.device
+        spectrogram = db_to_power(spectrogram.transpose(0, 1))
+        target_rms = framed_rms_from_power_spectrogram(spectrogram, **kwargs)
+        mask = torch.ones(
+            *target_rms.shape, device=device) if mask is None else mask.transpose(0, 1)
+        return power_to_db((target_rms * mask).pow(2).sum() / (mask.sum()))
+
+    def _update_loudness_metrics(self,
+                                 target,
+                                 predicted,
+                                 target_mask=None,
+                                 predicted_mask=None,
+                                 **kwargs):
+        """ Update the `self.loudness_metrics`.
+
+        Args:
+            target (torch.FloatTensor [num_frames, batch_size, frame_channels]): Target spectrogram.
+            predicted (torch.FloatTensor [num_frames, batch_size, frame_channels]): Predicted
+                spectrogram.
+            target_mask (torch.FloatTensor [num_frames, batch_size]): Target spectrogram mask.
+            predicted_mask (torch.FloatTensor [num_frames, batch_size]): Predicted spectrogram mask.
+            **kwargs: Additional key word arguments passed to `self._get_loudness`.
+        """
+        target_rms = db_to_power(self._get_loudness(target, target_mask, **kwargs))
+        predicted_rms = db_to_power(self._get_loudness(predicted, predicted_mask, **kwargs))
+        self.loudness_metrics['average_target_loudness'].update(
+            target_rms,
+            target.numel() if target_mask is None else target_mask.sum())
+        self.loudness_metrics['average_predicted_loudness'].update(
+            predicted_rms,
+            predicted_rms.numel() if predicted_mask is None else predicted_mask.sum())
+
+    def _log_loudness_metrics(self, prefix, get_metric):
+        """ Log to `comet_ml` `self.loudness_metrics`.
+
+        Args:
+            prefix (str)
+            get_metric (callable): Callable run on the values of `self.loudness_metrics`.
+        """
+        target = power_to_db(
+            torch.tensor(get_metric(self.loudness_metrics['average_target_loudness'])))
+        predicted = power_to_db(
+            torch.tensor(get_metric(self.loudness_metrics['average_predicted_loudness'])))
+        self.comet_ml.log_metric('%saverage_target_loudness' % prefix, target)
+        self.comet_ml.log_metric('%saverage_predicted_loudness' % prefix, predicted)
+        self.comet_ml.log_metric('%saverage_delta_loudness' % prefix, predicted - target)
 
     @configurable
     def _do_loss_and_maybe_backwards(self,
@@ -483,24 +557,35 @@ class Trainer():
              predicted_alignments, _, _) = model(text, speaker)
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
+        gold_spectrogram = maybe_load_tensor(example.spectrogram)
+        gold_loudness = self._get_loudness(gold_spectrogram)
+        predicted_loudness = self._get_loudness(predicted_post_spectrogram)
 
         self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
+        logged_audio = {
+            'predicted_griffin_lim_audio': griffin_lim(predicted_post_spectrogram.cpu().numpy()),
+            'gold_griffin_lim_audio': griffin_lim(gold_spectrogram.numpy()),
+            'gold_audio': maybe_load_tensor(example.spectrogram_audio)
+        }
         self.comet_ml.log_audio(
+            audio=logged_audio,
             tag=self.DEV_INFERRED_LABEL,
             text=example.text,
             speaker=example.speaker,
-            # TODO: Run griffin lim on the gold audio as well for a fair comparison.
-            predicted_audio=griffin_lim(predicted_post_spectrogram.cpu().numpy()),
-            gold_audio=maybe_load_tensor(example.spectrogram_audio))
+            predicted_loudness=predicted_loudness,
+            gold_loudness=gold_loudness)
         self.comet_ml.log_metrics({  # [num_frames, num_tokens] → scalar
             'single/attention_norm': get_average_norm(predicted_alignments, dim=1, norm=math.inf),
             'single/attention_std': get_weighted_stdev(predicted_alignments, dim=1),
+            'single/target_loudness': gold_loudness,
+            'single/predicted_loudness': predicted_loudness,
+            'single/delta_loudness': predicted_loudness - gold_loudness,
         })
         self.comet_ml.log_figures({
-            'final_spectrogram': plot_spectrogram(predicted_post_spectrogram),
-            'residual_spectrogram': plot_spectrogram(predicted_residual),
-            'gold_spectrogram': plot_spectrogram(maybe_load_tensor(example.spectrogram)),
-            'pre_spectrogram': plot_spectrogram(predicted_pre_spectrogram),
+            'final_spectrogram': plot_mel_spectrogram(predicted_post_spectrogram),
+            'residual_spectrogram': plot_mel_spectrogram(predicted_residual),
+            'gold_spectrogram': plot_mel_spectrogram(gold_spectrogram),
+            'pre_spectrogram': plot_mel_spectrogram(predicted_pre_spectrogram),
             'alignment': plot_attention(predicted_alignments),
             'stop_token': plot_stop_token(predicted_stop_tokens),
         })
@@ -546,11 +631,11 @@ class Trainer():
         self.comet_ml.log_figures({
             'post_spectrogram_loss_per_frame': plot_loss_per_frame(post_spectrogram_loss_per_frame),
             'pre_spectrogram_loss_per_frame': plot_loss_per_frame(pre_spectrogram_loss_per_frame),
-            'final_spectrogram': plot_spectrogram(predicted_post_spectrogram),
-            'residual_spectrogram': plot_spectrogram(predicted_residual),
-            'delta_spectrogram': plot_spectrogram(predicted_delta),
-            'gold_spectrogram': plot_spectrogram(gold_spectrogram),
-            'pre_spectrogram': plot_spectrogram(predicted_pre_spectrogram),
+            'final_spectrogram': plot_mel_spectrogram(predicted_post_spectrogram),
+            'residual_spectrogram': plot_mel_spectrogram(predicted_residual),
+            'delta_spectrogram': plot_mel_spectrogram(predicted_delta),
+            'gold_spectrogram': plot_mel_spectrogram(gold_spectrogram),
+            'pre_spectrogram': plot_mel_spectrogram(predicted_pre_spectrogram),
             'alignment': plot_attention(predicted_alignments),
             'stop_token': plot_stop_token(predicted_stop_tokens),
         })

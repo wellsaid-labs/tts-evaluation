@@ -34,7 +34,6 @@ from src.optimizers import ExponentialMovingParameterAverage
 from src.optimizers import Optimizer
 from src.signal_model import generate_waveform
 from src.utils import Checkpoint
-from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
 from src.utils import log_runtime
 from src.utils import maybe_load_tensor
@@ -348,7 +347,7 @@ class Trainer():
         self.comet_ml = comet_ml
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
-        self.comet_ml.log_parameters(dict_collapse(get_config()))
+        self.comet_ml.log_parameters(get_config())
         self.comet_ml.set_model_graph(str(self.model))
         self.comet_ml.log_parameters({
             'num_parameter': get_total_parameters(self.model),
@@ -642,10 +641,12 @@ class Trainer():
             'single/spectrogram_discriminator_loss': total_discriminator_loss.item()
         })
         self.comet_ml.log_audio(
+            audio={
+                'gold_audio': target_signal,
+                'predicted_audio': predicted,
+            },
             tag=self.DEV_INFERRED_LABEL,
             text=example.text,
             speaker=str(example.speaker),
-            gold_audio=target_signal,
-            predicted_audio=predicted,
             db_mel_spectrogram_magnitude_loss=total_spectrogram_loss.item())
         self.comet_ml.log_figure('input_spectrogram', plot_spectrogram(spectrogram.detach().cpu()))

@@ -94,6 +94,8 @@ class SpectrogramModel(nn.Module):
         speaker_embedding_dropout (float): The speaker embedding net dropout.
         frame_channels (int): Number of channels in each frame (sometimes refered to
             as "Mel-frequency bins" or "FFT bins" or "FFT bands")
+        max_frames_per_token (float): The maximum sequential predictions to make before
+            quitting; Used for testing and defensive design.
       """
 
     @configurable
@@ -102,10 +104,12 @@ class SpectrogramModel(nn.Module):
                  num_speakers,
                  speaker_embedding_dim=HParam(),
                  speaker_embedding_dropout=HParam(),
-                 frame_channels=HParam()):
+                 frame_channels=HParam(),
+                 max_frames_per_token=HParam()):
 
         super().__init__()
 
+        self.max_frames_per_token = max_frames_per_token
         self.encoder = Encoder(vocab_size)
         self.decoder = AutoregressiveDecoder(
             frame_channels=frame_channels, speaker_embedding_dim=speaker_embedding_dim)
@@ -203,7 +207,6 @@ class SpectrogramModel(nn.Module):
                speaker,
                num_tokens,
                is_unbatched=False,
-               max_frames_per_token=HParam(),
                stop_threshold=HParam(),
                use_tqdm=False,
                filter_reached_max=False):
@@ -214,8 +217,6 @@ class SpectrogramModel(nn.Module):
             speaker (torch.LongTensor [batch_size, speaker_embedding_dim]): Batched speaker
                 encoding.
             num_tokens (torch.LongTensor [batch_size]): The number of tokens in each sequence.
-            max_frames_per_token (int, optional): The maximum sequential predictions to make before
-                quitting; Used for testing and defensive design.
             stop_threshold (float, optional): The threshold probability for deciding to stop.
             use_tqdm (bool, optional): If ``True`` attach a progress bar to iterator.
             filter_reached_max (bool, optional): If `True` this filters the batch, removing
@@ -236,7 +237,7 @@ class SpectrogramModel(nn.Module):
         stopped = set()
         hidden_state = None
         alignments, frames, stop_tokens = [], [], []
-        max_lengths = torch.max((num_tokens.float() * max_frames_per_token).long(),
+        max_lengths = torch.max((num_tokens.float() * self.max_frames_per_token).long(),
                                 torch.tensor(1, device=num_tokens.device))
         lengths = max_lengths.clone().tolist()
         if use_tqdm:

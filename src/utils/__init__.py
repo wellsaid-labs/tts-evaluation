@@ -13,7 +13,6 @@ from src.utils.on_disk_tensor import OnDiskTensor
 from src.utils.record_standard_streams import RecordStandardStreams
 from src.utils.utils import assert_no_overwritten_files
 from src.utils.utils import bash_time_label
-from src.utils.utils import dict_collapse
 from src.utils.utils import evaluate
 from src.utils.utils import flatten
 from src.utils.utils import flatten_parameters

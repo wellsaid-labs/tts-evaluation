@@ -487,7 +487,7 @@ def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
         asset = experiment.log_asset(file_, file_name=file_name)
         return asset['web'] if asset is not None else asset
 
-    def log_audio(self, gold_audio=None, predicted_audio=None, step=None, **kwargs):
+    def log_audio(self, audio={}, step=None, **kwargs):
         """ Add text and audio to Comet via their HTML tab.
 
         TODO: Consider logging a visualized waveform also.
@@ -503,16 +503,10 @@ def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
         items = ['<p><b>Step:</b> {}</p>'.format(step)]
         for key, value in kwargs.items():
             items.append('<p><b>{}:</b> {}</p>'.format(key.title().replace('_', ' '), value))
-        if gold_audio is not None:
-            url = _write_wav('experiment_key=%s,step=%d,type=gold.wav' % (self.get_key(), step),
-                             gold_audio)
-            items.append('<p><b>Gold Audio:</b></p>')
-            items.append('<audio controls preload="metadata" src="{}"></audio>'.format(url))
-        if predicted_audio is not None:
-            url = _write_wav(
-                'experiment_key=%s,step=%d,type=predicted.wav' % (self.get_key(), step),
-                predicted_audio)
-            items.append('<p><b>Predicted Audio:</b></p>')
+        for name, waveform in audio.items():
+            url = _write_wav('step=%d,name=%s,experiment_key=%s.wav' % (step, name, self.get_key()),
+                             waveform)
+            items.append('<p><b>%s:</b></p>' % name)
             items.append('<audio controls preload="metadata" src="{}"></audio>'.format(url))
         experiment.log_html('<section>{}</section>'.format('\n'.join(items)))
 

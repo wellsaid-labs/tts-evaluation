@@ -29,14 +29,15 @@ logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
 
 # Args:
-#   creation_time (int): See `os.path.getctime`.
 #   modification_time (int): See `os.path.getmtime`.
 #   byte_size (int): See `os.path.getsize`.
-FileMetadata = namedtuple('FileMetadata', ['creation_time', 'modification_time', 'byte_size'])
+FileMetadata = namedtuple('FileMetadata', ['modification_time', 'byte_size'])
 
 
+# NOTE: We do not use creation time due to lack of support:
+# https://stackoverflow.com/questions/237079/how-to-get-file-creation-modification-date-times-in-python
 def get_file_metadata(path):
-    return FileMetadata(os.path.getctime(path), os.path.getmtime(path), os.path.getsize(path))
+    return FileMetadata(os.path.getmtime(path), os.path.getsize(path))
 
 
 def assert_no_overwritten_files(function=None):
@@ -97,29 +98,6 @@ def get_chunks(list_, n):
     """ Yield successive `n`-sized chunks from `list_`. """
     for i in range(0, len(list_), n):
         yield list_[i:i + n]
-
-
-def dict_collapse(dict_, keys=[], delimitator='.'):
-    """ Recursive ``dict`` collapse a nested dictionary.
-
-    Collapses a multi-level ``dict`` into a single level dict by merging the strings with a
-    delimitator.
-
-    Args:
-        dict_ (dict)
-        keys (list, optional): Base keys.
-        delimitator (str, optional): Delimitator used to join keys.
-
-    Returns:
-        (dict): Collapsed ``dict``.
-    """
-    ret_ = {}
-    for key in dict_:
-        if isinstance(dict_[key], dict):
-            ret_.update(dict_collapse(dict_[key], keys + [key]))
-        else:
-            ret_[delimitator.join(keys + [key])] = dict_[key]
-    return ret_
 
 
 def get_weighted_stdev(tensor, dim=0, mask=None):
@@ -428,7 +406,7 @@ def Pool(*args, **kwargs):
     # https://github.com/pytorch/pytorch/issues/2245
     # https://codewithoutrules.com/2018/09/04/python-multiprocessing/
     # https://pythontic.com/multiprocessing/multiprocessing/introduction
-    pool = multiprocessing.get_context('spawn').Pool(*args, **kwargs)
+    pool = multiprocessing.get_context('forkserver').Pool(*args, **kwargs)
     yield pool
     pool.close()  # Marks the pool as closed.
     pool.join()  # Waits for workers to exit.

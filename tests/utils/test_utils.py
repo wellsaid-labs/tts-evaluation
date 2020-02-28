@@ -10,7 +10,6 @@ import torch
 
 from src.utils.utils import assert_no_overwritten_files
 from src.utils.utils import bash_time_label
-from src.utils.utils import dict_collapse
 from src.utils.utils import evaluate
 from src.utils.utils import flatten
 from src.utils.utils import flatten_parameters
@@ -155,25 +154,6 @@ def test_log_runtime__smoke_test():
     func = lambda x: x + 1
     func = log_runtime(func)
     func(1)
-
-
-def test_dict_collapse():
-    assert {
-        'a': 1,
-        'b.c': 2,
-        'b.d.e': 3,
-        'g': []
-    } == dict_collapse({
-        'a': 1,
-        'b': {
-            'c': 2,
-            'd': {
-                'e': 3
-            }
-        },
-        'f': {},
-        'g': []
-    })
 
 
 def test_evaluate():

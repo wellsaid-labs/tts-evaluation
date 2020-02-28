@@ -513,7 +513,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             return db_mel_spectrogram
 
 
-def root_mean_square_from_signal(signal):
+def rms_from_signal(signal):
     """ Compute the root mean square from a signal.
 
     Learn more:
@@ -533,7 +533,7 @@ def root_mean_square_from_signal(signal):
 
 
 @configurable
-def framed_root_mean_square_from_signal(signal, frame_length=HParam(), hop_length=HParam()):
+def framed_rms_from_signal(signal, frame_length=HParam(), hop_length=HParam()):
     """ Compute the framed root mean square from a signal.
 
     Args:
@@ -549,7 +549,7 @@ def framed_root_mean_square_from_signal(signal, frame_length=HParam(), hop_lengt
 
 
 @configurable
-def framed_root_mean_square_from_power_spectrogram(power_spectrogram, window=HParam()):
+def framed_rms_from_power_spectrogram(power_spectrogram, window=HParam()):
     """ Compute the root mean square from a spectrogram.
 
     Learn more:

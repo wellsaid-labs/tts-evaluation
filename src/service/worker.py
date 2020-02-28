@@ -149,9 +149,6 @@ def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encod
         (callable): Callable that returns a generator incrementally returning a WAV file.
         (int): Number of bytes to be returned in total by the generator.
     """
-    # TODO (michael): Remove this log because it logs sensitive information.
-    app.logger.info('Requested stream conditioned on: "%s" and "%s".', speaker, text)
-
     # Compute spectrogram
     text, speaker = input_encoder.encode((text, speaker))
 

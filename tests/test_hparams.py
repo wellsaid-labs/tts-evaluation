@@ -2,13 +2,13 @@ from src.audio import get_num_seconds
 from src.datasets import LINDA_JOHNSON
 from src.datasets import TextSpeechRow
 from src.environment import ROOT_PATH
-from src.hparams import _filter_too_little_audio
-from src.hparams import _split_dataset
+from src.hparams import _filter_too_little_audio_per_character
 from src.hparams import _preprocess_dataset
+from src.hparams import _split_dataset
 from tests._utils import get_tts_mocks
 
 
-def test__filter_too_little_audio():
+def test__filter_too_little_audio_per_character():
     example = TextSpeechRow(
         text=('Lorem ipsum dolor sit amet, consectetur adipiscing elit. ' +
               'Nulla molestie est vitae lorem suscipit, eget vulputate urna pharetra. ' +
@@ -20,13 +20,13 @@ def test__filter_too_little_audio():
               'Vestibulum mollis pharetra ipsum at fermentum.'),
         speaker=LINDA_JOHNSON,
         audio_path=ROOT_PATH / 'tests/_test_data/_disk/data/LJSpeech-1.1/wavs/LJ005-0210.wav')
-    assert not _filter_too_little_audio(example, min_seconds_per_character=0.04)
+    assert not _filter_too_little_audio_per_character(example, min_seconds_per_character=0.04)
 
     example = TextSpeechRow(
         text=('At Walsall, in Staffordshire,'),
         speaker=LINDA_JOHNSON,
         audio_path=ROOT_PATH / 'tests/_test_data/_disk/data/LJSpeech-1.1/wavs/LJ005-0210.wav')
-    assert _filter_too_little_audio(example, min_seconds_per_character=0.04)
+    assert _filter_too_little_audio_per_character(example, min_seconds_per_character=0.04)
 
 
 def test__split_dataset():

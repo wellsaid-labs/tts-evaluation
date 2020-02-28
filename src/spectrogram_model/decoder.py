@@ -119,6 +119,7 @@ class AutoregressiveDecoder(nn.Module):
             last_attention_context=torch.zeros(
                 batch_size, self.attention_hidden_size, device=device),
             cumulative_alignment=None,
+            # TODO: Look into predicting the LSTM hidden state also.
             last_frame=self.get_initial_frame(speaker).unsqueeze(0),
             lstm_one_hidden_state=None,
             lstm_two_hidden_state=None) if hidden_state is None else hidden_state

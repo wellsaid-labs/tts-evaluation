@@ -22,8 +22,10 @@ def test_comet_ml():
         tag='audio',
         text='test input',
         speaker=Speaker('Test Speaker', Gender.MALE),
-        predicted_audio=torch.rand(100),
-        gold_audio=torch.rand(100))
+        audio={
+            'predicted_audio': torch.rand(100),
+            'gold_audio': torch.rand(100)
+        })
     figure = pyplot.figure()
     pyplot.close(figure)
     visualizer.log_figures({'figure': figure}, overwrite=True)
