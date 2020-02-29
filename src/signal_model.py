@@ -312,6 +312,7 @@ class SignalModel(torch.nn.Module):
         # [batch_size, num_frames, frame_channels] → [batch_size, frame_channels, num_frames]
         spectrogram = spectrogram.transpose(1, 2)
 
+        # TODO: Ensure that the padding is masked correctly.
         spectrogram = self.pad(spectrogram) if pad_input else spectrogram
         num_frames = num_frames if pad_input else num_frames - self.padding * 2
 

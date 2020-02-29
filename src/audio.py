@@ -617,7 +617,7 @@ def amplitude_to_db(tensor, **kwargs):
     return power_to_db(tensor, **kwargs) * 2
 
 
-def amplitude_to_power(tensor, **kwargs):
+def amplitude_to_power(tensor):
     """ Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to power units.
 
     Args:
@@ -629,7 +629,7 @@ def amplitude_to_power(tensor, **kwargs):
     return tensor**2
 
 
-def power_to_amplitude(tensor, **kwargs):
+def power_to_amplitude(tensor):
     """ Convert power units to amplitude units.
 
     Args:

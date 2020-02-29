@@ -182,6 +182,20 @@ class SpectrogramLoss(torch.nn.Module):
         predicted_signal = predicted_signal.view(-1, predicted_signal.shape[-1])
         target_signal = target_signal.view(-1, target_signal.shape[-1])
 
+        # TODO: We know that unless the signal is padded with `self.fft_length`, then the boundary
+        # samples will have a disproportionate affect on the loss; therefore, we need to account
+        # for that affect with padding.
+        # TODO: We also know that we want the loss to reflect the real distribution; therefore,
+        # it's likely not the best idea to use zero padding. It might work best just to drop
+        # the first four frames that are affected by the padding.
+        # TODO: At the beginning and end of a signal, we'll need to include zero padding anyways
+        # so we don't undersamples the boundary samples and we can't mask the zero padding to
+        # an extent. We can mask everything past `self.fft_length` in the loss and the discrimintor.
+        # TODO: Even if we decided to undersample the boundary samples; we will still need to
+        # deal with masking the padding from the batching process which requires padding.
+        # TODO: We can translate a signal mask into a spectrogram mask if need by using librosa's
+        # framing tool.
+
         assert target_signal.shape == predicted_signal.shape
 
         (predicted_db_mel_spectrogram, predicted_db_spectrogram,
@@ -549,6 +563,7 @@ class Trainer():
         assert batch.target_signal.shape == predicted_signal.shape, (
             'The shapes do not match %s =!= %s' %
             (batch.target_signal.shape, predicted_signal.shape))
+        assert predicted_signal.shape == batch.signal_mask.shape
 
         total_spectrogram_loss = torch.tensor(0.0, device=predicted_signal.device)
         total_discriminator_loss = torch.tensor(0.0, device=predicted_signal.device)
@@ -564,6 +579,13 @@ class Trainer():
             total_discriminator_loss += discriminator_loss / len(self.criterions)
             total_discriminator_accuracy += discriminator_accuracy / len(self.criterions)
 
+            # TODO: For incorperating padding into the training process, we should use something
+            # like `batch.signal_mask.sum()` for averaging. This is legitimate because the
+            # spectrogram amplitude does directly correlate the number of samples iff the
+            # appropriate padding is applied.
+            # TODO: This also requires a couple of other things ... See
+            # `test_frame_and_non_frame_equality`. This includes changing the frame hop to
+            # frame length ratio in the criterions so that they are divisable.
             self.metrics['db_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length].update(
                 spectrogram_loss, batch.target_signal.shape[0])
             self.metrics['%d_spectrogram_discriminator_loss' % criterion.fft_length].update(
@@ -585,7 +607,7 @@ class Trainer():
         self.metrics['spectrogram_discriminator_accuracy'].update(total_discriminator_accuracy,
                                                                   batch.target_signal.shape[0])
 
-        return total_spectrogram_loss, batch.signal_mask.sum()
+        return total_spectrogram_loss, total_discriminator_loss, batch.signal_mask.sum()
 
     @log_runtime
     def visualize_inferred(self):

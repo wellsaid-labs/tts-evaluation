@@ -61,62 +61,142 @@ def test_rms_from_signal__full_scale_sine_wave():
         full_scale_sine_wave()))).item() == pytest.approx(-3.0103)
 
 
+def test_frame_and_non_frame_equality():
+    """ Ensure that we can get the same results with and without framing. """
+    for frame_length in range(1, 16):
+        for frame_hop in range(1, frame_length + 1):
+            for signal_length in range(1, 32):
+                if frame_length % frame_hop != 0:
+                    continue
+
+                signal = np.arange(signal_length)
+                # NOTE: Pad the signal such that every sample appears the same number of times
+                # (equal to `repeated`). Without  padding the signal, the first sample would appear
+                # only once, for example.
+                padded_signal = np.pad(signal, frame_length, mode='constant', constant_values=0)
+                frame_rms = framed_rms_from_signal(padded_signal, frame_length, frame_hop)
+                assert rms_from_signal(signal) == pytest.approx(
+                    np.sqrt((frame_rms**2 * frame_hop / signal.shape[0]).sum()))
+
+
 def test_framed_rms_from_signal__full_scale_square_wave():
-    """ Test computing the framed root mean square of a 0 dBFS signal, this is slightly
-    inaccurate in computing a global RMS.
+    """ Test computing the framed root mean square of a 0 dBFS signal.
     """
-    frame_rms = framed_rms_from_signal(full_scale_square_wave())
-    assert np.sqrt((frame_rms**2).mean()) == pytest.approx(1.0)
+    frame_length = 1024
+    frame_hop = frame_length // 4
+    signal = full_scale_square_wave()
+    padded_signal = np.pad(signal, frame_length, mode='constant', constant_values=0)
+    frame_rms = framed_rms_from_signal(padded_signal, frame_length, frame_hop)
+    frame_rms = frame_rms**2 * frame_hop
+    assert np.sqrt((frame_rms / signal.shape[0]).sum()) == pytest.approx(1.0)
 
 
 def test_framed_rms_from_signal__full_scale_sine_wave():
-    """ Test computing the framed root mean square of a -3.01 dBFS signal, this is slightly
-    inaccurate in computing a global RMS due to the overlapping frames.
+    """ Test computing the framed root mean square of a -3.01 dBFS signal.
     """
-    frame_rms = framed_rms_from_signal(full_scale_sine_wave())
-    assert np.sqrt((frame_rms**2).mean()) == pytest.approx(0.70711106)
+    frame_length = 1024
+    frame_hop = frame_length // 4
+    signal = full_scale_sine_wave()
+    padded_signal = np.pad(signal, frame_length, mode='constant', constant_values=0)
+    frame_rms = framed_rms_from_signal(padded_signal, frame_length, frame_hop)
+    frame_rms = frame_rms**2 * frame_hop
+    assert np.sqrt((frame_rms / signal.shape[0]).sum()) == pytest.approx(0.70710677)
 
 
 def test_framed_rms_from_power_spectrogram__full_scale_square_wave():
     """ Test computing the root mean square of a 0 dBFS signal from a spectrogram. """
-    window = torch.ones(1024)
-    signal = torch.tensor(full_scale_square_wave())
+    frame_length = 1024
+    frame_hop = frame_length // 4
+    window = torch.ones(frame_length)
+    signal = full_scale_square_wave()
+    padded_signal = np.pad(signal, frame_length, mode='constant', constant_values=0)
     spectrogram = torch.stft(
-        signal, n_fft=1024, hop_length=256, win_length=1024, window=window, center=False)
+        torch.tensor(padded_signal),
+        n_fft=frame_length,
+        hop_length=frame_hop,
+        win_length=window.shape[0],
+        window=window,
+        center=False)
     spectrogram = torch.norm(spectrogram, dim=-1)
     power_spectrogram = amplitude_to_power(spectrogram).transpose(0, 1)
-    frame_rms = framed_rms_from_power_spectrogram(power_spectrogram, window=window)
-    assert frame_rms.pow(2).mean().sqrt().item() == pytest.approx(1.0)
+    frame_rms = framed_rms_from_power_spectrogram(power_spectrogram, window=window).numpy()
+    assert np.sqrt((frame_rms**2 * frame_hop / signal.shape[0]).sum()) == pytest.approx(1.0)
 
 
-def test_framed_rms_from_power_spectrogram__full_scale_sine_wave():
-    """ Test computing the root mean square of a 0 dBFS signal from a spectrogram with hann window.
+def test_framed_rms_from_power_spectrogram__full_scale_sine_wave__hann_window():
+    """ Test computing the root mean square of a -3.01 dBFS signal from a spectrogram with hann
+    window and an arbitrary amount of padding.
     """
-    window = torch.hann_window(2048)
-    signal = torch.tensor(full_scale_sine_wave())
-    spectrogram = torch.stft(
-        signal, n_fft=2048, hop_length=512, win_length=2048, window=window, center=False)
-    spectrogram = torch.norm(spectrogram, dim=-1)
-    power_spectrogram = amplitude_to_power(spectrogram).transpose(0, 1)
-    frame_rms = framed_rms_from_power_spectrogram(power_spectrogram, window=window)
-    assert frame_rms.pow(2).mean().sqrt().item() == pytest.approx(0.70710677)
+    for i in range(1, 5):
+        frame_length = 2048
+        frame_hop = frame_length // 4
+        window = torch.hann_window(frame_length)
+        signal = full_scale_sine_wave()
+        # Test an arbitrary amount of padding larger than `frame_length`.
+        padded_signal = np.pad(signal, frame_length + i * 100, mode='constant', constant_values=0)
+        spectrogram = torch.stft(
+            torch.tensor(padded_signal),
+            n_fft=frame_length,
+            hop_length=frame_hop,
+            win_length=window.shape[0],
+            window=window,
+            center=False)
+        spectrogram = torch.norm(spectrogram, dim=-1)
+        power_spectrogram = amplitude_to_power(spectrogram).transpose(0, 1)
+        frame_rms = framed_rms_from_power_spectrogram(power_spectrogram, window=window).numpy()
+        assert np.sqrt(
+            (frame_rms**2 * frame_hop / signal.shape[0]).sum()) == pytest.approx(0.70710677)
+
+
+def test_framed_rms_from_power_spectrogram__full_scale_sine_wave__ones_window():
+    """ Test computing the root mean square of a -3.01 dBFS signal from a spectrogram with ones
+    window over multiple different sample rates.
+    """
+    for sample_rate in range(1000, 24000, 1000):
+        frame_length = 2048
+        frame_hop = frame_length // 4
+        window = torch.ones(frame_length)
+        signal = full_scale_sine_wave(sample_rate)
+        padded_signal = np.pad(signal, frame_length, mode='constant', constant_values=0)
+        spectrogram = torch.stft(
+            torch.tensor(padded_signal),
+            n_fft=frame_length,
+            hop_length=frame_hop,
+            win_length=window.shape[0],
+            window=window,
+            center=False)
+        spectrogram = torch.norm(spectrogram.double(), dim=-1)
+        power_spectrogram = amplitude_to_power(spectrogram).transpose(0, 1)
+        frame_rms = framed_rms_from_power_spectrogram(power_spectrogram, window=window).numpy()
+        assert np.sqrt((frame_rms**2 * frame_hop / signal.shape[0]).sum()) == (
+            pytest.approx(rms_from_signal(signal)))
 
 
 def test_framed_rms_from_power_spectrogram__batched():
-    """ Test computing the root mean square of a 0 dBFS signal from a batched spectrogram with hann
-    window.
+    """ Test computing the root mean square of a signal from a batched spectrogram with hann window.
     """
-    window = torch.hann_window(2048)
+    frame_length = 2048
+    frame_hop = frame_length // 4
+    window = torch.hann_window(frame_length)
     batched_signal = torch.stack(
         [torch.tensor(full_scale_sine_wave()),
          torch.tensor(full_scale_square_wave())])
+    padded_batched_signal = torch.nn.functional.pad(batched_signal, (frame_length, frame_length))
     batched_spectrogram = torch.stft(
-        batched_signal, n_fft=2048, hop_length=512, win_length=2048, window=window, center=False)
+        padded_batched_signal,
+        n_fft=frame_length,
+        hop_length=frame_hop,
+        win_length=frame_length,
+        window=window,
+        center=False)
     batched_spectrogram = torch.norm(batched_spectrogram, dim=-1)
     batched_power_spectrogram = amplitude_to_power(batched_spectrogram).transpose(1, 2)
     frame_rms = framed_rms_from_power_spectrogram(batched_power_spectrogram, window=window)
-    assert frame_rms[0].pow(2).mean().sqrt().item() == pytest.approx(0.70710677)
-    assert frame_rms[1].pow(2).mean().sqrt().item() == pytest.approx(1.0)
+
+    assert (frame_rms[0].pow(2) * frame_hop /
+            batched_signal.shape[1]).sum().sqrt().item() == pytest.approx(0.70710677)
+    assert (frame_rms[1].pow(2) * frame_hop /
+            batched_signal.shape[1]).sum().sqrt().item() == pytest.approx(1.0)
 
 
 def test_loudness():
@@ -145,6 +225,8 @@ def test_loudness():
 
     fft_length = int(sample_rate * 0.4)
     window = torch.ones(fft_length)
+    # NOTE: The original implementation doesn't pad the signal at all; therefore, the boundary
+    # samples are sampled less frequency than other samples.
     signal_to_db_spectrogram = SignalTodBMelSpectrogram(
         fft_length=fft_length,
         frame_hop=fft_length // 4,
@@ -152,6 +234,8 @@ def test_loudness():
         num_mel_bins=128,
         window=window,
         min_decibel=float('-inf'),
+        # NOTE: Our `k_weighting` implementation predicts a different `offset` than -0.691 which
+        # is required by the original guidelines.
         get_weighting=partial(k_weighting, sample_rate=sample_rate, offset=-0.691),
         eps=1e-10,
         lower_hertz=0,
