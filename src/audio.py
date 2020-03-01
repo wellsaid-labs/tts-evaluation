@@ -577,6 +577,7 @@ def framed_rms_from_power_spectrogram(power_spectrogram, window=HParam()):
     window_correction_factor = (
         torch.ones(*window.shape).pow(2).mean().sqrt() / window.pow(2).mean().sqrt())
 
+    # TODO: This adjustment might have an unintended affect on the a mel spectrogram.
     # Adjust the DC and half sample rate component
     power_spectrogram[:, :, 0] *= 0.5
     if window.shape[0] % 2 == 0:

@@ -160,6 +160,9 @@ class LayerNorm(torch.nn.LayerNorm):
 
 def generate_waveform(model, spectrogram, split_size=64, generator=True):
     """
+    TODO: Similar to WaveNet, we could incorperate a "Fast WaveNet approach". This basically means
+    we don't need to recompute the padding for each split.
+
     Args:
         model (SignalModel): The model to synthesize the waveform with.
         spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])

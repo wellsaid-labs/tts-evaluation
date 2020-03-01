@@ -67,13 +67,14 @@ def test__update_loudness_metrics():
     trainer = get_trainer(load_data=False)
 
     frame_length = 1024
+    frame_hop = frame_length // 4
     window = torch.ones(frame_length)
 
     def get_db_spectrogram(signal):
         spectrogram = torch.stft(
             signal.view(1, -1),  # Add batch dimension
             n_fft=frame_length,
-            hop_length=frame_length // 4,
+            hop_length=frame_hop,
             win_length=frame_length,
             window=window,
             center=False)
@@ -89,6 +90,7 @@ def test__update_loudness_metrics():
     assert power_to_db(torch.tensor(target_loudness)) == 0.0
 
     predicted_loudness = trainer.loudness_metrics['average_predicted_loudness'].last_update()
+    # TODO: This should be equal to `-3.0103001594543457`, fix this discrepancy.
     assert power_to_db(torch.tensor(predicted_loudness)).item() == pytest.approx(-3.0102469)
 
 

@@ -48,6 +48,8 @@ def main(audio_path):
     peek_level = audio.abs().max()
     rms_level = rms_from_signal(audio.numpy())
     signal_to_db_mel_spectrogram = SignalTodBMelSpectrogram(sample_rate=metadata.sample_rate)
+    # TODO: Following the approach in `test_frame_and_non_frame_equality` we could pad the
+    # signal before hand for a more accurate calculation of loudness.
     db_mel_spectrogram, db_spectrogram, spectrogram = signal_to_db_mel_spectrogram(
         audio, intermediate=True)
     weighted_frame_rms_level = framed_rms_from_power_spectrogram(db_to_power(db_mel_spectrogram))

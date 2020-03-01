@@ -58,7 +58,7 @@ def test_rms_from_signal__full_scale_sine_wave():
     """ Test computing the root mean square of a -3.01 dBFS signal. """
     assert rms_from_signal(full_scale_sine_wave()) == pytest.approx(0.70710677)
     assert amplitude_to_db(torch.tensor(rms_from_signal(
-        full_scale_sine_wave()))).item() == pytest.approx(-3.0103)
+        full_scale_sine_wave()))).item() == pytest.approx(-3.0103001594543457)
 
 
 def test_frame_and_non_frame_equality():

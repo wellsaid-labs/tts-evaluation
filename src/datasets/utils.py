@@ -136,6 +136,10 @@ def _add_spectrogram_column(example, config, on_disk=True):
         signal = signal[trim[0]:trim[1]]
 
         # TODO: Compute batches of spectrograms, it'd be faster.
+        # TODO: Does `pad_remainder` introduce unwanted bias? Does adding zeros at the end or
+        # beginning of the audio introduce "unsmooth" transitions? Should we consider instead
+        # update the preprocessing pipeline earlier so that we can cut the signal initially
+        # so that it's length is a multiple of frame hop?
         padded_signal = pad_remainder(signal)
         db_mel_spectrogram = get_signal_to_db_mel_spectrogram()(
             torch.from_numpy(integer_to_floating_point_pcm(padded_signal)), aligned=True).detach()

@@ -395,6 +395,20 @@ class Trainer():
         target_rms = framed_rms_from_power_spectrogram(spectrogram, **kwargs)
         mask = torch.ones(
             *target_rms.shape, device=device) if mask is None else mask.transpose(0, 1)
+
+        # TODO: This conversion from framed RMS to global RMS is not accurate. The original
+        # spectrogram is padded such that it's length is some constant multiple (256x) of the signal
+        # length. In order to accurately convert a framed RMS to a global RMS, each sample
+        # has to appear an equal number of times in the frames. Supposing there is 25% overlap,
+        # that means each sample has to appear 4 times. That nessecarly means that the first and
+        # last sample needs to be evaluated 3x times, adding 6 frames to the total number of frames.
+        # Adding a constant number of frames, is not compatible with a constant multiple supposing
+        # any sequence length must be supported. To fix this, we need to remove the requirement
+        # for a constant multiple. The requirement comes from the signal model that upsamples
+        # via constant multiples at the moment. We could adjust the signal model so that
+        # it upsamples -6 frames then a constant multiple, each time. A change like this
+        # would ensure that the first and last frame have 4x overlapping frames to describe
+        # the audio sequence, increase performance at the boundary.
         return power_to_db((target_rms * mask).pow(2).sum() / (mask.sum()))
 
     def _update_loudness_metrics(self,

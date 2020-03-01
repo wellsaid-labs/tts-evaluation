@@ -43,3 +43,5 @@ compatible with commercial use. Learn more [here](https://opensource.guide/legal
 | intel-mkl           | https://software.intel.com/en-us/mkl/license-faq                         |
 | PyDSM               | GNU General Public License v3.0                                          |
 | torchaudio          | BSD 2-Clause "Simplified" License                                        |
+| pyloudnorm          | MIT License                                                              |
+| BrechtDeMan/loudness.py | MIT License                                                          |
