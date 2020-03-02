@@ -1,6 +1,7 @@
 from collections import Counter
 from collections import namedtuple
 
+import numpy as np
 import pytest
 import torch
 
@@ -10,6 +11,14 @@ from src.bin.train.spectrogram_model.data_loader import _BalancedSampler
 from src.bin.train.spectrogram_model.data_loader import DataLoader
 from src.bin.train.spectrogram_model.data_loader import get_normalized_half_gaussian
 from tests._utils import get_tts_mocks
+
+
+def test_get_normalized_half_gaussian():
+    np.testing.assert_almost_equal(
+        get_normalized_half_gaussian(8, 2).numpy(),
+        torch.tensor(
+            [0.0015184, 0.0070632, 0.0292409, 0.0952311, 0.2443498, 0.4946532, 0.7909854,
+             1.]).numpy())
 
 
 def test_data_loader():

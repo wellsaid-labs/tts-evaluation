@@ -42,7 +42,7 @@ def _get_normalized_half_gaussian(length, standard_deviation):
     gaussian_kernel = ndimage.gaussian_filter1d(
         np.float_([0] * (length - 1) + [1]), sigma=standard_deviation)
     gaussian_kernel = gaussian_kernel / gaussian_kernel.max()
-    return torch.tensor(gaussian_kernel)
+    return torch.tensor(gaussian_kernel).float()
 
 
 @configurable
