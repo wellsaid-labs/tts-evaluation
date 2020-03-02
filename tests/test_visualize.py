@@ -33,6 +33,8 @@ def test_comet_ml():
     assert visualizer.context == 'train'
     visualizer.log_current_epoch(0)
     visualizer.log_epoch_end(0)
+    visualizer.log_metric('blah', None)
+    visualizer.log_metric('blah', 0.0)
 
 
 def test_plot_spectrogram():

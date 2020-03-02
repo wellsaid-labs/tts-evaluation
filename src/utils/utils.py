@@ -85,6 +85,31 @@ def random_sample(list_, sample_size):
     return random.sample(list_, min(len(list_), sample_size))
 
 
+def dict_collapse(dict_, keys=[], delimitator='.'):
+    """ Recursive ``dict`` collapse a nested dictionary.
+
+    Collapses a multi-level ``dict`` into a single level dict by merging the strings with a
+    delimitator.
+
+    TODO: Add tests and add this to signal model
+
+    Args:
+        dict_ (dict)
+        keys (list, optional): Base keys.
+        delimitator (str, optional): Delimitator used to join keys.
+
+    Returns:
+        (dict): Collapsed ``dict``.
+    """
+    ret_ = {}
+    for key in dict_:
+        if isinstance(dict_[key], dict):
+            ret_.update(dict_collapse(dict_[key], keys + [key]))
+        else:
+            ret_[delimitator.join(keys + [key])] = dict_[key]
+    return ret_
+
+
 def mean(list_):
     """ Mean function like `statistics.mean` that does not return an error if `list_` is empty. """
     list_ = list(list_)

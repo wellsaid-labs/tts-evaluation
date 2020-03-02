@@ -169,12 +169,9 @@ def _set_audio_processing():
                 HParams(bits=bits, sample_rate=sample_rate, channels=channels, encoding=encoding)
         },
         'src.visualize': {
-            'plot_waveform':
-                HParams(sample_rate=sample_rate),
-            'plot_spectrogram':
-                HParams(sample_rate=sample_rate, frame_hop=frame_hop),
-            'plot_mel_spectrogram':
-                HParams(sample_rate=sample_rate, frame_hop=frame_hop, **hertz_bounds)
+            'plot_waveform': HParams(sample_rate=sample_rate),
+            'plot_spectrogram': HParams(sample_rate=sample_rate, frame_hop=frame_hop),
+            'plot_mel_spectrogram': HParams(**hertz_bounds)
         },
         'src.bin.chunk_wav_and_text': {
             'seconds_to_samples': HParams(sample_rate=sample_rate),
@@ -473,11 +470,13 @@ def _preprocess_dataset(dataset):
     dataset = filter_(_filter_elliot_miller, dataset)
     dataset = filter_(_filter_no_numbers, dataset)
     dataset = filter_(_filter_books, dataset)
+    dataset = filter_(_filter_too_little_characters, dataset)
     # TODO: Investigate trimming audio silences during normalization to assist the following rules
     # that dependent on the length of the audio.
+    # NOTE: `normalize_audio_column` run before audio length filters because it caches the audio
+    # metadata needed to execute the below filters quickly.
     dataset = normalize_audio_column(dataset)
     dataset = filter_(_filter_too_little_audio, dataset)
-    dataset = filter_(_filter_too_little_characters, dataset)
     dataset = filter_(_filter_too_little_audio_per_character, dataset)
     dataset = filter_(_filter_too_much_audio_per_character, dataset)
     random.shuffle(dataset)

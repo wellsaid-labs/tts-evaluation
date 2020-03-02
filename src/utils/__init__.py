@@ -13,6 +13,7 @@ from src.utils.on_disk_tensor import OnDiskTensor
 from src.utils.record_standard_streams import RecordStandardStreams
 from src.utils.utils import assert_no_overwritten_files
 from src.utils.utils import bash_time_label
+from src.utils.utils import dict_collapse
 from src.utils.utils import evaluate
 from src.utils.utils import flatten
 from src.utils.utils import flatten_parameters
@@ -41,5 +42,5 @@ __all__ = [
     'get_chunks', 'cache_on_disk_tensor_shapes', 'RecordStandardStreams', 'Pool',
     'maybe_load_tensor', 'AveragedMetric', 'DistributedAveragedMetric', 'bash_time_label',
     'RepeatTimer', 'mean', 'random_sample', 'make_arg_key', 'DiskCache',
-    'assert_no_overwritten_files', 'get_file_metadata'
+    'assert_no_overwritten_files', 'get_file_metadata', 'dict_collapse'
 ]

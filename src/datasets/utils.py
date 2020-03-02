@@ -140,6 +140,11 @@ def _add_spectrogram_column(example, config, on_disk=True):
         # beginning of the audio introduce "unsmooth" transitions? Should we consider instead
         # update the preprocessing pipeline earlier so that we can cut the signal initially
         # so that it's length is a multiple of frame hop?
+        # TODO: Adding zero padding without fading the signal can cause distortion (based on
+        # my experiments in Audacity); therefore, it's advisable that the signal is faded in
+        # and faded out before the zeros are added.
+        # TODO: Think about adding at least `frame_length` of padding to the signal so that up
+        # the pipeline we do not need to worry about the mixing of padding with real audio.
         padded_signal = pad_remainder(signal)
         db_mel_spectrogram = get_signal_to_db_mel_spectrogram()(
             torch.from_numpy(integer_to_floating_point_pcm(padded_signal)), aligned=True).detach()

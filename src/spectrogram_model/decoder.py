@@ -84,7 +84,6 @@ class AutoregressiveDecoder(nn.Module):
         self.linear_out = nn.Linear(in_features=hidden_size, out_features=frame_channels)
         self.linear_stop_token = nn.Linear(
             in_features=hidden_size - self.attention_hidden_size, out_features=1)
-        self.get_initial_frame = nn.Linear(speaker_embedding_dim, frame_channels)
 
     def forward(self, encoded_tokens, tokens_mask, speaker, target_frames=None, hidden_state=None):
         """
@@ -120,7 +119,7 @@ class AutoregressiveDecoder(nn.Module):
                 batch_size, self.attention_hidden_size, device=device),
             cumulative_alignment=None,
             # TODO: Look into predicting the LSTM hidden state also.
-            last_frame=self.get_initial_frame(speaker).unsqueeze(0),
+            last_frame=torch.zeros(1, batch_size, self.frame_channels, device=device),
             lstm_one_hidden_state=None,
             lstm_two_hidden_state=None) if hidden_state is None else hidden_state
 

@@ -504,6 +504,7 @@ def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
         for key, value in kwargs.items():
             items.append('<p><b>{}:</b> {}</p>'.format(key.title().replace('_', ' '), value))
         for name, waveform in audio.items():
+            name = name.title().replace('_', ' ')
             url = _write_wav('step=%d,name=%s,experiment_key=%s.wav' % (step, name, self.get_key()),
                              waveform)
             items.append('<p><b>%s:</b></p>' % name)
@@ -534,5 +535,15 @@ def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
         self.context = context
 
     experiment.set_context = set_context.__get__(experiment)
+    other_log_metric = experiment._log_metric
+
+    def _log_metric(self, name, value, *args, **kwargs):
+        if value is None:
+            logger.warning('Logged `None` for metric "%s", ignoring.', name)
+            return
+
+        return other_log_metric(name, value, *args, **kwargs)
+
+    experiment._log_metric = _log_metric.__get__(experiment)
 
     return experiment

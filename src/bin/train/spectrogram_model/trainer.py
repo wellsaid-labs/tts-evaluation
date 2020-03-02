@@ -24,6 +24,7 @@ from src.optimizers import AutoOptimizer
 from src.optimizers import Optimizer
 from src.spectrogram_model import InputEncoder
 from src.utils import Checkpoint
+from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
 from src.utils import evaluate
 from src.utils import get_average_norm
@@ -148,7 +149,7 @@ class Trainer():
         self.comet_ml = comet_ml
         self.comet_ml.set_step(step)
         self.comet_ml.log_current_epoch(epoch)
-        self.comet_ml.log_parameters(get_config())
+        self.comet_ml.log_parameters(dict_collapse(get_config()))
         self.comet_ml.set_model_graph(str(self.model))
 
         self.comet_ml.log_parameters({
@@ -331,10 +332,11 @@ class Trainer():
                         self.metrics['average_relative_speed'].update(
                             predictions[-2].sum() / lengths.sum(), lengths.sum())
 
+                        device = predictions[-2].device
                         self._update_loudness_metrics(
                             batch.spectrogram.tensor[:, reached_max_filter], predictions[1],
                             batch.spectrogram_mask.tensor[:, reached_max_filter],
-                            lengths_to_mask(predictions[-2], device=predictions[-2].device))
+                            lengths_to_mask(predictions[-2], device=device).transpose(0, 1))
 
                     self.metrics['reached_max_frames'].update(predictions[-1].float().mean(),
                                                               predictions[-1].numel())
@@ -443,13 +445,14 @@ class Trainer():
             prefix (str)
             get_metric (callable): Callable run on the values of `self.loudness_metrics`.
         """
-        target = power_to_db(
-            torch.tensor(get_metric(self.loudness_metrics['average_target_loudness'])))
-        predicted = power_to_db(
-            torch.tensor(get_metric(self.loudness_metrics['average_predicted_loudness'])))
+        target = get_metric(self.loudness_metrics['average_target_loudness'])
+        target = power_to_db(torch.tensor(target)) if target is not None else target
+        predicted = get_metric(self.loudness_metrics['average_predicted_loudness'])
+        predicted = power_to_db(torch.tensor(predicted)) if predicted is not None else predicted
+        delta = predicted - target if target is not None and predicted is not None else None
         self.comet_ml.log_metric('%saverage_target_loudness' % prefix, target)
         self.comet_ml.log_metric('%saverage_predicted_loudness' % prefix, predicted)
-        self.comet_ml.log_metric('%saverage_delta_loudness' % prefix, predicted - target)
+        self.comet_ml.log_metric('%saverage_delta_loudness' % prefix, delta)
 
     @configurable
     def _do_loss_and_maybe_backwards(self,
@@ -572,8 +575,8 @@ class Trainer():
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
         gold_spectrogram = maybe_load_tensor(example.spectrogram)
-        gold_loudness = self._get_loudness(gold_spectrogram)
-        predicted_loudness = self._get_loudness(predicted_post_spectrogram)
+        gold_loudness = self._get_loudness(gold_spectrogram).cpu().item()
+        predicted_loudness = self._get_loudness(predicted_post_spectrogram).cpu().item()
 
         self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
         logged_audio = {
