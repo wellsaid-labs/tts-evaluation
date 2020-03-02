@@ -539,7 +539,6 @@ def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
 
     def _log_metric(self, name, value, *args, **kwargs):
         if value is None:
-            logger.warning('Logged `None` for metric "%s", ignoring.', name)
             return
 
         return other_log_metric(name, value, *args, **kwargs)
