@@ -346,6 +346,18 @@ def iso226_weighting(frequencies):
     return -interpolator(frequencies) + interpolator(np.array([REFERENCE_FREQUENCY]))
 
 
+def identity_weighting(frequencies):
+    """ Get identity weighting, it doesn't change the frequency weighting.
+
+    Args:
+        frequencies (np.ndarray [*]): Frequencies for which to get weights.
+
+    Returns:
+        np.ndarray [*frequencies.shape]: Weighting for each frequency.
+    """
+    return np.zeros_like(frequencies)
+
+
 @lru_cache()
 def get_signal_to_db_mel_spectrogram(*args, **kwargs):
     """ Get cached `SignalTodBMelSpectrogram` module. """

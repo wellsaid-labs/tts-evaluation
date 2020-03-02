@@ -3,14 +3,20 @@
 Learn more about weighting here:
 https://en.wikipedia.org/wiki/Equal-loudness_contour
 https://en.wikipedia.org/wiki/A-weighting
+
+Example:
+
+    python -m src.bin.visualize_weightings
+
 """
 from matplotlib import pyplot
 
 import numpy as np
 
 from src.audio import a_weighting
-from src.audio import k_weighting
+from src.audio import identity_weighting
 from src.audio import iso226_weighting
+from src.audio import k_weighting
 
 if __name__ == '__main__':  # pragma: no cover
     sample_rate = 44100
@@ -37,6 +43,9 @@ if __name__ == '__main__':  # pragma: no cover
     pyplot.plot(frequencies, a_weighting(frequencies), **plot_kwargs, label='A-Weighting')
     pyplot.plot(
         frequencies, iso226_weighting(frequencies), **plot_kwargs, label='ISO 226 Weighting')
+    pyplot.plot(
+        frequencies, identity_weighting(frequencies), **plot_kwargs, label='Identity Weighting')
+    pyplot.legend()
     pyplot.yticks(y_ticks)
     pyplot.xlim(min_frequency, max_frequency)
     pyplot.ylabel('Magnitude (dB)')

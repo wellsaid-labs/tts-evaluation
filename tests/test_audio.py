@@ -25,6 +25,7 @@ from src.audio import get_audio_metadata
 from src.audio import get_num_seconds
 from src.audio import get_signal_to_db_mel_spectrogram
 from src.audio import griffin_lim
+from src.audio import identity_weighting
 from src.audio import integer_to_floating_point_pcm
 from src.audio import iso226_weighting
 from src.audio import k_weighting
@@ -293,6 +294,11 @@ def test_a_weighting():
 def test_k_weighting():
     np.testing.assert_almost_equal([-13.9492132, 0.0, 3.3104297],
                                    k_weighting(np.array([20, REFERENCE_FREQUENCY, 20000]), 24000))
+
+
+def test_identity_weighting():
+    np.testing.assert_almost_equal([0.0, 0.0, 0.0],
+                                   identity_weighting(np.array([20, REFERENCE_FREQUENCY, 20000])))
 
 
 def test_pad_remainder():
