@@ -1,6 +1,5 @@
 from collections import defaultdict
 from collections import namedtuple
-from functools import lru_cache
 from functools import partial
 
 import hashlib
@@ -37,7 +36,6 @@ SpectrogramModelTrainingRow = namedtuple('SpectrogramModelTrainingRow', [
 ])
 
 
-@lru_cache()
 def _get_normalized_half_gaussian(length, standard_deviation):
     gaussian_kernel = ndimage.gaussian_filter1d(
         np.float_([0] * (length - 1) + [1]), sigma=standard_deviation)
