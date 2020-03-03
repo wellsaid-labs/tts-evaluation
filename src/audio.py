@@ -164,8 +164,7 @@ def _mel_filters(sample_rate, num_mel_bins, fft_length, lower_hertz=HParam(), up
     Args:
         sample_rate (int): The sample rate of the signal.
         num_mel_bins (int): Number of Mel bands to generate.
-        fft_length (int): The size of the FFT to apply. If not provided, uses the smallest
-            power of 2 enclosing `frame_length`.
+        fft_length (int): The size of the FFT to apply.
         lower_hertz (int): Lower bound on the frequencies to be included in the mel
             spectrum. This corresponds to the lower edge of the lowest triangular band.
         upper_hertz (int): The desired top edge of the highest frequency band.
