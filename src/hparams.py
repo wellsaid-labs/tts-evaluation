@@ -682,7 +682,9 @@ def set_hparams():
                                 # the stop token predictions by a fully trained model without
                                 # this smoothing. We found that a fully trained model would
                                 # learn a similar curve over 4 - 8 frames in January 2020, on Comet.
-                                length=8,
+                                # NOTE: This was rounded up to 10 after the spectrograms got
+                                # 17% larger.
+                                length=10,
                                 standard_deviation=2),
                     },
                     'signal_model': {
