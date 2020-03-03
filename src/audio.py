@@ -367,6 +367,9 @@ def get_signal_to_db_mel_spectrogram(*args, **kwargs):
 class SignalTodBMelSpectrogram(torch.nn.Module):
     """ Compute a dB-mel-scaled spectrogram from signal.
 
+    The spectrogram is an important representation of audio data because human hearing is based on a
+    kind of real-time spectrogram encoded by the cochlea of the inner ear.
+
     Learn more:
     - Loudness Spectrogram:
       https://www.dsprelated.com/freebooks/sasp/Loudness_Spectrogram_Examples.html
@@ -390,6 +393,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
       intensity rather than a linear relationship (Weber–Fechner law), making the dB scale a useful
       measure. (https://en.wikipedia.org/wiki/Decibel)
     - http://msp.ucsd.edu/techniques/v0.08/book-html/node6.html
+    - Spectrogram Basics: https://www.dsprelated.com/freebooks/sasp/Classic_Spectrograms.html
 
     Args:
         fft_length (int): See `n_fft` here: https://pytorch.org/docs/stable/torch.html#torch.stft
