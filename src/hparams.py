@@ -34,6 +34,20 @@ logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
 
 
+def _get_window(window, window_length):
+    # NOTE: `torch.hann_window` is different than the `scipy` window used by `librosa`.
+    # Learn more here: https://github.com/pytorch/audio/issues/452
+    window_tensor = None
+
+    try:
+        import librosa
+        window_tensor = torch.tensor(librosa.filters.get_window(window, window_length)).float()
+    except ImportError:
+        logger.info('Ignoring optional `librosa` configurations.')
+
+    return window_tensor
+
+
 def _set_audio_processing():
     # SOURCE (Tacotron 1):
     # We use 24 kHz sampling rate for all experiments.
@@ -49,10 +63,10 @@ def _set_audio_processing():
     frame_size = 1024  # NOTE: Frame size in samples
     fft_length = frame_size
     frame_hop = 256
-    window = 'hann'
     # NOTE: A "hann window" is standard for calculating an FFT, it's even mentioned as a "popular
     # window" on Wikipedia (https://en.wikipedia.org/wiki/Window_function).
-    window_tensor = torch.hann_window(frame_size)
+    window = 'hann'
+    window_tensor = _get_window(window, frame_size)
 
     # SOURCE (Tacotron 2):
     # We transform the STFT magnitude to the mel scale using an 80 channel mel
@@ -721,19 +735,19 @@ def set_hparams():
                                         SpectrogramLoss,
                                         fft_length=2048,
                                         frame_hop=300,
-                                        window=torch.hann_window(1200),
+                                        window=_get_window('hann', 1200),
                                         num_mel_bins=128),
                                     partial(
                                         SpectrogramLoss,
                                         fft_length=1024,
                                         frame_hop=150,
-                                        window=torch.hann_window(600),
+                                        window=_get_window('hann', 600),
                                         num_mel_bins=64),
                                     partial(
                                         SpectrogramLoss,
                                         fft_length=512,
                                         frame_hop=75,
-                                        window=torch.hann_window(300),
+                                        window=_get_window('hann', 300),
                                         num_mel_bins=32),
                                 ]),
                         'trainer.SpectrogramLoss.__init__':

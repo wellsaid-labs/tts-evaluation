@@ -350,7 +350,9 @@ def test_signal_to_db_mel_spectrogram_against_librosa():
         frame_hop=hop_length,
         sample_rate=sample_rate,
         num_mel_bins=n_mels,
-        window=torch.hann_window(win_length),
+        # NOTE: `torch.hann_window` is different than the `scipy` window used by `librosa`.
+        # Learn more here: https://github.com/pytorch/audio/issues/452
+        window=torch.tensor(librosa.filters.get_window('hann', win_length)).float(),
         min_decibel=min_decibel,
         get_weighting=librosa.A_weighting,
         lower_hertz=0,
@@ -358,7 +360,7 @@ def test_signal_to_db_mel_spectrogram_against_librosa():
 
     other_mel_spectrogram = module(torch.tensor(signal)).detach().numpy()
     assert melspec.shape == other_mel_spectrogram.shape
-    np.testing.assert_almost_equal(melspec, other_mel_spectrogram, decimal=2)
+    np.testing.assert_allclose(melspec, other_mel_spectrogram, atol=1.6e-3)
 
 
 def test_signal_to_db_mel_spectrogram_backward():
