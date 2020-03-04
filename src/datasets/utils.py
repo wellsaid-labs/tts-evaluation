@@ -143,7 +143,7 @@ def _add_spectrogram_column(example, config, on_disk=True):
         # padding does not affect the spectrogram due to overlap between the padding and the
         # real audio.
         signal = pad_remainder(signal)
-        _, trim = librosa.effects.trim(integer_to_floating_point_pcm(signal))
+        _, trim = configurable(librosa.effects.trim)(integer_to_floating_point_pcm(signal))
         signal = signal[trim[0]:trim[1]]
 
         # TODO: Now that `get_signal_to_db_mel_spectrogram` is implemented in PyTorch, we could
