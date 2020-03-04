@@ -115,6 +115,8 @@ def _add_spectrogram_column(example, config, on_disk=True):
     audio_path = example.audio_path
     # TODO: Add a method for transfering global configuration between processes without private
     # variables.
+    # TODO: After the global configuration is transfered, the functions need to be rechecked like
+    # `librosa.effects.trim` for a configuration.
     hparams.hparams._configuration = config
 
     if on_disk:
