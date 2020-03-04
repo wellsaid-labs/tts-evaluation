@@ -68,6 +68,9 @@ class PhonesEncoder(StaticTokenizerEncoder):
     def __init__(self, text_samples, *args, **kwargs):
         all_punctuation = chain([re.findall(r'\W+', t) for t in text_samples])
         self._punctuation = set([p for punct in all_punctuation for p in punct])
+
+        # Add primary and secondary stress characters to the punctuation set so as to isolate them
+        # from the phonemic syllables for a more sensible encoder vocabulary.
         self._punctuation.update(['ˈ', 'ˌ'])
 
         if 'tokenize' in kwargs:

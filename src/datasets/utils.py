@@ -240,15 +240,11 @@ def normalize_text_clean_punctuation(dataset):
             i = example.text.find(t)
             if i > -1 and i + len(t) < len(
                     example.text) and example.text[i + len(t)] not in string.punctuation + ' \n':
-                logger.info('Normalizing text from:\t%s' % example.text)
                 dataset[row] = example._replace(text=example.text.replace(t, r))
-                logger.info('Normalized text to:\t\t%s' % dataset[row].text)
 
             if example.text[0] in ['.', '-'] and len(example.text) > 1:
                 if example.text[1] not in string.punctuation + ' \n':
-                    logger.info('Normalizing text from:\t%s' % example.text)
                     dataset[row] = example._replace(text=example.text[1:])
-                    logger.info('Normalized text to:\t\t%s' % dataset[row].text)
     return dataset
 
 
