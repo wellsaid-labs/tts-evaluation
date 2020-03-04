@@ -26,10 +26,10 @@ class AveragedMetric():
         else:
             average = None
 
-        self.last_update_value = 0
-        self.last_update_count = 0
-        self.total_value = 0
-        self.total_count = 0
+        self.last_update_value = 0.0
+        self.last_update_count = 0.0
+        self.total_value = 0.0
+        self.total_count = 0.0
 
         return average
 

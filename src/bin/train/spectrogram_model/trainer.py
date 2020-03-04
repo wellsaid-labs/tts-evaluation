@@ -330,7 +330,7 @@ class Trainer():
                         reached_max_filter = ~predictions[-1].squeeze()
                         lengths = batch.spectrogram.lengths[:, reached_max_filter]
                         self.metrics['average_relative_speed'].update(
-                            predictions[-2].sum() / lengths.sum(), lengths.sum())
+                            predictions[-2].sum().float() / lengths.sum().float(), lengths.sum())
 
                         device = predictions[-2].device
                         self._update_loudness_metrics(

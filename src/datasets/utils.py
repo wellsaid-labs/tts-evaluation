@@ -128,35 +128,39 @@ def _add_spectrogram_column(example, config, on_disk=True):
         # Compute and save to disk the spectrogram and audio
         assert audio_path.is_file(), 'Audio path must be a file %s' % audio_path
         signal = read_audio(audio_path)
+        dtype = signal.dtype
 
+        # TODO: The RMS function is a naive computation of loudness; therefore, it'd likely
+        # be more accurate to use our spectrogram for trimming with augmentations like A-weighting.
         # TODO: The RMS function that trim uses mentions that it's likely better to use a
         # spectrogram if it's available:
         # https://librosa.github.io/librosa/generated/librosa.feature.rms.html?highlight=rms#librosa.feature.rms
+        # TODO: `pad_remainder` could possibly add distortion if it's appended to non-zero samples;
+        # therefore, it'd likely be beneficial to have a small fade-in and fade-out before
+        # appending the zero samples.
+        # TODO: We should consider padding more than just the remainder. We could additionally
+        # pad a `frame_length` of padding so that further down the pipeline, any additional
+        # padding does not affect the spectrogram due to overlap between the padding and the
+        # real audio.
+        signal = pad_remainder(signal)
         _, trim = librosa.effects.trim(integer_to_floating_point_pcm(signal))
         signal = signal[trim[0]:trim[1]]
 
-        # TODO: Compute batches of spectrograms, it'd be faster.
-        # TODO: Does `pad_remainder` introduce unwanted bias? Does adding zeros at the end or
-        # beginning of the audio introduce "unsmooth" transitions? Should we consider instead
-        # update the preprocessing pipeline earlier so that we can cut the signal initially
-        # so that it's length is a multiple of frame hop?
-        # TODO: Adding zero padding without fading the signal can cause distortion (based on
-        # my experiments in Audacity); therefore, it's advisable that the signal is faded in
-        # and faded out before the zeros are added.
-        # TODO: Think about adding at least `frame_length` of padding to the signal so that up
-        # the pipeline we do not need to worry about the mixing of padding with real audio.
-        padded_signal = pad_remainder(signal)
+        # TODO: Now that `get_signal_to_db_mel_spectrogram` is implemented in PyTorch, we could
+        # batch process spectrograms. This would likely be faster. Also, it could be fast to
+        # compute spectrograms on-demand.
         db_mel_spectrogram = get_signal_to_db_mel_spectrogram()(
-            torch.from_numpy(integer_to_floating_point_pcm(padded_signal)), aligned=True).detach()
-        padded_signal = torch.from_numpy(padded_signal)
+            torch.from_numpy(integer_to_floating_point_pcm(signal)), aligned=True).detach()
+        assert signal.dtype == dtype, 'The signal `dtype` was changed.'
+        signal = torch.from_numpy(signal)
 
         if on_disk:
             parent.mkdir(exist_ok=True)
             return example._replace(
-                spectrogram_audio=OnDiskTensor.from_tensor(spectrogram_audio_path, padded_signal),
+                spectrogram_audio=OnDiskTensor.from_tensor(spectrogram_audio_path, signal),
                 spectrogram=OnDiskTensor.from_tensor(spectrogram_path, db_mel_spectrogram))
 
-        return example._replace(spectrogram_audio=padded_signal, spectrogram=db_mel_spectrogram)
+        return example._replace(spectrogram_audio=signal, spectrogram=db_mel_spectrogram)
 
     return example._replace(
         spectrogram_audio=OnDiskTensor(spectrogram_audio_path),

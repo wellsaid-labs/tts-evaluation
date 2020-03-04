@@ -369,6 +369,16 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
     The spectrogram is an important representation of audio data because human hearing is based on a
     kind of real-time spectrogram encoded by the cochlea of the inner ear.
 
+    TODO: Instead of using the decibel scale, it likely makes more sense to use the sone scale. The
+    reason is that the sone scale is intended to be linear to perceived loudness; therefore, it'd
+    make more sense to compute a linear loss like L1 or L2 on a linear scale. The decibel scale
+    has still a logarithmic relationship with perceived loudness because every additional 10 dB
+    the perceived loudness doubles.
+    Learn more:
+    https://community.sw.siemens.com/s/article/sound-quality-metrics-loudness-and-sones
+    https://en.wikipedia.org/wiki/Sone
+    http://www.physics.mcgill.ca/~guymoore/ph224/notes/lecture12.pdf
+
     Learn more:
     - Loudness Spectrogram:
       https://www.dsprelated.com/freebooks/sasp/Loudness_Spectrogram_Examples.html

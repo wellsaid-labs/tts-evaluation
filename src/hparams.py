@@ -91,16 +91,7 @@ def _set_audio_processing():
         import librosa
         librosa.effects.trim = configurable(librosa.effects.trim)
         add_config({
-            librosa.effects.trim:
-                HParams(
-                    frame_length=frame_size,
-                    hop_length=frame_hop,
-                    # NOTE: Manually determined to be a adequate cutoff for Linda Johnson via:
-                    # ``notebooks/Stripping Silence.ipynb``
-                    # TODO: Given the number of new datasets that we acquired, this value
-                    # should be reevaluated.
-                    top_db=50,
-                ),
+            librosa.effects.trim: HParams(frame_length=frame_size, hop_length=frame_hop),
         })
     except ImportError:
         logger.info('Ignoring optional `librosa` configurations.')
