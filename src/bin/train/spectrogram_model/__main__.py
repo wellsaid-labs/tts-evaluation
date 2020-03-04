@@ -248,7 +248,16 @@ if __name__ == '__main__':  # pragma: no cover
         default=None,
         help='Name of the comet.ml project to store a new experiment in.')
     # NOTE: The baseline tags summarize changes in the current repository.
-    parser.add_argument('--tags', default=[], nargs='+', help='List of tags for a new experiments.')
+    parser.add_argument(
+        '--tags',
+        default=[
+            '1024_frame_size', '16_bit_audio', 'amsgrad=False', 'dataset_filter', 'db_scale',
+            'iso226_weighting', 'layer_norm_pre_net', 'lower_hertz_20', 'min_decibel_50',
+            'min_padding', 'power_before_mel_scale', 'pytorch_1_4', 'pytorch_stft', 'seed_12345',
+            'zero_go_frame', 'pad_before_trim', 'larger_half_gaussian'
+        ],
+        nargs='+',
+        help='List of tags for a new experiments.')
     parser.add_argument(
         '--reset_optimizer',
         action='store_true',
