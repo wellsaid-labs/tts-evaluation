@@ -506,11 +506,12 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         if aligned:
             assert spectrogram.shape[-2] * self.frame_hop == signal.shape[1], 'Invariant failure.'
 
-        # NOTE: The below `norm` line is equal to a numerically stable version of the below...
-        # >>> real_part, imag_part = spectrogram.unbind(-1)
-        # >>> magnitude_spectrogram = torch.sqrt(real_part**2 + imag_part**2)
+        # NOTE: `torch.norm` is too slow to use in this case
+        # https://github.com/pytorch/pytorch/issues/34279
         # spectrogram [batch_size, fft_length // 2 + 1, num_frames]
-        spectrogram = torch.norm(spectrogram, dim=-1)
+        real_part, imaginary_part = spectrogram.unbind(-1)
+        spectrogram = real_part**2 + imaginary_part**2
+        spectrogram[spectrogram != 0.0] = torch.sqrt(spectrogram[spectrogram != 0.0])
 
         # NOTE: Perceived loudness (for example, the sone scale) corresponds fairly well to the dB
         # scale, suggesting that human perception of loudness is roughly logarithmic with

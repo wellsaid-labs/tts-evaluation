@@ -370,6 +370,13 @@ def test_signal_to_db_mel_spectrogram_backward():
     module(tensor).sum().backward()
 
 
+def test_signal_to_db_mel_spectrogram_zeros():
+    """ Ensure `SignalTodBMelSpectrogram` is numerically stable given a zero input. """
+    tensor = torch.nn.Parameter(torch.zeros(2400))
+    module = SignalTodBMelSpectrogram()
+    module(tensor).sum().backward()
+
+
 def test_signal_to_db_mel_spectrogram_batch_invariance():
     """ Ensure `SignalTodBMelSpectrogram` is batch invariant. """
     tensor = torch.nn.Parameter(torch.randn(10, 2400))
