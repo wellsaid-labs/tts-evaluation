@@ -9,7 +9,7 @@ import time
 # Learn more:
 # https://stackoverflow.com/questions/4931376/generating-matplotlib-graphs-without-a-running-x-server
 if platform.system() == 'Linux':
-    matplotlib.use('Agg', warn=False)
+    matplotlib.use('Agg')
 
 from comet_ml import ExistingExperiment
 from comet_ml import Experiment
