@@ -8,6 +8,7 @@ from hparams import configurable
 from hparams import get_config
 from hparams import HParam
 from torch import nn
+from torch.optim.lr_scheduler import LambdaLR
 from torchnlp.random import fork_rng
 from torchnlp.utils import get_total_parameters
 from torchnlp.utils import lengths_to_mask
@@ -92,6 +93,7 @@ class Trainer():
                  criterion_spectrogram=HParam(),
                  criterion_stop_token=HParam(),
                  optimizer=HParam(),
+                 lr_multiplier_schedule=HParam(),
                  model=HParam(),
                  input_encoder=None,
                  step=0,
@@ -126,6 +128,9 @@ class Trainer():
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.optimizer.to(device)
+
+        self.scheduler = LambdaLR(
+            self.optimizer.optimizer, lr_multiplier_schedule, last_epoch=step - 1)
 
         self.metrics = {
             'attention_norm': DistributedAveragedMetric(),
@@ -365,6 +370,7 @@ class Trainer():
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
+                self.scheduler.step(self.step)
 
             if trial_run:
                 break
@@ -512,8 +518,10 @@ class Trainer():
             # stop_token_loss [num_frames, batch_size] → [1]
             expected_average_spectrogram_length = (
                 self._train_loader.expected_average_spectrogram_length)
-            ((pre_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() +
-             (post_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() +
+            # NOTE: The loss is calibrated to match the loss of older models. Without this
+            # calibration, the model doesn't train well.
+            ((pre_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() / 100 +
+             (post_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() / 100 +
              (stop_token_loss.sum(dim=0) / expected_average_spectrogram_length).mean()).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
 

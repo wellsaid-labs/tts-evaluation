@@ -564,6 +564,22 @@ def get_dataset():
         return train, dev
 
 
+def spectrogram_model_lr_multiplier_schedule(step, warmup=500):
+    """ Learning rate multiplier schedule.
+
+    Args:
+        step (int): The current step.
+        warmup (int): The number of warmup steps.
+
+    Returns:
+        (float): Multiplier on the base learning rate.
+    """
+    if step < warmup:
+        return step / warmup
+
+    return 1.0
+
+
 def signal_model_lr_multiplier_schedule(step, warmup=500):
     """ Learning rate multiplier schedule.
 
@@ -642,7 +658,12 @@ def set_hparams():
                         # `_filter_too_much_audio_per_character`
                         # NOTE: This number was configured with the help of:
                         # `QA_Datasets/Sample_Dataset.ipynb`
-                        max_frames_per_token=0.2 / (frame_hop / sample_rate))
+                        max_frames_per_token=0.2 / (frame_hop / sample_rate),
+
+                        # NOTE: The spectrogram input ranges from around -50 to 50. This scaler
+                        # puts the input and output in a more reasonable range for the model of
+                        # -5 to 5.
+                        output_scalar=10.0)
             },
             # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
             'datasets.utils.add_predicted_spectrogram_column':
@@ -655,6 +676,7 @@ def set_hparams():
                             HParams(dataset=get_dataset),
                         'trainer.Trainer.__init__':
                             HParams(
+                                lr_multiplier_schedule=spectrogram_model_lr_multiplier_schedule,
                                 # SOURCE: Tacotron 2
                                 # To train the feature prediction network, we apply the standard
                                 # maximum-likelihood training procedure (feeding in the correct

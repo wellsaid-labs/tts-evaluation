@@ -96,6 +96,7 @@ class SpectrogramModel(nn.Module):
             as "Mel-frequency bins" or "FFT bins" or "FFT bands")
         max_frames_per_token (float): The maximum sequential predictions to make before
             quitting; Used for testing and defensive design.
+        output_scalar (float): The output of the model is scaled up by this value.
       """
 
     @configurable
@@ -105,7 +106,8 @@ class SpectrogramModel(nn.Module):
                  speaker_embedding_dim=HParam(),
                  speaker_embedding_dropout=HParam(),
                  frame_channels=HParam(),
-                 max_frames_per_token=HParam()):
+                 max_frames_per_token=HParam(),
+                 output_scalar=HParam()):
 
         super().__init__()
 
@@ -118,6 +120,8 @@ class SpectrogramModel(nn.Module):
         self.embed_speaker = nn.Sequential(
             nn.Embedding(num_speakers, speaker_embedding_dim),
             nn.Dropout(speaker_embedding_dropout))
+
+        self.register_buffer('output_scalar', torch.tensor(output_scalar).float())
 
     def _get_stopped_indexes(self, predictions, stop_threshold):
         """ Get a list of indices that predicted stop.
@@ -190,9 +194,14 @@ class SpectrogramModel(nn.Module):
             stop_token (torch.FloatTensor [num_frames, batch_size])
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
         """
+        target_frames = target_frames / self.output_scalar
+
         frames, stop_tokens, hidden_state, alignments = self.decoder(
             encoded_tokens, tokens_mask, speaker, target_frames=target_frames)
         frames_with_residual = self._add_residual(frames, target_lengths)
+
+        frames_with_residual = frames_with_residual * self.output_scalar
+        frames = frames * self.output_scalar
 
         if is_unbatched:
             return (frames.squeeze(1), frames_with_residual.squeeze(1), stop_tokens.squeeze(1),
@@ -285,6 +294,9 @@ class SpectrogramModel(nn.Module):
                 t[:lengths.squeeze().max(), filter_] if lengths.numel() > 0 else t[:, filter_]
                 for t in [frames, frames_with_residual, stop_tokens, alignments]
             ])
+
+        frames_with_residual = frames_with_residual * self.output_scalar
+        frames = frames * self.output_scalar
 
         if is_unbatched:
             return (frames.squeeze(1), frames_with_residual.squeeze(1), stop_tokens.squeeze(1),
