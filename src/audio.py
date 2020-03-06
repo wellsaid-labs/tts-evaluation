@@ -509,10 +509,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         # NOTE: `torch.norm` is too slow to use in this case
         # https://github.com/pytorch/pytorch/issues/34279
         # spectrogram [batch_size, fft_length // 2 + 1, num_frames]
-        real_part, imaginary_part = spectrogram.unbind(-1)
-        spectrogram = real_part**2 + imaginary_part**2
-        nonzero_mask = spectrogram != 0.0
-        spectrogram[nonzero_mask] = torch.sqrt(spectrogram[nonzero_mask])
+        power_spectrogram = spectrogram.pow(2).sum(-1)
 
         # NOTE: Perceived loudness (for example, the sone scale) corresponds fairly well to the dB
         # scale, suggesting that human perception of loudness is roughly logarithmic with
@@ -521,18 +518,18 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         # that it more representative of the human perception of loudness.
         # NOTE: A multiplication is equal to an addition in the log space / dB space.
         # power_spectrogram [batch_size, fft_length // 2 + 1, num_frames]
-        power_spectrogram = spectrogram**2 * self.weighting
+        weighted_power_spectrogram = power_spectrogram * self.weighting
         # power_mel_spectrogram [batch_size, num_mel_bins, num_frames]
-        power_mel_spectrogram = torch.matmul(self.mel_basis, power_spectrogram)
+        power_mel_spectrogram = torch.matmul(self.mel_basis, weighted_power_spectrogram)
         db_mel_spectrogram = power_to_db(power_mel_spectrogram, eps=self.eps)
         db_mel_spectrogram = torch.max(self.min_decibel, db_mel_spectrogram).transpose(-2, -1)
         db_mel_spectrogram = db_mel_spectrogram if has_batch_dim else db_mel_spectrogram.squeeze(0)
 
         if intermediate:
             # TODO: Simplify the `tranpose` and `squeeze`s.
-            db_spectrogram = power_to_db(power_spectrogram).transpose(-2, -1)
+            db_spectrogram = power_to_db(weighted_power_spectrogram).transpose(-2, -1)
             db_spectrogram = torch.max(self.min_decibel, db_spectrogram)
-            spectrogram = spectrogram.transpose(-2, -1)
+            spectrogram = torch.sqrt(torch.max(power_spectrogram, self.eps)).transpose(-2, -1)
             db_spectrogram = db_spectrogram if has_batch_dim else db_spectrogram.squeeze(0)
             spectrogram = spectrogram if has_batch_dim else spectrogram.squeeze(0)
             return db_mel_spectrogram, db_spectrogram, spectrogram

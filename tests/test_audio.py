@@ -367,14 +367,14 @@ def test_signal_to_db_mel_spectrogram_backward():
     """ Ensure `SignalTodBMelSpectrogram` is differentiable. """
     tensor = torch.nn.Parameter(torch.randn(2400))
     module = SignalTodBMelSpectrogram()
-    module(tensor).sum().backward()
+    [t.sum().backward(retain_graph=True) for t in module(tensor, intermediate=True)]
 
 
 def test_signal_to_db_mel_spectrogram_zeros():
     """ Ensure `SignalTodBMelSpectrogram` is numerically stable given a zero input. """
     tensor = torch.nn.Parameter(torch.zeros(2400))
     module = SignalTodBMelSpectrogram()
-    module(tensor).sum().backward()
+    [t.sum().backward(retain_graph=True) for t in module(tensor, intermediate=True)]
 
 
 def test_signal_to_db_mel_spectrogram_batch_invariance():
@@ -390,8 +390,15 @@ def test_signal_to_db_mel_spectrogram_intermediate():
     """ Ensure `SignalTodBMelSpectrogram` returns intermediate values of the right shape. """
     batch_size = 10
     n_fft = 2048
+    hop_length = n_fft // 4
+    window = torch.hann_window(n_fft)
     tensor = torch.nn.Parameter(torch.randn(batch_size, 2400))
-    module = SignalTodBMelSpectrogram(fft_length=n_fft, min_decibel=float('-inf'), lower_hertz=0)
+    module = SignalTodBMelSpectrogram(
+        fft_length=n_fft,
+        min_decibel=float('-inf'),
+        lower_hertz=0,
+        window=window,
+        frame_hop=hop_length)
     db_mel_spectrogram, db_spectrogram, spectrogram = module(tensor, intermediate=True)
 
     assert spectrogram.shape == (batch_size, db_mel_spectrogram.shape[1], n_fft // 2 + 1)
@@ -402,6 +409,12 @@ def test_signal_to_db_mel_spectrogram_intermediate():
         db_to_power(db_mel_spectrogram).sum(dim=-1).detach().numpy(),
         db_to_power(db_spectrogram).sum(dim=-1).detach().numpy(),
         rtol=1e-2)
+
+    expected_spectrogram = torch.stft(
+        tensor, n_fft, hop_length, win_length=n_fft, window=window, center=False)
+    expected_spectrogram = torch.norm(expected_spectrogram, dim=-1).transpose(-2, -1)
+
+    np.testing.assert_allclose(spectrogram.detach().numpy(), expected_spectrogram.detach().numpy())
 
 
 def test_signal_to_db_mel_spectrogram__alignment():
