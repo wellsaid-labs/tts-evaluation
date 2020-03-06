@@ -3,10 +3,12 @@ from functools import partial
 from pathlib import Path
 
 import logging
+import os
 import pprint
 
 from hparams import configurable
 from hparams import HParam
+from multiprocessing.pool import ThreadPool
 from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 from tqdm import tqdm
@@ -101,7 +103,7 @@ def add_predicted_spectrogram_column(data,
     return [e._replace(predicted_spectrogram=t) for e, t in zip(data, tensors)]
 
 
-def _add_spectrogram_column(example, config, on_disk=True):
+def _add_spectrogram_column(example, on_disk=True):
     """ Adds spectrogram to ``example``.
 
     Args:
@@ -113,11 +115,6 @@ def _add_spectrogram_column(example, config, on_disk=True):
         (TextSpeechRow): Row of text and speech aligned data with spectrogram data.
     """
     audio_path = example.audio_path
-    # TODO: Add a method for transfering global configuration between processes without private
-    # variables.
-    # TODO: After the global configuration is transfered, the functions need to be rechecked like
-    # `librosa.effects.trim` for a configuration.
-    hparams.hparams._configuration = config
 
     if on_disk:
         parent = audio_path.parent
@@ -145,16 +142,18 @@ def _add_spectrogram_column(example, config, on_disk=True):
         # padding does not affect the spectrogram due to overlap between the padding and the
         # real audio.
         signal = pad_remainder(signal)
-        _, trim = configurable(librosa.effects.trim)(integer_to_floating_point_pcm(signal))
+        _, trim = librosa.effects.trim(integer_to_floating_point_pcm(signal))
         signal = signal[trim[0]:trim[1]]
 
         # TODO: Now that `get_signal_to_db_mel_spectrogram` is implemented in PyTorch, we could
         # batch process spectrograms. This would likely be faster. Also, it could be fast to
         # compute spectrograms on-demand.
-        db_mel_spectrogram = get_signal_to_db_mel_spectrogram()(
-            torch.from_numpy(integer_to_floating_point_pcm(signal)), aligned=True).detach()
+        with torch.no_grad():
+            db_mel_spectrogram = get_signal_to_db_mel_spectrogram()(
+                torch.tensor(integer_to_floating_point_pcm(signal), requires_grad=False),
+                aligned=True)
         assert signal.dtype == dtype, 'The signal `dtype` was changed.'
-        signal = torch.from_numpy(signal)
+        signal = torch.tensor(signal, requires_grad=False)
 
         if on_disk:
             parent.mkdir(exist_ok=True)
@@ -182,8 +181,8 @@ def add_spectrogram_column(data, on_disk=True):
             data.
     """
     logger.info('Adding a spectrogram column to dataset.')
-    partial_ = partial(_add_spectrogram_column, on_disk=on_disk, config=hparams.get_config())
-    with Pool() as pool:
+    partial_ = partial(_add_spectrogram_column, on_disk=on_disk)
+    with ThreadPool(os.cpu_count()) as pool:
         # NOTE: `chunksize` with `imap` is more performant while allowing us to measure progress.
         # TODO: Consider using `imap_unordered` instead of `imap` because it is more performant,
         # learn more:
@@ -195,6 +194,8 @@ def add_spectrogram_column(data, on_disk=True):
 def _normalize_audio_column_helper(example, config):
     # TODO: Add a method for transfering global configuration between processes without private
     # variables.
+    # TODO: After the global configuration is transfered, the functions need to be rechecked like
+    # for a configuration, just in case the configuration is on a new process.
     hparams.hparams._configuration = config
     return example._replace(audio_path=normalize_audio(example.audio_path))
 
