@@ -511,7 +511,8 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         # spectrogram [batch_size, fft_length // 2 + 1, num_frames]
         real_part, imaginary_part = spectrogram.unbind(-1)
         spectrogram = real_part**2 + imaginary_part**2
-        spectrogram[spectrogram != 0.0] = torch.sqrt(spectrogram[spectrogram != 0.0])
+        nonzero_mask = spectrogram != 0.0
+        spectrogram[nonzero_mask] = torch.sqrt(spectrogram[nonzero_mask])
 
         # NOTE: Perceived loudness (for example, the sone scale) corresponds fairly well to the dB
         # scale, suggesting that human perception of loudness is roughly logarithmic with
