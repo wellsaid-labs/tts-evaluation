@@ -255,7 +255,7 @@ if __name__ == '__main__':  # pragma: no cover
             'iso226_weighting', 'lower_hertz_20', 'min_decibel_50', 'min_padding',
             'power_before_mel_scale', 'pytorch_1_4', 'pytorch_stft', 'zero_go_frame',
             'pad_before_trim', 'larger_half_gaussian', 'lower_reached_max', '500_step_warmup',
-            '0_01_spectrogram_loss', '10_output_scalar'
+            '0_01_spectrogram_loss', '10_output_scalar', 'ema'
         ],
         nargs='+',
         help='List of tags for a new experiments.')
