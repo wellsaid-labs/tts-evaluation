@@ -60,11 +60,12 @@ class LocationSensitiveAttention(nn.Module):
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, '`convolution_filter_size` must be odd'
 
+        self.alignment_conv_padding = int((convolution_filter_size - 1) / 2)
         self.alignment_conv = nn.Conv1d(
             in_channels=1,
             out_channels=num_convolution_filters,
             kernel_size=convolution_filter_size,
-            padding=int((convolution_filter_size - 1) / 2))
+            padding=0)
         self.project_query = nn.Sequential(
             nn.Linear(query_hidden_size, hidden_size), nn.ReLU(),
             nn.Linear(hidden_size, hidden_size))
@@ -120,7 +121,12 @@ class LocationSensitiveAttention(nn.Module):
 
         return alignment
 
-    def forward(self, encoded_tokens, tokens_mask, query, cumulative_alignment=None):
+    def forward(self,
+                encoded_tokens,
+                tokens_mask,
+                query,
+                cumulative_alignment=None,
+                initial_cumulative_alignment=None):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batched set of
@@ -132,6 +138,9 @@ class LocationSensitiveAttention(nn.Module):
             cumulative_alignment (torch.FloatTensor [batch_size, num_tokens], optional): Cumlative
                 attention alignment from the last queries. If this vector is not included, the
                 ``cumulative_alignment`` defaults to a zero vector.
+            initial_cumulative_alignment (torch.FloatTensor [batch_size, 1]): The left-side
+                padding value for the `alignment_conv`. This can also be interpreted as the
+                cumulative alignment for the former tokens.
 
         Returns:
             context (torch.FloatTensor [batch_size, hidden_size]): Computed attention
@@ -142,14 +151,26 @@ class LocationSensitiveAttention(nn.Module):
                 vector.
         """
         num_tokens, batch_size, _ = encoded_tokens.shape
+        device = encoded_tokens.device
 
         # NOTE: Attention alignment is sometimes refered to as attention weights.
         cumulative_alignment = torch.zeros(
             batch_size, num_tokens, dtype=torch.float,
-            device=encoded_tokens.device) if cumulative_alignment is None else cumulative_alignment
+            device=device) if cumulative_alignment is None else cumulative_alignment
+        initial_cumulative_alignment = torch.zeros(
+            batch_size, 1,
+            device=device) if initial_cumulative_alignment is None else initial_cumulative_alignment
 
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
         location_features = cumulative_alignment.unsqueeze(1)
+
+        # Add `self.alignment_conv_padding` to both sides.
+        initial_cumulative_alignment = initial_cumulative_alignment.unsqueeze(-1).expand(
+            -1, -1, self.alignment_conv_padding)
+        location_features = torch.cat([initial_cumulative_alignment, location_features], dim=-1)
+        location_features = torch.nn.functional.pad(
+            location_features, (0, self.alignment_conv_padding), mode='constant', value=0.0)
+
         # [batch_size, 1, num_tokens] → [batch_size, num_convolution_filters, num_tokens]
         location_features = self.alignment_conv(location_features)
         # [batch_size, num_convolution_filters, num_tokens] →
