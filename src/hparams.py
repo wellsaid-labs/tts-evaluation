@@ -62,7 +62,8 @@ def _set_audio_processing():
     # to the sample rate.
     frame_size = 1024  # NOTE: Frame size in samples
     fft_length = 2048
-    frame_hop = 256
+    assert frame_size % 4 == 0
+    frame_hop = frame_size // 4
     # NOTE: A "hann window" is standard for calculating an FFT, it's even mentioned as a "popular
     # window" on Wikipedia (https://en.wikipedia.org/wiki/Window_function).
     window = 'hann'
