@@ -22,7 +22,6 @@ from src.audio import griffin_lim
 from src.audio import power_to_db
 from src.bin.train.spectrogram_model.data_loader import DataLoader
 from src.optimizers import AutoOptimizer
-from src.optimizers import ExponentialMovingParameterAverage
 from src.optimizers import Optimizer
 from src.spectrogram_model import InputEncoder
 from src.utils import Checkpoint
@@ -93,7 +92,6 @@ class Trainer():
                  dev_batch_size=HParam(),
                  criterion_spectrogram=HParam(),
                  criterion_stop_token=HParam(),
-                 exponential_moving_parameter_average=ExponentialMovingParameterAverage,
                  optimizer=HParam(),
                  lr_multiplier_schedule=HParam(),
                  model=HParam(),
@@ -126,13 +124,6 @@ class Trainer():
         if src.distributed.is_initialized():
             self.model = nn.parallel.DistributedDataParallel(
                 self.model, device_ids=[device], output_device=device, dim=1)
-
-        self.exponential_moving_parameter_average = (
-            exponential_moving_parameter_average
-            if isinstance(exponential_moving_parameter_average, ExponentialMovingParameterAverage)
-            else exponential_moving_parameter_average(
-                filter(lambda p: p.requires_grad, self.model.parameters())))
-        self.exponential_moving_parameter_average.to(device)
 
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
@@ -252,7 +243,6 @@ class Trainer():
             'epoch': checkpoint.epoch,
             'step': checkpoint.step,
             'input_encoder': checkpoint.input_encoder,
-            'exponential_moving_parameter_average': checkpoint.exponential_moving_parameter_average,
         }
         checkpoint_kwargs.update(kwargs)
         return class_(**checkpoint_kwargs)
@@ -273,8 +263,7 @@ class Trainer():
                 input_encoder=self.input_encoder,
                 epoch=self.epoch,
                 step=self.step,
-                comet_ml_experiment_key=self.comet_ml.get_key(),
-                exponential_moving_parameter_average=self.exponential_moving_parameter_average)
+                comet_ml_experiment_key=self.comet_ml.get_key())
             if checkpoint.path.exists():
                 return None
             return checkpoint.save()
@@ -326,9 +315,6 @@ class Trainer():
         elif not train and not hasattr(self, '_dev_loader'):
             self._dev_loader = DataLoader(self.dev_dataset, self.dev_batch_size, **loader_kwargs)
         data_loader = self._train_loader if train else self._dev_loader
-
-        if not train:
-            self.exponential_moving_parameter_average.apply_shadow()
 
         random_batch = random.randint(0, len(data_loader) - 1)
         for i, batch in enumerate(data_loader):
@@ -388,9 +374,6 @@ class Trainer():
 
             if trial_run:
                 break
-
-        if not train:
-            self.exponential_moving_parameter_average.restore()
 
         # Log epoch metrics
         if not trial_run:
@@ -541,7 +524,6 @@ class Trainer():
              (post_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() / 100 +
              (stop_token_loss.sum(dim=0) / expected_average_spectrogram_length).mean()).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
-            self.exponential_moving_parameter_average.update()
 
         expected_stop_token = (batch.stop_token.tensor > stop_threshold).masked_select(mask > 0)
         predicted_stop_token = (torch.sigmoid(predicted_stop_tokens) >
@@ -594,12 +576,10 @@ class Trainer():
             self.input_encoder.encode((example.text, example.speaker)), device=self.device)
         model = self.model.module if src.distributed.is_initialized() else self.model
 
-        self.exponential_moving_parameter_average.apply_shadow()
         with evaluate(model, device=self.device):
             logger.info('Running inference...')
             (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
              predicted_alignments, _, _) = model(text, speaker)
-        self.exponential_moving_parameter_average.restore()
 
         predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
         gold_spectrogram = maybe_load_tensor(example.spectrogram)
