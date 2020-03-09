@@ -91,7 +91,6 @@ class SpectrogramModel(nn.Module):
         vocab_size (int): Maximum size of the vocabulary used to encode ``tokens``.
         num_speakers (int)
         speaker_embedding_dim (int): Size of the speaker embedding dimensions.
-        speaker_embedding_dropout (float): The speaker embedding net dropout.
         frame_channels (int): Number of channels in each frame (sometimes refered to
             as "Mel-frequency bins" or "FFT bins" or "FFT bands")
         max_frames_per_token (float): The maximum sequential predictions to make before
@@ -104,7 +103,6 @@ class SpectrogramModel(nn.Module):
                  vocab_size,
                  num_speakers,
                  speaker_embedding_dim=HParam(),
-                 speaker_embedding_dropout=HParam(),
                  frame_channels=HParam(),
                  max_frames_per_token=HParam(),
                  output_scalar=HParam()):
@@ -117,9 +115,7 @@ class SpectrogramModel(nn.Module):
             frame_channels=frame_channels, speaker_embedding_dim=speaker_embedding_dim)
         self.post_net = PostNet(frame_channels=frame_channels)
         self.stop_sigmoid = nn.Sigmoid()
-        self.embed_speaker = nn.Sequential(
-            nn.Embedding(num_speakers, speaker_embedding_dim),
-            nn.Dropout(speaker_embedding_dropout))
+        self.embed_speaker = nn.Embedding(num_speakers, speaker_embedding_dim)
 
         self.register_buffer('output_scalar', torch.tensor(output_scalar).float())
 

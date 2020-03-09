@@ -648,9 +648,6 @@ def set_hparams():
                     HParams(dropout=0.5),
                 'model.SpectrogramModel.__init__':
                     HParams(
-                        # NOTE: This dropout performed well on Comet in August 2019.
-                        speaker_embedding_dropout=0.25,
-
                         # NOTE: This is based on one of the slowest legitimate example in the
                         # dataset:
                         # "rate(WSL_SMurphyScript34-39,24000)/script_52_chunk_9.wav"
