@@ -205,7 +205,7 @@ class LocationSensitiveAttention(nn.Module):
         # `self.alignment_conv` computes the gate it'd loosely be based on the ratio of zeros to
         # nonzeros.
         # TODO: At the moment, we wouldn't see the affects of this gate because we don't
-        # visualize the cumulative alignment; therefore, in order to improve it further that'd
+        # visualize the gated alignment; therefore, in order to improve it further that'd
         # likely be beneficial.
         # [batch_size, num_tokens] + [batch_size, num_tokens] → [batch_size, num_tokens]
         cumulative_alignment = cumulative_alignment + alignment * torch.sigmoid(
