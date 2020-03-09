@@ -63,7 +63,7 @@ class LocationSensitiveAttention(nn.Module):
         self.alignment_conv_padding = int((convolution_filter_size - 1) / 2)
         self.alignment_conv = nn.Conv1d(
             in_channels=1,
-            out_channels=num_convolution_filters,
+            out_channels=num_convolution_filters + 1,
             kernel_size=convolution_filter_size,
             padding=0)
         self.project_query = nn.Sequential(
@@ -171,8 +171,9 @@ class LocationSensitiveAttention(nn.Module):
         location_features = torch.nn.functional.pad(
             location_features, (0, self.alignment_conv_padding), mode='constant', value=0.0)
 
-        # [batch_size, 1, num_tokens] → [batch_size, num_convolution_filters, num_tokens]
-        location_features = self.alignment_conv(location_features)
+        # [batch_size, 1, num_tokens] → [batch_size, num_convolution_filters + 1, num_tokens]
+        location_features, location_gate = self.alignment_conv(location_features).split(
+            [self.alignment_conv.out_channels - 1, 1], dim=1)
         # [batch_size, num_convolution_filters, num_tokens] →
         # [num_tokens, batch_size, num_convolution_filters]
         location_features = location_features.permute(2, 0, 1)
@@ -201,7 +202,8 @@ class LocationSensitiveAttention(nn.Module):
         context = context.squeeze(1)
 
         # [batch_size, num_tokens] + [batch_size, num_tokens] → [batch_size, num_tokens]
-        cumulative_alignment = cumulative_alignment + alignment
+        cumulative_alignment = cumulative_alignment + alignment * torch.sigmoid(
+            location_gate).squeeze(1)
 
         # Normalize energies to weights in range 0 to 1, resize to 1 x 1 x seq_len
         return context, cumulative_alignment, alignment

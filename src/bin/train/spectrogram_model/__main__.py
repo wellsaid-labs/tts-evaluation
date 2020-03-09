@@ -256,7 +256,7 @@ if __name__ == '__main__':  # pragma: no cover
             'power_before_mel_scale', 'pytorch_1_4', 'pytorch_stft', 'zero_go_frame',
             'pad_before_trim', 'larger_half_gaussian', 'lower_reached_max', '500_step_warmup',
             '0_01_spectrogram_loss', '10_output_scalar', '1024_zero_padding', 'predict_inital',
-            'pre_net_layer_norm', 'no_speaker_embed_dropout'
+            'pre_net_layer_norm', 'no_speaker_embed_dropout', 'gated_cum_alignment'
         ],
         nargs='+',
         help='List of tags for a new experiments.')
