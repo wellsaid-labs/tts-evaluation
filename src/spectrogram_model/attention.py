@@ -201,6 +201,9 @@ class LocationSensitiveAttention(nn.Module):
         # [batch_size, 1, hidden_size] → [batch_size, hidden_size]
         context = context.squeeze(1)
 
+        # TODO: Does there exist a more effective gating mechanism that'd be more precise? Since
+        # `self.alignment_conv` computes the gate it'd loosely be based on the ratio of zeros to
+        # nonzeros.
         # [batch_size, num_tokens] + [batch_size, num_tokens] → [batch_size, num_tokens]
         cumulative_alignment = cumulative_alignment + alignment * torch.sigmoid(
             location_gate).squeeze(1)
