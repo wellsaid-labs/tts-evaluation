@@ -161,6 +161,8 @@ class LocationSensitiveAttention(nn.Module):
             batch_size, 1,
             device=device) if initial_cumulative_alignment is None else initial_cumulative_alignment
 
+        cumulative_alignment = cumulative_alignment.masked_fill(~tokens_mask, 0)
+
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
         location_features = cumulative_alignment.unsqueeze(1)
 
