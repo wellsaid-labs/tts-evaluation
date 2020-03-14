@@ -6,6 +6,30 @@ import torch
 from src.spectrogram_model.attention import LocationSensitiveAttention
 
 
+def test_location_sensative_attention_zeros():
+    """ Test to ensure the attention module doesn't have any zero discontinuities. """
+    query_hidden_size = 32
+    attention_hidden_size = 24
+    batch_size = 8
+    num_tokens = 16
+
+    attention = LocationSensitiveAttention(
+        query_hidden_size=query_hidden_size, hidden_size=attention_hidden_size)
+
+    tokens_mask = torch.rand(batch_size, num_tokens) < 0.5
+    tokens_mask[0, :] = True  # NOTE: Softmax will fail unless one token is present.
+    encoded_tokens = torch.zeros(num_tokens, batch_size, attention_hidden_size)
+    query = torch.zeros(batch_size, query_hidden_size)
+    cumulative_alignment = torch.zeros(batch_size, num_tokens)
+    initial_cumulative_alignment = torch.zeros(batch_size, 1)
+
+    context, cumulative_alignment, alignment = attention(encoded_tokens, tokens_mask, query,
+                                                         cumulative_alignment,
+                                                         initial_cumulative_alignment)
+
+    (context.sum() + cumulative_alignment.sum() + alignment.sum()).backward()
+
+
 def test_location_sensative_attention_backward():
     """ Test to ensure the attention module can backprop. """
     query_hidden_size = 32
