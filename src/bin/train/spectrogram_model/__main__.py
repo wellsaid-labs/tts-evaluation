@@ -81,7 +81,7 @@ def _train(device_index,
            comet_ml_experiment_key,
            more_hparams,
            evaluate_aligned_every_n_epochs=1,
-           evaluate_inferred_every_n_epochs=3,
+           evaluate_inferred_every_n_epochs=1,
            save_checkpoint_every_n_epochs=3,
            distributed_backend='nccl',
            distributed_init_method='tcp://127.0.0.1:29500'):
