@@ -1,20 +1,25 @@
 from collections import Counter
 from functools import partial
+from itertools import groupby
 from pathlib import Path
 
 import logging
 import os
 import pprint
+import string
 
 from hparams import configurable
 from hparams import HParam
 from multiprocessing.pool import ThreadPool
+from phonemizer.phonemize import phonemize
+from phonemizer.separator import Separator
 from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 from tqdm import tqdm
 
 import hparams
 import torch
+
 librosa = LazyLoader('librosa', globals(), 'librosa')
 pandas = LazyLoader('pandas', globals(), 'pandas')
 
@@ -225,6 +230,157 @@ def normalize_audio_column(data):
     cache_get_audio_metadata([e.audio_path for e in return_])
 
     return return_
+
+
+def normalize_text_clean_punctuation(dataset):
+    """ Clean up texts missing spaces.
+
+        In February 2020, it was discovered that many phrases were experiencing common typos
+        throughout our datasets. The datasets should be cleaned before training, but in the interim
+        this simple clean function will fix the following issues:
+
+        ."Management
+        ."Companies
+        ."Critical
+        ."Therefore
+        ."Human
+        ."More
+        ."There
+
+        .Other
+        .People
+        .Sameer
+        .The
+        .Value
+        .There
+
+    """
+
+    typos = ['."', ' .', ' -', ' --']
+    replacements = ['." ', '. ', ' - ', ' -- ']
+
+    for row, example in enumerate(dataset):
+        for t, r in zip(typos, replacements):
+            i = example.text.find(t)
+            if i > -1 and i + len(t) < len(
+                    example.text) and example.text[i + len(t)] not in string.punctuation + ' \n':
+                dataset[row] = example._replace(text=example.text.replace(t, r))
+
+            if example.text[0] in ['.', '-'] and len(example.text) > 1:
+                if example.text[1] not in string.punctuation + ' \n':
+                    dataset[row] = example._replace(text=example.text[1:])
+    return dataset
+
+
+_separator_token = 'PHONE_SEPARATOR'
+_separator = Separator(phone=_separator_token)
+
+
+def phonemize_data(dataset, nlp):
+    """
+    Convert graphemes to phonemes in all rows in data.
+
+    Args:
+        dataset (iterable of TextSpeechRow)
+        nlp (Language): spaCy Language object for tokenizing text
+
+    Returns:
+        dataset (iterable of TextSpeechRow)
+    """
+
+    assert _separator_token not in ''.join(
+        r.text for r in dataset), 'WARNING! Phone separator is not unique.'
+
+    logger.info('Phonemizing dataset...')
+
+    list_of_tokenized_texts = [_phonemize_text(r.text, nlp=nlp) for r in dataset]
+
+    phrase_pos = []
+    to_phonemize = []
+    for i, row in enumerate(list_of_tokenized_texts):
+        for j, token in enumerate(row):
+            if isinstance(token, tuple):
+                pos = (i, j)
+                phrase_pos.append(pos)
+                to_phonemize.append(token[1])
+
+    phonemes = _phonemize_phrases(to_phonemize)
+    assert len(to_phonemize) == len(phonemes)
+
+    for i, row in enumerate(list_of_tokenized_texts):
+        for j, token in enumerate(row):
+            if (i, j) in phrase_pos:
+                list_of_tokenized_texts[i][j] = phonemes.pop(0)
+
+    return [r._replace(text=''.join(l)) for r, l in zip(dataset, list_of_tokenized_texts)]
+
+
+def _phonemize_text(text, nlp, pos_filter='PUNCT', **kwargs):
+    """
+    Tokenize text, phonemize phrases between punctuations, concatenate back together with
+    punctuations, return tokenized representation of text with tuples ready to be converted
+    to phonemes.
+
+    Args:
+        text (str): Text string from TextSpeechRow
+        nlp (Language): spaCy Language object for tokenizing text
+        pos_filter (str): spaCy part of speech filter
+        language (str): Translation language rules to apply to phonemizer
+        **kwargs: Utility arguments passed to phonemizer.phonemize
+
+    Returns:
+        tokenized (list): List of tokenized text, each element either a string or tuple.
+    """
+
+    tokens = nlp(text)
+    assert len(tokens) > 0, 'Zero tokens were found in text: %s' % text
+    assert text == ''.join(t.text_with_ws for t in tokens), 'Detokenization failed: %s' % text
+
+    phrase = ''
+    tokenized = []
+    for in_pos_filter, group in groupby(tokens, lambda t: t.pos_ == pos_filter or '\n' in t.text):
+        phrase = ''.join([t.text_with_ws for t in group])
+        if in_pos_filter or not phrase.split():
+            for is_punct, chars in groupby(phrase, lambda t: t in string.punctuation + ' \n'):
+                phrase = ''.join([c for c in chars])
+                if is_punct:
+                    tokenized.append(phrase)
+                else:
+                    tokenized.append(('phrase_to_phonemize', phrase))
+                    if phrase[-1:] == ' ':
+                        tokenized.append(' ')
+        else:
+            tokenized.append(('phrase_to_phonemize', phrase))
+            if phrase[-1:] == ' ':
+                tokenized.append(' ')
+
+    return tokenized
+
+
+def _phonemize_phrases(phrases, language='en-us', **kwargs):
+    """
+    Convert graphemes of a phrase to phonemes.
+
+    Args:
+        phrase (str)
+        language (str): Translation language rules to apply to `phonemizer`, e.g. 'en-us'
+        **kwargs: Utility arguments passed to `phonemizer.phonemize`
+
+    Returns:
+        ph (str) Phonemic representation of phrase
+    """
+
+    ph = phonemize(
+        phrases,
+        **kwargs,
+        separator=_separator,
+        strip=True,
+        with_stress=True,
+        njobs=os.cpu_count(),
+        backend='espeak',
+        language=language)
+
+    return ph
 
 
 def filter_(function, dataset):

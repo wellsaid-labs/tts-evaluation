@@ -75,9 +75,8 @@ def m_ailabs_en_us_speech_dataset(directory=DOWNLOAD_DIRECTORY,
                                   all_books=[
                                       THE_SEA_FAIRIES, THE_MASTER_KEY, RINKITINK_IN_OZ,
                                       DOROTHY_AND_WIZARD_OZ, SKY_ISLAND, OZMA_OF_OZ,
-                                      EMERALD_CITY_OF_OZ, MIDNIGHT_PASSENGER, NORTH_AND_SOUTH,
-                                      PIRATES_OF_ERSATZ, POISONED_PEN, SILENT_BULLET, HUNTERS_SPACE,
-                                      PINK_FAIRY_BOOK
+                                      EMERALD_CITY_OF_OZ, MIDNIGHT_PASSENGER, PIRATES_OF_ERSATZ,
+                                      POISONED_PEN, SILENT_BULLET, HUNTERS_SPACE, PINK_FAIRY_BOOK
                                   ],
                                   **kwargs):
     """ Load the M-AILABS ``en_US`` dataset.
