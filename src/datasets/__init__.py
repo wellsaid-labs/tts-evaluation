@@ -28,7 +28,6 @@ from src.datasets.utils import add_predicted_spectrogram_column
 from src.datasets.utils import add_spectrogram_column
 from src.datasets.utils import filter_
 from src.datasets.utils import normalize_audio_column
-from src.datasets.utils import normalize_text_clean_punctuation
 from src.datasets.utils import phonemize_data
 
 # TODO: Consider not using the actors realnames in the codebase in an effort to protect their
@@ -304,7 +303,7 @@ __all__ = [
     'beth_speech_dataset', 'beth_custom_speech_dataset', 'sam_speech_dataset',
     'susan_speech_dataset', 'sean_speech_dataset', 'TextSpeechRow',
     'add_predicted_spectrogram_column', 'add_spectrogram_column', 'filter_',
-    'normalize_audio_column', 'normalize_text_clean_punctuation', 'phonemize_data',
+    'normalize_audio_column', 'phonemize_data',
     'STEVEN_WAHLBERG', 'MARK_ATHERLAY', 'JACK_RUTKOWSKI', 'HANUMAN_WELCH', 'ELISE_RANDALL',
     'NADINE_NAGAMATSU', 'MEGAN_SINCLAIR', 'GEORGE_DRAKE', 'ALICIA_HARRIS', 'FRANK_BONACQUISTI',
     'ADRIENNE_WALKER_HELLER', 'SUSAN_MURPHY', 'SAM_SCHOLL', 'SEAN_HANNITY', 'BETH_CAMERON',

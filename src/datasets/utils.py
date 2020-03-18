@@ -232,46 +232,6 @@ def normalize_audio_column(data):
     return return_
 
 
-def normalize_text_clean_punctuation(dataset):
-    """ Clean up texts missing spaces.
-
-        In February 2020, it was discovered that many phrases were experiencing common typos
-        throughout our datasets. The datasets should be cleaned before training, but in the interim
-        this simple clean function will fix the following issues:
-
-        ."Management
-        ."Companies
-        ."Critical
-        ."Therefore
-        ."Human
-        ."More
-        ."There
-
-        .Other
-        .People
-        .Sameer
-        .The
-        .Value
-        .There
-
-    """
-
-    typos = ['."', ' .', ' -', ' --']
-    replacements = ['." ', '. ', ' - ', ' -- ']
-
-    for row, example in enumerate(dataset):
-        for t, r in zip(typos, replacements):
-            i = example.text.find(t)
-            if i > -1 and i + len(t) < len(
-                    example.text) and example.text[i + len(t)] not in string.punctuation + ' \n':
-                dataset[row] = example._replace(text=example.text.replace(t, r))
-
-            if example.text[0] in ['.', '-'] and len(example.text) > 1:
-                if example.text[1] not in string.punctuation + ' \n':
-                    dataset[row] = example._replace(text=example.text[1:])
-    return dataset
-
-
 _separator_token = 'PHONE_SEPARATOR'
 _separator = Separator(phone=_separator_token)
 

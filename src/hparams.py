@@ -27,7 +27,6 @@ from src.audio import WavFileMetadata
 from src.bin.train.signal_model.trainer import SpectrogramLoss
 from src.datasets import filter_
 from src.datasets import normalize_audio_column
-from src.datasets import normalize_text_clean_punctuation
 from src.datasets import phonemize_data
 from src.utils import log_runtime
 from src.utils import seconds_to_string
@@ -489,7 +488,6 @@ def _preprocess_dataset(dataset):
     dataset = filter_(_filter_too_little_audio, dataset)
     dataset = filter_(_filter_too_little_audio_per_character, dataset)
     dataset = filter_(_filter_too_much_audio_per_character, dataset)
-    dataset = normalize_text_clean_punctuation(dataset)
     dataset = phonemize_data(dataset, nlp)
     random.shuffle(dataset)
     return dataset

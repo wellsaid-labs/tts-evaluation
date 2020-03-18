@@ -10,7 +10,6 @@ from src.datasets import TextSpeechRow
 from src.datasets.utils import add_predicted_spectrogram_column
 from src.datasets.utils import add_spectrogram_column
 from src.datasets.utils import filter_
-from src.datasets.utils import normalize_text_clean_punctuation
 from src.datasets.utils import phonemize_data
 from src.datasets.utils import _phonemize_text
 from src.datasets.utils import _separator_token
@@ -75,24 +74,6 @@ def test_add_spectrogram_column():
     assert cached == processed
 
 
-def test_normalize_text_clean_punctuation():
-    text = [
-        'What do you know."Management',
-        'actions .Sameer M Babu is a professor who wrote an article about classroom climate and social intelligence.',
-        'Movies are purely for entertainment, while eLearning is more serious. It\'s ... well ... learning.  No entertainment there!'
-    ]
-    expected = [
-        'What do you know." Management',
-        'actions. Sameer M Babu is a professor who wrote an article about classroom climate and social intelligence.',
-        'Movies are purely for entertainment, while eLearning is more serious. It\'s ... well ... learning.  No entertainment there!'
-    ]
-
-    dataset = [TextSpeechRow(t, s, None) for t, s in product(text, [JACK_RUTKOWSKI])]
-    normalized = normalize_text_clean_punctuation(dataset)
-
-    assert all(e in [n.text for n in normalized] for e in expected)
-
-
 nlp = spacy.load('en_core_web_sm')  # Must load small EN core to use in testing.
 
 
@@ -107,7 +88,10 @@ def test_phonemize_data():
         assert curr_text[i] != p.text
 
     text = 'Eureka walks on the air all right.'
-    phonemes = 'jPHONE_SEPARATORuːPHONE_SEPARATORɹPHONE_SEPARATORiːPHONE_SEPARATORkPHONE_SEPARATORɐ wPHONE_SEPARATORɔːPHONE_SEPARATORkPHONE_SEPARATORs ɑːPHONE_SEPARATORnPHONE_SEPARATORðPHONE_SEPARATORɪ ɛPHONE_SEPARATORɹ ɔːPHONE_SEPARATORl ɹPHONE_SEPARATORaɪPHONE_SEPARATORt.'
+    phonemes = ('jPHONE_SEPARATORuːPHONE_SEPARATORɹPHONE_SEPARATORiː'
+                'PHONE_SEPARATORkPHONE_SEPARATORɐ wPHONE_SEPARATORɔːPHONE_SEPARATORk'
+                'PHONE_SEPARATORs ɑːPHONE_SEPARATORnPHONE_SEPARATORðPHONE_SEPARATORɪ '
+                'ɛPHONE_SEPARATORɹ ɔːPHONE_SEPARATORl ɹPHONE_SEPARATORaɪPHONE_SEPARATORt.')
     phonemized_text = [p.text for p in phonemized]
 
     assert text in curr_text
