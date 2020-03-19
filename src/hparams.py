@@ -15,7 +15,6 @@ from torch.nn import MSELoss
 from torch.optim import Adam
 from torchnlp.random import fork_rng
 
-import spacy
 import torch
 import torchnlp
 
@@ -27,13 +26,11 @@ from src.audio import WavFileMetadata
 from src.bin.train.signal_model.trainer import SpectrogramLoss
 from src.datasets import filter_
 from src.datasets import normalize_audio_column
-from src.datasets import phonemize_data
 from src.utils import log_runtime
 from src.utils import seconds_to_string
 from src.utils import slice_by_cumulative_sum
 
 logger = logging.getLogger(__name__)
-nlp = spacy.load('en_core_web_lg')
 pprint = pprint.PrettyPrinter(indent=4)
 
 
@@ -488,7 +485,6 @@ def _preprocess_dataset(dataset):
     dataset = filter_(_filter_too_little_audio, dataset)
     dataset = filter_(_filter_too_little_audio_per_character, dataset)
     dataset = filter_(_filter_too_much_audio_per_character, dataset)
-    dataset = phonemize_data(dataset, nlp)
     random.shuffle(dataset)
     return dataset
 

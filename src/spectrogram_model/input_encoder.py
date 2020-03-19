@@ -1,30 +1,145 @@
-from itertools import chain
 from itertools import groupby
 
+import logging
 import re
+import subprocess
 
 from torchnlp.encoders import Encoder
 from torchnlp.encoders import LabelEncoder
-from torchnlp.encoders.text.static_tokenizer_encoder import StaticTokenizerEncoder
+from torchnlp.encoders.text import CharacterEncoder
 
-from src.datasets.utils import _separator_token
+import spacy
+
+from src.utils import disk_cache
+
+logger = logging.getLogger(__name__)
+
+
+@disk_cache
+def _grapheme_to_phoneme(grapheme,
+                         service='espeak',
+                         flags=('--ipa=3', '-q', '-ven-us', '--stdin'),
+                         separator=None,
+                         service_separator='_',
+                         split_new_line=True):
+    """ Convert graphemes into phonemes without perserving punctuation.
+
+    Args:
+        grapheme (str): The graphemes to convert to phonemes.
+        service (str, optional): The service used to compute phonemes.
+        flags (list of str, optional): The list of flags to add to the service.
+        separator (None or str, optional): The separator used to seperate phonemes.
+        service_separator (str, optional): The separator used by the service between phonemes.
+        strip (bool, optional): `espeak` can be inconsistent in it's handling of outer spacing;
+            therefore, it's recommended both the `espeak` output and input is trimmed.
+        split_new_line (bool, optioanl): `espeak` can be inconsistent in it's handling of new lines;
+            therefore, it's recommended to split the input on new lines.
+
+    Returns:
+        phoneme (str)
+    """
+    if split_new_line:
+        splits = grapheme.split('\n')
+        if len(splits) > 1:
+            return '\n'.join([
+                _grapheme_to_phoneme(
+                    s,
+                    service=service,
+                    flags=flags,
+                    separator=separator,
+                    service_separator=service_separator,
+                    split_new_line=split_new_line) for s in splits
+            ])
+
+    # NOTE: `espeak` can be inconsistent in it's handling of outer spacing; therefore, it's
+    # recommended both the `espeak` output and input is trimmed.
+    original = grapheme
+    grapheme = grapheme.rstrip()
+    stripped_right = original[len(grapheme):]
+    grapheme = grapheme.lstrip()
+    stripped_left = original[:len(original) - len(stripped_right) - len(grapheme)]
+
+    # NOTE: The `--sep` flag is not supported by older versions of `espeak`.
+    # NOTE: We recommend using `--stdin` otherwise `espeak` might misinterpret an input like
+    # "--For this community," as a flag.
+    phoneme = subprocess.check_output(
+        'echo "%s" | %s %s' % (grapheme, service, ' '.join(flags)), shell=True).decode('utf-8')
+    assert separator is None or separator not in phoneme, 'The separator is not unique.'
+
+    phoneme = phoneme.strip()
+    phoneme = ' '.join([s.strip() for s in phoneme.split('\n')]) if split_new_line else phoneme
+
+    # NOTE: Replace multiple separators in a row without any phonemes in between with one separator.
+    phoneme = re.sub(r'%s+' % service_separator, service_separator, phoneme)
+    phoneme = re.sub(r'%s+\s+' % service_separator, ' ', phoneme)
+
+    phoneme = stripped_left + phoneme + stripped_right
+    return phoneme if separator is None else phoneme.replace(service_separator, separator)
+
+
+@disk_cache
+def _grapheme_to_phoneme_perserve_punctuation(text, nlp):
+    """ Convert grapheme to phoneme while perserving punctuation.
+
+    Args:
+        text (str): Graphemes.
+        nlp (Language): spaCy object used to tokenize and POS tag text.
+
+    Returns:
+        (str): Phonemes with the original punctuation.
+    """
+    tokens = nlp(text)
+
+    assert len(tokens) > 0, 'Zero tokens were found in text: %s' % text
+    assert text == ''.join(t.text_with_ws for t in tokens), 'Detokenization failed: %s' % text
+
+    phrases = []
+    is_punctuation = []
+    for is_punct, group in groupby(tokens, lambda t: t.is_punct):
+        phrases.append(''.join([t.text_with_ws for t in group]))
+        is_alpha_numeric = any(c.isalpha() or c.isdigit() for c in phrases[-1])
+        if is_punct and is_alpha_numeric:
+            logger.warning('Punctuation contains alphanumeric characters: %s' % phrases[-1])
+        is_punctuation.append(is_punct and not is_alpha_numeric)
+
+    return ''.join([
+        p if is_punct else _grapheme_to_phoneme(p) for p, is_punct in zip(phrases, is_punctuation)
+    ])
 
 
 class InputEncoder(Encoder):
     """ Handles encoding and decoding input to the spectrogram model.
 
+    TODO: Double check if `espeak` includes stress, like phonemizer.
+    TODO: Double check if we can use `espeak-ng`, if available.
+    TODO: Turn off `disk_cache` for production.
+    TODO: Redo the max reached frames analysis.
+    TODO: Add a CMD script for getting phonemes from graphemes.
+    TODO: Double check that the vocab only includes phonemes.
+    TODO: Ask Rhyan about removing North / South book and the reasoning behind removing it.
+    TODO: Include `espeak` and `spacy` in licenses.
+    TODO: Include downloading `spacy` models in the instructions and installing espeak-ng.
+    TODO: Remove the seperator during character encoding.
+    TODO: Run `pytest`...
+    TODO: Double check we are not breaking anything...
+    TODO: Monitor or print the largest phoneme per character ratio, and use it for debugging.
+    TODO: Test failure cases for `_grapheme_to_phoneme` and
+    `_grapheme_to_phoneme_perserve_punctuation`.
+
     Args:
         text_samples (list of str): Examples used to make the text encoder.
         speaker_samples (list of src.datasets.constants.Speaker): Examples used to make the speaker
           encoder.
+        spacy_model (str)
     """
 
-    def __init__(self, text_samples, speaker_samples, **kwargs):
+    def __init__(self, text_samples, speaker_samples, spacy_model='en_core_web_sm', **kwargs):
         super().__init__(**kwargs)
 
-        self.text_encoder = PhonesEncoder(text_samples, enforce_reversible=True)
+        self.text_encoder = CharacterEncoder(text_samples, enforce_reversible=True)
         self.speaker_encoder = LabelEncoder(
             speaker_samples, reserved_labels=[], enforce_reversible=True)
+        self.nlp = spacy.load(spacy_model, disable=['parser', 'ner'])
 
     def encode(self, object_):
         """
@@ -38,7 +153,11 @@ class InputEncoder(Encoder):
             (torch.Tensor [num_tokens]): Encoded text.
             (torch.Tensor [1]): Encoded speaker.
         """
-        return self.text_encoder.encode(object_[0]), self.speaker_encoder.encode(object_[1]).view(1)
+        return (
+            self.text_encoder.encode(
+                _grapheme_to_phoneme_perserve_punctuation(object_[0], self.nlp)),
+            self.speaker_encoder.encode(object_[1]).view(1),
+        )
 
     def decode(self, encoded):
         """
@@ -54,110 +173,3 @@ class InputEncoder(Encoder):
         """
         return self.text_encoder.decode(encoded[0]), self.speaker_encoder.decode(
             encoded[1].squeeze())
-
-
-class PhonesEncoder(StaticTokenizerEncoder):
-    """ Encodes text into a tensor containing punctuation characters, whitespace characters, and
-    phoneme syllables. Phoneme syllables can be single or multiple characters.
-
-    Args:
-        **args: Arguments passed onto ``StaticTokenizerEncoder.__init__``.
-        **kwargs: Keyword arguments passed onto ``StaticTokenizerEncoder.__init__``.
-    """
-
-    def __init__(self, text_samples, *args, **kwargs):
-        all_punctuation = chain([re.findall(r'\W+', t) for t in text_samples])
-        self._punctuation = set([p for punct in all_punctuation for p in punct])
-
-        # Add primary and secondary stress characters to the punctuation set so as to isolate them
-        # from the phonemic syllables for a more sensible encoder vocabulary.
-        self._punctuation.update(['ˈ', 'ˌ'])
-
-        if 'tokenize' in kwargs:
-            raise TypeError('``PhonesEncoder`` does not take keyword argument ``tokenize``.')
-
-        if 'detokenize' in kwargs:
-            raise TypeError('``PhonesEncoder`` does not take keyword argument ``detokenize``.')
-
-        super().__init__(
-            text_samples, *args, tokenize=self._tokenize, detokenize=self._detokenize, **kwargs)
-
-    def _tokenize(self, s):
-        """ Separates string into list of white spaces, punctuation characters, and phoneme
-        syllables. Phone syllables can be single or multiple characters.
-
-        Args:
-            s (str): string, written in phonemic form with syllables separated by
-            _separator_token
-
-        Returns:
-            list of str: list of string elements
-
-        EXAMPLE:
-        A phonemic transcription of a sentence will contain words, syllables, and spaces.
-        Words will be separated by spaces and syllables within each word will be separted by
-        the _separator_token. For example:
-
-        PHRASE:   'Let's see the pigs.'
-
-        PHONES:   'lTOKENˈɛTOKENtTOKENs sTOKENˈiː ðTOKENə pTOKENˈɪTOKENɡTOKENz'
-
-        RETURN: ['l', 'ˈɛ', 't', 's', ' ', 's', 'ˈiː', ' ', 'ð', 'ə', ' ', 'p', 'ˈɪ', 'g', 'z']
-
-        """
-
-        tokens = []
-
-        # Group by whitespace characters, punctuation characters, and remaining phoneme
-        # characters representing whole words
-        for (contains_spaces, contains_punctuation), word_characters in groupby(
-                s, lambda c: (c.isspace(), c in self._punctuation)):
-            if contains_spaces:
-                # ``word_characters`` could contain any number of white spaces; append them each
-                tokens.extend([c for c in word_characters])
-
-            else:
-                text = ''.join([c for c in word_characters])
-
-                # Append each punctuation character or split phoneme word on separator token
-                # and append each phoneme syllable
-                tokens.extend(list(text) if contains_punctuation else text.split(_separator_token))
-
-        return tokens
-
-    def _detokenize(self, s):
-        """ Concatenates list elements back to original text including white spaces, punctuation
-        characters, and phoneme syllables separated by the ``_separator_token``
-
-        Args:
-            s (list of str): list, containing string elements of white space characters,
-            punctuation characters, and phonemic syllable characters
-
-        Returns:
-            (str): string in its original form
-
-        EXAMPLE:
-        INPUT: ['l', 'ˈɛ', 't', 's', ' ', 's', 'ˈiː', ' ', 'ð', 'ə', ' ', 'p', 'ˈɪ', 'g', 'z']
-
-        PHONES:   lTOKENˈɛTOKENtTOKENs sTOKENˈiː ðTOKENə pTOKENˈɪTOKENɡTOKENz'
-
-        RETURN:   'Let's see the pigs.'
-
-        """
-        detokenized = ''
-
-        # Group by whitespace characters, punctuation characters, and remaining phoneme
-        # characters representing whole words
-        for (contains_spaces, contains_punctuation), word_characters in groupby(
-                s, lambda c: (c.isspace(), c in self._punctuation)):
-            if contains_spaces:
-                # Concatenate all whitespace characters
-                detokenized += ''.join([c for c in word_characters])
-
-            else:
-                # Concatenate all punctuation characters; or join all phoneme characters by
-                # the ``_separator_token``` and concatenate the result
-                detokenized += ('' if contains_punctuation else _separator_token).join(
-                    [c for c in word_characters])
-
-        return detokenized
