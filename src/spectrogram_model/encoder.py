@@ -102,6 +102,12 @@ class RightMaskedBiLSTM(nn.Module):
         return output
 
 
+class LayerNorm(nn.LayerNorm):
+
+    def forward(self, tensor):
+        return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
+
+
 class Encoder(nn.Module):
     """ Encodes sequence as a hidden feature representation.
 
@@ -156,7 +162,7 @@ class Encoder(nn.Module):
             nn.Embedding(vocab_size, hidden_size, padding_idx=DEFAULT_PADDING_INDEX),
             nn.LayerNorm(hidden_size))
 
-        self.convolution_layers = nn.ModuleList([
+        self.conv_layers = nn.ModuleList([
             nn.Sequential(
                 nn.Conv1d(
                     in_channels=hidden_size,
@@ -166,16 +172,16 @@ class Encoder(nn.Module):
             for i in range(num_convolution_layers)
         ])
 
-        for module in self.convolution_layers.modules():
+        for module in self.conv_layers.modules():
             if isinstance(module, nn.Conv1d):
                 nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
 
-        self.normalization_layers = nn.ModuleList(
-            [nn.LayerNorm(hidden_size) for i in range(num_convolution_layers)])
+        self.norm_layers = nn.ModuleList(
+            [LayerNorm(hidden_size) for i in range(num_convolution_layers)])
 
         self.lstm = RightMaskedBiLSTM(
             input_size=hidden_size, hidden_size=hidden_size // 2, num_layers=lstm_layers)
-        self.lstm_layer_norm = nn.LayerNorm(hidden_size)
+        self.lstm_norm = nn.LayerNorm(hidden_size)
 
         self.project_out = nn.Sequential(nn.Linear(hidden_size, out_dim), nn.LayerNorm(out_dim))
 
@@ -202,12 +208,9 @@ class Encoder(nn.Module):
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
         tokens_mask = tokens_mask.unsqueeze(1)
 
-        for conv, normalization_layer in zip(self.convolution_layers, self.normalization_layers):
+        for conv, norm in zip(self.conv_layers, self.norm_layers):
             tokens = tokens.masked_fill(~tokens_mask, 0)
-            tokens = conv(tokens) + tokens
-            tokens = tokens.transpose(1, 2)
-            tokens = normalization_layer(tokens)
-            tokens = tokens.transpose(1, 2)
+            tokens = norm(tokens + conv(tokens))
 
         # Our input is expected to have shape `[batch_size, hidden_size, num_tokens]`.
         # The lstm layers expect input of shape
@@ -216,8 +219,7 @@ class Encoder(nn.Module):
         tokens = tokens.permute(2, 0, 1)
         tokens_mask = tokens_mask.permute(2, 0, 1)
 
-        tokens = self.lstm(tokens, tokens_mask) + tokens
-        tokens = self.lstm_layer_norm(tokens)
+        tokens = self.lstm_norm(tokens + self.lstm(tokens, tokens_mask))
 
         # [num_tokens, batch_size, hidden_size] →
         # [num_tokens, batch_size, out_dim]

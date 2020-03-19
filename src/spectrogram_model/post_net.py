@@ -3,6 +3,12 @@ from hparams import HParam
 from torch import nn
 
 
+class LayerNorm(nn.LayerNorm):
+
+    def forward(self, tensor):
+        return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
+
+
 class PostNet(nn.Module):
     """ Post-net processes a frame of the spectrogram.
 
@@ -60,8 +66,8 @@ class PostNet(nn.Module):
                 nn.ReLU()) for i in range(num_convolution_layers - 1)
         ])
 
-        self.normalization_layers = nn.ModuleList(
-            [nn.LayerNorm(num_convolution_filters) for i in range(num_convolution_layers - 1)])
+        self.norm_layers = nn.ModuleList(
+            [LayerNorm(num_convolution_filters) for i in range(num_convolution_layers - 1)])
 
         # Initialize weights
         for layer in self.layers:
@@ -94,15 +100,9 @@ class PostNet(nn.Module):
         """
         frames = frames.masked_fill(~mask.unsqueeze(1), 0)
 
-        for i, (layer, normalize) in enumerate(zip(self.layers, self.normalization_layers)):
+        for i, (layer, norm) in enumerate(zip(self.layers, self.norm_layers)):
             # NOTE: Ignore the first residual because the shapes dont match.
-            frames = layer(frames) if i == 0 else layer(frames) + frames
-
-            # frames [batch_size, frame_channels, num_frames]
-            frames = frames.transpose(1, 2)
-            frames = normalize(frames)
-            frames = frames.transpose(1, 2)
-
+            frames = norm(layer(frames) if i == 0 else frames + layer(frames))
             frames = frames.masked_fill(~mask.unsqueeze(1), 0)
 
         return self.last_layer(frames).masked_fill(~mask.unsqueeze(1), 0)
