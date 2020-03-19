@@ -110,22 +110,6 @@ def _grapheme_to_phoneme_perserve_punctuation(text, nlp):
 class InputEncoder(Encoder):
     """ Handles encoding and decoding input to the spectrogram model.
 
-    TODO: Double check if `espeak` includes stress, like phonemizer.
-    TODO: Double check if we can use `espeak-ng`, if available.
-    TODO: Turn off `disk_cache` for production.
-    TODO: Redo the max reached frames analysis.
-    TODO: Add a CMD script for getting phonemes from graphemes.
-    TODO: Double check that the vocab only includes phonemes.
-    TODO: Ask Rhyan about removing North / South book and the reasoning behind removing it.
-    TODO: Include `espeak` and `spacy` in licenses.
-    TODO: Include downloading `spacy` models in the instructions and installing espeak-ng.
-    TODO: Remove the seperator during character encoding.
-    TODO: Run `pytest`...
-    TODO: Double check we are not breaking anything...
-    TODO: Monitor or print the largest phoneme per character ratio, and use it for debugging.
-    TODO: Test failure cases for `_grapheme_to_phoneme` and
-    `_grapheme_to_phoneme_perserve_punctuation`.
-
     Args:
         text_samples (list of str): Examples used to make the text encoder.
         speaker_samples (list of src.datasets.constants.Speaker): Examples used to make the speaker
