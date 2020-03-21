@@ -33,6 +33,7 @@ from src.utils.utils import save
 from src.utils.utils import seconds_to_string
 from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
+from src.utils.utils import strip
 
 __all__ = [
     'align_tokens', 'Checkpoint', 'DataLoader', 'disk_cache', 'OnDiskTensor', 'dict_collapse',
@@ -42,5 +43,5 @@ __all__ = [
     'get_chunks', 'cache_on_disk_tensor_shapes', 'RecordStandardStreams', 'Pool',
     'maybe_load_tensor', 'AveragedMetric', 'DistributedAveragedMetric', 'bash_time_label',
     'RepeatTimer', 'mean', 'random_sample', 'make_arg_key', 'DiskCache',
-    'assert_no_overwritten_files', 'get_file_metadata', 'dict_collapse'
+    'assert_no_overwritten_files', 'get_file_metadata', 'dict_collapse', 'strip'
 ]

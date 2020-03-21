@@ -114,7 +114,8 @@ class FlaskException(Exception):
     """
 
     def __init__(self, message, status_code=400, code='BAD_REQUEST', payload=None):
-        Exception.__init__(self)
+        super().__init__(self, message)
+
         self.message = message
         self.status_code = status_code
         self.payload = payload
@@ -269,9 +270,6 @@ def validate_and_unpack(request_args,
     processed_text = input_encoder.text_encoder.decode(
         input_encoder.text_encoder.encode(preprocessed_text))
     if processed_text != preprocessed_text:
-        # TODO: `processed_text` may contain special tokens like `<unk>` that need to be filtered
-        # out before the set of characters is compared.
-        # TODO: Test this!
         improper_characters = set(preprocessed_text).difference(
             set(input_encoder.text_encoder.vocab))
         improper_characters = ', '.join(sorted(list(improper_characters)))

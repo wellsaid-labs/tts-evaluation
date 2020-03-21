@@ -83,6 +83,17 @@ def test_validate_and_unpack():
     with pytest.raises(FlaskException):  # `speaker_id` must be positive
         validate_and_unpack({**args, 'speaker_id': -1}, input_encoder, api_keys=api_keys)
 
+    with pytest.raises(FlaskException, match=r".*cannot contain these characters: o, v, ˌ.*"):
+        # NOTE: "wɛɹɹˈɛvɚ kˌoːɹzənjˈuːski" should contain phonemes that are not already in
+        # mock `input_encoder`.
+        validate_and_unpack(
+            {
+                **args, 'text': 'wherever korzeniewski'
+            },
+            input_encoder,
+            api_keys=api_keys,
+        )
+
     # `text` gets normalized and `speaker` is dereferenced
     request_args = {**args, 'text': 'é😁'}
     result_text, result_speaker = validate_and_unpack(

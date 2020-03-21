@@ -9,6 +9,14 @@ from src.spectrogram_model.input_encoder import _grapheme_to_phoneme
 from src.spectrogram_model.input_encoder import _grapheme_to_phoneme_perserve_punctuation
 
 
+def test__grapheme_to_phoneme__separator():
+    # Test using `service_separator`.
+    assert _grapheme_to_phoneme('Hello World', separator='_') == 'h_ə_l_ˈoʊ w_ˈɜː_l_d'
+
+    with pytest.raises(AssertionError):  # Test separator is not unique
+        _grapheme_to_phoneme('Hello World', separator='ə')
+
+
 def test__grapheme_to_phoneme():
     grapheme = [
         "  Hello World  ",  # Test stripping
@@ -127,6 +135,7 @@ The man,""",
 
 def test__grapheme_to_phoneme_perserve_punctuation():
     nlp = spacy.load('en_core_web_sm', disable=['parser', 'ner'])
+
     assert """ʌ_v f_ˈaɪ_v s_t_ˈeɪ_dʒ_ᵻ_z:
 (ˈaɪ) p_ɹ_ˌɛ_p_ɚ_ɹ_ˈeɪ_ʃ_ə_n,
 (ɹ_ˌoʊ_m_ə_n t_ˈuː) ˌɪ_n_k_j_uː_b_ˈeɪ_ʃ_ə_n,
@@ -137,8 +146,15 @@ def test__grapheme_to_phoneme_perserve_punctuation():
 (ii) incubation,
 (iii) intimation,
 (iv) illumination""", nlp)
+
     assert "j_uː_ɹ_ˈiː_k_ɐ w_ˈɔː_k_s ɑː_n_ð_ɪ ˈɛ_ɹ ˈɔː_l ɹ_ˈaɪ_t." == (
         _grapheme_to_phoneme_perserve_punctuation("Eureka walks on the air all right.", nlp))
+
+    assert "  h_ə_l_ˈoʊ w_ˈɜː_l_d  " == (
+        _grapheme_to_phoneme_perserve_punctuation("  Hello World  ", nlp))
+
+    assert " \n\n h_ə_l_ˈoʊ w_ˈɜː_l_d \n\n " == (
+        _grapheme_to_phoneme_perserve_punctuation(" \n\n Hello World \n\n ", nlp))
 
 
 def test__grapheme_to_phoneme_perserve_punctuation__spacy_failure_cases():
