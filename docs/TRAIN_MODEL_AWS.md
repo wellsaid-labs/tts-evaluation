@@ -255,6 +255,7 @@ machine.
 
    python -m pip install wheel
    python -m pip install -r requirements.txt --upgrade
+   python -m spacy download en_core_web_sm
 
    sudo bash src/bin/install_mkl.sh
    ```
