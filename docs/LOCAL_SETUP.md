@@ -36,8 +36,8 @@ python -m pip install -r requirements.txt --upgrade
 ## 3. Install Additional Dependencies
 
 This repository requires [SoX](http://sox.sourceforge.net/) (Sound eXchange) and
-[FFmpeg](https://ffmpeg.org/) for audio preprocessing. Finally, it requires
-[eSpeak](http://espeak.sourceforge.net/) for grapheme to phoneme preprocessing. They can be
+[FFmpeg](https://ffmpeg.org/) for audio preprocessing. Finally, this requires
+[eSpeak](http://espeak.sourceforge.net/) for grapheme to phoneme text preprocessing. They can be
 installed like so:
 
 ```bash

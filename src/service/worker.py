@@ -266,7 +266,7 @@ def validate_and_unpack(request_args,
     # NOTE: Normalize text similar to the normalization during dataset creation.
     text = unidecode.unidecode(text)
     input_encoder.text_encoder.enforce_reversible = False
-    preprocessed_text = input_encoder._preprocess(text)
+    preprocessed_text = input_encoder.preprocess_text(text)
     processed_text = input_encoder.text_encoder.decode(
         input_encoder.text_encoder.encode(preprocessed_text))
     if processed_text != preprocessed_text:

@@ -144,11 +144,13 @@ class InputEncoder(Encoder):
 
     def __init__(self, text_samples, speaker_samples, **kwargs):
         super().__init__(**kwargs)
-        self.text_encoder = CharacterEncoder(
-            [_grapheme_to_phoneme_perserve_punctuation(t) for t in text_samples],
-            enforce_reversible=True)
+        self.text_encoder = CharacterEncoder([self.preprocess_text(t) for t in text_samples],
+                                             enforce_reversible=True)
         self.speaker_encoder = LabelEncoder(
             speaker_samples, reserved_labels=[], enforce_reversible=True)
+
+    def preprocess_text(self, text):
+        return _grapheme_to_phoneme_perserve_punctuation(text)
 
     def encode(self, object_):
         """
@@ -163,7 +165,7 @@ class InputEncoder(Encoder):
             (torch.Tensor [1]): Encoded speaker.
         """
         return (
-            self.text_encoder.encode(_grapheme_to_phoneme_perserve_punctuation(object_[0])),
+            self.text_encoder.encode(self.preprocess_text(object_[0])),
             self.speaker_encoder.encode(object_[1]).view(1),
         )
 
