@@ -31,7 +31,6 @@ python -m venv venv
 
 # Install Python dependencies
 python -m pip install -r requirements.txt --upgrade
-python -m spacy download en_core_web_sm
 ```
 
 ## 3. Install Additional Dependencies
