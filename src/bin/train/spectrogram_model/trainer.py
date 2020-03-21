@@ -357,8 +357,8 @@ class Trainer():
             # NOTE: This metric should be a positive integer indicating that the `data_loader`
             # is loading faster than the data is getting ingested; otherwise, the `data_loader`
             # is bottlenecking training by loading too slowly.
-            if hasattr(data_loader.iterator, 'data_queue'):
-                self.metrics['data_queue_size'].update(data_loader.iterator.data_queue.qsize())
+            if hasattr(data_loader.iterator, '_data_queue'):
+                self.metrics['data_queue_size'].update(data_loader.iterator._data_queue.qsize())
 
             if not train and not infer and (i == random_batch or trial_run):
                 self._visualize_predicted(batch, predictions)
