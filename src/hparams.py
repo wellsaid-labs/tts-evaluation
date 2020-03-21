@@ -662,7 +662,7 @@ def set_hparams():
                         # `_filter_too_much_audio_per_character`
                         # NOTE: This number was configured with the help of:
                         # `QA_Datasets/Sample_Dataset.ipynb`
-                        max_frames_per_token=0.2 / (frame_hop / sample_rate),
+                        max_frames_per_token=0.15 / (frame_hop / sample_rate),
 
                         # NOTE: The spectrogram input ranges from around -50 to 50. This scaler
                         # puts the input and output in a more reasonable range for the model of

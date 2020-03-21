@@ -128,7 +128,8 @@ class InputEncoder(Encoder):
 
     def _preprocess(self, text):
         # NOTE: The seperator is '' so that it's not included in the encoding.
-        return _grapheme_to_phoneme_perserve_punctuation(text, nlp=self.nlp, separator='').strip()
+        return _grapheme_to_phoneme_perserve_punctuation(
+            text.strip(), nlp=self.nlp, separator='').strip()
 
     def encode(self, object_):
         """
