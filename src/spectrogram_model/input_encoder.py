@@ -169,7 +169,7 @@ class InputEncoder(Encoder):
 
     def decode(self, encoded):
         """
-        NOTE: There is backward no grapheme to phoneme conversion.
+        NOTE: There is no reverse operation for grapheme to phoneme conversion.
 
         Args:
             encoded (tuple): (
