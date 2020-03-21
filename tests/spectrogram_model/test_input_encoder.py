@@ -149,6 +149,10 @@ def test__grapheme_to_phoneme_perserve_punctuation__spacy_failure_cases():
         "remarked the boy, who was almost as uneasy as captain Bill.",
         "I I don't s-s-see any-thing funny 'bout it! he stammered.",
         "But don't worry, there are plenty of toys that are safe--and fun--for your child.",
+        "Indeed, for the royal body, a rather unusual set of ideal attributes emerges in the "
+        "Mesopotamian lexicon: an accumulation of good form or breeding, auspiciousness, "
+        "vigor/vitality, and, specifically, sexual allure or charm – all of which are not "
+        "only ascribed in text, but equally to be read in imagery.",
     ]
 
     phoneme = [
@@ -167,6 +171,13 @@ def test__grapheme_to_phoneme_perserve_punctuation__spacy_failure_cases():
         "f_ˈʌ_n_i b_ˈaʊ_t ɪ_t! h_iː s_t_ˈæ_m_ɚ_d.",
         "b_ˌʌ_t d_ˈoʊ_n_t w_ˈʌ_ɹ_i, ð_ɛ_ɹ_ˌɑːɹ p_l_ˈɛ_n_t_i ʌ_v "
         "t_ˈɔɪ_z ð_æ_t ɑːɹ s_ˈeɪ_f--æ_n_d f_ˈʌ_n--f_ɔːɹ j_ʊɹ tʃ_ˈaɪ_l_d.",
+        "ˌɪ_n_d_ˈiː_d, f_ɚ_ð_ə ɹ_ˈɔɪ_əl b_ˈɑː_d_i, ɐ ɹ_ˈæ_ð_ɚ_ɹ ʌ_n_j_ˈuː_ʒ_uː_əl "
+        "s_ˈɛ_t ʌ_v aɪ_d_ˈiə_l ˈæ_t_ɹ_ɪ_b_j_ˌuː_t_s ɪ_m_ˈɜː_dʒ_ᵻ_z ɪ_n_ð_ə "
+        "m_ˌɛ_s_ə_p_ə_t_ˈeɪ_m_iə_n l_ˈɛ_k_s_ɪ_k_ə_n: ɐ_n ɐ_k_j_ˌuː_m_j_ʊ_l_ˈeɪ_ʃ_ə_n ʌ_v ɡ_ˈʊ_d "
+        "f_ˈɔːɹ_m ɔːɹ b_ɹ_ˈiː_d_ɪ_ŋ, ɔː_s_p_ˈɪ_ʃ_ə_s_n_ə_s, v_ˈɪ_ɡ_ɚ/v_aɪ_t_ˈæ_l_ɪ_ɾ_i, ˈæ_n_d, "
+        "s_p_ə_s_ˈɪ_f_ɪ_k_l_i, s_ˈɛ_k_ʃ_uː_əl ɐ_l_ˈʊɹ ɔːɹ tʃ_ˈɑːɹ_m – ˈɔː_l ʌ_v_w_ˈɪ_tʃ "
+        "ɑːɹ n_ˌɑː_t ˈoʊ_n_l_i ɐ_s_k_ɹ_ˈaɪ_b_d ɪ_n t_ˈɛ_k_s_t, b_ˌʌ_t ˈiː_k_w_əl_i t_ə_b_i "
+        "ɹ_ˈɛ_d ɪ_n ˈɪ_m_ɪ_dʒ_ɹ_i.",
     ]
 
     nlp = spacy.load('en_core_web_sm', disable=['parser', 'ner'])

@@ -442,6 +442,12 @@ def _filter_books(example):
             datasets.m_ailabs.MIDNIGHT_PASSENGER.title in str(example.audio_path)):
         return False
 
+    # Filter out the North & South book because it uses English in a way that's not consistent with
+    # editor usage, for example: "To-morrow, you will-- Come back to-night, John!"
+    if (example.speaker == datasets.m_ailabs.NORTH_AND_SOUTH.speaker and
+            datasets.m_ailabs.NORTH_AND_SOUTH.title in str(example.audio_path)):
+        return False
+
     return True
 
 
