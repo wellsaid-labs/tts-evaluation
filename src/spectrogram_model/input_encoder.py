@@ -1,27 +1,26 @@
 from itertools import groupby
+from multiprocessing.pool import ThreadPool
 
 import logging
+import os
 import re
+import shlex
 import subprocess
 
 from torchnlp.encoders import Encoder
 from torchnlp.encoders import LabelEncoder
 from torchnlp.encoders.text import CharacterEncoder
+from tqdm import tqdm
 
 import spacy
 
+from src.environment import IS_TESTING_ENVIRONMENT
 from src.utils import disk_cache
 
 logger = logging.getLogger(__name__)
 
 
-@disk_cache
-def _grapheme_to_phoneme(grapheme,
-                         service='espeak',
-                         flags=('--ipa=3', '-q', '-ven-us', '--stdin'),
-                         separator=None,
-                         service_separator='_',
-                         split_new_line=True):
+def _grapheme_to_phoneme(grapheme, split_new_line=True, **kwargs):
     """ Convert graphemes into phonemes without perserving punctuation.
 
     Args:
@@ -38,19 +37,18 @@ def _grapheme_to_phoneme(grapheme,
     Returns:
         phoneme (str)
     """
-    if split_new_line:
-        splits = grapheme.split('\n')
-        if len(splits) > 1:
-            return '\n'.join([
-                _grapheme_to_phoneme(
-                    s,
-                    service=service,
-                    flags=flags,
-                    separator=separator,
-                    service_separator=service_separator,
-                    split_new_line=split_new_line) for s in splits
-            ])
+    splits = grapheme.split('\n') if split_new_line else [grapheme]
+    return '\n'.join(
+        [_grapheme_to_phoneme_helper(s, split_new_line=split_new_line, **kwargs) for s in splits])
 
+
+@disk_cache
+def _grapheme_to_phoneme_helper(grapheme,
+                                service='espeak',
+                                flags=('--ipa=3', '-q', '-ven-us', '--stdin'),
+                                separator=None,
+                                service_separator='_',
+                                split_new_line=True):
     # NOTE: `espeak` can be inconsistent in it's handling of outer spacing; therefore, it's
     # recommended both the `espeak` output and input is trimmed.
     original = grapheme
@@ -63,8 +61,9 @@ def _grapheme_to_phoneme(grapheme,
     # NOTE: We recommend using `--stdin` otherwise `espeak` might misinterpret an input like
     # "--For this community," as a flag.
     phoneme = subprocess.check_output(
-        'echo "%s" | %s %s' % (grapheme, service, ' '.join(flags)), shell=True).decode('utf-8')
-    assert separator is None or separator not in phoneme, 'The separator is not unique.'
+        'echo %s | %s %s' % (shlex.quote(grapheme), service, ' '.join(flags)),
+        shell=True).decode('utf-8')
+    assert not separator or separator not in phoneme, 'The separator is not unique.'
 
     phoneme = phoneme.strip()
     phoneme = ' '.join([s.strip() for s in phoneme.split('\n')]) if split_new_line else phoneme
@@ -72,13 +71,14 @@ def _grapheme_to_phoneme(grapheme,
     # NOTE: Replace multiple separators in a row without any phonemes in between with one separator.
     phoneme = re.sub(r'%s+' % service_separator, service_separator, phoneme)
     phoneme = re.sub(r'%s+\s+' % service_separator, ' ', phoneme)
+    phoneme = phoneme.strip()
 
     phoneme = stripped_left + phoneme + stripped_right
     return phoneme if separator is None else phoneme.replace(service_separator, separator)
 
 
 @disk_cache
-def _grapheme_to_phoneme_perserve_punctuation(text, nlp):
+def _grapheme_to_phoneme_perserve_punctuation(text, nlp, **kwargs):
     """ Convert grapheme to phoneme while perserving punctuation.
 
     Args:
@@ -103,7 +103,8 @@ def _grapheme_to_phoneme_perserve_punctuation(text, nlp):
         is_punctuation.append(is_punct and not is_alpha_numeric)
 
     return ''.join([
-        p if is_punct else _grapheme_to_phoneme(p) for p, is_punct in zip(phrases, is_punctuation)
+        p if is_punct else _grapheme_to_phoneme(p, **kwargs)
+        for p, is_punct in zip(phrases, is_punctuation)
     ])
 
 
@@ -114,16 +115,32 @@ class InputEncoder(Encoder):
         text_samples (list of str): Examples used to make the text encoder.
         speaker_samples (list of src.datasets.constants.Speaker): Examples used to make the speaker
           encoder.
-        spacy_model (str)
+        spacy_model (str): spaCy model to load for tokenization and POS tagging.
+        chunksize (int): `chunksize` parameter passed to `imap`.
     """
 
-    def __init__(self, text_samples, speaker_samples, spacy_model='en_core_web_sm', **kwargs):
+    def __init__(self,
+                 text_samples,
+                 speaker_samples,
+                 spacy_model='en_core_web_sm',
+                 chunksize=128,
+                 **kwargs):
         super().__init__(**kwargs)
+
+        self.nlp = spacy.load(spacy_model, disable=['parser', 'ner'])
+
+        with ThreadPool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
+            length = len(text_samples)
+            text_samples = pool.imap(self._preprocess, text_samples, chunksize=chunksize)
+            text_samples = list(tqdm(text_samples, total=length))
 
         self.text_encoder = CharacterEncoder(text_samples, enforce_reversible=True)
         self.speaker_encoder = LabelEncoder(
             speaker_samples, reserved_labels=[], enforce_reversible=True)
-        self.nlp = spacy.load(spacy_model, disable=['parser', 'ner'])
+
+    def _preprocess(self, text):
+        # NOTE: The seperator is '' so that it's not included in the encoding.
+        return _grapheme_to_phoneme_perserve_punctuation(text, nlp=self.nlp, separator='').strip()
 
     def encode(self, object_):
         """
@@ -138,13 +155,14 @@ class InputEncoder(Encoder):
             (torch.Tensor [1]): Encoded speaker.
         """
         return (
-            self.text_encoder.encode(
-                _grapheme_to_phoneme_perserve_punctuation(object_[0], self.nlp)),
+            self.text_encoder.encode(self._preprocess(object_[0])),
             self.speaker_encoder.encode(object_[1]).view(1),
         )
 
     def decode(self, encoded):
         """
+        NOTE: There is backward no grapheme to phoneme conversion.
+
         Args:
             encoded (tuple): (
               text (torch.Tensor [num_tokens]): Encoded text.

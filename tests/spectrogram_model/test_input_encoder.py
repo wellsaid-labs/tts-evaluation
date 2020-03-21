@@ -16,6 +16,7 @@ def test__grapheme_to_phoneme():
         "  Hello World",  # Test stripping
         " \n Hello World \n ",  # Test stripping
         " \n\n Hello World \n\n ",  # Test stripping
+        '"It is commonly argued that the notion of',  # Test bash escape
         "and Trot fed it a handful of fresh blue clover and smoothed and petted it until the lamb "
         "was eager to follow her wherever she might go.",
         "The habits of mind that characterize a person strongly disposed toward critical thinking "
@@ -34,10 +35,10 @@ def test__grapheme_to_phoneme():
         "For example,",
         "(or sometimes being eliminated",
         """of 5 stages:
-(i) preparation,
-(ii) incubation,
-(iii) intimation,
-(iv) illumination""",
+ (i) preparation,
+ (ii) incubation,
+ (iii) intimation,
+ (iv) illumination""",
         "I ha thought till my brains ached,-Beli me, John, I have. An I say again, theres no help "
         "for us but having faith i the Union. Theyll win the day, see if they dunnot!",
         """the football play of the decade, or the concert of a lifetime.
@@ -63,6 +64,7 @@ The man,""",
         '  h_ə_l_ˈoʊ w_ˈɜː_l_d',
         ' \n h_ə_l_ˈoʊ w_ˈɜː_l_d \n ',
         ' \n\n h_ə_l_ˈoʊ w_ˈɜː_l_d \n\n ',
+        'ɪ_t ɪ_z k_ˈɑː_m_ə_n_l_i ˈɑːɹ_ɡ_j_uː_d ð_æ_t_ð_ə n_ˈoʊ_ʃ_ə_n ʌ_v',
         'æ_n_d t_ɹ_ˈɑː_t f_ˈɛ_d ɪ_t ɐ h_ˈæ_n_d_f_əl ʌ_v f_ɹ_ˈɛ_ʃ b_l_ˈuː '
         'k_l_ˈoʊ_v_ɚ æ_n_d s_m_ˈuː_ð_d æ_n_d p_ˈɛ_ɾ_ᵻ_d ɪ_t ʌ_n_t_ˈɪ_l ð_ə '
         'l_ˈæ_m w_ʌ_z ˈiː_ɡ_ɚ t_ə f_ˈɑː_l_oʊ h_ɜː w_ɛɹ_ɹ_ˈɛ_v_ɚ ʃ_iː m_ˌaɪ_t '
@@ -92,7 +94,7 @@ The man,""",
         'k_l_ˈaɪ_m_ə_t æ_n_d s_ˈoʊ_ʃ_əl ɪ_n_t_ˈɛ_l_ɪ_dʒ_ə_n_s',
         'k_ˈɑː_p_i b_ˈaɪ',
         'f_ɔː_ɹ ɛ_ɡ_z_ˈæ_m_p_əl',
-        ' ɔːɹ s_ˈʌ_m_t_aɪ_m_z b_ˌiː_ɪ_ŋ ɪ_l_ˈɪ_m_ᵻ_n_ˌeɪ_ɾ_ᵻ_d',
+        'ɔːɹ s_ˈʌ_m_t_aɪ_m_z b_ˌiː_ɪ_ŋ ɪ_l_ˈɪ_m_ᵻ_n_ˌeɪ_ɾ_ᵻ_d',
         """ʌ_v f_ˈaɪ_v s_t_ˈeɪ_dʒ_ᵻ_z
  ˈaɪ p_ɹ_ˌɛ_p_ɚ_ɹ_ˈeɪ_ʃ_ə_n
  ɹ_ˌoʊ_m_ə_n t_ˈuː ˌɪ_n_k_j_uː_b_ˈeɪ_ʃ_ə_n
@@ -187,9 +189,8 @@ def test__grapheme_to_phoneme_perserve_punctuation__spacy_failure_cases():
 
 def test_input_encoder():
     encoder = InputEncoder(['a', 'b', 'c'], [JUDY_BIEBER, MARY_ANN])
-    input_ = ('a', JUDY_BIEBER)
-    encoded = encoder.batch_encode([input_])[0]
-    assert encoder.decode(encoded) == input_
+    encoded = encoder.batch_encode([('a', JUDY_BIEBER)])[0]
+    assert encoder.decode(encoded) == ('ˈeɪ', JUDY_BIEBER)
 
 
 def test_input_encoder__reversible():
