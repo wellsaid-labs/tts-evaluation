@@ -1,5 +1,4 @@
 import pytest
-import spacy
 
 from src.datasets import HILARY_NORIEGA
 from src.datasets import JUDY_BIEBER
@@ -7,6 +6,12 @@ from src.datasets import MARY_ANN
 from src.spectrogram_model import InputEncoder
 from src.spectrogram_model.input_encoder import _grapheme_to_phoneme
 from src.spectrogram_model.input_encoder import _grapheme_to_phoneme_perserve_punctuation
+from src.spectrogram_model.input_encoder import cache_grapheme_to_phoneme_perserve_punctuation
+
+
+def test_cache_grapheme_to_phoneme_perserve_punctuation():
+    # Smoke test
+    cache_grapheme_to_phoneme_perserve_punctuation(['Hello world'])
 
 
 def test__grapheme_to_phoneme__separator():
@@ -130,12 +135,10 @@ The man,""",
     ]
 
     for g, p in zip(grapheme, phoneme):
-        assert _grapheme_to_phoneme(g) == p
+        assert _grapheme_to_phoneme(g, separator='_') == p
 
 
 def test__grapheme_to_phoneme_perserve_punctuation():
-    nlp = spacy.load('en_core_web_sm', disable=['parser', 'ner'])
-
     assert """ʌ_v f_ˈaɪ_v s_t_ˈeɪ_dʒ_ᵻ_z:
 (ˈaɪ) p_ɹ_ˌɛ_p_ɚ_ɹ_ˈeɪ_ʃ_ə_n,
 (ɹ_ˌoʊ_m_ə_n t_ˈuː) ˌɪ_n_k_j_uː_b_ˈeɪ_ʃ_ə_n,
@@ -145,16 +148,18 @@ def test__grapheme_to_phoneme_perserve_punctuation():
 (i) preparation,
 (ii) incubation,
 (iii) intimation,
-(iv) illumination""", nlp)
+(iv) illumination""",
+        separator='_')
 
     assert "j_uː_ɹ_ˈiː_k_ɐ w_ˈɔː_k_s ɑː_n_ð_ɪ ˈɛ_ɹ ˈɔː_l ɹ_ˈaɪ_t." == (
-        _grapheme_to_phoneme_perserve_punctuation("Eureka walks on the air all right.", nlp))
+        _grapheme_to_phoneme_perserve_punctuation(
+            "Eureka walks on the air all right.", separator='_'))
 
     assert "  h_ə_l_ˈoʊ w_ˈɜː_l_d  " == (
-        _grapheme_to_phoneme_perserve_punctuation("  Hello World  ", nlp))
+        _grapheme_to_phoneme_perserve_punctuation("  Hello World  ", separator='_'))
 
     assert " \n\n h_ə_l_ˈoʊ w_ˈɜː_l_d \n\n " == (
-        _grapheme_to_phoneme_perserve_punctuation(" \n\n Hello World \n\n ", nlp))
+        _grapheme_to_phoneme_perserve_punctuation(" \n\n Hello World \n\n ", separator='_'))
 
 
 def test__grapheme_to_phoneme_perserve_punctuation__spacy_failure_cases():
@@ -198,9 +203,8 @@ def test__grapheme_to_phoneme_perserve_punctuation__spacy_failure_cases():
         "ɹ_ˈɛ_d ɪ_n ˈɪ_m_ɪ_dʒ_ɹ_i.",
     ]
 
-    nlp = spacy.load('en_core_web_sm', disable=['parser', 'ner'])
     for g, p in zip(grapheme, phoneme):
-        assert _grapheme_to_phoneme_perserve_punctuation(g, nlp) == p
+        assert _grapheme_to_phoneme_perserve_punctuation(g, separator='_') == p
 
 
 def test_input_encoder():

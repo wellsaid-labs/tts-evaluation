@@ -1,3 +1,5 @@
+from functools import lru_cache
+from functools import partial
 from itertools import groupby
 from multiprocessing.pool import ThreadPool
 
@@ -12,11 +14,13 @@ from torchnlp.encoders import LabelEncoder
 from torchnlp.encoders.text import CharacterEncoder
 from tqdm import tqdm
 
-import spacy
+import en_core_web_sm
 
 from src.environment import IS_TESTING_ENVIRONMENT
 from src.utils import disk_cache
 from src.utils import strip
+from src.utils.disk_cache_ import make_arg_key
+from src.utils.utils import log_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +48,7 @@ def _grapheme_to_phoneme(grapheme, **kwargs):
 def _grapheme_to_phoneme_helper(grapheme,
                                 service='espeak',
                                 flags=('--ipa=3', '-q', '-ven-us', '--stdin'),
-                                separator=None,
+                                separator='',
                                 service_separator='_'):
     # NOTE: `espeak` can be inconsistent in it's handling of outer spacing; therefore, it's
     # recommended both the `espeak` output and input is trimmed.
@@ -69,18 +73,24 @@ def _grapheme_to_phoneme_helper(grapheme,
     return phoneme if separator is None else phoneme.replace(service_separator, separator)
 
 
+@lru_cache()
+def _get_spacy_model():
+    """ Get spaCy object used to tokenize and POS tag text. """
+    return en_core_web_sm.load(disable=['parser', 'ner'])
+
+
 @disk_cache
-def _grapheme_to_phoneme_perserve_punctuation(text, nlp, **kwargs):
+def _grapheme_to_phoneme_perserve_punctuation(text, **kwargs):
     """ Convert grapheme to phoneme while perserving punctuation.
 
     Args:
         text (str): Graphemes.
-        nlp (Language): spaCy object used to tokenize and POS tag text.
+        **kwargs: Key-word arguments passed to `_grapheme_to_phoneme`.
 
     Returns:
         (str): Phonemes with the original punctuation (as defined by spaCy).
     """
-    tokens = nlp(text)
+    tokens = _get_spacy_model()(text)
 
     assert len(tokens) > 0, 'Zero tokens were found in text: %s' % text
     assert text == ''.join(t.text_with_ws for t in tokens), 'Detokenization failed: %s' % text
@@ -96,6 +106,33 @@ def _grapheme_to_phoneme_perserve_punctuation(text, nlp, **kwargs):
     return return_
 
 
+@log_runtime
+def cache_grapheme_to_phoneme_perserve_punctuation(texts, chunksize=128, **kwargs):
+    """ Batch process and cache the results for `texts` passed to
+    `_grapheme_to_phoneme_perserve_punctuation`.
+
+    Args:
+        texts (list of str)
+        chunksize (int): `chunksize` parameter passed to `imap`.
+        **kwargs: Key-word arguments passed to `_grapheme_to_phoneme_perserve_punctuation`.
+    """
+    texts = [
+        t for t in texts
+        if make_arg_key(_grapheme_to_phoneme_perserve_punctuation.__wrapped__, t, **kwargs) not in
+        _grapheme_to_phoneme_perserve_punctuation.disk_cache
+    ]
+    if len(texts) == 0:
+        return
+
+    logger.info('Caching `_grapheme_to_phoneme_perserve_punctuation` %d texts.', len(texts))
+    partial_ = partial(_grapheme_to_phoneme_perserve_punctuation, **kwargs)
+    with ThreadPool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
+        iterator = pool.imap(partial_, texts, chunksize=chunksize)
+        list(tqdm(iterator, total=len(texts)))
+
+    _grapheme_to_phoneme_perserve_punctuation.disk_cache.save()
+
+
 class InputEncoder(Encoder):
     """ Handles encoding and decoding input to the spectrogram model.
 
@@ -103,33 +140,15 @@ class InputEncoder(Encoder):
         text_samples (list of str): Examples used to make the text encoder.
         speaker_samples (list of src.datasets.constants.Speaker): Examples used to make the speaker
           encoder.
-        spacy_model (str): spaCy model to load for tokenization and POS tagging.
-        chunksize (int): `chunksize` parameter passed to `imap`.
     """
 
-    def __init__(self,
-                 text_samples,
-                 speaker_samples,
-                 spacy_model='en_core_web_sm',
-                 chunksize=128,
-                 **kwargs):
+    def __init__(self, text_samples, speaker_samples, **kwargs):
         super().__init__(**kwargs)
-
-        self.nlp = spacy.load(spacy_model, disable=['parser', 'ner'])
-
-        with ThreadPool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
-            length = len(text_samples)
-            text_samples = pool.imap(self._preprocess, text_samples, chunksize=chunksize)
-            text_samples = list(tqdm(text_samples, total=length))
-
-        self.text_encoder = CharacterEncoder(text_samples, enforce_reversible=True)
+        self.text_encoder = CharacterEncoder(
+            [_grapheme_to_phoneme_perserve_punctuation(t) for t in text_samples],
+            enforce_reversible=True)
         self.speaker_encoder = LabelEncoder(
             speaker_samples, reserved_labels=[], enforce_reversible=True)
-
-    def _preprocess(self, text):
-        # NOTE: The seperator is '' so that it's not included in the encoding.
-        return _grapheme_to_phoneme_perserve_punctuation(
-            text.strip(), nlp=self.nlp, separator='').strip()
 
     def encode(self, object_):
         """
@@ -144,7 +163,7 @@ class InputEncoder(Encoder):
             (torch.Tensor [1]): Encoded speaker.
         """
         return (
-            self.text_encoder.encode(self._preprocess(object_[0])),
+            self.text_encoder.encode(_grapheme_to_phoneme_perserve_punctuation(object_[0])),
             self.speaker_encoder.encode(object_[1]).view(1),
         )
 
