@@ -7,11 +7,20 @@ from src.spectrogram_model import InputEncoder
 from src.spectrogram_model.input_encoder import _grapheme_to_phoneme
 from src.spectrogram_model.input_encoder import _grapheme_to_phoneme_perserve_punctuation
 from src.spectrogram_model.input_encoder import cache_grapheme_to_phoneme_perserve_punctuation
+from src.utils.disk_cache_ import make_arg_key
 
 
 def test_cache_grapheme_to_phoneme_perserve_punctuation():
-    # Smoke test
-    cache_grapheme_to_phoneme_perserve_punctuation(['Hello world'])
+    cache_grapheme_to_phoneme_perserve_punctuation(['Hello world'], separator='_')
+    cache_grapheme_to_phoneme_perserve_punctuation(['How are you?'], separator='_')
+    cache_grapheme_to_phoneme_perserve_punctuation(['I\'m great!'], separator='_')
+
+    get_result = lambda s: _grapheme_to_phoneme_perserve_punctuation.disk_cache.get(
+        make_arg_key(_grapheme_to_phoneme_perserve_punctuation.__wrapped__, s, separator='_'))
+
+    assert get_result('Hello world') == 'h_ə_l_ˈoʊ w_ˈɜː_l_d'
+    assert get_result('How are you?') == 'h_ˈaʊ ɑːɹ j_uː?'
+    assert get_result('I\'m great!') == 'aɪ_m ɡ_ɹ_ˈeɪ_t!'
 
 
 def test__grapheme_to_phoneme__separator():

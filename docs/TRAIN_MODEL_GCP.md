@@ -101,7 +101,7 @@ Related Documentation:
 
    ```bash
    sudo apt-get update
-   sudo apt-get install python3-venv python3-dev gcc g++ sox ffmpeg -y
+   sudo apt-get install python3-venv python3-dev gcc g++ sox ffmpeg espeak -y
    ```
 
    💡 TIP: After setting up your VM, you may want to

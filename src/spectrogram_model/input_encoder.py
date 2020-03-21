@@ -1,7 +1,6 @@
 from functools import lru_cache
 from functools import partial
 from itertools import groupby
-from multiprocessing.pool import ThreadPool
 
 import logging
 import os
@@ -18,9 +17,10 @@ import en_core_web_sm
 
 from src.environment import IS_TESTING_ENVIRONMENT
 from src.utils import disk_cache
+from src.utils import log_runtime
+from src.utils import Pool
 from src.utils import strip
 from src.utils.disk_cache_ import make_arg_key
-from src.utils.utils import log_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +116,9 @@ def cache_grapheme_to_phoneme_perserve_punctuation(texts, chunksize=128, **kwarg
         chunksize (int): `chunksize` parameter passed to `imap`.
         **kwargs: Key-word arguments passed to `_grapheme_to_phoneme_perserve_punctuation`.
     """
+    function = _grapheme_to_phoneme_perserve_punctuation.__wrapped__
     texts = [
-        t for t in texts
-        if make_arg_key(_grapheme_to_phoneme_perserve_punctuation.__wrapped__, t, **kwargs) not in
+        t for t in texts if make_arg_key(function, t, **kwargs) not in
         _grapheme_to_phoneme_perserve_punctuation.disk_cache
     ]
     if len(texts) == 0:
@@ -126,9 +126,11 @@ def cache_grapheme_to_phoneme_perserve_punctuation(texts, chunksize=128, **kwarg
 
     logger.info('Caching `_grapheme_to_phoneme_perserve_punctuation` %d texts.', len(texts))
     partial_ = partial(_grapheme_to_phoneme_perserve_punctuation, **kwargs)
-    with ThreadPool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
-        iterator = pool.imap(partial_, texts, chunksize=chunksize)
-        list(tqdm(iterator, total=len(texts)))
+    with Pool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
+        iterator = zip(texts, pool.imap(partial_, texts, chunksize=chunksize))
+        for text, result in tqdm(iterator, total=len(texts)):
+            arg_key = make_arg_key(function, text, **kwargs)
+            _grapheme_to_phoneme_perserve_punctuation.disk_cache.set(arg_key, result)
 
     _grapheme_to_phoneme_perserve_punctuation.disk_cache.save()
 
