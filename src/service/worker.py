@@ -265,9 +265,15 @@ def validate_and_unpack(request_args,
     # NOTE: Normalize text similar to the normalization during dataset creation.
     text = unidecode.unidecode(text)
     input_encoder.text_encoder.enforce_reversible = False
-    processed_text = input_encoder.text_encoder.decode(input_encoder.text_encoder.encode(text))
-    if processed_text != text:
-        improper_characters = set(text).difference(set(processed_text))
+    preprocessed_text = input_encoder._preprocess(text)
+    processed_text = input_encoder.text_encoder.decode(
+        input_encoder.text_encoder.encode(preprocessed_text))
+    if processed_text != preprocessed_text:
+        # TODO: `processed_text` may contain special tokens like `<unk>` that need to be filtered
+        # out before the set of characters is compared.
+        # TODO: Test this!
+        improper_characters = set(preprocessed_text).difference(
+            set(input_encoder.text_encoder.vocab))
         improper_characters = ', '.join(sorted(list(improper_characters)))
         raise FlaskException(
             'Text cannot contain these characters: %s' % improper_characters, code='INVALID_TEXT')
