@@ -78,6 +78,46 @@ def _get_slice(spectrogram, signal, spectrogram_slice_size, spectrogram_slice_pa
     # Signal model requires that there is a scaling factor between the signal and frames
     assert samples % num_frames == 0
 
+    # NOTE: While we need mask the spectrogram padding because it's not part of the trueto consider the spectrogram mask because zeros don't naturally
+    # appear in the spectrogram distribution, we can ignore the signal mask because the zeros do
+    # appear naturally at the boundary of a signal, at least in this dataset...
+    # We can naturally expect that zeros are predicted at the end of the signal model
+
+    # 1. The spectrogram is loaded with the boundaries padded with zeros that do the represent
+    # the true distribution.
+    # 2. The signal model takes the spectrogram / spectrogram mask and applies it so that it's
+    # output is not affected by the padding. The output for the padded aspects of the signal should
+    # be zero and that can be achieved by multiplying the output by zero.
+    # 3. Then, a spectrogram is computed from the predicted signal.
+
+    # QUESTION: While we can ensure that there is equal and consistent padding so that the spectrogram
+    # loss is not affected, we cannot have the same guarentee for the discrimintor loss because
+    # at the end of the day, it'll be dealing with a spectrogram that's not based in the true
+    # distribution...
+    # PROBLEM: We want each sample expressed equally in the loss function.
+    # PROBLEM: We cann't pad the spectrogram loss in such a way that it doesn't affect the
+    # spectrogram created at the boundary.
+    # POTENTIAL SOLUTON: If we pad the spectrogram during the data loading process, with 3 frames
+    # so that and the corresponding signal. We could make sure that that the corresponding
+    # boundary frames are not undersampled. The distribution would be semi-realistic because
+    # boundary zeros as part of the signal is mostly valid.
+    # (We should be explicit in this assumption)
+    # NOTE: While we do have spectrogram padding implemented, we don't have the same for the signal.
+    # QUESITON: Do we need to test anything? Earlier we were testing the loss function for
+    # padding invariance, for example.
+    # - We definintely need to ensure the model is padding invariant.
+    # - We need to test that signal slice pad works in conjecture with spectrogram slice pad.
+    # NOTE: Since the passed in signal to the `SpectrogramLoss` will be coming from a mostly
+    # true distribution with no padding adjusts, then we can don't have to worry about the
+    # spectrogram computation because it just computes the spectrogram and zeros it out.
+    # NOTE: Since the discriminator is recieving similarly a true spectrogram with no weird padding
+    # it doesn't have to deal with anything in paricular.
+    # CONJECTURE: We need to ensure that each sample has an equal chance of being sampled (sure)
+    # We also need to make sure that each sample has an eqaul chance of being on the boundary
+    # Both are not nesseciarly true at the same time if the slice is smaller than the frame size.
+    # However, overall, if there is at least 3 frames of padding.
+    # NOTE: We do have a mechanism that ensures each sample is equally sampled outside of the
+    # spectrogram slice padding
     signal_mask = torch.ones(signal.shape[0], dtype=torch.bool, device=signal.device)
     spectrogram_mask = torch.ones(spectrogram.shape[0], dtype=torch.bool, device=spectrogram.device)
 

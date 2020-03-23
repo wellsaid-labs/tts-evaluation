@@ -55,6 +55,9 @@ class SpectrogramLoss(torch.nn.Module):
     NOTE: This loss undersamples boundary samples; therefore, it's important in the training
     data that each sample has an equal chance of being a boundary / none-boundary sample so
     that all samples are undersampled equally.
+    NOTE: The loss boundary effect affects samller spectrograms disproportionately.
+    NOTE: The loss is average accross the spectrogram frames; therefore, there is no bias for
+    the length of the spectrogram.
 
     Args:
         criterion (torch.nn.Module): The loss function for comparing two spectrograms.
@@ -182,24 +185,14 @@ class SpectrogramLoss(torch.nn.Module):
             do_backwards (bool, optional): If `True` this updates the discriminator weights.
 
         Returns:
-            torch.FloatTensor: The loss.
+            torch.FloatTensor: The spectrogram loss.
+            torch.FloatTensor: The discriminator loss.
+            torch.FloatTensor: The discriminator accuracy.
+            int: The number of frames.
+
         """
         predicted_signal = predicted_signal.view(-1, predicted_signal.shape[-1])
         target_signal = target_signal.view(-1, target_signal.shape[-1])
-
-        # TODO: We know that unless the signal is padded with `self.fft_length`, then the boundary
-        # samples will have a disproportionate affect on the loss; therefore, we need to account
-        # for that affect with padding.
-        # TODO: We also know that we want the loss to reflect the real distribution; therefore,
-        # it's likely not the best idea to use zero padding. It might work best just to drop
-        # the first four frames that are affected by the padding.
-        # TODO: At the beginning and end of a signal, we'll need to include zero padding anyways
-        # so we don't undersamples the boundary samples and we can't mask the zero padding to
-        # an extent. We can mask everything past `self.fft_length` in the loss and the discrimintor.
-        # TODO: Even if we decided to undersample the boundary samples; we will still need to
-        # deal with masking the padding from the batching process which requires padding.
-        # TODO: We can translate a signal mask into a spectrogram mask if need by using librosa's
-        # framing tool.
 
         assert target_signal.shape == predicted_signal.shape
 
@@ -570,12 +563,14 @@ class Trainer():
             (batch.target_signal.shape, predicted_signal.shape))
         assert predicted_signal.shape == batch.signal_mask.shape
 
+        batch_size = predicted_signal.shape[0]
         total_spectrogram_loss = torch.tensor(0.0, device=predicted_signal.device)
         total_discriminator_loss = torch.tensor(0.0, device=predicted_signal.device)
         total_discriminator_accuracy = torch.tensor(0.0, device=predicted_signal.device)
         for criterion in self.criterions:
-            # NOTE: While the signal is padded, we can safely ignore it with the assumption that
-            # signals this model is learning generally start and end with quiet.
+            # NOTE: Even though the signal is zero padded, we can safely ignore it with the
+            # assumption that the training examples this model is learning generally start and end
+            # with quiet.
             spectrogram_loss, discriminator_loss, discriminator_accuracy = criterion(
                 predicted_signal,
                 batch.target_signal,
@@ -586,19 +581,15 @@ class Trainer():
             total_discriminator_loss += discriminator_loss / len(self.criterions)
             total_discriminator_accuracy += discriminator_accuracy / len(self.criterions)
 
-            # TODO: For incorperating padding into the training process, we should use something
-            # like `batch.signal_mask.sum()` for averaging. This is legitimate because the
-            # spectrogram amplitude does directly correlate the number of samples iff the
-            # appropriate padding is applied.
-            # TODO: This also requires a couple of other things ... See
-            # `test_frame_and_non_frame_equality`. This includes changing the frame hop to
-            # frame length ratio in the criterions so that they are divisable.
+            # TODO: Ensure that this loss reported to Comet is invariant to the slice size
+            # so that we can compare accross slices. We can do that by testing if this loss
+            # is infact proportional to the slice size (ignoring the boundary undersampling).
             self.metrics['db_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length].update(
-                spectrogram_loss, batch.target_signal.shape[0])
+                spectrogram_loss, batch_size)
             self.metrics['%d_spectrogram_discriminator_loss' % criterion.fft_length].update(
-                discriminator_loss, batch.target_signal.shape[0])
+                discriminator_loss, batch_size)
             self.metrics['%d_spectrogram_discriminator_accuracy' % criterion.fft_length].update(
-                discriminator_accuracy, batch.target_signal.shape[0])
+                discriminator_accuracy, batch_size * 2)
 
         if do_backwards:
             self.optimizer.zero_grad()
@@ -606,13 +597,10 @@ class Trainer():
             self.optimizer.step(comet_ml=self.comet_ml)
             self.exponential_moving_parameter_average.update()
 
-        # TODO: Consider using the spectrogram length instead of batch size
-        self.metrics['db_mel_spectrogram_magnitude_loss'].update(total_spectrogram_loss,
-                                                                 batch.target_signal.shape[0])
-        self.metrics['spectrogram_discriminator_loss'].update(total_discriminator_loss,
-                                                              batch.target_signal.shape[0])
+        self.metrics['db_mel_spectrogram_magnitude_loss'].update(total_spectrogram_loss, batch_size)
+        self.metrics['spectrogram_discriminator_loss'].update(total_discriminator_loss, batch_size)
         self.metrics['spectrogram_discriminator_accuracy'].update(total_discriminator_accuracy,
-                                                                  batch.target_signal.shape[0])
+                                                                  batch_size * 2)
 
         return total_spectrogram_loss, total_discriminator_loss, batch.signal_mask.sum()
 
