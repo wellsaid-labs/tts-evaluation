@@ -28,6 +28,7 @@ def main(speaker_id_to_speaker, spectrogram_model_checkpoint, signal_model_check
 
     # TODO: The below checkpoint attributes should be statically defined somewhere so that there is
     # some guarantee that these attributes exist.
+    # TODO: For performance, we should remove weight normalization.
 
     # Reduce checkpoint size
     signal_model_checkpoint.optimizer = None
