@@ -52,6 +52,10 @@ logger = logging.getLogger(__name__)
 class SpectrogramLoss(torch.nn.Module):
     """ Compute a loss based in the time / frequency domain.
 
+    NOTE: This loss undersamples boundary samples; therefore, it's important in the training
+    data that each sample has an equal chance of being a boundary / none-boundary sample so
+    that all samples are undersampled equally.
+
     Args:
         criterion (torch.nn.Module): The loss function for comparing two spectrograms.
         discriminator (torch.nn.Module): The model used to discriminate between two spectrograms.
@@ -570,6 +574,8 @@ class Trainer():
         total_discriminator_loss = torch.tensor(0.0, device=predicted_signal.device)
         total_discriminator_accuracy = torch.tensor(0.0, device=predicted_signal.device)
         for criterion in self.criterions:
+            # NOTE: While the signal is padded, we can safely ignore it with the assumption that
+            # signals this model is learning generally start and end with quiet.
             spectrogram_loss, discriminator_loss, discriminator_accuracy = criterion(
                 predicted_signal,
                 batch.target_signal,

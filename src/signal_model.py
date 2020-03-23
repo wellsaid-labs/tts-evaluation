@@ -36,7 +36,7 @@ class ConditionalConcat(torch.nn.Module):
     def __init__(self, size, scale_factor):
         super().__init__()
 
-        self.concat = None
+        self.concat = None  # torch.FloatTensor [batch_size, frame_channels, num_frames]
         self.size = size
         self.scale_factor = scale_factor
 
@@ -50,8 +50,39 @@ class ConditionalConcat(torch.nn.Module):
         """
         concat = torch.nn.functional.interpolate(self.concat, scale_factor=self.scale_factor)
         assert concat.shape[1] == self.size
+        assert concat.shape[2] >= in_.shape[2], 'Scale factor is too small.'
         self.concat = None  # NOTE: Don't use conditioning twice
         return torch.cat(list(trim(in_, concat)), dim=1)
+
+
+class Mask(torch.nn.Module):
+    """ Features are masked with mask injected by a parent module.
+
+    Args:
+        scale_factor (int): Scale factor used to interpolate the mask before applying it.
+    """
+
+    def __init__(self, scale_factor):
+        super().__init__()
+
+        self.mask = None  # torch.BoolTensor [batch_size, num_frames]
+        self.scale_factor = scale_factor
+
+    def forward(self, in_):
+        """
+        Args:
+            in_ (torch.FloatTensor [batch_size, frame_channels, num_frames])
+
+        Returns:
+            torch.FloatTensor [batch_size, frame_channels, num_frames]
+        """
+        with torch.no_grad():
+            mask = torch.nn.functional.interpolate(
+                self.mask.float(), scale_factor=self.scale_factor).bool()
+            self.mask = None  # NOTE: Don't use conditioning twice
+        assert mask.shape[2] >= in_.shape[2], 'Scale factor is too small.'
+        in_, mask = trim(in_, mask)
+        return in_.masked_fill(~mask, 0.0)
 
 
 class PixelShuffle1d(torch.nn.Module):
@@ -116,6 +147,7 @@ class Block(torch.nn.Module):
             ConditionalConcat(in_channels, input_scale),
             torch.nn.Conv1d(in_channels * 2, in_channels, kernel_size=1),
             torch.nn.GELU(),
+            Mask(input_scale),
             torch.nn.Conv1d(
                 in_channels,
                 out_channels * upscale_factor,
@@ -123,6 +155,7 @@ class Block(torch.nn.Module):
             ),
             PixelShuffle1d(upscale_factor),
             torch.nn.GELU(),
+            Mask(input_scale * upscale_factor),
             torch.nn.Conv1d(out_channels, out_channels, kernel_size=3),
         )
 
@@ -130,8 +163,10 @@ class Block(torch.nn.Module):
             ConditionalConcat(out_channels, input_scale * upscale_factor),
             torch.nn.Conv1d(out_channels * 2, out_channels, kernel_size=1),
             torch.nn.GELU(),
+            Mask(input_scale * upscale_factor),
             torch.nn.Conv1d(out_channels, out_channels, kernel_size=3),
             torch.nn.GELU(),
+            Mask(input_scale * upscale_factor),
             torch.nn.Conv1d(out_channels, out_channels, kernel_size=3),
         )
 
@@ -158,7 +193,7 @@ class LayerNorm(torch.nn.LayerNorm):
         return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
 
 
-def generate_waveform(model, spectrogram, split_size=64, generator=True):
+def generate_waveform(model, spectrogram, spectrogram_mask=None, split_size=64, generator=True):
     """
     TODO: Similar to WaveNet, we could incorperate a "Fast WaveNet" approach. This basically means
     we don't need to recompute the padding for each split.
@@ -166,6 +201,7 @@ def generate_waveform(model, spectrogram, split_size=64, generator=True):
     Args:
         model (SignalModel): The model to synthesize the waveform with.
         spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
+        spectrogram_mask (torch.BoolTensor [batch_size, num_frames], optional)
         split_size (int or None, optional): Number of frames to synthesize at a time.
         generator (bool, optional): If `True` this returns results incrementally.
 
@@ -177,18 +213,22 @@ def generate_waveform(model, spectrogram, split_size=64, generator=True):
     # [batch_size, num_frames, frame_channels]
     spectrogram = spectrogram.view(-1, spectrogram.shape[-2], spectrogram.shape[-1])
     batch_size, num_frames, frame_channels = spectrogram.shape
+    device = spectrogram.device
 
-    # [batch_size, num_frames, frame_channels] → [batch_size, frame_channels, num_frames]
-    spectrogram = spectrogram.transpose(1, 2)
+    # [batch_size, num_frames]
+    spectrogram_mask = torch.ones(
+        batch_size, num_frames, device=device,
+        dtype=torch.bool) if spectrogram_mask is None else spectrogram_mask
 
-    num_frames = spectrogram.shape[-1]
-    spectrogram = model.pad(spectrogram)
+    spectrogram = model.pad(spectrogram.transpose(1, 2)).transpose(1, 2)
+    spectrogram_mask = model.pad(spectrogram_mask.unsqueeze(1)).squeeze(1)
 
     padding = model.padding
     split_size = min(num_frames if split_size is None else split_size, num_frames)
-    iterator = range(padding, spectrogram.shape[2] - padding, split_size)
-    splits = [spectrogram[:, :, i - padding:i + split_size + padding] for i in iterator]
-    assert sum([s.shape[2] - padding * 2 for s in splits]) == num_frames, 'Invariant failed.'
+    iterator = list(range(padding, spectrogram.shape[1] - padding, split_size))
+    splits = [spectrogram[:, i - padding:i + split_size + padding] for i in iterator]
+    mask_splits = [spectrogram_mask[:, i - padding:i + split_size + padding] for i in iterator]
+    assert sum([s.shape[1] - padding * 2 for s in splits]) == num_frames, 'Invariant failed.'
 
     def _generate():
         # TODO: During evaluation, we should convert the `float32` output back to
@@ -196,8 +236,8 @@ def generate_waveform(model, spectrogram, split_size=64, generator=True):
         # output; however, we should consider the model already learned this on it's own with
         # the help of the discriminator.
         with torch.no_grad():
-            for split in splits:
-                waveform = model(split.transpose(1, 2), pad_input=False)
+            for split, mask in zip(splits, mask_splits):
+                waveform = model(split, mask, pad_input=False)
                 yield waveform if has_batch_dim else waveform.squeeze(0)
 
     if not generator:
@@ -239,8 +279,10 @@ class SignalModel(torch.nn.Module):
         self.pad = torch.nn.ConstantPad1d(padding, 0.0)
 
         self.pre_net = torch.nn.Sequential(
+            Mask(1),
             torch.nn.Conv1d(input_size, self.get_layer_size(0), kernel_size=3, padding=0),
-            LayerNorm(self.get_layer_size(0)))
+            LayerNorm(self.get_layer_size(0)),
+        )
         self.network = torch.nn.Sequential(*tuple([
             Block(self.get_layer_size(0), self.get_layer_size(0)),
             Block(self.get_layer_size(0), self.get_layer_size(0))
@@ -250,10 +292,13 @@ class SignalModel(torch.nn.Module):
         ] + [
             torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=1),
             torch.nn.GELU(),
-            torch.nn.Conv1d(hidden_size, 2, kernel_size=3, padding=0)
+            Mask(self.upscale_factor),
+            torch.nn.Conv1d(hidden_size, 2, kernel_size=3, padding=0),
+            Mask(self.upscale_factor)
         ]))
 
         self.conditionals = [m for m in self.modules() if isinstance(m, ConditionalConcat)]
+        self.masks = [m for m in self.modules() if isinstance(m, Mask)]
         self.condition = torch.nn.Conv1d(
             self.get_layer_size(0), max([m.size for m in self.conditionals]), kernel_size=1)
 
@@ -297,10 +342,13 @@ class SignalModel(torch.nn.Module):
         return min((int(2**(len(self.ratios) // 2)) * self.hidden_size) // 2**(i // 2),
                    self.max_channel_size)
 
-    def forward(self, spectrogram, pad_input=True):
+    def forward(self, spectrogram, spectrogram_mask=None, pad_input=True):
         """
         Args:
             spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
+            spectrogram_mask (torch.BoolTensor [batch_size, num_frames], optional): The mask
+                elements on either boundary of the spectrogram so that the corresponding output is
+                not affected.
             padding (bool, optional): If `True` padding is applied to the input.
 
         Args:
@@ -311,13 +359,23 @@ class SignalModel(torch.nn.Module):
         # [batch_size, num_frames, frame_channels]
         spectrogram = spectrogram.view(-1, spectrogram.shape[-2], spectrogram.shape[-1])
         batch_size, num_frames, frame_channels = spectrogram.shape
+        device = spectrogram.device
 
         # [batch_size, num_frames, frame_channels] → [batch_size, frame_channels, num_frames]
         spectrogram = spectrogram.transpose(1, 2)
 
-        # TODO: Ensure that the padding is masked correctly.
+        # [batch_size, 1, num_frames]
+        spectrogram_mask = torch.ones(
+            batch_size, num_frames, device=device,
+            dtype=torch.bool) if spectrogram_mask is None else spectrogram_mask
+        spectrogram_mask = spectrogram_mask.view(batch_size, 1, num_frames)
+
         spectrogram = self.pad(spectrogram) if pad_input else spectrogram
+        spectrogram_mask = self.pad(spectrogram_mask) if pad_input else spectrogram_mask
         num_frames = num_frames if pad_input else num_frames - self.padding * 2
+
+        for module in self.masks:
+            module.mask = spectrogram_mask
 
         # [batch_size, frame_channels, num_frames] →
         # [batch_size, self.get_layer_size(0), num_frames]
@@ -332,6 +390,7 @@ class SignalModel(torch.nn.Module):
 
         # [batch_size, 2, signal_length + excess_padding] →
         # [batch_size, signal_length + excess_padding]
+        # TODO: Experiment with `torch.sigmoid` * `torch.sign` as the output activation function.
         signal = torch.sigmoid(signal[:, 0]) * torch.tanh(signal[:, 1])
 
         # Mu-law expantion, learn more here:

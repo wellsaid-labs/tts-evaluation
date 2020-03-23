@@ -732,6 +732,9 @@ def set_hparams():
                                 # The teacher WaveNet network was trained for 1,000,000 steps with
                                 # the ADAM optimiser [14] with a minibatch size of 32 audio clips,
                                 # each containing 7,680 timesteps (roughly 320ms).
+                                # NOTE: The `spectrogram_slice_size` must be larger than the
+                                # `fft_length - frame_hop` of the largest `SpectrogramLoss`;
+                                # otherwise, the loss can't be computed.
                                 train_spectrogram_slice_size=int(8192 / frame_hop),
                                 dev_batch_size=16,
                                 dev_spectrogram_slice_size=int(32768 / frame_hop),
