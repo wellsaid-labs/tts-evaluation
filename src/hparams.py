@@ -56,10 +56,13 @@ def _set_audio_processing():
     # SOURCE (Tacotron 2):
     # mel spectrograms are computed through a shorttime Fourier transform (STFT)
     # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
-    # NOTE: A hop length of 25% the window size is standard practice in DSP, allowing for a 75%
-    # overlap between windows.
     # TODO: Parameterizing frame sizes in milliseconds can help ensure that your code is invariant
     # to the sample rate.
+    # TODO: 50ms / 12.5ms spectrogram is not typical spectrogram parameterization, a more typical
+    # parameterization is 25ms / 10ms. Learn more:
+    # https://www.dsprelated.com/freebooks/sasp/Classic_Spectrograms.html
+    # https://github.com/pytorch/audio/issues/384#issuecomment-597020705
+    # https://pytorch.org/audio/compliance.kaldi.html
     frame_size = 1024  # NOTE: Frame size in samples
     fft_length = 2048
     assert frame_size % 4 == 0
