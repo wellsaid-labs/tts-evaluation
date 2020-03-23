@@ -76,7 +76,12 @@ class SpectrogramLoss(torch.nn.Module):
                  **kwargs):
         super().__init__()
 
-        self.signal_to_spectrogram = SignalTodBMelSpectrogram(**kwargs)
+        # NOTE: The `SpectrogramLoss` has it's own configuration for `SignalTodBMelSpectrogram`.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                'ignore', module=r'.*hparams', message=r'.*Overwriting configured argument.*')
+            self.signal_to_spectrogram = SignalTodBMelSpectrogram(**kwargs)
+
         self.fft_length = self.signal_to_spectrogram.fft_length
         self.frame_hop = self.signal_to_spectrogram.frame_hop
         self.sample_rate = self.signal_to_spectrogram.sample_rate
