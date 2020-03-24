@@ -307,8 +307,6 @@ class SignalModel(torch.nn.Module):
         # NOTE: We initialize the convolution parameters weight norm factorizes them.
         for module in self.get_weight_norm_modules():
             torch.nn.utils.weight_norm(module)
-        # TODO: Experiment with adding back `weight_norm` to `self.condition`.
-        torch.nn.utils.remove_weight_norm(self.condition)
 
     def get_weight_norm_modules(self):
         # TODO: For performance, remove weight normalization before serving the model.
@@ -390,7 +388,6 @@ class SignalModel(torch.nn.Module):
 
         # [batch_size, 2, signal_length + excess_padding] →
         # [batch_size, signal_length + excess_padding]
-        # TODO: Experiment with `torch.sigmoid` * `torch.sign` as the output activation function.
         signal = torch.sigmoid(signal[:, 0]) * torch.tanh(signal[:, 1])
 
         # Mu-law expantion, learn more here:
@@ -431,11 +428,10 @@ class SpectrogramDiscriminator(torch.nn.Module):
         weight_norm = torch.nn.utils.weight_norm
         input_size = fft_length + num_mel_bins + 2
 
-        # TODO: Experiment with initializing these convolution layers to orthogonal.
-        # TODO: Experiment with using the `GELU` activation function.
-
         self.layers = torch.nn.Sequential(
             weight_norm(torch.nn.Conv1d(input_size, hidden_size, kernel_size=3, padding=1)),
+            LayerNorm(hidden_size),
+            weight_norm(torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1)),
             torch.nn.ReLU(),
             weight_norm(torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1)),
             torch.nn.ReLU(),

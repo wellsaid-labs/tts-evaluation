@@ -751,20 +751,20 @@ def set_hparams():
                                     partial(
                                         SpectrogramLoss,
                                         fft_length=2048,
-                                        frame_hop=300,
-                                        window=_get_window('hann', 1200),
+                                        frame_hop=256,
+                                        window=_get_window('hann', 1024),
                                         num_mel_bins=128),
                                     partial(
                                         SpectrogramLoss,
                                         fft_length=1024,
-                                        frame_hop=150,
-                                        window=_get_window('hann', 600),
+                                        frame_hop=128,
+                                        window=_get_window('hann', 512),
                                         num_mel_bins=64),
                                     partial(
                                         SpectrogramLoss,
                                         fft_length=512,
-                                        frame_hop=75,
-                                        window=_get_window('hann', 300),
+                                        frame_hop=64,
+                                        window=_get_window('hann', 256),
                                         num_mel_bins=32),
                                 ]),
                         'trainer.SpectrogramLoss.__init__':

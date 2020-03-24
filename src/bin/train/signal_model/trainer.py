@@ -88,16 +88,20 @@ class SpectrogramLoss(torch.nn.Module):
         self.num_mel_bins = self.signal_to_spectrogram.num_mel_bins
 
         self.criterion = criterion(reduction='none')
-        self.plot_spectrogram = lambda spectrogram: plot_spectrogram(
-            spectrogram, frame_hop=self.frame_hop, sample_rate=self.sample_rate)
-        self.plot_mel_spectrogram = lambda spectrogram: plot_mel_spectrogram(
-            spectrogram, frame_hop=self.frame_hop, sample_rate=self.sample_rate)
 
         self.discriminator = discriminator(self.fft_length, self.num_mel_bins)
         discriminator_optimizer = discriminator_optimizer(
             params=filter(lambda p: p.requires_grad, self.discriminator.parameters()))
         self.discriminator_optimizer = Optimizer(discriminator_optimizer)
         self.discriminator_criterion = discriminator_criterion()
+
+    def plot_spectrogram(self, *args, **kwargs):
+        return plot_spectrogram(
+            *args, **kwargs, frame_hop=self.frame_hop, sample_rate=self.sample_rate)
+
+    def plot_mel_spectrogram(self, *args, **kwargs):
+        return plot_mel_spectrogram(
+            *args, **kwargs, frame_hop=self.frame_hop, sample_rate=self.sample_rate)
 
     def to(self, device):
         self.discriminator_optimizer = self.discriminator_optimizer.to(device)
@@ -340,7 +344,9 @@ class Trainer():
         self.scheduler = LambdaLR(
             self.optimizer.optimizer, lr_multiplier_schedule, last_epoch=step - 1)
 
-        self.criterions = [c().to(device) for c in criterions]
+        self.criterions = [
+            (c if isinstance(c, SpectrogramLoss) else c()).to(device) for c in criterions
+        ]
 
         self.metrics = {
             'data_queue_size': DistributedAveragedMetric(),
@@ -449,6 +455,7 @@ class Trainer():
             'step': checkpoint.step,
             'spectrogram_model_checkpoint_path': checkpoint.spectrogram_model_checkpoint_path,
             'exponential_moving_parameter_average': checkpoint.exponential_moving_parameter_average,
+            'criterions': checkpoint.criterions,
         }
         checkpoint_kwargs.update(kwargs)
         return class_(**checkpoint_kwargs)
@@ -471,7 +478,8 @@ class Trainer():
                 comet_ml_project_name=self.comet_ml.project_name,
                 comet_ml_experiment_key=self.comet_ml.get_key(),
                 spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
-                exponential_moving_parameter_average=self.exponential_moving_parameter_average)
+                exponential_moving_parameter_average=self.exponential_moving_parameter_average,
+                criterions=self.criterions)
             if checkpoint.path.exists():
                 return None
             return checkpoint.save()
