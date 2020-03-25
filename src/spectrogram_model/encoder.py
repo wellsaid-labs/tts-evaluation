@@ -4,6 +4,7 @@ from hparams import configurable
 from hparams import HParam
 from torch import nn
 from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
+from torchnlp.nn import LockedDropout
 
 
 class RightMaskedBiLSTM(nn.Module):
@@ -108,6 +109,12 @@ class LayerNorm(nn.LayerNorm):
         return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
 
 
+class Conv1dLockedDropout(LockedDropout):
+
+    def forward(self, tensor):
+        return super().forward(tensor.permute(2, 0, 1)).permute(1, 2, 0)
+
+
 class Encoder(nn.Module):
     """ Encodes sequence as a hidden feature representation.
 
@@ -166,7 +173,7 @@ class Encoder(nn.Module):
 
         self.conv_layers = nn.ModuleList([
             nn.Sequential(
-                nn.Dropout(dropout),
+                Conv1dLockedDropout(dropout),
                 nn.Conv1d(
                     in_channels=hidden_size,
                     out_channels=hidden_size,
@@ -185,10 +192,10 @@ class Encoder(nn.Module):
         self.lstm = RightMaskedBiLSTM(
             input_size=hidden_size, hidden_size=hidden_size // 2, num_layers=lstm_layers)
         self.lstm_norm = nn.LayerNorm(hidden_size)
-        self.lstm_dropout = nn.Dropout(dropout)
+        self.lstm_dropout = LockedDropout(dropout)
 
         self.project_out = nn.Sequential(
-            nn.Dropout(dropout), nn.Linear(hidden_size, out_dim), nn.LayerNorm(out_dim))
+            LockedDropout(dropout), nn.Linear(hidden_size, out_dim), nn.LayerNorm(out_dim))
 
     def forward(self, tokens, tokens_mask):
         """

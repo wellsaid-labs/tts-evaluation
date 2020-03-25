@@ -256,7 +256,7 @@ if __name__ == '__main__':  # pragma: no cover
             'amsgrad=False', '500_step_warmup', 'predict_inital', 'pre_net_layer_norm',
             'detached_cum_alignment', 'attention_score_locked_dropout', 'alignment_stop_token',
             'frames_detached_stop_token', 'linear_relu_dropout_linear_stop_token',
-            'encoder_dropout', 'attention_normal_init', 'no_weight_decay'
+            'encoder_locked_dropout', 'attention_normal_init', 'no_weight_decay'
         ],
         nargs='+',
         help='List of tags for a new experiments.')
