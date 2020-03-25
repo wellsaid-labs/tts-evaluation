@@ -304,7 +304,7 @@ class SignalModel(torch.nn.Module):
 
         self.reset_parameters()
 
-        # NOTE: We initialize the convolution parameters weight norm factorizes them.
+        # NOTE: We initialize the convolution parameters before weight norm factorizes them.
         for module in self.get_weight_norm_modules():
             torch.nn.utils.weight_norm(module)
 
