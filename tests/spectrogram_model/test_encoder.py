@@ -178,7 +178,8 @@ def test_encoder_padding_invariance():
         out_dim=encoder_params['out_dim'],
         hidden_size=encoder_params['hidden_size'],
         num_convolution_layers=2,
-        lstm_layers=2)
+        lstm_layers=2,
+        dropout=0)
 
     # Ensure `LayerNorm` perturbs the input instead of being just an identity.
     for module in encoder.modules():

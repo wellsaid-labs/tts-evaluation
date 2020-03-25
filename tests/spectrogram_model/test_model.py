@@ -98,6 +98,10 @@ def test_spectrogram_model_train__batch_size_sensitivity():
     # >>> batch_dropout[0] != dropout
     add_config({
         'src.spectrogram_model': {
+            'attention.LocationSensitiveAttention.__init__': HParams(dropout=0.0),
+            'decoder.AutoregressiveDecoder.__init__': HParams(stop_net_dropout=0.0),
+            'encoder.Encoder.__init__': HParams(dropout=0.0),
+            'model.SpectrogramModel.__init__': HParams(speaker_embed_dropout=0.0),
             'pre_net.PreNet.__init__': HParams(dropout=0.0),
         },
     })
@@ -237,8 +241,8 @@ def test_spectrogram_model__filter_all():
         max_frames_per_token=num_frames / num_tokens)
 
     # Make sure that stop-token is not predicted; therefore, reaching ``max_frames_per_token``
-    torch.nn.init.constant_(model.decoder.linear_stop_token.weight, -math.inf)
-    torch.nn.init.constant_(model.decoder.linear_stop_token.bias, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].weight, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].bias, -math.inf)
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
@@ -339,8 +343,8 @@ def test_spectrogram_model():
         max_frames_per_token=num_frames / num_tokens)
 
     # Make sure that stop-token is not predicted; therefore, reaching ``max_frames_per_token``
-    torch.nn.init.constant_(model.decoder.linear_stop_token.weight, -math.inf)
-    torch.nn.init.constant_(model.decoder.linear_stop_token.bias, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].weight, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].bias, -math.inf)
 
     frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
         input_, speaker, num_tokens=batched_num_tokens)
@@ -379,8 +383,8 @@ def test_spectrogram_model_unbatched():
         max_frames_per_token=num_frames / num_tokens).eval()
 
     # Make sure that stop-token is not predicted; therefore, reaching ``max_frames_per_token``
-    torch.nn.init.constant_(model.decoder.linear_stop_token.weight, -math.inf)
-    torch.nn.init.constant_(model.decoder.linear_stop_token.bias, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].weight, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].bias, -math.inf)
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens).random_(1, vocab_size)

@@ -5,7 +5,7 @@ from src.spectrogram_model.decoder import AutoregressiveDecoderHiddenState
 
 
 def test_autoregressive_decoder():
-    attention_hidden_size = 32
+    encoder_output_size = 32
     batch_size = 5
     num_tokens = 6
     frame_channels = 20
@@ -13,9 +13,9 @@ def test_autoregressive_decoder():
     decoder = AutoregressiveDecoder(
         speaker_embedding_dim=speaker_embedding_dim,
         frame_channels=frame_channels,
-        attention_hidden_size=attention_hidden_size)
+        encoder_output_size=encoder_output_size)
 
-    encoded_tokens = torch.rand(num_tokens, batch_size, attention_hidden_size)
+    encoded_tokens = torch.rand(num_tokens, batch_size, encoder_output_size)
     tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
     speaker = torch.zeros(batch_size, speaker_embedding_dim)
 
@@ -25,7 +25,8 @@ def test_autoregressive_decoder():
             encoded_tokens=encoded_tokens,
             tokens_mask=tokens_mask,
             speaker=speaker,
-            hidden_state=hidden_state)
+            hidden_state=hidden_state,
+            num_tokens=tokens_mask.long().sum(dim=1))
 
         assert frames.type() == 'torch.FloatTensor'
         assert frames.shape == (1, batch_size, frame_channels)
@@ -40,7 +41,7 @@ def test_autoregressive_decoder():
 
 
 def test_autoregressive_decoder_target():
-    attention_hidden_size = 32
+    encoder_output_size = 32
     batch_size = 5
     num_tokens = 6
     frame_channels = 20
@@ -48,10 +49,10 @@ def test_autoregressive_decoder_target():
     speaker_embedding_dim = 16
     decoder = AutoregressiveDecoder(
         speaker_embedding_dim=speaker_embedding_dim,
-        attention_hidden_size=attention_hidden_size,
+        encoder_output_size=encoder_output_size,
         frame_channels=frame_channels)
 
-    encoded_tokens = torch.rand(num_tokens, batch_size, attention_hidden_size)
+    encoded_tokens = torch.rand(num_tokens, batch_size, encoder_output_size)
     tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
     target_frames = torch.rand(num_frames, batch_size, frame_channels)
     speaker = torch.zeros(batch_size, speaker_embedding_dim)
@@ -60,7 +61,8 @@ def test_autoregressive_decoder_target():
         encoded_tokens=encoded_tokens,
         tokens_mask=tokens_mask,
         speaker=speaker,
-        target_frames=target_frames)
+        target_frames=target_frames,
+        num_tokens=tokens_mask.long().sum(dim=1))
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, batch_size, frame_channels)

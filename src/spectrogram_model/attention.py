@@ -5,6 +5,7 @@ import torch
 from hparams import configurable
 from hparams import HParam
 from torch import nn
+from torchnlp.nn import LockedDropout
 
 
 class LocationSensitiveAttention(nn.Module):
@@ -40,86 +41,47 @@ class LocationSensitiveAttention(nn.Module):
           https://arxiv.org/pdf/1506.07503.pdf
 
     Args:
-        query_hidden_size (int): The hidden size of the query to expect.
-        hidden_size (int): The hidden size of the attention module dictating context, query,
-            and location features size.
-        num_convolution_filters (odd :clas:`int`): Number of dimensions (channels)
-            produced by the convolution.
-        convolution_filter_size (int): Size of the convolving kernel.
+        query_hidden_size (int): The hidden size of the query input.
+        hidden_size (int): The hidden size of the hidden attention features.
+        convolution_filter_size (int): Size of the convolving kernel applied to the cumulative
+            alignment.
+        dropout (float): The dropout probability.
+        initializer_range (float): The normal initialization standard deviation.
     """
 
     @configurable
     def __init__(self,
                  query_hidden_size,
-                 hidden_size,
-                 num_convolution_filters=HParam(),
-                 convolution_filter_size=HParam()):
-
+                 hidden_size=HParam(),
+                 convolution_filter_size=HParam(),
+                 dropout=HParam(),
+                 initializer_range=HParam()):
         super().__init__()
+
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, '`convolution_filter_size` must be odd'
 
+        self.dropout = dropout
+        self.hidden_size = hidden_size
+        self.initializer_range = initializer_range
+
         self.alignment_conv_padding = int((convolution_filter_size - 1) / 2)
         self.alignment_conv = nn.Conv1d(
-            in_channels=1,
-            out_channels=num_convolution_filters + 1,
-            kernel_size=convolution_filter_size,
-            padding=0)
-        self.project_query = nn.Sequential(
-            nn.Linear(query_hidden_size, hidden_size), nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size))
-        self.project_alignment = nn.Linear(num_convolution_filters, hidden_size, bias=False)
-        self.project_scores = nn.Linear(hidden_size, 1, bias=False)
-        self.softmax = nn.Softmax(dim=1)
+            in_channels=1, out_channels=hidden_size, kernel_size=convolution_filter_size, padding=0)
 
-        # Initialize Weights
-        nn.init.xavier_uniform_(self.project_scores.weight, gain=nn.init.calculate_gain('linear'))
+        self.project_query = nn.Linear(query_hidden_size, hidden_size)
+        self.project_scores = nn.Sequential(
+            LockedDropout(dropout), nn.Linear(hidden_size, 1, bias=False))
 
-    def score(self, encoded_tokens, tokens_mask, query, location_features):
-        """ Compute addative attention score with location features.
+        self.reset_parameters()
 
-        Args:
-            encoded_tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]):
-                Batched set of encoded sequences.
-            tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask where zeros's
-                represent padding in ``encoded_tokens``.
-            query (torch.FloatTensor [1, batch_size, hidden_size]): Query vector used to score
-                individual token vectors.
-            location_features (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Location
-                features extracted from the cumulative attention alignment from the last queries.
-
-        Returns:
-            alignment (torch.FloatTensor [batch_size, num_tokens]): Alignment over
-                ``encoded_tokens``
-        """
-        num_tokens, batch_size, hidden_size = encoded_tokens.shape
-
-        # [1, batch_size, hidden_size] → [num_tokens, batch_size, hidden_size]
-        query = query.expand(num_tokens, batch_size, hidden_size)
-
-        # score [num_tokens, batch_size, hidden_size]
-        # ei,j = w * tanh(W * si−1 + V * hj + U * fi,j + b)
-        score = (query + location_features).tanh_()
-
-        del location_features  # Clear memory
-        del query  # Clear memory
-
-        # [num_tokens, batch_size, hidden_size] → [batch_size, num_tokens, hidden_size]
-        score = score.transpose(0, 1)
-
-        # [batch_size, num_tokens, hidden_size] → [batch_size, num_tokens]
-        score = self.project_scores(score).squeeze(2)
-
-        # Mask encoded tokens padding
-        score.data.masked_fill_(~tokens_mask, -math.inf)
-
-        # [batch_size, num_tokens] → [batch_size, num_tokens]
-        alignment = self.softmax(score)
-
-        del score  # Clear memory
-
-        return alignment
+    def reset_parameters(self):
+        nn.init.normal_(self.project_scores[1].weight, std=self.initializer_range)
+        nn.init.normal_(self.project_query.weight, std=self.initializer_range)
+        nn.init.normal_(self.alignment_conv.weight, std=self.initializer_range)
+        nn.init.zeros_(self.project_query.bias)
+        nn.init.zeros_(self.alignment_conv.bias)
 
     def forward(self,
                 encoded_tokens,
@@ -154,42 +116,43 @@ class LocationSensitiveAttention(nn.Module):
         device = encoded_tokens.device
 
         # NOTE: Attention alignment is sometimes refered to as attention weights.
-        cumulative_alignment = torch.zeros(
-            batch_size, num_tokens, dtype=torch.float,
-            device=device) if cumulative_alignment is None else cumulative_alignment
-        initial_cumulative_alignment = torch.zeros(
-            batch_size, 1,
-            device=device) if initial_cumulative_alignment is None else initial_cumulative_alignment
+        if cumulative_alignment is None:
+            cumulative_alignment = torch.zeros(batch_size, num_tokens, device=device)
+        if initial_cumulative_alignment is None:
+            initial_cumulative_alignment = torch.zeros(batch_size, 1, device=device)
 
         cumulative_alignment = cumulative_alignment.masked_fill(~tokens_mask, 0)
 
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
-        location_features = cumulative_alignment.unsqueeze(1)
+        location_features = cumulative_alignment.unsqueeze(1).detach()
 
-        # Add `self.alignment_conv_padding` to both sides.
+        # NOTE: Add `self.alignment_conv_padding` to both sides.
         initial_cumulative_alignment = initial_cumulative_alignment.unsqueeze(-1).expand(
             -1, -1, self.alignment_conv_padding)
         location_features = torch.cat([initial_cumulative_alignment, location_features], dim=-1)
         location_features = torch.nn.functional.pad(
             location_features, (0, self.alignment_conv_padding), mode='constant', value=0.0)
 
-        # [batch_size, 1, num_tokens] → [batch_size, num_convolution_filters + 1, num_tokens]
-        location_features, location_gate = self.alignment_conv(location_features).split(
-            [self.alignment_conv.out_channels - 1, 1], dim=1)
-        # [batch_size, num_convolution_filters, num_tokens] →
-        # [num_tokens, batch_size, num_convolution_filters]
-        location_features = location_features.permute(2, 0, 1)
-        # [num_tokens, batch_size, num_convolution_filters] →
-        # [num_tokens, batch_size, hidden_size]
-        location_features = self.project_alignment(location_features)
+        # [batch_size, 1, num_tokens] → [batch_size, hidden_size, num_tokens]
+        location_features = self.alignment_conv(location_features)
 
-        # [1, batch_size, query_hidden_size] → [1, batch_size, hidden_size]
-        query = self.project_query(query)
+        # [1, batch_size, query_hidden_size] → [batch_size, hidden_size, 1]
+        query = self.project_query(query).view(batch_size, self.hidden_size, 1)
 
-        # alignment [batch_size, num_tokens]
-        alignment = self.score(encoded_tokens, tokens_mask, query, location_features)
+        # [batch_size, hidden_size, num_tokens]
+        location_features = torch.tanh(location_features + query)
 
-        # Transpose and unsqueeze to fit the requirements for ``torch.bmm``
+        # [batch_size, hidden_size, num_tokens] →
+        # [num_tokens, batch_size, hidden_size] →
+        # [num_tokens, batch_size]
+        score = self.project_scores(location_features.permute(2, 0, 1)).squeeze(2).transpose(0, 1)
+
+        score.data.masked_fill_(~tokens_mask, -math.inf)
+
+        # [batch_size, num_tokens] → [batch_size, num_tokens]
+        alignment = torch.softmax(score, dim=1)
+
+        # NOTE: Transpose and unsqueeze to fit the requirements for ``torch.bmm``
         # [num_tokens, batch_size, hidden_size] →
         # [batch_size, num_tokens, hidden_size]
         encoded_tokens = encoded_tokens.transpose(0, 1)
@@ -199,19 +162,10 @@ class LocationSensitiveAttention(nn.Module):
         # [batch_size (b), 1 (n), hidden_size (p)]
         context = torch.bmm(alignment.unsqueeze(1), encoded_tokens)
 
-        # Squeeze extra single dimension
         # [batch_size, 1, hidden_size] → [batch_size, hidden_size]
         context = context.squeeze(1)
 
-        # TODO: Does there exist a more effective gating mechanism that'd be more precise? Since
-        # `self.alignment_conv` computes the gate it'd loosely be based on the ratio of zeros to
-        # nonzeros.
-        # TODO: At the moment, we wouldn't see the affects of this gate because we don't
-        # visualize the gated alignment; therefore, in order to improve it further that'd
-        # likely be beneficial.
         # [batch_size, num_tokens] + [batch_size, num_tokens] → [batch_size, num_tokens]
-        cumulative_alignment = cumulative_alignment + alignment * torch.sigmoid(
-            location_gate).squeeze(1)
+        cumulative_alignment = cumulative_alignment + alignment
 
-        # Normalize energies to weights in range 0 to 1, resize to 1 x 1 x seq_len
         return context, cumulative_alignment, alignment

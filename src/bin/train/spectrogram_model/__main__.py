@@ -58,7 +58,9 @@ def _set_hparams(more_hparams, checkpoint):
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999, eps = 10−6
         # learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
-        'torch.optim.adam.Adam.__init__': HParams(eps=10**-6, weight_decay=10**-6, lr=10**-3)
+        # NOTE: An approach without L2 regularization was beneficial based on Comet experiments
+        # in March 2020.
+        'torch.optim.adam.Adam.__init__': HParams(eps=10**-6, weight_decay=0, lr=10**-3)
     })
     add_config(more_hparams)
     set_seed()
@@ -251,12 +253,10 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '--tags',
         default=[
-            '1024_frame_size', '16_bit_audio', 'amsgrad=False', 'dataset_filter', 'db_scale',
-            'iso226_weighting', 'lower_hertz_20', 'min_decibel_50', 'min_padding',
-            'power_before_mel_scale', 'pytorch_1_4', 'pytorch_stft', 'zero_go_frame',
-            'pad_before_trim', 'larger_half_gaussian', 'lower_reached_max', '500_step_warmup',
-            '0_01_spectrogram_loss', '10_output_scalar', '1024_zero_padding', 'predict_inital',
-            'pre_net_layer_norm', 'no_speaker_embed_dropout', 'gated_cum_alignment'
+            'amsgrad=False', '500_step_warmup', 'predict_inital', 'pre_net_layer_norm',
+            'detached_cum_alignment', 'attention_score_locked_dropout', 'alignment_stop_token',
+            'frames_detached_stop_token', 'linear_relu_dropout_linear_stop_token',
+            'encoder_dropout', 'attention_normal_init', 'no_weight_decay'
         ],
         nargs='+',
         help='List of tags for a new experiments.')

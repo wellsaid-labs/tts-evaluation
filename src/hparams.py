@@ -203,7 +203,7 @@ def _set_model_size(frame_channels):
     # SOURCE (Tacotron 2):
     # Attention probabilities are computed after projecting inputs and location
     # features to 128-dimensional hidden representations.
-    attention_hidden_size = 128
+    encoder_output_size = 128
 
     # SOURCE (Tacotron 2):
     # Specifically, generation completes at the first frame for which this
@@ -243,22 +243,23 @@ def _set_model_size(frame_channels):
                         # direction) to generate the encoded features.
                         lstm_layers=1,
 
-                        # SOURCE (Tacotron 2)
-                        # Attention probabilities are computed after projecting inputs and location
-                        # features to 128-dimensional hidden representations.
-                        out_dim=attention_hidden_size),
+                        out_dim=encoder_output_size),
                 'attention.LocationSensitiveAttention.__init__':
                     HParams(
                         # SOURCE (Tacotron 2):
                         # Location features are computed using 32 1-D convolution filters of length
                         # 31.
-                        num_convolution_filters=32,
+                        hidden_size=32,
                         convolution_filter_size=31,
+
+                        # SOURCE (BERT):
+                        # https://github.com/google-research/bert/blob/master/modeling.py#L375
+                        initializer_range=0.02,
                     ),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(
                         pre_net_hidden_size=pre_net_hidden_size,
-                        attention_hidden_size=attention_hidden_size,
+                        encoder_output_size=encoder_output_size,
 
                         # SOURCE (Tacotron 2):
                         # The prenet output and attention context vector are concatenated and
@@ -664,7 +665,17 @@ def set_hparams():
                         # NOTE: The spectrogram input ranges from around -50 to 50. This scaler
                         # puts the input and output in a more reasonable range for the model of
                         # -5 to 5.
-                        output_scalar=10.0)
+                        output_scalar=10.0,
+
+                        # NOTE: This dropout approach proved effective in Comet in March 2020.
+                        speaker_embed_dropout=0.1),
+                # NOTE: This below dropout approach proved effective in Comet in March 2020.
+                'attention.LocationSensitiveAttention.__init__':
+                    HParams(dropout=0.1),
+                'decoder.AutoregressiveDecoder.__init__':
+                    HParams(stop_net_dropout=0.5),
+                'encoder.Encoder.__init__':
+                    HParams(dropout=0.1)
             },
             # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
             'datasets.utils.add_predicted_spectrogram_column':
