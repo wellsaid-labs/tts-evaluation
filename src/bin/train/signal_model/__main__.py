@@ -264,7 +264,10 @@ if __name__ == '__main__':  # pragma: no cover
               'text as input to the signal model.'))
     parser.add_argument(
         '--tags',
-        default=['weight_norm_conditional', 'power_2_windows', 'layer_norm_input'],
+        default=[
+            'weight_norm_conditional', 'power_2_windows', 'layer_norm_input',
+            '100x_discriminator_lr'
+        ],
         nargs='+',
         help='List of tags for the experiment.')
     parser.add_argument('--name', type=str, default=None, help='Name of the experiment.')

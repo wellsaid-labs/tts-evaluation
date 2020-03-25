@@ -775,7 +775,7 @@ def set_hparams():
                                 # NOTE: This approach proved successful in Comet experiment
                                 # f590fe3c51a04130ad65736f8aa5fd81 run in February 2020.
                                 discriminator=SpectrogramDiscriminator,
-                                discriminator_optimizer=partial(torch.optim.Adam, lr=0.00001),
+                                discriminator_optimizer=torch.optim.Adam,
                                 discriminator_criterion=torch.nn.BCEWithLogitsLoss,
                             ),
                         # NOTE: The `DataLoader` pads the data before hand so that the model
