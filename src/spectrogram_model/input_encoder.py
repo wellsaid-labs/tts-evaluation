@@ -79,6 +79,10 @@ def _get_spacy_model():
     return en_core_web_sm.load(disable=['parser', 'ner'])
 
 
+# See https://spacy.io/api/annotation#pos-tagging for all available tags.
+SPACY_PUNCT_TAG = 'PUNCT'
+
+
 @disk_cache
 def _grapheme_to_phoneme_perserve_punctuation(text, **kwargs):
     """ Convert grapheme to phoneme while perserving punctuation.
@@ -95,8 +99,15 @@ def _grapheme_to_phoneme_perserve_punctuation(text, **kwargs):
     assert len(tokens) > 0, 'Zero tokens were found in text: %s' % text
     assert text == ''.join(t.text_with_ws for t in tokens), 'Detokenization failed: %s' % text
 
+    # NOTE: `is_punct` is not contextual while `pos_ == SPACY_PUNCT_TAG` is, see:
+    # https://github.com/explosion/spaCy/issues/998. This enables us to phonemize cases like:
+    # - "form of non-linguistic representations"  (ADJ)
+    # - "The psychopaths' empathic reaction"  (PART)
+    # - "judgement, name & face memory" (CCONJ)
+    # - "to public interest/national security" (SYM)
+    # - "spectacular, grand // desco da" (SYM)
     return_ = ''
-    for is_punct, group in groupby(tokens, lambda t: t.is_punct):
+    for is_punct, group in groupby(tokens, lambda t: t.pos_ == SPACY_PUNCT_TAG):
         phrase = ''.join([t.text_with_ws for t in group])
         is_alpha_numeric = any(c.isalpha() or c.isdigit() for c in phrase)
         if is_punct and is_alpha_numeric:
