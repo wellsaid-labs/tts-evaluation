@@ -602,6 +602,8 @@ def framed_rms_from_power_spectrogram(power_spectrogram, window=HParam()):
         torch.ones(*window.shape).pow(2).mean().sqrt() / window.pow(2).mean().sqrt())
 
     # TODO: This adjustment might have an unintended affect on the a mel spectrogram.
+    # TODO: This adjustment might be related to repairing constant-overlap-add, see here:
+    # https://ccrma.stanford.edu/~jos/sasp/Overlap_Add_Decomposition.html
     # Adjust the DC and half sample rate component
     power_spectrogram[:, :, 0] *= 0.5
     if window.shape[0] % 2 == 0:
@@ -804,8 +806,6 @@ def griffin_lim(db_mel_spectrogram,
         if large_values > 0:
             logger.warning('Griffin-lim waveform clipped %d samples.', large_values)
         return np.clip(waveform, -1, 1).astype(np.float32)
-    # TODO: Be more specific with the cases that this is capturing so that we don't have silent
-    # failures for invalid inputs.
     except Exception:
         logger.exception('Griffin-lim encountered an issue and was unable to render audio.')
         # NOTE: Return no audio for valid inputs that fail due to an overflow error or a small

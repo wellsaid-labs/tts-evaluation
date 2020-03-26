@@ -100,6 +100,37 @@ def test__get_slice(randint_mock):
     assert slice_.signal_mask.shape == (slice_size * samples_per_frame,)
 
 
+def test__get_slice__distribution():
+    """ Test that `_get_slice` samples each sample equally. """
+    spectrogram = torch.arange(1, 5).unsqueeze(1)
+    signal = torch.arange(1, 13)
+    slice_size = 3
+    spectrogram_slice_pad = 3
+    samples = 10000
+    sample_counter = Counter()
+    frame_counter = Counter()
+
+    for i in range(samples):
+        slice_ = _get_slice(
+            spectrogram,
+            signal,
+            spectrogram_slice_size=slice_size,
+            spectrogram_slice_pad=spectrogram_slice_pad)
+        sample_counter.update(slice_.target_signal.tolist())
+        frame_counter.update(slice_.spectrogram.squeeze().tolist())
+
+    total_samples = sum(sample_counter.values()) - sample_counter[0]  # Remove padding
+    for i in range(signal.shape[0]):
+        # Each sample should be sampled `1 / signal.shape[0]` times
+        assert sample_counter[signal[i].item()] / total_samples == pytest.approx(
+            1 / signal.shape[0], rel=1e-1)
+
+    total_frames = sum(frame_counter.values()) - frame_counter[0]  # Remove padding
+    for i in range(spectrogram.shape[0]):
+        assert frame_counter[spectrogram[i, 0].item()] / total_frames == pytest.approx(
+            1 / spectrogram.shape[0], rel=1e-1)
+
+
 @mock.patch('src.bin.train.signal_model.data_loader.random.randint')
 def test__get_slice__padding(randint_mock):
     randint_mock.return_value = 1

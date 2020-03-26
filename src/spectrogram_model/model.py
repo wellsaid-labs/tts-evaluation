@@ -96,6 +96,7 @@ class SpectrogramModel(nn.Module):
         max_frames_per_token (float): The maximum sequential predictions to make before
             quitting; Used for testing and defensive design.
         output_scalar (float): The output of the model is scaled up by this value.
+        speaker_embed_dropout (float): The speaker embedding dropout probability.
       """
 
     @configurable
@@ -105,17 +106,19 @@ class SpectrogramModel(nn.Module):
                  speaker_embedding_dim=HParam(),
                  frame_channels=HParam(),
                  max_frames_per_token=HParam(),
-                 output_scalar=HParam()):
-
+                 output_scalar=HParam(),
+                 speaker_embed_dropout=HParam()):
         super().__init__()
 
         self.max_frames_per_token = max_frames_per_token
+
         self.encoder = Encoder(vocab_size)
         self.decoder = AutoregressiveDecoder(
             frame_channels=frame_channels, speaker_embedding_dim=speaker_embedding_dim)
         self.post_net = PostNet(frame_channels=frame_channels)
         self.stop_sigmoid = nn.Sigmoid()
-        self.embed_speaker = nn.Embedding(num_speakers, speaker_embedding_dim)
+        self.embed_speaker = nn.Sequential(
+            nn.Embedding(num_speakers, speaker_embedding_dim), nn.Dropout(speaker_embed_dropout))
 
         self.register_buffer('output_scalar', torch.tensor(output_scalar).float())
 
@@ -173,16 +176,18 @@ class SpectrogramModel(nn.Module):
 
         return frames_with_residual
 
-    def _aligned(self, encoded_tokens, tokens_mask, speaker, target_frames, target_lengths,
-                 is_unbatched):
+    def _aligned(self, encoded_tokens, tokens_mask, speaker, num_tokens, target_frames,
+                 target_lengths, is_unbatched):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
             tokens_mask (torch.BoolTensor [batch_size, num_tokens])
             speaker (torch.LongTensor [batch_size, speaker_embedding_dim]): Batched speaker
                 encoding.
+            num_tokens (torch.LongTensor [batch_size]): The number of tokens in each sequence.
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
             target_lengths (torch.LongTensor [batch_size]): The number of frames in each sequence.
+            is_unbatched (bool): If `True`, the batch dimension is removed from the output.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
@@ -193,7 +198,7 @@ class SpectrogramModel(nn.Module):
         target_frames = target_frames / self.output_scalar
 
         frames, stop_tokens, hidden_state, alignments = self.decoder(
-            encoded_tokens, tokens_mask, speaker, target_frames=target_frames)
+            encoded_tokens, tokens_mask, speaker, num_tokens, target_frames=target_frames)
         frames_with_residual = self._add_residual(frames, target_lengths)
 
         frames_with_residual = frames_with_residual * self.output_scalar
@@ -222,6 +227,7 @@ class SpectrogramModel(nn.Module):
             speaker (torch.LongTensor [batch_size, speaker_embedding_dim]): Batched speaker
                 encoding.
             num_tokens (torch.LongTensor [batch_size]): The number of tokens in each sequence.
+            is_unbatched (bool): If `True`, the batch dimension is removed from the output.
             stop_threshold (float, optional): The threshold probability for deciding to stop.
             use_tqdm (bool, optional): If ``True`` attach a progress bar to iterator.
             filter_reached_max (bool, optional): If `True` this filters the batch, removing
@@ -249,7 +255,7 @@ class SpectrogramModel(nn.Module):
             progress_bar = tqdm(leave=True, unit='frame(s)')
         while len(stopped) < batch_size and len(frames) < max(lengths):
             frame, stop_token, hidden_state, alignment = self.decoder(
-                encoded_tokens, tokens_mask, speaker, hidden_state=hidden_state)
+                encoded_tokens, tokens_mask, speaker, num_tokens, hidden_state=hidden_state)
             to_stop = self._get_stopped_indexes(stop_token, stop_threshold=stop_threshold)
 
             # Zero out stopped frames
@@ -411,5 +417,5 @@ class SpectrogramModel(nn.Module):
             return self._infer(encoded_tokens, tokens_mask, speaker, num_tokens, is_unbatched,
                                **kwargs)
         else:
-            return self._aligned(encoded_tokens, tokens_mask, speaker, target_frames,
+            return self._aligned(encoded_tokens, tokens_mask, speaker, num_tokens, target_frames,
                                  target_lengths, is_unbatched, **kwargs)

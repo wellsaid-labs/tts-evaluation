@@ -56,10 +56,13 @@ def _set_audio_processing():
     # SOURCE (Tacotron 2):
     # mel spectrograms are computed through a shorttime Fourier transform (STFT)
     # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
-    # NOTE: A hop length of 25% the window size is standard practice in DSP, allowing for a 75%
-    # overlap between windows.
     # TODO: Parameterizing frame sizes in milliseconds can help ensure that your code is invariant
     # to the sample rate.
+    # TODO: 50ms / 12.5ms spectrogram is not typical spectrogram parameterization, a more typical
+    # parameterization is 25ms / 10ms. Learn more:
+    # https://www.dsprelated.com/freebooks/sasp/Classic_Spectrograms.html
+    # https://github.com/pytorch/audio/issues/384#issuecomment-597020705
+    # https://pytorch.org/audio/compliance.kaldi.html
     frame_size = 1024  # NOTE: Frame size in samples
     fft_length = 2048
     assert frame_size % 4 == 0
@@ -200,7 +203,7 @@ def _set_model_size(frame_channels):
     # SOURCE (Tacotron 2):
     # Attention probabilities are computed after projecting inputs and location
     # features to 128-dimensional hidden representations.
-    attention_hidden_size = 128
+    encoder_output_size = 128
 
     # SOURCE (Tacotron 2):
     # Specifically, generation completes at the first frame for which this
@@ -240,22 +243,23 @@ def _set_model_size(frame_channels):
                         # direction) to generate the encoded features.
                         lstm_layers=1,
 
-                        # SOURCE (Tacotron 2)
-                        # Attention probabilities are computed after projecting inputs and location
-                        # features to 128-dimensional hidden representations.
-                        out_dim=attention_hidden_size),
+                        out_dim=encoder_output_size),
                 'attention.LocationSensitiveAttention.__init__':
                     HParams(
                         # SOURCE (Tacotron 2):
                         # Location features are computed using 32 1-D convolution filters of length
                         # 31.
-                        num_convolution_filters=32,
+                        hidden_size=32,
                         convolution_filter_size=31,
+
+                        # SOURCE (BERT):
+                        # https://github.com/google-research/bert/blob/master/modeling.py#L375
+                        initializer_range=0.02,
                     ),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(
                         pre_net_hidden_size=pre_net_hidden_size,
-                        attention_hidden_size=attention_hidden_size,
+                        encoder_output_size=encoder_output_size,
 
                         # SOURCE (Tacotron 2):
                         # The prenet output and attention context vector are concatenated and
@@ -667,7 +671,17 @@ def set_hparams():
                         # NOTE: The spectrogram input ranges from around -50 to 50. This scaler
                         # puts the input and output in a more reasonable range for the model of
                         # -5 to 5.
-                        output_scalar=10.0)
+                        output_scalar=10.0,
+
+                        # NOTE: This dropout approach proved effective in Comet in March 2020.
+                        speaker_embed_dropout=0.1),
+                # NOTE: This below dropout approach proved effective in Comet in March 2020.
+                'attention.LocationSensitiveAttention.__init__':
+                    HParams(dropout=0.1),
+                'decoder.AutoregressiveDecoder.__init__':
+                    HParams(stop_net_dropout=0.5),
+                'encoder.Encoder.__init__':
+                    HParams(dropout=0.1)
             },
             # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
             'datasets.utils.add_predicted_spectrogram_column':
@@ -735,6 +749,9 @@ def set_hparams():
                                 # The teacher WaveNet network was trained for 1,000,000 steps with
                                 # the ADAM optimiser [14] with a minibatch size of 32 audio clips,
                                 # each containing 7,680 timesteps (roughly 320ms).
+                                # NOTE: The `spectrogram_slice_size` must be larger than the
+                                # `fft_length - frame_hop` of the largest `SpectrogramLoss`;
+                                # otherwise, the loss can't be computed.
                                 train_spectrogram_slice_size=int(8192 / frame_hop),
                                 dev_batch_size=16,
                                 dev_spectrogram_slice_size=int(32768 / frame_hop),
@@ -751,20 +768,20 @@ def set_hparams():
                                     partial(
                                         SpectrogramLoss,
                                         fft_length=2048,
-                                        frame_hop=300,
-                                        window=_get_window('hann', 1200),
+                                        frame_hop=256,
+                                        window=_get_window('hann', 1024),
                                         num_mel_bins=128),
                                     partial(
                                         SpectrogramLoss,
                                         fft_length=1024,
-                                        frame_hop=150,
-                                        window=_get_window('hann', 600),
+                                        frame_hop=128,
+                                        window=_get_window('hann', 512),
                                         num_mel_bins=64),
                                     partial(
                                         SpectrogramLoss,
                                         fft_length=512,
-                                        frame_hop=75,
-                                        window=_get_window('hann', 300),
+                                        frame_hop=64,
+                                        window=_get_window('hann', 256),
                                         num_mel_bins=32),
                                 ]),
                         'trainer.SpectrogramLoss.__init__':
@@ -775,7 +792,7 @@ def set_hparams():
                                 # NOTE: This approach proved successful in Comet experiment
                                 # f590fe3c51a04130ad65736f8aa5fd81 run in February 2020.
                                 discriminator=SpectrogramDiscriminator,
-                                discriminator_optimizer=partial(torch.optim.Adam, lr=0.00001),
+                                discriminator_optimizer=torch.optim.Adam,
                                 discriminator_criterion=torch.nn.BCEWithLogitsLoss,
                             ),
                         # NOTE: The `DataLoader` pads the data before hand so that the model

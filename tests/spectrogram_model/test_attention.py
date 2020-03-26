@@ -93,7 +93,7 @@ def test_location_sensative_attention():
         # Check the softmax computation was applied correctly.
         cumulative_alignment_sum = cumulative_alignment.sum(dim=1)
         for i in range(batch_size):
-            assert cumulative_alignment_sum[i].item() <= j + 1
+            assert cumulative_alignment_sum[i].item() == pytest.approx(j + 1)
 
 
 def test_location_sensative_attention__batch_invariant():
@@ -102,9 +102,10 @@ def test_location_sensative_attention__batch_invariant():
     attention_hidden_size = 24
     batch_size = 8
     num_tokens = 16
+    dropout = 0
 
     attention = LocationSensitiveAttention(
-        query_hidden_size=query_hidden_size, hidden_size=attention_hidden_size)
+        query_hidden_size=query_hidden_size, hidden_size=attention_hidden_size, dropout=dropout)
 
     tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
     encoded_tokens = torch.randn(num_tokens, batch_size, attention_hidden_size)
@@ -141,9 +142,10 @@ def test_location_sensative_attention__padding_invariant():
     batch_size = 8
     num_tokens = 16
     num_padding = 4
+    dropout = 0
 
     attention = LocationSensitiveAttention(
-        query_hidden_size=query_hidden_size, hidden_size=attention_hidden_size)
+        query_hidden_size=query_hidden_size, hidden_size=attention_hidden_size, dropout=dropout)
 
     initial_cumulative_alignment = torch.randn(batch_size, 1)
     query = torch.randn(1, batch_size, query_hidden_size)

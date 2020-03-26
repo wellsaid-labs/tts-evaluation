@@ -3,8 +3,6 @@ from unittest import mock
 import pytest
 import torch
 
-from src.audio import full_scale_sine_wave
-from src.audio import full_scale_square_wave
 from src.audio import read_audio
 from src.bin.train.signal_model.data_loader import SignalModelTrainingRow
 from src.bin.train.signal_model.trainer import SpectrogramLoss
@@ -116,40 +114,6 @@ def test__do_loss_and_maybe_backwards():
     assert db_mel_spectrogram_magnitude_loss.item() == pytest.approx(0.0)
     assert isinstance(discriminator_loss.item(), float)
     assert num_predictions == 8192
-
-
-@pytest.mark.skip(reason="TODO")
-def test__do_loss_and_maybe_backwards__masking():
-    """ Test that the correct loss values are computed and back propagated.
-
-    TODO: Finish writting a padding invariant implementation of our loss function and model.
-    """
-    trainer = get_trainer(load_data=False)
-
-    target_signal = torch.tensor(full_scale_square_wave(4000))
-    predicted_signal = torch.tensor(full_scale_sine_wave(4000))
-    mask = torch.ones(4000)
-
-    # TODO: Look into why an offset that's not a multiple of the frame size causes a big problem?
-    padded_target_signal = torch.nn.functional.pad(target_signal, (256, 256))
-    padded_predicted_signal = torch.nn.functional.pad(predicted_signal, (256, 256))
-    padded_mask = torch.nn.functional.pad(mask, (256, 256))
-
-    batch = SignalModelTrainingRow(None, None, target_signal, mask)
-    padded_batch = SignalModelTrainingRow(None, None, padded_target_signal, padded_mask)
-
-    (db_mel_spectrogram_magnitude_loss, discriminator_loss,
-     num_predictions) = trainer._do_loss_and_maybe_backwards(batch, predicted_signal, False, True)
-
-    (padded_db_mel_spectrogram_magnitude_loss, padded_discriminator_loss,
-     padded_num_predictions) = trainer._do_loss_and_maybe_backwards(padded_batch,
-                                                                    padded_predicted_signal, False,
-                                                                    True)
-
-    assert pytest.approx(db_mel_spectrogram_magnitude_loss.item()) == pytest.approx(
-        padded_db_mel_spectrogram_magnitude_loss.item())
-    assert discriminator_loss == padded_discriminator_loss
-    assert num_predictions == padded_num_predictions
 
 
 def test_visualize_inferred():

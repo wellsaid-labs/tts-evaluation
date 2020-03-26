@@ -4,6 +4,7 @@ from hparams import configurable
 from hparams import HParam
 from torch import nn
 from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
+from torchnlp.nn import LockedDropout
 
 
 class RightMaskedBiLSTM(nn.Module):
@@ -108,6 +109,12 @@ class LayerNorm(nn.LayerNorm):
         return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
 
 
+class Conv1dLockedDropout(LockedDropout):
+
+    def forward(self, tensor):
+        return super().forward(tensor.permute(2, 0, 1)).permute(1, 2, 0)
+
+
 class Encoder(nn.Module):
     """ Encodes sequence as a hidden feature representation.
 
@@ -140,6 +147,7 @@ class Encoder(nn.Module):
         num_convolution_layers (int): Number of convolution layers to apply.
         convolution_filter_size (int): Size of the convolving kernel.
         lstm_layers (int): Number of recurrent LSTM layers.
+        dropout (float): The dropout probability for hidden encoder features.
     """
 
     @configurable
@@ -149,7 +157,8 @@ class Encoder(nn.Module):
                  hidden_size=HParam(),
                  num_convolution_layers=HParam(),
                  convolution_filter_size=HParam(),
-                 lstm_layers=HParam()):
+                 lstm_layers=HParam(),
+                 dropout=HParam()):
 
         super().__init__()
 
@@ -164,6 +173,7 @@ class Encoder(nn.Module):
 
         self.conv_layers = nn.ModuleList([
             nn.Sequential(
+                Conv1dLockedDropout(dropout),
                 nn.Conv1d(
                     in_channels=hidden_size,
                     out_channels=hidden_size,
@@ -182,8 +192,10 @@ class Encoder(nn.Module):
         self.lstm = RightMaskedBiLSTM(
             input_size=hidden_size, hidden_size=hidden_size // 2, num_layers=lstm_layers)
         self.lstm_norm = nn.LayerNorm(hidden_size)
+        self.lstm_dropout = LockedDropout(dropout)
 
-        self.project_out = nn.Sequential(nn.Linear(hidden_size, out_dim), nn.LayerNorm(out_dim))
+        self.project_out = nn.Sequential(
+            LockedDropout(dropout), nn.Linear(hidden_size, out_dim), nn.LayerNorm(out_dim))
 
     def forward(self, tokens, tokens_mask):
         """
@@ -219,7 +231,7 @@ class Encoder(nn.Module):
         tokens = tokens.permute(2, 0, 1)
         tokens_mask = tokens_mask.permute(2, 0, 1)
 
-        tokens = self.lstm_norm(tokens + self.lstm(tokens, tokens_mask))
+        tokens = self.lstm_norm(tokens + self.lstm(self.lstm_dropout(tokens), tokens_mask))
 
         # [num_tokens, batch_size, hidden_size] →
         # [num_tokens, batch_size, out_dim]
