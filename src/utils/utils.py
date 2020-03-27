@@ -281,10 +281,11 @@ def evaluate(*modules, device=None):
         modules_metadata.append({'is_train': module.training, 'last_device': module_device})
         module.train(mode=False)
 
-    with torch.autograd.no_grad():
+    with torch.set_grad_enabled(False):
         yield
 
     for module, metadata in zip(modules, modules_metadata):
+        assert not module.training, 'Invariant failure.'
         module.train(mode=metadata['is_train'])
         if metadata['last_device'] is not None:
             module.to(metadata['last_device'])
