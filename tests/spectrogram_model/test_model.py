@@ -10,6 +10,16 @@ import numpy
 from src.spectrogram_model import SpectrogramModel
 
 
+class _MockSigmoidBatchInvariant(torch.nn.Module):
+
+    def __init__(self, size):
+        super().__init__()
+        self.register_buffer('offset', torch.rand(*size))
+
+    def forward(self, tensor):
+        return torch.rand(1, device=tensor.device) + self.offset
+
+
 def test_spectrogram_model_inference__batch_size_sensitivity():
     batch_size = 5
     num_tokens = 6
@@ -17,10 +27,6 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
     vocab_size = 20
     num_frames = 3
     num_speakers = 7
-    padding_len = 2
-
-    # Ensure that the model computes the full length
-    add_config({'src.spectrogram_model.model.SpectrogramModel._infer': HParams(stop_threshold=1.0)})
 
     # NOTE: The random generator for dropout varies based on the tensor size; therefore, it's
     # dependent on the `BatchSize` and we need to disable it. For example:
@@ -32,27 +38,26 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
     # >>> batch_dropout[0] != dropout
     add_config({'src.spectrogram_model.pre_net.PreNet.__init__': HParams(dropout=0.0)})
 
-    model = SpectrogramModel(
-        vocab_size,
-        num_speakers,
-        frame_channels=frame_channels,
-        max_frames_per_token=num_frames / num_tokens).eval()
+    with fork_rng(seed=123):
+        model = SpectrogramModel(
+            vocab_size,
+            num_speakers,
+            frame_channels=frame_channels,
+            max_frames_per_token=num_frames / num_tokens)
+        model.train(mode=False)
+        model.stop_sigmoid = _MockSigmoidBatchInvariant((1, batch_size))
 
-    # Ensure `LayerNorm` perturbs the input instead of being just an identity.
-    for module in model.modules():
-        if isinstance(module, torch.nn.LayerNorm):
-            torch.nn.init.uniform_(module.weight)
-            torch.nn.init.uniform_(module.bias)
+        # Ensure `LayerNorm` perturbs the input instead of being just an identity.
+        for module in model.modules():
+            if isinstance(module, torch.nn.LayerNorm):
+                torch.nn.init.uniform_(module.weight)
+                torch.nn.init.uniform_(module.bias)
 
-    # NOTE: 1-index to avoid using 0 typically associated with padding
-    input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
-    input_[-padding_len:, 0] = 0
-
-    speaker = torch.randint(1, num_speakers, (1, batch_size))
-
-    batched_num_tokens = torch.randint(1, num_tokens, (batch_size,))
-    batched_num_tokens[1] = num_tokens  # NOTE: One of the lengths must be at max length
-    batched_num_tokens[0] = num_tokens - padding_len
+        # NOTE: 1-index to avoid using 0 typically associated with padding
+        input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
+        speaker = torch.randint(1, num_speakers, (1, batch_size))
+        batched_num_tokens = torch.randint(1, num_tokens, (batch_size,))
+        batched_num_tokens[0] = num_tokens  # NOTE: One of the lengths must be at max length
 
     # frames [num_frames, batch_size, frame_channels]
     # frames_with_residual [num_frames, batch_size, frame_channels]
@@ -62,21 +67,26 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
         (batched_frames, batched_frames_with_residual, batched_stop_token, batched_alignment,
          batched_lengths, batched_reached_max) = model(
              input_, speaker, num_tokens=batched_num_tokens)
-        assert batched_reached_max.sum() == batch_size
+        assert batched_reached_max.sum() == 2
 
-    with fork_rng(seed=123):
-        frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
-            input_[:-padding_len, :1], speaker[:, :1])
-        assert reached_max
-
-    assert_almost_equal = lambda a, b: numpy.testing.assert_almost_equal(
+    stop_sigmoid_offset = model.stop_sigmoid.offset
+    assert_equal = lambda a, b: numpy.testing.assert_almost_equal(
         a.detach().numpy(), b.detach().numpy(), decimal=5)
 
-    assert_almost_equal(frames, batched_frames[:lengths[0], :1])
-    assert_almost_equal(frames_with_residual, batched_frames_with_residual[:lengths[0], :1])
-    assert_almost_equal(stop_token, batched_stop_token[:lengths[0], :1])
-    assert_almost_equal(alignment, batched_alignment[:lengths[0], :1, :int(batched_num_tokens[0])])
-    assert_almost_equal(lengths, lengths[:1])
+    for i in range(batch_size):
+        with fork_rng(seed=123):
+            model.stop_sigmoid.offset = stop_sigmoid_offset[:, i:i + 1]
+            frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
+                input_[:batched_num_tokens[i], i:i + 1], speaker[:, i:i + 1])
+
+        batched_length = batched_lengths[0, i]
+
+        assert_equal(reached_max, batched_reached_max[:, i:i + 1])
+        assert_equal(frames, batched_frames[:batched_length, i:i + 1])
+        assert_equal(frames_with_residual, batched_frames_with_residual[:batched_length, i:i + 1])
+        assert_equal(stop_token, batched_stop_token[:batched_length, i:i + 1])
+        assert_equal(alignment, batched_alignment[:batched_length, i:i + 1, :batched_num_tokens[i]])
+        assert_equal(lengths, batched_lengths[:, i:i + 1])
 
 
 def test_spectrogram_model_train__batch_size_sensitivity():
