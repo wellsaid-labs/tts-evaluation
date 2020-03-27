@@ -1,3 +1,4 @@
+from copy import deepcopy
 from unittest import mock
 
 import pytest
@@ -119,7 +120,11 @@ def test__do_loss_and_maybe_backwards():
 def test_visualize_inferred():
     """ Smoke test to ensure that `visualize_inferred` runs without failure. """
     trainer = get_trainer()
+    # NOTE: Test that the model parameters are not messed up after applying EMA.
+    old_state_dict = deepcopy(trainer.model.state_dict())
     trainer.visualize_inferred()
+    for old, new in zip(old_state_dict.values(), trainer.model.state_dict().values()):
+        assert old.data.ne(new.data).sum() == 0
 
 
 def test_run_epoch():
