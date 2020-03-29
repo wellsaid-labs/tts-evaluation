@@ -144,7 +144,7 @@ class LocationSensitiveAttention(nn.Module):
 
         # [batch_size, hidden_size, num_tokens] →
         # [num_tokens, batch_size, hidden_size] →
-        # [num_tokens, batch_size]
+        # [batch_size, num_tokens]
         score = self.project_scores(location_features.permute(2, 0, 1)).squeeze(2).transpose(0, 1)
 
         score.data.masked_fill_(~tokens_mask, -math.inf)
