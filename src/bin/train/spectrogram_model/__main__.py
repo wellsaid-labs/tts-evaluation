@@ -253,10 +253,10 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '--tags',
         default=[
-            'amsgrad=False', '500_step_warmup', 'predict_inital', 'pre_net_layer_norm',
-            'detached_cum_alignment', 'attention_score_locked_dropout', 'alignment_stop_token',
-            'frames_detached_stop_token', 'linear_relu_dropout_linear_stop_token',
-            'encoder_locked_dropout', 'attention_normal_init', 'no_weight_decay'
+            '2_layer_stop_net', '3_layer_attention', 'alignment_stop_token', 'amsgrad=False',
+            'attention_act_tanh(x+y)', 'attention_normal_init', 'attention_score_locked_dropout',
+            'detach_cumulative_alignment', 'encoder_locked_dropout', 'no_weight_decay',
+            'pre_net_frames_detached_stop_token', 'pre_net_layer_norm', 'predict_initial_v2'
         ],
         nargs='+',
         help='List of tags for a new experiments.')
