@@ -32,12 +32,14 @@ class Optimizer(object):
         self.state_dict = self.optimizer.state_dict
         self.load_state_dict = self.optimizer.load_state_dict
 
-    def step(self, comet_ml=None, max_grad_norm=None):
+    def step(self, comet_ml=None, max_grad_norm=None, skip_batch=False):
         """ Performs a single optimization step, including gradient norm clipping if necessary.
 
         Args:
             comet_ml (comet_ml.Experiment, optional): Visualization library.
             max_grad_norm (float, optional): Clip gradient norm to this maximum.
+            skip_batch (bool, optional): If `True`, this skips none finite batches; otherwise, this
+                raises an error.
 
         Returns:
             parameter_norm (float): Total norm of the parameters.
@@ -64,7 +66,10 @@ class Optimizer(object):
                     comet_ml.log_metric('step/parameters_%d/lr' % i, param_group['lr'])
             self.optimizer.step()
         elif comet_ml is not None:
-            logger.warning('Gradient was too large "%s", skipping batch.', str(parameter_norm))
+            if skip_batch:
+                logger.warning('Gradient was too large "%s", skipping batch.', str(parameter_norm))
+            else:
+                raise ValueError('Gradient was too large "%s".' % str(parameter_norm))
 
         return parameter_norm
 
