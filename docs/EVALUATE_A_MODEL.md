@@ -81,7 +81,7 @@ def main(
 
    Go back to the previous step if you have other models you'd like to include in this evaluation.
 
-   This may take a couple hours by the way.
+   This script should take around 30 minutes to complete.
 
 4. Run `evaluate.py` an extra time to get ground truth samples to compare your TTS model against,
    like so:
