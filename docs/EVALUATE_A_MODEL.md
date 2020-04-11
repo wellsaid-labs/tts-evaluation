@@ -154,7 +154,8 @@ def main(
       --csvs ~/Downloads/samples/*/metadata.csv \
       --shuffle \
       --name "$BATCH_DIRECTORY/metadata.csv"
-   cp ~/Downloads/samples/*/*.wav $BATCH_DIRECTORY
+   rsync -avh ~/Downloads/samples/*/ \
+      --include='*.wav' --exclude='*' --exclude='_mturk' $BATCH_DIRECTORY
    cp ~/Downloads/samples/*/*.log $BATCH_DIRECTORY
    ```
 
