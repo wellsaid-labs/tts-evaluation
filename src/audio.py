@@ -15,13 +15,13 @@ from third_party.iso226 import iso226_spl_itpl
 from tqdm import tqdm
 
 import numpy as np
-import scipy.signal
 import torch
 
 # NOTE: `LazyLoader` allows for this repository to run without these dependancies. Also,
 # it side-steps this issue: https://github.com/librosa/librosa/issues/924.
 librosa = LazyLoader('librosa', globals(), 'librosa')
 scipy_wavfile = LazyLoader('scipy_wavfile', globals(), 'scipy.io.wavfile')
+scipy_signal = LazyLoader('scipy_signal', globals(), 'scipy.signal')
 
 from src.environment import TTS_DISK_CACHE_NAME
 from src.utils import assert_no_overwritten_files
@@ -232,7 +232,7 @@ def full_scale_square_wave(sample_rate=REFERENCE_SAMPLE_RATE, frequency=REFERENC
         np.ndarray: Array of length `sample_rate`
     """
     x = np.arange(sample_rate)
-    return scipy.signal.square(2 * np.pi * frequency * (x / sample_rate)).astype(np.float32)
+    return scipy_signal.square(2 * np.pi * frequency * (x / sample_rate)).astype(np.float32)
 
 
 def _k_weighting(frequencies, fs):
@@ -251,7 +251,7 @@ def _k_weighting(frequencies, fs):
     a1 = 2.0 * (K * K - 1.0) / a0_
     a2 = (1.0 - K / Q + K * K) / a0_
 
-    h1 = scipy.signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]
+    h1 = scipy_signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]
     h1 = 20 * np.log10(abs(h1))
 
     # pre-filter 2
@@ -265,7 +265,7 @@ def _k_weighting(frequencies, fs):
     b1 = -2.0
     b2 = 1.0
 
-    h2 = scipy.signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]
+    h2 = scipy_signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]
     h2 = 20 * np.log10(abs(h2))
 
     return h1 + h2

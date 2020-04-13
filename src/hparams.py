@@ -242,7 +242,6 @@ def _set_model_size(frame_channels):
                         # bi-directional [19] LSTM [20] layer containing 512 units (256) in each
                         # direction) to generate the encoded features.
                         lstm_layers=1,
-
                         out_dim=encoder_output_size),
                 'attention.LocationSensitiveAttention.__init__':
                     HParams(

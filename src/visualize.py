@@ -1,33 +1,36 @@
 import io
 import logging
-import matplotlib
 import os
 import platform
 import subprocess
 import time
 
-# Learn more:
-# https://stackoverflow.com/questions/4931376/generating-matplotlib-graphs-without-a-running-x-server
-if platform.system() == 'Linux':
-    matplotlib.use('Agg')
+logger = logging.getLogger(__name__)
 
-from comet_ml import ExistingExperiment
-from comet_ml import Experiment
-from comet_ml.config import get_config
+try:
+    import matplotlib
+
+    # Learn more:
+    # https://stackoverflow.com/questions/4931376/generating-matplotlib-graphs-without-a-running-x-server
+    if platform.system() == 'Linux':
+        matplotlib.use('Agg')
+
+    from matplotlib import pyplot
+    from matplotlib.colors import ListedColormap
+except ImportError:
+    logger.info('Ignoring optional `matplotlib` configurations.')
+
 from hparams import configurable
 from hparams import HParam
-from matplotlib import pyplot
-from matplotlib.colors import ListedColormap
 from third_party import LazyLoader
 
 import numpy as np
 import torch
 librosa_display = LazyLoader('librosa_display', globals(), 'librosa.display')
+comet_ml = LazyLoader('comet_ml', globals(), 'comet_ml')
 
 from src.audio import write_audio
 from src.utils import log_runtime
-
-logger = logging.getLogger(__name__)
 
 turbo_colormap_data = [[0.18995, 0.07176, 0.23217], [0.19483, 0.08339, 0.26149],
                        [0.19956, 0.09498, 0.29024], [0.20415, 0.10652, 0.31844],
@@ -157,7 +160,11 @@ turbo_colormap_data = [[0.18995, 0.07176, 0.23217], [0.19483, 0.08339, 0.26149],
                        [0.54583, 0.03593, 0.00638], [0.53295, 0.03169, 0.00705],
                        [0.51989, 0.02756, 0.00780], [0.50664, 0.02354, 0.00863],
                        [0.49321, 0.01963, 0.00955], [0.47960, 0.01583, 0.01055]]
-matplotlib.cm.register_cmap('turbo', cmap=ListedColormap(turbo_colormap_data))
+
+try:
+    matplotlib.cm.register_cmap('turbo', cmap=ListedColormap(turbo_colormap_data))
+except NameError:
+    logger.info('Ignoring optional `matplotlib` configurations.')
 
 
 def plot_attention(alignment):
@@ -366,14 +373,17 @@ def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
         raise ValueError(('Experiment is not reproducible, Comet does not track untracked files. '
                           'Please track these files via `git`:\n%s') % untracked_files)
 
-    kwargs.update({'log_git_patch': log_git_patch, 'workspace': get_config()['comet.workspace']})
+    kwargs.update({
+        'log_git_patch': log_git_patch,
+        'workspace': comet_ml.config.get_config()['comet.workspace']
+    })
     if project_name is not None:
         kwargs.update({'project_name': project_name})
     if experiment_key is None:
-        experiment = Experiment(**kwargs)
+        experiment = comet_ml.Experiment(**kwargs)
         experiment.log_html(_BASE_HTML_STYLING)
     else:
-        experiment = ExistingExperiment(previous_experiment=experiment_key, **kwargs)
+        experiment = comet_ml.ExistingExperiment(previous_experiment=experiment_key, **kwargs)
 
     # NOTE: Unlike the usage of ``_upload_git_patch`` in ``Experiment``, this does not catch
     # any exceptions thrown by ``_upload_git_patch``; therefore, exiting the program if git patch

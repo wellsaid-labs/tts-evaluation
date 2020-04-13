@@ -259,8 +259,6 @@ machine.
    # NOTE: PyTorch 1.4 relies on CUDA 10.1, we enable it.
    sudo rm /usr/local/cuda
    sudo ln -s /usr/local/cuda-10.1 /usr/local/cuda
-
-   sudo bash src/bin/install_mkl.sh
    ```
 
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...

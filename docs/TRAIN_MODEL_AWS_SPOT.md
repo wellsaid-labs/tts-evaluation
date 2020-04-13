@@ -291,8 +291,6 @@ Related Documentation:
    sudo rm /usr/local/cuda
    sudo ln -s /usr/local/cuda-10.1 /usr/local/cuda
 
-   sudo bash src/bin/install_mkl.sh
-
    # Set a flag to restart training if the instance is rebooted
    touch /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
    ```

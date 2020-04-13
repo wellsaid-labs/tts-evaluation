@@ -236,6 +236,8 @@ def main(dataset,
             has_target_audio or spectrogram_model_checkpoint is not None):
         logger.info('The signal model path is: %s', signal_model_checkpoint.path)
         logger.info('Running inference with %d threads.', torch.get_num_threads())
+        # TODO: Remove `WeightNorm` from signal model for faster synthesis.
+        signal_model_checkpoint.exponential_moving_parameter_average.apply_shadow()
         signal_model = signal_model_checkpoint.model
         use_predicted = spectrogram_model_checkpoint is not None
 
