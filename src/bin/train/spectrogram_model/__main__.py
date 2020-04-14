@@ -85,7 +85,7 @@ def _train(device_index,
            more_hparams,
            evaluate_aligned_every_n_epochs=1,
            evaluate_inferred_every_n_epochs=1,
-           save_checkpoint_every_n_epochs=3,
+           save_checkpoint_every_n_epochs=1,
            distributed_backend='nccl',
            distributed_init_method='tcp://127.0.0.1:29500'):
     """ Loop for training and periodically evaluating the model.
@@ -256,10 +256,10 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument(
         '--tags',
         default=[
-            'amsgrad=False', '500_step_warmup', 'predict_inital', 'pre_net_layer_norm',
-            'detached_cum_alignment', 'attention_score_locked_dropout', 'alignment_stop_token',
-            'frames_detached_stop_token', 'linear_relu_dropout_linear_stop_token',
-            'encoder_locked_dropout', 'attention_normal_init', 'no_weight_decay'
+            '2_layer_stop_net', '3_layer_attention', 'alignment_stop_token', 'amsgrad=False',
+            'attention_act_tanh(x+y)', 'attention_normal_init', 'attention_score_locked_dropout',
+            'detach_cumulative_alignment', 'encoder_locked_dropout', 'no_weight_decay',
+            'pre_net_frames_detached_stop_token', 'pre_net_layer_norm', 'predict_initial_v3'
         ],
         nargs='+',
         help='List of tags for a new experiments.')

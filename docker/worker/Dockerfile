@@ -20,25 +20,6 @@ ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 # NOTE: Learn more about debian frontend, here: https://github.com/moby/moby/issues/4032
 ENV DEBIAN_FRONTEND=noninteractive
 
-# NOTE: This is PyTorch's MKL installation:
-# https://github.com/pytorch/builder/blob/master/manywheel/Dockerfile_101#L16
-RUN apt-get update --fix-missing \
-  && apt-get install -y wget \
-  # Required for `apt-key add`
-  && apt-get install -y gnupg \
-  # Required for `https` for various Docker installs.
-  && apt-get install -y apt-transport-https \
-  # Add the intel APT Repository, similar to: `src/bin/install_mkl.sh`
-  && wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB \
-  && apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB \
-  && sh -c 'echo deb https://apt.repos.intel.com/mkl all main > /etc/apt/sources.list.d/intel-mkl.list' \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends intel-mkl-2019.4-070 \
-  # Configure dynamic linker MKL run-time bindings
-  && echo "/opt/intel/lib/intel64"     >  /etc/ld.so.conf.d/mkl.conf \
-  && echo "/opt/intel/mkl/lib/intel64" >> /etc/ld.so.conf.d/mkl.conf \
-  && ldconfig
-
 WORKDIR /app
 
 RUN python3 -m venv venv
@@ -60,10 +41,7 @@ RUN apt-get update --fix-missing \
   && venv/bin/pip install --no-cache-dir numpy \
   flask \
   gunicorn \
-  # TODO: PyTorch is ~233mb due to MKL and MKLDNN. It may be possible to share our MKL installation
-  # with PyTorch; however, we ran into issues while trying to do this:
-  # https://github.com/pytorch/pytorch/issues/24844
-  torch==1.2.0+cpu -f https://download.pytorch.org/whl/torch_stable.html \
+  torch==1.4.0+cpu -f https://download.pytorch.org/whl/torch_stable.html \
   unidecode \
   tqdm \
   git+https://github.com/PetrochukM/HParams.git \
@@ -83,17 +61,6 @@ FROM base
 WORKDIR /app
 
 COPY --from=builder /app/ /app/
-
-# We do not need 94.8% of `/opt/intel/` folder (2.6G) leaving ~135m.
-COPY --from=builder /opt/intel/mkl/include /opt/intel/mkl/include
-COPY --from=builder /opt/intel/mkl/lib/intel64/libmkl_rt.so /opt/intel/mkl/lib/intel64/libmkl_rt.so
-COPY --from=builder /opt/intel/mkl/lib/intel64/libmkl_core.so /opt/intel/mkl/lib/intel64/libmkl_core.so
-COPY --from=builder /opt/intel/mkl/lib/intel64/libmkl_intel_thread.so /opt/intel/mkl/lib/intel64/libmkl_intel_thread.so
-COPY --from=builder /opt/intel/mkl/lib/intel64/libmkl_intel_lp64.so /opt/intel/mkl/lib/intel64/libmkl_intel_lp64.so
-# Configure dynamic linker MKL run-time bindings
-RUN echo "/opt/intel/lib/intel64"     >  /etc/ld.so.conf.d/mkl.conf \
-  && echo "/opt/intel/mkl/lib/intel64" >> /etc/ld.so.conf.d/mkl.conf \
-  && ldconfig
 
 LABEL maintainer="michael@wellsaidlabs.com"
 

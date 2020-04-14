@@ -31,7 +31,8 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       speakers = [...Array(4).keys()];
     } else if (version == "v2") {
       speakers = [...Array(12).keys()];
-    } else if (version == "v3" || version == "v4" || version == "v5" || version == "latest") {
+    } else if (version == "v3" || version == "v4" || version == "v5" ||
+      version == "v6" || version == "latest") {
       speakers = [...Array(20).keys()];
     } else if (version == "lincoln.v1") {
       speakers = [11541];

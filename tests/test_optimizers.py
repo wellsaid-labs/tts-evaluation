@@ -5,6 +5,7 @@ import unittest
 
 from torch.optim import Adam
 
+import pytest
 import torch
 
 from src.environment import TEMP_PATH
@@ -211,7 +212,7 @@ class TestOptimizer(unittest.TestCase):
         adam = Adam(params)
         adam.step = _step
         optim = Optimizer(adam)
-        optim.step(comet_ml=MockCometML())
+        optim.step(comet_ml=MockCometML(), skip_batch=True)
         assert not did_step
 
         # Test ``nan``
@@ -220,5 +221,25 @@ class TestOptimizer(unittest.TestCase):
         adam = Adam(params)
         adam.step = _step
         optim = Optimizer(adam)
-        optim.step(comet_ml=MockCometML())
+        optim.step(comet_ml=MockCometML(), skip_batch=True)
         assert not did_step
+
+        with pytest.raises(ValueError):
+            # Test ``nan``
+            did_step = False
+            params[0].grad = torch.tensor([float('nan')])
+            adam = Adam(params)
+            adam.step = _step
+            optim = Optimizer(adam)
+            optim.step(comet_ml=MockCometML(), skip_batch=False)
+            assert not did_step
+
+        with pytest.raises(ValueError):
+            # Test ``inf``
+            did_step = False
+            params = [torch.nn.Parameter(torch.randn(1))]
+            params[0].grad = torch.tensor([math.inf])
+            adam = Adam(params)
+            adam.step = _step
+            optim = Optimizer(adam)
+            optim.step(comet_ml=MockCometML(), skip_batch=False)

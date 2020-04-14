@@ -80,8 +80,11 @@ class AutoregressiveDecoder(nn.Module):
         self.lstm_hidden_size = lstm_hidden_size
         hidden_size = lstm_hidden_size + self.encoder_output_size + speaker_embedding_dim
 
-        self.initial_states = nn.Linear(speaker_embedding_dim + encoder_output_size,
-                                        frame_channels + 1 + encoder_output_size)
+        self.initial_states = nn.Sequential(
+            nn.Linear(speaker_embedding_dim + encoder_output_size,
+                      speaker_embedding_dim + encoder_output_size), nn.ReLU(),
+            nn.Linear(speaker_embedding_dim + encoder_output_size,
+                      frame_channels + 1 + encoder_output_size))
         self.pre_net = PreNet(hidden_size=pre_net_hidden_size, frame_channels=frame_channels)
         self.lstm_layer_one = nn.LSTMCell(
             input_size=pre_net_hidden_size + self.encoder_output_size + speaker_embedding_dim,

@@ -25,6 +25,9 @@ CONS:
 - The request for the stream must be a GET request. This prevents us, for example, from sending a
   Spectrogram used to condition the speech synthesis.
 
+TODO: Apply `exponential_moving_parameter_average` before running locally, for best performance.
+TODO: Remove `WeightNorm` before running locally, for best performance.
+
 The cons in summary are that the client cannot manage there own state due to the immaturity of the
 web audio api; therefore, the server must manage it via some database.
 

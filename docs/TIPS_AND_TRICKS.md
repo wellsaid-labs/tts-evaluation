@@ -36,6 +36,12 @@ caches.
   find disk/data -name '.tts_cache' -type d -exec rm -rf {} \;
   ```
 
+- Delete the cache'd predicted spectrograms, like so:
+
+  ```bash
+  find disk/data -type f -name 'predicted_spectrogram*aligned*npy' -delete
+  ```
+
 - Delete various function disk caches for functions. For example, in the below command
   we delete the disk cache for `src.audio.get_audio_metadata`:
 

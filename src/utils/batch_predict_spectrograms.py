@@ -110,7 +110,8 @@ def batch_predict_spectrograms(data,
                 _, predictions, _, alignments = model(text, speaker, text_lengths, spectrogram,
                                                       spectrogram_lengths)
             else:
-                _, predictions, _, alignments, spectrogram_lengths, _ = model(text, speaker)
+                _, predictions, _, alignments, spectrogram_lengths, _ = model(
+                    text, speaker, text_lengths)
 
             # Compute metrics for logging
             mask = lengths_to_mask(spectrogram_lengths, device=predictions.device).transpose(0, 1)

@@ -169,6 +169,8 @@ class Trainer():
             'average_dev_text_length': mean(len(r.text) for r in self.dev_dataset),
         })
         self.comet_ml.log_parameters({
+            # NOTE: The average text and spectrogram length can be used to ensure that two datasets
+            # are equivalent between two experiments.
             'average_train_spectrogram_length':
                 mean(r.spectrogram.shape[0] for r in self.train_dataset),
             'average_dev_spectrogram_length':

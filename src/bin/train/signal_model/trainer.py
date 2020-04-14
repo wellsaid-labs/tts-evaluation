@@ -60,6 +60,7 @@ class SpectrogramLoss(torch.nn.Module):
     the length of the spectrogram.
 
     Args:
+        device (torch.device, optional)
         criterion (torch.nn.Module): The loss function for comparing two spectrograms.
         discriminator (torch.nn.Module): The model used to discriminate between two spectrograms.
         discriminator_optimizer (torch.nn.Module)
@@ -69,6 +70,7 @@ class SpectrogramLoss(torch.nn.Module):
 
     @configurable
     def __init__(self,
+                 device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
                  criterion=HParam(),
                  discriminator=HParam(),
                  discriminator_optimizer=HParam(),
@@ -80,20 +82,25 @@ class SpectrogramLoss(torch.nn.Module):
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 'ignore', module=r'.*hparams', message=r'.*Overwriting configured argument.*')
-            self.signal_to_spectrogram = SignalTodBMelSpectrogram(**kwargs)
+            self.signal_to_spectrogram = SignalTodBMelSpectrogram(**kwargs).to(device)
 
         self.fft_length = self.signal_to_spectrogram.fft_length
         self.frame_hop = self.signal_to_spectrogram.frame_hop
         self.sample_rate = self.signal_to_spectrogram.sample_rate
         self.num_mel_bins = self.signal_to_spectrogram.num_mel_bins
 
-        self.criterion = criterion(reduction='none')
+        self.criterion = criterion(reduction='none').to(device)
 
-        self.discriminator = discriminator(self.fft_length, self.num_mel_bins)
+        self.discriminator = discriminator(self.fft_length, self.num_mel_bins).to(device)
+        if src.distributed.is_initialized():
+            self.discriminator = torch.nn.parallel.DistributedDataParallel(
+                self.discriminator, device_ids=[device], output_device=device, dim=1)
+
         discriminator_optimizer = discriminator_optimizer(
             params=filter(lambda p: p.requires_grad, self.discriminator.parameters()))
-        self.discriminator_optimizer = Optimizer(discriminator_optimizer)
-        self.discriminator_criterion = discriminator_criterion()
+        self.discriminator_optimizer = Optimizer(discriminator_optimizer).to(device)
+
+        self.discriminator_criterion = discriminator_criterion().to(device)
 
     def plot_spectrogram(self, *args, **kwargs):
         return plot_spectrogram(
@@ -102,13 +109,6 @@ class SpectrogramLoss(torch.nn.Module):
     def plot_mel_spectrogram(self, *args, **kwargs):
         return plot_mel_spectrogram(
             *args, **kwargs, frame_hop=self.frame_hop, sample_rate=self.sample_rate)
-
-    def to(self, device):
-        self.discriminator_optimizer = self.discriminator_optimizer.to(device)
-        self.discriminator_criterion = self.discriminator_criterion.to(device)
-        self.discriminator = self.discriminator.to(device)
-        self.signal_to_spectrogram = self.signal_to_spectrogram.to(device)
-        return self
 
     def get_name(self, signal_name=None, is_mel_scale=True, is_decibels=True, is_magnitude=True):
         """ Get a interpretable label for logging a spectrogram.
@@ -274,6 +274,7 @@ class Trainer():
         lr_multiplier_schedule (callable): Learning rate multiplier schedule.
         model (torch.nn.Module, optional): Model to train and evaluate.
         criterions (list of callables, optional): List of callables to initialize criterions.
+        criterions_state_dict (list of dict, optional): An optional state dict for each criterion.
         spectrogram_model_checkpoint_path (pathlib.Path or str, optional): Checkpoint path used to
             generate a spectrogram from text as input to the signal model.
         step (int, optional): Starting step; typically, this parameter is useful when starting from
@@ -306,6 +307,7 @@ class Trainer():
                  exponential_moving_parameter_average=ExponentialMovingParameterAverage,
                  model=HParam(),
                  criterions=HParam(),
+                 criterions_state_dict=None,
                  spectrogram_model_checkpoint_path=None,
                  step=0,
                  epoch=0,
@@ -344,9 +346,9 @@ class Trainer():
         self.scheduler = LambdaLR(
             self.optimizer.optimizer, lr_multiplier_schedule, last_epoch=step - 1)
 
-        self.criterions = [
-            (c if isinstance(c, SpectrogramLoss) else c()).to(device) for c in criterions
-        ]
+        self.criterions = [c(device) for c in criterions]
+        if criterions_state_dict is not None:
+            list(c.load_state_dict(s) for c, s in zip(self.criterions, criterions_state_dict))
 
         self.metrics = {
             'data_queue_size': DistributedAveragedMetric(),
@@ -455,7 +457,7 @@ class Trainer():
             'step': checkpoint.step,
             'spectrogram_model_checkpoint_path': checkpoint.spectrogram_model_checkpoint_path,
             'exponential_moving_parameter_average': checkpoint.exponential_moving_parameter_average,
-            'criterions': checkpoint.criterions,
+            'criterions_state_dict': checkpoint.criterions_state_dict,
         }
         checkpoint_kwargs.update(kwargs)
         return class_(**checkpoint_kwargs)
@@ -479,7 +481,7 @@ class Trainer():
                 comet_ml_experiment_key=self.comet_ml.get_key(),
                 spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
                 exponential_moving_parameter_average=self.exponential_moving_parameter_average,
-                criterions=self.criterions)
+                criterions_state_dict=[c.state_dict() for c in self.criterions])
             if checkpoint.path.exists():
                 return None
             return checkpoint.save()

@@ -49,16 +49,6 @@ brew install espeak
 Note that we do not use `ffmpeg` directly instead it is used by one of our
 [dependencies](https://librosa.github.io/librosa/install.html#ffmpeg).
 
-### (Optional) [MKL](https://software.intel.com/en-us/mkl)
-
-For optimal signal model inference performance, install [MKL](https://software.intel.com/en-us/mkl)
-like so:
-
-```bash
-sudo bash src/bin/install_mkl.sh
-```
-
-Note that this installation will only work on Linux machines with an Intel CPU.
 
 ## 4. Configure Visualization Dependencies
 

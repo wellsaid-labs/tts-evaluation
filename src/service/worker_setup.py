@@ -1,3 +1,5 @@
+import torch
+
 import logging
 
 from src.environment import set_basic_logging_config
@@ -23,16 +25,16 @@ def main(speaker_id_to_speaker, spectrogram_model_checkpoint, signal_model_check
     assert all(s in set(speaker_id_to_speaker.values()) for s in speaker_encoder.vocab), (
         'All speaker ids were not found in `speaker_id_to_speaker`.')
 
-    # Cache ths signal model inferrer
-    signal_model_checkpoint.model
-
     # TODO: The below checkpoint attributes should be statically defined somewhere so that there is
     # some guarantee that these attributes exist.
-    # TODO: For performance, we should remove weight normalization.
 
     # Reduce checkpoint size
+    signal_model_checkpoint.exponential_moving_parameter_average.apply_shadow()
+    signal_model_checkpoint.exponential_moving_parameter_average = None
     signal_model_checkpoint.optimizer = None
-    signal_model_checkpoint.anomaly_detector = None
+    signal_model_checkpoint.criterions_state_dict = None
+    for module in signal_model_checkpoint.model.get_weight_norm_modules():
+        torch.nn.utils.remove_weight_norm(module)
     spectrogram_model_checkpoint.optimizer = None
 
     # Remove unnecessary information

@@ -76,7 +76,7 @@ def _train(device_index,
            comet_ml_project_name,
            comet_ml_experiment_key,
            more_hparams,
-           evaluate_every_n_epochs=10,
+           evaluate_every_n_epochs=1,
            generate_every_n_evaluations=1,
            save_checkpoint_every_n_evaluations=1,
            distributed_backend='nccl',
@@ -266,7 +266,7 @@ if __name__ == '__main__':  # pragma: no cover
         '--tags',
         default=[
             'weight_norm_conditional', 'power_2_windows', 'layer_norm_input',
-            '100x_discriminator_lr'
+            '100x_discriminator_lr', 'synchronize_discriminator'
         ],
         nargs='+',
         help='List of tags for the experiment.')
