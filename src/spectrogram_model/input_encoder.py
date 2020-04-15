@@ -67,6 +67,7 @@ def _grapheme_to_phoneme_helper(grapheme,
     # NOTE: Replace multiple separators in a row without any phonemes in between with one separator.
     phoneme = re.sub(r'%s+' % re.escape(service_separator), service_separator, phoneme)
     phoneme = re.sub(r'%s+\s+' % re.escape(service_separator), ' ', phoneme)
+    phoneme = re.sub(r'\s+%s+' % re.escape(service_separator), ' ', phoneme)
     phoneme = phoneme.strip()
 
     phoneme = stripped_left + phoneme + stripped_right
