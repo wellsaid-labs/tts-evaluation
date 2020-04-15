@@ -35,7 +35,7 @@ def _grapheme_to_phoneme(grapheme, **kwargs):
         grapheme (str): The graphemes to convert to phonemes.
         service (str, optional): The service used to compute phonemes.
         flags (list of str, optional): The list of flags to add to the service.
-        separator (None or str, optional): The separator used to seperate phonemes.
+        separator (None or str, optional): The separator used to separate phonemes.
         service_separator (str, optional): The separator used by the service between phonemes.
 
     Returns:
