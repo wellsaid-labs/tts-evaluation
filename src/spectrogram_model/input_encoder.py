@@ -81,7 +81,7 @@ def _grapheme_to_phoneme_helper(grapheme,
     phoneme = stripped_left + phoneme + stripped_right
     phoneme = phoneme.replace(service_separator, separator)
 
-    # NOTE: Add seperators around stress tokens and words.
+    # NOTE: Add separators around stress tokens and words.
     phoneme = phoneme.replace(' ', separator + ' ' + separator)
     phoneme = phoneme.replace('ˈ', separator + 'ˈ' + separator)
     phoneme = phoneme.replace('ˌ', separator + 'ˌ' + separator)
