@@ -44,9 +44,12 @@ def _grapheme_to_phoneme(grapheme, separator='', **kwargs):
     return_ = (separator + '\n' + separator).join([
         _grapheme_to_phoneme_helper(s, separator=separator, **kwargs) for s in grapheme.split('\n')
     ])
-    # NOTE: We need to remove double separators from when there are consecutive new lines.
-    return re.sub(r'%s+' % re.escape(separator), separator,
-                  return_).strip(separator) if len(separator) > 0 else return_
+    # NOTE: We need to remove double separators from when there are consecutive new lines like
+    # "\n\n\n", for example.
+    if len(separator) > 0:
+        return re.sub(r'%s+' % re.escape(separator), separator, return_).strip(separator)
+    else:
+        return return_
 
 
 @disk_cache
