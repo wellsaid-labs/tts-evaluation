@@ -188,7 +188,7 @@ def test__grapheme_to_phoneme_perserve_punctuation__spacy_failure_cases():
     ]
 
     phoneme = [
-        "d_ˈɑː_t s_æ_m_ˈɪ_ɹ ˈɛ_m b_ˈɑː_b_uː ɪ_z ɐ p_ɹ_ə_f_ˈɛ_s_ɚ h_ˌuː "
+        "d_ˈɑː_t s_æ_m_ˈɪɹ ˈɛ_m b_ˈɑː_b_uː ɪ_z ɐ p_ɹ_ə_f_ˈɛ_s_ɚ h_ˌuː "
         "ɹ_ˈoʊ_t ɐ_n ˈɑːɹ_ɾ_ɪ_k_əl ɐ_b_ˌaʊ_t k_l_ˈæ_s_ɹ_uː_m k_l_ˈaɪ_m_ə_t æ_n_d "
         "s_ˈoʊ_ʃ_əl ɪ_n_t_ˈɛ_l_ɪ_dʒ_ə_n_s.",
         "aɪ h_ˈɑː θ_ˈɔː_t t_ˈɪ_l m_aɪ b_ɹ_ˈeɪ_n_z ˈeɪ_k_t_b_ɪ_l_i m_ˌiː, "
@@ -206,8 +206,8 @@ def test__grapheme_to_phoneme_perserve_punctuation__spacy_failure_cases():
         "ˌɪ_n_d_ˈiː_d, f_ɚ_ð_ə ɹ_ˈɔɪ_əl b_ˈɑː_d_i, ɐ ɹ_ˈæ_ð_ɚ_ɹ ʌ_n_j_ˈuː_ʒ_uː_əl "
         "s_ˈɛ_t ʌ_v aɪ_d_ˈiə_l ˈæ_t_ɹ_ɪ_b_j_ˌuː_t_s ɪ_m_ˈɜː_dʒ_ᵻ_z ɪ_n_ð_ə "
         "m_ˌɛ_s_ə_p_ə_t_ˈeɪ_m_iə_n l_ˈɛ_k_s_ɪ_k_ə_n: ɐ_n ɐ_k_j_ˌuː_m_j_ʊ_l_ˈeɪ_ʃ_ə_n ʌ_v ɡ_ˈʊ_d "
-        "f_ˈɔːɹ_m ɔːɹ b_ɹ_ˈiː_d_ɪ_ŋ, ɔː_s_p_ˈɪ_ʃ_ə_s_n_ə_s, v_ˈɪ_ɡ_ɚ/v_aɪ_t_ˈæ_l_ɪ_ɾ_i, ˈæ_n_d, "
-        "s_p_ə_s_ˈɪ_f_ɪ_k_l_i, s_ˈɛ_k_ʃ_uː_əl ɐ_l_ˈʊɹ ɔːɹ tʃ_ˈɑːɹ_m – ˈɔː_l ʌ_v_w_ˈɪ_tʃ "
+        "f_ˈɔːɹ_m ɔːɹ b_ɹ_ˈiː_d_ɪ_ŋ, ɔː_s_p_ˈɪ_ʃ_ə_s_n_ə_s, v_ˈɪ_ɡ_ɚ s_l_ˈæ_ʃ v_aɪ_t_ˈæ_l_ɪ_ɾ_i, "
+        "ˈæ_n_d, s_p_ə_s_ˈɪ_f_ɪ_k_l_i, s_ˈɛ_k_ʃ_uː_əl ɐ_l_ˈʊɹ ɔːɹ tʃ_ˈɑːɹ_m – ˈɔː_l ʌ_v_w_ˈɪ_tʃ "
         "ɑːɹ n_ˌɑː_t ˈoʊ_n_l_i ɐ_s_k_ɹ_ˈaɪ_b_d ɪ_n t_ˈɛ_k_s_t, b_ˌʌ_t ˈiː_k_w_əl_i t_ə_b_i "
         "ɹ_ˈɛ_d ɪ_n ˈɪ_m_ɪ_dʒ_ɹ_i.",
     ]
