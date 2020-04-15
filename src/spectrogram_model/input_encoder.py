@@ -10,7 +10,7 @@ import subprocess
 
 from torchnlp.encoders import Encoder
 from torchnlp.encoders import LabelEncoder
-from torchnlp.encoders.text import CharacterEncoder
+from torchnlp.encoders.text import DelimiterEncoder
 from tqdm import tqdm
 
 import en_core_web_sm
@@ -25,7 +25,7 @@ from src.utils.disk_cache_ import make_arg_key
 logger = logging.getLogger(__name__)
 
 
-def _grapheme_to_phoneme(grapheme, **kwargs):
+def _grapheme_to_phoneme(grapheme, separator='', **kwargs):
     """ Convert graphemes into phonemes without perserving punctuation.
 
     NOTE: `grapheme` is split on new lines because `espeak` is inconsistent in it's handling of new
@@ -35,13 +35,18 @@ def _grapheme_to_phoneme(grapheme, **kwargs):
         grapheme (str): The graphemes to convert to phonemes.
         service (str, optional): The service used to compute phonemes.
         flags (list of str, optional): The list of flags to add to the service.
-        separator (None or str, optional): The separator used to seperate phonemes.
+        separator (str, optional): The separator used to seperate phonemes.
         service_separator (str, optional): The separator used by the service between phonemes.
 
     Returns:
         phoneme (str)
     """
-    return '\n'.join([_grapheme_to_phoneme_helper(s, **kwargs) for s in grapheme.split('\n')])
+    return_ = (separator + '\n' + separator).join([
+        _grapheme_to_phoneme_helper(s, separator=separator, **kwargs) for s in grapheme.split('\n')
+    ])
+    # NOTE: We need to remove double separators from when there are consecutive new lines.
+    return re.sub(r'%s+' % re.escape(separator), separator,
+                  return_).strip(separator) if len(separator) > 0 else return_
 
 
 @disk_cache
@@ -65,12 +70,21 @@ def _grapheme_to_phoneme_helper(grapheme,
     phoneme = ' '.join([s.strip() for s in phoneme.strip().split('\n')])
 
     # NOTE: Replace multiple separators in a row without any phonemes in between with one separator.
-    phoneme = re.sub(r'%s+' % service_separator, service_separator, phoneme)
-    phoneme = re.sub(r'%s+\s+' % service_separator, ' ', phoneme)
+    phoneme = re.sub(r'%s+' % re.escape(service_separator), service_separator, phoneme)
+    phoneme = re.sub(r'%s+\s+' % re.escape(service_separator), ' ', phoneme)
+    phoneme = re.sub(r'\s+%s+' % re.escape(service_separator), ' ', phoneme)
     phoneme = phoneme.strip()
 
     phoneme = stripped_left + phoneme + stripped_right
-    return phoneme if separator is None else phoneme.replace(service_separator, separator)
+    phoneme = phoneme.replace(service_separator, separator)
+
+    # NOTE: Add seperators around stress tokens and words.
+    phoneme = phoneme.replace(' ', separator + ' ' + separator)
+    phoneme = phoneme.replace('ˈ', separator + 'ˈ' + separator)
+    phoneme = phoneme.replace('ˌ', separator + 'ˌ' + separator)
+    phoneme = re.sub(r'%s+' %
+                     re.escape(separator), separator, phoneme) if len(separator) > 0 else phoneme
+    return phoneme.strip(separator)
 
 
 @lru_cache()
@@ -84,11 +98,12 @@ SPACY_PUNCT_TAG = 'PUNCT'
 
 
 @disk_cache
-def _grapheme_to_phoneme_perserve_punctuation(text, **kwargs):
+def _grapheme_to_phoneme_perserve_punctuation(text, separator='', **kwargs):
     """ Convert grapheme to phoneme while perserving punctuation.
 
     Args:
         text (str): Graphemes.
+        separator (str): he separator used to seperate phonemes, stress, and punctuation.
         **kwargs: Key-word arguments passed to `_grapheme_to_phoneme`.
 
     Returns:
@@ -98,6 +113,7 @@ def _grapheme_to_phoneme_perserve_punctuation(text, **kwargs):
 
     assert len(tokens) > 0, 'Zero tokens were found in text: %s' % text
     assert text == ''.join(t.text_with_ws for t in tokens), 'Detokenization failed: %s' % text
+    assert not separator or separator not in text, 'The separator is not unique.'
 
     # NOTE: `is_punct` is not contextual while `pos_ == SPACY_PUNCT_TAG` is, see:
     # https://github.com/explosion/spaCy/issues/998. This enables us to phonemize cases like:
@@ -106,15 +122,17 @@ def _grapheme_to_phoneme_perserve_punctuation(text, **kwargs):
     # - "judgement, name & face memory" (CCONJ)
     # - "to public interest/national security" (SYM)
     # - "spectacular, grand // desco da" (SYM)
-    return_ = ''
+    return_ = []
     for is_punct, group in groupby(tokens, lambda t: t.pos_ == SPACY_PUNCT_TAG):
         phrase = ''.join([t.text_with_ws for t in group])
         is_alpha_numeric = any(c.isalpha() or c.isdigit() for c in phrase)
         if is_punct and is_alpha_numeric:
             logger.warning('Punctuation contains alphanumeric characters: %s' % phrase)
-        is_punct = is_punct and not is_alpha_numeric
-        return_ += phrase if is_punct else _grapheme_to_phoneme(phrase, **kwargs)
-    return return_
+        if is_punct and not is_alpha_numeric:
+            return_.extend(list(phrase))
+        else:
+            return_.append(_grapheme_to_phoneme(phrase, separator=separator, **kwargs))
+    return separator.join(return_)
 
 
 @log_runtime
@@ -153,17 +171,19 @@ class InputEncoder(Encoder):
         text_samples (list of str): Examples used to make the text encoder.
         speaker_samples (list of src.datasets.constants.Speaker): Examples used to make the speaker
           encoder.
+        delimiter (string, optional): A unique character used to tokenize text.
     """
 
-    def __init__(self, text_samples, speaker_samples, **kwargs):
+    def __init__(self, text_samples, speaker_samples, delimiter='|', **kwargs):
         super().__init__(**kwargs)
-        self.text_encoder = CharacterEncoder([self.preprocess_text(t) for t in text_samples],
-                                             enforce_reversible=True)
+        self.delimiter = delimiter
+        self.text_encoder = DelimiterEncoder(
+            delimiter, [self.preprocess_text(t) for t in text_samples], enforce_reversible=True)
         self.speaker_encoder = LabelEncoder(
             speaker_samples, reserved_labels=[], enforce_reversible=True)
 
     def preprocess_text(self, text):
-        return _grapheme_to_phoneme_perserve_punctuation(text)
+        return _grapheme_to_phoneme_perserve_punctuation(text, separator=self.delimiter)
 
     def encode(self, object_):
         """

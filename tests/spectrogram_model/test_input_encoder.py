@@ -18,17 +18,22 @@ def test_cache_grapheme_to_phoneme_perserve_punctuation():
     get_result = lambda s: _grapheme_to_phoneme_perserve_punctuation.disk_cache.get(
         make_arg_key(_grapheme_to_phoneme_perserve_punctuation.__wrapped__, s, separator='_'))
 
-    assert get_result('Hello world') == 'h_ə_l_ˈoʊ w_ˈɜː_l_d'
-    assert get_result('How are you?') == 'h_ˈaʊ ɑːɹ j_uː?'
-    assert get_result('I\'m great!') == 'aɪ_m ɡ_ɹ_ˈeɪ_t!'
+    assert get_result('Hello world') == 'h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d'
+    assert get_result('How are you?') == 'h_ˈ_aʊ_ _ɑːɹ_ _j_uː_?'
+    assert get_result('I\'m great!') == 'aɪ_m_ _ɡ_ɹ_ˈ_eɪ_t_!'
 
 
 def test__grapheme_to_phoneme__separator():
     # Test using `service_separator`.
-    assert _grapheme_to_phoneme('Hello World', separator='_') == 'h_ə_l_ˈoʊ w_ˈɜː_l_d'
+    assert _grapheme_to_phoneme('Hello World', separator='_') == 'h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d'
 
     with pytest.raises(AssertionError):  # Test separator is not unique
         _grapheme_to_phoneme('Hello World', separator='ə')
+
+
+def test__grapheme_to_phoneme_perserve_punctuation__separator():
+    with pytest.raises(AssertionError):  # Test separator is not unique
+        _grapheme_to_phoneme_perserve_punctuation('Hello World!', separator='!')
 
 
 def test__grapheme_to_phoneme():
@@ -81,66 +86,71 @@ He posed the couple, board-stiff in front of a plain house.
 The man,""",
     ]
     phoneme = [
-        '  h_ə_l_ˈoʊ w_ˈɜː_l_d  ',
-        'h_ə_l_ˈoʊ w_ˈɜː_l_d  ',
-        '  h_ə_l_ˈoʊ w_ˈɜː_l_d',
-        ' \n h_ə_l_ˈoʊ w_ˈɜː_l_d \n ',
-        ' \n\n h_ə_l_ˈoʊ w_ˈɜː_l_d \n\n ',
-        'ɪ_t ɪ_z k_ˈɑː_m_ə_n_l_i ˈɑːɹ_ɡ_j_uː_d ð_æ_t_ð_ə n_ˈoʊ_ʃ_ə_n ʌ_v',
-        'æ_n_d t_ɹ_ˈɑː_t f_ˈɛ_d ɪ_t ɐ h_ˈæ_n_d_f_əl ʌ_v f_ɹ_ˈɛ_ʃ b_l_ˈuː '
-        'k_l_ˈoʊ_v_ɚ æ_n_d s_m_ˈuː_ð_d æ_n_d p_ˈɛ_ɾ_ᵻ_d ɪ_t ʌ_n_t_ˈɪ_l ð_ə '
-        'l_ˈæ_m w_ʌ_z ˈiː_ɡ_ɚ t_ə f_ˈɑː_l_oʊ h_ɜː w_ɛɹ_ɹ_ˈɛ_v_ɚ ʃ_iː m_ˌaɪ_t '
-        'ɡ_ˈoʊ',
-        'ð_ə h_ˈæ_b_ɪ_t_s ʌ_v m_ˈaɪ_n_d ð_æ_t k_ˈæ_ɹ_ɪ_k_t_ɚ_ɹ_ˌaɪ_z ɐ '
-        'p_ˈɜː_s_ə_n s_t_ɹ_ˈɔ_ŋ_l_i d_ɪ_s_p_ˈoʊ_z_d t_ʊ_w_ˈɔːɹ_d '
-        'k_ɹ_ˈɪ_ɾ_ɪ_k_əl θ_ˈɪ_ŋ_k_ɪ_ŋ ɪ_n_k_l_ˈuː_d ɐ d_ɪ_z_ˈaɪɚ t_ə '
-        'f_ˈɑː_l_oʊ ɹ_ˈiː_z_ə_n æ_n_d ˈɛ_v_ɪ_d_ə_n_s w_ɛɹ_ɹ_ˈɛ_v_ɚ ð_eɪ '
-        'm_ˈeɪ l_ˈiː_d',
-        'ð_ə h_ˈæ_b_ɪ_t_s ʌ_v m_ˈaɪ_n_d ð_æ_t k_ˈæ_ɹ_ɪ_k_t_ɚ_ɹ_ˌaɪ_z ɐ '
-        'p_ˈɜː_s_ə_n s_t_ɹ_ˈɔ_ŋ_l_i d_ɪ_s_p_ˈoʊ_z_d t_ʊ_w_ˈɔːɹ_d '
-        'k_ɹ_ˈɪ_ɾ_ɪ_k_əl θ_ˈɪ_ŋ_k_ɪ_ŋ ɪ_n_k_l_ˈuː_d ɐ d_ɪ_z_ˈaɪɚ t_ə '
-        'f_ˈɑː_l_oʊ ɹ_ˈiː_z_ə_n æ_n_d ˈɛ_v_ɪ_d_ə_n_s w_ɛɹ_ɹ_ˈɛ_v_ɚ '
-        'ð_eɪ m_ˈeɪ l_ˈiː_d ɐ s_ˌɪ_s_t_ə_m_ˈæ_ɾ_ɪ_k',
-        'b_ˌʌ_t w_ɛɹ_ɹ_ˈɛ_v_ɚ ð_eɪ f_ˈɔː_t ɪ_n n_ˈɔːɹ_θ ˈæ_f_ɹ_ɪ_k_ə ɔːɹ '
-        'ð_ə s_ˈaʊ_θ p_ɐ_s_ˈɪ_f_ɪ_k ɔːɹ w_ˈɛ_s_t_ɚ_n j_ˈʊ_ɹ_ə_p ð_ɪ '
-        'ˈɪ_n_f_ə_n_t_ɹ_i b_ˈoːɹ ð_ə b_ɹ_ˈʌ_n_t ʌ_v_ð_ə f_ˈaɪ_ɾ_ɪ_ŋ '
-        'ɑː_n_ð_ə ɡ_ɹ_ˈaʊ_n_d æ_n_d s_ˈɛ_v_ə_n ˌaʊ_ɾ_ə_v t_ˈɛ_n s_ˈʌ_f_ɚ_d '
-        'k_ˈæ_ʒ_uː_əl_ɾ_ɪ_z',
-        'aɪ l_ˈeɪ ˈɛ_ɡ_z w_ɛɹ_ɹ_ˈɛ_v_ɚ_ɹ aɪ h_ˈæ_p_ə_n t_ə b_ˈiː s_ˈɛ_d ð_ə '
-        'h_ˈɛ_n ɹ_ˈʌ_f_l_ɪ_ŋ h_ɜː f_ˈɛ_ð_ɚ_z æ_n_d ð_ˈɛ_n ʃ_ˈeɪ_k_ɪ_ŋ '
-        'ð_ˌɛ_m ˌɪ_n_t_ʊ p_l_ˈeɪ_s',
-        's_k_ˈɜː_ɹ_ɪ_ɪ_ŋ f_ɔːɹ m_ˈeɪ_dʒ_ɚ s_t_ˈoː_ɹ_ɪ_z w_ɛ_n_ˌɛ_v_ɚ_ɹ '
-        'æ_n_d w_ɛɹ_ɹ_ˈɛ_v_ɚ ð_eɪ k_ʊ_d b_iː f_ˈaʊ_n_d',
-        'ˈæ_k_ʃ_ə_n_z d_ˈɑː_t s_æ_m_ˈɪ_ɹ ˈɛ_m b_ˈɑː_b_uː ɪ_z ɐ p_ɹ_ə_f_ˈ'
-        'ɛ_s_ɚ h_ˌuː ɹ_ˈoʊ_t ɐ_n ˈɑːɹ_ɾ_ɪ_k_əl ɐ_b_ˌaʊ_t k_l_ˈæ_s_ɹ_uː_m '
-        'k_l_ˈaɪ_m_ə_t æ_n_d s_ˈoʊ_ʃ_əl ɪ_n_t_ˈɛ_l_ɪ_dʒ_ə_n_s',
-        'k_ˈɑː_p_i b_ˈaɪ',
-        'f_ɔː_ɹ ɛ_ɡ_z_ˈæ_m_p_əl',
-        'ɔːɹ s_ˈʌ_m_t_aɪ_m_z b_ˌiː_ɪ_ŋ ɪ_l_ˈɪ_m_ᵻ_n_ˌeɪ_ɾ_ᵻ_d',
-        """ʌ_v f_ˈaɪ_v s_t_ˈeɪ_dʒ_ᵻ_z
- ˈaɪ p_ɹ_ˌɛ_p_ɚ_ɹ_ˈeɪ_ʃ_ə_n
- ɹ_ˌoʊ_m_ə_n t_ˈuː ˌɪ_n_k_j_uː_b_ˈeɪ_ʃ_ə_n
- ɹ_ˌoʊ_m_ə_n θ_ɹ_ˈiː ˌɪ_n_t_ɪ_m_ˈeɪ_ʃ_ə_n
- ɹ_ˌoʊ_m_ə_n f_ˈoːɹ ɪ_l_ˌuː_m_ᵻ_n_ˈeɪ_ʃ_ə_n""",
-        'aɪ h_ˈɑː θ_ˈɔː_t t_ˈɪ_l m_aɪ b_ɹ_ˈeɪ_n_z ˈeɪ_k_t_b_ɪ_l_i m_ˌiː dʒ_ˈɑː_n aɪ h_ˈæ_v ɐ_n aɪ '
-        's_ˈeɪ ɐ_ɡ_ˈɛ_n ð_ɚ_z n_ˈoʊ h_ˈɛ_l_p f_ɔː_ɹ ˌʌ_s b_ˌʌ_t h_ˌæ_v_ɪ_ŋ f_ˈeɪ_θ ˈaɪ ð_ə '
-        'j_ˈuː_n_iə_n θ_ˈeɪ_l w_ˈɪ_n ð_ə d_ˈeɪ s_ˈiː ɪ_f ð_eɪ d_ˈʌ_n_ɑː_t',
-        'ð_ə f_ˈʊ_t_b_ɔː_l p_l_ˈeɪ ʌ_v_ð_ə d_ˈɛ_k_eɪ_d ɔːɹ ð_ə k_ˈɑː_n_s_ɜː_t '
-        'ə_v_ə l_ˈaɪ_f_t_aɪ_m\n\n'
-        'ð_eɪ_l s_p_ˈɛ_n_d w_ˈʌ_n_p_ˈɔɪ_n_t_f_ˈaɪ_v b_ˈɪ_l_iə_n d_ˈɑː_l_ɚ_z '
-        'ˌɑː_n t_w_ˈɛ_n_t_i_ˈeɪ_t θ_ˈaʊ_z_ə_n_d ɪ_v_ˈɛ_n_t_s ɹ_ˈeɪ_n_dʒ_ɪ_ŋ '
-        'f_ɹ_ʌ_m b_ɹ_ˈɔː_d_w_eɪ t_ə s_ˈuː_p_ɚ b_ˈoʊ_l_z',
-        'f_ˈɔːɹ_tʃ_ə_n_ə_t_l_i k_l_ˈʌ_b m_ˈɛ_d h_ɐ_z ɡ_ˈɪ_v_ə_n ˌʌ_s ɐ_n ˈæ_n_t_ɪ_d_ˌoʊ_t\n\n'
-        'ð_ə k_l_ˈʌ_b m_ˈɛ_d v_eɪ_k_ˈeɪ_ʃ_ə_n v_ˈɪ_l_ɪ_dʒ w_ˌɛ_ɹ ˈɔː_l ð_oʊ_z p_ɹ_ˈaɪ_m '
-        'd_ɪ_s_t_ˈɜː_b_ɚ_z ʌ_v_ð_ə p_ˈiː_s l_ˈaɪ_k t_ˈɛ_l_ɪ_f_ˌoʊ_n_z k_l_ˈɑː_k_s æ_n_d '
-        'n_ˈuː_z_p_eɪ_p_ɚ_z ɑːɹ ɡ_ˈɔ_n',
-        'ɔːɹ f_ˈɔː_t ˌoʊ_v_ɚ ð_ɪ_s ɡ_ɹ_ˈaʊ_n_d\n'
-        'f_ɔːɹ ð_ɪ_s k_ə_m_j_ˈuː_n_ɪ_ɾ_i ɐ_n ɔːɹ_d_ˈiə_l ð_æ_t s_t_ˈɑːɹ_ɾ_ᵻ_d w_ɪ_ð ə_f_ˈɛ_n_s '
-        'ʌ_n_s_ˈɜː_t_ə_n_t_i æ_n_d ˈaʊ_t_ɹ_eɪ_dʒ ˈɛ_n_d_ᵻ_d ɐ_m_ˈɪ_d_s_t h_ˈɔː_ɹ_ɚ p_ˈɑː_v_ɚ_ɾ_i',
-        'ɐ b_ˈæ_n_d k_ˈɑː_l_ɚ ʃ_ˈɜː_t b_ˈʌ_ʔ_n̩_d t_ˈaɪ_t ɐ_ɹ_ˈaʊ_n_d ð_ə θ_ɹ_ˈoʊ_t æ_n_d ɐ '
-        'd_ˈɑːɹ_k b_ˈɪ_z_n_ə_s dʒ_ˈæ_k_ɪ_t\n\n'
-        'h_iː p_ˈoʊ_z_d ð_ə k_ˈʌ_p_əl b_ˈoːɹ_d_s_t_ˈɪ_f ɪ_n f_ɹ_ˈʌ_n_t ə_v_ə p_l_ˈeɪ_n h_ˈaʊ_s\n\n'
-        'ð_ə m_ˈæ_n',
+        ' _ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _ ',
+        'h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _ ',
+        ' _ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d',
+        ' _\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_ ',
+        ' _\n_\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_\n_ ',
+        'ɪ_t_ _ɪ_z_ _k_ˈ_ɑː_m_ə_n_l_i_ _ˈ_ɑːɹ_ɡ_j_uː_d_ _ð_æ_t_ð_ə_ _n_ˈ_oʊ_ʃ_ə_n_ _ʌ_v',
+        'æ_n_d_ _t_ɹ_ˈ_ɑː_t_ _f_ˈ_ɛ_d_ _ɪ_t_ _ɐ_ _h_ˈ_æ_n_d_f_əl_ _ʌ_v_ _f_ɹ_ˈ_ɛ_ʃ_ _b_l_ˈ_uː_ _'
+        'k_l_ˈ_oʊ_v_ɚ_ _æ_n_d_ _s_m_ˈ_uː_ð_d_ _æ_n_d_ _p_ˈ_ɛ_ɾ_ᵻ_d_ _ɪ_t_ _ʌ_n_t_ˈ_ɪ_l_ _ð_ə_ _'
+        'l_ˈ_æ_m_ _w_ʌ_z_ _ˈ_iː_ɡ_ɚ_ _t_ə_ _f_ˈ_ɑː_l_oʊ_ _h_ɜː_ _w_ɛɹ_ɹ_ˈ_ɛ_v_ɚ_ _ʃ_iː_ _m_ˌ_aɪ_t_ '
+        '_ɡ_ˈ_oʊ',
+        'ð_ə_ _h_ˈ_æ_b_ɪ_t_s_ _ʌ_v_ _m_ˈ_aɪ_n_d_ _ð_æ_t_ _k_ˈ_æ_ɹ_ɪ_k_t_ɚ_ɹ_ˌ_aɪ_z_ _ɐ_ _'
+        'p_ˈ_ɜː_s_ə_n_ _s_t_ɹ_ˈ_ɔ_ŋ_l_i_ _d_ɪ_s_p_ˈ_oʊ_z_d_ _t_ʊ_w_ˈ_ɔːɹ_d_ _'
+        'k_ɹ_ˈ_ɪ_ɾ_ɪ_k_əl_ _θ_ˈ_ɪ_ŋ_k_ɪ_ŋ_ _ɪ_n_k_l_ˈ_uː_d_ _ɐ_ _d_ɪ_z_ˈ_aɪɚ_ _t_ə_ _'
+        'f_ˈ_ɑː_l_oʊ_ _ɹ_ˈ_iː_z_ə_n_ _æ_n_d_ _ˈ_ɛ_v_ɪ_d_ə_n_s_ _w_ɛɹ_ɹ_ˈ_ɛ_v_ɚ_ _ð_eɪ_ _'
+        'm_ˈ_eɪ_ _l_ˈ_iː_d',
+        'ð_ə_ _h_ˈ_æ_b_ɪ_t_s_ _ʌ_v_ _m_ˈ_aɪ_n_d_ _ð_æ_t_ _k_ˈ_æ_ɹ_ɪ_k_t_ɚ_ɹ_ˌ_aɪ_z_ _ɐ_ _'
+        'p_ˈ_ɜː_s_ə_n_ _s_t_ɹ_ˈ_ɔ_ŋ_l_i_ _d_ɪ_s_p_ˈ_oʊ_z_d_ _t_ʊ_w_ˈ_ɔːɹ_d_ _'
+        'k_ɹ_ˈ_ɪ_ɾ_ɪ_k_əl_ _θ_ˈ_ɪ_ŋ_k_ɪ_ŋ_ _ɪ_n_k_l_ˈ_uː_d_ _ɐ_ _d_ɪ_z_ˈ_aɪɚ_ _t_ə_ _'
+        'f_ˈ_ɑː_l_oʊ_ _ɹ_ˈ_iː_z_ə_n_ _æ_n_d_ _ˈ_ɛ_v_ɪ_d_ə_n_s_ _w_ɛɹ_ɹ_ˈ_ɛ_v_ɚ_ _'
+        'ð_eɪ_ _m_ˈ_eɪ_ _l_ˈ_iː_d_ _ɐ_ _s_ˌ_ɪ_s_t_ə_m_ˈ_æ_ɾ_ɪ_k',
+        'b_ˌ_ʌ_t_ _w_ɛɹ_ɹ_ˈ_ɛ_v_ɚ_ _ð_eɪ_ _f_ˈ_ɔː_t_ _ɪ_n_ _n_ˈ_ɔːɹ_θ_ _ˈ_æ_f_ɹ_ɪ_k_ə_ _ɔːɹ_ _'
+        'ð_ə_ _s_ˈ_aʊ_θ_ _p_ɐ_s_ˈ_ɪ_f_ɪ_k_ _ɔːɹ_ _w_ˈ_ɛ_s_t_ɚ_n_ _j_ˈ_ʊ_ɹ_ə_p_ _ð_ɪ_ _'
+        'ˈ_ɪ_n_f_ə_n_t_ɹ_i_ _b_ˈ_oːɹ_ _ð_ə_ _b_ɹ_ˈ_ʌ_n_t_ _ʌ_v_ð_ə_ _f_ˈ_aɪ_ɾ_ɪ_ŋ_ _'
+        'ɑː_n_ð_ə_ _ɡ_ɹ_ˈ_aʊ_n_d_ _æ_n_d_ _s_ˈ_ɛ_v_ə_n_ _ˌ_aʊ_ɾ_ə_v_ _t_ˈ_ɛ_n_ _s_ˈ_ʌ_f_ɚ_d_ _'
+        'k_ˈ_æ_ʒ_uː_əl_ɾ_ɪ_z',
+        'aɪ_ _l_ˈ_eɪ_ _ˈ_ɛ_ɡ_z_ _w_ɛɹ_ɹ_ˈ_ɛ_v_ɚ_ɹ_ _aɪ_ _h_ˈ_æ_p_ə_n_ _t_ə_ _b_ˈ_iː_ _s_ˈ_ɛ_d_ '
+        '_ð_ə_ _h_ˈ_ɛ_n_ _ɹ_ˈ_ʌ_f_l_ɪ_ŋ_ _h_ɜː_ _f_ˈ_ɛ_ð_ɚ_z_ _æ_n_d_ _ð_ˈ_ɛ_n_ _ʃ_ˈ_eɪ_k_ɪ_ŋ_ _'
+        'ð_ˌ_ɛ_m_ _ˌ_ɪ_n_t_ʊ_ _p_l_ˈ_eɪ_s',
+        's_k_ˈ_ɜː_ɹ_ɪ_ɪ_ŋ_ _f_ɔːɹ_ _m_ˈ_eɪ_dʒ_ɚ_ _s_t_ˈ_oː_ɹ_ɪ_z_ _w_ɛ_n_ˌ_ɛ_v_ɚ_ɹ_ _'
+        'æ_n_d_ _w_ɛɹ_ɹ_ˈ_ɛ_v_ɚ_ _ð_eɪ_ _k_ʊ_d_ _b_iː_ _f_ˈ_aʊ_n_d',
+        'ˈ_æ_k_ʃ_ə_n_z_ _d_ˈ_ɑː_t_ _s_æ_m_ˈ_ɪ_ɹ_ _ˈ_ɛ_m_ _b_ˈ_ɑː_b_uː_ _ɪ_z_ _ɐ_ _p_ɹ_ə_f_ˈ_'
+        'ɛ_s_ɚ_ _h_ˌ_uː_ _ɹ_ˈ_oʊ_t_ _ɐ_n_ _ˈ_ɑːɹ_ɾ_ɪ_k_əl_ _ɐ_b_ˌ_aʊ_t_ _k_l_ˈ_æ_s_ɹ_uː_m_ _'
+        'k_l_ˈ_aɪ_m_ə_t_ _æ_n_d_ _s_ˈ_oʊ_ʃ_əl_ _ɪ_n_t_ˈ_ɛ_l_ɪ_dʒ_ə_n_s',
+        'k_ˈ_ɑː_p_i_ _b_ˈ_aɪ',
+        'f_ɔː_ɹ_ _ɛ_ɡ_z_ˈ_æ_m_p_əl',
+        'ɔːɹ_ _s_ˈ_ʌ_m_t_aɪ_m_z_ _b_ˌ_iː_ɪ_ŋ_ _ɪ_l_ˈ_ɪ_m_ᵻ_n_ˌ_eɪ_ɾ_ᵻ_d',
+        """ʌ_v_ _f_ˈ_aɪ_v_ _s_t_ˈ_eɪ_dʒ_ᵻ_z_
+_ _ˈ_aɪ_ _p_ɹ_ˌ_ɛ_p_ɚ_ɹ_ˈ_eɪ_ʃ_ə_n_
+_ _ɹ_ˌ_oʊ_m_ə_n_ _t_ˈ_uː_ _ˌ_ɪ_n_k_j_uː_b_ˈ_eɪ_ʃ_ə_n_
+_ _ɹ_ˌ_oʊ_m_ə_n_ _θ_ɹ_ˈ_iː_ _ˌ_ɪ_n_t_ɪ_m_ˈ_eɪ_ʃ_ə_n_
+_ _ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n""",
+        'aɪ_ _h_ˈ_ɑː_ _θ_ˈ_ɔː_t_ _t_ˈ_ɪ_l_ _m_aɪ_ _b_ɹ_ˈ_eɪ_n_z_ _ˈ_eɪ_k_t_b_ɪ_l_i_ _m_ˌ_iː_ '
+        '_dʒ_ˈ_ɑː_n_ _aɪ_ _h_ˈ_æ_v_ _ɐ_n_ _aɪ_ _'
+        's_ˈ_eɪ_ _ɐ_ɡ_ˈ_ɛ_n_ _ð_ɚ_z_ _n_ˈ_oʊ_ _h_ˈ_ɛ_l_p_ _f_ɔː_ɹ_ _ˌ_ʌ_s_ _b_ˌ_ʌ_t_ _h_ˌ_æ_v_ɪ_ŋ_ '
+        '_f_ˈ_eɪ_θ_ _ˈ_aɪ_ _ð_ə_ _'
+        'j_ˈ_uː_n_iə_n_ _θ_ˈ_eɪ_l_ _w_ˈ_ɪ_n_ _ð_ə_ _d_ˈ_eɪ_ _s_ˈ_iː_ _ɪ_f_ _ð_eɪ_ _d_ˈ_ʌ_n_ɑː_t',
+        'ð_ə_ _f_ˈ_ʊ_t_b_ɔː_l_ _p_l_ˈ_eɪ_ _ʌ_v_ð_ə_ _d_ˈ_ɛ_k_eɪ_d_ _ɔːɹ_ _ð_ə_ _k_ˈ_ɑː_n_s_ɜː_t_ _'
+        'ə_v_ə_ _l_ˈ_aɪ_f_t_aɪ_m_\n_\n_'
+        'ð_eɪ_l_ _s_p_ˈ_ɛ_n_d_ _w_ˈ_ʌ_n_p_ˈ_ɔɪ_n_t_f_ˈ_aɪ_v_ _b_ˈ_ɪ_l_iə_n_ _d_ˈ_ɑː_l_ɚ_z_ _'
+        'ˌ_ɑː_n_ _t_w_ˈ_ɛ_n_t_i_ˈ_eɪ_t_ _θ_ˈ_aʊ_z_ə_n_d_ _ɪ_v_ˈ_ɛ_n_t_s_ _ɹ_ˈ_eɪ_n_dʒ_ɪ_ŋ_ _'
+        'f_ɹ_ʌ_m_ _b_ɹ_ˈ_ɔː_d_w_eɪ_ _t_ə_ _s_ˈ_uː_p_ɚ_ _b_ˈ_oʊ_l_z',
+        'f_ˈ_ɔːɹ_tʃ_ə_n_ə_t_l_i_ _k_l_ˈ_ʌ_b_ _m_ˈ_ɛ_d_ _h_ɐ_z_ _ɡ_ˈ_ɪ_v_ə_n_ _ˌ_ʌ_s_ _ɐ_n_ '
+        '_ˈ_æ_n_t_ɪ_d_ˌ_oʊ_t_\n_\n_'
+        'ð_ə_ _k_l_ˈ_ʌ_b_ _m_ˈ_ɛ_d_ _v_eɪ_k_ˈ_eɪ_ʃ_ə_n_ _v_ˈ_ɪ_l_ɪ_dʒ_ _w_ˌ_ɛ_ɹ_ _ˈ_ɔː_l_ _ð_oʊ_z_ '
+        '_p_ɹ_ˈ_aɪ_m_ _'
+        'd_ɪ_s_t_ˈ_ɜː_b_ɚ_z_ _ʌ_v_ð_ə_ _p_ˈ_iː_s_ _l_ˈ_aɪ_k_ _t_ˈ_ɛ_l_ɪ_f_ˌ_oʊ_n_z_ _k_l_ˈ_ɑː_k_s_'
+        ' _æ_n_d_ _n_ˈ_uː_z_p_eɪ_p_ɚ_z_ _ɑːɹ_ _ɡ_ˈ_ɔ_n',
+        'ɔːɹ_ _f_ˈ_ɔː_t_ _ˌ_oʊ_v_ɚ_ _ð_ɪ_s_ _ɡ_ɹ_ˈ_aʊ_n_d_\n_'
+        'f_ɔːɹ_ _ð_ɪ_s_ _k_ə_m_j_ˈ_uː_n_ɪ_ɾ_i_ _ɐ_n_ _ɔːɹ_d_ˈ_iə_l_ _ð_æ_t_ _s_t_ˈ_ɑːɹ_ɾ_ᵻ_d_ '
+        '_w_ɪ_ð_ _ə_f_ˈ_ɛ_n_s_ _ʌ_n_s_ˈ_ɜː_t_ə_n_t_i_ _æ_n_d_ _ˈ_aʊ_t_ɹ_eɪ_dʒ_ _ˈ_ɛ_n_d_ᵻ_d_ '
+        '_ɐ_m_ˈ_ɪ_d_s_t_ _h_ˈ_ɔː_ɹ_ɚ_ _p_ˈ_ɑː_v_ɚ_ɾ_i',
+        'ɐ_ _b_ˈ_æ_n_d_ _k_ˈ_ɑː_l_ɚ_ _ʃ_ˈ_ɜː_t_ _b_ˈ_ʌ_ʔ_n̩_d_ _t_ˈ_aɪ_t_ _ɐ_ɹ_ˈ_aʊ_n_d_ _ð_ə_ '
+        '_θ_ɹ_ˈ_oʊ_t_ _æ_n_d_ _ɐ_ _d_ˈ_ɑːɹ_k_ _b_ˈ_ɪ_z_n_ə_s_ _dʒ_ˈ_æ_k_ɪ_t_\n_\n_'
+        'h_iː_ _p_ˈ_oʊ_z_d_ _ð_ə_ _k_ˈ_ʌ_p_əl_ _b_ˈ_oːɹ_d_s_t_ˈ_ɪ_f_ _ɪ_n_ _f_ɹ_ˈ_ʌ_n_t_ _ə_v_ə_ '
+        '_p_l_ˈ_eɪ_n_ _h_ˈ_aʊ_s_\n_\n_ð_ə_ _m_ˈ_æ_n',
     ]
 
     for g, p in zip(grapheme, phoneme):
@@ -148,27 +158,37 @@ The man,""",
 
 
 def test__grapheme_to_phoneme_perserve_punctuation():
-    assert """ʌ_v f_ˈaɪ_v s_t_ˈeɪ_dʒ_ᵻ_z:
-(ˈaɪ) p_ɹ_ˌɛ_p_ɚ_ɹ_ˈeɪ_ʃ_ə_n,
-(ɹ_ˌoʊ_m_ə_n t_ˈuː) ˌɪ_n_k_j_uː_b_ˈeɪ_ʃ_ə_n,
-(ɹ_ˌoʊ_m_ə_n θ_ɹ_ˈiː) ˌɪ_n_t_ɪ_m_ˈeɪ_ʃ_ə_n,
-(ɹ_ˌoʊ_m_ə_n f_ˈoːɹ) ɪ_l_ˌuː_m_ᵻ_n_ˈeɪ_ʃ_ə_n""" == _grapheme_to_phoneme_perserve_punctuation(
-        """of 5 stages:
+    assert """ʌ_v_ _f_ˈ_aɪ_v_ _s_t_ˈ_eɪ_dʒ_ᵻ_z_:_
+_(_ˈ_aɪ_)_ _p_ɹ_ˌ_ɛ_p_ɚ_ɹ_ˈ_eɪ_ʃ_ə_n_,_
+_(_ɹ_ˌ_oʊ_m_ə_n_ _t_ˈ_uː_)_ _ˌ_ɪ_n_k_j_uː_b_ˈ_eɪ_ʃ_ə_n_,_
+_(_ɹ_ˌ_oʊ_m_ə_n_ _θ_ɹ_ˈ_iː_)_ _ˌ_ɪ_n_t_ɪ_m_ˈ_eɪ_ʃ_ə_n_,_
+_(_ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_)_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n""" == (
+        _grapheme_to_phoneme_perserve_punctuation(
+            """of 5 stages:
 (i) preparation,
 (ii) incubation,
 (iii) intimation,
 (iv) illumination""",
-        separator='_')
+            separator='_'))
 
-    assert "j_uː_ɹ_ˈiː_k_ɐ w_ˈɔː_k_s ɑː_n_ð_ɪ ˈɛ_ɹ ˈɔː_l ɹ_ˈaɪ_t." == (
+    assert "j_uː_ɹ_ˈ_iː_k_ɐ_ _w_ˈ_ɔː_k_s_ _ɑː_n_ð_ɪ_ _ˈ_ɛ_ɹ_ _ˈ_ɔː_l_ _ɹ_ˈ_aɪ_t_." == (
         _grapheme_to_phoneme_perserve_punctuation(
             "Eureka walks on the air all right.", separator='_'))
 
-    assert "  h_ə_l_ˈoʊ w_ˈɜː_l_d  " == (
+    assert " _ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _ " == (
         _grapheme_to_phoneme_perserve_punctuation("  Hello World  ", separator='_'))
 
-    assert " \n\n h_ə_l_ˈoʊ w_ˈɜː_l_d \n\n " == (
+    assert " _\n_\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_\n_ " == (
         _grapheme_to_phoneme_perserve_punctuation(" \n\n Hello World \n\n ", separator='_'))
+
+    assert " _\n_\t_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_\t_ " == (
+        _grapheme_to_phoneme_perserve_punctuation(" \n\t Hello World \n\t ", separator='_'))
+
+    # NOTE: Test a number of string literals, see: https://docs.python.org/2.0/ref/strings.html
+    # TODO: Investigate why tab characters are not preserved.
+    assert " _\n_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ " == (
+        _grapheme_to_phoneme_perserve_punctuation(
+            " \n test \t test \r test \v test \f test \a test \b ", separator='_'))
 
 
 def test__grapheme_to_phoneme_perserve_punctuation__spacy_failure_cases():
@@ -188,28 +208,31 @@ def test__grapheme_to_phoneme_perserve_punctuation__spacy_failure_cases():
     ]
 
     phoneme = [
-        "d_ˈɑː_t s_æ_m_ˈɪ_ɹ ˈɛ_m b_ˈɑː_b_uː ɪ_z ɐ p_ɹ_ə_f_ˈɛ_s_ɚ h_ˌuː "
-        "ɹ_ˈoʊ_t ɐ_n ˈɑːɹ_ɾ_ɪ_k_əl ɐ_b_ˌaʊ_t k_l_ˈæ_s_ɹ_uː_m k_l_ˈaɪ_m_ə_t æ_n_d "
-        "s_ˈoʊ_ʃ_əl ɪ_n_t_ˈɛ_l_ɪ_dʒ_ə_n_s.",
-        "aɪ h_ˈɑː θ_ˈɔː_t t_ˈɪ_l m_aɪ b_ɹ_ˈeɪ_n_z ˈeɪ_k_t_b_ɪ_l_i m_ˌiː, "
-        "dʒ_ˈɑː_n, aɪ h_ˈæ_v. ɐ_n aɪ s_ˈeɪ ɐ_ɡ_ˈɛ_n, ð_ɚ_z n_ˈoʊ h_ˈɛ_l_p f_ɔː_ɹ "
-        "ˌʌ_s b_ˌʌ_t h_ˌæ_v_ɪ_ŋ f_ˈeɪ_θ ˈaɪ ð_ə j_ˈuː_n_iə_n. θ_ˈeɪ_l w_ˈɪ_n ð_ə d_ˈeɪ, "
-        "s_ˈiː ɪ_f ð_eɪ d_ˈʌ_n_ɑː_t!",
-        "w_ɪɹ ɡ_ˈɛ_t_n' ɐ l_ˈɑː_ŋ w_ˈeɪ f_ɹ_ʌ_m h_ˈoʊ_m. æ_n_d s_ˈiː "
-        "h_ˌaʊ ð_ə k_l_ˈaʊ_d_z ɑːɹ ɹ_ˈoʊ_l_ɪ_ŋ dʒ_ˈʌ_s_t ə_b_ˈʌ_v ˌʌ_s, "
-        "ɹ_ɪ_m_ˈɑːɹ_k_t ð_ə b_ˈɔɪ, h_ˌuː w_ʌ_z ˈɔː_l_m_oʊ_s_t "
-        "æ_z ʌ_n_ˈiː_z_i æ_z k_ˈæ_p_t_ɪ_n b_ˈɪ_l.",
-        "aɪ aɪ d_ˈoʊ_n_t ˈɛ_s-ˈɛ_s-s_ˈiː ˌɛ_n_i-θ_ˈɪ_ŋ "
-        "f_ˈʌ_n_i b_ˈaʊ_t ɪ_t! h_iː s_t_ˈæ_m_ɚ_d.",
-        "b_ˌʌ_t d_ˈoʊ_n_t w_ˈʌ_ɹ_i, ð_ɛ_ɹ_ˌɑːɹ p_l_ˈɛ_n_t_i ʌ_v "
-        "t_ˈɔɪ_z ð_æ_t ɑːɹ s_ˈeɪ_f--æ_n_d f_ˈʌ_n--f_ɔːɹ j_ʊɹ tʃ_ˈaɪ_l_d.",
-        "ˌɪ_n_d_ˈiː_d, f_ɚ_ð_ə ɹ_ˈɔɪ_əl b_ˈɑː_d_i, ɐ ɹ_ˈæ_ð_ɚ_ɹ ʌ_n_j_ˈuː_ʒ_uː_əl "
-        "s_ˈɛ_t ʌ_v aɪ_d_ˈiə_l ˈæ_t_ɹ_ɪ_b_j_ˌuː_t_s ɪ_m_ˈɜː_dʒ_ᵻ_z ɪ_n_ð_ə "
-        "m_ˌɛ_s_ə_p_ə_t_ˈeɪ_m_iə_n l_ˈɛ_k_s_ɪ_k_ə_n: ɐ_n ɐ_k_j_ˌuː_m_j_ʊ_l_ˈeɪ_ʃ_ə_n ʌ_v ɡ_ˈʊ_d "
-        "f_ˈɔːɹ_m ɔːɹ b_ɹ_ˈiː_d_ɪ_ŋ, ɔː_s_p_ˈɪ_ʃ_ə_s_n_ə_s, v_ˈɪ_ɡ_ɚ/v_aɪ_t_ˈæ_l_ɪ_ɾ_i, ˈæ_n_d, "
-        "s_p_ə_s_ˈɪ_f_ɪ_k_l_i, s_ˈɛ_k_ʃ_uː_əl ɐ_l_ˈʊɹ ɔːɹ tʃ_ˈɑːɹ_m – ˈɔː_l ʌ_v_w_ˈɪ_tʃ "
-        "ɑːɹ n_ˌɑː_t ˈoʊ_n_l_i ɐ_s_k_ɹ_ˈaɪ_b_d ɪ_n t_ˈɛ_k_s_t, b_ˌʌ_t ˈiː_k_w_əl_i t_ə_b_i "
-        "ɹ_ˈɛ_d ɪ_n ˈɪ_m_ɪ_dʒ_ɹ_i.",
+        "d_ˈ_ɑː_t_ _s_æ_m_ˈ_ɪɹ_ _ˈ_ɛ_m_ _b_ˈ_ɑː_b_uː_ _ɪ_z_ _ɐ_ _p_ɹ_ə_f_ˈ_ɛ_s_ɚ_ _h_ˌ_uː_ "
+        "_ɹ_ˈ_oʊ_t_ _ɐ_n_ _ˈ_ɑːɹ_ɾ_ɪ_k_əl_ _ɐ_b_ˌ_aʊ_t_ _k_l_ˈ_æ_s_ɹ_uː_m_ _k_l_ˈ_aɪ_m_ə_t_ "
+        "_æ_n_d_ _s_ˈ_oʊ_ʃ_əl_ _ɪ_n_t_ˈ_ɛ_l_ɪ_dʒ_ə_n_s_.",
+        "aɪ_ _h_ˈ_ɑː_ _θ_ˈ_ɔː_t_ _t_ˈ_ɪ_l_ _m_aɪ_ _b_ɹ_ˈ_eɪ_n_z_ _ˈ_eɪ_k_t_b_ɪ_l_i_ _m_ˌ_iː_,_ _"
+        "dʒ_ˈ_ɑː_n_,_ _aɪ_ _h_ˈ_æ_v_._ _ɐ_n_ _aɪ_ _s_ˈ_eɪ_ _ɐ_ɡ_ˈ_ɛ_n_,_ _ð_ɚ_z_ _n_ˈ_oʊ_ "
+        "_h_ˈ_ɛ_l_p_ _f_ɔː_ɹ_ _ˌ_ʌ_s_ _b_ˌ_ʌ_t_ _h_ˌ_æ_v_ɪ_ŋ_ _f_ˈ_eɪ_θ_ _ˈ_aɪ_ "
+        "_ð_ə_ _j_ˈ_uː_n_iə_n_._ _θ_ˈ_eɪ_l_ _w_ˈ_ɪ_n_ _ð_ə_ _d_ˈ_eɪ_,_ _s_ˈ_iː_ _ɪ_f_ _ð_eɪ_ "
+        "_d_ˈ_ʌ_n_ɑː_t_!",
+        "w_ɪɹ_ _ɡ_ˈ_ɛ_t_n_'_ _ɐ_ _l_ˈ_ɑː_ŋ_ _w_ˈ_eɪ_ _f_ɹ_ʌ_m_ _h_ˈ_oʊ_m_._ _æ_n_d_ _s_ˈ_iː_ _"
+        "h_ˌ_aʊ_ _ð_ə_ _k_l_ˈ_aʊ_d_z_ _ɑːɹ_ _ɹ_ˈ_oʊ_l_ɪ_ŋ_ _dʒ_ˈ_ʌ_s_t_ _ə_b_ˈ_ʌ_v_ _ˌ_ʌ_s_,_ "
+        "_ɹ_ɪ_m_ˈ_ɑːɹ_k_t_ _ð_ə_ _b_ˈ_ɔɪ_,_ _h_ˌ_uː_ _w_ʌ_z_ _ˈ_ɔː_l_m_oʊ_s_t_ _"
+        "æ_z_ _ʌ_n_ˈ_iː_z_i_ _æ_z_ _k_ˈ_æ_p_t_ɪ_n_ _b_ˈ_ɪ_l_.",
+        "aɪ_ _aɪ_ _d_ˈ_oʊ_n_t_ _ˈ_ɛ_s_-_ˈ_ɛ_s_-_s_ˈ_iː_ _ˌ_ɛ_n_i_-_θ_ˈ_ɪ_ŋ_ _"
+        "f_ˈ_ʌ_n_i_ _b_ˈ_aʊ_t_ _ɪ_t_!_ _h_iː_ _s_t_ˈ_æ_m_ɚ_d_.",
+        "b_ˌ_ʌ_t_ _d_ˈ_oʊ_n_t_ _w_ˈ_ʌ_ɹ_i_,_ _ð_ɛ_ɹ_ˌ_ɑːɹ_ _p_l_ˈ_ɛ_n_t_i_ _ʌ_v_ _"
+        "t_ˈ_ɔɪ_z_ _ð_æ_t_ _ɑːɹ_ _s_ˈ_eɪ_f_-_-_æ_n_d_ _f_ˈ_ʌ_n_-_-_f_ɔːɹ_ _j_ʊɹ_ _tʃ_ˈ_aɪ_l_d_.",
+        "ˌ_ɪ_n_d_ˈ_iː_d_,_ _f_ɚ_ð_ə_ _ɹ_ˈ_ɔɪ_əl_ _b_ˈ_ɑː_d_i_,_ _ɐ_ _ɹ_ˈ_æ_ð_ɚ_ɹ_ "
+        "_ʌ_n_j_ˈ_uː_ʒ_uː_əl_ _s_ˈ_ɛ_t_ _ʌ_v_ _aɪ_d_ˈ_iə_l_ _ˈ_æ_t_ɹ_ɪ_b_j_ˌ_uː_t_s_ "
+        "_ɪ_m_ˈ_ɜː_dʒ_ᵻ_z_ _ɪ_n_ð_ə_ _m_ˌ_ɛ_s_ə_p_ə_t_ˈ_eɪ_m_iə_n_ _l_ˈ_ɛ_k_s_ɪ_k_ə_n_:_ "
+        "_ɐ_n_ _ɐ_k_j_ˌ_uː_m_j_ʊ_l_ˈ_eɪ_ʃ_ə_n_ _ʌ_v_ _ɡ_ˈ_ʊ_d_ _f_ˈ_ɔːɹ_m_ _ɔːɹ_ "
+        "_b_ɹ_ˈ_iː_d_ɪ_ŋ_,_ "
+        "_ɔː_s_p_ˈ_ɪ_ʃ_ə_s_n_ə_s_,_ _v_ˈ_ɪ_ɡ_ɚ_ _s_l_ˈ_æ_ʃ_ _v_aɪ_t_ˈ_æ_l_ɪ_ɾ_i_,_ _ˈ_æ_n_d_,_ "
+        "_s_p_ə_s_ˈ_ɪ_f_ɪ_k_l_i_,_ _s_ˈ_ɛ_k_ʃ_uː_əl_ _ɐ_l_ˈ_ʊɹ_ _ɔːɹ_ _tʃ_ˈ_ɑːɹ_m_ "
+        "_–_ _ˈ_ɔː_l_ _ʌ_v_w_ˈ_ɪ_tʃ_ _ɑːɹ_ _n_ˌ_ɑː_t_ _ˈ_oʊ_n_l_i_ _ɐ_s_k_ɹ_ˈ_aɪ_b_d_ _ɪ_n_ "
+        "_t_ˈ_ɛ_k_s_t_,_ _b_ˌ_ʌ_t_ _ˈ_iː_k_w_əl_i_ _t_ə_b_i_ _ɹ_ˈ_ɛ_d_ _ɪ_n_ _ˈ_ɪ_m_ɪ_dʒ_ɹ_i_.",
     ]
 
     for g, p in zip(grapheme, phoneme):
@@ -219,7 +242,7 @@ def test__grapheme_to_phoneme_perserve_punctuation__spacy_failure_cases():
 def test_input_encoder():
     encoder = InputEncoder(['a', 'b', 'c'], [JUDY_BIEBER, MARY_ANN])
     encoded = encoder.batch_encode([('a', JUDY_BIEBER)])[0]
-    assert encoder.decode(encoded) == ('ˈeɪ', JUDY_BIEBER)
+    assert encoder.decode(encoded) == ('ˈ|eɪ', JUDY_BIEBER)
 
 
 def test_input_encoder__reversible():
