@@ -64,6 +64,11 @@ def _grapheme_to_phoneme_helper(grapheme,
 
     phoneme = ' '.join([s.strip() for s in phoneme.strip().split('\n')])
 
+    # NOTE: Remove language flags like `(en-us)` or `(fr)` that might be included for text like:
+    # Grapheme: “MON DIEU”
+    # Phoneme: “m_ˈɑː_n (fr)_d_j_ˈø_(en-us)”
+    phoneme = re.sub(r'\(.+?\)', '', phoneme)
+
     # NOTE: Replace multiple separators in a row without any phonemes in between with one separator.
     phoneme = re.sub(r'%s+' % re.escape(service_separator), service_separator, phoneme)
     phoneme = re.sub(r'%s+\s+' % re.escape(service_separator), ' ', phoneme)
@@ -143,6 +148,13 @@ def cache_grapheme_to_phoneme_perserve_punctuation(texts, chunksize=128, **kwarg
         for text, result in tqdm(iterator, total=len(texts)):
             arg_key = make_arg_key(function, text, **kwargs)
             _grapheme_to_phoneme_perserve_punctuation.disk_cache.set(arg_key, result)
+            # NOTE: `espeak` can give different results for the same argument, sometimes. For
+            # example, "Fitness that's invigorating, not intimidating!" sometimes returns...
+            # 1. "f|ˈɪ|t|n|ə|s ð|æ|t|s ɪ|n|v|ˈɪ|ɡ|ɚ|ɹ|ˌeɪ|ɾ|ɪ|ŋ"...
+            # 2. "f|ˈɪ|t|n|ə|s ð|æ|t|s ɪ|n|v|ˈɪ|ɡ|oː|ɹ|ˌeɪ|ɾ|ɪ|ŋ"...
+            # TODO: Add a warning if there was a different result.
+            if arg_key not in _grapheme_to_phoneme_perserve_punctuation.disk_cache:
+                _grapheme_to_phoneme_perserve_punctuation.disk_cache.set(arg_key, result)
 
     _grapheme_to_phoneme_perserve_punctuation.disk_cache.save()
 
