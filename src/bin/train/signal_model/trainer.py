@@ -153,7 +153,8 @@ class SpectrogramLoss(torch.nn.Module):
             do_backwards (bool, optional): If `True` this updates the discriminator weights.
 
         Returns:
-            (torch.FloatTensor): The disciminators loss on `predicted`.
+            (torch.FloatTensor): The generator loss on `predicted`.
+            (torch.FloatTensor): The discriminator loss on `predicted` and `target`.
             (torch.FloatTensor): The accuracy of the discriminator on `predicted` and `target`.
         """
         batch_size = predicted_spectrogram.shape[0]
@@ -181,7 +182,7 @@ class SpectrogramLoss(torch.nn.Module):
         # NOTE: Use target labels instead of predicted to flip the gradient for the generator.
         predictions = self.discriminator(predicted_spectrogram, predicted_db_spectrogram,
                                          predicted_db_mel_spectrogram)
-        return self.discriminator_criterion(predictions, labels_target), accuracy
+        return self.discriminator_criterion(predictions, labels_target), loss, accuracy
 
     def forward(self, predicted_signal, target_signal, comet_ml=None, do_backwards=False):
         """
@@ -195,10 +196,10 @@ class SpectrogramLoss(torch.nn.Module):
 
         Returns:
             torch.FloatTensor: The spectrogram loss.
+            torch.FloatTensor: The generator loss.
             torch.FloatTensor: The discriminator loss.
             torch.FloatTensor: The discriminator accuracy.
             int: The number of frames.
-
         """
         predicted_signal = predicted_signal.view(-1, predicted_signal.shape[-1])
         target_signal = target_signal.view(-1, target_signal.shape[-1])
@@ -215,7 +216,7 @@ class SpectrogramLoss(torch.nn.Module):
         db_mel_spectrogram_loss = self.criterion(predicted_db_mel_spectrogram,
                                                  target_db_mel_spectrogram)
 
-        discriminator_loss, disciminator_accuracy = self.discriminate(
+        generator_loss, disciminator_loss, disciminator_accuracy = self.discriminate(
             predicted_spectrogram,
             predicted_db_spectrogram,
             predicted_db_mel_spectrogram,
@@ -255,7 +256,8 @@ class SpectrogramLoss(torch.nn.Module):
                     self.plot_mel_spectrogram(db_mel_spectrogram_loss[random_item].mean(
                         dim=0, keepdim=True)))
 
-        return db_mel_spectrogram_loss.mean(), discriminator_loss, disciminator_accuracy
+        return (db_mel_spectrogram_loss.mean(), generator_loss, disciminator_loss,
+                disciminator_accuracy)
 
 
 class Trainer():
@@ -353,9 +355,14 @@ class Trainer():
         self.metrics = {
             'data_queue_size': DistributedAveragedMetric(),
             'db_mel_spectrogram_magnitude_loss': DistributedAveragedMetric(),
-            'spectrogram_discriminator_accuracy': DistributedAveragedMetric(),
+            'spectrogram_generator_loss': DistributedAveragedMetric(),
             'spectrogram_discriminator_loss': DistributedAveragedMetric(),
+            'spectrogram_discriminator_accuracy': DistributedAveragedMetric(),
         }
+        self.metrics.update({
+            '%d_spectrogram_generator_loss' % c.fft_length: DistributedAveragedMetric()
+            for c in self.criterions
+        })
         self.metrics.update({
             '%d_spectrogram_discriminator_loss' % c.fft_length: DistributedAveragedMetric()
             for c in self.criterions
@@ -580,19 +587,22 @@ class Trainer():
 
         batch_size = predicted_signal.shape[0]
         total_spectrogram_loss = torch.tensor(0.0, device=predicted_signal.device)
+        total_generator_loss = torch.tensor(0.0, device=predicted_signal.device)
         total_discriminator_loss = torch.tensor(0.0, device=predicted_signal.device)
         total_discriminator_accuracy = torch.tensor(0.0, device=predicted_signal.device)
         for criterion in self.criterions:
             # NOTE: Even though the signal is zero padded, we can safely ignore it with the
             # assumption that the training examples this model is learning generally start and end
             # with quiet.
-            spectrogram_loss, discriminator_loss, discriminator_accuracy = criterion(
-                predicted_signal,
-                batch.target_signal,
-                comet_ml=self.comet_ml if log_figure else None,
-                do_backwards=do_backwards)
+            (spectrogram_loss, generator_loss, discriminator_loss,
+             discriminator_accuracy) = criterion(
+                 predicted_signal,
+                 batch.target_signal,
+                 comet_ml=self.comet_ml if log_figure else None,
+                 do_backwards=do_backwards)
 
             total_spectrogram_loss += spectrogram_loss / len(self.criterions)
+            total_generator_loss += generator_loss / len(self.criterions)
             total_discriminator_loss += discriminator_loss / len(self.criterions)
             total_discriminator_accuracy += discriminator_accuracy / len(self.criterions)
 
@@ -601,6 +611,8 @@ class Trainer():
             # is infact proportional to the slice size (ignoring the boundary undersampling).
             self.metrics['db_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length].update(
                 spectrogram_loss, batch_size)
+            self.metrics['%d_spectrogram_generator_loss' % criterion.fft_length].update(
+                total_generator_loss, batch_size)
             self.metrics['%d_spectrogram_discriminator_loss' % criterion.fft_length].update(
                 discriminator_loss, batch_size)
             self.metrics['%d_spectrogram_discriminator_accuracy' % criterion.fft_length].update(
@@ -608,16 +620,17 @@ class Trainer():
 
         if do_backwards:
             self.optimizer.zero_grad()
-            (total_discriminator_loss + total_spectrogram_loss).backward()
+            (total_generator_loss + total_spectrogram_loss).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
             self.exponential_moving_parameter_average.update()
 
         self.metrics['db_mel_spectrogram_magnitude_loss'].update(total_spectrogram_loss, batch_size)
+        self.metrics['spectrogram_generator_loss'].update(total_generator_loss, batch_size)
         self.metrics['spectrogram_discriminator_loss'].update(total_discriminator_loss, batch_size)
         self.metrics['spectrogram_discriminator_accuracy'].update(total_discriminator_accuracy,
                                                                   batch_size * 2)
 
-        return total_spectrogram_loss, total_discriminator_loss, batch.signal_mask.sum()
+        return total_spectrogram_loss, total_generator_loss, batch.signal_mask.sum()
 
     @log_runtime
     def visualize_inferred(self):
@@ -648,29 +661,35 @@ class Trainer():
         self.exponential_moving_parameter_average.restore()
 
         total_spectrogram_loss = torch.tensor(0.0, device=self.device)
+        total_generator_loss = torch.tensor(0.0, device=self.device)
         total_discriminator_loss = torch.tensor(0.0, device=self.device)
         total_discriminator_accuracy = torch.tensor(0.0, device=self.device)
         for criterion in self.criterions:
-            spectrogram_loss, discriminator_loss, discriminator_accuracy = criterion(
-                predicted, target_signal, comet_ml=self.comet_ml)
+            (spectrogram_loss, generator_loss, discriminator_loss,
+             discriminator_accuracy) = criterion(
+                 predicted, target_signal, comet_ml=self.comet_ml)
 
             total_spectrogram_loss += spectrogram_loss / len(self.criterions)
+            total_generator_loss += generator_loss / len(self.criterions)
             total_discriminator_loss += discriminator_loss / len(self.criterions)
             total_discriminator_accuracy += discriminator_accuracy / len(self.criterions)
 
             self.comet_ml.log_metrics({
-                'single/%d_spectrogram_discriminator_accuracy' % criterion.fft_length:
-                    discriminator_accuracy.item(),
+                'single/%d_spectrogram_generator_loss' % criterion.fft_length:
+                    generator_loss.item(),
                 'single/%d_spectrogram_discriminator_loss' % criterion.fft_length:
                     discriminator_loss.item(),
+                'single/%d_spectrogram_discriminator_accuracy' % criterion.fft_length:
+                    discriminator_accuracy.item(),
                 'single/db_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length:
                     spectrogram_loss.item()
             })
 
         self.comet_ml.log_metrics({
             'single/db_mel_spectrogram_magnitude_loss': total_spectrogram_loss.item(),
-            'single/spectrogram_discriminator_accuracy': total_discriminator_accuracy.item(),
-            'single/spectrogram_discriminator_loss': total_discriminator_loss.item()
+            'single/spectrogram_generator_loss': total_generator_loss.item(),
+            'single/spectrogram_discriminator_loss': total_discriminator_loss.item(),
+            'single/spectrogram_discriminator_accuracy': total_discriminator_accuracy.item()
         })
         self.comet_ml.log_audio(
             audio={
