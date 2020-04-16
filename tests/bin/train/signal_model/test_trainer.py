@@ -42,12 +42,14 @@ def test_spectrogram_loss__smoke_test():
     spectrogram_loss = SpectrogramLoss()
     predicted = torch.randn(1, 24000)
     target = torch.randn(1, 24000)
-    loss, other_loss, accuracy = spectrogram_loss(
+    loss, other_loss, other_other_loss, accuracy = spectrogram_loss(
         predicted, target, comet_ml=MockCometML(disabled=True))
     assert loss.shape == tuple([])
     assert loss.dtype == torch.float32
     assert other_loss.shape == tuple([])
     assert other_loss.dtype == torch.float32
+    assert other_other_loss.shape == tuple([])
+    assert other_other_loss.dtype == torch.float32
     assert accuracy.shape == tuple([])
     assert accuracy.dtype == torch.float32
 
