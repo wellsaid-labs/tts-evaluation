@@ -73,7 +73,7 @@ def _grapheme_to_phoneme_helper(grapheme,
     phoneme = ' '.join([s.strip() for s in phoneme.strip().split('\n')])
 
     # NOTE: Remove language flags like `(en-us)` or `(fr)` that might be included for text like:
-    # Graphme: “MON DIEU”
+    # Grapheme: “MON DIEU”
     # Phoneme: “m_ˈɑː_n (fr)_d_j_ˈø_(en-us)”
     phoneme = re.sub(r'\(.+?\)', '', phoneme)
 
