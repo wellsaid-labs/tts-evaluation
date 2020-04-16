@@ -147,7 +147,6 @@ def cache_grapheme_to_phoneme_perserve_punctuation(texts, chunksize=128, **kwarg
         iterator = zip(texts, pool.imap(partial_, texts, chunksize=chunksize))
         for text, result in tqdm(iterator, total=len(texts)):
             arg_key = make_arg_key(function, text, **kwargs)
-            _grapheme_to_phoneme_perserve_punctuation.disk_cache.set(arg_key, result)
             # NOTE: `espeak` can give different results for the same argument, sometimes. For
             # example, "Fitness that's invigorating, not intimidating!" sometimes returns...
             # 1. "f|ˈɪ|t|n|ə|s ð|æ|t|s ɪ|n|v|ˈɪ|ɡ|ɚ|ɹ|ˌeɪ|ɾ|ɪ|ŋ"...
