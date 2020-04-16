@@ -72,6 +72,11 @@ def _grapheme_to_phoneme_helper(grapheme,
 
     phoneme = ' '.join([s.strip() for s in phoneme.strip().split('\n')])
 
+    # NOTE: Remove language flags like `(en-us)` or `(fr)` that might be included for text like:
+    # Graphme: “MON DIEU”
+    # Phoneme: “m_ˈɑː_n (fr)_d_j_ˈø_(en-us)”
+    phoneme = re.sub(r'\(.+?\)', '', phoneme)
+
     # NOTE: Replace multiple separators in a row without any phonemes in between with one separator.
     phoneme = re.sub(r'%s+' % re.escape(service_separator), service_separator, phoneme)
     phoneme = re.sub(r'%s+\s+' % re.escape(service_separator), ' ', phoneme)
@@ -139,9 +144,11 @@ def _grapheme_to_phoneme_perserve_punctuation(text, separator='', **kwargs):
 
 
 @log_runtime
-def cache_grapheme_to_phoneme_perserve_punctuation(texts, chunksize=128, **kwargs):
+def cache_grapheme_to_phoneme_perserve_punctuation(texts, chunksize=128, delimiter='|', **kwargs):
     """ Batch process and cache the results for `texts` passed to
     `_grapheme_to_phoneme_perserve_punctuation`.
+
+    TODO: Uncouple `cache_grapheme_to_phoneme_perserve_punctuation` `delimiter` from `InputEncoder`.
 
     Args:
         texts (list of str)
@@ -150,19 +157,25 @@ def cache_grapheme_to_phoneme_perserve_punctuation(texts, chunksize=128, **kwarg
     """
     function = _grapheme_to_phoneme_perserve_punctuation.__wrapped__
     texts = [
-        t for t in texts if make_arg_key(function, t, **kwargs) not in
+        t for t in texts if make_arg_key(function, t, separator=delimiter, **kwargs) not in
         _grapheme_to_phoneme_perserve_punctuation.disk_cache
     ]
     if len(texts) == 0:
         return
 
     logger.info('Caching `_grapheme_to_phoneme_perserve_punctuation` %d texts.', len(texts))
-    partial_ = partial(_grapheme_to_phoneme_perserve_punctuation, **kwargs)
+    partial_ = partial(_grapheme_to_phoneme_perserve_punctuation, separator=delimiter, **kwargs)
     with Pool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
         iterator = zip(texts, pool.imap(partial_, texts, chunksize=chunksize))
         for text, result in tqdm(iterator, total=len(texts)):
-            arg_key = make_arg_key(function, text, **kwargs)
-            _grapheme_to_phoneme_perserve_punctuation.disk_cache.set(arg_key, result)
+            arg_key = make_arg_key(function, text, separator=delimiter, **kwargs)
+            # NOTE: `espeak` can give different results for the same argument, sometimes. For
+            # example, "Fitness that's invigorating, not intimidating!" sometimes returns...
+            # 1. "f|ˈ|ɪ|t|n|ə|s| |ð|æ|t|s| |ɪ|n|v|ˈ|ɪ|ɡ|ɚ|ɹ|ˌ|eɪ|ɾ|ɪ|ŋ|,| "...
+            # 2. "f|ˈ|ɪ|t|n|ə|s| |ð|æ|t|s| |ɪ|n|v|ˈ|ɪ|ɡ|oː|ɹ|ˌ|eɪ|ɾ|ɪ|ŋ|,| "...
+            # TODO: Add a warning if there was a different result.
+            if arg_key not in _grapheme_to_phoneme_perserve_punctuation.disk_cache:
+                _grapheme_to_phoneme_perserve_punctuation.disk_cache.set(arg_key, result)
 
     _grapheme_to_phoneme_perserve_punctuation.disk_cache.save()
 
