@@ -144,11 +144,12 @@ class SpectrogramModel(nn.Module):
         """
         device = target_frames.device
         target_frames = target_frames / self.output_scalar
+        mask = lengths_to_mask(target_lengths, device=device)
 
         frames, stop_tokens, hidden_state, alignments = self.decoder(
             encoded_tokens, tokens_mask, speaker, num_tokens, target_frames=target_frames)
-        frames_with_residual = frames + self.post_net(
-            frames, lengths_to_mask(target_lengths, device=device))
+        frames = frames.masked_fill(~mask.transpose(0, 1).unsqueeze(2), 0)
+        frames_with_residual = frames + self.post_net(frames, mask)
 
         frames_with_residual = frames_with_residual * self.output_scalar
         frames = frames * self.output_scalar
@@ -200,6 +201,7 @@ class SpectrogramModel(nn.Module):
                 encoded_tokens, tokens_mask, speaker, num_tokens, hidden_state=hidden_state)
 
             lengths[~stopped] += 1
+            frame[:, stopped] *= 0
             stopped[(self.stop_sigmoid(stop_token).squeeze(0) >= stop_threshold) |
                     (lengths == max_lengths)] = True
             max_lengths[stopped] = lengths[stopped]

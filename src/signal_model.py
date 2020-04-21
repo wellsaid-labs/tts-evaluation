@@ -207,8 +207,6 @@ def generate_waveform(model, spectrogram, spectrogram_mask=None, split_size=64, 
         batch_size, num_frames, device=device,
         dtype=torch.bool) if spectrogram_mask is None else spectrogram_mask
 
-    # TODO: We'd want to pad before hand and we'd want to split it up
-    #
     spectrogram = model.pad(spectrogram.transpose(1, 2)).transpose(1, 2)
     spectrogram_mask = model.pad(spectrogram_mask.unsqueeze(1)).squeeze(1)
 
