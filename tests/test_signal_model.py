@@ -4,7 +4,6 @@ import torch
 from src.signal_model import generate_waveform
 from src.signal_model import SignalModel
 from src.signal_model import SpectrogramDiscriminator
-from src.signal_model import trim
 
 
 def test_generate_waveform():
@@ -93,12 +92,6 @@ def test_spectrogram_discriminator():
     output = discriminator(spectrogram, db_spectrogram, db_mel_spectrogram)
     assert output.shape == (batch_size,)
     output.sum().backward()
-
-
-def test_trim():
-    a, b = trim(torch.tensor([1, 2, 3, 4]), torch.tensor([2, 3]), dim=0)
-    assert torch.equal(a, torch.tensor([2, 3]))
-    assert torch.equal(b, torch.tensor([2, 3]))
 
 
 def test_signal_model():

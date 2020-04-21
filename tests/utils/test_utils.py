@@ -20,11 +20,13 @@ from src.utils.utils import get_weighted_stdev
 from src.utils.utils import identity
 from src.utils.utils import log_runtime
 from src.utils.utils import mean
+from src.utils.utils import pad_tensors
 from src.utils.utils import random_sample
 from src.utils.utils import RepeatTimer
 from src.utils.utils import ResetableTimer
 from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
+from src.utils.utils import trim_tensors
 
 
 def test_assert_no_overwritten_files():
@@ -249,3 +251,19 @@ class MockModel(nn.Module):
 def test_flatten_parameters__smoke_test():
     flatten_parameters(MockModel())
     flatten_parameters(nn.LSTM(10, 10))
+
+
+def test_trim_tensors():
+    a, b = trim_tensors(torch.tensor([1, 2, 3, 4]), torch.tensor([2, 3]), dim=0)
+    assert torch.equal(a, torch.tensor([2, 3]))
+    assert torch.equal(b, torch.tensor([2, 3]))
+
+
+def test_pad_tensors():
+    # Test various dimensions
+    assert pad_tensors(torch.zeros(3, 4, 5), pad=(1, 1), dim=0).shape == (5, 4, 5)
+    assert pad_tensors(torch.zeros(3, 4, 5), pad=(1, 1), dim=-1).shape == (3, 4, 7)
+    assert pad_tensors(torch.zeros(3, 4, 5), pad=(1, 1), dim=1).shape == (3, 6, 5)
+
+    # Test `kwargs`
+    assert pad_tensors(torch.zeros(3, 4, 5), pad=(1, 1), dim=1, value=1.0).sum() == 2 * 3 * 5

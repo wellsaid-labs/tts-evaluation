@@ -7,22 +7,9 @@ from torchnlp.utils import get_total_parameters
 import numpy as np
 import torch
 
+from src.utils import trim_tensors
+
 logger = logging.getLogger(__name__)
-
-
-def trim(*args, dim=2):
-    """ Trim such that all tensors sizes match on `dim`.
-
-    Args:
-        *args (torch.Tensor): A list of tensors.
-        dim (int): The dimension to trim.
-
-    Returns:
-        *args (torch.Tensor)
-    """
-    minimum = min(a.shape[dim] for a in args)
-    assert all((a.shape[dim] - minimum) % 2 == 0 for a in args), 'Uneven padding'
-    return (a.narrow(dim, (a.shape[dim] - minimum) // 2, minimum) for a in args)
 
 
 class ConditionalConcat(torch.nn.Module):
@@ -52,7 +39,7 @@ class ConditionalConcat(torch.nn.Module):
         assert concat.shape[1] == self.size
         assert concat.shape[2] >= in_.shape[2], 'Scale factor is too small.'
         self.concat = None  # NOTE: Don't use conditioning twice
-        return torch.cat(list(trim(in_, concat)), dim=1)
+        return torch.cat(list(trim_tensors(in_, concat)), dim=1)
 
 
 class Mask(torch.nn.Module):
@@ -81,7 +68,7 @@ class Mask(torch.nn.Module):
                 self.mask.float(), scale_factor=self.scale_factor).bool()
             self.mask = None  # NOTE: Don't use conditioning twice
         assert mask.shape[2] >= in_.shape[2], 'Scale factor is too small.'
-        in_, mask = trim(in_, mask)
+        in_, mask = trim_tensors(in_, mask)
         return in_.masked_fill(~mask, 0.0)
 
 
@@ -181,8 +168,8 @@ class Block(torch.nn.Module):
             torch.FloatTensor [batch_size, frame_channels, ~num_frames * upscale_factor]
         """
         shape = input_.shape  # [batch_size, frame_channels, num_frames]
-        input_ = torch.add(*trim(self.shortcut(input_), self.block(input_)))
-        input_ = torch.add(*trim(input_, self.other_block(input_)))
+        input_ = torch.add(*trim_tensors(self.shortcut(input_), self.block(input_)))
+        input_ = torch.add(*trim_tensors(input_, self.other_block(input_)))
         assert (shape[2] * self.upscale_factor - input_.shape[2]) % 2 == 0
         return input_
 
@@ -220,6 +207,8 @@ def generate_waveform(model, spectrogram, spectrogram_mask=None, split_size=64, 
         batch_size, num_frames, device=device,
         dtype=torch.bool) if spectrogram_mask is None else spectrogram_mask
 
+    # TODO: We'd want to pad before hand and we'd want to split it up
+    #
     spectrogram = model.pad(spectrogram.transpose(1, 2)).transpose(1, 2)
     spectrogram_mask = model.pad(spectrogram_mask.unsqueeze(1)).squeeze(1)
 

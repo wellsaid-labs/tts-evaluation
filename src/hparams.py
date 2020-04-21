@@ -298,7 +298,7 @@ def _set_model_size(frame_channels):
                             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to
                             # learn more about this parameter.
                             speaker_embedding_dim=128),
-                    '_infer':
+                    '_infer_generator_helper':
                         HParams(stop_threshold=stop_threshold)
                 }  # noqa: E122
             },

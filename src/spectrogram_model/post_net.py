@@ -2,6 +2,10 @@ from hparams import configurable
 from hparams import HParam
 from torch import nn
 
+import torch
+
+from src.utils import trim_tensors
+
 
 class LayerNorm(nn.LayerNorm):
 
@@ -51,6 +55,9 @@ class PostNet(nn.Module):
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, '`convolution_filter_size` must be odd'
 
+        self.padding = int((convolution_filter_size - 1) / 2) * num_convolution_layers
+        self.pad = nn.ConstantPad1d(self.padding, 0.0)
+
         self.layers = nn.ModuleList([
             nn.Sequential(
                 # SOURCE (Tacotron 2): Each post-net layer is comprised of 512 filters with shape
@@ -61,8 +68,7 @@ class PostNet(nn.Module):
                 nn.Conv1d(
                     in_channels=num_convolution_filters if i != 0 else frame_channels,
                     out_channels=num_convolution_filters,
-                    kernel_size=convolution_filter_size,
-                    padding=int((convolution_filter_size - 1) / 2)),
+                    kernel_size=convolution_filter_size),
                 nn.ReLU()) for i in range(num_convolution_layers - 1)
         ])
 
@@ -83,26 +89,39 @@ class PostNet(nn.Module):
         self.last_layer = nn.Conv1d(
             in_channels=num_convolution_filters,
             out_channels=frame_channels,
-            kernel_size=convolution_filter_size,
-            padding=int((convolution_filter_size - 1) / 2))
+            kernel_size=convolution_filter_size)
 
-    def forward(self, frames, mask):
+    def forward(self, frames, mask, pad_input=True):
         """
         Args:
-            frames (torch.FloatTensor [batch_size, frame_channels, num_frames]): Batched set of
+            frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Batched set of
                 spectrogram frames.
             mask (torch.BoolTensor [batch_size, num_frames]): Mask such that the padding tokens
                 are zeros.
+            pad_input (bool, optional): If `True` this pads the input, so the output is the
+                same size as the input.
 
         Returns:
-            residual (torch.FloatTensor [batch_size, frame_channels, num_frames]): Residual to add
+            residual (torch.FloatTensor [num_frames, batch_size, frame_channels]): Residual to add
                 to the frames to improve the overall reconstruction.
         """
+        # Learned from experiments that detaching the gradient is important for convergence.
+        # Learn more on comet.ml.
+        frames = frames.detach()
+
+        # [num_frames, batch_size, frame_channels]  → [batch_size, frame_channels, num_frames]
+        frames = frames.permute(1, 2, 0)
+
         frames = frames.masked_fill(~mask.unsqueeze(1), 0)
+        frames = self.pad(frames) if pad_input else frames
+        mask = self.pad(mask) if pad_input else mask
 
         for i, (layer, norm) in enumerate(zip(self.layers, self.norm_layers)):
             # NOTE: Ignore the first residual because the shapes dont match.
-            frames = norm(layer(frames) if i == 0 else frames + layer(frames))
-            frames = frames.masked_fill(~mask.unsqueeze(1), 0)
+            frames = norm(
+                layer(frames) if i == 0 else torch.add(*trim_tensors(frames, layer(frames))))
+            frames = torch.masked_fill(*trim_tensors(frames, ~mask.unsqueeze(1)), 0)
 
-        return self.last_layer(frames).masked_fill(~mask.unsqueeze(1), 0)
+        frames = torch.masked_fill(*trim_tensors(self.last_layer(frames), ~mask.unsqueeze(1)), 0)
+        # [batch_size, frame_channels, num_frames] → [num_frames, batch_size, frame_channels]
+        return frames.permute(2, 0, 1)
