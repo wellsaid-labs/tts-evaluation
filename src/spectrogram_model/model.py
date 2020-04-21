@@ -305,9 +305,10 @@ class SpectrogramModel(nn.Module):
             stop_token (torch.FloatTensor [num_frames, batch_size])
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
             lengths (torch.LongTensor [1, batch_size])
+
+        Returns (`is_generator == False`):
             reached_max (torch.BoolTensor [1, batch_size]): The spectrogram sequences that
-                reached the maximum number of frames as defined by `max_frames_per_token`. This
-                value is only returned if `is_generator` is `False`.
+                reached the maximum number of frames as defined by `max_frames_per_token`.
         """
         device = encoded_tokens.device
         _, batch_size, _ = encoded_tokens.shape
@@ -424,12 +425,13 @@ class SpectrogramModel(nn.Module):
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens] or [num_frames,
                 num_tokens]): Attention alignments.
 
-        Additionally, Inference Returns:
+        Returns (`target_frames is None and target_lengths is None`):
             lengths (torch.LongTensor [1, batch_size] or [1]): Number of frames predicted for each
                 sequence in the batch.
+
+        Returns (`is_generator == False and target_frames is None and target_lengths is None`):
             reached_max (torch.BoolTensor [1, batch_size] or [1]): The spectrogram sequences that
-                reached the maximum number of frames as defined by `max_frames_per_token`. This
-                value is only returned if `is_generator` is `False`.
+                reached the maximum number of frames as defined by `max_frames_per_token`.
         """
         is_unbatched = len(tokens.shape) == 1
 

@@ -1,3 +1,5 @@
+import itertools
+
 import numpy
 import torch
 
@@ -8,54 +10,45 @@ from src.signal_model import SpectrogramDiscriminator
 
 def test_generate_waveform():
     """ Test if incremental generation produces the same output as none-incremental. """
-    batch_size = 4
-    num_frames = 8
-    frame_channels = 128
+    batch_size = 2
+    num_frames = 53
+    frame_channels = 6
 
-    model = SignalModel(input_size=frame_channels)
+    model = SignalModel(input_size=frame_channels, ratios=[2, 2], max_channel_size=32, padding=13)
     spectrogram = torch.randn([batch_size, num_frames, frame_channels])
     immediate = model(spectrogram)
-    incremental = generate_waveform(model, spectrogram, split_size=4, generator=False)
-    other_incremental = generate_waveform(model, spectrogram, split_size=2, generator=True)
-    other_incremental = torch.cat(list(other_incremental), dim=1)
-
     assert immediate.shape == (batch_size, model.upscale_factor * num_frames)
-    assert incremental.shape == (batch_size, model.upscale_factor * num_frames)
-    assert other_incremental.shape == (batch_size, model.upscale_factor * num_frames)
 
-    numpy.testing.assert_almost_equal(immediate.detach().numpy(), incremental.detach().numpy())
-    numpy.testing.assert_almost_equal(immediate.detach().numpy(),
-                                      other_incremental.detach().numpy())
+    for i in itertools.chain([26, 27, 53]):
+        generated = torch.cat(list(generate_waveform(model, spectrogram.split(i, dim=1))), dim=1)
+        assert generated.shape == (batch_size, model.upscale_factor * num_frames)
+        numpy.testing.assert_almost_equal(immediate.detach().numpy(), generated.detach().numpy())
 
 
 def test_generate_waveform__no_batch_dim():
     """ Test if incremental generation produces the same output as none-incremental. """
-    num_frames = 8
-    frame_channels = 128
+    num_frames = 37
+    frame_channels = 8
+    split_size = 26
 
-    model = SignalModel(input_size=frame_channels)
+    model = SignalModel(input_size=frame_channels, ratios=[2, 2], max_channel_size=32, padding=13)
     spectrogram = torch.randn([num_frames, frame_channels])
     immediate = model(spectrogram)
-    incremental = generate_waveform(model, spectrogram, split_size=4, generator=False)
-    other_incremental = generate_waveform(model, spectrogram, split_size=2, generator=True)
-    other_incremental = torch.cat(list(other_incremental), dim=-1)
+    assert immediate.shape == (model.upscale_factor * num_frames,)
 
-    assert immediate.shape == (model.upscale_factor * num_frames)
-    assert incremental.shape == (model.upscale_factor * num_frames)
-    assert other_incremental.shape == (model.upscale_factor * num_frames)
-
-    numpy.testing.assert_almost_equal(immediate.detach().numpy(), incremental.detach().numpy())
-    numpy.testing.assert_almost_equal(immediate.detach().numpy(),
-                                      other_incremental.detach().numpy())
+    generated = torch.cat(list(generate_waveform(model, spectrogram.split(split_size))))
+    assert generated.shape == (model.upscale_factor * num_frames,)
+    numpy.testing.assert_almost_equal(immediate.detach().numpy(), generated.detach().numpy())
 
 
 def test_generate_waveform__padding_invariance():
-    batch_size = 4
-    num_frames = 8
-    frame_channels = 128
-    padding = 3
+    batch_size = 2
+    num_frames = 27
+    frame_channels = 6
+    padding = 7
+    split_size = 26
 
-    model = SignalModel(input_size=frame_channels)
+    model = SignalModel(input_size=frame_channels, ratios=[2, 2], max_channel_size=32, padding=13)
 
     spectrogram = torch.randn([batch_size, num_frames + padding * 2, frame_channels])
     mask = torch.cat(
@@ -66,18 +59,22 @@ def test_generate_waveform__padding_invariance():
         ],
         dim=1,
     ).bool()
-    padded_out = generate_waveform(model, spectrogram, mask, split_size=4, generator=False)
-    out = model(spectrogram[:, padding:-padding])
+
+    immediate = model(spectrogram[:, padding:-padding])
+
+    generated = generate_waveform(model, spectrogram.split(split_size, dim=1),
+                                  mask.split(split_size, dim=1))
+    generated = torch.cat(list(generated), dim=1)
 
     # Ensure padded output is zero
-    assert padded_out[:, :padding * model.upscale_factor].abs().sum().item() == 0.0
-    assert padded_out[:, -padding * model.upscale_factor:].abs().sum().item() == 0.0
+    assert generated[:, :padding * model.upscale_factor].abs().sum().item() == 0.0
+    assert generated[:, -padding * model.upscale_factor:].abs().sum().item() == 0.0
 
     # Ensure not padding output isn't affected.
     numpy.testing.assert_almost_equal(
-        padded_out[:,
-                   padding * model.upscale_factor:-padding * model.upscale_factor].detach().numpy(),
-        out.detach().numpy())
+        generated[:,
+                  padding * model.upscale_factor:-padding * model.upscale_factor].detach().numpy(),
+        immediate.detach().numpy())
 
 
 def test_spectrogram_discriminator():

@@ -181,54 +181,54 @@ class LayerNorm(torch.nn.LayerNorm):
         return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
 
 
-def generate_waveform(model,
-                      spectrogram,
-                      spectrogram_mask=None,
-                      split_size=64,
-                      generator=True,
-                      pad_input=True):
+def generate_waveform(model, spectrogram, spectrogram_mask=None):
     """
     TODO: Similar to WaveNet, we could incorperate a "Fast WaveNet" approach. This basically means
     we don't need to recompute the padding for each split.
+    TODO: During evaluation, we should convert the `float32` output back to `int16` to match the
+    dataset fidelity. That also means we'll want to dither the output; however, we should consider
+    the model already learned this on it's own with the help of the discriminator.
+    TODO: Should this function be part of the `SignalModel` object?
 
     Args:
         model (SignalModel): The model to synthesize the waveform with.
-        spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels] or
-            [num_frames, frame_channels])
-        spectrogram_mask (torch.BoolTensor [batch_size, num_frames] or [num_frames], optional)
-        split_size (int or None, optional): Number of frames to synthesize at a time.
-        generator (bool, optional): If `True` this returns results incrementally.
-        pad_input (bool, optional): If `True` padding is applied to the input.
+        spectrogram (generator)
+        spectrogram_mask (generator, optional)
 
     Returns:
-        signal (torch.FloatTensor [batch_size, signal_length])
+        signal (torch.FloatTensor [batch_size, signal_length] or [signal_length])
     """
-    has_batch_dim = len(spectrogram.shape) == 3
     padding = model.padding
-    spectrogram, spectrogram_mask = model._normalize_input(spectrogram, spectrogram_mask, pad_input)
-    batch_size, num_frames, frame_channels = spectrogram.shape
-    num_frames = num_frames - padding * 2
+    last_item = None
+    spectrogram_mask = spectrogram_mask if spectrogram_mask is None else iter(spectrogram_mask)
+    for frames in spectrogram:
+        has_batch_dim = len(frames.shape) == 3
 
-    split_size = min(num_frames if split_size is None else split_size, num_frames)
-    iterator = list(range(padding, spectrogram.shape[1] - padding, split_size))
-    splits = [spectrogram[:, i - padding:i + split_size + padding] for i in iterator]
-    mask_splits = [spectrogram_mask[:, i - padding:i + split_size + padding] for i in iterator]
-    assert sum([s.shape[1] - padding * 2 for s in splits]) == num_frames, 'Invariant failed.'
+        # [batch_size, num_frames, frame_channels]
+        frames = frames.view(-1, frames.shape[-2], frames.shape[-1])
+        mask = torch.ones(
+            *frames.shape[:2], device=frames.device,
+            dtype=torch.bool) if spectrogram_mask is None else next(spectrogram_mask)
+        mask = mask.view(*frames.shape[:2])  # [batch_size, num_frames]
 
-    def _generate():
-        # TODO: During evaluation, we should convert the `float32` output back to
-        # `int16` to match the dataset fidelity. That also means we'll want to dither the
-        # output; however, we should consider the model already learned this on it's own with
-        # the help of the discriminator.
-        with torch.no_grad():
-            for split, mask in zip(splits, mask_splits):
-                waveform = model(split, mask, pad_input=False)
-                yield waveform if has_batch_dim else waveform.squeeze(0)
+        if last_item is None:
+            padded_frames = pad_tensors(frames, pad=(padding, 0), dim=1)
+            padded_mask = pad_tensors(mask, pad=(padding, 0), dim=1)
+        else:
+            assert last_item[0].shape[1] >= padding * 2, ('The split size must be larger than %d.' %
+                                                          (padding * 2))
+            padded_frames = torch.cat([last_item[0][:, -padding * 2:], frames], dim=1)
+            padded_mask = torch.cat([last_item[1][:, -padding * 2:], mask], dim=1)
 
-    if not generator:
-        return torch.cat(list(_generate()), dim=-1)
+        waveform = model(padded_frames, padded_mask, pad_input=False)
+        yield waveform if has_batch_dim else waveform.squeeze(0)
 
-    return _generate()
+        last_item = (padded_frames, padded_mask)
+
+    padded_frames = pad_tensors(last_item[0][:, -padding * 2:], pad=(0, padding), dim=1)
+    padded_mask = pad_tensors(last_item[1][:, -padding * 2:], pad=(0, padding), dim=1)
+    waveform = model(padded_frames, padded_mask, pad_input=False)
+    yield waveform if has_batch_dim else waveform.squeeze(0)
 
 
 class SignalModel(torch.nn.Module):
@@ -339,12 +339,10 @@ class SignalModel(torch.nn.Module):
         # [batch_size, num_frames, frame_channels]
         spectrogram = spectrogram.view(-1, spectrogram.shape[-2], spectrogram.shape[-1])
 
-        batch_size, num_frames, _ = spectrogram.shape
         device = spectrogram.device
-
         if spectrogram_mask is None:
-            spectrogram_mask = torch.ones(batch_size, num_frames, device=device, dtype=torch.bool)
-        spectrogram_mask = spectrogram_mask.view(batch_size, num_frames)
+            spectrogram_mask = torch.ones(*spectrogram.shape[:2], device=device, dtype=torch.bool)
+        spectrogram_mask = spectrogram_mask.view(*spectrogram.shape[:2])
 
         if pad_input:
             spectrogram = pad_tensors(spectrogram, (self.padding, self.padding), dim=1)
@@ -363,7 +361,7 @@ class SignalModel(torch.nn.Module):
             pad_input (bool, optional): If `True` padding is applied to the input.
 
         Returns:
-            signal (torch.FloatTensor [batch_size, signal_length])
+            signal (torch.FloatTensor [batch_size, signal_length] or [signal_length])
         """
         has_batch_dim = len(spectrogram.shape) == 3
 

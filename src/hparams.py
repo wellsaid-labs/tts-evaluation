@@ -308,6 +308,7 @@ def _set_model_size(frame_channels):
                         input_size=frame_channels,
                         hidden_size=32,
                         max_channel_size=512,
+                        # TODO: This padding can be automatically computed and should be, probably.
                         padding=signal_model_padding,
                         ratios=[2] * 8,
                         # SOURCE https://en.wikipedia.org/wiki/%CE%9C-law_algorithm:

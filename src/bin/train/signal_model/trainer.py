@@ -32,7 +32,6 @@ from src.bin.train.signal_model.data_loader import DataLoader
 from src.optimizers import AutoOptimizer
 from src.optimizers import ExponentialMovingParameterAverage
 from src.optimizers import Optimizer
-from src.signal_model import generate_waveform
 from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
@@ -657,7 +656,7 @@ class Trainer():
                     spectrogram.shape[0], torch.get_num_threads())
 
         self.exponential_moving_parameter_average.apply_shadow()
-        predicted = generate_waveform(model, spectrogram, generator=False)
+        predicted = model(spectrogram)
         self.exponential_moving_parameter_average.restore()
 
         total_spectrogram_loss = torch.tensor(0.0, device=self.device)
