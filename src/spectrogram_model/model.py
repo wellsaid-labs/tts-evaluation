@@ -424,11 +424,12 @@ class SpectrogramModel(nn.Module):
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens] or [num_frames,
                 num_tokens]): Attention alignments.
 
-        Additionally, inference returns:
+        Additionally, Inference Returns:
             lengths (torch.LongTensor [1, batch_size] or [1]): Number of frames predicted for each
                 sequence in the batch.
-            reached_max (torch.BoolTensor [1, batch_size] or [1]): The spectrogram frames that
-                reached the maximum number of frames.
+            reached_max (torch.BoolTensor [1, batch_size] or [1]): The spectrogram sequences that
+                reached the maximum number of frames as defined by `max_frames_per_token`. This
+                value is only returned if `is_generator` is `False`.
         """
         is_unbatched = len(tokens.shape) == 1
 

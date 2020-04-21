@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from src.utils import trim_tensors
+from src.utils import pad_tensors
 
 logger = logging.getLogger(__name__)
 
@@ -180,37 +181,34 @@ class LayerNorm(torch.nn.LayerNorm):
         return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
 
 
-def generate_waveform(model, spectrogram, spectrogram_mask=None, split_size=64, generator=True):
+def generate_waveform(model,
+                      spectrogram,
+                      spectrogram_mask=None,
+                      split_size=64,
+                      generator=True,
+                      pad_input=True):
     """
     TODO: Similar to WaveNet, we could incorperate a "Fast WaveNet" approach. This basically means
     we don't need to recompute the padding for each split.
 
     Args:
         model (SignalModel): The model to synthesize the waveform with.
-        spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
-        spectrogram_mask (torch.BoolTensor [batch_size, num_frames], optional)
+        spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels] or
+            [num_frames, frame_channels])
+        spectrogram_mask (torch.BoolTensor [batch_size, num_frames] or [num_frames], optional)
         split_size (int or None, optional): Number of frames to synthesize at a time.
         generator (bool, optional): If `True` this returns results incrementally.
+        pad_input (bool, optional): If `True` padding is applied to the input.
 
     Returns:
         signal (torch.FloatTensor [batch_size, signal_length])
     """
     has_batch_dim = len(spectrogram.shape) == 3
-
-    # [batch_size, num_frames, frame_channels]
-    spectrogram = spectrogram.view(-1, spectrogram.shape[-2], spectrogram.shape[-1])
-    batch_size, num_frames, frame_channels = spectrogram.shape
-    device = spectrogram.device
-
-    # [batch_size, num_frames]
-    spectrogram_mask = torch.ones(
-        batch_size, num_frames, device=device,
-        dtype=torch.bool) if spectrogram_mask is None else spectrogram_mask
-
-    spectrogram = model.pad(spectrogram.transpose(1, 2)).transpose(1, 2)
-    spectrogram_mask = model.pad(spectrogram_mask.unsqueeze(1)).squeeze(1)
-
     padding = model.padding
+    spectrogram, spectrogram_mask = model._normalize_input(spectrogram, spectrogram_mask, pad_input)
+    batch_size, num_frames, frame_channels = spectrogram.shape
+    num_frames = num_frames - padding * 2
+
     split_size = min(num_frames if split_size is None else split_size, num_frames)
     iterator = list(range(padding, spectrogram.shape[1] - padding, split_size))
     splits = [spectrogram[:, i - padding:i + split_size + padding] for i in iterator]
@@ -263,7 +261,6 @@ class SignalModel(torch.nn.Module):
         self.max_channel_size = max_channel_size
         self.mu = mu
         self.upscale_factor = np.prod(ratios)
-        self.pad = torch.nn.ConstantPad1d(padding, 0.0)
 
         self.pre_net = torch.nn.Sequential(
             Mask(1),
@@ -327,37 +324,60 @@ class SignalModel(torch.nn.Module):
         return min((int(2**(len(self.ratios) // 2)) * self.hidden_size) // 2**(i // 2),
                    self.max_channel_size)
 
+    def _normalize_input(self, spectrogram, spectrogram_mask, pad_input):
+        """
+        Args:
+            spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels] or
+                [num_frames, frame_channels])
+            spectrogram_mask (torch.BoolTensor [batch_size, num_frames] or [num_frames] or None)
+            pad_input (bool): If `True` padding is applied to the input.
+
+        Returns:
+            spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
+            spectrogram_mask (torch.BoolTensor [batch_size, num_frames])
+        """
+        # [batch_size, num_frames, frame_channels]
+        spectrogram = spectrogram.view(-1, spectrogram.shape[-2], spectrogram.shape[-1])
+
+        batch_size, num_frames, _ = spectrogram.shape
+        device = spectrogram.device
+
+        if spectrogram_mask is None:
+            spectrogram_mask = torch.ones(batch_size, num_frames, device=device, dtype=torch.bool)
+        spectrogram_mask = spectrogram_mask.view(batch_size, num_frames)
+
+        if pad_input:
+            spectrogram = pad_tensors(spectrogram, (self.padding, self.padding), dim=1)
+            spectrogram_mask = pad_tensors(spectrogram_mask, (self.padding, self.padding), dim=1)
+
+        return spectrogram, spectrogram_mask
+
     def forward(self, spectrogram, spectrogram_mask=None, pad_input=True):
         """
         Args:
-            spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
-            spectrogram_mask (torch.BoolTensor [batch_size, num_frames], optional): The mask
-                elements on either boundary of the spectrogram so that the corresponding output is
-                not affected.
-            padding (bool, optional): If `True` padding is applied to the input.
+            spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels] or
+                [num_frames, frame_channels])
+            spectrogram_mask (torch.BoolTensor [batch_size, num_frames] or [num_frames], optional):
+                The mask elements on either boundary of the spectrogram so that the corresponding
+                output is not affected.
+            pad_input (bool, optional): If `True` padding is applied to the input.
 
-        Args:
+        Returns:
             signal (torch.FloatTensor [batch_size, signal_length])
         """
         has_batch_dim = len(spectrogram.shape) == 3
 
-        # [batch_size, num_frames, frame_channels]
-        spectrogram = spectrogram.view(-1, spectrogram.shape[-2], spectrogram.shape[-1])
+        spectrogram, spectrogram_mask = self._normalize_input(spectrogram, spectrogram_mask,
+                                                              pad_input)
+
         batch_size, num_frames, frame_channels = spectrogram.shape
-        device = spectrogram.device
+        num_frames = num_frames - self.padding * 2
 
         # [batch_size, num_frames, frame_channels] → [batch_size, frame_channels, num_frames]
         spectrogram = spectrogram.transpose(1, 2)
 
-        # [batch_size, 1, num_frames]
-        spectrogram_mask = torch.ones(
-            batch_size, num_frames, device=device,
-            dtype=torch.bool) if spectrogram_mask is None else spectrogram_mask
-        spectrogram_mask = spectrogram_mask.view(batch_size, 1, num_frames)
-
-        spectrogram = self.pad(spectrogram) if pad_input else spectrogram
-        spectrogram_mask = self.pad(spectrogram_mask) if pad_input else spectrogram_mask
-        num_frames = num_frames if pad_input else num_frames - self.padding * 2
+        # [batch_size, num_frames] → [batch_size, 1, num_frames]
+        spectrogram_mask = spectrogram_mask.unsqueeze(1)
 
         for module in self.masks:
             module.mask = spectrogram_mask
