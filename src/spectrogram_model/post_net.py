@@ -54,6 +54,7 @@ class PostNet(nn.Module):
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, '`convolution_filter_size` must be odd'
+        assert num_convolution_layers >= 2, 'There must be at least 2 layers.'
 
         self.padding = int((convolution_filter_size - 1) / 2) * num_convolution_layers
         self.pad = nn.ConstantPad1d(self.padding, 0.0)

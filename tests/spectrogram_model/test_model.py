@@ -10,6 +10,75 @@ import numpy
 from src.spectrogram_model import SpectrogramModel
 
 
+def test_spectrogram_model_inference__generator():
+    batch_size = 2
+    num_tokens = 5
+    frame_channels = 5
+    vocab_size = 20
+    num_frames = 20
+    num_speakers = 2
+
+    add_config(
+        {'src.spectrogram_model.post_net.PostNet.__init__': HParams(num_convolution_layers=2)})
+
+    with fork_rng(seed=123):
+        model = SpectrogramModel(
+            vocab_size,
+            num_speakers,
+            frame_channels=frame_channels,
+            max_frames_per_token=num_frames / num_tokens)
+        model.train(mode=False)
+
+        # Ensure `LayerNorm` perturbs the input instead of being just an identity.
+        for module in model.modules():
+            if isinstance(module, torch.nn.LayerNorm):
+                torch.nn.init.uniform_(module.weight)
+                torch.nn.init.uniform_(module.bias)
+
+        # NOTE: 1-index to avoid using 0 typically associated with padding
+        input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
+        speaker = torch.randint(1, num_speakers, (1, batch_size))
+        batched_num_tokens = torch.randint(1, num_tokens, (batch_size,))
+        batched_num_tokens[0] = num_tokens  # NOTE: One of the lengths must be at max length
+
+    # frames [num_frames, batch_size, frame_channels]
+    # frames_with_residual [num_frames, batch_size, frame_channels]
+    # stop_token [num_frames, batch_size]
+    # alignment [num_frames, batch_size, num_tokens]
+    with fork_rng(seed=123):
+        (frames, frames_with_residual, stop_token, alignment, lengths, _) = model(
+            input_, speaker, num_tokens=batched_num_tokens)
+
+    # frames [num_frames, batch_size, frame_channels]
+    # frames_with_residual [num_frames, batch_size, frame_channels]
+    # stop_token [num_frames, batch_size]
+    # alignment [num_frames, batch_size, num_tokens]
+    for i in range(8, 11):
+        with fork_rng(seed=123):
+            (generated_frames, generated_frames_with_residual, generated_stop_token,
+             generated_alignment, generated_lengths) = zip(*list(
+                 model(
+                     input_,
+                     speaker,
+                     num_tokens=batched_num_tokens,
+                     is_generator=True,
+                     split_size=20)))
+            generated_frames = torch.cat(generated_frames)
+            generated_frames_with_residual = torch.cat(generated_frames_with_residual)
+            generated_stop_token = torch.cat(generated_stop_token)
+            generated_alignment = torch.cat(generated_alignment)
+            generated_lengths = generated_lengths[-1]
+
+        assert_equal = lambda a, b: numpy.testing.assert_almost_equal(
+            a.detach().numpy(), b.detach().numpy(), decimal=5)
+
+        assert_equal(frames, generated_frames)
+        assert_equal(frames_with_residual, generated_frames_with_residual)
+        assert_equal(stop_token, generated_stop_token)
+        assert_equal(alignment, generated_alignment)
+        assert_equal(lengths, generated_lengths)
+
+
 class _MockSigmoidBatchInvariant(torch.nn.Module):
 
     def __init__(self, size):
