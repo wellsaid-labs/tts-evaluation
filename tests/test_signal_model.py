@@ -25,6 +25,22 @@ def test_generate_waveform():
         numpy.testing.assert_almost_equal(immediate.detach().numpy(), generated.detach().numpy())
 
 
+def test_generate_waveform_small():
+    """ Test if incremental generation produces the same output as none-incremental. """
+    batch_size = 2
+    num_frames = 1
+    frame_channels = 6
+
+    model = SignalModel(input_size=frame_channels, ratios=[2, 2], max_channel_size=32, padding=13)
+    spectrogram = torch.randn([batch_size, num_frames, frame_channels])
+    immediate = model(spectrogram)
+    assert immediate.shape == (batch_size, model.upscale_factor * num_frames)
+
+    generated = torch.cat(list(generate_waveform(model, spectrogram.split(1, dim=1))), dim=1)
+    assert generated.shape == (batch_size, model.upscale_factor * num_frames)
+    numpy.testing.assert_almost_equal(immediate.detach().numpy(), generated.detach().numpy())
+
+
 def test_generate_waveform__no_batch_dim():
     """ Test if incremental generation produces the same output as none-incremental. """
     num_frames = 37

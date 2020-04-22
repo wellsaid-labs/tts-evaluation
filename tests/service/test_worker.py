@@ -5,6 +5,7 @@ from src.service.worker import load_checkpoints
 from src.service.worker import stream_text_to_speech_synthesis
 from src.service.worker import validate_and_unpack
 from tests._utils import get_tts_mocks
+from torchnlp.random import fork_rng
 
 
 def test_load_checkpoints():
@@ -17,14 +18,14 @@ def test_load_checkpoints():
 
 
 def test_stream_text_to_speech_synthesis():
-    mocks = get_tts_mocks()
-    example = mocks['dev_dataset'][0]
-    generator, file_size = stream_text_to_speech_synthesis(mocks['signal_model'],
-                                                           mocks['spectrogram_model'].eval(),
-                                                           mocks['input_encoder'], example.text,
-                                                           example.speaker)
-    file_contents = b''.join([s for s in generator()])
-    assert len(file_contents) == file_size
+    with fork_rng(seed=123):
+        mocks = get_tts_mocks()
+        example = mocks['dev_dataset'][0]
+        generator, file_size = stream_text_to_speech_synthesis(mocks['signal_model'],
+                                                               mocks['spectrogram_model'].eval(),
+                                                               mocks['input_encoder'], example.text,
+                                                               example.speaker)
+        assert len(b''.join([s for s in generator()])) == 1082
 
 
 def test_validate_and_unpack():

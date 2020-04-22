@@ -201,34 +201,31 @@ def generate_waveform(model, spectrogram, spectrogram_mask=None):
     padding = model.padding
     last_item = None
     spectrogram_mask = spectrogram_mask if spectrogram_mask is None else iter(spectrogram_mask)
-    for frames in spectrogram:
-        has_batch_dim = len(frames.shape) == 3
+    spectrogram = iter(spectrogram)
+    is_stop = False
+    while not is_stop:
+        items = []
+        while sum([i[0].shape[1] for i in items]) < padding * 2 and not is_stop:
+            try:
+                frames = next(spectrogram)  # [batch_size (optional), num_frames, frame_channels]
+                has_batch_dim = len(frames.shape) == 3
+                mask = None if spectrogram_mask is None else next(spectrogram_mask)
+                items.append(model._normalize_input(frames, mask, False))
+            except StopIteration:
+                is_stop = True
 
-        # [batch_size, num_frames, frame_channels]
-        frames = frames.view(-1, frames.shape[-2], frames.shape[-1])
-        mask = torch.ones(
-            *frames.shape[:2], device=frames.device,
-            dtype=torch.bool) if spectrogram_mask is None else next(spectrogram_mask)
-        mask = mask.view(*frames.shape[:2])  # [batch_size, num_frames]
+        padding_tuple = (0 if last_item else padding, padding if is_stop else 0)
+        frames = ([last_item[0][:, -padding * 2:]] if last_item else []) + [i[0] for i in items]
+        frames = torch.cat(frames, dim=1)
+        frames = pad_tensors(frames, pad=padding_tuple, dim=1)
+        mask = ([last_item[1][:, -padding * 2:]] if last_item else []) + [i[1] for i in items]
+        mask = torch.cat(mask, dim=1)
+        mask = pad_tensors(mask, pad=padding_tuple, dim=1)
 
-        if last_item is None:
-            padded_frames = pad_tensors(frames, pad=(padding, 0), dim=1)
-            padded_mask = pad_tensors(mask, pad=(padding, 0), dim=1)
-        else:
-            assert last_item[0].shape[1] >= padding * 2, ('The split size must be larger than %d.' %
-                                                          (padding * 2))
-            padded_frames = torch.cat([last_item[0][:, -padding * 2:], frames], dim=1)
-            padded_mask = torch.cat([last_item[1][:, -padding * 2:], mask], dim=1)
-
-        waveform = model(padded_frames, padded_mask, pad_input=False)
+        waveform = model(frames, mask, pad_input=False)
         yield waveform if has_batch_dim else waveform.squeeze(0)
 
-        last_item = (padded_frames, padded_mask)
-
-    padded_frames = pad_tensors(last_item[0][:, -padding * 2:], pad=(0, padding), dim=1)
-    padded_mask = pad_tensors(last_item[1][:, -padding * 2:], pad=(0, padding), dim=1)
-    waveform = model(padded_frames, padded_mask, pad_input=False)
-    yield waveform if has_batch_dim else waveform.squeeze(0)
+        last_item = (frames, mask)
 
 
 class SignalModel(torch.nn.Module):
