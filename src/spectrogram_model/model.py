@@ -248,7 +248,7 @@ class SpectrogramModel(nn.Module):
                 try:
                     frames, stop_tokens, alignments, lengths = next(generator)
                     mask = torch.max(lengths - lengths.max() + frames.shape[0], zero)
-                    mask = lengths_to_mask(lengths, device=device)
+                    mask = lengths_to_mask(mask, device=device)
                     items.append((frames, mask, stop_tokens, alignments, lengths))
                 except StopIteration:
                     is_stop = True
@@ -448,5 +448,7 @@ class SpectrogramModel(nn.Module):
             return_ = self._aligned(encoded_tokens, tokens_mask, speaker, num_tokens, target_frames,
                                     target_lengths, **kwargs)
 
-        return (tuple([t.squeeze(1) for t in return_])
-                if is_unbatched and isinstance(return_, tuple) else return_)
+        if isinstance(return_, tuple):
+            return tuple([t.squeeze(1) for t in return_]) if is_unbatched else return_
+
+        return (tuple([t.squeeze(1) for t in item]) if is_unbatched else item for item in return_)

@@ -56,6 +56,7 @@ from src.service.worker_config import SIGNAL_MODEL_CHECKPOINT_PATH
 from src.service.worker_config import SPEAKER_ID_TO_SPEAKER
 from src.service.worker_config import SPECTROGRAM_MODEL_CHECKPOINT_PATH
 from src.signal_model import generate_waveform
+from src.spectrogram_model import SpectrogramModel
 from src.utils import Checkpoint
 
 # NOTE: Flask documentation requests that logging is configured before `app` is created.
@@ -97,6 +98,13 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
     spectrogram_model_checkpoint = Checkpoint.from_path(
         spectrogram_model_checkpoint_path, device=DEVICE)
     signal_model_checkpoint = Checkpoint.from_path(signal_model_checkpoint_path, device=DEVICE)
+
+    # TODO: Remove these lines they are for backwards compatibility, in the next release.
+    num_tokens = spectrogram_model_checkpoint.input_encoder.text_encoder.vocab_size
+    num_speakers = spectrogram_model_checkpoint.input_encoder.speaker_encoder.vocab_size
+    state_dict = spectrogram_model_checkpoint.model.state_dict()
+    spectrogram_model_checkpoint.model = SpectrogramModel(num_tokens, num_speakers)
+    spectrogram_model_checkpoint.model.load_state_dict(state_dict)
 
     spectrogram_model = spectrogram_model_checkpoint.model
     input_encoder = spectrogram_model_checkpoint.input_encoder
@@ -159,8 +167,9 @@ def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encod
 
     def get_spectrogram():
         for _, frames, _, _, _ in spectrogram_model(text, speaker, is_generator=True):
-            # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
-            yield frames.transpose(0, 1)
+            # [num_frames, batch_size (optional), frame_channels] →
+            # [batch_size (optional), num_frames, frame_channels]
+            yield frames.transpose(0, 1) if frames.dim() == 3 else frames
 
     # NOTE: Learn more:
     # https://stackoverflow.com/questions/25245439/writing-wav-files-of-unknown-length
