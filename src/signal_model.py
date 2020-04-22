@@ -216,11 +216,9 @@ def generate_waveform(model, spectrogram, spectrogram_mask=None):
 
         padding_tuple = (0 if last_item else padding, padding if is_stop else 0)
         frames = ([last_item[0][:, -padding * 2:]] if last_item else []) + [i[0] for i in items]
-        frames = torch.cat(frames, dim=1)
-        frames = pad_tensors(frames, pad=padding_tuple, dim=1)
+        frames = pad_tensors(torch.cat(frames, dim=1), pad=padding_tuple, dim=1)
         mask = ([last_item[1][:, -padding * 2:]] if last_item else []) + [i[1] for i in items]
-        mask = torch.cat(mask, dim=1)
-        mask = pad_tensors(mask, pad=padding_tuple, dim=1)
+        mask = pad_tensors(torch.cat(mask, dim=1), pad=padding_tuple, dim=1)
 
         waveform = model(frames, mask, pad_input=False)
         yield waveform if has_batch_dim else waveform.squeeze(0)
