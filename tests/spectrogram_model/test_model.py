@@ -109,7 +109,7 @@ def test_spectrogram_model_inference__generator():
     # frames_with_residual [num_frames, batch_size, frame_channels]
     # stop_token [num_frames, batch_size]
     # alignment [num_frames, batch_size, num_tokens]
-    for i in range(8, 11):
+    for i in [1, 8, 11]:
         with fork_rng(seed=123):
             (generated_frames, generated_frames_with_residual, generated_stop_token,
              generated_alignment, generated_lengths) = zip(*list(

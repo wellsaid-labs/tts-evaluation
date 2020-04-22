@@ -19,7 +19,7 @@ def test_generate_waveform():
     immediate = model(spectrogram)
     assert immediate.shape == (batch_size, model.upscale_factor * num_frames)
 
-    for i in itertools.chain([26, 27, 53]):
+    for i in itertools.chain([1, 26, 27, 53]):
         generated = torch.cat(list(generate_waveform(model, spectrogram.split(i, dim=1))), dim=1)
         assert generated.shape == (batch_size, model.upscale_factor * num_frames)
         numpy.testing.assert_almost_equal(immediate.detach().numpy(), generated.detach().numpy())

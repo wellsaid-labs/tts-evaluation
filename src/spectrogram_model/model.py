@@ -161,9 +161,9 @@ class SpectrogramModel(nn.Module):
                                 encoded_tokens,
                                 max_lengths,
                                 num_tokens,
+                                split_size,
                                 tokens_mask,
                                 speaker,
-                                split_size=float('inf'),
                                 use_tqdm=False,
                                 stop_threshold=HParam()):
         """ Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
@@ -172,9 +172,9 @@ class SpectrogramModel(nn.Module):
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
             max_lengths (torch.LongTensor [batch_size])
             num_tokens (torch.LongTensor [batch_size])
+            split_size (int, optional): The maximum length of a sequence returned by the generator.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens])
             speaker (torch.LongTensor [batch_size, speaker_embedding_dim])
-            split_size (int, optional): The maximum length of a sequence returned by the generator.
             use_tqdm (bool, optional): If `True` then this adds a `tqdm` progress bar.
             stop_threshold (float): The threshold overwhich the model should stop generating.
 
@@ -184,7 +184,6 @@ class SpectrogramModel(nn.Module):
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
             lengths (torch.LongTensor [batch_size]): The total number of frames in each sequence,
                 so far.
-            is_last (bool):  If `True` then this is the last split.
         """
         _, batch_size, _ = encoded_tokens.shape
         device = encoded_tokens.device
@@ -212,7 +211,7 @@ class SpectrogramModel(nn.Module):
 
             if len(frames) > split_size or not keep_going():
                 yield (torch.stack(frames, dim=0), torch.stack(stop_tokens, dim=0),
-                       torch.stack(alignments, dim=0), lengths, not keep_going())
+                       torch.stack(alignments, dim=0), lengths)
                 frames, stop_tokens, alignments = [], [], []
 
             if use_tqdm:
@@ -222,12 +221,11 @@ class SpectrogramModel(nn.Module):
         if use_tqdm:
             progress_bar.close()
 
-    def _infer_generator(self, encoded_tokens, split_size, *args, **kwargs):
+    def _infer_generator(self, encoded_tokens, *args, **kwargs):
         """ Generate frames from the decoder that have been processed by the `post_net`.
 
         Args:
             encoded_tokens: See `_infer_generator_helper`.
-            split_size: See `_infer_generator_helper`.
             *args: Arguments passed too `_infer_generator_helper`.
             **kwargs: Keyword arguments passed too `_infer_generator`.
 
@@ -238,45 +236,42 @@ class SpectrogramModel(nn.Module):
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
             lengths (torch.LongTensor [1, batch_size])
         """
-        num_tokens, batch_size, _ = encoded_tokens.shape
         device = encoded_tokens.device
         padding = self.post_net.padding
-        last_item, last_mask = (None, None)
+        last_item = None
+        is_stop = False
         zero = torch.tensor(0, device=device)
+        generator = self._infer_generator_helper(encoded_tokens, *args, **kwargs)
+        while not is_stop:
+            items = []
+            while sum([i[0].shape[0] for i in items]) < padding * 2 and not is_stop:
+                try:
+                    frames, stop_tokens, alignments, lengths = next(generator)
+                    mask = torch.max(lengths - lengths.max() + frames.shape[0], zero)
+                    mask = lengths_to_mask(lengths, device=device)
+                    items.append((frames, mask, stop_tokens, alignments, lengths))
+                except StopIteration:
+                    is_stop = True
 
-        assert split_size >= padding * 2, 'The split size must be larger than %d.' % (padding * 2)
+            padding_tuple = (0 if last_item else padding, padding if is_stop else 0)
+            frames = ([last_item[0][-padding * 2:]] if last_item else []) + [i[0] for i in items]
+            frames = pad_tensors(torch.cat(frames), pad=padding_tuple)
+            mask = ([last_item[1][:, -padding * 2:]] if last_item else []) + [i[1] for i in items]
+            mask = pad_tensors(torch.cat(mask, dim=1), pad=padding_tuple, dim=1)
+            stop_tokens = torch.cat([last_item[2][-padding:]] if last_item else [] + [stop_tokens])
+            alignments = torch.cat([last_item[3][-padding:]] if last_item else [] + [alignments])
 
-        for item in self._infer_generator_helper(
-                encoded_tokens, *args, split_size=split_size, **kwargs):
-            frames, stop_tokens, alignments, lengths, is_last = item
-            mask = torch.max(lengths - lengths.max() + frames.shape[0], zero)
-            mask = lengths_to_mask(lengths, device=device)
-
-            if last_item is None:
-                padded_frames = pad_tensors(frames, pad=(padding, padding if is_last else 0))
-                padded_mask = pad_tensors(mask, pad=(padding, padding if is_last else 0), dim=1)
-            else:
-                last_frames, last_stop_tokens, last_alignments, _, _ = last_item
-                padded_frames = torch.cat([last_frames[-padding * 2:], frames])
-                padded_mask = torch.cat([last_mask[:, -padding * 2:], mask], dim=1)
-                padded_stop_tokens = torch.cat([last_stop_tokens[-padding:], stop_tokens])
-                padded_alignments = torch.cat([last_alignments[-padding:], alignments])
-                padded_frames = pad_tensors(
-                    padded_frames, pad=(0, padding)) if is_last else padded_frames
-                padded_mask = pad_tensors(
-                    padded_mask, pad=(0, padding), dim=1) if is_last else padded_mask
-
-            residual = self.post_net(padded_frames, padded_mask, pad_input=False)
+            residual = self.post_net(frames, mask, pad_input=False)
 
             yield (
-                padded_frames[padding:-padding] * self.output_scalar,
-                (padded_frames[padding:-padding] + residual) * self.output_scalar,
-                (padded_stop_tokens if last_item else stop_tokens)[:None if is_last else -padding],
-                (padded_alignments if last_item else alignments)[:None if is_last else -padding],
-                (lengths if is_last else torch.min(lengths.max() - padding, lengths)).unsqueeze(0),
+                frames[padding:-padding] * self.output_scalar,
+                (frames[padding:-padding] + residual) * self.output_scalar,
+                stop_tokens[:None if is_stop else -padding],
+                alignments[:None if is_stop else -padding],
+                (lengths if is_stop else torch.min(lengths.max() - padding, lengths)).unsqueeze(0),
             )
 
-            last_item, last_mask = (item, mask)
+            last_item = (frames, mask, stop_tokens, alignments)
 
     def _infer(self,
                encoded_tokens,
@@ -316,7 +311,7 @@ class SpectrogramModel(nn.Module):
         max_lengths = torch.max((num_tokens.float() * self.max_frames_per_token).long(),
                                 torch.tensor(1, device=device))
 
-        generator = self._infer_generator(encoded_tokens, split_size, max_lengths, num_tokens,
+        generator = self._infer_generator(encoded_tokens, max_lengths, num_tokens, split_size,
                                           *args, **kwargs)
         if is_generator:
             return generator
