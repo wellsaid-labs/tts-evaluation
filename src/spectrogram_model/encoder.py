@@ -22,14 +22,14 @@ def roll(tensor, shift, dim=-1):
     shift = shift.unsqueeze(dim)
     assert shift.dim() == tensor.dim(
     ), 'The `shift` tensor must be the same size as `tensor` without the `dim` dimension.'
-    indices = torch.arange(0, tensor.shape[dim])
+    indices = torch.arange(0, tensor.shape[dim], device=tensor.device)
     dim = tensor.dim() + dim if dim < 0 else dim
 
     # EXAMPLE:
     # indicies.shape == (3,)
     # tensor.shape == (1, 2, 3, 4, 5)
     # indices_shape == [1, 1, 3, 1, 1]
-    indices_shape = [1] * (dim - 1) + [-1] + [1] * (tensor.dim() - dim - 1)
+    indices_shape = [1] * dim + [-1] + [1] * (tensor.dim() - dim - 1)
     indices = indices.view(*tuple(indices_shape)).expand(*tensor.shape)
 
     indices = (indices - shift) % tensor.shape[dim]
@@ -82,7 +82,7 @@ class RightMaskedBiLSTM(nn.Module):
         lengths = lengths.unsqueeze(1)
 
         # Ex. [1, 2, 3, 0, 0] → [0, 0, 1, 2, 3]
-        tokens = roll(tokens, (tokens.shape[0] - lengths).expand(-1, tokens.shape[-1]), dim=0)
+        tokens = roll(tokens, (tokens.shape[0] - lengths), dim=0)
 
         # Ex. [0, 0, 1, 2, 3] → [3, 2, 1, 0, 0]
         tokens = tokens.flip(0)
@@ -93,7 +93,7 @@ class RightMaskedBiLSTM(nn.Module):
         lstm_results = lstm_results.flip(0)
 
         # Ex. [0, 0, 1, 2, 3] → [1, 2, 3, 0, 0]
-        return roll(lstm_results, lengths.expand(-1, lstm_results.shape[-1]), dim=0)
+        return roll(lstm_results, lengths, dim=0)
 
     def forward(self, tokens, tokens_mask):
         """ Compute the LSTM pass.

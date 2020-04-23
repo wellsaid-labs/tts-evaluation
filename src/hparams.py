@@ -254,6 +254,14 @@ def _set_model_size(frame_channels):
                         # SOURCE (BERT):
                         # https://github.com/google-research/bert/blob/master/modeling.py#L375
                         initializer_range=0.02,
+
+                        # NOTE: The text speech alignment is monotonic; therefore, there is no need
+                        # to pay attention to any text outside of a narrow band of a couple
+                        # characters on either side.
+                        # NOTE: In Comet, we report the metric "attention_std". The standard
+                        # deviation for the attention alignment is helpful to set this metric in
+                        # such a way that it doesn't affect model performance.
+                        window_length=11,
                     ),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(
