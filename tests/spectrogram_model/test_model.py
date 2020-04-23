@@ -471,8 +471,8 @@ def test_spectrogram_model():
         batched_num_tokens = torch.full((batch_size,), num_tokens,
                                         dtype=torch.long).random_(1, num_tokens)
         batched_num_tokens[0] = num_tokens
-        max_lengths = torch.max((batched_num_tokens.float() * (num_frames / num_tokens)).long(),
-                                torch.tensor(1))
+        max_lengths = torch.clamp(
+            (batched_num_tokens.float() * (num_frames / num_tokens)).long(), min=1.0)
 
         assert num_frames == max_lengths.max()
 

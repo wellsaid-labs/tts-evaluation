@@ -240,14 +240,13 @@ class SpectrogramModel(nn.Module):
         padding = self.post_net.padding
         last_item = None
         is_stop = False
-        zero = torch.tensor(0, device=device)
         generator = self._infer_generator_helper(encoded_tokens, *args, **kwargs)
         while not is_stop:
             items = []
             while sum([i[0].shape[0] for i in items]) < padding * 2 and not is_stop:
                 try:
                     frames, stop_tokens, alignments, lengths = next(generator)
-                    mask = torch.max(lengths - lengths.max() + frames.shape[0], zero)
+                    mask = torch.clamp(lengths - lengths.max() + frames.shape[0], min=0)
                     mask = lengths_to_mask(mask, device=device)
                     items.append((frames, mask, stop_tokens, alignments, lengths))
                 except StopIteration:
@@ -305,11 +304,9 @@ class SpectrogramModel(nn.Module):
             reached_max (torch.BoolTensor [1, batch_size]): The spectrogram sequences that
                 reached the maximum number of frames as defined by `max_frames_per_token`.
         """
-        device = encoded_tokens.device
         _, batch_size, _ = encoded_tokens.shape
         split_size = split_size if is_generator else float('inf')
-        max_lengths = torch.max((num_tokens.float() * self.max_frames_per_token).long(),
-                                torch.tensor(1, device=device))
+        max_lengths = torch.clamp((num_tokens.float() * self.max_frames_per_token).long(), min=1)
 
         generator = self._infer_generator(encoded_tokens, max_lengths, num_tokens, split_size,
                                           *args, **kwargs)
