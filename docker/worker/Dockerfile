@@ -43,6 +43,8 @@ RUN apt-get update --fix-missing \
   torch==1.4.0+cpu -f https://download.pytorch.org/whl/torch_stable.html \
   unidecode \
   tqdm \
+  spacy \
+  https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-2.2.5/en_core_web_sm-2.2.5.tar.gz#egg=en_core_web_sm \
   git+https://github.com/PetrochukM/HParams.git \
   git+https://github.com/PetrochukM/PyTorch-NLP.git \
   && mkdir disk/other \
@@ -60,6 +62,10 @@ FROM base
 WORKDIR /app
 
 COPY --from=builder /app/ /app/
+
+RUN apt-get update --fix-missing \
+  && apt-get install -y espeak \
+  && rm -rf /var/lib/apt/lists/*
 
 LABEL maintainer="michael@wellsaidlabs.com"
 
