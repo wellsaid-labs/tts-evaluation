@@ -5,6 +5,49 @@ from torchnlp.random import fork_rng
 
 from src.spectrogram_model.encoder import Encoder
 from src.spectrogram_model.encoder import RightMaskedBiLSTM
+from src.spectrogram_model.encoder import roll
+
+
+def test_roll():
+    tensor = torch.tensor([[1, 2, 3], [1, 2, 3], [1, 2, 3]])
+    assert torch.equal(
+        roll(tensor, shift=torch.tensor([0, 1, 2]), dim=-1),
+        torch.tensor([[1, 2, 3], [3, 1, 2], [2, 3, 1]]))
+
+
+def test_roll__larger_shift():
+    tensor = torch.tensor([1, 2, 3, 4, 5, 6])
+    assert torch.equal(roll(tensor, shift=torch.tensor(4), dim=0), torch.tensor([3, 4, 5, 6, 1, 2]))
+
+
+def test_roll__transpose():
+    tensor = torch.tensor([[1, 2, 3], [1, 2, 3], [1, 2, 3]]).transpose(0, 1)
+    result = roll(tensor, shift=torch.tensor([0, 1, 2]), dim=0).transpose(0, 1)
+    assert torch.equal(result, torch.tensor([[1, 2, 3], [3, 1, 2], [2, 3, 1]]))
+
+
+def test_roll__3d():
+    tensor = torch.tensor([1, 2, 3]).view(1, 3, 1).expand(4, 3, 4)
+    shift = torch.arange(0, 16).view(4, 4)
+    result = roll(tensor, shift=shift, dim=1)
+
+    assert shift[0, 0] == 0
+    assert torch.equal(result[0, :, 0], torch.tensor([1, 2, 3]))
+
+    assert shift[0, 1] == 1
+    assert torch.equal(result[0, :, 1], torch.tensor([3, 1, 2]))
+
+    assert shift[0, 2] == 2
+    assert torch.equal(result[0, :, 2], torch.tensor([2, 3, 1]))
+
+    assert shift[0, 3] == 3
+    assert torch.equal(result[0, :, 3], torch.tensor([1, 2, 3]))
+
+    assert shift[1, 0] == 4
+    assert torch.equal(result[1, :, 0], torch.tensor([3, 1, 2]))
+
+    assert shift[1, 1] == 5
+    assert torch.equal(result[1, :, 1], torch.tensor([2, 3, 1]))
 
 
 def test_right_masked_bi_lstm__identity():

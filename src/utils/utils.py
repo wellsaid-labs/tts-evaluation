@@ -478,3 +478,37 @@ def bash_time_label(add_pid=True):
         label += '_PID-%s' % str(os.getpid())
 
     return label
+
+
+def pad_tensors(input_, pad, dim=0, **kwargs):
+    """ Pad a tensor dimension.
+
+    Args:
+        input_ (torch.Tensor)
+        pad (tuple): The padding to apply.
+        dim (int): The dimension to apply padding.
+        **kwargs: Keyword arguments passed onto `torch.nn.functional.pad`.
+
+    Returns:
+        torch.Tensor
+    """
+    padding = [(0, 0) for _ in range(input_.dim())]
+    padding[dim] = pad
+    # NOTE: `torch.nn.functional.pad` accepts the last dimension first.
+    padding = flatten(reversed(padding))
+    return torch.nn.functional.pad(input_, padding, **kwargs)
+
+
+def trim_tensors(*args, dim=2):
+    """ Trim such that all tensors sizes match on `dim`.
+
+    Args:
+        *args (torch.Tensor): A list of tensors.
+        dim (int): The dimension to trim.
+
+    Returns:
+        *args (torch.Tensor)
+    """
+    minimum = min(a.shape[dim] for a in args)
+    assert all((a.shape[dim] - minimum) % 2 == 0 for a in args), 'Uneven padding'
+    return (a.narrow(dim, (a.shape[dim] - minimum) // 2, minimum) for a in args)

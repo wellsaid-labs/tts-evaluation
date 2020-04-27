@@ -254,6 +254,14 @@ def _set_model_size(frame_channels):
                         # SOURCE (BERT):
                         # https://github.com/google-research/bert/blob/master/modeling.py#L375
                         initializer_range=0.02,
+
+                        # NOTE: The text speech alignment is monotonic; therefore, there is no need
+                        # to pay attention to any text outside of a narrow band of a couple
+                        # characters on either side.
+                        # NOTE: In Comet, we report the metric "attention_std". The standard
+                        # deviation for the attention alignment is helpful to set this metric in
+                        # such a way that it doesn't affect model performance.
+                        window_length=11,
                     ),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(
@@ -298,7 +306,7 @@ def _set_model_size(frame_channels):
                             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to
                             # learn more about this parameter.
                             speaker_embedding_dim=128),
-                    '_infer':
+                    '_infer_generator_helper':
                         HParams(stop_threshold=stop_threshold)
                 }  # noqa: E122
             },
@@ -308,6 +316,7 @@ def _set_model_size(frame_channels):
                         input_size=frame_channels,
                         hidden_size=32,
                         max_channel_size=512,
+                        # TODO: This padding can be automatically computed and should be, probably.
                         padding=signal_model_padding,
                         ratios=[2] * 8,
                         # SOURCE https://en.wikipedia.org/wiki/%CE%9C-law_algorithm:

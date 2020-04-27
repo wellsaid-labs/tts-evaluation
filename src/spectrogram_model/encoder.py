@@ -7,6 +7,35 @@ from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
 from torchnlp.nn import LockedDropout
 
 
+def roll(tensor, shift, dim=-1):
+    """ Shift a tensor along the specified dimension.
+
+    Args:
+        tensor (torch.Tensor [*, dim, *]): The tensor to shift.
+        shift (torch.Tensor [*]): The number of elements to shift `dim`. This tensor must have one
+            less dimensions than `tensor`.
+        dim (int): The dimension to shift.
+
+    Returns:
+        tensor (torch.Tensor [*, dim, *]): The tensor that was shifted.
+    """
+    shift = shift.unsqueeze(dim)
+    assert shift.dim() == tensor.dim(
+    ), 'The `shift` tensor must be the same size as `tensor` without the `dim` dimension.'
+    indices = torch.arange(0, tensor.shape[dim], device=tensor.device)
+    dim = tensor.dim() + dim if dim < 0 else dim
+
+    # EXAMPLE:
+    # indicies.shape == (3,)
+    # tensor.shape == (1, 2, 3, 4, 5)
+    # indices_shape == [1, 1, 3, 1, 1]
+    indices_shape = [1] * dim + [-1] + [1] * (tensor.dim() - dim - 1)
+    indices = indices.view(*tuple(indices_shape)).expand(*tensor.shape)
+
+    indices = (indices - shift) % tensor.shape[dim]
+    return torch.gather(tensor, dim, indices)
+
+
 class RightMaskedBiLSTM(nn.Module):
     """ A bidirectional LSTM that ignores any masked input on the right side of the sequence.
 
@@ -49,27 +78,22 @@ class RightMaskedBiLSTM(nn.Module):
         # tokens_mask = [1, 1, 1, 0, 0]
         # lengths = [3]
         # tokens.shape[0] = 5
-        reversed_tokens = torch.zeros(tokens.shape, dtype=tokens.dtype, device=tokens.device)
-        lengths = tokens_mask.int().sum(0)
-        iterator = lambda: zip(range(tokens.shape[1]), list(lengths))
-        for i, length in iterator():
-            # Ex. [1, 2, 3, 0, 0] → [0, 0, 1, 2, 3]
-            reversed_tokens[-length:, i] = tokens[:length, i]
+        lengths = tokens_mask.int().sum(0)  # TODO: Reuse the already computed `num_tokens`
+        lengths = lengths.unsqueeze(1)
+
+        # Ex. [1, 2, 3, 0, 0] → [0, 0, 1, 2, 3]
+        tokens = roll(tokens, (tokens.shape[0] - lengths), dim=0)
 
         # Ex. [0, 0, 1, 2, 3] → [3, 2, 1, 0, 0]
-        reversed_tokens = reversed_tokens.flip(0)
+        tokens = tokens.flip(0)
 
-        lstm_results, _ = backward_lstm(reversed_tokens)
+        lstm_results, _ = backward_lstm(tokens)
 
         # Ex. [3, 2, 1, 0, 0] → [0, 0, 1, 2, 3]
         lstm_results = lstm_results.flip(0)
 
-        results = torch.zeros(lstm_results.shape, dtype=tokens.dtype, device=tokens.device)
-        for i, length in iterator():
-            # Ex. [0, 0, 1, 2, 3] → [1, 2, 3, 0, 0]
-            results[:length, i] = lstm_results[-length:, i]
-
-        return results
+        # Ex. [0, 0, 1, 2, 3] → [1, 2, 3, 0, 0]
+        return roll(lstm_results, lengths, dim=0)
 
     def forward(self, tokens, tokens_mask):
         """ Compute the LSTM pass.

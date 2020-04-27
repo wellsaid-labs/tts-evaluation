@@ -105,84 +105,16 @@ document.addEventListener('DOMContentLoaded', async function (_) {
 
   function requestAudio(data) {
     return new Promise((resolve) => {
-      // Start stream
-      let startTime = new Date().getTime();
-      let queuingTime;
-      const request = new XMLHttpRequest();
-      let hasProgress = false;
-
-      // Make request for stream
-      request.open('POST', `https://voice.wellsaidlabs.com${endpoint}/stream`);
-      request.setRequestHeader('Content-Type', 'application/json');
-      request.setRequestHeader('Accept-Version', data.version);
-      request.responseType = 'blob';
-      request.addEventListener('progress', (event) => {
-        if (event.lengthComputable) {
-          if (!hasProgress && event.loaded > 0) {
-            hasProgress = true;
-            // The server sends first WAV headers, before generating the spectrogram.
-            queuingTime = ((new Date().getTime()) - startTime) / 1000;
-            resolve();
-          }
-          let percentage = event.loaded / event.total;
-          const now = new Date().getTime();
-          let estimatedTimeLeft = ((now - startTime) / percentage) * (1 - percentage);
-          estimatedTimeLeft = secondsToString(estimatedTimeLeft / 1000);
-          percentage = Math.round(percentage * 100); // Decimals to percent
-          const message = `${Math.round(percentage)}% Generated - ${estimatedTimeLeft} Left`
-          data.sectionElement.querySelector('.progress p').textContent = message;
-        }
-      });
-      request.addEventListener('error', (error) => {
-        console.error(error);
-        data.sectionElement.querySelector('.progress p').textContent = `Network error.`;
-        resolve();
-      });
-      request.addEventListener('timeout', () => {
-        data.sectionElement.querySelector('.progress p').textContent = `Request timed out.`;
-        resolve();
-      });
-      request.addEventListener('abort', () => {
-        data.sectionElement.querySelector('.progress p').textContent = `Request aborted.`;
-        resolve();
-      });
-      request.addEventListener('load', () => {
-        if (request.status === 200) {
-          data.sectionElement.querySelector('.progress').style.display = 'none';
-          const audioElement = data.sectionElement.querySelector('audio');
-          const generatingTime = ((new Date().getTime()) - startTime) / 1000;
-
-          // Add statistics to the footer on `audioElement` load.
-          audioElement.addEventListener('loadedmetadata', () => {
-            // `numSamples` assumes the 16-bit audio and a 44-bit WAV header.
-            const numSamples = (request.getResponseHeader("Content-Length") - 44) / 2;
-            const generatingWaveTime = generatingTime - queuingTime;
-            const samplesPerSecond = Math.round(numSamples / generatingWaveTime);
-            data.sectionElement.querySelector('footer p').innerHTML = ([
-              `Audio Duration: ${Math.round(audioElement.duration * 100) / 100}s`,
-              `Generation Timer: ${Math.round(generatingTime * 100) / 100}s`,
-              `Queuing / Spectrogram Timer: ${Math.round(queuingTime * 100) / 100}s`,
-              `Waveform Timer: ${Math.round(generatingWaveTime * 100) / 100}s`,
-              `${Math.round(samplesPerSecond)} Samples Per Second`,
-            ].join('&nbsp;&nbsp;|&nbsp;&nbsp;'));
-          });
-
-          allAudio.push({
-            'response': request.response,
-            'speakerId': data.payload.speaker_id,
-            'text': data.payload.text,
-            'clipNumber': data.clipNumber,
-          });
-          audioElement.src = window.URL.createObjectURL(request.response);
-          audioElement.load();
-          resolve();
-        } else {
-          const message = `Status code ${request.status}.`;
-          data.sectionElement.querySelector('.progress p').textContent = message;
-          resolve();
-        }
-      });
-      request.send(JSON.stringify(data.payload));
+      // TODO: Revert this change and implement something more thorough with...
+      // - Performance specifications
+      // - Adding version headers: https://stackoverflow.com/questions/9299189/send-custom-http-request-header-with-html5-audio-tag
+      // - Using a streamable and seakable file format
+      // - Using the correct endpoint.
+      data.sectionElement.querySelector('.progress').style.display = 'none';
+      const audioElement = data.sectionElement.querySelector('audio');
+      audioElement.src = `${endpoint}/stream?${new URLSearchParams(data.payload).toString()}`;
+      audioElement.load();
+      resolve();
     });
   };
 
@@ -231,7 +163,7 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       clipNumber += 1;
 
       try {
-        const response = await fetch(`https://voice2.wellsaidlabs.com${endpoint}/input_validated`, {
+        const response = await fetch(`${endpoint}/input_validated`, {
           method: 'POST',
           body: JSON.stringify(payload),
           headers: {

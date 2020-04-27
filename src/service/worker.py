@@ -56,6 +56,7 @@ from src.service.worker_config import SIGNAL_MODEL_CHECKPOINT_PATH
 from src.service.worker_config import SPEAKER_ID_TO_SPEAKER
 from src.service.worker_config import SPECTROGRAM_MODEL_CHECKPOINT_PATH
 from src.signal_model import generate_waveform
+from src.spectrogram_model import SpectrogramModel
 # TODO: Do not rely on private functions.
 from src.spectrogram_model.input_encoder import _grapheme_to_phoneme_helper
 from src.spectrogram_model.input_encoder import _grapheme_to_phoneme_perserve_punctuation
@@ -103,6 +104,13 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
         spectrogram_model_checkpoint_path, device=DEVICE)
     signal_model_checkpoint = Checkpoint.from_path(signal_model_checkpoint_path, device=DEVICE)
 
+    # TODO: Remove these lines they are for backwards compatibility, in the next release.
+    num_tokens = spectrogram_model_checkpoint.input_encoder.text_encoder.vocab_size
+    num_speakers = spectrogram_model_checkpoint.input_encoder.speaker_encoder.vocab_size
+    state_dict = spectrogram_model_checkpoint.model.state_dict()
+    spectrogram_model_checkpoint.model = SpectrogramModel(num_tokens, num_speakers)
+    spectrogram_model_checkpoint.model.load_state_dict(state_dict)
+
     spectrogram_model = spectrogram_model_checkpoint.model
     input_encoder = spectrogram_model_checkpoint.input_encoder
     app.logger.info('Loading speakers: %s', input_encoder.speaker_encoder.vocab)
@@ -147,6 +155,9 @@ def handle_invalid_usage(error):  # Register an error response
 def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encoder, text, speaker):
     """ Helper function for starting a speech synthesis stream.
 
+    TODO: If a loud sound is created, cut off the stream or consider rerendering.
+    TODO: Consider logging various events to stackdriver, to keep track.
+
     Args:
         signal_model (torch.nn.Module)
         spectrogram_model (torch.nn.Module)
@@ -158,26 +169,18 @@ def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encod
         (callable): Callable that returns a generator incrementally returning a WAV file.
         (int): Number of bytes to be returned in total by the generator.
     """
-    # Compute spectrogram
     text, speaker = input_encoder.encode((text, speaker))
 
-    app.logger.info('Generating spectrogram...')
-    with torch.no_grad():
-        _, spectrogram, _, _, _, is_max_frames = spectrogram_model(text, speaker, use_tqdm=True)
-    app.logger.info('Generated spectrogram of shape %s for text of shape %s.', spectrogram.shape,
-                    text.shape)
+    def get_spectrogram():
+        for _, frames, _, _, _ in spectrogram_model(text, speaker, is_generator=True):
+            # [num_frames, batch_size (optional), frame_channels] →
+            # [batch_size (optional), num_frames, frame_channels]
+            yield frames.transpose(0, 1) if frames.dim() == 3 else frames
 
-    if is_max_frames:
-        # NOTE: Status code 508 is "The server detected an infinite loop while processing the
-        # request". Learn more here: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
-        raise FlaskException('Failed to render, try again.', status_code=508, code='RENDER_FAILED')
-
-    # TODO: If a loud sound is created, cut off the stream or consider rerendering.
-    # TODO: Consider logging various events to stackdriver, to keep track.
-
-    app.logger.info('Generating waveform header...')
-    upscale_factor = signal_model.upscale_factor
-    wav_header, wav_file_size = build_wav_header(upscale_factor * spectrogram.shape[0])
+    # NOTE: Learn more:
+    # https://stackoverflow.com/questions/25245439/writing-wav-files-of-unknown-length
+    # TODO: Use a file type that's more compatible for streaming...
+    wav_header, wav_file_size = build_wav_header(2**28)
 
     def response():
         """ Generator incrementally generating a WAV file.
@@ -186,14 +189,15 @@ def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encod
             assert sys.byteorder == 'little', 'Ensure byte order is of little-endian format.'
             yield wav_header
             app.logger.info('Generating waveform...')
-            for waveform in generate_waveform(signal_model, spectrogram):
-                waveform = waveform.numpy()
+            for waveform in generate_waveform(signal_model, get_spectrogram()):
+                waveform = waveform.cpu().detach().numpy()
                 app.logger.info('Waveform shape %s', waveform.shape)
                 yield waveform.tostring()
             app.logger.info('Finished generating waveform.')
         # NOTE: Flask may abort this generator if the underlying request aborts.
         except Exception as error:
-            app.logger.warning('Finished generating waveform with an exception.', exc_info=True)
+            app.logger.warning(
+                'Stopping waveform generation because of an exception.', exc_info=True)
             raise error
 
     return response, wav_file_size

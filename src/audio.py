@@ -627,8 +627,7 @@ def power_to_db(tensor, eps=1e-10):
     Returns:
         (torch.FloatTensor)
     """
-    eps = eps if torch.is_tensor(eps) else torch.tensor(eps, device=tensor.device)
-    return 10.0 * torch.log10(torch.max(eps, tensor))
+    return 10.0 * torch.log10(torch.clamp(tensor, min=eps))
 
 
 def amplitude_to_db(tensor, **kwargs):

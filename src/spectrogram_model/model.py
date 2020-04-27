@@ -11,6 +11,7 @@ import torch
 from src.spectrogram_model.decoder import AutoregressiveDecoder
 from src.spectrogram_model.encoder import Encoder
 from src.spectrogram_model.post_net import PostNet
+from src.utils import pad_tensors
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,7 @@ class SpectrogramModel(nn.Module):
         super().__init__()
 
         self.max_frames_per_token = max_frames_per_token
+        self.frame_channels = frame_channels
 
         self.encoder = Encoder(vocab_size)
         self.decoder = AutoregressiveDecoder(
@@ -122,62 +124,8 @@ class SpectrogramModel(nn.Module):
 
         self.register_buffer('output_scalar', torch.tensor(output_scalar).float())
 
-    def _get_stopped_indexes(self, predictions, stop_threshold):
-        """ Get a list of indices that predicted stop.
-
-        Args:
-            stop_token (torch.FloatTensor [1, batch_size]): Score for stopping
-            stop_threshold (float): The threshold probability for deciding to stop.
-
-        Returns:
-            (list) Indices that predicted stop.
-        """
-        predictions = self.stop_sigmoid(predictions)
-        stopped = predictions.data.view(-1).ge(stop_threshold).nonzero()
-        if stopped.dim() > 1:
-            return stopped.squeeze(1).tolist()
-        else:
-            return []
-
-    def _add_residual(self, frames, frames_lengths):
-        """ Add residual to frames.
-
-        Args:
-            fames (torch.FloatTensor [num_frames, batch_size, frame_channels]) Predicted frames.
-            frames_lengths (torch.LongTensor [batch_size])
-
-        Returns:
-            fames (torch.FloatTensor [num_frames, batch_size, frame_channels]) Predicted frames.
-        """
-        # Learned from experiments that detaching the gradient is important for convergence.
-        # Learn more on comet.ml.
-        frames = frames.detach()
-
-        # ``frames`` is expected to have shape `[num_frames, batch_size, frame_channels]`.
-        # The post net expect input of shape `[batch_size, frame_channels, num_frames]`. We thus
-        # need to permute the tensor first.
-        residual = frames.permute(1, 2, 0)
-
-        # [batch_size, num_frames]
-        mask = lengths_to_mask(frames_lengths, device=residual.device)
-        residual = self.post_net(residual, mask)
-
-        # In order to add frames with the residual, we need to permute for their sizes to be
-        # compatible.
-        # [batch_size, frame_channels, num_frames] → [num_frames, batch_size, frame_channels]
-        residual = residual.permute(2, 0, 1)
-
-        # [num_frames, batch_size, frame_channels] +
-        # [num_frames, batch_size, frame_channels] →
-        # [num_frames, batch_size, frame_channels]
-        frames_with_residual = frames.add(residual)
-
-        del residual
-
-        return frames_with_residual
-
     def _aligned(self, encoded_tokens, tokens_mask, speaker, num_tokens, target_frames,
-                 target_lengths, is_unbatched):
+                 target_lengths):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
@@ -187,7 +135,6 @@ class SpectrogramModel(nn.Module):
             num_tokens (torch.LongTensor [batch_size]): The number of tokens in each sequence.
             target_frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
             target_lengths (torch.LongTensor [batch_size]): The number of frames in each sequence.
-            is_unbatched (bool): If `True`, the batch dimension is removed from the output.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
@@ -195,96 +142,180 @@ class SpectrogramModel(nn.Module):
             stop_token (torch.FloatTensor [num_frames, batch_size])
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
         """
+        device = target_frames.device
         target_frames = target_frames / self.output_scalar
+        mask = lengths_to_mask(target_lengths, device=device)
 
         frames, stop_tokens, hidden_state, alignments = self.decoder(
             encoded_tokens, tokens_mask, speaker, num_tokens, target_frames=target_frames)
-        frames_with_residual = self._add_residual(frames, target_lengths)
+        frames = frames.masked_fill(~mask.transpose(0, 1).unsqueeze(2), 0)
+        frames_with_residual = frames + self.post_net(frames, mask)
 
         frames_with_residual = frames_with_residual * self.output_scalar
         frames = frames * self.output_scalar
 
-        if is_unbatched:
-            return (frames.squeeze(1), frames_with_residual.squeeze(1), stop_tokens.squeeze(1),
-                    alignments.squeeze(1))
-
         return frames, frames_with_residual, stop_tokens, alignments
 
     @configurable
-    def _infer(self,
-               encoded_tokens,
-               tokens_mask,
-               speaker,
-               num_tokens,
-               is_unbatched=False,
-               stop_threshold=HParam(),
-               use_tqdm=False,
-               filter_reached_max=False):
-        """
+    def _infer_generator_helper(self,
+                                encoded_tokens,
+                                max_lengths,
+                                num_tokens,
+                                split_size,
+                                tokens_mask,
+                                speaker,
+                                use_tqdm=False,
+                                stop_threshold=HParam()):
+        """ Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
+
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
+            max_lengths (torch.LongTensor [batch_size])
+            num_tokens (torch.LongTensor [batch_size])
+            split_size (int, optional): The maximum length of a sequence returned by the generator.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens])
-            speaker (torch.LongTensor [batch_size, speaker_embedding_dim]): Batched speaker
-                encoding.
-            num_tokens (torch.LongTensor [batch_size]): The number of tokens in each sequence.
-            is_unbatched (bool): If `True`, the batch dimension is removed from the output.
-            stop_threshold (float, optional): The threshold probability for deciding to stop.
-            use_tqdm (bool, optional): If ``True`` attach a progress bar to iterator.
-            filter_reached_max (bool, optional): If `True` this filters the batch, removing
-                any sequences that reached the max frames.
+            speaker (torch.LongTensor [batch_size, speaker_embedding_dim])
+            use_tqdm (bool, optional): If `True` then this adds a `tqdm` progress bar.
+            stop_threshold (float): The threshold overwhich the model should stop generating.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
-            frames_with_residual (torch.FloatTensor [num_frames, batch_size, frame_channels])
             stop_token (torch.FloatTensor [num_frames, batch_size])
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-            lengths (torch.LongTensor [1, batch_size] or [1])
-            reached_max (torch.BoolTensor [1, batch_size] or [1]): The spectrogram frames that
-                reached the maximum number of frames.
+            lengths (torch.LongTensor [batch_size]): The total number of frames in each sequence,
+                so far.
         """
-        # [num_tokens, batch_size, hidden_size]
         _, batch_size, _ = encoded_tokens.shape
+        device = encoded_tokens.device
 
-        stopped = set()
         hidden_state = None
-        alignments, frames, stop_tokens = [], [], []
-        max_lengths = torch.max((num_tokens.float() * self.max_frames_per_token).long(),
-                                torch.tensor(1, device=num_tokens.device))
-        lengths = max_lengths.clone().tolist()
-        if use_tqdm:
-            progress_bar = tqdm(leave=True, unit='frame(s)')
-        while len(stopped) < batch_size and len(frames) < max(lengths):
+        max_lengths = max_lengths.clone()
+        frames, stop_tokens, alignments = [], [], []
+        lengths = torch.zeros(batch_size, dtype=torch.long, device=device)
+        stopped = torch.zeros(batch_size, dtype=torch.bool, device=device)
+        progress_bar = tqdm(leave=True, unit='frame(s)') if use_tqdm else None
+        keep_going = lambda: stopped.sum() < batch_size and max(lengths) < max(max_lengths)
+        while keep_going():
             frame, stop_token, hidden_state, alignment = self.decoder(
                 encoded_tokens, tokens_mask, speaker, num_tokens, hidden_state=hidden_state)
-            to_stop = self._get_stopped_indexes(stop_token, stop_threshold=stop_threshold)
 
-            # Zero out stopped frames
-            frame[:, list(stopped)] *= 0
-            # NOTE: `_get_stopped_indexes` predicts the last valid frame; therefore, these should
-            # be zero'd out afterwards.
-            stopped.update(to_stop)
+            lengths[~stopped] += 1
+            frame[:, stopped] *= 0
+            stopped[(self.stop_sigmoid(stop_token).squeeze(0) >= stop_threshold) |
+                    (lengths == max_lengths)] = True
+            max_lengths[stopped] = lengths[stopped]
 
-            # Store results
             frames.append(frame.squeeze(0))
             stop_tokens.append(stop_token.squeeze(0))
             alignments.append(alignment.squeeze(0))
+
+            if len(frames) > split_size or not keep_going():
+                yield (torch.stack(frames, dim=0), torch.stack(stop_tokens, dim=0),
+                       torch.stack(alignments, dim=0), lengths)
+                frames, stop_tokens, alignments = [], [], []
 
             if use_tqdm:
                 progress_bar.update(1)
                 progress_bar.total = len(frames)
 
-            for stop_index in to_stop:
-                lengths[stop_index] = min(lengths[stop_index], len(frames))
-
         if use_tqdm:
             progress_bar.close()
 
-        alignments = torch.stack(alignments, dim=0)
-        frames = torch.stack(frames, dim=0)
-        stop_tokens = torch.stack(stop_tokens, dim=0)
-        lengths = torch.tensor(lengths, device=frames.device).unsqueeze(0)
-        frames_with_residual = self._add_residual(frames, lengths)
+    def _infer_generator(self, encoded_tokens, *args, **kwargs):
+        """ Generate frames from the decoder that have been processed by the `post_net`.
 
+        Args:
+            encoded_tokens: See `_infer_generator_helper`.
+            *args: Arguments passed too `_infer_generator_helper`.
+            **kwargs: Keyword arguments passed too `_infer_generator`.
+
+        Returns:
+            frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
+            frames_with_residual (torch.FloatTensor [num_frames, batch_size, frame_channels])
+            stop_token (torch.FloatTensor [num_frames, batch_size])
+            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+            lengths (torch.LongTensor [1, batch_size])
+        """
+        device = encoded_tokens.device
+        padding = self.post_net.padding
+        last_item = None
+        is_stop = False
+        generator = self._infer_generator_helper(encoded_tokens, *args, **kwargs)
+        while not is_stop:
+            items = []
+            while sum([i[0].shape[0] for i in items]) < padding * 2 and not is_stop:
+                try:
+                    frames, stop_tokens, alignments, lengths = next(generator)
+                    mask = torch.clamp(lengths - lengths.max() + frames.shape[0], min=0)
+                    mask = lengths_to_mask(mask, device=device)
+                    items.append((frames, mask, stop_tokens, alignments, lengths))
+                except StopIteration:
+                    is_stop = True
+
+            padding_tuple = (0 if last_item else padding, padding if is_stop else 0)
+            frames = ([last_item[0][-padding * 2:]] if last_item else []) + [i[0] for i in items]
+            frames = pad_tensors(torch.cat(frames), pad=padding_tuple)
+            mask = ([last_item[1][:, -padding * 2:]] if last_item else []) + [i[1] for i in items]
+            mask = pad_tensors(torch.cat(mask, dim=1), pad=padding_tuple, dim=1)
+            stop_tokens = torch.cat([last_item[2][-padding:]] if last_item else [] + [stop_tokens])
+            alignments = torch.cat([last_item[3][-padding:]] if last_item else [] + [alignments])
+
+            residual = self.post_net(frames, mask, pad_input=False)
+
+            yield (
+                frames[padding:-padding] * self.output_scalar,
+                (frames[padding:-padding] + residual) * self.output_scalar,
+                stop_tokens[:None if is_stop else -padding],
+                alignments[:None if is_stop else -padding],
+                (lengths if is_stop else torch.min(lengths.max() - padding, lengths)).unsqueeze(0),
+            )
+
+            last_item = (frames, mask, stop_tokens, alignments)
+
+    def _infer(self,
+               encoded_tokens,
+               num_tokens,
+               *args,
+               is_generator=False,
+               filter_reached_max=False,
+               split_size=128,
+               **kwargs):
+        """
+        NOTE: The intermediate outputs are not masked according to the `length`.
+
+        Args:
+            encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
+            num_tokens (torch.LongTensor [batch_size])
+            *args: Arguments passed too `_infer_generator`.
+            is_generator (bool): If `True` this returns a generator over the sequence.
+            filter_reached_max (bool): If `True` this filters the batch, removing
+                any sequences that reached the max frames.
+            split_size: See `_infer_generator_helper`.
+            **kwargs: Keyword arguments passed too `_infer_generator`.
+
+        Returns:
+            frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
+            frames_with_residual (torch.FloatTensor [num_frames, batch_size, frame_channels])
+            stop_token (torch.FloatTensor [num_frames, batch_size])
+            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+            lengths (torch.LongTensor [1, batch_size])
+
+        Returns (`is_generator == False`):
+            reached_max (torch.BoolTensor [1, batch_size]): The spectrogram sequences that
+                reached the maximum number of frames as defined by `max_frames_per_token`.
+        """
+        _, batch_size, _ = encoded_tokens.shape
+        split_size = split_size if is_generator else float('inf')
+        max_lengths = torch.clamp((num_tokens.float() * self.max_frames_per_token).long(), min=1)
+
+        generator = self._infer_generator(encoded_tokens, max_lengths, num_tokens, split_size,
+                                          *args, **kwargs)
+        if is_generator:
+            return generator
+
+        generator = list(generator)
+        assert len(generator) == 1, 'Invariant Violation: Double check `split_size` logic.'
+        frames, frames_with_residual, stop_tokens, alignments, lengths = generator[0]
         reached_max = (lengths == max_lengths).view(1, batch_size)
         if reached_max.sum() > 0:
             logger.warning('%d sequences reached max frames', reached_max.sum())
@@ -297,17 +328,10 @@ class SpectrogramModel(nn.Module):
                 for t in [frames, frames_with_residual, stop_tokens, alignments]
             ])
 
-        frames_with_residual = frames_with_residual * self.output_scalar
-        frames = frames * self.output_scalar
-
-        if is_unbatched:
-            return (frames.squeeze(1), frames_with_residual.squeeze(1), stop_tokens.squeeze(1),
-                    alignments.squeeze(1), lengths.squeeze(1), reached_max.squeeze(1))
-
         return frames, frames_with_residual, stop_tokens, alignments, lengths, reached_max
 
-    def _normalize_shape(self, tokens, speaker, num_tokens, target_frames, target_lengths):
-        """ Normalize the shape of the forward inputs.
+    def _normalize_inputs(self, tokens, speaker, num_tokens, target_frames, target_lengths):
+        """ Normalize the inputs and check some argument invariants.
 
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size] or [num_tokens])
@@ -393,15 +417,17 @@ class SpectrogramModel(nn.Module):
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens] or [num_frames,
                 num_tokens]): Attention alignments.
 
-        Additionally, inference returns:
+        Returns (`target_frames is None and target_lengths is None`):
             lengths (torch.LongTensor [1, batch_size] or [1]): Number of frames predicted for each
                 sequence in the batch.
-            reached_max (torch.BoolTensor [1, batch_size] or [1]): The spectrogram frames that
-                reached the maximum number of frames.
+
+        Returns (`is_generator == False and target_frames is None and target_lengths is None`):
+            reached_max (torch.BoolTensor [1, batch_size] or [1]): The spectrogram sequences that
+                reached the maximum number of frames as defined by `max_frames_per_token`.
         """
         is_unbatched = len(tokens.shape) == 1
 
-        tokens, speaker, num_tokens, target_frames, target_lengths = self._normalize_shape(
+        tokens, speaker, num_tokens, target_frames, target_lengths = self._normalize_inputs(
             tokens, speaker, num_tokens, target_frames, target_lengths)
 
         # [batch_size, num_tokens]
@@ -414,8 +440,12 @@ class SpectrogramModel(nn.Module):
         speaker = self.embed_speaker(speaker)
 
         if target_frames is None:
-            return self._infer(encoded_tokens, tokens_mask, speaker, num_tokens, is_unbatched,
-                               **kwargs)
+            return_ = self._infer(encoded_tokens, num_tokens, tokens_mask, speaker, **kwargs)
         else:
-            return self._aligned(encoded_tokens, tokens_mask, speaker, num_tokens, target_frames,
-                                 target_lengths, is_unbatched, **kwargs)
+            return_ = self._aligned(encoded_tokens, tokens_mask, speaker, num_tokens, target_frames,
+                                    target_lengths, **kwargs)
+
+        if isinstance(return_, tuple):
+            return tuple([t.squeeze(1) for t in return_]) if is_unbatched else return_
+
+        return (tuple([t.squeeze(1) for t in item]) if is_unbatched else item for item in return_)
