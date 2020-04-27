@@ -10,7 +10,7 @@
 
 # NOTE: Alpine does not work with PyTorch wheel due to the reliance on various symbols like
 # `__printf_chk`. Learn more: https://github.com/gliderlabs/docker-alpine/issues/149
-FROM python:3.6-slim as base
+FROM python:3.7-slim as base
 
 # Learn more about multi-stage builds:
 # https://blog.realkinetic.com/building-minimal-docker-containers-for-python-applications-37d0272c52f3
@@ -35,7 +35,6 @@ COPY third_party/ third_party/
 # Install Python Dependencies
 RUN apt-get update --fix-missing \
   && apt-get install -y --no-install-recommends git-core \
-  && apt-get install -y ninja-build g++ \
   # TODO: Consider the ideas here to reduce the size of numpy installation:
   # https://towardsdatascience.com/how-to-shrink-numpy-scipy-pandas-and-matplotlib-for-your-data-product-4ec8d7e86ee4
   && venv/bin/pip install --no-cache-dir numpy \
