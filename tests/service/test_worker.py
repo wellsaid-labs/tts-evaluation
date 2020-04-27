@@ -83,7 +83,7 @@ def test_validate_and_unpack():
     with pytest.raises(FlaskException):  # `speaker_id` must be positive
         validate_and_unpack({**args, 'speaker_id': -1}, input_encoder, api_keys=api_keys)
 
-    with pytest.raises(FlaskException, match=r".*cannot contain these characters: o, v, ˌ.*"):
+    with pytest.raises(FlaskException, match=r".*cannot contain these characters: i, o,*"):
         # NOTE: "wɛɹɹˈɛvɚ kˌoːɹzənjˈuːski" should contain phonemes that are not already in
         # mock `input_encoder`.
         validate_and_unpack(

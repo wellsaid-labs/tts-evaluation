@@ -56,6 +56,9 @@ from src.service.worker_config import SIGNAL_MODEL_CHECKPOINT_PATH
 from src.service.worker_config import SPEAKER_ID_TO_SPEAKER
 from src.service.worker_config import SPECTROGRAM_MODEL_CHECKPOINT_PATH
 from src.signal_model import generate_waveform
+# TODO: Do not rely on private functions.
+from src.spectrogram_model.input_encoder import _grapheme_to_phoneme_helper
+from src.spectrogram_model.input_encoder import _grapheme_to_phoneme_perserve_punctuation
 from src.utils import Checkpoint
 
 # NOTE: Flask documentation requests that logging is configured before `app` is created.
@@ -70,6 +73,8 @@ NO_CACHE_HEADERS = {
 }
 API_KEY_SUFFIX = '_SPEECH_API_KEY'
 API_KEYS = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
+_grapheme_to_phoneme_helper.use_disk_cache(False)
+_grapheme_to_phoneme_perserve_punctuation.use_disk_cache(False)
 
 
 @lru_cache()
