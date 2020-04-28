@@ -193,8 +193,9 @@ class SpectrogramModel(nn.Module):
         frames, stop_tokens, alignments = [], [], []
         lengths = torch.zeros(batch_size, dtype=torch.long, device=device)
         stopped = torch.zeros(batch_size, dtype=torch.bool, device=device)
-        progress_bar = tqdm(leave=True, unit='frame(s)') if use_tqdm else None
-        keep_going = lambda: stopped.sum() < batch_size and max(lengths) < max(max_lengths)
+        progress_bar = tqdm(
+            leave=True, unit='char(s)', total=num_tokens.max().cpu().item()) if use_tqdm else None
+        keep_going = lambda: stopped.sum() < batch_size and lengths.max() < max_lengths.max()
         while keep_going():
             frame, stop_token, hidden_state, alignment = self.decoder(
                 encoded_tokens, tokens_mask, speaker, num_tokens, hidden_state=hidden_state)
@@ -215,8 +216,7 @@ class SpectrogramModel(nn.Module):
                 frames, stop_tokens, alignments = [], [], []
 
             if use_tqdm:
-                progress_bar.update(1)
-                progress_bar.total = len(frames)
+                progress_bar.update(hidden_state.window_start.cpu().item() - progress_bar.n)
 
         if use_tqdm:
             progress_bar.close()

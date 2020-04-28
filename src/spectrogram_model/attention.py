@@ -1,3 +1,4 @@
+import logging
 import math
 
 import torch
@@ -6,6 +7,8 @@ from hparams import configurable
 from hparams import HParam
 from torch import nn
 from torchnlp.nn import LockedDropout
+
+logger = logging.getLogger(__name__)
 
 
 def window(tensor, start, length, dim):
@@ -220,8 +223,13 @@ class LocationSensitiveAttention(nn.Module):
         if not self.training:
             alignment = torch.zeros(
                 batch_size, num_tokens, device=device).scatter_(1, window_indices, alignment)
+            last_window_start = window_start
             window_start = torch.clamp(
                 alignment.max(dim=1)[1] - window_length // 2, 0, num_tokens - window_length)
+            if window_start + 1 < last_window_start:
+                logger.warning(
+                    '`window_start` has moved backwards more than one character from %d to %d.',
+                    last_window_start, window_start)
 
         # [batch_size, num_tokens] + [batch_size, num_tokens] → [batch_size, num_tokens]
         cumulative_alignment = cumulative_alignment + alignment

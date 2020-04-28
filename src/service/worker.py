@@ -76,6 +76,7 @@ API_KEY_SUFFIX = '_SPEECH_API_KEY'
 API_KEYS = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
 _grapheme_to_phoneme_helper.use_disk_cache(False)
 _grapheme_to_phoneme_perserve_punctuation.use_disk_cache(False)
+torch.set_grad_enabled(False)
 
 
 @lru_cache()
@@ -116,7 +117,7 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
     app.logger.info('Loading speakers: %s', input_encoder.speaker_encoder.vocab)
     signal_model = signal_model_checkpoint.model
 
-    return signal_model, spectrogram_model.eval(), input_encoder
+    return signal_model.eval(), spectrogram_model.eval(), input_encoder
 
 
 class FlaskException(Exception):
