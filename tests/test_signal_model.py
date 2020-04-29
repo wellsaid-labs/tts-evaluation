@@ -2,9 +2,18 @@ import numpy
 import torch
 
 from src.signal_model import generate_waveform
+from src.signal_model import L1L2Loss
 from src.signal_model import SignalModel
 from src.signal_model import SpectrogramDiscriminator
 from src.signal_model import trim
+
+
+def test_l1_l2_loss():
+    loss = L1L2Loss()
+    input_ = torch.randn(3, 5, requires_grad=True)
+    target = torch.randn(3, 5)
+    output = loss(input_, target)
+    output.backward()
 
 
 def _get_small_signal_model(*args, **kwargs):

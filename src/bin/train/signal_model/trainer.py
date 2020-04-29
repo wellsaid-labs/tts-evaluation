@@ -538,7 +538,8 @@ class Trainer():
 
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
-                predicted_signal = self.model(batch.spectrogram, pad_input=False)
+                predicted_signal = self.model(
+                    batch.spectrogram, spectrogram_mask=batch.spectrogram_mask, pad_input=False)
                 self._do_loss_and_maybe_backwards(batch, predicted_signal, do_backwards=train)
 
             # NOTE: This metric should be a positive integer indicating that the `data_loader`

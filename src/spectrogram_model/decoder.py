@@ -93,8 +93,7 @@ class AutoregressiveDecoder(nn.Module):
         self.attention = LocationSensitiveAttention(query_hidden_size=lstm_hidden_size)
         self.linear_out = nn.Linear(in_features=hidden_size, out_features=frame_channels)
         self.linear_stop_token = nn.Sequential(
-            nn.Linear(pre_net_hidden_size + 2, pre_net_hidden_size + 2), nn.ReLU(),
-            nn.Dropout(stop_net_dropout), nn.Linear(pre_net_hidden_size + 2, 1))
+            nn.Dropout(stop_net_dropout), nn.Linear(lstm_hidden_size, 1))
 
     def forward(self,
                 encoded_tokens,
@@ -130,7 +129,6 @@ class AutoregressiveDecoder(nn.Module):
             "conditioned on ``target_frames`` or the ``hidden_state`` but not both.")
 
         _, batch_size, _ = encoded_tokens.shape
-        device = encoded_tokens.device
 
         if hidden_state is None:
             (initial_frame, initial_cumulative_alignment,
@@ -232,20 +230,14 @@ class AutoregressiveDecoder(nn.Module):
         # [num_frames, batch_size, lstm_hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
 
+        # [num_frames, batch_size, pre_net_hidden_size + 2] →
+        # [num_frames, batch_size]
+        stop_token = self.linear_stop_token(frames).squeeze(2)
+
         # [num_frames, batch_size,
         #  lstm_hidden_size (concat) encoder_output_size (concat) speaker_embedding_dim] →
         # [num_frames, batch_size, frame_channels]
         frames = self.linear_out(torch.cat([frames, attention_contexts, speaker], dim=2))
-
-        # [num_frames, batch_size, num_tokens] → [num_frames, batch_size]
-        range_ = torch.arange(batch_size, device=device)
-        last_alignment = alignments[:, range_, num_tokens - 1].unsqueeze(2)
-        last_cumulative_alignment = cumulative_alignments[:, range_, num_tokens - 1].unsqueeze(2)
-
-        # [num_frames, batch_size, pre_net_hidden_size + 2] →
-        # [num_frames, batch_size]
-        stop_token = [pre_net_frames.detach(), last_alignment, last_cumulative_alignment.detach()]
-        stop_token = self.linear_stop_token(torch.cat(stop_token, dim=2)).squeeze(2)
 
         new_hidden_state = AutoregressiveDecoderHiddenState(
             last_attention_context=last_attention_context,

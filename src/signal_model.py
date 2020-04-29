@@ -25,6 +25,18 @@ def trim(*args, dim=2):
     return (a.narrow(dim, (a.shape[dim] - minimum) // 2, minimum) for a in args)
 
 
+class L1L2Loss(torch.nn.Module):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
+        self.l1_loss = torch.nn.L1Loss(*args, **kwargs)
+        self.l2_loss = torch.nn.MSELoss(*args, **kwargs)
+
+    def forward(self, *args, **kwargs):
+        return self.l1_loss(*args, **kwargs) + self.l2_loss(*args, **kwargs)
+
+
 class ConditionalConcat(torch.nn.Module):
     """ Concat's conditional features injected by a parent module.
 
@@ -425,18 +437,36 @@ class SpectrogramDiscriminator(torch.nn.Module):
     def __init__(self, fft_length, num_mel_bins, hidden_size=HParam()):
         super().__init__()
 
-        weight_norm = torch.nn.utils.weight_norm
         input_size = fft_length + num_mel_bins + 2
 
         self.layers = torch.nn.Sequential(
-            weight_norm(torch.nn.Conv1d(input_size, hidden_size, kernel_size=3, padding=1)),
+            torch.nn.Conv1d(input_size, hidden_size, kernel_size=3, padding=1),
             LayerNorm(hidden_size),
-            weight_norm(torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1)),
-            torch.nn.ReLU(),
-            weight_norm(torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1)),
-            torch.nn.ReLU(),
-            weight_norm(torch.nn.Conv1d(hidden_size, 1, kernel_size=3, padding=1)),
+            torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1),
+            torch.nn.GELU(),
+            torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1),
+            torch.nn.GELU(),
+            torch.nn.Conv1d(hidden_size, 1, kernel_size=3, padding=1),
         )
+
+        # NOTE: We initialize the convolution parameters before weight norm factorizes them.
+        self.reset_parameters()
+
+        for module in self.modules():
+            if isinstance(module, torch.nn.Conv1d):
+                torch.nn.utils.weight_norm(module)
+
+    def reset_parameters(self):
+        for module in self.modules():
+            if isinstance(module, torch.nn.Conv1d):
+                assert isinstance(module.weight, torch.nn.Parameter)
+                torch.nn.init.orthogonal_(module.weight)
+                assert isinstance(module.bias, torch.nn.Parameter)
+                torch.nn.init.zeros_(module.bias)
+            elif get_total_parameters(module) > 0:
+                # TODO: Use a recursive approach to filter out modules where all children parameters
+                # were set, and only pass up legitmate messages.
+                logger.warning('%s module parameters may have not been set.', type(module))
 
     def forward(self, spectrogram, db_spectrogram, db_mel_spectrogram):
         """

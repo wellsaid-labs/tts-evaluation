@@ -26,6 +26,7 @@ from src.audio import WavFileMetadata
 from src.bin.train.signal_model.trainer import SpectrogramLoss
 from src.datasets import filter_
 from src.datasets import normalize_audio_column
+from src.signal_model import L1L2Loss
 from src.utils import log_runtime
 from src.utils import seconds_to_string
 from src.utils import slice_by_cumulative_sum
@@ -194,7 +195,6 @@ def _set_audio_processing():
 
 
 def _set_model_size(frame_channels):
-
     # SOURCE (Tacotron 2):
     # Attention probabilities are computed after projecting inputs and location
     # features to 128-dimensional hidden representations.
@@ -243,7 +243,10 @@ def _set_model_size(frame_channels):
                         # SOURCE (Tacotron 2):
                         # Location features are computed using 32 1-D convolution filters of length
                         # 31.
-                        hidden_size=32,
+                        # SOURCE (Tacotron 2):
+                        # Attention probabilities are computed after projecting inputs and location
+                        # features to 128-dimensional hidden representations.
+                        hidden_size=128,
                         convolution_filter_size=31,
 
                         # SOURCE (BERT):
@@ -313,8 +316,9 @@ def _set_model_size(frame_channels):
                         # For a given input x, the equation for μ-law encoding is where μ = 255 in
                         # the North American and Japanese standards.
                         mu=255),
+                # NOTE: We found this hidden size to be effective on Comet in April 2020.
                 'SpectrogramDiscriminator.__init__':
-                    HParams(hidden_size=128),
+                    HParams(hidden_size=512),
             },
             'bin.train.spectrogram_model.trainer.Trainer._do_loss_and_maybe_backwards':
                 HParams(stop_threshold=stop_threshold),
@@ -789,13 +793,13 @@ def set_hparams():
                                 ]),
                         'trainer.SpectrogramLoss.__init__':
                             HParams(
-                                criterion=torch.nn.L1Loss,
+                                criterion=L1L2Loss,
                                 # NOTE: This discriminator approach is largely based on:
                                 # https://pytorch.org/tutorials/beginner/dcgan_faces_tutorial.html
                                 # NOTE: This approach proved successful in Comet experiment
                                 # f590fe3c51a04130ad65736f8aa5fd81 run in February 2020.
                                 discriminator=SpectrogramDiscriminator,
-                                discriminator_optimizer=torch.optim.Adam,
+                                discriminator_optimizer=partial(torch.optim.Adam, lr=10**-3),
                                 discriminator_criterion=torch.nn.BCEWithLogitsLoss,
                             ),
                         # NOTE: The `DataLoader` pads the data before hand so that the model
@@ -815,7 +819,7 @@ def set_hparams():
                 HParams(window_size=128),
             # NOTE: The `beta` parameter is not super sensative.
             'optimizers.ExponentialMovingParameterAverage.__init__':
-                HParams(beta=0.999),
+                HParams(beta=0.9999),
             'environment.set_seed':
                 HParams(seed=seed),
         }

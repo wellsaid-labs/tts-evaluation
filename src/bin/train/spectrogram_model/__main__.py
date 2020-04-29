@@ -61,7 +61,8 @@ def _set_hparams(more_hparams, checkpoint):
         # We also apply L2 regularization with weight 10−6
         # NOTE: An approach without L2 regularization was beneficial based on Comet experiments
         # in March 2020.
-        'torch.optim.adam.Adam.__init__': HParams(eps=10**-6, weight_decay=0, lr=10**-3)
+        'torch.optim.adam.Adam.__init__':
+            HParams(eps=10**-6, weight_decay=0, lr=10**-3, amsgrad=True)
     })
     add_config(more_hparams)
     set_seed()
@@ -253,16 +254,7 @@ if __name__ == '__main__':  # pragma: no cover
         default=None,
         help='Name of the comet.ml project to store a new experiment in.')
     # NOTE: The baseline tags summarize changes in the current repository.
-    parser.add_argument(
-        '--tags',
-        default=[
-            '2_layer_stop_net', '3_layer_attention', 'alignment_stop_token', 'amsgrad=False',
-            'attention_act_tanh(x+y)', 'attention_normal_init', 'attention_score_locked_dropout',
-            'detach_cumulative_alignment', 'encoder_locked_dropout', 'no_weight_decay',
-            'pre_net_frames_detached_stop_token', 'pre_net_layer_norm', 'predict_initial_v3'
-        ],
-        nargs='+',
-        help='List of tags for a new experiments.')
+    parser.add_argument('--tags', default=[], nargs='+', help='List of tags for a new experiments.')
     parser.add_argument(
         '--reset_optimizer',
         action='store_true',

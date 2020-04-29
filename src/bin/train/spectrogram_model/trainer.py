@@ -522,9 +522,11 @@ class Trainer():
                 self._train_loader.expected_average_spectrogram_length)
             # NOTE: The loss is calibrated to match the loss of older models. Without this
             # calibration, the model doesn't train well.
+            # TODO: Parameterize these loss scalars.
             ((pre_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() / 100 +
              (post_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() / 100 +
-             (stop_token_loss.sum(dim=0) / expected_average_spectrogram_length).mean()).backward()
+             (stop_token_loss.sum(dim=0) / expected_average_spectrogram_length).mean() /
+             4).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
 
         expected_stop_token = (batch.stop_token.tensor > stop_threshold).masked_select(mask > 0)
