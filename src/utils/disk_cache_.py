@@ -255,7 +255,11 @@ _disk_cache_register = []
 
 
 def get_functions_with_disk_cache():
-    """ Get all functions with the `disk_cache` decorator. """
+    """ Get all functions with the `disk_cache` decorator.
+
+    Returns:
+        list of callables
+    """
     resolved = [i() for i in _disk_cache_register]
     return [i for i in resolved if i is not None]
 
