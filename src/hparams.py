@@ -444,6 +444,12 @@ def _filter_books(example):
             datasets.m_ailabs.MIDNIGHT_PASSENGER.title in str(example.audio_path)):
         return False
 
+    # Filter out the North & South book because it uses English in a way that's not consistent with
+    # editor usage, for example: "To-morrow, you will-- Come back to-night, John!"
+    if (example.speaker == datasets.m_ailabs.NORTH_AND_SOUTH.speaker and
+            datasets.m_ailabs.NORTH_AND_SOUTH.title in str(example.audio_path)):
+        return False
+
     return True
 
 
@@ -634,6 +640,9 @@ def set_hparams():
 
     seed = 1212212
 
+    # NOTE: This delimiter must be a single character not in the dataset.
+    phonetic_syllable_delimiter = '|'
+
     torchnlp.samplers.DeterministicSampler.__init__ = configurable(
         torchnlp.samplers.DeterministicSampler.__init__)
     add_config({
@@ -643,6 +652,8 @@ def set_hparams():
     add_config({
         'src': {
             'spectrogram_model': {
+                'input_encoder.InputEncoder.__init__':
+                    HParams(delimiter=phonetic_syllable_delimiter),
                 # SOURCE (Tacotron 2):
                 # In order to introduce output variation at inference time, dropout with
                 # probability 0.5 is applied only to layers in the pre-net of the
@@ -658,7 +669,7 @@ def set_hparams():
                         # `_filter_too_much_audio_per_character`
                         # NOTE: This number was configured with the help of:
                         # `QA_Datasets/Sample_Dataset.ipynb`
-                        max_frames_per_token=0.2 / (frame_hop / sample_rate),
+                        max_frames_per_token=0.16 / (frame_hop / sample_rate),
 
                         # NOTE: The spectrogram input ranges from around -50 to 50. This scaler
                         # puts the input and output in a more reasonable range for the model of
@@ -794,6 +805,8 @@ def set_hparams():
                     }
                 },
             },
+            'text.cache_grapheme_to_phoneme_perserve_punctuation':
+                HParams(delimiter=phonetic_syllable_delimiter),
             # NOTE: The expected signal model output is 32-bit float.
             'audio.build_wav_header':
                 HParams(wav_format=WAVE_FORMAT_IEEE_FLOAT, num_channels=1, sample_width=4),

@@ -34,6 +34,25 @@ pprint = pprint.PrettyPrinter(indent=4)
 FileMetadata = namedtuple('FileMetadata', ['modification_time', 'byte_size'])
 
 
+def strip(text):
+    """ Strip and return the stripped text.
+
+    Args:
+        text (str)
+
+    Returns:
+        (str): The stripped text.
+        (str): Text stripped from the left.
+        (str): Text stripped from the right.
+    """
+    original = text
+    text = text.rstrip()
+    stripped_right = original[len(text):]
+    text = text.lstrip()
+    stripped_left = original[:len(original) - len(stripped_right) - len(text)]
+    return text, stripped_left, stripped_right
+
+
 # NOTE: We do not use creation time due to lack of support:
 # https://stackoverflow.com/questions/237079/how-to-get-file-creation-modification-date-times-in-python
 def get_file_metadata(path):

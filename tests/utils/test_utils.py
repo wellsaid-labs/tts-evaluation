@@ -25,6 +25,15 @@ from src.utils.utils import RepeatTimer
 from src.utils.utils import ResetableTimer
 from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
+from src.utils.utils import strip
+
+
+def test_strip():
+    assert strip("  Hello World  ") == ("Hello World", "  ", "  ")
+    assert strip("Hello World  ") == ("Hello World", "", "  ")
+    assert strip("  Hello World") == ("Hello World", "  ", "")
+    assert strip(" \n Hello World \n ") == ("Hello World", " \n ", " \n ")
+    assert strip(" \n\n Hello World \n\n ") == ("Hello World", " \n\n ", " \n\n ")
 
 
 def test_assert_no_overwritten_files():

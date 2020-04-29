@@ -222,7 +222,7 @@ Related Documentation:
 
    ```bash
    sudo apt-get update
-   sudo apt-get install python3-venv sox ffmpeg -y
+   sudo apt-get install python3-venv sox ffmpeg espeak -y
    ```
 
    If you get a `dkpg` error, wait a minute or so and try again.

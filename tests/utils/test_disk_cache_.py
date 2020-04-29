@@ -168,6 +168,24 @@ def test_disk_cache__redundant_os_operations(mock_replace):
         assert mock_read_bytes.call_count == 0
 
 
+def test_disk_cache__disable():
+
+    @disk_cache(directory=DISK_CACHE_PATH, save_to_disk_delay=0.1)
+    def helper(arg):
+        return arg
+
+    helper('a')
+    assert len(helper.disk_cache) == 1
+
+    helper.use_disk_cache(False)
+    helper('b')
+    assert len(helper.disk_cache) == 1
+
+    helper.use_disk_cache(True)
+    helper('b')
+    assert len(helper.disk_cache) == 2
+
+
 @patch('src.utils.disk_cache_.os.replace', wraps=os.replace)
 def test_disk_cache__delete_cache(mock_replace):
     """ Test to ensure that cache is able to handle the disk cache getting deleted.

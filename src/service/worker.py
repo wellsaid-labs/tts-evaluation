@@ -38,7 +38,6 @@ from functools import lru_cache
 
 import os
 import sys
-import unidecode
 
 from flask import Flask
 from flask import jsonify
@@ -57,6 +56,7 @@ from src.service.worker_config import SPEAKER_ID_TO_SPEAKER
 from src.service.worker_config import SPECTROGRAM_MODEL_CHECKPOINT_PATH
 from src.signal_model import generate_waveform
 from src.utils import Checkpoint
+from src.utils import get_functions_with_disk_cache
 
 # NOTE: Flask documentation requests that logging is configured before `app` is created.
 set_basic_logging_config()
@@ -117,7 +117,8 @@ class FlaskException(Exception):
     """
 
     def __init__(self, message, status_code=400, code='BAD_REQUEST', payload=None):
-        Exception.__init__(self)
+        super().__init__(self, message)
+
         self.message = message
         self.status_code = status_code
         self.payload = payload
@@ -212,9 +213,8 @@ def validate_and_unpack(request_args,
         speaker_id_to_speaker (dict, optional)
 
     Returns:
-        speaker (src.datasets.Speaker)
         text (str)
-        api_key (str)
+        speaker (src.datasets.Speaker)
     """
     if 'api_key' not in request_args:
         raise FlaskException('API key was not provided.', status_code=401, code='MISSING_ARGUMENT')
@@ -265,17 +265,14 @@ def validate_and_unpack(request_args,
             (min(speaker_id_to_speaker.keys()), max(speaker_id_to_speaker.keys())),
             code='INVALID_SPEAKER_ID')
 
-    # NOTE: Normalize text similar to the normalization during dataset creation.
-    text = unidecode.unidecode(text)
-    input_encoder.text_encoder.enforce_reversible = False
-    processed_text = input_encoder.text_encoder.decode(input_encoder.text_encoder.encode(text))
-    if processed_text != text:
-        improper_characters = set(text).difference(set(processed_text))
-        improper_characters = ', '.join(sorted(list(improper_characters)))
-        raise FlaskException(
-            'Text cannot contain these characters: %s' % improper_characters, code='INVALID_TEXT')
+    speaker = speaker_id_to_speaker[speaker_id]
 
-    return text, speaker_id_to_speaker[speaker_id]
+    try:
+        text, speaker = input_encoder.encode((text, speaker))
+    except ValueError as error:
+        raise FlaskException(error, code='INVALID_TEXT')
+
+    return text, speaker
 
 
 @app.route('/healthy', methods=['GET'])
@@ -349,5 +346,9 @@ def send_static(path):
 
 
 if __name__ == "__main__":
+    # NOTE: Ensure that our memory doesn't grow while the server is running.
+    for function in get_functions_with_disk_cache():
+        function.use_disk_cache(False)
+
     load_checkpoints()  # Cache checkpoints on worker start.
     app.run(host='0.0.0.0', port=8000, debug=True)

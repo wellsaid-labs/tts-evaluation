@@ -544,8 +544,8 @@ class Trainer():
             # NOTE: This metric should be a positive integer indicating that the `data_loader`
             # is loading faster than the data is getting ingested; otherwise, the `data_loader`
             # is bottlenecking training by loading too slowly.
-            if hasattr(data_loader.iterator, 'data_queue'):
-                self.metrics['data_queue_size'].update(data_loader.iterator.data_queue.qsize())
+            if hasattr(data_loader.iterator, '_data_queue'):
+                self.metrics['data_queue_size'].update(data_loader.iterator._data_queue.qsize())
 
             for name, metric in self.metrics.items():
                 self.comet_ml.log_metric('step/%s' % name, metric.sync().last_update())
@@ -656,9 +656,10 @@ class Trainer():
         logger.info('Running inference on %d spectrogram frames with %d threads.',
                     spectrogram.shape[0], torch.get_num_threads())
 
-        self.exponential_moving_parameter_average.apply_shadow()
-        predicted = generate_waveform(model, spectrogram, generator=False)
-        self.exponential_moving_parameter_average.restore()
+        with torch.no_grad():
+            self.exponential_moving_parameter_average.apply_shadow()
+            predicted = generate_waveform(model, spectrogram, generator=False)
+            self.exponential_moving_parameter_average.restore()
 
         total_spectrogram_loss = torch.tensor(0.0, device=self.device)
         total_generator_loss = torch.tensor(0.0, device=self.device)
