@@ -7,13 +7,17 @@ from src.signal_model import SpectrogramDiscriminator
 from src.signal_model import trim
 
 
+def _get_small_signal_model(*args, **kwargs):
+    return SignalModel(*args, hidden_size=2, max_channel_size=8, ratios=[2], padding=12, **kwargs)
+
+
 def test_generate_waveform():
     """ Test if incremental generation produces the same output as none-incremental. """
     batch_size = 4
     num_frames = 8
-    frame_channels = 128
+    frame_channels = 16
 
-    model = SignalModel(input_size=frame_channels)
+    model = _get_small_signal_model(input_size=frame_channels)
     spectrogram = torch.randn([batch_size, num_frames, frame_channels])
     immediate = model(spectrogram)
     incremental = generate_waveform(model, spectrogram, split_size=4, generator=False)
@@ -32,9 +36,9 @@ def test_generate_waveform():
 def test_generate_waveform__no_batch_dim():
     """ Test if incremental generation produces the same output as none-incremental. """
     num_frames = 8
-    frame_channels = 128
+    frame_channels = 16
 
-    model = SignalModel(input_size=frame_channels)
+    model = _get_small_signal_model(input_size=frame_channels)
     spectrogram = torch.randn([num_frames, frame_channels])
     immediate = model(spectrogram)
     incremental = generate_waveform(model, spectrogram, split_size=4, generator=False)
@@ -53,11 +57,10 @@ def test_generate_waveform__no_batch_dim():
 def test_generate_waveform__padding_invariance():
     batch_size = 4
     num_frames = 8
-    frame_channels = 128
+    frame_channels = 16
     padding = 3
 
-    model = SignalModel(input_size=frame_channels)
-
+    model = _get_small_signal_model(input_size=frame_channels)
     spectrogram = torch.randn([batch_size, num_frames + padding * 2, frame_channels])
     mask = torch.cat(
         [
@@ -104,9 +107,9 @@ def test_trim():
 def test_signal_model():
     batch_size = 4
     num_frames = 8
-    frame_channels = 128
+    frame_channels = 16
 
-    model = SignalModel(input_size=frame_channels)
+    model = _get_small_signal_model(input_size=frame_channels)
     spectrogram = torch.randn([batch_size, num_frames, frame_channels])
     out = model(spectrogram)
 
@@ -120,9 +123,9 @@ def test_signal_model():
 
 def test_signal_model__no_batch():
     num_frames = 9  # Test odd number of frames
-    frame_channels = 128
+    frame_channels = 16
 
-    model = SignalModel(input_size=frame_channels)
+    model = _get_small_signal_model(input_size=frame_channels)
     spectrogram = torch.randn([num_frames, frame_channels])
     out = model(spectrogram)
 
@@ -137,9 +140,9 @@ def test_signal_model__no_batch():
 def test_signal_model__batch_invariance():
     batch_size = 4
     num_frames = 8
-    frame_channels = 128
+    frame_channels = 16
 
-    model = SignalModel(input_size=frame_channels)
+    model = _get_small_signal_model(input_size=frame_channels)
     batched_spectrogram = torch.randn([batch_size, num_frames, frame_channels])
     batched_out = model(batched_spectrogram)
 
@@ -151,10 +154,10 @@ def test_signal_model__batch_invariance():
 def test_signal_model__padding_invariance():
     batch_size = 4
     num_frames = 8
-    frame_channels = 128
+    frame_channels = 16
     padding = 3
 
-    model = SignalModel(input_size=frame_channels)
+    model = _get_small_signal_model(input_size=frame_channels)
 
     spectrogram = torch.randn([batch_size, num_frames + padding * 2, frame_channels])
     mask = torch.cat(

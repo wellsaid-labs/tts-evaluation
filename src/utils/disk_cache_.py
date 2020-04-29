@@ -251,6 +251,19 @@ def make_arg_key(function, *args, **kwargs):
     return frozenset(key.items())
 
 
+_disk_cache_register = []
+
+
+def get_functions_with_disk_cache():
+    """ Get all functions with the `disk_cache` decorator.
+
+    Returns:
+        list of callables
+    """
+    resolved = [i() for i in _disk_cache_register]
+    return [i for i in resolved if i is not None]
+
+
 def disk_cache(function=None,
                directory=DISK_CACHE_PATH,
                save_to_disk_delay=None if IS_TESTING_ENVIRONMENT else 180):
@@ -271,16 +284,27 @@ def disk_cache(function=None,
     if not function:
         return partial(disk_cache, directory=directory, save_to_disk_delay=save_to_disk_delay)
 
+    _use_disk_cache = True
     cache = DiskCache(
         Path(directory) / (inspect.getmodule(function).__name__ + '.' + function.__qualname__),
         save_to_disk_delay)
 
     @wraps(function)
     def decorator(*args, **kwargs):
+        if not _use_disk_cache:
+            return function(*args, **kwargs)
+
         key = make_arg_key(function, *args, **kwargs)
         if key not in cache:
             cache.set(key, function(*args, **kwargs))
         return cache.get(key)
 
+    def use_disk_cache(new_state):
+        nonlocal _use_disk_cache
+        _use_disk_cache = new_state
+
+    decorator.use_disk_cache = use_disk_cache
     decorator.disk_cache = cache
+    _disk_cache_register.append(weakref.ref(decorator))
+
     return decorator

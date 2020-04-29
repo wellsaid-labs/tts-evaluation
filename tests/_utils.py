@@ -202,9 +202,24 @@ def get_tts_mocks(add_spectrogram=False,
                                                     [e.speaker for e in _get_mock_data()])
 
     def get_spectrogram_model():
-        # NOTE: Configure the `SpectrogramModel` to stop iteration as soon as possible.
-        add_config(
-            {'src.spectrogram_model.model.SpectrogramModel._infer': HParams(stop_threshold=0.0)})
+        add_config({
+            'src.spectrogram_model': {
+                # NOTE: Configure the `SpectrogramModel` to stop iteration as soon as possible.
+                'model.SpectrogramModel._infer':
+                    HParams(stop_threshold=0.0),
+                # NOTE: Configure the `SpectrogramModel` to be small for testing.
+                'model.SpectrogramModel.__init__':
+                    HParams(speaker_embedding_dim=16),
+                'encoder.Encoder.__init__':
+                    HParams(hidden_size=16, num_convolution_layers=2, out_dim=16),
+                'decoder.AutoregressiveDecoder.__init__':
+                    HParams(lstm_hidden_size=16, encoder_output_size=16, pre_net_hidden_size=16),
+                'pre_net.PreNet.__init__':
+                    HParams(num_layers=1),
+                'post_net.PostNet.__init__':
+                    HParams(num_convolution_layers=2, num_convolution_filters=16),
+            }
+        })
         return SpectrogramModel(return_['input_encoder'].text_encoder.vocab_size,
                                 return_['input_encoder'].speaker_encoder.vocab_size)
 
@@ -227,7 +242,18 @@ def get_tts_mocks(add_spectrogram=False,
         return checkpoint
 
     return_['spectrogram_model_checkpoint'] = get_spectrogram_model_checkpoint
-    return_['signal_model'] = lambda: SignalModel()
+
+    def get_signal_model():
+        # NOTE: Configure the `SignalModel` to be small for testing.
+        add_config({
+            'src.signal_model': {
+                'SignalModel.__init__': HParams(hidden_size=2, max_channel_size=8),
+                'SpectrogramDiscriminator.__init__': HParams(hidden_size=32),
+            }
+        })
+        return SignalModel()
+
+    return_['signal_model'] = get_signal_model
 
     def get_signal_model_checkpoint():
         signal_model_optimizer = Optimizer(

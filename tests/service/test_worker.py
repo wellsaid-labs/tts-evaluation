@@ -1,4 +1,5 @@
 import pytest
+import torch
 
 from src.service.worker import FlaskException
 from src.service.worker import load_checkpoints
@@ -83,7 +84,7 @@ def test_validate_and_unpack():
     with pytest.raises(FlaskException):  # `speaker_id` must be positive
         validate_and_unpack({**args, 'speaker_id': -1}, input_encoder, api_keys=api_keys)
 
-    with pytest.raises(FlaskException, match=r".*cannot contain these characters: o, v, ˌ.*"):
+    with pytest.raises(FlaskException, match=r".*cannot contain these characters: i, o,*"):
         # NOTE: "wɛɹɹˈɛvɚ kˌoːɹzənjˈuːski" should contain phonemes that are not already in
         # mock `input_encoder`.
         validate_and_unpack(
@@ -98,5 +99,9 @@ def test_validate_and_unpack():
     request_args = {**args, 'text': 'é😁'}
     result_text, result_speaker = validate_and_unpack(
         request_args, input_encoder, api_keys=api_keys, speaker_id_to_speaker=speaker_id_to_speaker)
-    assert result_text == 'e'  # NOTE: The emoji is removed because there is no unicode equivilent.
-    assert result_speaker == speaker
+    assert torch.is_tensor(result_text)
+    assert result_text.shape[0] == 2
+    # NOTE: The emoji is removed because there is no unicode equivilent.
+    # TODO: The delimiter should be parameterized.
+    assert input_encoder.decode((result_text, result_speaker)) == ('ˈ|iː', speaker)
+    assert torch.is_tensor(result_speaker)

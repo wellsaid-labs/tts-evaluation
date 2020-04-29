@@ -23,6 +23,7 @@ librosa = LazyLoader('librosa', globals(), 'librosa')
 scipy_wavfile = LazyLoader('scipy_wavfile', globals(), 'scipy.io.wavfile')
 scipy_signal = LazyLoader('scipy_signal', globals(), 'scipy.signal')
 
+from src.environment import IS_TESTING_ENVIRONMENT
 from src.environment import TTS_DISK_CACHE_NAME
 from src.utils import assert_no_overwritten_files
 from src.utils import disk_cache
@@ -983,7 +984,7 @@ def cache_get_audio_metadata(paths):
     # systems.
     chunks = list(get_chunks(paths, 1024))
     progress_bar = tqdm(total=len(paths))
-    with Pool() as pool:
+    with Pool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
         for result in pool.imap_unordered(_cache_get_audio_metadata_helper, chunks):
             for audio_path, metadata in result:
                 get_audio_metadata.disk_cache.set(make_arg_key(function, audio_path), metadata)

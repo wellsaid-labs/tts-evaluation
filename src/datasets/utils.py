@@ -26,6 +26,7 @@ from src.audio import pad_remainder
 from src.audio import read_audio
 from src.datasets.constants import TextSpeechRow
 from src.environment import DATA_PATH
+from src.environment import IS_TESTING_ENVIRONMENT
 from src.environment import ROOT_PATH
 from src.environment import TEMP_PATH
 from src.environment import TTS_DISK_CACHE_NAME
@@ -181,7 +182,7 @@ def add_spectrogram_column(data, on_disk=True):
     """
     logger.info('Adding a spectrogram column to dataset.')
     partial_ = partial(_add_spectrogram_column, on_disk=on_disk)
-    with ThreadPool(os.cpu_count()) as pool:
+    with ThreadPool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
         # NOTE: `chunksize` with `imap` is more performant while allowing us to measure progress.
         # TODO: Consider using `imap_unordered` instead of `imap` because it is more performant,
         # learn more:
@@ -214,7 +215,7 @@ def normalize_audio_column(data):
         _normalize_audio_column_helper, config=hparams.get_config())
 
     logger.info('Normalizing dataset audio using SoX.')
-    with ThreadPool(os.cpu_count()) as pool:
+    with ThreadPool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
         # NOTE: `chunksize` allows `imap` to be much more performant while allowing us to measure
         # progress.
         iterator = pool.imap(_normalize_audio_column_helper_partial, data, chunksize=1024)
