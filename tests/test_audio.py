@@ -414,7 +414,8 @@ def test_signal_to_db_mel_spectrogram_intermediate():
         tensor, n_fft, hop_length, win_length=n_fft, window=window, center=False)
     expected_spectrogram = torch.norm(expected_spectrogram, dim=-1).transpose(-2, -1)
 
-    np.testing.assert_allclose(spectrogram.detach().numpy(), expected_spectrogram.detach().numpy())
+    np.testing.assert_allclose(
+        spectrogram.detach().numpy(), expected_spectrogram.detach().numpy(), rtol=1e-06)
 
 
 def test_signal_to_db_mel_spectrogram__alignment():

@@ -641,6 +641,9 @@ def set_hparams():
 
     seed = 1212212
 
+    # NOTE: This delimiter must be a single character not in the dataset.
+    phonetic_syllable_delimiter = '|'
+
     torchnlp.samplers.DeterministicSampler.__init__ = configurable(
         torchnlp.samplers.DeterministicSampler.__init__)
     add_config({
@@ -650,6 +653,8 @@ def set_hparams():
     add_config({
         'src': {
             'spectrogram_model': {
+                'input_encoder.InputEncoder.__init__':
+                    HParams(delimiter=phonetic_syllable_delimiter),
                 # SOURCE (Tacotron 2):
                 # In order to introduce output variation at inference time, dropout with
                 # probability 0.5 is applied only to layers in the pre-net of the
@@ -801,6 +806,8 @@ def set_hparams():
                     }
                 },
             },
+            'text.cache_grapheme_to_phoneme_perserve_punctuation':
+                HParams(delimiter=phonetic_syllable_delimiter),
             # NOTE: The expected signal model output is 32-bit float.
             'audio.build_wav_header':
                 HParams(wav_format=WAVE_FORMAT_IEEE_FLOAT, num_channels=1, sample_width=4),

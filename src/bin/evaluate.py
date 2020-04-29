@@ -236,9 +236,11 @@ def main(dataset,
             has_target_audio or spectrogram_model_checkpoint is not None):
         logger.info('The signal model path is: %s', signal_model_checkpoint.path)
         logger.info('Running inference with %d threads.', torch.get_num_threads())
-        # TODO: Remove `WeightNorm` from signal model for faster synthesis.
         signal_model_checkpoint.exponential_moving_parameter_average.apply_shadow()
-        signal_model = signal_model_checkpoint.model
+        signal_model = signal_model_checkpoint.model.eval()
+        # TODO: Factor out removing weight norm into the signal model's inference mode.
+        for module in signal_model.get_weight_norm_modules():
+            torch.nn.utils.remove_weight_norm(module)
         use_predicted = spectrogram_model_checkpoint is not None
 
         # NOTE: Sort by spectrogram lengths to batch similar sized outputs together
@@ -253,7 +255,8 @@ def main(dataset,
             logger.info('Predicting signal from spectrogram of size %s.', spectrogram.shape)
             start = time.time()
             # [local_length, local_features_size] → [signal_length]
-            waveform = signal_model(spectrogram)
+            with torch.no_grad():
+                waveform = signal_model(spectrogram)
             logger.info('Processed in %fx real time.',
                         (time.time() - start) / (waveform.shape[0] / sample_rate))
 

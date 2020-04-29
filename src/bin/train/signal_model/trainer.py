@@ -656,9 +656,10 @@ class Trainer():
         logger.info('Running inference on %d spectrogram frames with %d threads.',
                     spectrogram.shape[0], torch.get_num_threads())
 
-        self.exponential_moving_parameter_average.apply_shadow()
-        predicted = generate_waveform(model, spectrogram, generator=False)
-        self.exponential_moving_parameter_average.restore()
+        with torch.no_grad():
+            self.exponential_moving_parameter_average.apply_shadow()
+            predicted = generate_waveform(model, spectrogram, generator=False)
+            self.exponential_moving_parameter_average.restore()
 
         total_spectrogram_loss = torch.tensor(0.0, device=self.device)
         total_generator_loss = torch.tensor(0.0, device=self.device)

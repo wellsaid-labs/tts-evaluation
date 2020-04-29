@@ -251,6 +251,15 @@ def make_arg_key(function, *args, **kwargs):
     return frozenset(key.items())
 
 
+_disk_cache_register = []
+
+
+def get_functions_with_disk_cache():
+    """ Get all functions with the `disk_cache` decorator. """
+    resolved = [i() for i in _disk_cache_register]
+    return [i for i in resolved if i is not None]
+
+
 def disk_cache(function=None,
                directory=DISK_CACHE_PATH,
                save_to_disk_delay=None if IS_TESTING_ENVIRONMENT else 180):
@@ -292,5 +301,6 @@ def disk_cache(function=None,
 
     decorator.use_disk_cache = use_disk_cache
     decorator.disk_cache = cache
+    _disk_cache_register.append(weakref.ref(decorator))
 
     return decorator
