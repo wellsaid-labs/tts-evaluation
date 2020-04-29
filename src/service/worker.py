@@ -139,6 +139,13 @@ def handle_invalid_usage(error):  # Register an error response
     return response
 
 
+@app.before_first_request
+def before_first_request():
+    # NOTE: Ensure that our cache doesn't grow while the server is running.
+    for function in get_functions_with_disk_cache():
+        function.use_disk_cache(False)
+
+
 def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encoder, text, speaker):
     """ Helper function for starting a speech synthesis stream.
 
@@ -267,7 +274,7 @@ def validate_and_unpack(request_args,
     try:
         text, speaker = input_encoder.encode((text, speaker))
     except ValueError as error:
-        raise FlaskException(error, code='INVALID_TEXT')
+        raise FlaskException(str(error), code='INVALID_TEXT')
 
     return text, speaker
 
@@ -343,9 +350,6 @@ def send_static(path):
 
 
 if __name__ == "__main__":
-    # NOTE: Ensure that our memory doesn't grow while the server is running.
-    for function in get_functions_with_disk_cache():
-        function.use_disk_cache(False)
 
     load_checkpoints()  # Cache checkpoints on worker start.
     app.run(host='0.0.0.0', port=8000, debug=True)
