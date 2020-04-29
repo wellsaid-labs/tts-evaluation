@@ -34,10 +34,8 @@ class InputEncoder(Encoder):
 
     def _preprocess(self, text):
         text = unidecode.unidecode(text)
-
-        if self.delimiter and self.delimiter in text[0]:
+        if self.delimiter and self.delimiter in text:
             raise ValueError('Text cannot contain these characters: %s' % self.delimiter)
-
         text = grapheme_to_phoneme_perserve_punctuation(text, separator=self.delimiter)
         return text
 
