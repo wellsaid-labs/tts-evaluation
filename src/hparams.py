@@ -196,11 +196,6 @@ def _set_audio_processing():
 def _set_model_size(frame_channels):
 
     # SOURCE (Tacotron 2):
-    # The prediction from the previous time step is first passed through a small
-    # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
-    pre_net_hidden_size = 256
-
-    # SOURCE (Tacotron 2):
     # Attention probabilities are computed after projecting inputs and location
     # features to 128-dimensional hidden representations.
     encoder_output_size = 128
@@ -257,8 +252,12 @@ def _set_model_size(frame_channels):
                     ),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(
-                        pre_net_hidden_size=pre_net_hidden_size,
                         encoder_output_size=encoder_output_size,
+
+                        # SOURCE (Tacotron 2):
+                        # The prediction from the previous time step is first passed through a small
+                        # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
+                        pre_net_hidden_size=256,
 
                         # SOURCE (Tacotron 2):
                         # The prenet output and attention context vector are concatenated and
