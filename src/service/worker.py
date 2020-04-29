@@ -153,9 +153,6 @@ def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encod
         (callable): Callable that returns a generator incrementally returning a WAV file.
         (int): Number of bytes to be returned in total by the generator.
     """
-    # Compute spectrogram
-    text, speaker = input_encoder.encode((text, speaker))
-
     app.logger.info('Generating spectrogram...')
     with torch.no_grad():
         _, spectrogram, _, _, _, is_max_frames = spectrogram_model(text, speaker, use_tqdm=True)
