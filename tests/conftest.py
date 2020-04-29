@@ -4,7 +4,6 @@ import matplotlib
 matplotlib.use('Agg')
 
 from hparams import clear_config
-from torch.utils import cpp_extension
 
 # Fix this weird error: https://github.com/pytorch/pytorch/issues/2083
 import torch  # noqa: F401
@@ -28,11 +27,6 @@ def run_before_test():
     clear_config()
     for cache in DiskCache.get_instances():
         cache.purge()
-
-    # NOTE: `torch.utils.cpp_extension` assumes that within the same process that the temp
-    # storage is not cleared. Our tests do clear the disk after every test; therefore, we reset
-    # `torch.utils.cpp_extension.JIT_EXTENSION_VERSIONER`.
-    cpp_extension.JIT_EXTENSION_VERSIONER = cpp_extension.ExtensionVersioner()
 
     set_lazy_resolution(True)  # This helps performance for individual tests
     set_hparams()
