@@ -2,6 +2,7 @@ import logging
 
 from hparams import configurable
 from hparams import HParam
+from torch.nn.utils.weight_norm import WeightNorm
 from torchnlp.utils import get_total_parameters
 
 import numpy as np
@@ -258,6 +259,14 @@ def generate_waveform(model, spectrogram, spectrogram_mask=None, split_size=64, 
     return _generate()
 
 
+def has_weight_norm(module, name='weight'):
+    """ Check if module has `WeightNorm` decorator. """
+    for k, hook in module._forward_pre_hooks.items():
+        if isinstance(hook, WeightNorm) and hook.name == name:
+            return True
+    return False
+
+
 class SignalModel(torch.nn.Module):
     """ Predicts a signal given a spectrogram.
 
@@ -317,11 +326,23 @@ class SignalModel(torch.nn.Module):
         self.reset_parameters()
 
         # NOTE: We initialize the convolution parameters before weight norm factorizes them.
-        for module in self.get_weight_norm_modules():
+        for module in self._get_weight_norm_modules():
             torch.nn.utils.weight_norm(module)
 
-    def get_weight_norm_modules(self):
-        # TODO: For performance, remove weight normalization before serving the model.
+    def train(self, *args, **kwargs):
+        """ Sets the module in training or evaluation mode.
+
+        Learn more more: https://pytorch.org/docs/stable/nn.html#torch.nn.Module.train
+        """
+        return_ = super().train(*args, **kwargs)
+        for module in self._get_weight_norm_modules():
+            if self.training and not has_weight_norm(module):
+                torch.nn.utils.weight_norm(module)
+            if not self.training and has_weight_norm(module):
+                torch.nn.utils.remove_weight_norm(module)
+        return return_
+
+    def _get_weight_norm_modules(self):
         for module in self.modules():
             if isinstance(module, torch.nn.Conv1d):
                 yield module

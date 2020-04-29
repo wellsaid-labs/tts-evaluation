@@ -20,6 +20,15 @@ def _get_small_signal_model(*args, **kwargs):
     return SignalModel(*args, hidden_size=2, max_channel_size=8, ratios=[2], padding=12, **kwargs)
 
 
+def test_signal_model__train_mode():
+    """ Basic test is `train` mode can be applied multiple times. """
+    model = _get_small_signal_model()
+    model.train()
+    model.train()
+    model.eval()
+    model.eval()
+
+
 def test_generate_waveform():
     """ Test if incremental generation produces the same output as none-incremental. """
     batch_size = 4

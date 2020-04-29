@@ -236,11 +236,10 @@ def main(dataset,
             has_target_audio or spectrogram_model_checkpoint is not None):
         logger.info('The signal model path is: %s', signal_model_checkpoint.path)
         logger.info('Running inference with %d threads.', torch.get_num_threads())
+        # TODO: Factor out removing `exponential_moving_parameter_average` into the signal model's
+        # inference mode.
         signal_model_checkpoint.exponential_moving_parameter_average.apply_shadow()
         signal_model = signal_model_checkpoint.model.eval()
-        # TODO: Factor out removing weight norm into the signal model's inference mode.
-        for module in signal_model.get_weight_norm_modules():
-            torch.nn.utils.remove_weight_norm(module)
         use_predicted = spectrogram_model_checkpoint is not None
 
         # NOTE: Sort by spectrogram lengths to batch similar sized outputs together
