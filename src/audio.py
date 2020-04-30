@@ -56,8 +56,6 @@ def get_num_seconds(audio_path):
 def read_audio(filename, assert_metadata=HParam()):
     """ Read an audio file.
 
-    TODO: Rename considering the tighter specification.
-
     Tacotron 1 Reference:
         We use 24 kHz sampling rate for all experiments.
 
@@ -602,9 +600,9 @@ def framed_rms_from_power_spectrogram(power_spectrogram, window=HParam()):
     window_correction_factor = (
         torch.ones(*window.shape).pow(2).mean().sqrt() / window.pow(2).mean().sqrt())
 
-    # TODO: This adjustment might have an unintended affect on the a mel spectrogram.
     # TODO: This adjustment might be related to repairing constant-overlap-add, see here:
-    # https://ccrma.stanford.edu/~jos/sasp/Overlap_Add_Decomposition.html
+    # https://ccrma.stanford.edu/~jos/sasp/Overlap_Add_Decomposition.html. It should be better
+    # documented and tested. We've included it mostly because `librosa` also included it.
     # Adjust the DC and half sample rate component
     power_spectrogram[:, :, 0] *= 0.5
     if window.shape[0] % 2 == 0:
@@ -1005,6 +1003,11 @@ def normalize_audio(audio_path,
                     encoding=HParam()):
     """ Normalize audio on disk with the SoX library.
 
+    TODO:
+        - Consider adding support for `--show-progress`.
+        - Consider using `torchaudio` instead of `sox`, learn more:
+          https://github.com/pytorch/audio/issues/260
+
     Args:
         audio_path (Path or str): Path to a audio file.
         sample_rate (int or None, optional): Change the audio sampling rate
@@ -1020,7 +1023,6 @@ def normalize_audio(audio_path,
     """
     audio_path = Path(audio_path)
 
-    # TODO: Consider adding support for `--show-progress`.
     metadata = get_audio_metadata(audio_path)
 
     _channels = None if metadata.channels == channels else channels

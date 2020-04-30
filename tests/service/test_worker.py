@@ -20,10 +20,10 @@ def test_load_checkpoints():
 def test_stream_text_to_speech_synthesis():
     mocks = get_tts_mocks()
     example = mocks['dev_dataset'][0]
-    generator, file_size = stream_text_to_speech_synthesis(mocks['signal_model'],
-                                                           mocks['spectrogram_model'].eval(),
-                                                           mocks['input_encoder'], example.text,
-                                                           example.speaker)
+    text, speaker = mocks['input_encoder'].encode((example.text, example.speaker))
+    generator, file_size = stream_text_to_speech_synthesis(mocks['signal_model'].eval(),
+                                                           mocks['spectrogram_model'].eval(), text,
+                                                           speaker)
     file_contents = b''.join([s for s in generator()])
     assert len(file_contents) == file_size
 
@@ -102,6 +102,6 @@ def test_validate_and_unpack():
     assert torch.is_tensor(result_text)
     assert result_text.shape[0] == 2
     # NOTE: The emoji is removed because there is no unicode equivilent.
-    # TODO: The delimiter should be parameterized.
-    assert input_encoder.decode((result_text, result_speaker)) == ('ˈ|iː', speaker)
+    assert input_encoder.decode(
+        (result_text, result_speaker)) == ('ˈ' + input_encoder.delimiter + 'iː', speaker)
     assert torch.is_tensor(result_speaker)

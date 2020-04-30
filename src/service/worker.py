@@ -26,7 +26,6 @@ CONS:
   Spectrogram used to condition the speech synthesis.
 
 TODO: Apply `exponential_moving_parameter_average` before running locally, for best performance.
-TODO: Remove `WeightNorm` before running locally, for best performance.
 
 The cons in summary are that the client cannot manage there own state due to the immaturity of the
 web audio api; therefore, the server must manage it via some database.
@@ -103,7 +102,7 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
     app.logger.info('Loading speakers: %s', input_encoder.speaker_encoder.vocab)
     signal_model = signal_model_checkpoint.model
 
-    return signal_model, spectrogram_model.eval(), input_encoder
+    return signal_model.eval(), spectrogram_model.eval(), input_encoder
 
 
 class FlaskException(Exception):
@@ -146,13 +145,12 @@ def before_first_request():
         function.use_disk_cache(False)
 
 
-def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encoder, text, speaker):
+def stream_text_to_speech_synthesis(signal_model, spectrogram_model, text, speaker):
     """ Helper function for starting a speech synthesis stream.
 
     Args:
         signal_model (torch.nn.Module)
         spectrogram_model (torch.nn.Module)
-        input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         text (str)
         speaker (src.datasets.Speaker)
 

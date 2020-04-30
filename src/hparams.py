@@ -35,16 +35,23 @@ logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
 
 
-def _get_window(window, window_length):
+def _get_window(window, window_length, window_hop):
     # NOTE: `torch.hann_window` is different than the `scipy` window used by `librosa`.
     # Learn more here: https://github.com/pytorch/audio/issues/452
     window_tensor = None
 
     try:
         import librosa
-        window_tensor = torch.tensor(librosa.filters.get_window(window, window_length)).float()
+        window = librosa.filters.get_window(window, window_length)
+        window_tensor = torch.tensor(window).float()
     except ImportError:
         logger.info('Ignoring optional `librosa` configurations.')
+
+    try:
+        import scipy
+        assert scipy.signal.check_COLA(window, window_length, window_length - window_hop)
+    except ImportError:
+        logger.info('Ignoring optional `scipy` configurations.')
 
     return window_tensor
 
@@ -58,7 +65,10 @@ def _set_audio_processing():
     # mel spectrograms are computed through a shorttime Fourier transform (STFT)
     # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
     # TODO: Parameterizing frame sizes in milliseconds can help ensure that your code is invariant
-    # to the sample rate.
+    # to the sample rate; however, we would need to assure that we're still using powers of two
+    # for performance.
+    # TODO: Verify that `frame_hop` is equal to the signal model's upsample property, ensuring that
+    # that relationship holds.
     # TODO: 50ms / 12.5ms spectrogram is not typical spectrogram parameterization, a more typical
     # parameterization is 25ms / 10ms. Learn more:
     # https://www.dsprelated.com/freebooks/sasp/Classic_Spectrograms.html
@@ -71,7 +81,7 @@ def _set_audio_processing():
     # NOTE: A "hann window" is standard for calculating an FFT, it's even mentioned as a "popular
     # window" on Wikipedia (https://en.wikipedia.org/wiki/Window_function).
     window = 'hann'
-    window_tensor = _get_window(window, frame_size)
+    window_tensor = _get_window(window, frame_size, frame_hop)
 
     # SOURCE (Tacotron 2):
     # We transform the STFT magnitude to the mel scale using an 80 channel mel
@@ -205,10 +215,6 @@ def _set_model_size(frame_channels):
     # probability exceeds a threshold of 0.5.
     stop_threshold = 0.5
 
-    # NOTE: This parameter is determined manually by running `signal_model` tests until they pass.
-    # There needs to be enough padding such that the output shape is valid.
-    signal_model_padding = 14
-
     add_config({
         'src': {
             'spectrogram_model': {
@@ -310,7 +316,6 @@ def _set_model_size(frame_channels):
                         input_size=frame_channels,
                         hidden_size=32,
                         max_channel_size=512,
-                        padding=signal_model_padding,
                         ratios=[2] * 8,
                         # SOURCE https://en.wikipedia.org/wiki/%CE%9C-law_algorithm:
                         # For a given input x, the equation for μ-law encoding is where μ = 255 in
@@ -324,8 +329,6 @@ def _set_model_size(frame_channels):
                 HParams(stop_threshold=stop_threshold),
         }
     })
-
-    return signal_model_padding
 
 
 def _filter_audio_path_not_found(example):
@@ -619,7 +622,7 @@ def set_hparams():
     from src.spectrogram_model import SpectrogramModel
 
     frame_channels, frame_hop, sample_rate = _set_audio_processing()
-    signal_model_padding = _set_model_size(frame_channels)
+    _set_model_size(frame_channels)
 
     Adam.__init__ = configurable(Adam.__init__)
     nn.modules.batchnorm._BatchNorm.__init__ = configurable(
@@ -728,6 +731,16 @@ def set_hparams():
 
                                 # Tacotron 2 like model with any changes documented via Comet.ml.
                                 model=SpectrogramModel),
+                        'trainer.Trainer._do_loss_and_maybe_backwards':
+                            HParams(
+                                # NOTE: The loss is calibrated to match the loss computed on a
+                                # Tacotron-2 spectrogram input.
+                                pre_spectrogram_loss_scalar=1 / 100,
+                                post_spectrogram_loss_scalar=1 / 100,
+                                # NOTE: This stop token loss is calibrated to prevent overfitting
+                                # on the stop token before the model is able to model the
+                                # spectrogram.
+                                stop_token_loss_scalar=1 / 4),
                         'data_loader.get_normalized_half_gaussian':
                             HParams(
                                 # NOTE: We approximated the uncertainty in the stop token by viewing
@@ -776,19 +789,19 @@ def set_hparams():
                                         SpectrogramLoss,
                                         fft_length=2048,
                                         frame_hop=256,
-                                        window=_get_window('hann', 1024),
+                                        window=_get_window('hann', 1024, 256),
                                         num_mel_bins=128),
                                     partial(
                                         SpectrogramLoss,
                                         fft_length=1024,
                                         frame_hop=128,
-                                        window=_get_window('hann', 512),
+                                        window=_get_window('hann', 512, 128),
                                         num_mel_bins=64),
                                     partial(
                                         SpectrogramLoss,
                                         fft_length=512,
                                         frame_hop=64,
-                                        window=_get_window('hann', 256),
+                                        window=_get_window('hann', 256, 64),
                                         num_mel_bins=32),
                                 ]),
                         'trainer.SpectrogramLoss.__init__':
@@ -802,10 +815,6 @@ def set_hparams():
                                 discriminator_optimizer=partial(torch.optim.Adam, lr=10**-3),
                                 discriminator_criterion=torch.nn.BCEWithLogitsLoss,
                             ),
-                        # NOTE: The `DataLoader` pads the data before hand so that the model
-                        # trains on real padding instead of zero padding.
-                        'data_loader.DataLoader.__init__':
-                            HParams(spectrogram_slice_pad=signal_model_padding),
                     }
                 },
             },

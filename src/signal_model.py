@@ -1,9 +1,9 @@
 import logging
+import math
 
 from hparams import configurable
 from hparams import HParam
 from torch.nn.utils.weight_norm import WeightNorm
-from torchnlp.utils import get_total_parameters
 
 import numpy as np
 import torch
@@ -185,6 +185,12 @@ class Block(torch.nn.Module):
 
         self.upscale_factor = upscale_factor
 
+        output_scale = input_scale * upscale_factor
+        self.padding_required = (self.block[4].kernel_size[0] // 2) / input_scale
+        self.padding_required += (self.block[-1].kernel_size[0] // 2) / output_scale
+        self.padding_required += (self.other_block[4].kernel_size[0] // 2) / output_scale
+        self.padding_required += (self.other_block[-1].kernel_size[0] // 2) / output_scale
+
     def forward(self, input_):
         """
         Args:
@@ -274,7 +280,6 @@ class SignalModel(torch.nn.Module):
         input_size (int): The channel size of the input.
         hidden_size (int): The input size of the final convolution. The rest of the convolution
             sizes are a multiple of `hidden_size`.
-        padding (int): The input padding required.
         ratios (list of int): A list of scale factors for upsampling.
         max_channel_size (int): The maximum convolution channel size.
         mu (int): Mu for the u-law scaling. Learn more:
@@ -285,19 +290,16 @@ class SignalModel(torch.nn.Module):
     def __init__(self,
                  input_size=HParam(),
                  hidden_size=HParam(),
-                 padding=HParam(),
                  ratios=HParam(),
                  max_channel_size=HParam(),
                  mu=HParam()):
         super().__init__()
 
-        self.padding = padding
         self.ratios = ratios
         self.hidden_size = hidden_size
         self.max_channel_size = max_channel_size
         self.mu = mu
         self.upscale_factor = np.prod(ratios)
-        self.pad = torch.nn.ConstantPad1d(padding, 0.0)
 
         self.pre_net = torch.nn.Sequential(
             Mask(1),
@@ -322,6 +324,13 @@ class SignalModel(torch.nn.Module):
         self.masks = [m for m in self.modules() if isinstance(m, Mask)]
         self.condition = torch.nn.Conv1d(
             self.get_layer_size(0), max([m.size for m in self.conditionals]), kernel_size=1)
+
+        self.padding = self.pre_net[1].kernel_size[0] // 2
+        self.padding += (1 / (self.upscale_factor) * (self.network[-2].kernel_size[0] // 2))
+        self.padding += sum([m.padding_required for m in self.modules() if isinstance(m, Block)])
+        self.excess_padding = math.ceil(self.padding) - self.padding
+        self.padding = math.ceil(self.padding)
+        self.pad = torch.nn.ConstantPad1d(self.padding, 0.0)
 
         self.reset_parameters()
 
@@ -350,14 +359,8 @@ class SignalModel(torch.nn.Module):
     def reset_parameters(self):
         for module in self.modules():
             if isinstance(module, torch.nn.Conv1d):
-                assert isinstance(module.weight, torch.nn.Parameter)
                 torch.nn.init.orthogonal_(module.weight)
-                assert isinstance(module.bias, torch.nn.Parameter)
                 torch.nn.init.zeros_(module.bias)
-            elif get_total_parameters(module) > 0:
-                # TODO: Use a recursive approach to filter out modules where all children parameters
-                # were set, and only pass up legitmate messages.
-                logger.warning('%s module parameters may have not been set.', type(module))
 
     def get_layer_size(self, i):
         """ Get the hidden size of layer `i` based on the final hidden size `self.hidden_size`.
@@ -427,13 +430,9 @@ class SignalModel(torch.nn.Module):
         # https://librosa.github.io/librosa/_modules/librosa/core/audio.html#mu_expand
         signal = torch.sign(signal) / self.mu * (torch.pow(1 + self.mu, torch.abs(signal)) - 1)
 
-        # Remove `excess_padding` and error if `padding` was set incorrectly
-        excess_padding = signal.shape[1] - num_frames * self.upscale_factor
-        assert excess_padding < self.upscale_factor * 2, 'Too much padding, %d' % excess_padding
-        assert excess_padding >= 0, 'Too little padding, %d' % excess_padding
-        assert excess_padding % 2 == 0, 'Uneven padding, %d' % excess_padding
+        excess_padding = int(self.excess_padding * self.upscale_factor)
         if excess_padding > 0:  # [batch_size, num_frames * self.upscale_factor]
-            signal = signal[:, excess_padding // 2:-excess_padding // 2]
+            signal = signal[:, excess_padding:-excess_padding]
         assert signal.shape == (batch_size, self.upscale_factor * num_frames), signal.shape
 
         # Remove clipped samples
@@ -480,14 +479,8 @@ class SpectrogramDiscriminator(torch.nn.Module):
     def reset_parameters(self):
         for module in self.modules():
             if isinstance(module, torch.nn.Conv1d):
-                assert isinstance(module.weight, torch.nn.Parameter)
                 torch.nn.init.orthogonal_(module.weight)
-                assert isinstance(module.bias, torch.nn.Parameter)
                 torch.nn.init.zeros_(module.bias)
-            elif get_total_parameters(module) > 0:
-                # TODO: Use a recursive approach to filter out modules where all children parameters
-                # were set, and only pass up legitmate messages.
-                logger.warning('%s module parameters may have not been set.', type(module))
 
     def forward(self, spectrogram, db_spectrogram, db_mel_spectrogram):
         """

@@ -19,4 +19,6 @@ train the spectrogram model without making any code changes.
 
 ## Signal Model Training
 
-TODO
+| Comet                            | Machine Type  | GPU  | # GPU | GPU RAM | Spot Request \$/hr | Steps Per Second | \$/step |
+| -------------------------------- | ------------- | ---- | ----- | ------- | ------------------ | ---------------- | ------- |
+| 395d52ef56c24f6283a4b4817d624353 | g4dn.12xlarge | T4   | 4     | 64      | 1.1736             | ~1.7             | 0.00019 |

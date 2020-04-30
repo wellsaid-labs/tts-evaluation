@@ -110,8 +110,6 @@ def dict_collapse(dict_, keys=[], delimitator='.'):
     Collapses a multi-level ``dict`` into a single level dict by merging the strings with a
     delimitator.
 
-    TODO: Add tests and add this to signal model
-
     Args:
         dict_ (dict)
         keys (list, optional): Base keys.

@@ -13,7 +13,6 @@ from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 from tqdm import tqdm
 
-import hparams
 import torch
 librosa = LazyLoader('librosa', globals(), 'librosa')
 pandas = LazyLoader('pandas', globals(), 'pandas')
@@ -191,12 +190,7 @@ def add_spectrogram_column(data, on_disk=True):
         return list(tqdm(pool.imap(partial_, data, chunksize=128), total=len(data)))
 
 
-def _normalize_audio_column_helper(example, config):
-    # TODO: Add a method for transfering global configuration between processes without private
-    # variables.
-    # TODO: After the global configuration is transfered, the functions need to be rechecked like
-    # for a configuration, just in case the configuration is on a new process.
-    hparams.hparams._configuration = config
+def _normalize_audio_column_helper(example):
     return example._replace(audio_path=normalize_audio(example.audio_path))
 
 
@@ -211,14 +205,11 @@ def normalize_audio_column(data):
     """
     cache_get_audio_metadata([e.audio_path for e in data])
 
-    _normalize_audio_column_helper_partial = partial(
-        _normalize_audio_column_helper, config=hparams.get_config())
-
     logger.info('Normalizing dataset audio using SoX.')
     with ThreadPool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
         # NOTE: `chunksize` allows `imap` to be much more performant while allowing us to measure
         # progress.
-        iterator = pool.imap(_normalize_audio_column_helper_partial, data, chunksize=1024)
+        iterator = pool.imap(_normalize_audio_column_helper, data, chunksize=1024)
         return_ = list(tqdm(iterator, total=len(data)))
 
     # NOTE: `cache_get_audio_metadata` for any new normalized audio paths.

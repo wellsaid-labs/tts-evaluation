@@ -17,7 +17,19 @@ def test_l1_l2_loss():
 
 
 def _get_small_signal_model(*args, **kwargs):
-    return SignalModel(*args, hidden_size=2, max_channel_size=8, ratios=[2], padding=12, **kwargs)
+    return SignalModel(*args, hidden_size=2, max_channel_size=8, ratios=[2], **kwargs)
+
+
+def test_signal_model__excess_padding():
+    """ Test if the model is able to output the correct size regardless of the parameters. """
+    frame_channels = 4
+    for i in range(1, 3):
+        for j in range(1, 3):
+            for k in range(1, 3):
+                model = SignalModel(
+                    input_size=frame_channels, hidden_size=2, max_channel_size=8, ratios=[i] * j)
+                spectrogram = torch.randn([k, frame_channels])
+                assert model(spectrogram).shape == (model.upscale_factor * k,)
 
 
 def test_signal_model__train_mode():

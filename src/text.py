@@ -173,8 +173,12 @@ def cache_grapheme_to_phoneme_perserve_punctuation(texts, chunksize=128, delimit
             # example, "Fitness that's invigorating, not intimidating!" sometimes returns...
             # 1. "f|ˈ|ɪ|t|n|ə|s| |ð|æ|t|s| |ɪ|n|v|ˈ|ɪ|ɡ|ɚ|ɹ|ˌ|eɪ|ɾ|ɪ|ŋ|,| "...
             # 2. "f|ˈ|ɪ|t|n|ə|s| |ð|æ|t|s| |ɪ|n|v|ˈ|ɪ|ɡ|oː|ɹ|ˌ|eɪ|ɾ|ɪ|ŋ|,| "...
-            # TODO: Add a warning if there was a different result.
             if arg_key not in grapheme_to_phoneme_perserve_punctuation.disk_cache:
                 grapheme_to_phoneme_perserve_punctuation.disk_cache.set(arg_key, result)
+            else:  # TODO: Add test case to replicate this behavior.
+                cached = grapheme_to_phoneme_perserve_punctuation.disk_cache.get(arg_key)
+                if cached != result:
+                    logger.warning('Given `%s` `grapheme_to_phoneme_perserve_punctuation` returned '
+                                   'both `%s` and `%s`.', arg_key, cached, result)
 
     grapheme_to_phoneme_perserve_punctuation.disk_cache.save()
