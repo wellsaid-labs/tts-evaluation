@@ -165,27 +165,15 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       clipNumber += 1;
 
       try {
-        <<
-        << << < HEAD
-        const response = await fetch(`${endpoint}/input_validated`, {
+        const response = await fetch(
+          `${is_production ? 'https://voice2.wellsaidlabs.com' : ''}/input_validated`, {
             method: 'POST',
             body: JSON.stringify(payload),
             headers: {
               'Content-Type': 'application/json',
               'Accept-Version': version,
             }
-          }) ===
-          === =
-          const response = await fetch(
-              `${is_production ? 'https://voice2.wellsaidlabs.com' : ''}${endpoint}/input_validated`, {
-                method: 'POST',
-                body: JSON.stringify(payload),
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Accept-Version': version,
-                }
-              }) >>>
-            >>> > mel_gn
+          })
         if (!response.ok) {
           sectionElement.querySelector('.progress p').textContent = (await response.json()).message;
         } else {
