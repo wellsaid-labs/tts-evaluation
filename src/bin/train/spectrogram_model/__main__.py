@@ -36,7 +36,7 @@ from src.environment import set_basic_logging_config
 from src.environment import set_seed
 from src.environment import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 from src.hparams import set_hparams
-from src.spectrogram_model.input_encoder import cache_grapheme_to_phoneme_perserve_punctuation
+from src.text import cache_grapheme_to_phoneme_perserve_punctuation
 from src.utils import bash_time_label
 from src.utils import cache_on_disk_tensor_shapes
 from src.utils import Checkpoint

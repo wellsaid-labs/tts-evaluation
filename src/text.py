@@ -1,4 +1,3 @@
-
 from functools import lru_cache
 from functools import partial
 from itertools import groupby
@@ -145,7 +144,9 @@ def grapheme_to_phoneme_perserve_punctuation(text, separator='', **kwargs):
 
 @log_runtime
 @configurable
-def cache_grapheme_to_phoneme_perserve_punctuation(texts, chunksize=128, delimiter=HParam(),
+def cache_grapheme_to_phoneme_perserve_punctuation(texts,
+                                                   chunksize=128,
+                                                   delimiter=HParam(),
                                                    **kwargs):
     """ Batch process and cache the results for `texts` passed to
     `grapheme_to_phoneme_perserve_punctuation`.
@@ -178,7 +179,8 @@ def cache_grapheme_to_phoneme_perserve_punctuation(texts, chunksize=128, delimit
             else:  # TODO: Add test case to replicate this behavior.
                 cached = grapheme_to_phoneme_perserve_punctuation.disk_cache.get(arg_key)
                 if cached != result:
-                    logger.warning('Given `%s` `grapheme_to_phoneme_perserve_punctuation` returned '
-                                   'both `%s` and `%s`.', arg_key, cached, result)
+                    logger.warning(
+                        'Given `%s` `grapheme_to_phoneme_perserve_punctuation` returned '
+                        'both `%s` and `%s`.', arg_key, cached, result)
 
     grapheme_to_phoneme_perserve_punctuation.disk_cache.save()

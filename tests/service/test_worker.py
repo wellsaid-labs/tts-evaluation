@@ -8,6 +8,11 @@ from src.service.worker import validate_and_unpack
 from tests._utils import get_tts_mocks
 
 
+def test_flask_exception():
+    exception = FlaskException('This is a test', 404, code='NOT_FOUND', payload={'blah': 'hi'})
+    assert exception.to_dict() == {'blah': 'hi', 'code': 'NOT_FOUND', 'message': 'This is a test'}
+
+
 def test_load_checkpoints():
     mocks = get_tts_mocks()
     signal_model, spectrogram_model, input_encoder = load_checkpoints(

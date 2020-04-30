@@ -89,7 +89,7 @@ def read_audio(filename, assert_metadata=HParam()):
     return signal
 
 
-def integer_to_floating_point_pcm(signal):
+def to_floating_point_pcm(signal):
     """ Convert a `int32` or `int16` PCM signal representation to a `float32` PCM representation.
 
     Learn more about the common data types:

@@ -372,7 +372,7 @@ class Trainer():
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
-                self.scheduler.step(self.step)
+                self.scheduler.step()
 
             if trial_run:
                 break

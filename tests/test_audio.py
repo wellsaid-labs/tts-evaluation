@@ -26,7 +26,7 @@ from src.audio import get_num_seconds
 from src.audio import get_signal_to_db_mel_spectrogram
 from src.audio import griffin_lim
 from src.audio import identity_weighting
-from src.audio import integer_to_floating_point_pcm
+from src.audio import to_floating_point_pcm
 from src.audio import iso226_weighting
 from src.audio import k_weighting
 from src.audio import normalize_audio
@@ -319,7 +319,7 @@ def test_signal_to_db_mel_spectrogram_against_librosa():
 
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     metadata = WavFileMetadata(sample_rate, 16, 1, 'signed-integer')
-    signal = integer_to_floating_point_pcm(read_audio(path, metadata))
+    signal = to_floating_point_pcm(read_audio(path, metadata))
 
     # Learn more about this algorithm here:
     # https://github.com/librosa/librosa/issues/463#issuecomment-265165830
@@ -427,7 +427,7 @@ def test_signal_to_db_mel_spectrogram__alignment():
     sample_rate = 24000
     fft_length = 2048
     signal = read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer'))
-    signal = integer_to_floating_point_pcm(signal)
+    signal = to_floating_point_pcm(signal)
     signal = pad_remainder(signal, frame_hop, mode='constant', constant_values=0)
     module = get_signal_to_db_mel_spectrogram(
         sample_rate=sample_rate,
@@ -463,29 +463,32 @@ def test_read_audio():
     assert integer.dtype == np.int16
 
 
-def test_integer_to_floating_point_pcm():
+def test_to_floating_point_pcm():
     """ Test that `np.int16` and `np.int32` get converted correctly to `np.float32`. """
     int16 = np.random.randint(-2**15, 2**15, size=10000, dtype=np.int16)
     int32 = np.random.randint(-2**31, 2**31, size=10000, dtype=np.int32)
+    float32 = np.random.rand(10000).astype(np.float32) * 2 - 1
 
-    np.testing.assert_almost_equal(
-        integer_to_floating_point_pcm(int32), (int32.astype(np.float32) / 2**31))
-    np.testing.assert_almost_equal(
-        integer_to_floating_point_pcm(int16), (int16.astype(np.float32) / 2**15))
+    np.testing.assert_almost_equal(to_floating_point_pcm(int32), (int32.astype(np.float32) / 2**31))
+    np.testing.assert_almost_equal(to_floating_point_pcm(int16), (int16.astype(np.float32) / 2**15))
+    np.testing.assert_almost_equal(to_floating_point_pcm(float32), float32)
 
-    assert integer_to_floating_point_pcm(int32).max() <= 1.0
-    assert integer_to_floating_point_pcm(int32).min() >= -1.0
+    assert to_floating_point_pcm(float32).max() <= 1.0
+    assert to_floating_point_pcm(float32).min() >= -1.0
 
-    assert integer_to_floating_point_pcm(int16).max() <= 1.0
-    assert integer_to_floating_point_pcm(int16).min() >= -1.0
+    assert to_floating_point_pcm(int32).max() <= 1.0
+    assert to_floating_point_pcm(int32).min() >= -1.0
+
+    assert to_floating_point_pcm(int16).max() <= 1.0
+    assert to_floating_point_pcm(int16).min() >= -1.0
 
 
-def test_integer_to_floating_point_pcm__real_audio():
-    """ Enusre that the `integer_to_floating_point_pcm` conversion works on real audio. """
+def test_to_floating_point_pcm__real_audio():
+    """ Enusre that the `to_floating_point_pcm` conversion works on real audio. """
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     integer = read_audio(path)
     assert integer.dtype == np.int16
-    floating = integer_to_floating_point_pcm(integer)
+    floating = to_floating_point_pcm(integer)
     assert floating.dtype == np.float32
     expected = integer.astype(np.float32) / 2**15
     np.testing.assert_almost_equal(expected, floating)
@@ -623,7 +626,7 @@ def test_griffin_lim_smoke():
     path = TEST_DATA_PATH_LOCAL / 'rate(lj_speech,24000).wav'
     sample_rate = 24000
     signal = read_audio(path, WavFileMetadata(24000, 16, 1, 'signed-integer'))
-    signal = integer_to_floating_point_pcm(signal)
+    signal = to_floating_point_pcm(signal)
     signal = pad_remainder(signal)
     module = get_signal_to_db_mel_spectrogram(sample_rate=sample_rate)
     db_mel_spectrogram = module(torch.tensor(signal), aligned=True).numpy()

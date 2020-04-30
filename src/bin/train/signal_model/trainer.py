@@ -26,7 +26,7 @@ from torchnlp.utils import get_total_parameters
 
 import torch
 
-from src.audio import integer_to_floating_point_pcm
+from src.audio import to_floating_point_pcm
 from src.audio import SignalTodBMelSpectrogram
 from src.bin.train.signal_model.data_loader import DataLoader
 from src.optimizers import AutoOptimizer
@@ -557,7 +557,7 @@ class Trainer():
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
-                self.scheduler.step(self.step)
+                self.scheduler.step()
 
             if trial_run:
                 break
@@ -652,8 +652,8 @@ class Trainer():
         example = random.sample(self.dev_dataset, 1)[0]
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
         spectrogram = maybe_load_tensor(spectrogram)  # [num_frames, frame_channels]
-        target_signal = integer_to_floating_point_pcm(maybe_load_tensor(
-            example.spectrogram_audio)).to(self.device)  # [signal_length]
+        target_signal = to_floating_point_pcm(maybe_load_tensor(example.spectrogram_audio)).to(
+            self.device)  # [signal_length]
         spectrogram = spectrogram.to(self.device)
 
         logger.info('Running inference on %d spectrogram frames with %d threads.',

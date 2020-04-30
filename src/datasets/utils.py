@@ -19,7 +19,7 @@ pandas = LazyLoader('pandas', globals(), 'pandas')
 
 from src.audio import cache_get_audio_metadata
 from src.audio import get_signal_to_db_mel_spectrogram
-from src.audio import integer_to_floating_point_pcm
+from src.audio import to_floating_point_pcm
 from src.audio import normalize_audio
 from src.audio import pad_remainder
 from src.audio import read_audio
@@ -141,7 +141,7 @@ def _add_spectrogram_column(example, on_disk=True):
         # padding does not affect the spectrogram due to overlap between the padding and the
         # real audio.
         signal = pad_remainder(signal)
-        _, trim = librosa.effects.trim(integer_to_floating_point_pcm(signal))
+        _, trim = librosa.effects.trim(to_floating_point_pcm(signal))
         signal = signal[trim[0]:trim[1]]
 
         # TODO: Now that `get_signal_to_db_mel_spectrogram` is implemented in PyTorch, we could
@@ -149,8 +149,7 @@ def _add_spectrogram_column(example, on_disk=True):
         # compute spectrograms on-demand.
         with torch.no_grad():
             db_mel_spectrogram = get_signal_to_db_mel_spectrogram()(
-                torch.tensor(integer_to_floating_point_pcm(signal), requires_grad=False),
-                aligned=True)
+                torch.tensor(to_floating_point_pcm(signal), requires_grad=False), aligned=True)
         assert signal.dtype == dtype, 'The signal `dtype` was changed.'
         signal = torch.tensor(signal, requires_grad=False)
 

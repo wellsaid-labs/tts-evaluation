@@ -46,7 +46,7 @@ def main(speaker_id_to_speaker, spectrogram_model_checkpoint, signal_model_check
     signal_model_checkpoint.save(overwrite=True)
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     signal_model_checkpoint = Checkpoint.from_path(SIGNAL_MODEL_CHECKPOINT_PATH)
     spectrogram_model_checkpoint = Checkpoint.from_path(SPECTROGRAM_MODEL_CHECKPOINT_PATH)
     main(SPEAKER_ID_TO_SPEAKER, spectrogram_model_checkpoint, signal_model_checkpoint)
