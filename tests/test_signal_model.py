@@ -65,7 +65,7 @@ def test_generate_waveform_small():
     num_frames = 1
     frame_channels = 6
 
-    model = SignalModel(input_size=frame_channels, ratios=[2, 2], max_channel_size=32, padding=13)
+    model = _get_small_signal_model(input_size=frame_channels)
     spectrogram = torch.randn([batch_size, num_frames, frame_channels])
     immediate = model(spectrogram)
     assert immediate.shape == (batch_size, model.upscale_factor * num_frames)
