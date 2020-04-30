@@ -44,3 +44,5 @@ compatible with commercial use. Learn more [here](https://opensource.guide/legal
 | torchaudio          | BSD 2-Clause "Simplified" License                                        |
 | pyloudnorm          | MIT License                                                              |
 | BrechtDeMan/loudness.py | MIT License                                                          |
+| spacy               | MIT License                                                              |
+| espeak              | GNU General Public License v3.0                                          |

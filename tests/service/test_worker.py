@@ -1,4 +1,5 @@
 import pytest
+import torch
 
 from src.service.worker import FlaskException
 from src.service.worker import load_checkpoints
@@ -6,6 +7,11 @@ from src.service.worker import stream_text_to_speech_synthesis
 from src.service.worker import validate_and_unpack
 from tests._utils import get_tts_mocks
 from torchnlp.random import fork_rng
+
+
+def test_flask_exception():
+    exception = FlaskException('This is a test', 404, code='NOT_FOUND', payload={'blah': 'hi'})
+    assert exception.to_dict() == {'blah': 'hi', 'code': 'NOT_FOUND', 'message': 'This is a test'}
 
 
 def test_load_checkpoints():
@@ -21,10 +27,9 @@ def test_stream_text_to_speech_synthesis():
     with fork_rng(seed=123):
         mocks = get_tts_mocks()
         example = mocks['dev_dataset'][0]
-        generator, file_size = stream_text_to_speech_synthesis(mocks['signal_model'],
+        generator, file_size = stream_text_to_speech_synthesis(mocks['signal_model'].eval(),
                                                                mocks['spectrogram_model'].eval(),
-                                                               mocks['input_encoder'], example.text,
-                                                               example.speaker)
+                                                               example.text, example.speaker)
         assert len(b''.join([s for s in generator()])) == 1082
 
 
@@ -84,9 +89,24 @@ def test_validate_and_unpack():
     with pytest.raises(FlaskException):  # `speaker_id` must be positive
         validate_and_unpack({**args, 'speaker_id': -1}, input_encoder, api_keys=api_keys)
 
+    with pytest.raises(FlaskException, match=r".*cannot contain these characters: i, o,*"):
+        # NOTE: "wɛɹɹˈɛvɚ kˌoːɹzənjˈuːski" should contain phonemes that are not already in
+        # mock `input_encoder`.
+        validate_and_unpack(
+            {
+                **args, 'text': 'wherever korzeniewski'
+            },
+            input_encoder,
+            api_keys=api_keys,
+        )
+
     # `text` gets normalized and `speaker` is dereferenced
     request_args = {**args, 'text': 'é😁'}
     result_text, result_speaker = validate_and_unpack(
         request_args, input_encoder, api_keys=api_keys, speaker_id_to_speaker=speaker_id_to_speaker)
-    assert result_text == 'e'  # NOTE: The emoji is removed because there is no unicode equivilent.
-    assert result_speaker == speaker
+    assert torch.is_tensor(result_text)
+    assert result_text.shape[0] == 2
+    # NOTE: The emoji is removed because there is no unicode equivilent.
+    assert input_encoder.decode(
+        (result_text, result_speaker)) == ('ˈ' + input_encoder.delimiter + 'iː', speaker)
+    assert torch.is_tensor(result_speaker)

@@ -359,8 +359,8 @@ class Trainer():
             # NOTE: This metric should be a positive integer indicating that the `data_loader`
             # is loading faster than the data is getting ingested; otherwise, the `data_loader`
             # is bottlenecking training by loading too slowly.
-            if hasattr(data_loader.iterator, 'data_queue'):
-                self.metrics['data_queue_size'].update(data_loader.iterator.data_queue.qsize())
+            if hasattr(data_loader.iterator, '_data_queue'):
+                self.metrics['data_queue_size'].update(data_loader.iterator._data_queue.qsize())
 
             if not train and not infer and (i == random_batch or trial_run):
                 self._visualize_predicted(batch, predictions)
@@ -372,7 +372,7 @@ class Trainer():
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
-                self.scheduler.step(self.step)
+                self.scheduler.step()
 
             if trial_run:
                 break
@@ -467,7 +467,10 @@ class Trainer():
                                      batch,
                                      predictions,
                                      do_backwards,
-                                     stop_threshold=HParam()):
+                                     stop_threshold=HParam(),
+                                     pre_spectrogram_loss_scalar=HParam(),
+                                     post_spectrogram_loss_scalar=HParam(),
+                                     stop_token_loss_scalar=HParam()):
         """ Compute the losses and maybe do backwards.
 
         TODO: Consider logging seperate metrics per speaker.
@@ -520,13 +523,15 @@ class Trainer():
             # stop_token_loss [num_frames, batch_size] → [1]
             expected_average_spectrogram_length = (
                 self._train_loader.expected_average_spectrogram_length)
-            # NOTE: The loss is calibrated to match the loss of older models. Without this
-            # calibration, the model doesn't train well.
-            ((pre_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() / 100 +
-             (post_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() / 100 +
-             (stop_token_loss.sum(dim=0) / expected_average_spectrogram_length).mean()).backward()
+            ((pre_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() *
+             pre_spectrogram_loss_scalar +
+             (post_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() *
+             post_spectrogram_loss_scalar +
+             (stop_token_loss.sum(dim=0) / expected_average_spectrogram_length).mean() *
+             stop_token_loss_scalar).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
 
+        # TODO: Use the model's `stop_threshold` parameter and sigmoid potentially.
         expected_stop_token = (batch.stop_token.tensor > stop_threshold).masked_select(mask > 0)
         predicted_stop_token = (torch.sigmoid(predicted_stop_tokens) >
                                 stop_threshold).masked_select(mask > 0)

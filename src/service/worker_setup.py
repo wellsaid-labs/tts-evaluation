@@ -1,5 +1,3 @@
-import torch
-
 import logging
 
 from src.environment import set_basic_logging_config
@@ -33,9 +31,9 @@ def main(speaker_id_to_speaker, spectrogram_model_checkpoint, signal_model_check
     signal_model_checkpoint.exponential_moving_parameter_average = None
     signal_model_checkpoint.optimizer = None
     signal_model_checkpoint.criterions_state_dict = None
-    for module in signal_model_checkpoint.model.get_weight_norm_modules():
-        torch.nn.utils.remove_weight_norm(module)
     spectrogram_model_checkpoint.optimizer = None
+    signal_model_checkpoint.model.eval()
+    spectrogram_model_checkpoint.model.eval()
 
     # Remove unnecessary information
     signal_model_checkpoint.comet_ml_project_name = None
@@ -48,7 +46,7 @@ def main(speaker_id_to_speaker, spectrogram_model_checkpoint, signal_model_check
     signal_model_checkpoint.save(overwrite=True)
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     signal_model_checkpoint = Checkpoint.from_path(SIGNAL_MODEL_CHECKPOINT_PATH)
     spectrogram_model_checkpoint = Checkpoint.from_path(SPECTROGRAM_MODEL_CHECKPOINT_PATH)
     main(SPEAKER_ID_TO_SPEAKER, spectrogram_model_checkpoint, signal_model_checkpoint)

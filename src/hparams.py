@@ -26,6 +26,7 @@ from src.audio import WavFileMetadata
 from src.bin.train.signal_model.trainer import SpectrogramLoss
 from src.datasets import filter_
 from src.datasets import normalize_audio_column
+from src.signal_model import L1L2Loss
 from src.utils import log_runtime
 from src.utils import seconds_to_string
 from src.utils import slice_by_cumulative_sum
@@ -34,16 +35,23 @@ logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
 
 
-def _get_window(window, window_length):
+def _get_window(window, window_length, window_hop):
     # NOTE: `torch.hann_window` is different than the `scipy` window used by `librosa`.
     # Learn more here: https://github.com/pytorch/audio/issues/452
     window_tensor = None
 
     try:
         import librosa
-        window_tensor = torch.tensor(librosa.filters.get_window(window, window_length)).float()
+        window = librosa.filters.get_window(window, window_length)
+        window_tensor = torch.tensor(window).float()
     except ImportError:
         logger.info('Ignoring optional `librosa` configurations.')
+
+    try:
+        import scipy
+        assert scipy.signal.check_COLA(window, window_length, window_length - window_hop)
+    except ImportError:
+        logger.info('Ignoring optional `scipy` configurations.')
 
     return window_tensor
 
@@ -57,7 +65,10 @@ def _set_audio_processing():
     # mel spectrograms are computed through a shorttime Fourier transform (STFT)
     # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
     # TODO: Parameterizing frame sizes in milliseconds can help ensure that your code is invariant
-    # to the sample rate.
+    # to the sample rate; however, we would need to assure that we're still using powers of two
+    # for performance.
+    # TODO: Verify that `frame_hop` is equal to the signal model's upsample property, ensuring that
+    # that relationship holds.
     # TODO: 50ms / 12.5ms spectrogram is not typical spectrogram parameterization, a more typical
     # parameterization is 25ms / 10ms. Learn more:
     # https://www.dsprelated.com/freebooks/sasp/Classic_Spectrograms.html
@@ -70,7 +81,7 @@ def _set_audio_processing():
     # NOTE: A "hann window" is standard for calculating an FFT, it's even mentioned as a "popular
     # window" on Wikipedia (https://en.wikipedia.org/wiki/Window_function).
     window = 'hann'
-    window_tensor = _get_window(window, frame_size)
+    window_tensor = _get_window(window, frame_size, frame_hop)
 
     # SOURCE (Tacotron 2):
     # We transform the STFT magnitude to the mel scale using an 80 channel mel
@@ -194,12 +205,6 @@ def _set_audio_processing():
 
 
 def _set_model_size(frame_channels):
-
-    # SOURCE (Tacotron 2):
-    # The prediction from the previous time step is first passed through a small
-    # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
-    pre_net_hidden_size = 256
-
     # SOURCE (Tacotron 2):
     # Attention probabilities are computed after projecting inputs and location
     # features to 128-dimensional hidden representations.
@@ -209,10 +214,6 @@ def _set_model_size(frame_channels):
     # Specifically, generation completes at the first frame for which this
     # probability exceeds a threshold of 0.5.
     stop_threshold = 0.5
-
-    # NOTE: This parameter is determined manually by running `signal_model` tests until they pass.
-    # There needs to be enough padding such that the output shape is valid.
-    signal_model_padding = 14
 
     add_config({
         'src': {
@@ -248,7 +249,10 @@ def _set_model_size(frame_channels):
                         # SOURCE (Tacotron 2):
                         # Location features are computed using 32 1-D convolution filters of length
                         # 31.
-                        hidden_size=32,
+                        # SOURCE (Tacotron 2):
+                        # Attention probabilities are computed after projecting inputs and location
+                        # features to 128-dimensional hidden representations.
+                        hidden_size=128,
                         convolution_filter_size=31,
 
                         # SOURCE (BERT):
@@ -265,8 +269,12 @@ def _set_model_size(frame_channels):
                     ),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(
-                        pre_net_hidden_size=pre_net_hidden_size,
                         encoder_output_size=encoder_output_size,
+
+                        # SOURCE (Tacotron 2):
+                        # The prediction from the previous time step is first passed through a small
+                        # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
+                        pre_net_hidden_size=256,
 
                         # SOURCE (Tacotron 2):
                         # The prenet output and attention context vector are concatenated and
@@ -316,22 +324,19 @@ def _set_model_size(frame_channels):
                         input_size=frame_channels,
                         hidden_size=32,
                         max_channel_size=512,
-                        # TODO: This padding can be automatically computed and should be, probably.
-                        padding=signal_model_padding,
                         ratios=[2] * 8,
                         # SOURCE https://en.wikipedia.org/wiki/%CE%9C-law_algorithm:
                         # For a given input x, the equation for μ-law encoding is where μ = 255 in
                         # the North American and Japanese standards.
                         mu=255),
+                # NOTE: We found this hidden size to be effective on Comet in April 2020.
                 'SpectrogramDiscriminator.__init__':
-                    HParams(hidden_size=128),
+                    HParams(hidden_size=512),
             },
             'bin.train.spectrogram_model.trainer.Trainer._do_loss_and_maybe_backwards':
                 HParams(stop_threshold=stop_threshold),
         }
     })
-
-    return signal_model_padding
 
 
 def _filter_audio_path_not_found(example):
@@ -452,6 +457,12 @@ def _filter_books(example):
     # - Audible noise in the background
     if (example.speaker == datasets.m_ailabs.MIDNIGHT_PASSENGER.speaker and
             datasets.m_ailabs.MIDNIGHT_PASSENGER.title in str(example.audio_path)):
+        return False
+
+    # Filter out the North & South book because it uses English in a way that's not consistent with
+    # editor usage, for example: "To-morrow, you will-- Come back to-night, John!"
+    if (example.speaker == datasets.m_ailabs.NORTH_AND_SOUTH.speaker and
+            datasets.m_ailabs.NORTH_AND_SOUTH.title in str(example.audio_path)):
         return False
 
     return True
@@ -619,7 +630,7 @@ def set_hparams():
     from src.spectrogram_model import SpectrogramModel
 
     frame_channels, frame_hop, sample_rate = _set_audio_processing()
-    signal_model_padding = _set_model_size(frame_channels)
+    _set_model_size(frame_channels)
 
     Adam.__init__ = configurable(Adam.__init__)
     nn.modules.batchnorm._BatchNorm.__init__ = configurable(
@@ -644,6 +655,9 @@ def set_hparams():
 
     seed = 1212212
 
+    # NOTE: This delimiter must be a single character not in the dataset.
+    phonetic_syllable_delimiter = '|'
+
     torchnlp.samplers.DeterministicSampler.__init__ = configurable(
         torchnlp.samplers.DeterministicSampler.__init__)
     add_config({
@@ -653,6 +667,8 @@ def set_hparams():
     add_config({
         'src': {
             'spectrogram_model': {
+                'input_encoder.InputEncoder.__init__':
+                    HParams(delimiter=phonetic_syllable_delimiter),
                 # SOURCE (Tacotron 2):
                 # In order to introduce output variation at inference time, dropout with
                 # probability 0.5 is applied only to layers in the pre-net of the
@@ -668,7 +684,7 @@ def set_hparams():
                         # `_filter_too_much_audio_per_character`
                         # NOTE: This number was configured with the help of:
                         # `QA_Datasets/Sample_Dataset.ipynb`
-                        max_frames_per_token=0.2 / (frame_hop / sample_rate),
+                        max_frames_per_token=0.16 / (frame_hop / sample_rate),
 
                         # NOTE: The spectrogram input ranges from around -50 to 50. This scaler
                         # puts the input and output in a more reasonable range for the model of
@@ -723,6 +739,16 @@ def set_hparams():
 
                                 # Tacotron 2 like model with any changes documented via Comet.ml.
                                 model=SpectrogramModel),
+                        'trainer.Trainer._do_loss_and_maybe_backwards':
+                            HParams(
+                                # NOTE: The loss is calibrated to match the loss computed on a
+                                # Tacotron-2 spectrogram input.
+                                pre_spectrogram_loss_scalar=1 / 100,
+                                post_spectrogram_loss_scalar=1 / 100,
+                                # NOTE: This stop token loss is calibrated to prevent overfitting
+                                # on the stop token before the model is able to model the
+                                # spectrogram.
+                                stop_token_loss_scalar=1 / 4),
                         'data_loader.get_normalized_half_gaussian':
                             HParams(
                                 # NOTE: We approximated the uncertainty in the stop token by viewing
@@ -771,39 +797,37 @@ def set_hparams():
                                         SpectrogramLoss,
                                         fft_length=2048,
                                         frame_hop=256,
-                                        window=_get_window('hann', 1024),
+                                        window=_get_window('hann', 1024, 256),
                                         num_mel_bins=128),
                                     partial(
                                         SpectrogramLoss,
                                         fft_length=1024,
                                         frame_hop=128,
-                                        window=_get_window('hann', 512),
+                                        window=_get_window('hann', 512, 128),
                                         num_mel_bins=64),
                                     partial(
                                         SpectrogramLoss,
                                         fft_length=512,
                                         frame_hop=64,
-                                        window=_get_window('hann', 256),
+                                        window=_get_window('hann', 256, 64),
                                         num_mel_bins=32),
                                 ]),
                         'trainer.SpectrogramLoss.__init__':
                             HParams(
-                                criterion=torch.nn.L1Loss,
+                                criterion=L1L2Loss,
                                 # NOTE: This discriminator approach is largely based on:
                                 # https://pytorch.org/tutorials/beginner/dcgan_faces_tutorial.html
                                 # NOTE: This approach proved successful in Comet experiment
                                 # f590fe3c51a04130ad65736f8aa5fd81 run in February 2020.
                                 discriminator=SpectrogramDiscriminator,
-                                discriminator_optimizer=torch.optim.Adam,
+                                discriminator_optimizer=partial(torch.optim.Adam, lr=10**-3),
                                 discriminator_criterion=torch.nn.BCEWithLogitsLoss,
                             ),
-                        # NOTE: The `DataLoader` pads the data before hand so that the model
-                        # trains on real padding instead of zero padding.
-                        'data_loader.DataLoader.__init__':
-                            HParams(spectrogram_slice_pad=signal_model_padding),
                     }
                 },
             },
+            'text.cache_grapheme_to_phoneme_perserve_punctuation':
+                HParams(delimiter=phonetic_syllable_delimiter),
             # NOTE: The expected signal model output is 32-bit float.
             'audio.build_wav_header':
                 HParams(wav_format=WAVE_FORMAT_IEEE_FLOAT, num_channels=1, sample_width=4),
@@ -812,7 +836,7 @@ def set_hparams():
                 HParams(window_size=128),
             # NOTE: The `beta` parameter is not super sensative.
             'optimizers.ExponentialMovingParameterAverage.__init__':
-                HParams(beta=0.999),
+                HParams(beta=0.9999),
             'environment.set_seed':
                 HParams(seed=seed),
         }

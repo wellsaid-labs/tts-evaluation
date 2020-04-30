@@ -26,7 +26,7 @@ from torchnlp.utils import get_total_parameters
 
 import torch
 
-from src.audio import integer_to_floating_point_pcm
+from src.audio import to_floating_point_pcm
 from src.audio import SignalTodBMelSpectrogram
 from src.bin.train.signal_model.data_loader import DataLoader
 from src.optimizers import AutoOptimizer
@@ -35,6 +35,7 @@ from src.optimizers import Optimizer
 from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
+from src.utils import evaluate
 from src.utils import log_runtime
 from src.utils import maybe_load_tensor
 from src.utils import mean
@@ -523,12 +524,14 @@ class Trainer():
                 self.train_dataset,
                 self.train_batch_size,
                 spectrogram_slice_size=self.train_spectrogram_slice_size,
+                spectrogram_slice_pad=self.model.padding,
                 **loader_kwargs)
         elif not train and not hasattr(self, '_dev_loader'):
             self._dev_loader = DataLoader(
                 self.dev_dataset,
                 self.dev_batch_size,
                 spectrogram_slice_size=self.dev_spectrogram_slice_size,
+                spectrogram_slice_pad=self.model.padding,
                 **loader_kwargs)
         data_loader = self._train_loader if train else self._dev_loader
 
@@ -537,14 +540,15 @@ class Trainer():
 
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
-                predicted_signal = self.model(batch.spectrogram, pad_input=False)
+                predicted_signal = self.model(
+                    batch.spectrogram, spectrogram_mask=batch.spectrogram_mask, pad_input=False)
                 self._do_loss_and_maybe_backwards(batch, predicted_signal, do_backwards=train)
 
             # NOTE: This metric should be a positive integer indicating that the `data_loader`
             # is loading faster than the data is getting ingested; otherwise, the `data_loader`
             # is bottlenecking training by loading too slowly.
-            if hasattr(data_loader.iterator, 'data_queue'):
-                self.metrics['data_queue_size'].update(data_loader.iterator.data_queue.qsize())
+            if hasattr(data_loader.iterator, '_data_queue'):
+                self.metrics['data_queue_size'].update(data_loader.iterator._data_queue.qsize())
 
             for name, metric in self.metrics.items():
                 self.comet_ml.log_metric('step/%s' % name, metric.sync().last_update())
@@ -552,7 +556,7 @@ class Trainer():
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
-                self.scheduler.step(self.step)
+                self.scheduler.step()
 
             if trial_run:
                 break
@@ -606,7 +610,7 @@ class Trainer():
             total_discriminator_accuracy += discriminator_accuracy / len(self.criterions)
 
             # TODO: Ensure that this loss reported to Comet is invariant to the slice size
-            # so that we can compare accross slices. We can do that by testing if this loss
+            # so that we can compare accross slice sizes. We can do that by testing if this loss
             # is infact proportional to the slice size (ignoring the boundary undersampling).
             self.metrics['db_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length].update(
                 spectrogram_loss, batch_size)
@@ -644,20 +648,20 @@ class Trainer():
         # spectrogram model.
         self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
         model = self.model.module if src.distributed.is_initialized() else self.model
-        model = model.eval()
         example = random.sample(self.dev_dataset, 1)[0]
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
         spectrogram = maybe_load_tensor(spectrogram)  # [num_frames, frame_channels]
-        target_signal = integer_to_floating_point_pcm(maybe_load_tensor(
-            example.spectrogram_audio)).to(self.device)  # [signal_length]
+        target_signal = to_floating_point_pcm(maybe_load_tensor(example.spectrogram_audio)).to(
+            self.device)  # [signal_length]
         spectrogram = spectrogram.to(self.device)
 
         logger.info('Running inference on %d spectrogram frames with %d threads.',
                     spectrogram.shape[0], torch.get_num_threads())
 
-        self.exponential_moving_parameter_average.apply_shadow()
-        predicted = model(spectrogram)
-        self.exponential_moving_parameter_average.restore()
+        with evaluate(model, device=self.device):
+            self.exponential_moving_parameter_average.apply_shadow()
+            predicted = model(spectrogram)
+            self.exponential_moving_parameter_average.restore()
 
         total_spectrogram_loss = torch.tensor(0.0, device=self.device)
         total_generator_loss = torch.tensor(0.0, device=self.device)

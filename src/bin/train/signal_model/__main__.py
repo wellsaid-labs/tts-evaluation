@@ -17,6 +17,7 @@ import comet_ml  # noqa
 from hparams import add_config
 from hparams import configurable
 from hparams import HParam
+from hparams import HParams
 from hparams import parse_hparam_args
 from torchnlp.random import set_random_generator_state
 
@@ -55,6 +56,8 @@ def _set_hparams(more_hparams, checkpoint):
         checkpoint (src.utils.Checkpoint or None): Checkpoint to load random generator state from.
     """
     set_hparams()
+    # NOTE: We found that this learning rate was effective for the generator on Comet in April 2020.
+    add_config({'torch.optim.adam.Adam.__init__': HParams(lr=10**-4)})
     add_config(more_hparams)
     set_seed()
     if checkpoint is not None and hasattr(checkpoint, 'random_generator_state'):
@@ -262,14 +265,7 @@ if __name__ == '__main__':  # pragma: no cover
         default=None,
         help=('Spectrogram model checkpoint path used to predicted spectrogram from '
               'text as input to the signal model.'))
-    parser.add_argument(
-        '--tags',
-        default=[
-            'weight_norm_conditional', 'power_2_windows', 'layer_norm_input',
-            '100x_discriminator_lr', 'synchronize_discriminator'
-        ],
-        nargs='+',
-        help='List of tags for the experiment.')
+    parser.add_argument('--tags', default=[], nargs='+', help='List of tags for the experiment.')
     parser.add_argument('--name', type=str, default=None, help='Name of the experiment.')
     parser.add_argument(
         '--reset_optimizer', action='store_true', default=False, help='Reset optimizer.')

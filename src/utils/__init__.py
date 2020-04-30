@@ -6,6 +6,7 @@ from src.utils.checkpoint import Checkpoint
 from src.utils.data_loader import DataLoader
 from src.utils.disk_cache_ import disk_cache
 from src.utils.disk_cache_ import DiskCache
+from src.utils.disk_cache_ import get_functions_with_disk_cache
 from src.utils.disk_cache_ import make_arg_key
 from src.utils.on_disk_tensor import cache_on_disk_tensor_shapes
 from src.utils.on_disk_tensor import maybe_load_tensor
@@ -26,6 +27,7 @@ from src.utils.utils import load
 from src.utils.utils import log_runtime
 from src.utils.utils import maybe_get_model_devices
 from src.utils.utils import mean
+from src.utils.utils import pad_tensors
 from src.utils.utils import Pool
 from src.utils.utils import random_sample
 from src.utils.utils import RepeatTimer
@@ -33,8 +35,8 @@ from src.utils.utils import save
 from src.utils.utils import seconds_to_string
 from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
+from src.utils.utils import strip
 from src.utils.utils import trim_tensors
-from src.utils.utils import pad_tensors
 
 __all__ = [
     'align_tokens', 'Checkpoint', 'DataLoader', 'disk_cache', 'OnDiskTensor', 'dict_collapse',
@@ -45,5 +47,5 @@ __all__ = [
     'maybe_load_tensor', 'AveragedMetric', 'DistributedAveragedMetric', 'bash_time_label',
     'RepeatTimer', 'mean', 'random_sample', 'make_arg_key', 'DiskCache',
     'assert_no_overwritten_files', 'get_file_metadata', 'dict_collapse', 'trim_tensors',
-    'pad_tensors'
+    'pad_tensors', 'strip', 'get_functions_with_disk_cache'
 ]

@@ -26,7 +26,6 @@ CONS:
   Spectrogram used to condition the speech synthesis.
 
 TODO: Apply `exponential_moving_parameter_average` before running locally, for best performance.
-TODO: Remove `WeightNorm` before running locally, for best performance.
 
 The cons in summary are that the client cannot manage there own state due to the immaturity of the
 web audio api; therefore, the server must manage it via some database.
@@ -38,7 +37,6 @@ from functools import lru_cache
 
 import os
 import sys
-import unidecode
 
 from flask import Flask
 from flask import jsonify
@@ -58,6 +56,7 @@ from src.service.worker_config import SPECTROGRAM_MODEL_CHECKPOINT_PATH
 from src.signal_model import generate_waveform
 from src.spectrogram_model import SpectrogramModel
 from src.utils import Checkpoint
+from src.utils import get_functions_with_disk_cache
 
 # NOTE: Flask documentation requests that logging is configured before `app` is created.
 set_basic_logging_config()
@@ -111,7 +110,7 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
     app.logger.info('Loading speakers: %s', input_encoder.speaker_encoder.vocab)
     signal_model = signal_model_checkpoint.model
 
-    return signal_model, spectrogram_model.eval(), input_encoder
+    return signal_model.eval(), spectrogram_model.eval(), input_encoder
 
 
 class FlaskException(Exception):
@@ -125,7 +124,8 @@ class FlaskException(Exception):
     """
 
     def __init__(self, message, status_code=400, code='BAD_REQUEST', payload=None):
-        Exception.__init__(self)
+        super().__init__(self, message)
+
         self.message = message
         self.status_code = status_code
         self.payload = payload
@@ -146,7 +146,14 @@ def handle_invalid_usage(error):  # Register an error response
     return response
 
 
-def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encoder, text, speaker):
+@app.before_first_request
+def before_first_request():
+    # NOTE: Ensure that our cache doesn't grow while the server is running.
+    for function in get_functions_with_disk_cache():
+        function.use_disk_cache(False)
+
+
+def stream_text_to_speech_synthesis(signal_model, spectrogram_model, text, speaker):
     """ Helper function for starting a speech synthesis stream.
 
     TODO: If a loud sound is created, cut off the stream or consider rerendering.
@@ -155,7 +162,6 @@ def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encod
     Args:
         signal_model (torch.nn.Module)
         spectrogram_model (torch.nn.Module)
-        input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         text (str)
         speaker (src.datasets.Speaker)
 
@@ -163,13 +169,15 @@ def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encod
         (callable): Callable that returns a generator incrementally returning a WAV file.
         (int): Number of bytes to be returned in total by the generator.
     """
-    text, speaker = input_encoder.encode((text, speaker))
 
     def get_spectrogram():
         for _, frames, _, _, _ in spectrogram_model(text, speaker, is_generator=True):
             # [num_frames, batch_size (optional), frame_channels] →
             # [batch_size (optional), num_frames, frame_channels]
             yield frames.transpose(0, 1) if frames.dim() == 3 else frames
+
+    # TODO: If a loud sound is created, cut off the stream or consider rerendering.
+    # TODO: Consider logging various events to stackdriver, to keep track.
 
     # NOTE: Learn more:
     # https://stackoverflow.com/questions/25245439/writing-wav-files-of-unknown-length
@@ -180,14 +188,15 @@ def stream_text_to_speech_synthesis(signal_model, spectrogram_model, input_encod
         """ Generator incrementally generating a WAV file.
         """
         try:
-            assert sys.byteorder == 'little', 'Ensure byte order is of little-endian format.'
-            yield wav_header
-            app.logger.info('Generating waveform...')
-            for waveform in generate_waveform(signal_model, get_spectrogram()):
-                waveform = waveform.cpu().detach().numpy()
-                app.logger.info('Waveform shape %s', waveform.shape)
-                yield waveform.tostring()
-            app.logger.info('Finished generating waveform.')
+            with torch.no_grad():
+                assert sys.byteorder == 'little', 'Ensure byte order is of little-endian format.'
+                yield wav_header
+                app.logger.info('Generating waveform...')
+                for waveform in generate_waveform(signal_model, get_spectrogram()):
+                    waveform = waveform.cpu().detach().numpy()
+                    app.logger.info('Waveform shape %s', waveform.shape)
+                    yield waveform.tostring()
+                app.logger.info('Finished generating waveform.')
         # NOTE: Flask may abort this generator if the underlying request aborts.
         except Exception as error:
             app.logger.warning(
@@ -216,9 +225,8 @@ def validate_and_unpack(request_args,
         speaker_id_to_speaker (dict, optional)
 
     Returns:
-        speaker (src.datasets.Speaker)
         text (str)
-        api_key (str)
+        speaker (src.datasets.Speaker)
     """
     if 'api_key' not in request_args:
         raise FlaskException('API key was not provided.', status_code=401, code='MISSING_ARGUMENT')
@@ -269,17 +277,14 @@ def validate_and_unpack(request_args,
             (min(speaker_id_to_speaker.keys()), max(speaker_id_to_speaker.keys())),
             code='INVALID_SPEAKER_ID')
 
-    # NOTE: Normalize text similar to the normalization during dataset creation.
-    text = unidecode.unidecode(text)
-    input_encoder.text_encoder.enforce_reversible = False
-    processed_text = input_encoder.text_encoder.decode(input_encoder.text_encoder.encode(text))
-    if processed_text != text:
-        improper_characters = set(text).difference(set(processed_text))
-        improper_characters = ', '.join(sorted(list(improper_characters)))
-        raise FlaskException(
-            'Text cannot contain these characters: %s' % improper_characters, code='INVALID_TEXT')
+    speaker = speaker_id_to_speaker[speaker_id]
 
-    return text, speaker_id_to_speaker[speaker_id]
+    try:
+        text, speaker = input_encoder.encode((text, speaker))
+    except ValueError as error:
+        raise FlaskException(str(error), code='INVALID_TEXT')
+
+    return text, speaker
 
 
 @app.route('/healthy', methods=['GET'])

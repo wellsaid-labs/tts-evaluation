@@ -36,11 +36,14 @@ python -m pip install -r requirements.txt --upgrade
 ## 3. Install Additional Dependencies
 
 This repository requires [SoX](http://sox.sourceforge.net/) (Sound eXchange) and
-[FFmpeg](https://ffmpeg.org/) for audio preprocessing. They can be installed like so:
+[FFmpeg](https://ffmpeg.org/) for audio preprocessing. Finally, this requires
+[eSpeak](http://espeak.sourceforge.net/) for grapheme to phoneme text preprocessing. They can be
+installed like so:
 
 ```bash
 brew install sox
 brew install ffmpeg
+brew install espeak
 ```
 
 Note that we do not use `ffmpeg` directly instead it is used by one of our

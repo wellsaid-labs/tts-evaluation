@@ -113,15 +113,6 @@ class LocationSensitiveAttention(nn.Module):
         self.project_scores = nn.Sequential(
             LockedDropout(dropout), nn.Linear(hidden_size, 1, bias=False))
 
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.normal_(self.project_scores[1].weight, std=self.initializer_range)
-        nn.init.normal_(self.project_query.weight, std=self.initializer_range)
-        nn.init.normal_(self.alignment_conv.weight, std=self.initializer_range)
-        nn.init.zeros_(self.project_query.bias)
-        nn.init.zeros_(self.alignment_conv.bias)
-
     def forward(self,
                 encoded_tokens,
                 tokens_mask,
@@ -170,7 +161,7 @@ class LocationSensitiveAttention(nn.Module):
         cumulative_alignment = cumulative_alignment.masked_fill(~tokens_mask, 0)
 
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
-        location_features = cumulative_alignment.unsqueeze(1).detach()
+        location_features = cumulative_alignment.unsqueeze(1)
 
         # NOTE: Add `self.alignment_conv_padding` to both sides.
         initial_cumulative_alignment = initial_cumulative_alignment.unsqueeze(-1).expand(

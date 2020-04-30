@@ -219,3 +219,4 @@ def test_run_epoch():
     trainer.run_epoch(train=False, trial_run=False)
     trainer.run_epoch(train=False, trial_run=True)
     trainer.run_epoch(train=False, infer=True, trial_run=False)
+    trainer.run_epoch(train=True, trial_run=False)
