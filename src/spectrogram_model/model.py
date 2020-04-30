@@ -159,9 +159,9 @@ class SpectrogramModel(nn.Module):
     @configurable
     def _infer_generator_helper(self,
                                 encoded_tokens,
+                                split_size,
                                 max_lengths,
                                 num_tokens,
-                                split_size,
                                 tokens_mask,
                                 speaker,
                                 use_tqdm=False,
@@ -170,9 +170,9 @@ class SpectrogramModel(nn.Module):
 
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
+            split_size (int): The maximum length of a sequence returned by the generator.
             max_lengths (torch.LongTensor [batch_size])
             num_tokens (torch.LongTensor [batch_size])
-            split_size (int, optional): The maximum length of a sequence returned by the generator.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens])
             speaker (torch.LongTensor [batch_size, speaker_embedding_dim])
             use_tqdm (bool, optional): If `True` then this adds a `tqdm` progress bar.
@@ -194,7 +194,7 @@ class SpectrogramModel(nn.Module):
         lengths = torch.zeros(batch_size, dtype=torch.long, device=device)
         stopped = torch.zeros(batch_size, dtype=torch.bool, device=device)
         progress_bar = tqdm(leave=True, unit='frame(s)') if use_tqdm else None
-        keep_going = lambda: stopped.sum() < batch_size and max(lengths) < max(max_lengths)
+        keep_going = lambda: stopped.sum() < batch_size and lengths.max() < max_lengths.max()
         while keep_going():
             frame, stop_token, hidden_state, alignment = self.decoder(
                 encoded_tokens, tokens_mask, speaker, num_tokens, hidden_state=hidden_state)
@@ -221,11 +221,12 @@ class SpectrogramModel(nn.Module):
         if use_tqdm:
             progress_bar.close()
 
-    def _infer_generator(self, encoded_tokens, *args, **kwargs):
+    def _infer_generator(self, encoded_tokens, split_size, *args, **kwargs):
         """ Generate frames from the decoder that have been processed by the `post_net`.
 
         Args:
             encoded_tokens: See `_infer_generator_helper`.
+            split_size (int): The maximum length of a sequence returned by the generator.
             *args: Arguments passed too `_infer_generator_helper`.
             **kwargs: Keyword arguments passed too `_infer_generator`.
 
@@ -240,10 +241,11 @@ class SpectrogramModel(nn.Module):
         padding = self.post_net.padding
         last_item = None
         is_stop = False
-        generator = self._infer_generator_helper(encoded_tokens, *args, **kwargs)
+        generator = self._infer_generator_helper(encoded_tokens, split_size, *args, **kwargs)
         while not is_stop:
             items = []
-            while sum([i[0].shape[0] for i in items]) < padding * 2 and not is_stop:
+            while sum([i[0].shape[0]
+                       for i in items]) < max(padding * 2, split_size) and not is_stop:
                 try:
                     frames, stop_tokens, alignments, lengths = next(generator)
                     mask = torch.clamp(lengths - lengths.max() + frames.shape[0], min=0)
@@ -308,7 +310,7 @@ class SpectrogramModel(nn.Module):
         split_size = split_size if is_generator else float('inf')
         max_lengths = torch.clamp((num_tokens.float() * self.max_frames_per_token).long(), min=1)
 
-        generator = self._infer_generator(encoded_tokens, max_lengths, num_tokens, split_size,
+        generator = self._infer_generator(encoded_tokens, split_size, max_lengths, num_tokens,
                                           *args, **kwargs)
         if is_generator:
             return generator
