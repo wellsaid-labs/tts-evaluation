@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       // - Using the correct endpoint.
       data.sectionElement.querySelector('.progress').style.display = 'none';
       const audioElement = data.sectionElement.querySelector('audio');
-      audioElement.src = `${is_production ? 'https://voice.wellsaidlabs.com' : ''}/stream?${new URLSearchParams(data.payload).toString()}`;
+      audioElement.src = `${is_production ? 'https://voice.wellsaidlabs.com' : ''}${endpoint}/stream?${new URLSearchParams(data.payload).toString()}`;
       audioElement.load();
       resolve();
     });
@@ -166,7 +166,7 @@ document.addEventListener('DOMContentLoaded', async function (_) {
 
       try {
         const response = await fetch(
-          `${is_production ? 'https://voice2.wellsaidlabs.com' : ''}/input_validated`, {
+          `${is_production ? 'https://voice2.wellsaidlabs.com' : ''}${endpoint}/input_validated`, {
             method: 'POST',
             body: JSON.stringify(payload),
             headers: {
