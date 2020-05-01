@@ -1,4 +1,4 @@
-from src.bin.evaluate_preprocessing import main
+from src.bin.evaluate.audio_preprocessing import main
 
 
 def test_main():

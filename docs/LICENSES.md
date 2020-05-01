@@ -41,7 +41,6 @@ compatible with commercial use. Learn more [here](https://opensource.guide/legal
 | sox                 | GNU General Public License v2.0 & GNU Lesser General Public License v2.1 |
 | ffmpeg              | GNU General Public License v2.0 & GNU Lesser General Public License v2.1 |
 | PyDSM               | GNU General Public License v3.0                                          |
-| torchaudio          | BSD 2-Clause "Simplified" License                                        |
 | pyloudnorm          | MIT License                                                              |
 | BrechtDeMan/loudness.py | MIT License                                                          |
 | spacy               | MIT License                                                              |

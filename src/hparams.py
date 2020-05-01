@@ -119,7 +119,7 @@ def _set_audio_processing():
         logger.info('Ignoring optional `IPython` configurations.')
 
     add_config({
-        'src.bin.evaluate._get_sample_rate': HParams(sample_rate=sample_rate),
+        'src.bin.evaluate.models._get_sample_rate': HParams(sample_rate=sample_rate),
         'src.audio': {
             'framed_rms_from_power_spectrogram':
                 HParams(window=window_tensor),
@@ -693,7 +693,7 @@ def set_hparams():
             'datasets.utils.add_predicted_spectrogram_column':
                 HParams(batch_size=(spectrogram_model_dev_batch_size // 2)),
             'bin': {
-                'evaluate._get_dev_dataset': HParams(dataset=get_dataset),
+                'evaluate.models._get_dev_dataset': HParams(dataset=get_dataset),
                 'train': {
                     'spectrogram_model': {
                         '__main__._get_dataset':
