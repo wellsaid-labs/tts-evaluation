@@ -6,8 +6,7 @@ https://en.wikipedia.org/wiki/A-weighting
 
 Example:
 
-    python -m src.bin.visualize_weightings
-
+    python -m src.bin.evaluate.frequency_weighting
 """
 from matplotlib import pyplot
 

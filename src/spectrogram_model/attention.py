@@ -82,7 +82,6 @@ class LocationSensitiveAttention(nn.Module):
         convolution_filter_size (int): Size of the convolving kernel applied to the cumulative
             alignment.
         dropout (float): The dropout probability.
-        initializer_range (float): The normal initialization standard deviation.
         window_length (int): The size of the attention window applied during inference.
     """
 
@@ -92,7 +91,6 @@ class LocationSensitiveAttention(nn.Module):
                  hidden_size=HParam(),
                  convolution_filter_size=HParam(),
                  dropout=HParam(),
-                 initializer_range=HParam(),
                  window_length=HParam()):
         super().__init__()
 
@@ -102,7 +100,6 @@ class LocationSensitiveAttention(nn.Module):
 
         self.dropout = dropout
         self.hidden_size = hidden_size
-        self.initializer_range = initializer_range
         self.window_length = window_length
 
         self.alignment_conv_padding = int((convolution_filter_size - 1) / 2)

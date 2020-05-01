@@ -33,6 +33,7 @@ class InputEncoder(Encoder):
             speaker_samples, reserved_labels=[], enforce_reversible=True)
 
     def _preprocess(self, text):
+        text = text.strip()
         text = unidecode.unidecode(text)
         if self.delimiter and self.delimiter in text:
             raise ValueError('Text cannot contain these characters: %s' % self.delimiter)

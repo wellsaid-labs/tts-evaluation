@@ -2,8 +2,8 @@
 
 Example:
 
-    python -m src.bin.evaluate_preprocessing --audio_path tests/_test_data/test_audio/hilary.wav
-
+    python -m src.bin.evaluate.audio_preprocessing \
+           --audio_path tests/_test_data/test_audio/hilary.wav
 """
 import argparse
 import logging

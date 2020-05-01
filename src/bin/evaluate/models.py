@@ -5,23 +5,23 @@ Examples
 --------
 
 Example of sampling the preprocessed dataset:
-    $ python -m src.bin.evaluate
+    $ python -m src.bin.evaluate.models
 
 
 Example of generating signal model samples from the ground truth spectrograms:
-    $ python -m src.bin.evaluate --signal_model experiments/your/checkpoint.pt
+    $ python -m src.bin.evaluate.models --signal_model experiments/your/checkpoint.pt
 
 
 Example of generating TTS samples end-to-end:
-    $ python -m src.bin.evaluate --signal_model experiments/your/checkpoint.pt \
-                                 --spectrogram_model experiments/your/checkpoint.pt
+    $ python -m src.bin.evaluate.models --signal_model experiments/your/checkpoint.pt \
+                                        --spectrogram_model experiments/your/checkpoint.pt
 
 
 Example of generating TTS samples end-to-end with custom text:
-    $ python -m src.bin.evaluate --signal_model experiments/your/checkpoint.pt \
-                                 --spectrogram_model experiments/your/checkpoint.pt \
-                                 --text "custom text" \
-                                 --text "more custom text"
+    $ python -m src.bin.evaluate.models --signal_model experiments/your/checkpoint.pt \
+                                        --spectrogram_model experiments/your/checkpoint.pt \
+                                        --text "custom text" \
+                                        --text "more custom text"
 """
 from itertools import product
 from pathlib import Path

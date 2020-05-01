@@ -298,7 +298,7 @@ def evaluate(*modules, device=None):
         modules_metadata.append({'is_train': module.training, 'last_device': module_device})
         module.train(mode=False)
 
-    with torch.set_grad_enabled(False):
+    with torch.no_grad():
         yield
 
     for module, metadata in zip(modules, modules_metadata):
