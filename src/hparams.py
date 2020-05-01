@@ -254,10 +254,6 @@ def _set_model_size(frame_channels):
                         # features to 128-dimensional hidden representations.
                         hidden_size=128,
                         convolution_filter_size=31,
-
-                        # SOURCE (BERT):
-                        # https://github.com/google-research/bert/blob/master/modeling.py#L375
-                        initializer_range=0.02,
                     ),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(
