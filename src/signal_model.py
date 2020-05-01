@@ -204,10 +204,10 @@ def generate_waveform(model, spectrogram, spectrogram_mask=None):
     """
     TODO: Similar to WaveNet, we could incorperate a "Fast WaveNet" approach. This basically means
     we don't need to recompute the padding for each split.
-    TODO: During evaluation, we should convert the `float32` output back to `int16` to match the
-    dataset fidelity. That also means we'll want to dither the output; however, we should consider
-    the model already learned this on it's own with the help of the discriminator.
-    TODO: Should this function be part of the `SignalModel` object?
+    TODO: The dataset is based in 16-bits while the signal model outputs in 32-bits. This should
+    be resolved.
+    TODO: Consider adding another "forward" function like `forward_generator` to `SignalModel` and
+    incorperating this functionality.
 
     Args:
         model (SignalModel): The model to synthesize the waveform with.

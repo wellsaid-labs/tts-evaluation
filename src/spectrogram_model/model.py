@@ -171,8 +171,9 @@ class SpectrogramModel(nn.Module):
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
             split_size (int): The maximum length of a sequence returned by the generator.
-            max_lengths (torch.LongTensor [batch_size])
-            num_tokens (torch.LongTensor [batch_size])
+            max_lengths (torch.LongTensor [batch_size]): The maximum length to generate before
+                stopping the generation.
+            num_tokens (torch.LongTensor [batch_size]): The number of tokens in each sequence.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens])
             speaker (torch.LongTensor [batch_size, speaker_embedding_dim])
             use_tqdm (bool, optional): If `True` then this adds a `tqdm` progress bar.
@@ -228,7 +229,7 @@ class SpectrogramModel(nn.Module):
             encoded_tokens: See `_infer_generator_helper`.
             split_size (int): The maximum length of a sequence returned by the generator.
             *args: Arguments passed too `_infer_generator_helper`.
-            **kwargs: Keyword arguments passed too `_infer_generator`.
+            **kwargs: Keyword arguments passed too `_infer_generator_helper`.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, frame_channels])
