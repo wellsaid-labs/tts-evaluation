@@ -12,13 +12,10 @@ Walking through the math, a real epoch for the Linda Joshon dataset would be abo
 
 Find stats on the Linda Johnson dataset here: https://keithito.com/LJ-Speech-Dataset/
 """
-from collections import deque
-from collections import namedtuple
-from copy import deepcopy
-
 import atexit
 import logging
 import random
+import warnings
 
 from hparams import configurable
 from hparams import get_config
@@ -29,30 +26,239 @@ from torchnlp.utils import get_total_parameters
 
 import torch
 
-from src.audio import combine_signal
-from src.audio import split_signal
+from src.audio import to_floating_point_pcm
+from src.audio import SignalTodBMelSpectrogram
 from src.bin.train.signal_model.data_loader import DataLoader
 from src.optimizers import AutoOptimizer
+from src.optimizers import ExponentialMovingParameterAverage
 from src.optimizers import Optimizer
-from src.utils import AnomalyDetector
+from src.signal_model import generate_waveform
 from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
+from src.utils import evaluate
 from src.utils import log_runtime
 from src.utils import maybe_load_tensor
 from src.utils import mean
 from src.utils import random_sample
 from src.utils import RepeatTimer
+from src.visualize import plot_mel_spectrogram
 from src.visualize import plot_spectrogram
 
 import src.distributed
 
 logger = logging.getLogger(__name__)
 
-_RollbackTrainerState = namedtuple('_RollbackTrainerState', [
-    'step', 'epoch', 'optimizer_state_dict', 'model_state_dict', 'scheduler_state_dict',
-    'anomaly_detector'
-])
+
+class SpectrogramLoss(torch.nn.Module):
+    """ Compute a loss based in the time / frequency domain.
+
+    NOTE: This loss undersamples boundary samples; therefore, it's important in the training
+    data that each sample has an equal chance of being a boundary / none-boundary sample so
+    that all samples are undersampled equally.
+    NOTE: The loss boundary effect affects samller spectrograms disproportionately.
+    NOTE: The loss is average accross the spectrogram frames; therefore, there is no bias for
+    the length of the spectrogram.
+
+    Args:
+        device (torch.device, optional)
+        criterion (torch.nn.Module): The loss function for comparing two spectrograms.
+        discriminator (torch.nn.Module): The model used to discriminate between two spectrograms.
+        discriminator_optimizer (torch.nn.Module)
+        discriminator_criterion (torch.nn.Module)
+        **kwargs: Additional key word arguments passed to `SignalTodBMelSpectrogram`.
+    """
+
+    @configurable
+    def __init__(self,
+                 device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
+                 criterion=HParam(),
+                 discriminator=HParam(),
+                 discriminator_optimizer=HParam(),
+                 discriminator_criterion=HParam(),
+                 **kwargs):
+        super().__init__()
+
+        # NOTE: The `SpectrogramLoss` has it's own configuration for `SignalTodBMelSpectrogram`.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                'ignore', module=r'.*hparams', message=r'.*Overwriting configured argument.*')
+            self.signal_to_spectrogram = SignalTodBMelSpectrogram(**kwargs).to(device)
+
+        self.fft_length = self.signal_to_spectrogram.fft_length
+        self.frame_hop = self.signal_to_spectrogram.frame_hop
+        self.sample_rate = self.signal_to_spectrogram.sample_rate
+        self.num_mel_bins = self.signal_to_spectrogram.num_mel_bins
+
+        self.criterion = criterion(reduction='none').to(device)
+
+        self.discriminator = discriminator(self.fft_length, self.num_mel_bins).to(device)
+        if src.distributed.is_initialized():
+            self.discriminator = torch.nn.parallel.DistributedDataParallel(
+                self.discriminator, device_ids=[device], output_device=device, dim=1)
+
+        discriminator_optimizer = discriminator_optimizer(
+            params=filter(lambda p: p.requires_grad, self.discriminator.parameters()))
+        self.discriminator_optimizer = Optimizer(discriminator_optimizer).to(device)
+
+        self.discriminator_criterion = discriminator_criterion().to(device)
+
+    def plot_spectrogram(self, *args, **kwargs):
+        return plot_spectrogram(
+            *args, **kwargs, frame_hop=self.frame_hop, sample_rate=self.sample_rate)
+
+    def plot_mel_spectrogram(self, *args, **kwargs):
+        return plot_mel_spectrogram(
+            *args, **kwargs, frame_hop=self.frame_hop, sample_rate=self.sample_rate)
+
+    def get_name(self, signal_name=None, is_mel_scale=True, is_decibels=True, is_magnitude=True):
+        """ Get a interpretable label for logging a spectrogram.
+
+        Args:
+            signal_name (str): The same of the signal.
+            is_mel_scale (str): If `True` the signal spectrogram was fit to the mel scale.
+            is_decibels (str): If `True` the signal spectrogram is on the decibel scale.
+            is_magnitude (str): If `True` the signal spectrogram is a magnitude spectrogram.
+
+        Returns:
+            (str): A string representing the data type.
+        """
+        name = '' if signal_name is None else '%s,' % signal_name
+        name = 'spectrogram(%sfft_length=%d,frame_hop=%d)' % (name, self.fft_length, self.frame_hop)
+        name = 'abs(%s)' % name if is_magnitude else name
+        name = 'db(%s)' % name if is_decibels else name
+        name = 'mel(%s)' % name if is_mel_scale else name
+        return name
+
+    def discriminate(self,
+                     predicted_spectrogram,
+                     predicted_db_spectrogram,
+                     predicted_db_mel_spectrogram,
+                     target_spectrogram,
+                     target_db_spectrogram,
+                     target_db_mel_spectrogram,
+                     do_backwards=False):
+        """ Discriminate between predicted and real spectrograms.
+
+        Learn more about this approach:
+        https://pytorch.org/tutorials/beginner/dcgan_faces_tutorial.html
+
+        Args:
+            predicted_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
+            predicted_db_spectrogram (torch.FloatTensor
+                [batch_size, num_frames, fft_length // 2 + 1])
+            predicted_db_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins])
+            target_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
+            target_db_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
+            target_db_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins])
+            do_backwards (bool, optional): If `True` this updates the discriminator weights.
+
+        Returns:
+            (torch.FloatTensor): The generator loss on `predicted`.
+            (torch.FloatTensor): The discriminator loss on `predicted` and `target`.
+            (torch.FloatTensor): The accuracy of the discriminator on `predicted` and `target`.
+        """
+        batch_size = predicted_spectrogram.shape[0]
+        device = predicted_spectrogram.device
+
+        labels_target = torch.full((batch_size,), 1.0, device=device)
+        labels_predicted = torch.full((batch_size,), 0.0, device=device)
+        labels = torch.cat([labels_target, labels_predicted])
+
+        # NOTE: `detach` to avoid updating the generator.
+        db_mel_spectrogram = [target_db_mel_spectrogram, predicted_db_mel_spectrogram.detach()]
+        db_mel_spectrogram = torch.cat(db_mel_spectrogram)
+        db_spectrogram = torch.cat([target_db_spectrogram, predicted_db_spectrogram.detach()])
+        spectrogram = torch.cat([target_spectrogram, predicted_spectrogram.detach()])
+
+        predictions = self.discriminator(spectrogram, db_spectrogram, db_mel_spectrogram)
+        loss = self.discriminator_criterion(predictions, labels)
+        accuracy = ((labels > 0.5) == (torch.sigmoid(predictions) > 0.5)).float().mean()
+
+        if do_backwards:
+            self.discriminator.zero_grad()
+            loss.backward()
+            self.discriminator_optimizer.step()
+
+        # NOTE: Use target labels instead of predicted to flip the gradient for the generator.
+        predictions = self.discriminator(predicted_spectrogram, predicted_db_spectrogram,
+                                         predicted_db_mel_spectrogram)
+        return self.discriminator_criterion(predictions, labels_target), loss, accuracy
+
+    def forward(self, predicted_signal, target_signal, comet_ml=None, do_backwards=False):
+        """
+        Args:
+            predicted_signal (torch.FloatTensor [batch_size (optional), signal_length])
+            target_signal (torch.FloatTensor [batch_size (optional), signal_length])
+            comet_ml (None or Experiment): If this value is passed, then this logs figures to
+                comet. If the batch size is larger than one, then a random item from the
+                batch is picked to be logged.
+            do_backwards (bool, optional): If `True` this updates the discriminator weights.
+
+        Returns:
+            torch.FloatTensor: The spectrogram loss.
+            torch.FloatTensor: The generator loss.
+            torch.FloatTensor: The discriminator loss.
+            torch.FloatTensor: The discriminator accuracy.
+            int: The number of frames.
+        """
+        predicted_signal = predicted_signal.view(-1, predicted_signal.shape[-1])
+        target_signal = target_signal.view(-1, target_signal.shape[-1])
+
+        assert target_signal.shape == predicted_signal.shape
+
+        (predicted_db_mel_spectrogram, predicted_db_spectrogram,
+         predicted_spectrogram) = self.signal_to_spectrogram(
+             predicted_signal, intermediate=True)
+        (target_db_mel_spectrogram, target_db_spectrogram,
+         target_spectrogram) = self.signal_to_spectrogram(
+             target_signal, intermediate=True)
+
+        db_mel_spectrogram_loss = self.criterion(predicted_db_mel_spectrogram,
+                                                 target_db_mel_spectrogram)
+
+        generator_loss, disciminator_loss, disciminator_accuracy = self.discriminate(
+            predicted_spectrogram,
+            predicted_db_spectrogram,
+            predicted_db_mel_spectrogram,
+            target_spectrogram,
+            target_db_spectrogram,
+            target_db_mel_spectrogram,
+            do_backwards=do_backwards)
+
+        if comet_ml:
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    'ignore', module=r'.*hparams', message=r'.*Overwriting configured argument.*')
+                batch_size = predicted_signal.shape[0]
+                random_item = random.randint(0, batch_size - 1) if batch_size > 1 else 0
+                comet_ml.log_figure(
+                    self.get_name('predicted'),
+                    self.plot_mel_spectrogram(predicted_db_mel_spectrogram[random_item]))
+                comet_ml.log_figure(
+                    self.get_name('target'),
+                    self.plot_mel_spectrogram(target_db_mel_spectrogram[random_item]))
+                comet_ml.log_figure(
+                    self.get_name('predicted', is_mel_scale=False),
+                    self.plot_spectrogram(predicted_db_spectrogram[random_item]))
+                comet_ml.log_figure(
+                    self.get_name('target', is_mel_scale=False),
+                    self.plot_spectrogram(target_db_spectrogram[random_item]))
+                comet_ml.log_figure(
+                    self.get_name('predicted', is_mel_scale=False, is_decibels=False),
+                    self.plot_spectrogram(predicted_spectrogram[random_item]))
+                comet_ml.log_figure(
+                    self.get_name('target', is_mel_scale=False, is_decibels=False),
+                    self.plot_spectrogram(target_spectrogram[random_item]))
+                comet_ml.log_figure('%s(%s)' % (self.criterion.__class__.__name__, self.get_name()),
+                                    self.plot_mel_spectrogram(db_mel_spectrogram_loss[random_item]))
+                comet_ml.log_figure(
+                    'mean(%s(%s))' % (self.criterion.__class__.__name__, self.get_name()),
+                    self.plot_mel_spectrogram(db_mel_spectrogram_loss[random_item].mean(
+                        dim=0, keepdim=True)))
+
+        return (db_mel_spectrogram_loss.mean(), generator_loss, disciminator_loss,
+                disciminator_accuracy)
 
 
 class Trainer():
@@ -68,18 +274,16 @@ class Trainer():
         dev_batch_size (int): Batch size used for evaluation.
         criterion (callable): Loss function used to score signal predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
-        min_rollback (int): Minimum number of epochs to rollback in case of a loss anomaly.
         lr_multiplier_schedule (callable): Learning rate multiplier schedule.
         model (torch.nn.Module, optional): Model to train and evaluate.
+        criterions (list of callables, optional): List of callables to initialize criterions.
+        criterions_state_dict (list of dict, optional): An optional state dict for each criterion.
         spectrogram_model_checkpoint_path (pathlib.Path or str, optional): Checkpoint path used to
             generate a spectrogram from text as input to the signal model.
         step (int, optional): Starting step; typically, this parameter is useful when starting from
             a checkpoint.
         epoch (int, optional): Starting epoch; typically, this parameter is useful when starting
             from a checkpoint.
-        num_rollbacks (int, optional): Number of rollbacks.
-        anomaly_detector (AnomalyDetector, optional): Anomaly detector used to skip batches that
-            result in an anomalous loss.
         save_temp_checkpoint_every_n_seconds (int, optional): The number of seconds between
             temporary checkpoint saves.
         dataset_sample_size (int, optional): The number of samples to compute expensive dataset
@@ -101,16 +305,15 @@ class Trainer():
                  train_spectrogram_slice_size=HParam(),
                  dev_batch_size=HParam(),
                  dev_spectrogram_slice_size=HParam(),
-                 criterion=HParam(),
                  optimizer=HParam(),
-                 min_rollback=HParam(),
                  lr_multiplier_schedule=HParam(),
+                 exponential_moving_parameter_average=ExponentialMovingParameterAverage,
                  model=HParam(),
+                 criterions=HParam(),
+                 criterions_state_dict=None,
                  spectrogram_model_checkpoint_path=None,
                  step=0,
                  epoch=0,
-                 num_rollbacks=0,
-                 anomaly_detector=None,
                  save_temp_checkpoint_every_n_seconds=60 * 10,
                  dataset_sample_size=50):
         self.device = device
@@ -120,7 +323,6 @@ class Trainer():
         self.train_spectrogram_slice_size = train_spectrogram_slice_size
         self.dev_batch_size = dev_batch_size
         self.dev_spectrogram_slice_size = dev_spectrogram_slice_size
-        self.num_rollbacks = num_rollbacks
         self.checkpoints_directory = checkpoints_directory
         self.use_predicted = spectrogram_model_checkpoint_path is not None
         self.spectrogram_model_checkpoint_path = spectrogram_model_checkpoint_path
@@ -133,6 +335,13 @@ class Trainer():
             self.model = torch.nn.parallel.DistributedDataParallel(
                 self.model, device_ids=[device], output_device=device, dim=1)
 
+        self.exponential_moving_parameter_average = (
+            exponential_moving_parameter_average
+            if isinstance(exponential_moving_parameter_average, ExponentialMovingParameterAverage)
+            else exponential_moving_parameter_average(
+                filter(lambda p: p.requires_grad, self.model.parameters())))
+        self.exponential_moving_parameter_average.to(device)
+
         self.optimizer = optimizer if isinstance(optimizer, Optimizer) else AutoOptimizer(
             optimizer(params=filter(lambda p: p.requires_grad, self.model.parameters())))
         self.optimizer.to(device)
@@ -140,22 +349,33 @@ class Trainer():
         self.scheduler = LambdaLR(
             self.optimizer.optimizer, lr_multiplier_schedule, last_epoch=step - 1)
 
-        self.anomaly_detector = anomaly_detector if isinstance(
-            anomaly_detector, AnomalyDetector) else AnomalyDetector()
-
-        self.criterion = criterion(reduction='none').to(device)
+        self.criterions = [c(device) for c in criterions]
+        if criterions_state_dict is not None:
+            list(c.load_state_dict(s) for c, s in zip(self.criterions, criterions_state_dict))
 
         self.metrics = {
-            'coarse_loss': DistributedAveragedMetric(),
-            'fine_loss': DistributedAveragedMetric(),
-            'orthogonal_loss': DistributedAveragedMetric(),
             'data_queue_size': DistributedAveragedMetric(),
+            'db_mel_spectrogram_magnitude_loss': DistributedAveragedMetric(),
+            'spectrogram_generator_loss': DistributedAveragedMetric(),
+            'spectrogram_discriminator_loss': DistributedAveragedMetric(),
+            'spectrogram_discriminator_accuracy': DistributedAveragedMetric(),
         }
-
-        # NOTE: Rollback `maxlen=min_rollback + 1` to store the current state of the model with
-        # the additional rollbacks.
-        self._rollback_states = deque([self._make_partial_rollback_state()],
-                                      maxlen=min_rollback + 1)
+        self.metrics.update({
+            '%d_spectrogram_generator_loss' % c.fft_length: DistributedAveragedMetric()
+            for c in self.criterions
+        })
+        self.metrics.update({
+            '%d_spectrogram_discriminator_loss' % c.fft_length: DistributedAveragedMetric()
+            for c in self.criterions
+        })
+        self.metrics.update({
+            '%d_spectrogram_discriminator_accuracy' % c.fft_length: DistributedAveragedMetric()
+            for c in self.criterions
+        })
+        self.metrics.update({
+            'db_mel_%d_spectrogram_magnitude_loss' % c.fft_length: DistributedAveragedMetric()
+            for c in self.criterions
+        })
 
         self.comet_ml = comet_ml
         self.comet_ml.set_step(step)
@@ -239,14 +459,13 @@ class Trainer():
             (Trainer)
         """
         checkpoint_kwargs = {
-            # NOTE: ``rollback`` is not checkpointed due to it's size.
             'model': checkpoint.model,
             'optimizer': checkpoint.optimizer,
             'epoch': checkpoint.epoch,
             'step': checkpoint.step,
-            'anomaly_detector': checkpoint.anomaly_detector,
             'spectrogram_model_checkpoint_path': checkpoint.spectrogram_model_checkpoint_path,
-            'num_rollbacks': checkpoint.num_rollbacks
+            'exponential_moving_parameter_average': checkpoint.exponential_moving_parameter_average,
+            'criterions_state_dict': checkpoint.criterions_state_dict,
         }
         checkpoint_kwargs.update(kwargs)
         return class_(**checkpoint_kwargs)
@@ -266,91 +485,20 @@ class Trainer():
                 model=(self.model.module if src.distributed.is_initialized() else self.model),
                 optimizer=self.optimizer,
                 epoch=self.epoch,
-                anomaly_detector=self.anomaly_detector,
                 comet_ml_project_name=self.comet_ml.project_name,
                 comet_ml_experiment_key=self.comet_ml.get_key(),
                 spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
-                num_rollbacks=self.num_rollbacks)
+                exponential_moving_parameter_average=self.exponential_moving_parameter_average,
+                criterions_state_dict=[c.state_dict() for c in self.criterions])
             if checkpoint.path.exists():
                 return None
             return checkpoint.save()
         else:
             return None
 
-    def _make_partial_rollback_state(self):
-        """ Make a state for rolling back to.
-
-        The rollback includes:
-           * Model weights
-           * Optimizer weights
-           * Step counter `self.step`
-           * Epoch counter `self.epoch`
-
-        The rollback does not include:
-           * Number of rollbacks `self.num_rollbacks`.
-           * Comet_ml `self.comet_ml`. Comet ML does not have a mechanism for rolling back state
-             https://github.com/comet-ml/issue-tracking/issues/137.
-           * Metrics `self.metrics`. Any metrics are reset during a rollback and a rollback is
-             treated as the start of a new epoch.
-           * Random Generators. We do not make an effort to perserve the global state of the random
-             generators in `torch`, `numpy` and `random` modules.
-
-        Returns:
-            (_RollbackTrainerState)
-        """
-        # TODO: Test to ensure PyTorch operations do not change the state as a result of tensor
-        # side effects.
-        # NOTE: In PyTorch, unless we ``deepcopy``, ``state_dict`` continues to update.
-        return _RollbackTrainerState(
-            step=self.step,
-            epoch=self.epoch,
-            optimizer_state_dict=deepcopy(self.optimizer.state_dict()),
-            model_state_dict=deepcopy(self.model.state_dict()),
-            scheduler_state_dict=deepcopy(self.scheduler.state_dict()),
-            anomaly_detector=deepcopy(self.anomaly_detector))
-
-    def _partial_rollback(self):
-        """ Rollback to the earliest state available `self.rollback[0]` and restart the epoch.
-        """
-        self._end_epoch()
-
-        state = self._rollback_states[0]
-        logger.info('Rolling back from step %d to %d and from epoch %d to %d', self.step,
-                    state.step, self.epoch, state.epoch)
-        self.num_rollbacks += 1
-        self.comet_ml.log_metric('num_rollback', self.num_rollbacks)
-
-        self.model.load_state_dict(state.model_state_dict)
-        self.optimizer.load_state_dict(state.optimizer_state_dict)
-        self.scheduler.load_state_dict(state.scheduler_state_dict)
-        self.optimizer.zero_grad()
-        self.anomaly_detector = state.anomaly_detector
-        self.step = state.step
-        self.epoch = state.epoch
-        self.comet_ml.set_step(self.step)
-
-        self._rollback_states.clear()  # Clear the future states
-        self._rollback_states.append(state)
-
-    def _end_epoch(self):
-        """ Reset the trainer state from the current epoch.
-        """
-        self.comet_ml.log_epoch_end(self.epoch)
-        for name, metric in self.metrics.items():
-            self.comet_ml.log_metric('epoch/%s' % name, metric.sync().reset())
-
     @log_runtime
     def run_epoch(self, train=False, trial_run=False):
-        """ Iterate over a dataset with ``self.model``, computing the loss function every iteration.
-
-        The specification of an "epoch" is loose in rare circumstances:
-
-            - The trainer allows for partial rollbacks of state during training. There doesn't
-              exist effective mechanisms to capture the state of all modules and rollback like the
-              `DataLoader` and `comet_ml`.
-            - `DataLoader`'s specification allows it to drop data via `drop_last`. Therefore,
-              there is not always the same number of batches for each epoch.
-            - `trial_run` runs only on row of data.
+        """ Iterate over a dataset with `self.model`, computing the loss function every iteration.
 
         Args:
             train (bool, optional): If ``True`` the model will additionally take steps along the
@@ -377,29 +525,31 @@ class Trainer():
                 self.train_dataset,
                 self.train_batch_size,
                 spectrogram_slice_size=self.train_spectrogram_slice_size,
+                spectrogram_slice_pad=self.model.padding,
                 **loader_kwargs)
         elif not train and not hasattr(self, '_dev_loader'):
             self._dev_loader = DataLoader(
                 self.dev_dataset,
                 self.dev_batch_size,
                 spectrogram_slice_size=self.dev_spectrogram_slice_size,
+                spectrogram_slice_pad=self.model.padding,
                 **loader_kwargs)
         data_loader = self._train_loader if train else self._dev_loader
 
+        if not train:
+            self.exponential_moving_parameter_average.apply_shadow()
+
         for i, batch in enumerate(data_loader):
             with torch.set_grad_enabled(train):
-                predictions = self.model(
-                    batch.input_spectrogram,
-                    input_signal=batch.input_signal,
-                    target_coarse=batch.target_signal_coarse.unsqueeze(2))
-                self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
-                predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
+                predicted_signal = self.model(
+                    batch.spectrogram, spectrogram_mask=batch.spectrogram_mask, pad_input=False)
+                self._do_loss_and_maybe_backwards(batch, predicted_signal, do_backwards=train)
 
             # NOTE: This metric should be a positive integer indicating that the `data_loader`
             # is loading faster than the data is getting ingested; otherwise, the `data_loader`
             # is bottlenecking training by loading too slowly.
-            if hasattr(data_loader.iterator, 'data_queue'):
-                self.metrics['data_queue_size'].update(data_loader.iterator.data_queue.qsize())
+            if hasattr(data_loader.iterator, '_data_queue'):
+                self.metrics['data_queue_size'].update(data_loader.iterator._data_queue.qsize())
 
             for name, metric in self.metrics.items():
                 self.comet_ml.log_metric('step/%s' % name, metric.sync().last_update())
@@ -407,109 +557,84 @@ class Trainer():
             if train:
                 self.step += 1
                 self.comet_ml.set_step(self.step)
-                self.scheduler.step(self.step)
+                self.scheduler.step()
 
             if trial_run:
                 break
 
+        if not train:
+            self.exponential_moving_parameter_average.restore()
+
         if not trial_run:
-            self._end_epoch()
+            self.comet_ml.log_epoch_end(self.epoch)
+            for name, metric in self.metrics.items():
+                self.comet_ml.log_metric('epoch/%s' % name, metric.sync().reset())
             if train:
                 self.epoch += 1
         else:
             for _, metric in self.metrics.items():
                 metric.reset()
 
-    def _get_gru_orthogonal_loss(self):
-        """ Get the orthogonal loss for the hidden-to-hidden matrix in our GRUs.
-
-        Papers describing the loss:
-        https://papers.nips.cc/paper/7680-can-we-gain-more-from-orthogonality-regularizations-in-training-deep-networks.pdf
-        https://github.com/pytorch/pytorch/issues/2421#issuecomment-355534285
-        http://mathworld.wolfram.com/FrobeniusNorm.html
-        https://github.com/MingtaoGuo/BigGAN-tensorflow/blob/7e531cd875236544866f54248aa397f9176296b6/ops.py#L111
-
-        Returns:
-            (torch.FloatTensor [1])
-        """
-        total = torch.tensor(0.0, device=self.device)
-        for name, parameter in self.model.named_parameters():
-            if 'gru.weight_hh' in name:
-                splits = parameter.chunk(3)
-                for split in splits:
-                    eye = torch.eye(split.shape[0], device=self.device)
-                    total += torch.nn.functional.mse_loss(torch.mm(split, torch.t(split)), eye)
-                    total += torch.nn.functional.mse_loss(torch.mm(torch.t(split), split), eye)
-        return total
-
-    def _do_loss_and_maybe_backwards(self, batch, predictions, do_backwards):
+    def _do_loss_and_maybe_backwards(self, batch, predicted_signal, do_backwards, log_figure=False):
         """ Compute the losses and maybe do backwards.
 
         Args:
             batch (SignalModelTrainingRow)
-            predictions (any): Return value from ``self.model.forwards``.
+            predicted_signal (torch.FloatTensor [batch_size, signal_length])
             do_backwards (bool): If ``True`` backward propogate the loss.
+            log_figure (bool): If `True` this logs figures.
         """
-        (predicted_coarse, predicted_fine, _) = predictions
+        assert batch.target_signal.shape == predicted_signal.shape, (
+            'The shapes do not match %s =!= %s' %
+            (batch.target_signal.shape, predicted_signal.shape))
+        assert predicted_signal.shape == batch.signal_mask.shape
 
-        # [batch_size, signal_length, bins] → [batch_size, bins, signal_length]
-        predicted_fine = predicted_fine.transpose(1, 2)
-        predicted_coarse = predicted_coarse.transpose(1, 2)
+        batch_size = predicted_signal.shape[0]
+        total_spectrogram_loss = torch.tensor(0.0, device=predicted_signal.device)
+        total_generator_loss = torch.tensor(0.0, device=predicted_signal.device)
+        total_discriminator_loss = torch.tensor(0.0, device=predicted_signal.device)
+        total_discriminator_accuracy = torch.tensor(0.0, device=predicted_signal.device)
+        for criterion in self.criterions:
+            # NOTE: Even though the signal is zero padded, we can safely ignore it with the
+            # assumption that the training examples this model is learning generally start and end
+            # with quiet.
+            (spectrogram_loss, generator_loss, discriminator_loss,
+             discriminator_accuracy) = criterion(
+                 predicted_signal,
+                 batch.target_signal,
+                 comet_ml=self.comet_ml if log_figure else None,
+                 do_backwards=do_backwards)
 
-        # coarse_loss [batch_size, signal_length]
-        coarse_loss = self.criterion(predicted_coarse, batch.target_signal_coarse)
-        coarse_loss = coarse_loss.masked_select(batch.signal_mask).mean()  # coarse_loss [1]
+            total_spectrogram_loss += spectrogram_loss / len(self.criterions)
+            total_generator_loss += generator_loss / len(self.criterions)
+            total_discriminator_loss += discriminator_loss / len(self.criterions)
+            total_discriminator_accuracy += discriminator_accuracy / len(self.criterions)
 
-        # fine_loss [batch_size, signal_length]
-        fine_loss = self.criterion(predicted_fine, batch.target_signal_fine)
-        fine_loss = fine_loss.masked_select(batch.signal_mask).mean()  # fine_loss [1]
-
-        orthogonal_loss = self._get_gru_orthogonal_loss()  # orthogonal_loss [1]
+            # TODO: Ensure that this loss reported to Comet is invariant to the slice size
+            # so that we can compare accross slice sizes. We can do that by testing if this loss
+            # is infact proportional to the slice size (ignoring the boundary undersampling).
+            self.metrics['db_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length].update(
+                spectrogram_loss, batch_size)
+            self.metrics['%d_spectrogram_generator_loss' % criterion.fft_length].update(
+                total_generator_loss, batch_size)
+            self.metrics['%d_spectrogram_discriminator_loss' % criterion.fft_length].update(
+                discriminator_loss, batch_size)
+            self.metrics['%d_spectrogram_discriminator_accuracy' % criterion.fft_length].update(
+                discriminator_accuracy, batch_size * 2)
 
         if do_backwards:
             self.optimizer.zero_grad()
-            (coarse_loss + fine_loss).backward()
-            grad_norm = self.optimizer.step(comet_ml=self.comet_ml)
+            (total_generator_loss + total_spectrogram_loss).backward()
+            self.optimizer.step(comet_ml=self.comet_ml)
+            self.exponential_moving_parameter_average.update()
 
-            grad_norm = torch.tensor(grad_norm, device=coarse_loss.device)
-            torch.distributed.all_reduce(grad_norm)
-            grad_norm = (grad_norm / torch.distributed.get_world_size()).cpu().item()
-            if self.anomaly_detector.step(grad_norm):
-                logger.warning('Rolling back, detected an anomaly #%d (%f > %f ± %f)',
-                               self.num_rollbacks, grad_norm, self.anomaly_detector.last_average,
-                               self.anomaly_detector.max_deviation)
-                self._partial_rollback()
-            else:
-                self._rollback_states.append(self._make_partial_rollback_state())
+        self.metrics['db_mel_spectrogram_magnitude_loss'].update(total_spectrogram_loss, batch_size)
+        self.metrics['spectrogram_generator_loss'].update(total_generator_loss, batch_size)
+        self.metrics['spectrogram_discriminator_loss'].update(total_discriminator_loss, batch_size)
+        self.metrics['spectrogram_discriminator_accuracy'].update(total_discriminator_accuracy,
+                                                                  batch_size * 2)
 
-        # Learn more about `coarse_loss` and `fine_loss` in the "Efficient Neural Audio Synthesis"
-        # paper.
-        self.metrics['coarse_loss'].update(coarse_loss, batch.signal_mask.sum())
-        self.metrics['fine_loss'].update(fine_loss, batch.signal_mask.sum())
-        self.metrics['orthogonal_loss'].update(orthogonal_loss)
-
-        return coarse_loss, fine_loss, batch.signal_mask.sum()
-
-    def _get_sample_density_gap(self, predicted_signal, target_signal, greater_than):
-        """ Measure the relative difference in sample density inside a specified range.
-
-        Args:
-            predicted_signal (torch.IntTensor [predicted_signal_length])
-            target_signal (torch.IntTensor [target_signal_length])
-            greater_than (float): Defines the amplitude range.
-
-        Returns:
-            (float): The density margin between the predicted and target signals.
-        """
-
-        def get_density(unnormalized_signal):
-            maximum = torch.iinfo(unnormalized_signal.dtype).max
-            normalized = unnormalized_signal.float() / maximum
-            num_selected_samples = (normalized.abs() >= greater_than).sum()
-            total_samples = unnormalized_signal.numel()
-            return num_selected_samples.float() / total_samples
-
-        return (get_density(predicted_signal) - get_density(target_signal)).item()
+        return total_spectrogram_loss, total_generator_loss, batch.signal_mask.sum()
 
     @log_runtime
     def visualize_inferred(self):
@@ -518,33 +643,65 @@ class Trainer():
         if not src.distributed.is_master():
             return
 
+        # TODO: Consider running the algorithm end-to-end with the spectrogram model on CPU to
+        # have a end-to-end comparison.
+        # TODO: Consider transfer learning the signal model from ground truth to a particular
+        # spectrogram model.
         self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
         model = self.model.module if src.distributed.is_initialized() else self.model
-
         example = random.sample(self.dev_dataset, 1)[0]
         spectrogram = example.predicted_spectrogram if self.use_predicted else example.spectrogram
         spectrogram = maybe_load_tensor(spectrogram)  # [num_frames, frame_channels]
-        target_signal = maybe_load_tensor(example.spectrogram_audio).float()  # [signal_length]
-        spectrogram = spectrogram.to(torch.device('cpu'))
+        target_signal = to_floating_point_pcm(maybe_load_tensor(example.spectrogram_audio)).to(
+            self.device)  # [signal_length]
+        spectrogram = spectrogram.to(self.device)
 
         logger.info('Running inference on %d spectrogram frames with %d threads.',
                     spectrogram.shape[0], torch.get_num_threads())
 
-        inferrer = model.to_inferrer()
-        predicted_coarse, predicted_fine, _ = inferrer(spectrogram)
-        predicted = combine_signal(predicted_coarse, predicted_fine, return_int=True)
+        with evaluate(model, device=self.device):
+            self.exponential_moving_parameter_average.apply_shadow()
+            predicted = generate_waveform(model, spectrogram, generator=False)
+            self.exponential_moving_parameter_average.restore()
 
-        # NOTE: Introduce quantization noise similar to the model outputs and inputs.
-        target = combine_signal(*split_signal(target_signal), return_int=True)
+        total_spectrogram_loss = torch.tensor(0.0, device=self.device)
+        total_generator_loss = torch.tensor(0.0, device=self.device)
+        total_discriminator_loss = torch.tensor(0.0, device=self.device)
+        total_discriminator_accuracy = torch.tensor(0.0, device=self.device)
+        for criterion in self.criterions:
+            (spectrogram_loss, generator_loss, discriminator_loss,
+             discriminator_accuracy) = criterion(
+                 predicted, target_signal, comet_ml=self.comet_ml)
+
+            total_spectrogram_loss += spectrogram_loss / len(self.criterions)
+            total_generator_loss += generator_loss / len(self.criterions)
+            total_discriminator_loss += discriminator_loss / len(self.criterions)
+            total_discriminator_accuracy += discriminator_accuracy / len(self.criterions)
+
+            self.comet_ml.log_metrics({
+                'single/%d_spectrogram_generator_loss' % criterion.fft_length:
+                    generator_loss.item(),
+                'single/%d_spectrogram_discriminator_loss' % criterion.fft_length:
+                    discriminator_loss.item(),
+                'single/%d_spectrogram_discriminator_accuracy' % criterion.fft_length:
+                    discriminator_accuracy.item(),
+                'single/db_mel_%d_spectrogram_magnitude_loss' % criterion.fft_length:
+                    spectrogram_loss.item()
+            })
 
         self.comet_ml.log_metrics({
-            'single/%s_sample_density_gap' % str(int(n * 100)):
-            self._get_sample_density_gap(predicted, target, n) for n in [0.99, 0.95, 0.90]
+            'single/db_mel_spectrogram_magnitude_loss': total_spectrogram_loss.item(),
+            'single/spectrogram_generator_loss': total_generator_loss.item(),
+            'single/spectrogram_discriminator_loss': total_discriminator_loss.item(),
+            'single/spectrogram_discriminator_accuracy': total_discriminator_accuracy.item()
         })
         self.comet_ml.log_audio(
+            audio={
+                'gold_audio': target_signal,
+                'predicted_audio': predicted,
+            },
             tag=self.DEV_INFERRED_LABEL,
             text=example.text,
             speaker=str(example.speaker),
-            gold_audio=target,
-            predicted_audio=predicted)
-        self.comet_ml.log_figure('spectrogram', plot_spectrogram(spectrogram))
+            db_mel_spectrogram_magnitude_loss=total_spectrogram_loss.item())
+        self.comet_ml.log_figure('input_spectrogram', plot_spectrogram(spectrogram.detach().cpu()))

@@ -4,12 +4,9 @@ from unittest import mock
 from torchnlp.random import fork_rng
 from torchnlp.random import fork_rng_wrap
 
-import numpy as np
 import pytest
 import torch
 
-from src.audio import combine_signal
-from src.audio import split_signal
 from src.bin.train.signal_model.data_loader import _get_slice
 from src.bin.train.signal_model.data_loader import _BalancedSampler
 from src.bin.train.signal_model.data_loader import DataLoader
@@ -95,42 +92,61 @@ def test__get_slice(randint_mock):
     slice_pad = 3
     slice_size = 3
     slice_ = _get_slice(
-        spectrogram,
-        signal,
-        split_signal,
-        spectrogram_slice_size=slice_size,
-        spectrogram_slice_pad=slice_pad)
+        spectrogram, signal, spectrogram_slice_size=slice_size, spectrogram_slice_pad=slice_pad)
 
-    assert slice_.input_spectrogram.shape == (slice_size + slice_pad * 2, spectrogram_channels)
-    assert slice_.input_signal.shape == (slice_size * samples_per_frame, 2)
-    assert slice_.target_signal_coarse.shape == (slice_size * samples_per_frame,)
-    assert slice_.target_signal_fine.shape == (slice_size * samples_per_frame,)
+    assert slice_.spectrogram.shape == (slice_size + slice_pad * 2, spectrogram_channels)
+    assert slice_.spectrogram_mask.shape == (slice_size + slice_pad * 2,)
+    assert slice_.target_signal.shape == (slice_size * samples_per_frame,)
+    assert slice_.signal_mask.shape == (slice_size * samples_per_frame,)
+
+
+def test__get_slice__distribution():
+    """ Test that `_get_slice` samples each sample equally. """
+    spectrogram = torch.arange(1, 5).unsqueeze(1)
+    signal = torch.arange(1, 13)
+    slice_size = 3
+    spectrogram_slice_pad = 3
+    samples = 10000
+    sample_counter = Counter()
+    frame_counter = Counter()
+
+    for i in range(samples):
+        slice_ = _get_slice(
+            spectrogram,
+            signal,
+            spectrogram_slice_size=slice_size,
+            spectrogram_slice_pad=spectrogram_slice_pad)
+        sample_counter.update(slice_.target_signal.tolist())
+        frame_counter.update(slice_.spectrogram.squeeze().tolist())
+
+    total_samples = sum(sample_counter.values()) - sample_counter[0]  # Remove padding
+    for i in range(signal.shape[0]):
+        # Each sample should be sampled `1 / signal.shape[0]` times
+        assert sample_counter[signal[i].item()] / total_samples == pytest.approx(
+            1 / signal.shape[0], rel=1e-1)
+
+    total_frames = sum(frame_counter.values()) - frame_counter[0]  # Remove padding
+    for i in range(spectrogram.shape[0]):
+        assert frame_counter[spectrogram[i, 0].item()] / total_frames == pytest.approx(
+            1 / spectrogram.shape[0], rel=1e-1)
 
 
 @mock.patch('src.bin.train.signal_model.data_loader.random.randint')
 def test__get_slice__padding(randint_mock):
-    randint_mock.return_value = 2
+    randint_mock.return_value = 1
     spectrogram = torch.tensor([[1], [2], [3]])
     signal = torch.tensor([.1, .1, .2, .2, .3, .3])
 
     slice_pad = 3
     slice_size = 2
     slice_ = _get_slice(
-        spectrogram,
-        signal,
-        split_signal,
-        spectrogram_slice_size=slice_size,
-        spectrogram_slice_pad=slice_pad)
+        spectrogram, signal, spectrogram_slice_size=slice_size, spectrogram_slice_pad=slice_pad)
 
-    assert torch.equal(slice_.input_spectrogram,
-                       torch.tensor([[0], [1], [2], [3], [0], [0], [0], [0]]))
-    target_signal = combine_signal(slice_.target_signal_coarse, slice_.target_signal_fine)
-    np.testing.assert_array_almost_equal(
-        target_signal.numpy(), torch.tensor([0.3, 0.3, 0, 0]).numpy(), decimal=4)
-    source_signal = combine_signal(slice_.input_signal[:, 0], slice_.input_signal[:, 1])
-    np.testing.assert_array_almost_equal(
-        source_signal.numpy(), torch.tensor([.2, .3, .3, 0.0]).numpy(), decimal=4)
-    np.testing.assert_array_almost_equal(slice_.signal_mask, torch.tensor([1, 1, 0, 0]), decimal=4)
+    assert torch.equal(slice_.spectrogram, torch.tensor([[0], [0], [1], [2], [3], [0], [0], [0]]))
+    assert torch.equal(slice_.spectrogram_mask,
+                       torch.tensor([0, 0, 1, 1, 1, 0, 0, 0], dtype=torch.bool))
+    assert torch.equal(slice_.target_signal, torch.tensor([0.2, 0.2, 0.3, 0.3]))
+    assert torch.equal(slice_.signal_mask, torch.tensor([1, 1, 1, 1], dtype=torch.bool))
 
 
 def test_data_loader():
@@ -154,11 +170,11 @@ def test_data_loader():
     assert len(loader) == (len(data) // batch_size)
 
     # Ensure that sampled batches are different each time.
-    with fork_rng(seed=123):
+    with fork_rng(seed=124):
         samples = list(loader)
-        assert len(set([s.input_spectrogram[0].sum().item() for s in samples])) == len(samples)
+        assert len(set([s.spectrogram[0].sum().item() for s in samples])) == len(samples)
         more_samples = list(loader)
-        assert len(set([s.input_spectrogram[0].sum().item() for s in more_samples + samples])) == (
+        assert len(set([s.spectrogram[0].sum().item() for s in more_samples + samples])) == (
             len(samples) + len(more_samples))
 
     # Test collate

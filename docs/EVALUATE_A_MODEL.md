@@ -63,7 +63,7 @@ def main(
 3. Run `evaluate.py` once per model, like so:
 
    ```bash
-   python -m src.bin.evaluate \
+   python -m src.bin.evaluate.models \
       --signal_model=$SIGNAL_MODEL \
       --spectrogram_model=$SPECTROGRAM_MODEL \
       --name=$MODEL_NAME \
@@ -76,18 +76,21 @@ def main(
    If you'd like to learn more about these parameters, please run:
 
    ```bash
-   python -m src.bin.evaluate --help
+   python -m src.bin.evaluate.models --help
    ```
 
    Go back to the previous step if you have other models you'd like to include in this evaluation.
 
-   This may take a couple hours by the way.
+   This script should take around 30 minutes to complete.
 
 4. Run `evaluate.py` an extra time to get ground truth samples to compare your TTS model against,
    like so:
 
    ```bash
-   python -m src.bin.evaluate --num_samples=$NUM_SAMPLES --obscure_filename --name='ground-truth'
+   python -m src.bin.evaluate.models \
+      --num_samples=$NUM_SAMPLES \
+      --obscure_filename \
+      --name='ground-truth'
    ```
 
 ## From your local repository
@@ -154,7 +157,8 @@ def main(
       --csvs ~/Downloads/samples/*/metadata.csv \
       --shuffle \
       --name "$BATCH_DIRECTORY/metadata.csv"
-   cp ~/Downloads/samples/*/*.wav $BATCH_DIRECTORY
+   rsync -avh ~/Downloads/samples/*/ \
+      --include='*.wav' --exclude='*' --exclude='_mturk' $BATCH_DIRECTORY
    cp ~/Downloads/samples/*/*.log $BATCH_DIRECTORY
    ```
 

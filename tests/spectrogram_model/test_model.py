@@ -10,6 +10,16 @@ import numpy
 from src.spectrogram_model import SpectrogramModel
 
 
+class _MockSigmoidBatchInvariant(torch.nn.Module):
+
+    def __init__(self, size):
+        super().__init__()
+        self.register_buffer('offset', torch.rand(*size))
+
+    def forward(self, tensor):
+        return torch.rand(1, device=tensor.device) + self.offset
+
+
 def test_spectrogram_model_inference__batch_size_sensitivity():
     batch_size = 5
     num_tokens = 6
@@ -17,10 +27,6 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
     vocab_size = 20
     num_frames = 3
     num_speakers = 7
-    padding_len = 2
-
-    # Ensure that the model computes the full length
-    add_config({'src.spectrogram_model.model.SpectrogramModel._infer': HParams(stop_threshold=1.0)})
 
     # NOTE: The random generator for dropout varies based on the tensor size; therefore, it's
     # dependent on the `BatchSize` and we need to disable it. For example:
@@ -32,23 +38,26 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
     # >>> batch_dropout[0] != dropout
     add_config({'src.spectrogram_model.pre_net.PreNet.__init__': HParams(dropout=0.0)})
 
-    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels).eval()
+    with fork_rng(seed=123):
+        model = SpectrogramModel(
+            vocab_size,
+            num_speakers,
+            frame_channels=frame_channels,
+            max_frames_per_token=num_frames / num_tokens)
+        model.train(mode=False)
+        model.stop_sigmoid = _MockSigmoidBatchInvariant((1, batch_size))
 
-    # Ensure `LayerNorm` perturbs the input instead of being just an identity.
-    for module in model.modules():
-        if isinstance(module, torch.nn.LayerNorm):
-            torch.nn.init.uniform_(module.weight)
-            torch.nn.init.uniform_(module.bias)
+        # Ensure `LayerNorm` perturbs the input instead of being just an identity.
+        for module in model.modules():
+            if isinstance(module, torch.nn.LayerNorm):
+                torch.nn.init.uniform_(module.weight)
+                torch.nn.init.uniform_(module.bias)
 
-    # NOTE: 1-index to avoid using 0 typically associated with padding
-    input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
-    input_[-padding_len:, 0] = 0
-
-    speaker = torch.randint(1, num_speakers, (1, batch_size))
-
-    batched_num_tokens = torch.randint(1, num_tokens, (batch_size,))
-    batched_num_tokens[1] = num_tokens  # NOTE: One of the lengths must be at max length
-    batched_num_tokens[0] = num_tokens - padding_len
+        # NOTE: 1-index to avoid using 0 typically associated with padding
+        input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
+        speaker = torch.randint(1, num_speakers, (1, batch_size))
+        batched_num_tokens = torch.randint(1, num_tokens, (batch_size,))
+        batched_num_tokens[0] = num_tokens  # NOTE: One of the lengths must be at max length
 
     # frames [num_frames, batch_size, frame_channels]
     # frames_with_residual [num_frames, batch_size, frame_channels]
@@ -57,25 +66,27 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
     with fork_rng(seed=123):
         (batched_frames, batched_frames_with_residual, batched_stop_token, batched_alignment,
          batched_lengths, batched_reached_max) = model(
-             input_,
-             speaker,
-             num_tokens=batched_num_tokens,
-             max_frames_per_token=num_frames / num_tokens)
-        assert batched_reached_max.sum() == batch_size
+             input_, speaker, num_tokens=batched_num_tokens)
+        assert batched_reached_max.sum() == 2
 
-    with fork_rng(seed=123):
-        frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
-            input_[:-padding_len, :1], speaker[:, :1], max_frames_per_token=num_frames / num_tokens)
-        assert reached_max
-
-    assert_almost_equal = lambda a, b: numpy.testing.assert_almost_equal(
+    stop_sigmoid_offset = model.stop_sigmoid.offset
+    assert_equal = lambda a, b: numpy.testing.assert_almost_equal(
         a.detach().numpy(), b.detach().numpy(), decimal=5)
 
-    assert_almost_equal(frames, batched_frames[:lengths[0], :1])
-    assert_almost_equal(frames_with_residual, batched_frames_with_residual[:lengths[0], :1])
-    assert_almost_equal(stop_token, batched_stop_token[:lengths[0], :1])
-    assert_almost_equal(alignment, batched_alignment[:lengths[0], :1, :int(batched_num_tokens[0])])
-    assert_almost_equal(lengths, lengths[:1])
+    for i in range(batch_size):
+        with fork_rng(seed=123):
+            model.stop_sigmoid.offset = stop_sigmoid_offset[:, i:i + 1]
+            frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
+                input_[:batched_num_tokens[i], i:i + 1], speaker[:, i:i + 1])
+
+        batched_length = batched_lengths[0, i]
+
+        assert_equal(reached_max, batched_reached_max[:, i:i + 1])
+        assert_equal(frames, batched_frames[:batched_length, i:i + 1])
+        assert_equal(frames_with_residual, batched_frames_with_residual[:batched_length, i:i + 1])
+        assert_equal(stop_token, batched_stop_token[:batched_length, i:i + 1])
+        assert_equal(alignment, batched_alignment[:batched_length, i:i + 1, :batched_num_tokens[i]])
+        assert_equal(lengths, batched_lengths[:, i:i + 1])
 
 
 def test_spectrogram_model_train__batch_size_sensitivity():
@@ -97,6 +108,10 @@ def test_spectrogram_model_train__batch_size_sensitivity():
     # >>> batch_dropout[0] != dropout
     add_config({
         'src.spectrogram_model': {
+            'attention.LocationSensitiveAttention.__init__': HParams(dropout=0.0),
+            'decoder.AutoregressiveDecoder.__init__': HParams(stop_net_dropout=0.0),
+            'encoder.Encoder.__init__': HParams(dropout=0.0),
+            'model.SpectrogramModel.__init__': HParams(speaker_embed_dropout=0.0),
             'pre_net.PreNet.__init__': HParams(dropout=0.0),
         },
     })
@@ -179,7 +194,11 @@ def test_spectrogram_model__filter_reached_max():
     num_frames = 3
     num_speakers = 1
 
-    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels)
+    model = SpectrogramModel(
+        vocab_size,
+        num_speakers,
+        frame_channels=frame_channels,
+        max_frames_per_token=num_frames / num_tokens)
     model.stop_sigmoid = MockSigmoid()
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
@@ -190,11 +209,7 @@ def test_spectrogram_model__filter_reached_max():
     batched_num_tokens[0] = num_tokens
 
     frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
-        input_,
-        speaker,
-        num_tokens=batched_num_tokens,
-        max_frames_per_token=num_frames / num_tokens,
-        filter_reached_max=True)
+        input_, speaker, num_tokens=batched_num_tokens, filter_reached_max=True)
 
     assert reached_max.type() == 'torch.BoolTensor'
     assert reached_max.sum().item() >= 0
@@ -229,11 +244,15 @@ def test_spectrogram_model__filter_all():
     num_frames = 3
     num_speakers = 1
 
-    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels)
+    model = SpectrogramModel(
+        vocab_size,
+        num_speakers,
+        frame_channels=frame_channels,
+        max_frames_per_token=num_frames / num_tokens)
 
     # Make sure that stop-token is not predicted; therefore, reaching ``max_frames_per_token``
-    torch.nn.init.constant_(model.decoder.linear_stop_token.weight, -math.inf)
-    torch.nn.init.constant_(model.decoder.linear_stop_token.bias, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].weight, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].bias, -math.inf)
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
@@ -243,11 +262,7 @@ def test_spectrogram_model__filter_all():
     batched_num_tokens[0] = num_tokens
 
     frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
-        input_,
-        speaker,
-        num_tokens=batched_num_tokens,
-        max_frames_per_token=num_frames / num_tokens,
-        filter_reached_max=True)
+        input_, speaker, num_tokens=batched_num_tokens, filter_reached_max=True)
 
     assert reached_max.type() == 'torch.BoolTensor'
     assert reached_max.sum().item() == batch_size
@@ -274,9 +289,6 @@ def test_spectrogram_model__random_sigmoid():
     vocab_size = 20
     num_frames = 3
     num_speakers = 1
-    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels)
-
-    model.stop_sigmoid = MockSigmoid()
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
@@ -285,11 +297,16 @@ def test_spectrogram_model__random_sigmoid():
                                     dtype=torch.long).random_(1, num_tokens)
     batched_num_tokens[0] = num_tokens
 
-    frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
-        input_,
-        speaker,
-        num_tokens=batched_num_tokens,
+    model = SpectrogramModel(
+        vocab_size,
+        num_speakers,
+        frame_channels=frame_channels,
         max_frames_per_token=num_frames / num_tokens)
+
+    model.stop_sigmoid = MockSigmoid()
+
+    frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
+        input_, speaker, num_tokens=batched_num_tokens)
 
     max_length = lengths.max().item()
 
@@ -321,11 +338,6 @@ def test_spectrogram_model():
     vocab_size = 20
     num_frames = 3
     num_speakers = 1
-    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels)
-
-    # Make sure that stop-token is not predicted; therefore, reaching ``max_frames_per_token``
-    torch.nn.init.constant_(model.decoder.linear_stop_token.weight, -math.inf)
-    torch.nn.init.constant_(model.decoder.linear_stop_token.bias, -math.inf)
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens, batch_size).random_(1, vocab_size)
@@ -334,11 +346,18 @@ def test_spectrogram_model():
                                     dtype=torch.long).random_(1, num_tokens)
     batched_num_tokens[0] = num_tokens
 
-    frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
-        input_,
-        speaker,
-        num_tokens=batched_num_tokens,
+    model = SpectrogramModel(
+        vocab_size,
+        num_speakers,
+        frame_channels=frame_channels,
         max_frames_per_token=num_frames / num_tokens)
+
+    # Make sure that stop-token is not predicted; therefore, reaching ``max_frames_per_token``
+    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].weight, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].bias, -math.inf)
+
+    frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
+        input_, speaker, num_tokens=batched_num_tokens)
 
     assert reached_max.type() == 'torch.BoolTensor'
     assert reached_max.sum().item() == batch_size
@@ -367,18 +386,22 @@ def test_spectrogram_model_unbatched():
     vocab_size = 20
     num_frames = 3
     num_speakers = 3
-    model = SpectrogramModel(vocab_size, num_speakers, frame_channels=frame_channels).eval()
+    model = SpectrogramModel(
+        vocab_size,
+        num_speakers,
+        frame_channels=frame_channels,
+        max_frames_per_token=num_frames / num_tokens).eval()
 
     # Make sure that stop-token is not predicted; therefore, reaching ``max_frames_per_token``
-    torch.nn.init.constant_(model.decoder.linear_stop_token.weight, -math.inf)
-    torch.nn.init.constant_(model.decoder.linear_stop_token.bias, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].weight, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].bias, -math.inf)
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     input_ = torch.LongTensor(num_tokens).random_(1, vocab_size)
     speaker = torch.LongTensor(1, 1).fill_(0)
 
     frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
-        input_, speaker, max_frames_per_token=num_frames / num_tokens)
+        input_, speaker)
 
     assert reached_max.type() == 'torch.BoolTensor'
     assert reached_max

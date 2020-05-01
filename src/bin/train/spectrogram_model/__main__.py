@@ -36,6 +36,7 @@ from src.environment import set_basic_logging_config
 from src.environment import set_seed
 from src.environment import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 from src.hparams import set_hparams
+from src.text import cache_grapheme_to_phoneme_perserve_punctuation
 from src.utils import bash_time_label
 from src.utils import cache_on_disk_tensor_shapes
 from src.utils import Checkpoint
@@ -58,7 +59,10 @@ def _set_hparams(more_hparams, checkpoint):
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999, eps = 10−6
         # learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
-        'torch.optim.adam.Adam.__init__': HParams(eps=10**-6, weight_decay=10**-6, lr=10**-3)
+        # NOTE: An approach without L2 regularization was beneficial based on Comet experiments
+        # in March 2020.
+        'torch.optim.adam.Adam.__init__':
+            HParams(eps=10**-6, weight_decay=0, lr=10**-3, amsgrad=True)
     })
     add_config(more_hparams)
     set_seed()
@@ -81,8 +85,8 @@ def _train(device_index,
            comet_ml_experiment_key,
            more_hparams,
            evaluate_aligned_every_n_epochs=1,
-           evaluate_inferred_every_n_epochs=3,
-           save_checkpoint_every_n_epochs=3,
+           evaluate_inferred_every_n_epochs=1,
+           save_checkpoint_every_n_epochs=1,
            distributed_backend='nccl',
            distributed_init_method='tcp://127.0.0.1:29500'):
     """ Loop for training and periodically evaluating the model.
@@ -210,6 +214,8 @@ def main(experiment_name=None,
     dev_dataset = add_spectrogram_column(dev_dataset)
     cache_on_disk_tensor_shapes([e.spectrogram for e in train_dataset] +
                                 [e.spectrogram for e in dev_dataset])
+    cache_grapheme_to_phoneme_perserve_punctuation([e.text for e in train_dataset] +
+                                                   [e.text for e in dev_dataset])
 
     num_cuda_devices = torch.cuda.device_count()
     # NOTE (michael): Without this assert, when `nprocs` is zero, `torch.multiprocessing.spawn`

@@ -7,8 +7,8 @@ on a GCP virtual machine.
 
 1. Follow this [document](TRAIN_MODEL_GCP.md) to train a spectrogram model.
 
-1. Wait until the `dev_epoch/post_spectrogram_loss` in your Comet experiment stops decreasing. This
-   typically will happen within 72 hours of training, or \~150,000 steps.
+1. Allow your model to train for at least ~200,000 steps, or ~4 days. Then ask for help from a team
+   member to pick a good checkpoint for training the signal model.
 
 ## Train a Signal Model
 
@@ -59,5 +59,5 @@ on a GCP virtual machine.
    ❗IMPORTANT: Include the optional `--spectrogram_model_checkpoint=$SPECTROGRAM_CHECKPOINT`
    argument to start training.
 
-1. Wait until `dev_epoch/coarse_loss` and `dev_epoch/fine_loss` stop rapidly
-   decreasing. This typically will happen within 18-24 hours of training, or \~150,000 steps.
+1. Wait until audio samples are generated without artifacts. This typically will happen within
+   2 - 3 days of training, or 300,000 - 400,000 steps.

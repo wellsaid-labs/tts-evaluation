@@ -6,7 +6,7 @@ from collections import namedtuple
 #     speaker (Speaker or torch.LongTensor): Speaker speaking the text.
 #     audio_path (Path or str): Path to the ``.wav`` file of text.
 #     spectrogram (OnDiskTensor or torch.FloatTensor): Two-dimensional spectrogram of the audio.
-#     spectrogram_audio (OnDiskTensor or torch.HalfTensor): One-dimensional signal aligned to the
+#     spectrogram_audio (OnDiskTensor or torch.ShortTensor): One-dimensional signal aligned to the
 #         spectrogram.
 #     predicted_spectrogram (OnDiskTensor or torch.FloatTensor): Two-dimensional spectrogram of the
 #         audio predicted by some model.

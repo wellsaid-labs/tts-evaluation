@@ -1,26 +1,32 @@
 from collections import Counter
+from functools import partial
 
 import itertools
 import logging
 import pprint
+import random
 
 from hparams import add_config
 from hparams import configurable
 from hparams import HParams
 from torch import nn
 from torch.nn import BCEWithLogitsLoss
-from torch.nn import CrossEntropyLoss
 from torch.nn import MSELoss
 from torch.optim import Adam
 from torchnlp.random import fork_rng
 
-import random
+import torch
 import torchnlp
 
 from src import datasets
 from src.audio import get_num_seconds
+from src.audio import iso226_weighting
+from src.audio import WAVE_FORMAT_IEEE_FLOAT
+from src.audio import WavFileMetadata
+from src.bin.train.signal_model.trainer import SpectrogramLoss
 from src.datasets import filter_
 from src.datasets import normalize_audio_column
+from src.signal_model import L1L2Loss
 from src.utils import log_runtime
 from src.utils import seconds_to_string
 from src.utils import slice_by_cumulative_sum
@@ -29,22 +35,25 @@ logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
 
 
-def _set_anomaly_detection():
-    # NOTE: Prevent circular dependency
-    from src.utils import AnomalyDetector
+def _get_window(window, window_length, window_hop):
+    # NOTE: `torch.hann_window` is different than the `scipy` window used by `librosa`.
+    # Learn more here: https://github.com/pytorch/audio/issues/452
+    window_tensor = None
 
-    add_config({
-        'src.bin.train.signal_model.trainer.Trainer.__init__':
-            HParams(min_rollback=64),
-        'src.utils.anomaly_detector.AnomalyDetector.__init__':
-            HParams(
-                # NOTE: Based on ``notebooks/Detecting Anomalies.ipynb``. The current usage requires
-                # modeling gradient norm that has a lot of variation requiring a large `sigma`.
-                sigma=1024,
-                beta=0.98,
-                type_=AnomalyDetector.TYPE_HIGH,
-            )
-    })
+    try:
+        import librosa
+        window = librosa.filters.get_window(window, window_length)
+        window_tensor = torch.tensor(window).float()
+    except ImportError:
+        logger.info('Ignoring optional `librosa` configurations.')
+
+    try:
+        import scipy
+        assert scipy.signal.check_COLA(window, window_length, window_length - window_hop)
+    except ImportError:
+        logger.info('Ignoring optional `scipy` configurations.')
+
+    return window_tensor
 
 
 def _set_audio_processing():
@@ -55,17 +64,24 @@ def _set_audio_processing():
     # SOURCE (Tacotron 2):
     # mel spectrograms are computed through a shorttime Fourier transform (STFT)
     # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
-    frame_size = int(50 * sample_rate / 1000)  # NOTE: Frame size in samples
-    frame_hop = int(12.5 * sample_rate / 1000)
-    window = 'hann'
-
+    # TODO: Parameterizing frame sizes in milliseconds can help ensure that your code is invariant
+    # to the sample rate; however, we would need to assure that we're still using powers of two
+    # for performance.
+    # TODO: Verify that `frame_hop` is equal to the signal model's upsample property, ensuring that
+    # that relationship holds.
+    # TODO: 50ms / 12.5ms spectrogram is not typical spectrogram parameterization, a more typical
+    # parameterization is 25ms / 10ms. Learn more:
+    # https://www.dsprelated.com/freebooks/sasp/Classic_Spectrograms.html
+    # https://github.com/pytorch/audio/issues/384#issuecomment-597020705
+    # https://pytorch.org/audio/compliance.kaldi.html
+    frame_size = 1024  # NOTE: Frame size in samples
     fft_length = 2048
-
-    # SOURCE (Tacotron 2):
-    # Prior to log compression, the filterbank output magnitudes are clipped to a
-    # minimum value of 0.01 in order to limit dynamic range in the logarithmic
-    # domain.
-    min_magnitude = 0.01
+    assert frame_size % 4 == 0
+    frame_hop = frame_size // 4
+    # NOTE: A "hann window" is standard for calculating an FFT, it's even mentioned as a "popular
+    # window" on Wikipedia (https://en.wikipedia.org/wiki/Window_function).
+    window = 'hann'
+    window_tensor = _get_window(window, frame_size, frame_hop)
 
     # SOURCE (Tacotron 2):
     # We transform the STFT magnitude to the mel scale using an 80 channel mel
@@ -74,33 +90,23 @@ def _set_audio_processing():
     # SOURCE (Tacotron 2 Author):
     # Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
     frame_channels = 128
-    hertz_bounds = {'lower_hertz': None, 'upper_hertz': None}
-
-    # SOURCE: Efficient Neural Audio Synthesis
-    # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
-    # designed to efficiently predict 16-bit raw audio samples.
-    bits = 16
+    # NOTE: The human range is commonly given as 20 to 20,000 Hz
+    # (https://en.wikipedia.org/wiki/Hearing_range).
+    hertz_bounds = {'lower_hertz': 20, 'upper_hertz': 20000}
 
     # NOTE: The prior work only considers mono audio.
     channels = 1
     # Based on SoX this encoding is commonly used with a 16 or 24−bit encoding size. Learn more:
     # http://sox.sourceforge.net/sox.html
     encoding = 'signed-integer'
+    # TODO: Now that the model predicts audio in 32-bits, consider normalizing to 32-bits.
+    bits = 16
 
     try:
         import librosa
         librosa.effects.trim = configurable(librosa.effects.trim)
         add_config({
-            librosa.effects.trim:
-                HParams(
-                    frame_length=frame_size,
-                    hop_length=frame_hop,
-                    # NOTE: Manually determined to be a adequate cutoff for Linda Johnson via:
-                    # ``notebooks/Stripping Silence.ipynb``
-                    # TODO: Given the number of new datasets that we acquired, this value
-                    # should be reevaluated.
-                    top_db=50,
-                ),
+            librosa.effects.trim: HParams(frame_length=frame_size, hop_length=frame_hop),
         })
     except ImportError:
         logger.info('Ignoring optional `librosa` configurations.')
@@ -113,11 +119,19 @@ def _set_audio_processing():
         logger.info('Ignoring optional `IPython` configurations.')
 
     add_config({
-        'src.bin.evaluate._get_sample_rate': HParams(sample_rate=sample_rate),
+        'src.bin.evaluate.models._get_sample_rate': HParams(sample_rate=sample_rate),
         'src.audio': {
+            'framed_rms_from_power_spectrogram':
+                HParams(window=window_tensor),
+            'framed_rms_from_signal':
+                HParams(frame_length=frame_size, hop_length=frame_hop),
+            '_db_mel_spectrogram_to_spectrogram':
+                HParams(get_weighting=iso226_weighting),
+            'pad_remainder':
+                HParams(multiple=frame_hop, mode='constant', constant_values=0.0),
             'read_audio':
                 HParams(
-                    assert_metadata=dict(
+                    assert_metadata=WavFileMetadata(
                         sample_rate=sample_rate,
                         bits=bits,
                         channels=channels,
@@ -131,19 +145,27 @@ def _set_audio_processing():
             # number of channels, scaling linearly per channel.
             'build_wav_header':
                 HParams(frame_rate=sample_rate),
-            'get_log_mel_spectrogram':
+            'SignalTodBMelSpectrogram.__init__':
                 HParams(
                     sample_rate=sample_rate,
-                    frame_size=frame_size,
                     frame_hop=frame_hop,
-                    window=window,
+                    window=window_tensor,
                     fft_length=fft_length,
-                    min_magnitude=min_magnitude,
-                    # SOURCE (Tacotron 2):
-                    # We transform the STFT magnitude to the mel scale using an 80 channel mel
-                    # filterbank spanning 125 Hz to 7.6 kHz, followed by log dynamic range
-                    # compression.
                     num_mel_bins=frame_channels,
+                    # SOURCE (Tacotron 2):
+                    # Prior to log compression, the filterbank output magnitudes are clipped to a
+                    # minimum value of 0.01 in order to limit dynamic range in the logarithmic
+                    # domain.
+                    # NOTE: The `min_decibel` is set to ensure there is around 100 dB of
+                    # dynamic range, allowing us to make the most use of the maximum 96 dB dynamic
+                    # range a 16-bit audio file can provide. This is assuming that a full-scale
+                    # 997 Hz sine wave is the maximum dB which would be around ~47 dB. Tacotron 2's
+                    # equivalent  of 0.01 (~ -40 dB).
+                    min_decibel=-50.0,
+                    # NOTE: ISO226 is one of the latest standards for determining loudness:
+                    # https://www.iso.org/standard/34222.html. It does have some issues though:
+                    # http://www.lindos.co.uk/cgi-bin/FlexiData.cgi?SOURCE=Articles&VIEW=full&id=2
+                    get_weighting=iso226_weighting,
                 ),
             'griffin_lim':
                 HParams(
@@ -162,19 +184,14 @@ def _set_audio_processing():
                     iterations=30,
                 ),
             '_mel_filters':
-                HParams(fft_length=fft_length, **hertz_bounds),
-            'split_signal':
-                HParams(bits=bits),
-            'combine_signal':
-                HParams(bits=bits),
+                HParams(**hertz_bounds),
             'normalize_audio':
                 HParams(bits=bits, sample_rate=sample_rate, channels=channels, encoding=encoding)
         },
         'src.visualize': {
-            'plot_waveform':
-                HParams(sample_rate=sample_rate),
-            'plot_spectrogram':
-                HParams(sample_rate=sample_rate, frame_hop=frame_hop, y_axis='mel', **hertz_bounds)
+            'plot_waveform': HParams(sample_rate=sample_rate),
+            'plot_spectrogram': HParams(sample_rate=sample_rate, frame_hop=frame_hop),
+            'plot_mel_spectrogram': HParams(**hertz_bounds)
         },
         'src.bin.chunk_wav_and_text': {
             'seconds_to_samples': HParams(sample_rate=sample_rate),
@@ -182,25 +199,16 @@ def _set_audio_processing():
             'chunk_alignments': HParams(sample_rate=sample_rate),
             'align_wav_and_scripts': HParams(sample_rate=sample_rate),
         },
-        'src.spectrogram_model.decoder.AutoregressiveDecoder': {
-            '__init__': HParams(min_spectrogram_magnitude=min_magnitude),
-        }
     })
 
-    return frame_channels, frame_hop, bits
+    return frame_channels, frame_hop, sample_rate
 
 
-def _set_model_size(frame_channels, bits):
-
-    # SOURCE (Tacotron 2):
-    # The prediction from the previous time step is first passed through a small
-    # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
-    pre_net_hidden_size = 256
-
+def _set_model_size(frame_channels):
     # SOURCE (Tacotron 2):
     # Attention probabilities are computed after projecting inputs and location
     # features to 128-dimensional hidden representations.
-    attention_hidden_size = 128
+    encoder_output_size = 128
 
     # SOURCE (Tacotron 2):
     # Specifically, generation completes at the first frame for which this
@@ -235,23 +243,26 @@ def _set_model_size(frame_channels, bits):
                         # bi-directional [19] LSTM [20] layer containing 512 units (256) in each
                         # direction) to generate the encoded features.
                         lstm_layers=1,
-
-                        # SOURCE (Tacotron 2)
-                        # Attention probabilities are computed after projecting inputs and location
-                        # features to 128-dimensional hidden representations.
-                        out_dim=attention_hidden_size),
+                        out_dim=encoder_output_size),
                 'attention.LocationSensitiveAttention.__init__':
                     HParams(
                         # SOURCE (Tacotron 2):
                         # Location features are computed using 32 1-D convolution filters of length
                         # 31.
-                        num_convolution_filters=32,
+                        # SOURCE (Tacotron 2):
+                        # Attention probabilities are computed after projecting inputs and location
+                        # features to 128-dimensional hidden representations.
+                        hidden_size=128,
                         convolution_filter_size=31,
                     ),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(
-                        pre_net_hidden_size=pre_net_hidden_size,
-                        attention_hidden_size=attention_hidden_size,
+                        encoder_output_size=encoder_output_size,
+
+                        # SOURCE (Tacotron 2):
+                        # The prediction from the previous time step is first passed through a small
+                        # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
+                        pre_net_hidden_size=256,
 
                         # SOURCE (Tacotron 2):
                         # The prenet output and attention context vector are concatenated and
@@ -292,44 +303,26 @@ def _set_model_size(frame_channels, bits):
                             # learn more about this parameter.
                             speaker_embedding_dim=128),
                     '_infer':
-                        HParams(
-                            # NOTE: Estimated loosely to be a multiple of the slowest speech
-                            # observed in one dataset. This threshhold is primarily intended to
-                            # prevent recursion.
-                            max_frames_per_token=30,
-                            stop_threshold=stop_threshold)
+                        HParams(stop_threshold=stop_threshold)
                 }  # noqa: E122
+            },
+            'signal_model': {
+                'SignalModel.__init__':
+                    HParams(
+                        input_size=frame_channels,
+                        hidden_size=32,
+                        max_channel_size=512,
+                        ratios=[2] * 8,
+                        # SOURCE https://en.wikipedia.org/wiki/%CE%9C-law_algorithm:
+                        # For a given input x, the equation for μ-law encoding is where μ = 255 in
+                        # the North American and Japanese standards.
+                        mu=255),
+                # NOTE: We found this hidden size to be effective on Comet in April 2020.
+                'SpectrogramDiscriminator.__init__':
+                    HParams(hidden_size=512),
             },
             'bin.train.spectrogram_model.trainer.Trainer._do_loss_and_maybe_backwards':
                 HParams(stop_threshold=stop_threshold),
-            'signal_model.wave_rnn.WaveRNN.__init__':
-                HParams(
-                    local_features_size=frame_channels,
-
-                    # SOURCE: Efficient Neural Audio Synthesis
-                    # The WaveRNN model is a single-layer RNN with a dual softmax layer that is
-                    # designed to efficiently predict 16-bit raw audio samples.
-                    bits=bits,
-
-                    # SOURCE: Efficient Neural Audio Synthesis
-                    # We see that the WaveRNN with 896 units achieves NLL scores comparable to
-                    # those of the largest WaveNet model
-                    hidden_size=896,
-
-                    # SOURCE: Efficient Neural Audio Synthesis Author
-                    # The author suggested adding 3 - 5 convolutions on top of WaveRNN.
-                    # SOURCE:
-                    # https://github.com/pytorch/examples/blob/master/super_resolution/model.py
-                    # Upsampling layer is inspired by super resolution
-                    upsample_kernels=[(5, 5)],
-
-                    # SOURCE: Tacotron 2
-                    # only 2 upsampling layers are used in the conditioning stack instead of 3
-                    # layers.
-                    # SOURCE: Tacotron 2 Author Google Chat
-                    # We upsample 4x with the layers and then repeat each value 75x
-                    upsample_num_filters=[10],
-                    upsample_repeat=30),
         }
     })
 
@@ -345,7 +338,7 @@ def _filter_audio_path_not_found(example):
     return True
 
 
-def _filter_too_little_audio(example, min_seconds_per_character=0.0375):
+def _filter_too_little_audio_per_character(example, min_seconds_per_character=0.0375):
     """ Filter out examples with too little audio per character.
 
     MOTIVATION: In October 2019, Rhyan and Michael observed that actors typically cannot speak
@@ -377,21 +370,75 @@ def _filter_too_little_audio(example, min_seconds_per_character=0.0375):
     return True
 
 
+def _filter_too_little_characters(example, min_characters=3):
+    """ There was likely an error in the dataset creation if an example contains 2 or 1 characters.
+
+    NOTE: This rule was developed with the help of `QA_Datasets/Sample_Dataset.ipynb`.
+    """
+    if min_characters > len(example.text):
+        logger.warning('[%s] Hardly any text "%s" in this example, skipping %s', example.speaker,
+                       example.text, example.audio_path)
+        return False
+    return True
+
+
+def _filter_too_little_audio(example, min_audio=0.25):
+    """ There was likely an error in the dataset creation if an example contains less than 0.25
+    seconds of audio.
+
+    NOTE: This rule was developed with the help of `QA_Datasets/Sample_Dataset.ipynb`.
+    """
+    num_seconds = get_num_seconds(example.audio_path)
+    if min_audio > num_seconds:
+        logger.warning('[%s] Hardly any audio (%ss) in this example, skipping %s', example.speaker,
+                       num_seconds, example.audio_path)
+        return False
+    return True
+
+
+def _filter_too_much_audio_per_character(example, min_seconds=3.0, max_seconds_per_character=0.11):
+    """ Filter out examples with too much audio per character.
+
+    NOTE: This rule was developed with the help of `QA_Datasets/Sample_Dataset.ipynb`.
+
+    While `max_seconds_per_character` cutoff isn't perfect, it does remove more bad data than
+    good data based on the dataset as of Feburary 2020. This cutoff relies on the
+    "Law of large numbers" for that reason it doesn't apply well to clips under 3 seconds in length
+    which can go up to 0.20 seconds per character.
+
+    Args:
+        example (TextSpeechRow)
+        min_seconds (float): The mininum number of seconds before this rule goes into affect.
+        max_seconds_per_character (float): The maximum number of seconds per character before
+          filtering out the example.
+
+    Returns:
+        (bool)
+    """
+    num_seconds = get_num_seconds(example.audio_path)
+    if len(example.text) * max_seconds_per_character < num_seconds and min_seconds < num_seconds:
+        logger.warning(('[%s] Likely some text was repeated or the actor took a break; Example' +
+                        ' "%s" with %f seconds per character ' +
+                        '[%f second(s) / %d character(s)] at `%s` was removed.'),
+                       example.speaker, example.text, num_seconds / len(example.text), num_seconds,
+                       len(example.text), example.audio_path)
+        return False
+    return True
+
+
 def _filter_no_text(example):
     """ Filter out examples with no text.
     """
     if len(example.text) == 0:
         logger.warning('[%s] Text is absent, skipping: %s', example.speaker, example.audio_path)
         return False
-
     return True
 
 
 def _filter_books(example):
     """ Filter out examples originating from various audiobooks.
     """
-    # NOTE: Prevent circular dependency
-    from src import datasets
+    from src import datasets  # NOTE: Prevent circular dependency
 
     # Filter our particular books from M-AILABS dataset due:
     # - Inconsistent acoustic setup compared to other samples from the same speaker
@@ -400,18 +447,21 @@ def _filter_books(example):
             datasets.m_ailabs.MIDNIGHT_PASSENGER.title in str(example.audio_path)):
         return False
 
+    # Filter out the North & South book because it uses English in a way that's not consistent with
+    # editor usage, for example: "To-morrow, you will-- Come back to-night, John!"
+    if (example.speaker == datasets.m_ailabs.NORTH_AND_SOUTH.speaker and
+            datasets.m_ailabs.NORTH_AND_SOUTH.title in str(example.audio_path)):
+        return False
+
     return True
 
 
 def _filter_elliot_miller(example):
     """ Filter examples with the actor Elliot Miller due to his unannotated character portrayals.
     """
-    # NOTE: Prevent circular dependency
-    from src import datasets
-
+    from src import datasets  # NOTE: Prevent circular dependency
     if example.speaker == datasets.m_ailabs.ELLIOT_MILLER:
         return False
-
     return True
 
 
@@ -420,7 +470,6 @@ def _filter_no_numbers(example):
     """
     if len(set(example.text).intersection(set('0123456789'))) > 0:
         return False
-
     return True
 
 
@@ -438,8 +487,15 @@ def _preprocess_dataset(dataset):
     dataset = filter_(_filter_elliot_miller, dataset)
     dataset = filter_(_filter_no_numbers, dataset)
     dataset = filter_(_filter_books, dataset)
+    dataset = filter_(_filter_too_little_characters, dataset)
+    # TODO: Investigate trimming audio silences during normalization to assist the following rules
+    # that dependent on the length of the audio.
+    # NOTE: `normalize_audio_column` run before audio length filters because it caches the audio
+    # metadata needed to execute the below filters quickly.
     dataset = normalize_audio_column(dataset)
     dataset = filter_(_filter_too_little_audio, dataset)
+    dataset = filter_(_filter_too_little_audio_per_character, dataset)
+    dataset = filter_(_filter_too_much_audio_per_character, dataset)
     random.shuffle(dataset)
     return dataset
 
@@ -520,24 +576,36 @@ def get_dataset():
         return train, dev
 
 
-def signal_model_lr_multiplier_schedule(step, decay=80000, warmup=20000, min_lr_multiplier=.05):
+def spectrogram_model_lr_multiplier_schedule(step, warmup=500):
     """ Learning rate multiplier schedule.
-
-    NOTE: BERT uses a similar learning rate: https://github.com/google-research/bert/issues/425
 
     Args:
         step (int): The current step.
-        decay (int, optional): The total number of steps to decay the learning rate.
-        warmup (int, optional): The total number of steps to warm up the learning rate.
-        min_lr_multiplier (int, optional): The minimum learning rate at the end of the decay.
+        warmup (int): The number of warmup steps.
 
     Returns:
         (float): Multiplier on the base learning rate.
     """
     if step < warmup:
         return step / warmup
-    else:
-        return max(1 - ((step - warmup) / decay), min_lr_multiplier)
+
+    return 1.0
+
+
+def signal_model_lr_multiplier_schedule(step, warmup=500):
+    """ Learning rate multiplier schedule.
+
+    Args:
+        step (int): The current step.
+        warmup (int): The number of warmup steps.
+
+    Returns:
+        (float): Multiplier on the base learning rate.
+    """
+    if step < warmup:
+        return step / warmup
+
+    return 1.0
 
 
 @log_runtime
@@ -545,13 +613,12 @@ def set_hparams():
     """ Using the ``configurable`` module set the hyperparameters for the source code.
     """
     # NOTE: Prevent circular dependency
-    from src.optimizers import Lamb
-    from src.signal_model import WaveRNN
+    from src.signal_model import SignalModel
+    from src.signal_model import SpectrogramDiscriminator
     from src.spectrogram_model import SpectrogramModel
 
-    frame_channels, frame_hop, bits = _set_audio_processing()
-    _set_anomaly_detection()
-    _set_model_size(frame_channels, bits)
+    frame_channels, frame_hop, sample_rate = _set_audio_processing()
+    _set_model_size(frame_channels)
 
     Adam.__init__ = configurable(Adam.__init__)
     nn.modules.batchnorm._BatchNorm.__init__ = configurable(
@@ -559,40 +626,25 @@ def set_hparams():
     nn.LayerNorm.__init__ = configurable(nn.LayerNorm.__init__)
     add_config({
         # NOTE: `momentum=0.01` to match Tensorflow defaults
-        'torch.nn.modules.batchnorm._BatchNorm.__init__':
-            HParams(momentum=0.01),
+        'torch.nn.modules.batchnorm._BatchNorm.__init__': HParams(momentum=0.01),
         # NOTE: BERT uses `eps=1e-12` for `LayerNorm`, see here:
         # https://github.com/huggingface/transformers/blob/master/src/transformers/configuration_bert.py
-        'torch.nn.LayerNorm.__init__':
-            HParams(eps=1e-12),
+        'torch.nn.LayerNorm.__init__': HParams(eps=1e-12),
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
-        'torch.optim.adam.Adam.__init__':
-            HParams(
-                betas=(0.9, 0.999),
-                amsgrad=True,
-                lr=10**-3,
-            ),
-        'src.optimizers.Lamb.__init__':
-            HParams(
-                betas=(0.9, 0.999),  # NOTE: Default value as suggested in the paper proposing Adam.
-                # NOTE: `amsgrad` caused substantially lower performance (tested on Comet in August
-                # 2019).
-                amsgrad=False,
-                # NOTE: This learning rate performed well on (tested on Comet in June 2019).
-                lr=2 * 10**-3,
-                max_trust_ratio=10,  # NOTE: Default value as suggested in the paper proposing LAMB.
-                # NOTE: This l2 regularization reduced audio artifacts without sacrificing
-                # performance (tested on Comet in August 2019).
-                l2_regularization=10**-7,
-                # NOTE: `weight_decay` was more sensistive than l2 regularization without providing
-                # much benefit (tested on Comet in August 2019).
-                weight_decay=0.0),
+        'torch.optim.adam.Adam.__init__': HParams(
+            betas=(0.9, 0.999),
+            amsgrad=False,
+            lr=10**-3,
+        )
     })
 
     spectrogram_model_dev_batch_size = 224
 
     seed = 1212212
+
+    # NOTE: This delimiter must be a single character not in the dataset.
+    phonetic_syllable_delimiter = '|'
 
     torchnlp.samplers.DeterministicSampler.__init__ = configurable(
         torchnlp.samplers.DeterministicSampler.__init__)
@@ -603,6 +655,8 @@ def set_hparams():
     add_config({
         'src': {
             'spectrogram_model': {
+                'input_encoder.InputEncoder.__init__':
+                    HParams(delimiter=phonetic_syllable_delimiter),
                 # SOURCE (Tacotron 2):
                 # In order to introduce output variation at inference time, dropout with
                 # probability 0.5 is applied only to layers in the pre-net of the
@@ -611,20 +665,42 @@ def set_hparams():
                     HParams(dropout=0.5),
                 'model.SpectrogramModel.__init__':
                     HParams(
-                        # NOTE: This dropout performed well on Comet in August 2019.
-                        speaker_embedding_dropout=0.25)
+                        # NOTE: This is based on one of the slowest legitimate example in the
+                        # dataset:
+                        # "rate(WSL_SMurphyScript34-39,24000)/script_52_chunk_9.wav"
+                        # NOTE: This configuration is related to the dataset preprocessing step:
+                        # `_filter_too_much_audio_per_character`
+                        # NOTE: This number was configured with the help of:
+                        # `QA_Datasets/Sample_Dataset.ipynb`
+                        max_frames_per_token=0.16 / (frame_hop / sample_rate),
+
+                        # NOTE: The spectrogram input ranges from around -50 to 50. This scaler
+                        # puts the input and output in a more reasonable range for the model of
+                        # -5 to 5.
+                        output_scalar=10.0,
+
+                        # NOTE: This dropout approach proved effective in Comet in March 2020.
+                        speaker_embed_dropout=0.1),
+                # NOTE: This below dropout approach proved effective in Comet in March 2020.
+                'attention.LocationSensitiveAttention.__init__':
+                    HParams(dropout=0.1),
+                'decoder.AutoregressiveDecoder.__init__':
+                    HParams(stop_net_dropout=0.5),
+                'encoder.Encoder.__init__':
+                    HParams(dropout=0.1)
             },
             # NOTE: Parameters set after experimentation on a 1 Px100 GPU.
             'datasets.utils.add_predicted_spectrogram_column':
                 HParams(batch_size=(spectrogram_model_dev_batch_size // 2)),
             'bin': {
-                'evaluate._get_dev_dataset': HParams(dataset=get_dataset),
+                'evaluate.models._get_dev_dataset': HParams(dataset=get_dataset),
                 'train': {
                     'spectrogram_model': {
                         '__main__._get_dataset':
                             HParams(dataset=get_dataset),
                         'trainer.Trainer.__init__':
                             HParams(
+                                lr_multiplier_schedule=spectrogram_model_lr_multiplier_schedule,
                                 # SOURCE: Tacotron 2
                                 # To train the feature prediction network, we apply the standard
                                 # maximum-likelihood training procedure (feeding in the correct
@@ -651,13 +727,25 @@ def set_hparams():
 
                                 # Tacotron 2 like model with any changes documented via Comet.ml.
                                 model=SpectrogramModel),
+                        'trainer.Trainer._do_loss_and_maybe_backwards':
+                            HParams(
+                                # NOTE: The loss is calibrated to match the loss computed on a
+                                # Tacotron-2 spectrogram input.
+                                pre_spectrogram_loss_scalar=1 / 100,
+                                post_spectrogram_loss_scalar=1 / 100,
+                                # NOTE: This stop token loss is calibrated to prevent overfitting
+                                # on the stop token before the model is able to model the
+                                # spectrogram.
+                                stop_token_loss_scalar=1 / 4),
                         'data_loader.get_normalized_half_gaussian':
                             HParams(
                                 # NOTE: We approximated the uncertainty in the stop token by viewing
                                 # the stop token predictions by a fully trained model without
                                 # this smoothing. We found that a fully trained model would
                                 # learn a similar curve over 4 - 8 frames in January 2020, on Comet.
-                                length=8,
+                                # NOTE: This was rounded up to 10 after the spectrograms got
+                                # 17% larger.
+                                length=10,
                                 standard_deviation=2),
                     },
                     'signal_model': {
@@ -670,45 +758,73 @@ def set_hparams():
                                 # synchronous updates, using the Adam optimizer with β1 = 0.9, β2 =
                                 # 0.999, eps = 10−8 and a fixed learning rate of 10−4
                                 # NOTE: Parameters set after experimentation on a 8 V100 GPUs.
-                                train_batch_size=256,
+                                train_batch_size=128,
                                 # SOURCE: Efficient Neural Audio Synthesis
                                 # The WaveRNN models are trained on sequences of 960 audio samples.
-                                # NOTE: We were able to get better results with 1800 audio samples
-                                # in Comet in August, 2019.
-                                train_spectrogram_slice_size=int(1800 / frame_hop),
-                                dev_batch_size=32,
-                                dev_spectrogram_slice_size=int(24000 / frame_hop),
+                                # SOURCE: Parallel WaveNet: Fast High-Fidelity Speech Synthesis
+                                # The teacher WaveNet network was trained for 1,000,000 steps with
+                                # the ADAM optimiser [14] with a minibatch size of 32 audio clips,
+                                # each containing 7,680 timesteps (roughly 320ms).
+                                # NOTE: The `spectrogram_slice_size` must be larger than the
+                                # `fft_length - frame_hop` of the largest `SpectrogramLoss`;
+                                # otherwise, the loss can't be computed.
+                                train_spectrogram_slice_size=int(8192 / frame_hop),
+                                dev_batch_size=16,
+                                dev_spectrogram_slice_size=int(32768 / frame_hop),
+                                optimizer=Adam,
 
-                                # `CrossEntropyLoss` is not directly mentioned in the paper; however
-                                # is a popular choice as of Jan 2019 for a classification task.
-                                criterion=CrossEntropyLoss,
-                                optimizer=Lamb,
-
-                                # A similar schedule to used to train BERT; furthermore, experiments
-                                # on Comet show this schedule is effective along with the LAMB
-                                # optimizer and a large batch size.
+                                # NOTE: We employ a small warmup because the model can be unstable
+                                # at the start of it's training.
                                 lr_multiplier_schedule=signal_model_lr_multiplier_schedule,
-
-                                # WaveRNN from `Efficient Neural Audio Synthesis` is small,
-                                # efficient, and performant as a vocoder.
-                                model=WaveRNN,
-                            ),
-                        'data_loader.DataLoader.__init__':
+                                model=SignalModel,
+                                # NOTE: The `num_mel_bins` must be proportional to `fft_length`,
+                                # learn more:
+                                # https://stackoverflow.com/questions/56929874/what-is-the-warning-empty-filters-detected-in-mel-frequency-basis-about
+                                criterions=[
+                                    partial(
+                                        SpectrogramLoss,
+                                        fft_length=2048,
+                                        frame_hop=256,
+                                        window=_get_window('hann', 1024, 256),
+                                        num_mel_bins=128),
+                                    partial(
+                                        SpectrogramLoss,
+                                        fft_length=1024,
+                                        frame_hop=128,
+                                        window=_get_window('hann', 512, 128),
+                                        num_mel_bins=64),
+                                    partial(
+                                        SpectrogramLoss,
+                                        fft_length=512,
+                                        frame_hop=64,
+                                        window=_get_window('hann', 256, 64),
+                                        num_mel_bins=32),
+                                ]),
+                        'trainer.SpectrogramLoss.__init__':
                             HParams(
-                                # TODO: This should depend on an upsample property.
-                                # TODO: It may be more appropriate to pad by 2 spectrogram frames
-                                # instead. Given that each frame aligns with 300 samples and each
-                                # frame is created from 1200 samples, then there is 900 samples of
-                                # context for each frame outside of the aligned samples. Then it
-                                # makes sense to have 450 samples of padding or 2 spectrogram
-                                # frames.
-                                spectrogram_slice_pad=2,)
+                                criterion=L1L2Loss,
+                                # NOTE: This discriminator approach is largely based on:
+                                # https://pytorch.org/tutorials/beginner/dcgan_faces_tutorial.html
+                                # NOTE: This approach proved successful in Comet experiment
+                                # f590fe3c51a04130ad65736f8aa5fd81 run in February 2020.
+                                discriminator=SpectrogramDiscriminator,
+                                discriminator_optimizer=partial(torch.optim.Adam, lr=10**-3),
+                                discriminator_criterion=torch.nn.BCEWithLogitsLoss,
+                            ),
                     }
                 },
             },
+            'text.cache_grapheme_to_phoneme_perserve_punctuation':
+                HParams(delimiter=phonetic_syllable_delimiter),
+            # NOTE: The expected signal model output is 32-bit float.
+            'audio.build_wav_header':
+                HParams(wav_format=WAVE_FORMAT_IEEE_FLOAT, num_channels=1, sample_width=4),
             # NOTE: Window size smoothing parameter is not super sensative.
             'optimizers.AutoOptimizer.__init__':
                 HParams(window_size=128),
+            # NOTE: The `beta` parameter is not super sensative.
+            'optimizers.ExponentialMovingParameterAverage.__init__':
+                HParams(beta=0.9999),
             'environment.set_seed':
                 HParams(seed=seed),
         }

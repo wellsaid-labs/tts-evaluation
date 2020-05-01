@@ -1,123 +1,131 @@
-from copy import deepcopy
 from unittest import mock
 
 import math
 import unittest
 
 from torch.optim import Adam
-from torch.optim import AdamW
 
+import pytest
 import torch
-import numpy
 
+from src.environment import TEMP_PATH
 from src.optimizers import AutoOptimizer
-from src.optimizers import Lamb
+from src.optimizers import ExponentialMovingParameterAverage
 from src.optimizers import Optimizer
+from src.utils import Checkpoint
 from tests._utils import MockCometML
 
 
-def test_lamb_optimizer__adam():
-    net_lamb = torch.nn.LSTM(10, 20, 2)
-    net_adam = torch.nn.LSTM(10, 20, 2)
+class _TestExponentialMovingParameterAverageCheckpointModule(torch.nn.Module):
 
-    net_adam.load_state_dict(deepcopy(net_lamb.state_dict()))  # Same weights as `net_lamb`
-
-    # `trust_ratio=1.0` ensures equality with AdamW (similar to Adam with a different weight decay).
-    lamb = Lamb(
-        params=net_lamb.parameters(),
-        amsgrad=False,
-        lr=10**-3,
-        eps=1e-8,
-        min_trust_ratio=1,
-        max_trust_ratio=1,
-        l2_regularization=0.01)
-    adam = Adam(params=net_adam.parameters(), amsgrad=False, lr=10**-3, weight_decay=0.01, eps=1e-8)
-
-    input_ = torch.randn(5, 3, 10, requires_grad=False)
-
-    output_lamb, _ = net_lamb(input_)
-    lamb.zero_grad()
-    output_lamb.sum().backward()
-    lamb.step()
-
-    output_adam, _ = net_adam(input_)
-    adam.zero_grad()
-    output_adam.sum().backward()
-    adam.step()
-
-    # The first step for LAMB should have an Adam update
-    for p1, p2 in zip(net_lamb.parameters(), net_adam.parameters()):
-        numpy.testing.assert_allclose(p1.detach().numpy(), p2.detach().numpy(), rtol=1e-3)
+    def __init__(self, value):
+        super().__init__()
+        self.parameter = torch.nn.Parameter(torch.full((1,), value))
 
 
-def test_lamb_optimizer__amsgrad():
-    net_lamb = torch.nn.LSTM(10, 20, 2)
-    net_adam = torch.nn.LSTM(10, 20, 2)
+def test_exponential_moving_parameter_average__checkpoint():
+    """ Test to ensure that the state is saved correctly during checkpointing. """
 
-    net_adam.load_state_dict(deepcopy(net_lamb.state_dict()))  # Same weights as `net_lamb`
+    values = [1.0, 2.0]
 
-    # `trust_ratio=1.0` ensures equality with AdamW (similar to Adam with a different weight decay).
-    lamb = Lamb(
-        params=net_lamb.parameters(),
-        amsgrad=True,
-        lr=10**-3,
-        min_trust_ratio=1,
-        max_trust_ratio=1,
-        eps=1e-8)
-    adam = Adam(params=net_adam.parameters(), lr=10**-3, amsgrad=True, eps=1e-8)
+    module = _TestExponentialMovingParameterAverageCheckpointModule(values[0])
+    exponential_moving_parameter_average = ExponentialMovingParameterAverage(
+        module.parameters(), beta=0.98)
 
-    input_ = torch.randn(5, 3, 10, requires_grad=False)
+    checkpoint = Checkpoint(
+        directory=TEMP_PATH,
+        step=0,
+        model=module,
+        exponential_moving_parameter_average=exponential_moving_parameter_average)
+    checkpoint_path = checkpoint.save()
 
-    output_lamb, _ = net_lamb(input_)
-    lamb.zero_grad()
-    output_lamb.sum().backward()
-    lamb.step()
+    del checkpoint
 
-    output_adam, _ = net_adam(input_)
-    adam.zero_grad()
-    output_adam.sum().backward()
-    adam.step()
+    checkpoint = Checkpoint.from_path(checkpoint_path)
 
-    # NOTE: The first step for LAMB should have an Adam update
-    for p1, p2 in zip(net_lamb.parameters(), net_adam.parameters()):
-        numpy.testing.assert_almost_equal(p1.detach().numpy(), p2.detach().numpy(), decimal=5)
+    del exponential_moving_parameter_average
+    del module
+
+    exponential_moving_parameter_average = checkpoint.exponential_moving_parameter_average
+    module = checkpoint.model
+
+    # Ensure that `apply_shadow` is set to `values[0]`
+    exponential_moving_parameter_average.apply_shadow()
+    assert module.parameter.data[0] == values[0]
+    exponential_moving_parameter_average.restore()
+
+    # Ensure that `update` / `apply_shadow` responds to the parameter update from the model loaded
+    # from disk
+    module.parameter.data = torch.tensor([values[1]])
+    exponential_moving_parameter_average.update()
+    exponential_moving_parameter_average.apply_shadow()
+    assert module.parameter.data[0] == (0.0196 * values[0] + 0.02 * values[1]) / 0.0396
+
+    # Ensure that `restore` is able to restore the model loaded from disk
+    exponential_moving_parameter_average.restore()
+    assert module.parameter.data[0] == values[1]
 
 
-def test_lamb_optimizer__adam_w():  # Smoke test
-    net_lamb = torch.nn.LSTM(10, 20, 2)
-    net_adam = torch.nn.LSTM(10, 20, 2)
+def test_exponential_moving_parameter_average__identity():
 
-    net_adam.load_state_dict(deepcopy(net_lamb.state_dict()))  # Same weights as `net_lamb`
+    class Module(torch.nn.Module):
 
-    # `trust_ratio=1.0` ensures equality with AdamW (similar to Adam with a different weight decay).
-    # NOTE: Our implementation includes bias correction in `AdamW` while `AdamW`
-    # doesn't.
-    lamb = Lamb(
-        params=net_lamb.parameters(),
-        amsgrad=False,
-        lr=10**-3,
-        eps=1e-8,
-        min_trust_ratio=1,
-        max_trust_ratio=1,
-        weight_decay=0.01)
-    adam = AdamW(
-        params=net_adam.parameters(), amsgrad=False, lr=10**-3, weight_decay=0.01, eps=1e-8)
+        def __init__(self):
+            super().__init__()
+            self.parameter = torch.nn.Parameter(torch.zeros(1))
 
-    input_ = torch.randn(5, 3, 10, requires_grad=False)
+    module = Module()
+    exponential_moving_parameter_average = ExponentialMovingParameterAverage(
+        module.parameters(), beta=0)
 
-    output_lamb, _ = net_lamb(input_)
-    lamb.zero_grad()
-    output_lamb.sum().backward()
-    lamb.step()
+    module.parameter.data[0] = 1.0
+    exponential_moving_parameter_average.update()
+    exponential_moving_parameter_average.apply_shadow()
+    assert module.parameter.data[0] == 1.0
+    exponential_moving_parameter_average.restore()
 
-    output_adam, _ = net_adam(input_)
-    adam.zero_grad()
-    output_adam.sum().backward()
-    adam.step()
+    module.parameter.data[0] = 2.0
+    exponential_moving_parameter_average.update()
+    exponential_moving_parameter_average.apply_shadow()
+    assert module.parameter.data[0] == 2.0
+    exponential_moving_parameter_average.restore()
 
-    # The first step for LAMB should have an Adam update
-    for p1, p2 in zip(net_lamb.parameters(), net_adam.parameters()):
-        numpy.testing.assert_almost_equal(p1.detach().numpy(), p2.detach().numpy(), decimal=5)
+
+def test_exponential_moving_parameter_average():
+    """ Test bias correction implementation via this video:
+    https://pt.coursera.org/lecture/deep-neural-network/www.deeplearning.ai-XjuhD
+    """
+    values = [1.0, 2.0]
+
+    class Module(torch.nn.Module):
+
+        def __init__(self):
+            super().__init__()
+            self.parameter = torch.nn.Parameter(torch.full((2,), values[0]))
+
+    module = Module()
+    exponential_moving_parameter_average = ExponentialMovingParameterAverage(
+        module.parameters(), beta=0.98)
+
+    assert module.parameter.data[0] == values[0]
+    assert module.parameter.data[1] == values[0]
+
+    module.parameter.data = torch.tensor([values[1], values[1]])
+
+    exponential_moving_parameter_average.update()
+
+    assert module.parameter.data[0] == values[1]
+    assert module.parameter.data[1] == values[1]
+
+    exponential_moving_parameter_average.apply_shadow()
+
+    assert module.parameter.data[0] == (0.0196 * values[0] + 0.02 * values[1]) / 0.0396
+    assert module.parameter.data[1] == (0.0196 * values[0] + 0.02 * values[1]) / 0.0396
+
+    exponential_moving_parameter_average.restore()
+
+    assert module.parameter.data[0] == values[1]
+    assert module.parameter.data[1] == values[1]
 
 
 class TestOptimizer(unittest.TestCase):
@@ -204,7 +212,7 @@ class TestOptimizer(unittest.TestCase):
         adam = Adam(params)
         adam.step = _step
         optim = Optimizer(adam)
-        optim.step(comet_ml=MockCometML())
+        optim.step(comet_ml=MockCometML(), skip_batch=True)
         assert not did_step
 
         # Test ``nan``
@@ -213,5 +221,25 @@ class TestOptimizer(unittest.TestCase):
         adam = Adam(params)
         adam.step = _step
         optim = Optimizer(adam)
-        optim.step(comet_ml=MockCometML())
+        optim.step(comet_ml=MockCometML(), skip_batch=True)
         assert not did_step
+
+        with pytest.raises(ValueError):
+            # Test ``nan``
+            did_step = False
+            params[0].grad = torch.tensor([float('nan')])
+            adam = Adam(params)
+            adam.step = _step
+            optim = Optimizer(adam)
+            optim.step(comet_ml=MockCometML(), skip_batch=False)
+            assert not did_step
+
+        with pytest.raises(ValueError):
+            # Test ``inf``
+            did_step = False
+            params = [torch.nn.Parameter(torch.randn(1))]
+            params[0].grad = torch.tensor([math.inf])
+            adam = Adam(params)
+            adam.step = _step
+            optim = Optimizer(adam)
+            optim.step(comet_ml=MockCometML(), skip_batch=False)

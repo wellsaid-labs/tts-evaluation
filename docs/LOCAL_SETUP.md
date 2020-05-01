@@ -36,33 +36,19 @@ python -m pip install -r requirements.txt --upgrade
 ## 3. Install Additional Dependencies
 
 This repository requires [SoX](http://sox.sourceforge.net/) (Sound eXchange) and
-[FFmpeg](https://ffmpeg.org/) for audio preprocessing. They can be installed like so:
+[FFmpeg](https://ffmpeg.org/) for audio preprocessing. Finally, this requires
+[eSpeak](http://espeak.sourceforge.net/) for grapheme to phoneme text preprocessing. They can be
+installed like so:
 
 ```bash
 brew install sox
 brew install ffmpeg
+brew install espeak
 ```
 
 Note that we do not use `ffmpeg` directly instead it is used by one of our
 [dependencies](https://librosa.github.io/librosa/install.html#ffmpeg).
 
-This repository also requires [Ninja](https://ninja-build.org/) for compilation. It can be
-installed like so:
-
-```bash
-brew install ninja
-```
-
-### (Optional) [MKL](https://software.intel.com/en-us/mkl)
-
-For optimal signal model inference performance, install [MKL](https://software.intel.com/en-us/mkl)
-like so:
-
-```bash
-sudo bash src/bin/install_mkl.sh
-```
-
-Note that this installation will only work on Linux machines with an Intel CPU.
 
 ## 4. Configure Visualization Dependencies
 

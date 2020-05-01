@@ -867,7 +867,7 @@ def main(wav_pattern,
         logger.info('Chunking and writing...')
         audio_chunk_directory = wav_directory / wav_path.stem
         audio_chunk_directory.mkdir(exist_ok=True)
-        audio = read_audio(wav_path, to_float=False)
+        audio = read_audio(wav_path)
         to_write = []  # Metadata such as text to write in `metadata_filename`
         for j, (alignment, row) in enumerate(zip(alignments, data_frame.to_dict('records'))):
             script = row[text_column]

@@ -286,12 +286,13 @@ LINCOLN_CUSTOM = Speaker('Lincoln (Custom)', Gender.MALE)
 
 
 def lincoln_speech_dataset(
-        extracted_name='Lincoln_custom_ma',
-        url='https://drive.google.com/uc?export=download&id=1NJkVrPyxiNLKhc1Pj-ssCFhx_Mxzervf',
-        url_filename='Lincoln_custom_ma.tar.gz',
-        speaker=LINCOLN_CUSTOM,
-        create_root=True,
-        **kwargs):
+    extracted_name='Lincoln_custom_ma',
+    url='https://drive.google.com/uc?export=download&id=1NJkVrPyxiNLKhc1Pj-ssCFhx_Mxzervf',
+    url_filename='Lincoln_custom_ma.tar.gz',
+    speaker=LINCOLN_CUSTOM,
+    create_root=True,
+    **kwargs,
+):
     return _dataset_loader(extracted_name, url, speaker, url_filename, create_root, **kwargs)
 
 

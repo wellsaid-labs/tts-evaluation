@@ -36,10 +36,10 @@ caches.
   find disk/data -name '.tts_cache' -type d -exec rm -rf {} \;
   ```
 
-- Delete the signal model build files, like so:
+- Delete the cache'd predicted spectrograms, like so:
 
   ```bash
-  rm -rf disk/other/ninja_build
+  find disk/data -type f -name 'predicted_spectrogram*aligned*npy' -delete
   ```
 
 - Delete various function disk caches for functions. For example, in the below command
