@@ -2,10 +2,21 @@ import numpy
 import torch
 
 from src.signal_model import generate_waveform
+from src.signal_model import has_weight_norm
 from src.signal_model import L1L2Loss
 from src.signal_model import SignalModel
 from src.signal_model import SpectrogramDiscriminator
 from src.signal_model import trim
+
+
+def test_has_weight_norm():
+    module = torch.nn.Linear(20, 40)
+    torch.nn.utils.weight_norm(module, name='weight')
+
+    assert has_weight_norm(module)
+
+    torch.nn.utils.remove_weight_norm(module, name='weight')
+    assert not has_weight_norm(module)
 
 
 def test_l1_l2_loss():
