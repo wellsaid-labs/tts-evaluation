@@ -171,10 +171,11 @@ def stream_text_to_speech_synthesis(signal_model, spectrogram_model, text, speak
     """
 
     def get_spectrogram():
-        for _, frames, _, _, _ in spectrogram_model(text, speaker, is_generator=True):
-            # [num_frames, batch_size (optional), frame_channels] →
-            # [batch_size (optional), num_frames, frame_channels]
-            yield frames.transpose(0, 1) if frames.dim() == 3 else frames
+        with torch.no_grad():
+            for _, frames, _, _, _ in spectrogram_model(text, speaker, is_generator=True):
+                # [num_frames, batch_size (optional), frame_channels] →
+                # [batch_size (optional), num_frames, frame_channels]
+                yield frames.transpose(0, 1) if frames.dim() == 3 else frames
 
     # NOTE: Learn more:
     # https://stackoverflow.com/questions/25245439/writing-wav-files-of-unknown-length

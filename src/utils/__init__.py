@@ -46,6 +46,6 @@ __all__ = [
     'get_chunks', 'cache_on_disk_tensor_shapes', 'RecordStandardStreams', 'Pool',
     'maybe_load_tensor', 'AveragedMetric', 'DistributedAveragedMetric', 'bash_time_label',
     'RepeatTimer', 'mean', 'random_sample', 'make_arg_key', 'DiskCache',
-    'assert_no_overwritten_files', 'get_file_metadata', 'dict_collapse', 'trim_tensors',
-    'pad_tensors', 'strip', 'get_functions_with_disk_cache'
+    'assert_no_overwritten_files', 'get_file_metadata', 'dict_collapse', 'strip', 'trim_tensors',
+    'pad_tensors', 'get_functions_with_disk_cache'
 ]
