@@ -5,8 +5,10 @@
  */
 document.addEventListener('DOMContentLoaded', async function (_) {
   let clipNumber = 1;
+
   // NOTE: This endpoint is backwards compatible.
   const endpoint = '/api/speech_synthesis/v1/text_to_speech';
+  const is_production = location.hostname.includes('wellsaidlabs');
 
   const textarea = document.querySelector('textarea');
   const speakerSelect = document.querySelector('#speaker');
@@ -112,7 +114,7 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       // - Using the correct endpoint.
       data.sectionElement.querySelector('.progress').style.display = 'none';
       const audioElement = data.sectionElement.querySelector('audio');
-      audioElement.src = `${endpoint}/stream?${new URLSearchParams(data.payload).toString()}`;
+      audioElement.src = `${is_production ? 'https://voice.wellsaidlabs.com' : ''}/stream?${new URLSearchParams(data.payload).toString()}`;
       audioElement.load();
       resolve();
     });
@@ -163,14 +165,15 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       clipNumber += 1;
 
       try {
-        const response = await fetch(`${endpoint}/input_validated`, {
-          method: 'POST',
-          body: JSON.stringify(payload),
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept-Version': version,
-          }
-        })
+        const response = await fetch(
+          `${is_production ? 'https://voice2.wellsaidlabs.com' : ''}/input_validated`, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept-Version': version,
+            }
+          })
         if (!response.ok) {
           sectionElement.querySelector('.progress p').textContent = (await response.json()).message;
         } else {

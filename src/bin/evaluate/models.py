@@ -7,23 +7,23 @@ Examples
 --------
 
 Example of sampling the preprocessed dataset:
-    $ python -m src.bin.evaluate
+    $ python -m src.bin.evaluate.models
 
 
 Example of generating signal model samples from the ground truth spectrograms:
-    $ python -m src.bin.evaluate --signal_model experiments/your/checkpoint.pt
+    $ python -m src.bin.evaluate.models --signal_model experiments/your/checkpoint.pt
 
 
 Example of generating TTS samples end-to-end:
-    $ python -m src.bin.evaluate --signal_model experiments/your/checkpoint.pt \
-                                 --spectrogram_model experiments/your/checkpoint.pt
+    $ python -m src.bin.evaluate.models --signal_model experiments/your/checkpoint.pt \
+                                        --spectrogram_model experiments/your/checkpoint.pt
 
 
 Example of generating TTS samples end-to-end with custom text:
-    $ python -m src.bin.evaluate --signal_model experiments/your/checkpoint.pt \
-                                 --spectrogram_model experiments/your/checkpoint.pt \
-                                 --text "custom text" \
-                                 --text "more custom text"
+    $ python -m src.bin.evaluate.models --signal_model experiments/your/checkpoint.pt \
+                                        --spectrogram_model experiments/your/checkpoint.pt \
+                                        --text "custom text" \
+                                        --text "more custom text"
 """
 from itertools import product
 from pathlib import Path
@@ -238,9 +238,10 @@ def main(dataset,
             has_target_audio or spectrogram_model_checkpoint is not None):
         logger.info('The signal model path is: %s', signal_model_checkpoint.path)
         logger.info('Running inference with %d threads.', torch.get_num_threads())
-        # TODO: Remove `WeightNorm` from signal model for faster synthesis.
+        # TODO: Factor out removing `exponential_moving_parameter_average` into the signal model's
+        # inference mode.
         signal_model_checkpoint.exponential_moving_parameter_average.apply_shadow()
-        signal_model = signal_model_checkpoint.model
+        signal_model = signal_model_checkpoint.model.eval()
         use_predicted = spectrogram_model_checkpoint is not None
 
         # NOTE: Sort by spectrogram lengths to batch similar sized outputs together
@@ -255,7 +256,8 @@ def main(dataset,
             logger.info('Predicting signal from spectrogram of size %s.', spectrogram.shape)
             start = time.time()
             # [local_length, local_features_size] → [signal_length]
-            waveform = signal_model(spectrogram)
+            with torch.no_grad():
+                waveform = signal_model(spectrogram)
             logger.info('Processed in %fx real time.',
                         (time.time() - start) / (waveform.shape[0] / sample_rate))
 

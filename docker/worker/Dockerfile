@@ -1,7 +1,8 @@
-# NOTE: The total size of this image is expected to be around ~756mb. 715 megabytes consist of:
-# - Python dependencies: 247 mb torch, 75 mb numpy
-# - Model weights: 98 mb spectrogram model, 41 mb signal model
-# - Other dependencies: 135 mb intel, 63 mb python 3.6, 56 mb standard packages
+# NOTE: The total size of this image is expected to be around ~875 mb. 733 megabytes consist of:
+# - Python packages: 304 mb torch, 60 mb spacy, 73 mb numpy, 14 mb en_core_web_sm (spacy),
+#                    12 mb thinc (spacy), 12 mb blis (spacy)
+# - Models: 102 mb spectrogram model, 76 mb signal model
+# - Other: 80 mb python 3.7
 
 # NOTE: The GCP VM cold startup time is around 25 - 45 seconds. Afterwards, it takes time to
 # download and start the docker image. Learn more:
@@ -50,8 +51,8 @@ RUN apt-get update --fix-missing \
   && mkdir disk/other \
   && venv/bin/python -m src.service.worker_setup \
   && venv/bin/pip uninstall -y pip \
-  && rm -rf venv/lib/python3.6/site-packages/torch/test \
-  && rm -rf venv/lib/python3.6/site-packages/caffe2 \
+  && rm -rf venv/lib/python3.7/site-packages/torch/test \
+  && rm -rf venv/lib/python3.7/site-packages/caffe2 \
   # Inspired by: https://jcrist.github.io/conda-docker-tips.html
   && find venv/ -follow -type f -name '*.pyc' -delete \
   && find venv/ -follow -type f -name '*.a' -delete \
@@ -63,6 +64,7 @@ WORKDIR /app
 
 COPY --from=builder /app/ /app/
 
+# NOTE: To avoid manually copying `espeak`'s dependencies, we install `espeak` outside of builder.
 RUN apt-get update --fix-missing \
   && apt-get install -y espeak \
   && rm -rf /var/lib/apt/lists/*

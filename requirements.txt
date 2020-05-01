@@ -16,7 +16,6 @@ unidecode
 
 # Audio Library
 librosa
-torchaudio
 pyloudnorm
 
 # Visualization Library

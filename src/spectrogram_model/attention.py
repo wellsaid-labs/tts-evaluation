@@ -85,7 +85,6 @@ class LocationSensitiveAttention(nn.Module):
         convolution_filter_size (int): Size of the convolving kernel applied to the cumulative
             alignment.
         dropout (float): The dropout probability.
-        initializer_range (float): The normal initialization standard deviation.
         window_length (int): The size of the attention window applied during inference.
     """
 
@@ -95,7 +94,6 @@ class LocationSensitiveAttention(nn.Module):
                  hidden_size=HParam(),
                  convolution_filter_size=HParam(),
                  dropout=HParam(),
-                 initializer_range=HParam(),
                  window_length=HParam()):
         super().__init__()
 
@@ -105,7 +103,6 @@ class LocationSensitiveAttention(nn.Module):
 
         self.dropout = dropout
         self.hidden_size = hidden_size
-        self.initializer_range = initializer_range
         self.window_length = window_length
 
         self.alignment_conv_padding = int((convolution_filter_size - 1) / 2)
@@ -115,15 +112,6 @@ class LocationSensitiveAttention(nn.Module):
         self.project_query = nn.Linear(query_hidden_size, hidden_size)
         self.project_scores = nn.Sequential(
             LockedDropout(dropout), nn.Linear(hidden_size, 1, bias=False))
-
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.normal_(self.project_scores[1].weight, std=self.initializer_range)
-        nn.init.normal_(self.project_query.weight, std=self.initializer_range)
-        nn.init.normal_(self.alignment_conv.weight, std=self.initializer_range)
-        nn.init.zeros_(self.project_query.bias)
-        nn.init.zeros_(self.alignment_conv.bias)
 
     def forward(self,
                 encoded_tokens,
@@ -173,7 +161,7 @@ class LocationSensitiveAttention(nn.Module):
         cumulative_alignment = cumulative_alignment.masked_fill(~tokens_mask, 0)
 
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
-        location_features = cumulative_alignment.unsqueeze(1).detach()
+        location_features = cumulative_alignment.unsqueeze(1)
 
         # NOTE: Add `self.alignment_conv_padding` to both sides.
         initial_cumulative_alignment = initial_cumulative_alignment.unsqueeze(-1).expand(

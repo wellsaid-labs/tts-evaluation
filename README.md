@@ -4,7 +4,7 @@
 
 WellSaid Lab's TrueVoice deep neural network architecture.
 
-![PyPI - Python Version](https://img.shields.io/badge/python-3.6-blue.svg)
+![PyPI - Python Version](https://img.shields.io/badge/python-3.7-blue.svg)
 
 ## Get Started
 

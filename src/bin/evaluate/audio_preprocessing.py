@@ -2,8 +2,8 @@
 
 Example:
 
-    python -m src.bin.evaluate_preprocessing --audio_path tests/_test_data/test_audio/hilary.wav
-
+    python -m src.bin.evaluate.audio_preprocessing \
+           --audio_path tests/_test_data/test_audio/hilary.wav
 """
 import argparse
 import logging
@@ -19,7 +19,7 @@ from src.audio import framed_rms_from_power_spectrogram
 from src.audio import get_audio_metadata
 from src.audio import get_num_seconds
 from src.audio import griffin_lim
-from src.audio import integer_to_floating_point_pcm
+from src.audio import to_floating_point_pcm
 from src.audio import power_to_db
 from src.audio import read_audio
 from src.audio import rms_from_signal
@@ -44,7 +44,7 @@ def main(audio_path):
         'ignore', module=r'.*hparams', message=r'.*Overwriting configured argument.*')
 
     metadata = get_audio_metadata(pathlib.Path(audio_path))
-    audio = torch.tensor(integer_to_floating_point_pcm(read_audio(audio_path, metadata)))
+    audio = torch.tensor(to_floating_point_pcm(read_audio(audio_path, metadata)))
     peek_level = audio.abs().max()
     rms_level = rms_from_signal(audio.numpy())
     signal_to_db_mel_spectrogram = SignalTodBMelSpectrogram(sample_rate=metadata.sample_rate)

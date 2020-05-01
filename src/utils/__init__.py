@@ -6,6 +6,7 @@ from src.utils.checkpoint import Checkpoint
 from src.utils.data_loader import DataLoader
 from src.utils.disk_cache_ import disk_cache
 from src.utils.disk_cache_ import DiskCache
+from src.utils.disk_cache_ import get_functions_with_disk_cache
 from src.utils.disk_cache_ import make_arg_key
 from src.utils.on_disk_tensor import cache_on_disk_tensor_shapes
 from src.utils.on_disk_tensor import maybe_load_tensor
@@ -46,5 +47,5 @@ __all__ = [
     'maybe_load_tensor', 'AveragedMetric', 'DistributedAveragedMetric', 'bash_time_label',
     'RepeatTimer', 'mean', 'random_sample', 'make_arg_key', 'DiskCache',
     'assert_no_overwritten_files', 'get_file_metadata', 'dict_collapse', 'strip', 'trim_tensors',
-    'pad_tensors'
+    'pad_tensors', 'get_functions_with_disk_cache'
 ]

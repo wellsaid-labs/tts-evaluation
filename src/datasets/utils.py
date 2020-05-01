@@ -13,19 +13,19 @@ from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 from tqdm import tqdm
 
-import hparams
 import torch
 librosa = LazyLoader('librosa', globals(), 'librosa')
 pandas = LazyLoader('pandas', globals(), 'pandas')
 
 from src.audio import cache_get_audio_metadata
 from src.audio import get_signal_to_db_mel_spectrogram
-from src.audio import integer_to_floating_point_pcm
+from src.audio import to_floating_point_pcm
 from src.audio import normalize_audio
 from src.audio import pad_remainder
 from src.audio import read_audio
 from src.datasets.constants import TextSpeechRow
 from src.environment import DATA_PATH
+from src.environment import IS_TESTING_ENVIRONMENT
 from src.environment import ROOT_PATH
 from src.environment import TEMP_PATH
 from src.environment import TTS_DISK_CACHE_NAME
@@ -141,7 +141,7 @@ def _add_spectrogram_column(example, on_disk=True):
         # padding does not affect the spectrogram due to overlap between the padding and the
         # real audio.
         signal = pad_remainder(signal)
-        _, trim = librosa.effects.trim(integer_to_floating_point_pcm(signal))
+        _, trim = librosa.effects.trim(to_floating_point_pcm(signal))
         signal = signal[trim[0]:trim[1]]
 
         # TODO: Now that `get_signal_to_db_mel_spectrogram` is implemented in PyTorch, we could
@@ -149,8 +149,7 @@ def _add_spectrogram_column(example, on_disk=True):
         # compute spectrograms on-demand.
         with torch.no_grad():
             db_mel_spectrogram = get_signal_to_db_mel_spectrogram()(
-                torch.tensor(integer_to_floating_point_pcm(signal), requires_grad=False),
-                aligned=True)
+                torch.tensor(to_floating_point_pcm(signal), requires_grad=False), aligned=True)
         assert signal.dtype == dtype, 'The signal `dtype` was changed.'
         signal = torch.tensor(signal, requires_grad=False)
 
@@ -181,7 +180,7 @@ def add_spectrogram_column(data, on_disk=True):
     """
     logger.info('Adding a spectrogram column to dataset.')
     partial_ = partial(_add_spectrogram_column, on_disk=on_disk)
-    with ThreadPool(os.cpu_count()) as pool:
+    with ThreadPool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
         # NOTE: `chunksize` with `imap` is more performant while allowing us to measure progress.
         # TODO: Consider using `imap_unordered` instead of `imap` because it is more performant,
         # learn more:
@@ -190,12 +189,7 @@ def add_spectrogram_column(data, on_disk=True):
         return list(tqdm(pool.imap(partial_, data, chunksize=128), total=len(data)))
 
 
-def _normalize_audio_column_helper(example, config):
-    # TODO: Add a method for transfering global configuration between processes without private
-    # variables.
-    # TODO: After the global configuration is transfered, the functions need to be rechecked like
-    # for a configuration, just in case the configuration is on a new process.
-    hparams.hparams._configuration = config
+def _normalize_audio_column_helper(example):
     return example._replace(audio_path=normalize_audio(example.audio_path))
 
 
@@ -210,14 +204,11 @@ def normalize_audio_column(data):
     """
     cache_get_audio_metadata([e.audio_path for e in data])
 
-    _normalize_audio_column_helper_partial = partial(
-        _normalize_audio_column_helper, config=hparams.get_config())
-
     logger.info('Normalizing dataset audio using SoX.')
-    with ThreadPool(os.cpu_count()) as pool:
+    with ThreadPool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
         # NOTE: `chunksize` allows `imap` to be much more performant while allowing us to measure
         # progress.
-        iterator = pool.imap(_normalize_audio_column_helper_partial, data, chunksize=1024)
+        iterator = pool.imap(_normalize_audio_column_helper, data, chunksize=1024)
         return_ = list(tqdm(iterator, total=len(data)))
 
     # NOTE: `cache_get_audio_metadata` for any new normalized audio paths.

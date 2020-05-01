@@ -110,8 +110,6 @@ def dict_collapse(dict_, keys=[], delimitator='.'):
     Collapses a multi-level ``dict`` into a single level dict by merging the strings with a
     delimitator.
 
-    TODO: Add tests and add this to signal model
-
     Args:
         dict_ (dict)
         keys (list, optional): Base keys.
@@ -300,7 +298,7 @@ def evaluate(*modules, device=None):
         modules_metadata.append({'is_train': module.training, 'last_device': module_device})
         module.train(mode=False)
 
-    with torch.set_grad_enabled(False):
+    with torch.no_grad():
         yield
 
     for module, metadata in zip(modules, modules_metadata):

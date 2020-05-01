@@ -180,10 +180,6 @@ Related Documentation:
 
    python -m pip install wheel
    python -m pip install -r requirements.txt --upgrade
-
-   # NOTE: PyTorch 1.4 relies on CUDA 10.1, we enable it.
-   sudo rm /usr/local/cuda
-   sudo ln -s /usr/local/cuda-10.1 /usr/local/cuda
    ```
 
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...

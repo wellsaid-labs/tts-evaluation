@@ -63,7 +63,7 @@ def main(
 3. Run `evaluate.py` once per model, like so:
 
    ```bash
-   python -m src.bin.evaluate \
+   python -m src.bin.evaluate.models \
       --signal_model=$SIGNAL_MODEL \
       --spectrogram_model=$SPECTROGRAM_MODEL \
       --name=$MODEL_NAME \
@@ -76,7 +76,7 @@ def main(
    If you'd like to learn more about these parameters, please run:
 
    ```bash
-   python -m src.bin.evaluate --help
+   python -m src.bin.evaluate.models --help
    ```
 
    Go back to the previous step if you have other models you'd like to include in this evaluation.
@@ -87,7 +87,10 @@ def main(
    like so:
 
    ```bash
-   python -m src.bin.evaluate --num_samples=$NUM_SAMPLES --obscure_filename --name='ground-truth'
+   python -m src.bin.evaluate.models \
+      --num_samples=$NUM_SAMPLES \
+      --obscure_filename \
+      --name='ground-truth'
    ```
 
 ## From your local repository

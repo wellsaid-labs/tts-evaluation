@@ -2,8 +2,6 @@ from hparams import configurable
 from hparams import HParam
 from torch import nn
 
-# TODO: Integrate ``dropout_for_eval`` in the place of ``AlwaysDropout``.
-
 
 class AlwaysDropout(nn.Dropout):
     """ Adaptation of ``nn.Dropout`` to apply dropout during both evaluation and training. """

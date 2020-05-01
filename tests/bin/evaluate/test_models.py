@@ -1,7 +1,7 @@
 import numpy as np
 
-from src.bin.evaluate import _save
-from src.bin.evaluate import main
+from src.bin.evaluate.models import _save
+from src.bin.evaluate.models import main
 from src.datasets import Gender
 from src.datasets import Speaker
 from src.environment import SAMPLES_PATH
