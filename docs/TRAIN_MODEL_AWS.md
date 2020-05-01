@@ -62,7 +62,7 @@ machine.
    ... for training the signal model...
 
    ```bash
-   VM_MACHINE_TYPE=p3.16xlarge
+   VM_MACHINE_TYPE=g4dn.12xlarge
    TRAIN_SCRIPT_PATH='src/bin/train/signal_model/__main__.py'
    ```
 
@@ -191,7 +191,7 @@ machine.
 
    ```bash
    sudo apt-get update
-   sudo apt-get install python3-venv sox ffmpeg ninja-build -y
+   sudo apt-get install python3-venv sox ffmpeg espeak -y
    ```
 
    If you get a `dkpg` error, wait a minute or so and try again.
@@ -249,14 +249,16 @@ machine.
    ```bash
    cd /opt/wellsaid-labs/Text-to-Speech
 
-   # Note: You will always want to be in an active venv whenever you want to work with python.
+   # NOTE: You will always want to be in an active venv whenever you want to work with python.
    python3 -m venv venv
    . venv/bin/activate
 
    python -m pip install wheel
    python -m pip install -r requirements.txt --upgrade
 
-   sudo bash src/bin/install_mkl.sh
+   # NOTE: PyTorch 1.4 relies on CUDA 10.1, we enable it.
+   sudo rm /usr/local/cuda
+   sudo ln -s /usr/local/cuda-10.1 /usr/local/cuda
    ```
 
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...

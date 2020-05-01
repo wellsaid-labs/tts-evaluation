@@ -2,8 +2,6 @@ from hparams import configurable
 from hparams import HParam
 from torch import nn
 
-# TODO: Integrate ``dropout_for_eval`` in the place of ``AlwaysDropout``.
-
 
 class AlwaysDropout(nn.Dropout):
     """ Adaptation of ``nn.Dropout`` to apply dropout during both evaluation and training. """
@@ -42,8 +40,8 @@ class PreNet(nn.Module):
         self.layers = nn.Sequential(*tuple([
             nn.Sequential(
                 nn.Linear(
-                    in_features=frame_channels if i == 0 else hidden_size,
-                    out_features=hidden_size), nn.ReLU(inplace=True), AlwaysDropout(p=dropout))
+                    in_features=frame_channels if i == 0 else hidden_size, out_features=hidden_size
+                ), nn.ReLU(inplace=True), nn.LayerNorm(hidden_size), AlwaysDropout(p=dropout))
             for i in range(num_layers)
         ]))
 

@@ -1,32 +1,99 @@
+from collections import namedtuple
 from contextlib import contextmanager
 from functools import wraps
 from math import isclose
 from pathlib import Path
 from threading import Lock
 from threading import Timer
-from unittest.mock import patch
 
-import hashlib
+import inspect
+import itertools
 import logging
 import logging.config
 import math
 import os
-import pickle
 import pprint
 import random
 import statistics
 import time
 
 from torch import multiprocessing
-from torch.utils import cpp_extension
 
 import torch
 import torch.utils.data
 
-from src.environment import NINJA_BUILD_PATH
+from src.environment import DISK_CACHE_PATH
+from src.utils.disk_cache_ import DiskCache
 
 logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
+
+# Args:
+#   modification_time (int): See `os.path.getmtime`.
+#   byte_size (int): See `os.path.getsize`.
+FileMetadata = namedtuple('FileMetadata', ['modification_time', 'byte_size'])
+
+
+def strip(text):
+    """ Strip and return the stripped text.
+
+    Args:
+        text (str)
+
+    Returns:
+        (str): The stripped text.
+        (str): Text stripped from the left.
+        (str): Text stripped from the right.
+    """
+    original = text
+    text = text.rstrip()
+    stripped_right = original[len(text):]
+    text = text.lstrip()
+    stripped_left = original[:len(original) - len(stripped_right) - len(text)]
+    return text, stripped_left, stripped_right
+
+
+# NOTE: We do not use creation time due to lack of support:
+# https://stackoverflow.com/questions/237079/how-to-get-file-creation-modification-date-times-in-python
+def get_file_metadata(path):
+    return FileMetadata(os.path.getmtime(path), os.path.getsize(path))
+
+
+def assert_no_overwritten_files(function=None):
+    """ Ensure that all file paths passed to function were not overwritten since the last function
+    execution.
+
+    Args:
+        function (callable): Function to decorate.
+
+    Returns:
+        (callable)
+    """
+    if not function:
+        return assert_no_overwritten_files
+
+    file_metadata_cache = DiskCache(DISK_CACHE_PATH /
+                                    (inspect.getmodule(assert_no_overwritten_files).__name__ + '.' +
+                                     assert_no_overwritten_files.__qualname__))
+
+    @wraps(function)
+    def decorator(*args, **kwargs):
+        for arg in itertools.chain(args, kwargs.values()):
+            if isinstance(arg, Path):
+                metadata = get_file_metadata(arg)
+                if arg in file_metadata_cache:
+                    assert file_metadata_cache.get(arg) == metadata, (
+                        'Function `%s` does not allow file %s to be '
+                        'overwritten between executions. The original '
+                        'metadata was `%s` and the new metadata is `%s`.' %
+                        (function.__qualname__, arg, file_metadata_cache.get(arg), metadata))
+                else:
+                    file_metadata_cache.set(arg, metadata)
+
+        return function(*args, **kwargs)
+
+    function.assert_no_overwritten_files_cache = file_metadata_cache
+    return decorator
 
 
 def random_sample(list_, sample_size):
@@ -35,21 +102,6 @@ def random_sample(list_, sample_size):
     """
     # NOTE: `random.sample` returns an error for a list smaller than `sample_size`
     return random.sample(list_, min(len(list_), sample_size))
-
-
-def mean(list_):
-    """ Mean function like `statistics.mean` that does not return an error if `list_` is empty. """
-    list_ = list(list_)
-    if len(list_) == 0:
-        return math.nan
-    # NOTE: `statistics.mean` returns an error for an empty list
-    return statistics.mean(list_)
-
-
-def get_chunks(list_, n):
-    """ Yield successive `n`-sized chunks from `list_`. """
-    for i in range(0, len(list_), n):
-        yield list_[i:i + n]
 
 
 def dict_collapse(dict_, keys=[], delimitator='.'):
@@ -73,6 +125,21 @@ def dict_collapse(dict_, keys=[], delimitator='.'):
         else:
             ret_[delimitator.join(keys + [key])] = dict_[key]
     return ret_
+
+
+def mean(list_):
+    """ Mean function like `statistics.mean` that does not return an error if `list_` is empty. """
+    list_ = list(list_)
+    if len(list_) == 0:
+        return math.nan
+    # NOTE: `statistics.mean` returns an error for an empty list
+    return statistics.mean(list_)
+
+
+def get_chunks(list_, n):
+    """ Yield successive `n`-sized chunks from `list_`. """
+    for i in range(0, len(list_), n):
+        yield list_[i:i + n]
 
 
 def get_weighted_stdev(tensor, dim=0, mask=None):
@@ -170,6 +237,7 @@ def save(path, data, overwrite=False):
     """
     if not overwrite and Path(path).exists():
         raise ValueError('A file already exists at %s' % path)
+
     torch.save(data, str(path))
     logger.info('Saved: %s', str(path))
 
@@ -230,10 +298,11 @@ def evaluate(*modules, device=None):
         modules_metadata.append({'is_train': module.training, 'last_device': module_device})
         module.train(mode=False)
 
-    with torch.autograd.no_grad():
+    with torch.no_grad():
         yield
 
     for module, metadata in zip(modules, modules_metadata):
+        assert not module.training, 'Invariant failure.'
         module.train(mode=metadata['is_train'])
         if metadata['last_device'] is not None:
             module.to(metadata['last_device'])
@@ -376,7 +445,11 @@ def Pool(*args, **kwargs):
     context manager calls `terminate` rather than `close` followed by `join`.
     """
     # Learn more: https://pytest-cov.readthedocs.io/en/latest/subprocess-support.html
-    pool = multiprocessing.Pool(*args, **kwargs)
+    # Learn more about `forkserver` / `spawn` / `fork`:
+    # https://github.com/pytorch/pytorch/issues/2245
+    # https://codewithoutrules.com/2018/09/04/python-multiprocessing/
+    # https://pythontic.com/multiprocessing/multiprocessing/introduction
+    pool = multiprocessing.get_context('forkserver').Pool(*args, **kwargs)
     yield pool
     pool.close()  # Marks the pool as closed.
     pool.join()  # Waits for workers to exit.
@@ -403,47 +476,3 @@ def bash_time_label(add_pid=True):
         label += '_PID-%s' % str(os.getpid())
 
     return label
-
-
-def torch_cpp_extension_load(name, sources, build_directory=None, **kwargs):
-    """ Loads a PyTorch C++ extension just-in-time (JIT).
-
-    This function extends the functionality `torch.utils.cpp_extension.load`, like so:
-    - The disk cache is now used between processes and process restarts.
-    - The `build_directory` default is updated to be based in `src.environment.NINJA_BUILD_PATH`.
-    - Additional logging was added.
-
-    Args:
-        See `torch.utils.cpp_extension.load`.
-
-    Returns:
-        See `torch.utils.cpp_extension.load`.
-    """
-    build_directory = NINJA_BUILD_PATH / name if build_directory is None else build_directory
-    build_directory.mkdir(exist_ok=True, parents=True)
-    logger.info('The cpp extension "%s" will be cached here: `%s`', name, build_directory)
-
-    # NOTE: Cache the version between `Python` restarts (this is not multiprocess safe).
-    version_filename = build_directory / 'version.pkl'
-    if version_filename.exists():
-        version = pickle.loads(version_filename.read_bytes())
-        cpp_extension.JIT_EXTENSION_VERSIONER.entries[name] = version
-        logger.info('Found cached build of cpp extension "%s" on disk versioned `%s`.', name,
-                    version)
-
-    # TODO: Submit a PR to `pytorch` to use a process insensitive hash method.
-    with patch('torch.utils._cpp_extension_versioner.update_hash') as patched_update_hash:
-
-        def update_hash(seed, value):
-            """ Patched hash such that the hash is the same from process to process. """
-            hash_ = int(hashlib.md5(str(value).encode('utf-8')).hexdigest(), 16)
-            return seed ^ (hash_ + 0x9e3779b9 + (seed << 6) + (seed >> 2))
-
-        patched_update_hash.side_effect = update_hash
-
-        module = cpp_extension.load(
-            name=name, sources=sources, build_directory=build_directory, **kwargs)
-
-    version = cpp_extension.JIT_EXTENSION_VERSIONER.entries[name]
-    version_filename.write_bytes(pickle.dumps(version))
-    return module

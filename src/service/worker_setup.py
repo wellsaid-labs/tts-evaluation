@@ -23,16 +23,17 @@ def main(speaker_id_to_speaker, spectrogram_model_checkpoint, signal_model_check
     assert all(s in set(speaker_id_to_speaker.values()) for s in speaker_encoder.vocab), (
         'All speaker ids were not found in `speaker_id_to_speaker`.')
 
-    # Cache ths signal model inferrer
-    signal_model_checkpoint.model.to_inferrer()
-
     # TODO: The below checkpoint attributes should be statically defined somewhere so that there is
     # some guarantee that these attributes exist.
 
     # Reduce checkpoint size
+    signal_model_checkpoint.exponential_moving_parameter_average.apply_shadow()
+    signal_model_checkpoint.exponential_moving_parameter_average = None
     signal_model_checkpoint.optimizer = None
-    signal_model_checkpoint.anomaly_detector = None
+    signal_model_checkpoint.criterions_state_dict = None
     spectrogram_model_checkpoint.optimizer = None
+    signal_model_checkpoint.model.eval()
+    spectrogram_model_checkpoint.model.eval()
 
     # Remove unnecessary information
     signal_model_checkpoint.comet_ml_project_name = None
@@ -45,7 +46,7 @@ def main(speaker_id_to_speaker, spectrogram_model_checkpoint, signal_model_check
     signal_model_checkpoint.save(overwrite=True)
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     signal_model_checkpoint = Checkpoint.from_path(SIGNAL_MODEL_CHECKPOINT_PATH)
     spectrogram_model_checkpoint = Checkpoint.from_path(SPECTROGRAM_MODEL_CHECKPOINT_PATH)
     main(SPEAKER_ID_TO_SPEAKER, spectrogram_model_checkpoint, signal_model_checkpoint)

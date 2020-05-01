@@ -21,9 +21,11 @@ With this ecosystem, the only simple solution is to stream WAV files directly.
 
 CONS:
 - No additional context can be returned to the client. For example, this prevents us from sending
-  the WaveRNN hidden state used by the client to restart generation.
+  the model hidden state used by the client to restart generation.
 - The request for the stream must be a GET request. This prevents us, for example, from sending a
   Spectrogram used to condition the speech synthesis.
+
+TODO: Apply `exponential_moving_parameter_average` before running locally, for best performance.
 
 The cons in summary are that the client cannot manage there own state due to the immaturity of the
 web audio api; therefore, the server must manage it via some database.
@@ -35,7 +37,6 @@ from functools import lru_cache
 
 import os
 import sys
-import unidecode
 
 from flask import Flask
 from flask import jsonify
@@ -47,13 +48,14 @@ from flask import send_from_directory
 import torch
 
 from src.audio import build_wav_header
-from src.audio import combine_signal
 from src.environment import set_basic_logging_config
 from src.hparams import set_hparams
 from src.service.worker_config import SIGNAL_MODEL_CHECKPOINT_PATH
 from src.service.worker_config import SPEAKER_ID_TO_SPEAKER
 from src.service.worker_config import SPECTROGRAM_MODEL_CHECKPOINT_PATH
+from src.signal_model import generate_waveform
 from src.utils import Checkpoint
+from src.utils import get_functions_with_disk_cache
 
 # NOTE: Flask documentation requests that logging is configured before `app` is created.
 set_basic_logging_config()
@@ -98,9 +100,9 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
     spectrogram_model = spectrogram_model_checkpoint.model
     input_encoder = spectrogram_model_checkpoint.input_encoder
     app.logger.info('Loading speakers: %s', input_encoder.speaker_encoder.vocab)
-    signal_model = signal_model_checkpoint.model.to_inferrer()
+    signal_model = signal_model_checkpoint.model
 
-    return signal_model, spectrogram_model.eval(), input_encoder
+    return signal_model.eval(), spectrogram_model.eval(), input_encoder
 
 
 class FlaskException(Exception):
@@ -114,7 +116,8 @@ class FlaskException(Exception):
     """
 
     def __init__(self, message, status_code=400, code='BAD_REQUEST', payload=None):
-        Exception.__init__(self)
+        super().__init__(self, message)
+
         self.message = message
         self.status_code = status_code
         self.payload = payload
@@ -135,14 +138,19 @@ def handle_invalid_usage(error):  # Register an error response
     return response
 
 
-def stream_text_to_speech_synthesis(signal_model_inferrer, spectrogram_model, input_encoder, text,
-                                    speaker):
+@app.before_first_request
+def before_first_request():
+    # NOTE: Ensure that our cache doesn't grow while the server is running.
+    for function in get_functions_with_disk_cache():
+        function.use_disk_cache(False)
+
+
+def stream_text_to_speech_synthesis(signal_model, spectrogram_model, text, speaker):
     """ Helper function for starting a speech synthesis stream.
 
     Args:
         signal_model (torch.nn.Module)
         spectrogram_model (torch.nn.Module)
-        input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         text (str)
         speaker (src.datasets.Speaker)
 
@@ -150,12 +158,6 @@ def stream_text_to_speech_synthesis(signal_model_inferrer, spectrogram_model, in
         (callable): Callable that returns a generator incrementally returning a WAV file.
         (int): Number of bytes to be returned in total by the generator.
     """
-    # TODO (michael): Remove this log because it logs sensitive information.
-    app.logger.info('Requested stream conditioned on: "%s" and "%s".', speaker, text)
-
-    # Compute spectrogram
-    text, speaker = input_encoder.encode((text, speaker))
-
     app.logger.info('Generating spectrogram...')
     with torch.no_grad():
         _, spectrogram, _, _, _, is_max_frames = spectrogram_model(text, speaker, use_tqdm=True)
@@ -171,8 +173,8 @@ def stream_text_to_speech_synthesis(signal_model_inferrer, spectrogram_model, in
     # TODO: Consider logging various events to stackdriver, to keep track.
 
     app.logger.info('Generating waveform header...')
-    scale_factor = signal_model_inferrer.conditional_features_upsample.scale_factor
-    wav_header, wav_file_size = build_wav_header(scale_factor * spectrogram.shape[0])
+    upscale_factor = signal_model.upscale_factor
+    wav_header, wav_file_size = build_wav_header(upscale_factor * spectrogram.shape[0])
 
     def response():
         """ Generator incrementally generating a WAV file.
@@ -181,8 +183,8 @@ def stream_text_to_speech_synthesis(signal_model_inferrer, spectrogram_model, in
             assert sys.byteorder == 'little', 'Ensure byte order is of little-endian format.'
             yield wav_header
             app.logger.info('Generating waveform...')
-            for coarse, fine, _ in signal_model_inferrer(spectrogram, generator=True):
-                waveform = combine_signal(coarse, fine, return_int=True).numpy()
+            for waveform in generate_waveform(signal_model, spectrogram):
+                waveform = waveform.numpy()
                 app.logger.info('Waveform shape %s', waveform.shape)
                 yield waveform.tostring()
             app.logger.info('Finished generating waveform.')
@@ -213,9 +215,8 @@ def validate_and_unpack(request_args,
         speaker_id_to_speaker (dict, optional)
 
     Returns:
-        speaker (src.datasets.Speaker)
         text (str)
-        api_key (str)
+        speaker (src.datasets.Speaker)
     """
     if 'api_key' not in request_args:
         raise FlaskException('API key was not provided.', status_code=401, code='MISSING_ARGUMENT')
@@ -266,17 +267,14 @@ def validate_and_unpack(request_args,
             (min(speaker_id_to_speaker.keys()), max(speaker_id_to_speaker.keys())),
             code='INVALID_SPEAKER_ID')
 
-    # NOTE: Normalize text similar to the normalization during dataset creation.
-    text = unidecode.unidecode(text)
-    input_encoder.text_encoder.enforce_reversible = False
-    processed_text = input_encoder.text_encoder.decode(input_encoder.text_encoder.encode(text))
-    if processed_text != text:
-        improper_characters = set(text).difference(set(processed_text))
-        improper_characters = ', '.join(sorted(list(improper_characters)))
-        raise FlaskException(
-            'Text cannot contain these characters: %s' % improper_characters, code='INVALID_TEXT')
+    speaker = speaker_id_to_speaker[speaker_id]
 
-    return text, speaker_id_to_speaker[speaker_id]
+    try:
+        text, speaker = input_encoder.encode((text, speaker))
+    except ValueError as error:
+        raise FlaskException(str(error), code='INVALID_TEXT')
+
+    return text, speaker
 
 
 @app.route('/healthy', methods=['GET'])
@@ -330,11 +328,10 @@ def get_stream():
         `audio/wav` streamed in chunks given that the arguments are valid.
     """
     request_args = request.get_json() if request.method == 'POST' else request.args
-    signal_model_inferrer, spectrogram_model, input_encoder = load_checkpoints()
+    signal_model, spectrogram_model, input_encoder = load_checkpoints()
     text, speaker = validate_and_unpack(request_args, input_encoder)
-    response, content_length = stream_text_to_speech_synthesis(signal_model_inferrer,
-                                                               spectrogram_model, input_encoder,
-                                                               text, speaker)
+    response, content_length = stream_text_to_speech_synthesis(signal_model, spectrogram_model,
+                                                               input_encoder, text, speaker)
     headers = NO_CACHE_HEADERS.copy()
     headers['Content-Length'] = content_length
     return Response(response(), headers=headers, mimetype='audio/wav')

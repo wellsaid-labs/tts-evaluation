@@ -1149,8 +1149,9 @@ if (require.main === module) {
     v2: new PodPool(process.env.V2_WORKER_POD_IMAGE, 0),
     v3: new PodPool(process.env.V3_WORKER_POD_IMAGE, 0),
     v4: new PodPool(process.env.V4_WORKER_POD_IMAGE, 2),
-    "lincoln.v1": new PodPool(process.env.LINCOLN_V1_WORKER_POD_IMAGE),
-    v5: new PodPool(process.env.V5_WORKER_POD_IMAGE, 1),
+    "lincoln.v1": new PodPool(process.env.LINCOLN_V1_WORKER_POD_IMAGE, 0),
+    v5: new PodPool(process.env.V5_WORKER_POD_IMAGE, 0),
+    v6: new PodPool(process.env.V6_WORKER_POD_IMAGE, 1),
   };
   app.locals.podPools.latest = app.locals.podPools.v4;
 

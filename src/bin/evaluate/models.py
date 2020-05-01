@@ -5,23 +5,23 @@ Examples
 --------
 
 Example of sampling the preprocessed dataset:
-    $ python -m src.bin.evaluate
+    $ python -m src.bin.evaluate.models
 
 
 Example of generating signal model samples from the ground truth spectrograms:
-    $ python -m src.bin.evaluate --signal_model experiments/your/checkpoint.pt
+    $ python -m src.bin.evaluate.models --signal_model experiments/your/checkpoint.pt
 
 
 Example of generating TTS samples end-to-end:
-    $ python -m src.bin.evaluate --signal_model experiments/your/checkpoint.pt \
-                                 --spectrogram_model experiments/your/checkpoint.pt
+    $ python -m src.bin.evaluate.models --signal_model experiments/your/checkpoint.pt \
+                                        --spectrogram_model experiments/your/checkpoint.pt
 
 
 Example of generating TTS samples end-to-end with custom text:
-    $ python -m src.bin.evaluate --signal_model experiments/your/checkpoint.pt \
-                                 --spectrogram_model experiments/your/checkpoint.pt \
-                                 --text "custom text" \
-                                 --text "more custom text"
+    $ python -m src.bin.evaluate.models --signal_model experiments/your/checkpoint.pt \
+                                        --spectrogram_model experiments/your/checkpoint.pt \
+                                        --text "custom text" \
+                                        --text "more custom text"
 """
 from itertools import product
 from pathlib import Path
@@ -46,7 +46,6 @@ from src.environment import set_basic_logging_config
 
 set_basic_logging_config()
 
-from src.audio import combine_signal
 from src.audio import griffin_lim
 from src.audio import write_audio
 from src.datasets import add_predicted_spectrogram_column
@@ -197,7 +196,7 @@ def main(dataset,
         dataset = add_spectrogram_column(dataset, on_disk=False)
         if not no_target_audio:
             for i, example in zip(indicies, dataset):
-                waveform = example.spectrogram_audio.cpu().float().numpy()
+                waveform = example.spectrogram_audio.cpu().numpy()
                 audio_path = _save_partial(i, ['type=gold'], example.speaker, waveform)
                 add_to_metadata(
                     example,
@@ -237,7 +236,10 @@ def main(dataset,
             has_target_audio or spectrogram_model_checkpoint is not None):
         logger.info('The signal model path is: %s', signal_model_checkpoint.path)
         logger.info('Running inference with %d threads.', torch.get_num_threads())
-        signal_model = signal_model_checkpoint.model.to_inferrer()
+        # TODO: Factor out removing `exponential_moving_parameter_average` into the signal model's
+        # inference mode.
+        signal_model_checkpoint.exponential_moving_parameter_average.apply_shadow()
+        signal_model = signal_model_checkpoint.model.eval()
         use_predicted = spectrogram_model_checkpoint is not None
 
         # NOTE: Sort by spectrogram lengths to batch similar sized outputs together
@@ -252,8 +254,8 @@ def main(dataset,
             logger.info('Predicting signal from spectrogram of size %s.', spectrogram.shape)
             start = time.time()
             # [local_length, local_features_size] → [signal_length]
-            predicted_coarse, predicted_fine, _ = signal_model(spectrogram)
-            waveform = combine_signal(predicted_coarse, predicted_fine, return_int=True).numpy()
+            with torch.no_grad():
+                waveform = signal_model(spectrogram)
             logger.info('Processed in %fx real time.',
                         (time.time() - start) / (waveform.shape[0] / sample_rate))
 

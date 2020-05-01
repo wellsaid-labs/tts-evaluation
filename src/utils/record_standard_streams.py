@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 def _duplicate_stream(from_, to):
     """ Writes any messages to file object ``from_`` in file object ``to`` as well.
 
-    Note:
+    NOTE:
         With the various references below, we were unable to add C support. Find more details
         here: https://travis-ci.com/wellsaid-labs/Text-to-Speech/jobs/152504931
 

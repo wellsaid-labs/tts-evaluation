@@ -101,7 +101,7 @@ Related Documentation:
 
    ```bash
    sudo apt-get update
-   sudo apt-get install python3-venv python3-dev gcc g++ sox ffmpeg ninja-build -y
+   sudo apt-get install python3-venv python3-dev gcc g++ sox ffmpeg espeak -y
    ```
 
    💡 TIP: After setting up your VM, you may want to
@@ -174,14 +174,12 @@ Related Documentation:
    ```bash
    cd /opt/wellsaid-labs/Text-to-Speech
 
-   # Note: You will always want to be in an active venv whenever you want to work with python.
+   # NOTE: You will always want to be in an active venv whenever you want to work with python.
    python3 -m venv venv
    . venv/bin/activate
 
    python -m pip install wheel
    python -m pip install -r requirements.txt --upgrade
-
-   sudo bash src/bin/install_mkl.sh
    ```
 
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...

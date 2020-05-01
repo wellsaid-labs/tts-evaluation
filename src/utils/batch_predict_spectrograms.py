@@ -57,9 +57,6 @@ def batch_predict_spectrograms(data,
                                use_tqdm=True):
     """ Batch predict spectrograms.
 
-    TODO: Following running this function, for some reason, the `signal_model.trainer` runs out
-    of memory.
-
     Args:
         data (iterable of TextSpeechRow)
         input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
@@ -110,7 +107,8 @@ def batch_predict_spectrograms(data,
                 _, predictions, _, alignments = model(text, speaker, text_lengths, spectrogram,
                                                       spectrogram_lengths)
             else:
-                _, predictions, _, alignments, spectrogram_lengths, _ = model(text, speaker)
+                _, predictions, _, alignments, spectrogram_lengths, _ = model(
+                    text, speaker, text_lengths)
 
             # Compute metrics for logging
             mask = lengths_to_mask(spectrogram_lengths, device=predictions.device).transpose(0, 1)

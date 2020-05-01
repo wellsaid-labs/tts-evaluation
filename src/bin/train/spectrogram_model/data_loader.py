@@ -1,6 +1,5 @@
 from collections import defaultdict
 from collections import namedtuple
-from functools import lru_cache
 from functools import partial
 
 import hashlib
@@ -37,8 +36,14 @@ SpectrogramModelTrainingRow = namedtuple('SpectrogramModelTrainingRow', [
 ])
 
 
+def _get_normalized_half_gaussian(length, standard_deviation):
+    gaussian_kernel = ndimage.gaussian_filter1d(
+        np.float_([0] * (length - 1) + [1]), sigma=standard_deviation)
+    gaussian_kernel = gaussian_kernel / gaussian_kernel.max()
+    return torch.tensor(gaussian_kernel).float()
+
+
 @configurable
-@lru_cache()
 def get_normalized_half_gaussian(length=HParam(), standard_deviation=HParam()):
     """ Get a normalized half guassian distribution.
 
@@ -48,10 +53,7 @@ def get_normalized_half_gaussian(length=HParam(), standard_deviation=HParam()):
     Returns:
         (torch.FloatTensor [length,])
     """
-    gaussian_kernel = ndimage.gaussian_filter1d(
-        np.float_([0] * (length - 1) + [1]), sigma=standard_deviation)
-    gaussian_kernel = gaussian_kernel / gaussian_kernel.max()
-    return torch.tensor(gaussian_kernel)
+    return _get_normalized_half_gaussian(length, standard_deviation)
 
 
 class _BalancedSampler(WeightedRandomSampler):
@@ -83,7 +85,7 @@ class _BalancedSampler(WeightedRandomSampler):
         self.expected_weight = sum([w * n for w, n in zip(weighted, normalized_weights)])
 
 
-def _load_fn(row, input_encoder):
+def _load_fn(row, input_encoder, get_normalized_half_gaussian_partial):
     """ Load function for loading a single row.
 
     Args:
@@ -106,7 +108,7 @@ def _load_fn(row, input_encoder):
     # and the minimum loudness would be -96 Db or so. The probability for stopping is the loudness
     # relative to the minimum and maximum loudness. This is assuming that at the end of an audio
     # clip it gets progressively quieter.
-    gaussian_kernel = get_normalized_half_gaussian()
+    gaussian_kernel = get_normalized_half_gaussian_partial()
     max_len = min(len(stop_token), len(gaussian_kernel))
     stop_token[-max_len:] = gaussian_kernel[-max_len:]
 
@@ -199,7 +201,11 @@ class DataLoader(DataLoader):
 
         super().__init__(
             data,
-            load_fn=partial(_load_fn, **kwargs),
+            load_fn=partial(
+                _load_fn,
+                get_normalized_half_gaussian_partial=get_normalized_half_gaussian
+                .get_configured_partial(),
+                **kwargs),
             post_processing_fn=partial(tensors_to, device=device, non_blocking=True),
             batch_sampler=batch_sampler,
             collate_fn=partial(

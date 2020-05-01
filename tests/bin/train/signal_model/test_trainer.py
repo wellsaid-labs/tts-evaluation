@@ -1,3 +1,4 @@
+from copy import deepcopy
 from unittest import mock
 
 import pytest
@@ -5,6 +6,7 @@ import torch
 
 from src.audio import read_audio
 from src.bin.train.signal_model.data_loader import SignalModelTrainingRow
+from src.bin.train.signal_model.trainer import SpectrogramLoss
 from src.bin.train.signal_model.trainer import Trainer
 from src.environment import TEMP_PATH
 from src.utils import Checkpoint
@@ -23,7 +25,7 @@ def get_trainer(read_audio_mock, register_mock, load_data=True):
 
     register_mock.return_value = None
     # NOTE: Decrease the audio size for test performance.
-    read_audio_mock.side_effect = lambda *args, **kwargs: read_audio(*args, **kwargs)[:900]
+    read_audio_mock.side_effect = lambda *args, **kwargs: read_audio(*args, **kwargs)[:4096]
 
     return Trainer(
         comet_ml=MockCometML(),
@@ -36,15 +38,51 @@ def get_trainer(read_audio_mock, register_mock, load_data=True):
         dev_batch_size=1)
 
 
-def test__get_sample_density_gap():
-    trainer = get_trainer(load_data=False)
-    assert 0.0 == trainer._get_sample_density_gap(
-        torch.tensor([10, 0, 10]), torch.tensor([10, 0, 10]), 0.0)
-    assert 0.0 == trainer._get_sample_density_gap(
-        torch.tensor([10, 0, 10]), torch.tensor([10, 0, 10]), 1.0)
-    assert 0.25 == trainer._get_sample_density_gap(
-        torch.tensor([-120, 0, 120, 0], dtype=torch.int8),
-        torch.tensor([32760, 0, 0, 0], dtype=torch.int16), 0.9)
+def test_spectrogram_loss__smoke_test():
+    spectrogram_loss = SpectrogramLoss()
+    predicted = torch.randn(1, 24000)
+    target = torch.randn(1, 24000)
+    loss, other_loss, other_other_loss, accuracy = spectrogram_loss(
+        predicted, target, comet_ml=MockCometML(disabled=True))
+    assert loss.shape == tuple([])
+    assert loss.dtype == torch.float32
+    assert other_loss.shape == tuple([])
+    assert other_loss.dtype == torch.float32
+    assert other_other_loss.shape == tuple([])
+    assert other_other_loss.dtype == torch.float32
+    assert accuracy.shape == tuple([])
+    assert accuracy.dtype == torch.float32
+
+
+def test_spectrogram_loss__get_name():
+    fft_length = 2048
+    frame_hop = 512
+    spectrogram_loss = SpectrogramLoss(fft_length=fft_length, frame_hop=frame_hop)
+
+    assert spectrogram_loss.get_name(
+        is_mel_scale=True, is_decibels=True,
+        is_magnitude=True) == 'mel(db(abs(spectrogram(fft_length=%d,frame_hop=%d))))' % (fft_length,
+                                                                                         frame_hop)
+
+    assert spectrogram_loss.get_name(
+        'target', is_mel_scale=True, is_decibels=True,
+        is_magnitude=True) == 'mel(db(abs(spectrogram(target,fft_length=%d,frame_hop=%d))))' % (
+            fft_length, frame_hop)
+
+    assert spectrogram_loss.get_name(
+        'target', is_mel_scale=False, is_decibels=True,
+        is_magnitude=True) == 'db(abs(spectrogram(target,fft_length=%d,frame_hop=%d)))' % (
+            fft_length, frame_hop)
+
+    assert spectrogram_loss.get_name(
+        'target', is_mel_scale=True, is_decibels=False,
+        is_magnitude=True) == 'mel(abs(spectrogram(target,fft_length=%d,frame_hop=%d)))' % (
+            fft_length, frame_hop)
+
+    assert spectrogram_loss.get_name(
+        'target', is_mel_scale=True, is_decibels=True,
+        is_magnitude=False) == 'mel(db(spectrogram(target,fft_length=%d,frame_hop=%d)))' % (
+            fft_length, frame_hop)
 
 
 @mock.patch('src.bin.train.signal_model.trainer.atexit.register')
@@ -68,46 +106,27 @@ def test__do_loss_and_maybe_backwards():
     """ Test that the correct loss values are computed and back propagated. """
     trainer = get_trainer(load_data=False)
     batch = SignalModelTrainingRow(
-        input_signal=None,
-        input_spectrogram=None,
-        target_signal_coarse=torch.LongTensor([[0, 0, 1]]),
-        target_signal_fine=torch.LongTensor([[1, 1, 1]]),
-        signal_mask=torch.BoolTensor([[1, 1, 0]]))
-    predicted_coarse = torch.FloatTensor([[[1, 0], [1, 0], [1, 0]]])
-    predicted_fine = torch.FloatTensor([[[1, 0], [1, 0], [1, 0]]])
+        spectrogram_mask=None,
+        spectrogram=None,
+        target_signal=torch.zeros(2, 4096),
+        signal_mask=torch.ones(2, 4096))
+    predicted_signal = torch.zeros(2, 4096)
 
-    (coarse_loss, fine_loss, num_predictions) = trainer._do_loss_and_maybe_backwards(
-        batch, (predicted_coarse, predicted_fine, None), False)
-    assert coarse_loss.item() == pytest.approx(0.3132616)
-    assert fine_loss.item() == pytest.approx(1.3132616)
-    assert num_predictions == 2
-
-
-def test__get_gru_orthogonal_loss():
-    trainer = get_trainer(load_data=False)
-    assert trainer._get_gru_orthogonal_loss().item() > 0
-
-
-def test__partial_rollback():
-    trainer = get_trainer(load_data=False)
-    assert trainer.step == 0
-    assert trainer.num_rollbacks == 0
-    trainer.step += 1
-    trainer._partial_rollback()
-    assert trainer.step == 0
-    assert trainer.num_rollbacks == 1
+    (db_mel_spectrogram_magnitude_loss, discriminator_loss,
+     num_predictions) = trainer._do_loss_and_maybe_backwards(batch, predicted_signal, False, True)
+    assert db_mel_spectrogram_magnitude_loss.item() == pytest.approx(0.0)
+    assert isinstance(discriminator_loss.item(), float)
+    assert num_predictions == 8192
 
 
 def test_visualize_inferred():
     """ Smoke test to ensure that `visualize_inferred` runs without failure. """
-    signal_length = 16
     trainer = get_trainer()
-    infer_pass_return = (torch.LongTensor(signal_length).zero_(),
-                         torch.LongTensor(signal_length).zero_(), None)
-
-    with mock.patch('src.signal_model.wave_rnn._WaveRNNInferrer.forward') as mock_forward:
-        mock_forward.return_value = infer_pass_return
-        trainer.visualize_inferred()
+    # NOTE: Test that the model parameters are not messed up after applying EMA.
+    old_state_dict = deepcopy(trainer.model.state_dict())
+    trainer.visualize_inferred()
+    for old, new in zip(old_state_dict.values(), trainer.model.state_dict().values()):
+        assert old.data.ne(new.data).sum() == 0
 
 
 def test_run_epoch():
@@ -115,3 +134,4 @@ def test_run_epoch():
     trainer = get_trainer()
     trainer.run_epoch(train=False, trial_run=False)
     trainer.run_epoch(train=False, trial_run=True)
+    trainer.run_epoch(train=True, trial_run=False)

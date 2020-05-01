@@ -3,31 +3,34 @@ from functools import partial
 from pathlib import Path
 
 import logging
+import os
 import pprint
 
 from hparams import configurable
 from hparams import HParam
+from multiprocessing.pool import ThreadPool
 from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 from tqdm import tqdm
 
-import numpy
 import torch
 librosa = LazyLoader('librosa', globals(), 'librosa')
 pandas = LazyLoader('pandas', globals(), 'pandas')
 
 from src.audio import cache_get_audio_metadata
-from src.audio import get_log_mel_spectrogram
+from src.audio import get_signal_to_db_mel_spectrogram
+from src.audio import to_floating_point_pcm
 from src.audio import normalize_audio
+from src.audio import pad_remainder
 from src.audio import read_audio
 from src.datasets.constants import TextSpeechRow
 from src.environment import DATA_PATH
+from src.environment import IS_TESTING_ENVIRONMENT
 from src.environment import ROOT_PATH
 from src.environment import TEMP_PATH
 from src.environment import TTS_DISK_CACHE_NAME
 from src.utils import batch_predict_spectrograms
 from src.utils import OnDiskTensor
-from src.utils import Pool
 
 logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
@@ -123,28 +126,40 @@ def _add_spectrogram_column(example, on_disk=True):
         # Compute and save to disk the spectrogram and audio
         assert audio_path.is_file(), 'Audio path must be a file %s' % audio_path
         signal = read_audio(audio_path)
+        dtype = signal.dtype
 
+        # TODO: The RMS function is a naive computation of loudness; therefore, it'd likely
+        # be more accurate to use our spectrogram for trimming with augmentations like A-weighting.
         # TODO: The RMS function that trim uses mentions that it's likely better to use a
         # spectrogram if it's available:
         # https://librosa.github.io/librosa/generated/librosa.feature.rms.html?highlight=rms#librosa.feature.rms
-        _, trim = librosa.effects.trim(signal.astype(numpy.float32))
+        # TODO: `pad_remainder` could possibly add distortion if it's appended to non-zero samples;
+        # therefore, it'd likely be beneficial to have a small fade-in and fade-out before
+        # appending the zero samples.
+        # TODO: We should consider padding more than just the remainder. We could additionally
+        # pad a `frame_length` of padding so that further down the pipeline, any additional
+        # padding does not affect the spectrogram due to overlap between the padding and the
+        # real audio.
+        signal = pad_remainder(signal)
+        _, trim = librosa.effects.trim(to_floating_point_pcm(signal))
         signal = signal[trim[0]:trim[1]]
 
-        log_mel_spectrogram, padding = get_log_mel_spectrogram(signal.astype(numpy.float32))
-        log_mel_spectrogram = torch.from_numpy(log_mel_spectrogram)
-
-        # Pad so: ``log_mel_spectrogram.shape[0] % signal.shape[0] == frame_hop``
-        # This property is required for the vocoder.
-        padded_signal = numpy.pad(signal, padding, mode='constant', constant_values=0)
-        padded_signal = torch.from_numpy(padded_signal)
+        # TODO: Now that `get_signal_to_db_mel_spectrogram` is implemented in PyTorch, we could
+        # batch process spectrograms. This would likely be faster. Also, it could be fast to
+        # compute spectrograms on-demand.
+        with torch.no_grad():
+            db_mel_spectrogram = get_signal_to_db_mel_spectrogram()(
+                torch.tensor(to_floating_point_pcm(signal), requires_grad=False), aligned=True)
+        assert signal.dtype == dtype, 'The signal `dtype` was changed.'
+        signal = torch.tensor(signal, requires_grad=False)
 
         if on_disk:
             parent.mkdir(exist_ok=True)
             return example._replace(
-                spectrogram_audio=OnDiskTensor.from_tensor(spectrogram_audio_path, padded_signal),
-                spectrogram=OnDiskTensor.from_tensor(spectrogram_path, log_mel_spectrogram))
+                spectrogram_audio=OnDiskTensor.from_tensor(spectrogram_audio_path, signal),
+                spectrogram=OnDiskTensor.from_tensor(spectrogram_path, db_mel_spectrogram))
 
-        return example._replace(spectrogram_audio=padded_signal, spectrogram=log_mel_spectrogram)
+        return example._replace(spectrogram_audio=signal, spectrogram=db_mel_spectrogram)
 
     return example._replace(
         spectrogram_audio=OnDiskTensor(spectrogram_audio_path),
@@ -165,7 +180,7 @@ def add_spectrogram_column(data, on_disk=True):
     """
     logger.info('Adding a spectrogram column to dataset.')
     partial_ = partial(_add_spectrogram_column, on_disk=on_disk)
-    with Pool() as pool:
+    with ThreadPool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
         # NOTE: `chunksize` with `imap` is more performant while allowing us to measure progress.
         # TODO: Consider using `imap_unordered` instead of `imap` because it is more performant,
         # learn more:
@@ -190,7 +205,7 @@ def normalize_audio_column(data):
     cache_get_audio_metadata([e.audio_path for e in data])
 
     logger.info('Normalizing dataset audio using SoX.')
-    with Pool() as pool:
+    with ThreadPool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
         # NOTE: `chunksize` allows `imap` to be much more performant while allowing us to measure
         # progress.
         iterator = pool.imap(_normalize_audio_column_helper, data, chunksize=1024)

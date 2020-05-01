@@ -1,4 +1,5 @@
 import pytest
+import torch
 
 from src.service.worker import FlaskException
 from src.service.worker import load_checkpoints
@@ -7,11 +8,16 @@ from src.service.worker import validate_and_unpack
 from tests._utils import get_tts_mocks
 
 
+def test_flask_exception():
+    exception = FlaskException('This is a test', 404, code='NOT_FOUND', payload={'blah': 'hi'})
+    assert exception.to_dict() == {'blah': 'hi', 'code': 'NOT_FOUND', 'message': 'This is a test'}
+
+
 def test_load_checkpoints():
     mocks = get_tts_mocks()
     signal_model, spectrogram_model, input_encoder = load_checkpoints(
         mocks['spectrogram_model_checkpoint'].path, mocks['signal_model_checkpoint'].path)
-    assert type(mocks['signal_model'].to_inferrer()) == type(signal_model)
+    assert type(mocks['signal_model']) == type(signal_model)
     assert type(mocks['spectrogram_model']) == type(spectrogram_model)
     assert type(mocks['input_encoder']) == type(input_encoder)
 
@@ -19,10 +25,10 @@ def test_load_checkpoints():
 def test_stream_text_to_speech_synthesis():
     mocks = get_tts_mocks()
     example = mocks['dev_dataset'][0]
-    generator, file_size = stream_text_to_speech_synthesis(mocks['signal_model'].to_inferrer(),
-                                                           mocks['spectrogram_model'].eval(),
-                                                           mocks['input_encoder'], example.text,
-                                                           example.speaker)
+    text, speaker = mocks['input_encoder'].encode((example.text, example.speaker))
+    generator, file_size = stream_text_to_speech_synthesis(mocks['signal_model'].eval(),
+                                                           mocks['spectrogram_model'].eval(), text,
+                                                           speaker)
     file_contents = b''.join([s for s in generator()])
     assert len(file_contents) == file_size
 
@@ -83,9 +89,24 @@ def test_validate_and_unpack():
     with pytest.raises(FlaskException):  # `speaker_id` must be positive
         validate_and_unpack({**args, 'speaker_id': -1}, input_encoder, api_keys=api_keys)
 
+    with pytest.raises(FlaskException, match=r".*cannot contain these characters: i, o,*"):
+        # NOTE: "wɛɹɹˈɛvɚ kˌoːɹzənjˈuːski" should contain phonemes that are not already in
+        # mock `input_encoder`.
+        validate_and_unpack(
+            {
+                **args, 'text': 'wherever korzeniewski'
+            },
+            input_encoder,
+            api_keys=api_keys,
+        )
+
     # `text` gets normalized and `speaker` is dereferenced
     request_args = {**args, 'text': 'é😁'}
     result_text, result_speaker = validate_and_unpack(
         request_args, input_encoder, api_keys=api_keys, speaker_id_to_speaker=speaker_id_to_speaker)
-    assert result_text == 'e'  # NOTE: The emoji is removed because there is no unicode equivilent.
-    assert result_speaker == speaker
+    assert torch.is_tensor(result_text)
+    assert result_text.shape[0] == 2
+    # NOTE: The emoji is removed because there is no unicode equivilent.
+    assert input_encoder.decode(
+        (result_text, result_speaker)) == ('ˈ' + input_encoder.delimiter + 'iː', speaker)
+    assert torch.is_tensor(result_speaker)
