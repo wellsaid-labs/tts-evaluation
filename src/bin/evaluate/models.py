@@ -1,8 +1,6 @@
 """
 Generate random samples of `dev` dataset to evaluate.
 
-TODO: Rename to `evaluate_batch.py` in contrast to `evaluate_stream.py`.
-
 Examples
 --------
 
