@@ -54,7 +54,6 @@ from src.service.worker_config import SIGNAL_MODEL_CHECKPOINT_PATH
 from src.service.worker_config import SPEAKER_ID_TO_SPEAKER
 from src.service.worker_config import SPECTROGRAM_MODEL_CHECKPOINT_PATH
 from src.signal_model import generate_waveform
-from src.spectrogram_model import SpectrogramModel
 from src.utils import Checkpoint
 from src.utils import get_functions_with_disk_cache
 
@@ -97,13 +96,6 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
     spectrogram_model_checkpoint = Checkpoint.from_path(
         spectrogram_model_checkpoint_path, device=DEVICE)
     signal_model_checkpoint = Checkpoint.from_path(signal_model_checkpoint_path, device=DEVICE)
-
-    # TODO: Remove these lines they are for backwards compatibility, in the next release.
-    num_tokens = spectrogram_model_checkpoint.input_encoder.text_encoder.vocab_size
-    num_speakers = spectrogram_model_checkpoint.input_encoder.speaker_encoder.vocab_size
-    state_dict = spectrogram_model_checkpoint.model.state_dict()
-    spectrogram_model_checkpoint.model = SpectrogramModel(num_tokens, num_speakers)
-    spectrogram_model_checkpoint.model.load_state_dict(state_dict)
 
     spectrogram_model = spectrogram_model_checkpoint.model
     input_encoder = spectrogram_model_checkpoint.input_encoder

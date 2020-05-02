@@ -1,88 +1,128 @@
-# TODO: Add examples and documentation.
-# TODO: Rename to `evaluate_single.py`
+"""
+Generate a stream of audio from a script.
+
+Example:
+
+    $ python -m src.bin.evaluate.stream --signal_model experiments/your/checkpoint.pt \
+                                        --spectrogram_model experiments/your/checkpoint.pt \
+                                        --script_file_path script.txt \
+                                        --speaker 'Frank Bonacquisti'
+"""
+import argparse
+import logging
 import pathlib
 import subprocess
 
+from hparams import configurable
+from hparams import HParam
+from hparams import log_config
+
 import torch
-import unidecode
+
+# NOTE: Some modules log on import; therefore, we first setup logging.
+from src.environment import set_basic_logging_config
+
+set_basic_logging_config()
 
 from src import datasets
+from src.environment import SAMPLES_PATH
 from src.environment import set_basic_logging_config
-from src.environment import SIGNAL_MODEL_EXPERIMENTS_PATH
-from src.environment import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 from src.hparams import set_hparams
 from src.signal_model import generate_waveform
 from src.spectrogram_model import SpectrogramModel
+from src.signal_model import SignalModel
+from src.utils import bash_time_label
 from src.utils import Checkpoint
+from src.utils import RecordStandardStreams
 
-# TODO: Save a log along with teh sample
-torch.set_grad_enabled(False)
 set_basic_logging_config()
-set_hparams()
 
-# TODO: Make this configurable
-text = pathlib.Path('book.txt').read_text()
-
-# TODO: Make this configurable
-speaker = datasets.SAM_SCHOLL
-
-# TODO: Make this configurable
-spectrogram_model_checkpoint_path = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / 'step_261253.pt'
-signal_model_checkpoint_path = SIGNAL_MODEL_EXPERIMENTS_PATH / 'step_335371.pt'
-device = torch.device('cpu')
-
-spectrogram_model_checkpoint = Checkpoint.from_path(
-    spectrogram_model_checkpoint_path, device=device)
-signal_model_checkpoint = Checkpoint.from_path(signal_model_checkpoint_path, device=device)
-
-# TODO: Remove these lines they are for backwards compatibility, in the next release.
-num_tokens = spectrogram_model_checkpoint.input_encoder.text_encoder.vocab_size
-num_speakers = spectrogram_model_checkpoint.input_encoder.speaker_encoder.vocab_size
-state_dict = spectrogram_model_checkpoint.model.state_dict()
-spectrogram_model_checkpoint.model = SpectrogramModel(num_tokens, num_speakers)
-spectrogram_model_checkpoint.model.load_state_dict(state_dict)
-
-spectrogram_model = spectrogram_model_checkpoint.model.eval()
-input_encoder = spectrogram_model_checkpoint.input_encoder
-signal_model = signal_model_checkpoint.model.eval()
-
-# TODO: Save attention pictures and spectrogram images along with the text.
-# TODO: Save the phonetic spelling.
-text = unidecode.unidecode(text)
-input_encoder.text_encoder.enforce_reversible = False
-preprocessed_text = input_encoder.preprocess_text(text)
-processed_text = input_encoder.text_encoder.decode(
-    input_encoder.text_encoder.encode(preprocessed_text))
-if processed_text != preprocessed_text:
-    improper_characters = set(preprocessed_text).difference(set(input_encoder.text_encoder.vocab))
-    improper_characters = ', '.join(sorted(list(improper_characters)))
-    raise ValueError('Text cannot contain these characters: %s' % improper_characters)
-
-signal_model_checkpoint.exponential_moving_parameter_average.apply_shadow()
-for module in signal_model.get_weight_norm_modules():
-    torch.nn.utils.remove_weight_norm(module)
-
-# TODO: Use Logger
-print('Number of characters: %d' % len(text))
-
-text, speaker = input_encoder.encode((text, speaker))
-
-print('Number of tokens: %d' % len(text))
+logger = logging.getLogger(__name__)
 
 
-# TODO: Use TQDM
-def get_spectrogram():
-    for _, frames, _, _, _ in spectrogram_model(text, speaker, is_generator=True):
-        # [num_frames, batch_size (optional), frame_channels] →
-        # [batch_size (optional), num_frames, frame_channels]
-        yield frames.transpose(0, 1) if frames.dim() == 3 else frames
+@configurable
+def _get_sample_rate(sample_rate=HParam()):
+    return sample_rate
 
 
-# TODO: Save samples in `disk/samples/`
-# TODO: Write an MP3 file because it can streamed
-command = ('ffmpeg -y -f f32le -acodec pcm_f32le -ar 24000 -ac 1 -i pipe: book.wav').split()
-pipe = subprocess.Popen(command, stdin=subprocess.PIPE)
-for waveform in generate_waveform(signal_model, get_spectrogram()):
-    pipe.stdin.write(waveform.cpu().detach().numpy().tobytes())
-pipe.stdin.close()
-pipe.wait()
+def main(file_path,
+         speaker,
+         signal_model_checkpoint,
+         spectrogram_model_checkpoint,
+         get_sample_rate=_get_sample_rate,
+         destination=SAMPLES_PATH / bash_time_label(),
+         stream_filename='stream.mp3',
+         preprocessed_text_filename='preprocessed_text.txt',
+         device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+    """
+    Args:
+        file_path (str): The script file path.
+        speaker (Speaker): The voice over speaker.
+        signal_model_checkpoint (str or None): Checkpoint used to predict a raw waveform
+            given a spectrogram.
+        spectrogram_model_checkpoint (str or None): Checkpoint used to generate spectrogram
+            from text as input to the signal model.
+        get_sample_rate (callable, optional): Get the number of samples in a clip per second.
+        destination (str, optional): Path to store results.
+        stream_filename (str, optional): The stream file name.
+        preprocessed_text_filename (str, optional): The file name to store the preprocessed text.
+        device (torch.device, optioanl): The device to run inference on.
+    """
+    destination = pathlib.Path(destination)
+    destination.mkdir(exist_ok=False)
+
+    RecordStandardStreams(destination).start()
+
+    log_config()
+
+    sample_rate = get_sample_rate()
+    text = pathlib.Path(file_path).read_text()
+
+    spectrogram_model = spectrogram_model_checkpoint.model.eval()
+    input_encoder = spectrogram_model_checkpoint.input_encoder
+    signal_model_checkpoint.exponential_moving_parameter_average.apply_shadow()
+    signal_model = signal_model_checkpoint.model.eval()
+
+    logger.info('Number of characters: %d', len(text))
+    (destination / preprocessed_text_filename).write_text(input_encoder._preprocess(text))
+    text, speaker = input_encoder.encode((text, speaker))
+    logger.info('Number of tokens: %d', len(text))
+
+    def get_spectrogram():
+        for _, frames, _, _, _ in spectrogram_model(
+                text, speaker, is_generator=True, use_tqdm=True):
+            # [num_frames, batch_size (optional), frame_channels] →
+            # [batch_size (optional), num_frames, frame_channels]
+            yield frames.transpose(0, 1) if frames.dim() == 3 else frames
+
+    with torch.no_grad():
+        command = ('ffmpeg -y -f f32le -acodec pcm_f32le -ar %d -ac 1 -i pipe: -b:a 192k %s' %
+                   (sample_rate, destination / stream_filename)).split()
+        pipe = subprocess.Popen(command, stdin=subprocess.PIPE)
+        for waveform in generate_waveform(signal_model, get_spectrogram()):
+            pipe.stdin.write(waveform.cpu().detach().numpy().tobytes())
+        pipe.stdin.close()
+        pipe.wait()
+
+
+if __name__ == '__main__':  # pragma: no cover
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--signal_model', type=str, help='Signal model checkpoint to use.')
+    parser.add_argument(
+        '--spectrogram_model', type=str, help='Spectrogram model checkpoint to use.')
+    parser.add_argument('--script_file_path', type=str, help='The script file path.')
+    parser.add_argument('--speaker', type=str, help='The voice over speaker.')
+    args = parser.parse_args()
+
+    # NOTE: Load early and crash early by ensuring that the checkpoint exists and is not corrupt.
+    args.signal_model = Checkpoint.from_path(args.signal_model)
+    args.spectrogram_model = Checkpoint.from_path(args.spectrogram_model)
+    args.speaker = getattr(datasets, args.speaker.upper().replace(' ', '_'))
+
+    set_hparams()
+
+    main(
+        file_path=args.script_file_path,
+        speaker=args.speaker,
+        signal_model_checkpoint=args.signal_model,
+        spectrogram_model_checkpoint=args.spectrogram_model)

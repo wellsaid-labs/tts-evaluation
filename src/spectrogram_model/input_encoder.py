@@ -53,14 +53,19 @@ class InputEncoder(Encoder):
             (torch.Tensor [1]): Encoded speaker.
         """
         preprocessed = self._preprocess(object_[0])
+
         try:
             return (self.text_encoder.encode(preprocessed),
                     self.speaker_encoder.encode(object_[1]).view(1))
         except ValueError:
-            difference = set(self.text_encoder.tokenize(preprocessed)).difference(
-                set(self.text_encoder.vocab))
-            difference = ', '.join(sorted(list(difference)))
-            raise ValueError('Text cannot contain these characters: %s' % difference)
+            pass
+
+        # NOTE: This allows us to ignore the earlier traceback. The earlier traceback is not
+        # helpful in situations where the text is very long.
+        difference = set(self.text_encoder.tokenize(preprocessed)).difference(
+            set(self.text_encoder.vocab))
+        difference = ', '.join(sorted(list(difference)))
+        raise ValueError('Text cannot contain these characters: %s' % difference)
 
     def decode(self, encoded):
         """

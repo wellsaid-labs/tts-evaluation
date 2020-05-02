@@ -120,6 +120,7 @@ def _set_audio_processing():
 
     add_config({
         'src.bin.evaluate.models._get_sample_rate': HParams(sample_rate=sample_rate),
+        'src.bin.evaluate.stream._get_sample_rate': HParams(sample_rate=sample_rate),
         'src.audio': {
             'framed_rms_from_power_spectrogram':
                 HParams(window=window_tensor),
@@ -261,7 +262,7 @@ def _set_model_size(frame_channels):
                         # NOTE: In Comet, we report the metric "attention_std". The standard
                         # deviation for the attention alignment is helpful to set this metric in
                         # such a way that it doesn't affect model performance.
-                        window_length=11,
+                        window_length=9,
                     ),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(
