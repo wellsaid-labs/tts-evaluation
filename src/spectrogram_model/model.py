@@ -260,8 +260,10 @@ class SpectrogramModel(nn.Module):
             frames = pad_tensors(torch.cat(frames), pad=padding_tuple)
             mask = ([last_item[1][:, -padding * 2:]] if last_item else []) + [i[1] for i in items]
             mask = pad_tensors(torch.cat(mask, dim=1), pad=padding_tuple, dim=1)
-            stop_tokens = torch.cat([last_item[2][-padding:]] if last_item else [] + [stop_tokens])
-            alignments = torch.cat([last_item[3][-padding:]] if last_item else [] + [alignments])
+            stop_tokens = ([last_item[2][-padding:]] if last_item else []) + [i[2] for i in items]
+            stop_tokens = torch.cat(stop_tokens)
+            alignments = ([last_item[3][-padding:]] if last_item else []) + [i[3] for i in items]
+            alignments = torch.cat(alignments)
 
             residual = self.post_net(frames, mask, pad_input=False)
 
