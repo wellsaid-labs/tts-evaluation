@@ -29,8 +29,6 @@ from src.environment import SAMPLES_PATH
 from src.environment import set_basic_logging_config
 from src.hparams import set_hparams
 from src.signal_model import generate_waveform
-from src.spectrogram_model import SpectrogramModel
-from src.signal_model import SignalModel
 from src.utils import bash_time_label
 from src.utils import Checkpoint
 from src.utils import RecordStandardStreams
