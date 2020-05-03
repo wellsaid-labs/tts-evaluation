@@ -56,7 +56,7 @@ def main(file_path,
             given a spectrogram.
         spectrogram_model_checkpoint (str or None): Checkpoint used to generate spectrogram
             from text as input to the signal model.
-        get_sample_rate (callable, optional): Get the number of samples in a clip per second.
+        sample_rate (int, optional): Get the number of samples in a clip per second.
         destination (str, optional): Path to store results.
         stream_filename (str, optional): The stream file name.
         preprocessed_text_filename (str, optional): The file name to store the preprocessed text.

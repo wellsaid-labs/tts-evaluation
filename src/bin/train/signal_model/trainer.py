@@ -270,10 +270,13 @@ class Trainer():
         checkpoints_directory (str or Path): Directory to store checkpoints in.
         comet_ml (Experiment or ExistingExperiment): Object for visualization with comet.
         train_batch_size (int): Batch size used for training.
+        train_spectrogram_slice_size (int): The size of each spectrogram slice used to train.
         dev_batch_size (int): Batch size used for evaluation.
-        criterion (callable): Loss function used to score signal predictions.
+        dev_spectrogram_slice_size (int):  The size of each spectrogram slice used to evaluate.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
         lr_multiplier_schedule (callable): Learning rate multiplier schedule.
+        exponential_moving_parameter_average (callable): The implementation used to computing
+            `ExponentialMovingParameterAverage`.
         model (torch.nn.Module, optional): Model to train and evaluate.
         criterions (list of callables, optional): List of callables to initialize criterions.
         criterions_state_dict (list of dict, optional): An optional state dict for each criterion.

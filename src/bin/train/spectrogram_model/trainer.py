@@ -65,6 +65,7 @@ class Trainer():
         criterion_stop_token (callable): Loss function used to score stop
             token predictions.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
+        lr_multiplier_schedule (callable): The learning rate schedule used by `LambdaLR`.
         model (torch.nn.Module): Model to train and evaluate.
         input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
         step (int, optional): Starting step; typically, this parameter is useful when starting from

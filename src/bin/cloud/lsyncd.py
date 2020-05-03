@@ -38,7 +38,7 @@ def main(source,
         identity_file (str): File from which the identity (private key) for authentication is read.
         user (str): Username on remote machine.
         template (Path): Template configuration for lsyncd.
-        tmp (str): Tmp filename to save configuration.
+        tmp (str): Temporary filename to save configuration.
     """
     config = template.read_text().strip()
     config = config.replace('{source}', source)

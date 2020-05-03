@@ -20,12 +20,14 @@ class InputEncoder(Encoder):
         text_samples (list of str): Examples used to make the text encoder.
         speaker_samples (list of src.datasets.constants.Speaker): Examples used to make the speaker
           encoder.
+        **args: Additional arguments passed to `super()`.
         delimiter (string): A unique character used to tokenize text.
+        **kwargs: Additional key-word arguments passed to `super()`.
     """
 
     @configurable
-    def __init__(self, text_samples, speaker_samples, delimiter=HParam(), **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, text_samples, speaker_samples, *args, delimiter=HParam(), **kwargs):
+        super().__init__(*args, **kwargs)
         self.delimiter = delimiter
         self.text_encoder = DelimiterEncoder(
             delimiter, [self._preprocess(t) for t in text_samples], enforce_reversible=True)

@@ -127,6 +127,7 @@ class LocationSensitiveAttention(nn.Module):
                 encoded sequences.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask where zero's
                 represent padding in ``encoded_tokens``.
+            num_tokens (torch.LongTensor [batch_size]): The number of tokens in each sequence.
             query (torch.FloatTensor [1, batch_size, query_hidden_size]): Query vector used to score
                 individual token vectors.
             cumulative_alignment (torch.FloatTensor [batch_size, num_tokens], optional): Cumlative

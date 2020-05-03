@@ -722,6 +722,7 @@ def _db_mel_spectrogram_to_spectrogram(db_mel_spectrogram,
         db_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
         sample_rate (int): Sample rate of the `db_mel_spectrogram`.
         fft_length (int): The size of the FFT to apply.
+        get_weighting (callable): Get weighting to weight frequencies.
         **kwargs: Additional arguments passed to `_mel_filters`.
 
     Returns:

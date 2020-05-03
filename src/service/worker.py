@@ -110,7 +110,8 @@ class FlaskException(Exception):
 
     Args:
         message (str)
-        status_code (int)
+        status_code (int): An HTTP response status codes.
+        code (str): A string code.
         payload (dict): Additional context to send.
     """
 
@@ -145,14 +146,23 @@ def before_first_request():
 
 
 def _enqueue(out, queue):
-    """ Enqueue all lines from a file-like object to `queue`. """
+    """ Enqueue all lines from a file-like object to `queue`.
+
+    Args:
+        out (file-like object)
+        queue (Queue)
+    """
     for line in iter(out.readline, b''):
         queue.put(line)
     out.close()
 
 
 def _dequeue(queue):
-    """ Dequeue all items from `queue`. """
+    """ Dequeue all items from `queue`.
+
+    Args:
+        queue (Queue)
+    """
     try:
         while True:
             yield queue.get_nowait()
@@ -223,7 +233,7 @@ def validate_and_unpack(request_args,
     """ Validate and unpack the request object.
 
     Args:
-        args (dict) {
+        request_args (dict) {
           speaker_id (int or str)
           text (str)
           api_key (str)

@@ -238,8 +238,8 @@ def make_arg_key(function, *args, **kwargs):
 
     Args:
         function (callable): Function for which to create the key.
-        args (tuple): Arguments passed to `function`.
-        kwargs (dict): Keyword arguments passed to `function`.
+        *args: Arguments passed to `function`.
+        **kwargs: Keyword arguments passed to `function`.
 
     Returns:
         frozenset: Set compromising of both `args` and `kwargs`.

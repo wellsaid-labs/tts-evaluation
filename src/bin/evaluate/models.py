@@ -125,7 +125,7 @@ def main(dataset,
             from text as input to the signal model.
         num_samples (int): Number of rows to evaluate.
         name (str, optional): The name of this evaluation process to be included in the metadata.
-        sample_rate (callable, optional): The number of samples in a clip per second.
+        sample_rate (int, optional): The number of samples in a clip per second.
         destination (str, optional): Path to store results.
         metadata_filename (str, optional): The filename for a CSV file containing clip metadata.
         aligned (bool, optional): If `True`, predict a ground truth aligned spectrogram.
