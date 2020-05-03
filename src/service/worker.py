@@ -189,7 +189,8 @@ def stream_text_to_speech_synthesis(signal_model,
             # [batch_size (optional), num_frames, frame_channels]
             yield item[1].transpose(0, 1) if item[1].dim() == 3 else item[1]
 
-    # TODO: Add a timeout in case the client is stalling.
+    # TODO: Add a timeout in case the client is keeping the connection alive and not consuming
+    # any data.
     def response():
         # NOTE: Inspired by:
         # https://stackoverflow.com/questions/375427/non-blocking-read-on-a-subprocess-pipe-in-python
