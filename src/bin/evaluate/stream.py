@@ -39,15 +39,11 @@ logger = logging.getLogger(__name__)
 
 
 @configurable
-def _get_sample_rate(sample_rate=HParam()):
-    return sample_rate
-
-
 def main(file_path,
          speaker,
          signal_model_checkpoint,
          spectrogram_model_checkpoint,
-         get_sample_rate=_get_sample_rate,
+         sample_rate=HParam(),
          destination=SAMPLES_PATH / bash_time_label(),
          stream_filename='stream.mp3',
          preprocessed_text_filename='preprocessed_text.txt',
@@ -73,7 +69,6 @@ def main(file_path,
 
     log_config()
 
-    sample_rate = get_sample_rate()
     text = pathlib.Path(file_path).read_text()
 
     spectrogram_model = spectrogram_model_checkpoint.model.eval()
@@ -87,11 +82,10 @@ def main(file_path,
     logger.info('Number of tokens: %d', len(text))
 
     def get_spectrogram():
-        for _, frames, _, _, _ in spectrogram_model(
-                text, speaker, is_generator=True, use_tqdm=True):
+        for item in spectrogram_model(text, speaker, is_generator=True, use_tqdm=True):
             # [num_frames, batch_size (optional), frame_channels] →
             # [batch_size (optional), num_frames, frame_channels]
-            yield frames.transpose(0, 1) if frames.dim() == 3 else frames
+            yield item[1].transpose(0, 1) if item[1].dim() == 3 else item[1]
 
     with torch.no_grad():
         command = ('ffmpeg -y -f f32le -acodec pcm_f32le -ar %d -ac 1 -i pipe: -b:a 192k %s' %

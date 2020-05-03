@@ -5,7 +5,6 @@ from pathlib import Path
 import logging
 import math
 import os
-import struct
 import subprocess
 
 from hparams import configurable
@@ -809,64 +808,6 @@ def griffin_lim(db_mel_spectrogram,
         # NOTE: Return no audio for valid inputs that fail due to an overflow error or a small
         # spectrogram.
         return np.array([], dtype=np.float32)
-
-
-WAVE_FORMAT_PCM = 0x0001
-WAVE_FORMAT_IEEE_FLOAT = 0x0003
-
-
-@configurable
-def build_wav_header(num_frames,
-                     frame_rate=HParam(),
-                     wav_format=HParam(),
-                     num_channels=HParam(),
-                     sample_width=HParam()):
-    """ Create a WAV file header.
-
-    Args:
-        num_frames (int): Number of frames. A frame includes one sample per channel.
-        frame_rate (int): Number of frames per second.
-        wav_format (int): Format of the audio file, 1 indiciates PCM format.
-        num_channels (int): Number of audio channels.
-        sample_width (int): Number of bytes per sample, typically 1 (8-bit), 2 (16-bit)
-            or 4 (32-bit).
-
-    Returns:
-        (bytes): Bytes representing the WAV header.
-        (int): File size in bytes.
-    """
-    # Inspired by: https://github.com/python/cpython/blob/master/Lib/wave.py
-    # Inspired by: https://github.com/scipy/scipy/blob/v1.2.0/scipy/io/wavfile.py#L284-L396
-    header_length = 36 if wav_format == WAVE_FORMAT_PCM else 50
-    data_length = num_frames * num_channels * sample_width
-    file_size = header_length + data_length + 8
-    bytes_per_second = num_channels * frame_rate * sample_width
-    block_align = num_channels * sample_width
-    bit_depth = sample_width * 8
-
-    header = b'RIFF'  # RIFF identifier
-    header += struct.pack('<I', header_length + data_length)  # RIFF chunk length
-    header += b'WAVE'  # RIFF type
-    header += b'fmt '  # Format chunk identifier
-
-    fmt_chunk_data = struct.pack('<HHIIHH', wav_format, num_channels, frame_rate, bytes_per_second,
-                                 block_align, bit_depth)
-    if wav_format != WAVE_FORMAT_PCM:
-        fmt_chunk_data += b'\x00\x00'  # Add `cbSize` field for non-PCM files
-
-    header += struct.pack('<I', len(fmt_chunk_data))  # Format chunk length
-    header += fmt_chunk_data
-
-    if wav_format != WAVE_FORMAT_PCM:  # Add fact chunk (non-PCM files)
-        header += b'fact'
-        header += struct.pack('<II', 4, num_frames)
-
-    if ((len(header) - 4 - 4) + (4 + 4 + data_length)) > 0xFFFFFFFF:
-        raise ValueError('Data exceeds wave file size limit.')
-
-    header += b'data'  # Data chunk identifier
-    header += struct.pack('<I', data_length)  # Data chunk length
-    return header, file_size
 
 
 # Args:

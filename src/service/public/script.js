@@ -15,13 +15,11 @@ document.addEventListener('DOMContentLoaded', async function (_) {
   const speakerOptionElements = document.querySelectorAll('#speaker option');
   const apiKeyInput = document.querySelector('input');
   const generateButton = document.querySelector('#generate-button');
-  const downloadAllButton = document.querySelector('#download-all');
   const errorParagraphElement = document.querySelector('#error p');
   const errorElement = document.querySelector('#error');
   const clipsElement = document.querySelector('#clips');
   const splitBySetencesInput = document.querySelector('#split-by-setences');
   const versionSelect = document.querySelector('#version');
-  const allAudio = [];
   const allRequests = [];
 
   function filterSpeakers() {
@@ -47,9 +45,6 @@ document.addEventListener('DOMContentLoaded', async function (_) {
   filterSpeakers(); // Initial filter
   versionSelect.onchange = filterSpeakers;
 
-  // `zip` function similar to python.
-  const zip = (...args) => args[0].map((_, i) => args.map(arg => arg[i]));
-
   /**
    * Sleep for a number of milliseconds.
    *
@@ -58,6 +53,10 @@ document.addEventListener('DOMContentLoaded', async function (_) {
    */
   function sleep(milliseconds) {
     return new Promise(resolve => setTimeout(resolve, milliseconds));
+  }
+
+  function roundHundredth(number) {
+    return Math.round(number * 100) / 100;
   }
 
   function splitIntoSentences(text) {
@@ -105,17 +104,78 @@ document.addEventListener('DOMContentLoaded', async function (_) {
     '"It should be a new sentence." "(And the same with this one.)" ' +
     '(\'And this one!\')"(\'(And (this)) \'?)"').length == 5);
 
+  /**
+   * Request `data.sectionElement` to be populated with an audio stream.
+   *
+   * @param {Object} data
+   * @param {String} data.version Audio request version header.
+   * @param {Object} data.payload Audio request payload.
+   * @param {HTMLElement} data.sectionElement The HTMLElement to be populated.
+   */
   function requestAudio(data) {
     return new Promise((resolve) => {
-      // TODO: Revert this change and implement something more thorough with...
-      // - Performance specifications
-      // - Adding version headers: https://stackoverflow.com/questions/9299189/send-custom-http-request-header-with-html5-audio-tag
-      // - Using a streamable and seakable file format
-      // - Using the correct endpoint.
-      data.sectionElement.querySelector('.progress').style.display = 'none';
       const audioElement = data.sectionElement.querySelector('audio');
-      audioElement.src = `${is_production ? 'https://voice.wellsaidlabs.com' : ''}${endpoint}/stream?${new URLSearchParams(data.payload).toString()}`;
-      audioElement.load();
+      // TODO: A GET request traditionally does not support more than 2,000 characters. We might
+      // need to use a POST request.
+      // TODO: Enable downloading the audio clips.
+      // TODO: Print the errors to the user instead of console.
+      // NOTE: This is largely inspired by this example:
+      // https://developers.google.com/web/fundamentals/media/mse/basics
+      const startTime = new Date().getTime();
+      const audioSource = `${is_production ? 'https://voice.wellsaidlabs.com' : ''}${
+        endpoint}/stream?${new URLSearchParams(data.payload).toString()}`;
+      const mediaSource = new MediaSource();
+      audioElement.src = URL.createObjectURL(mediaSource);
+      mediaSource.addEventListener('sourceopen', async (event) => {
+        URL.revokeObjectURL(audioElement.src);
+        const response = await fetch(audioSource, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept-Version': data.version,
+          }
+        }).catch((error) => {
+          console.error('Error:', error);
+        });
+        const ttfbTime = new Date().getTime(); // Time To First Byte (TTFB)
+        const reader = response.body.getReader();
+        const mediaSource = event.target;
+        const sourceBuffer = mediaSource.addSourceBuffer(response.headers.get('Content-Type'));
+        const onEndOfStream = () => {
+          if (!sourceBuffer.updating && mediaSource.readyState === 'open') {
+            mediaSource.endOfStream();
+          }
+        }
+        const getBuffered = () => { // Get the maximum buffer time
+          let maxBuffered = 0;
+          for (let i = 0; i < sourceBuffer.buffered.length; i++) {
+            maxBuffered = Math.max(sourceBuffer.buffered.end(i), maxBuffered);
+          }
+          return maxBuffered;
+        }
+        while (true) {
+          let {
+            done,
+            value,
+          } = await reader.read();
+          if (done) {
+            break;
+          }
+          sourceBuffer.appendBuffer(value.buffer);
+          sourceBuffer.addEventListener('update', () => {
+            if (!sourceBuffer.updating && mediaSource.readyState === 'open') {
+              mediaSource.duration = getBuffered();
+            }
+          });
+          const generationTime = (new Date().getTime() - ttfbTime) / 1000;
+          data.sectionElement.querySelector('footer p').innerHTML = ([
+            `Queuing Time: ${roundHundredth((ttfbTime - startTime) / 1000)}s`,
+            `Real Time: ${roundHundredth(generationTime / getBuffered())}x`,
+          ].join('&nbsp;&nbsp;|&nbsp;&nbsp;'));
+        }
+        onEndOfStream();
+        sourceBuffer.addEventListener('updateend', onEndOfStream);
+      });
       resolve();
     });
   };
@@ -152,9 +212,6 @@ document.addEventListener('DOMContentLoaded', async function (_) {
                                       <p>${text}</p>
                                     </div>
                                     <div>
-                                      <div class="progress">
-                                        <p>Queuing / Generating Spectrogram</p>
-                                      </div>
                                       <audio controls></audio>
                                     </div>
                                   </main>
@@ -175,11 +232,10 @@ document.addEventListener('DOMContentLoaded', async function (_) {
             }
           })
         if (!response.ok) {
-          sectionElement.querySelector('.progress p').textContent = (await response.json()).message;
+          console.error((await response.json()).message);
         } else {
           allRequests.push({
             version,
-            clipNumber: clipNumber - 1,
             payload,
             sectionElement,
           });
@@ -187,38 +243,8 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       } catch (error) {
         // TODO: Retry input validation a couple times if so.
         console.error(error);
-        sectionElement.querySelector('.progress p').textContent = 'Network error';
       }
     }
-  }
-
-  downloadAllButton.onclick = () => {
-    /** Donwload all the audio clips on the page. */
-    if (allAudio.length == 0) {
-      return;
-    }
-
-    const zip = new JSZip();
-    const clips = zip.folder("clips");
-    allAudio.forEach(function ({
-      response,
-      speakerId,
-      text,
-      clipNumber,
-      maxTextLength = 50, // NOTE: There is a maximum length in various OSs for filenames.
-    }) {
-      const speakerName = speakerSelect.options[speakerId].text;
-      let partialText = text.trim();
-      if (partialText.length > maxTextLength) {
-        partialText = partialText.slice(0, maxTextLength) + '...';
-      }
-      clips.file(clipNumber + ' - ' + speakerName.trim() + ' - ' + partialText + '.wav', response);
-    });
-    zip.generateAsync({
-      type: "blob"
-    }).then(content => {
-      saveAs(content, 'clips.zip');
-    });
   }
 
   let isGenerateButtonDisabled = false;

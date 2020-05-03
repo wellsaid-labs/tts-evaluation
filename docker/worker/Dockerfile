@@ -66,7 +66,7 @@ COPY --from=builder /app/ /app/
 
 # NOTE: To avoid manually copying `espeak`'s dependencies, we install `espeak` outside of builder.
 RUN apt-get update --fix-missing \
-  && apt-get install -y espeak \
+  && apt-get install -y espeak ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 
 LABEL maintainer="michael@wellsaidlabs.com"

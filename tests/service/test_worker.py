@@ -28,10 +28,10 @@ def test_stream_text_to_speech_synthesis():
         mocks = get_tts_mocks()
         example = mocks['dev_dataset'][0]
         text, speaker = mocks['input_encoder'].encode((example.text, example.speaker))
-        generator, file_size = stream_text_to_speech_synthesis(mocks['signal_model'].eval(),
-                                                               mocks['spectrogram_model'].eval(),
-                                                               text, speaker)
-        assert len(b''.join([s for s in generator()])) == 1082
+        generator = stream_text_to_speech_synthesis(mocks['signal_model'].eval(),
+                                                    mocks['spectrogram_model'].eval(), text,
+                                                    speaker)
+        assert len(b''.join([s for s in generator()])) == 103725
 
 
 def test_validate_and_unpack():

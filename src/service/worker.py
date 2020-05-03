@@ -34,9 +34,12 @@ Example:
       $ PYTHONPATH=. YOUR_SPEECH_API_KEY=123 python -m src.service.worker
 """
 from functools import lru_cache
+from queue import Empty
+from queue import Queue
 
 import os
-import sys
+import subprocess
+import threading
 
 from flask import Flask
 from flask import jsonify
@@ -44,10 +47,11 @@ from flask import request
 from flask import Response
 from flask import send_file
 from flask import send_from_directory
+from hparams import configurable
+from hparams import HParam
 
 import torch
 
-from src.audio import build_wav_header
 from src.environment import set_basic_logging_config
 from src.hparams import set_hparams
 from src.service.worker_config import SIGNAL_MODEL_CHECKPOINT_PATH
@@ -62,11 +66,6 @@ set_basic_logging_config()
 
 app = Flask(__name__)
 DEVICE = torch.device('cpu')
-NO_CACHE_HEADERS = {
-    'Cache-Control': 'no-cache, no-store, must-revalidate',
-    'Pragma': 'no-cache',
-    'Expires': '0'
-}
 API_KEY_SUFFIX = '_SPEECH_API_KEY'
 API_KEYS = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
 
@@ -145,7 +144,28 @@ def before_first_request():
         function.use_disk_cache(False)
 
 
-def stream_text_to_speech_synthesis(signal_model, spectrogram_model, text, speaker):
+def _enqueue(out, queue):
+    """ Enqueue all lines from a file-like object to `queue`. """
+    for line in iter(out.readline, b''):
+        queue.put(line)
+    out.close()
+
+
+def _dequeue(queue):
+    """ Dequeue all items from `queue`. """
+    try:
+        while True:
+            yield queue.get_nowait()
+    except Empty:
+        pass
+
+
+@configurable
+def stream_text_to_speech_synthesis(signal_model,
+                                    spectrogram_model,
+                                    text,
+                                    speaker,
+                                    sample_rate=HParam()):
     """ Helper function for starting a speech synthesis stream.
 
     TODO: If a loud sound is created, cut off the stream or consider rerendering.
@@ -156,6 +176,7 @@ def stream_text_to_speech_synthesis(signal_model, spectrogram_model, text, speak
         spectrogram_model (torch.nn.Module)
         text (str)
         speaker (src.datasets.Speaker)
+        sample_rate (int)
 
     Returns:
         (callable): Callable that returns a generator incrementally returning a WAV file.
@@ -163,42 +184,39 @@ def stream_text_to_speech_synthesis(signal_model, spectrogram_model, text, speak
     """
 
     def get_spectrogram():
-        with torch.no_grad():
-            for _, frames, _, _, _ in spectrogram_model(text, speaker, is_generator=True):
-                # [num_frames, batch_size (optional), frame_channels] →
-                # [batch_size (optional), num_frames, frame_channels]
-                yield frames.transpose(0, 1) if frames.dim() == 3 else frames
+        for item in spectrogram_model(text, speaker, is_generator=True):
+            # [num_frames, batch_size (optional), frame_channels] →
+            # [batch_size (optional), num_frames, frame_channels]
+            yield item[1].transpose(0, 1) if item[1].dim() == 3 else item[1]
 
-    # NOTE: Learn more:
-    # https://stackoverflow.com/questions/25245439/writing-wav-files-of-unknown-length
-    # TODO: Use a file type that's more compatible for streaming...
-    wav_header, wav_file_size = build_wav_header(2**28)
-
+    # TODO: Add a timeout in case the client is stalling.
     def response():
-        """ Generator incrementally generating a WAV file.
-        """
-        try:
-            with torch.no_grad():
-                assert sys.byteorder == 'little', 'Ensure byte order is of little-endian format.'
-                yield wav_header
-                app.logger.info('Generating waveform...')
-                for waveform in generate_waveform(signal_model, get_spectrogram()):
-                    waveform = waveform.cpu().detach().numpy()
-                    app.logger.info('Waveform shape %s', waveform.shape)
-                    yield waveform.tostring()
-                app.logger.info('Finished generating waveform.')
-        # NOTE: Flask may abort this generator if the underlying request aborts.
-        except Exception as error:
-            app.logger.warning(
-                'Stopping waveform generation because of an exception.', exc_info=True)
-            raise error
+        # NOTE: Inspired by:
+        # https://stackoverflow.com/questions/375427/non-blocking-read-on-a-subprocess-pipe-in-python
+        with torch.no_grad():
+            command = (
+                'ffmpeg -f f32le -acodec pcm_f32le -ar %d -ac 1 -i pipe: -f mp3 -b:a 192k pipe:' %
+                sample_rate).split()
+            pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            queue = Queue()
+            thread = threading.Thread(target=_enqueue, args=(pipe.stdout, queue))
+            thread.daemon = True
+            thread.start()
+            app.logger.info('Generating waveform...')
+            for waveform in generate_waveform(signal_model, get_spectrogram()):
+                pipe.stdin.write(waveform.cpu().detach().numpy().tobytes())
+                yield from _dequeue(queue)
+            pipe.stdin.close()
+            pipe.wait()
+            yield from _dequeue(queue)
+            app.logger.info('Finished generating waveform.')
 
-    return response, wav_file_size
+    return response
 
 
 def validate_and_unpack(request_args,
                         input_encoder,
-                        max_characters=10000,
+                        max_characters=100000,
                         api_keys=API_KEYS,
                         speaker_id_to_speaker=SPEAKER_ID_TO_SPEAKER):
     """ Validate and unpack the request object.
@@ -325,16 +343,19 @@ def get_stream():
             request.
 
     Returns:
-        `audio/wav` streamed in chunks given that the arguments are valid.
+        `audio/mpeg` streamed in chunks given that the arguments are valid.
     """
     request_args = request.get_json() if request.method == 'POST' else request.args
     signal_model, spectrogram_model, input_encoder = load_checkpoints()
     text, speaker = validate_and_unpack(request_args, input_encoder)
-    response, content_length = stream_text_to_speech_synthesis(signal_model, spectrogram_model,
-                                                               input_encoder, text, speaker)
-    headers = NO_CACHE_HEADERS.copy()
-    headers['Content-Length'] = content_length
-    return Response(response(), headers=headers, mimetype='audio/wav')
+    return Response(
+        stream_text_to_speech_synthesis(signal_model, spectrogram_model, text, speaker)(),
+        headers={
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        },
+        mimetype='audio/mpeg')
 
 
 @app.route('/')
