@@ -8,14 +8,13 @@ import torch
 import numpy
 
 from src.spectrogram_model import SpectrogramModel
-from tests._utils import set_small_model_size_hparams
+from tests import _utils
 
-assert_equal = lambda a, b: numpy.testing.assert_almost_equal(
-    a.detach().numpy(), b.detach().numpy(), decimal=5)
+assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decimal=5)
 
 
 def _get_spectrogram_model(*args, **kwargs):
-    set_small_model_size_hparams()
+    _utils.set_small_model_size_hparams()
 
     model = SpectrogramModel(*args, **kwargs)
 
@@ -68,10 +67,10 @@ def test_spectrogram_model_inference__train_equality():
              target_frames=frames,
              target_lengths=lengths)
 
-    assert_equal(frames, aligned_frames)
-    assert_equal(frames_with_residual, aligned_frames_with_residual)
-    assert_equal(stop_token, aligned_stop_token)
-    assert_equal(alignment, aligned_alignment)
+    assert_almost_equal(frames, aligned_frames)
+    assert_almost_equal(frames_with_residual, aligned_frames_with_residual)
+    assert_almost_equal(stop_token, aligned_stop_token)
+    assert_almost_equal(alignment, aligned_alignment)
 
 
 def test_spectrogram_model_inference__generator():
@@ -123,11 +122,11 @@ def test_spectrogram_model_inference__generator():
             generated_alignment = torch.cat(generated_alignment)
             generated_lengths = generated_lengths[-1]
 
-        assert_equal(frames, generated_frames)
-        assert_equal(frames_with_residual, generated_frames_with_residual)
-        assert_equal(stop_token, generated_stop_token)
-        assert_equal(alignment, generated_alignment)
-        assert_equal(lengths, generated_lengths)
+        assert_almost_equal(frames, generated_frames)
+        assert_almost_equal(frames_with_residual, generated_frames_with_residual)
+        assert_almost_equal(stop_token, generated_stop_token)
+        assert_almost_equal(alignment, generated_alignment)
+        assert_almost_equal(lengths, generated_lengths)
 
 
 def test_spectrogram_model_inference__generator__unbatched():
@@ -177,11 +176,11 @@ def test_spectrogram_model_inference__generator__unbatched():
         generated_alignment = torch.cat(generated_alignment)
         generated_lengths = generated_lengths[-1]
 
-    assert_equal(frames, generated_frames)
-    assert_equal(frames_with_residual, generated_frames_with_residual)
-    assert_equal(stop_token, generated_stop_token)
-    assert_equal(alignment, generated_alignment)
-    assert_equal(lengths, generated_lengths)
+    assert_almost_equal(frames, generated_frames)
+    assert_almost_equal(frames_with_residual, generated_frames_with_residual)
+    assert_almost_equal(stop_token, generated_stop_token)
+    assert_almost_equal(alignment, generated_alignment)
+    assert_almost_equal(lengths, generated_lengths)
 
 
 class _MockSigmoidBatchInvariant(torch.nn.Module):
@@ -262,11 +261,11 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
         generated_alignment = torch.cat(generated_alignment)
         generated_lengths = generated_lengths[-1]
 
-    assert_equal(batched_frames, generated_frames)
-    assert_equal(batched_frames_with_residual, generated_frames_with_residual)
-    assert_equal(batched_stop_token, generated_stop_token)
-    assert_equal(batched_alignment, generated_alignment)
-    assert_equal(batched_lengths, generated_lengths)
+    assert_almost_equal(batched_frames, generated_frames)
+    assert_almost_equal(batched_frames_with_residual, generated_frames_with_residual)
+    assert_almost_equal(batched_stop_token, generated_stop_token)
+    assert_almost_equal(batched_alignment, generated_alignment)
+    assert_almost_equal(batched_lengths, generated_lengths)
 
     # NOTE: Test if running each sequence individually is equal to running them in a batch.
     for i in range(batch_size):
@@ -279,12 +278,14 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
 
         batched_length = batched_lengths[0, i]
 
-        assert_equal(reached_max, batched_reached_max[:, i:i + 1])
-        assert_equal(frames, batched_frames[:batched_length, i:i + 1])
-        assert_equal(frames_with_residual, batched_frames_with_residual[:batched_length, i:i + 1])
-        assert_equal(stop_token, batched_stop_token[:batched_length, i:i + 1])
-        assert_equal(alignment, batched_alignment[:batched_length, i:i + 1, :batched_num_tokens[i]])
-        assert_equal(lengths, batched_lengths[:, i:i + 1])
+        assert_almost_equal(reached_max, batched_reached_max[:, i:i + 1])
+        assert_almost_equal(frames, batched_frames[:batched_length, i:i + 1])
+        assert_almost_equal(frames_with_residual, batched_frames_with_residual[:batched_length,
+                                                                               i:i + 1])
+        assert_almost_equal(stop_token, batched_stop_token[:batched_length, i:i + 1])
+        assert_almost_equal(alignment, batched_alignment[:batched_length,
+                                                         i:i + 1, :batched_num_tokens[i]])
+        assert_almost_equal(lengths, batched_lengths[:, i:i + 1])
 
 
 def test_spectrogram_model_train__batch_size_sensitivity():
@@ -359,9 +360,6 @@ def test_spectrogram_model_train__batch_size_sensitivity():
         (frames_with_residual.sum() + stop_token.sum()).backward()
         gradient_sum = sum([p.grad.sum() for p in model.parameters() if p.grad is not None])
         model.zero_grad()
-
-    assert_almost_equal = lambda a, b: numpy.testing.assert_almost_equal(
-        a.detach().numpy(), b.detach().numpy(), decimal=5)
 
     assert_almost_equal(frames, batched_frames[:batched_num_frames[0], :1])
     assert_almost_equal(frames_with_residual,
@@ -581,17 +579,12 @@ def test_spectrogram_model__basic():
         threshold = torch.sigmoid(stop_token) >= 0.5
         stopped_index = ((threshold.cumsum(dim=0) == 1) & threshold).max(dim=0)[1]
         expected_length = torch.min(stopped_index + 1, max_lengths)
-        numpy.testing.assert_almost_equal(
-            lengths.squeeze(0).detach().numpy(),
-            expected_length.detach().numpy())
+        assert_almost_equal(lengths.squeeze(0), expected_length)
 
         # Ensure masking works as intended
-        numpy.testing.assert_almost_equal(
-            lengths.squeeze(0).detach().numpy(),
-            (frames_with_residual.sum(dim=2).abs() > 1e-10).sum(dim=0).detach().numpy())
-        numpy.testing.assert_almost_equal(
-            lengths.squeeze(0).detach().numpy(),
-            (frames.sum(dim=2).abs() > 1e-10).sum(dim=0).detach().numpy())
+        assert_almost_equal(
+            lengths.squeeze(0), (frames_with_residual.sum(dim=2).abs() > 1e-10).sum(dim=0))
+        assert_almost_equal(lengths.squeeze(0), (frames.sum(dim=2).abs() > 1e-10).sum(dim=0))
 
 
 def test_spectrogram_model_unbatched():

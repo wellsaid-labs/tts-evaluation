@@ -217,7 +217,12 @@ class SpectrogramModel(nn.Module):
                 frames, stop_tokens, alignments = [], [], []
 
             if use_tqdm:
-                progress_bar.update(hidden_state.window_start.cpu().item() - progress_bar.n)
+                half_window_length = self.decoder.attention.window_length // 2
+                # NOTE: The `tqdm` will start at `half_window_length` and it'll end at negative
+                # `half_window_length`; otherwise, it's an accurate representation of the
+                # character progress.
+                progress_bar.update(hidden_state.window_start.cpu().item() + half_window_length -
+                                    progress_bar.n)
 
         if use_tqdm:
             progress_bar.close()

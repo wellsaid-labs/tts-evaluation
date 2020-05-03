@@ -26,9 +26,9 @@ def window(tensor, start, length, dim):
             be used with `scatter` to reverse the operation.
     """
     assert torch.min(start) >= 0, 'The window `start` must be positive.'
+    assert length <= tensor.shape[dim], 'The `length` is larger than the `tensor`.'
     assert torch.max(start) + length <= tensor.shape[
         dim], 'The window `start` must smaller or equal to than `tensor.shape[dim] - length`.'
-    assert length <= tensor.shape[dim], 'The `length` is larger than the `tensor`.'
 
     dim = tensor.dim() + dim if dim < 0 else dim
     start = start.unsqueeze(dim)
@@ -116,6 +116,7 @@ class LocationSensitiveAttention(nn.Module):
     def forward(self,
                 encoded_tokens,
                 tokens_mask,
+                num_tokens,
                 query,
                 cumulative_alignment=None,
                 initial_cumulative_alignment=None,
@@ -146,13 +147,13 @@ class LocationSensitiveAttention(nn.Module):
             window_start (torch.LongTensor [batch_size] or None): The updated window starting
                 location.
         """
-        num_tokens, batch_size, _ = encoded_tokens.shape
+        max_num_tokens, batch_size, _ = encoded_tokens.shape
         device = encoded_tokens.device
-        window_length = min(self.window_length, num_tokens)
+        window_length = min(self.window_length, max_num_tokens)
 
         # NOTE: Attention alignment is sometimes refered to as attention weights.
         if cumulative_alignment is None:
-            cumulative_alignment = torch.zeros(batch_size, num_tokens, device=device)
+            cumulative_alignment = torch.zeros(batch_size, max_num_tokens, device=device)
         if initial_cumulative_alignment is None:
             initial_cumulative_alignment = torch.zeros(batch_size, 1, device=device)
         if not self.training and window_start is None:
@@ -210,9 +211,9 @@ class LocationSensitiveAttention(nn.Module):
 
         if not self.training:
             alignment = torch.zeros(
-                batch_size, num_tokens, device=device).scatter_(1, window_indices, alignment)
-            window_start = torch.clamp(
-                alignment.max(dim=1)[1] - window_length // 2, 0, num_tokens - window_length)
+                batch_size, max_num_tokens, device=device).scatter_(1, window_indices, alignment)
+            window_start = alignment.max(dim=1)[1] - window_length // 2
+            window_start = torch.clamp(torch.min(window_start, num_tokens - window_length), min=0)
 
         # [batch_size, num_tokens] + [batch_size, num_tokens] → [batch_size, num_tokens]
         cumulative_alignment = cumulative_alignment + alignment

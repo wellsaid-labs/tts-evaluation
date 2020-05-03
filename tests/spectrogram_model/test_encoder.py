@@ -6,6 +6,7 @@ from torchnlp.random import fork_rng
 from src.spectrogram_model.encoder import Encoder
 from src.spectrogram_model.encoder import RightMaskedBiLSTM
 from src.spectrogram_model.encoder import roll
+from tests._utils import assert_almost_equal
 
 
 def test_roll():
@@ -104,9 +105,7 @@ def test_right_masked_bi_lstm__uneven_mask():
 
     result = masked_bi_lstm(tokens, tokens_mask)
 
-    numpy.testing.assert_almost_equal(
-        (expected_forward_pass.sum() + expected_backward_pass.sum()).detach().numpy(),
-        result.sum().detach().numpy())
+    assert_almost_equal((expected_forward_pass.sum() + expected_backward_pass.sum()), result.sum())
 
 
 def test_right_masked_bi_lstm__multiple_masked_layers():
@@ -139,8 +138,7 @@ def test_right_masked_bi_lstm__multiple_masked_layers():
     expected, _ = lstm(tokens)
     result = masked_bi_lstm(padded_tokens, padded_tokens_mask)
 
-    numpy.testing.assert_almost_equal(
-        expected.sum().detach().numpy(), result.sum().detach().numpy(), decimal=4)
+    assert_almost_equal(expected.sum(), result.sum(), decimal=4)
     assert torch.equal(expected, result[:-padding_len])
     assert result[-padding_len:].sum().item() == 0
     assert result.sum().item() != 0
@@ -248,8 +246,8 @@ def test_encoder_padding_invariance():
         encoder.zero_grad()
 
         if expected is None and expected_grad is None:
-            expected = result.detach().numpy()
+            expected = result
             expected_grad = result_grad.detach().numpy()
         else:
-            numpy.testing.assert_almost_equal(result.detach().numpy(), expected, decimal=5)
+            assert_almost_equal(result, expected, decimal=5)
             numpy.isclose(result_grad.detach().numpy(), expected_grad)

@@ -188,6 +188,7 @@ class AutoregressiveDecoder(nn.Module):
             last_attention_context, cumulative_alignment, alignment, window_start = self.attention(
                 encoded_tokens=encoded_tokens,
                 tokens_mask=tokens_mask,
+                num_tokens=num_tokens,
                 query=frame.unsqueeze(0),
                 initial_cumulative_alignment=initial_cumulative_alignment,
                 cumulative_alignment=cumulative_alignment,

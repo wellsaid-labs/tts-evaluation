@@ -1,6 +1,5 @@
 import itertools
 
-import numpy
 import torch
 
 from src.signal_model import generate_waveform
@@ -8,6 +7,7 @@ from src.signal_model import has_weight_norm
 from src.signal_model import L1L2Loss
 from src.signal_model import SignalModel
 from src.signal_model import SpectrogramDiscriminator
+from tests._utils import assert_almost_equal
 
 
 def test_has_weight_norm():
@@ -67,7 +67,7 @@ def test_generate_waveform():
     for i in itertools.chain([1, 26, 27, 53]):
         generated = torch.cat(list(generate_waveform(model, spectrogram.split(i, dim=1))), dim=1)
         assert generated.shape == (batch_size, model.upscale_factor * num_frames)
-        numpy.testing.assert_almost_equal(immediate.detach().numpy(), generated.detach().numpy())
+        assert_almost_equal(immediate, generated)
 
 
 def test_generate_waveform_small():
@@ -83,7 +83,7 @@ def test_generate_waveform_small():
 
     generated = torch.cat(list(generate_waveform(model, spectrogram.split(1, dim=1))), dim=1)
     assert generated.shape == (batch_size, model.upscale_factor * num_frames)
-    numpy.testing.assert_almost_equal(immediate.detach().numpy(), generated.detach().numpy())
+    assert_almost_equal(immediate, generated)
 
 
 def test_generate_waveform__no_batch_dim():
@@ -99,7 +99,7 @@ def test_generate_waveform__no_batch_dim():
 
     generated = torch.cat(list(generate_waveform(model, spectrogram.split(split_size))))
     assert generated.shape == (model.upscale_factor * num_frames,)
-    numpy.testing.assert_almost_equal(immediate.detach().numpy(), generated.detach().numpy())
+    assert_almost_equal(immediate, generated)
 
 
 def test_generate_waveform__padding_invariance():
@@ -131,10 +131,8 @@ def test_generate_waveform__padding_invariance():
     assert generated[:, -padding * model.upscale_factor:].abs().sum().item() == 0.0
 
     # Ensure not padding output isn't affected.
-    numpy.testing.assert_almost_equal(
-        generated[:,
-                  padding * model.upscale_factor:-padding * model.upscale_factor].detach().numpy(),
-        immediate.detach().numpy())
+    assert_almost_equal(
+        generated[:, padding * model.upscale_factor:-padding * model.upscale_factor], immediate)
 
 
 def test_spectrogram_discriminator():
@@ -195,7 +193,7 @@ def test_signal_model__batch_invariance():
 
     out = model(batched_spectrogram[0])
 
-    numpy.testing.assert_almost_equal(batched_out[0].detach().numpy(), out.detach().numpy())
+    assert_almost_equal(batched_out[0], out)
 
 
 def test_signal_model__padding_invariance():
@@ -223,7 +221,5 @@ def test_signal_model__padding_invariance():
     assert padded_out[:, -padding * model.upscale_factor:].abs().sum().item() == 0.0
 
     # Ensure not padding output isn't affected.
-    numpy.testing.assert_almost_equal(
-        padded_out[:,
-                   padding * model.upscale_factor:-padding * model.upscale_factor].detach().numpy(),
-        out.detach().numpy())
+    assert_almost_equal(
+        padded_out[:, padding * model.upscale_factor:-padding * model.upscale_factor], out)

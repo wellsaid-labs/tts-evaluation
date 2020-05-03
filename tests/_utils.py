@@ -11,8 +11,9 @@ from hparams import HParams
 from torch.optim import Adam
 from torchnlp.utils import split_list
 
-import torch
+import numpy
 import pytest
+import torch
 
 from src.datasets import add_predicted_spectrogram_column
 from src.datasets import add_spectrogram_column
@@ -29,6 +30,10 @@ from src.spectrogram_model import InputEncoder
 from src.spectrogram_model import SpectrogramModel
 from src.utils import Checkpoint
 from src.utils import OnDiskTensor
+
+assert_almost_equal = lambda a, b, **kwargs: numpy.testing.assert_almost_equal(
+    a.cpu().detach().numpy(),
+    b.cpu().detach().numpy(), **kwargs)
 
 
 def create_disk_garbage_collection_fixture(root_directory, **kwargs):
