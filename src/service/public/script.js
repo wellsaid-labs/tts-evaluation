@@ -125,9 +125,7 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       const audioSource = `${is_production ? 'https://voice.wellsaidlabs.com' : ''}${
         endpoint}/stream?${new URLSearchParams(data.payload).toString()}`;
       const mediaSource = new MediaSource();
-      audioElement.src = URL.createObjectURL(mediaSource);
-      mediaSource.addEventListener('sourceopen', async (event) => {
-        URL.revokeObjectURL(audioElement.src);
+      mediaSource.addEventListener('sourceopen', async () => {
         const response = await fetch(audioSource, {
           method: 'GET',
           headers: {
@@ -139,7 +137,6 @@ document.addEventListener('DOMContentLoaded', async function (_) {
         });
         const ttfbTime = new Date().getTime(); // Time To First Byte (TTFB)
         const reader = response.body.getReader();
-        const mediaSource = event.target;
         const sourceBuffer = mediaSource.addSourceBuffer(response.headers.get('Content-Type'));
         const onEndOfStream = () => {
           if (!sourceBuffer.updating && mediaSource.readyState === 'open') {
@@ -176,6 +173,7 @@ document.addEventListener('DOMContentLoaded', async function (_) {
         onEndOfStream();
         sourceBuffer.addEventListener('updateend', onEndOfStream);
       });
+      audioElement.src = URL.createObjectURL(mediaSource);
       resolve();
     });
   };
