@@ -527,14 +527,16 @@ class Trainer():
                 self.train_dataset,
                 self.train_batch_size,
                 spectrogram_slice_size=self.train_spectrogram_slice_size,
-                spectrogram_slice_pad=self.model.padding,
+                spectrogram_slice_pad=(self.model.module
+                                       if src.distributed.is_initialized() else self.model).padding,
                 **loader_kwargs)
         elif not train and not hasattr(self, '_dev_loader'):
             self._dev_loader = DataLoader(
                 self.dev_dataset,
                 self.dev_batch_size,
                 spectrogram_slice_size=self.dev_spectrogram_slice_size,
-                spectrogram_slice_pad=self.model.padding,
+                spectrogram_slice_pad=(self.model.module
+                                       if src.distributed.is_initialized() else self.model).padding,
                 **loader_kwargs)
         data_loader = self._train_loader if train else self._dev_loader
 
