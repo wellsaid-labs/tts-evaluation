@@ -149,7 +149,7 @@ class SpectrogramModel(nn.Module):
         frames, stop_tokens, hidden_state, alignments = self.decoder(
             encoded_tokens, tokens_mask, speaker, num_tokens, target_frames=target_frames)
         frames = frames.masked_fill(~mask.transpose(0, 1).unsqueeze(2), 0)
-        frames_with_residual = frames + self.post_net(frames, mask)
+        frames_with_residual = frames.detach() + self.post_net(frames, mask)
 
         frames_with_residual = frames_with_residual * self.output_scalar
         frames = frames * self.output_scalar
