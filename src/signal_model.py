@@ -8,8 +8,9 @@ from torch.nn.utils.weight_norm import WeightNorm
 import numpy as np
 import torch
 
-from src.utils import trim_tensors
 from src.utils import pad_tensors
+from src.utils import trim_tensors
+import src.distributed
 
 logger = logging.getLogger(__name__)
 
@@ -324,11 +325,12 @@ class SignalModel(torch.nn.Module):
         Learn more more: https://pytorch.org/docs/stable/nn.html#torch.nn.Module.train
         """
         return_ = super().train(*args, **kwargs)
-        for module in self._get_weight_norm_modules():
-            if self.training and not has_weight_norm(module):
-                torch.nn.utils.weight_norm(module)
-            if not self.training and has_weight_norm(module):
-                torch.nn.utils.remove_weight_norm(module)
+        if not src.distributed.is_initialized() or self.training:
+            for module in self._get_weight_norm_modules():
+                if self.training and not has_weight_norm(module):
+                    torch.nn.utils.weight_norm(module)
+                if not self.training and has_weight_norm(module):
+                    torch.nn.utils.remove_weight_norm(module)
         return return_
 
     def _get_weight_norm_modules(self):
