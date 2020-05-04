@@ -162,6 +162,9 @@ document.addEventListener('DOMContentLoaded', async function (_) {
           // NOTE: The `sourceBuffer` only allows for around 12 mb of audio or about 10 minutes of
           // `mp3` audio at 19.2 Kb/s.
           // https://developers.google.com/web/updates/2017/10/quotaexceedederror
+          // TODO: Check if `sourceBuffer` is still updating before appending:
+          // "DOMException: Failed to execute 'appendBuffer' on 'SourceBuffer': This SourceBuffer is
+          // still processing an 'appendBuffer' or 'remove' operation."
           sourceBuffer.appendBuffer(value.buffer);
           sourceBuffer.addEventListener('update', () => {
             if (!sourceBuffer.updating && mediaSource.readyState === 'open') {
