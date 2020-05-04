@@ -71,10 +71,10 @@ def main(file_path,
 
     text = pathlib.Path(file_path).read_text()
 
-    spectrogram_model = spectrogram_model_checkpoint.model.eval()
+    spectrogram_model = spectrogram_model_checkpoint.model.eval().to(device)
     input_encoder = spectrogram_model_checkpoint.input_encoder
     signal_model_checkpoint.exponential_moving_parameter_average.apply_shadow()
-    signal_model = signal_model_checkpoint.model.eval()
+    signal_model = signal_model_checkpoint.model.eval().to(device)
 
     logger.info('Number of characters: %d', len(text))
     (destination / preprocessed_text_filename).write_text(input_encoder._preprocess(text))
@@ -82,7 +82,8 @@ def main(file_path,
     logger.info('Number of tokens: %d', len(text))
 
     def get_spectrogram():
-        for item in spectrogram_model(text, speaker, is_generator=True, use_tqdm=True):
+        for item in spectrogram_model(
+                text.to(device), speaker.to(device), is_generator=True, use_tqdm=True):
             # [num_frames, batch_size (optional), frame_channels] →
             # [batch_size (optional), num_frames, frame_channels]
             yield item[1].transpose(0, 1) if item[1].dim() == 3 else item[1]
