@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 def window(tensor, start, length, dim):
     """ Return a window of `tensor` with variable window offsets.
 
+    TODO: Create a `Window` module so that `indices` are not recomputed each time.
+
     Args:
         tensor (torch.Tensor [*, dim_length, *]): The tensor to window.
         start (torch.Tensor [*]): The start of a window.
@@ -214,6 +216,8 @@ class LocationSensitiveAttention(nn.Module):
             alignment = torch.zeros(
                 batch_size, max_num_tokens, device=device).scatter_(1, window_indices, alignment)
             window_start = alignment.max(dim=1)[1] - window_length // 2
+            # TODO: Cache `num_tokens - window_length` clamped at 0 so that we dont need to
+            # recompute the `clamp` and subtraction each time.
             window_start = torch.clamp(torch.min(window_start, num_tokens - window_length), min=0)
 
         # [batch_size, num_tokens] + [batch_size, num_tokens] → [batch_size, num_tokens]

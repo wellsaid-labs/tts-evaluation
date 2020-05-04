@@ -10,6 +10,8 @@ from torchnlp.nn import LockedDropout
 def roll(tensor, shift, dim=-1):
     """ Shift a tensor along the specified dimension.
 
+    TODO: Create a `Roll` module so that `indices` are not recomputed each time.
+
     Args:
         tensor (torch.Tensor [*, dim, *]): The tensor to shift.
         shift (torch.Tensor [*]): The number of elements to shift `dim`. This tensor must have one
