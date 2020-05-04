@@ -1,4 +1,5 @@
 import logging
+import re
 
 import unidecode
 
@@ -37,6 +38,10 @@ class InputEncoder(Encoder):
     def _preprocess(self, text):
         text = text.strip()
         text = unidecode.unidecode(text)
+        # Learn more:
+        # https://en.wikipedia.org/wiki/Control_character
+        # https://stackoverflow.com/questions/14946109/how-to-remove-escape-sequence-like-xe2-or-x0c-in-python
+        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\xff]', '', text)
         if self.delimiter and self.delimiter in text:
             raise ValueError('Text cannot contain these characters: %s' % self.delimiter)
         text = grapheme_to_phoneme_perserve_punctuation(text, separator=self.delimiter)

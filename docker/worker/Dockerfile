@@ -65,6 +65,8 @@ WORKDIR /app
 COPY --from=builder /app/ /app/
 
 # NOTE: To avoid manually copying `espeak`'s dependencies, we install `espeak` outside of builder.
+# TODO: Attempt to reduce `ffmpeg` size, it's about 200mb without any optimization...
+# https://github.com/alberthdev/alberthdev-misc/wiki/Build-your-own-tiny-FFMPEG
 RUN apt-get update --fix-missing \
   && apt-get install -y espeak ffmpeg \
   && rm -rf /var/lib/apt/lists/*

@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', async function (_) {
     } else if (version == "v2") {
       speakers = [...Array(12).keys()];
     } else if (version == "v3" || version == "v4" || version == "v5" ||
-      version == "v6" || version == "latest") {
+      version == "v6" || version == "v7" || version == "latest") {
       speakers = [...Array(20).keys()];
     } else if (version == "lincoln.v1") {
       speakers = [11541];
@@ -123,15 +123,16 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       // https://developers.google.com/web/fundamentals/media/mse/basics
       const startTime = new Date().getTime();
       const audioSource = `${is_production ? 'https://voice.wellsaidlabs.com' : ''}${
-        endpoint}/stream?${new URLSearchParams(data.payload).toString()}`;
+        endpoint}/stream`;
       const mediaSource = new MediaSource();
       mediaSource.addEventListener('sourceopen', async () => {
         const response = await fetch(audioSource, {
-          method: 'GET',
+          method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Accept-Version': data.version,
-          }
+          },
+          body: JSON.stringify(data.payload),
         }).catch((error) => {
           console.error('Error:', error);
         });
@@ -158,6 +159,9 @@ document.addEventListener('DOMContentLoaded', async function (_) {
           if (done) {
             break;
           }
+          // NOTE: The `sourceBuffer` only allows for around 12 mb of audio or about 10 minutes of
+          // `mp3` audio at 19.2 Kb/s.
+          // https://developers.google.com/web/updates/2017/10/quotaexceedederror
           sourceBuffer.appendBuffer(value.buffer);
           sourceBuffer.addEventListener('update', () => {
             if (!sourceBuffer.updating && mediaSource.readyState === 'open') {

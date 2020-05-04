@@ -46,6 +46,8 @@ spec:
               value: gcr.io/voice-service-255602/speech-api-worker:v5.02
             - name: V6_WORKER_POD_IMAGE
               value: gcr.io/voice-service-255602/speech-api-worker:v6.08
+            - name: V7_WORKER_POD_IMAGE
+              value: gcr.io/voice-service-255602/speech-api-worker:v7.02
             - name: WORKER_POD_EXPOSED_PORT # Port master communicates with its workers on
               value: "8000"
             - name: WORKER_POD_PREFIX
@@ -92,7 +94,7 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-          image: gcr.io/voice-service-255602/speech-api:v5.04
+          image: gcr.io/voice-service-255602/speech-api:v6.03
           ports:
             - containerPort: 8000
               protocol: TCP
