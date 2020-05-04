@@ -315,8 +315,8 @@ class SignalModel(torch.nn.Module):
         self.reset_parameters()
 
         # NOTE: We initialize the convolution parameters before weight norm factorizes them.
-        for module in self._get_weight_norm_modules():
-            torch.nn.utils.weight_norm(module)
+        # NOTE: The `torch.nn.Module` by default is initialized to `self.training = True`.
+        self.train(mode=True)
 
     def train(self, *args, **kwargs):
         """ Sets the module in training or evaluation mode.
