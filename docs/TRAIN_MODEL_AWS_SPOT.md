@@ -287,9 +287,9 @@ Related Documentation:
    python -m pip install wheel
    python -m pip install -r requirements.txt --upgrade
 
-   # NOTE: PyTorch 1.4 relies on CUDA 10.1, we enable it.
+   # NOTE: PyTorch 1.5 relies on CUDA 10.1, we enable it.
    sudo rm /usr/local/cuda
-   sudo ln -s /usr/local/cuda-10.1 /usr/local/cuda
+   sudo ln -s /usr/local/cuda-10.2 /usr/local/cuda
 
    # Set a flag to restart training if the instance is rebooted
    touch /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT

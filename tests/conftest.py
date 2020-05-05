@@ -1,3 +1,5 @@
+import warnings
+
 # Fix this weird error:
 # https://stackoverflow.com/questions/37604289/tkinter-tclerror-no-display-name-and-no-display-environment-variable
 import matplotlib
@@ -31,8 +33,11 @@ def run_before_test():
     set_lazy_resolution(True)  # This helps performance for individual tests
     set_hparams()
 
-    with torch.autograd.detect_anomaly():
-        yield
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            'ignore', module=r'.*torch.*', message=r'.*Anomaly Detection has been enabled.*')
+        with torch.autograd.detect_anomaly():
+            yield
 
     # NOTE: We need to invalidate caching after the test because of delayed writes.
     for cache in DiskCache.get_instances():

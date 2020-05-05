@@ -385,11 +385,6 @@ def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
     else:
         experiment = comet_ml.ExistingExperiment(previous_experiment=experiment_key, **kwargs)
 
-    # NOTE: Unlike the usage of ``_upload_git_patch`` in ``Experiment``, this does not catch
-    # any exceptions thrown by ``_upload_git_patch``; therefore, exiting the program if git patch
-    # fails to upload.
-    experiment._upload_git_patch()
-
     check_output = lambda *a, **k: subprocess.check_output(*a, shell=True, **k).decode().strip()
 
     # Log the last git commit date
