@@ -353,14 +353,13 @@ _BASE_HTML_STYLING = """
 
 
 @log_runtime
-def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
+def CometML(project_name, experiment_key=None, **kwargs):
     """
     Initiate a Comet.ml visualizer with several monkey patched methods.
 
     Args:
         project_name (str)
         experiment_key (str, optional): Comet.ml existing experiment identifier.
-        log_git_patch (bool or None, optional): If ``True``
         **kwargs: Other kwargs to pass to comet `Experiment` or `ExistingExperiment`
 
     Returns:
@@ -373,10 +372,7 @@ def CometML(project_name, experiment_key=None, log_git_patch=None, **kwargs):
         raise ValueError(('Experiment is not reproducible, Comet does not track untracked files. '
                           'Please track these files via `git`:\n%s') % untracked_files)
 
-    kwargs.update({
-        'log_git_patch': log_git_patch,
-        'workspace': comet_ml.config.get_config()['comet.workspace']
-    })
+    kwargs.update({'workspace': comet_ml.config.get_config()['comet.workspace']})
     if project_name is not None:
         kwargs.update({'project_name': project_name})
     if experiment_key is None:
