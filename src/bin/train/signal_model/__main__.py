@@ -37,6 +37,7 @@ from src.environment import set_basic_logging_config
 from src.environment import set_seed
 from src.environment import SIGNAL_MODEL_EXPERIMENTS_PATH
 from src.hparams import set_hparams
+from src.text import cache_grapheme_to_phoneme_perserve_punctuation
 from src.utils import bash_time_label
 from src.utils import cache_on_disk_tensor_shapes
 from src.utils import Checkpoint
@@ -220,6 +221,7 @@ def main(experiment_name=None,
         data = add_spectrogram_column(data)
         cache_on_disk_tensor_shapes([r.spectrogram for r in data])
         if spectrogram_model_checkpoint is not None:
+            cache_grapheme_to_phoneme_perserve_punctuation([r.text for r in data])
             data = add_predicted_spectrogram_column(data, spectrogram_model_checkpoint, device)
             cache_on_disk_tensor_shapes([r.predicted_spectrogram for r in data])
         return data
