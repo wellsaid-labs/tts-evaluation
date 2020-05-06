@@ -79,7 +79,7 @@ machine.
    if [[ "$VM_STATUS" != "None" ]]; then echo -e '\033[;31mERROR:\033[0m The region you provided' \
       'is invalid or the VM name you provided has already been taken!'; fi;
 
-   VM_IMAGE_NAME='Deep Learning Base AMI (Ubuntu 18.04) Version 21.0'
+   VM_IMAGE_NAME='Deep Learning Base AMI (Ubuntu 18.04) Version 23.0'
    VM_IMAGE_ID=$(aws ec2 describe-images \
    --owners amazon \
    --filters "Name=name,Values=$VM_IMAGE_NAME" \
