@@ -14,6 +14,14 @@ from src.text import grapheme_to_phoneme_perserve_punctuation
 logger = logging.getLogger(__name__)
 
 
+class InvalidTextValueError(ValueError):
+    pass
+
+
+class InvalidSpeakerValueError(ValueError):
+    pass
+
+
 class InputEncoder(Encoder):
     """ Handles encoding and decoding input to the spectrogram model.
 
@@ -62,17 +70,21 @@ class InputEncoder(Encoder):
         preprocessed = self._preprocess(object_[0])
 
         try:
-            return (self.text_encoder.encode(preprocessed),
-                    self.speaker_encoder.encode(object_[1]).view(1))
+            encoded_text = self.text_encoder.encode(preprocessed)
         except ValueError:
-            pass
+            difference = set(self.text_encoder.tokenize(preprocessed)).difference(
+                set(self.text_encoder.vocab))
+            difference = ', '.join([repr(c)[1:-1] for c in sorted(list(difference))])
+            raise InvalidTextValueError('Text cannot contain these characters: %s' % difference)
 
-        # NOTE: This allows us to ignore the earlier traceback. The earlier traceback is not
-        # helpful in situations where the text is very long.
-        difference = set(self.text_encoder.tokenize(preprocessed)).difference(
-            set(self.text_encoder.vocab))
-        difference = ', '.join(sorted(list(difference)))
-        raise ValueError('Text cannot contain these characters: %s' % difference)
+        try:
+            encoded_speaker = self.speaker_encoder.encode(object_[1]).view(1)
+        except ValueError:
+            # NOTE: We do not expose speaker information in the `ValueError` because this error
+            # is passed on to the public via the API.
+            raise InvalidSpeakerValueError('Speaker is not available.')
+
+        return encoded_text, encoded_speaker
 
     def decode(self, encoded):
         """

@@ -15,11 +15,18 @@ def test_input_encoder():
 def test_input_encoder__failure_cases():
     encoder = InputEncoder(['a', 'b', 'c'], [JUDY_BIEBER, MARY_ANN], delimiter='|')
 
-    with pytest.raises(ValueError):  # Text is not reversible
+    with pytest.raises(ValueError) as error:  # Text is not reversible
         encoder.encode(('d', JUDY_BIEBER))
+
+    assert "Text cannot contain these characters: d" in str(error.value)
 
     with pytest.raises(ValueError):  # Do not support delimiter
         encoder.encode(('|', JUDY_BIEBER))
 
     with pytest.raises(ValueError):  # Speaker is not reversible
         encoder.encode(('a', HILARY_NORIEGA))
+
+    with pytest.raises(ValueError) as error:
+        encoder.encode(('a\n\fa', JUDY_BIEBER))
+
+    assert "Text cannot contain these characters: \\n" in str(error.value)

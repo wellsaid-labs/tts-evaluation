@@ -58,6 +58,8 @@ from src.service.worker_config import SIGNAL_MODEL_CHECKPOINT_PATH
 from src.service.worker_config import SPEAKER_ID_TO_SPEAKER
 from src.service.worker_config import SPECTROGRAM_MODEL_CHECKPOINT_PATH
 from src.signal_model import generate_waveform
+from src.spectrogram_model.input_encoder import InvalidSpeakerValueError
+from src.spectrogram_model.input_encoder import InvalidTextValueError
 from src.utils import Checkpoint
 from src.utils import get_functions_with_disk_cache
 
@@ -300,7 +302,9 @@ def validate_and_unpack(request_args,
 
     try:
         text, speaker = input_encoder.encode((text, speaker))
-    except ValueError as error:
+    except InvalidSpeakerValueError as error:
+        raise FlaskException(str(error), code='INVALID_SPEAKER_ID')
+    except InvalidTextValueError as error:
         raise FlaskException(str(error), code='INVALID_TEXT')
 
     return text, speaker
