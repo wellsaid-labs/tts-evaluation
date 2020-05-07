@@ -97,6 +97,8 @@ class Optimizer(object):
 class AutoOptimizer(Optimizer):
     """ Encapsulates ``torch.optim`` package adding additional functionality.
 
+    TODO: The `state_dict` function does not save `window` and `sorted_window`.
+
     Args:
         optim (torch.optim.Optimizer): Optimizer object. Note the parameters to be optimized
           should be given when instantiating ``optim`` (e.g. ``torch.optim.SGD(params)``)

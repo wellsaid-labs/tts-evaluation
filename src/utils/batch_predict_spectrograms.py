@@ -23,6 +23,8 @@ from src.utils.utils import get_average_norm
 from src.utils.utils import get_weighted_stdev
 from src.utils.utils import sort_together
 
+import src
+
 logger = logging.getLogger(__name__)
 
 # LEARN MORE: https://github.com/pytorch/pytorch/issues/973
@@ -85,6 +87,8 @@ def batch_predict_spectrograms(data,
         data = sort_together(data, [-r.spectrogram.shape[0] for r in data])
     else:
         data = sorted(data, key=lambda r: len(r.text), reverse=True)
+
+    src.text.cache_grapheme_to_phoneme_perserve_punctuation([r.text for r in data])
 
     load_fn_partial = partial(
         _batch_predict_spectrogram_load_fn, input_encoder=input_encoder, load_spectrogram=aligned)

@@ -79,7 +79,7 @@ machine.
    if [[ "$VM_STATUS" != "None" ]]; then echo -e '\033[;31mERROR:\033[0m The region you provided' \
       'is invalid or the VM name you provided has already been taken!'; fi;
 
-   VM_IMAGE_NAME='Deep Learning Base AMI (Ubuntu 18.04) Version 21.0'
+   VM_IMAGE_NAME='Deep Learning Base AMI (Ubuntu 18.04) Version 23.0'
    VM_IMAGE_ID=$(aws ec2 describe-images \
    --owners amazon \
    --filters "Name=name,Values=$VM_IMAGE_NAME" \
@@ -256,9 +256,9 @@ machine.
    python -m pip install wheel
    python -m pip install -r requirements.txt --upgrade
 
-   # NOTE: PyTorch 1.4 relies on CUDA 10.1, we enable it.
+   # NOTE: PyTorch 1.5 relies on CUDA 10.1, we enable it.
    sudo rm /usr/local/cuda
-   sudo ln -s /usr/local/cuda-10.1 /usr/local/cuda
+   sudo ln -s /usr/local/cuda-10.2 /usr/local/cuda
    ```
 
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...

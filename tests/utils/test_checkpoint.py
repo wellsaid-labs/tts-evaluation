@@ -14,12 +14,14 @@ TEST_DATA_PATH_LOCAL = TEST_DATA_PATH / 'utils'
 
 
 def test_load_most_recent_checkpoint():
+    # TODO: Every PyTorch update this checkpoint gets outdated. Create the checkpoint as needed
+    # instead of storing on disk.
     checkpoint = Checkpoint.most_recent(str(TEST_DATA_PATH_LOCAL / '**/*.pt'))
     assert isinstance(checkpoint, Checkpoint)
     assert str(TEST_DATA_PATH_LOCAL / 'step_100.pt') in str(checkpoint.path)
 
     set_random_generator_state(checkpoint.random_generator_state)
-    assert 1112540545 == random.randint(1, 2**31)  # Checkpoint set random generator state
+    assert 120453214 == random.randint(1, 2**31)  # Checkpoint set random generator state
 
 
 def test_load_most_recent_checkpoint_none():

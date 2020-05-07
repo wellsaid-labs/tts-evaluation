@@ -41,7 +41,7 @@ RUN apt-get update --fix-missing \
   && venv/bin/pip install --no-cache-dir numpy \
   flask \
   gunicorn \
-  torch==1.4.0+cpu -f https://download.pytorch.org/whl/torch_stable.html \
+  torch==1.5.0+cpu -f https://download.pytorch.org/whl/torch_stable.html \
   unidecode \
   tqdm \
   spacy \

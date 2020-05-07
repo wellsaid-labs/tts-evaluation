@@ -65,6 +65,9 @@ def maybe_load_tensor(tensor):
 class OnDiskTensor():
     """ Tensor that resides on disk.
 
+    TODO: Consider implementing an `onDiskTensor` by overriding `torch.Tensor` via:
+    https://github.com/pytorch/pytorch/issues/22402
+
     Args:
         path (str or Path): Path to a tensor saved on disk as an ``.npy`` file.
         allow_pickle (bool, optional): Allow saving object arrays using Python pickles. This

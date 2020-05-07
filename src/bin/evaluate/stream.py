@@ -75,6 +75,8 @@ def main(file_path,
 
     logger.info('Number of characters: %d', len(text))
     (destination / preprocessed_text_filename).write_text(input_encoder._preprocess(text))
+    # TODO: The `ValueError` from a failed encoding will be as long as the `script.txt` is. Consider
+    # submitting a PR to `torchnlp` to cap the error length.
     text, speaker = input_encoder.encode((text, speaker))
     logger.info('Number of tokens: %d', len(text))
 
