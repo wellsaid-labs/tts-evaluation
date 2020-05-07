@@ -156,7 +156,6 @@ def _enqueue(out, queue):
     """
     for line in iter(out.readline, b''):
         queue.put(line)
-    out.close()
 
 
 def _dequeue(queue):
@@ -221,7 +220,9 @@ def stream_text_to_speech_synthesis(signal_model,
                 yield from _dequeue(queue)
             pipe.stdin.close()
             pipe.wait()
+            thread.join()
             yield from _dequeue(queue)
+            pipe.stdout.close()
             app.logger.info('Finished generating waveform.')
 
     return response
