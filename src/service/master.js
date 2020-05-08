@@ -1154,13 +1154,13 @@ if (require.main === module) {
     v1: new PodPool(process.env.V1_WORKER_POD_IMAGE, 0),
     v2: new PodPool(process.env.V2_WORKER_POD_IMAGE, 0),
     v3: new PodPool(process.env.V3_WORKER_POD_IMAGE, 0),
-    v4: new PodPool(process.env.V4_WORKER_POD_IMAGE, 2),
+    v4: new PodPool(process.env.V4_WORKER_POD_IMAGE, 1),
     "lincoln.v1": new PodPool(process.env.LINCOLN_V1_WORKER_POD_IMAGE, 0),
     v5: new PodPool(process.env.V5_WORKER_POD_IMAGE, 0),
     v6: new PodPool(process.env.V6_WORKER_POD_IMAGE, 0),
-    v7: new PodPool(process.env.V7_WORKER_POD_IMAGE, 1),
+    v7: new PodPool(process.env.V7_WORKER_POD_IMAGE, 2),
   };
-  app.locals.podPools.latest = app.locals.podPools.v4;
+  app.locals.podPools.latest = app.locals.podPools.v7;
 
   const listener = app.listen(8000, '0.0.0.0', () => logger.log(`Listening on port ${8000}!`));
 
