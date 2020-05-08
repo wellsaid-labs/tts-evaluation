@@ -35,10 +35,10 @@ class _BalancedSampler(WeightedRandomSampler):
     """ Weighted sampler with respect for an element's class.
 
     Args:
-        data (iterable)
+        data_source (iterable)
         get_class (callable, optional): Get the class of an item relative to the entire dataset.
         get_weight (callable, optional): Define a weight for each item other than one.
-        kwargs: Additional key word arguments passed onto `WeightedRandomSampler`.
+        **kwargs: Additional key word arguments passed onto `super()`.
     """
 
     def __init__(self, data_source, get_class, get_weight, **kwargs):
@@ -162,7 +162,6 @@ class DataLoader(src.utils.DataLoader):
         num_workers (int): Number of workers used to load data.
         max_workers_per_process (int, optional): The maximum workers per process used for data
             loading.
-        balance_speaker (bool): If `True` this equalizes the audio data sampled for each speaker.
         **kwargs (any): Other arguments to the data loader ``_load_fn``
 
     Returns:

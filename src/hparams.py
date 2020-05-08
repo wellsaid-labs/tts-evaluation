@@ -21,7 +21,6 @@ import torchnlp
 from src import datasets
 from src.audio import get_num_seconds
 from src.audio import iso226_weighting
-from src.audio import WAVE_FORMAT_IEEE_FLOAT
 from src.audio import WavFileMetadata
 from src.bin.train.signal_model.trainer import SpectrogramLoss
 from src.datasets import filter_
@@ -119,7 +118,6 @@ def _set_audio_processing():
         logger.info('Ignoring optional `IPython` configurations.')
 
     add_config({
-        'src.bin.evaluate.models._get_sample_rate': HParams(sample_rate=sample_rate),
         'src.audio': {
             'framed_rms_from_power_spectrogram':
                 HParams(window=window_tensor),
@@ -139,12 +137,6 @@ def _set_audio_processing():
                     )),
             'write_audio':
                 HParams(sample_rate=sample_rate),
-            # NOTE: Practically, `frame_rate` is equal to `sample_rate`. However, the terminology is
-            # more appropriate because `sample_rate` is ambiguous. In a multi-channel scenario, each
-            # channel has its own set of samples. It's unclear if `sample_rate` depends on the
-            # number of channels, scaling linearly per channel.
-            'build_wav_header':
-                HParams(frame_rate=sample_rate),
             'SignalTodBMelSpectrogram.__init__':
                 HParams(
                     sample_rate=sample_rate,
@@ -188,17 +180,22 @@ def _set_audio_processing():
             'normalize_audio':
                 HParams(bits=bits, sample_rate=sample_rate, channels=channels, encoding=encoding)
         },
+        'src.service.worker.stream_text_to_speech_synthesis': HParams(sample_rate=sample_rate),
         'src.visualize': {
             'plot_waveform': HParams(sample_rate=sample_rate),
             'plot_spectrogram': HParams(sample_rate=sample_rate, frame_hop=frame_hop),
             'plot_mel_spectrogram': HParams(**hertz_bounds)
         },
-        'src.bin.chunk_wav_and_text': {
-            'seconds_to_samples': HParams(sample_rate=sample_rate),
-            'samples_to_seconds': HParams(sample_rate=sample_rate),
-            'chunk_alignments': HParams(sample_rate=sample_rate),
-            'align_wav_and_scripts': HParams(sample_rate=sample_rate),
-        },
+        'src.bin': {
+            'evaluate.models.main': HParams(sample_rate=sample_rate),
+            'evaluate.stream.main': HParams(sample_rate=sample_rate),
+            'chunk_wav_and_text': {
+                'seconds_to_samples': HParams(sample_rate=sample_rate),
+                'samples_to_seconds': HParams(sample_rate=sample_rate),
+                'chunk_alignments': HParams(sample_rate=sample_rate),
+                'align_wav_and_scripts': HParams(sample_rate=sample_rate),
+            },
+        }
     })
 
     return frame_channels, frame_hop, sample_rate
@@ -254,6 +251,14 @@ def _set_model_size(frame_channels):
                         # features to 128-dimensional hidden representations.
                         hidden_size=128,
                         convolution_filter_size=31,
+
+                        # NOTE: The text speech alignment is monotonic; therefore, there is no need
+                        # to pay attention to any text outside of a narrow band of a couple
+                        # characters on either side.
+                        # NOTE: In Comet, we report the metric "attention_std". The standard
+                        # deviation for the attention alignment is helpful to set this metric in
+                        # such a way that it doesn't affect model performance.
+                        window_length=11,
                     ),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(
@@ -302,7 +307,7 @@ def _set_model_size(frame_channels):
                             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to
                             # learn more about this parameter.
                             speaker_embedding_dim=128),
-                    '_infer':
+                    '_infer_generator_helper':
                         HParams(stop_threshold=stop_threshold)
                 }  # noqa: E122
             },
@@ -816,9 +821,6 @@ def set_hparams():
             },
             'text.cache_grapheme_to_phoneme_perserve_punctuation':
                 HParams(delimiter=phonetic_syllable_delimiter),
-            # NOTE: The expected signal model output is 32-bit float.
-            'audio.build_wav_header':
-                HParams(wav_format=WAVE_FORMAT_IEEE_FLOAT, num_channels=1, sample_width=4),
             # NOTE: Window size smoothing parameter is not super sensative.
             'optimizers.AutoOptimizer.__init__':
                 HParams(window_size=128),

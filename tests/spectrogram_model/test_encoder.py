@@ -5,6 +5,50 @@ from torchnlp.random import fork_rng
 
 from src.spectrogram_model.encoder import Encoder
 from src.spectrogram_model.encoder import RightMaskedBiLSTM
+from src.spectrogram_model.encoder import roll
+from tests._utils import assert_almost_equal
+
+
+def test_roll():
+    tensor = torch.tensor([[1, 2, 3], [1, 2, 3], [1, 2, 3]])
+    assert torch.equal(
+        roll(tensor, shift=torch.tensor([0, 1, 2]), dim=-1),
+        torch.tensor([[1, 2, 3], [3, 1, 2], [2, 3, 1]]))
+
+
+def test_roll__larger_shift():
+    tensor = torch.tensor([1, 2, 3, 4, 5, 6])
+    assert torch.equal(roll(tensor, shift=torch.tensor(4), dim=0), torch.tensor([3, 4, 5, 6, 1, 2]))
+
+
+def test_roll__transpose():
+    tensor = torch.tensor([[1, 2, 3], [1, 2, 3], [1, 2, 3]]).transpose(0, 1)
+    result = roll(tensor, shift=torch.tensor([0, 1, 2]), dim=0).transpose(0, 1)
+    assert torch.equal(result, torch.tensor([[1, 2, 3], [3, 1, 2], [2, 3, 1]]))
+
+
+def test_roll__3d():
+    tensor = torch.tensor([1, 2, 3]).view(1, 3, 1).expand(4, 3, 4)
+    shift = torch.arange(0, 16).view(4, 4)
+    result = roll(tensor, shift=shift, dim=1)
+
+    assert shift[0, 0] == 0
+    assert torch.equal(result[0, :, 0], torch.tensor([1, 2, 3]))
+
+    assert shift[0, 1] == 1
+    assert torch.equal(result[0, :, 1], torch.tensor([3, 1, 2]))
+
+    assert shift[0, 2] == 2
+    assert torch.equal(result[0, :, 2], torch.tensor([2, 3, 1]))
+
+    assert shift[0, 3] == 3
+    assert torch.equal(result[0, :, 3], torch.tensor([1, 2, 3]))
+
+    assert shift[1, 0] == 4
+    assert torch.equal(result[1, :, 0], torch.tensor([3, 1, 2]))
+
+    assert shift[1, 1] == 5
+    assert torch.equal(result[1, :, 1], torch.tensor([2, 3, 1]))
 
 
 def test_right_masked_bi_lstm__identity():
@@ -61,9 +105,7 @@ def test_right_masked_bi_lstm__uneven_mask():
 
     result = masked_bi_lstm(tokens, tokens_mask)
 
-    numpy.testing.assert_almost_equal(
-        (expected_forward_pass.sum() + expected_backward_pass.sum()).detach().numpy(),
-        result.sum().detach().numpy())
+    assert_almost_equal((expected_forward_pass.sum() + expected_backward_pass.sum()), result.sum())
 
 
 def test_right_masked_bi_lstm__multiple_masked_layers():
@@ -96,8 +138,7 @@ def test_right_masked_bi_lstm__multiple_masked_layers():
     expected, _ = lstm(tokens)
     result = masked_bi_lstm(padded_tokens, padded_tokens_mask)
 
-    numpy.testing.assert_almost_equal(
-        expected.sum().detach().numpy(), result.sum().detach().numpy(), decimal=4)
+    assert_almost_equal(expected.sum(), result.sum(), decimal=4)
     assert torch.equal(expected, result[:-padding_len])
     assert result[-padding_len:].sum().item() == 0
     assert result.sum().item() != 0
@@ -205,8 +246,8 @@ def test_encoder_padding_invariance():
         encoder.zero_grad()
 
         if expected is None and expected_grad is None:
-            expected = result.detach().numpy()
+            expected = result
             expected_grad = result_grad.detach().numpy()
         else:
-            numpy.testing.assert_almost_equal(result.detach().numpy(), expected, decimal=5)
+            assert_almost_equal(result, expected, decimal=5)
             numpy.isclose(result_grad.detach().numpy(), expected_grad)

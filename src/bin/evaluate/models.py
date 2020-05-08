@@ -97,16 +97,12 @@ def _get_dev_dataset(dataset=HParam()):
 
 
 @configurable
-def _get_sample_rate(sample_rate=HParam()):
-    return sample_rate
-
-
 def main(dataset,
          signal_model_checkpoint,
          spectrogram_model_checkpoint,
          num_samples,
          name='',
-         get_sample_rate=_get_sample_rate,
+         sample_rate=HParam(),
          destination=SAMPLES_PATH / bash_time_label(),
          metadata_filename='metadata.csv',
          aligned=False,
@@ -129,7 +125,7 @@ def main(dataset,
             from text as input to the signal model.
         num_samples (int): Number of rows to evaluate.
         name (str, optional): The name of this evaluation process to be included in the metadata.
-        get_sample_rate (callable, optional): Get the number of samples in a clip per second.
+        sample_rate (int, optional): The number of samples in a clip per second.
         destination (str, optional): Path to store results.
         metadata_filename (str, optional): The filename for a CSV file containing clip metadata.
         aligned (bool, optional): If `True`, predict a ground truth aligned spectrogram.
@@ -153,8 +149,6 @@ def main(dataset,
     RecordStandardStreams(destination).start()
 
     log_config()
-
-    sample_rate = get_sample_rate()
 
     # Sample from the dataset
     dataset = dataset() if callable(dataset) else dataset

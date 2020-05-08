@@ -59,11 +59,15 @@ def lj_speech_dataset(root_directory_name='LJSpeech-1.1',
         url (str, optional): URL of the dataset `tar.gz` file.
         speaker (src.datasets.Speaker, optional)
         verbalize (bool, optional): Verbalize the text.
+        metadata_audio_column (str, optional): Column name or index with the audio filename.
+        metadata_audio_path (str, optional): String template for the audio path given the
+            ``metadata_audio_column`` value.
+        metadata_text_column (str, optional): Column name or index with the audio transcript.
         metadata_quoting (int, optional): Control field quoting behavior per ``csv.QUOTE_*``
             constants for the metadata file.
         metadata_delimiter (str, optional): Delimiter for the metadata file.
         metadata_header (bool, optional): If ``True``, ``metadata_file`` has a header to parse.
-        kwargs: Key word arguments passed to ``_dataset_loader``.
+        **kwargs: Key word arguments passed to ``_dataset_loader``.
 
     Returns:
         list of TextSpeechRow: Dataset with audio filenames and text annotations.

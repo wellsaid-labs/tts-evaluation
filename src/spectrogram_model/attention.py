@@ -1,3 +1,4 @@
+import logging
 import math
 
 import torch
@@ -6,6 +7,46 @@ from hparams import configurable
 from hparams import HParam
 from torch import nn
 from torchnlp.nn import LockedDropout
+
+logger = logging.getLogger(__name__)
+
+
+def window(tensor, start, length, dim):
+    """ Return a window of `tensor` with variable window offsets.
+
+    TODO: Create a `Window` module so that `indices` are not recomputed each time.
+
+    Args:
+        tensor (torch.Tensor [*, dim_length, *]): The tensor to window.
+        start (torch.Tensor [*]): The start of a window.
+        length (int): The length of the window.
+        dim (int): The `tensor` dimension to window.
+
+    Returns:
+        tensor (torch.Tensor [*, length, *]): The windowed tensor.
+        tensor (torch.Tensor [*, length, *]): The indices used to `gather` the window and that can
+            be used with `scatter` to reverse the operation.
+    """
+    assert torch.min(start) >= 0, 'The window `start` must be positive.'
+    assert length <= tensor.shape[dim], 'The `length` is larger than the `tensor`.'
+    assert torch.max(start) + length <= tensor.shape[
+        dim], 'The window `start` must smaller or equal to than `tensor.shape[dim] - length`.'
+
+    dim = tensor.dim() + dim if dim < 0 else dim
+    start = start.unsqueeze(dim)
+    assert start.dim() == tensor.dim(
+    ), 'The `start` tensor must be the same size as `tensor` without the `dim` dimension.'
+    indices = torch.arange(0, length, device=tensor.device)
+
+    indices_shape = [1] * dim + [-1] + [1] * (tensor.dim() - dim - 1)
+    indices = indices.view(*tuple(indices_shape))
+    indices_shape = list(tensor.shape)
+    indices_shape[dim] = length
+    indices = indices.expand(*tuple(indices_shape))
+
+    indices = start + indices
+
+    return torch.gather(tensor, dim, indices), indices
 
 
 class LocationSensitiveAttention(nn.Module):
@@ -46,6 +87,7 @@ class LocationSensitiveAttention(nn.Module):
         convolution_filter_size (int): Size of the convolving kernel applied to the cumulative
             alignment.
         dropout (float): The dropout probability.
+        window_length (int): The size of the attention window applied during inference.
     """
 
     @configurable
@@ -53,7 +95,8 @@ class LocationSensitiveAttention(nn.Module):
                  query_hidden_size,
                  hidden_size=HParam(),
                  convolution_filter_size=HParam(),
-                 dropout=HParam()):
+                 dropout=HParam(),
+                 window_length=HParam()):
         super().__init__()
 
         # LEARN MORE:
@@ -62,6 +105,7 @@ class LocationSensitiveAttention(nn.Module):
 
         self.dropout = dropout
         self.hidden_size = hidden_size
+        self.window_length = window_length
 
         self.alignment_conv_padding = int((convolution_filter_size - 1) / 2)
         self.alignment_conv = nn.Conv1d(
@@ -74,15 +118,18 @@ class LocationSensitiveAttention(nn.Module):
     def forward(self,
                 encoded_tokens,
                 tokens_mask,
+                num_tokens,
                 query,
                 cumulative_alignment=None,
-                initial_cumulative_alignment=None):
+                initial_cumulative_alignment=None,
+                window_start=None):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batched set of
                 encoded sequences.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask where zero's
                 represent padding in ``encoded_tokens``.
+            num_tokens (torch.LongTensor [batch_size]): The number of tokens in each sequence.
             query (torch.FloatTensor [1, batch_size, query_hidden_size]): Query vector used to score
                 individual token vectors.
             cumulative_alignment (torch.FloatTensor [batch_size, num_tokens], optional): Cumlative
@@ -91,6 +138,7 @@ class LocationSensitiveAttention(nn.Module):
             initial_cumulative_alignment (torch.FloatTensor [batch_size, 1]): The left-side
                 padding value for the `alignment_conv`. This can also be interpreted as the
                 cumulative alignment for the former tokens.
+            window_start (torch.LongTensor [batch_size]): The start of the attention window.
 
         Returns:
             context (torch.FloatTensor [batch_size, hidden_size]): Computed attention
@@ -99,15 +147,20 @@ class LocationSensitiveAttention(nn.Module):
                 alignment vector.
             alignment (torch.FloatTensor [batch_size, num_tokens]): Computed attention alignment
                 vector.
+            window_start (torch.LongTensor [batch_size] or None): The updated window starting
+                location.
         """
-        num_tokens, batch_size, _ = encoded_tokens.shape
+        max_num_tokens, batch_size, _ = encoded_tokens.shape
         device = encoded_tokens.device
+        window_length = min(self.window_length, max_num_tokens)
 
         # NOTE: Attention alignment is sometimes refered to as attention weights.
         if cumulative_alignment is None:
-            cumulative_alignment = torch.zeros(batch_size, num_tokens, device=device)
+            cumulative_alignment = torch.zeros(batch_size, max_num_tokens, device=device)
         if initial_cumulative_alignment is None:
             initial_cumulative_alignment = torch.zeros(batch_size, 1, device=device)
+        if not self.training and window_start is None:
+            window_start = torch.zeros(batch_size, device=device, dtype=torch.long)
 
         cumulative_alignment = cumulative_alignment.masked_fill(~tokens_mask, 0)
 
@@ -120,6 +173,12 @@ class LocationSensitiveAttention(nn.Module):
         location_features = torch.cat([initial_cumulative_alignment, location_features], dim=-1)
         location_features = torch.nn.functional.pad(
             location_features, (0, self.alignment_conv_padding), mode='constant', value=0.0)
+
+        if not self.training:
+            tokens_mask, window_indices = window(tokens_mask, window_start, window_length, 1)
+            encoded_tokens = window(encoded_tokens, window_start.unsqueeze(1), window_length, 0)[0]
+            location_features = window(location_features, window_start.unsqueeze(1),
+                                       window_length + self.alignment_conv_padding * 2, 2)[0]
 
         # [batch_size, 1, num_tokens] → [batch_size, hidden_size, num_tokens]
         location_features = self.alignment_conv(location_features)
@@ -153,7 +212,15 @@ class LocationSensitiveAttention(nn.Module):
         # [batch_size, 1, hidden_size] → [batch_size, hidden_size]
         context = context.squeeze(1)
 
+        if not self.training:
+            alignment = torch.zeros(
+                batch_size, max_num_tokens, device=device).scatter_(1, window_indices, alignment)
+            window_start = alignment.max(dim=1)[1] - window_length // 2
+            # TODO: Cache `num_tokens - window_length` clamped at 0 so that we dont need to
+            # recompute the `clamp` and subtraction each time.
+            window_start = torch.clamp(torch.min(window_start, num_tokens - window_length), min=0)
+
         # [batch_size, num_tokens] + [batch_size, num_tokens] → [batch_size, num_tokens]
         cumulative_alignment = cumulative_alignment + alignment
 
-        return context, cumulative_alignment, alignment
+        return context, cumulative_alignment, alignment, window_start

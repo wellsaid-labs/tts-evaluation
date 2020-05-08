@@ -34,9 +34,12 @@ Example:
       $ PYTHONPATH=. YOUR_SPEECH_API_KEY=123 python -m src.service.worker
 """
 from functools import lru_cache
+from queue import Empty
+from queue import Queue
 
 import os
-import sys
+import subprocess
+import threading
 
 from flask import Flask
 from flask import jsonify
@@ -44,16 +47,19 @@ from flask import request
 from flask import Response
 from flask import send_file
 from flask import send_from_directory
+from hparams import configurable
+from hparams import HParam
 
 import torch
 
-from src.audio import build_wav_header
 from src.environment import set_basic_logging_config
 from src.hparams import set_hparams
 from src.service.worker_config import SIGNAL_MODEL_CHECKPOINT_PATH
 from src.service.worker_config import SPEAKER_ID_TO_SPEAKER
 from src.service.worker_config import SPECTROGRAM_MODEL_CHECKPOINT_PATH
 from src.signal_model import generate_waveform
+from src.spectrogram_model.input_encoder import InvalidSpeakerValueError
+from src.spectrogram_model.input_encoder import InvalidTextValueError
 from src.utils import Checkpoint
 from src.utils import get_functions_with_disk_cache
 
@@ -62,11 +68,6 @@ set_basic_logging_config()
 
 app = Flask(__name__)
 DEVICE = torch.device('cpu')
-NO_CACHE_HEADERS = {
-    'Cache-Control': 'no-cache, no-store, must-revalidate',
-    'Pragma': 'no-cache',
-    'Expires': '0'
-}
 API_KEY_SUFFIX = '_SPEECH_API_KEY'
 API_KEYS = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
 
@@ -111,7 +112,8 @@ class FlaskException(Exception):
 
     Args:
         message (str)
-        status_code (int)
+        status_code (int): An HTTP response status codes.
+        code (str): A string code.
         payload (dict): Additional context to send.
     """
 
@@ -145,66 +147,96 @@ def before_first_request():
         function.use_disk_cache(False)
 
 
-def stream_text_to_speech_synthesis(signal_model, spectrogram_model, text, speaker):
+def _enqueue(out, queue):
+    """ Enqueue all lines from a file-like object to `queue`.
+
+    Args:
+        out (file-like object)
+        queue (Queue)
+    """
+    for line in iter(out.readline, b''):
+        queue.put(line)
+
+
+def _dequeue(queue):
+    """ Dequeue all items from `queue`.
+
+    Args:
+        queue (Queue)
+    """
+    try:
+        while True:
+            yield queue.get_nowait()
+    except Empty:
+        pass
+
+
+@configurable
+def stream_text_to_speech_synthesis(signal_model,
+                                    spectrogram_model,
+                                    text,
+                                    speaker,
+                                    sample_rate=HParam()):
     """ Helper function for starting a speech synthesis stream.
+
+    TODO: If a loud sound is created, cut off the stream or consider rerendering.
+    TODO: Consider logging various events to stackdriver, to keep track.
 
     Args:
         signal_model (torch.nn.Module)
         spectrogram_model (torch.nn.Module)
         text (str)
         speaker (src.datasets.Speaker)
+        sample_rate (int)
 
     Returns:
         (callable): Callable that returns a generator incrementally returning a WAV file.
         (int): Number of bytes to be returned in total by the generator.
     """
-    app.logger.info('Generating spectrogram...')
-    with torch.no_grad():
-        _, spectrogram, _, _, _, is_max_frames = spectrogram_model(text, speaker, use_tqdm=True)
-    app.logger.info('Generated spectrogram of shape %s for text of shape %s.', spectrogram.shape,
-                    text.shape)
 
-    if is_max_frames:
-        # NOTE: Status code 508 is "The server detected an infinite loop while processing the
-        # request". Learn more here: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
-        raise FlaskException('Failed to render, try again.', status_code=508, code='RENDER_FAILED')
+    def get_spectrogram():
+        for item in spectrogram_model(text, speaker, is_generator=True):
+            # [num_frames, batch_size (optional), frame_channels] →
+            # [batch_size (optional), num_frames, frame_channels]
+            yield item[1].transpose(0, 1) if item[1].dim() == 3 else item[1]
 
-    # TODO: If a loud sound is created, cut off the stream or consider rerendering.
-    # TODO: Consider logging various events to stackdriver, to keep track.
-
-    app.logger.info('Generating waveform header...')
-    upscale_factor = signal_model.upscale_factor
-    wav_header, wav_file_size = build_wav_header(upscale_factor * spectrogram.shape[0])
-
+    # TODO: Add a timeout in case the client is keeping the connection alive and not consuming
+    # any data.
     def response():
-        """ Generator incrementally generating a WAV file.
-        """
-        try:
-            assert sys.byteorder == 'little', 'Ensure byte order is of little-endian format.'
-            yield wav_header
+        # NOTE: Inspired by:
+        # https://stackoverflow.com/questions/375427/non-blocking-read-on-a-subprocess-pipe-in-python
+        with torch.no_grad():
+            command = (
+                'ffmpeg -f f32le -acodec pcm_f32le -ar %d -ac 1 -i pipe: -f mp3 -b:a 192k pipe:' %
+                sample_rate).split()
+            pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            queue = Queue()
+            thread = threading.Thread(target=_enqueue, args=(pipe.stdout, queue))
+            thread.daemon = True
+            thread.start()
             app.logger.info('Generating waveform...')
-            for waveform in generate_waveform(signal_model, spectrogram):
-                waveform = waveform.numpy()
-                app.logger.info('Waveform shape %s', waveform.shape)
-                yield waveform.tostring()
+            for waveform in generate_waveform(signal_model, get_spectrogram()):
+                pipe.stdin.write(waveform.cpu().detach().numpy().tobytes())
+                yield from _dequeue(queue)
+            pipe.stdin.close()
+            pipe.wait()
+            thread.join()
+            yield from _dequeue(queue)
+            pipe.stdout.close()
             app.logger.info('Finished generating waveform.')
-        # NOTE: Flask may abort this generator if the underlying request aborts.
-        except Exception as error:
-            app.logger.warning('Finished generating waveform with an exception.', exc_info=True)
-            raise error
 
-    return response, wav_file_size
+    return response
 
 
 def validate_and_unpack(request_args,
                         input_encoder,
-                        max_characters=10000,
+                        max_characters=100000,
                         api_keys=API_KEYS,
                         speaker_id_to_speaker=SPEAKER_ID_TO_SPEAKER):
     """ Validate and unpack the request object.
 
     Args:
-        args (dict) {
+        request_args (dict) {
           speaker_id (int or str)
           text (str)
           api_key (str)
@@ -271,7 +303,9 @@ def validate_and_unpack(request_args,
 
     try:
         text, speaker = input_encoder.encode((text, speaker))
-    except ValueError as error:
+    except InvalidSpeakerValueError as error:
+        raise FlaskException(str(error), code='INVALID_SPEAKER_ID')
+    except InvalidTextValueError as error:
         raise FlaskException(str(error), code='INVALID_TEXT')
 
     return text, speaker
@@ -325,16 +359,19 @@ def get_stream():
             request.
 
     Returns:
-        `audio/wav` streamed in chunks given that the arguments are valid.
+        `audio/mpeg` streamed in chunks given that the arguments are valid.
     """
     request_args = request.get_json() if request.method == 'POST' else request.args
     signal_model, spectrogram_model, input_encoder = load_checkpoints()
     text, speaker = validate_and_unpack(request_args, input_encoder)
-    response, content_length = stream_text_to_speech_synthesis(signal_model, spectrogram_model,
-                                                               input_encoder, text, speaker)
-    headers = NO_CACHE_HEADERS.copy()
-    headers['Content-Length'] = content_length
-    return Response(response(), headers=headers, mimetype='audio/wav')
+    return Response(
+        stream_text_to_speech_synthesis(signal_model, spectrogram_model, text, speaker)(),
+        headers={
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        },
+        mimetype='audio/mpeg')
 
 
 @app.route('/')

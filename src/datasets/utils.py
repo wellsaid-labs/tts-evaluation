@@ -270,13 +270,13 @@ def _dataset_loader(
             `url`.
         url (str): URL of the dataset file.
         speaker (src.datasets.Speaker): The dataset speaker.
+        url_filename (str, optional): Name of the file downloaded; Otherwise, a filename is
+            extracted from the url.
         create_root (bool, optional): If ``True`` extract tar into
             ``{directory}/{root_directory_name}``. The file is downloaded into
             ``{directory}/{root_directory_name}``.
         check_files (list of str, optional): The download is considered successful, if these files
             exist.
-        url_filename (str, optional): Name of the file downloaded; Otherwise, a filename is
-            extracted from the url.
         directory (str or Path, optional): Directory to cache the dataset.
         metadata_filename (str, optional): The filename for the metadata file.
         metadata_text_column (str, optional): Column name or index with the audio transcript.

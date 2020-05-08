@@ -18,14 +18,16 @@ from src.spectrogram_model.pre_net import PreNet
 #         padding value.
 #     cumulative_alignment (torch.FloatTensor [batch_size, num_tokens]): The last
 #         predicted attention alignment.
+#     window_start (torch.LongTensor [batch_size]): During inference, the attention is
+#         windowed to improve performance and this value determines the start of the window.
 #     last_frame (torch.FloatTensor [1, batch_size, frame_channels], optional): The last
 #         predicted frame.
 #     lstm_one_hidden_state (tuple): The last hidden state of the first LSTM in Tacotron.
 #     lstm_two_hidden_state (tuple): The last hidden state of the second LSTM in Tacotron.
 #
 AutoregressiveDecoderHiddenState = namedtuple('AutoregressiveDecoderHiddenState', [
-    'last_attention_context', 'initial_cumulative_alignment', 'cumulative_alignment', 'last_frame',
-    'lstm_one_hidden_state', 'lstm_two_hidden_state'
+    'last_attention_context', 'initial_cumulative_alignment', 'cumulative_alignment',
+    'window_start', 'last_frame', 'lstm_one_hidden_state', 'lstm_two_hidden_state'
 ])
 
 
@@ -140,6 +142,7 @@ class AutoregressiveDecoder(nn.Module):
             last_attention_context=initial_attention_context,
             initial_cumulative_alignment=torch.abs(initial_cumulative_alignment),
             cumulative_alignment=None,
+            window_start=None,
             last_frame=initial_frame.unsqueeze(0),
             lstm_one_hidden_state=None,
             lstm_two_hidden_state=None) if hidden_state is None else hidden_state
@@ -150,8 +153,8 @@ class AutoregressiveDecoder(nn.Module):
 
         num_frames, _, _ = frames.shape
 
-        (last_attention_context, initial_cumulative_alignment, cumulative_alignment, _,
-         lstm_one_hidden_state, lstm_two_hidden_state) = hidden_state
+        (last_attention_context, initial_cumulative_alignment, cumulative_alignment, window_start,
+         _, lstm_one_hidden_state, lstm_two_hidden_state) = hidden_state
 
         del hidden_state
 
@@ -182,12 +185,14 @@ class AutoregressiveDecoder(nn.Module):
 
             # Initial attention alignment, sometimes refered to as attention weights.
             # attention_context [batch_size, encoder_output_size]
-            last_attention_context, cumulative_alignment, alignment = self.attention(
+            last_attention_context, cumulative_alignment, alignment, window_start = self.attention(
                 encoded_tokens=encoded_tokens,
                 tokens_mask=tokens_mask,
+                num_tokens=num_tokens,
                 query=frame.unsqueeze(0),
                 initial_cumulative_alignment=initial_cumulative_alignment,
-                cumulative_alignment=cumulative_alignment)
+                cumulative_alignment=cumulative_alignment,
+                window_start=window_start)
 
             updated_frames.append(frame)
             attention_contexts.append(last_attention_context)
@@ -243,6 +248,7 @@ class AutoregressiveDecoder(nn.Module):
             last_attention_context=last_attention_context,
             initial_cumulative_alignment=initial_cumulative_alignment,
             cumulative_alignment=cumulative_alignment,
+            window_start=window_start,
             last_frame=frames[-1].unsqueeze(0),
             lstm_one_hidden_state=lstm_one_hidden_state,
             lstm_two_hidden_state=lstm_two_hidden_state)

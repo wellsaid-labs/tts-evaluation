@@ -19,6 +19,7 @@ def main(csvs, name, shuffle=False):
     Args:
         csvs (list of str): List of CSV filenames.
         name (str): Output filename.
+        shuffle (bool, optional): If `True` then shuffle the CSV rows.
     """
     df = pandas.read_csv(csvs[0])
     df['__csv'] = csvs[0]

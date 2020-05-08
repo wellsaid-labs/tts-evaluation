@@ -954,7 +954,13 @@ function proxyRequestToPod(prefix, pod, request, response, flushHeaders = false)
         signal: ttsAbortController.signal,
         method: request.method,
         headers: request.headers,
-        body: JSON.stringify(request.body),
+        // Learn more:
+        // https://stackoverflow.com/questions/47892127/succinct-concise-syntax-for-optional-object-keys-in-es6-es7
+        // Learn more:
+        // https://github.com/whatwg/fetch/issues/551
+        ...(!['head', 'get'].includes(request.method.toLowerCase()) && {
+          body: JSON.stringify(request.body)
+        }),
       });
 
       // Stream response back
@@ -1151,7 +1157,8 @@ if (require.main === module) {
     v4: new PodPool(process.env.V4_WORKER_POD_IMAGE, 2),
     "lincoln.v1": new PodPool(process.env.LINCOLN_V1_WORKER_POD_IMAGE, 0),
     v5: new PodPool(process.env.V5_WORKER_POD_IMAGE, 0),
-    v6: new PodPool(process.env.V6_WORKER_POD_IMAGE, 1),
+    v6: new PodPool(process.env.V6_WORKER_POD_IMAGE, 0),
+    v7: new PodPool(process.env.V7_WORKER_POD_IMAGE, 1),
   };
   app.locals.podPools.latest = app.locals.podPools.v4;
 

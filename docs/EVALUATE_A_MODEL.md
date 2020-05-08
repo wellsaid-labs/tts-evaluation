@@ -27,9 +27,9 @@ in our Google Cloud Storage bucket.
 ## [OPTIONAL] Modify the script
 
 Should you be interested in curating the random samples of audio being sent to MTurk for testing,
-you can modify `evaluate.py` to filter the samples before generating the CSV. For example, perhaps
-you want to test the quality of one specific `Speaker` from a model. You can filter your models for
-that Speaker in main, before running `evaluate.py`.
+you can modify `evaluate/models.py` to filter the samples before generating the CSV. For example,
+perhaps you want to test the quality of one specific `Speaker` from a model. You can filter your
+models for that Speaker in main, before running `evaluate/models.py`.
 
 ```python
 def main(
@@ -60,7 +60,7 @@ def main(
    NUM_SAMPLES=512
    ```
 
-3. Run `evaluate.py` once per model, like so:
+3. Run `evaluate/models.py` once per model, like so:
 
    ```bash
    python -m src.bin.evaluate.models \
@@ -83,8 +83,8 @@ def main(
 
    This script should take around 30 minutes to complete.
 
-4. Run `evaluate.py` an extra time to get ground truth samples to compare your TTS model against,
-   like so:
+4. Run `evaluate/models.py` an extra time to get ground truth samples to compare your TTS model
+   against, like so:
 
    ```bash
    python -m src.bin.evaluate.models \

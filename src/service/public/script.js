@@ -15,13 +15,11 @@ document.addEventListener('DOMContentLoaded', async function (_) {
   const speakerOptionElements = document.querySelectorAll('#speaker option');
   const apiKeyInput = document.querySelector('input');
   const generateButton = document.querySelector('#generate-button');
-  const downloadAllButton = document.querySelector('#download-all');
   const errorParagraphElement = document.querySelector('#error p');
   const errorElement = document.querySelector('#error');
   const clipsElement = document.querySelector('#clips');
   const splitBySetencesInput = document.querySelector('#split-by-setences');
   const versionSelect = document.querySelector('#version');
-  const allAudio = [];
   const allRequests = [];
 
   function filterSpeakers() {
@@ -33,9 +31,11 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       speakers = [...Array(4).keys()];
     } else if (version == "v2") {
       speakers = [...Array(12).keys()];
-    } else if (version == "v3" || version == "v4" || version == "v5" ||
-      version == "v6" || version == "latest") {
+    } else if (version == "v3" || version == "v4" || version == "v5" || version == "latest") {
       speakers = [...Array(20).keys()];
+    } else if (version == "v6" || version == "v7") {
+      speakers = [...Array(20).keys()];
+      speakers.splice(1, 1); // Macy is not available in v6 / v7
     } else if (version == "lincoln.v1") {
       speakers = [11541];
     }
@@ -47,9 +47,6 @@ document.addEventListener('DOMContentLoaded', async function (_) {
   filterSpeakers(); // Initial filter
   versionSelect.onchange = filterSpeakers;
 
-  // `zip` function similar to python.
-  const zip = (...args) => args[0].map((_, i) => args.map(arg => arg[i]));
-
   /**
    * Sleep for a number of milliseconds.
    *
@@ -58,6 +55,10 @@ document.addEventListener('DOMContentLoaded', async function (_) {
    */
   function sleep(milliseconds) {
     return new Promise(resolve => setTimeout(resolve, milliseconds));
+  }
+
+  function roundHundredth(number) {
+    return Math.round(number * 100) / 100;
   }
 
   function splitIntoSentences(text) {
@@ -105,87 +106,84 @@ document.addEventListener('DOMContentLoaded', async function (_) {
     '"It should be a new sentence." "(And the same with this one.)" ' +
     '(\'And this one!\')"(\'(And (this)) \'?)"').length == 5);
 
+  /**
+   * Request `data.sectionElement` to be populated with an audio stream.
+   *
+   * @param {Object} data
+   * @param {String} data.version Audio request version header.
+   * @param {Object} data.payload Audio request payload.
+   * @param {HTMLElement} data.sectionElement The HTMLElement to be populated.
+   */
   function requestAudio(data) {
     return new Promise((resolve) => {
-      // Start stream
-      let startTime = new Date().getTime();
-      let queuingTime;
-      const request = new XMLHttpRequest();
-      let hasProgress = false;
-
-      // Make request for stream
-      request.open('POST',
-        `${is_production ? 'https://voice.wellsaidlabs.com' : ''}${endpoint}/stream`);
-      request.setRequestHeader('Content-Type', 'application/json');
-      request.setRequestHeader('Accept-Version', data.version);
-      request.responseType = 'blob';
-      request.addEventListener('progress', (event) => {
-        if (event.lengthComputable) {
-          if (!hasProgress && event.loaded > 0) {
-            hasProgress = true;
-            // The server sends first WAV headers, before generating the spectrogram.
-            queuingTime = ((new Date().getTime()) - startTime) / 1000;
-            resolve();
+      const audioElement = data.sectionElement.querySelector('audio');
+      // TODO: A GET request traditionally does not support more than 2,000 characters. We might
+      // need to use a POST request.
+      // TODO: Enable downloading the audio clips.
+      // TODO: Print the errors to the user instead of console.
+      // NOTE: This is largely inspired by this example:
+      // https://developers.google.com/web/fundamentals/media/mse/basics
+      const startTime = new Date().getTime();
+      const audioSource = `${is_production ? 'https://voice.wellsaidlabs.com' : ''}${
+        endpoint}/stream`;
+      const mediaSource = new MediaSource();
+      mediaSource.addEventListener('sourceopen', async () => {
+        const response = await fetch(audioSource, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept-Version': data.version,
+          },
+          body: JSON.stringify(data.payload),
+        }).catch((error) => {
+          console.error('Error:', error);
+        });
+        const ttfbTime = new Date().getTime(); // Time To First Byte (TTFB)
+        const reader = response.body.getReader();
+        const sourceBuffer = mediaSource.addSourceBuffer(response.headers.get('Content-Type'));
+        const onEndOfStream = () => {
+          if (!sourceBuffer.updating && mediaSource.readyState === 'open') {
+            mediaSource.endOfStream();
           }
-          let percentage = event.loaded / event.total;
-          const now = new Date().getTime();
-          let estimatedTimeLeft = ((now - startTime) / percentage) * (1 - percentage);
-          estimatedTimeLeft = secondsToString(estimatedTimeLeft / 1000);
-          percentage = Math.round(percentage * 100); // Decimals to percent
-          const message = `${Math.round(percentage)}% Generated - ${estimatedTimeLeft} Left`
-          data.sectionElement.querySelector('.progress p').textContent = message;
         }
-      });
-      request.addEventListener('error', (error) => {
-        console.error(error);
-        data.sectionElement.querySelector('.progress p').textContent = `Network error.`;
-        resolve();
-      });
-      request.addEventListener('timeout', () => {
-        data.sectionElement.querySelector('.progress p').textContent = `Request timed out.`;
-        resolve();
-      });
-      request.addEventListener('abort', () => {
-        data.sectionElement.querySelector('.progress p').textContent = `Request aborted.`;
-        resolve();
-      });
-      request.addEventListener('load', () => {
-        if (request.status === 200) {
-          data.sectionElement.querySelector('.progress').style.display = 'none';
-          const audioElement = data.sectionElement.querySelector('audio');
-          const generatingTime = ((new Date().getTime()) - startTime) / 1000;
-
-          // Add statistics to the footer on `audioElement` load.
-          audioElement.addEventListener('loadedmetadata', () => {
-            // `numSamples` assumes the 16-bit audio and a 44-bit WAV header.
-            const numSamples = (request.getResponseHeader("Content-Length") - 44) / 2;
-            const generatingWaveTime = generatingTime - queuingTime;
-            const samplesPerSecond = Math.round(numSamples / generatingWaveTime);
-            data.sectionElement.querySelector('footer p').innerHTML = ([
-              `Audio Duration: ${Math.round(audioElement.duration * 100) / 100}s`,
-              `Generation Timer: ${Math.round(generatingTime * 100) / 100}s`,
-              `Queuing / Spectrogram Timer: ${Math.round(queuingTime * 100) / 100}s`,
-              `Waveform Timer: ${Math.round(generatingWaveTime * 100) / 100}s`,
-              `${Math.round(samplesPerSecond)} Samples Per Second`,
-            ].join('&nbsp;&nbsp;|&nbsp;&nbsp;'));
-          });
-
-          allAudio.push({
-            'response': request.response,
-            'speakerId': data.payload.speaker_id,
-            'text': data.payload.text,
-            'clipNumber': data.clipNumber,
-          });
-          audioElement.src = window.URL.createObjectURL(request.response);
-          audioElement.load();
-          resolve();
-        } else {
-          const message = `Status code ${request.status}.`;
-          data.sectionElement.querySelector('.progress p').textContent = message;
-          resolve();
+        const getBuffered = () => { // Get the maximum buffer time
+          let maxBuffered = 0;
+          for (let i = 0; i < sourceBuffer.buffered.length; i++) {
+            maxBuffered = Math.max(sourceBuffer.buffered.end(i), maxBuffered);
+          }
+          return maxBuffered;
         }
+        while (true) {
+          let {
+            done,
+            value,
+          } = await reader.read();
+          if (done) {
+            break;
+          }
+          // NOTE: The `sourceBuffer` only allows for around 12 mb of audio or about 10 minutes of
+          // `mp3` audio at 19.2 Kb/s.
+          // https://developers.google.com/web/updates/2017/10/quotaexceedederror
+          // TODO: Check if `sourceBuffer` is still updating before appending:
+          // "DOMException: Failed to execute 'appendBuffer' on 'SourceBuffer': This SourceBuffer is
+          // still processing an 'appendBuffer' or 'remove' operation."
+          sourceBuffer.appendBuffer(value.buffer);
+          sourceBuffer.addEventListener('update', () => {
+            if (!sourceBuffer.updating && mediaSource.readyState === 'open') {
+              mediaSource.duration = getBuffered();
+            }
+          });
+          const generationTime = (new Date().getTime() - ttfbTime) / 1000;
+          data.sectionElement.querySelector('footer p').innerHTML = ([
+            `Queuing Time: ${roundHundredth((ttfbTime - startTime) / 1000)}s`,
+            `Real Time: ${roundHundredth(generationTime / getBuffered())}x`,
+          ].join('&nbsp;&nbsp;|&nbsp;&nbsp;'));
+        }
+        onEndOfStream();
+        sourceBuffer.addEventListener('updateend', onEndOfStream);
       });
-      request.send(JSON.stringify(data.payload));
+      audioElement.src = URL.createObjectURL(mediaSource);
+      resolve();
     });
   };
 
@@ -221,9 +219,6 @@ document.addEventListener('DOMContentLoaded', async function (_) {
                                       <p>${text}</p>
                                     </div>
                                     <div>
-                                      <div class="progress">
-                                        <p>Queuing / Generating Spectrogram</p>
-                                      </div>
                                       <audio controls></audio>
                                     </div>
                                   </main>
@@ -244,11 +239,10 @@ document.addEventListener('DOMContentLoaded', async function (_) {
             }
           })
         if (!response.ok) {
-          sectionElement.querySelector('.progress p').textContent = (await response.json()).message;
+          console.error((await response.json()).message);
         } else {
           allRequests.push({
             version,
-            clipNumber: clipNumber - 1,
             payload,
             sectionElement,
           });
@@ -256,38 +250,8 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       } catch (error) {
         // TODO: Retry input validation a couple times if so.
         console.error(error);
-        sectionElement.querySelector('.progress p').textContent = 'Network error';
       }
     }
-  }
-
-  downloadAllButton.onclick = () => {
-    /** Donwload all the audio clips on the page. */
-    if (allAudio.length == 0) {
-      return;
-    }
-
-    const zip = new JSZip();
-    const clips = zip.folder("clips");
-    allAudio.forEach(function ({
-      response,
-      speakerId,
-      text,
-      clipNumber,
-      maxTextLength = 50, // NOTE: There is a maximum length in various OSs for filenames.
-    }) {
-      const speakerName = speakerSelect.options[speakerId].text;
-      let partialText = text.trim();
-      if (partialText.length > maxTextLength) {
-        partialText = partialText.slice(0, maxTextLength) + '...';
-      }
-      clips.file(clipNumber + ' - ' + speakerName.trim() + ' - ' + partialText + '.wav', response);
-    });
-    zip.generateAsync({
-      type: "blob"
-    }).then(content => {
-      saveAs(content, 'clips.zip');
-    });
   }
 
   let isGenerateButtonDisabled = false;

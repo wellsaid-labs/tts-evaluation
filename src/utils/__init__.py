@@ -27,6 +27,7 @@ from src.utils.utils import load
 from src.utils.utils import log_runtime
 from src.utils.utils import maybe_get_model_devices
 from src.utils.utils import mean
+from src.utils.utils import pad_tensors
 from src.utils.utils import Pool
 from src.utils.utils import random_sample
 from src.utils.utils import RepeatTimer
@@ -35,6 +36,7 @@ from src.utils.utils import seconds_to_string
 from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
 from src.utils.utils import strip
+from src.utils.utils import trim_tensors
 
 __all__ = [
     'align_tokens', 'Checkpoint', 'DataLoader', 'disk_cache', 'OnDiskTensor', 'dict_collapse',
@@ -44,6 +46,6 @@ __all__ = [
     'get_chunks', 'cache_on_disk_tensor_shapes', 'RecordStandardStreams', 'Pool',
     'maybe_load_tensor', 'AveragedMetric', 'DistributedAveragedMetric', 'bash_time_label',
     'RepeatTimer', 'mean', 'random_sample', 'make_arg_key', 'DiskCache',
-    'assert_no_overwritten_files', 'get_file_metadata', 'dict_collapse', 'strip',
-    'get_functions_with_disk_cache'
+    'assert_no_overwritten_files', 'get_file_metadata', 'dict_collapse', 'strip', 'trim_tensors',
+    'pad_tensors', 'get_functions_with_disk_cache'
 ]

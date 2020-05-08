@@ -49,6 +49,11 @@ def get_normalized_half_gaussian(length=HParam(), standard_deviation=HParam()):
 
     Learn more:
     https://en.wikipedia.org/wiki/Half-normal_distribution
+    https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.gaussian_filter1d.html
+
+    Args:
+        length (int): The size of the gaussian filter.
+        standard_deviation (float): The standard deviation of the guassian.
 
     Returns:
         (torch.FloatTensor [length,])
@@ -63,10 +68,10 @@ class _BalancedSampler(WeightedRandomSampler):
     speaker, in a TTS dataset, this ensures that an equal amount of audio is sampled per speaker.
 
     Args:
-        data (iterable)
+        data_source (iterable)
         get_class (callable): Get the class of an item relative to the entire dataset.
         get_weight (callable): Define a weight for each item.
-        kwargs: Additional key word arguments passed onto `WeightedRandomSampler`.
+        **kwargs: Additional key word arguments passed onto `WeightedRandomSampler`.
     """
 
     def __init__(self, data_source, get_class, get_weight, **kwargs):
@@ -91,6 +96,7 @@ def _load_fn(row, input_encoder, get_normalized_half_gaussian_partial):
     Args:
         row (TextSpeechRow)
         input_encoder (src.spectrogram_model.InputEncoder)
+        get_normalized_half_gaussian_partial (callable)
 
     Returns:
         (SpectrogramModelTrainingRow)
@@ -144,18 +150,18 @@ class DataLoader(DataLoader):
         includes: SpectrogramModelTrainingRow (
             text (BatchedSequences(torch.LongTensor [num_tokens, batch_size],
                         torch.LongTensor [1, batch_size]))
+            speaker (BatchedSequences(torch.LongTensor [1, batch_size],
+                           torch.LongTensor [1, batch_size]))
+            stop_token (BatchedSequences(torch.FloatTensor [num_frames, batch_size],
+                              torch.LongTensor [1, batch_size]))
             spectrogram (BatchedSequences(
                           torch.FloatTensor [num_frames, batch_size, frame_channels],
                           torch.LongTensor [1, batch_size]))
-            stop_token (BatchedSequences(torch.FloatTensor [num_frames, batch_size],
-                              torch.LongTensor [1, batch_size]))
-            speaker (BatchedSequences(torch.LongTensor [1, batch_size],
-                           torch.LongTensor [1, batch_size]))
+            spectrogram_mask (BatchedSequences(torch.FloatTensor [num_frames, batch_size],
+                                    torch.LongTensor [1, batch_size]))
             spectrogram_expanded_mask (BatchedSequences(torch.FloatTensor [num_frames, batch_size,
                                                                 frame_channels],
                                              torch.LongTensor [1, batch_size]))
-            spectrogram_mask (BatchedSequences(torch.FloatTensor [num_frames, batch_size],
-                                    torch.LongTensor [1, batch_size]))
         )
     """
 

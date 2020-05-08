@@ -32,7 +32,6 @@ from src.bin.train.signal_model.data_loader import DataLoader
 from src.optimizers import AutoOptimizer
 from src.optimizers import ExponentialMovingParameterAverage
 from src.optimizers import Optimizer
-from src.signal_model import generate_waveform
 from src.utils import Checkpoint
 from src.utils import dict_collapse
 from src.utils import DistributedAveragedMetric
@@ -271,10 +270,13 @@ class Trainer():
         checkpoints_directory (str or Path): Directory to store checkpoints in.
         comet_ml (Experiment or ExistingExperiment): Object for visualization with comet.
         train_batch_size (int): Batch size used for training.
+        train_spectrogram_slice_size (int): The size of each spectrogram slice used to train.
         dev_batch_size (int): Batch size used for evaluation.
-        criterion (callable): Loss function used to score signal predictions.
+        dev_spectrogram_slice_size (int):  The size of each spectrogram slice used to evaluate.
         optimizer (torch.optim.Optimizer): Optimizer used for gradient descent.
         lr_multiplier_schedule (callable): Learning rate multiplier schedule.
+        exponential_moving_parameter_average (callable): The implementation used to computing
+            `ExponentialMovingParameterAverage`.
         model (torch.nn.Module, optional): Model to train and evaluate.
         criterions (list of callables, optional): List of callables to initialize criterions.
         criterions_state_dict (list of dict, optional): An optional state dict for each criterion.
@@ -525,14 +527,16 @@ class Trainer():
                 self.train_dataset,
                 self.train_batch_size,
                 spectrogram_slice_size=self.train_spectrogram_slice_size,
-                spectrogram_slice_pad=self.model.padding,
+                spectrogram_slice_pad=(self.model.module
+                                       if src.distributed.is_initialized() else self.model).padding,
                 **loader_kwargs)
         elif not train and not hasattr(self, '_dev_loader'):
             self._dev_loader = DataLoader(
                 self.dev_dataset,
                 self.dev_batch_size,
                 spectrogram_slice_size=self.dev_spectrogram_slice_size,
-                spectrogram_slice_pad=self.model.padding,
+                spectrogram_slice_pad=(self.model.module
+                                       if src.distributed.is_initialized() else self.model).padding,
                 **loader_kwargs)
         data_loader = self._train_loader if train else self._dev_loader
 
@@ -661,7 +665,7 @@ class Trainer():
 
         with evaluate(model, device=self.device):
             self.exponential_moving_parameter_average.apply_shadow()
-            predicted = generate_waveform(model, spectrogram, generator=False)
+            predicted = model(spectrogram)
             self.exponential_moving_parameter_average.restore()
 
         total_spectrogram_loss = torch.tensor(0.0, device=self.device)

@@ -6,17 +6,11 @@ TODO: These models should be uploaded online for so that everyone has access to 
 lose track of them.
 """
 from src import datasets
-from src.environment import IS_TESTING_ENVIRONMENT
 from src.environment import SIGNAL_MODEL_EXPERIMENTS_PATH
 from src.environment import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 
 SPECTROGRAM_MODEL_CHECKPOINT_PATH = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / 'MY_LOCAL_SPECTROGRAM.pt'
 SIGNAL_MODEL_CHECKPOINT_PATH = SIGNAL_MODEL_EXPERIMENTS_PATH / 'MY_LOCAL_SIGNAL.pt'
-
-if not IS_TESTING_ENVIRONMENT:
-    assert SIGNAL_MODEL_CHECKPOINT_PATH.is_file(), 'Signal model checkpoint cannot be found.'
-    assert SPECTROGRAM_MODEL_CHECKPOINT_PATH.is_file(
-    ), 'Spectrogram model checkpoint cannot be found.'
 
 # NOTE: These value (not the keys) need to be updated based on the spectrogram model encoder.
 # The keys need to stay the same for backwards compatibility.

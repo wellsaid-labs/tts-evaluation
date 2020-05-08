@@ -34,9 +34,10 @@ logger = logging.getLogger(__name__)
 
 
 def main(audio_path):
-    """
+    """ Use a number of functions from `src.audio` to evaluate `audio_path`.
+
     Args:
-        audio_path (str)
+        audio_path (str): The audio file to process.
     """
     set_hparams()
 
