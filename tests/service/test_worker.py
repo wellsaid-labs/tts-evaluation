@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 import torch
 
@@ -32,6 +34,22 @@ def test_stream_text_to_speech_synthesis():
                                                     mocks['spectrogram_model'].eval(), text,
                                                     speaker)
         assert len(b''.join([s for s in generator()])) == 103725
+
+
+def test_stream_text_to_speech_synthesis__thread_leak():
+    """ Test if threads are cleaned up on generator close. """
+    with fork_rng(seed=123):
+        mocks = get_tts_mocks()
+        example = mocks['dev_dataset'][0]
+        text, speaker = mocks['input_encoder'].encode((example.text, example.speaker))
+        active_threads = threading.active_count()
+        generator = stream_text_to_speech_synthesis(mocks['signal_model'].eval(),
+                                                    mocks['spectrogram_model'].eval(), text,
+                                                    speaker)()
+        next(generator)
+        assert active_threads + 1 == threading.active_count()
+        generator.close()
+        assert active_threads == threading.active_count()
 
 
 def test_validate_and_unpack():

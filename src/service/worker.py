@@ -206,24 +206,34 @@ def stream_text_to_speech_synthesis(signal_model,
         # NOTE: Inspired by:
         # https://stackoverflow.com/questions/375427/non-blocking-read-on-a-subprocess-pipe-in-python
         with torch.no_grad():
-            command = (
-                'ffmpeg -f f32le -acodec pcm_f32le -ar %d -ac 1 -i pipe: -f mp3 -b:a 192k pipe:' %
-                sample_rate).split()
-            pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-            queue = Queue()
-            thread = threading.Thread(target=_enqueue, args=(pipe.stdout, queue))
-            thread.daemon = True
-            thread.start()
-            app.logger.info('Generating waveform...')
-            for waveform in generate_waveform(signal_model, get_spectrogram()):
-                pipe.stdin.write(waveform.cpu().detach().numpy().tobytes())
+            try:
+                command = (
+                    'ffmpeg -f f32le -acodec pcm_f32le -ar %d -ac 1 -i pipe: -f mp3 -b:a 192k pipe:'
+                    % sample_rate).split()
+                pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+                queue = Queue()
+                thread = threading.Thread(target=_enqueue, args=(pipe.stdout, queue))
+                thread.daemon = True
+                thread.start()
+                app.logger.info('Generating waveform...')
+                for waveform in generate_waveform(signal_model, get_spectrogram()):
+                    pipe.stdin.write(waveform.cpu().detach().numpy().tobytes())
+                    yield from _dequeue(queue)
+                pipe.stdin.close()
+                pipe.wait()
+                thread.join()
                 yield from _dequeue(queue)
-            pipe.stdin.close()
-            pipe.wait()
-            thread.join()
-            yield from _dequeue(queue)
-            pipe.stdout.close()
-            app.logger.info('Finished generating waveform.')
+                pipe.stdout.close()
+                app.logger.info('Finished generating waveform.')
+            # NOTE: `Exception` does not catch `GeneratorExit`.
+            # https://stackoverflow.com/questions/18982610/difference-between-except-and-except-exception-as-e-in-python
+            except:
+                pipe.stdin.close()
+                pipe.wait()
+                thread.join()
+                pipe.stdout.close()
+                app.logger.info('Aborted waveform generation.')
+                raise
 
     return response
 
