@@ -27,9 +27,9 @@ def window(tensor, start, length, dim):
         tensor (torch.Tensor [*, length, *]): The indices used to `gather` the window and that can
             be used with `scatter` to reverse the operation.
     """
-    assert torch.min(start) >= 0, 'The window `start` must be positive.'
+    assert start.min() >= 0, 'The window `start` must be positive.'
     assert length <= tensor.shape[dim], 'The `length` is larger than the `tensor`.'
-    assert torch.max(start) + length <= tensor.shape[
+    assert start.max() + length <= tensor.shape[
         dim], 'The window `start` must smaller or equal to than `tensor.shape[dim] - length`.'
 
     dim = tensor.dim() + dim if dim < 0 else dim

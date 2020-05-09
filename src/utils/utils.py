@@ -509,4 +509,4 @@ def trim_tensors(*args, dim=2):
     """
     minimum = min(a.shape[dim] for a in args)
     assert all((a.shape[dim] - minimum) % 2 == 0 for a in args), 'Uneven padding'
-    return (a.narrow(dim, (a.shape[dim] - minimum) // 2, minimum) for a in args)
+    return tuple([a.narrow(dim, (a.shape[dim] - minimum) // 2, minimum) for a in args])

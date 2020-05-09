@@ -39,6 +39,7 @@ from queue import Queue
 
 import os
 import subprocess
+import sys
 import threading
 
 from flask import Flask
@@ -210,14 +211,18 @@ def stream_text_to_speech_synthesis(signal_model,
                 command = (
                     'ffmpeg -f f32le -acodec pcm_f32le -ar %d -ac 1 -i pipe: -f mp3 -b:a 192k pipe:'
                     % sample_rate).split()
-                pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+                pipe = subprocess.Popen(
+                    command,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=sys.stdout.buffer)
                 queue = Queue()
                 thread = threading.Thread(target=_enqueue, args=(pipe.stdout, queue))
                 thread.daemon = True
                 thread.start()
                 app.logger.info('Generating waveform...')
                 for waveform in generate_waveform(signal_model, get_spectrogram()):
-                    pipe.stdin.write(waveform.cpu().detach().numpy().tobytes())
+                    pipe.stdin.write(waveform.cpu().numpy().tobytes())
                     yield from _dequeue(queue)
                 pipe.stdin.close()
                 pipe.wait()
