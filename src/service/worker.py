@@ -227,8 +227,8 @@ def stream_text_to_speech_synthesis(signal_model,
                 pipe.stdin.close()
                 pipe.wait()
                 thread.join()
-                yield from _dequeue(queue)
                 pipe.stdout.close()
+                yield from _dequeue(queue)
                 app.logger.info('Finished generating waveform.')
             # NOTE: `Exception` does not catch `GeneratorExit`.
             # https://stackoverflow.com/questions/18982610/difference-between-except-and-except-exception-as-e-in-python
