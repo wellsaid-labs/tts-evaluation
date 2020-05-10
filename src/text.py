@@ -96,6 +96,7 @@ def _grapheme_to_phoneme_helper(grapheme,
 @lru_cache()
 def _get_spacy_model():
     """ Get spaCy object used to tokenize and POS tag text. """
+    logger.info('Loading spaCy model...')
     return en_core_web_sm.load(disable=['parser', 'ner'])
 
 
