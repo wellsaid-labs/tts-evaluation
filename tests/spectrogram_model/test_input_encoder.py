@@ -35,5 +35,13 @@ def test_input_encoder__failure_cases():
 def test_input_encoder__regression():
     """ Test cases that failed in the past. """
     encoder = InputEncoder(['a', 'b', 'c'], [JUDY_BIEBER, MARY_ANN], delimiter='|')
-    encoder.encode(('<>', JUDY_BIEBER))
-    encoder.encode(('', JUDY_BIEBER))
+
+    with pytest.raises(ValueError) as error:
+        encoder.encode(('<>', JUDY_BIEBER))
+
+    assert "Invalid text." in str(error.value)
+
+    with pytest.raises(ValueError) as error:
+        encoder.encode(('', JUDY_BIEBER))
+
+    assert "Text cannot be empty." in str(error.value)

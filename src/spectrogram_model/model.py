@@ -360,6 +360,8 @@ class SpectrogramModel(nn.Module):
         """
         if tokens.dtype != torch.long:
             raise ValueError('The `tokens` dtype must be a `torch.long`.')
+        if tokens.shape[0] == 0:
+            raise ValueError('`tokens` cannot be empty.')
         if speaker.dtype != torch.long:
             raise ValueError('The `speaker` dtype must be a `torch.long`.')
 
@@ -371,6 +373,8 @@ class SpectrogramModel(nn.Module):
         if target_frames is not None:
             if target_frames.dtype != torch.float:
                 raise ValueError('The `target_frames` dtype must be a `torch.float`.')
+            if target_frames.shape[0] == 0:
+                raise ValueError('`target_frames` cannnot be empty.')
             # [num_frames, batch_size, frame_channels]
             target_frames = target_frames.view(target_frames.shape[0], batch_size, -1)
 

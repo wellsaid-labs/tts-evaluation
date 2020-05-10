@@ -45,11 +45,13 @@ class InputEncoder(Encoder):
 
     def _preprocess(self, text):
         text = text.strip()
-        text = unidecode.unidecode(text)
         # Learn more:
         # https://en.wikipedia.org/wiki/Control_character
         # https://stackoverflow.com/questions/14946109/how-to-remove-escape-sequence-like-xe2-or-x0c-in-python
         text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\xff]', '', text)
+        if len(text) == 0:
+            raise InvalidTextValueError('Text cannot be empty.')
+        text = unidecode.unidecode(text)
         if self.delimiter and self.delimiter in text:
             raise InvalidTextValueError('Text cannot contain these characters: %s' % self.delimiter)
         text = grapheme_to_phoneme_perserve_punctuation(text, separator=self.delimiter)
@@ -76,6 +78,9 @@ class InputEncoder(Encoder):
                 set(self.text_encoder.vocab))
             difference = ', '.join([repr(c)[1:-1] for c in sorted(list(difference))])
             raise InvalidTextValueError('Text cannot contain these characters: %s' % difference)
+
+        if encoded_text.shape[0] == 0:
+            raise InvalidTextValueError('Invalid text.')
 
         try:
             encoded_speaker = self.speaker_encoder.encode(object_[1]).view(1)
