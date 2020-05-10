@@ -36,6 +36,7 @@ Example:
 from functools import lru_cache
 from queue import SimpleQueue
 
+import gc
 import os
 import subprocess
 import sys
@@ -190,6 +191,7 @@ def stream_text_to_speech_synthesis(signal_model,
         (callable): Callable that returns a generator incrementally returning a WAV file.
         (int): Number of bytes to be returned in total by the generator.
     """
+    gc.collect()
 
     def get_spectrogram():
         for item in spectrogram_model(text, speaker, is_generator=True):
