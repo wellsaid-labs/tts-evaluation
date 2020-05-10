@@ -116,9 +116,11 @@ def grapheme_to_phoneme_perserve_punctuation(text, separator='', **kwargs):
     Returns:
         (str): Phonemes with the original punctuation (as defined by spaCy).
     """
+    if len(text) == 0:
+        return text
+
     tokens = _get_spacy_model()(text)
 
-    assert len(tokens) > 0, 'Zero tokens were found in text: %s' % text
     assert text == ''.join(t.text_with_ws for t in tokens), 'Detokenization failed: %s' % text
     assert not separator or separator not in text, 'The separator is not unique.'
 

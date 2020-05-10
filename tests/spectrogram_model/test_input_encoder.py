@@ -30,3 +30,10 @@ def test_input_encoder__failure_cases():
         encoder.encode(('a\n\fa', JUDY_BIEBER))
 
     assert "Text cannot contain these characters: \\n" in str(error.value)
+
+
+def test_input_encoder__regression():
+    """ Test cases that failed in the past. """
+    encoder = InputEncoder(['a', 'b', 'c'], [JUDY_BIEBER, MARY_ANN], delimiter='|')
+    encoder.encode(('<>', JUDY_BIEBER))
+    encoder.encode(('', JUDY_BIEBER))
