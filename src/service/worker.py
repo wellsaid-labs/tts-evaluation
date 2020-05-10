@@ -34,8 +34,7 @@ Example:
       $ PYTHONPATH=. YOUR_SPEECH_API_KEY=123 python -m src.service.worker
 """
 from functools import lru_cache
-from queue import Empty
-from queue import Queue
+from queue import SimpleQueue
 
 import os
 import subprocess
@@ -165,11 +164,8 @@ def _dequeue(queue):
     Args:
         queue (Queue)
     """
-    try:
-        while True:
-            yield queue.get_nowait()
-    except Empty:
-        pass
+    while not queue.empty():
+        yield queue.get()
 
 
 @configurable
@@ -216,7 +212,7 @@ def stream_text_to_speech_synthesis(signal_model,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=sys.stdout.buffer)
-                queue = Queue()
+                queue = SimpleQueue()
                 thread = threading.Thread(target=_enqueue, args=(pipe.stdout, queue))
                 thread.daemon = True
                 thread.start()
