@@ -213,8 +213,7 @@ def stream_text_to_speech_synthesis(signal_model,
                     stdout=subprocess.PIPE,
                     stderr=sys.stdout.buffer)
                 queue = SimpleQueue()
-                thread = threading.Thread(target=_enqueue, args=(pipe.stdout, queue))
-                thread.daemon = True
+                thread = threading.Thread(target=_enqueue, args=(pipe.stdout, queue), daemon=True)
                 thread.start()
                 app.logger.info('Generating waveform...')
                 for waveform in generate_waveform(signal_model, get_spectrogram()):
