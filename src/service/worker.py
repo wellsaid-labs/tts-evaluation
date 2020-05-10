@@ -165,7 +165,7 @@ def _dequeue(queue):
         queue (Queue)
     """
     while not queue.empty():
-        yield queue.get()
+        yield queue.get_nowait()
 
 
 @configurable
