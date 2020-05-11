@@ -313,10 +313,8 @@ class SignalModel(torch.nn.Module):
             Mask(self.upscale_factor)
         ]))
 
-        self.conditionals = [m for m in self.modules() if isinstance(m, ConditionalConcat)]
-        self.masks = [m for m in self.modules() if isinstance(m, Mask)]
-        self.condition = torch.nn.Conv1d(
-            self.get_layer_size(0), max([m.size for m in self.conditionals]), kernel_size=1)
+        max_size = max([m.size for m in self.modules() if isinstance(m, ConditionalConcat)])
+        self.condition = torch.nn.Conv1d(self.get_layer_size(0), max_size, kernel_size=1)
 
         self.padding = self.pre_net[1].kernel_size[0] // 2
         self.padding += (1 / (self.upscale_factor) * (self.network[-2].kernel_size[0] // 2))

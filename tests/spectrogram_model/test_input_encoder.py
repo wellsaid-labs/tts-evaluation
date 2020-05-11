@@ -39,7 +39,7 @@ def test_input_encoder__regression():
     with pytest.raises(ValueError) as error:
         encoder.encode(('<>', JUDY_BIEBER))
 
-    assert "Invalid text." in str(error.value)
+    assert "Invalid text: \"<>\"" in str(error.value)
 
     with pytest.raises(ValueError) as error:
         encoder.encode(('', JUDY_BIEBER))
