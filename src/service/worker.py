@@ -30,8 +30,13 @@ TODO: Apply `exponential_moving_parameter_average` before running locally, for b
 The cons in summary are that the client cannot manage there own state due to the immaturity of the
 web audio api; therefore, the server must manage it via some database.
 
-Example:
+Example (Flask):
+
       $ PYTHONPATH=. YOUR_SPEECH_API_KEY=123 python -m src.service.worker
+
+Example (Gunicorn):
+
+      $ gunicorn src.service.worker:app --workers=2
 """
 from functools import lru_cache
 from queue import SimpleQueue
