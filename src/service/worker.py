@@ -36,7 +36,7 @@ Example (Flask):
 
 Example (Gunicorn):
 
-      $ gunicorn src.service.worker:app --workers=2
+      $ YOUR_SPEECH_API_KEY=123 gunicorn src.service.worker:app --workers=2
 """
 from functools import lru_cache
 from queue import SimpleQueue
