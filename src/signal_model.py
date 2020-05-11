@@ -37,24 +37,22 @@ class ConditionalConcat(torch.nn.Module):
 
     def __init__(self, size, scale_factor):
         super().__init__()
-
-        self.concat = None  # torch.FloatTensor [batch_size, frame_channels, num_frames]
         self.size = size
         self.scale_factor = scale_factor
 
-    def forward(self, in_):
+    def forward(self, in_, conditioning):
         """
         Args:
             in_ (torch.FloatTensor [batch_size, frame_channels, num_frames])
+            conditioning (torch.FloatTensor [batch_size, frame_channels, num_frames])
 
         Returns:
             torch.FloatTensor [batch_size, frame_channels + self.size, num_frames]
         """
-        concat = torch.nn.functional.interpolate(self.concat, scale_factor=self.scale_factor)
-        assert concat.shape[1] == self.size
-        assert concat.shape[2] >= in_.shape[2], 'Scale factor is too small.'
-        self.concat = None  # NOTE: Don't use conditioning twice
-        return torch.cat(list(trim_tensors(in_, concat)), dim=1)
+        conditioning = torch.nn.functional.interpolate(conditioning, scale_factor=self.scale_factor)
+        assert conditioning.shape[1] == self.size
+        assert conditioning.shape[2] >= in_.shape[2], 'Scale factor is too small.'
+        return torch.cat(list(trim_tensors(in_, conditioning)), dim=1)
 
 
 class Mask(torch.nn.Module):
@@ -66,22 +64,20 @@ class Mask(torch.nn.Module):
 
     def __init__(self, scale_factor):
         super().__init__()
-
-        self.mask = None  # torch.BoolTensor [batch_size, num_frames]
         self.scale_factor = scale_factor
 
-    def forward(self, in_):
+    def forward(self, in_, mask):
         """
         Args:
             in_ (torch.FloatTensor [batch_size, frame_channels, num_frames])
+            mask (torch.BoolTensor [batch_size, num_frames])
 
         Returns:
             torch.FloatTensor [batch_size, frame_channels, num_frames]
         """
         with torch.no_grad():
             mask = torch.nn.functional.interpolate(
-                self.mask.float(), scale_factor=self.scale_factor).bool()
-            self.mask = None  # NOTE: Don't use conditioning twice
+                mask.float(), scale_factor=self.scale_factor).bool()
         assert mask.shape[2] >= in_.shape[2], 'Scale factor is too small.'
         in_, mask = trim_tensors(in_, mask)
         return in_.masked_fill(~mask, 0.0)
@@ -126,6 +122,21 @@ class PixelShuffle1d(torch.nn.Module):
         return shuffle_out.view(batch_size, channels, steps * self.upscale_factor)
 
 
+class Sequential(torch.nn.Sequential):
+
+    def forward(self, input_, mask=None, conditioning=None):
+        for module in self:
+            if isinstance(module, ConditionalConcat):
+                input_ = module(input_, conditioning[:, :module.size])
+            elif isinstance(module, Mask):
+                input_ = module(input_, mask)
+            elif isinstance(module, Block):
+                input_ = module(input_, mask, conditioning)
+            else:
+                input_ = module(input_)
+        return input_
+
+
 class Block(torch.nn.Module):
     """ Building block for `SignalModel`.
 
@@ -138,14 +149,14 @@ class Block(torch.nn.Module):
     def __init__(self, in_channels, out_channels, upscale_factor=1, input_scale=1):
         super().__init__()
 
-        self.shortcut = torch.nn.Sequential(
+        self.shortcut = Sequential(
             torch.nn.Conv1d(
                 in_channels,
                 out_channels * upscale_factor,
                 kernel_size=1,
             ), PixelShuffle1d(upscale_factor))
 
-        self.block = torch.nn.Sequential(
+        self.block = Sequential(
             ConditionalConcat(in_channels, input_scale),
             torch.nn.Conv1d(in_channels * 2, in_channels, kernel_size=1),
             torch.nn.GELU(),
@@ -161,7 +172,7 @@ class Block(torch.nn.Module):
             torch.nn.Conv1d(out_channels, out_channels, kernel_size=3),
         )
 
-        self.other_block = torch.nn.Sequential(
+        self.other_block = Sequential(
             ConditionalConcat(out_channels, input_scale * upscale_factor),
             torch.nn.Conv1d(out_channels * 2, out_channels, kernel_size=1),
             torch.nn.GELU(),
@@ -180,7 +191,7 @@ class Block(torch.nn.Module):
         self.padding_required += (self.other_block[4].kernel_size[0] // 2) / output_scale
         self.padding_required += (self.other_block[-1].kernel_size[0] // 2) / output_scale
 
-    def forward(self, input_):
+    def forward(self, input_, mask, conditioning):
         """
         Args:
             input_ (torch.FloatTensor [batch_size, frame_channels, ~num_frames])
@@ -189,8 +200,9 @@ class Block(torch.nn.Module):
             torch.FloatTensor [batch_size, frame_channels, ~num_frames * upscale_factor]
         """
         shape = input_.shape  # [batch_size, frame_channels, num_frames]
-        input_ = torch.add(*trim_tensors(self.shortcut(input_), self.block(input_)))
-        input_ = torch.add(*trim_tensors(input_, self.other_block(input_)))
+        input_ = torch.add(
+            *trim_tensors(self.shortcut(input_), self.block(input_, mask, conditioning)))
+        input_ = torch.add(*trim_tensors(input_, self.other_block(input_, mask, conditioning)))
         assert (shape[2] * self.upscale_factor - input_.shape[2]) % 2 == 0
         return input_
 
@@ -282,12 +294,12 @@ class SignalModel(torch.nn.Module):
         self.mu = mu
         self.upscale_factor = np.prod(ratios)
 
-        self.pre_net = torch.nn.Sequential(
+        self.pre_net = Sequential(
             Mask(1),
             torch.nn.Conv1d(input_size, self.get_layer_size(0), kernel_size=3, padding=0),
             LayerNorm(self.get_layer_size(0)),
         )
-        self.network = torch.nn.Sequential(*tuple([
+        self.network = Sequential(*tuple([
             Block(self.get_layer_size(0), self.get_layer_size(0)),
             Block(self.get_layer_size(0), self.get_layer_size(0))
         ] + [
@@ -411,19 +423,14 @@ class SignalModel(torch.nn.Module):
         # [batch_size, num_frames] → [batch_size, 1, num_frames]
         spectrogram_mask = spectrogram_mask.unsqueeze(1)
 
-        for module in self.masks:
-            module.mask = spectrogram_mask
-
         # [batch_size, frame_channels, num_frames] →
         # [batch_size, self.get_layer_size(0), num_frames]
-        spectrogram = self.pre_net(spectrogram)
+        spectrogram = self.pre_net(spectrogram, spectrogram_mask)
 
         conditioning = self.condition(spectrogram)  # [batch_size, *, num_frames]
-        for module in self.conditionals:
-            module.concat = conditioning[:, :module.size]
 
         # [batch_size, frame_channels, num_frames] → [batch_size, 2, signal_length + excess_padding]
-        signal = self.network(spectrogram)
+        signal = self.network(spectrogram, spectrogram_mask, conditioning)
 
         # [batch_size, 2, signal_length + excess_padding] →
         # [batch_size, signal_length + excess_padding]
@@ -462,7 +469,7 @@ class SpectrogramDiscriminator(torch.nn.Module):
 
         input_size = fft_length + num_mel_bins + 2
 
-        self.layers = torch.nn.Sequential(
+        self.layers = Sequential(
             torch.nn.Conv1d(input_size, hidden_size, kernel_size=3, padding=1),
             LayerNorm(hidden_size),
             torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1),
