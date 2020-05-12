@@ -222,10 +222,7 @@ class Pod {
 
       const response = await fetch(`http://${host}:${port}/healthy`, {
         signal: abortController.signal,
-        method: 'GET',
-        headers: {
-          'Connection': 'keep-alive',
-        },
+        method: 'GET'
       });
 
       if (!response.ok) {
@@ -242,14 +239,19 @@ class Pod {
     }
   }
 
-  async isReady() {
+  /**
+   * Check if this Pod is ready for more requests.
+   *
+   * @param {boolean} update_cache If `true` `isReady` forcefully updates it's cache.
+   */
+  async isReady(update_cache = false) {
     if (this.isDestroyed) {
       throw new Error(`Pod.isReady Error: Pod ${this.name} has already been destroyed.`);
     }
 
     logger.log(`Pod.isReady: Checking if Pod ${this.name} is ready to serve requests.`);
 
-    if (!this.isReadyCache.createdTime ||
+    if (update_cache || !this.isReadyCache.createdTime ||
       Date.now() - this.isReadyCache.createdTime > this.isReadyCache.ttl) {
       this.isReadyCache.createdTime = Date.now();
       this.isReadyCache.contents = Pod.isReady(this.name, this.ip, this.port);
@@ -456,7 +458,7 @@ class Pod {
               'requests': {
                 // NOTE: This is smaller than required purposefully to give room for any other
                 // system pods.
-                'memory': '3Gi',
+                'memory': '4Gi',
                 'cpu': '7250m'
               }
             },
@@ -464,7 +466,8 @@ class Pod {
               'containerPort': podPort,
               'protocol': 'TCP'
             }]
-          }]
+          }],
+          'terminationGracePeriodSeconds': 600,
         }
       }
     });
@@ -931,6 +934,7 @@ function proxyRequestToPod(prefix, pod, request, response) {
       if (error == null) {
         resolve();
       } else {
+        pod.isReady(update_cache = true);
         reject(error);
       }
     };

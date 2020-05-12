@@ -41,6 +41,7 @@ Example (Gunicorn):
 from functools import lru_cache
 from queue import SimpleQueue
 
+import gc
 import os
 import subprocess
 import sys
@@ -76,7 +77,6 @@ app = Flask(__name__)
 DEVICE = torch.device('cpu')
 API_KEY_SUFFIX = '_SPEECH_API_KEY'
 API_KEYS = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
-
 
 
 def _load_checkpoints_helper(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPOINT_PATH,
@@ -241,6 +241,7 @@ def stream_text_to_speech_synthesis(signal_model,
                 for waveform in generate_waveform(signal_model, get_spectrogram()):
                     pipe.stdin.write(waveform.cpu().numpy().tobytes())
                     yield from _dequeue(queue)
+                    gc.collect()
                 pipe.stdin.close()
                 pipe.wait()
                 thread.join()
