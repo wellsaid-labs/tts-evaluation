@@ -417,5 +417,4 @@ def send_static(path):
 
 
 if __name__ == "__main__":
-    load_checkpoints()  # Cache checkpoints on worker start.
     app.run(host='0.0.0.0', port=8000, debug=True)
