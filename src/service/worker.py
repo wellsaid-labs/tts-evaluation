@@ -327,6 +327,8 @@ def validate_and_unpack(request_args,
 
     app.logger.info('Encoding text: "%s"', text)
 
+    gc.collect()
+
     try:
         text, speaker = input_encoder.encode((text, speaker))
     except InvalidSpeakerValueError as error:
