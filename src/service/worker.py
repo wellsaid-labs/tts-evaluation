@@ -45,6 +45,7 @@ import os
 import subprocess
 import sys
 import threading
+import warnings
 
 from flask import Flask
 from flask import jsonify
@@ -147,6 +148,12 @@ def handle_invalid_usage(error):  # Register an error response
 
 @app.before_first_request
 def before_first_request():
+    # NOTE: Remove this warning after this is fixed...
+    # https://github.com/PetrochukM/HParams/issues/6
+    warnings.filterwarnings(
+        'ignore',
+        module=r'.*hparams',
+        message=r'.*The decorator was not executed immediately before*')
     # NOTE: Ensure that our cache doesn't grow while the server is running.
     for function in get_functions_with_disk_cache():
         function.use_disk_cache(False)

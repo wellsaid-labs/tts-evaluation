@@ -451,22 +451,14 @@ class Pod {
           'containers': [{
             'image': podImage,
             'name': process.env.WORKER_POD_PREFIX,
-            'env': [{
-                'name': 'NUM_CPU_THREADS',
-                'value': '8',
-              },
-              ...apiKeys,
-            ],
+            'env': apiKeys,
             'resources': {
               'requests': {
                 // NOTE: This is smaller than required purposefully to give room for any other
                 // system pods.
                 'memory': '3Gi',
                 'cpu': '7250m'
-              },
-              'limits': {
-                'memory': '5Gi'
-              },
+              }
             },
             'ports': [{
               'containerPort': podPort,

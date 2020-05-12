@@ -288,7 +288,7 @@ class SpectrogramModel(nn.Module):
                *args,
                is_generator=False,
                filter_reached_max=False,
-               split_size=128,
+               split_size=64,
                **kwargs):
         """
         NOTE: The intermediate outputs are not masked according to the `length`.
