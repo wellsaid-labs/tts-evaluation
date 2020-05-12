@@ -165,7 +165,7 @@ Refer to the above guides in case there are missing details in the below steps.
    1. Create a `Node pool` for worker (i.e. 'worker-pool') and master nodes (i.e. 'master-pool').
       The worker and master likely do not need default 100GB disk size. The worker likely has an
       optimized architecture that it runs most quickly on. The worker pool will need autoscaling
-      enabled with 1 node minimum and a maximum of 100 nodes.
+      enabled with 2 nodes minimum and a maximum of 100 nodes.
    1. Pick the required computer resources for this deployment.
 1. Assuming GKE is installed on your system. Log into your cluster via:
 
