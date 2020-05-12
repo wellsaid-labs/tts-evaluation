@@ -325,8 +325,6 @@ def validate_and_unpack(request_args,
 
     speaker = speaker_id_to_speaker[speaker_id]
 
-    app.logger.info('Encoding text: "%s"', text)
-
     gc.collect()
 
     try:
