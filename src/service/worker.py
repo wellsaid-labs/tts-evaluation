@@ -113,16 +113,6 @@ def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPO
     return signal_model.eval(), spectrogram_model.eval(), input_encoder
 
 
-@lru_cache()
-def load_input_encoder():
-    return _load_checkpoints_helper()[2]
-
-
-@lru_cache()
-def load_checkpoints():
-    return _load_checkpoints_helper()
-
-
 class FlaskException(Exception):
     """
     Inspired by http://flask.pocoo.org/docs/1.0/patterns/apierrors/
