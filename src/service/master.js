@@ -919,10 +919,8 @@ function onClose(request, response, func) {
  * @param {Pod} pod The Pod to proxy the request to.
  * @param {express.Request} request
  * @param {express.Response} response
- * @param {boolean} flushHeaders Bypasses a Node optimization. Learn more:
- *  https://nodejs.org/api/http.html#http_request_flushheaders
  */
-function proxyRequestToPod(prefix, pod, request, response, flushHeaders = false) {
+function proxyRequestToPod(prefix, pod, request, response) {
   return new Promise(async (resolve, reject) => {
     const ttsAbortController = new AbortController();
     const handleClose = (message, error) => {
@@ -957,9 +955,6 @@ function proxyRequestToPod(prefix, pod, request, response, flushHeaders = false)
 
       // Stream response back
       response.writeHead(ttsResponse.status, ttsResponse.headers.raw());
-      if (flushHeaders) {
-        response.flushHeaders();
-      }
       ttsResponse.body
         .on('data', chunk => response.write(chunk))
         .on('end', () => {
@@ -1010,10 +1005,6 @@ function reservePodController(request, response, next) {
   let prefix = `reservePodController: `;
   logger.log(`${prefix}Got request.`);
 
-  // NOTE: Chrome times out requests when TTFB (time to first byte) exceeds 2 minutes.
-  // It may take longer than that to reserve a Pod under heavy load. TTFB refers to the HTTP data
-  // and not the HTTP header.
-
   const podPool = getPodPool(request, response);
   if (response.headersSent) {
     return;
@@ -1022,9 +1013,7 @@ function reservePodController(request, response, next) {
   const cancelReservation = podPool.reservePod(async (pod) => {
     prefix = `reservePodController [${pod.name}]: `;
     try {
-      // NOTE (September 2019): It may take up to a 2 seconds for the first body chunk to be
-      // written; therefore, we `flushHeaders`.
-      await proxyRequestToPod(prefix, pod, request, response, flushHeaders = true);
+      await proxyRequestToPod(prefix, pod, request, response);
     } catch (error) {
       next(error);
     }
