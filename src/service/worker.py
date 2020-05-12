@@ -79,8 +79,9 @@ API_KEY_SUFFIX = '_SPEECH_API_KEY'
 API_KEYS = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
 
 
-def _load_checkpoints_helper(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPOINT_PATH,
-                             signal_model_checkpoint_path=SIGNAL_MODEL_CHECKPOINT_PATH):
+@lru_cache()
+def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPOINT_PATH,
+                     signal_model_checkpoint_path=SIGNAL_MODEL_CHECKPOINT_PATH):
     """
     Args:
         spectrogram_model_checkpoint_path (str)
@@ -348,6 +349,7 @@ def validate_and_unpack(request_args,
 
 @app.route('/healthy', methods=['GET'])
 def healthy():
+    load_checkpoints()  # Healthy iff ``load_checkpoints`` succeeds and this route succeeds.
     return 'ok'
 
 
@@ -376,7 +378,8 @@ def get_input_validated():
         `FlaskException`.
     """
     request_args = request.get_json() if request.method == 'POST' else request.args
-    validate_and_unpack(request_args, load_input_encoder())
+    input_encoder = load_checkpoints()[2]
+    validate_and_unpack(request_args, input_encoder)
     return jsonify({'message': 'OK'})
 
 
@@ -418,4 +421,5 @@ def send_static(path):
 
 
 if __name__ == "__main__":
+    load_checkpoints()  # Cache checkpoints on worker start.
     app.run(host='0.0.0.0', port=8000, debug=True)
