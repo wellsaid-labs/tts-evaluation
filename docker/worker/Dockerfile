@@ -97,5 +97,5 @@ RUN echo 'Top N largest directories\n' && du -h / | sort -rh | head -100
 # https://github.com/benoitc/gunicorn/issues/1184
 # https://github.com/fofanov/gunicorn/commit/e8ecc20cc547b614eaa1bed5b0bf5f3b4b4d0274
 # http://docs.gunicorn.org/en/stable/settings.html#logging
-CMD ["venv/bin/gunicorn", "src.service.worker:app", "--bind=0.0.0.0:8000", "--timeout=3600", \
-  "--graceful-timeout=600", "--workers=2", "--access-logfile='-'"]
+CMD ["venv/bin/gunicorn", "--bind=0.0.0.0:8000", "--timeout=3600",  "--graceful-timeout=600", \
+  "--workers=2", "--env GUNICORN=1", "--access-logfile='-'", "--preload", "src.service.worker:app"]

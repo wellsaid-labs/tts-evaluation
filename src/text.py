@@ -105,12 +105,16 @@ _SPACY_PUNCT_TAG = 'PUNCT'
 
 
 @disk_cache
-def grapheme_to_phoneme_perserve_punctuation(text, separator='', **kwargs):
+def grapheme_to_phoneme_perserve_punctuation(text,
+                                             separator='',
+                                             get_spacy_model=_get_spacy_model,
+                                             **kwargs):
     """ Convert grapheme to phoneme while perserving punctuation.
 
     Args:
         text (str): Graphemes.
         separator (str): The separator used to separate phonemes, stress, and punctuation.
+        get_spacy_model (callable, optional)
         **kwargs: Key-word arguments passed to `grapheme_to_phoneme`.
 
     Returns:
@@ -119,7 +123,7 @@ def grapheme_to_phoneme_perserve_punctuation(text, separator='', **kwargs):
     if len(text) == 0:
         return text
 
-    tokens = _get_spacy_model()(text)
+    tokens = get_spacy_model()(text)
 
     assert text == ''.join(t.text_with_ws for t in tokens), 'Detokenization failed: %s' % text
     assert not separator or separator not in text, 'The separator is not unique.'
