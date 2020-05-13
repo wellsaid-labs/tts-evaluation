@@ -44,11 +44,11 @@ class InputEncoder(Encoder):
             speaker_samples, reserved_labels=[], enforce_reversible=True)
 
     def _preprocess(self, text):
-        preprocessed = text.strip()
-        # Learn more:
+        # NOTE: Remove all ASCII control characters from 0 to 31 except `\t` and `\n`, see:
         # https://en.wikipedia.org/wiki/Control_character
-        # https://stackoverflow.com/questions/14946109/how-to-remove-escape-sequence-like-xe2-or-x0c-in-python
-        preprocessed = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\xff]', '', preprocessed)
+        preprocessed = re.sub(r'[\x00-\x08\x0b\x0c\x0d\x0e-\x1f]', '', text)
+        preprocessed = preprocessed.replace('\t', '  ')
+        preprocessed = preprocessed.strip()
         if len(preprocessed) == 0:
             raise InvalidTextValueError('Text cannot be empty.')
         preprocessed = unidecode.unidecode(preprocessed)

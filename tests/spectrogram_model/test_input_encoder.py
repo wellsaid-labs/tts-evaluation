@@ -12,6 +12,13 @@ def test_input_encoder():
     assert encoder.decode(encoded) == ('ˈ|eɪ', JUDY_BIEBER)
 
 
+def test_input_encoder__preprocess():
+    encoder = InputEncoder(['a', 'b', 'c'], [JUDY_BIEBER, MARY_ANN], delimiter='|')
+    assert encoder._preprocess('resume') == 'ɹ|ɪ|z|ˈ|uː|m'
+    assert encoder._preprocess('resumé') == 'ɹ|ɪ|z|ˈ|uː|m'
+    assert encoder._preprocess('résumé') == 'ɹ|ɪ|z|ˈ|uː|m'
+
+
 def test_input_encoder__failure_cases():
     encoder = InputEncoder(['a', 'b', 'c'], [JUDY_BIEBER, MARY_ANN], delimiter='|')
 
