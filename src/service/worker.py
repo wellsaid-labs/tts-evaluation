@@ -208,6 +208,7 @@ def stream_text_to_speech_synthesis(signal_model,
         for item in spectrogram_model(text, speaker, is_generator=True):
             # [num_frames, batch_size (optional), frame_channels] →
             # [batch_size (optional), num_frames, frame_channels]
+            gc.collect()
             yield item[1].transpose(0, 1) if item[1].dim() == 3 else item[1]
 
     # TODO: Add a timeout in case the client is keeping the connection alive and not consuming
@@ -232,7 +233,6 @@ def stream_text_to_speech_synthesis(signal_model,
                 for waveform in generate_waveform(signal_model, get_spectrogram()):
                     pipe.stdin.write(waveform.cpu().numpy().tobytes())
                     yield from _dequeue(queue)
-                    gc.collect()
                 pipe.stdin.close()
                 pipe.wait()
                 thread.join()

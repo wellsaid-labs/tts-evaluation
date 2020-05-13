@@ -1130,7 +1130,7 @@ app.use((error, request, response, next) => {
   response.status(500);
   response.json({
     'code': 'INTERNAL_ERROR',
-    'message': IS_PRODUCTION ? 'Internal Error. Please contact support@wellsaidlabs.com.' : error,
+    'message': IS_PRODUCTION ? 'Internal error, please try again.' : error,
   });
 });
 
