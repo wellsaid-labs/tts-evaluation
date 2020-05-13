@@ -36,7 +36,7 @@ Example (Flask):
 
 Example (Gunicorn):
 
-      $ YOUR_SPEECH_API_KEY=123 gunicorn --timeout=3600 --env GUNICORN=1 src.service.worker:app
+      $ YOUR_SPEECH_API_KEY=123 gunicorn src.service.worker:app --timeout=3600 --env='GUNICORN=1'
 """
 from queue import SimpleQueue
 
@@ -401,6 +401,14 @@ if __name__ == "__main__" or 'GUNICORN' in os.environ:
     SIGNAL_MODEL = signal_model_checkpoint.model.eval()
 
     SPACY = en_core_web_sm.load(disable=['parser', 'ner'])
+    app.logger.info('Loaded spaCy.')
+
+    # NOTE: In order to support copy-on-write, we freeze all the objects tracked by `gc`, learn
+    # more:
+    # https://docs.python.org/3/library/gc.html#gc.freeze
+    # https://instagram-engineering.com/copy-on-write-friendly-python-garbage-collection-ad6ed5233ddf
+    # https://github.com/benoitc/gunicorn/issues/1640
+    gc.freeze()
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8000, debug=True)
