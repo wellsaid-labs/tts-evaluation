@@ -308,6 +308,7 @@ def validate_and_unpack(request_args,
     gc.collect()
 
     try:
+        app.logger.info('Encoding text: %s', text)
         text, speaker = input_encoder.encode((text, speaker), **kwargs)
     except InvalidSpeakerValueError as error:
         raise FlaskException(str(error), code='INVALID_SPEAKER_ID')
