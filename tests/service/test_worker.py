@@ -4,7 +4,6 @@ import pytest
 import torch
 
 from src.service.worker import FlaskException
-from src.service.worker import load_checkpoints
 from src.service.worker import stream_text_to_speech_synthesis
 from src.service.worker import validate_and_unpack
 from tests._utils import get_tts_mocks
@@ -16,23 +15,13 @@ def test_flask_exception():
     assert exception.to_dict() == {'blah': 'hi', 'code': 'NOT_FOUND', 'message': 'This is a test'}
 
 
-def test_load_checkpoints():
-    mocks = get_tts_mocks()
-    signal_model, spectrogram_model, input_encoder = load_checkpoints(
-        mocks['spectrogram_model_checkpoint'].path, mocks['signal_model_checkpoint'].path)
-    assert type(mocks['signal_model']) == type(signal_model)
-    assert type(mocks['spectrogram_model']) == type(spectrogram_model)
-    assert type(mocks['input_encoder']) == type(input_encoder)
-
-
 def test_stream_text_to_speech_synthesis():
     with fork_rng(seed=123):
         mocks = get_tts_mocks()
         example = mocks['dev_dataset'][0]
         text, speaker = mocks['input_encoder'].encode((example.text, example.speaker))
-        generator = stream_text_to_speech_synthesis(mocks['signal_model'].eval(),
-                                                    mocks['spectrogram_model'].eval(), text,
-                                                    speaker)
+        generator = stream_text_to_speech_synthesis(text, speaker, mocks['signal_model'].eval(),
+                                                    mocks['spectrogram_model'].eval())
         assert len(b''.join([s for s in generator()])) == 103725
 
 
@@ -43,9 +32,8 @@ def test_stream_text_to_speech_synthesis__thread_leak():
         example = mocks['dev_dataset'][0]
         text, speaker = mocks['input_encoder'].encode((example.text, example.speaker))
         active_threads = threading.active_count()
-        generator = stream_text_to_speech_synthesis(mocks['signal_model'].eval(),
-                                                    mocks['spectrogram_model'].eval(), text,
-                                                    speaker)()
+        generator = stream_text_to_speech_synthesis(text, speaker, mocks['signal_model'].eval(),
+                                                    mocks['spectrogram_model'].eval())()
         next(generator)
         assert active_threads + 1 == threading.active_count()
         generator.close()

@@ -87,11 +87,16 @@ RUN echo 'Top N largest directories\n' && du -h / | sort -rh | head -100
 # NOTE: `--workers=2` enables the worker to handle multiple requests in parallel. All endpoints
 # on the worker can handle parallel requests; however, the stream endpoint will suffer a large
 # performance decrease.
+# NOTE: The most basic and the default worker type is a synchronous worker class that handles a
+# single request at a time. sync worker does not support persistent connections - each connection is
+# closed after response has been sent (even if you manually add Keep-Alive or Connection: keep-alive
+# header in your application).
 # Learn more about various `gunicorn` optimizations:
 # https://medium.com/building-the-system/gunicorn-3-means-of-concurrency-efbb547674b7
 # NOTE: `--access-logfile='-'` forces the access logs to go to stdout, learn more:
 # https://github.com/benoitc/gunicorn/issues/1184
 # https://github.com/fofanov/gunicorn/commit/e8ecc20cc547b614eaa1bed5b0bf5f3b4b4d0274
 # http://docs.gunicorn.org/en/stable/settings.html#logging
+ENV GUNICORN=1
 CMD ["venv/bin/gunicorn", "src.service.worker:app", "--bind=0.0.0.0:8000", "--timeout=3600", \
-  "--keep-alive=300", "--workers=2", "--access-logfile='-'"]
+  "--graceful-timeout=600", "--workers=2", "--access-logfile='-'", "--preload"]

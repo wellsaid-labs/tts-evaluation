@@ -32,6 +32,8 @@ def main(speaker_id_to_speaker, spectrogram_model_checkpoint, signal_model_check
     signal_model_checkpoint.optimizer = None
     signal_model_checkpoint.criterions_state_dict = None
     spectrogram_model_checkpoint.optimizer = None
+    signal_model_checkpoint.model.zero_grad()
+    spectrogram_model_checkpoint.model.zero_grad()
     signal_model_checkpoint.model.eval()
     spectrogram_model_checkpoint.model.eval()
 

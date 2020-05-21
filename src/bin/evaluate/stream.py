@@ -80,6 +80,8 @@ def main(file_path,
     text, speaker = input_encoder.encode((text, speaker))
     logger.info('Number of tokens: %d', len(text))
 
+    # TODO: Consider disabling `gc` to increase performance.
+
     def get_spectrogram():
         for item in spectrogram_model(
                 text.to(device), speaker.to(device), is_generator=True, use_tqdm=True):

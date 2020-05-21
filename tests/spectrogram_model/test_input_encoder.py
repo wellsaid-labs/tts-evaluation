@@ -12,6 +12,13 @@ def test_input_encoder():
     assert encoder.decode(encoded) == ('ˈ|eɪ', JUDY_BIEBER)
 
 
+def test_input_encoder__preprocess():
+    encoder = InputEncoder(['a', 'b', 'c'], [JUDY_BIEBER, MARY_ANN], delimiter='|')
+    assert encoder._preprocess('resume') == 'ɹ|ɪ|z|ˈ|uː|m'
+    assert encoder._preprocess('resumé') == 'ɹ|ɪ|z|ˈ|uː|m'
+    assert encoder._preprocess('résumé') == 'ɹ|ɪ|z|ˈ|uː|m'
+
+
 def test_input_encoder__failure_cases():
     encoder = InputEncoder(['a', 'b', 'c'], [JUDY_BIEBER, MARY_ANN], delimiter='|')
 
@@ -30,3 +37,18 @@ def test_input_encoder__failure_cases():
         encoder.encode(('a\n\fa', JUDY_BIEBER))
 
     assert "Text cannot contain these characters: \\n" in str(error.value)
+
+
+def test_input_encoder__regression():
+    """ Test cases that failed in the past. """
+    encoder = InputEncoder(['a', 'b', 'c'], [JUDY_BIEBER, MARY_ANN], delimiter='|')
+
+    with pytest.raises(ValueError) as error:
+        encoder.encode(('<>', JUDY_BIEBER))
+
+    assert "Invalid text: \"<>\"" in str(error.value)
+
+    with pytest.raises(ValueError) as error:
+        encoder.encode(('', JUDY_BIEBER))
+
+    assert "Text cannot be empty." in str(error.value)

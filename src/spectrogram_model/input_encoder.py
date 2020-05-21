@@ -43,31 +43,37 @@ class InputEncoder(Encoder):
         self.speaker_encoder = LabelEncoder(
             speaker_samples, reserved_labels=[], enforce_reversible=True)
 
-    def _preprocess(self, text):
-        text = text.strip()
-        text = unidecode.unidecode(text)
-        # Learn more:
+    def _preprocess(self, text, **kwargs):
+        # NOTE: Remove all ASCII control characters from 0 to 31 except `\t` and `\n`, see:
         # https://en.wikipedia.org/wiki/Control_character
-        # https://stackoverflow.com/questions/14946109/how-to-remove-escape-sequence-like-xe2-or-x0c-in-python
-        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\xff]', '', text)
-        if self.delimiter and self.delimiter in text:
-            raise ValueError('Text cannot contain these characters: %s' % self.delimiter)
-        text = grapheme_to_phoneme_perserve_punctuation(text, separator=self.delimiter)
-        return text
+        preprocessed = re.sub(r'[\x00-\x08\x0b\x0c\x0d\x0e-\x1f]', '', text)
+        preprocessed = preprocessed.replace('\t', '  ')
+        preprocessed = preprocessed.strip()
+        if len(preprocessed) == 0:
+            raise InvalidTextValueError('Text cannot be empty.')
+        preprocessed = unidecode.unidecode(preprocessed)
+        if self.delimiter and self.delimiter in preprocessed:
+            raise InvalidTextValueError('Text cannot contain these characters: %s' % self.delimiter)
+        preprocessed = grapheme_to_phoneme_perserve_punctuation(
+            preprocessed, separator=self.delimiter, **kwargs)
+        if len(preprocessed) == 0:
+            raise InvalidTextValueError('Invalid text: "%s"' % text)
+        return preprocessed
 
-    def encode(self, object_):
+    def encode(self, object_, **kwargs):
         """
         Args:
             object_ (tuple): (
               text (str)
               speaker (src.datasets.constants.Speaker)
             )
+            **kwargs: Additional keyword arguments passed onto `self._preprocess`.
 
         Returns:
             (torch.Tensor [num_tokens]): Encoded text.
             (torch.Tensor [1]): Encoded speaker.
         """
-        preprocessed = self._preprocess(object_[0])
+        preprocessed = self._preprocess(object_[0], **kwargs)
 
         try:
             encoded_text = self.text_encoder.encode(preprocessed)

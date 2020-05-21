@@ -201,6 +201,7 @@ def test__grapheme_to_phoneme_perserve_punctuation__spacy_failure_cases():
         "Mesopotamian lexicon: an accumulation of good form or breeding, auspiciousness, "
         "vigor/vitality, and, specifically, sexual allure or charm – all of which are not "
         "only ascribed in text, but equally to be read in imagery.",
+        "This is a test {}:\"><?,./;'[]\\q234567890-=!@##$%%^&*()+"
     ]
 
     phoneme = [
@@ -229,6 +230,11 @@ def test__grapheme_to_phoneme_perserve_punctuation__spacy_failure_cases():
         "_s_p_ə_s_ˈ_ɪ_f_ɪ_k_l_i_,_ _s_ˈ_ɛ_k_ʃ_uː_əl_ _ɐ_l_ˈ_ʊɹ_ _ɔːɹ_ _tʃ_ˈ_ɑːɹ_m_ "
         "_–_ _ˈ_ɔː_l_ _ʌ_v_w_ˈ_ɪ_tʃ_ _ɑːɹ_ _n_ˌ_ɑː_t_ _ˈ_oʊ_n_l_i_ _ɐ_s_k_ɹ_ˈ_aɪ_b_d_ _ɪ_n_ "
         "_t_ˈ_ɛ_k_s_t_,_ _b_ˌ_ʌ_t_ _ˈ_iː_k_w_əl_i_ _t_ə_b_i_ _ɹ_ˈ_ɛ_d_ _ɪ_n_ _ˈ_ɪ_m_ɪ_dʒ_ɹ_i_.",
+        "ð_ɪ_s_ _ɪ_z_ _ɐ_ _t_ˈ_ɛ_s_t_ _{_}_:_\"_d_ˈ_ɑː_t_s_l_æ_ʃ_ _b_ˈ_æ_k_s_l_æ_ʃ_ _k_j_ˈ_uː_ "
+        "_t_ˈ_uː_h_ˈ_ʌ_n_d_ɹ_ə_d_ _θ_ˈ_ɜː_ɾ_i_f_ˈ_oːɹ_ _m_ˈ_ɪ_l_iə_n_ _f_ˈ_aɪ_v_h_ˈ_ʌ_n_d_ɹ_ə_d_"
+        " _s_ˈ_ɪ_k_s_t_i_s_ˈ_ɛ_v_ə_n_ _θ_ˈ_aʊ_z_ə_n_d_ _ˈ_eɪ_t_h_ˈ_ʌ_n_d_ɹ_ə_d_ _n_ˈ_aɪ_n_t_i_"
+        " _ˌ_iː_k_w_əl_z_ˌ_ɛ_k_s_k_l_ə_m_ˌ_eɪ_ʃ_ə_n_ˌ_æ_t_h_ɐ_ʃ_h_ˌ_æ_ʃ_d_ə_l_ɚ_p_ɚ_s_ˈ_ɛ_n_t_p"
+        "_ɚ_s_ˈ_ɛ_n_t_ɐ_n_d_ˌ_æ_s_t_ɚ_ɹ_ˌ_ɪ_s_k_p_l_ʌ_s"
     ]
 
     for g, p in zip(grapheme, phoneme):

@@ -46,9 +46,8 @@ def grapheme_to_phoneme(grapheme, separator='', **kwargs):
     # NOTE: We need to remove double separators from when there are consecutive new lines like
     # "\n\n\n", for example.
     if len(separator) > 0:
-        return re.sub(r'%s+' % re.escape(separator), separator, return_).strip(separator)
-    else:
-        return return_
+        return_ = re.sub(r'%s+' % re.escape(separator), separator, return_).strip(separator)
+    return return_
 
 
 @disk_cache
@@ -97,6 +96,7 @@ def _grapheme_to_phoneme_helper(grapheme,
 @lru_cache()
 def _get_spacy_model():
     """ Get spaCy object used to tokenize and POS tag text. """
+    logger.info('Loading spaCy model...')
     return en_core_web_sm.load(disable=['parser', 'ner'])
 
 
@@ -105,20 +105,26 @@ _SPACY_PUNCT_TAG = 'PUNCT'
 
 
 @disk_cache
-def grapheme_to_phoneme_perserve_punctuation(text, separator='', **kwargs):
+def grapheme_to_phoneme_perserve_punctuation(text,
+                                             separator='',
+                                             get_spacy_model=_get_spacy_model,
+                                             **kwargs):
     """ Convert grapheme to phoneme while perserving punctuation.
 
     Args:
         text (str): Graphemes.
         separator (str): The separator used to separate phonemes, stress, and punctuation.
+        get_spacy_model (callable, optional)
         **kwargs: Key-word arguments passed to `grapheme_to_phoneme`.
 
     Returns:
         (str): Phonemes with the original punctuation (as defined by spaCy).
     """
-    tokens = _get_spacy_model()(text)
+    if len(text) == 0:
+        return text
 
-    assert len(tokens) > 0, 'Zero tokens were found in text: %s' % text
+    tokens = get_spacy_model()(text)
+
     assert text == ''.join(t.text_with_ws for t in tokens), 'Detokenization failed: %s' % text
     assert not separator or separator not in text, 'The separator is not unique.'
 
@@ -139,7 +145,7 @@ def grapheme_to_phoneme_perserve_punctuation(text, separator='', **kwargs):
             return_.extend(list(phrase))
         else:
             return_.append(grapheme_to_phoneme(phrase, separator=separator, **kwargs))
-    return separator.join(return_)
+    return separator.join([t for t in return_ if len(t) > 0])
 
 
 @log_runtime

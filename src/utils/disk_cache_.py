@@ -301,6 +301,8 @@ def disk_cache(function=None,
 
     def use_disk_cache(new_state):
         nonlocal _use_disk_cache
+        logger.info('%s `%s` disk cache.', 'Enabling' if new_state else 'Disabling',
+                    function.__qualname__)
         _use_disk_cache = new_state
 
     decorator.use_disk_cache = use_disk_cache

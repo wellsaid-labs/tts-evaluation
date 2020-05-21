@@ -30,16 +30,22 @@ TODO: Apply `exponential_moving_parameter_average` before running locally, for b
 The cons in summary are that the client cannot manage there own state due to the immaturity of the
 web audio api; therefore, the server must manage it via some database.
 
-Example:
-      $ PYTHONPATH=. YOUR_SPEECH_API_KEY=123 python -m src.service.worker
-"""
-from functools import lru_cache
-from queue import Empty
-from queue import Queue
+Example (Flask):
 
+      $ PYTHONPATH=. YOUR_SPEECH_API_KEY=123 python -m src.service.worker
+
+Example (Gunicorn):
+
+      $ YOUR_SPEECH_API_KEY=123 gunicorn src.service.worker:app --timeout=3600 --env='GUNICORN=1'
+"""
+from queue import SimpleQueue
+
+import gc
 import os
 import subprocess
+import sys
 import threading
+import warnings
 
 from flask import Flask
 from flask import jsonify
@@ -50,6 +56,7 @@ from flask import send_from_directory
 from hparams import configurable
 from hparams import HParam
 
+import en_core_web_sm
 import torch
 
 from src.environment import set_basic_logging_config
@@ -63,47 +70,25 @@ from src.spectrogram_model.input_encoder import InvalidTextValueError
 from src.utils import Checkpoint
 from src.utils import get_functions_with_disk_cache
 
+if 'NUM_CPU_THREADS' in os.environ:
+    torch.set_num_threads(int(os.environ['NUM_CPU_THREADS']))
+
 # NOTE: Flask documentation requests that logging is configured before `app` is created.
 set_basic_logging_config()
 
 app = Flask(__name__)
+
+app.logger.info('PyTorch version: %s', torch.__version__)
+app.logger.info('Found MKL: %s', torch.backends.mkl.is_available())
+app.logger.info('Threads: %s', torch.get_num_threads())
+
 DEVICE = torch.device('cpu')
 API_KEY_SUFFIX = '_SPEECH_API_KEY'
 API_KEYS = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
-
-
-@lru_cache()
-def load_checkpoints(spectrogram_model_checkpoint_path=SPECTROGRAM_MODEL_CHECKPOINT_PATH,
-                     signal_model_checkpoint_path=SIGNAL_MODEL_CHECKPOINT_PATH):
-    """
-    Args:
-        spectrogram_model_checkpoint_path (str)
-        signal_model_checkpoint_path (str)
-
-    Returns:
-        signal_model (torch.nn.Module)
-        spectrogram_model (torch.nn.Module)
-        input_encoder (src.spectrogram_model.InputEncoder): Spectrogram model input encoder.
-    """
-    if 'NUM_CPU_THREADS' in os.environ:
-        torch.set_num_threads(int(os.environ['NUM_CPU_THREADS']))
-
-    app.logger.info('PyTorch version: %s', torch.__version__)
-    app.logger.info('Found MKL: %s', torch.backends.mkl.is_available())
-    app.logger.info('Threads: %s', torch.get_num_threads())
-
-    set_hparams()
-
-    spectrogram_model_checkpoint = Checkpoint.from_path(
-        spectrogram_model_checkpoint_path, device=DEVICE)
-    signal_model_checkpoint = Checkpoint.from_path(signal_model_checkpoint_path, device=DEVICE)
-
-    spectrogram_model = spectrogram_model_checkpoint.model
-    input_encoder = spectrogram_model_checkpoint.input_encoder
-    app.logger.info('Loading speakers: %s', input_encoder.speaker_encoder.vocab)
-    signal_model = signal_model_checkpoint.model
-
-    return signal_model.eval(), spectrogram_model.eval(), input_encoder
+SIGNAL_MODEL = None
+SPECTROGRAM_MODEL = None
+INPUT_ENCODER = None
+SPACY = None
 
 
 class FlaskException(Exception):
@@ -142,6 +127,12 @@ def handle_invalid_usage(error):  # Register an error response
 
 @app.before_first_request
 def before_first_request():
+    # NOTE: Remove this warning after this is fixed...
+    # https://github.com/PetrochukM/HParams/issues/6
+    warnings.filterwarnings(
+        'ignore',
+        module=r'.*hparams',
+        message=r'.*The decorator was not executed immediately before*')
     # NOTE: Ensure that our cache doesn't grow while the server is running.
     for function in get_functions_with_disk_cache():
         function.use_disk_cache(False)
@@ -164,18 +155,15 @@ def _dequeue(queue):
     Args:
         queue (Queue)
     """
-    try:
-        while True:
-            yield queue.get_nowait()
-    except Empty:
-        pass
+    while not queue.empty():
+        yield queue.get_nowait()
 
 
 @configurable
-def stream_text_to_speech_synthesis(signal_model,
-                                    spectrogram_model,
-                                    text,
+def stream_text_to_speech_synthesis(text,
                                     speaker,
+                                    signal_model,
+                                    spectrogram_model,
                                     sample_rate=HParam()):
     """ Helper function for starting a speech synthesis stream.
 
@@ -183,10 +171,10 @@ def stream_text_to_speech_synthesis(signal_model,
     TODO: Consider logging various events to stackdriver, to keep track.
 
     Args:
-        signal_model (torch.nn.Module)
-        spectrogram_model (torch.nn.Module)
         text (str)
         speaker (src.datasets.Speaker)
+        signal_model (torch.nn.Module)
+        spectrogram_model (torch.nn.Module)
         sample_rate (int)
 
     Returns:
@@ -198,6 +186,7 @@ def stream_text_to_speech_synthesis(signal_model,
         for item in spectrogram_model(text, speaker, is_generator=True):
             # [num_frames, batch_size (optional), frame_channels] →
             # [batch_size (optional), num_frames, frame_channels]
+            gc.collect()
             yield item[1].transpose(0, 1) if item[1].dim() == 3 else item[1]
 
     # TODO: Add a timeout in case the client is keeping the connection alive and not consuming
@@ -210,20 +199,23 @@ def stream_text_to_speech_synthesis(signal_model,
                 command = (
                     'ffmpeg -f f32le -acodec pcm_f32le -ar %d -ac 1 -i pipe: -f mp3 -b:a 192k pipe:'
                     % sample_rate).split()
-                pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-                queue = Queue()
-                thread = threading.Thread(target=_enqueue, args=(pipe.stdout, queue))
-                thread.daemon = True
+                pipe = subprocess.Popen(
+                    command,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=sys.stdout.buffer)
+                queue = SimpleQueue()
+                thread = threading.Thread(target=_enqueue, args=(pipe.stdout, queue), daemon=True)
                 thread.start()
                 app.logger.info('Generating waveform...')
                 for waveform in generate_waveform(signal_model, get_spectrogram()):
-                    pipe.stdin.write(waveform.cpu().detach().numpy().tobytes())
+                    pipe.stdin.write(waveform.cpu().numpy().tobytes())
                     yield from _dequeue(queue)
                 pipe.stdin.close()
                 pipe.wait()
                 thread.join()
-                yield from _dequeue(queue)
                 pipe.stdout.close()
+                yield from _dequeue(queue)
                 app.logger.info('Finished generating waveform.')
             # NOTE: `Exception` does not catch `GeneratorExit`.
             # https://stackoverflow.com/questions/18982610/difference-between-except-and-except-exception-as-e-in-python
@@ -242,7 +234,8 @@ def validate_and_unpack(request_args,
                         input_encoder,
                         max_characters=100000,
                         api_keys=API_KEYS,
-                        speaker_id_to_speaker=SPEAKER_ID_TO_SPEAKER):
+                        speaker_id_to_speaker=SPEAKER_ID_TO_SPEAKER,
+                        **kwargs):
     """ Validate and unpack the request object.
 
     Args:
@@ -255,6 +248,7 @@ def validate_and_unpack(request_args,
         max_characters (int, optional)
         api_keys (list of str, optional)
         speaker_id_to_speaker (dict, optional)
+        **kwargs: Key-word arguments passed to `input_encoder.encode`.
 
     Returns:
         text (str)
@@ -311,11 +305,15 @@ def validate_and_unpack(request_args,
 
     speaker = speaker_id_to_speaker[speaker_id]
 
+    gc.collect()
+
     try:
-        text, speaker = input_encoder.encode((text, speaker))
+        text, speaker = input_encoder.encode((text, speaker), **kwargs)
     except InvalidSpeakerValueError as error:
+        app.logger.info('Invalid text: %r', text)
         raise FlaskException(str(error), code='INVALID_SPEAKER_ID')
     except InvalidTextValueError as error:
+        app.logger.info('Invalid text: %r', text)
         raise FlaskException(str(error), code='INVALID_TEXT')
 
     return text, speaker
@@ -323,7 +321,6 @@ def validate_and_unpack(request_args,
 
 @app.route('/healthy', methods=['GET'])
 def healthy():
-    load_checkpoints()  # Healthy iff ``load_checkpoints`` succeeds and this route succeeds.
     return 'ok'
 
 
@@ -352,8 +349,7 @@ def get_input_validated():
         `FlaskException`.
     """
     request_args = request.get_json() if request.method == 'POST' else request.args
-    input_encoder = load_checkpoints()[2]
-    validate_and_unpack(request_args, input_encoder)
+    validate_and_unpack(request_args, INPUT_ENCODER, get_spacy_model=lambda: SPACY)
     return jsonify({'message': 'OK'})
 
 
@@ -372,10 +368,9 @@ def get_stream():
         `audio/mpeg` streamed in chunks given that the arguments are valid.
     """
     request_args = request.get_json() if request.method == 'POST' else request.args
-    signal_model, spectrogram_model, input_encoder = load_checkpoints()
-    text, speaker = validate_and_unpack(request_args, input_encoder)
+    text, speaker = validate_and_unpack(request_args, INPUT_ENCODER, get_spacy_model=lambda: SPACY)
     return Response(
-        stream_text_to_speech_synthesis(signal_model, spectrogram_model, text, speaker)(),
+        stream_text_to_speech_synthesis(text, speaker, SIGNAL_MODEL, SPECTROGRAM_MODEL)(),
         headers={
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
@@ -394,6 +389,29 @@ def send_static(path):
     return send_from_directory('public', path)
 
 
+if __name__ == "__main__" or 'GUNICORN' in os.environ:
+    set_hparams()
+
+    # NOTE: These models are cached globally to enable sharing between processes, learn more:
+    # https://github.com/benoitc/gunicorn/issues/2007
+    spectrogram_model_checkpoint = Checkpoint.from_path(SPECTROGRAM_MODEL_CHECKPOINT_PATH, DEVICE)
+    SPECTROGRAM_MODEL = spectrogram_model_checkpoint.model.eval()
+    INPUT_ENCODER = spectrogram_model_checkpoint.input_encoder
+    app.logger.info('Loaded speakers: %s', INPUT_ENCODER.speaker_encoder.vocab)
+
+    signal_model_checkpoint = Checkpoint.from_path(SIGNAL_MODEL_CHECKPOINT_PATH, DEVICE)
+    SIGNAL_MODEL = signal_model_checkpoint.model.eval()
+
+    SPACY = en_core_web_sm.load(disable=['parser', 'ner'])
+    app.logger.info('Loaded spaCy.')
+
+    # NOTE: In order to support copy-on-write, we freeze all the objects tracked by `gc`, learn
+    # more:
+    # https://docs.python.org/3/library/gc.html#gc.freeze
+    # https://instagram-engineering.com/copy-on-write-friendly-python-garbage-collection-ad6ed5233ddf
+    # https://github.com/benoitc/gunicorn/issues/1640
+    # TODO: Measure shared memory to check if it's working well.
+    gc.freeze()
+
 if __name__ == "__main__":
-    load_checkpoints()  # Cache checkpoints on worker start.
     app.run(host='0.0.0.0', port=8000, debug=True)

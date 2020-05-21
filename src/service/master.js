@@ -222,10 +222,7 @@ class Pod {
 
       const response = await fetch(`http://${host}:${port}/healthy`, {
         signal: abortController.signal,
-        method: 'GET',
-        headers: {
-          'Connection': 'keep-alive',
-        },
+        method: 'GET'
       });
 
       if (!response.ok) {
@@ -242,14 +239,19 @@ class Pod {
     }
   }
 
-  async isReady() {
+  /**
+   * Check if this Pod is ready for more requests.
+   *
+   * @param {boolean} update_cache If `true` `isReady` forcefully updates it's cache.
+   */
+  async isReady(update_cache = false) {
     if (this.isDestroyed) {
       throw new Error(`Pod.isReady Error: Pod ${this.name} has already been destroyed.`);
     }
 
     logger.log(`Pod.isReady: Checking if Pod ${this.name} is ready to serve requests.`);
 
-    if (!this.isReadyCache.createdTime ||
+    if (update_cache || !this.isReadyCache.createdTime ||
       Date.now() - this.isReadyCache.createdTime > this.isReadyCache.ttl) {
       this.isReadyCache.createdTime = Date.now();
       this.isReadyCache.contents = Pod.isReady(this.name, this.ip, this.port);
@@ -451,28 +453,21 @@ class Pod {
           'containers': [{
             'image': podImage,
             'name': process.env.WORKER_POD_PREFIX,
-            'env': [{
-                'name': 'NUM_CPU_THREADS',
-                'value': '8',
-              },
-              ...apiKeys,
-            ],
+            'env': apiKeys,
             'resources': {
               'requests': {
                 // NOTE: This is smaller than required purposefully to give room for any other
                 // system pods.
-                'memory': '3Gi',
+                'memory': '4Gi',
                 'cpu': '7250m'
-              },
-              'limits': {
-                'memory': '5Gi'
-              },
+              }
             },
             'ports': [{
               'containerPort': podPort,
               'protocol': 'TCP'
             }]
-          }]
+          }],
+          'terminationGracePeriodSeconds': 600,
         }
       }
     });
@@ -927,10 +922,8 @@ function onClose(request, response, func) {
  * @param {Pod} pod The Pod to proxy the request to.
  * @param {express.Request} request
  * @param {express.Response} response
- * @param {boolean} flushHeaders Bypasses a Node optimization. Learn more:
- *  https://nodejs.org/api/http.html#http_request_flushheaders
  */
-function proxyRequestToPod(prefix, pod, request, response, flushHeaders = false) {
+function proxyRequestToPod(prefix, pod, request, response) {
   return new Promise(async (resolve, reject) => {
     const ttsAbortController = new AbortController();
     const handleClose = (message, error) => {
@@ -941,6 +934,9 @@ function proxyRequestToPod(prefix, pod, request, response, flushHeaders = false)
       if (error == null) {
         resolve();
       } else {
+        if (!pod.isDestroyed) {
+          pod.isReady(update_cache = true);
+        }
         reject(error);
       }
     };
@@ -965,9 +961,6 @@ function proxyRequestToPod(prefix, pod, request, response, flushHeaders = false)
 
       // Stream response back
       response.writeHead(ttsResponse.status, ttsResponse.headers.raw());
-      if (flushHeaders) {
-        response.flushHeaders();
-      }
       ttsResponse.body
         .on('data', chunk => response.write(chunk))
         .on('end', () => {
@@ -1018,10 +1011,6 @@ function reservePodController(request, response, next) {
   let prefix = `reservePodController: `;
   logger.log(`${prefix}Got request.`);
 
-  // NOTE: Chrome times out requests when TTFB (time to first byte) exceeds 2 minutes.
-  // It may take longer than that to reserve a Pod under heavy load. TTFB refers to the HTTP data
-  // and not the HTTP header.
-
   const podPool = getPodPool(request, response);
   if (response.headersSent) {
     return;
@@ -1030,9 +1019,7 @@ function reservePodController(request, response, next) {
   const cancelReservation = podPool.reservePod(async (pod) => {
     prefix = `reservePodController [${pod.name}]: `;
     try {
-      // NOTE (September 2019): It may take up to a 2 seconds for the first body chunk to be
-      // written; therefore, we `flushHeaders`.
-      await proxyRequestToPod(prefix, pod, request, response, flushHeaders = true);
+      await proxyRequestToPod(prefix, pod, request, response);
     } catch (error) {
       next(error);
     }
@@ -1145,7 +1132,7 @@ app.use((error, request, response, next) => {
   response.status(500);
   response.json({
     'code': 'INTERNAL_ERROR',
-    'message': IS_PRODUCTION ? 'Internal Error. Please contact michael@wellsaidlabs.com.' : error,
+    'message': IS_PRODUCTION ? 'Internal error, please try again.' : error,
   });
 });
 
