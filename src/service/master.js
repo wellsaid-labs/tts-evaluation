@@ -934,7 +934,9 @@ function proxyRequestToPod(prefix, pod, request, response) {
       if (error == null) {
         resolve();
       } else {
-        pod.isReady(update_cache = true);
+        if (!pod.isDestroyed) {
+          pod.isReady(update_cache = true);
+        }
         reject(error);
       }
     };
