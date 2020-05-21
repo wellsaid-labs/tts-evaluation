@@ -410,6 +410,7 @@ if __name__ == "__main__" or 'GUNICORN' in os.environ:
     # https://docs.python.org/3/library/gc.html#gc.freeze
     # https://instagram-engineering.com/copy-on-write-friendly-python-garbage-collection-ad6ed5233ddf
     # https://github.com/benoitc/gunicorn/issues/1640
+    # TODO: Measure shared memory to check if it's working well.
     gc.freeze()
 
 if __name__ == "__main__":
