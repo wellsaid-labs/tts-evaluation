@@ -23,14 +23,14 @@ Refer to the above guides in case there are missing details in the below steps.
 
    ```bash
    PROJECT_ID="voice-service-255602"
-   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v6.13 .
-   docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v7.23 .
+   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v6.14 .
+   docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v7.24 .
    ```
 
 1. Check the worker image size:
 
    ```bash
-   docker images gcr.io/${PROJECT_ID}/speech-api-worker:v7.23
+   docker images gcr.io/${PROJECT_ID}/speech-api-worker:v7.24
    ```
 
    The image size should be around 750mb.
@@ -38,22 +38,22 @@ Refer to the above guides in case there are missing details in the below steps.
 1. Push the build:
 
    ```bash
-   docker push gcr.io/${PROJECT_ID}/speech-api:v6.13
-   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v7.23
+   docker push gcr.io/${PROJECT_ID}/speech-api:v6.14
+   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v7.24
    ```
 
 1. Test the build:
 
    ```bash
    docker run --rm -p 8000:8000 -e "YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api-worker:v7.23
+      gcr.io/${PROJECT_ID}/speech-api-worker:v7.24
    ```
 
    Or:
 
    ```bash
    docker run --rm -p 8000:8000 -e "AUTOSCALE_LOOP=5000 YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api:v6.13
+      gcr.io/${PROJECT_ID}/speech-api:v6.14
    ```
 
 1. Update the Kubernetes deployment manifest (e.g. `src/service/deployment.yaml`) with the updated
@@ -73,7 +73,7 @@ Similar to the above, except:
 - For authentication reasons, the build should be pushed with the `gcloud` tool:
 
   ```bash
-  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v7.23
+  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v7.24
   ```
 
   Learn more here: https://cloud.google.com/container-registry/docs/advanced-authentication
