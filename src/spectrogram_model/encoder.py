@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 import torch
 
 from hparams import configurable
@@ -7,10 +9,24 @@ from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
 from torchnlp.nn import LockedDropout
 
 
+@lru_cache(maxsize=8)
+def _roll_helper(length, device, dimension, num_dimensions):
+    """ Helper to ensure `indices` and `dimension` are not recalculated unnecessarily. """
+    with torch.no_grad():
+        indices = torch.arange(0, length, device=device)
+        dimension = num_dimensions + dimension if dimension < 0 else dimension
+
+        # EXAMPLE:
+        # indicies.shape == (3,)
+        # tensor.shape == (1, 2, 3, 4, 5)
+        # indices_shape == [1, 1, 3, 1, 1]
+        indices_shape = [1] * dimension + [-1] + [1] * (num_dimensions - dimension - 1)
+        indices = indices.view(*tuple(indices_shape))
+    return indices, dimension
+
+
 def roll(tensor, shift, dim=-1):
     """ Shift a tensor along the specified dimension.
-
-    TODO: Create a `Roll` module so that `indices` are not recomputed each time.
 
     Args:
         tensor (torch.Tensor [*, dim, *]): The tensor to shift.
@@ -24,16 +40,8 @@ def roll(tensor, shift, dim=-1):
     shift = shift.unsqueeze(dim)
     assert shift.dim() == tensor.dim(
     ), 'The `shift` tensor must be the same size as `tensor` without the `dim` dimension.'
-    indices = torch.arange(0, tensor.shape[dim], device=tensor.device)
-    dim = tensor.dim() + dim if dim < 0 else dim
-
-    # EXAMPLE:
-    # indicies.shape == (3,)
-    # tensor.shape == (1, 2, 3, 4, 5)
-    # indices_shape == [1, 1, 3, 1, 1]
-    indices_shape = [1] * dim + [-1] + [1] * (tensor.dim() - dim - 1)
-    indices = indices.view(*tuple(indices_shape)).expand(*tensor.shape)
-
+    indices, dim = _roll_helper(tensor.shape[dim], tensor.device, dim, tensor.dim())
+    indices = indices.detach().expand(*tensor.shape)
     indices = (indices - shift) % tensor.shape[dim]
     return torch.gather(tensor, dim, indices)
 
