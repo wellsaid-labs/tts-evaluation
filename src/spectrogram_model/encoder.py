@@ -8,8 +8,7 @@ from torch import nn
 from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
 from torchnlp.nn import LockedDropout
 
-# TODO: Factor out `LSTM` to a utility file
-from src.spectrogram_model.decoder import LSTM
+from src.utils import LSTM
 
 
 @lru_cache(maxsize=8)
@@ -49,42 +48,46 @@ def roll(tensor, shift, dim=-1):
     return torch.gather(tensor, dim, indices)
 
 
-class RightMaskedBiLSTM(nn.Module):
-    """ A bidirectional LSTM that ignores any masked input on the right side of the sequence.
+class RightMaskedBiRNN(nn.Module):
+    """ A bidirectional RNN that ignores any masked input on the right side of the sequence.
 
-    Unfortunatly, this LSTM does not return the hidden state due to related performance
+    Unfortunatly, this RNN does not return the hidden state due to related performance
     implications. Similarly, it does not properly handle left side masking due to performance
     implications.
+
+    Args:
+        rnn_class: The RNN class to instantiate.
+        ... See the documentation for `rnn_class`.
     """
 
-    def __init__(self, input_size, hidden_size, num_layers=1, bias=True):
+    def __init__(self, input_size, hidden_size, num_layers=1, bias=True, rnn_class=torch.nn.LSTM):
         super().__init__()
 
-        self.lstm_layers = nn.ModuleList([
+        self.rnn_layers = nn.ModuleList([
             nn.ModuleList([
-                LSTM(
+                rnn_class(
                     input_size=input_size if i == 0 else hidden_size * 2,
                     hidden_size=hidden_size,
                     bias=bias),
-                LSTM(
+                rnn_class(
                     input_size=input_size if i == 0 else hidden_size * 2,
                     hidden_size=hidden_size,
                     bias=bias)
             ]) for i in range(num_layers)
         ])
 
-    def _backward_pass(self, backward_lstm, tokens, tokens_mask):
-        """ Compute the backwards LSTM pass.
+    def _backward_pass(self, backward_rnn, tokens, tokens_mask):
+        """ Compute the backwards RNN pass.
 
         Args:
-            backward_lstm (nn.Module)
-            tokens (torch.FloatTensor [seq_len, batch_size, backward_lstm.input_size]): Batched set
+            backward_rnn (nn.Module)
+            tokens (torch.FloatTensor [seq_len, batch_size, backward_rnn.input_size]): Batched set
                 of sequences.
             tokens_mask (torch.BoolTensor [seq_len, batch_size]): Binary mask applied on tokens.
 
         Returns:
             (torch.FloatTensor [seq_len, batch_size, hidden_size]): Output features predicted
-                by the LSTM.
+                by the RNN.
         """
         # Ex. Assume we are dealing with a one dimensional input, like this:
         # tokens = [1, 2, 3, 0, 0]
@@ -100,16 +103,16 @@ class RightMaskedBiLSTM(nn.Module):
         # Ex. [0, 0, 1, 2, 3] → [3, 2, 1, 0, 0]
         tokens = tokens.flip(0)
 
-        lstm_results, _ = backward_lstm(tokens)
+        rnn_results, _ = backward_rnn(tokens)
 
         # Ex. [3, 2, 1, 0, 0] → [0, 0, 1, 2, 3]
-        lstm_results = lstm_results.flip(0)
+        rnn_results = rnn_results.flip(0)
 
         # Ex. [0, 0, 1, 2, 3] → [1, 2, 3, 0, 0]
-        return roll(lstm_results, lengths, dim=0)
+        return roll(rnn_results, lengths, dim=0)
 
     def forward(self, tokens, tokens_mask):
-        """ Compute the LSTM pass.
+        """ Compute the RNN pass.
 
         Args:
             tokens (torch.FloatTensor [seq_len, batch_size, input_size]): Batched set of sequences.
@@ -118,20 +121,20 @@ class RightMaskedBiLSTM(nn.Module):
 
         Returns:
             (torch.FloatTensor [seq_len, batch_size, hidden_size * 2]): Output features predicted
-                by the LSTM.
+                by the RNN.
         """
         output = tokens
         tokens_mask_expanded = tokens_mask if len(
             tokens_mask.shape) == 3 else tokens_mask.unsqueeze(2)
         tokens_mask = tokens_mask.view(tokens_mask.shape[0], tokens_mask.shape[1])
-        for forward_lstm, backward_lstm in self.lstm_layers:
+        for forward_rnn, backward_rnn in self.rnn_layers:
             # [seq_len, batch_size, input_size or hidden_size * 2] →
             # [seq_len, batch_size, hidden_size * 2]
-            forward_output, _ = forward_lstm(output)
+            forward_output, _ = forward_rnn(output)
 
             # [seq_len, batch_size, input_size or hidden_size * 2] →
             # [seq_len, batch_size, hidden_size * 2]
-            backward_output = self._backward_pass(backward_lstm, output, tokens_mask)
+            backward_output = self._backward_pass(backward_rnn, output, tokens_mask)
 
             # [seq_len, batch_size, hidden_size] (concat) [seq_len, batch_size, hidden_size] →
             # [seq_len, batch_size, hidden_size * 2]
@@ -178,7 +181,7 @@ class Encoder(nn.Module):
 
     Args:
         vocab_size (int): Maximum size of the vocabulary used to encode ``tokens``.
-        speaker_embedding_dim (int)
+        speaker_embedding_dim (int): The size of the speaker embedding.
         out_dim (int): Number of dimensions to output.
         hidden_size (int): The hidden size for internal RNN, embedding, and convolution features.
             This hidden size must be even.
@@ -231,8 +234,11 @@ class Encoder(nn.Module):
         self.norm_layers = nn.ModuleList(
             [LayerNorm(hidden_size) for i in range(num_convolution_layers)])
 
-        self.lstm = RightMaskedBiLSTM(
-            input_size=hidden_size, hidden_size=hidden_size // 2, num_layers=lstm_layers)
+        self.lstm = RightMaskedBiRNN(
+            rnn_class=LSTM,
+            input_size=hidden_size,
+            hidden_size=hidden_size // 2,
+            num_layers=lstm_layers)
         self.lstm_norm = nn.LayerNorm(hidden_size)
         self.lstm_dropout = LockedDropout(dropout)
 
@@ -254,6 +260,9 @@ class Encoder(nn.Module):
         # [batch_size, speaker_embedding_dim] → [batch_size, num_tokens, speaker_embedding_dim]
         speaker = speaker.unsqueeze(1).expand(-1, tokens.shape[1], -1)
         # [batch_size, num_tokens] → [batch_size, num_tokens, hidden_size]
+        # TODO: The speaker embedding decreases the size of the token embedding. This side-effect
+        # is not intuitive. In order to implement this, we recommend that you slice in the
+        # residual connection.
         tokens = torch.cat([self.embed_token(tokens), speaker], dim=2)
 
         # Our input is expected to have shape `[batch_size, num_tokens, hidden_size]`.  The

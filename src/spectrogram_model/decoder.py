@@ -8,6 +8,8 @@ import torch
 
 from src.spectrogram_model.attention import LocationSensitiveAttention
 from src.spectrogram_model.pre_net import PreNet
+from src.utils import LSTM
+from src.utils import LSTMCell
 
 # For sequential prediction, decoder hidden state used to predict the next frame.
 #
@@ -29,43 +31,6 @@ AutoregressiveDecoderHiddenState = namedtuple('AutoregressiveDecoderHiddenState'
     'last_attention_context', 'initial_cumulative_alignment', 'cumulative_alignment',
     'window_start', 'last_frame', 'lstm_one_hidden_state', 'lstm_two_hidden_state'
 ])
-
-
-class LSTM(nn.LSTM):
-    """ LSTM with a trainable initial hidden state.
-
-    TODO: Test and document.
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        num_directions = 2 if self.bidirectional else 1
-        self.initial_hidden_state = torch.nn.Parameter(
-            torch.randn(self.num_layers * num_directions, 1, self.hidden_size))
-        self.initial_cell_state = torch.nn.Parameter(
-            torch.randn(self.num_layers * num_directions, 1, self.hidden_size))
-
-    def forward(self, input, hx=None):
-        if hx is None:
-            batch_size = input.shape[0] if self.batch_first else input.shape[1]
-            hx = (self.initial_hidden_state.expand(-1, batch_size, -1).contiguous(),
-                  self.initial_cell_state.expand(-1, batch_size, -1).contiguous())
-        return super().forward(input, hx=hx)
-
-
-class LSTMCell(nn.LSTMCell):
-    """ LSTMCell with a trainable initial hidden state. """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.initial_hidden_state = torch.nn.Parameter(torch.randn(1, self.hidden_size))
-        self.initial_cell_state = torch.nn.Parameter(torch.randn(1, self.hidden_size))
-
-    def forward(self, input, hx=None):
-        if hx is None:
-            hx = (self.initial_hidden_state.expand(input.shape[0], -1).contiguous(),
-                  self.initial_cell_state.expand(input.shape[0], -1).contiguous())
-        return super().forward(input, hx=hx)
 
 
 class AutoregressiveDecoder(nn.Module):

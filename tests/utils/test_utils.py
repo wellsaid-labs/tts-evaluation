@@ -19,6 +19,8 @@ from src.utils.utils import get_chunks
 from src.utils.utils import get_weighted_stdev
 from src.utils.utils import identity
 from src.utils.utils import log_runtime
+from src.utils.utils import LSTM
+from src.utils.utils import LSTMCell
 from src.utils.utils import mean
 from src.utils.utils import pad_tensors
 from src.utils.utils import random_sample
@@ -28,6 +30,111 @@ from src.utils.utils import slice_by_cumulative_sum
 from src.utils.utils import sort_together
 from src.utils.utils import strip
 from src.utils.utils import trim_tensors
+from tests._utils import assert_almost_equal
+
+
+def test_lstm():
+    input_ = torch.randn(5, 3, 10)
+    hidden_state = (torch.randn(4, 3, 20), torch.randn(4, 3, 20))
+
+    with fork_rng(seed=123):
+        rnn = nn.LSTM(10, 20, 2, bidirectional=True)
+    output, updated_hidden_state = rnn(input_, hidden_state)
+
+    with fork_rng(seed=123):
+        other_rnn = LSTM(10, 20, 2, bidirectional=True)
+    other_output, other_updated_hidden_state = other_rnn(input_, hidden_state)
+
+    assert_almost_equal(output, other_output)
+    assert_almost_equal(updated_hidden_state[0], other_updated_hidden_state[0])
+    assert_almost_equal(updated_hidden_state[1], other_updated_hidden_state[1])
+
+
+def test_lstm__hidden_state():
+    """ Test if `LSTM` hidden state is passed along correctly. """
+    input_ = torch.randn(5, 1, 10)
+
+    with fork_rng(seed=123):
+        other_rnn = LSTM(10, 20, 2, bidirectional=True)
+    other_output, other_updated_hidden_state = other_rnn(input_)
+
+    with fork_rng(seed=123):
+        rnn = nn.LSTM(10, 20, 2, bidirectional=True)
+    output, updated_hidden_state = rnn(
+        input_, (other_rnn.initial_hidden_state, other_rnn.initial_cell_state))
+
+    assert_almost_equal(output, other_output)
+    assert_almost_equal(updated_hidden_state[0], other_updated_hidden_state[0])
+    assert_almost_equal(updated_hidden_state[1], other_updated_hidden_state[1])
+
+
+def test_lstm__batch_first():
+    """ Test if `LSTM` `batch_first` is respected. """
+    input_ = torch.randn(1, 3, 10)
+
+    with fork_rng(seed=123):
+        other_rnn = LSTM(10, 20, 2, bidirectional=True, batch_first=True)
+    other_output, other_updated_hidden_state = other_rnn(input_)
+
+    with fork_rng(seed=123):
+        rnn = nn.LSTM(10, 20, 2, bidirectional=True, batch_first=True)
+    output, updated_hidden_state = rnn(
+        input_, (other_rnn.initial_hidden_state, other_rnn.initial_cell_state))
+
+    assert_almost_equal(output, other_output)
+    assert_almost_equal(updated_hidden_state[0], other_updated_hidden_state[0])
+    assert_almost_equal(updated_hidden_state[1], other_updated_hidden_state[1])
+
+
+def test_lstm__mono():
+    """ Test if `LSTM` `bidirectional=False` is respected. """
+    input_ = torch.randn(5, 1, 10)
+
+    with fork_rng(seed=123):
+        other_rnn = LSTM(10, 20, 2, bidirectional=False)
+    other_output, other_updated_hidden_state = other_rnn(input_)
+
+    with fork_rng(seed=123):
+        rnn = nn.LSTM(10, 20, 2, bidirectional=False)
+    output, updated_hidden_state = rnn(
+        input_, (other_rnn.initial_hidden_state, other_rnn.initial_cell_state))
+
+    assert_almost_equal(output, other_output)
+    assert_almost_equal(updated_hidden_state[0], other_updated_hidden_state[0])
+    assert_almost_equal(updated_hidden_state[1], other_updated_hidden_state[1])
+
+
+def test_lstm_cell():
+    input_ = torch.randn(3, 10)
+    hidden_state = (torch.randn(3, 20), torch.randn(3, 20))
+
+    with fork_rng(seed=123):
+        rnn = nn.LSTMCell(10, 20)
+    updated_hidden_state = rnn(input_, hidden_state)
+
+    with fork_rng(seed=123):
+        other_rnn = LSTMCell(10, 20)
+    other_updated_hidden_state = other_rnn(input_, hidden_state)
+
+    assert_almost_equal(updated_hidden_state[0], other_updated_hidden_state[0])
+    assert_almost_equal(updated_hidden_state[1], other_updated_hidden_state[1])
+
+
+def test_lstm_cell__hidden_state():
+    """ Test if `LSTM` hidden state is passed along correctly. """
+    input_ = torch.randn(1, 10)
+
+    with fork_rng(seed=123):
+        other_rnn = LSTMCell(10, 20)
+    other_updated_hidden_state = other_rnn(input_)
+
+    with fork_rng(seed=123):
+        rnn = nn.LSTMCell(10, 20)
+    updated_hidden_state = rnn(input_,
+                               (other_rnn.initial_hidden_state, other_rnn.initial_cell_state))
+
+    assert_almost_equal(updated_hidden_state[0], other_updated_hidden_state[0])
+    assert_almost_equal(updated_hidden_state[1], other_updated_hidden_state[1])
 
 
 def test_strip():

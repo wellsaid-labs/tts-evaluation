@@ -4,7 +4,7 @@ import torch
 from torchnlp.random import fork_rng
 
 from src.spectrogram_model.encoder import Encoder
-from src.spectrogram_model.encoder import RightMaskedBiLSTM
+from src.spectrogram_model.encoder import RightMaskedBiRNN
 from src.spectrogram_model.encoder import roll
 from tests._utils import assert_almost_equal
 
@@ -51,7 +51,7 @@ def test_roll__3d():
     assert torch.equal(result[1, :, 1], torch.tensor([2, 3, 1]))
 
 
-def test_right_masked_bi_lstm__identity():
+def test_right_masked_bi_rnn__identity():
     """ Test if `RightMaskedBiLSTM` is equal to an bidirectional LSTM without masking. """
     batch_size = 2
     seq_len = 3
@@ -63,8 +63,11 @@ def test_right_masked_bi_lstm__identity():
     tokens_mask = torch.ones(seq_len, batch_size, dtype=torch.bool)
 
     with fork_rng(123):
-        masked_bi_lstm = RightMaskedBiLSTM(
-            input_size=input_size, hidden_size=lstm_hidden_size, num_layers=num_layers)
+        masked_bi_rnn = RightMaskedBiRNN(
+            input_size=input_size,
+            hidden_size=lstm_hidden_size,
+            num_layers=num_layers,
+            rnn_class=torch.nn.LSTM)
 
     with fork_rng(123):
         lstm = torch.nn.LSTM(
@@ -73,12 +76,42 @@ def test_right_masked_bi_lstm__identity():
             num_layers=num_layers,
             bidirectional=True)
 
-    result = masked_bi_lstm(tokens, tokens_mask)
+    result = masked_bi_rnn(tokens, tokens_mask)
     expected, _ = lstm(tokens)
     assert torch.equal(expected, result)
 
 
-def test_right_masked_bi_lstm__uneven_mask():
+def test_right_masked_bi_rnn__gru():
+    """ Test if `RightMaskedBiLSTM` is equal to an bidirectional GRU without masking. """
+    batch_size = 2
+    seq_len = 3
+    input_size = 4
+    rnn_hidden_size = 5
+    num_layers = 2
+
+    tokens = torch.randn(seq_len, batch_size, input_size)
+    tokens_mask = torch.ones(seq_len, batch_size, dtype=torch.bool)
+
+    with fork_rng(123):
+        masked_bi_rnn = RightMaskedBiRNN(
+            input_size=input_size,
+            hidden_size=rnn_hidden_size,
+            num_layers=num_layers,
+            rnn_class=torch.nn.GRU)
+
+    with fork_rng(123):
+        gru = torch.nn.GRU(
+            input_size=input_size,
+            hidden_size=rnn_hidden_size,
+            num_layers=num_layers,
+            bidirectional=True)
+
+    result = masked_bi_rnn(tokens, tokens_mask)
+    expected, _ = gru(tokens)
+    assert torch.equal(expected, result)
+
+
+def test_right_masked_bi_rnn__uneven_mask():
     """ Test if `RightMaskedBiLSTM` is able to handle an uneven LSTM mask on the end. """
     input_size = 1
     lstm_hidden_size = 5
@@ -95,20 +128,23 @@ def test_right_masked_bi_lstm__uneven_mask():
     tokens_mask = torch.tensor([[1, 1, 1, 0, 0], [1, 1, 0, 0, 0]], dtype=torch.bool).transpose(0, 1)
 
     with fork_rng(123):
-        masked_bi_lstm = RightMaskedBiLSTM(
-            input_size=input_size, hidden_size=lstm_hidden_size, num_layers=1)
+        masked_bi_rnn = RightMaskedBiRNN(
+            input_size=input_size,
+            hidden_size=lstm_hidden_size,
+            num_layers=1,
+            rnn_class=torch.nn.LSTM)
 
-    forward_lstm, backward_lstm = masked_bi_lstm.lstm_layers[0]
+    forward_lstm, backward_lstm = masked_bi_rnn.rnn_layers[0]
     tokens_mask_expanded = tokens_mask.unsqueeze(2)
     expected_forward_pass = forward_lstm(tokens)[0].masked_fill(~tokens_mask_expanded, 0)
     expected_backward_pass = backward_lstm(backward_tokens)[0].masked_fill(~tokens_mask_expanded, 0)
 
-    result = masked_bi_lstm(tokens, tokens_mask)
+    result = masked_bi_rnn(tokens, tokens_mask)
 
     assert_almost_equal((expected_forward_pass.sum() + expected_backward_pass.sum()), result.sum())
 
 
-def test_right_masked_bi_lstm__multiple_masked_layers():
+def test_right_masked_bi_rnn__multiple_masked_layers():
     """ Test if `RightMaskedBiLSTM` is able to handle a mask over multiple layers. """
     batch_size = 2
     seq_len = 3
@@ -125,8 +161,11 @@ def test_right_masked_bi_lstm__multiple_masked_layers():
         [tokens_mask, torch.zeros(padding_len, batch_size, dtype=torch.bool)], dim=0)
 
     with fork_rng(123):
-        masked_bi_lstm = RightMaskedBiLSTM(
-            input_size=input_size, hidden_size=lstm_hidden_size, num_layers=num_layers)
+        masked_bi_rnn = RightMaskedBiRNN(
+            input_size=input_size,
+            hidden_size=lstm_hidden_size,
+            num_layers=num_layers,
+            rnn_class=torch.nn.LSTM)
 
     with fork_rng(123):
         lstm = torch.nn.LSTM(
@@ -136,7 +175,7 @@ def test_right_masked_bi_lstm__multiple_masked_layers():
             bidirectional=True)
 
     expected, _ = lstm(tokens)
-    result = masked_bi_lstm(padded_tokens, padded_tokens_mask)
+    result = masked_bi_rnn(padded_tokens, padded_tokens_mask)
 
     assert_almost_equal(expected.sum(), result.sum(), decimal=4)
     assert torch.equal(expected, result[:-padding_len])
@@ -144,7 +183,7 @@ def test_right_masked_bi_lstm__multiple_masked_layers():
     assert result.sum().item() != 0
 
 
-def test_right_masked_bi_lstm__backwards():
+def test_right_masked_bi_rnn__backwards():
     """ Test if `MaskedBackwardLSTM` can compute a gradient. """
     batch_size = 2
     seq_len = 3
@@ -153,10 +192,10 @@ def test_right_masked_bi_lstm__backwards():
     tokens = torch.randn(seq_len, batch_size, input_size)
     tokens_mask = torch.ones(seq_len, batch_size, 1).bool()
 
-    masked_bi_lstm = RightMaskedBiLSTM(
-        input_size=input_size, hidden_size=lstm_hidden_size, num_layers=1)
+    masked_bi_rnn = RightMaskedBiRNN(
+        input_size=input_size, hidden_size=lstm_hidden_size, num_layers=1, rnn_class=torch.nn.LSTM)
 
-    masked_bi_lstm(tokens, tokens_mask).sum().backward()
+    masked_bi_rnn(tokens, tokens_mask).sum().backward()
 
 
 encoder_params = {
@@ -165,6 +204,7 @@ encoder_params = {
     'vocab_size': 10,
     'hidden_size': 16,
     'out_dim': 8,
+    'speaker_embedding_dim': 6,
 }
 
 
@@ -172,15 +212,17 @@ def test_encoder():
     encoder = Encoder(
         encoder_params['vocab_size'],
         out_dim=encoder_params['out_dim'],
-        hidden_size=encoder_params['hidden_size'])
+        hidden_size=encoder_params['hidden_size'],
+        speaker_embedding_dim=encoder_params['speaker_embedding_dim'])
 
     # NOTE: 1-index to avoid using 0 typically associated with padding
     tokens = torch.randint(1, encoder_params['vocab_size'],
                            (encoder_params['batch_size'], encoder_params['num_tokens']))
     tokens_mask = torch.ones(
         encoder_params['batch_size'], encoder_params['num_tokens'], dtype=torch.bool)
+    speaker = torch.randn(encoder_params['batch_size'], encoder_params['speaker_embedding_dim'])
 
-    output = encoder(tokens, tokens_mask)
+    output = encoder(tokens, tokens_mask, speaker)
 
     assert output.type() == 'torch.FloatTensor'
     assert output.shape == (encoder_params['num_tokens'], encoder_params['batch_size'],
@@ -196,6 +238,7 @@ def test_encoder_filter_size():
             encoder_params['vocab_size'],
             out_dim=encoder_params['out_dim'],
             hidden_size=encoder_params['hidden_size'],
+            speaker_embedding_dim=encoder_params['speaker_embedding_dim'],
             convolution_filter_size=filter_size)
 
         # NOTE: 1-index to avoid using 0 typically associated with padding
@@ -203,8 +246,9 @@ def test_encoder_filter_size():
                                (encoder_params['batch_size'], encoder_params['num_tokens']))
         tokens_mask = torch.ones(
             encoder_params['batch_size'], encoder_params['num_tokens'], dtype=torch.bool)
+        speaker = torch.randn(encoder_params['batch_size'], encoder_params['speaker_embedding_dim'])
 
-        output = encoder(tokens, tokens_mask)
+        output = encoder(tokens, tokens_mask, speaker)
 
         assert output.type() == 'torch.FloatTensor'
         assert output.shape == (encoder_params['num_tokens'], encoder_params['batch_size'],
@@ -218,6 +262,7 @@ def test_encoder_padding_invariance():
         encoder_params['vocab_size'],
         out_dim=encoder_params['out_dim'],
         hidden_size=encoder_params['hidden_size'],
+        speaker_embedding_dim=encoder_params['speaker_embedding_dim'],
         num_convolution_layers=2,
         lstm_layers=2,
         dropout=0)
@@ -232,6 +277,7 @@ def test_encoder_padding_invariance():
                            (encoder_params['batch_size'], encoder_params['num_tokens']))
     tokens_mask = torch.ones(
         encoder_params['batch_size'], encoder_params['num_tokens'], dtype=torch.bool)
+    speaker = torch.randn(encoder_params['batch_size'], encoder_params['speaker_embedding_dim'])
 
     expected = None
     expected_grad = None
@@ -240,7 +286,7 @@ def test_encoder_padding_invariance():
         padded_tokens = torch.cat([tokens, padding.long()], dim=1)
         padded_tokens_mask = torch.cat([tokens_mask, padding.bool()], dim=1)
 
-        result = encoder(padded_tokens, padded_tokens_mask).sum()
+        result = encoder(padded_tokens, padded_tokens_mask, speaker).sum()
         result.backward()
         result_grad = sum([p.grad.sum() for p in encoder.parameters() if p.grad is not None])
         encoder.zero_grad()

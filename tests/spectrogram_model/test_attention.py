@@ -257,7 +257,8 @@ def test_location_sensative_attention():
             query,
             cumulative_alignment=cumulative_alignment)
 
-        assert window_start is None
+        assert window_start.type() == 'torch.LongTensor'
+        assert window_start.shape == (batch_size,)
 
         assert context.type() == 'torch.FloatTensor'
         assert context.shape == (batch_size, attention_hidden_size)
