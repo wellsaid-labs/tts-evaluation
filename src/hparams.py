@@ -73,7 +73,7 @@ def _set_audio_processing():
     # https://www.dsprelated.com/freebooks/sasp/Classic_Spectrograms.html
     # https://github.com/pytorch/audio/issues/384#issuecomment-597020705
     # https://pytorch.org/audio/compliance.kaldi.html
-    frame_size = 1024  # NOTE: Frame size in samples
+    frame_size = 2048  # NOTE: Frame size in samples
     fft_length = 2048
     assert frame_size % 4 == 0
     frame_hop = frame_size // 4
@@ -258,7 +258,7 @@ def _set_model_size(frame_channels):
                         # NOTE: In Comet, we report the metric "attention_std". The standard
                         # deviation for the attention alignment is helpful to set this metric in
                         # such a way that it doesn't affect model performance.
-                        window_length=11,
+                        window_length=9,
                     ),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(
@@ -317,7 +317,7 @@ def _set_model_size(frame_channels):
                         input_size=frame_channels,
                         hidden_size=32,
                         max_channel_size=512,
-                        ratios=[2] * 8,
+                        ratios=[2] * 9,
                         # SOURCE https://en.wikipedia.org/wiki/%CE%9C-law_algorithm:
                         # For a given input x, the equation for μ-law encoding is where μ = 255 in
                         # the North American and Japanese standards.
@@ -741,7 +741,7 @@ def set_hparams():
                                 # NOTE: This stop token loss is calibrated to prevent overfitting
                                 # on the stop token before the model is able to model the
                                 # spectrogram.
-                                stop_token_loss_scalar=1 / 4),
+                                stop_token_loss_scalar=1),
                         'data_loader.get_normalized_half_gaussian':
                             HParams(
                                 # NOTE: We approximated the uncertainty in the stop token by viewing
@@ -750,6 +750,8 @@ def set_hparams():
                                 # learn a similar curve over 4 - 8 frames in January 2020, on Comet.
                                 # NOTE: This was rounded up to 10 after the spectrograms got
                                 # 17% larger.
+                                # TODO: In July 2020, the spectrogram size was decreased by 2x, we
+                                # should test decreasing `length` by 2x, also.
                                 length=10,
                                 standard_deviation=2),
                     },

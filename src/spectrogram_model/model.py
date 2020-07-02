@@ -10,7 +10,6 @@ import torch
 
 from src.spectrogram_model.decoder import AutoregressiveDecoder
 from src.spectrogram_model.encoder import Encoder
-from src.spectrogram_model.post_net import PostNet
 from src.utils import pad_tensors
 
 logger = logging.getLogger(__name__)
@@ -114,10 +113,9 @@ class SpectrogramModel(nn.Module):
         self.max_frames_per_token = max_frames_per_token
         self.frame_channels = frame_channels
 
-        self.encoder = Encoder(vocab_size)
+        self.encoder = Encoder(vocab_size, speaker_embedding_dim)
         self.decoder = AutoregressiveDecoder(
             frame_channels=frame_channels, speaker_embedding_dim=speaker_embedding_dim)
-        self.post_net = PostNet(frame_channels=frame_channels)
         self.stop_sigmoid = nn.Sigmoid()
         self.embed_speaker = nn.Sequential(
             nn.Embedding(num_speakers, speaker_embedding_dim), nn.Dropout(speaker_embed_dropout))
@@ -149,7 +147,7 @@ class SpectrogramModel(nn.Module):
         frames, stop_tokens, hidden_state, alignments = self.decoder(
             encoded_tokens, tokens_mask, speaker, num_tokens, target_frames=target_frames)
         frames = frames.masked_fill(~mask.transpose(0, 1).unsqueeze(2), 0)
-        frames_with_residual = frames.detach() + self.post_net(frames, mask)
+        frames_with_residual = frames
 
         frames_with_residual = frames_with_residual * self.output_scalar
         frames = frames * self.output_scalar
@@ -244,7 +242,7 @@ class SpectrogramModel(nn.Module):
             lengths (torch.LongTensor [1, batch_size])
         """
         device = encoded_tokens.device
-        padding = self.post_net.padding
+        padding = 1
         last_item = None
         is_stop = False
         generator = self._infer_generator_helper(encoded_tokens, split_size, *args, **kwargs)
@@ -270,11 +268,9 @@ class SpectrogramModel(nn.Module):
             alignments = ([last_item[3][-padding:]] if last_item else []) + [i[3] for i in items]
             alignments = torch.cat(alignments)
 
-            residual = self.post_net(frames, mask, pad_input=False)
-
             yield (
                 frames[padding:-padding] * self.output_scalar,
-                (frames[padding:-padding] + residual) * self.output_scalar,
+                (frames[padding:-padding]) * self.output_scalar,
                 stop_tokens[:None if is_stop else -padding],
                 alignments[:None if is_stop else -padding],
                 (lengths if is_stop else torch.min(lengths.max() - padding, lengths)).unsqueeze(0),
@@ -447,11 +443,11 @@ class SpectrogramModel(nn.Module):
         # [batch_size, num_tokens]
         tokens_mask = lengths_to_mask(num_tokens, device=tokens.device)
 
-        # [batch_size, num_tokens] → [num_tokens, batch_size, encoder_hidden_size]
-        encoded_tokens = self.encoder(tokens, tokens_mask)
-
         # [batch_size] → [batch_size, speaker_embedding_dim]
         speaker = self.embed_speaker(speaker)
+
+        # [batch_size, num_tokens] → [num_tokens, batch_size, encoder_hidden_size]
+        encoded_tokens = self.encoder(tokens, tokens_mask, speaker)
 
         if target_frames is None:
             return_ = self._infer(encoded_tokens, num_tokens, tokens_mask, speaker, **kwargs)

@@ -81,7 +81,7 @@ def _train(device_index,
            more_hparams,
            evaluate_every_n_epochs=1,
            generate_every_n_evaluations=1,
-           save_checkpoint_every_n_evaluations=1,
+           save_checkpoint_every_n_evaluations=10,
            distributed_backend='nccl',
            distributed_init_method='tcp://127.0.0.1:29500'):
     """ Loop for training and periodically evaluating the model.

@@ -8,6 +8,9 @@ from torch import nn
 from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
 from torchnlp.nn import LockedDropout
 
+# TODO: Factor out `LSTM` to a utility file
+from src.spectrogram_model.decoder import LSTM
+
 
 @lru_cache(maxsize=8)
 def _roll_helper(length, device, dimension, num_dimensions):
@@ -59,11 +62,11 @@ class RightMaskedBiLSTM(nn.Module):
 
         self.lstm_layers = nn.ModuleList([
             nn.ModuleList([
-                nn.LSTM(
+                LSTM(
                     input_size=input_size if i == 0 else hidden_size * 2,
                     hidden_size=hidden_size,
                     bias=bias),
-                nn.LSTM(
+                LSTM(
                     input_size=input_size if i == 0 else hidden_size * 2,
                     hidden_size=hidden_size,
                     bias=bias)
@@ -175,6 +178,7 @@ class Encoder(nn.Module):
 
     Args:
         vocab_size (int): Maximum size of the vocabulary used to encode ``tokens``.
+        speaker_embedding_dim (int)
         out_dim (int): Number of dimensions to output.
         hidden_size (int): The hidden size for internal RNN, embedding, and convolution features.
             This hidden size must be even.
@@ -187,6 +191,7 @@ class Encoder(nn.Module):
     @configurable
     def __init__(self,
                  vocab_size,
+                 speaker_embedding_dim,
                  out_dim=HParam(),
                  hidden_size=HParam(),
                  num_convolution_layers=HParam(),
@@ -200,10 +205,13 @@ class Encoder(nn.Module):
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, ('`convolution_filter_size` must be odd')
         assert hidden_size % 2 == 0, '`hidden_size` must be divisable by even'
+        assert speaker_embedding_dim < hidden_size, (
+            'The `hidden_size` must be larger than the `speaker_embedding_dim` to accommodate it.')
 
         self.embed_token = nn.Sequential(
-            nn.Embedding(vocab_size, hidden_size, padding_idx=DEFAULT_PADDING_INDEX),
-            nn.LayerNorm(hidden_size))
+            nn.Embedding(
+                vocab_size, hidden_size - speaker_embedding_dim, padding_idx=DEFAULT_PADDING_INDEX),
+            nn.LayerNorm(hidden_size - speaker_embedding_dim))
 
         self.conv_layers = nn.ModuleList([
             nn.Sequential(
@@ -231,19 +239,22 @@ class Encoder(nn.Module):
         self.project_out = nn.Sequential(
             LockedDropout(dropout), nn.Linear(hidden_size, out_dim), nn.LayerNorm(out_dim))
 
-    def forward(self, tokens, tokens_mask):
+    def forward(self, tokens, tokens_mask, speaker):
         """
         Args:
             tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask applied on
                 tokens.
+            speaker (torch.FloatTensor [batch_size, speaker_embedding_dim])
 
         Returns:
             output (torch.FloatTensor [num_tokens, batch_size, out_dim]): Batched set of encoded
                 sequences.
         """
+        # [batch_size, speaker_embedding_dim] → [batch_size, num_tokens, speaker_embedding_dim]
+        speaker = speaker.unsqueeze(1).expand(-1, tokens.shape[1], -1)
         # [batch_size, num_tokens] → [batch_size, num_tokens, hidden_size]
-        tokens = self.embed_token(tokens)
+        tokens = torch.cat([self.embed_token(tokens), speaker], dim=2)
 
         # Our input is expected to have shape `[batch_size, num_tokens, hidden_size]`.  The
         # convolution layers expect input of shape

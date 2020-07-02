@@ -497,11 +497,6 @@ class Trainer():
         # [num_frames, batch_size, frame_channels] → [num_frames, batch_size, frame_channels]
         pre_spectrogram_loss = pre_spectrogram_loss * expanded_mask
 
-        # post_spectrogram_loss [num_frames, batch_size, frame_channels]
-        post_spectrogram_loss = self.criterion_spectrogram(predicted_post_spectrogram, spectrogram)
-        # [num_frames, batch_size, frame_channels] → [num_frames, batch_size, frame_channels]
-        post_spectrogram_loss = post_spectrogram_loss * expanded_mask
-
         mask = batch.spectrogram_mask.tensor  # [num_frames, batch_size]
         # stop_token_loss [num_frames, batch_size]
         stop_token_loss = self.criterion_stop_token(predicted_stop_tokens, batch.stop_token.tensor)
@@ -524,12 +519,12 @@ class Trainer():
             # stop_token_loss [num_frames, batch_size] → [1]
             expected_average_spectrogram_length = (
                 self._train_loader.expected_average_spectrogram_length)
+            # TODO: Factor out the stop token minimum loss
+            # TODO: Try increasing the stop token minimum loss because it still overfit.
             ((pre_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() *
              pre_spectrogram_loss_scalar +
-             (post_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() *
-             post_spectrogram_loss_scalar +
-             (stop_token_loss.sum(dim=0) / expected_average_spectrogram_length).mean() *
-             stop_token_loss_scalar).backward()
+             (torch.abs((stop_token_loss.sum(dim=0) / expected_average_spectrogram_length).mean() -
+                        0.0105) + 0.0105)).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
 
         # TODO: Use the model's `stop_threshold` parameter and sigmoid potentially.
@@ -544,11 +539,9 @@ class Trainer():
         # NOTE: These losses are from the original Tacotron 2 paper.
         self.metrics['pre_spectrogram_loss'].update(pre_spectrogram_loss.mean(),
                                                     expanded_mask.sum())
-        self.metrics['post_spectrogram_loss'].update(post_spectrogram_loss.mean(),
-                                                     expanded_mask.sum())
         self.metrics['stop_token_loss'].update(stop_token_loss.mean(), mask.sum())
 
-        return (pre_spectrogram_loss.sum(), post_spectrogram_loss.sum(), stop_token_loss.sum(),
+        return (pre_spectrogram_loss.sum(), pre_spectrogram_loss.sum(), stop_token_loss.sum(),
                 expanded_mask.sum(), mask.sum())
 
     def _add_attention_metrics(self, predicted_alignments, lengths):

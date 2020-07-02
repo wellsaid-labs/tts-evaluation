@@ -31,6 +31,43 @@ AutoregressiveDecoderHiddenState = namedtuple('AutoregressiveDecoderHiddenState'
 ])
 
 
+class LSTM(nn.LSTM):
+    """ LSTM with a trainable initial hidden state.
+
+    TODO: Test and document.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        num_directions = 2 if self.bidirectional else 1
+        self.initial_hidden_state = torch.nn.Parameter(
+            torch.randn(self.num_layers * num_directions, 1, self.hidden_size))
+        self.initial_cell_state = torch.nn.Parameter(
+            torch.randn(self.num_layers * num_directions, 1, self.hidden_size))
+
+    def forward(self, input, hx=None):
+        if hx is None:
+            batch_size = input.shape[0] if self.batch_first else input.shape[1]
+            hx = (self.initial_hidden_state.expand(-1, batch_size, -1).contiguous(),
+                  self.initial_cell_state.expand(-1, batch_size, -1).contiguous())
+        return super().forward(input, hx=hx)
+
+
+class LSTMCell(nn.LSTMCell):
+    """ LSTMCell with a trainable initial hidden state. """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.initial_hidden_state = torch.nn.Parameter(torch.randn(1, self.hidden_size))
+        self.initial_cell_state = torch.nn.Parameter(torch.randn(1, self.hidden_size))
+
+    def forward(self, input, hx=None):
+        if hx is None:
+            hx = (self.initial_hidden_state.expand(input.shape[0], -1).contiguous(),
+                  self.initial_cell_state.expand(input.shape[0], -1).contiguous())
+        return super().forward(input, hx=hx)
+
+
 class AutoregressiveDecoder(nn.Module):
     """ Decodes the sequence hidden feature representation into a mel-spectrogram.
 
@@ -88,10 +125,10 @@ class AutoregressiveDecoder(nn.Module):
             nn.Linear(speaker_embedding_dim + encoder_output_size,
                       frame_channels + 1 + encoder_output_size))
         self.pre_net = PreNet(hidden_size=pre_net_hidden_size, frame_channels=frame_channels)
-        self.lstm_layer_one = nn.LSTMCell(
+        self.lstm_layer_one = LSTMCell(
             input_size=pre_net_hidden_size + self.encoder_output_size + speaker_embedding_dim,
             hidden_size=lstm_hidden_size)
-        self.lstm_layer_two = nn.LSTM(input_size=hidden_size, hidden_size=lstm_hidden_size)
+        self.lstm_layer_two = LSTM(input_size=hidden_size, hidden_size=lstm_hidden_size)
         self.attention = LocationSensitiveAttention(query_hidden_size=lstm_hidden_size)
         self.linear_out = nn.Linear(in_features=hidden_size, out_features=frame_channels)
         self.linear_stop_token = nn.Sequential(
