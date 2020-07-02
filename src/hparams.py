@@ -258,6 +258,8 @@ def _set_model_size(frame_channels):
                         # NOTE: In Comet, we report the metric "attention_std". The standard
                         # deviation for the attention alignment is helpful to set this metric in
                         # such a way that it doesn't affect model performance.
+                        # TODO: We could add noise to the model by randomly changing the
+                        # `window_length`, experiment with this.
                         window_length=9,
                     ),
                 'decoder.AutoregressiveDecoder.__init__':

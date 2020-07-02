@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       speakers = [...Array(12).keys()];
     } else if (version == "v3" || version == "v4" || version == "v5") {
       speakers = [...Array(20).keys()];
-    } else if (version == "v6" || version == "v7" || version == "latest") {
+    } else if (version == "v6" || version == "v7" || version == "v8" || version == "latest") {
       speakers = [...Array(20).keys()];
       speakers.splice(1, 1); // Macy is not available in v6 / v7
     } else if (version == "lincoln.v1") {
