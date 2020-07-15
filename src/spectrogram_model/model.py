@@ -198,7 +198,7 @@ class SpectrogramModel(nn.Module):
             # NOTE: This is a hard constraint to prevent stoppping unless all the characters were
             # seen.
             # TODO: Train with this logic, and incorporate a similar signal into the stop token.
-            has_stopped = (self.stop_sigmoid(stop_token).squeeze(0) >= stop_threshold) and (
+            has_stopped = (self.stop_sigmoid(stop_token).squeeze(0) >= stop_threshold) & (
                 hidden_state.window_start >= num_tokens - self.decoder.attention.window_length)
             stopped[has_stopped | (lengths == max_lengths)] = True
             max_lengths[stopped] = lengths[stopped]
