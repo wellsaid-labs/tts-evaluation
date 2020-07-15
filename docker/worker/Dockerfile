@@ -26,10 +26,10 @@ WORKDIR /app
 RUN python3 -m venv venv
 
 # NOTE: `COPY` experiment folder fist, so that this layer is reused the most.
-COPY disk/experiments/spectrogram_model/step_649010.pt \
-  disk/experiments/spectrogram_model/step_649010.pt
-COPY disk/experiments/signal_model/step_911582.pt \
-  disk/experiments/signal_model/step_911582.pt
+COPY disk/experiments/spectrogram_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/ \
+  disk/experiments/spectrogram_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/
+COPY disk/experiments/signal_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/ \
+  disk/experiments/signal_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/
 COPY src/ src/
 COPY third_party/ third_party/
 
