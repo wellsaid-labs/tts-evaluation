@@ -51,24 +51,21 @@ def test_spectrogram_model_inference__train_equality():
         batched_num_tokens[0] = num_tokens  # NOTE: One of the lengths must be at max length
 
     # frames [num_frames, batch_size, frame_channels]
-    # frames_with_residual [num_frames, batch_size, frame_channels]
     # stop_token [num_frames, batch_size]
     # alignment [num_frames, batch_size, num_tokens]
     with fork_rng(seed=123):
-        (frames, frames_with_residual, stop_token, alignment, lengths, _) = model(
+        frames, stop_token, alignment, lengths, _ = model(
             input_, speaker, num_tokens=batched_num_tokens)
 
     with fork_rng(seed=123):
-        (aligned_frames, aligned_frames_with_residual, aligned_stop_token,
-         aligned_alignment) = model(
-             input_,
-             speaker,
-             num_tokens=batched_num_tokens,
-             target_frames=frames,
-             target_lengths=lengths)
+        aligned_frames, aligned_stop_token, aligned_alignment = model(
+            input_,
+            speaker,
+            num_tokens=batched_num_tokens,
+            target_frames=frames,
+            target_lengths=lengths)
 
     assert_almost_equal(frames, aligned_frames)
-    assert_almost_equal(frames_with_residual, aligned_frames_with_residual)
     assert_almost_equal(stop_token, aligned_stop_token)
     assert_almost_equal(alignment, aligned_alignment)
 
@@ -80,9 +77,6 @@ def test_spectrogram_model_inference__generator():
     vocab_size = 20
     num_frames = 20
     num_speakers = 2
-
-    add_config(
-        {'src.spectrogram_model.post_net.PostNet.__init__': HParams(num_convolution_layers=2)})
 
     with fork_rng(seed=123):
         model = _get_spectrogram_model(
@@ -99,31 +93,27 @@ def test_spectrogram_model_inference__generator():
         batched_num_tokens[0] = num_tokens  # NOTE: One of the lengths must be at max length
 
     # frames [num_frames, batch_size, frame_channels]
-    # frames_with_residual [num_frames, batch_size, frame_channels]
     # stop_token [num_frames, batch_size]
     # alignment [num_frames, batch_size, num_tokens]
     with fork_rng(seed=123):
-        (frames, frames_with_residual, stop_token, alignment, lengths, _) = model(
+        frames, stop_token, alignment, lengths, _ = model(
             input_, speaker, num_tokens=batched_num_tokens)
 
     # frames [num_frames, batch_size, frame_channels]
-    # frames_with_residual [num_frames, batch_size, frame_channels]
     # stop_token [num_frames, batch_size]
     # alignment [num_frames, batch_size, num_tokens]
     for i in [1, 8, 11]:
         with fork_rng(seed=123):
             generator = model(
                 input_, speaker, num_tokens=batched_num_tokens, is_generator=True, split_size=i)
-            (generated_frames, generated_frames_with_residual, generated_stop_token,
-             generated_alignment, generated_lengths) = zip(*list(generator))
+            (generated_frames, generated_stop_token, generated_alignment,
+             generated_lengths) = zip(*list(generator))
             generated_frames = torch.cat(generated_frames)
-            generated_frames_with_residual = torch.cat(generated_frames_with_residual)
             generated_stop_token = torch.cat(generated_stop_token)
             generated_alignment = torch.cat(generated_alignment)
             generated_lengths = generated_lengths[-1]
 
         assert_almost_equal(frames, generated_frames)
-        assert_almost_equal(frames_with_residual, generated_frames_with_residual)
         assert_almost_equal(stop_token, generated_stop_token)
         assert_almost_equal(alignment, generated_alignment)
         assert_almost_equal(lengths, generated_lengths)
@@ -135,9 +125,6 @@ def test_spectrogram_model_inference__generator__unbatched():
     vocab_size = 20
     num_frames = 20
     num_speakers = 2
-
-    add_config(
-        {'src.spectrogram_model.post_net.PostNet.__init__': HParams(num_convolution_layers=2)})
 
     with fork_rng(seed=123):
         model = _get_spectrogram_model(
@@ -154,30 +141,26 @@ def test_spectrogram_model_inference__generator__unbatched():
         batched_num_tokens[0] = num_tokens  # NOTE: One of the lengths must be at max length
 
     # frames [num_frames, batch_size, frame_channels]
-    # frames_with_residual [num_frames, batch_size, frame_channels]
     # stop_token [num_frames, batch_size]
     # alignment [num_frames, batch_size, num_tokens]
     with fork_rng(seed=123):
-        (frames, frames_with_residual, stop_token, alignment, lengths, _) = model(
+        frames, stop_token, alignment, lengths, _ = model(
             input_, speaker, num_tokens=batched_num_tokens)
 
     # frames [num_frames, batch_size, frame_channels]
-    # frames_with_residual [num_frames, batch_size, frame_channels]
     # stop_token [num_frames, batch_size]
     # alignment [num_frames, batch_size, num_tokens]
     with fork_rng(seed=123):
         generator = model(
             input_, speaker, num_tokens=batched_num_tokens, is_generator=True, split_size=20)
-        (generated_frames, generated_frames_with_residual, generated_stop_token,
-         generated_alignment, generated_lengths) = zip(*list(generator))
+        (generated_frames, generated_stop_token, generated_alignment,
+         generated_lengths) = zip(*list(generator))
         generated_frames = torch.cat(generated_frames)
-        generated_frames_with_residual = torch.cat(generated_frames_with_residual)
         generated_stop_token = torch.cat(generated_stop_token)
         generated_alignment = torch.cat(generated_alignment)
         generated_lengths = generated_lengths[-1]
 
     assert_almost_equal(frames, generated_frames)
-    assert_almost_equal(frames_with_residual, generated_frames_with_residual)
     assert_almost_equal(stop_token, generated_stop_token)
     assert_almost_equal(alignment, generated_alignment)
     assert_almost_equal(lengths, generated_lengths)
@@ -202,6 +185,8 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
     num_speakers = 3
 
     # NOTE: These are tunned to ensure a balance of diverse sequence lengths for testing.
+    # TODO: These settings got screwed up in the lastest model changes, we should revisit them
+    # or find another method of testing the model end-to-end with high coverage.
     offset_scalar = 0.1
     stop_threshold = 0.85
     seed = 123456
@@ -233,12 +218,11 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
         batched_num_tokens[0] = num_tokens  # NOTE: One of the lengths must be at max length
 
     # frames [num_frames, batch_size, frame_channels]
-    # frames_with_residual [num_frames, batch_size, frame_channels]
     # stop_token [num_frames, batch_size]
     # alignment [num_frames, batch_size, num_tokens]
     with fork_rng(seed=123):
-        (batched_frames, batched_frames_with_residual, batched_stop_token, batched_alignment,
-         batched_lengths, batched_reached_max) = model(
+        (batched_frames, batched_stop_token, batched_alignment, batched_lengths,
+         batched_reached_max) = model(
              input_, speaker, num_tokens=batched_num_tokens, stop_threshold=stop_threshold)
         assert batched_reached_max.sum() == 3
 
@@ -246,8 +230,8 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
 
     # NOTE: Test if the same results are achieved via a generator interface.
     with fork_rng(seed=123):
-        (generated_frames, generated_frames_with_residual, generated_stop_token,
-         generated_alignment, generated_lengths) = zip(*list(
+        (generated_frames, generated_stop_token, generated_alignment,
+         generated_lengths) = zip(*list(
              model(
                  input_,
                  speaker,
@@ -256,13 +240,11 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
                  split_size=5,
                  stop_threshold=stop_threshold)))
         generated_frames = torch.cat(generated_frames)
-        generated_frames_with_residual = torch.cat(generated_frames_with_residual)
         generated_stop_token = torch.cat(generated_stop_token)
         generated_alignment = torch.cat(generated_alignment)
         generated_lengths = generated_lengths[-1]
 
     assert_almost_equal(batched_frames, generated_frames)
-    assert_almost_equal(batched_frames_with_residual, generated_frames_with_residual)
     assert_almost_equal(batched_stop_token, generated_stop_token)
     assert_almost_equal(batched_alignment, generated_alignment)
     assert_almost_equal(batched_lengths, generated_lengths)
@@ -271,7 +253,7 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
     for i in range(batch_size):
         with fork_rng(seed=123):
             model.stop_sigmoid.offset = stop_sigmoid_offset[:, i:i + 1]
-            frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
+            frames, stop_token, alignment, lengths, reached_max = model(
                 input_[:batched_num_tokens[i], i:i + 1],
                 speaker[:, i:i + 1],
                 stop_threshold=stop_threshold)
@@ -280,8 +262,6 @@ def test_spectrogram_model_inference__batch_size_sensitivity():
 
         assert_almost_equal(reached_max, batched_reached_max[:, i:i + 1])
         assert_almost_equal(frames, batched_frames[:batched_length, i:i + 1])
-        assert_almost_equal(frames_with_residual, batched_frames_with_residual[:batched_length,
-                                                                               i:i + 1])
         assert_almost_equal(stop_token, batched_stop_token[:batched_length, i:i + 1])
         assert_almost_equal(alignment, batched_alignment[:batched_length,
                                                          i:i + 1, :batched_num_tokens[i]])
@@ -335,35 +315,31 @@ def test_spectrogram_model_train__batch_size_sensitivity():
     batched_num_frames[0] = num_frames - padding_len
 
     # frames [num_frames, batch_size, frame_channels]
-    # frames_with_residual [num_frames, batch_size, frame_channels]
     # stop_token [num_frames, batch_size]
     # alignment [num_frames, batch_size, num_tokens]
     with fork_rng(seed=123):
-        (batched_frames, batched_frames_with_residual, batched_stop_token,
-         batched_alignment) = model(
-             input_,
-             speaker,
-             num_tokens=batched_num_tokens,
-             target_lengths=batched_num_frames,
-             target_frames=target_frames)
-        (batched_frames_with_residual[:, :1].sum() + batched_stop_token[:, :1].sum()).backward()
+        batched_frames, batched_stop_token, batched_alignment = model(
+            input_,
+            speaker,
+            num_tokens=batched_num_tokens,
+            target_lengths=batched_num_frames,
+            target_frames=target_frames)
+        (batched_frames[:, :1].sum() + batched_stop_token[:, :1].sum()).backward()
         batched_gradient_sum = sum([p.grad.sum() for p in model.parameters() if p.grad is not None])
         model.zero_grad()
 
     with fork_rng(seed=123):
-        frames, frames_with_residual, stop_token, alignment = model(
+        frames, stop_token, alignment = model(
             input_[:-padding_len, :1],
             speaker[:, :1],
             target_frames=target_frames[:-padding_len, :1],
             num_tokens=batched_num_tokens[:1],
             target_lengths=batched_num_frames[:1])
-        (frames_with_residual.sum() + stop_token.sum()).backward()
+        (frames.sum() + stop_token.sum()).backward()
         gradient_sum = sum([p.grad.sum() for p in model.parameters() if p.grad is not None])
         model.zero_grad()
 
     assert_almost_equal(frames, batched_frames[:batched_num_frames[0], :1])
-    assert_almost_equal(frames_with_residual,
-                        batched_frames_with_residual[:batched_num_frames[0], :1])
     assert_almost_equal(stop_token, batched_stop_token[:batched_num_frames[0], :1])
     assert_almost_equal(alignment,
                         batched_alignment[:batched_num_frames[0], :1, :int(batched_num_tokens[0])])
@@ -398,7 +374,7 @@ def test_spectrogram_model__filter_reached_max():
                                     dtype=torch.long).random_(1, num_tokens)
     batched_num_tokens[0] = num_tokens
 
-    frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
+    frames, stop_token, alignment, lengths, reached_max = model(
         input_, speaker, num_tokens=batched_num_tokens, filter_reached_max=True)
 
     assert reached_max.type() == 'torch.BoolTensor'
@@ -409,9 +385,6 @@ def test_spectrogram_model__filter_reached_max():
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (max_length, batch_size - num_reached_max, frame_channels)
-
-    assert frames_with_residual.type() == 'torch.FloatTensor'
-    assert frames_with_residual.shape == (max_length, batch_size - num_reached_max, frame_channels)
 
     assert stop_token.type() == 'torch.FloatTensor'
     assert stop_token.shape == (max_length, batch_size - num_reached_max)
@@ -451,7 +424,7 @@ def test_spectrogram_model__filter_all():
                                     dtype=torch.long).random_(1, num_tokens)
     batched_num_tokens[0] = num_tokens
 
-    frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
+    frames, stop_token, alignment, lengths, reached_max = model(
         input_, speaker, num_tokens=batched_num_tokens, filter_reached_max=True)
 
     assert reached_max.type() == 'torch.BoolTensor'
@@ -459,9 +432,6 @@ def test_spectrogram_model__filter_all():
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, 0, frame_channels)
-
-    assert frames_with_residual.type() == 'torch.FloatTensor'
-    assert frames_with_residual.shape == (num_frames, 0, frame_channels)
 
     assert stop_token.type() == 'torch.FloatTensor'
     assert stop_token.shape == (num_frames, 0)
@@ -495,7 +465,7 @@ def test_spectrogram_model__random_sigmoid():
 
     model.stop_sigmoid = MockSigmoid()
 
-    frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
+    frames, stop_token, alignment, lengths, reached_max = model(
         input_, speaker, num_tokens=batched_num_tokens)
 
     max_length = lengths.max().item()
@@ -505,9 +475,6 @@ def test_spectrogram_model__random_sigmoid():
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (max_length, batch_size, frame_channels)
-
-    assert frames_with_residual.type() == 'torch.FloatTensor'
-    assert frames_with_residual.shape == (max_length, batch_size, frame_channels)
 
     assert stop_token.type() == 'torch.FloatTensor'
     assert stop_token.shape == (max_length, batch_size)
@@ -530,6 +497,8 @@ def test_spectrogram_model__basic():
     num_speakers = 1
 
     # NOTE: These are tunned to ensure a balance of diverse sequence lengths for testing.
+    # TODO: These settings got screwed up in the lastest model changes, we should revisit them
+    # or find another method of testing the model end-to-end with high coverage.
     seed = 1234
     stop_threshold = 0.5
     max_index = -1
@@ -552,17 +521,14 @@ def test_spectrogram_model__basic():
             frame_channels=frame_channels,
             max_frames_per_token=num_frames / num_tokens)
 
-        frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
+        frames, stop_token, alignment, lengths, reached_max = model(
             input_, speaker, num_tokens=batched_num_tokens, stop_threshold=stop_threshold)
 
         assert reached_max.type() == 'torch.BoolTensor'
-        assert reached_max.sum().item() == 3
+        assert reached_max.sum().item() == 4
 
         assert frames.type() == 'torch.FloatTensor'
         assert frames.shape == (num_frames, batch_size, frame_channels)
-
-        assert frames_with_residual.type() == 'torch.FloatTensor'
-        assert frames_with_residual.shape == (num_frames, batch_size, frame_channels)
 
         assert stop_token.type() == 'torch.FloatTensor'
         assert stop_token.shape == (num_frames, batch_size)
@@ -582,8 +548,7 @@ def test_spectrogram_model__basic():
         assert_almost_equal(lengths.squeeze(0), expected_length)
 
         # Ensure masking works as intended
-        assert_almost_equal(
-            lengths.squeeze(0), (frames_with_residual.sum(dim=2).abs() > 1e-10).sum(dim=0))
+        assert_almost_equal(lengths.squeeze(0), (frames.sum(dim=2).abs() > 1e-10).sum(dim=0))
         assert_almost_equal(lengths.squeeze(0), (frames.sum(dim=2).abs() > 1e-10).sum(dim=0))
 
 
@@ -607,8 +572,7 @@ def test_spectrogram_model_unbatched():
     input_ = torch.LongTensor(num_tokens).random_(1, vocab_size)
     speaker = torch.LongTensor(1, 1).fill_(0)
 
-    frames, frames_with_residual, stop_token, alignment, lengths, reached_max = model(
-        input_, speaker)
+    frames, stop_token, alignment, lengths, reached_max = model(input_, speaker)
 
     assert reached_max.type() == 'torch.BoolTensor'
     assert reached_max
@@ -617,9 +581,6 @@ def test_spectrogram_model_unbatched():
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, frame_channels)
-
-    assert frames_with_residual.type() == 'torch.FloatTensor'
-    assert frames_with_residual.shape == (num_frames, frame_channels)
 
     assert stop_token.type() == 'torch.FloatTensor'
     assert stop_token.shape == (num_frames,)
@@ -643,7 +604,7 @@ def test_spectrogram_model_target():
     target_frames = torch.rand(num_frames, batch_size, frame_channels)
     target_lengths = torch.full((batch_size,), num_frames, dtype=torch.long)
     batched_num_tokens = torch.full((batch_size,), num_tokens, dtype=torch.long)
-    frames, frames_with_residual, stop_token, alignment = model(
+    frames, stop_token, alignment = model(
         input_,
         speaker,
         num_tokens=batched_num_tokens,
@@ -653,16 +614,13 @@ def test_spectrogram_model_target():
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, batch_size, frame_channels)
 
-    assert frames_with_residual.type() == 'torch.FloatTensor'
-    assert frames_with_residual.shape == (num_frames, batch_size, frame_channels)
-
     assert stop_token.type() == 'torch.FloatTensor'
     assert stop_token.shape == (num_frames, batch_size)
 
     assert alignment.type() == 'torch.FloatTensor'
     assert alignment.shape == (num_frames, batch_size, num_tokens)
 
-    frames_with_residual.sum().backward()
+    frames.sum().backward()
 
 
 def test_spectrogram_model_target_unbatched():
@@ -678,14 +636,11 @@ def test_spectrogram_model_target_unbatched():
     speaker = torch.zeros(1, 1, dtype=torch.long)
     target_frames = torch.rand(num_frames, frame_channels)
     target_lengths = torch.tensor(num_frames, dtype=torch.long)
-    frames, frames_with_residual, stop_token, alignment = model(
+    frames, stop_token, alignment = model(
         input_, speaker, target_frames=target_frames, target_lengths=target_lengths)
 
     assert frames.type() == 'torch.FloatTensor'
     assert frames.shape == (num_frames, frame_channels)
-
-    assert frames_with_residual.type() == 'torch.FloatTensor'
-    assert frames_with_residual.shape == (num_frames, frame_channels)
 
     assert stop_token.type() == 'torch.FloatTensor'
     assert stop_token.shape == (num_frames,)
@@ -693,4 +648,4 @@ def test_spectrogram_model_target_unbatched():
     assert alignment.type() == 'torch.FloatTensor'
     assert alignment.shape == (num_frames, num_tokens)
 
-    frames_with_residual.sum().backward()
+    frames.sum().backward()

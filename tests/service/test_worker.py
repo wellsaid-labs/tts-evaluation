@@ -1,5 +1,8 @@
 import threading
 
+from hparams import add_config
+from hparams import HParams
+
 import pytest
 import torch
 
@@ -34,6 +37,10 @@ def test_stream_text_to_speech_synthesis__thread_leak():
         active_threads = threading.active_count()
         generator = stream_text_to_speech_synthesis(text, speaker, mocks['signal_model'].eval(),
                                                     mocks['spectrogram_model'].eval())()
+        add_config({
+            'src.spectrogram_model.model.SpectrogramModel._infer_generator':
+                HParams(stop_threshold=float('inf'))
+        })
         next(generator)
         assert active_threads + 1 == threading.active_count()
         generator.close()

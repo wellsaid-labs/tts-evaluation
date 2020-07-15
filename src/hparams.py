@@ -73,7 +73,7 @@ def _set_audio_processing():
     # https://www.dsprelated.com/freebooks/sasp/Classic_Spectrograms.html
     # https://github.com/pytorch/audio/issues/384#issuecomment-597020705
     # https://pytorch.org/audio/compliance.kaldi.html
-    frame_size = 1024  # NOTE: Frame size in samples
+    frame_size = 2048  # NOTE: Frame size in samples
     fft_length = 2048
     assert frame_size % 4 == 0
     frame_hop = frame_size // 4
@@ -258,7 +258,9 @@ def _set_model_size(frame_channels):
                         # NOTE: In Comet, we report the metric "attention_std". The standard
                         # deviation for the attention alignment is helpful to set this metric in
                         # such a way that it doesn't affect model performance.
-                        window_length=11,
+                        # TODO: We could add noise to the model by randomly changing the
+                        # `window_length`, experiment with this.
+                        window_length=9,
                     ),
                 'decoder.AutoregressiveDecoder.__init__':
                     HParams(
@@ -280,21 +282,6 @@ def _set_model_size(frame_channels):
                         # The prediction from the previous time step is first passed through a small
                         # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
                         num_layers=2),
-                'post_net.PostNet.__init__':
-                    HParams(
-                        # SOURCE (Tacotron 2):
-                        # Finally, the predicted mel spectrogram is passed
-                        # through a 5-layer convolutional post-net which predicts a residual
-                        # to add to the prediction to improve the overall reconstruction
-                        num_convolution_layers=5,
-
-                        # SOURCE (Tacotron 2):
-                        # Each post-net layer is comprised of 512 filters with shape 5 × 1 with
-                        # batch normalization, followed by tanh activations on all but the final
-                        # layer
-                        num_convolution_filters=512,
-                        convolution_filter_size=5,
-                    ),
                 'model.SpectrogramModel': {
                     '__init__':
                         HParams(
@@ -307,7 +294,7 @@ def _set_model_size(frame_channels):
                             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to
                             # learn more about this parameter.
                             speaker_embedding_dim=128),
-                    '_infer_generator_helper':
+                    '_infer_generator':
                         HParams(stop_threshold=stop_threshold)
                 }  # noqa: E122
             },
@@ -317,7 +304,7 @@ def _set_model_size(frame_channels):
                         input_size=frame_channels,
                         hidden_size=32,
                         max_channel_size=512,
-                        ratios=[2] * 8,
+                        ratios=[2] * 9,
                         # SOURCE https://en.wikipedia.org/wiki/%CE%9C-law_algorithm:
                         # For a given input x, the equation for μ-law encoding is where μ = 255 in
                         # the North American and Japanese standards.
@@ -736,12 +723,17 @@ def set_hparams():
                             HParams(
                                 # NOTE: The loss is calibrated to match the loss computed on a
                                 # Tacotron-2 spectrogram input.
-                                pre_spectrogram_loss_scalar=1 / 100,
-                                post_spectrogram_loss_scalar=1 / 100,
+                                spectrogram_loss_scalar=1 / 100,
                                 # NOTE: This stop token loss is calibrated to prevent overfitting
                                 # on the stop token before the model is able to model the
                                 # spectrogram.
-                                stop_token_loss_scalar=1 / 4),
+                                stop_token_loss_scalar=1.0,
+
+                                # NOTE: This parameter is based on https://arxiv.org/abs/2002.08709.
+                                # We set a loss cut off to prevent overfitting.
+                                # TODO: Try increasing the stop token minimum loss because it still
+                                # overfit.
+                                stop_token_minimum_loss=0.0105),
                         'data_loader.get_normalized_half_gaussian':
                             HParams(
                                 # NOTE: We approximated the uncertainty in the stop token by viewing
@@ -750,6 +742,8 @@ def set_hparams():
                                 # learn a similar curve over 4 - 8 frames in January 2020, on Comet.
                                 # NOTE: This was rounded up to 10 after the spectrograms got
                                 # 17% larger.
+                                # TODO: In July 2020, the spectrogram size was decreased by 2x, we
+                                # should test decreasing `length` by 2x, also.
                                 length=10,
                                 standard_deviation=2),
                     },

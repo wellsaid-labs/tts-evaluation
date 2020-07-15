@@ -8,6 +8,8 @@ import torch
 
 from src.spectrogram_model.attention import LocationSensitiveAttention
 from src.spectrogram_model.pre_net import PreNet
+from src.utils import LSTM
+from src.utils import LSTMCell
 
 # For sequential prediction, decoder hidden state used to predict the next frame.
 #
@@ -88,10 +90,10 @@ class AutoregressiveDecoder(nn.Module):
             nn.Linear(speaker_embedding_dim + encoder_output_size,
                       frame_channels + 1 + encoder_output_size))
         self.pre_net = PreNet(hidden_size=pre_net_hidden_size, frame_channels=frame_channels)
-        self.lstm_layer_one = nn.LSTMCell(
+        self.lstm_layer_one = LSTMCell(
             input_size=pre_net_hidden_size + self.encoder_output_size + speaker_embedding_dim,
             hidden_size=lstm_hidden_size)
-        self.lstm_layer_two = nn.LSTM(input_size=hidden_size, hidden_size=lstm_hidden_size)
+        self.lstm_layer_two = LSTM(input_size=hidden_size, hidden_size=lstm_hidden_size)
         self.attention = LocationSensitiveAttention(query_hidden_size=lstm_hidden_size)
         self.linear_out = nn.Linear(in_features=hidden_size, out_features=frame_channels)
         self.linear_stop_token = nn.Sequential(

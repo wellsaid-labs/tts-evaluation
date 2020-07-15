@@ -17,6 +17,9 @@ def test_input_encoder__preprocess():
     assert encoder._preprocess('resume') == 'ɹ|ɪ|z|ˈ|uː|m'
     assert encoder._preprocess('resumé') == 'ɹ|ɪ|z|ˈ|uː|m'
     assert encoder._preprocess('résumé') == 'ɹ|ɪ|z|ˈ|uː|m'
+    # NOTE: Check the "bug" / "feature" that multiple spaces are turned into a single space.
+    assert encoder._preprocess('résumé résumé  résumé   résumé') == (
+        'ɹ|ɪ|z|ˈ|uː|m| |ɹ|ɪ|z|ˈ|uː|m| |ɹ|ɪ|z|ˈ|uː|m| |ɹ|ɪ|z|ˈ|uː|m')
 
 
 def test_input_encoder__failure_cases():

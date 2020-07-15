@@ -87,7 +87,7 @@ def main(file_path,
                 text.to(device), speaker.to(device), is_generator=True, use_tqdm=True):
             # [num_frames, batch_size (optional), frame_channels] →
             # [batch_size (optional), num_frames, frame_channels]
-            yield item[1].transpose(0, 1) if item[1].dim() == 3 else item[1]
+            yield item[0].transpose(0, 1) if item[0].dim() == 3 else item[0]
 
     with torch.no_grad():
         command = ('ffmpeg -y -f f32le -acodec pcm_f32le -ar %d -ac 1 -i pipe: -b:a 192k %s' %

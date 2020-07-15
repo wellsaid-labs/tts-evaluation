@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 import logging
 import math
 
@@ -11,41 +13,49 @@ from torchnlp.nn import LockedDropout
 logger = logging.getLogger(__name__)
 
 
-def window(tensor, start, length, dim):
-    """ Return a window of `tensor` with variable window offsets.
+@lru_cache(maxsize=8)
+def _window_helper(length, dimension, num_dimensions, device):
+    """ Helper to ensure `indices` and `dimension` are not recalculated unnecessarily. """
+    with torch.no_grad():
+        dimension = num_dimensions + dimension if dimension < 0 else dimension
+        indices = torch.arange(0, length, device=device)
+        indices_shape = [1] * dimension + [-1] + [1] * (num_dimensions - dimension - 1)
+        indices = indices.view(*tuple(indices_shape))
+    return indices, dimension
 
-    TODO: Create a `Window` module so that `indices` are not recomputed each time.
+
+def window(tensor, start, length, dim, check_invariant=True):
+    """ Return a window of `tensor` with variable window offsets.
 
     Args:
         tensor (torch.Tensor [*, dim_length, *]): The tensor to window.
         start (torch.Tensor [*]): The start of a window.
         length (int): The length of the window.
         dim (int): The `tensor` dimension to window.
+        check_invariant (bool, optional): If `True`, then check invariants via asserts.
 
     Returns:
         tensor (torch.Tensor [*, length, *]): The windowed tensor.
         tensor (torch.Tensor [*, length, *]): The indices used to `gather` the window and that can
             be used with `scatter` to reverse the operation.
     """
-    assert start.min() >= 0, 'The window `start` must be positive.'
-    assert length <= tensor.shape[dim], 'The `length` is larger than the `tensor`.'
-    assert start.max() + length <= tensor.shape[
-        dim], 'The window `start` must smaller or equal to than `tensor.shape[dim] - length`.'
+    if check_invariant:
+        assert start.min() >= 0, 'The window `start` must be positive.'
+        assert length <= tensor.shape[dim], 'The `length` is larger than the `tensor`.'
+        assert start.max() + length <= tensor.shape[
+            dim], 'The window `start` must smaller or equal to than `tensor.shape[dim] - length`.'
 
-    dim = tensor.dim() + dim if dim < 0 else dim
-    start = start.unsqueeze(dim)
-    assert start.dim() == tensor.dim(
-    ), 'The `start` tensor must be the same size as `tensor` without the `dim` dimension.'
-    indices = torch.arange(0, length, device=tensor.device)
-
-    indices_shape = [1] * dim + [-1] + [1] * (tensor.dim() - dim - 1)
-    indices = indices.view(*tuple(indices_shape))
+    indices, dim = _window_helper(length, dim, tensor.dim(), tensor.device)
     indices_shape = list(tensor.shape)
     indices_shape[dim] = length
-    indices = indices.expand(*tuple(indices_shape))
+    indices = indices.detach().expand(*tuple(indices_shape))
+    start = start.unsqueeze(dim)
 
-    indices = start + indices
+    if check_invariant:
+        assert start.dim() == tensor.dim(
+        ), 'The `start` tensor must be the same size as `tensor` without the `dim` dimension.'
 
+    indices = indices + start
     return torch.gather(tensor, dim, indices), indices
 
 
@@ -122,7 +132,8 @@ class LocationSensitiveAttention(nn.Module):
                 query,
                 cumulative_alignment=None,
                 initial_cumulative_alignment=None,
-                window_start=None):
+                window_start=None,
+                token_skip_warning=2):
         """
         Args:
             encoded_tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batched set of
@@ -139,6 +150,8 @@ class LocationSensitiveAttention(nn.Module):
                 padding value for the `alignment_conv`. This can also be interpreted as the
                 cumulative alignment for the former tokens.
             window_start (torch.LongTensor [batch_size]): The start of the attention window.
+            token_skip_warning (int, optional): Throw a warning if more than `token_skip_warning`
+                are skipped.
 
         Returns:
             context (torch.FloatTensor [batch_size, hidden_size]): Computed attention
@@ -159,7 +172,7 @@ class LocationSensitiveAttention(nn.Module):
             cumulative_alignment = torch.zeros(batch_size, max_num_tokens, device=device)
         if initial_cumulative_alignment is None:
             initial_cumulative_alignment = torch.zeros(batch_size, 1, device=device)
-        if not self.training and window_start is None:
+        if window_start is None:
             window_start = torch.zeros(batch_size, device=device, dtype=torch.long)
 
         cumulative_alignment = cumulative_alignment.masked_fill(~tokens_mask, 0)
@@ -174,11 +187,11 @@ class LocationSensitiveAttention(nn.Module):
         location_features = torch.nn.functional.pad(
             location_features, (0, self.alignment_conv_padding), mode='constant', value=0.0)
 
-        if not self.training:
-            tokens_mask, window_indices = window(tokens_mask, window_start, window_length, 1)
-            encoded_tokens = window(encoded_tokens, window_start.unsqueeze(1), window_length, 0)[0]
-            location_features = window(location_features, window_start.unsqueeze(1),
-                                       window_length + self.alignment_conv_padding * 2, 2)[0]
+        tokens_mask, window_indices = window(tokens_mask, window_start, window_length, 1, False)
+        encoded_tokens = window(encoded_tokens, window_start.unsqueeze(1), window_length, 0,
+                                False)[0]
+        location_features = window(location_features, window_start.unsqueeze(1),
+                                   window_length + self.alignment_conv_padding * 2, 2, False)[0]
 
         # [batch_size, 1, num_tokens] → [batch_size, hidden_size, num_tokens]
         location_features = self.alignment_conv(location_features)
@@ -212,13 +225,17 @@ class LocationSensitiveAttention(nn.Module):
         # [batch_size, 1, hidden_size] → [batch_size, hidden_size]
         context = context.squeeze(1)
 
-        if not self.training:
-            alignment = torch.zeros(
-                batch_size, max_num_tokens, device=device).scatter_(1, window_indices, alignment)
-            window_start = alignment.max(dim=1)[1] - window_length // 2
-            # TODO: Cache `num_tokens - window_length` clamped at 0 so that we dont need to
-            # recompute the `clamp` and subtraction each time.
-            window_start = torch.clamp(torch.min(window_start, num_tokens - window_length), min=0)
+        alignment = torch.zeros(
+            batch_size, max_num_tokens, device=device).scatter_(1, window_indices, alignment)
+
+        last_window_start = window_start
+        window_start = alignment.max(dim=1)[1] - window_length // 2
+        # TODO: Cache `num_tokens - window_length` clamped at 0 so that we dont need to
+        # recompute the `clamp` and subtraction each time.
+        window_start = torch.clamp(torch.min(window_start, num_tokens - window_length), min=0)
+        max_tokens_skipped = (window_start - last_window_start).max()
+        if max_tokens_skipped > token_skip_warning:
+            logger.warning('Attention module skipped %d tokens.', max_tokens_skipped)
 
         # [batch_size, num_tokens] + [batch_size, num_tokens] → [batch_size, num_tokens]
         cumulative_alignment = cumulative_alignment + alignment

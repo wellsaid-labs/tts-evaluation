@@ -138,8 +138,7 @@ class Trainer():
             'attention_std': DistributedAveragedMetric(),
             'data_queue_size': DistributedAveragedMetric(),
             'average_relative_speed': DistributedAveragedMetric(),
-            'post_spectrogram_loss': DistributedAveragedMetric(),
-            'pre_spectrogram_loss': DistributedAveragedMetric(),
+            'spectrogram_loss': DistributedAveragedMetric(),
             'reached_max_frames': DistributedAveragedMetric(),
             'stop_token_accuracy': DistributedAveragedMetric(),
             'stop_token_loss': DistributedAveragedMetric(),
@@ -342,7 +341,7 @@ class Trainer():
 
                         device = predictions[-2].device
                         self._update_loudness_metrics(
-                            batch.spectrogram.tensor[:, reached_max_filter], predictions[1],
+                            batch.spectrogram.tensor[:, reached_max_filter], predictions[0],
                             batch.spectrogram_mask.tensor[:, reached_max_filter],
                             lengths_to_mask(predictions[-2], device=device).transpose(0, 1))
 
@@ -355,7 +354,7 @@ class Trainer():
                     self._do_loss_and_maybe_backwards(batch, predictions, do_backwards=train)
                 predictions = [p.detach() if torch.is_tensor(p) else p for p in predictions]
                 spectrogram_lengths = predictions[-2] if infer else batch.spectrogram.lengths
-                self._add_attention_metrics(predictions[3], spectrogram_lengths)
+                self._add_attention_metrics(predictions[2], spectrogram_lengths)
 
             # NOTE: This metric should be a positive integer indicating that the `data_loader`
             # is loading faster than the data is getting ingested; otherwise, the `data_loader`
@@ -469,9 +468,9 @@ class Trainer():
                                      predictions,
                                      do_backwards,
                                      stop_threshold=HParam(),
-                                     pre_spectrogram_loss_scalar=HParam(),
-                                     post_spectrogram_loss_scalar=HParam(),
-                                     stop_token_loss_scalar=HParam()):
+                                     spectrogram_loss_scalar=HParam(),
+                                     stop_token_loss_scalar=HParam(),
+                                     stop_token_minimum_loss=HParam()):
         """ Compute the losses and maybe do backwards.
 
         TODO: Consider logging seperate metrics per speaker.
@@ -481,26 +480,23 @@ class Trainer():
             predictions (any): Return value from ``self.model.forwards``.
             do_backwards (bool): If ``True`` backward propogate the loss.
             stop_threshold (float): The threshold probability for deciding to stop.
+            spectrogram_loss_scalar (float): This scales the spectrogram loss by some value.
+            stop_token_loss_scalar (float): This scales the stop token loss by some value.
+            stop_token_minimum_loss (float): This thresholds the stop token loss to prevent
+                overfitting.
         """
-        # predicted_pre_spectrogram, predicted_post_spectrogram
-        # [num_frames, batch_size, frame_channels]
+        # predicted_spectrogram [num_frames, batch_size, frame_channels]
         # predicted_stop_tokens [num_frames, batch_size]
         # predicted_alignments [num_frames, batch_size, num_tokens]
-        (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
-         predicted_alignments) = predictions
+        predicted_spectrogram, predicted_stop_tokens, predicted_alignments = predictions
         spectrogram = batch.spectrogram.tensor  # [num_frames, batch_size, frame_channels]
 
         # expanded_mask [num_frames, batch_size, frame_channels]
         expanded_mask = batch.spectrogram_expanded_mask.tensor
-        # pre_spectrogram_loss [num_frames, batch_size, frame_channels]
-        pre_spectrogram_loss = self.criterion_spectrogram(predicted_pre_spectrogram, spectrogram)
+        # spectrogram_loss [num_frames, batch_size, frame_channels]
+        spectrogram_loss = self.criterion_spectrogram(predicted_spectrogram, spectrogram)
         # [num_frames, batch_size, frame_channels] → [num_frames, batch_size, frame_channels]
-        pre_spectrogram_loss = pre_spectrogram_loss * expanded_mask
-
-        # post_spectrogram_loss [num_frames, batch_size, frame_channels]
-        post_spectrogram_loss = self.criterion_spectrogram(predicted_post_spectrogram, spectrogram)
-        # [num_frames, batch_size, frame_channels] → [num_frames, batch_size, frame_channels]
-        post_spectrogram_loss = post_spectrogram_loss * expanded_mask
+        spectrogram_loss = spectrogram_loss * expanded_mask
 
         mask = batch.spectrogram_mask.tensor  # [num_frames, batch_size]
         # stop_token_loss [num_frames, batch_size]
@@ -519,17 +515,14 @@ class Trainer():
             # help normalize the loss value between experiments with different `batch_size` and
             # `frame_channels`.
 
-            # pre_spectrogram_loss [num_frames, batch_size, frame_channels] → [1]
-            # post_spectrogram_loss [num_frames, batch_size, frame_channels] → [1]
+            # spectrogram_loss [num_frames, batch_size, frame_channels] → [1]
             # stop_token_loss [num_frames, batch_size] → [1]
             expected_average_spectrogram_length = (
                 self._train_loader.expected_average_spectrogram_length)
-            ((pre_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() *
-             pre_spectrogram_loss_scalar +
-             (post_spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() *
-             post_spectrogram_loss_scalar +
-             (stop_token_loss.sum(dim=0) / expected_average_spectrogram_length).mean() *
-             stop_token_loss_scalar).backward()
+            ((spectrogram_loss.sum(dim=0) / expected_average_spectrogram_length).mean() *
+             spectrogram_loss_scalar +
+             (torch.abs((stop_token_loss.sum(dim=0) / expected_average_spectrogram_length).mean() -
+                        stop_token_minimum_loss) + stop_token_minimum_loss)).backward()
             self.optimizer.step(comet_ml=self.comet_ml)
 
         # TODO: Use the model's `stop_threshold` parameter and sigmoid potentially.
@@ -542,14 +535,10 @@ class Trainer():
 
         # NOTE: These metrics track the average loss per tensor element.
         # NOTE: These losses are from the original Tacotron 2 paper.
-        self.metrics['pre_spectrogram_loss'].update(pre_spectrogram_loss.mean(),
-                                                    expanded_mask.sum())
-        self.metrics['post_spectrogram_loss'].update(post_spectrogram_loss.mean(),
-                                                     expanded_mask.sum())
+        self.metrics['spectrogram_loss'].update(spectrogram_loss.mean(), expanded_mask.sum())
         self.metrics['stop_token_loss'].update(stop_token_loss.mean(), mask.sum())
 
-        return (pre_spectrogram_loss.sum(), post_spectrogram_loss.sum(), stop_token_loss.sum(),
-                expanded_mask.sum(), mask.sum())
+        return spectrogram_loss.sum(), stop_token_loss.sum(), expanded_mask.sum(), mask.sum()
 
     def _add_attention_metrics(self, predicted_alignments, lengths):
         """ Compute and report attention metrics.
@@ -586,17 +575,16 @@ class Trainer():
 
         with evaluate(model, device=self.device):
             logger.info('Running inference...')
-            (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
-             predicted_alignments, _, _) = model(text, speaker)
+            (predicted_spectrogram, predicted_stop_tokens, predicted_alignments, _,
+             _) = model(text, speaker)
 
-        predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
         gold_spectrogram = maybe_load_tensor(example.spectrogram)
         gold_loudness = self._get_loudness(gold_spectrogram).cpu().item()
-        predicted_loudness = self._get_loudness(predicted_post_spectrogram).cpu().item()
+        predicted_loudness = self._get_loudness(predicted_spectrogram).cpu().item()
 
         self.comet_ml.set_context(self.DEV_INFERRED_LABEL)
         logged_audio = {
-            'predicted_griffin_lim_audio': griffin_lim(predicted_post_spectrogram.cpu().numpy()),
+            'predicted_griffin_lim_audio': griffin_lim(predicted_spectrogram.cpu().numpy()),
             'gold_griffin_lim_audio': griffin_lim(gold_spectrogram.numpy()),
             'gold_audio': maybe_load_tensor(example.spectrogram_audio)
         }
@@ -615,10 +603,8 @@ class Trainer():
             'single/delta_loudness': predicted_loudness - gold_loudness,
         })
         self.comet_ml.log_figures({
-            'final_spectrogram': plot_mel_spectrogram(predicted_post_spectrogram),
-            'residual_spectrogram': plot_mel_spectrogram(predicted_residual),
             'gold_spectrogram': plot_mel_spectrogram(gold_spectrogram),
-            'pre_spectrogram': plot_mel_spectrogram(predicted_pre_spectrogram),
+            'predicted_spectrogram': plot_mel_spectrogram(predicted_spectrogram),
             'alignment': plot_attention(predicted_alignments),
             'stop_token': plot_stop_token(predicted_stop_tokens),
         })
@@ -630,29 +616,22 @@ class Trainer():
             batch (SpectrogramModelTrainingRow)
             predictions (any): Return value from ``self.model.forwards``.
         """
-        (predicted_pre_spectrogram, predicted_post_spectrogram, predicted_stop_tokens,
-         predicted_alignments) = predictions
-        batch_size = predicted_post_spectrogram.shape[1]
+        predicted_spectrogram, predicted_stop_tokens, predicted_alignments = predictions
+        batch_size = predicted_spectrogram.shape[1]
         item = random.randint(0, batch_size - 1)
         spectrogram_length = int(batch.spectrogram.lengths[0, item].item())
         text_length = int(batch.text.lengths[0, item].item())
 
-        # predicted_post_spectrogram [num_frames, frame_channels]
-        predicted_post_spectrogram = predicted_post_spectrogram[:spectrogram_length, item]
-        # predicted_pre_spectrogram [num_frames, frame_channels]
-        predicted_pre_spectrogram = predicted_pre_spectrogram[:spectrogram_length, item]
+        # predicted_spectrogram [num_frames, frame_channels]
+        predicted_spectrogram = predicted_spectrogram[:spectrogram_length, item]
         # gold_spectrogram [num_frames, frame_channels]
         gold_spectrogram = batch.spectrogram.tensor[:spectrogram_length, item]
 
         # [num_frames, frame_channels] → [num_frames]
-        post_spectrogram_loss_per_frame = self.criterion_spectrogram(predicted_post_spectrogram,
-                                                                     gold_spectrogram).mean(dim=1)
-        # [num_frames, frame_channels] → [num_frames]
-        pre_spectrogram_loss_per_frame = self.criterion_spectrogram(predicted_pre_spectrogram,
-                                                                    gold_spectrogram).mean(dim=1)
+        spectrogram_loss_per_frame = self.criterion_spectrogram(predicted_spectrogram,
+                                                                gold_spectrogram).mean(dim=1)
 
-        predicted_residual = predicted_post_spectrogram - predicted_pre_spectrogram
-        predicted_delta = abs(gold_spectrogram - predicted_post_spectrogram)
+        predicted_delta = abs(gold_spectrogram - predicted_spectrogram)
 
         predicted_alignments = predicted_alignments[:spectrogram_length, item, :text_length]
         predicted_stop_tokens = predicted_stop_tokens[:spectrogram_length, item]
@@ -662,13 +641,10 @@ class Trainer():
             'single/attention_std': get_weighted_stdev(predicted_alignments, dim=1),
         })
         self.comet_ml.log_figures({
-            'post_spectrogram_loss_per_frame': plot_loss_per_frame(post_spectrogram_loss_per_frame),
-            'pre_spectrogram_loss_per_frame': plot_loss_per_frame(pre_spectrogram_loss_per_frame),
-            'final_spectrogram': plot_mel_spectrogram(predicted_post_spectrogram),
-            'residual_spectrogram': plot_mel_spectrogram(predicted_residual),
+            'spectrogram_loss_per_frame': plot_loss_per_frame(spectrogram_loss_per_frame),
             'delta_spectrogram': plot_mel_spectrogram(predicted_delta),
             'gold_spectrogram': plot_mel_spectrogram(gold_spectrogram),
-            'pre_spectrogram': plot_mel_spectrogram(predicted_pre_spectrogram),
+            'predicted_spectrogram': plot_mel_spectrogram(predicted_spectrogram),
             'alignment': plot_attention(predicted_alignments),
             'stop_token': plot_stop_token(predicted_stop_tokens),
         })

@@ -25,6 +25,8 @@ from src.utils.utils import get_weighted_stdev
 from src.utils.utils import identity
 from src.utils.utils import load
 from src.utils.utils import log_runtime
+from src.utils.utils import LSTM
+from src.utils.utils import LSTMCell
 from src.utils.utils import maybe_get_model_devices
 from src.utils.utils import mean
 from src.utils.utils import pad_tensors
@@ -47,5 +49,5 @@ __all__ = [
     'maybe_load_tensor', 'AveragedMetric', 'DistributedAveragedMetric', 'bash_time_label',
     'RepeatTimer', 'mean', 'random_sample', 'make_arg_key', 'DiskCache',
     'assert_no_overwritten_files', 'get_file_metadata', 'dict_collapse', 'strip', 'trim_tensors',
-    'pad_tensors', 'get_functions_with_disk_cache'
+    'pad_tensors', 'get_functions_with_disk_cache', 'LSTM', 'LSTMCell'
 ]

@@ -108,10 +108,10 @@ def batch_predict_spectrograms(data,
             speaker = batch.speaker[0]
             if aligned:
                 spectrogram, spectrogram_lengths = batch.spectrogram
-                _, predictions, _, alignments = model(text, speaker, text_lengths, spectrogram,
-                                                      spectrogram_lengths)
+                predictions, _, alignments = model(text, speaker, text_lengths, spectrogram,
+                                                   spectrogram_lengths)
             else:
-                _, predictions, _, alignments, spectrogram_lengths, _ = model(
+                predictions, _, alignments, spectrogram_lengths, _ = model(
                     text, speaker, text_lengths)
 
             # Compute metrics for logging
