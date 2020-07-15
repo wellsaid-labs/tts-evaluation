@@ -25,7 +25,7 @@ def test_stream_text_to_speech_synthesis():
         text, speaker = mocks['input_encoder'].encode((example.text, example.speaker))
         generator = stream_text_to_speech_synthesis(text, speaker, mocks['signal_model'].eval(),
                                                     mocks['spectrogram_model'].eval())
-        assert len(b''.join([s for s in generator()])) == 1485
+        assert len(b''.join([s for s in generator()])) == 103725
 
 
 def test_stream_text_to_speech_synthesis__thread_leak():

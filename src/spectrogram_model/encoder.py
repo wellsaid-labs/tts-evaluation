@@ -143,6 +143,11 @@ class RightMaskedBiRNN(nn.Module):
         return output
 
 
+# TODO: Remove.
+class RightMaskedBiLSTM(RightMaskedBiRNN):
+    pass
+
+
 class LayerNorm(nn.LayerNorm):
 
     def forward(self, tensor):

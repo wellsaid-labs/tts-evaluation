@@ -9,8 +9,8 @@ from src import datasets
 from src.environment import SIGNAL_MODEL_EXPERIMENTS_PATH
 from src.environment import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 
-SPECTROGRAM_MODEL_CHECKPOINT_PATH = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / 'MY_LOCAL_SPECTROGRAM.pt'
-SIGNAL_MODEL_CHECKPOINT_PATH = SIGNAL_MODEL_EXPERIMENTS_PATH / 'MY_LOCAL_SIGNAL.pt'
+SPECTROGRAM_MODEL_CHECKPOINT_PATH = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / 'step_649010.pt'
+SIGNAL_MODEL_CHECKPOINT_PATH = SIGNAL_MODEL_EXPERIMENTS_PATH / 'step_911582.pt'
 
 # NOTE: These value (not the keys) need to be updated based on the spectrogram model encoder.
 # The keys need to stay the same for backwards compatibility.

@@ -3,10 +3,10 @@ Generate a stream of audio from a script.
 
 Example:
 
-    $ python -m src.bin.evaluate.stream --signal_model experiments/your/checkpoint.pt \
-                                        --spectrogram_model experiments/your/checkpoint.pt \
+    $ python -m src.bin.evaluate.stream --signal_model disk/experiments/signal_model/step_911582.pt \
+                                        --spectrogram_model disk/experiments/spectrogram_model/step_649010.pt \
                                         --script_file_path script.txt \
-                                        --speaker 'Frank Bonacquisti'
+                                        --speaker 'HEATHER_DOE'
 """
 import argparse
 import logging
