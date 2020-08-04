@@ -1,12 +1,18 @@
-"""
+""" Script for generating an alignment between a script and a voice-over.
+
+Given a audio file with a voice-over of some text, this script generate and cache an alignment
+from text spans to audio spans. Furthermore, this script will help resolve any issues where the
+script or audio is missing or has extra data.
+
+
 Questions:
 - Should we add SoX preprocessing now? No. The SoX preprocessing can be run during runtime.
 - The text should also be preprocessed during runtime.
 - Can our voice actors directly upload the VO to a public GCS? How do we safely expose a GCS link
 for the voice actor to upload to? Should we use a signed URL?
-- Should we handle each file individually? Or as a group?
-- How do we get all the files in a GCS bucket?
-- Can a GCS bucket be backed up?
+- Should we handle each file individually? Or as a group? (Group)
+- How do we get all the files in a GCS bucket? (Not sure yet... We could just us `gsutil ls`)
+- Can a GCS bucket be backed up? (Yes)
 
 VO Upload Process:
 1. Create a new bucket called "upload_{voice actor name}".
@@ -26,12 +32,23 @@ Script:
 6. Upload the STT file to the GCS bucket
 7. Upload an alignment file between STT and script
 
+Prior:
+
+    Setup a service account for your local machine that allows you to write to the
+    `TODO` bucket in Google Cloud Storage. Start by creating a service account
+    using the Google Cloud Console. Give the service account the
+    "Google Cloud Storage Object Admin" role (f.y.i. the "Role" menu scrolls). Name the service
+    account something similar to "michael-local-gcs". Download a key as JSON and put it somewhere
+    secure locally:
+
+    $ mv ~/Downloads/voice-research-255602-1a5538456fc3.json gcs_credentials.json
+
 Example:
 
     GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
-    python -m src.bin.create_transcript --audio gs://bucket/audio.wav \
-                                        --script gs://bucket/script.csv \
-                                        --alignment gs://bucket/
+    python -m src.bin.sync_script_with_audio --audio gs://bucket/audio.wav \
+                                             --script gs://bucket/script.csv \
+                                             --alignment gs://bucket/
 """
 from io import StringIO
 from tqdm import tqdm
@@ -155,6 +172,8 @@ def align_stt_with_script(scripts,
                                              get_alignment_window(
                                                  len(script_tokens), len(stt_tokens)))
 
+    # TODO: Save the results in a alignment folder in the actor's bucket
+    # TODO: Save the results so that they are aligned the scripts to the audio.
     return [((script_tokens[a[0]]['start_text'], script_tokens[a[0]]['end_text']),
              (stt_tokens[a[1]]['start_audio'], stt_tokens[a[1]]['end_audio'])) for a in alignments]
 
@@ -182,7 +201,8 @@ def get_stt(gcs_audio_files,
     https://blog.timbunce.org/2018/05/15/a-comparison-of-automatic-speech-recognition-asr-systems/
 
     TODO: Investigate using alternatives text for alignment.
-    TODO: Investigate adding additional words to Google's STT vocab.
+    TODO: Investigate adding additional words to Google's STT vocab, and including our expected
+    word distribution or n-gram distribution.
     TODO: Investigate updating `types.RecognitionConfig` with a better model.
     TODO: Update the return value for this function.
     TODO: Make the above arguments configurable.
@@ -215,6 +235,7 @@ def get_stt(gcs_audio_files,
           }
         ]
     """
+    # TODO: Save the results in a speech-to-text folder in the actor's bucket
     names = [p.split('/')[-1].split('.')[0] + '.stt' for p in gcs_audio_files]
     assert len(
         set(names)) == len(names), 'This function requires that all audio files have unique names.'
@@ -265,6 +286,7 @@ def main(gcs_audio_files,
     Returns:
         (list of dict): The STT results for each audio file.
     """
+    # TODO: Save the logs to the bucket.
     RecordStandardStreams(tmp_file_path).start()  # Save a log of the execution for future reference
 
     set_hparams()
