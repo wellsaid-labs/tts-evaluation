@@ -4,51 +4,33 @@ Given a audio file with a voice-over of some text, this script generate and cach
 from text spans to audio spans. Furthermore, this script will help resolve any issues where the
 script or audio is missing or has extra data.
 
-
-Questions:
-- Should we add SoX preprocessing now? No. The SoX preprocessing can be run during runtime.
-- The text should also be preprocessed during runtime.
-- Can our voice actors directly upload the VO to a public GCS? How do we safely expose a GCS link
-for the voice actor to upload to? Should we use a signed URL?
-- Should we handle each file individually? Or as a group? (Group)
-- How do we get all the files in a GCS bucket? (Not sure yet... We could just us `gsutil ls`)
-- Can a GCS bucket be backed up? (Yes)
-
-VO Upload Process:
-1. Create a new bucket called "upload_{voice actor name}".
-2. Go to permissions, and grant the voice actor permission to upload files.
-3. Transfer the files to our secure bucket like "voice_over_data" that holds the data.
-
-Alternative Process:
-1. Have voice actors upload documents to Google Drive.
-2. Download them, and reupload them to Google Storage like "voice_over_data".
-
-Script:
-1. Arguments: Public GCS link with script, public GCS link with VO, and GCS password
-2. Download and read the script.
-3. Run STT on GCS VO link (cache the STT)
-4. Align the STT results with the script
-5. QA the STT results
-6. Upload the STT file to the GCS bucket
-7. Upload an alignment file between STT and script
-
 Prior:
 
     Setup a service account for your local machine that allows you to write to the
-    `TODO` bucket in Google Cloud Storage. Start by creating a service account
+    `wellsaid_labs_datasets` bucket in Google Cloud Storage. Start by creating a service account
     using the Google Cloud Console. Give the service account the
     "Google Cloud Storage Object Admin" role (f.y.i. the "Role" menu scrolls). Name the service
-    account something similar to "michael-local-gcs". Download a key as JSON and put it somewhere
-    secure locally:
+    account something similar to "michael-gcs-datasets". Download a key as JSON and put it
+    somewhere secure locally:
 
     $ mv ~/Downloads/voice-research-255602-1a5538456fc3.json gcs_credentials.json
 
 Example:
 
     GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
-    python -m src.bin.sync_script_with_audio --audio gs://bucket/audio.wav \
-                                             --script gs://bucket/script.csv \
-                                             --alignment gs://bucket/
+    python -m src.bin.sync_script_with_audio --audio 'gs://wellsaid_labs_datasets/hilary_noriega/preprocessed_recordings/Script 1.wav' \
+                                             --script 'gs://wellsaid_labs_datasets/hilary_noriega/scripts/Script 1 - Hilary.csv' \
+                                             --destination gs://wellsaid_labs_datasets/hilary_noriega/
+
+Example (Batch):
+
+    PREFIX=gs://wellsaid_labs_datasets/hilary_noriega
+    GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
+    python -m src.bin.sync_script_with_audio \
+      --audio "${(@f)$(gsutil ls "$PREFIX/preprocessed_recordings/*.wav")}" \
+      --script "${(@f)$(gsutil ls "$PREFIX/scripts/*.csv")}" \
+      --destination $PREFIX/
+
 """
 from io import StringIO
 from tqdm import tqdm
@@ -67,17 +49,14 @@ from google.cloud import storage
 from google.cloud.speech import types
 from google.protobuf.json_format import MessageToDict
 
-from src.environment import COLORS
 from src.environment import TEMP_PATH
 from src.hparams import set_hparams
 from src.utils import align_tokens
 from src.utils import flatten
 from src.utils import RecordStandardStreams
+from src.environment import set_basic_logging_config
 
-logging.basicConfig(
-    format='{}%(levelname)s:%(name)s:{} %(message)s'.format(COLORS['light_magenta'],
-                                                            COLORS['reset_all']),
-    level=logging.INFO)
+set_basic_logging_config()
 logger = logging.getLogger(__name__)
 
 
@@ -90,6 +69,8 @@ def gcs_uri_to_blob(gcs_uri):
     Returns:
         (google.cloud.storage.blob.Blob)
     """
+    assert len(gcs_uri) > 5, 'The URI must be longer than 5 characters to be a valid GCS link.'
+    assert gcs_uri[:5] == 'gs://', 'The URI provided is not a valid GCS link.'
     path_segments = gcs_uri[5:].split('/')
     storage_client = storage.Client()
     bucket = storage_client.get_bucket(path_segments[0])
@@ -178,9 +159,43 @@ def align_stt_with_script(scripts,
              (stt_tokens[a[1]]['start_audio'], stt_tokens[a[1]]['end_audio'])) for a in alignments]
 
 
+def _get_stt(gcs_audio_files, blobs, stt_config, max_requests_per_second):
+    """ Run speech-to-text on `gcs_audio_files` and save them at `blobs`.
+    """
+    operations = [
+        speech.SpeechClient().long_running_recognize(
+            stt_config, types.RecognitionAudio(uri=f), retry=Retry())
+        for f, b in zip(gcs_audio_files, blobs)
+    ]
+    blobs = list(blobs)
+    progress = [0] * len(operations)
+    # NOTE: You can preview the running operations via the command line. For example:
+    # $ gcloud ml speech operations describe 5187645621111131232
+    logger.info('Running %d speech-to-text operation(s):\n%s', len(operations),
+                '\n'.join([str((o.operation.name, b.name)) for o, b in zip(operations, blobs)]))
+    # TODO: This progress bar could be more accurate if it were weighted by file size (`blob.size`)
+    # or audio length.
+    with tqdm(total=100 * len(operations)) as progress_bar:
+        while not all(o is None for o in operations):
+            for i, (operation, blob) in enumerate(zip(operations, blobs)):
+                if operation is not None and blob is not None:
+                    metadata = operation.metadata
+                    if operation.done():
+                        blob.upload_from_string(json.dumps(MessageToDict(operation.result())))
+                        logger.info('Operation %s "%s" is done.', operation.operation.name,
+                                    blob.name)
+                        blobs[i] = None
+                        operations[i] = None
+                        progress[i] = 100
+                    elif metadata is not None and metadata.progress_percent is not None:
+                        progress[i] = metadata.progress_percent
+                    progress_bar.update(sum(progress) - progress_bar.n)
+                    time.sleep(1 / max_requests_per_second)
+
+
 def get_stt(gcs_audio_files,
-            gcs_bucket,
-            max_requests_per_second=100,
+            gcs_destination,
+            max_requests_per_second=50,
             stt_config=types.RecognitionConfig(
                 language_code='en-US',
                 model='video',
@@ -193,8 +208,8 @@ def get_stt(gcs_audio_files,
     - The documentation for `types.RecognitionConfig` does not include all the available
       options. All the potential parameters are included here:
       https://cloud.google.com/speech-to-text/docs/reference/rest/v1p1beta1/RecognitionConfig
-    - The results will be cached in `gcs_bucket` with the same filename as the audio file, and the
-      extension `.stt`.
+    - The results will be cached in `gcs_destination` with the same filename as the audio file
+      under the 'speech-to-text' folder.
     - Careful not to exceed default 300 requests a second quota; however, if you end up exceeding
       the quota, Google will force you to wait up to 30 minutes before it allows more requests.
     - The `stt_config` defaults are set based on:
@@ -210,7 +225,7 @@ def get_stt(gcs_audio_files,
     Args:
         gcs_audio_files (list of str): List of GCS paths to audio files.
         max_requests_per_second (int): The maximum requests per second to make.
-        gcs_bucket (google.cloud.storage.bucket.Bucket): GCS bucket to upload results too.
+        gcs_destination (google.cloud.storage.bucket.Bucket): GCS location to upload results too.
         stt_config (types.RecognitionConfig)
 
     Returns:
@@ -235,40 +250,23 @@ def get_stt(gcs_audio_files,
           }
         ]
     """
-    # TODO: Save the results in a speech-to-text folder in the actor's bucket
-    names = [p.split('/')[-1].split('.')[0] + '.stt' for p in gcs_audio_files]
+    names = ['speech_to_text/' + p.split('/')[-1].split('.')[0] + '.json' for p in gcs_audio_files]
     assert len(
         set(names)) == len(names), 'This function requires that all audio files have unique names.'
-    blobs = [gcs_bucket.blob(n) for n in names]
+    blobs = [gcs_destination.bucket.blob(gcs_destination.name + n) for n in names]
 
-    logger.info('Running speech-to-text for %d files', len(gcs_audio_files))
-    operations = [
-        speech.SpeechClient().long_running_recognize(
-            stt_config, types.RecognitionAudio(uri=f), retry=Retry())
-        for f, b in zip(gcs_audio_files, blobs)
-        if not b.exists()
-    ]
-    progress = [0] * len(operations)
-    with tqdm(total=100 * len(operations)) as progress_bar:
-        while not all(o.done() for o in operations):
-            for i, operation in enumerate(operations):
-                metadata = operation.metadata()
-                if metadata is not None:
-                    metadata = MessageToDict(metadata)
-                    if 'progressPercent' in metadata:
-                        progress[i] = metadata['progressPercent']
-                        progress_bar.update(sum(progress) - progress_bar.n)
-                time.sleep(1 / max_requests_per_second)
+    # Run speech-to-text on audio files iff their results are not found.
+    filtered = [(a, b) for a, b in zip(gcs_audio_files, blobs) if not b.exists()]
+    if len(filtered) > 0:
+        _get_stt(*zip(*filtered), stt_config, max_requests_per_second)
 
-    responses = [json.dumps(MessageToDict(o.result())) for o in operations]
-    for response, name in zip(responses, names):
-        gcs_bucket.blob(name).upload_from_string(response)
-    return [b.download_as_string() for b in blobs]
+    # Get all speech-to-text results.
+    return [json.loads(b.download_as_string()) for b in blobs]
 
 
 def main(gcs_audio_files,
          gcs_script_files,
-         gcs_bucket,
+         gcs_destination,
          text_column='Content',
          tmp_file_path=TEMP_PATH):
     """ Align the script to the audio file and cache the results.
@@ -276,42 +274,42 @@ def main(gcs_audio_files,
     TODO: Save the alignment.
 
     Args:
-        gcs_audio_files (list of str): List of GCS paths to audio files.
-        gcs_script_files (list of str): List of GCS scripts to audio files. The scripts
+        gcs_audio_files (list of str): List of GCS URIs to audio files.
+        gcs_script_files (list of str): List of GCS URIs to voice-over scripts. The scripts
             are stored in CSV format.
-        gcs_bucket (str): GCS bucket to upload results too.
-        text_column (str, optional): The script column
+        gcs_destination (str): GCS location to upload results too.
+        text_column (str, optional): The voice-over script column in the CSV script files.
         tmp_file_path (pathlib.Path, optional)
-
-    Returns:
-        (list of dict): The STT results for each audio file.
     """
     # TODO: Save the logs to the bucket.
+    # TODO: Naturally sort the audio files and script files, unless gsutil already does this...
     RecordStandardStreams(tmp_file_path).start()  # Save a log of the execution for future reference
 
     set_hparams()
 
-    gcs_bucket = storage.Client().bucket(gcs_bucket)
-    stt_results = get_stt(gcs_audio_files, gcs_bucket)
+    gcs_destination = gcs_uri_to_blob(gcs_destination)
+    stt_results = get_stt(gcs_audio_files, gcs_destination)
 
     # Preprocess `stt_results` removing unnecessary keys or hierarchy.
-    stt_results = stt_results['results']
-    stt_results = [r['alternatives'][0] for r in stt_results if r['alternatives'][0]]
+    stt_results = [
+        [r['alternatives'][0] for r in s['results'] if r['alternatives'][0]] for s in stt_results
+    ]
 
     for gcs_script_file, stt_result in zip(gcs_script_files, stt_results):
-        script_file = gcs_uri_to_blob(gcs_script_file).download_as_string()
+        script_file = gcs_uri_to_blob(gcs_script_file).download_as_string().decode('utf-8')
         data_frame = pandas.read_csv(StringIO(script_file))
         scripts = data_frame[text_column].tolist()
         alignment = align_stt_with_script(scripts, stt_result)
-
-    logger.log(alignment)
+        logger.info('alignment: %s', alignment)
 
 
 if __name__ == "__main__":  # pragma: no cover
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--audio', type=str, help='GCS link(s) to audio file(s).')
-    parser.add_argument('--script', type=str, help='GCS link(s) to the script(s).')
+    parser.add_argument('--audio', nargs='+', type=str, help='GCS link(s) to audio file(s).')
+    parser.add_argument('--script', nargs='+', type=str, help='GCS link(s) to the script(s).')
     parser.add_argument(
-        '--bucket', type=str, help='GCS bucket to upload alignments and speech-to-text results.')
+        '--destination',
+        type=str,
+        help='GCS location to upload alignments and speech-to-text results.')
     args = parser.parse_args()
-    main(args.audio, args.script)
+    main(args.audio, args.script, args.destination)
