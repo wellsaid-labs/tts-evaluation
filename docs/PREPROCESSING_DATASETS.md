@@ -22,6 +22,7 @@ documentation.
 4. In this guide, do we need to define machine learning, and how to create a consistent and
     unambiguous task? This guide is likely for beginners to pre-process a dataset; however, it's not
     for a complete beginner. We don't need to revisit
+6. Add a section for transfering from Google Drive?
 
 ## Data
 
@@ -69,6 +70,89 @@ In order to assure data consistency, you'll want to pay attention to these items
   - They should have similar metadata like format, sample rate, and channels.
   - Aside from changes in the content, the voice-over sounds similar.
   - Unless there is additional context given, the voice-over does not change prosody or language.
+
+
+## Preprocess Audio (Optional)
+
+Google speech-to-text requires that the audio submitted is one of
+[these formats](https://cloud.google.com/speech-to-text/docs/reference/rest/v1p1beta1/RecognitionConfig#audioencoding)
+. You'll need to process your audio data, if it's not one of the accepted formats. These are the
+steps to-do so:
+
+1. Set these variables...
+
+   ```bash
+   VM_NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-dataset-preprocessing
+
+   # Pick a zone that's closest to the GCS bucket `wellsaid_labs_datasets`.
+   VM_ZONE=your-vm-instance-zone # EXAMPLE: us-central1-a
+   ```
+
+1. Create a VM to preprocess the audio data, like so...
+
+   ```bash
+   VM_MACHINE_TYPE=n1-standard-2
+   gcloud compute --project=voice-research-255602 instances create $VM_NAME \
+      --zone=$VM_ZONE \
+      --machine-type=$VM_MACHINE_TYPE \
+      --boot-disk-size=512GB \
+      --boot-disk-type=pd-ssd \
+      --scopes=https://www.googleapis.com/auth/cloud-platform \
+      --image-family=ubuntu-2004-lts \
+      --image-project=ubuntu-os-cloud
+   ```
+
+1. From your local repository, ssh into your new VM instance, like so:
+
+   ```bash
+   gcloud compute ssh --zone=$VM_ZONE $VM_NAME
+   ```
+
+   Continue to run this command until it succeeds.
+
+1. Install these packages, like so...
+
+   ```bash
+   sudo apt-get update
+   sudo apt-get install ffmpeg -y
+   ```
+
+1. Download the audio files, like so...
+
+   ```bash
+   DOWNLOAD_GCS_URI=gs://wellsaid_labs_datasets/.../recordings/*.wav # Example: gs://wellsaid_labs_datasets/hilary_noriega/recordings/*.wav
+   DOWNLOAD_PATH=~/downloads/
+   mkdir $DOWNLOAD_PATH
+   gsutil -m cp -n $DOWNLOAD_GCS_URI $DOWNLOAD_PATH
+   ```
+
+1. Preprocess the files into 16kHz mono 16-bit WAV files, like so...
+
+   ```bash
+   PREPROCESSED_PATH=~/preprocessed/
+   SAMPLE_RATE=16000
+   NUM_CHANNELS=1
+   CODEC=pcm_s16le
+   mkdir $PREPROCESSED_PATH
+   cd $DOWNLOAD_PATH
+   for i in *.wav; do ffmpeg -i "$i" -acodec $CODEC -ac $NUM_CHANNELS -ar $SAMPLE_RATE "$PREPROCESSED_PATH${i%.*}.wav"; done
+   cd ~/
+   ```
+
+1. Upload the preprocessed files back to GCS, like so...
+
+   ```bash
+   UPLOAD_GCS_URI=gs://wellsaid_labs_datasets/.../preprocessed_recordings/ # Example: gs://wellsaid_labs_datasets/hilary_noriega/preprocessed_recordings/
+   gsutil -m cp $PREPROCESSED_PATH*.wav $UPLOAD_GCS_URI
+   ```
+
+1. You can now exit your VM with the `exit` command.
+
+1. Stop your instance...
+
+    ```bash
+    gcloud compute instances stop $VM_NAME --zone=$VM_ZONE
+    ```
 
 ## Synchronize Script with Audio
 
