@@ -2,7 +2,7 @@
 
 This documentation will walk you through preprocessing the data from one of our actors on MacOS.
 
-For more software details, please visit `src/bin/chunk_wav_and_text.py` and read the inline
+For more software details, please visit `src/bin/sync_script_with_audio.py` and read the inline
 documentation.
 
 ## Prerequisites
@@ -14,130 +14,75 @@ documentation.
 
 3. Ask a team member to grant you access to our GCP project called "voice-research".
 
-## Download
+## TODO
 
-The data for each voice actor who has contributed to WellSaid Labs is organized in the WSL-Team
-Google Drive under
-**[01 Voice/Datasets](https://drive.google.com/drive/u/1/folders/1_QGAJqcklVHrY4Pjyg5405_n-QauhM_z)**.
-Find the actor whose data needs to be processed and note the directory structure should look like
-this:
+1. How do you verify the metadata in the audio is consistent?
+2. How does the actor upload there data to Google Cloud Storage?
+3. What is required to create a good dataset? We're not going to cover the entire section here.
+4. In this guide, do we need to define machine learning, and how to create a consistent and
+    unambiguous task? This guide is likely for beginners to pre-process a dataset; however, it's not
+    for a complete beginner. We don't need to revisit
 
-```bash
-├── Datasets
-│ ├── ...
-│ │ ├── Actor Name
-│ │ │ ├── 00 Audio Samples - contains Actor audition, tone preworking clips
-│ │ │ ├── 01 Agreements - contains Actor contracts + agreements with WSL
-│ │ │ ├── 02 Scripts - contains the scripts in .docx for Actor use
-│ │ │ ├── 03 Recordings - contains the audio in .wav uploaded by the Actor
-└─└─└─└──  04 Scripts (CSV) - contains the scripts in .csv for WSL processing
-```
+## Data
 
-You're going to want to download the contents of **03 Recordings** and **04 Scripts (CSV)**, using a
-structure outlined in the following example.
+This data will be used to train our text-to-speech model. As in any other modeling task, the task
+must be clearly defined. For example, the data should not include random and unexplained variations
+in the voice-over.
 
-Note: Check the file size of each wav stored in `03 Recordings` and verify they are appropriate
-size (a good check is that all files in the directory are _similar_ in size and appropriate for the
-length of the script text.) Due to the size of these files, the `03 Recordings` directory will most
-likely download as _multiple zip files_. Don't forget to unzip _each_ and move the contents into the
-structure outlined!
-
-Suppose that the actor we're working with is called "Actor Shmactor". Please download the actor's
-corresponding CSV and WAV files into a directory like so:
+You'll find the data for each voice-actor working with WellSaid Labs in the
+[wellsaid_labs_datasets](https://console.cloud.google.com/storage/browser/wellsaid_labs_datasets;tab=objects?project=voice-research-255602&prefix=)
+Google Storage Bucket. Find the actor whose data needs to be processed and note the directory
+structure should look like this:
 
 ```bash
-.
-├── /actor_shmactor/
-│   ├── /wavs/
-│   │   ├── WSL_ActorShmactor_Script-DIPHONE-1.wav
-│   │   ├── WSL_ActorShmactor_Script-DIPHONE-2.wav
-│   │   ...
-│   │   ├── WSL_ActorShmactor_ENTHUSIASTIC_Script 1.wav
-│   │   ├── WSL_ActorShmactor_ENTHUSIASTIC_Script 2.wav
-│   │   ...
-│   ├── /csvs/
-│   │   ├── DIPHONE_Script-1.csv
-│   │   ├── DIPHONE_Script-2.csv
-│   │   ...
-│   │   ├── ENTHUSIASTIC_Script-1.csv
-│   │   ├── ENTHUSIASTIC_Script-2.csv
-│   │   ...
-└── └── /processed/
+└── wellsaid_labs_datasets
+    ├── actor_name
+    │   ├── scripts
+    │   │   ├── DIPHONE_Script-1.csv
+    │   │   ├── DIPHONE_Script-2.csv
+    │   │   ...
+    │   │   ├── ENTHUSIASTIC_Script-1.csv
+    │   │   └── ENTHUSIASTIC_Script-2.csv
+    │   └── recordings
+    │       ├── WSL_ActorShmactor_Script-DIPHONE-1.wav
+    │       ├── WSL_ActorShmactor_Script-DIPHONE-2.wav
+    │       ...
+    │       ├── WSL_ActorShmactor_ENTHUSIASTIC_Script 1.wav
+    │       └── WSL_ActorShmactor_ENTHUSIASTIC_Script 2.wav
+    └── ....
 ```
 
-Pay close attention to the following:
+In order to assure data consistency, you'll want to pay attention to these items:
 
-- All files in `/csvs/` must be `.csv` files
-- All files in `/wavs/` must be `.wav` files
-- There must be the same number of CSV files as there are WAV files
-- The CSV and WAV files must be named similarly. More specifically, the script uses
-  https://en.wikipedia.org/wiki/Natural_sort_order to pair the CSV and WAV files together.
+- All files in `/scripts/` must be `.csv` files.
+- All files in `/recordings/` must be audio files.
+- There must be the same number of script files as there are audio files.
+- The script and audio files must be named similarly. More specifically, the script uses
+  https://en.wikipedia.org/wiki/Natural_sort_order to pair the script and audio files together.
   Pay attention to the natural sort order of the files in each directory; you may need to do some
   renaming.
-- The directory can live anywhere on your system, so long as it follows this structure.
+- The file size of each audio file stored in `recordings` are _similar_ in size and appropriate for
+  the length of the script text.
+- The script files are normalized such that any odd characters or phrases that the voice actor
+  ignored have been removed or replaced.
+- The audio files are self-consistent, for example:
+  - They should have similar metadata like format, sample rate, and channels.
+  - Aside from changes in the content, the voice-over sounds similar.
+  - Unless there is additional context given, the voice-over does not change prosody or language.
 
-Create a **processed** directory to store the output from running `chunk_wav_and_text.py`. It's
-easiest if it lives here, but can also live anywhere on your system.
+## Synchronize Script with Audio
 
-## Pre-Processing
+Follow the inline documentation for `src/bin/sync_script_with_audio.py` to synchronize the script
+with the audio, and to save a file with the alignment. You'll need to audit the results of the
+synchronization, and re-run the script if necessary. The issues that may arise are:
 
-Follow the inline documentation for `src/bin/chunk_wav_and_text.py` to pre-process the audio data!
+- The dataset length is shorter or longer than expected.
+- The voice-over is cutoff, and it does not have enough hours of audio.
+- The voice-over skips parts of the script.
+- The script has odd characters that are not read by the voice-actor.
+- There are a large number of unaligned words.
 
-The output of the script will be stored in the `/processed/` directory like this:
-
-```bash
-.
-├── /processed/
-│   ├── /.sst/
-│   │   ├── bits(rate(WSL_ActorShmactor_ENTHUSIASTIC_Script 22,24000),16).json
-│   │   ├── bits(rate(WSL_ActorShmactor_ENTHUSIASTIC_Script 23,24000),16).json
-│   │   ...
-│   │   ├── rate(WSL_ActorShmactor_ENTHUSIASTIC_Script 59,24000).json
-│   │   ├── rate(WSL_ActorShmactor_ENTHUSIASTIC_Script-60,24000).json
-│   │   ...
-│   ├── /wavs/
-│   │   ├── /bits(rate(WSL_ActorShmactor_ENTHUSIASTIC_Script-22,24000),16)/
-│   │   │   ├── script_0_chunk_0.wav
-│   │   │   ├── script_0_chunk_1.wav
-│   │   │   ├── ...
-│   │   │   ├── script_19_chunk_4.wav
-│   │   ├── /bits(rate(WSL_ActorShmactor_ENTHUSIASTIC_Script-23,24000),16)/
-│   │   ...
-│   │   ├── /rate(WSL_ActorShmactor_ENTHUSIASTIC_Script-59,24000)/
-│   │   ├── /rate(WSL_ActorShmactor_ENTHUSIASTIC_Script-60,24000)/
-└── └── ...
-│   ├── metadata.csv
-│   ├── stderr*.log
-│   ├── stdout*.log
-```
-
-- The `.sst` directory is HIDDEN, but contains the cached results from Google Speech-to-Text.
-- The `/wavs/` directory contains subdirectories for each original wav file; each subdirectory
-  contains the original wav sliced into smaller wav files.
-- `metadata.csv` is a large CSV file that pairs the original text to the chunked wav file and
-  its file path.
-- `stderr*.log` is a log of errors that were thrown while running the script.
-- `stdout*.log` is a log of the written standard output while running the script.
-
-Should the pre-processing run into any errors OR if the output is bad and you need to re-run
-`src/bin/chunk_wav_and_text.py`, you will need to delete everything but the `.sst` directory.
-Running Google Speech-to-Text is the most time-consuming portion of the `chunk_wav_and_text.py`
-script, so caching the results is important for future runs.
-
-## Quality Assurance
-
-The script tends to print a lot of logs to help you validate that the process ran smoothly. The
-errors that may come up are:
-
-- The transcript doesn't match the spoken words in the audio.
-- There are not enough hours of audio.
-- The audio files were not created consistently.
-- The audio skips some parts of the transcript.
-- The transcript has odd characters.
-- The script crashed and was restarted in a compromised state.
-- The script made incorrect assumptions about the alignment of the audio and transcript.
-
-In order to mitigate these errors, please check:
+In order to mitigate these errors, please check: (TODO)
 
 - [ ] That the original audio files have reasonable and consistent file sizes.
 - [ ] The script reports less than 0.5% "unaligned characters"; otherwise, the transcript likely
@@ -148,7 +93,7 @@ In order to mitigate these errors, please check:
       the audio.
 - [ ] The `/processed/wavs/` files are named consistently; otherwise, the audio formats of the
       original files are not the same. This could mean that the audio was recorded inconsistently.
-      For example, some of Actor Shmactor's audio files required a `bits` normalization and others 
+      For example, some of Actor Shmactor's audio files required a `bits` normalization and others
       required a `rate` normalization.
 - [ ] The metadata has the same number of entries as the number of audio files; otherwise, the
       script may have been run in a compromised state.
@@ -164,23 +109,13 @@ In order to mitigate these errors, please check:
 Finally, please run this notebook as a final check: `notebooks/QA Datasets/Sample Dataset.ipynb`.
 The notebook will enable you to check for any weird characters in the finished dataset. Also, it
 will allow you to listen to a random sample of audio to ensure that the final dataset was
-processed correctly.
+processed correctly. (TODO)
 
 If you find any errors have occurred, please update the transcript or audio files and rerun the
 scripts. In the end, we want to have an accurate transcript, audio files, and processed dataset.
+(TODO)
 
 ## Afterwards
 
-Zip up the `metadata.csv`, log files, and wavs directory into a TAR, like so:
-
-```bash
-ACTOR_NAME='ActorShmactor'
-tar -czvf "$ACTOR_NAME.tar.gz" metadata.csv *.log wavs
-```
-
-Navigate to the actor's folder on the WSL Google Drive and create a new folder called
-**(05) Processed**. Upload the TAR there.
-
-## Note
-
-- You can bulk rename on MacOS.
+TODO: Add the dataset to the code base
+TODO: The dataset will be automatically process during runtime.
