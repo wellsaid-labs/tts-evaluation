@@ -24,7 +24,7 @@ documentation.
     for a complete beginner. We don't need to revisit
 6. Add a section for transfering from Google Drive?
 
-## Data
+## 1. Data
 
 This data will be used to train our text-to-speech model. As in any other modeling task, the task
 must be clearly defined. For example, the data should not include random and unexplained variations
@@ -72,7 +72,7 @@ In order to assure data consistency, you'll want to pay attention to these items
   - Unless there is additional context given, the voice-over does not change prosody or language.
 
 
-## Preprocess Audio (Optional)
+## 2. Preprocess Audio (Optional)
 
 Google speech-to-text requires that the audio submitted is one of
 [these formats](https://cloud.google.com/speech-to-text/docs/reference/rest/v1p1beta1/RecognitionConfig#audioencoding)
@@ -148,13 +148,14 @@ steps to-do so:
 
 1. You can now exit your VM with the `exit` command.
 
-1. Stop your instance...
+1. Stop and delete your instance...
 
     ```bash
     gcloud compute instances stop $VM_NAME --zone=$VM_ZONE
+    gcloud compute instances delete $VM_NAME --zone=$VM_ZONE
     ```
 
-## Synchronize Script with Audio
+## 3. Synchronize Script with Audio
 
 Follow the inline documentation for `src/bin/sync_script_with_audio.py` to synchronize the script
 with the audio, and to save a file with the alignment. You'll need to audit the results of the

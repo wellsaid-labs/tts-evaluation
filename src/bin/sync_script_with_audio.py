@@ -142,8 +142,8 @@ def align_stt_with_script(scripts,
     } for m in re.finditer(r'\S+', script)] for i, script in enumerate(scripts)])
     stt_tokens = flatten([[{
         'text': w['word'].lower(),
-        'start_audio': w['startTime'],
-        'end_audio': w['endTime'],
+        'start_audio': float(w['startTime'][:-1]),
+        'end_audio': float(w['endTime'][:-1]),
     } for w in r['words']] for r in stt_result])
 
     logger.info('Aligning transcript with STT.')

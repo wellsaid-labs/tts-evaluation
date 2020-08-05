@@ -50,7 +50,7 @@ Related Documentation:
    Also set these environment variables...
 
    ```bash
-   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
+   VM_NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
 
    # Pick a zone that supports your choosen `VM_ACCELERATOR_TYPE` using this chart:
    # https://cloud.google.com/compute/docs/gpus/
@@ -82,7 +82,7 @@ Related Documentation:
      # Ensure machine can communicate with other VMs on GCP
      --scopes=https://www.googleapis.com/auth/cloud-platform \
 
-     --image=ubuntu-1804-lts \
+     --image-family=ubuntu-2004-lts \
      --image-project=ubuntu-os-cloud
    ```
 
@@ -138,7 +138,7 @@ Related Documentation:
 1. In a new terminal window, setup your environment variables again...
 
    ```bash
-   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
+   VM_NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    ```
 
 1. Use `src.bin.cloud.lsyncd` to live sync your repository to your VM instance...
@@ -247,7 +247,7 @@ Related Documentation:
 1. Setup your environment variables again...
 
    ```bash
-   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
+   VM_NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    VM_ZONE=$(gcloud compute instances list | grep "^$VM_NAME\s" | awk '{ print $2 }')
    ```
 

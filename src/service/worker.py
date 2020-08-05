@@ -78,10 +78,6 @@ set_basic_logging_config()
 
 app = Flask(__name__)
 
-app.logger.info('PyTorch version: %s', torch.__version__)
-app.logger.info('Found MKL: %s', torch.backends.mkl.is_available())
-app.logger.info('Threads: %s', torch.get_num_threads())
-
 DEVICE = torch.device('cpu')
 API_KEY_SUFFIX = '_SPEECH_API_KEY'
 API_KEYS = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
@@ -390,6 +386,10 @@ def send_static(path):
 
 
 if __name__ == "__main__" or 'GUNICORN' in os.environ:
+    app.logger.info('PyTorch version: %s', torch.__version__)
+    app.logger.info('Found MKL: %s', torch.backends.mkl.is_available())
+    app.logger.info('Threads: %s', torch.get_num_threads())
+
     set_hparams()
 
     # NOTE: These models are cached globally to enable sharing between processes, learn more:

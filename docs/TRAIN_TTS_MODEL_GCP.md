@@ -17,7 +17,7 @@ on a GCP virtual machine.
 1. Setup your environment variables...
 
    ```bash
-   VM_NAME=$USER"_your-experiment-name" # EXAMPLE: michaelp_baseline
+   VM_NAME=$USER"-your-experiment-name" # EXAMPLE: michaelp-baseline
    VM_ZONE=$(gcloud compute instances list | grep "^$VM_NAME\s" | awk '{ print $2 }')
    ```
 

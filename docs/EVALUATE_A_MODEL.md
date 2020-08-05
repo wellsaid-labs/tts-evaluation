@@ -121,7 +121,7 @@ def main(
    ... for GCP:
 
    ```bash
-   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
+   VM_NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    ```
 
    ```bash
