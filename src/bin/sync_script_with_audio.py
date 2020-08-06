@@ -105,6 +105,17 @@ def gcs_uri_to_blob(gcs_uri):
     return bucket.blob('/'.join(path_segments[1:]))
 
 
+def blob_to_gcs_uri(blob):
+    """
+    Args:
+        blob (google.cloud.storage.blob.Blob)
+
+    Returns:
+        (str): URI to a GCS object (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac")
+    """
+    return 'gs://' + blob.bucket + blob.name
+
+
 def print_differences(scripts, alignments, tokens, stt_tokens):
     """ Print the differences between `tokens` and `stt_tokens` given the `alignments`.
 
@@ -244,42 +255,43 @@ def align_stt_with_script(
              (stt_tokens[a[1]].start_audio, stt_tokens[a[1]].end_audio)) for a in alignments]
 
 
-def _get_stt(gcs_audio_files, blobs, stt_config, max_requests_per_second):
-    """ Run speech-to-text on `gcs_audio_files` and save them at `blobs`.
+def _get_stt(audio_blobs, dest_blobs, stt_config, max_requests_per_second):
+    """ Run speech-to-text on `audio_blobs` and save them at `dest_blobs`.
+
+    NOTE: You can preview the running operations via the command line. For example:
+    $ gcloud ml speech operations describe 5187645621111131232
     """
     operations = [
         speech.SpeechClient().long_running_recognize(
-            stt_config, types.RecognitionAudio(uri=f), retry=Retry())
-        for f, b in zip(gcs_audio_files, blobs)
+            stt_config, types.RecognitionAudio(uri=blob_to_gcs_uri(a)), retry=Retry())
+        for a in audio_blobs
     ]
-    blobs = list(blobs)
+    dest_blobs = list(dest_blobs)
     progress = [0] * len(operations)
-    # NOTE: You can preview the running operations via the command line. For example:
-    # $ gcloud ml speech operations describe 5187645621111131232
-    logger.info('Running %d speech-to-text operation(s):\n%s', len(operations),
-                '\n'.join([str((o.operation.name, b.name)) for o, b in zip(operations, blobs)]))
-    # TODO: This progress bar could be more accurate if it were weighted by file size (`blob.size`)
-    # or audio length.
-    with tqdm(total=100 * len(operations)) as progress_bar:
+    names = [str((o.operation.name, b.name)) for o, b in zip(operations, dest_blobs)]
+    logger.info('Running %d speech-to-text operation(s):\n%s', len(operations), '\n'.join(names))
+    total = sum([a.size * 100 for a in audio_blobs])
+    with tqdm(total=100) as progress_bar:
         while not all(o is None for o in operations):
-            for i, (operation, blob) in enumerate(zip(operations, blobs)):
-                if operation is not None and blob is not None:
+            for i, (operation, audio_blob,
+                    dest_blob) in enumerate(zip(operations, audio_blobs, dest_blobs)):
+                if operation is not None and dest_blob is not None:
                     metadata = operation.metadata
                     if operation.done():
-                        blob.upload_from_string(json.dumps(MessageToDict(operation.result())))
+                        dest_blob.upload_from_string(json.dumps(MessageToDict(operation.result())))
                         logger.info('Operation %s "%s" is done.', operation.operation.name,
-                                    blob.name)
-                        blobs[i] = None
+                                    dest_blob.name)
+                        dest_blobs[i] = None
                         operations[i] = None
-                        progress[i] = 100
+                        progress[i] = 100 * audio_blob.size
                     elif metadata is not None and metadata.progress_percent is not None:
-                        progress[i] = metadata.progress_percent
-                    progress_bar.update(sum(progress) - progress_bar.n)
+                        progress[i] = metadata.progress_percent * audio_blob.size
+                    progress_bar.update(round(sum(progress) / total) - progress_bar.n)
                     time.sleep(1 / max_requests_per_second)
 
 
-def get_stt(gcs_audio_files,
-            gcs_destination,
+def get_stt(audio_blobs,
+            dest_blob,
             max_requests_per_second=50,
             stt_config=types.RecognitionConfig(
                 language_code='en-US',
@@ -293,7 +305,7 @@ def get_stt(gcs_audio_files,
     - The documentation for `types.RecognitionConfig` does not include all the available
       options. All the potential parameters are included here:
       https://cloud.google.com/speech-to-text/docs/reference/rest/v1p1beta1/RecognitionConfig
-    - The results will be cached in `gcs_destination` with the same filename as the audio file
+    - The results will be cached in `dest_blob` with the same filename as the audio file
       under the 'speech-to-text' folder.
     - Careful not to exceed default 300 requests a second quota; however, if you end up exceeding
       the quota, Google will force you to wait up to 30 minutes before it allows more requests.
@@ -308,9 +320,9 @@ def get_stt(gcs_audio_files,
     TODO: Make the above arguments configurable.
 
     Args:
-        gcs_audio_files (list of str): List of GCS paths to audio files.
+        audio_blobs (list of google.cloud.storage.blob.Blob): List of GCS audio blobs.
+        dest_blob (google.cloud.storage.blob.Blob): GCS blob to upload results too.
         max_requests_per_second (int): The maximum requests per second to make.
-        gcs_destination (google.cloud.storage.bucket.Bucket): GCS location to upload results too.
         stt_config (types.RecognitionConfig)
 
     Returns:
@@ -335,23 +347,23 @@ def get_stt(gcs_audio_files,
           }
         ]
     """
-    names = ['speech_to_text/' + p.split('/')[-1].split('.')[0] + '.json' for p in gcs_audio_files]
+    names = ['speech_to_text/' + p.name.split('/')[-1].split('.')[0] + '.json' for p in audio_blobs]
     assert len(
         set(names)) == len(names), 'This function requires that all audio files have unique names.'
-    blobs = [gcs_destination.bucket.blob(gcs_destination.name + n) for n in names]
+    dest_blobs = [dest_blob.bucket.blob(dest_blob.name + n) for n in names]
 
     # Run speech-to-text on audio files iff their results are not found.
-    filtered = [(a, b) for a, b in zip(gcs_audio_files, blobs) if not b.exists()]
+    filtered = [(a, b) for a, b in zip(audio_blobs, dest_blobs) if not b.exists()]
     if len(filtered) > 0:
         _get_stt(*zip(*filtered), stt_config, max_requests_per_second)
 
     # Get all speech-to-text results.
-    return [json.loads(b.download_as_string()) for b in blobs]
+    return [json.loads(b.download_as_string()) for b in dest_blobs]
 
 
 def main(gcs_audio_files,
          gcs_script_files,
-         gcs_destination,
+         gcs_dest,
          text_column='Content',
          tmp_file_path=TEMP_PATH):
     """ Align the script to the audio file and cache the results.
@@ -362,7 +374,7 @@ def main(gcs_audio_files,
         gcs_audio_files (list of str): List of GCS URIs to audio files.
         gcs_script_files (list of str): List of GCS URIs to voice-over scripts. The scripts
             are stored in CSV format.
-        gcs_destination (str): GCS location to upload results too.
+        gcs_dest (str): GCS location to upload results too.
         text_column (str, optional): The voice-over script column in the CSV script files.
         tmp_file_path (pathlib.Path, optional)
     """
@@ -372,16 +384,19 @@ def main(gcs_audio_files,
 
     set_hparams()
 
-    gcs_destination = gcs_uri_to_blob(gcs_destination)
-    stt_results = get_stt(gcs_audio_files, gcs_destination)
+    dest_blob = gcs_uri_to_blob(gcs_dest)
+    audio_blobs = [gcs_uri_to_blob(a) for a in gcs_audio_files]
+    script_blobs = [gcs_uri_to_blob(s) for s in gcs_script_files]
+
+    stt_results = get_stt(audio_blobs, dest_blob)
 
     # Preprocess `stt_results` removing unnecessary keys or hierarchy.
     stt_results = [
         [r['alternatives'][0] for r in s['results'] if r['alternatives'][0]] for s in stt_results
     ]
 
-    for gcs_script_file, stt_result in zip(gcs_script_files, stt_results):
-        script_file = gcs_uri_to_blob(gcs_script_file).download_as_string().decode('utf-8')
+    for script_blob, stt_result in zip(script_blobs, stt_results):
+        script_file = script_blob.download_as_string().decode('utf-8')
         data_frame = pandas.read_csv(StringIO(script_file))
         scripts = data_frame[text_column].tolist()
         alignment = align_stt_with_script(scripts, stt_result)
