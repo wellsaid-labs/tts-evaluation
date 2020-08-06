@@ -163,8 +163,8 @@ def align_tokens(tokens,
             if _is_in_window(j - 1, row_one_window):
                 token = tokens[i]
                 other_token = other_tokens[j - 1]
-                substition_cost = Levenshtein.distance(token, other_token)
-                if allow_substitution(token, other_token):
+                if token == other_token or allow_substitution(token, other_token):
+                    substition_cost = Levenshtein.distance(token, other_token)
                     substition_cost = row_one[j - 1 - row_one_window[0]] + substition_cost
                     alignment = (j - 1, i) if flipped else (i, j - 1)
                     substition_path = row_one_paths[j - 1 - row_one_window[0]]

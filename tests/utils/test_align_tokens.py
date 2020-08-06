@@ -18,7 +18,7 @@ def test_align_tokens():
 
     # Should just add "a" to the beginning.
     assert align_tokens('abc', 'bc', window_length=1)[0] == 1
-    assert align_tokens('abc', 'bc', allow_substitution=lambda a, b: False)[0] == 5
+    assert align_tokens('abc', 'bc', allow_substitution=lambda a, b: False)[0] == 1
     assert (_align_and_format('abc', 'bc') == (
         'a b c',
         '  b c',

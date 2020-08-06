@@ -33,7 +33,7 @@ Example (Batch):
 
 """
 from io import StringIO
-from tqdm import tqdm
+from collections import namedtuple
 
 import argparse
 import json
@@ -48,16 +48,44 @@ from google.cloud import speech
 from google.cloud import storage
 from google.cloud.speech import types
 from google.protobuf.json_format import MessageToDict
+from tqdm import tqdm
 
+from src.environment import COLORS
+from src.environment import set_basic_logging_config
 from src.environment import TEMP_PATH
 from src.hparams import set_hparams
 from src.utils import align_tokens
 from src.utils import flatten
 from src.utils import RecordStandardStreams
-from src.environment import set_basic_logging_config
 
 set_basic_logging_config()
 logger = logging.getLogger(__name__)
+
+
+def format_ratio(a, b):
+    """
+    Example:
+        >>> format_ratio(1, 100)
+        '1.000000% [1 of 100]'
+    """
+    return '%f%% [%d of %d]' % ((float(a) / b) * 100, a, b)
+
+
+def remove_punctuation(string):
+    """ Remove all punctuation from a string.
+
+    Example:
+        >>> remove_punctuation('123 abc !.?')
+        '123 abc'
+    """
+    return re.sub(r'[^\w\s]', '', string).strip()
+
+
+def is_sound_alike(a, b):
+    if remove_punctuation(a.lower()) == remove_punctuation(b.lower()):
+        return True
+
+    return False
 
 
 def gcs_uri_to_blob(gcs_uri):
@@ -77,9 +105,66 @@ def gcs_uri_to_blob(gcs_uri):
     return bucket.blob('/'.join(path_segments[1:]))
 
 
-def align_stt_with_script(scripts,
-                          stt_result,
-                          get_alignment_window=lambda a, b: max(round(a * 0.1), 256) + abs(a - b)):
+def print_differences(scripts, alignments, tokens, stt_tokens):
+    """ Print the differences between `tokens` and `stt_tokens` given the `alignments`.
+
+    Example:
+    > Welcome to Morton Arboretum, home to more than
+    > --- "36 HUNDRED "
+    > +++ "3,600"
+    > native trees, shrubs, and plants.
+    """
+    minuses = lambda span: print(COLORS['red'], '--- "' + span + '"' + COLORS['reset_all'])
+    pluses = lambda span: print(COLORS['green'], '+++ "' + span + '"' + COLORS['reset_all'])
+
+    pairs = zip([(0, 0)] + alignments, alignments + [(len(tokens) - 1, len(stt_tokens) - 1)])
+    for last, next in pairs:
+        last_script_index = tokens[last[0]].script_index
+        next_script_index = tokens[next[0]].script_index
+        last_script = scripts[last_script_index]
+        next_script = scripts[next_script_index]
+
+        if next[0] - last[0] > 1 or next[1] - last[1] > 1:
+            print(last_script[tokens[last[0]].start_text:tokens[last[0]].end_text])
+            if last_script_index != next_script_index:
+                print('-' * 100)
+                minuses(last_script[tokens[last[0]].end_text + 1:])
+                minuses(next_script[:tokens[next[0]].start_text])
+            else:
+                minuses(last_script[tokens[last[0]].end_text + 1:tokens[next[0]].start_text])
+            pluses(' '.join([t.text for t in stt_tokens[last[1] + 1:next[1]]]))
+            if last_script_index != next_script_index:
+                print('-' * 100)
+            print(next_script[tokens[next[0]].start_text:tokens[next[0]].start_text], end='')
+        elif last_script_index != next_script_index:
+            print(last_script[tokens[last[0]].start_text:])
+            print('=' * 100)
+            print(next_script[:tokens[next[0]].start_text], end='')
+        else:
+            span = last_script[tokens[last[0]].start_text:tokens[next[0]].start_text]
+            print(span, end='')
+
+
+# Args:
+#   text (str): The script text.
+#   start_text (int): The first character offset of the script text.
+#   end_text (int): This is equal to: `start_text + len(text)`
+#   script_index (int): The index of the script from which the text comes from.
+ScriptToken = namedtuple('ScriptToken', ['text', 'start_text', 'end_text', 'script_index'])
+
+# Args:
+#   text (str): The script text.
+#   start_audio (float): The beginning of the audio span in seconds during which `text` is voiced.
+#   end_audio (float): The end of the audio span in seconds during which `text` is voiced.
+SttToken = namedtuple('SttToken', ['text', 'start_audio', 'end_audio'])
+
+
+def align_stt_with_script(
+    scripts,
+    stt_result,
+    get_alignment_window=lambda a, b: max(round(a * 0.1), 256) + abs(a - b),
+    allow_substitution=is_sound_alike,
+):
     """ Align an STT results with the script.
 
     NOTE:
@@ -127,36 +212,36 @@ def align_stt_with_script(scripts,
         get_alignment_window (lambda, optional): Callable for computing the maximum window size in
             tokens for aligning the STT results with the provided script.
 
-    Returns:
-        (list of Alignment or Nonalignment): List of scripts and their corresponding token
-            alignments.
+    Returns: TODO
     """
     # Tokenize tokens similar to Google STT for alignment.
     # NOTE: Google STT as of June 21st, 2019 tends to tokenize based on white spaces.
-    # NOTE: `.lower()` to assist in alignment in cases like "HEALTH" and "health".
-    script_tokens = flatten([[{
-        'text': m.group(0).lower(),
-        'start_text': m.start(),
-        'end_text': m.end(),
-        'script_index': i
-    } for m in re.finditer(r'\S+', script)] for i, script in enumerate(scripts)])
-    stt_tokens = flatten([[{
-        'text': w['word'].lower(),
-        'start_audio': float(w['startTime'][:-1]),
-        'end_audio': float(w['endTime'][:-1]),
-    } for w in r['words']] for r in stt_result])
+    script_tokens = flatten(
+        [[ScriptToken(m.group(0), m.start(), m.end(), i)
+          for m in re.finditer(r'\S+', script)]
+         for i, script in enumerate(scripts)])
+    stt_tokens = flatten([[
+        SttToken(
+            text=w['word'],
+            start_audio=float(w['startTime'][:-1]),
+            end_audio=float(w['endTime'][:-1],)) for w in r['words']
+    ] for r in stt_result])
+    # TODO: Assert that `stt_tokens` are white space deliminated
 
-    logger.info('Aligning transcript with STT.')
-
-    num_unaligned, alignments = align_tokens([t['text'] for t in script_tokens],
-                                             [t['text'] for t in stt_tokens],
+    logger.info('Aligning transcript with STT...')
+    num_unaligned, alignments = align_tokens([t.text for t in script_tokens],
+                                             [t.text for t in stt_tokens],
                                              get_alignment_window(
-                                                 len(script_tokens), len(stt_tokens)))
+                                                 len(script_tokens), len(stt_tokens)),
+                                             allow_substitution=allow_substitution)
+    logger.info('Total word(s) unaligned: %s',
+                format_ratio(len(script_tokens) - len(alignments), len(script_tokens)))
+    print_differences(scripts, alignments, script_tokens, stt_tokens)
 
     # TODO: Save the results in a alignment folder in the actor's bucket
     # TODO: Save the results so that they are aligned the scripts to the audio.
-    return [((script_tokens[a[0]]['start_text'], script_tokens[a[0]]['end_text']),
-             (stt_tokens[a[1]]['start_audio'], stt_tokens[a[1]]['end_audio'])) for a in alignments]
+    return [((script_tokens[a[0]].start_text, script_tokens[a[0]].end_text),
+             (stt_tokens[a[1]].start_audio, stt_tokens[a[1]].end_audio)) for a in alignments]
 
 
 def _get_stt(gcs_audio_files, blobs, stt_config, max_requests_per_second):
@@ -300,7 +385,6 @@ def main(gcs_audio_files,
         data_frame = pandas.read_csv(StringIO(script_file))
         scripts = data_frame[text_column].tolist()
         alignment = align_stt_with_script(scripts, stt_result)
-        logger.info('alignment: %s', alignment)
 
 
 if __name__ == "__main__":  # pragma: no cover
