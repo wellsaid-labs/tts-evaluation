@@ -32,8 +32,10 @@ Example (Batch):
       --destination $PREFIX/
 
 """
-from io import StringIO
 from collections import namedtuple
+from copy import copy
+from functools import lru_cache
+from io import StringIO
 
 import argparse
 import json
@@ -42,8 +44,8 @@ import re
 import time
 
 import pandas
+import unidecode
 
-from google.api_core.retry import Retry
 from google.cloud import speech
 from google.cloud import storage
 from google.cloud.speech import types
@@ -54,12 +56,26 @@ from src.environment import COLORS
 from src.environment import set_basic_logging_config
 from src.environment import TEMP_PATH
 from src.hparams import set_hparams
+from src.text import grapheme_to_phoneme
 from src.utils import align_tokens
 from src.utils import flatten
 from src.utils import RecordStandardStreams
 
 set_basic_logging_config()
 logger = logging.getLogger(__name__)
+
+# Args:
+#   text (str): The script text.
+#   start_text (int): The first character offset of the script text.
+#   end_text (int): This is equal to: `start_text + len(text)`
+#   script_index (int): The index of the script from which the text comes from.
+ScriptToken = namedtuple('ScriptToken', ['text', 'start_text', 'end_text', 'script_index'])
+
+# Args:
+#   text (str): The script text.
+#   start_audio (float): The beginning of the audio span in seconds during which `text` is voiced.
+#   end_audio (float): The end of the audio span in seconds during which `text` is voiced.
+SttToken = namedtuple('SttToken', ['text', 'start_audio', 'end_audio'])
 
 
 def format_ratio(a, b):
@@ -81,8 +97,16 @@ def remove_punctuation(string):
     return re.sub(r'[^\w\s]', '', string).strip()
 
 
+@lru_cache(maxsize=128)
 def is_sound_alike(a, b):
+    """ Return `True` if `str` `a` and `str` `b` sound a-like. """
+    a = unidecode.unidecode(a)
+    b = unidecode.unidecode(b)
+
     if remove_punctuation(a.lower()) == remove_punctuation(b.lower()):
+        return True
+
+    if grapheme_to_phoneme(a, separator='|') == grapheme_to_phoneme(b, separator='|'):
         return True
 
     return False
@@ -90,6 +114,8 @@ def is_sound_alike(a, b):
 
 def gcs_uri_to_blob(gcs_uri):
     """ Parse GCS URI and return a `Blob`.
+
+    NOTE: This function requires GCS authorization.
 
     Args:
         gcs_uri (str): URI to a GCS object (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac")
@@ -102,7 +128,8 @@ def gcs_uri_to_blob(gcs_uri):
     path_segments = gcs_uri[5:].split('/')
     storage_client = storage.Client()
     bucket = storage_client.get_bucket(path_segments[0])
-    return bucket.blob('/'.join(path_segments[1:]))
+    blob = bucket.get_blob('/'.join(path_segments[1:]))
+    return blob
 
 
 def blob_to_gcs_uri(blob):
@@ -113,13 +140,19 @@ def blob_to_gcs_uri(blob):
     Returns:
         (str): URI to a GCS object (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac")
     """
-    return 'gs://' + blob.bucket + blob.name
+    return 'gs://' + blob.bucket.name + '/' + blob.name
 
 
 def print_differences(scripts, alignments, tokens, stt_tokens):
     """ Print the differences between `tokens` and `stt_tokens` given the `alignments`.
 
-    Example:
+    Args:
+        scripts (list of str): The voice-over scripts.
+        alignments (list of tuple): Alignments between `tokens` and `stt_tokens`.
+        tokens (list of ScriptToken): Tokens derived from `scripts`.
+        stt_tokens (list of SttToken): The predicted speech-to-text tokens.
+
+    Example Output:
     > Welcome to Morton Arboretum, home to more than
     > --- "36 HUNDRED "
     > +++ "3,600"
@@ -154,20 +187,6 @@ def print_differences(scripts, alignments, tokens, stt_tokens):
         else:
             span = last_script[tokens[last[0]].start_text:tokens[next[0]].start_text]
             print(span, end='')
-
-
-# Args:
-#   text (str): The script text.
-#   start_text (int): The first character offset of the script text.
-#   end_text (int): This is equal to: `start_text + len(text)`
-#   script_index (int): The index of the script from which the text comes from.
-ScriptToken = namedtuple('ScriptToken', ['text', 'start_text', 'end_text', 'script_index'])
-
-# Args:
-#   text (str): The script text.
-#   start_audio (float): The beginning of the audio span in seconds during which `text` is voiced.
-#   end_audio (float): The end of the audio span in seconds during which `text` is voiced.
-SttToken = namedtuple('SttToken', ['text', 'start_audio', 'end_audio'])
 
 
 def align_stt_with_script(
@@ -255,44 +274,97 @@ def align_stt_with_script(
              (stt_tokens[a[1]].start_audio, stt_tokens[a[1]].end_audio)) for a in alignments]
 
 
-def _get_stt(audio_blobs, dest_blobs, stt_config, max_requests_per_second):
+def _get_speech_context(script, max_phrase_length=100):
+    """ Given the voice-over script generate `SpeechContext` to help Speech-to-Text recognize
+    specific words or phrases more frequently.
+
+    TODO:
+      - Should we normalize the phrases with `unidecode.unidecode` and removing punctuation?
+      - Should we pass a word or phrase distribution with the `boost` feature?
+      - Should the phrases be longer or shorter?
+
+    Args:
+        script (str)
+        max_phrase_length (int)
+
+    Returns:
+        (list of str)
+
+    Example:
+        >>> _get_speech_context('a b c d e f g h i j', 5)
+        phrases: "j"
+        phrases: "a b c"
+        phrases: "g h i"
+        phrases: "d e f"
+
+    """
+    # Tokenize tokens similar to Google STT for alignment.
+    # NOTE: Google STT as of June 21st, 2019 tends to tokenize based on white spaces.
+    spans = [(m.start(), m.end()) for m in re.finditer(r'\S+', script)]
+    phrases = []
+    start = 0
+    end = 0
+    for span in spans:
+        if span[1] - start <= max_phrase_length:
+            end = span[1]
+        else:
+            phrases.append(script[start:end])
+            start = span[0]
+    phrases.append(script[start:])
+    return types.SpeechContext(phrases=list(set(phrases)))
+
+
+def _get_stt(audio_blobs, scripts, dest_blobs, stt_config, max_stt_requests_per_second):
     """ Run speech-to-text on `audio_blobs` and save them at `dest_blobs`.
 
     NOTE: You can preview the running operations via the command line. For example:
     $ gcloud ml speech operations describe 5187645621111131232
+
+    TODO: `max_stt_requests_per_second` is only considered every iteration; however, it's not
+    guarenteed that every iteration has only one request to STT.
+
+    Args:
+        audio_blobs (list of google.cloud.storage.blob.Blob)
+        scripts (list of str)
+        dest_blobs (list of google.cloud.storage.blob.Blob)
+        stt_config (types.RecognitionConfig)
+        max_stt_requests_per_second (int)
+
+    Returns: None
     """
-    operations = [
-        speech.SpeechClient().long_running_recognize(
-            stt_config, types.RecognitionAudio(uri=blob_to_gcs_uri(a)), retry=Retry())
-        for a in audio_blobs
-    ]
-    dest_blobs = list(dest_blobs)
+    operations = []
+    for audio_blob, script, dest_blob in zip(audio_blobs, scripts, dest_blobs):
+        config = copy(stt_config)
+        config.speech_contexts.append(_get_speech_context('\n'.join(script)))
+        audio = types.RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
+        operations.append(speech.SpeechClient().long_running_recognize(config, audio))
+        logger.info('Operation %s "%s" started.', operations[-1].operation.name, dest_blob.name)
+
     progress = [0] * len(operations)
-    names = [str((o.operation.name, b.name)) for o, b in zip(operations, dest_blobs)]
-    logger.info('Running %d speech-to-text operation(s):\n%s', len(operations), '\n'.join(names))
-    total = sum([a.size * 100 for a in audio_blobs])
-    with tqdm(total=100) as progress_bar:
-        while not all(o is None for o in operations):
-            for i, (operation, audio_blob,
-                    dest_blob) in enumerate(zip(operations, audio_blobs, dest_blobs)):
-                if operation is not None and dest_blob is not None:
-                    metadata = operation.metadata
-                    if operation.done():
-                        dest_blob.upload_from_string(json.dumps(MessageToDict(operation.result())))
-                        logger.info('Operation %s "%s" is done.', operation.operation.name,
-                                    dest_blob.name)
-                        dest_blobs[i] = None
-                        operations[i] = None
-                        progress[i] = 100 * audio_blob.size
-                    elif metadata is not None and metadata.progress_percent is not None:
-                        progress[i] = metadata.progress_percent * audio_blob.size
-                    progress_bar.update(round(sum(progress) / total) - progress_bar.n)
-                    time.sleep(1 / max_requests_per_second)
+    total_size = sum([a.size for a in audio_blobs])
+    progress_bar = tqdm(total=100)
+    while not all(o is None for o in operations):
+        for i, operation in enumerate(operations):
+            if operation is None:
+                continue
+
+            metadata = operation.metadata
+            if operation.done():
+                dest_blob.upload_from_string(json.dumps(MessageToDict(operation.result())))
+                logger.info('Operation %s "%s" done.', operation.operation.name, dest_blobs[i].name)
+                operations[i] = None
+                progress[i] = 100 * audio_blobs[i].size
+            elif metadata is not None and metadata.progress_percent is not None:
+                progress[i] = metadata.progress_percent * audio_blobs[i].size
+            progress_bar.update(round(sum(progress) / total_size) - progress_bar.n)
+
+            time.sleep(1 / max_stt_requests_per_second)
 
 
 def get_stt(audio_blobs,
+            scripts,
             dest_blob,
-            max_requests_per_second=50,
+            max_stt_requests_per_second=50,
             stt_config=types.RecognitionConfig(
                 language_code='en-US',
                 model='video',
@@ -305,6 +377,8 @@ def get_stt(audio_blobs,
     - The documentation for `types.RecognitionConfig` does not include all the available
       options. All the potential parameters are included here:
       https://cloud.google.com/speech-to-text/docs/reference/rest/v1p1beta1/RecognitionConfig
+    - Time offset values are only included for the first alternative provided in the recognition
+      response, learn more here: https://cloud.google.com/speech-to-text/docs/async-time-offsets
     - The results will be cached in `dest_blob` with the same filename as the audio file
       under the 'speech-to-text' folder.
     - Careful not to exceed default 300 requests a second quota; however, if you end up exceeding
@@ -321,8 +395,9 @@ def get_stt(audio_blobs,
 
     Args:
         audio_blobs (list of google.cloud.storage.blob.Blob): List of GCS audio blobs.
+        scripts (list of str): List of scripts.
         dest_blob (google.cloud.storage.blob.Blob): GCS blob to upload results too.
-        max_requests_per_second (int): The maximum requests per second to make.
+        max_stt_requests_per_second (int): The maximum requests per second to make to STT.
         stt_config (types.RecognitionConfig)
 
     Returns:
@@ -353,12 +428,37 @@ def get_stt(audio_blobs,
     dest_blobs = [dest_blob.bucket.blob(dest_blob.name + n) for n in names]
 
     # Run speech-to-text on audio files iff their results are not found.
-    filtered = [(a, b) for a, b in zip(audio_blobs, dest_blobs) if not b.exists()]
+    filtered = [(a, s, b) for a, s, b in zip(audio_blobs, scripts, dest_blobs) if not b.exists()]
     if len(filtered) > 0:
-        _get_stt(*zip(*filtered), stt_config, max_requests_per_second)
+        _get_stt(*zip(*filtered), stt_config, max_stt_requests_per_second)
 
     # Get all speech-to-text results.
     return [json.loads(b.download_as_string()) for b in dest_blobs]
+
+
+def normalize_text(text):
+    """ Normalize the text such that the text matches up closely to the audio.
+
+    NOTE: These rules are specific to the datasets processed so far.
+    TODO: Remove from this script...
+
+    Args:
+        text (str)
+
+    Returns
+        text (str)
+    """
+    text = text.strip()
+    text = text.replace('\t', '  ')
+    text = text.replace('®', '')
+    text = text.replace('™', '')
+    # Remove HTML tags
+    text = re.sub('<.*?>', '', text)
+    # Fix for a missing space between end and beginning of a sentence.
+    # Example match deliminated by <>:
+    #   the cold w<ar.T>he term 'business ethics'
+    text = re.sub(r"([a-z]{2}[.!?])([A-Z])", r"\1 \2", text)
+    return unidecode.unidecode(text)
 
 
 def main(gcs_audio_files,
@@ -386,20 +486,23 @@ def main(gcs_audio_files,
 
     dest_blob = gcs_uri_to_blob(gcs_dest)
     audio_blobs = [gcs_uri_to_blob(a) for a in gcs_audio_files]
-    script_blobs = [gcs_uri_to_blob(s) for s in gcs_script_files]
+    script_data_frames = [
+        pandas.read_csv(StringIO(gcs_uri_to_blob(s).download_as_string().decode('utf-8')))
+        for s in gcs_script_files
+    ]
+    script_texts = [
+        [normalize_text(t) for t in df[text_column].tolist()] for df in script_data_frames
+    ]
 
-    stt_results = get_stt(audio_blobs, dest_blob)
+    stt_results = get_stt(audio_blobs, script_texts, dest_blob)
 
     # Preprocess `stt_results` removing unnecessary keys or hierarchy.
     stt_results = [
         [r['alternatives'][0] for r in s['results'] if r['alternatives'][0]] for s in stt_results
     ]
 
-    for script_blob, stt_result in zip(script_blobs, stt_results):
-        script_file = script_blob.download_as_string().decode('utf-8')
-        data_frame = pandas.read_csv(StringIO(script_file))
-        scripts = data_frame[text_column].tolist()
-        alignment = align_stt_with_script(scripts, stt_result)
+    for script_text, stt_result in zip(script_texts, stt_results):
+        alignment = align_stt_with_script(script_text, stt_result)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -47,3 +47,4 @@ gunicorn
 
 # GCP
 google-cloud-speech
+google-cloud-storage
