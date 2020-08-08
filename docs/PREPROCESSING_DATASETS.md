@@ -23,6 +23,8 @@ documentation.
     unambiguous task? This guide is likely for beginners to pre-process a dataset; however, it's not
     for a complete beginner. We don't need to revisit
 6. Add a section for transfering from Google Drive?
+7. Create a script to double check the metadata for a dataset and the text normalization?
+8. Create an alignment file for a dataset without a transcript?
 
 ## 1. Data
 
