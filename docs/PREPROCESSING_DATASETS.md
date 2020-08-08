@@ -137,7 +137,7 @@ steps to-do so:
    CODEC=pcm_s16le
    mkdir $PREPROCESSED_PATH
    cd $DOWNLOAD_PATH
-   for i in *.wav; do ffmpeg -i "$i" -acodec $CODEC -ac $NUM_CHANNELS -ar $SAMPLE_RATE "$PREPROCESSED_PATH${i%.*}.wav"; done
+   for i in *.wav; do ffmpeg -i "$i" -acodec $CODEC -ac $NUM_CHANNELS -ar $SAMPLE_RATE "$PREPROCESSED_PATH${i%.*}.wav"; done;
    cd ~/
    ```
 
@@ -150,10 +150,9 @@ steps to-do so:
 
 1. You can now exit your VM with the `exit` command.
 
-1. Stop and delete your instance...
+1. Delete your instance...
 
     ```bash
-    gcloud compute instances stop $VM_NAME --zone=$VM_ZONE
     gcloud compute instances delete $VM_NAME --zone=$VM_ZONE
     ```
 
