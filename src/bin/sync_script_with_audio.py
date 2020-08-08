@@ -31,10 +31,10 @@ Example (Multiple Speakers):
     GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
     python -m src.bin.sync_script_with_audio \
       --voice_over "$PREFIX/hilary_noriega/preprocessed_recordings/Script 1.wav" \
-                   "$PREFIX/sam_scholl/recordings/WSL Sam4.wav" \
-                   "$PREFIX/frank_bonacquisti/recordings/WSL-Script 001.wav" \
-                   "$PREFIX/adrienne_walker_heller/recordings/WSL - Adrienne WalkerScript1.wav" \
-                   "$PREFIX/heather_doe/recordings/Heather_99-101.wav" \
+        "$PREFIX/sam_scholl/preprocessed_recordings/WSL Sam4.wav" \
+        "$PREFIX/frank_bonacquisti/preprocessed_recordings/WSL-Script 001.wav" \
+        "$PREFIX/adrienne_walker_heller/preprocessed_recordings/WSL - Adrienne WalkerScript1.wav" \
+        "$PREFIX/heather_doe/preprocessed_recordings/Heather_99-101.wav" \
       --voice_over_script "$PREFIX/hilary_noriega/scripts/Script 1 - Hilary.csv" \
                           "$PREFIX/sam_scholl/scripts/Script 4.csv" \
                           "$PREFIX/frank_bonacquisti/scripts/Script 1.csv" \
@@ -75,9 +75,9 @@ import time
 import pandas
 import unidecode
 
-from google.cloud import speech
+from google.cloud import speech_v1p1beta1 as speech
 from google.cloud import storage
-from google.cloud.speech import types
+from google.cloud.speech_v1p1beta1 import types
 from google.protobuf.json_format import MessageToDict
 from tqdm import tqdm
 
@@ -173,6 +173,8 @@ def blob_to_gcs_uri(blob):
 
 def print_differences(scripts, alignments, tokens, stt_tokens):
     """ Print the differences between `tokens` and `stt_tokens` given the `alignments`.
+
+    TODO: Consider not printing a script, if there are no issues with it.
 
     Args:
         scripts (list of str): The voice-over scripts.
@@ -282,7 +284,6 @@ def align_stt_with_script(scripts,
     ] for r in stt_result])
     # TODO: Assert that `stt_tokens` are white space deliminated
 
-    logger.info('Aligning transcript with STT...')
     num_unaligned, alignments = align_tokens([t.text for t in script_tokens],
                                              [t.text for t in stt_tokens],
                                              get_alignment_window(
@@ -306,13 +307,16 @@ def _get_speech_context(script, max_phrase_length=100):
 
     TODO:
       - Should we normalize the phrases with `unidecode.unidecode` and removing punctuation?
-      - Should we pass a word or phrase distribution with the `boost` feature?
-      - Should the phrases be longer or shorter?
-      - Should we boost the phrases?
+      - Should we pass a word or phrase distribution with the `boost` feature? (phrase)
+      - Should the phrases be longer or shorter? (longer)
+      - Should we boost the phrases? (likely not)
+      - Does speech context help? (yes)
 
     Args:
         script (str)
-        max_phrase_length (int)
+        max_phrase_length (int, optional): The maximum character length of a phrase.
+        boost (int, optional): See
+        https://googleapis.dev/python/speech/latest/gapic/v1p1beta1/types.html#google.cloud.speech_v1p1beta1.types.SpeechContext
 
     Returns:
         (list of str)
@@ -394,7 +398,6 @@ def run_stt(audio_blobs,
         logger.info('STT operation %s "%s" started.', operations[-1].operation.name, dest_blob.name)
 
     progress = [0] * len(operations)
-    total_size = sum([a.size for a in audio_blobs])
     progress_bar = tqdm(total=100)
     while not all(o is None for o in operations):
         for i, operation in enumerate(operations):
@@ -403,15 +406,14 @@ def run_stt(audio_blobs,
 
             metadata = operation.metadata
             if operation.done():
-                dest_blob.upload_from_string(json.dumps(MessageToDict(operation.result())))
+                dest_blobs[i].upload_from_string(json.dumps(MessageToDict(operation.result())))
                 logger.info('STT operation %s "%s" finished.', operation.operation.name,
                             dest_blobs[i].name)
                 operations[i] = None
-                progress[i] = 100 * audio_blobs[i].size
+                progress[i] = 100
             elif metadata is not None and metadata.progress_percent is not None:
-                progress[i] = metadata.progress_percent * audio_blobs[i].size
-            progress_bar.update(round(sum(progress) / total_size) - progress_bar.n)
-
+                progress[i] = metadata.progress_percent
+            progress_bar.update(min(progress) - progress_bar.n)
             time.sleep(1 / max_stt_requests_per_second)
 
 
@@ -465,9 +467,10 @@ def main(gcs_voice_overs,
     stt_results = [s['results'] for s in stt_results]
     stt_results = [[r['alternatives'][0] for r in s if r['alternatives'][0]] for s in stt_results]
 
-    logger.info('Running alignment and uploading results...')
-    alignments = [align_stt_with_script(s, r) for s, r in zip(scripts, stt_results)]
-    [b.upload_from_string(json.dumps(a)) for a, b in zip(alignments, alignment_blobs)]
+    for script, stt_result, alignment_blob in zip(scripts, stt_results, alignment_blobs):
+        logger.info('Running alignment "%s" and uploading results...', alignment_blob.name)
+        alignment = align_stt_with_script(script, stt_result)
+        alignment_blob.upload_from_string(json.dumps(alignment))
 
     logger.info('Uploading logs...')
     for dest_blob in set(dest_blobs):
