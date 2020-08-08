@@ -8,7 +8,7 @@ The various scripts and packages are:
 - `cloud/`: These scripts are used interact with the cloud.
 - `evaluate/`: These scripts are used to manually evaluate.
 - `train/`: These scripts are used to train a model.
-- `chunk_wav_and_text`: This script is used to align audio and text and divide the paired audio and
-  text into chunks compatible for training.
 - `combine_csv`: This script is used to combine multiple CSV files.
 - `csv_add_prefix`: This script is used to add a prefix to a CSV file column.
+- `sync_script_with_audio`: This script is used to synchronize a voice-over with it's voice-over
+  script.
