@@ -1,8 +1,8 @@
 """ Script for generating an alignment between a script and a voice-over.
 
-Given a audio file with a voice-over of some text, this script generate and cache an alignment
-from text spans to audio spans. Furthermore, this script will help resolve any issues where the
-script or audio is missing or has extra data.
+Given a voice-over of a script, this python script generates an alignment between text spans
+and audio spans. Furthermore, this script will help resolve any issues that reduce the accuracy
+of the alignment.
 
 Prior:
 
@@ -18,9 +18,10 @@ Prior:
 Example:
 
     GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
-    python -m src.bin.sync_script_with_audio --audio 'gs://wellsaid_labs_datasets/hilary_noriega/preprocessed_recordings/Script 1.wav' \
-                                             --script 'gs://wellsaid_labs_datasets/hilary_noriega/scripts/Script 1 - Hilary.csv' \
-                                             --destination gs://wellsaid_labs_datasets/hilary_noriega/
+    python -m src.bin.sync_script_with_audio \
+      --audio 'gs://wellsaid_labs_datasets/hilary_noriega/preprocessed_recordings/Script 1.wav' \
+      --script 'gs://wellsaid_labs_datasets/hilary_noriega/scripts/Script 1 - Hilary.csv' \
+      --destination gs://wellsaid_labs_datasets/hilary_noriega/
 
 Example (Batch):
 
@@ -37,6 +38,7 @@ from collections import namedtuple
 from copy import copy
 from functools import lru_cache
 from io import StringIO
+from itertools import groupby
 
 import argparse
 import json
@@ -55,7 +57,6 @@ from tqdm import tqdm
 
 from src.environment import COLORS
 from src.environment import set_basic_logging_config
-from src.environment import TEMP_PATH
 from src.hparams import set_hparams
 from src.text import grapheme_to_phoneme
 from src.utils import align_tokens
@@ -190,13 +191,10 @@ def print_differences(scripts, alignments, tokens, stt_tokens):
             print(span, end='')
 
 
-def align_stt_with_script(
-    scripts,
-    stt_result,
-    get_alignment_window=lambda a, b: max(round(a * 0.1), 256) + abs(a - b),
-    allow_substitution=is_sound_alike,
-):
-    """ Align an STT results with the script.
+def align_stt_with_script(scripts,
+                          stt_result,
+                          get_alignment_window=lambda a, b: max(round(a * 0.1), 256) + abs(a - b)):
+    """ Align an STT result(s) with the related script(s).
 
     NOTE:
       - There are a number of alignment issues due to dashes. Google's STT predictions around
@@ -207,7 +205,7 @@ def align_stt_with_script(
         space tokenization, it's easy to reconstruct text spans; however, this approach messes up in
         cases like "parents...and", "tax-deferred", "little-c/Big-C" and "1978.In".
       - The alignment window default was set based off these assumptions:
-        - The 10% window has performed well based off empirical evidence while a 5% window
+        - The 10% window has performed well based on empirical evidence while a 5% window
           did not; furthermore, a 10% window is justified assuming a 6 - 10% insertion and deletion
           rate following an alignment.
         - The `max(x, 256)` is present for small sequences. 256 is small enough that it won't
@@ -223,7 +221,6 @@ def align_stt_with_script(
             This approach should succeed to align "1978.In" and "parents...and"; however, it would
             still fail on "tax-deferred" because Google's STT will still include dashes in their
             output.
-      - Allow substitutions iff the text is in the "alternatives" list.
       - Adding visualization tools to help visualize the remaining errors:
         - STT and script have different character sets
         - STT and script have different token counts
@@ -240,7 +237,7 @@ def align_stt_with_script(
     Args:
         scripts (list of str): The voice-over script.
         stt_result (list): The speech-to-text results for the related voice-over.
-        get_alignment_window (lambda, optional): Callable for computing the maximum window size in
+        get_alignment_window (callable, optional): Callable for computing the maximum window size in
             tokens for aligning the STT results with the provided script.
 
     Returns: TODO
@@ -264,15 +261,15 @@ def align_stt_with_script(
                                              [t.text for t in stt_tokens],
                                              get_alignment_window(
                                                  len(script_tokens), len(stt_tokens)),
-                                             allow_substitution=allow_substitution)
+                                             allow_substitution=is_sound_alike)
     logger.info('Total word(s) unaligned: %s',
                 format_ratio(len(script_tokens) - len(alignments), len(script_tokens)))
     print_differences(scripts, alignments, script_tokens, stt_tokens)
 
-    # TODO: Save the results in a alignment folder in the actor's bucket
-    # TODO: Save the results so that they are aligned the scripts to the audio.
-    return [((script_tokens[a[0]].start_text, script_tokens[a[0]].end_text),
-             (stt_tokens[a[1]].start_audio, stt_tokens[a[1]].end_audio)) for a in alignments]
+    return_ = [(script_tokens[a[0]].script_index, (script_tokens[a[0]].start_text,
+                                                   script_tokens[a[0]].end_text),
+                (stt_tokens[a[1]].start_audio, stt_tokens[a[1]].end_audio)) for a in alignments]
+    return [[(i[1], i[2]) for i in g] for g in groupby(return_, lambda i: i[0])]
 
 
 def _get_speech_context(script, max_phrase_length=100):
@@ -315,21 +312,47 @@ def _get_speech_context(script, max_phrase_length=100):
     return types.SpeechContext(phrases=list(set(phrases)))
 
 
-def _get_stt(audio_blobs, scripts, dest_blobs, stt_config, max_stt_requests_per_second):
+def run_stt(audio_blobs,
+            scripts,
+            dest_blobs,
+            max_stt_requests_per_second=50,
+            stt_config=types.RecognitionConfig(
+                language_code='en-US',
+                model='video',
+                use_enhanced=True,
+                enable_automatic_punctuation=True,
+                enable_word_time_offsets=True)):
     """ Run speech-to-text on `audio_blobs` and save them at `dest_blobs`.
 
-    NOTE: You can preview the running operations via the command line. For example:
-    $ gcloud ml speech operations describe 5187645621111131232
+    NOTE:
+    - The documentation for `types.RecognitionConfig` does not include all the available
+      options. All the potential parameters are included here:
+      https://cloud.google.com/speech-to-text/docs/reference/rest/v1p1beta1/RecognitionConfig
+    - Time offset values are only included for the first alternative provided in the recognition
+      response, learn more here: https://cloud.google.com/speech-to-text/docs/async-time-offsets
+    - Careful not to exceed default 300 requests a second quota; however, if you end up exceeding
+      the quota, Google will force you to wait up to 30 minutes before it allows more requests.
+    - The `stt_config` defaults are set based on:
+      https://blog.timbunce.org/2018/05/15/a-comparison-of-automatic-speech-recognition-asr-systems/
+    - You can preview the running operations via the command line. For example:
+      $ gcloud ml speech operations describe 5187645621111131232
 
+    TODO: Investigate using alternatives text for alignment.
+    TODO: Investigate adding additional words to Google's STT vocab, and including our expected
+    word distribution or n-gram distribution.
+    TODO: Investigate updating `types.RecognitionConfig` with a better model.
+    TODO: Update the return value for this function.
+    TODO: Make the above arguments configurable.
     TODO: `max_stt_requests_per_second` is only considered every iteration; however, it's not
     guarenteed that every iteration has only one request to STT.
 
     Args:
-        audio_blobs (list of google.cloud.storage.blob.Blob)
-        scripts (list of str)
-        dest_blobs (list of google.cloud.storage.blob.Blob)
-        stt_config (types.RecognitionConfig)
-        max_stt_requests_per_second (int)
+        audio_blobs (list of google.cloud.storage.blob.Blob): List of GCS voice-over blobs.
+        scripts (list of str): List of voice-over scripts.
+        dest_blobs (list of google.cloud.storage.blob.Blob): List of GCS blobs to upload
+            results too.
+        max_stt_requests_per_second (int, optional): The maximum requests per second to make to STT.
+        stt_config (types.RecognitionConfig, optional)
 
     Returns: None
     """
@@ -362,106 +385,6 @@ def _get_stt(audio_blobs, scripts, dest_blobs, stt_config, max_stt_requests_per_
             time.sleep(1 / max_stt_requests_per_second)
 
 
-def get_stt(audio_blobs,
-            scripts,
-            dest_blob,
-            max_stt_requests_per_second=50,
-            stt_config=types.RecognitionConfig(
-                language_code='en-US',
-                model='video',
-                use_enhanced=True,
-                enable_automatic_punctuation=True,
-                enable_word_time_offsets=True)):
-    """ Get Google speech-to-text (STT) results for each audio file in `gcs_audio_files`.
-
-    NOTE:
-    - The documentation for `types.RecognitionConfig` does not include all the available
-      options. All the potential parameters are included here:
-      https://cloud.google.com/speech-to-text/docs/reference/rest/v1p1beta1/RecognitionConfig
-    - Time offset values are only included for the first alternative provided in the recognition
-      response, learn more here: https://cloud.google.com/speech-to-text/docs/async-time-offsets
-    - The results will be cached in `dest_blob` with the same filename as the audio file
-      under the 'speech-to-text' folder.
-    - Careful not to exceed default 300 requests a second quota; however, if you end up exceeding
-      the quota, Google will force you to wait up to 30 minutes before it allows more requests.
-    - The `stt_config` defaults are set based on:
-    https://blog.timbunce.org/2018/05/15/a-comparison-of-automatic-speech-recognition-asr-systems/
-
-    TODO: Investigate using alternatives text for alignment.
-    TODO: Investigate adding additional words to Google's STT vocab, and including our expected
-    word distribution or n-gram distribution.
-    TODO: Investigate updating `types.RecognitionConfig` with a better model.
-    TODO: Update the return value for this function.
-    TODO: Make the above arguments configurable.
-
-    Args:
-        audio_blobs (list of google.cloud.storage.blob.Blob): List of GCS audio blobs.
-        scripts (list of str): List of scripts.
-        dest_blob (google.cloud.storage.blob.Blob): GCS blob to upload results too.
-        max_stt_requests_per_second (int): The maximum requests per second to make to STT.
-        stt_config (types.RecognitionConfig)
-
-    Returns:
-        (list) [
-          {
-            script (str): Script of the audio chunk.
-            confidence (float): Google's confidence in the script.
-            words (list): List of words in the script tokenized by spaces.
-            [
-              {
-                startTime (str): Start time of the word in seconds. (i.e. "0s")
-                endTime (str): End time of the word in seconds. (i.e. "0.100s")
-                word (str)
-              },
-              {
-                ...
-              }
-            ]
-          },
-          {
-            ...
-          }
-        ]
-    """
-    names = ['speech_to_text/' + p.name.split('/')[-1].split('.')[0] + '.json' for p in audio_blobs]
-    assert len(
-        set(names)) == len(names), 'This function requires that all audio files have unique names.'
-    dest_blobs = [dest_blob.bucket.blob(dest_blob.name + n) for n in names]
-
-    # Run speech-to-text on audio files iff their results are not found.
-    filtered = [(a, s, b) for a, s, b in zip(audio_blobs, scripts, dest_blobs) if not b.exists()]
-    if len(filtered) > 0:
-        _get_stt(*zip(*filtered), stt_config, max_stt_requests_per_second)
-
-    # Get all speech-to-text results.
-    return [json.loads(b.download_as_string()) for b in dest_blobs]
-
-
-def normalize_text(text):
-    """ Normalize the text such that the text matches up closely to the audio.
-
-    NOTE: These rules are specific to the datasets processed so far.
-    TODO: Remove from this script...
-
-    Args:
-        text (str)
-
-    Returns
-        text (str)
-    """
-    text = text.strip()
-    text = text.replace('\t', '  ')
-    text = text.replace('®', '')
-    text = text.replace('™', '')
-    # Remove HTML tags
-    text = re.sub('<.*?>', '', text)
-    # Fix for a missing space between end and beginning of a sentence.
-    # Example match deliminated by <>:
-    #   the cold w<ar.T>he term 'business ethics'
-    text = re.sub(r"([a-z]{2}[.!?])([A-Z])", r"\1 \2", text)
-    return unidecode.unidecode(text)
-
-
 def natural_keys(text):
     """ Returns keys (`list`) for sorting in a "natural" order.
 
@@ -470,48 +393,47 @@ def natural_keys(text):
     return [(int(char) if char.isdigit() else char) for char in re.split(r'(\d+)', str(text))]
 
 
-def main(gcs_audio_files,
-         gcs_script_files,
-         gcs_dest,
-         text_column='Content',
-         tmp_file_path=TEMP_PATH):
-    """ Align the script to the audio file and cache the results.
-
-    TODO: Save the alignment.
+def main(gcs_voice_overs, gcs_scripts, gcs_dest, text_column='Content'):
+    """ Align `gcs_scripts` to `gcs_voice_overs` and cache the results at `gcs_dest`.
 
     Args:
-        gcs_audio_files (list of str): List of GCS URIs to audio files.
-        gcs_script_files (list of str): List of GCS URIs to voice-over scripts. The scripts
-            are stored in CSV format.
+        gcs_voice_overs (list of str): List of GCS URI(s) to voice-over(s).
+        gcs_scripts (list of str): List of GCS URI(s) to voice-over script(s). The script(s) are
+            stored in CSV format with related metadata.
         gcs_dest (str): GCS location to upload results too.
         text_column (str, optional): The voice-over script column in the CSV script files.
-        tmp_file_path (pathlib.Path, optional)
     """
-    # TODO: Save the logs to the bucket.
-    # TODO: Naturally sort the audio files and script files, unless gsutil already does this...
-    RecordStandardStreams(tmp_file_path).start()  # Save a log of the execution for future reference
+    recorder = RecordStandardStreams().start()  # Save a log of the execution for future reference
 
     set_hparams()
 
     dest_blob = gcs_uri_to_blob(gcs_dest)
-    audio_blobs = [gcs_uri_to_blob(a) for a in gcs_audio_files]
-    script_data_frames = [
-        pandas.read_csv(StringIO(gcs_uri_to_blob(s).download_as_string().decode('utf-8')))
-        for s in gcs_script_files
-    ]
-    script_texts = [
-        [normalize_text(t) for t in df[text_column].tolist()] for df in script_data_frames
-    ]
+    audio_blobs = [gcs_uri_to_blob(a) for a in gcs_voice_overs]
+    bucket = dest_blob.bucket
 
-    stt_results = get_stt(audio_blobs, script_texts, dest_blob)
+    filenames = [b.name.split('/')[-1].split('.')[0] for b in audio_blobs]
+    stt_blobs = [bucket.blob(dest_blob.name + 'stt_results/' + n + '.json') for n in filenames]
+    alignment_blobs = [bucket.blob(dest_blob.name + 'alignments/' + n + '.json') for n in filenames]
 
-    # Preprocess `stt_results` removing unnecessary keys or hierarchy.
-    stt_results = [
-        [r['alternatives'][0] for r in s['results'] if r['alternatives'][0]] for s in stt_results
-    ]
+    logger.info('Downloading voice-over scripts.')
+    scripts = [gcs_uri_to_blob(s).download_as_string().decode('utf-8') for s in gcs_scripts]
+    scripts = [pandas.read_csv(StringIO(s))[text_column].tolist() for s in scripts]
 
-    for script_text, stt_result in zip(script_texts, stt_results):
-        alignment = align_stt_with_script(script_text, stt_result)
+    logger.info('Running speech-to-text and caching results.')
+    filtered = filter(zip(audio_blobs, scripts, stt_blobs), lambda i: i[-1].exists())
+    if len(filtered) > 0:
+        run_stt(*zip(*filtered))
+    stt_results = [json.loads(b.download_as_string()) for b in stt_blobs]
+    stt_results = [s['results'] for s in stt_results]
+    stt_results = [[r['alternatives'][0] for r in s if r['alternatives'][0]] for s in stt_results]
+
+    logger.info('Running alignment and uploading results.')
+    alignments = [align_stt_with_script(s, r) for s, r in zip(scripts, stt_results)]
+    [b.upload_from_string(json.dumps(a)) for a, b in zip(alignments, alignment_blobs)]
+
+    logger.info('Uploading logs.')
+    bucket.blob(dest_blob.name + recorder.log_path.name).upload_from_string(
+        recorder.log_path.read_text())
 
 
 if __name__ == "__main__":  # pragma: no cover
