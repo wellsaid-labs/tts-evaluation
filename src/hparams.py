@@ -188,13 +188,7 @@ def _set_audio_processing():
         },
         'src.bin': {
             'evaluate.models.main': HParams(sample_rate=sample_rate),
-            'evaluate.stream.main': HParams(sample_rate=sample_rate),
-            'chunk_wav_and_text': {
-                'seconds_to_samples': HParams(sample_rate=sample_rate),
-                'samples_to_seconds': HParams(sample_rate=sample_rate),
-                'chunk_alignments': HParams(sample_rate=sample_rate),
-                'align_wav_and_scripts': HParams(sample_rate=sample_rate),
-            },
+            'evaluate.stream.main': HParams(sample_rate=sample_rate)
         }
     })
 
