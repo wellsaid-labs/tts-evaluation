@@ -15,21 +15,45 @@ Prior:
 
     $ mv ~/Downloads/voice-research-255602-1a5538456fc3.json gcs_credentials.json
 
+
 Example:
 
+    PREFIX=gs://wellsaid_labs_datasets/hilary_noriega
     GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
     python -m src.bin.sync_script_with_audio \
-      --audio 'gs://wellsaid_labs_datasets/hilary_noriega/preprocessed_recordings/Script 1.wav' \
-      --script 'gs://wellsaid_labs_datasets/hilary_noriega/scripts/Script 1 - Hilary.csv' \
-      --destination gs://wellsaid_labs_datasets/hilary_noriega/
+      --voice_over "$PREFIX/preprocessed_recordings/Script 1.wav" \
+      --voice_over_script "$PREFIX/scripts/Script 1 - Hilary.csv" \
+      --destination "$PREFIX/"
+
+Example (Multiple Speakers):
+
+    PREFIX=gs://wellsaid_labs_datasets
+    GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
+    python -m src.bin.sync_script_with_audio \
+      --voice_over "$PREFIX/hilary_noriega/preprocessed_recordings/Script 1.wav" \
+                   "$PREFIX/sam_scholl/recordings/WSL Sam4.wav" \
+                   "$PREFIX/frank_bonacquisti/recordings/WSL-Script 001.wav" \
+                   "$PREFIX/adrienne_walker_heller/recordings/WSL - Adrienne WalkerScript1.wav" \
+                   "$PREFIX/heather_doe/recordings/Heather_99-101.wav" \
+      --voice_over_script "$PREFIX/hilary_noriega/scripts/Script 1 - Hilary.csv" \
+                          "$PREFIX/sam_scholl/scripts/Script 4.csv" \
+                          "$PREFIX/frank_bonacquisti/scripts/Script 1.csv" \
+                          "$PREFIX/adrienne_walker_heller/scripts/Script 1.csv" \
+                          "$PREFIX/heather_doe/scripts/Scripts 99-101.csv" \
+      --destination "$PREFIX/hilary_noriega/" \
+                    "$PREFIX/sam_scholl/" \
+                    "$PREFIX/frank_bonacquisti/" \
+                    "$PREFIX/adrienne_walker_heller/" \
+                    "$PREFIX/heather_doe/" \
+      --sort
 
 Example (Batch):
 
     PREFIX=gs://wellsaid_labs_datasets/hilary_noriega
     GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
     python -m src.bin.sync_script_with_audio \
-      --audio "${(@f)$(gsutil ls "$PREFIX/preprocessed_recordings/*.wav")}" \
-      --script "${(@f)$(gsutil ls "$PREFIX/scripts/*.csv")}" \
+      --voice_over "${(@f)$(gsutil ls "$PREFIX/preprocessed_recordings/*.wav")}" \
+      --voice_over_script "${(@f)$(gsutil ls "$PREFIX/scripts/*.csv")}" \
       --destination $PREFIX/ \
       --sort
 
@@ -38,7 +62,9 @@ from collections import namedtuple
 from copy import copy
 from functools import lru_cache
 from io import StringIO
+from itertools import chain
 from itertools import groupby
+from itertools import repeat
 
 import argparse
 import json
@@ -269,7 +295,9 @@ def align_stt_with_script(scripts,
     return_ = [(script_tokens[a[0]].script_index, (script_tokens[a[0]].start_text,
                                                    script_tokens[a[0]].end_text),
                 (stt_tokens[a[1]].start_audio, stt_tokens[a[1]].end_audio)) for a in alignments]
-    return [[(i[1], i[2]) for i in g] for g in groupby(return_, lambda i: i[0])]
+    return_ = [[(i[1], i[2]) for i in g] for _, g in groupby(return_, lambda i: i[0])]
+    assert len(return_) == len(scripts), 'Invariant failure.'
+    return return_
 
 
 def _get_speech_context(script, max_phrase_length=100):
@@ -280,6 +308,7 @@ def _get_speech_context(script, max_phrase_length=100):
       - Should we normalize the phrases with `unidecode.unidecode` and removing punctuation?
       - Should we pass a word or phrase distribution with the `boost` feature?
       - Should the phrases be longer or shorter?
+      - Should we boost the phrases?
 
     Args:
         script (str)
@@ -362,7 +391,7 @@ def run_stt(audio_blobs,
         config.speech_contexts.append(_get_speech_context('\n'.join(script)))
         audio = types.RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
         operations.append(speech.SpeechClient().long_running_recognize(config, audio))
-        logger.info('Operation %s "%s" started.', operations[-1].operation.name, dest_blob.name)
+        logger.info('STT operation %s "%s" started.', operations[-1].operation.name, dest_blob.name)
 
     progress = [0] * len(operations)
     total_size = sum([a.size for a in audio_blobs])
@@ -375,7 +404,8 @@ def run_stt(audio_blobs,
             metadata = operation.metadata
             if operation.done():
                 dest_blob.upload_from_string(json.dumps(MessageToDict(operation.result())))
-                logger.info('Operation %s "%s" done.', operation.operation.name, dest_blobs[i].name)
+                logger.info('STT operation %s "%s" finished.', operation.operation.name,
+                            dest_blobs[i].name)
                 operations[i] = None
                 progress[i] = 100 * audio_blobs[i].size
             elif metadata is not None and metadata.progress_percent is not None:
@@ -393,62 +423,79 @@ def natural_keys(text):
     return [(int(char) if char.isdigit() else char) for char in re.split(r'(\d+)', str(text))]
 
 
-def main(gcs_voice_overs, gcs_scripts, gcs_dest, text_column='Content'):
+def main(gcs_voice_overs,
+         gcs_scripts,
+         gcs_dests,
+         text_column='Content',
+         stt_folder='speech_to_text_results/',
+         alignments_folder='alignments/'):
     """ Align `gcs_scripts` to `gcs_voice_overs` and cache the results at `gcs_dest`.
 
     Args:
         gcs_voice_overs (list of str): List of GCS URI(s) to voice-over(s).
         gcs_scripts (list of str): List of GCS URI(s) to voice-over script(s). The script(s) are
             stored in CSV format with related metadata.
-        gcs_dest (str): GCS location to upload results too.
+        gcs_dests (list of str): GCS location(s) to upload results too.
         text_column (str, optional): The voice-over script column in the CSV script files.
+        stt_folder (str, optional): The name of the folder to save speech-to-text results to.
+        alignments_folder (str, optional): The name of the folder to save alignments too.
     """
     recorder = RecordStandardStreams().start()  # Save a log of the execution for future reference
 
     set_hparams()
 
-    dest_blob = gcs_uri_to_blob(gcs_dest)
-    audio_blobs = [gcs_uri_to_blob(a) for a in gcs_voice_overs]
-    bucket = dest_blob.bucket
+    dest_blobs = [gcs_uri_to_blob(d) for d in gcs_dests]
+    audio_blobs = [gcs_uri_to_blob(v) for v in gcs_voice_overs]
 
-    filenames = [b.name.split('/')[-1].split('.')[0] for b in audio_blobs]
-    stt_blobs = [bucket.blob(dest_blob.name + 'stt_results/' + n + '.json') for n in filenames]
-    alignment_blobs = [bucket.blob(dest_blob.name + 'alignments/' + n + '.json') for n in filenames]
+    filenames = [b.name.split('/')[-1].split('.')[0] + '.json' for b in audio_blobs]
+    stt_blobs = [b.bucket.blob(b.name + stt_folder + n) for b, n in zip(dest_blobs, filenames)]
+    alignment_blobs = [
+        b.bucket.blob(b.name + alignments_folder + n) for b, n in zip(dest_blobs, filenames)
+    ]
 
-    logger.info('Downloading voice-over scripts.')
+    logger.info('Downloading voice-over scripts...')
     scripts = [gcs_uri_to_blob(s).download_as_string().decode('utf-8') for s in gcs_scripts]
     scripts = [pandas.read_csv(StringIO(s))[text_column].tolist() for s in scripts]
 
-    logger.info('Running speech-to-text and caching results.')
-    filtered = filter(zip(audio_blobs, scripts, stt_blobs), lambda i: i[-1].exists())
+    logger.info('Running speech-to-text and caching results...')
+    filtered = list(filter(lambda i: not i[-1].exists(), zip(audio_blobs, scripts, stt_blobs)))
     if len(filtered) > 0:
         run_stt(*zip(*filtered))
     stt_results = [json.loads(b.download_as_string()) for b in stt_blobs]
     stt_results = [s['results'] for s in stt_results]
     stt_results = [[r['alternatives'][0] for r in s if r['alternatives'][0]] for s in stt_results]
 
-    logger.info('Running alignment and uploading results.')
+    logger.info('Running alignment and uploading results...')
     alignments = [align_stt_with_script(s, r) for s, r in zip(scripts, stt_results)]
     [b.upload_from_string(json.dumps(a)) for a, b in zip(alignments, alignment_blobs)]
 
-    logger.info('Uploading logs.')
-    bucket.blob(dest_blob.name + recorder.log_path.name).upload_from_string(
-        recorder.log_path.read_text())
+    logger.info('Uploading logs...')
+    for dest_blob in set(dest_blobs):
+        blob = dest_blob.bucket.blob(dest_blob.name + recorder.log_path.name)
+        blob.upload_from_string(recorder.log_path.read_text())
 
 
 if __name__ == "__main__":  # pragma: no cover
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--audio', nargs='+', type=str, help='GCS link(s) to audio file(s).')
-    parser.add_argument('--script', nargs='+', type=str, help='GCS link(s) to the script(s).')
+    parser.add_argument('--voice_over', nargs='+', type=str, help='GCS link(s) to audio file(s).')
+    parser.add_argument(
+        '--voice_over_script', nargs='+', type=str, help='GCS link(s) to the script(s).')
     parser.add_argument(
         '--destination',
+        nargs='+',
         type=str,
-        help='GCS location to upload alignments and speech-to-text results.')
-    parser.add_argument('--sort', action='store_true', help='Sort the script and audio lists.')
+        help='GCS location(s) to upload alignment(s) and speech-to-text result(s).')
+    parser.add_argument(
+        '--sort', action='store_true', help='Sort the script, audio and destination lists.')
     args = parser.parse_args()
 
     if args.sort:
-        args.audio = sorted(args.audio, key=natural_keys)
-        args.script = sorted(args.script, key=natural_keys)
+        args.voice_over = sorted(args.voice_over, key=natural_keys)
+        args.voice_over_script = sorted(args.voice_over_script, key=natural_keys)
+        args.destination = sorted(args.destination, key=natural_keys)
 
-    main(args.audio, args.script, args.destination)
+    if len(args.voice_over) > len(args.destination):
+        ratio = len(args.voice_over) // len(args.destination)
+        args.destination = list(chain.from_iterable(repeat(x, ratio) for x in args.destination))
+
+    main(args.voice_over, args.voice_over_script, args.destination)
