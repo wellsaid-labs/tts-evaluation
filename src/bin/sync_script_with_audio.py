@@ -29,7 +29,8 @@ Example (Batch):
     python -m src.bin.sync_script_with_audio \
       --audio "${(@f)$(gsutil ls "$PREFIX/preprocessed_recordings/*.wav")}" \
       --script "${(@f)$(gsutil ls "$PREFIX/scripts/*.csv")}" \
-      --destination $PREFIX/
+      --destination $PREFIX/ \
+      --sort
 
 """
 from collections import namedtuple
@@ -461,6 +462,14 @@ def normalize_text(text):
     return unidecode.unidecode(text)
 
 
+def natural_keys(text):
+    """ Returns keys (`list`) for sorting in a "natural" order.
+
+    Inspired by: http://nedbatchelder.com/blog/200712/human_sorting.html
+    """
+    return [(int(char) if char.isdigit() else char) for char in re.split(r'(\d+)', str(text))]
+
+
 def main(gcs_audio_files,
          gcs_script_files,
          gcs_dest,
@@ -513,5 +522,11 @@ if __name__ == "__main__":  # pragma: no cover
         '--destination',
         type=str,
         help='GCS location to upload alignments and speech-to-text results.')
+    parser.add_argument('--sort', action='store_true', help='Sort the script and audio lists.')
     args = parser.parse_args()
+
+    if args.sort:
+        args.audio = sorted(args.audio, key=natural_keys)
+        args.script = sorted(args.script, key=natural_keys)
+
     main(args.audio, args.script, args.destination)
