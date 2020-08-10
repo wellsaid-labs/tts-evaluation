@@ -171,10 +171,8 @@ def blob_to_gcs_uri(blob):
     return 'gs://' + blob.bucket.name + '/' + blob.name
 
 
-def print_differences(scripts, alignments, tokens, stt_tokens):
-    """ Print the differences between `tokens` and `stt_tokens` given the `alignments`.
-
-    TODO: Consider not printing a script, if there are no issues with it.
+def format_differences(scripts, alignments, tokens, stt_tokens):
+    """ Format the differences between `tokens` and `stt_tokens` given the `alignments`.
 
     Args:
         scripts (list of str): The voice-over scripts.
@@ -182,41 +180,61 @@ def print_differences(scripts, alignments, tokens, stt_tokens):
         tokens (list of ScriptToken): Tokens derived from `scripts`.
         stt_tokens (list of SttToken): The predicted speech-to-text tokens.
 
+    Returns:
+        (str)
+
     Example Output:
     > Welcome to Morton Arboretum, home to more than
     > --- "36 HUNDRED "
     > +++ "3,600"
     > native trees, shrubs, and plants.
     """
-    minuses = lambda span: print(COLORS['red'], '--- "' + span + '"' + COLORS['reset_all'])
-    pluses = lambda span: print(COLORS['green'], '+++ "' + span + '"' + COLORS['reset_all'])
+    out = []
+    minuses = lambda span: out.append(COLORS['red'] + '--- "' + span + '"' + COLORS['reset_all'])
+    pluses = lambda span: out.append(COLORS['green'] + '+++ "' + span + '"' + COLORS['reset_all'])
 
-    pairs = zip([(0, 0)] + alignments, alignments + [(len(tokens) - 1, len(stt_tokens) - 1)])
-    for last, next in pairs:
-        last_script_index = tokens[last[0]].script_index
-        next_script_index = tokens[next[0]].script_index
-        last_script = scripts[last_script_index]
-        next_script = scripts[next_script_index]
+    tokens = [ScriptToken('', -1, -1, 0)] + tokens
+    tokens += [ScriptToken('', len(scripts[-1]), len(scripts[-1]), len(scripts) - 1)]
+    stt_tokens = [SttToken('', None, None)] + stt_tokens + [SttToken('', None, None)]
+    alignments = [(a + 1, b + 1) for (a, b) in alignments]
 
-        if next[0] - last[0] > 1 or next[1] - last[1] > 1:
-            print(last_script[tokens[last[0]].start_text:tokens[last[0]].end_text])
-            if last_script_index != next_script_index:
-                print('-' * 100)
-                minuses(last_script[tokens[last[0]].end_text + 1:])
-                minuses(next_script[:tokens[next[0]].start_text])
-            else:
-                minuses(last_script[tokens[last[0]].end_text + 1:tokens[next[0]].start_text])
-            pluses(' '.join([t.text for t in stt_tokens[last[1] + 1:next[1]]]))
-            if last_script_index != next_script_index:
-                print('-' * 100)
-            print(next_script[tokens[next[0]].start_text:tokens[next[0]].start_text], end='')
-        elif last_script_index != next_script_index:
-            print(last_script[tokens[last[0]].start_text:])
-            print('=' * 100)
-            print(next_script[:tokens[next[0]].start_text], end='')
+    pairs = list(zip([(0, 0)] + alignments, alignments + [(len(tokens) - 1, len(stt_tokens) - 1)]))
+    gaps = [(a, b) for (a, b) in pairs if b[0] - a[0] > 1 or b[1] - a[1] > 1]
+
+    for last_gap, next_gap in zip([None] + gaps, gaps + [None]):
+        last = None if last_gap is None else (tokens[last_gap[0][0]], tokens[last_gap[1][0]])
+        next_ = None if next_gap is None else (tokens[next_gap[0][0]], tokens[next_gap[1][0]])
+        is_script_change = (last is not None and
+                            next_ is not None) and last[1].script_index != next_[0].script_index
+
+        if (last is not None and next_ is None) or is_script_change:  # Finish the previous script.
+            if last[1].start_text < len(scripts[last[1].script_index]):
+                out.append(scripts[last[1].script_index][last[1].start_text:])
+
+        if next_ is None:
+            continue
+
+        if is_script_change:
+            out.append('=' * 100)
+
+        if last is None or is_script_change:  # Print the script before the gap.
+            if next_[0].end_text > 0:
+                out.append(scripts[next_[0].script_index][:next_[0].end_text])
         else:
-            span = last_script[tokens[last[0]].start_text:tokens[next[0]].start_text]
-            print(span, end='')
+            out.append(scripts[next_[0].script_index][last[1].start_text:next_[0].end_text])
+
+        if next_[0].script_index != next_[1].script_index:  # Print the gap.
+            out.append('-' * 100)
+            minuses(scripts[next_[0].script_index][next_[0].end_text + 1:])
+            [minuses(scripts[i]) for i in range(next_[0].script_index + 1, next_[1].script_index)]
+            minuses(scripts[next_[1].script_index][:next_[1].start_text])
+        else:
+            minuses(scripts[next_[0].script_index][next_[0].end_text + 1:next_[1].start_text])
+        pluses(' '.join([t.text for t in stt_tokens[next_gap[0][1] + 1:next_gap[1][1]]]))
+        if next_[0].script_index != next_[1].script_index:
+            out.append('-' * 100)
+
+    return '\n'.join(out)
 
 
 def align_stt_with_script(scripts,
@@ -291,7 +309,8 @@ def align_stt_with_script(scripts,
                                              allow_substitution=is_sound_alike)
     logger.info('Total word(s) unaligned: %s',
                 format_ratio(len(script_tokens) - len(alignments), len(script_tokens)))
-    print_differences(scripts, alignments, script_tokens, stt_tokens)
+    logger.info('Failed to align: %s',
+                format_differences(scripts, alignments, script_tokens, stt_tokens))
 
     return_ = [(script_tokens[a[0]].script_index, (script_tokens[a[0]].start_text,
                                                    script_tokens[a[0]].end_text),
