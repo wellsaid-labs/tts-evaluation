@@ -79,6 +79,7 @@ from google.cloud import speech_v1p1beta1 as speech
 from google.cloud import storage
 from google.cloud.speech_v1p1beta1 import types
 from google.protobuf.json_format import MessageToDict
+from Levenshtein import distance
 from tqdm import tqdm
 
 from src.environment import COLORS
@@ -106,6 +107,8 @@ ScriptToken = namedtuple(
 #   end_audio (float): The end of the audio span in seconds during which `text` is voiced.
 SttToken = namedtuple('SttToken', ['text', 'start_audio', 'end_audio'], defaults=(None,) * 3)
 
+STATS = {'total_aligned_tokens': 0, 'total_tokens': 0, 'sound_alike': set()}
+
 
 def format_ratio(a, b):
     """
@@ -122,22 +125,21 @@ def remove_punctuation(string):
     Example:
         >>> remove_punctuation('123 abc !.?')
         '123 abc'
+        >>> remove_punctuation('Hello. You\'ve')
+        'Hello You ve'
     """
-    return re.sub(r'[^\w\s]', '', string).strip()
+    return re.sub(r'\s\s+', ' ', re.sub(r'[^\w\s]', ' ', string).strip())
 
 
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=32768)
 def is_sound_alike(a, b):
     """ Return `True` if `str` `a` and `str` `b` sound a-like. """
     a = unidecode.unidecode(a)
     b = unidecode.unidecode(b)
-
-    if remove_punctuation(a.lower()) == remove_punctuation(b.lower()):
+    if (remove_punctuation(a.lower()) == remove_punctuation(b.lower()) or
+            grapheme_to_phoneme(a, separator='|') == grapheme_to_phoneme(b, separator='|')):
+        STATS['sound_alike'].add(frozenset([a, b]))
         return True
-
-    if grapheme_to_phoneme(a, separator='|') == grapheme_to_phoneme(b, separator='|'):
-        return True
-
     return False
 
 
@@ -236,19 +238,40 @@ def format_differences(scripts, alignments, tokens, stt_tokens):
     yield from _format_gap(scripts, tokens[current[-1][0]:], stt_tokens[current[-1][1] + 1:])
 
 
+def _fix_one_to_many_alignment(alignments, tokens, stt_tokens):
+    """ Try to align multiple speech-to-text tokens to a single script token. For example, this
+    token "Hello.You've" can be aligned to "Hello" and "You've" speech-to-text tokens.
+    """
+    stt_tokens = stt_tokens.copy()
+    alignments = alignments.copy()
+    iterator = zip([(-1, -1)] + alignments, alignments + [(len(tokens), len(stt_tokens))])
+    for i, (last, next_) in reversed(list(enumerate(iterator))):
+        if next_[0] - last[0] == 2 and next_[1] - last[1] > 2:
+            token = tokens[last[0] + 1]
+            stt_token = SttToken(
+                text=' '.join([t.text for t in stt_tokens[last[1] + 1:next_[1]]]),
+                start_audio=stt_tokens[last[1] + 1].start_audio,
+                end_audio=stt_tokens[next_[1] - 1].end_audio)
+            if is_sound_alike(token.text, stt_token.text):
+                logger.info('Fixing alignment between: "%s" and "%s"', token.text, stt_token.text)
+                for j in reversed(range(last[1] + 1, next_[1])):
+                    del stt_tokens[j]
+                    alignments = [(a, b - 1) if b > j else (a, b) for a, b in alignments]
+                stt_tokens.insert(last[1] + 1, stt_token)
+                alignments = [(a, b + 1) if b >= last[1] + 1 else (a, b) for a, b in alignments]
+                alignments.insert(i, (last[0] + 1, last[1] + 1))
+    return stt_tokens, alignments
+
+
 def align_stt_with_script(scripts,
                           stt_result,
                           get_alignment_window=lambda a, b: max(round(a * 0.1), 256) + abs(a - b)):
     """ Align an STT result(s) with the related script(s).
 
     NOTE:
-      - There are a number of alignment issues due to dashes. Google's STT predictions around
-        dashes are inconsistent with the original script. Furthermore, we cannot remove the dashes
-        prior to alignment because Google's STT predictions do not provide timing for the words
-        seperated by dashed. Lastly, Google does not have an option to remove dashes, either.
-      - This approach for alignment is accurate but relies on white space tokenization. With white
-        space tokenization, it's easy to reconstruct text spans; however, this approach messes up in
-        cases like "parents...and", "tax-deferred", "little-c/Big-C" and "1978.In".
+      - Google STT as of June 21st, 2019 tends to tokenize based on white spaces; therefore, we
+        also use the same tokenization strategy.
+      - Google STT without punctuation predicts dashes.
       - The alignment window default was set based off these assumptions:
         - The 10% window has performed well based on empirical evidence while a 5% window
           did not; furthermore, a 10% window is justified assuming a 6 - 10% insertion and deletion
@@ -259,25 +282,8 @@ def align_stt_with_script(scripts,
           include large misaligned sections.
 
     TODO:
-      - Consider this approach:
-          1. Align the STT transcript to the original transcript without sentence-level punctuation
-            avoiding the error cases mentioned above.
-          2. Align pervious alignment with the white space tokenized original transcript tokens.
-            This approach should succeed to align "1978.In" and "parents...and"; however, it would
-            still fail on "tax-deferred" because Google's STT will still include dashes in their
-            output.
-      - Adding visualization tools to help visualize the remaining errors:
-        - STT and script have different character sets
-        - STT and script have different token counts
-        - STT and script didn't align well, and required lots of insertions or deletions.
-        - There were tokens that could have aligned but were slightly different or there were tokens
-          that aligned that were dramatically different.
-        - STT didn't align with the audio correctly, and the timing is off.
-        - The longest unaligned sequences.
-        - The % of words that were aligned.
-        The goal of this script is not to fix these issues, I think. We can fix some of these issues
-        in the main training script; however, we do have an opprotunity to fix the transcript...
-        or to manually adjust the alignment. We also can test other STT softwares.
+      - `assert` that `stt_tokens` and `script_tokens` have the same character set.
+      - stt_tokens` are white space deliminated.
 
     Args:
         scripts (list of str): The voice-over script.
@@ -287,8 +293,6 @@ def align_stt_with_script(scripts,
 
     Returns: TODO
     """
-    # Tokenize tokens similar to Google STT for alignment.
-    # NOTE: Google STT as of June 21st, 2019 tends to tokenize based on white spaces.
     script_tokens = flatten(
         [[ScriptToken(m.group(0), m.start(), m.end(), i)
           for m in re.finditer(r'\S+', script)]
@@ -299,36 +303,33 @@ def align_stt_with_script(scripts,
             start_audio=float(w['startTime'][:-1]),
             end_audio=float(w['endTime'][:-1],)) for w in r['words']
     ] for r in stt_result])
-    # TODO: Assert that `stt_tokens` are white space deliminated
 
-    num_unaligned, alignments = align_tokens([t.text for t in script_tokens],
-                                             [t.text for t in stt_tokens],
-                                             get_alignment_window(
-                                                 len(script_tokens), len(stt_tokens)),
-                                             allow_substitution=is_sound_alike)
-    logger.info('Total word(s) unaligned: %s',
+    args = ([t.text for t in script_tokens], [t.text for t in stt_tokens],
+            get_alignment_window(len(script_tokens), len(stt_tokens)))
+    alignments = align_tokens(*args, allow_substitution=is_sound_alike)[1]
+    stt_tokens, alignments = _fix_one_to_many_alignment(alignments, script_tokens, stt_tokens)
+
+    STATS['total_aligned_tokens'] += len(alignments)
+    STATS['total_tokens'] += len(script_tokens)
+    logger.info('Script word(s) unaligned: %s',
                 format_ratio(len(script_tokens) - len(alignments), len(script_tokens)))
     logger.info('Failed to align: %s',
-                format_differences(scripts, alignments, script_tokens, stt_tokens))
+                ''.join(format_differences(scripts, alignments, script_tokens, stt_tokens)))
 
     return_ = [(script_tokens[a[0]].script_index, (script_tokens[a[0]].start_text,
                                                    script_tokens[a[0]].end_text),
                 (stt_tokens[a[1]].start_audio, stt_tokens[a[1]].end_audio)) for a in alignments]
-    return_ = [[(i[1], i[2]) for i in g] for _, g in groupby(return_, lambda i: i[0])]
-    assert len(return_) == len(scripts), 'Invariant failure.'
-    return return_
+    return [[(i[1], i[2]) for i in g] for _, g in groupby(return_, lambda i: i[0])]
 
 
 def _get_speech_context(script, max_phrase_length=100):
     """ Given the voice-over script generate `SpeechContext` to help Speech-to-Text recognize
     specific words or phrases more frequently.
 
-    TODO:
-      - Should we normalize the phrases with `unidecode.unidecode` and removing punctuation?
-      - Should we pass a word or phrase distribution with the `boost` feature? (phrase)
-      - Should the phrases be longer or shorter? (longer)
-      - Should we boost the phrases? (likely not)
-      - Does speech context help? (yes)
+    NOTE:
+    - This applies `unidecode.unidecode` to the `script` in order to remove any odd characters
+    that Google may not recongize.
+    - Google STT as of June 21st, 2019 tends to tokenize based on white spaces.
 
     Args:
         script (str)
@@ -347,9 +348,7 @@ def _get_speech_context(script, max_phrase_length=100):
         phrases: "d e f"
 
     """
-    # Tokenize tokens similar to Google STT for alignment.
-    # NOTE: Google STT as of June 21st, 2019 tends to tokenize based on white spaces.
-    spans = [(m.start(), m.end()) for m in re.finditer(r'\S+', script)]
+    spans = [(m.start(), m.end()) for m in re.finditer(r'\S+', unidecode.unidecode(script))]
     phrases = []
     start = 0
     end = 0
@@ -366,7 +365,7 @@ def _get_speech_context(script, max_phrase_length=100):
 def run_stt(audio_blobs,
             scripts,
             dest_blobs,
-            max_stt_requests_per_second=50,
+            poll_interval=1 / 50,
             stt_config=types.RecognitionConfig(
                 language_code='en-US',
                 model='video',
@@ -381,28 +380,24 @@ def run_stt(audio_blobs,
       https://cloud.google.com/speech-to-text/docs/reference/rest/v1p1beta1/RecognitionConfig
     - Time offset values are only included for the first alternative provided in the recognition
       response, learn more here: https://cloud.google.com/speech-to-text/docs/async-time-offsets
-    - Careful not to exceed default 300 requests a second quota; however, if you end up exceeding
-      the quota, Google will force you to wait up to 30 minutes before it allows more requests.
+    - Careful not to exceed default 300 requests a second quota. If you do exceed it, note that
+      Google STT will not respond to requests for up to 30 minutes.
     - The `stt_config` defaults are set based on:
       https://blog.timbunce.org/2018/05/15/a-comparison-of-automatic-speech-recognition-asr-systems/
     - You can preview the running operations via the command line. For example:
       $ gcloud ml speech operations describe 5187645621111131232
 
-    TODO: Investigate using alternatives text for alignment.
-    TODO: Investigate adding additional words to Google's STT vocab, and including our expected
-    word distribution or n-gram distribution.
-    TODO: Investigate updating `types.RecognitionConfig` with a better model.
-    TODO: Update the return value for this function.
-    TODO: Make the above arguments configurable.
-    TODO: `max_stt_requests_per_second` is only considered every iteration; however, it's not
-    guarenteed that every iteration has only one request to STT.
+    TODO:
+    - Configure this script with `hparams`.
+    - Look into how many requests are made every poll, in order to better calibrate against Google's
+      quota.
 
     Args:
         audio_blobs (list of google.cloud.storage.blob.Blob): List of GCS voice-over blobs.
         scripts (list of str): List of voice-over scripts.
         dest_blobs (list of google.cloud.storage.blob.Blob): List of GCS blobs to upload
             results too.
-        max_stt_requests_per_second (int, optional): The maximum requests per second to make to STT.
+        poll_interval (int, optional): The interval between each poll of STT progress.
         stt_config (types.RecognitionConfig, optional)
 
     Returns: None
@@ -432,7 +427,7 @@ def run_stt(audio_blobs,
             elif metadata is not None and metadata.progress_percent is not None:
                 progress[i] = metadata.progress_percent
             progress_bar.update(min(progress) - progress_bar.n)
-            time.sleep(1 / max_stt_requests_per_second)
+            time.sleep(poll_interval)
 
 
 def natural_keys(text):
@@ -489,6 +484,13 @@ def main(gcs_voice_overs,
         logger.info('Running alignment "%s" and uploading results...', alignment_blob.name)
         alignment = align_stt_with_script(script, stt_result)
         alignment_blob.upload_from_string(json.dumps(alignment))
+
+    _words_unaligned = format_ratio(STATS['total_tokens'] - STATS['total_aligned_tokens'],
+                                    STATS['total_tokens'])
+    logger.info('Total word(s) unaligned: %s', _words_unaligned)
+    _sound_alike = [tuple(p) for p in STATS['sound_alike']]
+    _sound_alike = sorted(_sound_alike, key=lambda i: distance(i[0], i[-1]), reverse=True)
+    logger.info('Sound-a-like word(s): %s', '\n'.join([str(p) for p in _sound_alike]))
 
     logger.info('Uploading logs...')
     for dest_blob in set(dest_blobs):
