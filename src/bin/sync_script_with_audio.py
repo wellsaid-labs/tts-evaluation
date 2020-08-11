@@ -97,13 +97,14 @@ logger = logging.getLogger(__name__)
 #   start_text (int): The first character offset of the script text.
 #   end_text (int): This is equal to: `start_text + len(text)`
 #   script_index (int): The index of the script from which the text comes from.
-ScriptToken = namedtuple('ScriptToken', ['text', 'start_text', 'end_text', 'script_index'])
+ScriptToken = namedtuple(
+    'ScriptToken', ['text', 'start_text', 'end_text', 'script_index'], defaults=(None,) * 4)
 
 # Args:
 #   text (str): The script text.
 #   start_audio (float): The beginning of the audio span in seconds during which `text` is voiced.
 #   end_audio (float): The end of the audio span in seconds during which `text` is voiced.
-SttToken = namedtuple('SttToken', ['text', 'start_audio', 'end_audio'])
+SttToken = namedtuple('SttToken', ['text', 'start_audio', 'end_audio'], defaults=(None,) * 3)
 
 
 def format_ratio(a, b):
@@ -171,6 +172,30 @@ def blob_to_gcs_uri(blob):
     return 'gs://' + blob.bucket.name + '/' + blob.name
 
 
+def _format_gap(scripts, tokens, stt_tokens):
+    """ Format the span of `tokens` and `stt_tokens` that lie between two alignments, the gap.
+    """
+    minus = lambda t: '\n' + COLORS['red'] + '--- "' + t + '"' + COLORS['reset_all'] + '\n'
+    if len(tokens) > 2 or len(stt_tokens) > 0:
+        if tokens[0].script_index != tokens[-1].script_index:
+            yield minus(scripts[tokens[0].script_index][tokens[0].end_text:])
+            yield '=' * 100
+            for i in range(tokens[0].script_index + 1, tokens[-1].script_index):
+                yield minus(scripts[i])
+                yield '=' * 100
+            yield minus(scripts[tokens[-1].script_index][:tokens[-1].start_text])
+        else:
+            yield minus(scripts[tokens[0].script_index][tokens[0].end_text:tokens[-1].start_text])
+        text = ' '.join([t.text for t in stt_tokens])
+        yield COLORS['green'] + '+++ "' + text + '"' + COLORS['reset_all'] + '\n'
+    elif len(tokens) == 2 and tokens[0].script_index == tokens[-1].script_index:
+        yield scripts[tokens[0].script_index][tokens[0].end_text:tokens[-1].start_text]
+    elif len(tokens) == 2:
+        yield scripts[tokens[0].script_index][tokens[0].end_text:]
+        yield '\n' + '=' * 100 + '\n'
+        yield scripts[tokens[-1].script_index][:tokens[-1].start_text]
+
+
 def format_differences(scripts, alignments, tokens, stt_tokens):
     """ Format the differences between `tokens` and `stt_tokens` given the `alignments`.
 
@@ -181,7 +206,7 @@ def format_differences(scripts, alignments, tokens, stt_tokens):
         stt_tokens (list of SttToken): The predicted speech-to-text tokens.
 
     Returns:
-        (str)
+        (generator): Generates `str` snippets that can be joined together for the full output.
 
     Example Output:
     > Welcome to Morton Arboretum, home to more than
@@ -189,52 +214,26 @@ def format_differences(scripts, alignments, tokens, stt_tokens):
     > +++ "3,600"
     > native trees, shrubs, and plants.
     """
-    out = []
-    minuses = lambda span: out.append(COLORS['red'] + '--- "' + span + '"' + COLORS['reset_all'])
-    pluses = lambda span: out.append(COLORS['green'] + '+++ "' + span + '"' + COLORS['reset_all'])
+    tokens = ([ScriptToken(end_text=0, script_index=0)] + tokens +
+              [ScriptToken(start_text=len(scripts[-1]), script_index=len(scripts) - 1)])
+    alignments = [(a + 1, b) for a, b in alignments]
 
-    tokens = [ScriptToken('', -1, -1, 0)] + tokens
-    tokens += [ScriptToken('', len(scripts[-1]), len(scripts[-1]), len(scripts) - 1)]
-    stt_tokens = [SttToken('', None, None)] + stt_tokens + [SttToken('', None, None)]
-    alignments = [(a + 1, b + 1) for (a, b) in alignments]
+    groups = [(i, list(g)) for i, g in groupby(alignments, lambda a: tokens[a[0]].script_index)]
+    groups = [(None, [(0, -1)])] + groups + [(None, [(len(tokens) - 1, len(stt_tokens))])]
 
-    pairs = list(zip([(0, 0)] + alignments, alignments + [(len(tokens) - 1, len(stt_tokens) - 1)]))
-    gaps = [(a, b) for (a, b) in pairs if b[0] - a[0] > 1 or b[1] - a[1] > 1]
+    current = groups[0][1]
+    for (_, before), (i, current), (_, after) in zip(groups, groups[1:], groups[2:]):
+        is_unaligned = zip([before[-1]] + current, current + [after[0]])
+        if any([b[0] - a[0] > 1 or b[1] - a[1] > 1 for a, b in is_unaligned]):
+            yield from _format_gap(scripts, tokens[before[-1][0]:current[0][0] + 1],
+                                   stt_tokens[before[-1][1] + 1:current[0][1]])
+            for last, next_ in zip(current, current[1:] + [None]):
+                yield scripts[i][tokens[last[0]].start_text:tokens[last[0]].end_text]
+                if next_:
+                    yield from _format_gap(scripts, tokens[last[0]:next_[0] + 1],
+                                           stt_tokens[last[1] + 1:next_[1]])
 
-    for last_gap, next_gap in zip([None] + gaps, gaps + [None]):
-        last = None if last_gap is None else (tokens[last_gap[0][0]], tokens[last_gap[1][0]])
-        next_ = None if next_gap is None else (tokens[next_gap[0][0]], tokens[next_gap[1][0]])
-        is_script_change = (last is not None and
-                            next_ is not None) and last[1].script_index != next_[0].script_index
-
-        if (last is not None and next_ is None) or is_script_change:  # Finish the previous script.
-            if last[1].start_text < len(scripts[last[1].script_index]):
-                out.append(scripts[last[1].script_index][last[1].start_text:])
-
-        if next_ is None:
-            continue
-
-        if is_script_change:
-            out.append('=' * 100)
-
-        if last is None or is_script_change:  # Print the script before the gap.
-            if next_[0].end_text > 0:
-                out.append(scripts[next_[0].script_index][:next_[0].end_text])
-        else:
-            out.append(scripts[next_[0].script_index][last[1].start_text:next_[0].end_text])
-
-        if next_[0].script_index != next_[1].script_index:  # Print the gap.
-            out.append('-' * 100)
-            minuses(scripts[next_[0].script_index][next_[0].end_text + 1:])
-            [minuses(scripts[i]) for i in range(next_[0].script_index + 1, next_[1].script_index)]
-            minuses(scripts[next_[1].script_index][:next_[1].start_text])
-        else:
-            minuses(scripts[next_[0].script_index][next_[0].end_text + 1:next_[1].start_text])
-        pluses(' '.join([t.text for t in stt_tokens[next_gap[0][1] + 1:next_gap[1][1]]]))
-        if next_[0].script_index != next_[1].script_index:
-            out.append('-' * 100)
-
-    return '\n'.join(out)
+    yield from _format_gap(scripts, tokens[current[-1][0]:], stt_tokens[current[-1][1] + 1:])
 
 
 def align_stt_with_script(scripts,

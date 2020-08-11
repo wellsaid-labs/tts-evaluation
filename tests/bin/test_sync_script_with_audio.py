@@ -48,22 +48,71 @@ def test_format_differences():
     alignments = [(0, 0), (1, 1), (2, 2), (3, 3), (6, 5), (7, 6)]
     tokens = _get_script_tokens(scripts)
     stt_tokens = _get_stt_tokens(stt_results)
-    assert format_differences(scripts, alignments, tokens, stt_tokens) == '\n'.join([
+    assert ''.join(format_differences(scripts, alignments, tokens, stt_tokens)) == '\n'.join([
         'Home to more than',
-        COLORS['red'] + '--- "36 HUNDRED "' + COLORS['reset_all'],
+        COLORS['red'] + '--- " 36 HUNDRED "' + COLORS['reset_all'],
         COLORS['green'] + '+++ "3,600"' + COLORS['reset_all'],
         'native trees.',
     ])
 
 
+def test_format_differences__one_word():
+    """ Test that `format_differences` is able to handle one aligned word.
+    """
+    scripts = ['Home']
+    stt_results = ['Home']
+    alignments = [(0, 0)]
+    tokens = _get_script_tokens(scripts)
+    stt_tokens = _get_stt_tokens(stt_results)
+    assert ''.join(format_differences(scripts, alignments, tokens, stt_tokens)) == ''
+
+
+def test_format_differences__one_word_not_aligned():
+    """ Test that `format_differences` is able to handle one unaligned word.
+    """
+    scripts = ['Home']
+    stt_results = ['Tom']
+    alignments = []
+    tokens = _get_script_tokens(scripts)
+    stt_tokens = _get_stt_tokens(stt_results)
+    assert ''.join(format_differences(scripts, alignments, tokens, stt_tokens)) == '\n'.join([
+        '\n' + COLORS['red'] + '--- "Home"' + COLORS['reset_all'],
+        COLORS['green'] + '+++ "Tom"' + COLORS['reset_all'] + '\n',
+    ])
+
+
+def test_format_differences__extra_words():
+    """ Test that `format_differences` is able to handle extra words on the edges and middle.
+    """
+    scripts = ['to than 36 HUNDRED native']
+    stt_results = ['Home to more than 3,600 native trees.']
+    alignments = [(0, 1), (1, 3), (4, 5)]
+    tokens = _get_script_tokens(scripts)
+    stt_tokens = _get_stt_tokens(stt_results)
+    assert ''.join(format_differences(scripts, alignments, tokens, stt_tokens)) == '\n'.join([
+        '\n' + COLORS['red'] + '--- ""' + COLORS['reset_all'],
+        COLORS['green'] + '+++ "Home"' + COLORS['reset_all'],
+        'to',
+        COLORS['red'] + '--- " "' + COLORS['reset_all'],
+        COLORS['green'] + '+++ "more"' + COLORS['reset_all'],
+        'than',
+        COLORS['red'] + '--- " 36 HUNDRED "' + COLORS['reset_all'],
+        COLORS['green'] + '+++ "3,600"' + COLORS['reset_all'],
+        'native',
+        COLORS['red'] + '--- ""' + COLORS['reset_all'],
+        COLORS['green'] + '+++ "trees."' + COLORS['reset_all'] + '\n',
+    ])
+
+
 def test_format_differences__skip_script():
-    """ Test that `format_differences` does not print scripts with no differences. """
+    """ Test that `format_differences` is able to handle a perfect alignment.
+    """
     scripts = ['I love short sentences.']
     stt_results = ['I love short sentences.']
     alignments = [(0, 0), (1, 1), (2, 2), (3, 3)]
     tokens = _get_script_tokens(scripts)
     stt_tokens = _get_stt_tokens(stt_results)
-    assert format_differences(scripts, alignments, tokens, stt_tokens) == ''
+    assert ''.join(format_differences(scripts, alignments, tokens, stt_tokens)) == ''
 
 
 def test_format_differences__two_scripts__ends_unaligned():
@@ -74,17 +123,18 @@ def test_format_differences__two_scripts__ends_unaligned():
     alignments = [(1, 1), (3, 3), (4, 4), (5, 5)]
     tokens = _get_script_tokens(scripts)
     stt_tokens = _get_stt_tokens(stt_results)
-    assert format_differences(scripts, alignments, tokens, stt_tokens) == '\n'.join([
-        COLORS['red'] + '--- "I "' + COLORS['reset_all'],
+    print(list(format_differences(scripts, alignments, tokens, stt_tokens)))
+    assert ''.join(format_differences(scripts, alignments, tokens, stt_tokens)) == '\n'.join([
+        '\n' + COLORS['red'] + '--- "I "' + COLORS['reset_all'],
         COLORS['green'] + '+++ "You"' + COLORS['reset_all'],
         'love',
-        COLORS['red'] + '--- "short "' + COLORS['reset_all'],
+        COLORS['red'] + '--- " short "' + COLORS['reset_all'],
         COLORS['green'] + '+++ "distort"' + COLORS['reset_all'],
         'sentences.',
         '=' * 100,
         'I am',
-        COLORS['red'] + '--- "here."' + COLORS['reset_all'],
-        COLORS['green'] + '+++ "there."' + COLORS['reset_all'],
+        COLORS['red'] + '--- " here."' + COLORS['reset_all'],
+        COLORS['green'] + '+++ "there."' + COLORS['reset_all'] + '\n',
     ])
 
 
@@ -97,13 +147,39 @@ def test_format_differences__all_unaligned():
     alignments = []
     tokens = _get_script_tokens(scripts)
     stt_tokens = _get_stt_tokens(stt_results)
-    assert format_differences(scripts, alignments, tokens, stt_tokens) == '\n'.join([
-        '-' * 100,
-        COLORS['red'] + '--- "I love short sentences."' + COLORS['reset_all'],
+    assert ''.join(format_differences(scripts, alignments, tokens, stt_tokens)) == '\n'.join([
+        '\n' + COLORS['red'] + '--- "I love short sentences."' + COLORS['reset_all'],
+        '=' * 100,
         COLORS['red'] + '--- "I am here."' + COLORS['reset_all'],
+        '=' * 100,
         COLORS['red'] + '--- "I am here again."' + COLORS['reset_all'],
-        COLORS['green'] + '+++ "You distort attendance. You are there."' + COLORS['reset_all'],
-        '-' * 100,
+        COLORS['green'] + '+++ "You distort attendance. You are there."' + COLORS['reset_all'] +
+        '\n',
+    ])
+
+
+def test_format_differences__unaligned_and_aligned():
+    """ Test that `format_differences` is able to transition between unaligned and aligned scripts.
+    """
+    scripts = ['a b c', 'a b c', 'a b c', 'a b c', 'a b c']
+    stt_results = ['x y z', 'x y z', 'a b c', 'x y z', 'x y z']
+    alignments = [(6, 6), (7, 7), (8, 8)]
+    tokens = _get_script_tokens(scripts)
+    stt_tokens = _get_stt_tokens(stt_results)
+    assert ''.join(format_differences(scripts, alignments, tokens, stt_tokens)) == '\n'.join([
+        '\n' + COLORS['red'] + '--- "a b c"' + COLORS['reset_all'],
+        '=' * 100,
+        COLORS['red'] + '--- "a b c"' + COLORS['reset_all'],
+        '=' * 100,
+        COLORS['red'] + '--- ""' + COLORS['reset_all'],
+        COLORS['green'] + '+++ "x y z x y z"' + COLORS['reset_all'],
+        'a b c',
+        COLORS['red'] + '--- ""' + COLORS['reset_all'],
+        '=' * 100,
+        COLORS['red'] + '--- "a b c"' + COLORS['reset_all'],
+        '=' * 100,
+        COLORS['red'] + '--- "a b c"' + COLORS['reset_all'],
+        COLORS['green'] + '+++ "x y z x y z"' + COLORS['reset_all'] + '\n',
     ])
 
 
@@ -115,12 +191,11 @@ def test_format_differences__unalignment_between_scripts():
     alignments = [(0, 0), (1, 1), (2, 2), (6, 6)]
     tokens = _get_script_tokens(scripts)
     stt_tokens = _get_stt_tokens(stt_results)
-    assert format_differences(scripts, alignments, tokens, stt_tokens) == '\n'.join([
+    assert ''.join(format_differences(scripts, alignments, tokens, stt_tokens)) == '\n'.join([
         'I love short',
-        '-' * 100,
-        COLORS['red'] + '--- "sentences."' + COLORS['reset_all'],
+        COLORS['red'] + '--- " sentences."' + COLORS['reset_all'],
+        '=' * 100,
         COLORS['red'] + '--- "I am "' + COLORS['reset_all'],
         COLORS['green'] + '+++ "attendance. You are"' + COLORS['reset_all'],
-        '-' * 100,
         'here.',
     ])
