@@ -110,6 +110,17 @@ SttToken = namedtuple('SttToken', ['text', 'start_audio', 'end_audio'], defaults
 STATS = {'total_aligned_tokens': 0, 'total_tokens': 0, 'sound_alike': set()}
 
 
+def _normalize_text(s):
+    """ Normalize the script so that:
+    - The character set matches Google's speech-to-text predictions.
+    - The script matches the voice-over more closely.
+    """
+    s = s.replace('—', '-')  # NOTE: `unidecode.unidecode` replaces em dashes with two dashes.
+    s = s.replace('®', '')
+    s = s.replace('™', '')
+    return unidecode.unidecode(s).strip()
+
+
 def format_ratio(a, b):
     """
     Example:
@@ -134,8 +145,8 @@ def remove_punctuation(string):
 @lru_cache(maxsize=32768)
 def is_sound_alike(a, b):
     """ Return `True` if `str` `a` and `str` `b` sound a-like. """
-    a = unidecode.unidecode(a)
-    b = unidecode.unidecode(b)
+    a = _normalize_text(a)
+    b = _normalize_text(b)
     if (remove_punctuation(a.lower()) == remove_punctuation(b.lower()) or
             grapheme_to_phoneme(a, separator='|') == grapheme_to_phoneme(b, separator='|')):
         STATS['sound_alike'].add(frozenset([a, b]))
@@ -304,7 +315,8 @@ def align_stt_with_script(scripts,
             end_audio=float(w['endTime'][:-1],)) for w in r['words']
     ] for r in stt_result])
 
-    args = ([t.text for t in script_tokens], [t.text for t in stt_tokens],
+    args = ([_normalize_text(t.text.lower()) for t in script_tokens],
+            [t.text.lower() for t in stt_tokens],
             get_alignment_window(len(script_tokens), len(stt_tokens)))
     alignments = align_tokens(*args, allow_substitution=is_sound_alike)[1]
     stt_tokens, alignments = _fix_one_to_many_alignment(alignments, script_tokens, stt_tokens)
@@ -322,20 +334,23 @@ def align_stt_with_script(scripts,
     return [[(i[1], i[2]) for i in g] for _, g in groupby(return_, lambda i: i[0])]
 
 
-def _get_speech_context(script, max_phrase_length=100):
+def _get_speech_context(script, max_phrase_length=100, min_overlap=0.25):
     """ Given the voice-over script generate `SpeechContext` to help Speech-to-Text recognize
     specific words or phrases more frequently.
+
+    TODO: Add notes with the experiments I can
 
     NOTE:
     - This applies `unidecode.unidecode` to the `script` in order to remove any odd characters
     that Google may not recongize.
     - Google STT as of June 21st, 2019 tends to tokenize based on white spaces.
+    - In August 2020, `boost` reduced the accuracy of STT even with values as high was 1000, much
+      larger than the recommended value of 20.
 
     Args:
         script (str)
         max_phrase_length (int, optional): The maximum character length of a phrase.
-        boost (int, optional): See
-        https://googleapis.dev/python/speech/latest/gapic/v1p1beta1/types.html#google.cloud.speech_v1p1beta1.types.SpeechContext
+        min_overlap (float, optional): The minimum overlap between two consecutive phrases.
 
     Returns:
         (list of str)
@@ -348,16 +363,19 @@ def _get_speech_context(script, max_phrase_length=100):
         phrases: "d e f"
 
     """
-    spans = [(m.start(), m.end()) for m in re.finditer(r'\S+', unidecode.unidecode(script))]
+    spans = [(m.start(), m.end()) for m in re.finditer(r'\S+', _normalize_text(script))]
     phrases = []
     start = 0
     end = 0
+    overlap = 0
     for span in spans:
+        if span[0] - start <= round(max_phrase_length * (1 - min_overlap)):
+            overlap = span[0]
         if span[1] - start <= max_phrase_length:
             end = span[1]
         else:
             phrases.append(script[start:end])
-            start = span[0]
+            start = overlap if min_overlap > 0.0 else span[0]
     phrases.append(script[start:])
     return types.SpeechContext(phrases=list(set(phrases)))
 

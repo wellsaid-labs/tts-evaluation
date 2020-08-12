@@ -27,8 +27,13 @@ def test_format_ratio():
 
 
 def test__get_speech_context():
-    assert set(_get_speech_context('a b c d e f g h i j',
-                                   5).phrases) == set(['a b c', 'd e f', 'g h i', 'j'])
+    assert set(_get_speech_context('a b c d e f g h i j', 5,
+                                   0.0).phrases) == set(['a b c', 'd e f', 'g h i', 'j'])
+
+
+def test__get_speech_context__overlap():
+    assert set(_get_speech_context('a b c d e f g h i j', 5,
+                                   0.2).phrases) == set(['a b c', 'c d e', 'e f g', 'g h i', 'i j'])
 
 
 def _get_script_tokens(scripts):
