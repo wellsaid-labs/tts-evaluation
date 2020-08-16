@@ -151,7 +151,12 @@ def is_sound_alike(a, b):
     """ Return `True` if `str` `a` and `str` `b` sound a-like.
 
     Example:
-        TODO
+        >>> is_sound_alike("Hello-you've", "Hello. You've")
+        True
+        >>> is_sound_alike('five', '5')
+        True
+        >>> is_sound_alike('screen introduction', 'screen--Introduction,')
+        True
     """
     a = _normalize_text(a)
     b = _normalize_text(b)
@@ -310,9 +315,9 @@ def align_stt_with_script(scripts,
           for m in re.finditer(r'\S+', script)]
          for i, script in enumerate(scripts)])
     for result in stt_result:
-        expectation = ' '.join([w['word'] for w in result['words']])
+        expectation = ' '.join([w['word'] for w in result['words']]).strip()
         # NOTE: This is `true` as of June 21st, 2019.
-        assert expectation == result['transcript'], 'Not white-space tokenized.'
+        assert expectation == result['transcript'].strip(), 'Not white-space tokenized.'
     stt_tokens = flatten([[
         SttToken(
             text=w['word'],
