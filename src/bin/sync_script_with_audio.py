@@ -52,8 +52,8 @@ Example (Batch):
     PREFIX=gs://wellsaid_labs_datasets/hilary_noriega
     GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
     python -m src.bin.sync_script_with_audio \
-      --voice_over "${(@f)$(gsutil ls "$PREFIX/preprocessed_recordings/*.wav")}" \
-      --voice_over_script "${(@f)$(gsutil ls "$PREFIX/scripts/*.csv")}" \
+      --voice_over "${(@f)$(gsutil ls "$PREFIX/preprocessed_recordings/*.wav" | sort -h)}" \
+      --voice_over_script "${(@f)$(gsutil ls "$PREFIX/scripts/*.csv" | sort -h)}" \
       --destination $PREFIX/ \
       --sort
 
@@ -338,7 +338,7 @@ def _get_speech_context(script, max_phrase_length=100, min_overlap=0.25):
     """ Given the voice-over script generate `SpeechContext` to help Speech-to-Text recognize
     specific words or phrases more frequently.
 
-    TODO: Add notes with the experiments I can
+    TODO: Add notes with the experiments I ran.
 
     NOTE:
     - This applies `unidecode.unidecode` to the `script` in order to remove any odd characters
@@ -448,14 +448,6 @@ def run_stt(audio_blobs,
             time.sleep(poll_interval)
 
 
-def natural_keys(text):
-    """ Returns keys (`list`) for sorting in a "natural" order.
-
-    Inspired by: http://nedbatchelder.com/blog/200712/human_sorting.html
-    """
-    return [(int(char) if char.isdigit() else char) for char in re.split(r'(\d+)', str(text))]
-
-
 def main(gcs_voice_overs,
          gcs_scripts,
          gcs_dests,
@@ -526,14 +518,7 @@ if __name__ == "__main__":  # pragma: no cover
         nargs='+',
         type=str,
         help='GCS location(s) to upload alignment(s) and speech-to-text result(s).')
-    parser.add_argument(
-        '--sort', action='store_true', help='Sort the script, audio and destination lists.')
     args = parser.parse_args()
-
-    if args.sort:
-        args.voice_over = sorted(args.voice_over, key=natural_keys)
-        args.voice_over_script = sorted(args.voice_over_script, key=natural_keys)
-        args.destination = sorted(args.destination, key=natural_keys)
 
     if len(args.voice_over) > len(args.destination):
         ratio = len(args.voice_over) // len(args.destination)
