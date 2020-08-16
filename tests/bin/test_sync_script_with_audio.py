@@ -4,17 +4,11 @@ from src.bin.sync_script_with_audio import _fix_one_to_many_alignment
 from src.bin.sync_script_with_audio import _get_speech_context
 from src.bin.sync_script_with_audio import format_differences
 from src.bin.sync_script_with_audio import format_ratio
-from src.bin.sync_script_with_audio import natural_keys
 from src.bin.sync_script_with_audio import remove_punctuation
 from src.bin.sync_script_with_audio import ScriptToken
 from src.bin.sync_script_with_audio import SttToken
 from src.environment import COLORS
 from src.utils import flatten
-
-
-def test_natural_keys():
-    list_ = ['name 0', 'name 1', 'name 10', 'name 11']
-    assert sorted(list_, key=natural_keys) == list_
 
 
 def test_remove_punctuation():
