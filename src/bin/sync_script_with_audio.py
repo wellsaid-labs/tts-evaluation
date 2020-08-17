@@ -168,9 +168,11 @@ def is_sound_alike(a, b):
     """
     a = _normalize_text(a)
     b = _normalize_text(b)
-    if (a.lower() == b.lower() or
-            _remove_punctuation(a.lower()) == _remove_punctuation(b.lower()) or
-            grapheme_to_phoneme(a, separator='|') == grapheme_to_phoneme(b, separator='|')):
+    _is_sound_alike = (
+        a.lower() == b.lower() or
+        _remove_punctuation(a.lower()) == _remove_punctuation(b.lower()) or
+        grapheme_to_phoneme(a, separator='|') == grapheme_to_phoneme(b, separator='|'))
+    if _is_sound_alike:
         STATS['sound_alike'].add(frozenset([a, b]))
         return True
     return False
