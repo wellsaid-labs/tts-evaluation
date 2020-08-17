@@ -153,9 +153,11 @@ def is_sound_alike(a, b):
     Example:
         >>> is_sound_alike("Hello-you've", "Hello. You've")
         True
-        >>> is_sound_alike('five', '5')
-        True
         >>> is_sound_alike('screen introduction', 'screen--Introduction,')
+        True
+        >>> is_sound_alike('twentieth', '20th')
+        True
+        >>> is_sound_alike('financingA', 'financing a')
         True
     """
     a = _normalize_text(a)

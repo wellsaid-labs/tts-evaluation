@@ -28,9 +28,7 @@ documentation.
 
 ## 1. Data
 
-This data will be used to train our text-to-speech model. As in any other modeling task, the task
-must be clearly defined. For example, the data should not include random and unexplained variations
-in the voice-over.
+This data will be used to train our text-to-speech model.
 
 You'll find the data for each voice-actor working with WellSaid Labs in the
 [wellsaid_labs_datasets](https://console.cloud.google.com/storage/browser/wellsaid_labs_datasets;tab=objects?project=voice-research-255602&prefix=)
@@ -55,15 +53,16 @@ structure should look like this:
     └── ....
 ```
 
-In order to assure data consistency, you'll want to pay attention to these items:
+As in any other data modeling, the problem must be clearly defined. For example, the data should not
+include random and unexplained variations in the voice-over. This is a non exhaustive list of
+consistencies to pay attention too:
 
 - All files in `/scripts/` must be `.csv` files.
 - All files in `/recordings/` must be audio files.
 - There must be the same number of script files as there are audio files.
-- The script and audio files must be named similarly. More specifically, the script uses
-  https://en.wikipedia.org/wiki/Natural_sort_order to pair the script and audio files together.
-  Pay attention to the natural sort order of the files in each directory; you may need to do some
-  renaming.
+- The script and audio files must be named similarly. More specifically, the examples use
+  `sort --human-numeric-sort` to pair the script and audio files together. Pay attention to the sort
+  order of the files in each directory; you may need to do some renaming.
 - The file size of each audio file stored in `recordings` are _similar_ in size and appropriate for
   the length of the script text.
 - The script files are normalized such that any odd characters or phrases that the voice actor
@@ -72,7 +71,6 @@ In order to assure data consistency, you'll want to pay attention to these items
   - They should have similar metadata like format, sample rate, and channels.
   - Aside from changes in the content, the voice-over sounds similar.
   - Unless there is additional context given, the voice-over does not change prosody or language.
-
 
 ## 2. Preprocess Audio (Optional)
 
@@ -159,14 +157,14 @@ steps to-do so:
 ## 3. Synchronize Script with Audio
 
 Follow the inline documentation for `src/bin/sync_script_with_audio.py` to synchronize the script
-with the audio, and to save a file with the alignment. You'll need to audit the results of the
+with the audio, and to save an alignment file. You'll need to audit the results of the
 synchronization, and re-run the script if necessary. The issues that may arise are:
 
-- The dataset length is shorter or longer than expected.
-- The voice-over is cutoff, and it does not have enough hours of audio.
 - The voice-over skips parts of the script.
 - The script has odd characters that are not read by the voice-actor.
 - There are a large number of unaligned words.
+- The dataset length is shorter or longer than expected.
+- The voice-over is cutoff, and it does not have enough hours of audio.
 
 In order to mitigate these errors, please check: (TODO)
 
