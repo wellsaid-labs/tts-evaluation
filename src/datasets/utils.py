@@ -237,6 +237,105 @@ def filter_(function, dataset):
     return positive
 
 
+def alignment_dataset_loader(alignments='gs://wellsaid_labs_datasets/hilary_noriega/alignments'):
+    """ Load an alignment text to speech (TTS) dataset.
+
+    IDEAS:
+    1. Preprocess the audio spectrogram before hand, and slice from it. We'd still need to adjust
+       the edges. This might not be the biggest issue, since a typical spectrogram is 100ms.
+       This might cause issues downstream for the signal model.
+    2. Measure attention skipping while training
+    3. Measure the difference between the first half and last half of the audio for loudness.
+
+    QUESTIONS:
+    1. Predicted spectrogram... How long does it take to compute a predicted spectrogram? We
+    could just have a sampler that samples the first 100,000 rows, and computes for that. That's
+    assuming that doing so ondemand is too slow. In order to do so ondemand, we'd want to compute
+    128 aligned examples every half a second? The other option... is that we could increasingly
+    grow the size of the dataset (with a cap) as training is going on. We could always have a
+    process in the background that's processing more predicted spectrograms, and meanwhile the
+    training continues to go.
+
+    CONCERNS:
+    1. Generators cannot be pickled; thefore, we'll need to recreate it. Or we'll need to create
+       the generator directly in the child process.
+    2. We cannot compute all the spectrograms, and we might not be able to compute the spectrograms
+       fast enough to-do so on-demand. We'll want to develop a sampler that can backfill. As
+       training goes on, it'll progressively add more data to the dataset.
+       The sampler can just get the next sample, if it's ready. If it's not ready, then it can
+       grab a previous example from the last 1,000 or so examples.
+       The reason I like this is it simplifies the pipeline. We don't need batch processing before
+       hand in order to ensure performance. That'll simplify the scripting process, wohoo!
+       The reason I don't like this is it adds randomness that cannot be controled. I think
+       the randomness is "Okay". We'll be able to replace that component with a determinisitc one
+       by pregenerating a large dataset, and just using it.
+    3. We'll need some sort of "Universal" encoder and decoder:
+       (This should be doable but it'll require some thought. We'll need to worry about the data)
+       1. We could have a vocab encoder which is automatically generated based types:
+          1. Number (Identity) [1.5, 2.5, 3.5, 4.5]
+          2. torch.Tensor (Identity)
+          3. String (Label / Tokenizer)
+    4. How do we handle the discrepency between annotated data, and non-annotated data?
+    5. Most likely, our users will be using the system without annotations. It should be capable
+       of operating without annotations required.
+    6. How do we break up the program?
+       1. Loading
+       2. Variety of modules for annotating
+       3. Some universal example, that can be passed downstream.
+
+    7. What does realistic usage look like? Should we annotate everything, and then use dropout?
+       Should we randomly annotate?
+       Always having annotations is appealing because it'll make modeling easier but that doesn't
+       make sense in real life. In real-life, we'll sometimes have annotations and sometimes we
+       won't.
+       The idea of dropout is interesting... We shouldn't use dropout. IT won't be as effective.
+       We should dropout entire annotations, similar to "block dropout" which is frequently more
+       effective. A user is likely including or not an annotation...
+    8. What does deployment look like? Which annotations will we add?
+       We'll automatically parse with spacy, and lower case the text. The loudness / speed / pitch
+       will not be defined.
+       We might take advantage of the metadata or preset it.
+    9. Should the server parse the XML? Or should that be responsiblity of the frontend?
+       This should be handled on the backend, and that'll make the API easier to use.
+
+    TODO:
+    1. Cache alignments, voice-over, and voice-over script.
+    2. Preprocess voice-over with `SoX` or `ffmpeg` and cache.
+    3. Pick the script subset to generate data from.
+    4. Log the number of hours of data
+    4. Start an infinite loop to generate slices:
+      1. Randomly select a starting alignment.
+      2. Randomly select an ending alignment that is less that the maximum seconds.
+      3. Reject the slice if:
+          1. There is an unalignment in the middle of the slice.
+          2. The start or end alignment has too little audio per character.
+          3. There is a number in the slice.
+          3. Research others...
+      4. Normalize script text.
+      5. Preprocess the script with spaCy medium, and add both `.tensor` and `.vector` features to
+         the slice.
+      6. For a random number of non-overlapping random slices, compute the:
+          - Average and rounded (to prevent overfitting) loudness (with ITU-R BS.1770-4).
+          - Average and rounded (to prevent overfitting) speed (seconds per phoneme).
+          - Average and rounded (to prevent overfitting) pitch (with CREPE or SPICE or torchaudio).
+      7. For a random number of transitions, compute the (rounded to prevent overfitting) pause
+         time in seconds.
+      8. Lower case the text, and provide an extra feature with regard to capitalization.
+      9. For a random number of words, provide the phonetic spelling.
+      10. For the audio file, compute the noise by measuring the quietest second. Provide that
+          information. (Later)
+      11. Extract and provide any related metadata with regards to book or article.
+    5. Following getting the dataset... the spectrogram is generated.
+    6. The spectrogram shapes are cached. In order to do so, we'll just need to pregenerate
+       100 * batch_size, and the examples are sorted internally.
+    7. The grapheme to phoneme data is cached. This is not required iff we have a on-demand workflow
+       with backfilling.
+    8. The iterators are passed onto the processes. They need to be recreated.
+    We can then chain a sampler onto this generator for data sampling...
+    """
+    pass
+
+
 def _dataset_loader(
     root_directory_name,
     url,
