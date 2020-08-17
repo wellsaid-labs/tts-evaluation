@@ -483,6 +483,10 @@ def main(gcs_voice_overs,
 
     dest_blobs = [gcs_uri_to_blob(d) for d in gcs_dests]
     audio_blobs = [gcs_uri_to_blob(v) for v in gcs_voice_overs]
+    script_blobs = [gcs_uri_to_blob(v) for v in gcs_scripts]
+    for audio_blob, script_blob, dest_blob in zip(audio_blobs, script_blobs, dest_blobs):
+        logger.info('Processing... \n "%s" \n "%s" \n and saving to... "%s"', audio_blob.name,
+                    script_blob.name, dest_blob.name)
 
     filenames = [b.name.split('/')[-1].split('.')[0] + '.json' for b in audio_blobs]
     stt_blobs = [b.bucket.blob(b.name + stt_folder + n) for b, n in zip(dest_blobs, filenames)]
@@ -491,7 +495,7 @@ def main(gcs_voice_overs,
     ]
 
     logger.info('Downloading voice-over scripts...')
-    scripts = [gcs_uri_to_blob(s).download_as_string().decode('utf-8') for s in gcs_scripts]
+    scripts = [s.download_as_string().decode('utf-8') for s in script_blobs]
     scripts = [pandas.read_csv(StringIO(s))[text_column].tolist() for s in scripts]
 
     logger.info('Running speech-to-text and caching results...')
