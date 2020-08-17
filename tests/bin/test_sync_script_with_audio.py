@@ -2,6 +2,7 @@ import re
 
 from src.bin.sync_script_with_audio import _fix_alignments
 from src.bin.sync_script_with_audio import _get_speech_context
+from src.bin.sync_script_with_audio import _normalize_text
 from src.bin.sync_script_with_audio import _remove_punctuation
 from src.bin.sync_script_with_audio import format_differences
 from src.bin.sync_script_with_audio import format_ratio
@@ -11,9 +12,14 @@ from src.environment import COLORS
 from src.utils import flatten
 
 
+def test__normalize_text():
+    assert _normalize_text('Testing… \f ® ™ — coöperation') == 'Testing...    - cooperation'
+
+
 def test__remove_punctuation():
     assert _remove_punctuation('123 abc !.?') == '123 abc'
     assert _remove_punctuation('Hello. You\'ve') == 'Hello You ve'
+    assert _remove_punctuation('Hello. \n\fYou\'ve') == 'Hello You ve'
 
 
 def test_format_ratio():

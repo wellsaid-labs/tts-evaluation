@@ -106,7 +106,12 @@ SttToken = namedtuple('SttToken', ['text', 'start_audio', 'end_audio'], defaults
 
 STATS = {'total_aligned_tokens': 0, 'total_tokens': 0, 'sound_alike': set()}
 
+CONTROL_CHARACTERS_REGEX = re.compile(r'[\x00-\x08\x0b\x0c\x0d\x0e-\x1f]')
+MULTIPLE_WHITE_SPACES_REGEX = re.compile(r'\s\s+')
+PUNCTUATION_REGEX = re.compile(r'[^\w\s]')
 
+
+@lru_cache(maxsize=1048576)
 def _normalize_text(s):
     """ Normalize text for alignment.
 
@@ -116,7 +121,7 @@ def _normalize_text(s):
     """
     # NOTE: Remove all ASCII control characters from 0 to 31 except `\t` and `\n`, see:
     # https://en.wikipedia.org/wiki/Control_character
-    s = re.sub(r'[\x00-\x08\x0b\x0c\x0d\x0e-\x1f]', '', s)
+    s = CONTROL_CHARACTERS_REGEX.sub('', s)
     # NOTE: `unidecode.unidecode` replaces em dashes with two dashes. This is inconsistent with
     # Google STT.
     s = s.replace('—', '-')
@@ -134,6 +139,7 @@ def format_ratio(a, b):
     return '%f%% [%d of %d]' % ((float(a) / b) * 100, a, b)
 
 
+@lru_cache(maxsize=1048576)
 def _remove_punctuation(string):
     """ Remove all punctuation from a string.
 
@@ -143,10 +149,10 @@ def _remove_punctuation(string):
         >>> remove_punctuation('Hello. You\'ve')
         'Hello You ve'
     """
-    return re.sub(r'\s\s+', ' ', re.sub(r'[^\w\s]', ' ', string).strip())
+    return MULTIPLE_WHITE_SPACES_REGEX.sub(' ', PUNCTUATION_REGEX.sub(' ', string).strip())
 
 
-@lru_cache(maxsize=32768)
+@lru_cache(maxsize=1048576)
 def is_sound_alike(a, b):
     """ Return `True` if `str` `a` and `str` `b` sound a-like.
 
@@ -162,7 +168,8 @@ def is_sound_alike(a, b):
     """
     a = _normalize_text(a)
     b = _normalize_text(b)
-    if (_remove_punctuation(a.lower()) == _remove_punctuation(b.lower()) or
+    if (a.lower() == b.lower() or
+            _remove_punctuation(a.lower()) == _remove_punctuation(b.lower()) or
             grapheme_to_phoneme(a, separator='|') == grapheme_to_phoneme(b, separator='|')):
         STATS['sound_alike'].add(frozenset([a, b]))
         return True
@@ -514,7 +521,7 @@ def main(gcs_voice_overs,
     scripts = [s.download_as_string().decode('utf-8') for s in script_blobs]
     scripts = [pandas.read_csv(StringIO(s))[text_column].tolist() for s in scripts]
 
-    logger.info('Running speech-to-text and caching results...')
+    logger.info('Maybe running speech-to-text and caching results...')
     filtered = list(filter(lambda i: not i[-1].exists(), zip(audio_blobs, scripts, stt_blobs)))
     if len(filtered) > 0:
         run_stt(*zip(*filtered))
