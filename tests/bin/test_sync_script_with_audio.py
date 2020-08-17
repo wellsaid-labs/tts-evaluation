@@ -1,19 +1,19 @@
 import re
 
-from src.bin.sync_script_with_audio import _fix_one_to_many_alignment
+from src.bin.sync_script_with_audio import _fix_alignments
 from src.bin.sync_script_with_audio import _get_speech_context
+from src.bin.sync_script_with_audio import _remove_punctuation
 from src.bin.sync_script_with_audio import format_differences
 from src.bin.sync_script_with_audio import format_ratio
-from src.bin.sync_script_with_audio import remove_punctuation
 from src.bin.sync_script_with_audio import ScriptToken
 from src.bin.sync_script_with_audio import SttToken
 from src.environment import COLORS
 from src.utils import flatten
 
 
-def test_remove_punctuation():
-    assert remove_punctuation('123 abc !.?') == '123 abc'
-    assert remove_punctuation('Hello. You\'ve') == 'Hello You ve'
+def test__remove_punctuation():
+    assert _remove_punctuation('123 abc !.?') == '123 abc'
+    assert _remove_punctuation('Hello. You\'ve') == 'Hello You ve'
 
 
 def test_format_ratio():
@@ -202,25 +202,64 @@ def test_format_differences__unalignment_between_scripts():
     ])
 
 
-def test__fix_one_to_many_alignment():
-    scripts = ['a b-c d e']
+def test__fix_alignments():
+    scripts = ['a b c d e']
     stt_results = ['a b c d e']
-    alignments = [(0, 0), (2, 3), (3, 4)]
+    alignments = [(0, 0), (4, 4)]
     tokens = _get_script_tokens(scripts)
     stt_tokens = _get_stt_tokens(stt_results)
-    updated_stt_tokens, updated_alignments = _fix_one_to_many_alignment(
-        alignments, tokens, stt_tokens)
-    assert updated_alignments == [(0, 0), (1, 1), (2, 2), (3, 3)]
-    assert [s.text for s in updated_stt_tokens] == ['a', 'b c', 'd', 'e']
+    updated_tokens, updated_stt_tokens, updated_alignments = _fix_alignments(
+        scripts, alignments, tokens, stt_tokens)
+    assert updated_alignments == [(0, 0), (1, 1), (2, 2)]
+    assert [s.text for s in updated_stt_tokens] == ['a', 'b c d', 'e']
+    assert [s.text for s in updated_tokens] == ['a', 'b c d', 'e']
 
 
-def test__fix_one_to_many_alignment__edges():
+def test__fix_alignments__edges():
+    scripts = ['a b c d e']
+    stt_results = ['a b c d e']
+    alignments = [(2, 2)]
+    tokens = _get_script_tokens(scripts)
+    stt_tokens = _get_stt_tokens(stt_results)
+    updated_tokens, updated_stt_tokens, updated_alignments = _fix_alignments(
+        scripts, alignments, tokens, stt_tokens)
+    assert updated_alignments == [(0, 0), (1, 1), (2, 2)]
+    assert [s.text for s in updated_stt_tokens] == ['a b', 'c', 'd e']
+    assert [s.text for s in updated_tokens] == ['a b', 'c', 'd e']
+
+
+def test__fix_alignments__stt_edges():
     scripts = ['a-b c d-e']
     stt_results = ['a b c d e']
     alignments = [(1, 2)]
     tokens = _get_script_tokens(scripts)
     stt_tokens = _get_stt_tokens(stt_results)
-    updated_stt_tokens, updated_alignments = _fix_one_to_many_alignment(
-        alignments, tokens, stt_tokens)
+    _, updated_stt_tokens, updated_alignments = _fix_alignments(scripts, alignments, tokens,
+                                                                stt_tokens)
     assert updated_alignments == [(0, 0), (1, 1), (2, 2)]
     assert [s.text for s in updated_stt_tokens] == ['a b', 'c', 'd e']
+
+
+def test__fix_alignments__script_edges():
+    scripts = ['a b c d e']
+    stt_results = ['a-b c d-e']
+    alignments = [(2, 1)]
+    tokens = _get_script_tokens(scripts)
+    stt_tokens = _get_stt_tokens(stt_results)
+    updated_tokens, _, updated_alignments = _fix_alignments(scripts, alignments, tokens, stt_tokens)
+    assert updated_alignments == [(0, 0), (1, 1), (2, 2)]
+    assert [s.text for s in updated_tokens] == ['a b', 'c', 'd e']
+
+
+def test__fix_alignments__between_scripts():
+    """ Test that `_fix_alignments` doesn't align tokens between two scripts. """
+    scripts = ['a b c', 'd e']
+    stt_results = ['a b c', 'd e']
+    alignments = [(0, 0), (1, 1), (4, 4)]
+    tokens = _get_script_tokens(scripts)
+    stt_tokens = _get_stt_tokens(stt_results)
+    updated_tokens, updated_stt_tokens, updated_alignments = _fix_alignments(
+        scripts, alignments, tokens, stt_tokens)
+    assert updated_alignments == [(0, 0), (1, 1), (4, 4)]
+    assert [s.text for s in updated_tokens] == ['a', 'b', 'c', 'd', 'e']
+    assert [s.text for s in updated_stt_tokens] == ['a', 'b', 'c', 'd', 'e']

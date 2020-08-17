@@ -264,41 +264,56 @@ def format_differences(scripts, alignments, tokens, stt_tokens):
     yield from _format_gap(scripts, tokens[current[-1][0]:], stt_tokens[current[-1][1] + 1:])
 
 
-def _fix_one_to_many_alignment(alignments, tokens, stt_tokens):
-    """ Using `is_sound_alike`, try to resolve multiple STT tokens to a single script token.
+def _fix_alignments(scripts, alignments, tokens, stt_tokens):
+    """ Resolve misalignments if unaligned `tokens` and unaligned `stt_tokens` sound alike.
 
-    Example: This will align these two tokens `ScriptToken("Hello.You've")` and
-      `SttToken("Hello You\'ve"))`.
+    Example: This will align these two tokens:
+      `ScriptToken("Hello.You've")`
+      `SttToken("Hello You\'ve"))`
     """
     stt_tokens = stt_tokens.copy()
     alignments = alignments.copy()
     iterator = zip([(-1, -1)] + alignments, alignments + [(len(tokens), len(stt_tokens))])
     for i, (last, next_) in reversed(list(enumerate(iterator))):
-        if next_[0] - last[0] == 2 and next_[1] - last[1] > 2:
-            token = tokens[last[0] + 1]
+        if (next_[0] - last[0] > 1 and next_[1] - last[1] > 1 and
+                tokens[last[0] + 1].script_index == tokens[next_[0] - 1].script_index):
+            token = scripts[tokens[last[0] + 1].script_index]
+            token = token[tokens[last[0] + 1].start_text:tokens[next_[0] - 1].end_text]
+            token = ScriptToken(
+                text=token,
+                start_text=tokens[last[0] + 1].start_text,
+                end_text=tokens[next_[0] - 1].end_text,
+                script_index=tokens[last[0] + 1].script_index)
             stt_token = SttToken(
                 text=' '.join([t.text for t in stt_tokens[last[1] + 1:next_[1]]]),
                 start_audio=stt_tokens[last[1] + 1].start_audio,
                 end_audio=stt_tokens[next_[1] - 1].end_audio)
             if is_sound_alike(token.text, stt_token.text):
                 logger.info('Fixing alignment between: "%s" and "%s"', token.text, stt_token.text)
+                for j in reversed(range(last[0] + 1, next_[0])):
+                    del tokens[j]
+                    alignments = [(a - 1, b) if a > j else (a, b) for a, b in alignments]
+                tokens.insert(last[0] + 1, token)
+                alignments = [(a + 1, b) if a >= last[0] + 1 else (a, b) for a, b in alignments]
+
                 for j in reversed(range(last[1] + 1, next_[1])):
                     del stt_tokens[j]
                     alignments = [(a, b - 1) if b > j else (a, b) for a, b in alignments]
                 stt_tokens.insert(last[1] + 1, stt_token)
                 alignments = [(a, b + 1) if b >= last[1] + 1 else (a, b) for a, b in alignments]
+
                 alignments.insert(i, (last[0] + 1, last[1] + 1))
-    return stt_tokens, alignments
+    return tokens, stt_tokens, alignments
 
 
 def align_stt_with_script(scripts,
                           stt_result,
-                          get_window_size=lambda a, b: max(round(a * 0.1), 256) + abs(a - b)):
+                          get_window_size=lambda a, b: max(round(a * 0.05), 256) + abs(a - b)):
     """ Align an STT result(s) with the related script(s). Uses white-space tokenization.
 
     NOTE: The `get_window_size` default used with `align_tokens` was set based off empirical
     data. The three components are:
-      - `a * 0.1` assumes that a maximum of 10% of tokens will be misaligned.
+      - `a * 0.05` assumes that a maximum of 5% of tokens will be misaligned.
       - `max(x, 256)` is a minimum window size that doesn't cause performance issues.
       - `abs(a - b)` is an additional bias for large misalignments.
 
@@ -331,7 +346,8 @@ def align_stt_with_script(scripts,
             [_normalize_text(t.text.lower()) for t in stt_tokens],
             get_window_size(len(script_tokens), len(stt_tokens)))
     alignments = align_tokens(*args, allow_substitution=is_sound_alike)[1]
-    stt_tokens, alignments = _fix_one_to_many_alignment(alignments, script_tokens, stt_tokens)
+    script_tokens, stt_tokens, alignments = _fix_alignments(scripts, alignments, script_tokens,
+                                                            stt_tokens)
 
     STATS['total_aligned_tokens'] += len(alignments)
     STATS['total_tokens'] += len(script_tokens)
