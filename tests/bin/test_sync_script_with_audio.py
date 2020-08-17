@@ -13,7 +13,7 @@ from src.utils import flatten
 
 
 def test__normalize_text():
-    assert _normalize_text('Testing… \f ® ™ — coöperation') == 'Testing...    - cooperation'
+    assert _normalize_text(' Testing… \f ® ™ — coöperation ') == 'Testing...    - cooperation'
 
 
 def test__remove_punctuation():
