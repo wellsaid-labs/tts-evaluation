@@ -14,7 +14,6 @@ Prior:
 
     $ mv ~/Downloads/voice-research-255602-1a5538456fc3.json gcs_credentials.json
 
-
 Example:
 
     PREFIX=gs://wellsaid_labs_datasets/hilary_noriega
@@ -365,10 +364,13 @@ def align_stt_with_script(scripts,
     logger.info('Failed to align: %s',
                 ''.join(format_differences(scripts, alignments, script_tokens, stt_tokens)))
 
-    return_ = [(script_tokens[a[0]].script_index, (script_tokens[a[0]].start_text,
-                                                   script_tokens[a[0]].end_text),
-                (stt_tokens[a[1]].start_audio, stt_tokens[a[1]].end_audio)) for a in alignments]
-    return [[(i[1], i[2]) for i in g] for _, g in groupby(return_, lambda i: i[0])]
+    return_ = [[] for _ in range(len(scripts))]
+    for alignment in alignments:
+        return_[script_tokens[alignment[0]].script_index].append((
+            (script_tokens[alignment[0]].start_text, script_tokens[alignment[0]].end_text),
+            (stt_tokens[alignment[1]].start_audio, stt_tokens[alignment[1]].end_audio),
+        ))
+    return return_
 
 
 def _get_speech_context(script, max_phrase_length=100, min_overlap=0.25):
