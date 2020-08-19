@@ -14,6 +14,7 @@ import math
 import os
 import pprint
 import random
+import re
 import statistics
 import time
 
@@ -32,6 +33,41 @@ pprint = pprint.PrettyPrinter(indent=4)
 #   modification_time (int): See `os.path.getmtime`.
 #   byte_size (int): See `os.path.getsize`.
 FileMetadata = namedtuple('FileMetadata', ['modification_time', 'byte_size'])
+
+
+
+def cumulative_split(list_, thresholds, get_value=lambda x: x):
+    """ Split list by cumulative sum.
+
+    TODO: Test
+
+    Args:
+        list_ (iterable)
+        thresholds (list of int)
+        get_value (callable, optional): Given a list item, determine the value of the list item.
+
+    Returns:
+        (iterable): Slice of the list.
+    """
+    return_ = []
+    threshold = float('inf') if len(thresholds) == 0 else thresholds.pop(0)
+    split = []
+    total = 0
+    for item in list_:
+        total += get_value(item)
+        if total > threshold:
+            return_.append(split)
+            split = []
+            threshold = float('inf') if len(thresholds) == 0 else thresholds.pop(0)
+        split.append(item)
+    return return_
+
+
+def natural_keys(text):
+    """ Returns keys (`list`) for sorting in a "natural" order.
+    Inspired by: http://nedbatchelder.com/blog/200712/human_sorting.html
+    """
+    return [(int(char) if char.isdigit() else char) for char in re.split(r'(\d+)', str(text))]
 
 
 def strip(text):

@@ -14,6 +14,7 @@ from src.utils.on_disk_tensor import OnDiskTensor
 from src.utils.record_standard_streams import RecordStandardStreams
 from src.utils.utils import assert_no_overwritten_files
 from src.utils.utils import bash_time_label
+from src.utils.utils import cumulative_split
 from src.utils.utils import dict_collapse
 from src.utils.utils import evaluate
 from src.utils.utils import flatten
@@ -29,6 +30,7 @@ from src.utils.utils import LSTM
 from src.utils.utils import LSTMCell
 from src.utils.utils import maybe_get_model_devices
 from src.utils.utils import mean
+from src.utils.utils import natural_keys
 from src.utils.utils import pad_tensors
 from src.utils.utils import Pool
 from src.utils.utils import random_sample
@@ -49,5 +51,6 @@ __all__ = [
     'maybe_load_tensor', 'AveragedMetric', 'DistributedAveragedMetric', 'bash_time_label',
     'RepeatTimer', 'mean', 'random_sample', 'make_arg_key', 'DiskCache',
     'assert_no_overwritten_files', 'get_file_metadata', 'dict_collapse', 'strip', 'trim_tensors',
-    'pad_tensors', 'get_functions_with_disk_cache', 'LSTM', 'LSTMCell'
+    'pad_tensors', 'get_functions_with_disk_cache', 'LSTM', 'LSTMCell', 'natural_keys',
+    'cumulative_split'
 ]

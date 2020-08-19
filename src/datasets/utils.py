@@ -1,10 +1,175 @@
+"""
+IDEAS:
+1. Preprocess the audio spectrogram before hand, and slice from it. We'd still need to adjust
+    the edges. This might not be the biggest issue, since a typical spectrogram is 100ms.
+    This might cause issues downstream for the signal model.
+2. Measure attention skipping while training
+3. Measure the difference between the first half and last half of the audio for loudness.
+
+QUESTIONS:
+1. Predicted spectrogram... How long does it take to compute a predicted spectrogram? We
+could just have a sampler that samples the first 100,000 rows, and computes for that. That's
+assuming that doing so ondemand is too slow. In order to do so ondemand, we'd want to compute
+128 aligned examples every half a second? The other option... is that we could increasingly
+grow the size of the dataset (with a cap) as training is going on. We could always have a
+process in the background that's processing more predicted spectrograms, and meanwhile the
+training continues to go.
+
+CONCERNS:
+1. Generators cannot be pickled; thefore, we'll need to recreate it. Or we'll need to create
+    the generator directly in the child process.
+2. We cannot compute all the spectrograms, and we might not be able to compute the spectrograms
+    fast enough to-do so on-demand. We'll want to develop a sampler that can backfill. As
+    training goes on, it'll progressively add more data to the dataset.
+    The sampler can just get the next sample, if it's ready. If it's not ready, then it can
+    grab a previous example from the last 1,000 or so examples.
+    The reason I like this is it simplifies the pipeline. We don't need batch processing before
+    hand in order to ensure performance. That'll simplify the scripting process, wohoo!
+    The reason I don't like this is it adds randomness that cannot be controled. I think
+    the randomness is "Okay". We'll be able to replace that component with a determinisitc one
+    by pregenerating a large dataset, and just using it.
+3. We'll need some sort of "Universal" encoder and decoder:
+    (This should be doable but it'll require some thought. We'll need to worry about the data)
+    1. We could have a vocab encoder which is automatically generated based types:
+      1. Number (Identity) [1.5, 2.5, 3.5, 4.5]
+      2. torch.Tensor (Identity)
+      3. String (Label / Tokenizer)
+4. How do we handle the discrepency between annotated data, and non-annotated data?
+5. Most likely, our users will be using the system without annotations. It should be capable
+    of operating without annotations required.
+6. How do we break up the program?
+    1. Loading
+    2. Variety of modules for annotating
+    3. Some universal example, that can be passed downstream.
+
+7. What does realistic usage look like? Should we annotate everything, and then use dropout?
+    Should we randomly annotate?
+    Always having annotations is appealing because it'll make modeling easier but that doesn't
+    make sense in real life. In real-life, we'll sometimes have annotations and sometimes we
+    won't.
+    The idea of dropout is interesting... We shouldn't use dropout. IT won't be as effective.
+    We should dropout entire annotations, similar to "block dropout" which is frequently more
+    effective. A user is likely including or not an annotation...
+8. What does deployment look like? Which annotations will we add?
+    We'll automatically parse with spacy, and lower case the text. The loudness / speed / pitch
+    will not be defined.
+    We might take advantage of the metadata or preset it.
+9. Should the server parse the XML? Or should that be responsiblity of the frontend?
+    This should be handled on the backend, and that'll make the API easier to use.
+
+TODO:
+1. Cache alignments, voice-over, and voice-over script.
+2. Preprocess voice-over with `SoX` or `ffmpeg` and cache.
+3. Pick the script subset to generate data from.
+4. Log the number of hours of data
+4. Start an infinite loop to generate slices:
+  1. Randomly select a starting alignment.
+  2. Randomly select an ending alignment that is less that the maximum seconds.
+  3. Reject the slice if:
+      1. There is an unalignment in the middle of the slice.
+      2. The start or end alignment has too little audio per character.
+      3. There is a number in the slice.
+      3. Research others...
+  4. Normalize script text (maybe the input encoder already does this?)
+  5. Preprocess the script with spaCy medium, and add both `.tensor` and `.vector` features to
+      the slice.
+  6. For a random number of non-overlapping random slices, compute the:
+      - Average and rounded (to prevent overfitting) loudness (with ITU-R BS.1770-4).
+      - Average and rounded (to prevent overfitting) speed (seconds per phoneme).
+      - Average and rounded (to prevent overfitting) pitch (with CREPE or SPICE or torchaudio).
+  7. For a random number of transitions, compute the (rounded to prevent overfitting) pause
+      time in seconds.
+  8. Lower case the text, and provide an extra feature with regard to capitalization.
+  9. For a random number of words, provide the phonetic spelling.
+  10. For the audio file, compute the noise by measuring the quietest second. Provide that
+      information. (Later)
+  11. Extract and provide any related metadata with regards to book or article.
+5. Following getting the dataset... the spectrogram is generated.
+6. The spectrogram shapes are cached. In order to do so, we'll just need to pregenerate
+    100 * batch_size, and the examples are sorted internally.
+7. The grapheme to phoneme data is cached. This is not required iff we have a on-demand workflow
+    with backfilling.
+8. The iterators are passed onto the processes. They need to be recreated.
+We can then chain a sampler onto this generator for data sampling...
+
+Ideally... all the datasets would follow the same paradigm. The current paradigm is:
+1. Download
+2. Cache
+3. Get Rows
+4. Split / shuffle datasets
+5. Add spectrogram
+7. Cache G2P
+6. Add predicted spectrogram
+7. Pickle and distribute data
+8. Create model / input encoder
+9. DataLoader / Sampling
+
+The new paradigm is different complicated... because data is generated ondemand instead of before
+hand.
+
+QUESTIONS:
+1. Do we need to reserve evaluation data / training data? We need to create some sort of split...
+and ensure they are not overlapping. The ideas I have are:
+  - Create the split during preprocessing
+  - Create the split after preprocessing
+    - Pass a boolean?
+    - The most generic approach is to randomly assign some overlapping segments. We can randomly
+      generate 100 slices of the same size...
+    - Maybe... we have some sort of generic generator of alignments of a particular size, we can
+      also ensure it doesn't overlap with previous alignments somehow...
+  - IDEA:
+    - We have a generator that can sample with / without replacement. It can also take a list of
+  - How do we ensure consistency between the seperate methods data generation? One method...
+    has a fixed size while the other one isn't fixed in size.
+
+    - Should this be the responsibility of
+    - Should each function be responsible?
+        -
+  - IDEA: We pass the number of dataset splits to the dataset, and it returns generators for each.
+    That's how things are right now...
+      - The reason that I like this idea... is that it fits into the current code base. And
+        it can be reasonably incorperated into both data models.
+  - IDEA: Instead of splits, we just
+
+QUESTION:
+- What should the output of the function be?
+  It could be... a namedtuple with the audio, script, and a list of annotations.
+  It could be... references to the audio, script and annotations with alignments when to get them.
+- Does the loader have to be responsible for normalizing?
+  - The script?
+    - Handle special characters
+    - Strip white spaces
+  - The audio?
+    - Audio format
+    - Loudness
+  - The alignments?
+    - Remove any alignments that are not useful
+- The loader shouldn't have to normalize because it's common too every piece of data that's loaded.
+
+IDEA: We could create a pipeline:
+1. Downloading / Caching / Splitting /
+1. Generators that include alignments + references to recordings and scripts
+2. Normalization and filtering of data.
+3. Annotating of the data with caching if nesssecary.
+
+# NOTE: We can just remove a subset of alignments... and as long as we don't allow for
+#
+# The only issue is that we remove an alignment related to a random punctuation mark. Is that
+# really an issue? All of our alignments are based on Google words or things that sound-a-like.
+"""
 from collections import Counter
+from collections import namedtuple
 from functools import partial
+from math import ceil
+from math import floor
 from pathlib import Path
 
+import json
 import logging
 import os
 import pprint
+import random
+import subprocess
 
 from hparams import configurable
 from hparams import HParam
@@ -19,10 +184,10 @@ pandas = LazyLoader('pandas', globals(), 'pandas')
 
 from src.audio import cache_get_audio_metadata
 from src.audio import get_signal_to_db_mel_spectrogram
-from src.audio import to_floating_point_pcm
 from src.audio import normalize_audio
 from src.audio import pad_remainder
 from src.audio import read_audio
+from src.audio import to_floating_point_pcm
 from src.datasets.constants import TextSpeechRow
 from src.environment import DATA_PATH
 from src.environment import IS_TESTING_ENVIRONMENT
@@ -30,6 +195,9 @@ from src.environment import ROOT_PATH
 from src.environment import TEMP_PATH
 from src.environment import TTS_DISK_CACHE_NAME
 from src.utils import batch_predict_spectrograms
+from src.utils import cumulative_split
+from src.utils import flatten
+from src.utils import natural_keys
 from src.utils import OnDiskTensor
 
 logger = logging.getLogger(__name__)
@@ -237,103 +405,137 @@ def filter_(function, dataset):
     return positive
 
 
-def alignment_dataset_loader(alignments='gs://wellsaid_labs_datasets/hilary_noriega/alignments'):
-    """ Load an alignment text to speech (TTS) dataset.
+# Args:
+#     alignments (list of tuple(tuple(int, int), tuple(int, int))): List of alignments from
+#         `script` to `audio_path`.
+#     script (str): The script read in the voice over.
+#     audio_path (pathlib.Path): The voice over.
+#     speaker (Speaker): Speaker represented in voice over.
+#     metadata (dict): Additional metadata associated with this example.
+Example = namedtuple(
+    'Example', ['alignments', 'script', 'audio_path', 'speaker', 'metadata'],
+    defaults=(None, None, None, None, None, {}))
 
-    IDEAS:
-    1. Preprocess the audio spectrogram before hand, and slice from it. We'd still need to adjust
-       the edges. This might not be the biggest issue, since a typical spectrogram is 100ms.
-       This might cause issues downstream for the signal model.
-    2. Measure attention skipping while training
-    3. Measure the difference between the first half and last half of the audio for loudness.
 
-    QUESTIONS:
-    1. Predicted spectrogram... How long does it take to compute a predicted spectrogram? We
-    could just have a sampler that samples the first 100,000 rows, and computes for that. That's
-    assuming that doing so ondemand is too slow. In order to do so ondemand, we'd want to compute
-    128 aligned examples every half a second? The other option... is that we could increasingly
-    grow the size of the dataset (with a cap) as training is going on. We could always have a
-    process in the background that's processing more predicted spectrograms, and meanwhile the
-    training continues to go.
+def _alignment_generator(split, max_seconds):
+    """ Generate a `Example`s that are at most `max_seconds` long.
 
-    CONCERNS:
-    1. Generators cannot be pickled; thefore, we'll need to recreate it. Or we'll need to create
-       the generator directly in the child process.
-    2. We cannot compute all the spectrograms, and we might not be able to compute the spectrograms
-       fast enough to-do so on-demand. We'll want to develop a sampler that can backfill. As
-       training goes on, it'll progressively add more data to the dataset.
-       The sampler can just get the next sample, if it's ready. If it's not ready, then it can
-       grab a previous example from the last 1,000 or so examples.
-       The reason I like this is it simplifies the pipeline. We don't need batch processing before
-       hand in order to ensure performance. That'll simplify the scripting process, wohoo!
-       The reason I don't like this is it adds randomness that cannot be controled. I think
-       the randomness is "Okay". We'll be able to replace that component with a determinisitc one
-       by pregenerating a large dataset, and just using it.
-    3. We'll need some sort of "Universal" encoder and decoder:
-       (This should be doable but it'll require some thought. We'll need to worry about the data)
-       1. We could have a vocab encoder which is automatically generated based types:
-          1. Number (Identity) [1.5, 2.5, 3.5, 4.5]
-          2. torch.Tensor (Identity)
-          3. String (Label / Tokenizer)
-    4. How do we handle the discrepency between annotated data, and non-annotated data?
-    5. Most likely, our users will be using the system without annotations. It should be capable
-       of operating without annotations required.
-    6. How do we break up the program?
-       1. Loading
-       2. Variety of modules for annotating
-       3. Some universal example, that can be passed downstream.
+    Examples, representing a interval of time, are sampled uniformly over the audio file.
+    Afterwards unaligned or aligned intervals that overlap with the boundaries are removed.
 
-    7. What does realistic usage look like? Should we annotate everything, and then use dropout?
-       Should we randomly annotate?
-       Always having annotations is appealing because it'll make modeling easier but that doesn't
-       make sense in real life. In real-life, we'll sometimes have annotations and sometimes we
-       won't.
-       The idea of dropout is interesting... We shouldn't use dropout. IT won't be as effective.
-       We should dropout entire annotations, similar to "block dropout" which is frequently more
-       effective. A user is likely including or not an annotation...
-    8. What does deployment look like? Which annotations will we add?
-       We'll automatically parse with spacy, and lower case the text. The loudness / speed / pitch
-       will not be defined.
-       We might take advantage of the metadata or preset it.
-    9. Should the server parse the XML? Or should that be responsiblity of the frontend?
-       This should be handled on the backend, and that'll make the API easier to use.
+    NOTE:
+    - Longer alignments or unalignments are less likely to be sampled because they are more
+      likely to overlap with the boundary.
+    - The length of the sampled interval is less likely to be the full `max_seconds` afterward
+      any boundary segments are removed.
 
     TODO:
-    1. Cache alignments, voice-over, and voice-over script.
-    2. Preprocess voice-over with `SoX` or `ffmpeg` and cache.
-    3. Pick the script subset to generate data from.
-    4. Log the number of hours of data
-    4. Start an infinite loop to generate slices:
-      1. Randomly select a starting alignment.
-      2. Randomly select an ending alignment that is less that the maximum seconds.
-      3. Reject the slice if:
-          1. There is an unalignment in the middle of the slice.
-          2. The start or end alignment has too little audio per character.
-          3. There is a number in the slice.
-          3. Research others...
-      4. Normalize script text.
-      5. Preprocess the script with spaCy medium, and add both `.tensor` and `.vector` features to
-         the slice.
-      6. For a random number of non-overlapping random slices, compute the:
-          - Average and rounded (to prevent overfitting) loudness (with ITU-R BS.1770-4).
-          - Average and rounded (to prevent overfitting) speed (seconds per phoneme).
-          - Average and rounded (to prevent overfitting) pitch (with CREPE or SPICE or torchaudio).
-      7. For a random number of transitions, compute the (rounded to prevent overfitting) pause
-         time in seconds.
-      8. Lower case the text, and provide an extra feature with regard to capitalization.
-      9. For a random number of words, provide the phonetic spelling.
-      10. For the audio file, compute the noise by measuring the quietest second. Provide that
-          information. (Later)
-      11. Extract and provide any related metadata with regards to book or article.
-    5. Following getting the dataset... the spectrogram is generated.
-    6. The spectrogram shapes are cached. In order to do so, we'll just need to pregenerate
-       100 * batch_size, and the examples are sorted internally.
-    7. The grapheme to phoneme data is cached. This is not required iff we have a on-demand workflow
-       with backfilling.
-    8. The iterators are passed onto the processes. They need to be recreated.
-    We can then chain a sampler onto this generator for data sampling...
+    - Look into removing these biases by including boundary intervals based on some statistical
+    correction.
+    - Log the alignment distribution in order to ensure it's relatively uniform.
+
+    Args:
+        split (list of Example): List of examples to sample from.
+        max_seconds (float): The maximum interval length:
+
+    Returns:
+        (generator of Example)
     """
-    pass
+    split = sorted(split, key=lambda e: e.alignments[0][1][0])
+    min_ = split[0].alignments[0][1][0]
+    max_ = split[-1].alignments[-1][1][1]
+    lookup = [[] for _ in range(ceil(max_))]
+    for i, example in enumerate(split):
+        for j, alignment in enumerate(example.alignments):
+            for k in range(int(floor(alignment[1][0])), int(ceil(alignment[1][0])) + 1):
+                lookup[k].append(i, j)
+    find = lambda i: split[i[0]].alignments[i[1]][1]  # Given the indicies return the audio span.
+    while True:
+        start = random.uniform(min_ - max_seconds, max_)
+        end = min(max_, start + random.uniform(0.0, max_seconds))
+        start = max(min_, start)
+        slice_ = flatten(lookup[int(start):int(end)])
+        start = next((i for i in slice_ if find(i)[0] >= start and find(i)[1] >= start), None)
+        end = next((i for i in reversed(slice_) if find(i)[0] <= end and find(i)[1] <= end), None)
+        if start and end and start[0] == end[0] and find(end)[1] - find(start)[0] > 0:
+            example = split[start[0]]
+            yield example._replace(alignments=example.alignments[start[1]:end[1] + 1])
+
+
+def _gcs_alignment_dataset_loader(root_directory_name,
+                                  speaker,
+                                  splits,
+                                  directory=DATA_PATH,
+                                  gcs_path='gs://wellsaid_labs_datasets/hilary_noriega',
+                                  alignments_directory_name='alignments',
+                                  recordings_directory_name='recordings',
+                                  scripts_directory_name='scripts',
+                                  text_column='Content',
+                                  max_seconds=15):
+    """ Load an alignment text-to-speech (TTS) dataset from GCS.
+
+    The structure of the dataset should be:
+        - The file structure is similar to:
+            {gcs_path}/
+            ├── {alignments_directory_name}/  # Alignments between recordings and scripts
+            │   ├── audio1.json
+            │   └── ...
+            ├── {recordings_directory_name}/  # Voice overs
+            │   ├── audio1.wav                # NOTE: Most audio file formats are accepted.
+            │   └── ...
+            └── {scripts_directory_name}/     # Voice over scripts with related metadata
+                ├── audio1-script.csv
+                └── ...
+        - The alignments, recordings, and scripts directory should contain the same number of
+          similarly named files.
+        - The dataset contain data representing only one speaker.
+
+    Args:
+        root_directory_name (str): Name of the directory inside `directory` to store data.
+        speaker (src.datasets.Speaker): The speaker represented by this dataset.
+        splits (list of int): The size of each dataset split in seconds. Iff the the total size
+            is smaller than the dataset size, then an extra dataset split will be returned with
+            the remaining data.
+        directory (str or Path, optional): Directory to cache the dataset.
+        gcs_path (str, optional): The base GCS path storing the data.
+        alignments_gcs_path (str, optional): The name of the alignments directory on GCS.
+        recordings_gcs_path (str, optional): The name of the voice over directory on GCS.
+        scripts_gcs_path (str, optional): The name of the voice over script directory on GCS.
+        text_column (str, optional): The voice over script column in the CSV script files.
+        max_seconds (int, optional): The length of an example.
+
+    Returns:
+        (tuple of generator of Example): A generator of `Example`s is returned for each split.
+    """
+    logger.info('Loading `%s` speech dataset', root_directory_name)
+
+    root = (Path(directory) / root_directory_name).absolute()
+    root.mkdir(exist_ok=True)
+    directories = [alignments_directory_name, recordings_directory_name, scripts_directory_name]
+    directories = [root / d for d in directories]
+    for directory, suffix in zip(directories, ('.json', '', '.csv')):
+        directory.mkdir(exist_ok=True)
+        command = 'gsutil -m cp -n %s/%s/*%s %s/' % (gcs_path, directory.name, suffix, directory)
+        subprocess.run(command.split(), check=True)
+
+    files = (sorted(d.iterdir(), key=lambda p: natural_keys(p.name)) for d in directories)
+    examples = []
+    for alignment_file_path, recording_file_path, script_file_path in zip(*tuple(files)):
+        alignments = json.loads(alignment_file_path.read_text())
+        scripts = pandas.read_csv(script_file_path.read_text())
+        assert len(scripts) == len(alignments), 'Expected equal number of scripts and alignments'
+        iterator = zip(alignments, scripts.iterrows())
+        examples.extend([
+            Example(a, s[text_column], recording_file_path, speaker,
+                    {k: v for k, v in s.items() if k != text_column}) for a, s in iterator
+        ])
+
+    random.shuffle(examples)
+    # NOTE: This assumes that a negligible amount of data is unusable in each example.
+    splits = cumulative_split(examples, splits,
+                              lambda e: e.alignments[-1][1][1] - e.alignments[0][1][0])
+
+    return tuple(_alignment_generator(s, max_seconds) for s in splits)
 
 
 def _dataset_loader(
