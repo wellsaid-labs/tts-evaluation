@@ -60,7 +60,9 @@ def cumulative_split(list_, thresholds, get_value=lambda x: x):
             split = []
             threshold = float('inf') if len(thresholds) == 0 else thresholds.pop(0)
         split.append(item)
-    return return_
+    if len(split) != 0:
+        return_.append(split)
+    return tuple(return_)
 
 
 def natural_keys(text):

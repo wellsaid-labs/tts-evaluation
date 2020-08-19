@@ -414,10 +414,10 @@ def filter_(function, dataset):
 #     metadata (dict): Additional metadata associated with this example.
 Example = namedtuple(
     'Example', ['alignments', 'script', 'audio_path', 'speaker', 'metadata'],
-    defaults=(None, None, None, None, None, {}))
+    defaults=(None, None, None, None, {}))
 
 
-def _alignment_generator(split, max_seconds):
+def _alignment_generator(data, max_seconds):
     """ Generate a `Example`s that are at most `max_seconds` long.
 
     Examples, representing a interval of time, are sampled uniformly over the audio file.
@@ -433,32 +433,39 @@ def _alignment_generator(split, max_seconds):
     - Look into removing these biases by including boundary intervals based on some statistical
     correction.
     - Log the alignment distribution in order to ensure it's relatively uniform.
+    - Look into extending the maximum seconds by the size of the largest alignment, and then
+      filtering out alignments that are longer than the max alignment.
+    - Does this need extra tests? Yes. We should test small max legnth and alignments
 
     Args:
-        split (list of Example): List of examples to sample from.
-        max_seconds (float): The maximum interval length:
+        data (list of Example): List of examples to sample from.
+        max_seconds (float): The maximum interval length.
 
     Returns:
-        (generator of Example)
+        (iterator of Example)
     """
-    split = sorted(split, key=lambda e: e.alignments[0][1][0])
-    min_ = split[0].alignments[0][1][0]
-    max_ = split[-1].alignments[-1][1][1]
-    lookup = [[] for _ in range(ceil(max_))]
-    for i, example in enumerate(split):
+    assert max_seconds > 0, 'The maximum interval length must be a positive number.'
+    data = sorted(data, key=lambda e: e.alignments[0][1][0])
+    if len(data) == 0:
+        return iter([])
+    min_ = data[0].alignments[0][1][0]
+    max_ = data[-1].alignments[-1][1][1]
+    lookup = [[] for _ in range(ceil(max_) + 1)]
+    for i, example in enumerate(data):
         for j, alignment in enumerate(example.alignments):
             for k in range(int(floor(alignment[1][0])), int(ceil(alignment[1][0])) + 1):
-                lookup[k].append(i, j)
-    find = lambda i: split[i[0]].alignments[i[1]][1]  # Given the indicies return the audio span.
+                lookup[k].append((i, j))
+    find = lambda i: data[i[0]].alignments[i[1]][1]  # Given the indicies return the audio span.
     while True:
-        start = random.uniform(min_ - max_seconds, max_)
-        end = min(max_, start + random.uniform(0.0, max_seconds))
+        length = random.uniform(0.0, max_seconds)
+        start = random.uniform(min_ - length, max_)
+        end = min(max_, start + length)
         start = max(min_, start)
-        slice_ = flatten(lookup[int(start):int(end)])
+        slice_ = flatten(lookup[int(start):int(end) + 1])
         start = next((i for i in slice_ if find(i)[0] >= start and find(i)[1] >= start), None)
         end = next((i for i in reversed(slice_) if find(i)[0] <= end and find(i)[1] <= end), None)
         if start and end and start[0] == end[0] and find(end)[1] - find(start)[0] > 0:
-            example = split[start[0]]
+            example = data[start[0]]
             yield example._replace(alignments=example.alignments[start[1]:end[1] + 1])
 
 
@@ -522,9 +529,9 @@ def _gcs_alignment_dataset_loader(root_directory_name,
     examples = []
     for alignment_file_path, recording_file_path, script_file_path in zip(*tuple(files)):
         alignments = json.loads(alignment_file_path.read_text())
-        scripts = pandas.read_csv(script_file_path.read_text())
+        scripts = pandas.read_csv(str(script_file_path.absolute()))
         assert len(scripts) == len(alignments), 'Expected equal number of scripts and alignments'
-        iterator = zip(alignments, scripts.iterrows())
+        iterator = zip(alignments, [r for _, r in scripts.iterrows()])
         examples.extend([
             Example(a, s[text_column], recording_file_path, speaker,
                     {k: v for k, v in s.items() if k != text_column}) for a, s in iterator
