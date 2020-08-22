@@ -9,11 +9,97 @@ num2words = LazyLoader('num2words', globals(), 'num2words')
 
 from src.datasets.constants import Gender
 from src.datasets.constants import Speaker
-from src.datasets.utils import _dataset_loader
+from src.environments import DATA_PATH
 
 logger = logging.getLogger(__name__)
 
 LINDA_JOHNSON = Speaker('Linda Johnson', Gender.FEMALE)
+
+
+def _dataset_loader(
+    root_directory_name,
+    url,
+    speaker,
+    url_filename=None,
+    create_root=False,
+    check_files=['{metadata_filename}'],
+    directory=DATA_PATH,
+    metadata_filename='{directory}/{root_directory_name}/metadata.csv',
+    metadata_text_column='Content',
+    metadata_audio_column='WAV Filename',
+    metadata_audio_path='{directory}/{root_directory_name}/wavs/{metadata_audio_column_value}',
+    **kwargs,
+):
+    """ Load a standard speech dataset.
+
+    A standard speech dataset has these invariants:
+        - The file structure is similar to:
+            {root_directory_name}/
+                metadata.csv
+                wavs/
+                    audio1.wav
+                    audio2.wav
+        - The metadata CSV file contains a mapping of audio transcriptions to audio filenames.
+        - The dataset contains one speaker.
+        - The dataset is stored in a ``tar`` or ``zip`` at some url.
+
+    Args:
+        root_directory_name (str): Name of the directory inside `directory` to store data. With
+            `create_root=False`, this assumes the directory will be created while extracting
+            `url`.
+        url (str): URL of the dataset file.
+        speaker (src.datasets.Speaker): The dataset speaker.
+        url_filename (str, optional): Name of the file downloaded; Otherwise, a filename is
+            extracted from the url.
+        create_root (bool, optional): If ``True`` extract tar into
+            ``{directory}/{root_directory_name}``. The file is downloaded into
+            ``{directory}/{root_directory_name}``.
+        check_files (list of str, optional): The download is considered successful, if these files
+            exist.
+        directory (str or Path, optional): Directory to cache the dataset.
+        metadata_filename (str, optional): The filename for the metadata file.
+        metadata_text_column (str, optional): Column name or index with the audio transcript.
+        metadata_audio_column (str, optional): Column name or index with the audio filename.
+        metadata_audio_path (str, optional): String template for the audio path given the
+            ``metadata_audio_column`` value.
+        **kwargs: Key word arguments passed to ``pandas.read_csv``.
+
+    Returns:
+        list of TextSpeechRow: Dataset with audio filenames and text annotations.
+    """
+    logger.info('Loading `%s` speech dataset', root_directory_name)
+    directory = Path(directory)
+    metadata_filename = metadata_filename.format(
+        directory=directory, root_directory_name=root_directory_name)
+    check_files = [
+        str(Path(f.format(metadata_filename=metadata_filename)).absolute()) for f in check_files
+    ]
+
+    if create_root:
+        (directory / root_directory_name).mkdir(exist_ok=True)
+
+    download_file_maybe_extract(
+        url=url,
+        directory=str((directory / root_directory_name if create_root else directory).absolute()),
+        check_files=check_files,
+        filename=url_filename)
+    dataframe = pandas.read_csv(Path(metadata_filename), **kwargs)
+    return [
+        TextSpeechRow(
+            text=row[metadata_text_column].strip(),
+            audio_path=Path(
+                metadata_audio_path.format(
+                    directory=directory,
+                    root_directory_name=root_directory_name,
+                    metadata_audio_column_value=row[metadata_audio_column])),
+            speaker=speaker,
+            metadata={
+                k: v
+                for k, v in row.items()
+                if k not in [metadata_text_column, metadata_audio_column]
+            })
+        for _, row in dataframe.iterrows()
+    ]
 
 
 def lj_speech_dataset(root_directory_name='LJSpeech-1.1',

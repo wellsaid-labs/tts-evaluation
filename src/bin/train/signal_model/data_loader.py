@@ -166,7 +166,7 @@ class DataLoader(src.utils.DataLoader):
 
     Returns:
         Single-process or multi-process iterators over the dataset. Per iteration the batch returned
-        includes: SpectrogramModelTrainingRow (
+        includes: SignalModelTrainingRow (
             spectrogram (torch.FloatTensor
                 [batch_size, spectrogram_slice_size + spectrogram_slice_pad, frame_channels])
             spectrogram_mask (torch.BoolTensor

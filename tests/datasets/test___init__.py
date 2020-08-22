@@ -49,5 +49,6 @@ def test_datasets(mock_read_csv, mock_download_file_maybe_extract):
     ]
     for dataset in speech_datasets:
         # Check a row are parsed correctly
+        # TODO: What does this do?
         data = dataset(directory=TEST_DATA_PATH / 'datasets')
         assert len(data) == 0
