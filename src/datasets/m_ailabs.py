@@ -32,9 +32,9 @@ from third_party import LazyLoader
 
 pandas = LazyLoader('pandas', globals(), 'pandas')
 
-from src.datasets.constants import Gender
-from src.datasets.constants import Speaker
-from src.datasets.constants import TextSpeechRow
+from src.datasets.utils import Example
+from src.datasets.utils import Gender
+from src.datasets.utils import Speaker
 from src.environment import DATA_PATH
 
 logger = logging.getLogger(__name__)
@@ -135,6 +135,8 @@ def _m_ailabs_speech_dataset(directory,
     The original URL is ``http://www.caito.de/2019/01/the-m-ailabs-speech-dataset/``.
     Use ``curl -I <URL>`` to find the redirected URL.
 
+    TODO: Extract related metadata.
+
     Args:
         directory (str or Path, optional): Directory to cache the dataset.
         extracted_name (str, optional): Name of the extracted dataset directory.
@@ -173,7 +175,7 @@ def _m_ailabs_speech_dataset(directory,
         extracted_name=extracted_name,
         metadata_path_column=metadata_path_column)
     return [
-        TextSpeechRow(
+        Example(
             text=row[metadata_text_column].strip(),
             audio_path=Path(row[metadata_path_column].parent,
                             metadata_audio_path_template.format(row[metadata_audio_column])),
