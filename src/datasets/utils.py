@@ -82,6 +82,96 @@ get_dataset:
   skeptical about using the word-level sequences with the same encoder since they are so different.
 - IDEA: Instead of implementing a caching method for predicted spectrogram output, we could
   add a GAN to the spectrogram. I'd prefer that...
+- QUESTION: Can we use the same dataset loader for lj_speech or m-ailabs dataset? No. The dataset
+  loader that we built samples longer alignments less often. That said... We could just push
+  max_seconds to `infinity` and it'll work on the other type of dataset as well.
+- QUESTION: With a float('inf'), that means that longer alignments are sampled more often. Should
+  that be the case? That means that longer alignments are sampled more frequently, which is
+  against the goal of the function. The goal is that alignments are sampled an equal amount. This
+  is messed up because... if the script length is shorter than the length of the span, than the
+  sampler script. As the span length gets larger, the number of spans inside of example shrinks.
+  Uptill the the point where, there is only one span. If there is only one span, then each script
+  is effectively equal. Should we correct for that? Something like... size of the span divided
+  by the size of the script. For example if we make this problem discrete it looks like this:
+x x x [0, 0, 0, 0] with a span of 3 has 6 spans inside of it. If the span is 4 it has... 7 spans
+  inside it. What I am really saying is that it gets less and less likely to only sample 1, 2, 3
+  items. The larger it gets the more likely we are always going to sample the entire script. After a span of 4, there
+  will always be only 2 options for sampling 1, 2, 3 items. Every other item will be the entire span.
+  So at a span of 60, there will be 6 options to sample 1, 2, 3. +1 ~54 ish options for sampling
+  the entire script. Do we implicitly rely on the length to be sampler than the script.
+  If the likelihood of capturing the entire script goes higher, then we end up missing elements...
+  Ok... So what is that likelihood?
+  x x x [0, 0, 0]
+  span 0.0: 0%
+  span 1.0: 0%
+  span 2.0: 0%
+  span 3.0: ~0%
+  span 4.0: 1 / 7 (random.uniform(-4, 3))
+  span 5.0: 2 / 8 (random.uniform(-5, 3))
+  span 6.0: 3 / 9 (random.uniform(-6, 3))
+  span 7.0: 4 / 10 (random.uniform(-7, 3))
+  span 60.0: 57 / 63 (random.uniform(-7, 3))
+  function(span_length, script_length): (span_length - script_length) / (span_length + script_length)
+  This is the probability of times that.... the weight should be equal to 1.0.
+
+  Another way to think about this is as a probability distribution. What is the probability
+  distribution implying? I think it's implying there are more spans in one distribution than
+  another distribution. If the span is sufficient small, that's true. So what we're really
+  trying to say is... we're just counting the number of spans. The larger the span, the more
+  everythign looks equal from the prespective of the span. Okay... So the solution is...
+  the weight should be the script_length + span_length
+- QUESTION: Why not just uniformly pick an alignment? That'll pass all our tests... Is there any
+  specific test that it wouldn't pass? (We'll still need to do a length with a random generator...)
+  Okay... The test that might be difficult to pass if we sample alignments uniformly is specifically
+  around spans. We could then get a startpoint inside it with the same min / max idea. We'll still
+  need to pick an end point.
+- QUESTION: What should be the probability of picking a particular length to offset the boundary
+  issues?
+  [0, 0, 0]
+  span 0.0: 3/3% (random.uniform(0, 3))
+  span 1.0: 2/4 (0 - 2) (random.uniform(-1, 3))
+  span 2.0: 1/5 (0 - 1) (random.uniform(-2, 3))
+  span 3.0: 0/6 (0 - 1) (random.uniform(-3, 3))
+  This is the probability that the length is not correct. So we should increase it by that much,
+  the distribution should look like this:
+  1.0 4/2
+  2.0 5/1
+  3.0 (inf)
+
+  Or... (script_length - span_length) / (span_length + script_length)
+  (3 - 1) / (3 + 1)
+- QUESTION: What's the probability for a certain length to appear?
+  [0, 0, 0] (max_seconds=3)
+
+  length 0 - 0.5:
+      length 0 - 0.5:
+  length 0.5 - 1.5:
+      length 0 - 0.5: 8 (25%) 1 / 4 random.uniform(-1, 3)
+      length 0.5 - 1.5: 25 (75%) 3 / 4
+  length 1.5 - 2.5:
+      length 0 - 0.5: 7 (20%) 1 / 5 random.uniform(-2, 3)
+      length 0.5 - 1.5: 13 (40%) 2 / 5
+      length 1.5 - 2: 13 (40%) 2 / 5
+  length 2.5 - 3:
+      length 0 - 0.5: 2.9 (17.5%) 1.05 / 6 random.uniform(-3, 3)
+      length 0.5 - 1.5: 5.8 (35%) 2.1 / 6
+      length 1.5 - 2.5: 5.8 (35%) 2.1 / 6
+      length 2.5 - 3: 2.1 (12.5%) 0.75 / 6
+
+  length 1
+      random.uniform(-1, 3) length=1: 75% 3/4 [-1 0 1 2 3] ()
+      random.uniform(-2, 3) length=2: 40% 2/5 [-2 -1 0 1 2 3] (0.5 - 2,1.5 - 2) (1.5, 2.5)
+      random.uniform(-3, 3) length=3: 33% 2/6 [-3 -2 -1 0 1 2 3] (0.5 - 3,1.5 - 3) (1.5, 2.5)
+  length 2
+      random.uniform(-1, 3) length=1: 0%
+      random.uniform(-2, 3) length=2: 33.3%
+      random.uniform(-3, 3) length=3: 25% [-3 -2 -1 0 1 2 3] (-1.5,1.5) to (-0.5, 2.5) 0.5 to 1.5
+  length 3
+      random.uniform(-1, 3) length=1: 0%
+      random.uniform(-2, 3) length=2: 0%
+      random.uniform(-3, 3) length=3: 25%
+
+
 
 Trainer.__init__ or Model.__init__:
   - Iterate through the text, and create a vocab.
@@ -169,6 +259,7 @@ Worker:
       - Phonemes
   - Accept XML to create loudness, speed, pausing and phoneme.
 
+
 TODO:
 1. Print the size of each dataset loaded.
 2. Ensure old datasets like LJ and M-AILABS are converted to the new format.
@@ -181,6 +272,7 @@ datasets/
 """
 from collections import namedtuple
 from enum import Enum
+from functools import lru_cache
 from math import ceil
 from math import floor
 from pathlib import Path
@@ -193,11 +285,11 @@ import subprocess
 
 from third_party import LazyLoader
 
+import torch
 librosa = LazyLoader('librosa', globals(), 'librosa')
 pandas = LazyLoader('pandas', globals(), 'pandas')
 
 from src.environment import DATA_PATH
-from src.utils import cumulative_split
 from src.utils import flatten
 from src.utils import natural_keys
 
@@ -244,25 +336,16 @@ class Speaker(object):
         return '%s(name=\'%s\', gender=%s)' % (self.__class__.__name__, self.name, self.gender.name)
 
 
-def _alignment_generator(data, max_seconds):
-    """ Generate a `Example`s that are at most `max_seconds` long.
-
-    Examples, representing a interval of time, are sampled uniformly over the audio file.
-    Afterwards unaligned or aligned intervals that overlap with the boundaries are removed.
+def dataset_generator(data, max_seconds):
+    """ Generate `Example`(s) that are at most `max_seconds` long.
 
     NOTE:
-    - Longer alignments or unalignments are less likely to be sampled because they are more
-      likely to overlap with the boundary.
-    - The length of the sampled interval is less likely to be the full `max_seconds` afterward
-      any boundary segments are removed.
+    - Every alignment has an equal chance of getting sampled, assuming there are no overlaps.
+    - Larger slices of alignments are less likely to be sampled, for the most part. See more here:
+      https://stats.stackexchange.com/questions/484329/how-do-you-uniformly-sample-spans-from-a-bounded-line/484332#484332
 
-    TODO:
-    - Look into removing these biases by including boundary intervals based on some statistical
-    correction.
-    - Log the alignment distribution in order to ensure it's relatively uniform.
-    - Look into extending the maximum seconds by the size of the largest alignment, and then
-      filtering out alignments that are longer than the max alignment.
-    - Does this need extra tests? Yes. We should test small max legnth and alignments
+    TODO: Resolve the above bias.
+    TODO: Visualize the sampled distribution, in order to ensure it it's reasonable for training.
 
     Args:
         data (list of Example): List of examples to sample from.
@@ -272,40 +355,54 @@ def _alignment_generator(data, max_seconds):
         (iterator of Example)
     """
     assert max_seconds > 0, 'The maximum interval length must be a positive number.'
-    data = sorted(data, key=lambda e: e.alignments[0][1][0])
     if len(data) == 0:
         return iter([])
-    min_ = data[0].alignments[0][1][0]
-    max_ = data[-1].alignments[-1][1][1]
-    lookup = [[] for _ in range(ceil(max_) + 1)]
+    if max_seconds == float('inf'):
+        while True:
+            return random.choice(data)
+
+    min_ = lambda e: e.alignments[0][1][0]
+    max_ = lambda e: e.alignments[-1][1][1]
+    offset = lambda e: floor(min_(e))
+
+    lookup = [[[] for _ in range(ceil(max_(e)) - offset(e) + 1)] for e in data]
     for i, example in enumerate(data):
         for j, alignment in enumerate(example.alignments):
-            for k in range(int(floor(alignment[1][0])), int(ceil(alignment[1][0])) + 1):
-                lookup[k].append((i, j))
-    find = lambda i: data[i[0]].alignments[i[1]][1]  # Given the indicies return the audio span.
+            for k in range(int(floor(alignment[1][0])), int(ceil(alignment[1][1])) + 1):
+                lookup[i][k - offset(example)].append(j)
+
+    weights = torch.FloatTensor([max_(e) - min_(e) for e in data])
     while True:
-        length = random.uniform(0.0, max_seconds)
-        start = random.uniform(min_ - length, max_)
-        end = min(max_, start + length)
-        start = max(min_, start)
-        slice_ = flatten(lookup[int(start):int(end) + 1])
-        start = next((i for i in slice_ if find(i)[0] >= start and find(i)[1] >= start), None)
-        end = next((i for i in reversed(slice_) if find(i)[0] <= end and find(i)[1] <= end), None)
-        if start and end and start[0] == end[0] and find(end)[1] - find(start)[0] > 0:
-            example = data[start[0]]
-            yield example._replace(alignments=example.alignments[start[1]:end[1] + 1])
+        length = random.uniform(0, max_seconds)
+        # NOTE: The `weight` is based on `start` (i.e. the number of spans)
+        index = torch.multinomial(weights + length, 1).item()
+        example = data[index]
+        start = random.uniform(min_(example) - length, max_(example))
+        end = min(start + length, max_(example))
+        start = max(start, min_(example))
+        part = flatten(lookup[index][int(start) - offset(example):int(end) - offset(example) + 1])
+        get = lambda i: example.alignments[i][1]
+        overlap = lambda i: (min(end, get(i)[1]) - max(start, get(i)[0])) / (get(i)[1] - get(i)[0])
+        random_ = lru_cache(maxsize=None)(lambda i: random.random())
+        bounds = (
+            next((i for i in part if overlap(i) >= random_(i)), None),
+            next((i for i in reversed(part) if overlap(i) >= random_(i)), None),
+        )
+        if (bounds[0] is not None and bounds[1] is not None and bounds[0] <= bounds[1] and
+                get(bounds[1])[1] - get(bounds[0])[0] > 0 and
+                get(bounds[1])[1] - get(bounds[0])[0] <= max_seconds):
+            yield example._replace(alignments=example.alignments[bounds[0]:bounds[1] + 1])
 
 
-def _gcs_alignment_dataset_loader(root_directory_name,
-                                  speaker,
-                                  splits,
-                                  directory=DATA_PATH,
-                                  gcs_path='gs://wellsaid_labs_datasets/hilary_noriega',
-                                  alignments_directory_name='alignments',
-                                  recordings_directory_name='recordings',
-                                  scripts_directory_name='scripts',
-                                  text_column='Content',
-                                  max_seconds=15):
+def dataset_loader(root_directory_name,
+                   speaker,
+                   directory=DATA_PATH,
+                   gcs_path='gs://wellsaid_labs_datasets/hilary_noriega',
+                   alignments_directory_name='alignments',
+                   recordings_directory_name='recordings',
+                   scripts_directory_name='scripts',
+                   text_column='Content',
+                   max_seconds=15):
     """ Load an alignment text-to-speech (TTS) dataset from GCS.
 
     TODO: Print dataset size with `seconds_to_string`.
@@ -329,9 +426,6 @@ def _gcs_alignment_dataset_loader(root_directory_name,
     Args:
         root_directory_name (str): Name of the directory inside `directory` to store data.
         speaker (src.datasets.Speaker): The speaker represented by this dataset.
-        splits (list of int): The size of each dataset split in seconds. Iff the the total size
-            is smaller than the dataset size, then an extra dataset split will be returned with
-            the remaining data.
         directory (str or Path, optional): Directory to cache the dataset.
         gcs_path (str, optional): The base GCS path storing the data.
         alignments_gcs_path (str, optional): The name of the alignments directory on GCS.
@@ -366,9 +460,4 @@ def _gcs_alignment_dataset_loader(root_directory_name,
                     {k: v for k, v in s.items() if k != text_column}) for a, s in iterator
         ])
 
-    random.shuffle(examples)
-    # NOTE: This assumes that a negligible amount of data is unusable in each example.
-    splits = cumulative_split(examples, splits,
-                              lambda e: e.alignments[-1][1][1] - e.alignments[0][1][0])
-
-    return tuple(_alignment_generator(s, max_seconds) for s in splits)
+    return examples
