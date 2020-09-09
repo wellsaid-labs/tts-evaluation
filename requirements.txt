@@ -4,15 +4,18 @@ scipy
 
 # NOTE: For optimized `torch` install, visit https://pytorch.org and follow the "Get Started"
 # guide.
-torch==1.5.0
+torch==1.5.0 # TODO: Update to 1.6.0
 
 # Language Library
 git+https://github.com/PetrochukM/PyTorch-NLP.git
 git+https://github.com/savoirfairelinux/num2words.git
 # Learn more: https://spacy.io/usage/models#production
 spacy
-https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-2.2.5/en_core_web_sm-2.2.5.tar.gz#egg=en_core_web_sm
+https://github.com/explosion/spacy-models/releases/download/en_core_web_md-2.2.5/en_core_web_md-2.2.5.tar.gz#egg=en_core_web_md
 unidecode
+normalise
+ftfy
+nltk
 
 # Audio Library
 librosa
@@ -20,7 +23,7 @@ pyloudnorm
 
 # Visualization Library
 matplotlib
-comet-ml==3.1.6
+comet-ml==3.1.6 # TODO: Update to 3.2.0
 
 # Testing
 pytest
@@ -28,6 +31,8 @@ pytest-cov
 
 # Linting
 flake8
+mypy
+typing_extensions
 
 # Auto Formatter
 yapf==0.30.0
@@ -39,7 +44,8 @@ python-Levenshtein # Sequence alignment
 git+https://github.com/PetrochukM/HParams.git # Organize hyperparameters
 pandas
 retry
-psutil # For comet logging: https://www.comet.ml/docs/python-sdk/releases/
+# TODO: Does this install work on CPU?
+# psutil # For comet logging: https://www.comet.ml/docs/python-sdk/releases/
 
 # Web
 flask
