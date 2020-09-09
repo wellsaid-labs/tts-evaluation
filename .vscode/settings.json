@@ -41,9 +41,10 @@
     "latex",
     "plaintext"
   ],
-  "python.pythonPath": "venv/bin/python3",
   "python.dataScience.useNotebookEditor": false,
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": true
-  }
+  },
+  "python.linting.mypyEnabled": true,
+  "python.pythonPath": "./venv/bin/Python3"
 }
