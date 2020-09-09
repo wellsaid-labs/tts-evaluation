@@ -6,6 +6,7 @@ from torchnlp.random import fork_rng
 import pytest
 
 from src.datasets import Gender
+from src.datasets import HILARY_NORIEGA
 from src.datasets import Speaker
 from src.datasets.utils import dataset_generator
 from src.datasets.utils import dataset_loader
@@ -35,12 +36,21 @@ def test_dataset_generator__empty():
 
 
 def test_dataset_generator__one():
-    """ Test if `dataset_generator` handles a one item list.
+    """ Test if `dataset_generator` handles a one alignment.
     """
-    example = Example((((0, 1), (0, 1)),))
-    iterator = dataset_generator([example], max_seconds=10)
-    for i in range(100):
-        assert len(next(iterator).alignments) == 1
+    dataset = [
+        Example((((0, 1), (0, 1)),)),
+        Example((((0, 10), (0, 10)),)),
+        Example((((0, 5), (0, 5)),))
+    ]
+    iterator = dataset_generator(dataset, max_seconds=10)
+    counter = Counter()
+    for i in range(10000):
+        counter.update(next(iterator).alignments)
+    total = sum(counter.values())
+    alignments = flatten([d.alignments for d in dataset])
+    for alignment in alignments:
+        assert counter[alignment] / total == pytest.approx(1 / len(alignments), abs=0.01)
 
 
 def test_dataset_generator__multiple_scripts():
@@ -114,28 +124,16 @@ def test_dataset_generator__unequal_alignment_size__small_span():
 def test_dataset_loader(_):
     """ Test if `dataset_loader` is able to load a dataset.
     """
-    speaker = Speaker('Hilary Noriega', Gender.FEMALE)
-    with fork_rng(seed=123):
-        train, dev = dataset_loader('hilary_noriega', speaker, [6.0], max_seconds=5.0)
-        example = next(train)
-        assert example == Example(
-            alignments=[[[48, 53], [11.6, 11.8]], [[54, 60], [11.8, 12.4]]],
-            script='For the twentieth time that evening the two men shook hands.',
-            audio_path=TEST_DATA_PATH / '_disk/data/hilary_noriega/recordings/Script 1.wav',
-            speaker=speaker,
-            metadata={
-                'Index': 2,
-                'Source': 'CMU',
-                'Title': 'CMU'
-            })
-        example = next(dev)
-        assert example == Example(
-            alignments=[[[35, 42], [2.5, 2.6]]],
-            script='Author of the danger trail, Philip Steels, etc.',
-            audio_path=TEST_DATA_PATH / '_disk/data/hilary_noriega/recordings/Script 1.wav',
-            speaker=speaker,
-            metadata={
-                'Index': 0,
-                'Source': 'CMU',
-                'Title': 'CMU'
-            })
+    examples = dataset_loader('hilary_noriega', '', HILARY_NORIEGA, max_seconds=5.0)
+    assert examples[0] == Example(
+        alignments=[[[0, 6], [0.0, 0.6]], [[7, 9], [0.6, 0.8]], [[10, 13], [0.8, 0.8]],
+                    [[14, 20], [0.8, 1.4]], [[21, 27], [1.4, 1.8]], [[28, 34], [1.8, 2.5]],
+                    [[35, 42], [2.5, 2.6]], [[43, 47], [2.6, 3.3]]],
+        text='Author of the danger trail, Philip Steels, etc.',
+        audio_path=TEST_DATA_PATH / '_disk/data/hilary_noriega/recordings/Script 1.wav',
+        speaker=HILARY_NORIEGA,
+        metadata={
+            'Index': 0,
+            'Source': 'CMU',
+            'Title': 'CMU'
+        })

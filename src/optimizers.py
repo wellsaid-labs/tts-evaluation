@@ -200,3 +200,19 @@ class ExponentialMovingParameterAverage():
             for i, param in enumerate(list_):
                 list_[i] = param.to(device)
         return self
+
+
+def warmup_lr_multiplier_schedule(step, warmup):
+    """ Learning rate multiplier schedule.
+
+    Args:
+        step (int): The current step.
+        warmup (int): The number of warmup steps.
+
+    Returns:
+        (float): Multiplier on the base learning rate.
+    """
+    if step < warmup:
+        return step / warmup
+
+    return 1.0

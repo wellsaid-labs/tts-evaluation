@@ -1,9 +1,11 @@
 from pathlib import Path
 
+import atexit
 import logging
 import os
 import subprocess
 import sys
+import time
 
 from hparams import configurable
 from hparams import HParam
@@ -45,17 +47,13 @@ SPECTROGRAM_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / 'spectrogram_model'
 
 SPECTROGRAM_MODEL_EXPERIMENTS_PATH.mkdir(exist_ok=True)
 
-OTHER_DISK_CACHE_PATH = DISK_PATH / 'other'
+DATABASES_PATH = DISK_PATH / 'databases'
 
-OTHER_DISK_CACHE_PATH.mkdir(exist_ok=True)
+DATABASES_PATH.mkdir(exist_ok=True)
 
 TEMP_PATH = DISK_PATH / 'temp'
 
 TEMP_PATH.mkdir(exist_ok=True)
-
-DISK_CACHE_PATH = OTHER_DISK_CACHE_PATH / 'disk_cache'
-
-DISK_CACHE_PATH.mkdir(exist_ok=True)
 
 SAMPLES_PATH = DISK_PATH / 'samples'
 
@@ -200,7 +198,8 @@ def set_basic_logging_config(id_=os.getpid()):
         root.addHandler(handler)
 
 
-def assert_enough_disk_space(min_space=0.2):
+@configurable
+def assert_enough_disk_space(min_space=HParam()):
     """ Check if there is enough disk space.
 
     Args:
@@ -238,3 +237,162 @@ def set_seed(seed=HParam()):
     """ Set a process seed to help ensure consistency. """
     logger.info('Setting process seed to be %d', seed)
     torchnlp.random.set_seed(seed)
+
+
+def bash_time_label(add_pid=True):
+    """ Get a bash friendly string representing the time and process.
+
+    NOTE: This string is optimized for sorting by ordering units of time from largest to smallest.
+    NOTE: This string avoids any special bash characters, learn more:
+    https://unix.stackexchange.com/questions/270977/what-characters-are-required-to-be-escaped-in-command-line-arguments
+    NOTE: `os.getpid` is often used by routines that generate unique identifiers, learn more:
+    http://manpages.ubuntu.com/manpages/cosmic/man2/getpid.2.html
+
+    Args:
+        add_pid (bool, optional): If `True` add the process PID to the label.
+
+    Returns:
+        (str)
+    """
+    label = str(time.strftime('DATE-%Yy%mm%dd-%Hh%Mm%Ss', time.localtime()))
+
+    if add_pid:
+        label += '_PID-%s' % str(os.getpid())
+
+    return label
+
+
+def text_to_label(text):
+    """ Get a label like 'hilary_noriega' from text like 'Hilary Noriega'. """
+    return text.lowercase().replace(' ', '_')
+
+
+def _duplicate_stream(from_, to):
+    """ Writes any messages to file object ``from_`` in file object ``to`` as well.
+
+    NOTE:
+        With the various references below, we were unable to add C support. Find more details
+        here: https://travis-ci.com/wellsaid-labs/Text-to-Speech/jobs/152504931
+
+    Learn more:
+        - https://eli.thegreenplace.net/2015/redirecting-all-kinds-of-stdout-in-python/
+        - https://stackoverflow.com/questions/17942874/stdout-redirection-with-ctypes
+        - https://gist.github.com/denilsonsa/9c8f5c44bf2038fd000f
+        - https://github.com/IDSIA/sacred/blob/master/sacred/stdout_capturing.py
+        - http://stackoverflow.com/a/651718/1388435
+        - http://stackoverflow.com/a/22434262/1388435
+
+    Args:
+        from_ (file object)
+        to (str or Path): Filename to write in.
+
+    Returns:
+        callable: Executing the callable stops the duplication.
+    """
+    from_.flush()
+
+    to = Path(to)
+    to.touch()
+
+    # Keep a file descriptor open to the original file object
+    original_fileno = os.dup(from_.fileno())
+    tee = subprocess.Popen(['tee', '-a', str(to)], stdin=subprocess.PIPE)
+    time.sleep(0.01)  # HACK: ``tee`` needs time to open
+    os.dup2(tee.stdin.fileno(), from_.fileno())
+
+    def _clean_up():
+        """ Clean up called during exit or by user. """
+        # (High Level) Ensure ``from_`` flushes before tee is closed
+        from_.flush()
+
+        # Tee flush / close / terminate
+        tee.stdin.close()
+        tee.terminate()
+        tee.wait()
+
+        # Reset ``from_``
+        os.dup2(original_fileno, from_.fileno())
+        os.close(original_fileno)
+
+    def stop():
+        """ Stop duplication early before the program exits. """
+        atexit.unregister(_clean_up)
+        _clean_up()
+
+    atexit.register(_clean_up)
+    return stop
+
+
+class RecordStandardStreams():
+    """ Record output of `sys.stdout` and `sys.stderr` to a log file over an entire Python process.
+
+    Args:
+        directory (Path or str): Directory to save log files in.
+        log_filename (str, optional)
+    """
+
+    # TODO: Ensure `bash_time_label()` is executed when `start` is called so that the time
+    # is accurate.
+    def __init__(self, directory=TEMP_PATH, log_filename='%s.log' % bash_time_label()):
+        directory = Path(directory)
+
+        self._check_invariants(directory, log_filename)
+
+        self.log_path = directory / log_filename
+        self.stop_stream_stdout = None
+        self.stop_stream_stderr = None
+        self.first_start = True
+
+    def _check_invariants(self, directory, log_filename):
+        assert directory.exists()
+        # NOTE: Stream must be duplicated to a new file.
+        assert not (directory / log_filename).exists()
+
+    # TODO: Add `directory` and `log_filename` parameters to `start` so that it's consistent with
+    # `update`.
+    def start(self):
+        """ Start recording `sys.stdout` and `sys.stderr` at the start of the process. """
+        self.stop_stream_stdout = _duplicate_stream(sys.stdout, self.log_path)
+        self.stop_stream_stderr = _duplicate_stream(sys.stderr, self.log_path)
+
+        # NOTE: This is unable to capture the command line arguments without explicitly logging
+        # them.
+        if self.first_start:
+            logger.info('The command line arguments are: %s', str(sys.argv))
+            self.first_start = False
+
+        return self
+
+    def _stop(self):
+        """ Stop recording `sys.stdout` and `sys.stderr`.
+
+        NOTE: This is a private method because `RecordStandardStreams` is not intended to be
+        stopped outside of an exit event.
+        """
+        if self.stop_stream_stdout is None or self.stop_stream_stderr is None:
+            raise ValueError('Recording has already been stopped or has not been started.')
+
+        self.stop_stream_stderr()
+        self.stop_stream_stdout()
+
+        return self
+
+    def update(self, directory, log_filename=None):
+        """ Update the recorder to use new log paths without losing any logs.
+
+        Args:
+            directory (Path or str): Directory to save log files in.
+            log_filename (str, optional)
+        """
+        if log_filename is None:
+            log_filename = self.log_path.name
+
+        self._check_invariants(directory, log_filename)
+
+        self._stop()
+
+        self.log_path.replace(directory / log_filename)
+        self.log_path = directory / log_filename
+
+        self.start()
+        return self

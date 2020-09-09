@@ -26,7 +26,7 @@ from src.utils.utils import pad_tensors
 from src.utils.utils import random_sample
 from src.utils.utils import RepeatTimer
 from src.utils.utils import ResetableTimer
-from src.utils.utils import slice_by_cumulative_sum
+from src.utils.utils import cumulative_sum_slice
 from src.utils.utils import sort_together
 from src.utils.utils import strip
 from src.utils.utils import trim_tensors
@@ -258,11 +258,11 @@ def test_flatten():
     assert flatten([[1, 2], [3, 4]]) == [1, 2, 3, 4]
 
 
-def test_slice_by_cumulative_sum():
-    assert [1, 2, 3] == slice_by_cumulative_sum([1, 2, 3, 4], max_total_value=6)
-    assert [(1, 1), (1, 2)] == slice_by_cumulative_sum([(1, 1), (1, 2), (1, 3), (1, 4)],
-                                                       max_total_value=4,
-                                                       get_value=lambda x: x[1])
+def test_cumulative_sum_slice():
+    assert [1, 2, 3] == cumulative_sum_slice([1, 2, 3, 4], max_total_value=6)
+    assert [(1, 1), (1, 2)] == cumulative_sum_slice([(1, 1), (1, 2), (1, 3), (1, 4)],
+                                                    max_total_value=4,
+                                                    get_value=lambda x: x[1])
 
 
 def test_sort_together():

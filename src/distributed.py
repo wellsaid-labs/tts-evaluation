@@ -53,3 +53,17 @@ def assert_synced(value, message='', type_=torch.cuda):
         torch.distributed.broadcast(master_value, src=get_master_rank())
 
     assert torch.equal(master_value, value), message
+
+
+def spawn(*args, **kwargs):
+    """ Wrapper for `torch.multiprocessing.spawn`.
+    """
+    num_cuda_devices = torch.cuda.device_count()
+    # NOTE (michael): Without this assert, when `nprocs` is zero, `torch.multiprocessing.spawn`
+    # crashes in a nondescript way.
+    assert num_cuda_devices > 0, 'Unable to find CUDA devices.'
+    torch.multiprocessing.spawn(
+        *args,
+        nprocs=num_cuda_devices,
+        **kwargs,
+    )

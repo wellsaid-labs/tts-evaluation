@@ -1,33 +1,34 @@
 import csv
 import logging
 import re
+import typing
 
 from third_party import LazyLoader
 
 unidecode = LazyLoader('unidecode', globals(), 'unidecode')
 num2words = LazyLoader('num2words', globals(), 'num2words')
 
-from src.datasets.utils import Gender
-from src.datasets.utils import preprocessed_dataset_loader
+from src.datasets.utils import Example
+from src.datasets.utils import precut_dataset_loader
 from src.datasets.utils import Speaker
 
 logger = logging.getLogger(__name__)
 
-LINDA_JOHNSON = Speaker('Linda Johnson', Gender.FEMALE)
+LINDA_JOHNSON = Speaker('Linda Johnson')
 
 
-def lj_speech_dataset(root_directory_name='LJSpeech-1.1',
-                      url='http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
-                      speaker=LINDA_JOHNSON,
-                      verbalize=True,
-                      metadata_audio_column=0,
-                      metadata_audio_path=('{directory}/{root_directory_name}/' +
-                                           'wavs/{metadata_audio_column_value}.wav'),
-                      metadata_text_column=1,
-                      metadata_quoting=csv.QUOTE_NONE,
-                      metadata_delimiter='|',
-                      metadata_header=None,
-                      **kwargs):
+def lj_speech_dataset(root_directory_name: str = 'LJSpeech-1.1',
+                      url: str = 'http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
+                      speaker: Speaker = LINDA_JOHNSON,
+                      verbalize: bool = True,
+                      metadata_audio_column: typing.Union[int, str] = 0,
+                      metadata_audio_path: str = ('{directory}/{root_directory_name}/' +
+                                                  'wavs/{metadata_audio_column_value}.wav'),
+                      metadata_text_column: typing.Union[int, str] = 1,
+                      metadata_quoting: int = csv.QUOTE_NONE,
+                      metadata_delimiter: str = '|',
+                      metadata_header: typing.Optional[bool] = None,
+                      **kwargs) -> typing.List[Example]:
     """ Load the Linda Johnson (LJ) Speech dataset.
 
     This is a public domain speech dataset consisting of 13,100 short audio clips of a single
@@ -55,30 +56,29 @@ def lj_speech_dataset(root_directory_name='LJSpeech-1.1',
           the President's Commission on the Assassination of President Kennedy. 1964.
 
     Args:
-        root_directory_name (str, optional): Name of the extracted dataset directory.
-        url (str, optional): URL of the dataset `tar.gz` file.
-        speaker (src.datasets.Speaker, optional)
-        verbalize (bool, optional): Verbalize the text.
-        metadata_audio_column (str, optional): Column name or index with the audio filename.
-        metadata_audio_path (str, optional): String template for the audio path given the
-            ``metadata_audio_column`` value.
-        metadata_text_column (str, optional): Column name or index with the audio transcript.
-        metadata_quoting (int, optional): Control field quoting behavior per ``csv.QUOTE_*``
-            constants for the metadata file.
-        metadata_delimiter (str, optional): Delimiter for the metadata file.
-        metadata_header (bool, optional): If ``True``, ``metadata_file`` has a header to parse.
+        root_directory_name: Name of the extracted dataset directory.
+        url: URL of the dataset `tar.gz` file.
+        speaker
+        verbalize: Verbalize the text.
+        metadata_audio_column: Column name or index with the audio filename.
+        metadata_audio_path: String template for the audio path given the ``metadata_audio_column``
+            value.
+        metadata_text_column: Column name or index with the audio transcript.
+        metadata_quoting: Control field quoting behavior per ``csv.QUOTE_*`` constants for the
+            metadata file.
+        metadata_delimiter: Delimiter for the metadata file.
+        metadata_header: If ``True``, ``metadata_file`` has a header to parse.
         **kwargs: Key word arguments passed to ``_dataset_loader``.
 
     Returns:
-        list of TextSpeechRow: Dataset with audio filenames and text annotations.
+        Dataset with audio filenames and text annotations.
 
     Example:
         >>> from src.hparams import set_hparams # doctest: +SKIP
         >>> from src.datasets import lj_speech_dataset # doctest: +SKIP
-        >>> set_hparams() # doctest: +SKIP
         >>> train, dev = lj_speech_dataset() # doctest: +SKIP
     """
-    data = preprocessed_dataset_loader(
+    data = precut_dataset_loader(
         root_directory_name=root_directory_name,
         url=url,
         speaker=speaker,
@@ -113,7 +113,7 @@ def lj_speech_dataset(root_directory_name='LJSpeech-1.1',
     return [process_text(example) for example in data]
 
 
-'''
+"""
 Modules for text preprocessing.
 
 M-AILABS speech dataset mentioned: “numbers have been converted to words and some cleanup of
@@ -123,10 +123,11 @@ trained on normalized text.” LJ Speech dataset mentioned: “Normalized Transc
 with numbers, ordinals, and monetary units expanded into full words (UTF-8).” Tacotron 2 authors
 mentioned: "We use verbalized data so numbers are extended. There is no need to lowercase or remove
 punctuation.".
-'''
+"""
 
 # Reference: https://keithito.com/LJ-Speech-Dataset/
 # List of (regular expression, replacement) pairs for abbreviations:
+_abbreviations: typing.List[typing.Tuple[typing.Pattern, str]]
 _abbreviations = [(re.compile('\\b%s\\.' % x[0], re.IGNORECASE), x[1]) for x in [
     ('mrs', 'misess'),
     ('mr', 'mister'),
@@ -151,15 +152,15 @@ _abbreviations = [(re.compile('\\b%s\\.' % x[0], re.IGNORECASE), x[1]) for x in 
 ]]
 
 
-def _match_case(source, target):
+def _match_case(source: str, target: str) -> str:
     """ Match ``source`` letter case to ``target`` letter case.
 
     Args:
-        source (str): Reference text for the letter case.
-        target (str): Target text to transfer the letter case.
+        source: Reference text for the letter case.
+        target: Target text to transfer the letter case.
 
     Returns:
-        str: Target text with source the letter case.
+        Target text with source the letter case.
     """
     if source.isupper():
         return target.upper()
@@ -169,6 +170,8 @@ def _match_case(source, target):
 
     if source.istitle():
         return target.title()
+
+    return target
 
 
 def _iterate_and_replace(regex, text, replace, group=1):

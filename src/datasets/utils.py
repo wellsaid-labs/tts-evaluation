@@ -9,14 +9,12 @@ _gcs_alignment_dataset_loader:
     - Download and load the dataset
     - Sample from the dataset (including splitting and shuffling)
     - TODO: Print the size of each dataset loaded.
-    - TODO: Return the size of the dataset alongside the generator.
-    - TODO: Handle distributed: Each process does not need download the dataset; however, it's fine
-      if they all have their own copy of the data.
-      The generator will need to be replicated accross workers in the `DataLoader`.
+    - TODO: Normalize the audio data and save it as numpy file. We can use memmap?
 
 get_dataset:
     - TODO: Get each of the datasets with dataset loader.
-    - TODO: Return a generator that runs non-generalizable (related to hyperparameters and unrelated to input_encoder)
+    - TODO: Return a generator that runs non-generalizable
+      (related to hyperparameters and unrelated to input_encoder)
       preprocessing on our datasets.
         - Sampling: The datasets should be sampled equally per speaker; however, we'll eventually
             want to transition away from that model so that we can take advantage of more data.
@@ -33,6 +31,7 @@ get_dataset:
           - There are numbers
           - Bad alignments
         - Normalize audio w/ ffmpeg and the settings Rhyan sent me.
+        - Trim the audio with `silenceremove=1:0:-50dB`
     - TODO: Using `HParams` we can parameterize the dataset generator function.
 
 - The idea is... we need a function that'll preprocess single rows. It'll also use multiple
@@ -80,6 +79,9 @@ get_dataset:
   We could "batch" the word-level, character-level, and phone-level sequences. We could even
   reuse the same encoder between the character-level and phone-level sequences. I'm a bit more
   skeptical about using the word-level sequences with the same encoder since they are so different.
+- IDEA: There are only two sequences we need to worry about... character-level and phoneme-level.
+  The word vectors can be added to the character level sequence easily. We then have two sequences
+  a character-level sequence and a phoneme level sequence.
 - IDEA: Instead of implementing a caching method for predicted spectrogram output, we could
   add a GAN to the spectrogram. I'd prefer that...
 - QUESTION: Can we use the same dataset loader for lj_speech or m-ailabs dataset? No. The dataset
@@ -95,8 +97,10 @@ get_dataset:
   by the size of the script. For example if we make this problem discrete it looks like this:
 x x x [0, 0, 0, 0] with a span of 3 has 6 spans inside of it. If the span is 4 it has... 7 spans
   inside it. What I am really saying is that it gets less and less likely to only sample 1, 2, 3
-  items. The larger it gets the more likely we are always going to sample the entire script. After a span of 4, there
-  will always be only 2 options for sampling 1, 2, 3 items. Every other item will be the entire span.
+  items. The larger it gets the more likely we are always going to sample the entire script. After
+  a span of 4, there
+  will always be only 2 options for sampling 1, 2, 3 items. Every other item will be the entire
+  span.
   So at a span of 60, there will be 6 options to sample 1, 2, 3. +1 ~54 ish options for sampling
   the entire script. Do we implicitly rely on the length to be sampler than the script.
   If the likelihood of capturing the entire script goes higher, then we end up missing elements...
@@ -111,7 +115,8 @@ x x x [0, 0, 0, 0] with a span of 3 has 6 spans inside of it. If the span is 4 i
   span 6.0: 3 / 9 (random.uniform(-6, 3))
   span 7.0: 4 / 10 (random.uniform(-7, 3))
   span 60.0: 57 / 63 (random.uniform(-7, 3))
-  function(span_length, script_length): (span_length - script_length) / (span_length + script_length)
+  function(span_length, script_length):
+      (span_length - script_length) / (span_length + script_length)
   This is the probability of times that.... the weight should be equal to 1.0.
 
   Another way to think about this is as a probability distribution. What is the probability
@@ -170,8 +175,131 @@ x x x [0, 0, 0, 0] with a span of 3 has 6 spans inside of it. If the span is 4 i
       random.uniform(-1, 3) length=1: 0%
       random.uniform(-2, 3) length=2: 0%
       random.uniform(-3, 3) length=3: 25%
+- QUESTION: What do we have in common about our two balancing samplers? For the signal model, we
+  sample the data so that each speaker has an equal amount of audio sampled. For the spectrogram
+  model, it also makes sure that an equal amount of audio is sampled per speaker. That said,
+  the spectrogram model doesn't samples each piece of audio equally. They have different biases on
+  the length of the sample; otherwise, they are the same. The spectrogram model respects the
+  distribution of the incoming data by picking examples equally as long as the speakers are
+  sampled equally. The signal model does not...
+  Since the signal model takes a slice of data, regardless of how long the example is, we need
+  ensure that (for the signal model) we sample an equal number of examples from each dataset.
+  Since the spectrogram model considers the entire example, we need to sample
+- QUESTION: Would this work? We sample an equal number of examples per speaker for the signal
+  model. We sample an equal amount of audio per speaker for the spectrogram model. No. That
+  wouldn't work... Why?
+- QUESTION: How do we get the size the data for the m-ailabs dataset? There are a couple options:
+     1. We use `get_audio_metadata` to get that information and assign it to alignments.
+        We would need to use multiple processes in order to do this at a reasonable speed.
+     2. Or... We run the function at a generator level. At the generator level, we're already in
+        the data_loader, and it's meant for these kinda issues. I prefer this... Do we have any
+        guarentee that disk_cache can work accross multiple processes? No... Welp. What's
+        the reason we built disk cache in the first place? We built it because we want to store
+        various metadata on disk without worrying about it's location. Ultimitately, a cache
+        is a cache. IT doesn't need to have perfect data retentaiton... it's okay to lose data
+        as long as that doesn't compromise performance or any invariants...
+     3. Do we need multiple expceptions to this rule?
+- Question? We are likely going to want to run items like `ffmpeg` in the main process. We'll
+  want to cache the results of that. We'll also want to run `get_audio_metadata` accross a subset
+  of our data. There are two things that I'm thinking about...
+    1. The idea of keeping the current caching structure around but without `disk_cache`. There
+       are a number of issues that `disk_cache` has.
+    2. We don't have to worry about the current caching structure in some ways... because
+       predicting a spectrogram is fast. Predicting loudness is fast. We could predict those
+       on the fly. We could also cache as we go along? Could we modify the data... Arg. No.
+       The reason is that there are multiple processes, and they don't share the same data.
+       We'd likely be better off running spacy and grapheme_to_phoneme once, and caching it.
+       We could use sqlite to also cache it onto disk and share that cache with multiple processes.
+       I prefer that method because otherwise grapheme_to_phoneme could take some time... everytime.
+       I don't want to use disk_cache because of it's side-effect nature.
+       I'm thinking about modifying our training script... and I think that'll be okay.
+- QUESTION? How do we maintain performance for loading the m-ailabs or lj speech datasets? We
+  could implement get_audio_metadata in a similar way to the way we implemented disk_cache?
+  The issue with disk_cache is the side-effects. With disk_cache, everything is cached and
+  done so "poorly". So then... We could be more explicit about it. We could have a seperate
+  cache function, which is the current design. I do like the idea of having a batch operation
+  and a non-batch operation. The batch operation caches by default. Does this work for all our use
+  cases for `disk_cache`?
+    - grapheme_to_phoneme_perserve_punctuation
+    - get_audio_metadata
+        - read_audio (not batch)
+        - normalize_audio
+    - cache_on_disk_tensor_shapes
+  Shoot. Okay. So the issue is likely different. The issue is that I'm trying to incorperate
+  reading metadata into the dataset loading process. That's forcing me to have a side-effect
+  that allows to that operation to have good performance.
+  Our design should be two-fold. We should have a function (that takes batch and non-batch). We
+  can then let the main script handle any caching requirements as it sees fit to complete
+  the job quickly. I like that...
+- QUESTION? Can a namedtuple `State` replace checkpoints. The issue with it replacing the checkpoint
+  and getting passed around is... that we'll need to pass around other items as well. The other
+  items that need to be passed around are:
+  - device
+  - checkpoints_directory
+  - dev_dataset
+  - train_dataset
+  - train_batch_size (no need to pass around)
+  - dev_batch_size (no need to pass around)
+  - metrics (these don't need to be passed around... they can be deleted instead of `reset`)
+  - criterions
+  - comet_ml
+  - timer (probably not)
+  The idea of saving each of these items in a collective state is appealing for it's simplicity.
+  The items that would trouble some are... datasets, etc. We could probably get away with it.
+  We'd just pass a `State` and other items that are more environmental like device, datasets,
+  directory, comet_ml, and criterions.
+- Question? Should the data generator annotate the data and filter it based on the annotations.
+  The reason for not annotating the data, and filtering based on the annotations would be a
+  performance driven motivation... The transformations that we need to include are:
+    - Loading data
+    - Creating spectrogram
+    - Computing mask
+    - Computing
+  At the end of the day... we're going to have multiple generators. Do we need multiple generators?
+  Yes. We'll need to balance generators differently, for example. The question is mostly around what
+  the common aspects of both generators are... The signal model will need access to the spectrogram
+  model data generator for the purpose of generating data.
+- QUESTION: How do we organize the dataset generation? We have several competing ideas... We have
+  the idea of sampling from speakers uniformly... When does that have to run? It has to have
+  access to the speaker generators. We have the idea of speaker generators, and the idea of
+  mixing them together. We have the idea of generating items like loudness / spectrogram /
+  silence removed audio length and filtering based on those items.
+  IDEAS: We attach the various preprocessing and filtering functions to the speaker generators.
+  IDEAS: We have two concepts. Preprocessing for the sake of filters, and preprocessing for
+  the sake of training or evaluating. We should have a utility function that links to
+  `IterableDataset` for any training / evaluating specific preprocessing.
+  CONCERNS: Some of the data that we want to use for preprocessing requires the use of our datasets
+  for performance and caching purposes... Okay.
+  IDEAS: We could ensure that before the generator is run that the cached dataset has been created.
+  We could do that by just running the functions before hand... Which is fine... The processes
+  will just read the entire dataset, and find that everything has been updated and created. During
+  a more casual usage, like in a notebook, they'll actually run which is nice.
+  CONCERNS: This is starting to be morph to be a utility instead of a config. We should move
+  most of the generation stuff into _utils.
+  CONCERNS: If we want to use something like silenceremove, and alignments in tandem. Never mind.
+- QUESTION: Is this generating data for the spectrogram_model... Maybe? Why not?
+  Where else would it go? The data generation process is largely a hyperparameter in it's self.
+  The issue is that it messes up code sharing? The signal model needs to be able generate
+  examples with a similar distribution...
+  QUESTION: What do you mean the signal model needs to generate data with a similar distribution?
+  The signal model distribution is basically the running the spectrogram model to generate
+  a bunch of relevant examples for training. It's running the same generator, the same spectrogram
+  model, and then training the signal model.
+  The other option... is generating with a ground truth spectrogram. It's kinda the same
+  distribution... We don't even really need to consider alignments except for filtering?
+  We technically don't even need to filter unless we want to make sure the distribution
+  between the two model's matches as closely as possible... which is kinda important!
+- NOTE: We won't know which data is relevant for filtering and preprocessing until we get to that
+  step... For right now, let's just pass the example. If in the future, we want to use more
+  data for filtering the audio sample before hand, we'll just move the preprocessing functions
+  up the chain of generators.
 
 
+disk_cache_.py:
+  - Ensure this can work accross multiple processes. It's okay if we lose data, it should still
+    function. We could also use "FileLock" similar to the `nlp` repo, in order to control this.
+    The issue is this adds additional overhead, that I might not want to deal with. WHY
+    NOT JUST USE SQLITE3?
 
 Trainer.__init__ or Model.__init__:
   - Iterate through the text, and create a vocab.
@@ -208,10 +336,12 @@ data_loader#_load_fn:
     - Preprocess with spaCy (and cache) (36ms) (Cache)
     - Average and rounded (to prevent overfitting) loudness (with ITU-R BS.1770-4) (17ms)
     - Average and rounded (to prevent overfitting) speed (seconds per phoneme).
-    - Average and rounded (to prevent overfitting) pitch (with CREPE or SPICE or torchaudio) (671ms) (Don't Implement)
+    - Average and rounded (to prevent overfitting) pitch (with CREPE or SPICE or torchaudio) (671ms)
+      (Don't Implement)
     - For a random number of transitions, compute the (rounded to prevent overfitting) pause
       time in seconds.
-    - Lower case the text, and provide an extra feature with regard to capitalization. (in the input encoder?)
+    - Lower case the text, and provide an extra feature with regard to capitalization.
+      (in the input encoder?)
     - For a random number of words, provide the phonetic spelling. (522ms) (Cache)
     - Extract and provide any related metadata with regards to book or article.
     - Get spectrogram (38ms)
@@ -220,19 +350,25 @@ data_loader#_load_fn:
       - loudness_mask
       - speed: torch.FloatTensor [num_tokens] (0 is minmimum, 16 characters on average)
       - speed_mask
-      - pausing: torch.FloatTensor [num_tokens] (0 is minimum, 1 or 2 seconds)
-      - pausing_mask
+      - pausing: torch.FloatTensor [num_tokens] (0 is minimum, 1 or 2 seconds)  (NVM)
+      - pausing_mask  (NVM)
       - capitalization: torch.LongTensor [num_tokens] (capitalized, not capitalized, not letter)
       - text: torch.LongTensor [num_tokens]
       - word_to_text: list of text spans
       - phoneme: list of phonetic spellings
       - word_vectors: torch.FloatTensor [num_words, word_vector_size]
-      - contextual_word_vectors: torch.FloatTensor [num_words, word_vector_size]
+      - contextual_word_vectors: torch.FloatTensor [num_words, word_vector_size] (NVM)
       - speaker: torch.LongTensor [1]
       - spectrogram: torch.FloatTensor [num_frames, frame_channels]
       - spectrogram_mask: torch.FloatTensor [num_frames]
       - spectrogram_extended_mask: torch.FloatTensor [num_frames, frame_channels]
       - stop_token: torch.FloatTensor [num_frames]
+  - Use silenceremove to load a slice of data with ffmpeg: `format_audio_filter(
+    'silenceremove',
+    start_periods=1,
+    start_threshold='-50dB',
+    stop_periods=1,
+    stop_threshold='-50dB')`
 
 Trainer#_do_loss_and_maybe_backwards:
   - TODO: Remove `expected_average_spectrogram_length` and replace it with a constant or calculate
@@ -258,7 +394,7 @@ Worker:
       - Capitalization
       - Phonemes
   - Accept XML to create loudness, speed, pausing and phoneme.
-
+  - Normalize numbers so that they are handled correctly.
 
 TODO:
 1. Print the size of each dataset loaded.
@@ -270,8 +406,6 @@ TODO:
 datasets/
     Within this module
 """
-from collections import namedtuple
-from enum import Enum
 from functools import lru_cache
 from math import ceil
 from math import floor
@@ -282,106 +416,109 @@ import logging
 import pprint
 import random
 import subprocess
+import typing
 
 from third_party import LazyLoader
+from torchnlp.download import download_file_maybe_extract
 
 import torch
 librosa = LazyLoader('librosa', globals(), 'librosa')
 pandas = LazyLoader('pandas', globals(), 'pandas')
 
 from src.environment import DATA_PATH
+from src.text import is_normalized_vo_script
+from src.text import natural_keys
+from src.text import normalize_vo_script
+from src.utils import cumulative_split
 from src.utils import flatten
-from src.utils import natural_keys
 
 logger = logging.getLogger(__name__)
-pprint = pprint.PrettyPrinter(indent=4)
-
-# Args:
-#     alignments (list of tuple(tuple(int, int), tuple(int, int))): List of alignments from
-#         `script` to `audio_path`.
-#     script (str): The script read in the voice over.
-#     audio_path (pathlib.Path): The voice over.
-#     speaker (Speaker): Speaker represented in voice over.
-#     metadata (dict): Additional metadata associated with this example.
-Example = namedtuple(
-    'Example', ['alignments', 'script', 'audio_path', 'speaker', 'metadata'],
-    defaults=(None, None, None, None, {}))
+pprinter = pprint.PrettyPrinter(indent=4)
 
 
-class Gender(Enum):
-    FEMALE = 0
-    MALE = 1
+class Alignment(typing.NamedTuple):
+    """ An aligned `text` and `audio` snippet.
+
+    Args:
+        text: The start and end of a slice of text.
+        audio: The start and end of a slice of audio.
+    """
+    text: typing.Tuple[int, int]
+    audio: typing.Tuple[float, float]
 
 
-class Speaker(object):
-
-    def __init__(self, name, gender):
-        self.name = name
-        self.gender = gender
-
-    def __eq__(self, other):
-        if isinstance(other, Speaker):
-            return self.name == other.name and self.gender == other.gender
-
-        # Learn more:
-        # https://stackoverflow.com/questions/878943/why-return-notimplemented-instead-of-raising-notimplementederror
-        return NotImplemented
-
-    def __hash__(self):
-        # Learn more:
-        # https://computinglife.wordpress.com/2008/11/20/why-do-hash-functions-use-prime-numbers/
-        return 32 * hash(self.name) + 97 * hash(self.gender)
-
-    def __repr__(self):
-        return '%s(name=\'%s\', gender=%s)' % (self.__class__.__name__, self.name, self.gender.name)
+class Speaker(typing.NamedTuple):
+    name: str
 
 
-def dataset_generator(data, max_seconds):
+class Example(typing.NamedTuple):
+    """ Example of a voice-over with alignments between the `text` and `audio_path`.
+
+    Args:
+        alignments: List of alignments between `text` and `audio_path`.
+        text: The text read in `audio_path`.
+        audio_path: A voice over of the `text.`
+        speaker: The voice.
+        metadata: Additional metadata associated with this example.
+    """
+    audio_path: Path
+    speaker: Speaker
+    alignments: typing.Optional[typing.List[Alignment]] = None
+    text: str = ''
+    metadata: typing.Dict[str, typing.Any] = {}
+
+
+def dataset_generator(data: typing.List[Example],
+                      max_seconds: float) -> typing.Generator[Example, None, None]:
     """ Generate `Example`(s) that are at most `max_seconds` long.
 
     NOTE:
     - Every alignment has an equal chance of getting sampled, assuming there are no overlaps.
     - Larger slices of alignments are less likely to be sampled, for the most part. See more here:
       https://stats.stackexchange.com/questions/484329/how-do-you-uniformly-sample-spans-from-a-bounded-line/484332#484332
+      https://www.reddit.com/r/MachineLearning/comments/if8icr/d_how_do_you_sample_spans_uniformly_from_a_time/
+      https://pytorch.slack.com/archives/C205U7WAF/p1598227661001700
+      https://www.reddit.com/r/math/comments/iftev6/uniformly_sampling_from_timeseries_data/
 
-    TODO: Resolve the above bias.
     TODO: Visualize the sampled distribution, in order to ensure it it's reasonable for training.
+    TODO: For the signal model consider changing random.uniform to a linear distribution
 
     Args:
-        data (list of Example): List of examples to sample from.
-        max_seconds (float): The maximum interval length.
-
-    Returns:
-        (iterator of Example)
+        data: List of examples to sample from.
+        max_seconds: The maximum interval length.
     """
     assert max_seconds > 0, 'The maximum interval length must be a positive number.'
     if len(data) == 0:
-        return iter([])
+        return
+
     if max_seconds == float('inf'):
         while True:
-            return random.choice(data)
+            yield random.choice(data)
 
-    min_ = lambda e: e.alignments[0][1][0]
-    max_ = lambda e: e.alignments[-1][1][1]
+    min_ = lambda e: e.alignments[0].audio[0]
+    max_ = lambda e: e.alignments[-1].audio[1]
     offset = lambda e: floor(min_(e))
 
+    lookup: typing.List[typing.List[typing.List[int]]]
     lookup = [[[] for _ in range(ceil(max_(e)) - offset(e) + 1)] for e in data]
     for i, example in enumerate(data):
+        assert example.alignments is not None, '`alignments` must be defined.'
         for j, alignment in enumerate(example.alignments):
-            for k in range(int(floor(alignment[1][0])), int(ceil(alignment[1][1])) + 1):
+            for k in range(int(floor(alignment.audio[0])), int(ceil(alignment.audio[1])) + 1):
                 lookup[i][k - offset(example)].append(j)
 
-    weights = torch.FloatTensor([max_(e) - min_(e) for e in data])
+    weights = torch.tensor([float(max_(e) - min_(e)) for e in data])
     while True:
         length = random.uniform(0, max_seconds)
         # NOTE: The `weight` is based on `start` (i.e. the number of spans)
-        index = torch.multinomial(weights + length, 1).item()
+        index = int(torch.multinomial(weights + length, 1).item())
         example = data[index]
+        assert example.alignments is not None, '`alignments` must be defined.'
         start = random.uniform(min_(example) - length, max_(example))
         end = min(start + length, max_(example))
         start = max(start, min_(example))
         part = flatten(lookup[index][int(start) - offset(example):int(end) - offset(example) + 1])
-        get = lambda i: example.alignments[i][1]
+        get = lambda i: example.alignments[i].audio
         overlap = lambda i: (min(end, get(i)[1]) - max(start, get(i)[0])) / (get(i)[1] - get(i)[0])
         random_ = lru_cache(maxsize=None)(lambda i: random.random())
         bounds = (
@@ -394,15 +531,15 @@ def dataset_generator(data, max_seconds):
             yield example._replace(alignments=example.alignments[bounds[0]:bounds[1] + 1])
 
 
-def dataset_loader(root_directory_name,
-                   speaker,
-                   directory=DATA_PATH,
-                   gcs_path='gs://wellsaid_labs_datasets/hilary_noriega',
-                   alignments_directory_name='alignments',
-                   recordings_directory_name='recordings',
-                   scripts_directory_name='scripts',
-                   text_column='Content',
-                   max_seconds=15):
+def dataset_loader(root_directory_name: str,
+                   gcs_path: str,
+                   speaker: Speaker,
+                   directory: Path = DATA_PATH,
+                   alignments_directory_name: str = 'alignments',
+                   recordings_directory_name: str = 'recordings',
+                   scripts_directory_name: str = 'scripts',
+                   text_column: str = 'Content',
+                   max_seconds: int = 15) -> typing.List[Example]:
     """ Load an alignment text-to-speech (TTS) dataset from GCS.
 
     TODO: Print dataset size with `seconds_to_string`.
@@ -422,27 +559,28 @@ def dataset_loader(root_directory_name,
         - The alignments, recordings, and scripts directory should contain the same number of
           similarly named files.
         - The dataset contain data representing only one speaker.
+        - The scripts only contain ASCII characters.
 
     Args:
-        root_directory_name (str): Name of the directory inside `directory` to store data.
-        speaker (src.datasets.Speaker): The speaker represented by this dataset.
-        directory (str or Path, optional): Directory to cache the dataset.
-        gcs_path (str, optional): The base GCS path storing the data.
-        alignments_gcs_path (str, optional): The name of the alignments directory on GCS.
-        recordings_gcs_path (str, optional): The name of the voice over directory on GCS.
-        scripts_gcs_path (str, optional): The name of the voice over script directory on GCS.
-        text_column (str, optional): The voice over script column in the CSV script files.
-        max_seconds (int, optional): The length of an example.
+        root_directory_name: Name of the directory inside `directory` to store data.
+        gcs_path: The base GCS path storing the data.
+        speaker: The speaker represented by this dataset.
+        directory: Directory to cache the dataset.
+        alignments_gcs_path: The name of the alignments directory on GCS.
+        recordings_gcs_path: The name of the voice over directory on GCS.
+        scripts_gcs_path: The name of the voice over script directory on GCS.
+        text_column: The voice over script column in the CSV script files.
+        max_seconds: The length of an example.
 
     Returns:
-        (tuple of generator of Example): A generator of `Example`s is returned for each split.
+        List of voice-over examples in the dataset.
     """
     logger.info('Loading `%s` speech dataset', root_directory_name)
 
     root = (Path(directory) / root_directory_name).absolute()
     root.mkdir(exist_ok=True)
-    directories = [alignments_directory_name, recordings_directory_name, scripts_directory_name]
-    directories = [root / d for d in directories]
+    names = [alignments_directory_name, recordings_directory_name, scripts_directory_name]
+    directories = [root / d for d in names]
     for directory, suffix in zip(directories, ('.json', '', '.csv')):
         directory.mkdir(exist_ok=True)
         command = 'gsutil -m cp -n %s/%s/*%s %s/' % (gcs_path, directory.name, suffix, directory)
@@ -451,13 +589,95 @@ def dataset_loader(root_directory_name,
     files = (sorted(d.iterdir(), key=lambda p: natural_keys(p.name)) for d in directories)
     examples = []
     for alignment_file_path, recording_file_path, script_file_path in zip(*tuple(files)):
-        alignments = json.loads(alignment_file_path.read_text())
         scripts = pandas.read_csv(str(script_file_path.absolute()))
-        assert len(scripts) == len(alignments), 'Expected equal number of scripts and alignments'
-        iterator = zip(alignments, [r for _, r in scripts.iterrows()])
-        examples.extend([
-            Example(a, s[text_column], recording_file_path, speaker,
-                    {k: v for k, v in s.items() if k != text_column}) for a, s in iterator
-        ])
+        script_alignments: typing.List[typing.List[typing.List[typing.List[float]]]]
+        script_alignments = json.loads(alignment_file_path.read_text())
+        assert len(scripts) == len(script_alignments), 'Invariant failed.'
+        for (script, _), alignments in zip(scripts.iterrows(), script_alignments):
+            assert is_normalized_vo_script(script[text_column]), 'The script must be normalized.'
+            example = Example(
+                audio_path=recording_file_path,
+                speaker=speaker,
+                alignments=[
+                    Alignment((int(a[0][0]), int(a[0][1])), (a[1][0], a[1][1])) for a in alignments
+                ],
+                text=script[text_column],
+                metadata={k: v for k, v in script.items() if k not in (text_column,)})
+            examples.append(example)
 
     return examples
+
+
+def precut_dataset_loader(
+    root_directory_name: str,
+    url: str,
+    speaker: Speaker,
+    directory: Path = DATA_PATH,
+    url_filename: typing.Optional[str] = None,
+    check_files: typing.List[str] = ['{metadata_filename}'],
+    metadata_filename: str = '{directory}/{root_directory_name}/metadata.csv',
+    metadata_text_column: typing.Union[str, int] = 'Content',
+    metadata_audio_column: typing.Union[str, int] = 'WAV Filename',
+    metadata_audio_path:
+    str = '{directory}/{root_directory_name}/wavs/{metadata_audio_column_value}',
+    **kwargs,
+) -> typing.List[Example]:
+    """ Load a precut speech dataset.
+
+    A precut speech dataset has these invariants:
+        - The dataset has already been segmented, and the segments have been audited.
+        - The file structure is similar to:
+            {root_directory_name}/
+                metadata.csv
+                wavs/
+                    audio1.wav
+                    audio2.wav
+        - The metadata CSV file contains a mapping of audio transcriptions to audio filenames.
+        - The dataset contains one speaker.
+        - The dataset is stored in a ``tar`` or ``zip`` at some url.
+
+    Args:
+        root_directory_name: Name of the directory inside `directory` to store data.
+        url: URL of the dataset file.
+        speaker: The dataset speaker.
+        url_filename: Name of the file downloaded; Otherwise, a filename is extracted from the url.
+      check_files: The download is considered successful, if these files exist.
+        directory: Directory to cache the dataset.
+        metadata_filename: The filename for the metadata file.
+        metadata_text_column: Column name or index with the audio transcript.
+        metadata_audio_column: Column name or index with the audio filename.
+        metadata_audio_path: String template for the audio path given the ``metadata_audio_column``
+            value.
+        **kwargs: Key word arguments passed to ``pandas.read_csv``.
+
+    Returns:
+        Dataset with audio filenames and text annotations.
+    """
+    logger.info('Loading `%s` speech dataset', root_directory_name)
+    directory = Path(directory)
+    metadata_filename = metadata_filename.format(
+        directory=directory, root_directory_name=root_directory_name)
+    check_files = [f.format(metadata_filename=metadata_filename) for f in check_files]
+    check_files = [str(Path(f).absolute()) for f in check_files]
+    download_file_maybe_extract(
+        url=url,
+        directory=str(directory.absolute()),
+        check_files=check_files,
+        filename=url_filename)
+    dataframe = pandas.read_csv(Path(metadata_filename), **kwargs)
+    return [
+        Example(
+            text=normalize_vo_script(row[metadata_text_column]),
+            audio_path=Path(
+                metadata_audio_path.format(
+                    directory=directory,
+                    root_directory_name=root_directory_name,
+                    metadata_audio_column_value=row[metadata_audio_column])),
+            speaker=speaker,
+            metadata={
+                k: v
+                for k, v in row.items()
+                if k not in [metadata_text_column, metadata_audio_column]
+            })
+        for _, row in dataframe.iterrows()
+    ]

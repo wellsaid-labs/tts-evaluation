@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 import io
 import logging
 import os
@@ -29,8 +31,8 @@ import torch
 librosa_display = LazyLoader('librosa_display', globals(), 'librosa.display')
 comet_ml = LazyLoader('comet_ml', globals(), 'comet_ml')
 
-from src.audio import write_audio
-from src.utils import log_runtime
+# from src.audio import write_audio
+# from src.utils import log_runtime
 
 turbo_colormap_data = [[0.18995, 0.07176, 0.23217], [0.19483, 0.08339, 0.26149],
                        [0.19956, 0.09498, 0.29024], [0.20415, 0.10652, 0.31844],
@@ -352,8 +354,9 @@ _BASE_HTML_STYLING = """
 """
 
 
-@log_runtime
-def CometML(project_name, experiment_key=None, **kwargs):
+def CometML(project_name,
+            experiment_key=None,
+            **kwargs) -> typing.Union[comet_ml.Experiment, comet_ml.ExistingExperiment]:
     """
     Initiate a Comet.ml visualizer with several monkey patched methods.
 
@@ -403,6 +406,17 @@ def CometML(project_name, experiment_key=None, **kwargs):
         experiment.log_parameter('total_physical_memory_in_kb',
                                  check_output("awk '/MemTotal/ {print $2}' /proc/meminfo",))
 
+    _add_comet_ml_set_step(experiment)
+    _add_comet_ml_log_epoch(experiment)
+    _add_comet_ml_log_audio(experiment)
+    _add_comet_ml_log_figures(experiment)
+    _add_comet_ml_set_name(experiment)
+    _add_comet_ml_set_name(experiment)
+
+    return experiment
+
+
+def _add_comet_ml_set_step(experiment):
     last_step_time = None
     last_step = None
 
@@ -429,11 +443,12 @@ def CometML(project_name, experiment_key=None, **kwargs):
 
     experiment.set_step = set_step.__get__(experiment)
 
+
+def _add_comet_ml_log_epoch(experiment):
     start_epoch_time = None
     start_epoch_step = None
     first_epoch_time = None
     first_epoch_step = None
-
     other_log_current_epoch = experiment.log_current_epoch
 
     def log_current_epoch(self, *args, **kwargs):
@@ -452,7 +467,6 @@ def CometML(project_name, experiment_key=None, **kwargs):
         return other_log_current_epoch(*args, **kwargs)
 
     experiment.log_current_epoch = log_current_epoch.__get__(experiment)
-
     other_log_epoch_end = experiment.log_epoch_end
 
     def log_epoch_end(self, *args, **kwargs):
@@ -472,6 +486,9 @@ def CometML(project_name, experiment_key=None, **kwargs):
         return other_log_epoch_end(*args, **kwargs)
 
     experiment.log_epoch_end = log_epoch_end.__get__(experiment)
+
+
+def _add_comet_ml_log_audio(experiment):
 
     def _write_wav(file_name, data):
         """ Write wav from a tensor to ``io.BytesIO``.
@@ -514,6 +531,9 @@ def CometML(project_name, experiment_key=None, **kwargs):
 
     experiment.log_audio = log_audio.__get__(experiment)
 
+
+def _add_comet_ml_log_figures(experiment):
+
     def log_figures(self, dict_, **kwargs):
         """ Convenience function to log multiple figures.
 
@@ -527,23 +547,23 @@ def CometML(project_name, experiment_key=None, **kwargs):
 
     experiment.log_figures = log_figures.__get__(experiment)
 
-    def set_context(self, context):
-        """ Set the context (i.e. train, dev, test) for further logs.
 
-        Args:
-            context (str): Some context for all further logs.
-        """
-        self.context = context
+def _add_comet_ml_set_name(experiment):
+    other_set_name = experiment.set_name
 
-    experiment.set_context = set_context.__get__(experiment)
-    other_log_metric = experiment._log_metric
+    def set_name(self, name, *args, **kwargs):
+        logger.info('Experiment name: %s')
+        if name is not None:  # TODO: Remove?
+            return other_set_name(name, *args, **kwargs)
 
-    def _log_metric(self, name, value, *args, **kwargs):
-        if value is None:
-            return
+    experiment.set_name = set_name.__get__(experiment)
 
-        return other_log_metric(name, value, *args, **kwargs)
 
-    experiment._log_metric = _log_metric.__get__(experiment)
+def _add_comet_ml_add_tags(experiment):
+    other_add_tags = experiment.add_tags
 
-    return experiment
+    def add_tags(self, tags, *args, **kwargs):
+        logger.info('Experiment tags: %s', tags)
+        return other_add_tags(tags, *args, **kwargs)
+
+    experiment.add_tags = add_tags.__get__(experiment)

@@ -26,6 +26,7 @@ from pathlib import Path
 import csv
 import logging
 import os
+import typing
 
 from torchnlp.download import download_file_maybe_extract
 from third_party import LazyLoader
@@ -33,17 +34,15 @@ from third_party import LazyLoader
 pandas = LazyLoader('pandas', globals(), 'pandas')
 
 from src.datasets.utils import Example
-from src.datasets.utils import Gender
 from src.datasets.utils import Speaker
-from src.environment import DATA_PATH
 
 logger = logging.getLogger(__name__)
 Book = namedtuple('Book', 'speaker title')
 
-JUDY_BIEBER = Speaker('Judy Bieber', Gender.FEMALE)
-MARY_ANN = Speaker('Mary Ann', Gender.FEMALE)
-ELLIOT_MILLER = Speaker('Elliot Miller', Gender.MALE)
-ELIZABETH_KLETT = Speaker('Elizabeth Klett', Gender.FEMALE)
+JUDY_BIEBER = Speaker('Judy Bieber')
+MARY_ANN = Speaker('Mary Ann')
+ELLIOT_MILLER = Speaker('Elliot Miller')
+ELIZABETH_KLETT = Speaker('Elizabeth Klett')
 
 THE_SEA_FAIRIES = Book(JUDY_BIEBER, 'the_sea_fairies')
 THE_MASTER_KEY = Book(JUDY_BIEBER, 'the_master_key')
@@ -65,10 +64,28 @@ PINK_FAIRY_BOOK = Book(ELLIOT_MILLER, 'pink_fairy_book')
 JANE_EYRE = Book(ELIZABETH_KLETT, 'jane_eyre')
 WIVES_AND_DAUGHTERS = Book(ELIZABETH_KLETT, 'wives_and_daughters')
 
-DOWNLOAD_DIRECTORY = DATA_PATH / 'M-AILABS'
+
+def m_ailabs_en_us_judy_bieber_speech_dataset(all_books=[
+    THE_SEA_FAIRIES, THE_MASTER_KEY, RINKITINK_IN_OZ, DOROTHY_AND_WIZARD_OZ, SKY_ISLAND, OZMA_OF_OZ,
+    EMERALD_CITY_OF_OZ
+]):
+    return m_ailabs_en_us_speech_dataset(all_books=all_books)
 
 
-def m_ailabs_en_us_speech_dataset(directory=DOWNLOAD_DIRECTORY,
+def m_ailabs_en_us_mary_ann_speech_dataset(all_books=[MIDNIGHT_PASSENGER, NORTH_AND_SOUTH]):
+    return m_ailabs_en_us_speech_dataset(all_books=all_books)
+
+
+def m_ailabs_en_us_elliot_miller_speech_dataset(
+        all_books=[PIRATES_OF_ERSATZ, POISONED_PEN, SILENT_BULLET, HUNTERS_SPACE, PINK_FAIRY_BOOK]):
+    return m_ailabs_en_us_speech_dataset(all_books=all_books)
+
+
+def m_ailabs_en_uk_elizabeth_klett_speech_dataset(all_books=[JANE_EYRE, JANE_EYRE]):
+    return m_ailabs_en_us_speech_dataset(all_books=all_books)
+
+
+def m_ailabs_en_us_speech_dataset(directory,
                                   url='http://www.caito.de/data/Training/stt_tts/en_US.tgz',
                                   check_files=['en_US/by_book/info.txt'],
                                   extracted_name='en_US',
@@ -98,7 +115,7 @@ def m_ailabs_en_us_speech_dataset(directory=DOWNLOAD_DIRECTORY,
         **kwargs)
 
 
-def m_ailabs_en_uk_speech_dataset(directory=DOWNLOAD_DIRECTORY,
+def m_ailabs_en_uk_speech_dataset(directory,
                                   url='http://www.caito.de/data/Training/stt_tts/en_UK.tgz',
                                   check_files=['en_UK/by_book/info.txt'],
                                   extracted_name='en_UK',
@@ -119,45 +136,43 @@ def m_ailabs_en_uk_speech_dataset(directory=DOWNLOAD_DIRECTORY,
         **kwargs)
 
 
-def _m_ailabs_speech_dataset(directory,
-                             extracted_name,
-                             url,
-                             check_files,
-                             all_books,
-                             metadata_pattern='**/metadata.csv',
-                             metadata_path_column='metadata_path',
-                             metadata_audio_column=0,
-                             metadata_audio_path_template='wavs/{}.wav',
-                             metadata_text_column=2):
+def _m_ailabs_speech_dataset(
+        directory: typing.Union[str, Path],
+        extracted_name: str,
+        url: str,
+        check_files: typing.List[str],
+        all_books: typing.List[Book],
+        metadata_pattern: str = '**/metadata.csv',
+        metadata_path_column: str = 'metadata_path',
+        metadata_audio_column: typing.Union[str, int] = 0,
+        metadata_audio_path_template: str = 'wavs/{}.wav',
+        metadata_text_column: typing.Union[str, int] = 2) -> typing.List[Example]:
     """ Load a M-AILABS dataset.
 
     Download, extract, and process a M-AILABS dataset.
     The original URL is ``http://www.caito.de/2019/01/the-m-ailabs-speech-dataset/``.
     Use ``curl -I <URL>`` to find the redirected URL.
 
-    TODO: Extract related metadata.
-
     Args:
-        directory (str or Path, optional): Directory to cache the dataset.
-        extracted_name (str, optional): Name of the extracted dataset directory.
-        url (str, optional): URL of the dataset ``tar.gz`` file.
+        directory: Directory to cache the dataset.
+        extracted_name: Name of the extracted dataset directory.
+        url: URL of the dataset ``tar.gz`` file.
         check_files (list of str, optional): Check this file exists if the download was successful.
         all_books (list of Book): List of books to load.
-        metadata_pattern (str, optional): Pattern for all ``metadata.csv`` files containing
-            (filename, text) information.
-        metadata_path_column (str, optional): Column name to store the metadata path.
-        metadata_audio_column (int, optional): Column name or index with the audio filename.
-        metadata_audio_path_template (str, optional): Given the audio column, this template
+        metadata_pattern: Pattern for all ``metadata.csv`` files containing (filename, text)
+            information.
+        metadata_path_column: Column name to store the metadata path.
+        metadata_audio_column: Column name or index with the audio filename.
+        metadata_audio_path_template: Given the audio column, this template
             determines the filename.
-        metadata_text_column (int, optional): Column name or index with the audio transcript.
+        metadata_text_column): Column name or index with the audio transcript.
 
      Returns:
-          list: A M-AILABS dataset with audio filenames and text annotations.
+        A M-AILABS dataset with audio filenames and text annotations.
 
     Example:
         >>> from src.hparams import set_hparams # doctest: +SKIP
         >>> from src.datasets import m_ailabs_speech_dataset # doctest: +SKIP
-        >>> set_hparams() # doctest: +SKIP
         >>> train, dev = m_ailabs_speech_dataset() # doctest: +SKIP
     """
     logger.info('Loading `M-AILABS %s` speech dataset', extracted_name)
@@ -180,7 +195,8 @@ def _m_ailabs_speech_dataset(directory,
             audio_path=Path(row[metadata_path_column].parent,
                             metadata_audio_path_template.format(row[metadata_audio_column])),
             speaker=_path2book(row[metadata_path_column], directory=directory).speaker,
-            metadata=None) for row in data
+            metadata={'book': _path2book(row[metadata_path_column], directory=directory)})
+        for row in data
     ]
 
 
@@ -208,9 +224,8 @@ def _path2book(metadata_path, directory):
     """
     metadata_path = metadata_path.relative_to(directory)
     # EXAMPLE: metadata_path=en_US/by_book/female/judy_bieber/dorothy_and_wizard_oz/metadata.csv
-    speaker_gender, speaker_name, book_title = metadata_path.parts[2:5]
-    speaker_gender = getattr(Gender, speaker_gender.upper())
-    speaker = Speaker(speaker_name.replace('_', ' ').title(), speaker_gender)
+    _, speaker_name, book_title = metadata_path.parts[2:5]
+    speaker = Speaker(speaker_name.replace('_', ' ').title())
     return Book(speaker, book_title)
 
 

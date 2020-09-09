@@ -53,6 +53,20 @@ Example (Batch):
       --voice_over_script "${(@f)$(gsutil ls "$PREFIX/scripts/*.csv" | sort -h)}" \
       --destination $PREFIX/
 
+TODO: Normalize the text before the alignments are generated; otherwise, it is decently complicated
+to adjust the alignments. The issue is that we need consistency with text normalization... So maybe
+the idea is that we normalize the text as it's being loaded. In those modules, we can have specific
+rules for loading the dataset. The other issues... Should normalize the text the input
+encoder? Maybe? Why not? I think we need to share code via _utils between the two. The
+normalizations include:
+- Removing HTML (Specific)
+- Removing special characters like ® ™ (Specific)
+- Replace \t with "  " (Generic)
+- Converting to ASCII (Generic)
+- Adding spaces between sentences (Specific)
+- Removing control characters (Generic)
+TODO: Consider normalizing numbers, so that more of the data is usable. Furthermore, it'll give
+us a reasonable performance estimate of the text normalization.
 """
 from collections import namedtuple
 from copy import copy
@@ -82,6 +96,7 @@ from src.environment import COLORS
 from src.environment import set_basic_logging_config
 from src.hparams import set_hparams
 from src.text import grapheme_to_phoneme
+from src.text import normalize_vo_script
 from src.utils import align_tokens
 from src.utils import flatten
 from src.utils import RecordStandardStreams
@@ -343,6 +358,7 @@ def align_stt_with_script(scripts,
         expectation = ' '.join([w['word'] for w in result['words']]).strip()
         # NOTE: This is `true` as of June 21st, 2019.
         assert expectation == result['transcript'].strip(), 'Not white-space tokenized.'
+        # TODO: Should we double check there are no overlapping alignments?
     stt_tokens = flatten([[
         SttToken(
             text=w['word'],

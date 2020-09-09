@@ -6,6 +6,7 @@ from pathlib import Path
 from threading import Lock
 from threading import Timer
 
+import glob
 import inspect
 import itertools
 import logging
@@ -17,6 +18,7 @@ import random
 import re
 import statistics
 import time
+import typing
 
 from torch import multiprocessing
 
@@ -26,14 +28,10 @@ import torch.utils.data
 from src.environment import DISK_CACHE_PATH
 from src.utils.disk_cache_ import DiskCache
 
+import src.distributed
+
 logger = logging.getLogger(__name__)
 pprint = pprint.PrettyPrinter(indent=4)
-
-# Args:
-#   modification_time (int): See `os.path.getmtime`.
-#   byte_size (int): See `os.path.getsize`.
-FileMetadata = namedtuple('FileMetadata', ['modification_time', 'byte_size'])
-
 
 
 def cumulative_split(list_, thresholds, get_value=lambda x: x):
@@ -63,75 +61,6 @@ def cumulative_split(list_, thresholds, get_value=lambda x: x):
     if len(split) != 0:
         return_.append(split)
     return tuple(return_)
-
-
-def natural_keys(text):
-    """ Returns keys (`list`) for sorting in a "natural" order.
-    Inspired by: http://nedbatchelder.com/blog/200712/human_sorting.html
-    """
-    return [(int(char) if char.isdigit() else char) for char in re.split(r'(\d+)', str(text))]
-
-
-def strip(text):
-    """ Strip and return the stripped text.
-
-    Args:
-        text (str)
-
-    Returns:
-        (str): The stripped text.
-        (str): Text stripped from the left.
-        (str): Text stripped from the right.
-    """
-    original = text
-    text = text.rstrip()
-    stripped_right = original[len(text):]
-    text = text.lstrip()
-    stripped_left = original[:len(original) - len(stripped_right) - len(text)]
-    return text, stripped_left, stripped_right
-
-
-# NOTE: We do not use creation time due to lack of support:
-# https://stackoverflow.com/questions/237079/how-to-get-file-creation-modification-date-times-in-python
-def get_file_metadata(path):
-    return FileMetadata(os.path.getmtime(path), os.path.getsize(path))
-
-
-def assert_no_overwritten_files(function=None):
-    """ Ensure that all file paths passed to function were not overwritten since the last function
-    execution.
-
-    Args:
-        function (callable): Function to decorate.
-
-    Returns:
-        (callable)
-    """
-    if not function:
-        return assert_no_overwritten_files
-
-    file_metadata_cache = DiskCache(DISK_CACHE_PATH /
-                                    (inspect.getmodule(assert_no_overwritten_files).__name__ + '.' +
-                                     assert_no_overwritten_files.__qualname__))
-
-    @wraps(function)
-    def decorator(*args, **kwargs):
-        for arg in itertools.chain(args, kwargs.values()):
-            if isinstance(arg, Path):
-                metadata = get_file_metadata(arg)
-                if arg in file_metadata_cache:
-                    assert file_metadata_cache.get(arg) == metadata, (
-                        'Function `%s` does not allow file %s to be '
-                        'overwritten between executions. The original '
-                        'metadata was `%s` and the new metadata is `%s`.' %
-                        (function.__qualname__, arg, file_metadata_cache.get(arg), metadata))
-                else:
-                    file_metadata_cache.set(arg, metadata)
-
-        return function(*args, **kwargs)
-
-    function.assert_no_overwritten_files_cache = file_metadata_cache
-    return decorator
 
 
 def random_sample(list_, sample_size):
@@ -415,7 +344,7 @@ def sort_together(list_, sort_key, **kwargs):
     return [x for _, x in sorted(zip(sort_key, list_), key=lambda pair: pair[0], **kwargs)]
 
 
-def slice_by_cumulative_sum(list_, max_total_value, get_value=lambda x: x):
+def cumulative_sum_slice(list_, max_total_value, get_value=lambda x: x):
     """ Get slice of a list such that the cumulative sum is less than or equal to ``max_total``.
 
     Args:
@@ -493,27 +422,7 @@ def Pool(*args, **kwargs):
     pool.join()  # Waits for workers to exit.
 
 
-def bash_time_label(add_pid=True):
-    """ Get a bash friendly string representing the time and process.
-
-    NOTE: This string is optimized for sorting by ordering units of time from largest to smallest.
-    NOTE: This string avoids any special bash characters, learn more:
-    https://unix.stackexchange.com/questions/270977/what-characters-are-required-to-be-escaped-in-command-line-arguments
-    NOTE: `os.getpid` is often used by routines that generate unique identifiers, learn more:
-    http://manpages.ubuntu.com/manpages/cosmic/man2/getpid.2.html
-
-    Args:
-        add_pid (bool, optional): If `True` add the process PID to the label.
-
-    Returns:
-        (str)
-    """
-    label = str(time.strftime('DATE-%Yy%mm%dd-%Hh%Mm%Ss', time.localtime()))
-
-    if add_pid:
-        label += '_PID-%s' % str(os.getpid())
-
-    return label
+# TODO: Create a new module for tensor specific operations.
 
 
 def pad_tensors(input_, pad, dim=0, **kwargs):
@@ -590,3 +499,138 @@ class LSTMCell(torch.nn.LSTMCell):
             hx = (self.initial_hidden_state.expand(input.shape[0], -1).contiguous(),
                   self.initial_cell_state.expand(input.shape[0], -1).contiguous())
         return super().forward(input, hx=hx)
+
+
+class AveragedMetric():
+    """ Compute and track the average of a metric.
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        """ Reset the metric statistics.
+
+        Returns:
+            (float): The average value before reseting.
+        """
+        if hasattr(self, 'total_value') and hasattr(self, 'total_count') and self.total_count > 0:
+            average = self.total_value / self.total_count
+        else:
+            average = None
+
+        self.last_update_value = 0.0
+        self.last_update_count = 0.0
+        self.total_value = 0.0
+        self.total_count = 0.0
+
+        return average
+
+    def update(self, value, count=1):
+        """ Add a new measurement of this metric.
+
+        Args:
+            value (number)
+            count (int): Number of times to add value / frequency of value.
+
+        Returns:
+            AverageMetric: `self`
+        """
+        if torch.is_tensor(value):
+            value = value.item()
+
+        if torch.is_tensor(count):
+            count = count.item()
+
+        assert count > 0, '%s count must be a positive number' % count
+
+        self.total_value += value * count
+        self.total_count += count
+        self.last_update_value = value * count
+        self.last_update_count = count
+
+        return self
+
+    def last_update(self):
+        """ Get the measurement update.
+
+        Returns:
+            (float): The average value of the last measurement.
+        """
+        if self.last_update_count == 0:
+            return None
+
+        return self.last_update_value / self.last_update_count
+
+
+class DistributedAveragedMetric(AveragedMetric):
+    """ Compute and track the average of a metric in a distributed environment.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def reset(self):
+        super().reset()
+
+        if (hasattr(self, 'post_sync_total_value') and hasattr(self, 'post_sync_total_value') and
+                self.post_sync_total_count > 0):
+            average = self.post_sync_total_value / self.post_sync_total_count
+        else:
+            average = None
+
+        self.post_sync_total_value = 0
+        self.post_sync_total_count = 0
+
+        return average
+
+    def sync(self):
+        """ Synchronize measurements from multiple processes.
+
+        Returns:
+            AverageMetric: `self`
+        """
+        last_post_sync_total_value = self.post_sync_total_value
+        last_post_sync_total_count = self.post_sync_total_count
+        if src.distributed.is_initialized():
+            torch_ = torch.cuda if torch.cuda.is_available() else torch
+            packed = torch_.FloatTensor([self.total_value, self.total_count])
+            torch.distributed.reduce(packed, dst=src.distributed.get_master_rank())
+            self.post_sync_total_value, self.post_sync_total_count = tuple(packed.tolist())
+        else:
+            self.post_sync_total_value = self.total_value
+            self.post_sync_total_count = self.total_count
+        self.last_update_value = self.post_sync_total_value - last_post_sync_total_value
+        self.last_update_count = self.post_sync_total_count - last_post_sync_total_count
+        return self
+
+
+_GetMostRecentReturnType = typing.TypeVar('_GetMostRecentReturnType')
+
+
+def load_most_recent_file(
+        pattern: Path, read: typing.Callable[[Path],
+                                             _GetMostRecentReturnType]) -> _GetMostRecentReturnType:
+    """ Get the most recently modified file.
+
+    Args:
+        pattern: Pattern to search for files.
+
+    Returns:
+        The most recent non-corrupted file that is found based on modification time.
+    """
+    paths = list(glob.iglob(str(pattern), recursive=True))
+    if len(paths) == 0:
+        raise ValueError(f"No files found with {pattern} pattern.")
+
+    # NOTE: We used modified time for sorting files because creation time is unreliable, learn more:
+    # https://stackoverflow.com/questions/237079/how-to-get-file-creation-modification-date-times-in-python/237084
+    modified_time = [os.path.getmtime(c) for c in paths]
+    assert len(modified_time) == len(
+        set(modified_time)), 'Multiple paths found with the same modification time'
+    for path in sort_together(paths, modified_time, reverse=True):
+        try:
+            return read(path)
+        except (EOFError, RuntimeError):
+            logger.exception(f"Failed to load file at {path}.")
+    raise ValueError('Unable to load recent file.')
