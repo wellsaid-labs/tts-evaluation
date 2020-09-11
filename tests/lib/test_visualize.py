@@ -3,79 +3,57 @@ from matplotlib import pyplot
 import matplotlib
 import torch
 
-from src.datasets import Gender
-from src.datasets import Speaker
-from src.visualize import CometML
-from src.visualize import plot_attention
-from src.visualize import plot_loss_per_frame
-from src.visualize import plot_spectrogram
-from src.visualize import plot_mel_spectrogram
-from src.visualize import plot_stop_token
-from src.visualize import plot_waveform
+import lib
 
 
-def test_comet_ml():
-    # Smoke tests
-    visualizer = CometML('', disabled=True)
-    visualizer.set_step(0)
-    visualizer.log_audio(
-        tag='audio',
-        text='test input',
-        speaker=Speaker('Test Speaker', Gender.MALE),
-        audio={
-            'predicted_audio': torch.rand(100),
-            'gold_audio': torch.rand(100)
-        })
-    figure = pyplot.figure()
-    pyplot.close(figure)
-    visualizer.log_figures({'figure': figure}, overwrite=True)
-    visualizer.set_context('train')
-    assert visualizer.context == 'train'
-    visualizer.log_current_epoch(0)
-    visualizer.log_epoch_end(0)
-    visualizer.set_step(0)
-    visualizer.set_step(1)
-    visualizer.log_metric('blah', None)
-    visualizer.log_metric('blah', 0.0)
+def test_plot_alignments():
+    assert isinstance(lib.visualize.plot_alignments(torch.rand(5, 6)), matplotlib.figure.Figure)
 
 
-def test_plot_spectrogram():
-    arr = torch.rand(5, 6)
-    figure = plot_spectrogram(arr)
-    assert isinstance(figure, matplotlib.figure.Figure)
-    pyplot.close(figure)
-
-
-def test_plot_mel_spectrogram():
-    arr = torch.rand(5, 6)
-    figure = plot_mel_spectrogram(arr)
-    assert isinstance(figure, matplotlib.figure.Figure)
-    pyplot.close(figure)
-
-
-def test_plot_attention():
-    arr = torch.rand(5, 6)
-    figure = plot_attention(arr)
-    assert isinstance(figure, matplotlib.figure.Figure)
-    pyplot.close(figure)
+def test_plot_line_graph_of_logits():
+    assert isinstance(
+        lib.visualize.plot_line_graph_of_logits(torch.rand(5)), matplotlib.figure.Figure)
 
 
 def test_plot_waveform():
-    arr = torch.rand(5)
-    figure = plot_waveform(arr)
+    assert isinstance(lib.visualize.plot_waveform(torch.rand(5), 24000), matplotlib.figure.Figure)
+
+
+def test_plot_mel_spectrogram():
+    figure = lib.visualize.plot_waveform(
+        torch.rand(5, 6),
+        sample_rate=24000,
+        frame_hop=256,
+        lower_hertz=None,
+        upper_hertz=None,
+    )
     assert isinstance(figure, matplotlib.figure.Figure)
-    pyplot.close(figure)
 
 
-def test_plot_loss_per_frame():
-    arr = torch.rand(5)
-    figure = plot_loss_per_frame(arr)
+def test_plot_spectrogram():
+    figure = lib.visualize.plot_waveform(torch.rand(5, 6), sample_rate=24000, frame_hop=256)
     assert isinstance(figure, matplotlib.figure.Figure)
-    pyplot.close(figure)
 
 
-def test_plot_stop_token():
-    arr = torch.rand(5)
-    figure = plot_stop_token(arr)
-    assert isinstance(figure, matplotlib.figure.Figure)
-    pyplot.close(figure)
+def test_comet_ml_experiment():
+    """ Test if `lib.visualize.CometMLExperiment` initializes, and the patched functions execute.
+    """
+    comet = lib.visualize.CometMLExperiment(disabled=True)
+    with comet.set_context('train'):
+        assert comet.context == 'train'
+        comet.set_step(0)
+        comet.set_step(0)
+        comet.set_step(1)
+        comet.log_audio(
+            metadata='random metadata',
+            audio={
+                'predicted_audio': torch.rand(100),
+                'gold_audio': torch.rand(100)
+            })
+        figure = pyplot.figure()
+        pyplot.close(figure)
+        comet.log_figures({'figure': figure}, overwrite=True)
+        comet.log_current_epoch(0)
+        comet.log_epoch_end(0)
+        comet.set_name('name')
+        comet.add_tags(['tag'])

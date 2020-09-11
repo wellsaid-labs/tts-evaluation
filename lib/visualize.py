@@ -4,8 +4,9 @@ import io
 import logging
 import os
 import platform
-import subprocess
 import time
+import types
+import typing
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ try:
     from matplotlib import pyplot
     from matplotlib.colors import ListedColormap
 except ImportError:
-    logger.info('Ignoring optional `matplotlib` configurations.')
+    logger.info('Ignoring optional `matplotlib` dependency.')
 
 from hparams import configurable
 from hparams import HParam
@@ -28,11 +29,11 @@ from third_party import LazyLoader
 
 import numpy as np
 import torch
-librosa_display = LazyLoader('librosa_display', globals(), 'librosa.display')
-comet_ml = LazyLoader('comet_ml', globals(), 'comet_ml')
+import comet_ml
 
-# from src.audio import write_audio
-# from src.utils import log_runtime
+librosa_display = LazyLoader('librosa_display', globals(), 'librosa.display')
+
+import lib
 
 turbo_colormap_data = [[0.18995, 0.07176, 0.23217], [0.19483, 0.08339, 0.26149],
                        [0.19956, 0.09498, 0.29024], [0.20415, 0.10652, 0.31844],
@@ -166,18 +167,15 @@ turbo_colormap_data = [[0.18995, 0.07176, 0.23217], [0.19483, 0.08339, 0.26149],
 try:
     matplotlib.cm.register_cmap('turbo', cmap=ListedColormap(turbo_colormap_data))
 except NameError:
-    logger.info('Ignoring optional `matplotlib` configurations.')
+    logger.info('Ignoring optional `matplotlib` dependency.')
 
 
-def plot_attention(alignment):
-    """ Plot alignment of attention.
+def plot_alignments(alignment: typing.Union[torch.Tensor, np.ndarray]) -> matplotlib.figure.Figure:
+    """ Plot an alignment of two sequences.
 
     Args:
-        alignment (numpy.array or torch.Tensor [decoder_timestep, encoder_timestep]): Attention
-            alignment weights computed at every timestep of the decoder.
-
-    Returns:
-        (matplotlib.figure.Figure): Matplotlib figure representing the plot.
+        alignment (numpy.ndarray or torch.Tensor [decoded_sequence, encoded_sequence]): Alignment
+            weights between two sequences.
     """
     alignment = alignment.detach().cpu().numpy() if torch.is_tensor(alignment) else alignment
     alignment = np.transpose(alignment)
@@ -192,48 +190,25 @@ def plot_attention(alignment):
         vmin=0,
         vmax=1)
     figure.colorbar(im, ax=axis, orientation='horizontal')
-    pyplot.xlabel('Decoder timestep')
-    pyplot.ylabel('Encoder timestep')
+    pyplot.xlabel('Decoded Sequence')
+    pyplot.ylabel('Encoded Sequence')
     pyplot.close(figure)
     return figure
 
 
-def plot_loss_per_frame(loss_per_frame):
-    """ Plot the loss for each frame.
+def plot_line_graph_of_logits(
+        logits: typing.Union[torch.Tensor, np.ndarray]) -> matplotlib.figure.Figure:
+    """ Given a time-series of logits, plot a line graph.
 
     Args:
-        loss_per_frame (numpy.array or torch.Tensor [num_frames]): The loss for each frame.
-
-    Returns:
-        (matplotlib.figure.Figure): Matplotlib figure representing the plot.
+        logits (numpy.array or torch.Tensor [sequence_length])
     """
-    loss_per_frame = loss_per_frame.detach().cpu().numpy() if torch.is_tensor(
-        loss_per_frame) else loss_per_frame
+    logits = logits if torch.is_tensor(logits) else torch.tensor(logits)
+    logits = torch.sigmoid(logits)
+    logits = logits.detach().cpu().numpy()
     pyplot.style.use('ggplot')
     figure = pyplot.figure()
-    pyplot.plot(list(range(len(loss_per_frame))), loss_per_frame, marker='.', linestyle='solid')
-    pyplot.ylabel('Loss')
-    pyplot.xlabel('Frame')
-    pyplot.close(figure)
-    return figure
-
-
-def plot_stop_token(stop_token):
-    """ Plot probability of the stop token over time.
-
-    Args:
-        stop_token (numpy.array or torch.Tensor [decoder_timestep]): Stop token logits per
-            decoder timestep.
-
-    Returns:
-        (matplotlib.figure.Figure): Matplotlib figure representing the plot.
-    """
-    stop_token = stop_token if torch.is_tensor(stop_token) else torch.tensor(stop_token)
-    stop_token = torch.sigmoid(stop_token)
-    stop_token = stop_token.detach().cpu().numpy()
-    pyplot.style.use('ggplot')
-    figure = pyplot.figure()
-    pyplot.plot(list(range(len(stop_token))), stop_token, marker='.', linestyle='solid')
+    pyplot.plot(list(range(len(logits))), logits, marker='.', linestyle='solid')
     pyplot.ylabel('Probability')
     pyplot.xlabel('Timestep')
     pyplot.close(figure)
@@ -241,76 +216,69 @@ def plot_stop_token(stop_token):
 
 
 @configurable
-def plot_waveform(signal, sample_rate=HParam()):
-    """ Save image of spectrogram to disk.
+def plot_waveform(
+    signal: typing.Union[torch.Tensor, np.ndarray], sample_rate: int = HParam()
+) -> matplotlib.figure.Figure:
+    """ Plot the amplitude envelope of a waveform.
 
     Args:
-        signal (torch.Tensor or numpy.array [signal_length]): Signal to plot.
-        sample_rate (int): Sample rate of the associated wave.
-
-    Returns:
-        (matplotlib.figure.Figure): Matplotlib figure representing the plot.
+        signal (torch.Tensor or numpy.array [signal_length]): Signal to plot as a waveform.
+        sample_rate: The number of samples or points per second.
     """
     signal = signal.detach().cpu().numpy() if torch.is_tensor(signal) else signal
     pyplot.style.use('ggplot')
     figure = pyplot.figure()
     librosa_display.waveplot(signal, sr=sample_rate)
-    pyplot.ylabel('Energy')
+    pyplot.ylabel('Amplitude')
     pyplot.xlabel('Time')
-    pyplot.ylim(-1, 1)
+    pyplot.ylim(-1.0, 1.0)
     # Learn more: https://stackoverflow.com/questions/21884271/warning-about-too-many-open-figures
     pyplot.close(figure)
     return figure
 
 
 @configurable
-def plot_mel_spectrogram(spectrogram,
-                         lower_hertz=HParam(),
-                         upper_hertz=HParam(),
-                         y_axis='mel',
-                         **kwargs):
-    """ Get image of a mel spectrogram.
+def plot_mel_spectrogram(spectrogram: typing.Union[torch.Tensor, np.ndarray],
+                         lower_hertz: typing.Optional[int] = HParam(),
+                         upper_hertz: typing.Optional[int] = HParam(),
+                         y_axis: str = 'mel',
+                         **kwargs) -> matplotlib.figure.Figure:
+    """ Plot a mel spectrogram.
 
     Args:
-        spectrogram (numpy.array or torch.FloatTensor [frames, num_mel_bins])
-        lower_hertz (int): Lower bound on the frequencies to be included in the mel spectrum. This
+        spectrogram (numpy.array or torch.FloatTensor [num_frames, num_mel_bins])
+        lower_hertz: Lower bound on the frequencies to be included in the mel spectrum. This
             corresponds to the lower edge of the lowest triangular band.
-        upper_hertz (int): The desired top edge of the highest frequency band.
-        **kwargs: Any additional keyword arguments are passed onto `src.visualize.plot_spectrogram`.
-
-    Returns:
-        (matplotlib.figure.Figure): Matplotlib figure representing the plot.
+        upper_hertz: The desired top edge of the highest frequency band.
+        **kwargs: Any additional keyword arguments are passed onto `visualize.plot_spectrogram`.
     """
     return plot_spectrogram(
         spectrogram, fmin=lower_hertz, fmax=upper_hertz, y_axis=y_axis, **kwargs)
 
 
 @configurable
-def plot_spectrogram(spectrogram,
-                     sample_rate=HParam(),
-                     frame_hop=HParam(),
-                     cmap='turbo',
-                     y_axis='linear',
-                     x_axis='time',
-                     fmax=None,
-                     **kwargs):
-    """ Get image of a spectrogram.
+def plot_spectrogram(spectrogram: typing.Union[torch.Tensor, np.ndarray],
+                     sample_rate: int = HParam(),
+                     frame_hop: int = HParam(),
+                     cmap: str = 'turbo',
+                     y_axis: str = 'linear',
+                     x_axis: str = 'time',
+                     fmax: typing.Optional[float] = None,
+                     **kwargs) -> matplotlib.figure.Figure:
+    """ Plot a spectrogram.
 
     Args:
-        spectrogram (numpy.array or torch.FloatTensor [frames, num_mel_bins])
-        sample_rate (int): Sample rate for the signal.
-        frame_hop (int): The frame hop in samples.
+        spectrogram (numpy.array or torch.FloatTensor [num_frames, num_frequencies])
+        sample_rate: Sample rate for the signal.
+        frame_hop: The frame hop in samples.
         **kwargs: Any additional keyword arguments are passed onto `librosa_display.specshow`.
-
-    Returns:
-        (matplotlib.figure.Figure): Matplotlib figure representing the plot.
     """
-    assert len(spectrogram.shape) == 2, 'Log mel spectrogram must be 2D.'
+    assert len(spectrogram.shape) == 2, 'Spectrogram must be 2-dimensional.'
     figure = pyplot.figure()
     pyplot.style.use('ggplot')
     spectrogram = spectrogram.detach().cpu().numpy() if torch.is_tensor(
         spectrogram) else spectrogram
-    spectrogram = spectrogram.transpose()
+    spectrogram = np.transpose(spectrogram)
     fmax = fmax if fmax is None else min(fmax, float(sample_rate) / 2)
     librosa_display.specshow(
         spectrogram,
@@ -354,216 +322,207 @@ _BASE_HTML_STYLING = """
 """
 
 
-def CometML(project_name,
-            experiment_key=None,
-            **kwargs) -> typing.Union[comet_ml.Experiment, comet_ml.ExistingExperiment]:
-    """
-    Initiate a Comet.ml visualizer with several monkey patched methods.
+def CometMLExperiment(project_name: typing.Optional[str] = None,
+                      experiment_key: typing.Optional[str] = None,
+                      workspace: typing.Optional[str] = comet_ml.config.get_config()
+                      ['comet.workspace'],
+                      **kwargs) -> comet_ml.Experiment:
+    """ Create a `comet_ml.Experiment` or `comet_ml.ExistingExperiment` object with several
+    adjustments.
 
     Args:
-        project_name (str)
-        experiment_key (str, optional): Comet.ml existing experiment identifier.
-        **kwargs: Other kwargs to pass to comet `Experiment` or `ExistingExperiment`
-
-    Returns:
-        (Experiment or ExistingExperiment): Object for visualization with comet.
+        project_name
+        experiment_key: Existing experiment identifier.
+        **kwargs: Other kwargs to pass to comet `Experiment` and / or `ExistingExperiment`
     """
-    # NOTE: Comet ensures reproducibility if all files are tracked via git.
-    untracked_files = subprocess.check_output(
-        'git ls-files --others --exclude-standard', shell=True).decode().strip()
-    if len(untracked_files) > 0:
-        raise ValueError(('Experiment is not reproducible, Comet does not track untracked files. '
-                          'Please track these files via `git`:\n%s') % untracked_files)
+    if lib.environment.has_untracked_files():
+        raise ValueError(
+            ('Experiment is not reproducible, Comet does not track untracked files. '
+             'Please track these files via `git`:\n%s') % lib.environment.get_untracked_files())
 
-    kwargs.update({'workspace': comet_ml.config.get_config()['comet.workspace']})
-    if project_name is not None:
-        kwargs.update({'project_name': project_name})
+    kwargs.update({'project_name': project_name, 'workspace': workspace})
     if experiment_key is None:
         experiment = comet_ml.Experiment(**kwargs)
         experiment.log_html(_BASE_HTML_STYLING)
     else:
         experiment = comet_ml.ExistingExperiment(previous_experiment=experiment_key, **kwargs)
 
-    check_output = lambda *a, **k: subprocess.check_output(*a, shell=True, **k).decode().strip()
-
-    # Log the last git commit date
-    experiment.log_other('last_git_commit', check_output('git log -1 --format=%cd'))
-    experiment.log_other('git_branch', check_output('git rev-parse --abbrev-ref HEAD'))
-    experiment.log_other('has_git_patch', str(len(check_output('git status --porcelain')) > 0))
-    # TODO: Instead of using different approaches for extracting CPU, GPU, and disk information
-    # consider standardizing to use `lshw` instead.
-    if torch.cuda.is_available():
-        experiment.log_other('list_gpus', check_output('nvidia-smi --list-gpus'))
-    if platform.system() == 'Linux':
-        experiment.log_other('list_disks', check_output('lshw -class disk -class storage'))
-    if platform.system() == 'Linux':
-        experiment.log_other(
-            'list_unique_cpus',
-            check_output("awk '/model name/ {$1=$2=$3=\"\"; print $0}' /proc/cpuinfo | uniq"))
-    experiment.log_parameter('num_gpu', torch.cuda.device_count())
-    experiment.log_parameter('num_cpu', os.cpu_count())
-    if platform.system() == 'Linux':
-        experiment.log_parameter('total_physical_memory_in_kb',
-                                 check_output("awk '/MemTotal/ {print $2}' /proc/meminfo",))
+    experiment.log_other('last_git_commit_date', lib.environment.get_last_git_commit_date())
+    experiment.log_other('git_branch', lib.environment.get_git_branch_name())
+    experiment.log_other('has_git_patch', str(lib.environment.has_tracked_changes()))
+    experiment.log_other('gpus', lib.environment.get_cuda_gpus())
+    experiment.log_other('num_gpus', lib.environment.get_num_cuda_gpus())
+    experiment.log_other('disks', lib.environment.get_disks())
+    experiment.log_other('unique_cpus', lib.environment.get_unique_cpus())
+    experiment.log_other('num_cpus', os.cpu_count())
+    experiment.log_other('total_physical_memory', lib.environment.get_total_physical_memory())
 
     _add_comet_ml_set_step(experiment)
+    _add_comet_ml_set_context(experiment)
     _add_comet_ml_log_epoch(experiment)
     _add_comet_ml_log_audio(experiment)
     _add_comet_ml_log_figures(experiment)
     _add_comet_ml_set_name(experiment)
-    _add_comet_ml_set_name(experiment)
+    _add_comet_ml_add_tags(experiment)
 
     return experiment
 
 
-def _add_comet_ml_set_step(experiment):
+def _add_comet_ml_set_step(experiment: comet_ml.Experiment):
+    """ Monkey patch `Experiment.set_step`.
+
+    This adds the metric 'step/seconds_per_step', it measures the number of seconds each step takes.
+    """
+    _set_step = experiment.set_step
     last_step_time = None
     last_step = None
 
-    other_set_step = experiment.set_step
-
     def set_step(self, *args, **kwargs):
-        return_ = other_set_step(*args, **kwargs)
+        return_ = _set_step(*args, **kwargs)
 
         nonlocal last_step_time
         nonlocal last_step
 
-        if last_step_time is not None and last_step is not None and self.curr_step > last_step:
+        if last_step_time is None and last_step is None:
+            last_step_time = time.time()
+            last_step = self.curr_step
+        elif self.curr_step > last_step:
             seconds_per_step = (time.time() - last_step_time) / (self.curr_step - last_step)
             last_step_time = time.time()
             last_step = self.curr_step
-            # NOTE: Ensure that `last_step` is updated before `log_metric` to ensure that
-            # recursion is prevented via `self.curr_step > last_step`.
+            # NOTE: Ensure that the variable `last_step` is updated before `log_metric` is called.
+            # This prevents infinite recursion via `self.curr_step > last_step`.
             self.log_metric('step/seconds_per_step', seconds_per_step)
-        elif last_step_time is None and last_step is None:
-            last_step_time = time.time()
-            last_step = self.curr_step
 
         return return_
 
-    experiment.set_step = set_step.__get__(experiment)
+    # Learn more:
+    # https://stackoverflow.com/questions/972/adding-a-method-to-an-existing-object-instance
+    experiment.set_step = types.MethodType(set_step, experiment)
 
 
-def _add_comet_ml_log_epoch(experiment):
-    start_epoch_time = None
-    start_epoch_step = None
+def _add_comet_ml_set_context(experiment: comet_ml.Experiment):
+    """ Add `set_context` to `comet_ml.Experiment` to support a custom context.
+    """
+
+    @contextmanager
+    def set_context(self, context):
+        old_context = self.context
+        self.context = context
+        yield self
+        self.context = old_context
+
+    experiment.set_context = types.MethodType(set_context, experiment)
+
+
+def _add_comet_ml_log_epoch(experiment: comet_ml.Experiment):
+    """ Monkey patch `Experiment.log_current_epoch` and `Experiment.log_epoch_end`.
+
+    This adds the metrics 'steps_per_second' and 'epoch/steps_per_second'.
+    """
+    _log_current_epoch = experiment.log_current_epoch
+    _log_epoch_end = experiment.log_epoch_end
+    last_epoch_time = None
+    last_epoch_step = None
     first_epoch_time = None
     first_epoch_step = None
-    other_log_current_epoch = experiment.log_current_epoch
 
     def log_current_epoch(self, *args, **kwargs):
-        nonlocal start_epoch_time
-        nonlocal start_epoch_step
+        nonlocal last_epoch_time
+        nonlocal last_epoch_step
         nonlocal first_epoch_time
         nonlocal first_epoch_step
 
-        start_epoch_step = self.curr_step
-        start_epoch_time = time.time()
-
+        last_epoch_step = self.curr_step
+        last_epoch_time = time.time()
         if first_epoch_time is None and first_epoch_step is None:
             first_epoch_step = self.curr_step
             first_epoch_time = time.time()
 
-        return other_log_current_epoch(*args, **kwargs)
-
-    experiment.log_current_epoch = log_current_epoch.__get__(experiment)
-    other_log_epoch_end = experiment.log_epoch_end
+        return _log_current_epoch(*args, **kwargs)
 
     def log_epoch_end(self, *args, **kwargs):
         # NOTE: Logs an average `steps_per_second` for each epoch.
-        if start_epoch_step is not None and start_epoch_time is not None:
+        if last_epoch_step is not None and last_epoch_time is not None:
             self.log_metric('epoch/steps_per_second',
-                            (self.curr_step - start_epoch_step) / (time.time() - start_epoch_time))
+                            (self.curr_step - last_epoch_step) / (time.time() - last_epoch_time))
 
         # NOTE: Logs an average `steps_per_second` since the training started.
         if first_epoch_time is not None and first_epoch_step is not None:
-            old_context = self.context
-            self.context = None
-            self.log_metric('steps_per_second',
-                            (self.curr_step - first_epoch_step) / (time.time() - first_epoch_time))
-            self.context = old_context
+            with experiment.set_context(None):
+                self.log_metric('steps_per_second', (self.curr_step - first_epoch_step) /
+                                (time.time() - first_epoch_time))
 
-        return other_log_epoch_end(*args, **kwargs)
+        return _log_epoch_end(*args, **kwargs)
 
-    experiment.log_epoch_end = log_epoch_end.__get__(experiment)
+    experiment.log_current_epoch = types.MethodType(log_current_epoch, experiment)
+    experiment.log_epoch_end = types.MethodType(log_epoch_end, experiment)
 
 
-def _add_comet_ml_log_audio(experiment):
+def _add_comet_ml_log_audio(experiment: comet_ml.Experiment):
+    """ Add `log_audio` to `comet_ml.Experiment` to support logging audio.
 
-    def _write_wav(file_name, data):
-        """ Write wav from a tensor to ``io.BytesIO``.
+    NOTE: This assumes that the HTML has `_BASE_HTML_STYLING`.
+    """
 
-        Args:
-            file_name (str): File name to use with comet.ml
-            data (np.array or torch.tensor)
-
-        Returns:
-            (str): String url to the asset.
+    def _upload_audio(file_name: str, data: typing.Union[np.ndarray, torch.Tensor]) -> str:
+        """ Upload the audio and return the URL.
         """
         file_ = io.BytesIO()
-        write_audio(file_, data)
+        lib.audio.write_audio(file_, data)
         asset = experiment.log_asset(file_, file_name=file_name)
         return asset['web'] if asset is not None else asset
 
-    def log_audio(self, audio={}, step=None, **kwargs):
-        """ Add text and audio to Comet via their HTML tab.
-
-        TODO: Consider logging a visualized waveform also.
+    def log_audio(self,
+                  audio: typing.Dict[str, typing.Union[np.ndarray, torch.Tensor]] = {},
+                  **kwargs):
+        """ Audio with related metadata to Comet in the HTML tab.
 
         Args:
-            gold_audio (torch.Tensor, optional)
-            predicted_audio (torch.Tensor, optional)
-            step (int, optional)
-            **kwargs: Additional arguments to be printed.
+            audio
+            **kwargs: Additional metadata to include.
         """
-        step = self.curr_step if step is None else step
-        assert step is not None
-        items = ['<p><b>Step:</b> {}</p>'.format(step)]
-        for key, value in kwargs.items():
-            items.append('<p><b>{}:</b> {}</p>'.format(key.title().replace('_', ' '), value))
-        for name, waveform in audio.items():
-            name = name.title().replace('_', ' ')
-            url = _write_wav('step=%d,name=%s,experiment_key=%s.wav' % (step, name, self.get_key()),
-                             waveform)
-            items.append('<p><b>%s:</b></p>' % name)
-            items.append('<audio controls preload="metadata" src="{}"></audio>'.format(url))
+        items = [f"<p><b>Step:</b> {self.curr_step}</p>"]
+        param_to_label = lambda s: s.title().replace('_', ' ')
+        items.extend([f"<p><b>{param_to_label(k)}:</b> {v}</p>" for k, v in kwargs.items()])
+        for key, data in audio.items():
+            name = param_to_label(key)
+            file_name = f"step={self.curr_step},name={name},experiment={self.get_key()}"
+            url = _upload_audio(file_name, data)
+            items.append(f"<p><b>{name}:</b></p>")
+            items.append(f"<audio controls preload=\"metadata\" src=\"{url}\"></audio>")
         experiment.log_html('<section>{}</section>'.format('\n'.join(items)))
 
-    experiment.log_audio = log_audio.__get__(experiment)
+    experiment.log_audio = types.MethodType(log_audio, experiment)
 
 
-def _add_comet_ml_log_figures(experiment):
+def _add_comet_ml_log_figures(experiment: comet_ml.Experiment):
+    """ Add `log_figures` to `comet_ml.Experiment` to support logging multiple figures. """
 
-    def log_figures(self, dict_, **kwargs):
-        """ Convenience function to log multiple figures.
-
-        Args:
-            dict_ (dict): Dictionary with figure (e.g. value) and figure names (e.g. key).
-
-        Returns:
-            (list): List of the ``log_figure`` returned values.
-        """
+    def log_figures(self, dict_: typing.Dict[str, matplotlib.figure.Figure], **kwargs):
+        """ Log multiple figures from `dict_` via `experiment.log_figure`. """
         return [self.log_figure(k, v, **kwargs) for k, v in dict_.items()]
 
-    experiment.log_figures = log_figures.__get__(experiment)
+    experiment.log_figures = types.MethodType(log_figures, experiment)
 
 
-def _add_comet_ml_set_name(experiment):
-    other_set_name = experiment.set_name
+def _add_comet_ml_set_name(experiment: comet_ml.Experiment):
+    """ Monkey patch `Experiment.set_name` with additional logging. """
+    _set_name = experiment.set_name
 
     def set_name(self, name, *args, **kwargs):
-        logger.info('Experiment name: %s')
-        if name is not None:  # TODO: Remove?
-            return other_set_name(name, *args, **kwargs)
+        logger.info('Experiment name set to "%s"', name)
+        return _set_name(name, *args, **kwargs)
 
-    experiment.set_name = set_name.__get__(experiment)
+    experiment.set_name = types.MethodType(set_name, experiment)
 
 
-def _add_comet_ml_add_tags(experiment):
-    other_add_tags = experiment.add_tags
+def _add_comet_ml_add_tags(experiment: comet_ml.Experiment):
+    """ Monkey patch `Experiment.add_tags` with additional logging. """
+    _add_tags = experiment.add_tags
 
     def add_tags(self, tags, *args, **kwargs):
-        logger.info('Experiment tags: %s', tags)
-        return other_add_tags(tags, *args, **kwargs)
+        logger.info('Added tags to experiment: %s', tags)
+        return _add_tags(tags, *args, **kwargs)
 
-    experiment.add_tags = add_tags.__get__(experiment)
+    experiment.add_tags = types.MethodType(add_tags, experiment)
