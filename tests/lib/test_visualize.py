@@ -20,18 +20,13 @@ def test_plot_waveform():
 
 
 def test_plot_mel_spectrogram():
-    figure = lib.visualize.plot_waveform(
-        torch.rand(5, 6),
-        sample_rate=24000,
-        frame_hop=256,
-        lower_hertz=None,
-        upper_hertz=None,
-    )
+    figure = lib.visualize.plot_mel_spectrogram(
+        torch.rand(5, 6), sample_rate=24000, frame_hop=256, lower_hertz=None, upper_hertz=None)
     assert isinstance(figure, matplotlib.figure.Figure)
 
 
 def test_plot_spectrogram():
-    figure = lib.visualize.plot_waveform(torch.rand(5, 6), sample_rate=24000, frame_hop=256)
+    figure = lib.visualize.plot_spectrogram(torch.rand(5, 6), sample_rate=24000, frame_hop=256)
     assert isinstance(figure, matplotlib.figure.Figure)
 
 
