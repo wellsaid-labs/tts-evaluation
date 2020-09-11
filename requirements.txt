@@ -10,7 +10,7 @@ torch==1.5.0 # TODO: Update to 1.6.0
 git+https://github.com/PetrochukM/PyTorch-NLP.git
 git+https://github.com/savoirfairelinux/num2words.git
 # Learn more: https://spacy.io/usage/models#production
-spacy
+spacy==2.2.4
 https://github.com/explosion/spacy-models/releases/download/en_core_web_md-2.2.5/en_core_web_md-2.2.5.tar.gz#egg=en_core_web_md
 unidecode
 normalise
@@ -23,7 +23,7 @@ pyloudnorm
 
 # Visualization Library
 matplotlib
-comet-ml==3.1.6 # TODO: Update to 3.2.0
+comet-ml==3.2.0
 
 # Testing
 pytest
@@ -45,7 +45,7 @@ git+https://github.com/PetrochukM/HParams.git # Organize hyperparameters
 pandas
 retry
 # TODO: Does this install work on CPU?
-# psutil # For comet logging: https://www.comet.ml/docs/python-sdk/releases/
+psutil # For comet logging: https://www.comet.ml/docs/python-sdk/releases/
 
 # Web
 flask
