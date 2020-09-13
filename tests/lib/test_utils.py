@@ -29,13 +29,16 @@ def test_nested_to_flat_dict():
                     'e': 'f',
                 }
             },
-            'g': 'g',
+            'g': 'h',
+            'i': {},
+            'j': [],
         },
         delimitator='.',
     ) == {
         'a.b': 'c',
         'a.d.e': 'f',
-        'g': 'g'
+        'g': 'h',
+        'j': []
     }
 
 
