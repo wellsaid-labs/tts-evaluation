@@ -3,6 +3,7 @@ from unittest import mock
 
 import logging
 import os
+import pathlib
 import sys
 import tempfile
 
@@ -204,6 +205,55 @@ def test_record_standard_streams(capsys):
             assert 'Test Logger' in lines
             assert 'Test Update' in lines
             assert 'Error' in lines
+
+
+def test_load_and_save():
+    """ Test `load` and `save` work on a random object. """
+    with tempfile.TemporaryDirectory() as directory:
+        file_path = pathlib.Path(directory) / 'test_load_and_save'
+        object_ = frozenset(['testing'])
+        lib.environment.save(file_path, object_)
+        assert lib.environment.load(file_path) == object_
+
+
+def test_save__overwrite():
+    """ Test `save` overwrites existing files only explicitly. """
+    with tempfile.TemporaryDirectory() as directory:
+        file_path = pathlib.Path(directory) / 'test_save__overwrite'
+        lib.environment.save(file_path, 'object')
+        with pytest.raises(ValueError):
+            lib.environment.save(file_path, 'object')
+        lib.environment.save(file_path, 'object', overwrite=True)
+
+
+def test_load_most_recent_file():
+    """ Test `load_most_recent_file` loads the most recent non-corrupted file. """
+    with tempfile.TemporaryDirectory() as directory:
+        path = pathlib.Path(directory)
+        lib.environment.save(path / 'oldest', 'oldest')
+        lib.environment.save(path / 'recent', 'recent')
+        newest = path / 'newest'
+        newest.write_text('newest')
+        assert lib.environment.load_most_recent_file(str(path / '*'),
+                                                     lib.environment.load) == 'recent'
+
+
+def test_load_most_recent_file__no_files():
+    """ Test `load_most_recent_file` errors if there are no files found. """
+    with tempfile.TemporaryDirectory() as directory:
+        path = pathlib.Path(directory)
+        with pytest.raises(ValueError):
+            lib.environment.load_most_recent_file(str(path / '*'), lib.environment.load)
+
+
+def test_load_most_recent_file__corrupted():
+    """ Test `load_most_recent_file` errors if only corrupted files are found. """
+    with tempfile.TemporaryDirectory() as directory:
+        path = pathlib.Path(directory)
+        newest = path / 'newest'
+        newest.write_text('newest')
+        with pytest.raises(ValueError):
+            lib.environment.load_most_recent_file(str(path / '*'), lib.environment.load)
 
 
 def test_get_untracked_files():

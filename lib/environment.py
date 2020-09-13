@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import atexit
+import glob
 import logging
 import os
 import platform
@@ -20,6 +21,8 @@ from hparams import HParam
 
 import torch
 import torchnlp.random
+
+import lib
 
 logger = logging.getLogger(__name__)
 
@@ -339,6 +342,73 @@ class RecordStandardStreams():
         self.log_path = directory / log_filename
         self._start()
         return self
+
+
+def save(path: Path, data: typing.Any, overwrite: bool = False):
+    """ Use `torch.save` to save an object to `path`.
+
+    Raises:
+        (ValueError): If a file already exists at `path`.
+
+    Args:
+        path: File path to save to.
+        data: Data to save.
+        overwrite: If `True` this allows for `path` to be overwritten.
+    """
+    if not overwrite and path.exists():
+        raise ValueError('File already exists (%s).', path)
+    torch.save(data, str(path))
+    logger.info('Saved: %s', str(path))
+
+
+def load(path: Path, device: torch.device = torch.device('cpu')) -> typing.Any:
+    """ Use `torch.load` load an object from `path` onto `device`.
+
+    Args:
+        path: File to load.
+        device: Device to load onto.
+    """
+    logger.info('Loading: %s', path)
+    assert Path(path).is_file(), f"Path ({path}) must point to a file."
+
+    def remap(storage, loc):
+        if 'cuda' in loc and device.type == 'cuda':
+            return storage.cuda(device=device.index)
+        return storage
+
+    return torch.load(str(path), map_location=remap)
+
+
+_LoadMostRecentFileReturnType = typing.TypeVar('_LoadMostRecentFileReturnType')
+
+
+def load_most_recent_file(
+        pattern: Path,
+        read: typing.Callable[[Path],
+                              _LoadMostRecentFileReturnType]) -> _LoadMostRecentFileReturnType:
+    """ Get the most recently modified file.
+
+    Args:
+        pattern: Pattern to search for files.
+
+    Returns:
+        The most recent non-corrupted file that is found based on modification time.
+    """
+    paths = list(glob.iglob(str(pattern), recursive=True))
+    if len(paths) == 0:
+        raise ValueError(f"No files found with {pattern} pattern.")
+
+    # NOTE: We used modified time for sorting files because creation time is unreliable, learn more:
+    # https://stackoverflow.com/questions/237079/how-to-get-file-creation-modification-date-times-in-python/237084
+    modified_time = [os.path.getmtime(c) for c in paths]
+    assert len(modified_time) == len(
+        set(modified_time)), 'Multiple paths found with the same modification time'
+    for path in lib.utils.sort_together(paths, modified_time, reverse=True):
+        try:
+            return read(path)
+        except:
+            logger.exception(f"Failed to load file at {path}.")
+    raise ValueError('Unable to load recent file.')
 
 
 def get_untracked_files() -> str:
