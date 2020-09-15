@@ -7,37 +7,38 @@ import re
 import shlex
 import subprocess
 
+from normalise import normalise
 from third_party import LazyLoader
 from tqdm import tqdm
 
 import en_core_web_md
 import ftfy
 import nltk
+import spacy.lang.en
+import typing
 import unidecode
 Levenshtein = LazyLoader('Levenshtein', globals(), 'Levenshtein')
 
-from src.environment import IS_TESTING_ENVIRONMENT
-from src.utils import flatten
-from src.utils import Pool
+import lib
 
 logger = logging.getLogger(__name__)
 
 
-def _grapheme_to_phoneme_helper(grapheme,
-                                service='espeak',
-                                flags=('--ipa=3', '-q', '-ven-us', '--stdin'),
-                                separator='',
-                                service_separator='_'):
+def _grapheme_to_phoneme_helper(grapheme: str,
+                                service: str = 'espeak',
+                                flags: typing.List[str] = ['--ipa=3', '-q', '-ven-us', '--stdin'],
+                                separator: str = '',
+                                service_separator: str = '_') -> str:
     """
-    Args:
-        grapheme (str)
-        service (str, optional): The service used to compute phonemes.
-        flags (list of str, optional): The list of flags to add to the service.
-        separator (str, optional): The separator used to separate phonemes.
-        service_separator (str, optional): The separator used by the service between phonemes.
+    TODO: Since eSpeak does not preserve punctuation or white spaces, we shouldn't preserve
+    white spaces via `strip` on the edges.
 
-    Returns:
-        phoneme (str)
+    Args:
+        grapheme
+        service: The service used to compute phonemes.
+        flags: The list of flags to add to the service.
+        separator: The separator used to separate phonemes.
+        service_separator: The separator used by the service between phonemes.
     """
     # NOTE: `espeak` can be inconsistent in it's handling of outer spacing; therefore, it's
     # recommended both the `espeak` output and input is trimmed.
@@ -76,7 +77,7 @@ def _grapheme_to_phoneme_helper(grapheme,
     return phoneme.strip(separator)
 
 
-def _grapheme_to_phoneme(grapheme, separator='', **kwargs):
+def _grapheme_to_phoneme(grapheme: str, separator: str = '', **kwargs) -> str:
     # NOTE: `grapheme` is split on new lines because `espeak` is inconsistent in it's handling of
     # new lines.
     return_ = (separator + '\n' + separator).join([
@@ -89,51 +90,51 @@ def _grapheme_to_phoneme(grapheme, separator='', **kwargs):
     return return_
 
 
-def grapheme_to_phoneme(graphemes, chunk_size=128, **kwargs):
-    """ Convert graphemes into phonemes without perserving punctuation.
+def grapheme_to_phoneme(graphemes: typing.List[str],
+                        chunk_size: int = 128,
+                        **kwargs) -> typing.List[str]:
+    """ Convert graphemes into phonemes without perserving punctuation or white-spaces.
 
     NOTE: `espeak` can give different results for the same argument, sometimes. For example,
     "Fitness that's invigorating, not intimidating!" sometimes returns...
     1. "f|ˈ|ɪ|t|n|ə|s| |ð|æ|t|s| |ɪ|n|v|ˈ|ɪ|ɡ|ɚ|ɹ|ˌ|eɪ|ɾ|ɪ|ŋ|,| "...
     2. "f|ˈ|ɪ|t|n|ə|s| |ð|æ|t|s| |ɪ|n|v|ˈ|ɪ|ɡ|oː|ɹ|ˌ|eɪ|ɾ|ɪ|ŋ|,| "...
 
-    TODO: Instead of using eSpeak, we could use a combination of `normalise`, CMU's dictionary,
-    spaCy, and a small NN for new words.
+    TODO: Replace the eSpeak with a in-house solution including:
+    - `lib.text.normalize_non_standard_words`
+    - CMU dictionary or https://github.com/kylebgorman/wikipron for most words
+    - spaCy for homographs similar to https://github.com/Kyubyong/g2p
+    - A neural network trained on CMU dictionary for words not in the dictionaries.
 
     Args:
-        graphemes (str): The graphemes to convert to phonemes.
-        chunk_size (int, optional): `chunk_size` parameter passed to `imap`.
+        graphemes: The graphemes to convert to phonemes.
+        chunk_size: `chunk_size` parameter passed to `imap` for multiprocessing.
         **kwargs: Key-word arguments passed to `_grapheme_to_phoneme`.
-
-    Returns:
-        phoneme (str)
     """
     part = partial(_grapheme_to_phoneme, **kwargs)
     if len(graphemes) < chunk_size:
         return [part(g) for g in graphemes]
 
     logger.info('Getting phonemes for %d graphemes.', len(graphemes))
-    with Pool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
+    with lib.utils.Pool(1 if lib.environment.IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
         return list(tqdm(pool.imap(part, graphemes, chunksize=chunk_size), total=len(graphemes)))
 
 
-def natural_keys(text):
+def natural_keys(text: typing.List[str]) -> typing.List[typing.Union[str, int]]:
     """ Returns keys (`list`) for sorting in a "natural" order.
+
     Inspired by: http://nedbatchelder.com/blog/200712/human_sorting.html
     """
     return [(int(char) if char.isdigit() else char) for char in re.split(r'(\d+)', str(text))]
 
 
-def strip(text):
+def strip(text: str) -> typing.Tuple[str, str, str]:
     """ Strip and return the stripped text.
 
-    Args:
-        text (str)
-
     Returns:
-        (str): The stripped text.
-        (str): Text stripped from the left.
-        (str): Text stripped from the right.
+        text: The stripped text.
+        left: Text stripped from the left-side.
+        right: Text stripped from the right-side.
     """
     input_ = text
     text = text.rstrip()
@@ -143,7 +144,7 @@ def strip(text):
     return text, left, right
 
 
-def normalize_vo_script(text):
+def normalize_vo_script(text: str, strip: bool = True) -> str:
     """ Normalize a voice-over script such that only readable characters remain.
 
     References:
@@ -151,62 +152,124 @@ def normalize_vo_script(text):
     - ASCII characters: https://www.ascii-code.com/
     - `Unidecode` vs `unicodedata`:
       https://stackoverflow.com/questions/517923/what-is-the-best-way-to-remove-accents-normalize-in-a-python-unicode-string
-
-    TODO: Test control characters that produce whitespace (U+09, U+0A, U+0C, U+0D) are handled.
-    TODO: Test all other control characters are handled correctly.
     """
-    text = text.encode().decode('unicode-escape')
+    text = str(text)
     text = ftfy.fix_text(text)
     text = text.replace('\f', '\n')
     text = text.replace('\t', '  ')
-    return unidecode.unidecode(text).strip()
+    text = unidecode.unidecode(text)
+    if strip:
+        text = text.strip()
+    return text
 
 
 _READABLE_CHARACTERS = set(
-    normalize_vo_script(chr(i)) if i in [10, 32] else chr(i) for i in range(0, 128))
+    lib.utils.flatten(normalize_vo_script(chr(i), strip=False) for i in range(0, 128)))
 
 
-def is_normalized_vo_script(text):
-    """ Return `True` if `text` has been normalized to a small set of characters.
-    """
+def is_normalized_vo_script(text: str) -> bool:
+    """ Return `True` if `text` has been normalized to a small set of characters. """
     return len(set(text) - _READABLE_CHARACTERS) == 0
 
 
-def normalize_non_standard_words(text, variety='AmE'):
-    """ Noramlize non-standard words (NSWs) into standard words.
-
-    References:
-       - Ford & Flint `normalise` Paper (2017): https://www.aclweb.org/anthology/W17-4414.pdf
-       - Ford & Flint `normalise` Code (2017): https://github.com/EFord36/normalise
-       - Sproat & Jaitly Dataset (2017): https://github.com/rwsproat/text-normalization-data
-       - Siri (2017): https://machinelearning.apple.com/research/inverse-text-normal
-       - Sproat Kaggle Challenge (2017):
-         https://www.kaggle.com/c/text-normalization-challenge-english-language/overview
-       - Sproat Kaggle Dataset (2017): https://www.kaggle.com/google-nlu/text-normalization
-       - Sproat & Jaitly Paper (2016): https://arxiv.org/pdf/1611.00068.pdf
-       - Wu & Gorman & Sproat Paper (2016): https://arxiv.org/abs/1609.06649
-       - Gorman & Sproat Paper (2016): https://transacl.org/ojs/index.php/tacl/article/view/897/213
-       - Ebden and Sproat (2014) Code: https://opensource.google/projects/sparrowhawk
-         https://www.kaggle.com/c/text-normalization-challenge-english-language/discussion/39061#219939
-
-    TODO: There are a number of interesting kernels and datasets hosted on Kaggle with regard
-    to this problem; however, the licensing on them is vague.
-    """
-    for dependency in ('brown', 'names', 'wordnet', 'averaged_perceptron_tagger',
-                       'universal_tagset'):
-        nltk.download(dependency)
-    from normalise import normalise
-    return normalise(text, variety=variety)
+@lru_cache(maxsize=None)
+def _nltk_download(dependency):
+    """ Run `nltk.download` but only once per process. """
+    nltk.download(dependency)
 
 
 @lru_cache(maxsize=None)
-def load_en_core_web_md(*args, **kwargs):
-    """ Load and cache in memory a spaCy `Language` object.
-    """
+def load_en_core_web_md(*args, **kwargs) -> spacy.lang.en.English:
+    """ Load and cache in memory a spaCy `spacy.lang.en.English` object. """
     return en_core_web_md.load(*args, **kwargs)
 
 
-def format_alignment(tokens, other_tokens, alignments):
+@lru_cache(maxsize=None)
+def load_en_english(*args, **kwargs) -> spacy.lang.en.English:
+    """ Load and cache in memory a spaCy `spacy.lang.en.English` object. """
+    return spacy.lang.en.English()
+
+
+def normalize_non_standard_words(text: str, variety: str = 'AmE', **kwargs) -> str:
+    """ Noramlize non-standard words (NSWs) into standard words.
+
+    References:
+      - Text Normalization Researcher, Richard Sproat:
+        https://scholar.google.com/citations?hl=en&user=LNDGglkAAAAJ&view_op=list_works&sortby=pubdate
+        https://rws.xoba.com/
+      - Timeline:
+        - Sproat & Jaitly Dataset (2020):
+          https://www.kaggle.com/richardwilliamsproat/text-normalization-for-english-russian-and-polish
+        - Zhang & Sproat Paper (2019):
+          https://www.mitpressjournals.org/doi/full/10.1162/COLI_a_00349
+        - Wu & Gorman & Sproat Code (2016):
+            https://github.com/google/TextNormalizationCoveringGrammars
+        - Ford & Flint `normalise` Paper (2017): https://www.aclweb.org/anthology/W17-4414.pdf
+        - Ford & Flint `normalise` Code (2017): https://github.com/EFord36/normalise
+        - Sproat & Jaitly Dataset (2017): https://github.com/rwsproat/text-normalization-data
+        - Siri (2017): https://machinelearning.apple.com/research/inverse-text-normal
+        - Sproat Kaggle Challenge (2017):
+          https://www.kaggle.com/c/text-normalization-challenge-english-language/overview
+        - Sproat Kaggle Dataset (2017): https://www.kaggle.com/google-nlu/text-normalization
+        - Sproat TTS Tutorial (2016): https://github.com/rwsproat/tts-tutorial
+        - Sproat & Jaitly Paper (2016): https://arxiv.org/pdf/1611.00068.pdf
+        - Wu & Gorman & Sproat Paper (2016): https://arxiv.org/abs/1609.06649
+        - Gorman & Sproat Paper (2016): https://transacl.org/ojs/index.php/tacl/article/view/897/213
+        - Ebden and Sproat (2014) Code:
+          https://github.com/google/sparrowhawk
+          https://opensource.google/projects/sparrowhawk
+          https://www.kaggle.com/c/text-normalization-challenge-english-language/discussion/39061#219939
+        - Sproat Course (2011):
+          https://web.archive.org/web/20181029032542/http://www.csee.ogi.edu/~sproatr/Courses/TextNorm/
+      - Other:
+        - MaryTTS text normalization:
+          https://github.com/marytts/marytts/blob/master/marytts-languages/marytts-lang-en/src/main/java/marytts/language/en/Preprocess.java
+        - ESPnet text normalization:
+          https://github.com/espnet/espnet_tts_frontend/tree/master/tacotron_cleaner
+        - Quora question on text normalization:
+          https://www.quora.com/Is-it-possible-to-use-festival-toolkit-for-text-normalization
+        - spaCy entity classification:
+          https://explosion.ai/demos/displacy-ent
+          https://prodi.gy/docs/named-entity-recognition#manual-model
+          https://spacy.io/usage/examples#training
+        - Dockerized installation of festival by Google:
+          https://github.com/google/voice-builder
+
+    TODO:
+       - Following the state-of-the-art approach presented here:
+         https://www.kaggle.com/c/text-normalization-challenge-english-language/discussion/43963
+         Use spaCy to classify entities, and then use a formatter to clean up the strings. The
+         dataset was open-sourced here:
+         https://www.kaggle.com/richardwilliamsproat/text-normalization-for-english-russian-and-polish
+         A formatter can be found here:
+         https://www.kaggle.com/neerjad/class-wise-regex-functions-l-b-0-995
+         We may need to train spaCy to detect new entities, if the ones already supported are not
+         enough via prodi.gy:
+         https://prodi.gy/docs/named-entity-recognition#manual-model
+       - Adopt Google's commercial "sparrowhawk" or the latest grammar
+         "TextNormalizationCoveringGrammars" for text normalization.
+    """
+    for dependency in ('brown', 'names', 'wordnet', 'averaged_perceptron_tagger',
+                       'universal_tagset'):
+        _nltk_download(dependency)
+
+    tokens = [[t.text, t.whitespace_] for t in load_en_english()(text)]
+    merged = [tokens[0]]
+    for token, whitespace in tokens[1:]:
+        # NOTE: spaCy tokenizes "$29.95" as two tokens, and this merges them back together.
+        if (merged[-1][0] == '$' or token == '$') and merged[-1][1] == '':
+            merged[-1][0] += token
+            merged[-1][1] = whitespace
+        else:
+            merged.append([token, whitespace])
+
+    assert ''.join(lib.utils.flatten(merged)) == text
+    normalized = normalise([t[0] for t in merged], variety=variety, **kwargs)
+    return ''.join(lib.utils.flatten([(n.strip(), m[1]) for n, m in zip(normalized, merged)]))
+
+
+def format_alignment(tokens: typing.List[str], other_tokens: typing.List[str],
+                     alignments: typing.List[typing.Tuple[int, int]]) -> typing.Tuple[str, str]:
     """ Format strings to be printed of the alignment.
 
     Example:
@@ -221,14 +284,14 @@ def format_alignment(tokens, other_tokens, alignments):
         'e   x e c u t i o n'
 
     Args:
-        tokens (list or str): Sequences of strings.
-        other_tokens (list or str): Sequences of strings.
-        alignment (list): Alignment between the tokens in both sequences. The alignment is a
-            sequence of sorted tuples with a `tokens` index and `other_tokens` index.
+        tokens: Sequences of strings.
+        other_tokens: Sequences of strings.
+        alignment: Alignment between the tokens in both sequences. The alignment is a sequence of
+            sorted tuples with a `tokens` index and `other_tokens` index.
 
     Returns:
-        formatted_tokens (str): String formatted for printing.
-        formatted_other_tokens (str): String formatted for printing.
+        formatted_tokens: String formatted for printing including `tokens`.
+        formatted_other_tokens: String formatted for printing including `other_tokens`.
     """
     tokens_index = 0
     other_tokens_index = 0
@@ -261,24 +324,24 @@ def format_alignment(tokens, other_tokens, alignments):
     return tokens_string.rstrip(), other_tokens_string.rstrip()
 
 
-def _is_in_window(value, window):
-    """ Check if `value` is in the range [`window[0]`, `window[1]`)
-    """
+def _is_in_window(value: int, window: typing.Tuple[int, int]) -> bool:
+    """ Check if `value` is in the range [`window[0]`, `window[1]`).  """
     return value >= window[0] and value < window[1]
 
 
-def align_tokens(tokens,
-                 other_tokens,
-                 window_length=None,
-                 all_alignments=False,
-                 allow_substitution=lambda a, b: True):
+def align_tokens(
+    tokens: typing.List[str],
+    other_tokens: typing.List[str],
+    window_length: typing.Optional[int] = None,
+    all_alignments: bool = False,
+    allow_substitution: typing.Callable[[str, str], bool] = lambda a, b: True
+) -> typing.Tuple[int, typing.List[typing.Tuple[int, int]]]:
     """ Compute the alignment between `tokens` and `other_tokens`.
 
     Base algorithm implementation: https://en.wikipedia.org/wiki/Levenshtein_distance
 
     This implements a modified version of the levenshtein distance algorithm. The modifications are
     as follows:
-
       - We do not assume each token is a character; therefore, the cost of substition is the
         levenshtein distance between tokens. The cost of deletion or insertion is the length
         of the token. In the case that the tokens are characters, this algorithms functions
@@ -291,18 +354,16 @@ def align_tokens(tokens,
         O(`window_length` * `max(len(tokens), len(other_tokens))`).
 
     Args:
-        tokens (list or str): Sequences of strings.
-        other_tokens (list or str): Sequences of strings.
-        window_length (int or None, optional): Approximately the maximum number of consecutive
-            insertions or deletions required to align two similar sequences.
-        all_alignments (bool, optional): If `True` return all optimal alignments, otherwise, return
-            one optimal alignment.
-        allow_substitution (callable, optional): Return a `bool` if the substitution is allowed
-            between two tokens `a` and `b`.
+        tokens: Sequences of strings.
+        other_tokens: Sequences of strings.
+        window_length: Approximately the maximum number of consecutive insertions or deletions
+            required to align two similar sequences.
+        allow_substitution: Callable that returns `True` if the substitution is allowed between two
+            tokens `a` and `b`.
 
     Returns:
-        (int): The cost of alignment.
-        (list): The alignment consisting of a sequence of indicies.
+        cost: The cost of alignment.
+        alignment: The alignment consisting of a sequence of indicies.
     """
     # For `window_center` to be on a diagonal with an appropriate slope to align both sequences,
     # `tokens` needs to be the longer sequence.
@@ -314,21 +375,25 @@ def align_tokens(tokens,
         window_length = len(other_tokens)
 
     alignment_window_length = min(2 * window_length + 1, len(other_tokens) + 1)
-    row_one = [None] * alignment_window_length
-    row_two = [None] * alignment_window_length
+    row_one: typing.List[typing.Optional[int]] = [None] * alignment_window_length
+    row_two: typing.List[typing.Optional[int]] = [None] * alignment_window_length
     # NOTE: This operation copies a reference to the initial list `alignment_window_length` times.
     # Example:
     # >>> list_of_lists = [[]] * 10
     # >>> list_of_lists[0].append(1)
     # >>> list_of_lists
     # [[1], [1], [1], [1], [1], [1], [1], [1], [1], [1]]
+    row_one_paths: typing.List[typing.List[typing.List[typing.Tuple[int, int]]]]
     row_one_paths = [[[]]] * alignment_window_length
+    row_two_paths: typing.List[typing.List[typing.List[typing.Tuple[int, int]]]]
     row_two_paths = [[[]]] * alignment_window_length
 
     # Number of edits to convert a substring of the `other_tokens` into the empty string.
     row_one[0] = 0
     for i in range(min(window_length, len(other_tokens))):
-        row_one[i + 1] = row_one[i] + len(other_tokens[i])  # Deletion of `other_tokens[:i + 1]`.
+        assert row_one[i] is not None
+        row_one[i + 1] = typing.cast(int, row_one[i]) + len(
+            other_tokens[i])  # Deletion of `other_tokens[:i + 1]`.
 
     # Both `row_one_window` and `row_two_window` are not inclusive of the maximum.
     row_one_window = (0, min(len(other_tokens) + 1, window_length + 1))
@@ -352,11 +417,13 @@ def align_tokens(tokens,
             choices = []
 
             if _is_in_window(j, row_one_window):
-                deletion_cost = row_one[j - row_one_window[0]] + len(tokens[i])
+                deletion_cost = typing.cast(int, row_one[j - row_one_window[0]]) + len(tokens[i])
                 deletion_path = row_one_paths[j - row_one_window[0]]
                 choices.append((deletion_cost, deletion_path))
             if _is_in_window(j - 1, row_two_window):
-                insertion_cost = row_two[j - 1 - row_two_window[0]] + len(other_tokens[j - 1])
+                assert row_two[j - 1 - row_two_window[0]] is not None
+                insertion_cost = typing.cast(int, row_two[j - 1 - row_two_window[0]]) + len(
+                    other_tokens[j - 1])
                 insertion_path = row_two_paths[j - 1 - row_two_window[0]]
                 choices.append((insertion_cost, insertion_path))
             if _is_in_window(j - 1, row_one_window):
@@ -374,8 +441,6 @@ def align_tokens(tokens,
             # NOTE: Substition is put last on purpose to discourage substition if other options are
             # available that cost the same.
             min_cost, min_paths = min(choices, key=lambda p: p[0])
-            if all_alignments:
-                min_paths = flatten([path for cost, path in choices if cost == min_cost])
 
             row_two[j - row_two_window[0]] = min_cost
             row_two_paths[j - row_two_window[0]] = min_paths
@@ -384,4 +449,7 @@ def align_tokens(tokens,
         row_one_paths = row_two_paths[:]
         row_one_window = row_two_window
 
-    return row_one[-1], row_one_paths[-1] if all_alignments else row_one_paths[-1][0]
+    return (
+        typing.cast(int, row_one[-1]),
+        row_one_paths[-1][0],
+    )

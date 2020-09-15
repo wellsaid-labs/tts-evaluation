@@ -8,15 +8,13 @@ matplotlib.use('Agg')
 # Fix this weird error: https://github.com/pytorch/pytorch/issues/2083
 import torch  # noqa: F401
 
-import pytest
-
 from hparams import set_lazy_resolution
 
-from lib.environment import set_basic_logging_config
-from lib.environment import TEST_DATA_PATH
-from tests._utils import create_disk_garbage_collection_fixture
+import pytest
 
-set_basic_logging_config()
+import lib
+
+lib.environment.set_basic_logging_config()
 
 
 @pytest.fixture(autouse=True)
@@ -28,6 +26,3 @@ def run_before_test():
             'ignore', module=r'.*torch.*', message=r'.*Anomaly Detection has been enabled.*')
         with torch.autograd.detect_anomaly():
             yield
-
-
-gc_fixture_test_data = create_disk_garbage_collection_fixture(TEST_DATA_PATH, autouse=True)

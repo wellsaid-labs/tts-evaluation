@@ -1,93 +1,52 @@
 import pytest
 
-from src.text import grapheme_to_phoneme
-from src.text import grapheme_to_phoneme_perserve_punctuation
-from src.text import cache_grapheme_to_phoneme_perserve_punctuation
-from src.utils.disk_cache_ import make_arg_key
+import lib
 
 
-def test_cache_grapheme_to_phoneme_perserve_punctuation():
-    cache_grapheme_to_phoneme_perserve_punctuation(['Hello world'], delimiter='_')
-    cache_grapheme_to_phoneme_perserve_punctuation(['How are you?'], delimiter='_')
-    cache_grapheme_to_phoneme_perserve_punctuation(['I\'m great!'], delimiter='_')
-
-    get_result = lambda s: grapheme_to_phoneme_perserve_punctuation.disk_cache.get(
-        make_arg_key(grapheme_to_phoneme_perserve_punctuation.__wrapped__, s, separator='_'))
-
-    assert get_result('Hello world') == 'h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d'
-    assert get_result('How are you?') == 'h_ˈ_aʊ_ _ɑːɹ_ _j_uː_?'
-    assert get_result('I\'m great!') == 'aɪ_m_ _ɡ_ɹ_ˈ_eɪ_t_!'
-
-
-def test__grapheme_to_phoneme__separator():
-    # Test using `service_separator`.
-    assert grapheme_to_phoneme('Hello World', separator='_') == 'h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d'
-
-    with pytest.raises(AssertionError):  # Test separator is not unique
-        grapheme_to_phoneme('Hello World', separator='ə')
-
-
-def test__grapheme_to_phoneme_perserve_punctuation__separator():
-    with pytest.raises(AssertionError):  # Test separator is not unique
-        grapheme_to_phoneme_perserve_punctuation('Hello World!', separator='!')
-
-
-def test__grapheme_to_phoneme():
-    grapheme = [
-        "  Hello World  ",  # Test stripping
-        "Hello World  ",  # Test stripping
-        "  Hello World",  # Test stripping
-        " \n Hello World \n ",  # Test stripping
-        " \n\n Hello World \n\n ",  # Test stripping
-        '"It is commonly argued that the notion of',  # Test bash escape
-        "and Trot fed it a handful of fresh blue clover and smoothed and petted it until the lamb "
-        "was eager to follow her wherever she might go.",
-        "The habits of mind that characterize a person strongly disposed toward critical thinking "
-        "include a desire to follow reason and evidence wherever they may lead,",
-        "The habits of mind that characterize a person strongly disposed toward critical thinking "
-        "include a desire to follow reason and evidence wherever they may lead, a systematic",
-        "But wherever they fought - in North Africa or the South Pacific or Western Europe -- the "
-        "infantry bore the brunt of the fighting on the ground -- and seven out of ten suffered "
-        "casualties.",
-        "I lay eggs wherever I happen to be, said the hen, ruffling her feathers and then shaking "
-        "them into place.",
-        "scurrying for major stories whenever and wherever they could be found.",
-        "actions .Sameer M Babu is a professor who wrote an article about classroom climate and "
-        "social intelligence.",
-        "copy by",
-        "For example,",
-        "(or sometimes being eliminated",
+def test_grapheme_to_phoneme():
+    in_ = [
+        'and Trot fed it a handful of fresh blue clover and smoothed and petted it until the lamb '
+        'was eager to follow her wherever she might go.',
+        'The habits of mind that characterize a person strongly disposed toward critical thinking '
+        'include a desire to follow reason and evidence wherever they may lead,',
+        'The habits of mind that characterize a person strongly disposed toward critical thinking '
+        'include a desire to follow reason and evidence wherever they may lead, a systematic',
+        'But wherever they fought - in North Africa or the South Pacific or Western Europe -- the '
+        'infantry bore the brunt of the fighting on the ground -- and seven out of ten suffered '
+        'casualties.',
+        'I lay eggs wherever I happen to be, said the hen, ruffling her feathers and then shaking '
+        'them into place.',
+        'scurrying for major stories whenever and wherever they could be found.',
+        'actions .Sameer M Babu is a professor who wrote an article about classroom climate and '
+        'social intelligence.',
+        'copy by',
+        'For example,',
+        '(or sometimes being eliminated',
         """of 5 stages:
  (i) preparation,
  (ii) incubation,
  (iii) intimation,
  (iv) illumination""",
-        "I ha thought till my brains ached,-Beli me, John, I have. An I say again, theres no help "
-        "for us but having faith i the Union. Theyll win the day, see if they dunnot!",
+        'I ha thought till my brains ached,-Beli me, John, I have. An I say again, theres no help '
+        'for us but having faith i the Union. Theyll win the day, see if they dunnot!',
         """the football play of the decade, or the concert of a lifetime.
 
 They'll spend one-point-five billion dollars on twenty-eight thousand """
-        "events ranging from Broadway to Super Bowls,",
+        'events ranging from Broadway to Super Bowls,',
         """Fortunately, Club Med has given us an antidote.
 
 ...The Club Med Vacation Village. Where all those prime disturbers of the peace like """
-        "telephones, clocks and newspapers are gone.",
+        'telephones, clocks and newspapers are gone.',
         """or fought over this ground.
 --For this community, an ordeal that started with offense, uncertainty, and outrage, ended """
-        "amidst horror, poverty,",
+        'amidst horror, poverty,',
         """a band collar shirt buttoned tight around the throat and a dark business jacket.
 
 He posed the couple, board-stiff in front of a plain house.
 
 The man,""",
     ]
-    phoneme = [
-        ' _ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _ ',
-        'h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _ ',
-        ' _ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d',
-        ' _\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_ ',
-        ' _\n_\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_\n_ ',
-        'ɪ_t_ _ɪ_z_ _k_ˈ_ɑː_m_ə_n_l_i_ _ˈ_ɑːɹ_ɡ_j_uː_d_ _ð_æ_t_ð_ə_ _n_ˈ_oʊ_ʃ_ə_n_ _ʌ_v',
+    out_ = [
         'æ_n_d_ _t_ɹ_ˈ_ɑː_t_ _f_ˈ_ɛ_d_ _ɪ_t_ _ɐ_ _h_ˈ_æ_n_d_f_əl_ _ʌ_v_ _f_ɹ_ˈ_ɛ_ʃ_ _b_l_ˈ_uː_ _'
         'k_l_ˈ_oʊ_v_ɚ_ _æ_n_d_ _s_m_ˈ_uː_ð_d_ _æ_n_d_ _p_ˈ_ɛ_ɾ_ᵻ_d_ _ɪ_t_ _ʌ_n_t_ˈ_ɪ_l_ _ð_ə_ _'
         'l_ˈ_æ_m_ _w_ʌ_z_ _ˈ_iː_ɡ_ɚ_ _t_ə_ _f_ˈ_ɑː_l_oʊ_ _h_ɜː_ _w_ɛɹ_ɹ_ˈ_ɛ_v_ɚ_ _ʃ_iː_ _m_ˌ_aɪ_t_ '
@@ -148,94 +107,255 @@ _ _ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n""",
         'h_iː_ _p_ˈ_oʊ_z_d_ _ð_ə_ _k_ˈ_ʌ_p_əl_ _b_ˈ_oːɹ_d_s_t_ˈ_ɪ_f_ _ɪ_n_ _f_ɹ_ˈ_ʌ_n_t_ _ə_v_ə_ '
         '_p_l_ˈ_eɪ_n_ _h_ˈ_aʊ_s_\n_\n_ð_ə_ _m_ˈ_æ_n',
     ]
-
-    for g, p in zip(grapheme, phoneme):
-        assert grapheme_to_phoneme(g, separator='_') == p
+    assert lib.text.grapheme_to_phoneme(in_, separator='_') == out_
 
 
-def test__grapheme_to_phoneme_perserve_punctuation():
-    assert """ʌ_v_ _f_ˈ_aɪ_v_ _s_t_ˈ_eɪ_dʒ_ᵻ_z_:_
-_(_ˈ_aɪ_)_ _p_ɹ_ˌ_ɛ_p_ɚ_ɹ_ˈ_eɪ_ʃ_ə_n_,_
-_(_ɹ_ˌ_oʊ_m_ə_n_ _t_ˈ_uː_)_ _ˌ_ɪ_n_k_j_uː_b_ˈ_eɪ_ʃ_ə_n_,_
-_(_ɹ_ˌ_oʊ_m_ə_n_ _θ_ɹ_ˈ_iː_)_ _ˌ_ɪ_n_t_ɪ_m_ˈ_eɪ_ʃ_ə_n_,_
-_(_ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_)_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n""" == (
-        grapheme_to_phoneme_perserve_punctuation(
-            """of 5 stages:
-(i) preparation,
-(ii) incubation,
-(iii) intimation,
-(iv) illumination""",
-            separator='_'))
-
-    assert "j_uː_ɹ_ˈ_iː_k_ɐ_ _w_ˈ_ɔː_k_s_ _ɑː_n_ð_ɪ_ _ˈ_ɛ_ɹ_ _ˈ_ɔː_l_ _ɹ_ˈ_aɪ_t_." == (
-        grapheme_to_phoneme_perserve_punctuation(
-            "Eureka walks on the air all right.", separator='_'))
-
-    assert " _ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _ " == (
-        grapheme_to_phoneme_perserve_punctuation("  Hello World  ", separator='_'))
-
-    assert " _\n_\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_\n_ " == (
-        grapheme_to_phoneme_perserve_punctuation(" \n\n Hello World \n\n ", separator='_'))
-
-    assert " _\n_\t_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_\t_ " == (
-        grapheme_to_phoneme_perserve_punctuation(" \n\t Hello World \n\t ", separator='_'))
-
-    # NOTE: Test a number of string literals, see: https://docs.python.org/2.0/ref/strings.html
-    # TODO: Investigate why tab characters are not preserved.
-    assert " _\n_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ " == (
-        grapheme_to_phoneme_perserve_punctuation(
-            " \n test \t test \r test \v test \f test \a test \b ", separator='_'))
+def test_grapheme_to_phoneme__special_bash_character():
+    """ Test `lib.text.grapheme_to_phoneme` handles double quotes, a bash special character. """
+    assert lib.text.grapheme_to_phoneme(
+        ['"It is commonly argued that the notion of'], separator='_'
+    )[0] == 'ɪ_t_ _ɪ_z_ _k_ˈ_ɑː_m_ə_n_l_i_ _ˈ_ɑːɹ_ɡ_j_uː_d_ _ð_æ_t_ð_ə_ _n_ˈ_oʊ_ʃ_ə_n_ _ʌ_v'
 
 
-def test__grapheme_to_phoneme_perserve_punctuation__spacy_failure_cases():
-    grapheme = [
-        ".Sameer M Babu is a professor who wrote an article about classroom "
-        "climate and social intelligence.",
-        "I ha thought till my brains ached,-Beli me, John, I have. An I say again, theres no "
-        "help for us but having faith i the Union. Theyll win the day, see if they dunnot!",
-        "we're gett'n' a long way from home. And see how the clouds are rolling just above us, "
-        "remarked the boy, who was almost as uneasy as captain Bill.",
-        "I I don't s-s-see any-thing funny 'bout it! he stammered.",
-        "But don't worry, there are plenty of toys that are safe--and fun--for your child.",
-        "Indeed, for the royal body, a rather unusual set of ideal attributes emerges in the "
-        "Mesopotamian lexicon: an accumulation of good form or breeding, auspiciousness, "
-        "vigor/vitality, and, specifically, sexual allure or charm – all of which are not "
-        "only ascribed in text, but equally to be read in imagery.",
-        "This is a test {}:\"><?,./;'[]\\q234567890-=!@##$%%^&*()+"
+def test_grapheme_to_phoneme__stripping():
+    """ Test `lib.text.grapheme_to_phoneme` respects white spaces on the edges. """
+    assert lib.text.grapheme_to_phoneme(
+        [
+            '  Hello World  ',
+            'Hello World  ',
+            '  Hello World',
+            ' \n Hello World \n ',
+            ' \n\n Hello World \n\n ',
+        ],
+        separator='_',
+    ) == [
+        ' _ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _ ',
+        'h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _ ',
+        ' _ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d',
+        ' _\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_ ',
+        ' _\n_\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_\n_ ',
     ]
 
-    phoneme = [
-        "d_ˈ_ɑː_t_ _s_æ_m_ˈ_ɪɹ_ _ˈ_ɛ_m_ _b_ˈ_ɑː_b_uː_ _ɪ_z_ _ɐ_ _p_ɹ_ə_f_ˈ_ɛ_s_ɚ_ _h_ˌ_uː_ "
-        "_ɹ_ˈ_oʊ_t_ _ɐ_n_ _ˈ_ɑːɹ_ɾ_ɪ_k_əl_ _ɐ_b_ˌ_aʊ_t_ _k_l_ˈ_æ_s_ɹ_uː_m_ _k_l_ˈ_aɪ_m_ə_t_ "
-        "_æ_n_d_ _s_ˈ_oʊ_ʃ_əl_ _ɪ_n_t_ˈ_ɛ_l_ɪ_dʒ_ə_n_s_.",
-        "aɪ_ _h_ˈ_ɑː_ _θ_ˈ_ɔː_t_ _t_ˈ_ɪ_l_ _m_aɪ_ _b_ɹ_ˈ_eɪ_n_z_ _ˈ_eɪ_k_t_b_ɪ_l_i_ _m_ˌ_iː_,_ _"
-        "dʒ_ˈ_ɑː_n_,_ _aɪ_ _h_ˈ_æ_v_._ _ɐ_n_ _aɪ_ _s_ˈ_eɪ_ _ɐ_ɡ_ˈ_ɛ_n_,_ _ð_ɚ_z_ _n_ˈ_oʊ_ "
-        "_h_ˈ_ɛ_l_p_ _f_ɔː_ɹ_ _ˌ_ʌ_s_ _b_ˌ_ʌ_t_ _h_ˌ_æ_v_ɪ_ŋ_ _f_ˈ_eɪ_θ_ _ˈ_aɪ_ "
-        "_ð_ə_ _j_ˈ_uː_n_iə_n_._ _θ_ˈ_eɪ_l_ _w_ˈ_ɪ_n_ _ð_ə_ _d_ˈ_eɪ_,_ _s_ˈ_iː_ _ɪ_f_ _ð_eɪ_ "
-        "_d_ˈ_ʌ_n_ɑː_t_!",
-        "w_ɪɹ_ _ɡ_ˈ_ɛ_t_n_'_ _ɐ_ _l_ˈ_ɑː_ŋ_ _w_ˈ_eɪ_ _f_ɹ_ʌ_m_ _h_ˈ_oʊ_m_._ _æ_n_d_ _s_ˈ_iː_ _"
-        "h_ˌ_aʊ_ _ð_ə_ _k_l_ˈ_aʊ_d_z_ _ɑːɹ_ _ɹ_ˈ_oʊ_l_ɪ_ŋ_ _dʒ_ˈ_ʌ_s_t_ _ə_b_ˈ_ʌ_v_ _ˌ_ʌ_s_,_ "
-        "_ɹ_ɪ_m_ˈ_ɑːɹ_k_t_ _ð_ə_ _b_ˈ_ɔɪ_,_ _h_ˌ_uː_ _w_ʌ_z_ _ˈ_ɔː_l_m_oʊ_s_t_ _"
-        "æ_z_ _ʌ_n_ˈ_iː_z_i_ _æ_z_ _k_ˈ_æ_p_t_ɪ_n_ _b_ˈ_ɪ_l_.",
-        "aɪ_ _aɪ_ _d_ˈ_oʊ_n_t_ _ˈ_ɛ_s_-_ˈ_ɛ_s_-_s_ˈ_iː_ _ˌ_ɛ_n_i_-_θ_ˈ_ɪ_ŋ_ _"
-        "f_ˈ_ʌ_n_i_ _b_ˈ_aʊ_t_ _ɪ_t_!_ _h_iː_ _s_t_ˈ_æ_m_ɚ_d_.",
-        "b_ˌ_ʌ_t_ _d_ˈ_oʊ_n_t_ _w_ˈ_ʌ_ɹ_i_,_ _ð_ɛ_ɹ_ˌ_ɑːɹ_ _p_l_ˈ_ɛ_n_t_i_ _ʌ_v_ _"
-        "t_ˈ_ɔɪ_z_ _ð_æ_t_ _ɑːɹ_ _s_ˈ_eɪ_f_-_-_æ_n_d_ _f_ˈ_ʌ_n_-_-_f_ɔːɹ_ _j_ʊɹ_ _tʃ_ˈ_aɪ_l_d_.",
-        "ˌ_ɪ_n_d_ˈ_iː_d_,_ _f_ɚ_ð_ə_ _ɹ_ˈ_ɔɪ_əl_ _b_ˈ_ɑː_d_i_,_ _ɐ_ _ɹ_ˈ_æ_ð_ɚ_ɹ_ "
-        "_ʌ_n_j_ˈ_uː_ʒ_uː_əl_ _s_ˈ_ɛ_t_ _ʌ_v_ _aɪ_d_ˈ_iə_l_ _ˈ_æ_t_ɹ_ɪ_b_j_ˌ_uː_t_s_ "
-        "_ɪ_m_ˈ_ɜː_dʒ_ᵻ_z_ _ɪ_n_ð_ə_ _m_ˌ_ɛ_s_ə_p_ə_t_ˈ_eɪ_m_iə_n_ _l_ˈ_ɛ_k_s_ɪ_k_ə_n_:_ "
-        "_ɐ_n_ _ɐ_k_j_ˌ_uː_m_j_ʊ_l_ˈ_eɪ_ʃ_ə_n_ _ʌ_v_ _ɡ_ˈ_ʊ_d_ _f_ˈ_ɔːɹ_m_ _ɔːɹ_ "
-        "_b_ɹ_ˈ_iː_d_ɪ_ŋ_,_ "
-        "_ɔː_s_p_ˈ_ɪ_ʃ_ə_s_n_ə_s_,_ _v_ˈ_ɪ_ɡ_ɚ_ _s_l_ˈ_æ_ʃ_ _v_aɪ_t_ˈ_æ_l_ɪ_ɾ_i_,_ _ˈ_æ_n_d_,_ "
-        "_s_p_ə_s_ˈ_ɪ_f_ɪ_k_l_i_,_ _s_ˈ_ɛ_k_ʃ_uː_əl_ _ɐ_l_ˈ_ʊɹ_ _ɔːɹ_ _tʃ_ˈ_ɑːɹ_m_ "
-        "_–_ _ˈ_ɔː_l_ _ʌ_v_w_ˈ_ɪ_tʃ_ _ɑːɹ_ _n_ˌ_ɑː_t_ _ˈ_oʊ_n_l_i_ _ɐ_s_k_ɹ_ˈ_aɪ_b_d_ _ɪ_n_ "
-        "_t_ˈ_ɛ_k_s_t_,_ _b_ˌ_ʌ_t_ _ˈ_iː_k_w_əl_i_ _t_ə_b_i_ _ɹ_ˈ_ɛ_d_ _ɪ_n_ _ˈ_ɪ_m_ɪ_dʒ_ɹ_i_.",
-        "ð_ɪ_s_ _ɪ_z_ _ɐ_ _t_ˈ_ɛ_s_t_ _{_}_:_\"_d_ˈ_ɑː_t_s_l_æ_ʃ_ _b_ˈ_æ_k_s_l_æ_ʃ_ _k_j_ˈ_uː_ "
-        "_t_ˈ_uː_h_ˈ_ʌ_n_d_ɹ_ə_d_ _θ_ˈ_ɜː_ɾ_i_f_ˈ_oːɹ_ _m_ˈ_ɪ_l_iə_n_ _f_ˈ_aɪ_v_h_ˈ_ʌ_n_d_ɹ_ə_d_"
-        " _s_ˈ_ɪ_k_s_t_i_s_ˈ_ɛ_v_ə_n_ _θ_ˈ_aʊ_z_ə_n_d_ _ˈ_eɪ_t_h_ˈ_ʌ_n_d_ɹ_ə_d_ _n_ˈ_aɪ_n_t_i_"
-        " _ˌ_iː_k_w_əl_z_ˌ_ɛ_k_s_k_l_ə_m_ˌ_eɪ_ʃ_ə_n_ˌ_æ_t_h_ɐ_ʃ_h_ˌ_æ_ʃ_d_ə_l_ɚ_p_ɚ_s_ˈ_ɛ_n_t_p"
-        "_ɚ_s_ˈ_ɛ_n_t_ɐ_n_d_ˌ_æ_s_t_ɚ_ɹ_ˌ_ɪ_s_k_p_l_ʌ_s"
+
+def test_grapheme_to_phoneme__service_separator():
+    """ Test `lib.text.grapheme_to_phoneme` works when `separator == service_separator`. """
+    assert lib.text.grapheme_to_phoneme(['Hello World'],
+                                        separator='_')[0] == 'h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d'
+
+
+def test_grapheme_to_phoneme__unique_separator():
+    """ Test `lib.text.grapheme_to_phoneme` errors if `seperator` is not unique. """
+    with pytest.raises(AssertionError):
+        lib.text.grapheme_to_phoneme(['Hello World'], separator='ə')
+
+
+def test_grapheme_to_phoneme__white_spaces():
+    """ Test `lib.text.grapheme_to_phoneme` does not preserve white spaces. """
+    assert lib.text.grapheme_to_phoneme(
+        ['résumé résumé  résumé   résumé'], separator='|'
+    )[0] == 'ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ'
+
+
+def test_grapheme_to_phoneme__long_number():
+    """ Test `lib.text.grapheme_to_phoneme` is UNABLE to handle long numbers.
+
+    NOTE: eSpeak stops before outputing "7169399375105820974944592". Feel free to test this, like
+    so: `espeak --ipa=3 -q -ven-us 3.141592653589793238462643383279502884197`.
+
+    Learn more here: https://github.com/wellsaid-labs/Text-to-Speech/issues/299
+    """
+    assert lib.text.grapheme_to_phoneme(
+        ['3.141592653589793238462643383279502884197169399375105820974944592'],
+        separator='|')[0] == (
+            'θ|ɹ|ˈ|iː| |p|ɔɪ|n|t| |w|ˈ|ʌ|n| |f|ˈ|oːɹ| |w|ˈ|ʌ|n| |f|ˈ|aɪ|v| |n|ˈ|aɪ|n| |t|ˈ|uː| '
+            '|s|ˈ|ɪ|k|s| |f|ˈ|aɪ|v| |θ|ɹ|ˈ|iː| |f|ˈ|aɪ|v| |ˈ|eɪ|t| |n|ˈ|aɪ|n| |s|ˈ|ɛ|v|ə|n| '
+            '|n|ˈ|aɪ|n| |θ|ɹ|ˈ|iː| |t|ˈ|uː| |θ|ɹ|ˈ|iː| |ˈ|eɪ|t| |f|ˈ|oːɹ| |s|ˈ|ɪ|k|s| |t|ˈ|uː| '
+            '|s|ˈ|ɪ|k|s| |f|ˈ|oːɹ| |θ|ɹ|ˈ|iː| |θ|ɹ|ˈ|iː| |ˈ|eɪ|t| |θ|ɹ|ˈ|iː| |t|ˈ|uː| '
+            '|s|ˈ|ɛ|v|ə|n| |n|ˈ|aɪ|n| |f|ˈ|aɪ|v| |z|ˈ|iə|ɹ|oʊ| |t|ˈ|uː| |ˈ|eɪ|t| |ˈ|eɪ|t| '
+            '|f|ˈ|oːɹ| |w|ˈ|ʌ|n| |n|ˈ|aɪ')
+
+
+def test_natural_keys():
+    """ Test `lib.text.natural_keys` sorts naturally. """
+    list_ = ['name 0', 'name 1', 'name 10', 'name 11']
+    assert sorted(list_, key=lib.text.natural_keys) == list_
+
+
+def test_strip():
+    """ Test `lib.text.strip` handles various white space scenarios. """
+    assert lib.text.strip("  Hello World  ") == ("Hello World", "  ", "  ")
+    assert lib.text.strip("Hello World  ") == ("Hello World", "", "  ")
+    assert lib.text.strip("  Hello World") == ("Hello World", "  ", "")
+    assert lib.text.strip(" \n Hello World \n ") == ("Hello World", " \n ", " \n ")
+    assert lib.text.strip(" \n\n Hello World \n\n ") == ("Hello World", " \n\n ", " \n\n ")
+
+
+def test_normalize_vo_script():
+    """ Test `lib.text.normalize_vo_script` handles all characters from 0 - 128. """
+    assert list(lib.text.normalize_vo_script(chr(i), strip=False) for i in range(0, 128)) == [
+        '', '', '', '', '', '', '', '', '', '  ', '\n', '', '\n', '\n', '', '', '', '', '', '', '',
+        '', '', '', '', '', '', '', '', '', '', '', ' ', '!', '"', '#', '$', '%', '&', "'", '(',
+        ')', '*', '+', ',', '-', '.', '/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':',
+        ';', '<', '=', '>', '?', '@', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+        'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '[', '\\', ']', '^',
+        '_', '`', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
+        'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '{', '|', '}', '~', ''
     ]
 
-    for g, p in zip(grapheme, phoneme):
-        assert grapheme_to_phoneme_perserve_punctuation(g, separator='_') == p
+
+def test_is_normalized_vo_script():
+    """ Test `lib.text.is_normalized_vo_script` handles all characters from 0 - 128. """
+    assert all(
+        lib.text.is_normalized_vo_script(lib.text.normalize_vo_script(chr(i), strip=False))
+        for i in range(0, 128))
+
+
+def test_is_normalized_vo_script__unnormalized():
+    """ Test `lib.text.is_normalized_vo_script` fails for unnormalized characters. """
+    assert [(chr(i), lib.text.is_normalized_vo_script(chr(i))) for i in range(0, 128)] == [
+        ('\x00', False), ('\x01', False), ('\x02', False), ('\x03', False), ('\x04', False),
+        ('\x05', False), ('\x06', False), ('\x07', False), ('\x08', False), ('\t', False),
+        ('\n', True), ('\x0b', False), ('\x0c', False), ('\r', False), ('\x0e', False),
+        ('\x0f', False), ('\x10', False), ('\x11', False), ('\x12', False), ('\x13', False),
+        ('\x14', False), ('\x15', False), ('\x16', False), ('\x17', False), ('\x18', False),
+        ('\x19', False), ('\x1a', False), ('\x1b', False), ('\x1c', False), ('\x1d', False),
+        ('\x1e', False), ('\x1f', False), (' ', True), ('!', True), ('"', True), ('#', True),
+        ('$', True), ('%', True), ('&', True), ("'", True), ('(', True), (')', True), ('*', True),
+        ('+', True), (',', True), ('-', True), ('.', True), ('/', True), ('0', True), ('1', True),
+        ('2', True), ('3', True), ('4', True), ('5', True), ('6', True), ('7', True), ('8', True),
+        ('9', True), (':', True), (';', True), ('<', True), ('=', True), ('>', True), ('?', True),
+        ('@', True), ('A', True), ('B', True), ('C', True), ('D', True), ('E', True), ('F', True),
+        ('G', True), ('H', True), ('I', True), ('J', True), ('K', True), ('L', True), ('M', True),
+        ('N', True), ('O', True), ('P', True), ('Q', True), ('R', True), ('S', True), ('T', True),
+        ('U', True), ('V', True), ('W', True), ('X', True), ('Y', True), ('Z', True), ('[', True),
+        ('\\', True), (']', True), ('^', True), ('_', True), ('`', True), ('a', True), ('b', True),
+        ('c', True), ('d', True), ('e', True), ('f', True), ('g', True), ('h', True), ('i', True),
+        ('j', True), ('k', True), ('l', True), ('m', True), ('n', True), ('o', True), ('p', True),
+        ('q', True), ('r', True), ('s', True), ('t', True), ('u', True), ('v', True), ('w', True),
+        ('x', True), ('y', True), ('z', True), ('{', True), ('|', True), ('}', True), ('~', True),
+        ('\x7f', False)
+    ]
+
+
+def test_normalize_non_standard_words():
+    cases = [
+        ('Mr. Gurney', 'Mr. Gurney'),
+        ('San Antonio at 1:30 p.m.,', 'San Antonio at one thirty P M,'),
+        ('between May 1st, 1827,', 'between May first, eighteen twenty seven,'),
+        ('inch BBL, unquote, cost $29.95.',
+         'inch B B L, unquote, cost twenty nine point nine five dollars.'),
+        ('Post Office Box 2915, Dallas, Texas',
+         'Post Office B O X two thousand, nine hundred and fifteen, Dallas, Texas'),
+        ('serial No. C2766, which was also found',
+         'serial No. century two thousand, seven hundred and sixty six, which was also found'),
+        ('Newgate down to 1818,', 'Newgate down to eighteen eighteen,'),
+        ('It was about 250 B.C., when the great',
+         'It was about two hundred and fifty B C, when the great'),
+        ('In 606, Nineveh', 'In six hundred and six, Nineveh'),
+        ('Exhibit No. 143 as the', 'Exhibit No. one hundred and forty three as the'),
+        ('William IV. was also the victim', 'William the fourth. was also the victim'),
+        ('Chapter 4. The Assassin:', 'Chapter four. The Assassin:'),
+        ('was shipped on March 20, and the', 'was shipped on March twentieth, and the'),
+        ('4 March 2014', 'the fourth of March twenty fourteen'),
+        ('distance of 265.3 feet was, quote',
+         'distance of two hundred and sixty five point three feet was, quote'),
+        ('information on some 50,000 cases', 'information on some fifty thousand cases'),
+        ('PRS received items in 8,709 cases',
+         'P R S received items in eight thousand, seven hundred and nine cases'),
+    ]
+    for input_, output in cases:
+        assert lib.text.normalize_non_standard_words(input_) == output
+
+
+def _align_and_format(tokens, other, **kwargs):
+    cost, alignment = lib.text.align_tokens(tokens, other, **kwargs)
+    return lib.text.format_alignment(tokens, other, alignment)
+
+
+def test_align_tokens__empty():
+    """ Test `lib.text.align_tokens` aligns empty text correctly. """
+    assert lib.text.align_tokens('', '')[0] == 0
+    assert lib.text.align_tokens('a', '')[0] == 1
+    assert lib.text.align_tokens('', 'a')[0] == 1
+    assert lib.text.align_tokens('abc', '')[0] == 3
+    assert lib.text.align_tokens('', 'abc')[0] == 3
+    assert lib.text.align_tokens('', 'abc', window_length=1)[0] == 3
+
+
+def test_align_tokens__one_letter():
+    """ Test `lib.text.align_tokens` aligns one letter correctly. """
+    # Should just add "a" to the beginning.
+    assert lib.text.align_tokens('abc', 'bc', window_length=1)[0] == 1
+    assert lib.text.align_tokens('abc', 'bc', allow_substitution=lambda a, b: False)[0] == 1
+    assert (_align_and_format('abc', 'bc') == (
+        'a b c',
+        '  b c',
+    ))
+
+    # Should just add I to the beginning.
+    assert lib.text.align_tokens('islander', 'slander')[0] == 1
+    assert lib.text.align_tokens('islander', 'slander', window_length=1)[0] == 1
+    assert (_align_and_format('islander', 'slander') == (
+        'i s l a n d e r',
+        '  s l a n d e r',
+    ))
+
+
+def test_align_tokens__deletion():
+    """ Test `lib.text.align_tokens` deletion. """
+    # Should delete 4 letters FOOT at the beginning.
+    assert lib.text.align_tokens('football', 'foot')[0] == 4
+
+
+def test_align_tokens__substitution():
+    """ Test `lib.text.align_tokens` substitution. """
+    # Needs to substitute the first 5 chars: INTEN by EXECU
+    assert lib.text.align_tokens('intention', 'execution')[0] == 5
+
+
+def test_align_tokens__multi_operation_alignments():
+    """ Test `lib.text.align_tokens` substitution, insertion, and deletion. """
+    # Needs to substitute M by K, T by M and add an A to the end
+    assert lib.text.align_tokens('mart', 'karma')[0] == 3
+
+    # Needs to substitute K by M, M by T, and delete A from the end
+    assert lib.text.align_tokens('karma', 'mart')[0] == 3
+
+    # Substitute K by S, E by I and add a G at the end.
+    assert lib.text.align_tokens('kitten', 'sitting')[0] == 3
+
+
+def test_align_tokens__window_lengths():
+    """ Test `lib.text.align_tokens` handles various window lengths. """
+    assert lib.text.align_tokens('ball', 'football')[0] == 4
+    assert lib.text.align_tokens('ball', 'football', window_length=1)[0] == 7
+    assert (_align_and_format('ball', 'football', window_length=1) == (
+        'b a l       l',
+        'f o o t b a l',
+    ))
+    assert lib.text.align_tokens('ball', 'football', window_length=2)[0] == 6
+    assert (_align_and_format('ball', 'football', window_length=2) == (
+        'b a         l l',
+        'f o o t b a l l',
+    ))
+    assert lib.text.align_tokens('ball', 'football', window_length=3)[0] == 4
+    assert (_align_and_format('ball', 'football', window_length=3) == (
+        '        b a l l',
+        'f o o t b a l l',
+    ))
+
+
+def test_align_tokens__word_subtitution():
+    """ Test `lib.text.align_tokens` substitutes words. """
+    assert lib.text.align_tokens(['Hey', 'There'], ['Hey', 'There'])[0] == 0
+    assert lib.text.align_tokens(['Hey', 'There'], ['Hi', 'There'])[0] == 2
+    assert lib.text.align_tokens(['Hey', 'There'], ['Hi', 'The'])[0] == 4
+
+
+def test_align_tokens__word_deletion():
+    """ Test `lib.text.align_tokens` deletes words. """
+    assert lib.text.align_tokens(['Hey', 'There', 'You'], ['Hey', ',', 'There'])[0] == 4
+    assert (_align_and_format(['Hey', 'There', 'You'], ['Hey', ',', 'There']) == (
+        'Hey   There',
+        'Hey , There',
+    ))
