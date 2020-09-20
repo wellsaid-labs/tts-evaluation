@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from functools import lru_cache
 from pathlib import Path
 
@@ -6,6 +8,7 @@ import math
 import os
 import subprocess
 import typing
+import typing_extensions
 
 from hparams import configurable
 from hparams import HParam
@@ -15,16 +18,17 @@ from tqdm import tqdm
 
 import numpy as np
 import torch
-
-from src.environment import IS_TESTING_ENVIRONMENT
-from src.utils import get_chunks
-from src.utils import Pool
-
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import pyloudnorm
+else:
+    pyloudnorm = LazyLoader('pyloudnorm', globals(), 'pyloudnorm')
 # NOTE: `LazyLoader` allows for this repository to run without these dependancies. Also,
 # it side-steps this issue: https://github.com/librosa/librosa/issues/924.
 librosa = LazyLoader('librosa', globals(), 'librosa')
-scipy_wavfile = LazyLoader('scipy_wavfile', globals(), 'scipy.io.wavfile')
 scipy_signal = LazyLoader('scipy_signal', globals(), 'scipy.signal')
+scipy_wavfile = LazyLoader('scipy_wavfile', globals(), 'scipy.io.wavfile')
+
+import lib
 
 logger = logging.getLogger(__name__)
 
@@ -45,84 +49,143 @@ class AudioFileMetadata(typing.NamedTuple):
     length: float
 
 
-@configurable
-def read_audio(
-    filename: str, expected_metadata: typing.Union[AudioFileMetadata,
-                                                   HParam] = HParam()) -> np.ndarray:
-    """ Read an audio file.
+def _parse_audio_metadata(metadata: str) -> AudioFileMetadata:
+    """ Parse audio metadata returned by `sox --i`.
 
-    Tacotron 1 Reference:
-        We use 24 kHz sampling rate for all experiments.
+    NOTE: This parses the output of `sox --i` instead individual requests like `sox --i -r` and
+    `sox --i -b` to conserve on the number  of requests made via `subprocess`.
 
-    Notes:
-        * To keep consistent with Tacotron 2 ensure audio files are mono WAVs with subformat PCM
-          16 bit and a 24 kHz sampling rate.
+    TODO: Adapt `ffmpeg --i` for consistency.
+    """
+    splits = [s.split(':', maxsplit=1)[1].strip() for s in metadata.strip().split('\n')]
+    audio_path = str(splits[0][1:-1])
+    channels = int(splits[1])
+    sample_rate = int(splits[2])
+    assert splits[4].split()[3] == 'samples'
+    length = float(splits[4].split()[2]) / sample_rate
+    encoding = splits[-1]
+    return AudioFileMetadata(Path(audio_path), sample_rate, channels, encoding, length)
 
-    References:
-        * WAV specs:
-          http://www-mmsp.ece.mcgill.ca/Documents/AudioFormats/WAVE/WAVE.html
-        * Resampy the Librosa resampler.
-          https://github.com/bmcfee/resampy
-        * All Python audio resamplers:
-          https://livingthing.danmackinlay.name/python_audio.html
-        * Issue on scaling amplitude:
-          https://github.com/bmcfee/resampy/issues/61
+
+def _get_audio_metadata_helper(chunk: typing.List[Path]) -> typing.List[AudioFileMetadata]:
+    command = ['sox', '--i'] + [str(p) for p in chunk]
+    metadatas = subprocess.check_output(command).decode()
+    splits = metadatas.strip().split('\n\n')
+    splits = splits[:-1] if 'Total Duration' in splits[-1] else splits
+    return [_parse_audio_metadata(metadata) for metadata in splits]
+
+
+def get_audio_metadata(
+    paths: typing.List[Path],
+    max_arg_length: int = 2**16,
+    num_processes: int = (1 if lib.environment.IS_TESTING_ENVIRONMENT else typing.cast(
+        int, os.cpu_count())),
+) -> typing.List[AudioFileMetadata]:
+    """ Get the audio metadatas for a list of files.
+
+    NOTE: It's difficult to determine the bash maximum argument length, learn more:
+    https://unix.stackexchange.com/questions/45143/what-is-a-canonical-way-to-find-the-actual-maximum-argument-list-length
+    https://stackoverflow.com/questions/19354870/bash-command-line-and-input-limit
+    """
+    len_ = lambda p: len(str(p))
+    total = sum([len_(p) for p in paths])
+    chunks = list(
+        lib.utils.accumulate_and_split(paths, [max_arg_length] * (total // max_arg_length), len_))
+    if len(chunks) == 1:
+        return _get_audio_metadata_helper(chunks[0])
+
+    logger.info('Getting audio metadata for %d audio files.', len(paths))
+    return_ = []
+    with tqdm(total=len(paths)) as progress_bar:
+        with lib.utils.Pool(num_processes) as pool:
+            for result in pool.imap_unordered(_get_audio_metadata_helper, chunks):
+                return_.extend(result)
+                progress_bar.update(len(result))
+    return return_
+
+
+def read_audio(path: Path) -> np.ndarray:
+    """ Read an audio file slice into a `np.float32` array.
+
+    NOTE: Audio files with multiple channels will be mixed into a mono channel.
+    """
+    command = f"ffmpeg -i {path} -f f32le -acodec pcm_f32le -ac 1 pipe:"
+    return np.frombuffer(
+        subprocess.check_output(command.split(), stderr=subprocess.DEVNULL), np.float32)
+
+
+def read_audio_slice(path: Path, start: float, length: float) -> np.ndarray:
+    """ Read an audio file slice into a `np.float32` array.
+
+    NOTE: Audio files with multiple channels will be mixed into a mono channel.
+    NOTE: Learn more about efficiently selecting a slice of audio with `ffmpeg`:
+    https://stackoverflow.com/questions/18444194/cutting-the-videos-based-on-start-and-end-time-using-ffmpeg
 
     Args:
-        filename (Path or str): Name of the file to load.
-        expected_metadata (AudioFileMetadata): Assert this metadata for any audio file read.
-
-    Returns:
-        See the second return value of `scipy.io.wavfile.read`.
+        path: Path to load.
+        start: The start of the audio segment.
+        length: The length of the audio segment.
     """
-    metadata = get_audio_metadata([Path(filename)])[0]
-
-    assert metadata.sample_rate == expected_metadata.sample_rate, (
-        'Expected %s to have %d sample rate.' % (filename, expected_metadata.sample_rate))
-    assert metadata.channels == expected_metadata.channels, 'Expected %s to have %d channels' % (
-        filename, expected_metadata.channels)
-    assert metadata.encoding == expected_metadata.encoding, 'Expected %s to have %s encoding' % (
-        filename, expected_metadata.encoding)
-
-    _, signal = scipy_wavfile.read(str(filename))
-    assert len(signal) > 0, "Signal (%s) length is zero." % filename
-    return signal
+    command = f"ffmpeg -ss {start} -i {path} -to {length} -f f32le -acodec pcm_f32le -ac 1 pipe:"
+    return np.frombuffer(
+        subprocess.check_output(command.split(), stderr=subprocess.DEVNULL), np.float32)
 
 
 @configurable
-def write_audio(filename: typing.Union[Path, str, typing.BinaryIO],
+def write_audio(path: typing.Union[Path, typing.BinaryIO],
                 audio: typing.Union[np.ndarray, torch.Tensor],
                 sample_rate: int = HParam(),
-                overwrite: bool = False) -> np.ndarray:
-    """ Write a numpy array as a WAV file.
+                overwrite: bool = False):
+    """ Write a `np.float32` array in a Waveform Audio File Format (WAV) format at `path`.
 
     Args:
-        filename: Name of the file to load.
-        audio: A 1-D or 2-D matrix of either integer or float data-type.
-        sample_rate: The sample rate (in samples/sec).
-        overwrite: If `True` this allows for `path` to be overwritten.
+        path: Path to save audio at.
+        audio: A 1-D or 2-D `np.float32` array.
+        sample_rate: The audio sample rate (samples/sec).
+        overwrite: If `True` and there is an existing file at `path`, it'll be overwritten.
+    """
+    if not overwrite and isinstance(path, Path) and path.exists():
+        raise ValueError(f"File exists at {path}.")
+    audio = audio.detach().cpu().numpy() if isinstance(audio, torch.Tensor) else audio
+    assert audio.dtype == np.float32
+    if audio.size > 0:
+        assert np.max(audio) <= 1.0 and np.min(audio) >= -1.0, 'Signal must be in range [-1, 1].'
+    scipy_wavfile.write(path, sample_rate, audio)
+
+
+@configurable
+def pad_remainder(signal: np.ndarray,
+                  multiple: int = HParam(),
+                  center: bool = True,
+                  **kwargs) -> np.ndarray:
+    """ Pad signal such that `signal.shape[0] % multiple == 0`.
+
+    Args:
+        signal (np.array [signal_length]): One-dimensional signal to pad.
+        multiple: The returned signal shape is divisible by `multiple`.
+        center: If `True` both sides are padded, else the right side is padded.
+        **kwargs: Key word arguments passed to `np.pad`.
 
     Returns:
-        See `scipy.io.wavfile.write`.
+        np.array [padded_signal_length]
     """
-    if not overwrite and (isinstance(filename, str) or
-                          isinstance(filename, Path)) and Path(filename).exists():
-        raise ValueError('A file already exists at %s' % filename)
-
-    if torch.is_tensor(audio):
-        audio = audio.detach().cpu().numpy()
-
-    assert audio.dtype in (np.int32, np.int16, np.uint8, np.float32)
-    if audio.dtype == np.float32 and audio.shape[0] > 0:
-        assert np.max(audio) <= 1.0 and np.min(audio) >= -1.0, (
-            "Signal (%s) must be in range [-1, 1]." % filename)
-
-    return scipy_wavfile.write(filename, sample_rate, audio)
+    assert isinstance(signal, np.ndarray)
+    remainder = signal.shape[0] % multiple
+    remainder = multiple - remainder if remainder != 0 else remainder
+    padding = (math.ceil(remainder / 2), math.floor(remainder / 2)) if center else (0, remainder)
+    padded_signal = np.pad(signal, padding, **kwargs)
+    assert padded_signal.shape[0] % multiple == 0
+    return padded_signal
 
 
 def _mel_filters(sample_rate: int, num_mel_bins: int, fft_length: int, lower_hertz: float,
                  upper_hertz: float) -> np.ndarray:
     """ Create a Filterbank matrix to combine FFT bins into Mel-frequency bins.
+
+    NOTE: The Tacotron 2 model likely did not normalize the filterbank; otherwise, the 0.01
+    minimum mentioned in their paper for the dynamic range is too high. NVIDIA/tacotron2 includes
+    norm and had to set their minimum to 10**-5 to compensate.
+    NOTE: ``htk=True`` because normalization of the mel filterbank is from Slaney's algorithm.
 
     Reference:
         * The API written by RJ Skerry-Ryan a Tacotron author.
@@ -139,10 +202,6 @@ def _mel_filters(sample_rate: int, num_mel_bins: int, fft_length: int, lower_her
     Returns:
         (np.ndarray [num_mel_bins, 1 + fft_length / 2]): Mel transform matrix.
     """
-    # NOTE: The Tacotron 2 model likely did not normalize the filterbank; otherwise, the 0.01
-    # minimum mentioned in their paper for the dynamic range is too high. NVIDIA/tacotron2 includes
-    # norm and had to set their minimum to 10**-5 to compensate.
-    # NOTE: ``htk=True`` because normalization of the mel filterbank is from Slaney's algorithm.
     lower_hertz = 0.0 if lower_hertz is None else lower_hertz
     upper_hertz = min(upper_hertz, float(sample_rate) / 2)
     return librosa.filters.mel(
@@ -181,7 +240,7 @@ def full_scale_sine_wave(sample_rate: int = REFERENCE_SAMPLE_RATE,
     Returns:
         `np.ndarray` of length `sample_rate`
     """
-    x = np.arange(sample_rate)
+    x = np.arange(sample_rate, dtype=np.float32)
     return np.sin(2 * np.pi * frequency * (x / sample_rate)).astype(np.float32)
 
 
@@ -192,7 +251,7 @@ def full_scale_square_wave(sample_rate: int = REFERENCE_SAMPLE_RATE,
     Returns:
         `np.ndarray` of length `sample_rate`
     """
-    x = np.arange(sample_rate)
+    x = np.arange(sample_rate, dtype=np.float32)
     return scipy_signal.square(2 * np.pi * frequency * (x / sample_rate)).astype(np.float32)
 
 
@@ -320,6 +379,137 @@ def identity_weighting(frequencies: np.ndarray) -> np.ndarray:
     return np.zeros_like(frequencies)
 
 
+def power_to_db(tensor: torch.Tensor, eps: float = 1e-10) -> torch.Tensor:
+    """ Convert power (https://www.dsprelated.com/freebooks/mdft/Decibels.html) units to decibel
+    units.
+
+    Args:
+        tensor (torch.FloatTensor)
+        eps (float or torch.FloatTensor): The minimum amplitude to `log` avoiding the discontinuity
+            at `log(0)`.
+    """
+    return 10.0 * torch.log10(torch.clamp(tensor, min=eps))
+
+
+def amplitude_to_db(tensor: torch.Tensor, **kwargs) -> torch.Tensor:
+    """ Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to decibel units.
+
+    Args:
+        tensor
+        **kwargs: Other keyword arguments passed to `power_to_db`.
+    """
+    return power_to_db(tensor, **kwargs) * 2
+
+
+def amplitude_to_power(
+        tensor: typing.Union[torch.Tensor, np.ndarray]) -> typing.Union[torch.Tensor, np.ndarray]:
+    """ Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to power units. """
+    return tensor**2
+
+
+def power_to_amplitude(
+        tensor: typing.Union[torch.Tensor, np.ndarray]) -> typing.Union[torch.Tensor, np.ndarray]:
+    """ Convert power units to amplitude units. """
+    return tensor**0.5
+
+
+def db_to_power(
+        tensor: typing.Union[torch.Tensor, np.ndarray]) -> typing.Union[torch.Tensor, np.ndarray]:
+    """ Convert decibel units to power units. """
+    return 10**(tensor / 10.0)
+
+
+def db_to_amplitude(
+        tensor: typing.Union[torch.Tensor, np.ndarray]) -> typing.Union[torch.Tensor, np.ndarray]:
+    """ Convert decibel units to amplitude units. """
+    return db_to_power(tensor / 2)
+
+
+def signal_to_rms(signal: np.ndarray) -> np.ndarray:
+    """ Compute the root mean square from a signal.
+
+    Learn more:
+    - Implementations of RMS:
+      https://librosa.github.io/librosa/_modules/librosa/feature/spectral.html#rms
+      https://github.com/endolith/waveform_analysis/blob/master/waveform_analysis/_common.py#L116
+    - Wikipedia on RMS:
+      https://en.wikipedia.org/wiki/Root_mean_square
+
+    Args:
+        signal (np.ndarray [signal_length])
+
+    Returns:
+        np.ndarray [1]
+    """
+    return np.sqrt(np.mean(np.abs(signal)**2))
+
+
+@configurable
+def signal_to_framed_rms(
+        signal: np.ndarray,
+        frame_length: int = HParam(),
+        hop_length: int = HParam(),
+) -> np.ndarray:
+    """ Compute the framed root mean square from a signal.
+
+    Args:
+        signal (np.ndarray [signal_length])
+        frame_length
+        hop_length
+
+    Returns:
+        np.ndarray [1]
+    """
+    frames = librosa.util.frame(signal, frame_length=frame_length, hop_length=hop_length)
+    return np.sqrt(np.mean(np.abs(frames**2), axis=0))
+
+
+@configurable
+def power_spectrogram_to_framed_rms(
+        power_spectrogram: torch.Tensor,
+        window: torch.Tensor = HParam(),
+) -> torch.Tensor:
+    """ Compute the root mean square from a spectrogram.
+
+    Learn more:
+    - Implementations of RMS:
+      https://librosa.github.io/librosa/_modules/librosa/feature/spectral.html#rms
+    - Opinionated discussion between LUFS and RMS:
+      https://www.gearslutz.com/board/mastering-forum/1142602-lufs-really-better-than-rms-measure-loudness.html
+      Also, see `test_loudness` in `test_audio.py` that replicates LUFS via RMS.
+    - Compare LUFS to Decibels:
+      https://backtracks.fm/blog/whats-the-difference-between-decibels-and-lufs/
+
+    Args:
+        power_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
+        window (torch.FloatTensor [window_size])
+
+    Returns:
+        (torch.FloatTensor [batch_size, num_frames])
+    """
+    has_batch_dim = power_spectrogram.dim() == 3
+    power_spectrogram = power_spectrogram.view(-1, *power_spectrogram.shape[-2:])
+
+    # Learn more:
+    # https://community.sw.siemens.com/s/article/window-correction-factors
+    # https://www.mathworks.com/matlabcentral/answers/372516-calculate-windowing-correction-factor
+    window_correction_factor = (
+        torch.ones(*window.shape).pow(2).mean().sqrt() / window.pow(2).mean().sqrt())
+
+    # TODO: This adjustment might be related to repairing constant-overlap-add, see here:
+    # https://ccrma.stanford.edu/~jos/sasp/Overlap_Add_Decomposition.html. It should be better
+    # documented and tested. We've included it mostly because `librosa` also included it.
+    # Adjust the DC and half sample rate component
+    power_spectrogram[:, :, 0] *= 0.5
+    if window.shape[0] % 2 == 0:
+        power_spectrogram[:, :, -1] *= 0.5
+
+    # Calculate power
+    power = 2 * power_spectrogram.sum(dim=-1) / window.shape[0]**2
+    frame_rms = power.sqrt() * window_correction_factor
+    return frame_rms if has_batch_dim else frame_rms.squeeze(0)
+
+
 class SignalTodBMelSpectrogram(torch.nn.Module):
     """ Compute a dB-mel-scaled spectrogram from signal.
 
@@ -388,7 +578,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
                  sample_rate: int = HParam(),
                  num_mel_bins: int = HParam(),
                  window: torch.Tensor = HParam(),
-                 min_decibel: int = HParam(),
+                 min_decibel: float = HParam(),
                  get_weighting: typing.Callable[[np.ndarray], np.ndarray] = HParam(),
                  eps: float = 1e-10,
                  **kwargs):
@@ -408,6 +598,16 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         weighting = db_to_power(weighting)
         self.register_buffer('mel_basis', torch.tensor(mel_basis).float())
         self.register_buffer('weighting', weighting)
+
+    @typing.overload
+    def forward(self, signal: torch.Tensor, intermediate: typing_extensions.Literal[False],
+                aligned: bool) -> torch.Tensor:
+        ...
+
+    @typing.overload
+    def forward(self, signal: torch.Tensor, intermediate: typing_extensions.Literal[True],
+                aligned: bool) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        ...
 
     def forward(
         self,
@@ -504,162 +704,19 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             return db_mel_spectrogram
 
 
-@lru_cache()
+@lru_cache(maxsize=None)
 def get_signal_to_db_mel_spectrogram(*args, **kwargs) -> SignalTodBMelSpectrogram:
     """ Get cached `SignalTodBMelSpectrogram` module. """
     return SignalTodBMelSpectrogram(*args, **kwargs)
 
 
-def rms_from_signal(signal: np.ndarray) -> np.ndarray:
-    """ Compute the root mean square from a signal.
+@lru_cache(maxsize=None)
+def get_pyloudnorm_meter(*args, **kwargs) -> pyloudnorm.Meter:
+    """ Get cached `pyloudnorm.Meter` module.
 
-    Learn more:
-    - Implementations of RMS:
-      https://librosa.github.io/librosa/_modules/librosa/feature/spectral.html#rms
-      https://github.com/endolith/waveform_analysis/blob/master/waveform_analysis/_common.py#L116
-    - Wikipedia on RMS:
-      https://en.wikipedia.org/wiki/Root_mean_square
-
-    Args:
-        signal (np.ndarray [signal_length])
-
-    Returns:
-        np.ndarray [1]
+    NOTE: `pyloudnorm.Meter` is expensive to import, so we try to avoid it.
     """
-    return np.sqrt(np.mean(np.abs(signal)**2))
-
-
-@configurable
-def framed_rms_from_signal(
-        signal: np.ndarray,
-        frame_length: int = HParam(),
-        hop_length: int = HParam(),
-) -> np.ndarray:
-    """ Compute the framed root mean square from a signal.
-
-    Args:
-        signal (np.ndarray [signal_length])
-        frame_length
-        hop_length
-
-    Returns:
-        np.ndarray [1]
-    """
-    frames = librosa.util.frame(signal, frame_length=frame_length, hop_length=hop_length)
-    return np.sqrt(np.mean(np.abs(frames**2), axis=0))
-
-
-@configurable
-def framed_rms_from_power_spectrogram(
-        power_spectrogram: torch.Tensor,
-        window: torch.Tensor = HParam(),
-) -> torch.Tensor:
-    """ Compute the root mean square from a spectrogram.
-
-    Learn more:
-    - Implementations of RMS:
-      https://librosa.github.io/librosa/_modules/librosa/feature/spectral.html#rms
-    - Opinionated discussion between LUFS and RMS:
-      https://www.gearslutz.com/board/mastering-forum/1142602-lufs-really-better-than-rms-measure-loudness.html
-      Also, see `test_loudness` in `test_audio.py` that replicates LUFS via RMS.
-    - Compare LUFS to Decibels:
-      https://backtracks.fm/blog/whats-the-difference-between-decibels-and-lufs/
-
-    Args:
-        power_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
-        window (torch.FloatTensor [window_size])
-
-    Returns:
-        (torch.FloatTensor [batch_size, num_frames])
-    """
-    has_batch_dim = power_spectrogram.dim() == 3
-    power_spectrogram = power_spectrogram.view(-1, *power_spectrogram.shape[-2:])
-
-    # Learn more:
-    # https://community.sw.siemens.com/s/article/window-correction-factors
-    # https://www.mathworks.com/matlabcentral/answers/372516-calculate-windowing-correction-factor
-    window_correction_factor = (
-        torch.ones(*window.shape).pow(2).mean().sqrt() / window.pow(2).mean().sqrt())
-
-    # TODO: This adjustment might be related to repairing constant-overlap-add, see here:
-    # https://ccrma.stanford.edu/~jos/sasp/Overlap_Add_Decomposition.html. It should be better
-    # documented and tested. We've included it mostly because `librosa` also included it.
-    # Adjust the DC and half sample rate component
-    power_spectrogram[:, :, 0] *= 0.5
-    if window.shape[0] % 2 == 0:
-        power_spectrogram[:, :, -1] *= 0.5
-
-    # Calculate power
-    power = 2 * power_spectrogram.sum(dim=-1) / window.shape[0]**2
-    frame_rms = power.sqrt() * window_correction_factor
-    return frame_rms if has_batch_dim else frame_rms.squeeze(0)
-
-
-def power_to_db(tensor: torch.Tensor, eps: float = 1e-10) -> torch.Tensor:
-    """ Convert power (https://www.dsprelated.com/freebooks/mdft/Decibels.html) units to decibel
-    units.
-
-    Args:
-        tensor (torch.FloatTensor)
-        eps (float or torch.FloatTensor): The minimum amplitude to `log` avoiding the discontinuity
-            at `log(0)`.
-    """
-    return 10.0 * torch.log10(torch.clamp(tensor, min=eps))
-
-
-def amplitude_to_db(tensor: torch.Tensor, **kwargs) -> torch.Tensor:
-    """ Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to decibel units.
-
-    Args:
-        tensor
-        **kwargs: Other keyword arguments passed to `power_to_db`.
-    """
-    return power_to_db(tensor, **kwargs) * 2
-
-
-def amplitude_to_power(
-        tensor: typing.Union[torch.Tensor, np.ndarray]) -> typing.Union[torch.Tensor, np.ndarray]:
-    """ Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to power units. """
-    return tensor**2
-
-
-def power_to_amplitude(
-        tensor: typing.Union[torch.Tensor, np.ndarray]) -> typing.Union[torch.Tensor, np.ndarray]:
-    """ Convert power units to amplitude units. """
-    return tensor**0.5
-
-
-def db_to_power(
-        tensor: typing.Union[torch.Tensor, np.ndarray]) -> typing.Union[torch.Tensor, np.ndarray]:
-    """ Convert decibel units to power units. """
-    return 10**(tensor / 10.0)
-
-
-def db_to_amplitude(
-        tensor: typing.Union[torch.Tensor, np.ndarray]) -> typing.Union[torch.Tensor, np.ndarray]:
-    """ Convert decibel units to amplitude units. """
-    return db_to_power(tensor / 2)
-
-
-@configurable
-def pad_remainder(signal: np.ndarray, multiple: int = HParam(), **kwargs) -> np.ndarray:
-    """ Pad signal such that `signal.shape[0] % multiple == 0`.
-
-    Args:
-        signal (np.array [signal_length]): One-dimensional signal to pad.
-        multiple: The returned signal shape is divisible by `multiple`.
-        **kwargs: Key word arguments passed to `np.pad`.
-
-    Returns:
-        np.array [padded_signal_length]
-    """
-    assert isinstance(signal, np.ndarray)
-    remainder = signal.shape[0] % multiple
-    remainder = multiple - remainder if remainder != 0 else remainder
-    padding = (math.ceil(remainder / 2), math.floor(remainder / 2))
-    padded_signal = np.pad(signal, padding, **kwargs)
-    assert padded_signal.shape[0] % multiple == 0
-    return padded_signal
+    return pyloudnorm.Meter(*args, **kwargs)
 
 
 def _db_mel_spectrogram_to_spectrogram(db_mel_spectrogram: np.ndarray, sample_rate: int,
@@ -694,9 +751,8 @@ def _db_mel_spectrogram_to_spectrogram(db_mel_spectrogram: np.ndarray, sample_ra
 @configurable
 def griffin_lim(db_mel_spectrogram: np.ndarray,
                 sample_rate: int = HParam(),
-                frame_size: int = HParam(),
-                frame_hop: int = HParam(),
                 fft_length: int = HParam(),
+                frame_hop: int = HParam(),
                 window: np.ndarray = HParam(),
                 power: float = HParam(),
                 iterations: int = HParam(),
@@ -726,9 +782,8 @@ def griffin_lim(db_mel_spectrogram: np.ndarray,
     Args:
         db_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
         sample_rate: Sample rate of the spectrogram and the resulting wav file.
-        frame_size: The frame size in samples. (e.g. 50ms * 24,000 / 1000 == 1200)
-        frame_hop: The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
         fft_length: The size of the FFT to apply.
+        frame_hop: The frame hop in samples. (e.g. 12.5ms * 24,000 / 1000 == 300)
         window: Window function to be applied to each
             frame. See the full specification for window at ``librosa.filters.get_window``.
         power: Amplification float used to reduce artifacts.
@@ -750,7 +805,7 @@ def griffin_lim(db_mel_spectrogram: np.ndarray,
             spectrogram,
             n_iter=iterations,
             hop_length=frame_hop,
-            win_length=frame_size,
+            win_length=window.shape[0],
             window=window)
         # NOTE: Pad to ensure spectrogram and waveform align.
         waveform = np.pad(waveform, int(frame_hop // 2), mode='constant', constant_values=0)
@@ -763,72 +818,3 @@ def griffin_lim(db_mel_spectrogram: np.ndarray,
         # NOTE: Return no audio for valid inputs that fail due to an overflow error or a small
         # spectrogram.
         return np.array([], dtype=np.float32)
-
-
-def _parse_audio_metadata(metadata: str) -> AudioFileMetadata:
-    """ Parse audio metadata returned by `sox --i`.
-
-    Example:
-
-        >>> metadata = '''
-        ... Input File     : 'data/Heather Doe/03 Recordings/Heather_4-21.wav'
-        ... Channels       : 1
-        ... Sample Rate    : 44100
-        ... Precision      : 24-bit
-        ... Duration       : 03:46:28.09 = 599234761 samples = 1.01911e+06 CDDA sectors
-        ... File Size      : 1.80G
-        ... Bit Rate       : 1.06M
-        ... Sample Encoding: 24-bit Signed Integer PCM
-        ... '''
-        >>> str(_parse_audio_metadata(metadata)[0])
-        'data/Heather Doe/03 Recordings/Heather_4-21.wav'
-        >>> _parse_audio_metadata(metadata)[1]
-        AudioFileMetadata(sample_rate=44100, bits=24, channels=1, encoding='signed-integer')
-    """
-    # NOTE: Parse the output of `sox --i` instead individual requests like `sox --i -r` and
-    # `sox --i -b` to conserve on the number  of requests made via `subprocess`.
-    splits = [s.split(':', maxsplit=1)[1].strip() for s in metadata.strip().split('\n')]
-    audio_path = str(splits[0][1:-1])
-    channels = int(splits[1])
-    sample_rate = int(splits[2])
-    duration = splits[4].split()[0].split(':')
-    length = float(duration[0]) * 60 * 60 + float(duration[1]) * 60 + float(duration[2])
-    encoding = splits[-1]
-    return AudioFileMetadata(Path(audio_path), sample_rate, channels, encoding, length)
-
-
-def _get_audio_metadata_helper(chunk: typing.List[str]) -> typing.List[AudioFileMetadata]:
-    # TODO: Consider using `ffmpeg --i` for consistency
-    # NOTE: Glob may find unused files like:
-    # `M-AILABS/ ... /judy_bieber/ozma_of_oz/wavs/._ozma_of_oz_10_f000095.wav`
-    # Those errors are ignored along with any other output from `stderr`.
-    command = ['sox', '--i'] + chunk
-    metadatas = subprocess.run(command, stdout=subprocess.PIPE).stdout.decode('utf-8')
-    splits = metadatas.strip().split('\n\n')
-    splits = splits[:-1] if 'Total Duration' in splits[-1] else splits
-    return [_parse_audio_metadata(metadata) for metadata in splits]
-
-
-def get_audio_metadata(
-    paths: typing.Union[typing.Iterable[Path],
-                        typing.Iterable[str]]) -> typing.List[AudioFileMetadata]:
-    """ Get the audio metadata for a batch of files more quickly."""
-    paths_ = list(paths)
-    logger.info('Getting audio metadata for %d audio files.', len(paths_))
-
-    # NOTE: It's difficult to determine the bash maximum argument length, learn more:
-    # https://unix.stackexchange.com/questions/45143/what-is-a-canonical-way-to-find-the-actual-maximum-argument-list-length
-    # https://stackoverflow.com/questions/19354870/bash-command-line-and-input-limit
-    # NOTE: 1024 was choosen empirically to be less then the bash maximum argument length on most
-    # systems.
-    chunks = list(get_chunks(paths_, 1024))
-    if len(chunks) == 1:
-        return _get_audio_metadata_helper(chunks[0])
-
-    progress_bar = tqdm(total=len(paths_))
-    return_ = []
-    with Pool(1 if IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
-        for result in pool.imap_unordered(_get_audio_metadata_helper, chunks):
-            return_.extend(result)
-            progress_bar.update(len(result))
-    return return_

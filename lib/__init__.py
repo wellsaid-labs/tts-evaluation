@@ -4,5 +4,6 @@ from lib import distributed
 from lib import optimizers
 from lib import text
 from lib import visualize
+from lib import audio
 
-__all__ = ['environment', 'optimizers', 'utils', 'visualize', 'distributed', 'text']
+__all__ = ['environment', 'optimizers', 'utils', 'visualize', 'distributed', 'text', 'audio']

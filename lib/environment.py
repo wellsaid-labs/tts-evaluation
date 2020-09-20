@@ -28,8 +28,6 @@ logger = logging.getLogger(__name__)
 
 ROOT_PATH = Path(__file__).parents[1].resolve()  # Repository root path
 
-TEST_DATA_PATH = ROOT_PATH / 'tests' / '_test_data'  # TODO: Move to tests/_utils.py?
-
 IS_TESTING_ENVIRONMENT = 'pytest' in sys.modules
 
 # NOTE: You can experiment with these codes in your console like so:
@@ -405,7 +403,7 @@ def load_most_recent_file(
         set(modified_time)), 'Multiple paths found with the same modification time'
     for path in lib.utils.sort_together(paths, modified_time, reverse=True):
         try:
-            return read(path)
+            return read(Path(path))
         except:
             logger.exception(f"Failed to load file at {path}.")
     raise ValueError('Unable to load recent file.')

@@ -61,8 +61,11 @@ def mean(list_: typing.Iterable[float]) -> float:
     return statistics.mean(list_)  # NOTE: `statistics.mean` returns an error for an empty list
 
 
-def get_chunks(list_: typing.List[typing.Any],
-               n: int) -> typing.Generator[typing.List[typing.Any], None, None]:
+_ChunksReturnType = typing.TypeVar('_ChunksReturnType')
+
+
+def get_chunks(list_: typing.List[_ChunksReturnType],
+               n: int) -> typing.Generator[typing.List[_ChunksReturnType], None, None]:
     """ Yield successive `n`-sized chunks from `list_`. """
     for i in range(0, len(list_), n):
         yield list_[i:i + n]
@@ -125,10 +128,14 @@ def identity(x: _IdentityReturnType) -> _IdentityReturnType:
     return x
 
 
+_AccumulateAndSplitReturnType = typing.TypeVar('_AccumulateAndSplitReturnType')
+
+
 def accumulate_and_split(
-        list_: typing.List[typing.Any],
+        list_: typing.List[_AccumulateAndSplitReturnType],
         thresholds: typing.List[float],
-        get_value=identity) -> typing.Generator[typing.Iterable[typing.Any], None, None]:
+        get_value=identity
+) -> typing.Generator[typing.List[_AccumulateAndSplitReturnType], None, None]:
     """ Split `list_` when the accumulated sum passes a threshold.
 
     Args:

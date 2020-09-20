@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from functools import lru_cache
 from functools import partial
 
@@ -6,17 +8,19 @@ import os
 import re
 import shlex
 import subprocess
+import typing
 
-from normalise import normalise
 from third_party import LazyLoader
 from tqdm import tqdm
+normalise = LazyLoader('normalise', globals(), 'normalise.normalise')
 
-import en_core_web_md
 import ftfy
-import nltk
-import spacy.lang.en
-import typing
 import unidecode
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import spacy.lang.en
+spacy_en = LazyLoader('spacy_en', globals(), 'spacy.lang.en')
+en_core_web_md = LazyLoader('en_core_web_md', globals(), 'en_core_web_md')
+nltk = LazyLoader('nltk', globals(), 'nltk')
 Levenshtein = LazyLoader('Levenshtein', globals(), 'Levenshtein')
 
 import lib
@@ -187,7 +191,7 @@ def load_en_core_web_md(*args, **kwargs) -> spacy.lang.en.English:
 @lru_cache(maxsize=None)
 def load_en_english(*args, **kwargs) -> spacy.lang.en.English:
     """ Load and cache in memory a spaCy `spacy.lang.en.English` object. """
-    return spacy.lang.en.English()
+    return spacy_en.English()
 
 
 def normalize_non_standard_words(text: str, variety: str = 'AmE', **kwargs) -> str:
@@ -256,7 +260,7 @@ def normalize_non_standard_words(text: str, variety: str = 'AmE', **kwargs) -> s
     tokens = [[t.text, t.whitespace_] for t in load_en_english()(text)]
     merged = [tokens[0]]
     for token, whitespace in tokens[1:]:
-        # NOTE: spaCy tokenizes "$29.95" as two tokens, and this merges them back together.
+        # NOTE: For example, spaCy tokenizes "$29.95" as two tokens, and this undos that.
         if (merged[-1][0] == '$' or token == '$') and merged[-1][1] == '':
             merged[-1][0] += token
             merged[-1][1] = whitespace

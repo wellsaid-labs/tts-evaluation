@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from contextlib import contextmanager
 
 import io
@@ -29,8 +31,10 @@ from third_party import LazyLoader
 
 import numpy as np
 import torch
-import comet_ml
-
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import comet_ml
+else:
+    comet_ml = LazyLoader('comet_ml', globals(), 'comet_ml')
 librosa_display = LazyLoader('librosa_display', globals(), 'librosa.display')
 
 import lib
@@ -324,8 +328,7 @@ _BASE_HTML_STYLING = """
 
 def CometMLExperiment(project_name: typing.Optional[str] = None,
                       experiment_key: typing.Optional[str] = None,
-                      workspace: typing.Optional[str] = comet_ml.config.get_config()
-                      ['comet.workspace'],
+                      workspace: typing.Optional[str] = None,
                       **kwargs) -> comet_ml.Experiment:
     """ Create a `comet_ml.Experiment` or `comet_ml.ExistingExperiment` object with several
     adjustments.
@@ -333,6 +336,7 @@ def CometMLExperiment(project_name: typing.Optional[str] = None,
     Args:
         project_name
         experiment_key: Existing experiment identifier.
+        workspace
         **kwargs: Other kwargs to pass to comet `Experiment` and / or `ExistingExperiment`
     """
     if lib.environment.has_untracked_files():
