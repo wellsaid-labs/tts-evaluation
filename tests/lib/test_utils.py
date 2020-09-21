@@ -1,5 +1,3 @@
-from unittest import mock
-
 import typing
 
 from torchnlp.random import fork_rng
@@ -313,19 +311,5 @@ def test_averaged_metric():
     metric.update(torch.tensor([.5]), torch.tensor(3))
     metric.update(0.25, 2)
     assert metric.last_update_value == 0.25
-    assert metric.reset() == 0.4
-    assert metric.last_update_value is None
-
-
-@mock.patch('torch.distributed')
-def test_distributed_average_metric(mock_distributed):
-    mock_distributed.reduce.return_value = None
-
-    metric = lib.utils.DistributedAverage()
-    assert metric.last_update_value is None
-    metric.update(torch.tensor([.5]), torch.tensor(3))
-    metric.update(0.25, 2)
-    assert metric.last_update_value == 0.25
-    assert metric.sync().last_update_value == 0.4
     assert metric.reset() == 0.4
     assert metric.last_update_value is None

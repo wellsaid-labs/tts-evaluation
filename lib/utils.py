@@ -18,8 +18,6 @@ import typing
 import torch
 import torch.utils.data
 
-import lib
-
 logger = logging.getLogger(__name__)
 
 _RandomSampleReturnType = typing.TypeVar('_RandomSampleReturnType')
@@ -351,29 +349,4 @@ class Average():
         self.total_value += value * count
         self.total_count += count
         self.last_update_value = value
-        return self
-
-
-class DistributedAverage(Average):
-    """ Track the average in a distributed environment. """
-
-    def reset(self) -> typing.Optional[float]:
-        super().reset()
-        average = self.post_sync_total_value / self.post_sync_total_count if (
-            hasattr(self, 'post_sync_total_value') and hasattr(self, 'post_sync_total_value') and
-            self.post_sync_total_count > 0) else None
-        self.post_sync_total_value: float = 0.0
-        self.post_sync_total_count: float = 0.0
-        return average
-
-    def sync(self) -> DistributedAverage:
-        """ Synchronize measurements accross multiple processes. """
-        last_post_sync_total_value = self.post_sync_total_value
-        last_post_sync_total_count = self.post_sync_total_count
-        torch_ = torch.cuda if torch.cuda.is_available() else torch
-        packed = torch_.FloatTensor([self.total_value, self.total_count])  # type: ignore
-        torch.distributed.reduce(packed, dst=lib.distributed.get_master_rank())
-        self.post_sync_total_value, self.post_sync_total_count = tuple(packed.tolist())
-        self.last_update_value = (self.post_sync_total_value - last_post_sync_total_value) / (
-            self.post_sync_total_count - last_post_sync_total_count)
         return self
