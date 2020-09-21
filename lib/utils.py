@@ -285,7 +285,7 @@ class LSTM(torch.nn.LSTM):
         self.initial_cell_state = torch.nn.Parameter(
             torch.randn(self.num_layers * num_directions, 1, self.hidden_size))
 
-    def forward(
+    def forward(  # type: ignore
         self,
         input: torch.Tensor,
         hx: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
