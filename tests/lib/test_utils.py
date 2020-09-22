@@ -12,6 +12,8 @@ import lib
 
 
 def test_random_sample():
+    """ Test `lib.utils.random_sample` handles the basic case, an empty list, and a large
+    `sample_size`. """
     with fork_rng(1234):
         assert lib.utils.random_sample([1, 2, 3, 4], 0) == []
         assert lib.utils.random_sample([1, 2, 3, 4], 2) == [4, 1]
@@ -19,6 +21,8 @@ def test_random_sample():
 
 
 def test_nested_to_flat_dict():
+    """ Test `lib.utils.nested_to_flat_dict` flattens nested dicts, including edge cases with
+    an empty dict. """
     assert lib.utils.nested_to_flat_dict(
         {
             'a': {
@@ -41,6 +45,7 @@ def test_nested_to_flat_dict():
 
 
 def test_mean():
+    """ Test `lib.utils.mean` handles empty and non-empty iterables. """
     assert lib.utils.mean([1, 2, 3]) == 2
     assert lib.utils.mean(range(3)) == 1
     assert numpy.isnan(lib.utils.mean([]))
@@ -57,7 +62,7 @@ def test_get_weighted_stdev():
 
 
 def test_get_weighted_stdev__mask():
-    """ Test `get_weighted_stdev` respects the mask. """
+    """ Test `lib.utils.get_weighted_stdev` respects the mask. """
     tensor = torch.Tensor([[[0.33333, 0.33333, 0.33334], [0, 0.5, 0.5]],
                            [[0, 0.5, 0.5], [0, 0.5, 0.5]]])
     mask = torch.BoolTensor([[1, 0], [0, 0]])
@@ -67,19 +72,20 @@ def test_get_weighted_stdev__mask():
 
 
 def test_get_weighted_stdev__one_data_point():
-    """ Test `get_weighted_stdev` computes the correct standard deviation for one data point. """
+    """ Test `lib.utils.get_weighted_stdev` computes the correct standard deviation for one data
+    point. """
     assert lib.utils.get_weighted_stdev(torch.Tensor([0, 1, 0]), dim=0) == 0.0
 
 
 def test_get_weighted_stdev__bias():
-    """ Test `get_weighted_stdev` computes the correct standard deviation. """
+    """ Test `lib.utils.get_weighted_stdev` computes the correct standard deviation. """
     standard_deviation = lib.utils.get_weighted_stdev(torch.Tensor([.25, .25, .25, .25]), dim=0)
     # NOTE: Equal to the population standard deviation for 1, 2, 3, 4
     assert standard_deviation == pytest.approx(1.1180339887499)
 
 
 def test_get_weighted_stdev__error():
-    """ Test `get_weighted_stdev` errors if the distribution is not normalized. """
+    """ Test `lib.utils.get_weighted_stdev` errors if the distribution is not normalized. """
     with pytest.raises(AssertionError):
         lib.utils.get_weighted_stdev(torch.Tensor([0, .25, .25, .25]), dim=0)
 
@@ -102,7 +108,7 @@ class MockModel(torch.nn.Module):
 
 
 def test_flatten_parameters():
-    """ Test that `flatten_parameters` executes. """
+    """ Test that `lib.utils.flatten_parameters` executes. """
     lib.utils.flatten_parameters(MockModel())
     lib.utils.flatten_parameters(torch.nn.LSTM(10, 10))
 
@@ -112,29 +118,29 @@ def test_identity():
 
 
 def test_accumulate_and_split():
-    """ Test `accumulate_and_split` splits once. """
+    """ Test `lib.utils.accumulate_and_split` splits once. """
     assert list(lib.utils.accumulate_and_split([1, 2, 3, 4, 5], [4])) == [[1, 2], [3, 4, 5]]
 
 
 def test_accumulate_and_split__empty_split():
-    """ Test `accumulate_and_split` returns empty splits if threshold is not met. """
+    """ Test `lib.utils.accumulate_and_split` returns empty splits if threshold is not met. """
     assert list(lib.utils.accumulate_and_split([3], [2])) == [[], [3]]
     assert list(lib.utils.accumulate_and_split([1, 2, 3, 4, 5], [8, 3])) == [[1, 2, 3], [], [4, 5]]
 
 
 def test_accumulate_and_split__infinity():
-    """ Test `accumulate_and_split` handles infinite thresholds and overflow. """
+    """ Test `lib.utils.accumulate_and_split` handles infinite thresholds and overflow. """
     expected = [[1, 2, 3], [4, 5], []]
     assert list(lib.utils.accumulate_and_split([1, 2, 3, 4, 5], [8, float('inf'), 3])) == expected
 
 
 def test_accumulate_and_split__no_thresholds():
-    """ Test `accumulate_and_split` handles no thresholds. """
+    """ Test `lib.utils.accumulate_and_split` handles no thresholds. """
     assert list(lib.utils.accumulate_and_split([1, 2, 3, 4, 5], [])) == [[1, 2, 3, 4, 5]]
 
 
 def test_log_runtime():
-    """ Test `log_runtime` executes. """
+    """ Test `lib.utils.log_runtime` executes. """
 
     @lib.utils.log_runtime
     def _helper():
@@ -144,7 +150,7 @@ def test_log_runtime():
 
 
 def test_log_runtime__type_hints__documentation():
-    """ Test if `@log_runtime` passes along type hints and documentation. """
+    """ Test if `lib.utils.log_runtime` passes along type hints and documentation. """
 
     @lib.utils.log_runtime
     def _helper(arg: str):
@@ -165,34 +171,34 @@ def test_pool():
 
 
 def test_pad_tensor():
-    """ Test `pad_tensor` for various `dim`. """
+    """ Test `lib.utils.pad_tensor` for various `dim`. """
     assert lib.utils.pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=0).shape == (5, 4, 5)
     assert lib.utils.pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=-1).shape == (3, 4, 7)
     assert lib.utils.pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=1).shape == (3, 6, 5)
 
 
 def test_pad_tensor__kwargs():
-    """ Test `pad_tensor` `kwargs` are passed along. """
+    """ Test `lib.utils.pad_tensor` `kwargs` are passed along. """
     assert lib.utils.pad_tensor(
         torch.zeros(3, 4, 5), pad=(1, 1), dim=1, value=1.0).sum() == 2 * 3 * 5
 
 
 def test_trim_tensors():
-    """ Test `trim_tensors` trims a 1-d tensor. """
+    """ Test `lib.utils.trim_tensors` trims a 1-d tensor. """
     a, b = lib.utils.trim_tensors(torch.tensor([1, 2, 3, 4]), torch.tensor([2, 3]), dim=0)
     assert torch.equal(a, torch.tensor([2, 3]))
     assert torch.equal(b, torch.tensor([2, 3]))
 
 
 def test_trim_tensors__3d():
-    """ Test `trim_tensors` trims a 3-d tensor. """
+    """ Test `lib.utils.trim_tensors` trims a 3-d tensor. """
     a, b = lib.utils.trim_tensors(torch.zeros(2, 4, 2), torch.zeros(2, 2, 2), dim=1)
     assert a.shape == (2, 2, 2)
     assert b.shape == (2, 2, 2)
 
 
 def test_trim_tensors__uneven():
-    """ Test `trim_tensors` raises if it needs to trim unevenly. """
+    """ Test `lib.utils.trim_tensors` raises if it needs to trim unevenly. """
     with pytest.raises(AssertionError):
         lib.utils.trim_tensors(torch.tensor([1, 2, 3]), torch.tensor([2, 3]), dim=0)
 
@@ -305,7 +311,7 @@ def test_lstm_cell__hidden_state():
 
 
 def test_averaged_metric():
-    """ Test `Average` is able to track the average over multiple iterations. """
+    """ Test `lib.utils.Average` is able to track the average over multiple iterations. """
     metric = lib.utils.Average()
     assert metric.last_update_value is None
     metric.update(torch.tensor([.5]), torch.tensor(3))
