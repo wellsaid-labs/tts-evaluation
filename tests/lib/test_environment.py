@@ -25,8 +25,7 @@ def _make_log_record(name='logger_name',
 
 
 def test__colored_formatter__warning():
-    """ Test `_ColoredFormatter` runs for a warning.
-    """
+    """ Test `_ColoredFormatter` runs for a warning. """
     id_ = 0
     formatter = lib.environment._ColoredFormatter(id_)
     record = _make_log_record(level=logging.WARNING)
@@ -37,8 +36,7 @@ def test__colored_formatter__warning():
 
 
 def test__colored_formatter__error__large_id():
-    """ Test `_ColoredFormatter` runs for a error with a large id.
-    """
+    """ Test `_ColoredFormatter` runs for a error with a large id. """
     id_ = 10000
     formatter = lib.environment._ColoredFormatter(id_)
     record = _make_log_record(level=logging.ERROR)
@@ -49,8 +47,7 @@ def test__colored_formatter__error__large_id():
 
 
 def test__max_level_filter():
-    """ Test `_MaxLevelFilter` filters correctly.
-    """
+    """ Test `_MaxLevelFilter` filters correctly. """
     filter_ = lib.environment._MaxLevelFilter(logging.INFO)
     assert filter_.filter(_make_log_record(level=logging.INFO))
     assert not filter_.filter(_make_log_record(level=logging.WARNING))

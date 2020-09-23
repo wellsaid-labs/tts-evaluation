@@ -1,6 +1,7 @@
 from lib import utils
 from lib import environment
 from lib import audio
+from lib import datasets
 from lib import distributed
 from lib import optimizers
 from lib import signal_model
@@ -16,4 +17,5 @@ __all__ = [
     'signal_model',
     'text',
     'visualize',
+    'datasets',
 ]

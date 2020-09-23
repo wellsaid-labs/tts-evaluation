@@ -1,5 +1,6 @@
 import csv
 import logging
+import pathlib
 import re
 import typing
 
@@ -8,9 +9,11 @@ from third_party import LazyLoader
 unidecode = LazyLoader('unidecode', globals(), 'unidecode')
 num2words = LazyLoader('num2words', globals(), 'num2words')
 
-from src.datasets.utils import Example
-from src.datasets.utils import precut_dataset_loader
-from src.datasets.utils import Speaker
+from lib.datasets.utils import Example
+from lib.datasets.utils import precut_dataset_loader
+from lib.datasets.utils import Speaker
+
+import lib
 
 logger = logging.getLogger(__name__)
 
@@ -61,21 +64,21 @@ def lj_speech_dataset(root_directory_name: str = 'LJSpeech-1.1',
         speaker
         verbalize: Verbalize the text.
         metadata_audio_column: Column name or index with the audio filename.
-        metadata_audio_path: String template for the audio path given the ``metadata_audio_column``
+        metadata_audio_path: String template for the audio path given the `metadata_audio_column`
             value.
         metadata_text_column: Column name or index with the audio transcript.
-        metadata_quoting: Control field quoting behavior per ``csv.QUOTE_*`` constants for the
+        metadata_quoting: Control field quoting behavior per `csv.QUOTE_*` constants for the
             metadata file.
         metadata_delimiter: Delimiter for the metadata file.
-        metadata_header: If ``True``, ``metadata_file`` has a header to parse.
-        **kwargs: Key word arguments passed to ``_dataset_loader``.
+        metadata_header: If `True`, `metadata_file` has a header to parse.
+        **kwargs: Key word arguments passed to `_dataset_loader`.
 
     Returns:
         Dataset with audio filenames and text annotations.
 
     Example:
-        >>> from src.hparams import set_hparams # doctest: +SKIP
-        >>> from src.datasets import lj_speech_dataset # doctest: +SKIP
+        >>> from lib.hparams import set_hparams # doctest: +SKIP
+        >>> from lib.datasets import lj_speech_dataset # doctest: +SKIP
         >>> train, dev = lj_speech_dataset() # doctest: +SKIP
     """
     data = precut_dataset_loader(
@@ -106,8 +109,8 @@ def lj_speech_dataset(root_directory_name: str = 'LJSpeech-1.1',
             text = _verbalize_number(text)
             text = _verbalize_roman_number(text)
 
-        # NOTE: Messes up pound sign (£); therefore, this is after ``_verbalize_currency``
-        text = _remove_accents(text)
+        # NOTE: Messes up pound sign (£); therefore, this is after `_verbalize_currency`
+        text = lib.text.normalize_vo_script(text)
         return example._replace(text=text)
 
     return [process_text(example) for example in data]
@@ -153,7 +156,7 @@ _abbreviations = [(re.compile('\\b%s\\.' % x[0], re.IGNORECASE), x[1]) for x in 
 
 
 def _match_case(source: str, target: str) -> str:
-    """ Match ``source`` letter case to ``target`` letter case.
+    """ Match `source` letter case to `target` letter case.
 
     Args:
         source: Reference text for the letter case.
@@ -174,16 +177,20 @@ def _match_case(source: str, target: str) -> str:
     return target
 
 
-def _iterate_and_replace(regex, text, replace, group=1):
-    """ Match in ``text`` with ``regex`` then replace matches with callable.
+def _iterate_and_replace(regex: typing.Pattern[str],
+                         text: str,
+                         replace: typing.Callable[[str], str],
+                         group: int = 1) -> str:
+    """ Iterate over all `regex` matches in `text`, and replace the matched text.
 
     Args:
-        regex (regular expression object or pattern :class:`str`): Pattern to match subtext.
-        text (str): Source text to edit.
-        replace (callable): Given a :class:`str` in ``text``, return a replacement.
-        group (int, optional): Group to select in regex.
+        regex: Pattern to match subtext.
+        text: Source text to edit.
+        replace: Given a match, return a replacement.
+        group: Regex match group to select.
+
     Returns:
-        (str): Editted text.
+        Updated text.
     """
     matches = re.finditer(regex, text)
     offset = 0
@@ -196,18 +203,12 @@ def _iterate_and_replace(regex, text, replace, group=1):
     return text
 
 
-def _expand_abbreviations(text):
-    """ Expand abbreviations in ``text``.
+def _expand_abbreviations(text: str) -> str:
+    """ Expand abbreviations in `text`.
 
     Notes:
-        * The supported abbreviations can be found at: ``_abbreviations``.
+        * The supported abbreviations can be found at: `_abbreviations`.
         * Expanded abbreviations will maintain the same letter case as the initial abbreviation.
-
-    Args:
-        text (str): Text inwhich to expand abbreviations
-
-    Returns:
-        str: Text with expanded abbreviations.
 
     Example:
         >>> _expand_abbreviations('Mr. Gurney')
@@ -222,16 +223,10 @@ def _expand_abbreviations(text):
 _whitespace_re = re.compile(r'\s+')
 
 
-def _normalize_whitespace(text):
-    """ Normalize white spaces in text.
+def _normalize_whitespace(text: str) -> str:
+    """ Normalize white spaces in `text`.
 
     Ensure there is only one white space at a time and no white spaces at the end.
-
-    Args:
-        text (str): Text to normalize
-
-    Returns
-        str: Normalized text.
 
     Example:
         >>> _normalize_whitespace('Mr.     Gurney   ')
@@ -240,14 +235,8 @@ def _normalize_whitespace(text):
     return re.sub(_whitespace_re, ' ', text).strip()
 
 
-def _normalize_quotations(text):
-    """ Remove accents from the text.
-
-    Args:
-        text (str): Text to normalize.
-
-    Returns
-        str: Normalized text.
+def _normalize_quotations(text: str) -> str:
+    """ Normalize quotation marks from the text.
 
     Example:
         >>> _normalize_quotations('“sponge,”')
@@ -258,22 +247,6 @@ def _normalize_quotations(text):
     text = text.replace('’', '\'')
     text = text.replace('‘', '\'')
     return text
-
-
-def _remove_accents(text):
-    """ Remove accents from the text.
-
-    Args:
-        text (str): Text to normalize.
-
-    Returns
-        str: Normalized text.
-
-    Example:
-        >>> _remove_accents('Málaga')
-        'Malaga'
-    """
-    return unidecode.unidecode(text)
 
 
 _special_cases = {
@@ -290,18 +263,17 @@ _special_cases = {
 _re_filename = re.compile('LJ[0-9]{3}-[0-9]{4}')
 
 
-def _verbalize_special_cases(wav, text):
-    """
-    Uses ``_special_cases`` to verbalize wav.
+def _verbalize_special_cases(audio: pathlib.Path, text: str) -> str:
+    """ Uses `_special_cases` to verbalize text.
 
     Args:
-        wav (str): Filename of the WAV file (e.g. LJ044-0055)
-        text (str): Text associated with WAV file
+        audio: Filename of the audio file (e.g. LJ044-0055)
+        text: Text associated with audio file
 
     Returns:
-        text (str): Text with special cases verbalized.
+        text: Text with special cases verbalized.
     """
-    basename = wav.name[:10]  # Extract 10 characters similar to `LJ029-0193`
+    basename = audio.name[:10]  # Extract 10 characters similar to `LJ029-0193`
     assert _re_filename.match(basename)
     if basename in _special_cases:
         return text.replace(*_special_cases[basename])
@@ -311,14 +283,8 @@ def _verbalize_special_cases(wav, text):
 _re_time_of_day = re.compile(r'([0-9]{1,2}:[0-9]{1,2})')
 
 
-def _verbalize_time_of_day(text):
-    """ Verbalize text.
-
-    Args:
-        text (str): Text to verbalize.
-
-    Returns:
-        text (str): Text verbalized.
+def _verbalize_time_of_day(text: str) -> str:
+    """ Verbalize time of day in text.
 
     Example:
         >>> _verbalize_time_of_day('San Antonio at 1:30 p.m.,')
@@ -338,14 +304,8 @@ def _verbalize_time_of_day(text):
 _re_ordinals = re.compile(r'([0-9]+(st|nd|rd|th))')
 
 
-def _verbalize_ordinals(text):
-    """ Verbalize text.
-
-    Args:
-        text (str): Text to verbalize.
-
-    Returns:
-        text (str): Text verbalized.
+def _verbalize_ordinals(text: str) -> str:
+    """ Verbalize ordinals in text.
 
     Example:
         >>> _verbalize_ordinals('between May 1st, 1827,')
@@ -363,14 +323,8 @@ def _verbalize_ordinals(text):
 _re_currency = re.compile(r'(\S*([$£]{1}[0-9\,\.]+\b))')
 
 
-def _verbalize_currency(text):
-    """ Verbalize text.
-
-    Args:
-        text (str): Text to verbalize.
-
-    Returns:
-        text (str): Text verbalized.
+def _verbalize_currency(text: str) -> str:
+    """ Verbalize currencies in text.
 
     Example:
         >>> _verbalize_currency('inch BBL, unquote, cost $29.95.')
@@ -396,14 +350,8 @@ _re_po_box = re.compile(r'([Bb]ox [0-9]+\b)')
 _re_serial_number = re.compile(r'(\b[A-Za-z]+[0-9]+\b)')
 
 
-def _verbalize_serial_numbers(text):
-    """ Verbalize text.
-
-    Args:
-        text (str): Text to verbalize.
-
-    Returns:
-        text (str): Text verbalized.
+def _verbalize_serial_numbers(text: str) -> str:
+    """ Verbalize serial numbers in text.
 
     Example:
         >>> _verbalize_serial_numbers('Post Office Box 2915, Dallas, Texas')
@@ -430,14 +378,8 @@ _re_year_hundred = re.compile(r'\b(?:in|In) ([0-9]{3})\b')
 _re_year_bce = re.compile(r'\b([0-9]{3}) B\.C\b')
 
 
-def _verbalize_year(text):
-    """ Verbalize text.
-
-    Args:
-        text (str): Text to verbalize.
-
-    Returns:
-        text (str): Text verbalized.
+def _verbalize_year(text: str) -> str:
+    """ Verbalize years in text.
 
     Example:
         >>> _verbalize_year('Newgate down to 1818,')
@@ -460,14 +402,8 @@ def _verbalize_year(text):
 _re_numeral = re.compile(r'(?:Number|number) ([0-9]+)')
 
 
-def _verbalize_numeral(text):
-    """ Verbalize text.
-
-    Args:
-        text (str): Text to verbalize.
-
-    Returns:
-        text (str): Text verbalized.
+def _verbalize_numeral(text: str) -> str:
+    """ Verbalize numerals in text.
 
     Example:
         >>> _verbalize_numeral(_expand_abbreviations('Exhibit No. 143 as the'))
@@ -485,14 +421,8 @@ _re_roman_number = re.compile(
     r'\b(?:George|Charles|Napoleon|Henry|Nebuchadnezzar|William) ([IV]+\.{0,})')
 
 
-def _verbalize_roman_number(text):
-    """ Verbalize text.
-
-    Args:
-        text (str): Text to verbalize.
-
-    Returns:
-        text (str): Text verbalized.
+def _verbalize_roman_number(text: str) -> str:
+    """ Verbalize roman numers in text.
 
     Example:
         >>> _verbalize_roman_number('William IV. was also the victim')
@@ -520,14 +450,8 @@ def _verbalize_roman_number(text):
 _re_number = re.compile(r'(\b[0-9]{1}[0-9\.\,]{0,}\b)')
 
 
-def _verbalize_number(text):
-    """ Verbalize text.
-
-    Args:
-        text (str): Text to verbalize.
-
-    Returns:
-        text (str): Text verbalized.
+def _verbalize_number(text: str) -> str:
+    """ Verbalize numbers in text.
 
     Example:
         >>> _verbalize_number('Chapter 4. The Assassin:')

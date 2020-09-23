@@ -17,12 +17,7 @@ import torch
 librosa = LazyLoader('librosa', globals(), 'librosa')
 pandas = LazyLoader('pandas', globals(), 'pandas')
 
-from src.environment import DATA_PATH
-from src.text import is_normalized_vo_script
-from src.text import natural_keys
-from src.text import normalize_vo_script
-from src.utils import cumulative_split
-from src.utils import flatten
+import lib
 
 logger = logging.getLogger(__name__)
 pprinter = pprint.PrettyPrinter(indent=4)
@@ -41,6 +36,7 @@ class Alignment(typing.NamedTuple):
 
 class Speaker(typing.NamedTuple):
     name: str
+    gender: typing.Optional[str] = None
 
 
 class Example(typing.NamedTuple):
@@ -55,7 +51,7 @@ class Example(typing.NamedTuple):
     """
     audio_path: Path
     speaker: Speaker
-    alignments: typing.Optional[typing.List[Alignment]] = None
+    alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None
     text: str = ''
     metadata: typing.Dict[str, typing.Any] = {}
 
@@ -73,7 +69,10 @@ def dataset_generator(data: typing.List[Example],
       https://www.reddit.com/r/math/comments/iftev6/uniformly_sampling_from_timeseries_data/
 
     TODO: Visualize the sampled distribution, in order to ensure it it's reasonable for training.
-    TODO: For the signal model consider changing random.uniform to a linear distribution
+    TODO: For the signal model consider changing `random.uniform` to a linear distribution.
+    TODO: A sufficiently large pause would slow this algorithm to a hault because it'd be
+    sampled continuously and ignored. We could handle that better by excluding large samples
+    from the sampling distribution.
 
     Args:
         data: List of examples to sample from.
@@ -83,6 +82,8 @@ def dataset_generator(data: typing.List[Example],
     if len(data) == 0:
         return
 
+    # NOTE: For a sufficiently large `max_seconds`, the span length tends to be larger than the
+    # example length.
     if max_seconds == float('inf'):
         while True:
             yield random.choice(data)
@@ -91,6 +92,7 @@ def dataset_generator(data: typing.List[Example],
     max_ = lambda e: e.alignments[-1].audio[1]
     offset = lambda e: floor(min_(e))
 
+    # NOTE: `lookup` allows fast lookups of alignments given a unit of time.
     lookup: typing.List[typing.List[typing.List[int]]]
     lookup = [[[] for _ in range(ceil(max_(e)) - offset(e) + 1)] for e in data]
     for i, example in enumerate(data):
@@ -106,10 +108,14 @@ def dataset_generator(data: typing.List[Example],
         index = int(torch.multinomial(weights + length, 1).item())
         example = data[index]
         assert example.alignments is not None, '`alignments` must be defined.'
+        # NOTE: Uniformly sample a span of audio.
         start = random.uniform(min_(example) - length, max_(example))
         end = min(start + length, max_(example))
         start = max(start, min_(example))
-        part = flatten(lookup[index][int(start) - offset(example):int(end) - offset(example) + 1])
+
+        # NOTE: Based on the overlap, decide which alignments to include in the span.
+        part = lib.utils.flatten(lookup[index][int(start) - offset(example):int(end) -
+                                               offset(example) + 1])
         get = lambda i: example.alignments[i].audio
         overlap = lambda i: (min(end, get(i)[1]) - max(start, get(i)[0])) / (get(i)[1] - get(i)[0])
         random_ = lru_cache(maxsize=None)(lambda i: random.random())
@@ -120,13 +126,13 @@ def dataset_generator(data: typing.List[Example],
         if (bounds[0] is not None and bounds[1] is not None and bounds[0] <= bounds[1] and
                 get(bounds[1])[1] - get(bounds[0])[0] > 0 and
                 get(bounds[1])[1] - get(bounds[0])[0] <= max_seconds):
-            yield example._replace(alignments=example.alignments[bounds[0]:bounds[1] + 1])
+            yield example._replace(alignments=tuple(example.alignments[bounds[0]:bounds[1] + 1]))
 
 
 def dataset_loader(root_directory_name: str,
                    gcs_path: str,
                    speaker: Speaker,
-                   directory: Path = DATA_PATH,
+                   directory: Path,
                    alignments_directory_name: str = 'alignments',
                    recordings_directory_name: str = 'recordings',
                    scripts_directory_name: str = 'scripts',
@@ -164,8 +170,7 @@ def dataset_loader(root_directory_name: str,
         text_column: The voice over script column in the CSV script files.
         max_seconds: The length of an example.
 
-    Returns:
-        List of voice-over examples in the dataset.
+    Returns: List of voice-over examples in the dataset.
     """
     logger.info('Loading `%s` speech dataset', root_directory_name)
 
@@ -178,21 +183,22 @@ def dataset_loader(root_directory_name: str,
         command = 'gsutil -m cp -n %s/%s/*%s %s/' % (gcs_path, directory.name, suffix, directory)
         subprocess.run(command.split(), check=True)
 
-    files = (sorted(d.iterdir(), key=lambda p: natural_keys(p.name)) for d in directories)
+    files = (sorted(d.iterdir(), key=lambda p: lib.text.natural_keys(p.name)) for d in directories)
     examples = []
     for alignment_file_path, recording_file_path, script_file_path in zip(*tuple(files)):
         scripts = pandas.read_csv(str(script_file_path.absolute()))
         script_alignments: typing.List[typing.List[typing.List[typing.List[float]]]]
         script_alignments = json.loads(alignment_file_path.read_text())
-        assert len(scripts) == len(script_alignments), 'Invariant failed.'
-        for (script, _), alignments in zip(scripts.iterrows(), script_alignments):
-            assert is_normalized_vo_script(script[text_column]), 'The script must be normalized.'
+        assert len(scripts) == len(script_alignments)
+        for (_, script), alignments in zip(scripts.iterrows(), script_alignments):
+            assert lib.text.is_normalized_vo_script(
+                script[text_column]), 'The script must be normalized.'
             example = Example(
                 audio_path=recording_file_path,
                 speaker=speaker,
-                alignments=[
+                alignments=tuple([
                     Alignment((int(a[0][0]), int(a[0][1])), (a[1][0], a[1][1])) for a in alignments
-                ],
+                ]),
                 text=script[text_column],
                 metadata={k: v for k, v in script.items() if k not in (text_column,)})
             examples.append(example)
@@ -204,7 +210,7 @@ def precut_dataset_loader(
     root_directory_name: str,
     url: str,
     speaker: Speaker,
-    directory: Path = DATA_PATH,
+    directory: Path,
     url_filename: typing.Optional[str] = None,
     check_files: typing.List[str] = ['{metadata_filename}'],
     metadata_filename: str = '{directory}/{root_directory_name}/metadata.csv',
@@ -233,7 +239,7 @@ def precut_dataset_loader(
         url: URL of the dataset file.
         speaker: The dataset speaker.
         url_filename: Name of the file downloaded; Otherwise, a filename is extracted from the url.
-      check_files: The download is considered successful, if these files exist.
+        check_files: The download is considered successful, if these files exist.
         directory: Directory to cache the dataset.
         metadata_filename: The filename for the metadata file.
         metadata_text_column: Column name or index with the audio transcript.
@@ -242,8 +248,7 @@ def precut_dataset_loader(
             value.
         **kwargs: Key word arguments passed to ``pandas.read_csv``.
 
-    Returns:
-        Dataset with audio filenames and text annotations.
+    Returns: List of voice-over examples in the dataset.
     """
     logger.info('Loading `%s` speech dataset', root_directory_name)
     directory = Path(directory)
@@ -259,7 +264,7 @@ def precut_dataset_loader(
     dataframe = pandas.read_csv(Path(metadata_filename), **kwargs)
     return [
         Example(
-            text=normalize_vo_script(row[metadata_text_column]),
+            text=row[metadata_text_column],
             audio_path=Path(
                 metadata_audio_path.format(
                     directory=directory,

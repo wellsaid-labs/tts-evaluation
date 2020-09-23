@@ -124,7 +124,7 @@ def grapheme_to_phoneme(graphemes: typing.List[str],
         return list(tqdm(pool.imap(part, graphemes, chunksize=chunk_size), total=len(graphemes)))
 
 
-def natural_keys(text: typing.List[str]) -> typing.List[typing.Union[str, int]]:
+def natural_keys(text: str) -> typing.List[typing.Union[str, int]]:
     """ Returns keys (`list`) for sorting in a "natural" order.
 
     Inspired by: http://nedbatchelder.com/blog/200712/human_sorting.html

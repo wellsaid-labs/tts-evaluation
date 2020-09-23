@@ -1,10 +1,13 @@
 from unittest import mock
 
+import pathlib
 import re
+import shutil
+import tempfile
 
-from src.datasets import lj_speech_dataset
-from src.environment import TEST_DATA_PATH
-from tests._utils import url_first_side_effect
+from tests import _utils
+
+import lib
 
 verbalize_test_cases = {
     'LJ044-0055': 'five four four Camp Street New',  # Test special case
@@ -36,29 +39,37 @@ verbalize_test_cases = {
 }
 
 
-@mock.patch("urllib.request.urlretrieve")
+@mock.patch('urllib.request.urlretrieve')
 def test_lj_speech_dataset(mock_urlretrieve):
-    mock_urlretrieve.side_effect = url_first_side_effect
+    """ Test `lib.datasets.lj_speech_dataset` loads and verbalizes the data. """
+    mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
+    archive = _utils.TEST_DATA_PATH / 'datasets' / 'LJSpeech-1.1.tar.bz2'
 
-    # Check a row are parsed correctly
-    data = lj_speech_dataset(directory=TEST_DATA_PATH / 'datasets')
+    with tempfile.TemporaryDirectory() as path:
+        directory = pathlib.Path(path)
+        shutil.copy(archive, directory / archive.name)
+        data = lib.datasets.lj_speech_dataset(directory=directory)
+        assert len(data) == 13100
+        assert sum([len(r.text) for r in data]) == 1310332
+        assert data[0] == lib.datasets.Example(
+            audio_path=directory / 'LJSpeech-1.1/wavs/LJ001-0001.wav',
+            speaker=lib.datasets.LINDA_JOHNSON,
+            alignments=None,
+            text=('Printing, in the only sense with which we are at present concerned, differs '
+                  'from most if not from all the arts and crafts represented in the Exhibition'),
+            metadata={
+                2: ('Printing, in the only sense with which we are at present concerned, differs '
+                    'from most if not from all the arts and crafts represented in the Exhibition'),
+            },
+        )
 
-    assert len(data) == 13100
-    assert sum([len(r.text) for r in data]) == 1310332
-    assert data[0].text == (
-        'Printing, in the only sense with which we are at present concerned, differs from most if '
-        'not from all the arts and crafts represented in the Exhibition')
-    assert str(TEST_DATA_PATH / 'datasets/LJSpeech-1.1/wavs/LJ001-0001.wav') in str(
-        data[0].audio_path)
-
-    _re_filename = re.compile('LJ[0-9]{3}-[0-9]{4}')
-
-    # Test verbilization
-    seen = 0
-    for row in data:
-        basename = row.audio_path.name[:10]
-        assert _re_filename.match(basename)
-        if basename in verbalize_test_cases:
-            seen += 1
-            assert verbalize_test_cases[basename] in row.text
-    assert seen == len(verbalize_test_cases)
+        # NOTE: Test verbilization via `verbalize_test_cases`.
+        _re_filename = re.compile('LJ[0-9]{3}-[0-9]{4}')
+        seen = 0
+        for row in data:
+            basename = row.audio_path.name[:10]
+            assert _re_filename.match(basename)
+            if basename in verbalize_test_cases:
+                seen += 1
+                assert verbalize_test_cases[basename] in row.text
+        assert seen == len(verbalize_test_cases)

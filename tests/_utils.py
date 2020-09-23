@@ -19,5 +19,6 @@ def first_parameter_url_side_effect(url: str, *args, **kwargs):
     return None
 
 
-# `unittest.mock.side_effect` for functions with a second parameter url.
-url_second_side_effect = lambda _, *args, **kwargs: first_parameter_url_side_effect(*args, **kwargs)
+# NOTE: `unittest.mock.side_effect` for functions with a second parameter url.
+second_parameter_url_side_effect = lambda _, *args, **kwargs: first_parameter_url_side_effect(
+    *args, **kwargs)
