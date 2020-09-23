@@ -1,17 +1,3 @@
-"""
-TODO: Support more datasets:
-  - English Bible Speech Dataset
-    https://www.kaggle.com/bryanpark/the-world-english-bible-speech-dataset
-  -	CMU Arctic Speech Synthesis Dataset
-    http://festvox.org/cmu_arctic/
-  - Synthetic Wave Dataset with SoX e.g. [sine, square, triangle, sawtooth, trapezium, exp, brow]
-  - VCTK Dataset
-  - Voice Conversion Challenge (VCC) 2016 dataset
-  - Blizzard dataset
-  - JSUT dataset
-  - Common Voice dataset
-    https://toolbox.google.com/datasetsearch/search?query=text%20speech&docid=sGZ%2FjOYUalNI7AzSAAAAAA%3D%3D
-"""
 from lib.datasets.lj_speech import LINDA_JOHNSON
 from lib.datasets.lj_speech import lj_speech_dataset
 from lib.datasets.m_ailabs import ELIZABETH_KLETT

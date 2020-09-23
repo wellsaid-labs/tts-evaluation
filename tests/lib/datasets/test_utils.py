@@ -10,21 +10,20 @@ from tests import _utils
 import lib
 
 
-def _get_example(alignments=(),
-                 audio_path=pathlib.Path('.'),
-                 speaker=lib.datasets.Speaker(''),
-                 text='',
-                 metadata={}):
-    """ Get `lib.datasets.Example` for testing. """
+def _make_example(alignments=(),
+                  audio_path=pathlib.Path('.'),
+                  speaker=lib.datasets.Speaker(''),
+                  text='',
+                  metadata={}):
+    """ Make a `lib.datasets.Example` for testing. """
     alignments = tuple([lib.datasets.Alignment(a, a) for a in alignments])
     return lib.datasets.Example(audio_path, speaker, alignments, text, metadata)
 
 
 def test_dataset_generator():
     """ Test `lib.datasets.dataset_generator` samples uniformly given a uniform distribution of
-    alignments.
-    """
-    dataset = [_get_example(((0, 1), (1, 2), (2, 3)))]
+    alignments. """
+    dataset = [_make_example(((0, 1), (1, 2), (2, 3)))]
     iterator = lib.datasets.dataset_generator(dataset, max_seconds=10)
     counter = Counter()
     for i in range(10000):
@@ -43,7 +42,7 @@ def test_dataset_generator__empty():
 def test_dataset_generator__singular():
     """ Test `lib.datasets.dataset_generator` handles multiple examples with a singular alignment
     of varying lengths. """
-    dataset = [_get_example(((0, 1),)), _get_example(((0, 10),)), _get_example(((0, 5),))]
+    dataset = [_make_example(((0, 1),)), _make_example(((0, 10),)), _make_example(((0, 5),))]
     iterator = lib.datasets.dataset_generator(dataset, max_seconds=10)
     counter = Counter()
     for i in range(10000):
@@ -57,7 +56,7 @@ def test_dataset_generator__singular():
 def test_dataset_generator__multiple_multiple():
     """ Test `lib.datasets.dataset_generator` handles multiple scripts with a uniform alignment
     distribution. """
-    dataset = [_get_example(((0, 1), (1, 2), (2, 3))), _get_example(((3, 4), (4, 5), (5, 6)))]
+    dataset = [_make_example(((0, 1), (1, 2), (2, 3))), _make_example(((3, 4), (4, 5), (5, 6)))]
     iterator = lib.datasets.dataset_generator(dataset, max_seconds=10)
     counter = Counter()
     for i in range(10000):
@@ -70,7 +69,7 @@ def test_dataset_generator__multiple_multiple():
 
 def test_dataset_generator__pause():
     """ Test `lib.datasets.dataset_generator` samples uniformly despite a large pause. """
-    dataset = [_get_example(((0, 1), (1, 2), (2, 3), (20, 21), (40, 41)))]
+    dataset = [_make_example(((0, 1), (1, 2), (2, 3), (20, 21), (40, 41)))]
     iterator = lib.datasets.dataset_generator(dataset, max_seconds=4)
     counter = Counter()
     for i in range(10000):
@@ -84,8 +83,11 @@ def test_dataset_generator__pause():
 
 def test_dataset_generator__multiple_unequal_examples__large_max_seconds():
     """ Test `lib.datasets.dataset_generator` samples uniformly despite unequal example sizes,
-    and large max seconds. """
-    dataset = [_get_example(((0, 1),)), _get_example(((3, 4), (4, 5), (5, 6)))]
+    and large max seconds.
+
+    NOTE: With a large enough `max_seconds`, the entire example should be sampled most of the time.
+    """
+    dataset = [_make_example(((0, 1),)), _make_example(((3, 4), (4, 5), (5, 6)))]
     iterator = lib.datasets.dataset_generator(dataset, max_seconds=1000000)
 
     alignments_counter = Counter()
@@ -110,7 +112,7 @@ def test_dataset_generator__multiple_unequal_examples__large_max_seconds():
 
 def test_dataset_generator__unequal_alignment_sizes():
     """ Test `lib.datasets.dataset_generator` samples uniformly despite unequal alignment sizes. """
-    dataset = [_get_example(((0, 1), (1, 5), (5, 20)))]
+    dataset = [_make_example(((0, 1), (1, 5), (5, 20)))]
     iterator = lib.datasets.dataset_generator(dataset, max_seconds=20)
     counter = Counter()
     for i in range(10000):

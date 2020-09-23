@@ -106,8 +106,8 @@ def m_ailabs_en_us_speech_dataset(directory,
     The dataset is 8GB compressed. The file to be downloaded is called `en_US.tgz`. It contains 102
     hours of audio. When extracted, it creates a list of 14 books.
 
-    NOTE: A cursory analysis 100 clips from the M-AILABS dataset was that it was 10% of the clips
-    would end to early. The text was verbalized accurately, during the analysis.
+    NOTE: Based on 100 clips from the M-AILABS dataset, around 10% of the clips would end too early.
+    Furthermore, it seemed like the text was verbalized accuractely.
     """
     return _m_ailabs_speech_dataset(
         directory=directory,
@@ -167,8 +167,7 @@ def _m_ailabs_speech_dataset(
         metadata_audio_path_template: Given the audio column, this template determines the filename.
         metadata_text_column: Column name or index with the audio transcript.
 
-     Returns:
-        A M-AILABS dataset with audio filenames and text annotations.
+    Returns: List of voice-over examples in the dataset.
 
     Example:
         >>> from lib.hparams import set_hparams # doctest: +SKIP

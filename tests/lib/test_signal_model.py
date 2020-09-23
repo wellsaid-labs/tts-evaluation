@@ -73,7 +73,7 @@ def test__has_weight_norm():
     assert not lib.signal_model._has_weight_norm(module)
 
 
-def _get_small_signal_model(input_size=6, hidden_size=2, ratios=[2], max_channel_size=8, mu=255):
+def _make_small_signal_model(input_size=6, hidden_size=2, ratios=[2], max_channel_size=8, mu=255):
     return lib.signal_model.SignalModel(
         input_size=input_size,
         hidden_size=hidden_size,
@@ -88,7 +88,7 @@ def test_signal_model():
     batch_size = 4
     num_frames = 8
     frame_channels = 16
-    model = _get_small_signal_model(input_size=frame_channels)
+    model = _make_small_signal_model(input_size=frame_channels)
     spectrogram = torch.randn([batch_size, num_frames, frame_channels])
     out = model(spectrogram)
     assert out.shape == (batch_size, model.upscale_factor * num_frames)
@@ -102,7 +102,7 @@ def test_signal_model__no_batch__odd():
     an odd number of frames. """
     num_frames = 9
     frame_channels = 16
-    model = _get_small_signal_model(input_size=frame_channels)
+    model = _make_small_signal_model(input_size=frame_channels)
     spectrogram = torch.randn([num_frames, frame_channels])
     out = model(spectrogram)
     assert out.shape == (model.upscale_factor * num_frames,)
@@ -116,7 +116,7 @@ def test_signal_model__batch_invariance():
     batch_size = 4
     num_frames = 8
     frame_channels = 16
-    model = _get_small_signal_model(input_size=frame_channels)
+    model = _make_small_signal_model(input_size=frame_channels)
     batched_spectrogram = torch.randn([batch_size, num_frames, frame_channels])
     batched_out = model(batched_spectrogram)
     out = model(batched_spectrogram[0])
@@ -130,7 +130,7 @@ def test_signal_model__padding_invariance():
     num_frames = 8
     frame_channels = 16
     padding = 3
-    model = _get_small_signal_model(input_size=frame_channels)
+    model = _make_small_signal_model(input_size=frame_channels)
     spectrogram = torch.randn([batch_size, num_frames + padding * 2, frame_channels])
     mask = torch.cat([
         torch.zeros([batch_size, padding]),
@@ -161,7 +161,7 @@ def test_signal_model__shape():
 
 def test_train():
     """ Test `lib.signal_model.SignalModel.train` executes. """
-    model = _get_small_signal_model()
+    model = _make_small_signal_model()
     model.train()
     model.train()
     model.eval()
@@ -192,7 +192,7 @@ def test_generate_waveform():
     num_frames = 53
     frame_channels = 6
 
-    model = _get_small_signal_model(input_size=frame_channels)
+    model = _make_small_signal_model(input_size=frame_channels)
     spectrogram = torch.randn([batch_size, num_frames, frame_channels])
     output = model(spectrogram)
     assert output.shape == (batch_size, model.upscale_factor * num_frames)
@@ -212,7 +212,7 @@ def test_generate_waveform__no_batch_dim():
     frame_channels = 8
     split_size = 26
 
-    model = _get_small_signal_model(input_size=frame_channels)
+    model = _make_small_signal_model(input_size=frame_channels)
     spectrogram = torch.randn([num_frames, frame_channels])
     output = model(spectrogram)
     assert output.shape == (model.upscale_factor * num_frames,)
@@ -231,7 +231,7 @@ def test_generate_waveform__padding_invariance():
     frame_channels = 6
     padding = 7
     split_size = 26
-    model = _get_small_signal_model(input_size=frame_channels)
+    model = _make_small_signal_model(input_size=frame_channels)
     spectrogram = torch.randn([batch_size, num_frames + padding * 2, frame_channels])
     mask = torch.cat([
         torch.zeros([batch_size, padding]),

@@ -24,23 +24,24 @@ pprinter = pprint.PrettyPrinter(indent=4)
 
 
 class Alignment(typing.NamedTuple):
-    """ An aligned `text` and `audio` snippet.
+    """ An aligned `text` and `audio` slice.
 
     Args:
-        text: The start and end of a slice of text.
-        audio: The start and end of a slice of audio.
+        text: The start and end of a slice of text in characters.
+        audio: The start and end of a slice of audio in seconds.
     """
     text: typing.Tuple[int, int]
     audio: typing.Tuple[float, float]
 
 
 class Speaker(typing.NamedTuple):
+    # NOTE: `gender` is not a required property for a `Speaker`.
     name: str
     gender: typing.Optional[str] = None
 
 
 class Example(typing.NamedTuple):
-    """ Example of a voice-over with alignments between the `text` and `audio_path`.
+    """ Given the `text`, this is an `Example` voice-over stored at the `audio_path`.
 
     Args:
         alignments: List of alignments between `text` and `audio_path`.
@@ -58,18 +59,16 @@ class Example(typing.NamedTuple):
 
 def dataset_generator(data: typing.List[Example],
                       max_seconds: float) -> typing.Generator[Example, None, None]:
-    """ Generate `Example`(s) that are at most `max_seconds` long.
+    """ Randomly generate `Example`(s) that are at most `max_seconds` long.
 
     NOTE:
-    - Every alignment has an equal chance of getting sampled, assuming there are no overlaps.
-    - Larger slices of alignments are less likely to be sampled, for the most part. See more here:
+    - Every `Alignment` has an equal chance of getting sampled, assuming there are no overlaps.
+    - Larger groups of `Alignment` are less likely to be sampled. Learn more here:
       https://stats.stackexchange.com/questions/484329/how-do-you-uniformly-sample-spans-from-a-bounded-line/484332#484332
       https://www.reddit.com/r/MachineLearning/comments/if8icr/d_how_do_you_sample_spans_uniformly_from_a_time/
       https://pytorch.slack.com/archives/C205U7WAF/p1598227661001700
       https://www.reddit.com/r/math/comments/iftev6/uniformly_sampling_from_timeseries_data/
 
-    TODO: Visualize the sampled distribution, in order to ensure it it's reasonable for training.
-    TODO: For the signal model consider changing `random.uniform` to a linear distribution.
     TODO: A sufficiently large pause would slow this algorithm to a hault because it'd be
     sampled continuously and ignored. We could handle that better by excluding large samples
     from the sampling distribution.
@@ -83,7 +82,7 @@ def dataset_generator(data: typing.List[Example],
         return
 
     # NOTE: For a sufficiently large `max_seconds`, the span length tends to be larger than the
-    # example length.
+    # example length; therefore, the entire example tends to be selected every time.
     if max_seconds == float('inf'):
         while True:
             yield random.choice(data)
@@ -92,7 +91,7 @@ def dataset_generator(data: typing.List[Example],
     max_ = lambda e: e.alignments[-1].audio[1]
     offset = lambda e: floor(min_(e))
 
-    # NOTE: `lookup` allows fast lookups of alignments given a unit of time.
+    # NOTE: `lookup` allows fast lookups of alignments for a point in time.
     lookup: typing.List[typing.List[typing.List[int]]]
     lookup = [[[] for _ in range(ceil(max_(e)) - offset(e) + 1)] for e in data]
     for i, example in enumerate(data):
@@ -139,8 +138,6 @@ def dataset_loader(root_directory_name: str,
                    text_column: str = 'Content',
                    max_seconds: int = 15) -> typing.List[Example]:
     """ Load an alignment text-to-speech (TTS) dataset from GCS.
-
-    TODO: Print dataset size with `seconds_to_string`.
 
     The structure of the dataset should be:
         - The file structure is similar to:
@@ -232,21 +229,21 @@ def precut_dataset_loader(
                     audio2.wav
         - The metadata CSV file contains a mapping of audio transcriptions to audio filenames.
         - The dataset contains one speaker.
-        - The dataset is stored in a ``tar`` or ``zip`` at some url.
+        - The dataset is stored in a `tar` or `zip` at some url.
 
     Args:
         root_directory_name: Name of the directory inside `directory` to store data.
         url: URL of the dataset file.
         speaker: The dataset speaker.
+        directory: Directory to cache the dataset.
         url_filename: Name of the file downloaded; Otherwise, a filename is extracted from the url.
         check_files: The download is considered successful, if these files exist.
-        directory: Directory to cache the dataset.
         metadata_filename: The filename for the metadata file.
         metadata_text_column: Column name or index with the audio transcript.
         metadata_audio_column: Column name or index with the audio filename.
-        metadata_audio_path: String template for the audio path given the ``metadata_audio_column``
+        metadata_audio_path: String template for the audio path given the `metadata_audio_column`
             value.
-        **kwargs: Key word arguments passed to ``pandas.read_csv``.
+        **kwargs: Key word arguments passed to `pandas.read_csv`.
 
     Returns: List of voice-over examples in the dataset.
     """
@@ -261,7 +258,6 @@ def precut_dataset_loader(
         directory=str(directory.absolute()),
         check_files=check_files,
         filename=url_filename)
-    dataframe = pandas.read_csv(Path(metadata_filename), **kwargs)
     return [
         Example(
             text=row[metadata_text_column],
@@ -276,5 +272,5 @@ def precut_dataset_loader(
                 for k, v in row.items()
                 if k not in [metadata_text_column, metadata_audio_column]
             })
-        for _, row in dataframe.iterrows()
+        for _, row in pandas.read_csv(Path(metadata_filename), **kwargs).iterrows()
     ]

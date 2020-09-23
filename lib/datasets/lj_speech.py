@@ -62,7 +62,7 @@ def lj_speech_dataset(root_directory_name: str = 'LJSpeech-1.1',
         root_directory_name: Name of the extracted dataset directory.
         url: URL of the dataset `tar.gz` file.
         speaker
-        verbalize: Verbalize the text.
+        verbalize: If `True`, verbalize the text.
         metadata_audio_column: Column name or index with the audio filename.
         metadata_audio_path: String template for the audio path given the `metadata_audio_column`
             value.
@@ -73,8 +73,7 @@ def lj_speech_dataset(root_directory_name: str = 'LJSpeech-1.1',
         metadata_header: If `True`, `metadata_file` has a header to parse.
         **kwargs: Key word arguments passed to `_dataset_loader`.
 
-    Returns:
-        Dataset with audio filenames and text annotations.
+    Returns: List of voice-over examples in the dataset.
 
     Example:
         >>> from lib.hparams import set_hparams # doctest: +SKIP
