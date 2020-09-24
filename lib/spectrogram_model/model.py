@@ -246,7 +246,7 @@ class SpectrogramModel(nn.Module):
 
         speaker = self.embed_speaker(speaker)  # [batch_size] → [batch_size, speaker_embedding_dim]
         # [batch_size, num_tokens] → [num_tokens, batch_size, encoder_hidden_size]
-        encoded_tokens = self.encoder(tokens, tokens_mask, speaker)
+        encoded_tokens = self.encoder(tokens, tokens_mask, num_tokens, speaker)
         frames, stop_tokens, hidden_state, alignments = self.decoder(
             encoded_tokens, tokens_mask, speaker, num_tokens, target_frames / self.output_scalar)
 
@@ -291,7 +291,7 @@ class SpectrogramModel(nn.Module):
 
         speaker = self.embed_speaker(speaker)  # [batch_size] → [batch_size, speaker_embedding_dim]
         # [batch_size, num_tokens] → [num_tokens, batch_size, encoder_hidden_size]
-        encoded_tokens = self.encoder(tokens, tokens_mask, speaker)
+        encoded_tokens = self.encoder(tokens, tokens_mask, num_tokens, speaker)
         generator = self._infer_generator(encoded_tokens, split_size, num_tokens, tokens_mask,
                                           speaker, use_tqdm)
 

@@ -10,14 +10,14 @@ from tests import _utils
 import lib.spectrogram_model.attention
 
 
-def test_window():
+def test__window():
     """ Test `lib.spectrogram_model.attention._window` to window given a simple tensor. """
     window = lib.spectrogram_model.attention._window(
         torch.tensor([1, 2, 3]), start=torch.tensor(1), length=2, dim=0)[0]
     assert torch.equal(window, torch.tensor([2, 3]))
 
 
-def test_window__identity():
+def test__window__identity():
     """ Test `lib.spectrogram_model.attention._window` to compute an identity if `length` is equal
     to the dimension size. """
     window = lib.spectrogram_model.attention._window(
@@ -25,42 +25,42 @@ def test_window__identity():
     assert torch.equal(window, torch.tensor([1, 2, 3]))
 
 
-def test_window__length_to_small():
+def test__window__length_to_small():
     """ Test `lib.spectrogram_model.attention._window` fails if `length` is too small. """
     with pytest.raises(RuntimeError):
         lib.spectrogram_model.attention._window(
             torch.tensor([1, 2, 3]), start=torch.tensor(0), length=-1, dim=0)
 
 
-def test_window__length_to_long():
+def test__window__length_to_long():
     """ Test `lib.spectrogram_model.attention._window` fails if `length` is too long. """
     with pytest.raises(AssertionError):
         lib.spectrogram_model.attention._window(
             torch.tensor([1, 2, 3]), start=torch.tensor(0), length=4, dim=0)
 
 
-def test_window__start_to_small():
+def test__window__start_to_small():
     """ Test `lib.spectrogram_model.attention._window` fails if `start` is out of range.  """
     with pytest.raises(AssertionError):
         lib.spectrogram_model.attention._window(
             torch.tensor([1, 2, 3]), start=torch.tensor(-1), length=3, dim=0)
 
 
-def test_window__start_to_large():
+def test__window__start_to_large():
     """ Test `lib.spectrogram_model.attention._window` fails if `start` is out of range.  """
     with pytest.raises(AssertionError):
         lib.spectrogram_model.attention._window(
             torch.tensor([1, 2, 3]), start=torch.tensor(4), length=1, dim=0)
 
 
-def test_window__window_out_of_range():
+def test__window__window_out_of_range():
     """ Test `lib.spectrogram_model.attention._window` fails if the window is out of range.  """
     with pytest.raises(AssertionError):
         lib.spectrogram_model.attention._window(
             torch.tensor([1, 2, 3]), start=torch.tensor(1), length=3, dim=0)
 
 
-def test_window__2d():
+def test__window__2d():
     """ Test `lib.spectrogram_model.attention._window` to window given a 2d `tensor` with variable
     `start`. """
     window = lib.spectrogram_model.attention._window(
@@ -68,7 +68,7 @@ def test_window__2d():
     assert torch.equal(window, torch.tensor([[2, 3], [1, 2]]))
 
 
-def test_window__3d():
+def test__window__3d():
     """ Test `lib.spectrogram_model.attention._window` to window given a 3d `tensor` and 2d `start`.
     Furthermore, this tests a negative `dim`. """
     tensor = torch.tensor([[[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]], [[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]]])
@@ -77,7 +77,7 @@ def test_window__3d():
     assert torch.equal(window, torch.tensor([[[1, 2], [2, 3]], [[3, 4], [4, 5]]]))
 
 
-def test_window__transpose_invariance():
+def test__window__transpose_invariance():
     """ Test `lib.spectrogram_model.attention._window` to window given a transposed 3d `tensor`.
     `lib.spectrogram_model.attention._window` should return consistent results regardless of the
     dimension and ordering of the data. """

@@ -1,5 +1,7 @@
 from functools import lru_cache
 
+import typing
+
 import torch
 
 from hparams import configurable
@@ -12,12 +14,12 @@ from lib.utils import LSTM
 
 
 @lru_cache(maxsize=8)
-def _roll_helper(length, device, dimension, num_dimensions):
+def _roll_helper(length: int, device: torch.device, dimension: int,
+                 num_dimensions: int) -> typing.Tuple[torch.Tensor, int]:
     """ Helper to ensure `indices` and `dimension` are not recalculated unnecessarily. """
     with torch.no_grad():
         indices = torch.arange(0, length, device=device)
         dimension = num_dimensions + dimension if dimension < 0 else dimension
-
         # EXAMPLE:
         # indicies.shape == (3,)
         # tensor.shape == (1, 2, 3, 4, 5)
@@ -27,14 +29,14 @@ def _roll_helper(length, device, dimension, num_dimensions):
     return indices, dimension
 
 
-def roll(tensor, shift, dim=-1):
+def _roll(tensor: torch.Tensor, shift: torch.Tensor, dim: int = -1) -> torch.Tensor:
     """ Shift a tensor along the specified dimension.
 
     Args:
         tensor (torch.Tensor [*, dim, *]): The tensor to shift.
         shift (torch.Tensor [*]): The number of elements to shift `dim`. This tensor must have one
             less dimensions than `tensor`.
-        dim (int): The dimension to shift.
+        dim: The dimension to shift.
 
     Returns:
         tensor (torch.Tensor [*, dim, *]): The tensor that was shifted.
@@ -48,21 +50,26 @@ def roll(tensor, shift, dim=-1):
     return torch.gather(tensor, dim, indices)
 
 
-class RightMaskedBiRNN(nn.Module):
+class _RightMaskedBiRNN(nn.Module):
     """ A bidirectional RNN that ignores any masked input on the right side of the sequence.
 
-    Unfortunatly, this RNN does not return the hidden state due to related performance
+    NOTE: Unfortunatly, this RNN does not return the hidden state due to related performance
     implications. Similarly, it does not properly handle left side masking due to performance
     implications.
-
-    Args:
-        rnn_class: The RNN class to instantiate.
-        ... See the documentation for `rnn_class`.
     """
 
-    def __init__(self, input_size, hidden_size, num_layers=1, bias=True, rnn_class=torch.nn.LSTM):
+    def __init__(self,
+                 input_size: int,
+                 hidden_size: int,
+                 num_layers: int = 1,
+                 bias: bool = True,
+                 rnn_class: typing.Union[typing.Type[torch.nn.LSTM],
+                                         typing.Type[torch.nn.GRU]] = torch.nn.LSTM):
         super().__init__()
-
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.bias = bias
         self.rnn_layers = nn.ModuleList([
             nn.ModuleList([
                 rnn_class(
@@ -76,29 +83,33 @@ class RightMaskedBiRNN(nn.Module):
             ]) for i in range(num_layers)
         ])
 
-    def _backward_pass(self, backward_rnn, tokens, tokens_mask):
+    def _backward_pass(
+        self,
+        backward_rnn: typing.Union[torch.nn.LSTM, torch.nn.GRU],
+        tokens: torch.Tensor,
+        tokens_mask: torch.Tensor,
+        num_tokens: torch.Tensor,
+    ) -> torch.Tensor:
         """ Compute the backwards RNN pass.
 
         Args:
-            backward_rnn (nn.Module)
-            tokens (torch.FloatTensor [seq_len, batch_size, backward_rnn.input_size]): Batched set
-                of sequences.
-            tokens_mask (torch.BoolTensor [seq_len, batch_size]): Binary mask applied on tokens.
+            backward_rnn
+            tokens (torch.FloatTensor [seq_len, batch_size, backward_rnn.input_size])
+            tokens_mask (torch.BoolTensor [seq_len, batch_size])
+            num_tokens (torch.LongTensor [batch_size])
 
         Returns:
-            (torch.FloatTensor [seq_len, batch_size, hidden_size]): Output features predicted
-                by the RNN.
+            (torch.FloatTensor [seq_len, batch_size, hidden_size]): RNN output.
         """
         # Ex. Assume we are dealing with a one dimensional input, like this:
         # tokens = [1, 2, 3, 0, 0]
         # tokens_mask = [1, 1, 1, 0, 0]
-        # lengths = [3]
+        # num_tokens = [3]
         # tokens.shape[0] = 5
-        lengths = tokens_mask.int().sum(0)  # TODO: Reuse the already computed `num_tokens`
-        lengths = lengths.unsqueeze(1)
+        num_tokens = num_tokens.unsqueeze(1)
 
         # Ex. [1, 2, 3, 0, 0] → [0, 0, 1, 2, 3]
-        tokens = roll(tokens, (tokens.shape[0] - lengths), dim=0)
+        tokens = _roll(tokens, (tokens.shape[0] - num_tokens), dim=0)
 
         # Ex. [0, 0, 1, 2, 3] → [3, 2, 1, 0, 0]
         tokens = tokens.flip(0)
@@ -109,23 +120,22 @@ class RightMaskedBiRNN(nn.Module):
         rnn_results = rnn_results.flip(0)
 
         # Ex. [0, 0, 1, 2, 3] → [1, 2, 3, 0, 0]
-        return roll(rnn_results, lengths, dim=0)
+        return _roll(rnn_results, num_tokens, dim=0)
 
-    def forward(self, tokens, tokens_mask):
+    def forward(self, tokens: torch.Tensor, tokens_mask: torch.Tensor, num_tokens: torch.Tensor):
         """ Compute the RNN pass.
 
         Args:
-            tokens (torch.FloatTensor [seq_len, batch_size, input_size]): Batched set of sequences.
-            tokens_mask (torch.BoolTensor [seq_len, batch_size] or [seq_len, batch_size, 1]): Binary
-                mask applied on tokens.
+            tokens (torch.FloatTensor [seq_len, batch_size, input_size])
+            tokens_mask (torch.BoolTensor [seq_len, batch_size, 1 (optional)])
+            num_tokens (torch.LongTensor [batch_size])
 
         Returns:
             (torch.FloatTensor [seq_len, batch_size, hidden_size * 2]): Output features predicted
                 by the RNN.
         """
         output = tokens
-        tokens_mask_expanded = tokens_mask if len(
-            tokens_mask.shape) == 3 else tokens_mask.unsqueeze(2)
+        tokens_mask_expanded = tokens_mask.view(tokens_mask.shape[0], tokens_mask.shape[1], 1)
         tokens_mask = tokens_mask.view(tokens_mask.shape[0], tokens_mask.shape[1])
         for forward_rnn, backward_rnn in self.rnn_layers:
             # [seq_len, batch_size, input_size or hidden_size * 2] →
@@ -134,91 +144,71 @@ class RightMaskedBiRNN(nn.Module):
 
             # [seq_len, batch_size, input_size or hidden_size * 2] →
             # [seq_len, batch_size, hidden_size * 2]
-            backward_output = self._backward_pass(backward_rnn, output, tokens_mask)
+            backward_output = self._backward_pass(backward_rnn, output, tokens_mask, num_tokens)
 
             # [seq_len, batch_size, hidden_size] (concat) [seq_len, batch_size, hidden_size] →
             # [seq_len, batch_size, hidden_size * 2]
-            output = torch.cat([forward_output, backward_output],
-                               dim=2).masked_fill(~tokens_mask_expanded, 0)
+            output = torch.cat([forward_output, backward_output], dim=2)
+            output = output.masked_fill(~tokens_mask_expanded, 0)
         return output
 
 
-class LayerNorm(nn.LayerNorm):
+class _LayerNorm(nn.LayerNorm):
 
-    def forward(self, tensor):
+    def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
 
 
-class Conv1dLockedDropout(LockedDropout):
+class _Conv1dLockedDropout(LockedDropout):
 
-    def forward(self, tensor):
+    def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         return super().forward(tensor.permute(2, 0, 1)).permute(1, 2, 0)
 
 
 class Encoder(nn.Module):
-    """ Encodes sequence as a hidden feature representation.
+    """ Encode a discrete sequence as a sequence of differentiable vector(s).
 
-    SOURCE (Tacotron 2):
-        The encoder converts a character sequence into a hidden feature representation. Input
-        characters are represented using a learned 512-dimensional character embedding, which are
-        passed through a stack of 3 convolutional layers each containing 512 filters with shape 5 ×
-        1, i.e., where each filter spans 5 characters, followed by batch normalization [18] and ReLU
-        activations. As in Tacotron, these convolutional layers model longer-term context (e.g.,
-        N-grams) in the input character sequence. The output of the final convolutional layer is
-        passed into a single bi-directional [19] LSTM [20] layer containing 512 units (256 in each
-        direction) to generate the encoded features.
-
-        ...
-
-        The convolutional layers in the network are regularized using dropout [25] with probability
-        0.5, and LSTM layers are regularized using zoneout [26] with probability 0.1. In order to
-        introduce output variation at inference time, dropout with probability 0.5 is applied only
-        to layers in the pre-net of the autoregressive decoder.
-
-    Reference:
-        * PyTorch BatchNorm vs Tensorflow parameterization possible source of error...
-          https://stackoverflow.com/questions/48345857/batchnorm-momentum-convention-pytorch?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
+    TODO: Parameterized `padding_index` with `HParam`.
 
     Args:
-        vocab_size (int): Maximum size of the vocabulary used to encode ``tokens``.
-        speaker_embedding_dim (int): The size of the speaker embedding.
-        out_dim (int): Number of dimensions to output.
-        hidden_size (int): The hidden size for internal RNN, embedding, and convolution features.
-            This hidden size must be even.
-        num_convolution_layers (int): Number of convolution layers to apply.
-        convolution_filter_size (int): Size of the convolving kernel.
-        lstm_layers (int): Number of recurrent LSTM layers.
-        dropout (float): The dropout probability for hidden encoder features.
+        vocab_size: The size of the vocabulary used to encode `tokens`.
+        speaker_embedding_size The size of the speaker embedding.
+        out_size: The size of the encoder output.
+        hidden_size: The size of the encoders hidden representation. This value must be even.
+        num_convolution_layers: Number of convolution layers.
+        convolution_filter_size: Size of the convolving kernel. This value must be odd.
+        lstm_layers: Number of recurrent LSTM layers.
+        dropout: Dropout probability used to regularize the encoders hidden representation.
+        padding_index: Integer used to represent padding.
     """
 
     @configurable
     def __init__(self,
-                 vocab_size,
-                 speaker_embedding_dim,
-                 out_dim=HParam(),
-                 hidden_size=HParam(),
-                 num_convolution_layers=HParam(),
-                 convolution_filter_size=HParam(),
-                 lstm_layers=HParam(),
-                 dropout=HParam()):
-
+                 vocab_size: int,
+                 speaker_embedding_size: int,
+                 out_size: int = HParam(),
+                 hidden_size: int = HParam(),
+                 num_convolution_layers: int = HParam(),
+                 convolution_filter_size: int = HParam(),
+                 lstm_layers: int = HParam(),
+                 dropout: float = HParam(),
+                 padding_index: int = DEFAULT_PADDING_INDEX):
         super().__init__()
 
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, ('`convolution_filter_size` must be odd')
         assert hidden_size % 2 == 0, '`hidden_size` must be divisable by even'
-        assert speaker_embedding_dim < hidden_size, (
+        assert speaker_embedding_size < hidden_size, (
             'The `hidden_size` must be larger than the `speaker_embedding_dim` to accommodate it.')
 
         self.embed_token = nn.Sequential(
             nn.Embedding(
-                vocab_size, hidden_size - speaker_embedding_dim, padding_idx=DEFAULT_PADDING_INDEX),
-            nn.LayerNorm(hidden_size - speaker_embedding_dim))
-
+                vocab_size, hidden_size - speaker_embedding_size, padding_idx=padding_index),
+            nn.LayerNorm(hidden_size - speaker_embedding_size))
         self.conv_layers = nn.ModuleList([
             nn.Sequential(
-                Conv1dLockedDropout(dropout),
+                _Conv1dLockedDropout(dropout),
                 nn.Conv1d(
                     in_channels=hidden_size,
                     out_channels=hidden_size,
@@ -226,36 +216,39 @@ class Encoder(nn.Module):
                     padding=int((convolution_filter_size - 1) / 2)), nn.ReLU())
             for i in range(num_convolution_layers)
         ])
-
-        for module in self.conv_layers.modules():
-            if isinstance(module, nn.Conv1d):
-                nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
-
         self.norm_layers = nn.ModuleList(
-            [LayerNorm(hidden_size) for i in range(num_convolution_layers)])
-
-        self.lstm = RightMaskedBiRNN(
+            [_LayerNorm(hidden_size) for i in range(num_convolution_layers)])
+        self.lstm = _RightMaskedBiRNN(
             rnn_class=LSTM,
             input_size=hidden_size,
             hidden_size=hidden_size // 2,
             num_layers=lstm_layers)
         self.lstm_norm = nn.LayerNorm(hidden_size)
         self.lstm_dropout = LockedDropout(dropout)
-
         self.project_out = nn.Sequential(
-            LockedDropout(dropout), nn.Linear(hidden_size, out_dim), nn.LayerNorm(out_dim))
+            LockedDropout(dropout), nn.Linear(hidden_size, out_size), nn.LayerNorm(out_size))
 
-    def forward(self, tokens, tokens_mask, speaker):
+        for module in self.conv_layers.modules():
+            if isinstance(module, nn.Conv1d):
+                nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
+
+    def forward(
+        self,
+        tokens: torch.Tensor,
+        tokens_mask: torch.Tensor,
+        num_tokens: torch.Tensor,
+        speaker: torch.Tensor,
+    ) -> torch.Tensor:
         """
         Args:
-            tokens (torch.LongTensor [batch_size, num_tokens]): Batched set of sequences.
-            tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Binary mask applied on
-                tokens.
+            tokens (torch.LongTensor [batch_size, num_tokens]): Batch of sequences.
+            tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Sequence mask(s) to deliminate
+                padding in `tokens` with zeros.
+            num_tokens (torch.LongTensor [batch_size]): Number of tokens in each sequence.
             speaker (torch.FloatTensor [batch_size, speaker_embedding_dim])
 
         Returns:
-            output (torch.FloatTensor [num_tokens, batch_size, out_dim]): Batched set of encoded
-                sequences.
+            output (torch.FloatTensor [num_tokens, batch_size, out_dim]): Batch of sequences.
         """
         # [batch_size, speaker_embedding_dim] → [batch_size, num_tokens, speaker_embedding_dim]
         speaker = speaker.unsqueeze(1).expand(-1, tokens.shape[1], -1)
@@ -285,7 +278,8 @@ class Encoder(nn.Module):
         tokens = tokens.permute(2, 0, 1)
         tokens_mask = tokens_mask.permute(2, 0, 1)
 
-        tokens = self.lstm_norm(tokens + self.lstm(self.lstm_dropout(tokens), tokens_mask))
+        tokens = self.lstm_norm(tokens +
+                                self.lstm(self.lstm_dropout(tokens), tokens_mask, num_tokens))
 
         # [num_tokens, batch_size, hidden_size] →
         # [num_tokens, batch_size, out_dim]
