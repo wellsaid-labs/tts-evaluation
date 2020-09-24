@@ -1,59 +1,23 @@
-import pytest
+import torch
 
-from src.datasets import HILARY_NORIEGA
-from src.datasets import JUDY_BIEBER
-from src.datasets import MARY_ANN
-from src.spectrogram_model import InputEncoder
+import lib.spectrogram_model.input_encoder
 
 
 def test_input_encoder():
-    encoder = InputEncoder(['a', 'b', 'c'], [JUDY_BIEBER, MARY_ANN])
-    encoded = encoder.batch_encode([('a', JUDY_BIEBER)])[0]
-    assert encoder.decode(encoded) == ('ˈ|eɪ', JUDY_BIEBER)
-
-
-def test_input_encoder__preprocess():
-    encoder = InputEncoder(['a', 'b', 'c'], [JUDY_BIEBER, MARY_ANN], delimiter='|')
-    assert encoder._preprocess('resume') == 'ɹ|ɪ|z|ˈ|uː|m'
-    assert encoder._preprocess('resumé') == 'ɹ|ɪ|z|ˈ|uː|m'
-    assert encoder._preprocess('résumé') == 'ɹ|ɪ|z|ˈ|uː|m'
-    # NOTE: Check the "bug" / "feature" that multiple spaces are turned into a single space.
-    assert encoder._preprocess('résumé résumé  résumé   résumé') == (
-        'ɹ|ɪ|z|ˈ|uː|m| |ɹ|ɪ|z|ˈ|uː|m| |ɹ|ɪ|z|ˈ|uː|m| |ɹ|ɪ|z|ˈ|uː|m')
-    assert encoder._preprocess('slash slash slash slash slash') == (
-        's|l|ˈ|æ|ʃ| |s|l|ˈ|æ|ʃ| |s|l|ˈ|æ|ʃ| |s|l|ˈ|æ|ʃ| |s|l|ˈ|æ|ʃ')
-
-
-def test_input_encoder__failure_cases():
-    encoder = InputEncoder(['a', 'b', 'c'], [JUDY_BIEBER, MARY_ANN], delimiter='|')
-
-    with pytest.raises(ValueError) as error:  # Text is not reversible
-        encoder.encode(('d', JUDY_BIEBER))
-
-    assert "Text cannot contain these characters: d" in str(error.value)
-
-    with pytest.raises(ValueError):  # Do not support delimiter
-        encoder.encode(('|', JUDY_BIEBER))
-
-    with pytest.raises(ValueError):  # Speaker is not reversible
-        encoder.encode(('a', HILARY_NORIEGA))
-
-    with pytest.raises(ValueError) as error:
-        encoder.encode(('a\n\fa', JUDY_BIEBER))
-
-    assert "Text cannot contain these characters: \\n" in str(error.value)
-
-
-def test_input_encoder__regression():
-    """ Test cases that failed in the past. """
-    encoder = InputEncoder(['a', 'b', 'c'], [JUDY_BIEBER, MARY_ANN], delimiter='|')
-
-    with pytest.raises(ValueError) as error:
-        encoder.encode(('<>', JUDY_BIEBER))
-
-    assert "Invalid text: \"<>\"" in str(error.value)
-
-    with pytest.raises(ValueError) as error:
-        encoder.encode(('', JUDY_BIEBER))
-
-    assert "Text cannot be empty." in str(error.value)
+    """ Test `lib.spectrogram_model.input_encoder.InputEncoder` handles a basic case. """
+    graphemes = ['abc', 'def']
+    phonemes = ['ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|', 'd|ˈ|ɛ|f']
+    phoneme_seperator = '|'
+    speakers = [lib.datasets.MARK_ATHERLAY, lib.datasets.MARY_ANN]
+    encoder = lib.spectrogram_model.input_encoder.InputEncoder(graphemes, phonemes,
+                                                               phoneme_seperator, speakers)
+    input_ = ('a', 'ˈ|eɪ', lib.datasets.MARK_ATHERLAY)
+    assert encoder._get_case('A') == encoder._CASE_LABELS[0]
+    assert encoder._get_case('a') == encoder._CASE_LABELS[1]
+    assert encoder._get_case('1') == encoder._CASE_LABELS[2]
+    encoded = encoder.encode(input_)
+    assert torch.equal(encoded[0], torch.tensor([5]))
+    assert torch.equal(encoded[1], torch.tensor([1]))
+    assert torch.equal(encoded[2], torch.tensor([5, 6]))
+    assert torch.equal(encoded[3], torch.tensor([0]))
+    assert encoder.decode(encoded) == input_
