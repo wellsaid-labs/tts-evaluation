@@ -1,17 +1,19 @@
 from hparams import configurable
 from hparams import HParam
-from torch import nn
+
+import torch
 
 
-class AlwaysDropout(nn.Dropout):
-    """ Adaptation of ``nn.Dropout`` to apply dropout during both evaluation and training. """
+class _AlwaysDropout(torch.nn.Dropout):
+    """ Adaptation of `nn.Dropout` to apply dropout during both evaluation and training. """
 
     def forward(self, input):
-        return nn.functional.dropout(input=input, p=self.p, training=True, inplace=self.inplace)
+        return torch.nn.functional.dropout(
+            input=input, p=self.p, training=True, inplace=self.inplace)
 
 
-class PreNet(nn.Module):
-    """ Pre-net processes the last frame of the spectrogram.
+class PreNet(torch.nn.Module):
+    """ Pre-net processes encodes spectrogram frames.
 
     SOURCE (Tacotron 2):
         ...small pre-net containing 2 fully connected layers of 256 hidden ReLU units. We found that
@@ -23,11 +25,11 @@ class PreNet(nn.Module):
         applied only to layers in the pre-net of the autoregressive decoder.
 
     Args:
-        frame_channels (int): Number of channels in each frame (sometimes refered to
-            as "Mel-frequency bins" or "FFT bins" or "FFT bands").
-        hidden_size (int): Number of hidden units in each layer.
-        num_layers (int): Number of fully connected layers of ReLU units.
-        dropout (float): Probability of an element to be zeroed.
+        frame_channels: Number of channels in each frame (sometimes refered to as
+            "Mel-frequency bins" or "FFT bins" or "FFT bands").
+        hidden_size: Number of hidden units in each layer.
+        num_layers: Number of fully connected layers of ReLU units.
+        dropout: Probability of an element to be zeroed.
 
     Reference:
         * Tacotron 2 Paper:
@@ -35,29 +37,34 @@ class PreNet(nn.Module):
     """
 
     @configurable
-    def __init__(self, frame_channels, hidden_size, num_layers=HParam(), dropout=HParam()):
+    def __init__(self,
+                 frame_channels: int,
+                 hidden_size: int,
+                 num_layers: int = HParam(),
+                 dropout: float = HParam()):
         super().__init__()
-        self.layers = nn.Sequential(*tuple([
-            nn.Sequential(
-                nn.Linear(
-                    in_features=frame_channels if i == 0 else hidden_size, out_features=hidden_size
-                ), nn.ReLU(inplace=True), nn.LayerNorm(hidden_size), AlwaysDropout(p=dropout))
-            for i in range(num_layers)
+        self.layers = torch.nn.Sequential(*tuple([
+            torch.nn.Sequential(
+                torch.nn.Linear(
+                    in_features=frame_channels if i == 0 else hidden_size,
+                    out_features=hidden_size),
+                torch.nn.ReLU(inplace=True),
+                torch.nn.LayerNorm(hidden_size),
+                _AlwaysDropout(p=dropout),
+            ) for i in range(num_layers)
         ]))
 
-        # Initialize weights
         for module in self.layers.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
+            if isinstance(module, torch.nn.Linear):
+                torch.nn.init.xavier_uniform_(
+                    module.weight, gain=torch.nn.init.calculate_gain('relu'))
 
-    def forward(self, frames):
+    def forward(self, frames: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Batched set of
-                spectrogram frames.
+            frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Spectrogram frames.
 
         Returns:
-            frames (torch.FloatTensor [num_frames, batch_size, hidden_size]): Batched set of
-                spectrogram frames processed by the Pre-net.
+            frames (torch.FloatTensor [num_frames, batch_size, hidden_size])
         """
         return self.layers(frames)
