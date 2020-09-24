@@ -287,7 +287,7 @@ def test_spectrogram_model_train__batch_size_sensitivity():
     # >>> batch_dropout[0] != dropout
     add_config({
         'src.spectrogram_model': {
-            'attention.LocationSensitiveAttention.__init__': HParams(dropout=0.0),
+            'attention.LocationRelativeAttention.__init__': HParams(dropout=0.0),
             'decoder.AutoregressiveDecoder.__init__': HParams(stop_net_dropout=0.0),
             'encoder.Encoder.__init__': HParams(dropout=0.0),
             'model.SpectrogramModel.__init__': HParams(speaker_embed_dropout=0.0),

@@ -8,7 +8,7 @@ from torchnlp.encoders.text import DelimiterEncoder
 
 import torch
 
-from src.datasets import Speaker
+from lib.datasets import Speaker
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class InputEncoder(Encoder):
         return (
             self.grapheme_encoder.encode(object_[0].lower()),
             self.case_encoder.batch_encode([self._get_case(c) for c in object_[0]]),
-            self.phoneme_encoder.encode(p),
+            self.phoneme_encoder.encode(object_[1]),
             self.speaker_encoder.encode(object_[2]).view(1),
         )
 

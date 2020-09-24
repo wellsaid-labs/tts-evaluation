@@ -10,8 +10,8 @@ from tqdm import tqdm
 
 import torch
 
-from src.spectrogram_model.decoder import AutoregressiveDecoder
-from src.spectrogram_model.encoder import Encoder
+from lib.spectrogram_model.decoder import AutoregressiveDecoder
+from lib.spectrogram_model.encoder import Encoder
 
 logger = logging.getLogger(__name__)
 

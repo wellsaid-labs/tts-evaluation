@@ -8,7 +8,7 @@ from torch import nn
 from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
 from torchnlp.nn import LockedDropout
 
-from src.utils import LSTM
+from lib.utils import LSTM
 
 
 @lru_cache(maxsize=8)
