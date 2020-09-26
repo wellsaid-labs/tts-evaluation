@@ -13,6 +13,6 @@ def test_pre_net():
         hidden_size=hidden_size, frame_channels=frame_channels, num_layers=2, dropout=0.5)
     input_ = torch.randn(num_frames, batch_size, frame_channels)
     output = pre_net(input_)
-    assert output.type() == 'torch.FloatTensor'
+    assert output.dtype == torch.float
     assert output.shape == (num_frames, batch_size, hidden_size)
     output.sum().backward()

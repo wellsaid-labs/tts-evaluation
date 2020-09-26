@@ -194,7 +194,7 @@ def test_encoder():
     """ Test `encoder.Encoder` handles a basic case. """
     module, (tokens, tokens_mask, speaker), (num_tokens, batch_size, out_size) = _make_encoder()
     output = module(tokens, tokens_mask, tokens_mask.sum(dim=1), speaker)
-    assert output.type() == 'torch.FloatTensor'
+    assert output.dtype == torch.float
     assert output.shape == (num_tokens, batch_size, out_size)
     output.sum().backward()
 

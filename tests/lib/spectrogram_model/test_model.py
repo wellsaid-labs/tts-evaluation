@@ -377,19 +377,19 @@ def test_spectrogram_model__filter_reached_max():
     frames, stop_token, alignment, lengths, reached_max = model(
         input_, speaker, num_tokens=batched_num_tokens, filter_reached_max=True)
 
-    assert reached_max.type() == 'torch.BoolTensor'
+    assert reached_max.dtype == torch.bool
     assert reached_max.sum().item() >= 0
 
     num_reached_max = reached_max.sum().item()
     max_length = lengths.max().item()
 
-    assert frames.type() == 'torch.FloatTensor'
+    assert frames.dtype == torch.float
     assert frames.shape == (max_length, batch_size - num_reached_max, frame_channels)
 
-    assert stop_token.type() == 'torch.FloatTensor'
+    assert stop_token.dtype == torch.float
     assert stop_token.shape == (max_length, batch_size - num_reached_max)
 
-    assert alignment.type() == 'torch.FloatTensor'
+    assert alignment.dtype == torch.float
     assert alignment.shape == (max_length, batch_size - num_reached_max, num_tokens)
 
     assert lengths.shape == (1, batch_size - num_reached_max)
@@ -427,16 +427,16 @@ def test_spectrogram_model__filter_all():
     frames, stop_token, alignment, lengths, reached_max = model(
         input_, speaker, num_tokens=batched_num_tokens, filter_reached_max=True)
 
-    assert reached_max.type() == 'torch.BoolTensor'
+    assert reached_max.dtype == torch.bool
     assert reached_max.sum().item() == batch_size
 
-    assert frames.type() == 'torch.FloatTensor'
+    assert frames.dtype == torch.float
     assert frames.shape == (num_frames, 0, frame_channels)
 
-    assert stop_token.type() == 'torch.FloatTensor'
+    assert stop_token.dtype == torch.float
     assert stop_token.shape == (num_frames, 0)
 
-    assert alignment.type() == 'torch.FloatTensor'
+    assert alignment.dtype == torch.float
     assert alignment.shape == (num_frames, 0, num_tokens)
 
     assert lengths.shape == (1, 0)
@@ -470,16 +470,16 @@ def test_spectrogram_model__random_sigmoid():
 
     max_length = lengths.max().item()
 
-    assert reached_max.type() == 'torch.BoolTensor'
+    assert reached_max.dtype == torch.bool
     assert reached_max.sum().item() >= 0
 
-    assert frames.type() == 'torch.FloatTensor'
+    assert frames.dtype == torch.float
     assert frames.shape == (max_length, batch_size, frame_channels)
 
-    assert stop_token.type() == 'torch.FloatTensor'
+    assert stop_token.dtype == torch.float
     assert stop_token.shape == (max_length, batch_size)
 
-    assert alignment.type() == 'torch.FloatTensor'
+    assert alignment.dtype == torch.float
     assert alignment.shape == (max_length, batch_size, num_tokens)
 
     assert lengths.shape == (1, batch_size)
@@ -524,16 +524,16 @@ def test_spectrogram_model__basic():
         frames, stop_token, alignment, lengths, reached_max = model(
             input_, speaker, num_tokens=batched_num_tokens, stop_threshold=stop_threshold)
 
-        assert reached_max.type() == 'torch.BoolTensor'
+        assert reached_max.dtype == torch.bool
         assert reached_max.sum().item() == 4
 
-        assert frames.type() == 'torch.FloatTensor'
+        assert frames.dtype == torch.float
         assert frames.shape == (num_frames, batch_size, frame_channels)
 
-        assert stop_token.type() == 'torch.FloatTensor'
+        assert stop_token.dtype == torch.float
         assert stop_token.shape == (num_frames, batch_size)
 
-        assert alignment.type() == 'torch.FloatTensor'
+        assert alignment.dtype == torch.float
         assert alignment.shape == (num_frames, batch_size, num_tokens)
 
         assert lengths.shape == (1, batch_size)
@@ -574,18 +574,18 @@ def test_spectrogram_model_unbatched():
 
     frames, stop_token, alignment, lengths, reached_max = model(input_, speaker)
 
-    assert reached_max.type() == 'torch.BoolTensor'
+    assert reached_max.dtype == torch.bool
     assert reached_max
 
     assert torch.equal(lengths, torch.tensor([num_frames]))
 
-    assert frames.type() == 'torch.FloatTensor'
+    assert frames.dtype == torch.float
     assert frames.shape == (num_frames, frame_channels)
 
-    assert stop_token.type() == 'torch.FloatTensor'
+    assert stop_token.dtype == torch.float
     assert stop_token.shape == (num_frames,)
 
-    assert alignment.type() == 'torch.FloatTensor'
+    assert alignment.dtype == torch.float
     assert alignment.shape == (num_frames, num_tokens)
 
 
@@ -611,13 +611,13 @@ def test_spectrogram_model_target():
         target_frames=target_frames,
         target_lengths=target_lengths)
 
-    assert frames.type() == 'torch.FloatTensor'
+    assert frames.dtype == torch.float
     assert frames.shape == (num_frames, batch_size, frame_channels)
 
-    assert stop_token.type() == 'torch.FloatTensor'
+    assert stop_token.dtype == torch.float
     assert stop_token.shape == (num_frames, batch_size)
 
-    assert alignment.type() == 'torch.FloatTensor'
+    assert alignment.dtype == torch.float
     assert alignment.shape == (num_frames, batch_size, num_tokens)
 
     frames.sum().backward()
@@ -639,13 +639,13 @@ def test_spectrogram_model_target_unbatched():
     frames, stop_token, alignment = model(
         input_, speaker, target_frames=target_frames, target_lengths=target_lengths)
 
-    assert frames.type() == 'torch.FloatTensor'
+    assert frames.dtype == torch.float
     assert frames.shape == (num_frames, frame_channels)
 
-    assert stop_token.type() == 'torch.FloatTensor'
+    assert stop_token.dtype == torch.float
     assert stop_token.shape == (num_frames,)
 
-    assert alignment.type() == 'torch.FloatTensor'
+    assert alignment.dtype == torch.float
     assert alignment.shape == (num_frames, num_tokens)
 
     frames.sum().backward()

@@ -25,9 +25,9 @@ class PreNet(torch.nn.Module):
         applied only to layers in the pre-net of the autoregressive decoder.
 
     Args:
-        frame_channels: Number of channels in each frame (sometimes refered to as
+        num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands").
-        hidden_size: Number of hidden units in each layer.
+        size: The size of the hidden representation and output.
         num_layers: Number of fully connected layers of ReLU units.
         dropout: Probability of an element to be zeroed.
 
@@ -38,18 +38,17 @@ class PreNet(torch.nn.Module):
 
     @configurable
     def __init__(self,
-                 frame_channels: int,
-                 hidden_size: int,
+                 num_frame_channels: int,
+                 size: int,
                  num_layers: int = HParam(),
                  dropout: float = HParam()):
         super().__init__()
         self.layers = torch.nn.Sequential(*tuple([
             torch.nn.Sequential(
                 torch.nn.Linear(
-                    in_features=frame_channels if i == 0 else hidden_size,
-                    out_features=hidden_size),
+                    in_features=num_frame_channels if i == 0 else size, out_features=size),
                 torch.nn.ReLU(inplace=True),
-                torch.nn.LayerNorm(hidden_size),
+                torch.nn.LayerNorm(size),
                 _AlwaysDropout(p=dropout),
             ) for i in range(num_layers)
         ]))
@@ -62,7 +61,8 @@ class PreNet(torch.nn.Module):
     def forward(self, frames: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            frames (torch.FloatTensor [num_frames, batch_size, frame_channels]): Spectrogram frames.
+            frames (torch.FloatTensor [num_frames, batch_size, num_frame_channels]): Spectrogram
+                frames.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, hidden_size])

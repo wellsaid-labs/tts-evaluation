@@ -65,6 +65,18 @@ def _window(tensor: torch.Tensor,
     return torch.gather(tensor, dim, indices), indices
 
 
+class LocationRelativeAttentionHiddenState(typing.NamedTuple):
+    """ Hidden state from previous time steps, used to predict the next time step.
+
+    Args:
+        cumulative_alignment (torch.FloatTensor
+            [batch_size, num_tokens + 2 * cumulative_alignment_padding])
+        window_start (torch.LongTensor [batch_size])
+    """
+    cumulative_alignment: torch.Tensor
+    window_start: torch.Tensor
+
+
 class LocationRelativeAttention(nn.Module):
     """ Query using the Bahdanau attention mechanism given location features.
 
@@ -98,7 +110,7 @@ class LocationRelativeAttention(nn.Module):
         self.dropout = dropout
         self.hidden_size = hidden_size
         self.window_length = window_length
-        self.alignment_conv_padding = int((convolution_filter_size - 1) / 2)
+        self.cumulative_alignment_padding = int((convolution_filter_size - 1) / 2)
         self.alignment_conv = nn.Conv1d(
             in_channels=1, out_channels=hidden_size, kernel_size=convolution_filter_size, padding=0)
         self.project_query = nn.Linear(query_hidden_size, hidden_size)
@@ -111,67 +123,43 @@ class LocationRelativeAttention(nn.Module):
         tokens_mask: torch.Tensor,
         num_tokens: torch.Tensor,
         query: torch.Tensor,
-        cumulative_alignment: typing.Optional[torch.Tensor] = None,
-        initial_cumulative_alignment: typing.Optional[torch.Tensor] = None,
-        window_start: typing.Optional[torch.Tensor] = None,
+        hidden_state: LocationRelativeAttentionHiddenState,
         token_skip_warning: int = 2
-    ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> typing.Tuple[torch.Tensor, torch.Tensor, LocationRelativeAttentionHiddenState]:
         """
-        NOTE: Attention alignment is sometimes refered to as attention weights.
-
         Args:
             tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batch of sequences.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Sequence mask(s) to deliminate
                 padding in `tokens` with zeros.
             num_tokens (torch.LongTensor [batch_size]): Number of tokens in each sequence.
             query (torch.FloatTensor [1, batch_size, query_hidden_size]): Attention query.
-            cumulative_alignment (torch.FloatTensor [batch_size, num_tokens], optional): Cumulation
-                of alignments from other queries. If `None` then this defaults to the zero vector.
-            initial_cumulative_alignment (torch.FloatTensor [batch_size, 1]): The
-                `cumulative_alignment` vector has a non-zero value for every token that is has
-                attended to. Assuming the model is attending to tokens from left-to-right
-                and the model starts reading at the first token, then any padding to the left
-                of the first token should be non-zero to be consistent with `cumulative_alignment`.
-                `initial_cumulative_alignment` is the value of the padding on the left-side of
-                `cumulative_alignment`.
-            window_start (torch.LongTensor [batch_size]): The start of the attention window.
+            hidden_state
             token_skip_warning: If the attention skips more than `token_skip_warning`, then
                 a warning will be thrown.
 
         Returns:
             context (torch.FloatTensor [batch_size, hidden_size]): Attention context vector.
-            cumulative_alignment (torch.FloatTensor [batch_size, num_tokens]): Updated
-                `cumulative_alignment`.
             alignment (torch.FloatTensor [batch_size, num_tokens]): Attention alignment.
-            window_start (torch.LongTensor [batch_size]): Updated `window_start`.
+            hidden_state
         """
         max_num_tokens, batch_size, _ = tokens.shape
         device = tokens.device
+        cumulative_alignment_padding = self.cumulative_alignment_padding
         window_length = min(self.window_length, max_num_tokens)
 
-        if cumulative_alignment is None:
-            cumulative_alignment = torch.zeros(batch_size, max_num_tokens, device=device)
-        if initial_cumulative_alignment is None:
-            initial_cumulative_alignment = torch.zeros(batch_size, 1, device=device)
-        if window_start is None:
-            window_start = torch.zeros(batch_size, device=device, dtype=torch.long)
+        cumulative_alignment, window_start = hidden_state
 
-        cumulative_alignment = cumulative_alignment.masked_fill(~tokens_mask, 0)
+        part = slice(cumulative_alignment_padding, -cumulative_alignment_padding)
+        cumulative_alignment[:, part] = cumulative_alignment[:, part].masked_fill(~tokens_mask, 0)
 
-        # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
+        # [batch_size, num_tokens + 2 * cumulative_alignment_padding] →
+        # [batch_size, 1, num_tokens + 2 * cumulative_alignment_padding]
         location_features = cumulative_alignment.unsqueeze(1)
-
-        # NOTE: Add `self.alignment_conv_padding` to both sides.
-        initial_cumulative_alignment = initial_cumulative_alignment.unsqueeze(-1).expand(
-            -1, -1, self.alignment_conv_padding)
-        location_features = torch.cat([initial_cumulative_alignment, location_features], dim=-1)
-        location_features = torch.nn.functional.pad(
-            location_features, [0, self.alignment_conv_padding], mode='constant', value=0.0)
 
         tokens_mask, window_indices = _window(tokens_mask, window_start, window_length, 1, False)
         tokens = _window(tokens, window_start.unsqueeze(1), window_length, 0, False)[0]
         location_features = _window(location_features, window_start.unsqueeze(1),
-                                    window_length + self.alignment_conv_padding * 2, 2, False)[0]
+                                    window_length + cumulative_alignment_padding * 2, 2, False)[0]
 
         # [batch_size, 1, num_tokens] → [batch_size, hidden_size, num_tokens]
         location_features = self.alignment_conv(location_features)
@@ -206,10 +194,11 @@ class LocationRelativeAttention(nn.Module):
         context = context.squeeze(1)
 
         alignment = torch.zeros(
-            batch_size, max_num_tokens, device=device).scatter_(1, window_indices, alignment)
+            batch_size, max_num_tokens + cumulative_alignment_padding * 2, device=device)
+        alignment.scatter_(1, window_indices + cumulative_alignment_padding, alignment)
 
         last_window_start = window_start
-        window_start = alignment.max(dim=1)[1] - window_length // 2
+        window_start = alignment.max(dim=1)[1] - window_length // 2 - cumulative_alignment_padding
         # TODO: Cache `num_tokens - window_length` clamped at 0 so that we dont need to
         # recompute the `clamp` and subtraction each time.
         window_start = torch.clamp(torch.min(window_start, num_tokens - window_length), min=0)
@@ -217,7 +206,7 @@ class LocationRelativeAttention(nn.Module):
         if max_tokens_skipped > token_skip_warning:
             logger.warning('Attention module skipped %d tokens.', max_tokens_skipped)
 
-        # [batch_size, num_tokens] + [batch_size, num_tokens] → [batch_size, num_tokens]
-        cumulative_alignment = cumulative_alignment + alignment
+        hidden_state = LocationRelativeAttentionHiddenState(cumulative_alignment + alignment,
+                                                            window_start)
 
-        return context, cumulative_alignment, alignment, window_start
+        return context, alignment[:, part], hidden_state
