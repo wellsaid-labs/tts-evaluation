@@ -377,7 +377,7 @@ class SpectrogramModel(nn.Module):
         num_tokens: typing.Optional[torch.Tensor] = None,
         target_lengths: typing.Optional[torch.Tensor] = None,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        ...
+        ...  # pragma: no cover
 
     @typing.overload
     def __call__(
@@ -389,7 +389,7 @@ class SpectrogramModel(nn.Module):
         num_tokens: typing.Optional[torch.Tensor] = None,
         use_tqdm: bool = False,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        ...
+        ...  # pragma: no cover
 
     @typing.overload
     def __call__(self,
@@ -399,7 +399,7 @@ class SpectrogramModel(nn.Module):
                  num_tokens: typing.Optional[torch.Tensor] = None,
                  split_size: float = 32,
                  use_tqdm: bool = False) -> SpectrogramModelGenerator:
-        ...
+        ...  # pragma: no cover
 
     def __call__(self,
                  *args,

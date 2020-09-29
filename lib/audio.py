@@ -602,12 +602,12 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
     @typing.overload
     def forward(self, signal: torch.Tensor, intermediate: typing_extensions.Literal[False],
                 aligned: bool) -> torch.Tensor:
-        ...
+        ...  # pragma: no cover
 
     @typing.overload
     def forward(self, signal: torch.Tensor, intermediate: typing_extensions.Literal[True],
                 aligned: bool) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        ...
+        ...  # pragma: no cover
 
     def forward(
         self,

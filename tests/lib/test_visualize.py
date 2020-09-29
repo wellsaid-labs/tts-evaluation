@@ -1,9 +1,22 @@
 from matplotlib import pyplot
 
+import hparams
 import matplotlib
+import pytest
 import torch
 
 import lib
+
+
+@pytest.fixture(autouse=True)
+def run_around_tests():
+    """ Set a basic configuration for `lib.visualize`. """
+    sample_rate = 24000
+    hparams.add_config({
+        lib.audio.write_audio: hparams.HParams(sample_rate=sample_rate),
+    })
+    yield
+    hparams.clear_config()
 
 
 def test_plot_alignments():

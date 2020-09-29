@@ -28,6 +28,7 @@ comet-ml[cpu_logging]==3.2.0
 # Testing
 pytest
 pytest-cov
+pytest-xdist
 
 # Linting
 flake8
