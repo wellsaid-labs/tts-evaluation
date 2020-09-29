@@ -135,8 +135,7 @@ def dataset_loader(root_directory_name: str,
                    alignments_directory_name: str = 'alignments',
                    recordings_directory_name: str = 'recordings',
                    scripts_directory_name: str = 'scripts',
-                   text_column: str = 'Content',
-                   max_seconds: int = 15) -> typing.List[Example]:
+                   text_column: str = 'Content') -> typing.List[Example]:
     """ Load an alignment text-to-speech (TTS) dataset from GCS.
 
     The structure of the dataset should be:
@@ -165,7 +164,6 @@ def dataset_loader(root_directory_name: str,
         recordings_gcs_path: The name of the voice over directory on GCS.
         scripts_gcs_path: The name of the voice over script directory on GCS.
         text_column: The voice over script column in the CSV script files.
-        max_seconds: The length of an example.
 
     Returns: List of voice-over examples in the dataset.
     """

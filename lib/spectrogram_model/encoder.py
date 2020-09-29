@@ -232,6 +232,15 @@ class Encoder(nn.Module):
             if isinstance(module, nn.Conv1d):
                 nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
 
+    def __call__(
+        self,
+        tokens: torch.Tensor,
+        tokens_mask: torch.Tensor,
+        num_tokens: torch.Tensor,
+        speaker: torch.Tensor,
+    ) -> torch.Tensor:
+        return super().__call__(tokens, tokens_mask, num_tokens, speaker)
+
     def forward(
         self,
         tokens: torch.Tensor,

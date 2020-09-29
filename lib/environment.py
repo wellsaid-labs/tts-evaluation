@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 ROOT_PATH = Path(__file__).parents[1].resolve()  # Repository root path
 
-IS_TESTING_ENVIRONMENT = 'pytest' in sys.modules
+IS_TESTING_ENVIRONMENT: bool = 'pytest' in sys.modules
 
 # NOTE: You can experiment with these codes in your console like so:
 # `echo -e '\033[43m \033[30m hi \033[0m'`
@@ -272,6 +272,7 @@ def _duplicate_stream(from_: typing.TextIO, to: Path) -> typing.Callable[[], Non
         from_.flush()
 
         # Tee flush / close / terminate
+        assert tee.stdin is not None
         tee.stdin.close()
         tee.terminate()
         tee.wait()
@@ -381,7 +382,7 @@ _LoadMostRecentFileReturnType = typing.TypeVar('_LoadMostRecentFileReturnType')
 
 
 def load_most_recent_file(
-        pattern: Path,
+        pattern: str,
         read: typing.Callable[[Path],
                               _LoadMostRecentFileReturnType]) -> _LoadMostRecentFileReturnType:
     """ Get the most recently modified file.
@@ -392,7 +393,7 @@ def load_most_recent_file(
     Returns:
         The most recent non-corrupted file that is found based on modification time.
     """
-    paths = list(glob.iglob(str(pattern), recursive=True))
+    paths = list(glob.iglob(pattern, recursive=True))
     if len(paths) == 0:
         raise ValueError(f"No files found with {pattern} pattern.")
 

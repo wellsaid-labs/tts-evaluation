@@ -25,6 +25,9 @@ class L1L2Loss(torch.nn.Module):
         self.l1_loss = torch.nn.L1Loss(*args, **kwargs)
         self.l2_loss = torch.nn.MSELoss(*args, **kwargs)
 
+    def __call__(self, *args, **kwargs) -> torch.Tensor:
+        ...
+
     def forward(self, *args, **kwargs) -> torch.Tensor:
         return self.l1_loss(*args, **kwargs) + self.l2_loss(*args, **kwargs)
 
@@ -41,6 +44,9 @@ class _InterpolateAndConcat(torch.nn.Module):
         super().__init__()
         self.size = size
         self.scale_factor = scale_factor
+
+    def __call__(self, tensor: torch.Tensor, concat: torch.Tensor) -> torch.Tensor:
+        ...
 
     def forward(self, tensor: torch.Tensor, concat: torch.Tensor) -> torch.Tensor:
         """
@@ -68,6 +74,9 @@ class _InterpolateAndMask(torch.nn.Module):
         super().__init__()
         self.scale_factor = scale_factor
 
+    def __call__(self, tensor: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        ...
+
     def forward(self, tensor: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
         Args:
@@ -91,6 +100,9 @@ class _PixelShuffle1d(torch.nn.Module):
     def __init__(self, upscale_factor: int):
         super().__init__()
         self.upscale_factor = upscale_factor
+
+    def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
+        ...
 
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         """
@@ -125,6 +137,12 @@ class _PixelShuffle1d(torch.nn.Module):
 
 class _Sequential(torch.nn.Sequential):
 
+    def __call__(self,
+                 input_: torch.Tensor,
+                 mask: typing.Optional[torch.Tensor] = None,
+                 conditioning: typing.Optional[torch.Tensor] = None) -> torch.Tensor:
+        ...
+
     def forward(self,
                 input_: torch.Tensor,
                 mask: typing.Optional[torch.Tensor] = None,
@@ -139,6 +157,8 @@ class _Sequential(torch.nn.Sequential):
                 assert mask is not None
                 input_ = module(input_, mask)
             elif isinstance(module, _Block):
+                assert mask is not None
+                assert conditioning is not None
                 input_ = module(input_, mask, conditioning)
             else:
                 input_ = module(input_)
@@ -201,6 +221,10 @@ class _Block(torch.nn.Module):
         self.padding_required += (self.other_block[4].kernel_size[0] // 2) / output_scale
         self.padding_required += (self.other_block[-1].kernel_size[0] // 2) / output_scale
 
+    def __call__(self, input_: torch.Tensor, mask: torch.Tensor,
+                 conditioning: torch.Tensor) -> torch.Tensor:
+        ...
+
     def forward(self, input_: torch.Tensor, mask: torch.Tensor,
                 conditioning: torch.Tensor) -> torch.Tensor:
         """
@@ -227,6 +251,9 @@ class _Block(torch.nn.Module):
 
 
 class _LayerNorm(torch.nn.LayerNorm):
+
+    def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
+        ...
 
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
@@ -328,7 +355,8 @@ class SignalModel(torch.nn.Module):
         for module in self.modules():
             if isinstance(module, torch.nn.Conv1d):
                 torch.nn.init.orthogonal_(module.weight)
-                torch.nn.init.zeros_(module.bias)
+                if module.bias is not None:
+                    torch.nn.init.zeros_(module.bias)
 
     def get_layer_size(self, i: int) -> int:
         """ Get the hidden size of layer `i`. """
@@ -364,6 +392,12 @@ class SignalModel(torch.nn.Module):
             spectrogram_mask = lib.utils.pad_tensor(spectrogram_mask, padding, dim=1)
 
         return spectrogram, spectrogram_mask
+
+    def __call__(self,
+                 spectrogram: torch.Tensor,
+                 spectrogram_mask: typing.Optional[torch.Tensor] = None,
+                 pad_input: bool = True) -> torch.Tensor:
+        ...
 
     def forward(self,
                 spectrogram: torch.Tensor,
@@ -459,7 +493,12 @@ class SpectrogramDiscriminator(torch.nn.Module):
         for module in self.modules():
             if isinstance(module, torch.nn.Conv1d):
                 torch.nn.init.orthogonal_(module.weight)
-                torch.nn.init.zeros_(module.bias)
+                if module.bias is not None:
+                    torch.nn.init.zeros_(module.bias)
+
+    def __call__(self, spectrogram: torch.Tensor, db_spectrogram: torch.Tensor,
+                 db_mel_spectrogram: torch.Tensor) -> torch.Tensor:
+        ...
 
     def forward(self, spectrogram: torch.Tensor, db_spectrogram: torch.Tensor,
                 db_mel_spectrogram: torch.Tensor) -> torch.Tensor:

@@ -179,11 +179,12 @@ def _make_encoder(vocab_size=10,
         lstm_layers=lstm_layers,
         dropout=dropout,
         padding_index=padding_index)
-    # NOTE: Ensure `LayerNorm` perturbs the input instead of being just an identity.
-    for module in encoder.modules():
-        if isinstance(module, torch.nn.LayerNorm):
-            torch.nn.init.uniform_(module.weight)
-            torch.nn.init.uniform_(module.bias)
+
+    # NOTE: Ensure modules like `LayerNorm` perturbs the input instead of being just an identity.
+    for name, parameter in encoder.named_parameters():
+        if parameter.std() == 0:
+            torch.nn.init.normal_(parameter)
+
     tokens = torch.randint(1, vocab_size, (batch_size, num_tokens))
     tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
     speaker = torch.randn(batch_size, speaker_embedding_size)

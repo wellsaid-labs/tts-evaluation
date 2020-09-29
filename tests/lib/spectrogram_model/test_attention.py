@@ -7,10 +7,10 @@ import typing
 
 from tests import _utils
 
-import lib.spectrogram_model.attention
-
 from lib.spectrogram_model.attention import LocationRelativeAttention
 from lib.spectrogram_model.attention import LocationRelativeAttentionHiddenState
+
+import lib.spectrogram_model.attention
 
 
 def test__window():
@@ -112,9 +112,10 @@ def _make_attention(
     tokens = torch.randn(max_num_tokens, batch_size, attention_hidden_size)
     tokens_mask = torch.ones(batch_size, max_num_tokens, dtype=torch.bool)
     query = torch.randn(1, batch_size, query_hidden_size)
+    padding = (module.cumulative_alignment_padding, module.cumulative_alignment_padding)
+    cumulative_alignment = torch.zeros(batch_size, max_num_tokens)
     hidden_state = LocationRelativeAttentionHiddenState(
-        cumulative_alignment=torch.zeros(batch_size,
-                                         max_num_tokens + module.cumulative_alignment_padding * 2),
+        cumulative_alignment=lib.utils.pad_tensor(cumulative_alignment, padding, 1, value=1.0),
         window_start=torch.zeros(batch_size, dtype=torch.long),
     )
     return module, (tokens, tokens_mask, query, hidden_state), (batch_size, max_num_tokens)
@@ -144,7 +145,7 @@ assert_almost_equal = partial(_utils.assert_almost_equal, decimal=5)
 
 
 def test_location_relative_attention():
-    """ Test `LocationRelativeAttention` handles a basic case. """
+    """ Test `attention.LocationRelativeAttention` handles a basic case. """
     module, (tokens, tokens_mask, query, hidden_state), (batch_size,
                                                          max_num_tokens) = _make_attention()
     tokens_mask[:, -1].fill_(0)
@@ -180,9 +181,10 @@ def test_location_relative_attention():
             assert alignment_sum[i].item() == pytest.approx(1, 0.0001)
 
         # NOTE: Check the softmax computation was applied correctly.
-        cumulative_alignment_sum = hidden_state.cumulative_alignment.sum(dim=1)
+        padding = module.cumulative_alignment_padding
+        alignment_sum = hidden_state.cumulative_alignment[:, padding:-padding].sum(dim=1)
         for i in range(batch_size):
-            assert cumulative_alignment_sum[i].item() == pytest.approx(j + 1)
+            assert alignment_sum[i].item() == pytest.approx(j + 1)
 
         last_hidden_state = hidden_state
 

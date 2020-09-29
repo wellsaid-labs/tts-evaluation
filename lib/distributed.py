@@ -58,15 +58,15 @@ def assert_synced(value: float, message: str = ''):
     assert torch.equal(master_value, value_tensor), message
 
 
-def spawn(*args, **kwargs):
+def spawn(*args, nprocs=None, **kwargs):
     """ `torch.multiprocessing.spawn` wrapper.
 
     NOTE (michael): Without an assert, when `nprocs` is zero, `torch.multiprocessing.spawn`
     crashes in a nondescript way.
     """
-    num_cuda_devices = torch.cuda.device_count()
-    assert num_cuda_devices > 0, 'Unable to find CUDA devices.'
-    torch.multiprocessing.spawn(*args, nprocs=num_cuda_devices, **kwargs)
+    assert torch.cuda.device_count() > 0, 'Unable to find CUDA devices.'
+    nprocs = torch.cuda.device_count() if nprocs is None else nprocs
+    torch.multiprocessing.spawn(*args, nprocs=nprocs, **kwargs)  # type: ignore
 
 
 class DistributedAverage(lib.utils.Average):

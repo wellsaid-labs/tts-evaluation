@@ -58,6 +58,9 @@ class PreNet(torch.nn.Module):
                 torch.nn.init.xavier_uniform_(
                     module.weight, gain=torch.nn.init.calculate_gain('relu'))
 
+    def __call__(self, frames: torch.Tensor) -> torch.Tensor:
+        return super().__call__(frames)
+
     def forward(self, frames: torch.Tensor) -> torch.Tensor:
         """
         Args:

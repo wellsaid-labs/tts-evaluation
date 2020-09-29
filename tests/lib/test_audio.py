@@ -416,7 +416,7 @@ def test_power_spectrogram_to_framed_rms__batch():
         torch.tensor(lib.audio.full_scale_sine_wave()),
         torch.tensor(lib.audio.full_scale_square_wave()),
     ])
-    padded_batched_signal = torch.nn.functional.pad(batched_signal, (frame_length, frame_length))
+    padded_batched_signal = torch.nn.functional.pad(batched_signal, [frame_length, frame_length])
     batched_spectrogram = torch.stft(
         padded_batched_signal,
         n_fft=frame_length,

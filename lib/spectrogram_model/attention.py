@@ -117,6 +117,18 @@ class LocationRelativeAttention(nn.Module):
         self.project_scores = nn.Sequential(
             LockedDropout(dropout), nn.Linear(hidden_size, 1, bias=False))
 
+    def __call__(
+        self,
+        tokens: torch.Tensor,
+        tokens_mask: torch.Tensor,
+        num_tokens: torch.Tensor,
+        query: torch.Tensor,
+        hidden_state: LocationRelativeAttentionHiddenState,
+        token_skip_warning: int = 2
+    ) -> typing.Tuple[torch.Tensor, torch.Tensor, LocationRelativeAttentionHiddenState]:
+        return super().__call__(tokens, tokens_mask, num_tokens, query, hidden_state,
+                                token_skip_warning)
+
     def forward(
         self,
         tokens: torch.Tensor,
@@ -150,7 +162,6 @@ class LocationRelativeAttention(nn.Module):
         cumulative_alignment, window_start = hidden_state
 
         part = slice(cumulative_alignment_padding, -cumulative_alignment_padding)
-        cumulative_alignment[:, part] = cumulative_alignment[:, part].masked_fill(~tokens_mask, 0)
 
         # [batch_size, num_tokens + 2 * cumulative_alignment_padding] →
         # [batch_size, 1, num_tokens + 2 * cumulative_alignment_padding]
@@ -194,13 +205,16 @@ class LocationRelativeAttention(nn.Module):
         context = context.squeeze(1)
 
         alignment = torch.zeros(
-            batch_size, max_num_tokens + cumulative_alignment_padding * 2, device=device)
-        alignment.scatter_(1, window_indices + cumulative_alignment_padding, alignment)
+            batch_size, max_num_tokens + cumulative_alignment_padding * 2,
+            device=device).scatter_(1, window_indices + cumulative_alignment_padding, alignment)
 
         last_window_start = window_start
         window_start = alignment.max(dim=1)[1] - window_length // 2 - cumulative_alignment_padding
         # TODO: Cache `num_tokens - window_length` clamped at 0 so that we dont need to
         # recompute the `clamp` and subtraction each time.
+        # TODO: `torch.clamp` does not prompt a consistent left-to-right progression. Can this be
+        # fixed? For example, we could pad the alignment and encoder output so that `window_start`
+        # can progress to the end.
         window_start = torch.clamp(torch.min(window_start, num_tokens - window_length), min=0)
         max_tokens_skipped = (window_start - last_window_start).max()
         if max_tokens_skipped > token_skip_warning:

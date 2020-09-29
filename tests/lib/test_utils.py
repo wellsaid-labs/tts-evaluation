@@ -167,7 +167,8 @@ def test_sort_together():
 
 def test_pool():
     with lib.utils.Pool() as pool:
-        assert pool.map(lib.utils.identity, [1, 2, 3]) == [1, 2, 3]
+        assert pool.map(typing.cast(typing.Callable[[int], int], lib.utils.identity),
+                        [1, 2, 3]) == [1, 2, 3]
 
 
 def test_pad_tensor():

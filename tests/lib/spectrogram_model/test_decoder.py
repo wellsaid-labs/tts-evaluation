@@ -3,12 +3,19 @@ import torch
 from hparams import HParams
 
 import hparams
+import pytest
 
 from lib.spectrogram_model.attention import LocationRelativeAttentionHiddenState
 from lib.spectrogram_model.decoder import AutoregressiveDecoder
 from lib.spectrogram_model.decoder import AutoregressiveDecoderHiddenState
 
 import lib
+
+
+@pytest.fixture(autouse=True)
+def run_around_tests():
+    yield
+    hparams.clear_config()
 
 
 def _make_decoder(num_frame_channels=16,

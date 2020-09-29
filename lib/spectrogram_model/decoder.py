@@ -56,7 +56,7 @@ class AutoregressiveDecoder(nn.Module):
                  pre_net_size: int = HParam(),
                  lstm_hidden_size: int = HParam(),
                  encoder_output_size: int = HParam(),
-                 stop_net_dropout: int = HParam()):
+                 stop_net_dropout: float = HParam()):
         super().__init__()
 
         self.num_frame_channels = num_frame_channels
@@ -133,6 +133,23 @@ class AutoregressiveDecoder(nn.Module):
             lstm_one_hidden_state=None,
             lstm_two_hidden_state=None,
         )
+
+    def __call__(
+        self,
+        tokens: torch.Tensor,
+        tokens_mask: torch.Tensor,
+        num_tokens: torch.Tensor,
+        speaker: torch.Tensor,
+        target_frames: typing.Optional[torch.Tensor] = None,
+        hidden_state: typing.Optional[AutoregressiveDecoderHiddenState] = None
+    ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, AutoregressiveDecoderHiddenState]:
+        return super().__call__(
+            tokens=tokens,
+            tokens_mask=tokens_mask,
+            num_tokens=num_tokens,
+            speaker=speaker,
+            target_frames=target_frames,
+            hidden_state=hidden_state)
 
     def forward(
         self,

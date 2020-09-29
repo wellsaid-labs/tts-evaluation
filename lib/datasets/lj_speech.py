@@ -361,8 +361,7 @@ def _verbalize_serial_numbers(text: str) -> str:
 
     def _replace(match):
         split = match.split(' ')
-        ret = [num2words.num2words(int(t)) if t.isdigit() else t for t in list(split[-1])]
-        ret = ' '.join(ret)
+        ret = ' '.join([num2words.num2words(int(t)) if t.isdigit() else t for t in list(split[-1])])
         if len(split) == 2:
             ret = split[0] + ' ' + ret
         return ret

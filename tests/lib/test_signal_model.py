@@ -239,9 +239,9 @@ def test_generate_waveform__padding_invariance():
         torch.zeros([batch_size, padding])
     ], 1).bool()
     immediate = model(spectrogram[:, padding:-padding])
-    generated = lib.signal_model.generate_waveform(model, spectrogram.split(split_size, dim=1),
+    generator = lib.signal_model.generate_waveform(model, spectrogram.split(split_size, dim=1),
                                                    mask.split(split_size, dim=1))
-    generated = torch.cat(list(generated), dim=1)
+    generated = torch.cat(list(generator), dim=1)
     # NOTE: Ensure the output is masked.
     assert generated[:, :padding * model.upscale_factor].abs().sum().item() == 0.0
     assert generated[:, -padding * model.upscale_factor:].abs().sum().item() == 0.0

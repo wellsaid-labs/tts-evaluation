@@ -69,24 +69,27 @@ JANE_EYRE = Book(ELIZABETH_KLETT, 'jane_eyre')
 WIVES_AND_DAUGHTERS = Book(ELIZABETH_KLETT, 'wives_and_daughters')
 
 
-def m_ailabs_en_us_judy_bieber_speech_dataset(books=[
-    THE_SEA_FAIRIES, THE_MASTER_KEY, RINKITINK_IN_OZ, DOROTHY_AND_WIZARD_OZ, SKY_ISLAND, OZMA_OF_OZ,
-    EMERALD_CITY_OF_OZ
-]):
-    return m_ailabs_en_us_speech_dataset(books=books)
+def m_ailabs_en_us_judy_bieber_speech_dataset(*args,
+                                              books=[
+                                                  THE_SEA_FAIRIES, THE_MASTER_KEY, RINKITINK_IN_OZ,
+                                                  DOROTHY_AND_WIZARD_OZ, SKY_ISLAND, OZMA_OF_OZ,
+                                                  EMERALD_CITY_OF_OZ
+                                              ]):
+    return m_ailabs_en_us_speech_dataset(*args, books=books)  # type: ignore
 
 
-def m_ailabs_en_us_mary_ann_speech_dataset(books=[MIDNIGHT_PASSENGER, NORTH_AND_SOUTH]):
-    return m_ailabs_en_us_speech_dataset(books=books)
+def m_ailabs_en_us_mary_ann_speech_dataset(*args, books=[MIDNIGHT_PASSENGER, NORTH_AND_SOUTH]):
+    return m_ailabs_en_us_speech_dataset(*args, books=books)  # type: ignore
 
 
 def m_ailabs_en_us_elliot_miller_speech_dataset(
+        *args,
         books=[PIRATES_OF_ERSATZ, POISONED_PEN, SILENT_BULLET, HUNTERS_SPACE, PINK_FAIRY_BOOK]):
-    return m_ailabs_en_us_speech_dataset(books=books)
+    return m_ailabs_en_us_speech_dataset(*args, books=books)  # type: ignore
 
 
-def m_ailabs_en_uk_elizabeth_klett_speech_dataset(books=[JANE_EYRE, JANE_EYRE]):
-    return m_ailabs_en_us_speech_dataset(books=books)
+def m_ailabs_en_uk_elizabeth_klett_speech_dataset(*args, books=[JANE_EYRE, JANE_EYRE]):
+    return m_ailabs_en_us_speech_dataset(*args, books=books)  # type: ignore
 
 
 def m_ailabs_en_us_speech_dataset(directory,
