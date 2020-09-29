@@ -12,7 +12,7 @@ import typing
 
 from third_party import LazyLoader
 from tqdm import tqdm
-normalise = LazyLoader('normalise', globals(), 'normalise.normalise')
+normalise = LazyLoader('normalise', globals(), 'normalise')
 
 import ftfy
 import unidecode
@@ -259,6 +259,7 @@ def normalize_non_standard_words(text: str, variety: str = 'AmE', **kwargs) -> s
 
     tokens = [[t.text, t.whitespace_] for t in load_en_english()(text)]
     merged = [tokens[0]]
+    # TODO: Use https://spacy.io/usage/linguistic-features#retokenization
     for token, whitespace in tokens[1:]:
         # NOTE: For example, spaCy tokenizes "$29.95" as two tokens, and this undos that.
         if (merged[-1][0] == '$' or token == '$') and merged[-1][1] == '':
@@ -268,7 +269,7 @@ def normalize_non_standard_words(text: str, variety: str = 'AmE', **kwargs) -> s
             merged.append([token, whitespace])
 
     assert ''.join(lib.utils.flatten(merged)) == text
-    normalized = normalise([t[0] for t in merged], variety=variety, **kwargs)
+    normalized = normalise.normalise([t[0] for t in merged], variety=variety, **kwargs)
     return ''.join(lib.utils.flatten([(n.strip(), m[1]) for n, m in zip(normalized, merged)]))
 
 
@@ -334,8 +335,8 @@ def _is_in_window(value: int, window: typing.Tuple[int, int]) -> bool:
 
 
 def align_tokens(
-    tokens: typing.List[str],
-    other_tokens: typing.List[str],
+    tokens: typing.Union[typing.List[str], str],
+    other_tokens: typing.Union[typing.List[str], str],
     window_length: typing.Optional[int] = None,
     all_alignments: bool = False,
     allow_substitution: typing.Callable[[str, str], bool] = lambda a, b: True

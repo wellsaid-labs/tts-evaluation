@@ -26,7 +26,7 @@ class L1L2Loss(torch.nn.Module):
         self.l2_loss = torch.nn.MSELoss(*args, **kwargs)
 
     def __call__(self, *args, **kwargs) -> torch.Tensor:
-        ...
+        return super().__call__(*args, **kwargs)
 
     def forward(self, *args, **kwargs) -> torch.Tensor:
         return self.l1_loss(*args, **kwargs) + self.l2_loss(*args, **kwargs)
@@ -46,7 +46,7 @@ class _InterpolateAndConcat(torch.nn.Module):
         self.scale_factor = scale_factor
 
     def __call__(self, tensor: torch.Tensor, concat: torch.Tensor) -> torch.Tensor:
-        ...
+        return super().__call__(tensor, concat)
 
     def forward(self, tensor: torch.Tensor, concat: torch.Tensor) -> torch.Tensor:
         """
@@ -75,7 +75,7 @@ class _InterpolateAndMask(torch.nn.Module):
         self.scale_factor = scale_factor
 
     def __call__(self, tensor: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        ...
+        return super().__call__(tensor, mask)
 
     def forward(self, tensor: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
@@ -102,7 +102,7 @@ class _PixelShuffle1d(torch.nn.Module):
         self.upscale_factor = upscale_factor
 
     def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
-        ...
+        return super().__call__(tensor)
 
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         """
@@ -141,7 +141,7 @@ class _Sequential(torch.nn.Sequential):
                  input_: torch.Tensor,
                  mask: typing.Optional[torch.Tensor] = None,
                  conditioning: typing.Optional[torch.Tensor] = None) -> torch.Tensor:
-        ...
+        return super().__call__(input_, mask, conditioning)
 
     def forward(self,
                 input_: torch.Tensor,
@@ -223,7 +223,7 @@ class _Block(torch.nn.Module):
 
     def __call__(self, input_: torch.Tensor, mask: torch.Tensor,
                  conditioning: torch.Tensor) -> torch.Tensor:
-        ...
+        return super().__call__(input_, mask, conditioning)
 
     def forward(self, input_: torch.Tensor, mask: torch.Tensor,
                 conditioning: torch.Tensor) -> torch.Tensor:
@@ -253,7 +253,7 @@ class _Block(torch.nn.Module):
 class _LayerNorm(torch.nn.LayerNorm):
 
     def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
-        ...
+        return super().__call__(tensor)
 
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
@@ -397,7 +397,7 @@ class SignalModel(torch.nn.Module):
                  spectrogram: torch.Tensor,
                  spectrogram_mask: typing.Optional[torch.Tensor] = None,
                  pad_input: bool = True) -> torch.Tensor:
-        ...
+        return super().__call__(spectrogram, spectrogram_mask, pad_input)
 
     def forward(self,
                 spectrogram: torch.Tensor,
@@ -498,7 +498,7 @@ class SpectrogramDiscriminator(torch.nn.Module):
 
     def __call__(self, spectrogram: torch.Tensor, db_spectrogram: torch.Tensor,
                  db_mel_spectrogram: torch.Tensor) -> torch.Tensor:
-        ...
+        return super().__call__(spectrogram, db_spectrogram, db_mel_spectrogram)
 
     def forward(self, spectrogram: torch.Tensor, db_spectrogram: torch.Tensor,
                 db_mel_spectrogram: torch.Tensor) -> torch.Tensor:

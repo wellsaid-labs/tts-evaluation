@@ -129,16 +129,19 @@ def test_dataset_generator__unequal_alignment_sizes():
 @mock.patch('lib.datasets.utils.subprocess.run', return_value=None)
 def test_dataset_loader(_):
     """ Test `lib.datasets.dataset_loader` loads a dataset. """
-    examples = lib.datasets.dataset_loader(
-        'hilary_noriega',
-        '',
-        lib.datasets.HILARY_NORIEGA,
-        _utils.TEST_DATA_PATH / '_disk' / 'data')
+    examples = lib.datasets.dataset_loader('hilary_noriega', '', lib.datasets.HILARY_NORIEGA,
+                                           _utils.TEST_DATA_PATH / '_disk' / 'data')
     alignments = tuple([
-        lib.datasets.Alignment(a[0], a[1])
-        for a in [((0, 6), (0.0, 0.6)), ((7, 9), (0.6, 0.8)), ((10, 13), (0.8, 0.8)),
-                  ((14, 20), (0.8, 1.4)), ((21, 27), (1.4, 1.8)), ((28, 34), (1.8, 2.5)),
-                  ((35, 42), (2.5, 2.6)), ((43, 47), (2.6, 3.3))]
+        lib.datasets.Alignment(a[0], a[1]) for a in [
+            ((0, 6), (0.0, 0.6)),
+            ((7, 9), (0.6, 0.8)),
+            ((10, 13), (0.8, 0.8)),
+            ((14, 20), (0.8, 1.4)),
+            ((21, 27), (1.4, 1.8)),
+            ((28, 34), (1.8, 2.5)),
+            ((35, 42), (2.5, 2.6)),
+            ((43, 47), (2.6, 3.3)),
+        ]
     ])
     assert examples[0] == lib.datasets.Example(
         alignments=alignments,
