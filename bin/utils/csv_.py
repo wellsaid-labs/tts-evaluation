@@ -1,3 +1,4 @@
+""" Command-line interface (CLI) for processing CSV files. """
 import math
 import pathlib
 import typing
