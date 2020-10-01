@@ -45,6 +45,7 @@ python-Levenshtein # Sequence alignment
 git+https://github.com/PetrochukM/HParams.git # Organize hyperparameters
 pandas
 retry
+typer
 
 # Web
 flask
