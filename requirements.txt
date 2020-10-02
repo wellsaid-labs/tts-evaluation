@@ -36,7 +36,8 @@ mypy
 typing_extensions
 
 # Auto Formatter
-yapf==0.30.0
+black
+isort
 
 # Utils
 tqdm # Progress bar
