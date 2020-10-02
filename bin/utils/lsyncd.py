@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 
 def main(source: pathlib.Path = typer.Argument(..., help='A path on the local machine.'),
          destination: pathlib.Path = typer.Argument(..., help='A path on the remote machine.'),
-         public_dns: str = typer.Argument(..., help='The remote machine public DNS'),
-         user: str = typer.Argument(..., help='A remote machine username.'),
-         identity_file: pathlib.Path = typer.Argument(
+         public_dns: str = typer.Option(..., help='The remote machine public DNS'),
+         user: str = typer.Option(..., help='A remote machine username.'),
+         identity_file: pathlib.Path = typer.Option(
              ...,
              help='The path to private key used for authentication '
              '(e.g. ~/.ssh/michaelp_amazon_web_services)'),
-         template: pathlib.Path = typer.Argument(
+         template: pathlib.Path = typer.Option(
              lib.environment.ROOT_PATH / 'bin' / 'utils' / 'lsyncd.conf.lua',
              help='The path to a lsyncd config and template.')):
     """ Sync SOURCE to USER@PUBLIC_DNS:DESTINATION via [lsyncd](https://github.com/axkibe/lsyncd).
