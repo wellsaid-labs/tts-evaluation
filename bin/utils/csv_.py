@@ -35,7 +35,7 @@ def shuffle(source: pathlib.Path, destination: pathlib.Path):
 
 
 @app.command()
-def prefix(source: pathlib.Path, column: str, prefix: str, destination: pathlib.Path):
+def prefix(source: pathlib.Path, destination: pathlib.Path, column: str, prefix: str):
     """ Add a PREFIX to every entry in the SOURCE csv under COLUMN and save to DESTINATION. """
     df = pandas.read_csv(source)
     df[column] = prefix + df[column].astype(str)
