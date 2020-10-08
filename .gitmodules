@@ -1,3 +1,0 @@
-[submodule "third_party/amepd"]
-	path = third_party/amepd
-	url = https://github.com/rhdunn/amepd.git
