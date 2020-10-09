@@ -223,7 +223,6 @@ def test__load_amepd():
     assert part_of_speech_coarse == set(get_args(lib.text.AMEPD_PART_OF_SPEECH_COARSE))
     assert part_of_speech_fine == set(list(get_args(lib.text.AMEPD_PART_OF_SPEECH_FINE)) + [None])
     assert arpabet == set(get_args(lib.text.AMEPD_ARPABET))
-    print(characters)
     assert characters == set(list(string.ascii_uppercase) + ["'"])
 
 
