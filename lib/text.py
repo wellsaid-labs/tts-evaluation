@@ -313,7 +313,7 @@ def _load_amepd(
                 kwargs["pos"] = AmEPDPartOfSpeech(coarse, fine)  # type: ignore
 
         if any(c not in string.ascii_uppercase and c != "'" for c in word):
-            logger.warning("Ignoring non-ascii word %s.", word)
+            logger.warning("AmEPD non-ascii word in AmEPD dictionary: '%s'", word)
             continue
 
         pronunciation = rest
@@ -408,9 +408,9 @@ def get_pronunciation(
         pronunciations = list(filter(is_match, pronunciations))
 
     if len(pronunciations) > 1:
-        logger.warning("Unable to disamgiuate pronunciation of %s.", word)
+        logger.warning("Unable to disamgiuate pronunciation of '%s'.", word)
     elif len(pronunciations) == 0:
-        logger.warning("Unable to find pronunciation of %s.", word)
+        logger.warning("Unable to find pronunciation of '%s'.", word)
 
     return pronunciations[0].pronunciation if len(pronunciations) == 1 else None
 
