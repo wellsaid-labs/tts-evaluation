@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 class AudioFileMetadata(typing.NamedTuple):
     """
+    TODO: The `sample_rate` does not change in porportion to the number of channels; therefore, the
+    `sample_rate` should technically be called the `frame_rate` because it measures the number of
+    frames per second.
+
     Args:
       path: The audio file path.
       sample_rate: The sample rate of the audio.

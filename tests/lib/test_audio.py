@@ -15,6 +15,7 @@ from tests import _utils
 
 TEST_DATA_PATH = _utils.TEST_DATA_PATH / "test_audio"
 TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
+TEST_DATA_LJ_MULTI_CHANNEL = TEST_DATA_PATH / "channels(bit(rate(lj_speech,24000),32),2).wav"
 
 
 @pytest.fixture(autouse=True)
@@ -108,6 +109,19 @@ def test_get_audio_metadata__large_batch():
             encoding="32-bit Floating Point PCM",
             length=7.583958333333333,
         )
+
+
+def test_get_audio_metadata__multiple_channels():
+    """Test `lib.audio.get_audio_metadata` returns the right metadata for multiple channel audio."""
+    assert lib.audio.get_audio_metadata([TEST_DATA_LJ_MULTI_CHANNEL])[
+        0
+    ] == lib.audio.AudioFileMetadata(
+        path=TEST_DATA_LJ_MULTI_CHANNEL,
+        sample_rate=24000,
+        channels=2,
+        encoding="32-bit Floating Point PCM",
+        length=7.583958333333333,
+    )
 
 
 def test_read_audio():
