@@ -64,9 +64,7 @@ class AdaptiveGradientNormClipping:
         half = int(half)
         return (self.sorted_window[half] + self.sorted_window[half - 1]) / 2
 
-    def clip_(
-        self, parameters: typing.Union[torch.Tensor, typing.Iterable[torch.Tensor]]
-    ):
+    def clip_(self, parameters: typing.Union[torch.Tensor, typing.Iterable[torch.Tensor]]):
         """Clips gradient norm of an iterable of parameters, and update gradient norm history.
 
         Args:
@@ -96,23 +94,17 @@ class ExponentialMovingParameterAverage:
     """
 
     @configurable
-    def __init__(
-        self, parameters: typing.Iterable[torch.Tensor], beta: float = HParam()
-    ):
+    def __init__(self, parameters: typing.Iterable[torch.Tensor], beta: float = HParam()):
         self.parameters = list(parameters)
         self.beta = beta
-        self.shadow = [
-            param.clone().detach() * (1.0 - self.beta) for param in self.parameters
-        ]
+        self.shadow = [param.clone().detach() * (1.0 - self.beta) for param in self.parameters]
         self.backup: typing.List[torch.Tensor] = []
         self.step = 1
 
     def update(self):
         """ Update the parameter average. """
         for i, param in enumerate(self.parameters):
-            self.shadow[i] = (
-                1.0 - self.beta
-            ) * param.clone().detach() + self.beta * self.shadow[i]
+            self.shadow[i] = (1.0 - self.beta) * param.clone().detach() + self.beta * self.shadow[i]
         self.step += 1
 
     def apply(self):

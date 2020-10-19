@@ -21,9 +21,7 @@ def test__roll__2d():
     """Test `lib.spectrogram_model.encoder._roll` to roll given a 2d `tensor` with variable
     `shift`. Furthermore, this tests a negative `dim`."""
     tensor = torch.tensor([[1, 2, 3], [1, 2, 3], [1, 2, 3]])
-    result = lib.spectrogram_model.encoder._roll(
-        tensor, shift=torch.tensor([0, 1, 2]), dim=-1
-    )
+    result = lib.spectrogram_model.encoder._roll(tensor, shift=torch.tensor([0, 1, 2]), dim=-1)
     assert torch.equal(result, torch.tensor([[1, 2, 3], [3, 1, 2], [2, 3, 1]]))
 
 
@@ -121,9 +119,7 @@ def test__right_masked_bi_rnn__jagged_mask():
     tokens = torch.tensor([[1, 2, 3, 0, 0], [1, 2, 0, 0, 0]], dtype=torch.float32)
     tokens = tokens.transpose(0, 1).unsqueeze(2)
     # tokens_mask [batch_size, seq_len] → [seq_len, batch_size]
-    tokens_mask = torch.tensor(
-        [[1, 1, 1, 0, 0], [1, 1, 0, 0, 0]], dtype=torch.bool
-    ).transpose(0, 1)
+    tokens_mask = torch.tensor([[1, 1, 1, 0, 0], [1, 1, 0, 0, 0]], dtype=torch.bool).transpose(0, 1)
     num_tokens = tokens_mask.sum(dim=0)
 
     masked_bi_rnn = lib.spectrogram_model.encoder._RightMaskedBiRNN(
@@ -136,9 +132,7 @@ def test__right_masked_bi_rnn__jagged_mask():
 
     forward_lstm, backward_lstm = masked_bi_rnn.rnn_layers[0]
     expected = torch.zeros(tokens.shape[0], tokens.shape[1], hidden_size * 2)
-    expected[:, :, :hidden_size] = forward_lstm(tokens)[0].masked_fill(
-        ~tokens_mask.unsqueeze(2), 0
-    )
+    expected[:, :, :hidden_size] = forward_lstm(tokens)[0].masked_fill(~tokens_mask.unsqueeze(2), 0)
     expected[:3, 0:1, hidden_size:] = backward_lstm(tokens[:3, 0:1].flip(0))[0].flip(0)
     expected[:2, 1:2, hidden_size:] = backward_lstm(tokens[:2, 1:2].flip(0))[0].flip(0)
     assert_almost_equal(result, expected)
@@ -159,9 +153,7 @@ def test__right_masked_bi_rnn__multilayer_mask():
     padding_len = 2
     tokens, tokens_mask = _make_rnn_inputs(masked_bi_rnn)
     num_tokens = tokens_mask.sum(dim=0)
-    padded_tokens = torch.cat(
-        [tokens, torch.zeros(padding_len, *tokens.shape[1:3])], dim=0
-    )
+    padded_tokens = torch.cat([tokens, torch.zeros(padding_len, *tokens.shape[1:3])], dim=0)
     padded_tokens_mask = torch.cat(
         [tokens_mask, torch.zeros(padding_len, tokens_mask.shape[1], dtype=torch.bool)],
         dim=0,
@@ -252,9 +244,7 @@ def test_encoder_padding_invariance():
         padding = torch.zeros(batch_size, padding_len)
         padded_tokens = torch.cat([tokens, padding.long()], dim=1)
         padded_tokens_mask = torch.cat([tokens_mask, padding.bool()], dim=1)
-        result = module(
-            padded_tokens, padded_tokens_mask, tokens_mask.sum(dim=1), speaker
-        )
+        result = module(padded_tokens, padded_tokens_mask, tokens_mask.sum(dim=1), speaker)
         result.sum().backward()
         result_grad = [p.grad for p in module.parameters() if p.grad is not None]
         module.zero_grad()

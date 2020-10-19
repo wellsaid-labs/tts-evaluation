@@ -15,9 +15,7 @@ logger = logging.getLogger(__name__)
 
 def main(
     source: pathlib.Path = typer.Argument(..., help="A path on the local machine."),
-    destination: pathlib.Path = typer.Argument(
-        ..., help="A path on the remote machine."
-    ),
+    destination: pathlib.Path = typer.Argument(..., help="A path on the remote machine."),
     public_dns: str = typer.Option(..., help="The remote machine public DNS"),
     user: str = typer.Option(..., help="A remote machine username."),
     identity_file: pathlib.Path = typer.Option(

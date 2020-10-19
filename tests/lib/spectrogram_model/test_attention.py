@@ -85,9 +85,7 @@ def test__window__2d():
 def test__window__3d():
     """Test `lib.spectrogram_model.attention._window` to window given a 3d `tensor` and 2d `start`.
     Furthermore, this tests a negative `dim`."""
-    tensor = torch.tensor(
-        [[[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]], [[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]]]
-    )
+    tensor = torch.tensor([[[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]], [[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]]])
     window = lib.spectrogram_model.attention._window(
         tensor, start=torch.tensor([[0, 1], [2, 3]]), length=2, dim=-1
     )[0]
@@ -98,16 +96,12 @@ def test__window__transpose_invariance():
     """Test `lib.spectrogram_model.attention._window` to window given a transposed 3d `tensor`.
     `lib.spectrogram_model.attention._window` should return consistent results regardless of the
     dimension and ordering of the data."""
-    tensor = torch.tensor(
-        [[[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]], [[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]]]
-    )
+    tensor = torch.tensor([[[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]], [[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]]])
     tensor = tensor.transpose(-2, -1)
     window = lib.spectrogram_model.attention._window(
         tensor, start=torch.tensor([[0, 1], [2, 3]]), length=2, dim=-2
     )[0]
-    assert torch.equal(
-        window.transpose(-1, -2), torch.tensor([[[1, 2], [2, 3]], [[3, 4], [4, 5]]])
-    )
+    assert torch.equal(window.transpose(-1, -2), torch.tensor([[[1, 2], [2, 3]], [[3, 4], [4, 5]]]))
 
 
 def _make_attention(
@@ -120,9 +114,7 @@ def _make_attention(
     window_length=7,
 ) -> typing.Tuple[
     LocationRelativeAttention,
-    typing.Tuple[
-        torch.Tensor, torch.Tensor, torch.Tensor, LocationRelativeAttentionHiddenState
-    ],
+    typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, LocationRelativeAttentionHiddenState],
     typing.Tuple[int, int],
 ]:
     """ Make `attention.LocationRelativeAttention` and it's inputs for testing."""
@@ -139,9 +131,7 @@ def _make_attention(
     padding = (module.cumulative_alignment_padding, module.cumulative_alignment_padding)
     cumulative_alignment = torch.zeros(batch_size, max_num_tokens)
     hidden_state = LocationRelativeAttentionHiddenState(
-        cumulative_alignment=lib.utils.pad_tensor(
-            cumulative_alignment, padding, 1, value=1.0
-        ),
+        cumulative_alignment=lib.utils.pad_tensor(cumulative_alignment, padding, 1, value=1.0),
         window_start=torch.zeros(batch_size, dtype=torch.long),
     )
     return (
@@ -169,9 +159,7 @@ def _add_padding(
     padded_tokens_mask = torch.cat([tokens_mask, tokens_mask_padding], dim=1)
     alignment_padding = torch.randn(hidden_state.cumulative_alignment.shape[0], amount)
     padded_hidden_state = hidden_state._replace(
-        cumulative_alignment=torch.cat(
-            [hidden_state.cumulative_alignment, alignment_padding], 1
-        )
+        cumulative_alignment=torch.cat([hidden_state.cumulative_alignment, alignment_padding], 1)
     )
     return padded_tokens, padded_tokens_mask, padded_hidden_state
 
@@ -225,17 +213,13 @@ def test_location_relative_attention():
 
         # NOTE: Check the softmax computation was applied correctly.
         padding = module.cumulative_alignment_padding
-        alignment_sum = hidden_state.cumulative_alignment[:, padding:-padding].sum(
-            dim=1
-        )
+        alignment_sum = hidden_state.cumulative_alignment[:, padding:-padding].sum(dim=1)
         for i in range(batch_size):
             assert alignment_sum[i].item() == pytest.approx(j + 1)
 
         last_hidden_state = hidden_state
 
-    (
-        context.sum() + hidden_state.cumulative_alignment.sum() + alignment.sum()
-    ).backward()
+    (context.sum() + hidden_state.cumulative_alignment.sum() + alignment.sum()).backward()
 
 
 def test_location_relative_attention__batch_invariance():
@@ -271,9 +255,7 @@ def test_location_relative_attention__batch_invariance():
         batch_new_hidden_state.cumulative_alignment[slice_],
         new_hidden_state.cumulative_alignment,
     )
-    assert_almost_equal(
-        batch_new_hidden_state.window_start[slice_], new_hidden_state.window_start
-    )
+    assert_almost_equal(batch_new_hidden_state.window_start[slice_], new_hidden_state.window_start)
 
 
 def test_location_relative_attention__padding_invariance():
@@ -321,12 +303,8 @@ def test_location_relative_attention__zero():
     num_tokens = _make_num_tokens(tokens_mask)
     tokens.zero_()
     query.zero_()
-    context, alignment, hidden_state = module(
-        tokens, tokens_mask, num_tokens, query, hidden_state
-    )
-    (
-        context.sum() + hidden_state.cumulative_alignment.sum() + alignment.sum()
-    ).backward()
+    context, alignment, hidden_state = module(tokens, tokens_mask, num_tokens, query, hidden_state)
+    (context.sum() + hidden_state.cumulative_alignment.sum() + alignment.sum()).backward()
 
 
 def test_location_relative_attention__window_invariance():
@@ -339,9 +317,7 @@ def test_location_relative_attention__window_invariance():
         max_num_tokens=max_num_tokens,
         dropout=0,
     )
-    tokens, tokens_mask, hidden_state = _add_padding(
-        num_padding, tokens, tokens_mask, hidden_state
-    )
+    tokens, tokens_mask, hidden_state = _add_padding(num_padding, tokens, tokens_mask, hidden_state)
     num_tokens = _make_num_tokens(tokens_mask)
     args = (tokens, tokens_mask, num_tokens, query, hidden_state)
 
@@ -354,7 +330,5 @@ def test_location_relative_attention__window_invariance():
     assert other_hidden_state.window_start.sum() == 0
     assert_almost_equal(other_context, context)
     assert_almost_equal(other_alignment, alignment)
-    assert_almost_equal(
-        other_hidden_state.cumulative_alignment, hidden_state.cumulative_alignment
-    )
+    assert_almost_equal(other_hidden_state.cumulative_alignment, hidden_state.cumulative_alignment)
     assert_almost_equal(other_hidden_state.window_start, hidden_state.window_start)

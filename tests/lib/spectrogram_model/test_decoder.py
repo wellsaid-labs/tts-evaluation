@@ -25,9 +25,7 @@ def _make_decoder(
     """ Make `decoder.AutoregressiveDecoder` for testing. """
     hparams.add_config(
         {
-            lib.spectrogram_model.pre_net.PreNet.__init__: HParams(
-                num_layers=1, dropout=0.5
-            ),
+            lib.spectrogram_model.pre_net.PreNet.__init__: HParams(num_layers=1, dropout=0.5),
             lib.spectrogram_model.attention.LocationRelativeAttention.__init__: HParams(
                 hidden_size=4, convolution_filter_size=3, dropout=0.1, window_length=5
             ),
@@ -85,9 +83,7 @@ def test_autoregressive_decoder():
             module.encoder_output_size,
         )
 
-        assert isinstance(
-            hidden_state.attention_hidden_state, LocationRelativeAttentionHiddenState
-        )
+        assert isinstance(hidden_state.attention_hidden_state, LocationRelativeAttentionHiddenState)
         assert isinstance(hidden_state.lstm_one_hidden_state, tuple)
         assert isinstance(hidden_state.lstm_two_hidden_state, tuple)
 
@@ -131,9 +127,7 @@ def test_autoregressive_decoder__target():
         module.encoder_output_size,
     )
 
-    assert isinstance(
-        hidden_state.attention_hidden_state, LocationRelativeAttentionHiddenState
-    )
+    assert isinstance(hidden_state.attention_hidden_state, LocationRelativeAttentionHiddenState)
     assert isinstance(hidden_state.lstm_one_hidden_state, tuple)
     assert isinstance(hidden_state.lstm_two_hidden_state, tuple)
 

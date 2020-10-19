@@ -12,9 +12,7 @@ app = typer.Typer(context_settings=dict(max_content_width=math.inf))
 
 @app.command()
 def combine(
-    csvs: typing.List[pathlib.Path] = typer.Argument(
-        ..., help="List of CSVs to combine."
-    ),
+    csvs: typing.List[pathlib.Path] = typer.Argument(..., help="List of CSVs to combine."),
     csv: pathlib.Path = typer.Argument(..., help="Combined CSV filename."),
 ):
     """Combine a list of CSVS input one CSV.

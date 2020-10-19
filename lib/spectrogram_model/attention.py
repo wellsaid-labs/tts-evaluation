@@ -178,9 +178,7 @@ class LocationRelativeAttention(nn.Module):
         # [batch_size, 1, num_tokens + 2 * cumulative_alignment_padding]
         location_features = cumulative_alignment.unsqueeze(1)
 
-        tokens_mask, window_indices = _window(
-            tokens_mask, window_start, window_length, 1, False
-        )
+        tokens_mask, window_indices = _window(tokens_mask, window_start, window_length, 1, False)
         tokens = _window(tokens, window_start.unsqueeze(1), window_length, 0, False)[0]
         location_features = _window(
             location_features,
@@ -202,11 +200,7 @@ class LocationRelativeAttention(nn.Module):
         # [batch_size, hidden_size, num_tokens] →
         # [num_tokens, batch_size, hidden_size] →
         # [batch_size, num_tokens]
-        score = (
-            self.project_scores(location_features.permute(2, 0, 1))
-            .squeeze(2)
-            .transpose(0, 1)
-        )
+        score = self.project_scores(location_features.permute(2, 0, 1)).squeeze(2).transpose(0, 1)
 
         score.data.masked_fill_(~tokens_mask, -math.inf)
 
@@ -231,17 +225,13 @@ class LocationRelativeAttention(nn.Module):
         ).scatter_(1, window_indices + cumulative_alignment_padding, alignment)
 
         last_window_start = window_start
-        window_start = (
-            alignment.max(dim=1)[1] - window_length // 2 - cumulative_alignment_padding
-        )
+        window_start = alignment.max(dim=1)[1] - window_length // 2 - cumulative_alignment_padding
         # TODO: Cache `num_tokens - window_length` clamped at 0 so that we dont need to
         # recompute the `clamp` and subtraction each time.
         # TODO: `torch.clamp` does not prompt a consistent left-to-right progression. Can this be
         # fixed? For example, we could pad the alignment and encoder output so that `window_start`
         # can progress to the end.
-        window_start = torch.clamp(
-            torch.min(window_start, num_tokens - window_length), min=0
-        )
+        window_start = torch.clamp(torch.min(window_start, num_tokens - window_length), min=0)
         max_tokens_skipped = (window_start - last_window_start).max()
         if max_tokens_skipped > token_skip_warning:
             logger.warning("Attention module skipped %d tokens.", max_tokens_skipped)
