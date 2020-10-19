@@ -1,20 +1,19 @@
 import typing
 
-from hparams import configurable
-from hparams import HParam
+import torch
+from hparams import HParam, configurable
 from torch import nn
 
-import torch
-
-from lib.spectrogram_model.attention import LocationRelativeAttention
-from lib.spectrogram_model.attention import LocationRelativeAttentionHiddenState
+from lib.spectrogram_model.attention import (
+    LocationRelativeAttention,
+    LocationRelativeAttentionHiddenState,
+)
 from lib.spectrogram_model.pre_net import PreNet
-from lib.utils import LSTM
-from lib.utils import LSTMCell
+from lib.utils import LSTM, LSTMCell
 
 
 class AutoregressiveDecoderHiddenState(typing.NamedTuple):
-    """ Hidden state from previous time steps, used to predict the next time step.
+    """Hidden state from previous time steps, used to predict the next time step.
 
     Args:
         last_attention_context (torch.FloatTensor [batch_size, encoder_output_size]):
@@ -25,15 +24,20 @@ class AutoregressiveDecoderHiddenState(typing.NamedTuple):
         lstm_one_hidden_state: `AutoregressiveDecoder.lstm_layer_one` hidden state.
         lstm_two_hidden_state: `AutoregressiveDecoder.lstm_layer_two` hidden state.
     """
+
     last_attention_context: torch.Tensor
     last_frame: torch.Tensor
     attention_hidden_state: LocationRelativeAttentionHiddenState
-    lstm_one_hidden_state: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
-    lstm_two_hidden_state: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
+    lstm_one_hidden_state: typing.Optional[
+        typing.Tuple[torch.Tensor, torch.Tensor]
+    ] = None
+    lstm_two_hidden_state: typing.Optional[
+        typing.Tuple[torch.Tensor, torch.Tensor]
+    ] = None
 
 
 class AutoregressiveDecoder(nn.Module):
-    """ Predicts the next spectrogram frame, given the previous spectrogram frame.
+    """Predicts the next spectrogram frame, given the previous spectrogram frame.
 
     Reference:
         * Tacotron 2 Paper:
@@ -50,13 +54,15 @@ class AutoregressiveDecoder(nn.Module):
     """
 
     @configurable
-    def __init__(self,
-                 num_frame_channels: int,
-                 speaker_embedding_size: int,
-                 pre_net_size: int = HParam(),
-                 lstm_hidden_size: int = HParam(),
-                 encoder_output_size: int = HParam(),
-                 stop_net_dropout: float = HParam()):
+    def __init__(
+        self,
+        num_frame_channels: int,
+        speaker_embedding_size: int,
+        pre_net_size: int = HParam(),
+        lstm_hidden_size: int = HParam(),
+        encoder_output_size: int = HParam(),
+        stop_net_dropout: float = HParam(),
+    ):
         super().__init__()
 
         self.num_frame_channels = num_frame_channels
@@ -67,8 +73,10 @@ class AutoregressiveDecoder(nn.Module):
         initial_state_input_size = speaker_embedding_size + encoder_output_size
         initial_state_ouput_size = num_frame_channels + 1 + encoder_output_size
         self.initial_state = nn.Sequential(
-            nn.Linear(initial_state_input_size, initial_state_input_size), nn.ReLU(),
-            nn.Linear(initial_state_input_size, initial_state_ouput_size))
+            nn.Linear(initial_state_input_size, initial_state_input_size),
+            nn.ReLU(),
+            nn.Linear(initial_state_input_size, initial_state_ouput_size),
+        )
 
         self.pre_net = PreNet(num_frame_channels=num_frame_channels, size=pre_net_size)
         self.lstm_layer_one = LSTMCell(
@@ -76,12 +84,16 @@ class AutoregressiveDecoder(nn.Module):
             hidden_size=lstm_hidden_size,
         )
         self.lstm_layer_two = LSTM(
-            input_size=lstm_hidden_size + self.encoder_output_size + speaker_embedding_size,
+            input_size=lstm_hidden_size
+            + self.encoder_output_size
+            + speaker_embedding_size,
             hidden_size=lstm_hidden_size,
         )
         self.attention = LocationRelativeAttention(query_hidden_size=lstm_hidden_size)
         self.linear_out = nn.Linear(
-            in_features=lstm_hidden_size + self.encoder_output_size + speaker_embedding_size,
+            in_features=lstm_hidden_size
+            + self.encoder_output_size
+            + speaker_embedding_size,
             out_features=num_frame_channels,
         )
         self.linear_stop_token = nn.Sequential(
@@ -89,9 +101,10 @@ class AutoregressiveDecoder(nn.Module):
             nn.Linear(lstm_hidden_size, 1),
         )
 
-    def _make_initial_hidden_state(self, tokens: torch.Tensor,
-                                   speaker: torch.Tensor) -> AutoregressiveDecoderHiddenState:
-        """ Make an initial hidden state, if one is not provided.
+    def _make_initial_hidden_state(
+        self, tokens: torch.Tensor, speaker: torch.Tensor
+    ) -> AutoregressiveDecoderHiddenState:
+        """Make an initial hidden state, if one is not provided.
 
         Args:
             tokens (torch.FloatTensor [num_tokens, batch_size, encoder_output_size])
@@ -105,7 +118,9 @@ class AutoregressiveDecoder(nn.Module):
         # [batch_size, speaker_embedding_dim + encoder_output_size] →
         # [batch_size, num_frame_channels + 1 + encoder_output_size] →
         # ([batch_size, num_frame_channels], [batch_size, 1], [batch_size, encoder_output_size])
-        state = self.initial_state(torch.cat([speaker, tokens[0]], dim=1)).split(segments, dim=-1)
+        state = self.initial_state(torch.cat([speaker, tokens[0]], dim=1)).split(
+            segments, dim=-1
+        )
         initial_frame, initial_cumulative_alignment, initial_attention_context = state
 
         # NOTE: The `cumulative_alignment` vector has a positive value for every token that is has
@@ -115,13 +130,20 @@ class AutoregressiveDecoder(nn.Module):
         cumulative_alignment = torch.zeros(batch_size, max_num_tokens, device=device)
         # [batch_size, 1] → [batch_size, cumulative_alignment_padding]
         initial_cumulative_alignment = initial_cumulative_alignment.expand(
-            -1, cumulative_alignment_padding).abs()
+            -1, cumulative_alignment_padding
+        ).abs()
         # [batch_size, num_tokens] → [batch_size, num_tokens + cumulative_alignment_padding]
-        cumulative_alignment = torch.cat([initial_cumulative_alignment, cumulative_alignment], -1)
+        cumulative_alignment = torch.cat(
+            [initial_cumulative_alignment, cumulative_alignment], -1
+        )
         # [batch_size, num_tokens + cumulative_alignment_padding] →
         # [batch_size, num_tokens + 2 * cumulative_alignment_padding]
         cumulative_alignment = torch.nn.functional.pad(
-            cumulative_alignment, [0, cumulative_alignment_padding], mode='constant', value=0.0)
+            cumulative_alignment,
+            [0, cumulative_alignment_padding],
+            mode="constant",
+            value=0.0,
+        )
 
         return AutoregressiveDecoderHiddenState(
             last_attention_context=initial_attention_context,
@@ -141,15 +163,18 @@ class AutoregressiveDecoder(nn.Module):
         num_tokens: torch.Tensor,
         speaker: torch.Tensor,
         target_frames: typing.Optional[torch.Tensor] = None,
-        hidden_state: typing.Optional[AutoregressiveDecoderHiddenState] = None
-    ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, AutoregressiveDecoderHiddenState]:
+        hidden_state: typing.Optional[AutoregressiveDecoderHiddenState] = None,
+    ) -> typing.Tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor, AutoregressiveDecoderHiddenState
+    ]:
         return super().__call__(
             tokens=tokens,
             tokens_mask=tokens_mask,
             num_tokens=num_tokens,
             speaker=speaker,
             target_frames=target_frames,
-            hidden_state=hidden_state)
+            hidden_state=hidden_state,
+        )
 
     def forward(
         self,
@@ -158,8 +183,10 @@ class AutoregressiveDecoder(nn.Module):
         num_tokens: torch.Tensor,
         speaker: torch.Tensor,
         target_frames: typing.Optional[torch.Tensor] = None,
-        hidden_state: typing.Optional[AutoregressiveDecoderHiddenState] = None
-    ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, AutoregressiveDecoderHiddenState]:
+        hidden_state: typing.Optional[AutoregressiveDecoderHiddenState] = None,
+    ) -> typing.Tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor, AutoregressiveDecoderHiddenState
+    ]:
         """
         Args:
             tokens (torch.FloatTensor [num_tokens, batch_size, encoder_output_size])
@@ -180,18 +207,30 @@ class AutoregressiveDecoder(nn.Module):
             hidden_state
         """
         assert target_frames is None or hidden_state is None, (
-            'Either the decoder is conditioned on `target_frames` or '
-            'the `hidden_state` but not both.')
+            "Either the decoder is conditioned on `target_frames` or "
+            "the `hidden_state` but not both."
+        )
 
-        hidden_state = self._make_initial_hidden_state(
-            tokens, speaker) if hidden_state is None else hidden_state
+        hidden_state = (
+            self._make_initial_hidden_state(tokens, speaker)
+            if hidden_state is None
+            else hidden_state
+        )
 
-        (last_attention_context, last_frame, attention_hidden_state, lstm_one_hidden_state,
-         lstm_two_hidden_state) = hidden_state
+        (
+            last_attention_context,
+            last_frame,
+            attention_hidden_state,
+            lstm_one_hidden_state,
+            lstm_two_hidden_state,
+        ) = hidden_state
 
         # NOTE: Shift target frames backwards one step to be the source frames.
-        frames = last_frame if target_frames is None else torch.cat(
-            [last_frame, target_frames[0:-1]])
+        frames = (
+            last_frame
+            if target_frames is None
+            else torch.cat([last_frame, target_frames[0:-1]])
+        )
 
         num_frames, _, _ = frames.shape
 
@@ -229,7 +268,8 @@ class AutoregressiveDecoder(nn.Module):
                 tokens_mask=tokens_mask,
                 num_tokens=num_tokens,
                 query=frame.unsqueeze(0),
-                hidden_state=attention_hidden_state)
+                hidden_state=attention_hidden_state,
+            )
 
             frames_list.append(frame)
             attention_contexts_list.append(last_attention_context)
@@ -267,7 +307,9 @@ class AutoregressiveDecoder(nn.Module):
         # frames [seq_len (num_frames), batch (batch_size),
         # input_size (lstm_hidden_size + encoder_output_size + speaker_embedding_dim)] →
         # [num_frames, batch_size, lstm_hidden_size]
-        frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
+        frames, lstm_two_hidden_state = self.lstm_layer_two(
+            frames, lstm_two_hidden_state
+        )
 
         # [num_frames, batch_size, pre_net_hidden_size + 2] →
         # [num_frames, batch_size]
@@ -276,13 +318,16 @@ class AutoregressiveDecoder(nn.Module):
         # [num_frames, batch_size,
         #  lstm_hidden_size (concat) encoder_output_size (concat) speaker_embedding_dim] →
         # [num_frames, batch_size, num_frame_channels]
-        frames = self.linear_out(torch.cat([frames, attention_contexts, speaker], dim=2))
+        frames = self.linear_out(
+            torch.cat([frames, attention_contexts, speaker], dim=2)
+        )
 
         hidden_state = AutoregressiveDecoderHiddenState(
             last_attention_context=last_attention_context,
             last_frame=frames[-1].unsqueeze(0),
             attention_hidden_state=attention_hidden_state,
             lstm_one_hidden_state=lstm_one_hidden_state,
-            lstm_two_hidden_state=lstm_two_hidden_state)
+            lstm_two_hidden_state=lstm_two_hidden_state,
+        )
 
         return frames, stop_token, alignments.detach(), hidden_state

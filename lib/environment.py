@@ -2,8 +2,6 @@
 # https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
 from __future__ import annotations
 
-from pathlib import Path
-
 import atexit
 import glob
 import logging
@@ -14,13 +12,11 @@ import sys
 import tempfile
 import time
 import typing
-import typing_extensions
-
-from hparams import configurable
-from hparams import HParam
+from pathlib import Path
 
 import torch
 import torchnlp.random
+from hparams import HParam, configurable
 
 import lib
 
@@ -28,67 +24,70 @@ logger = logging.getLogger(__name__)
 
 ROOT_PATH = Path(__file__).parents[1].resolve()  # Repository root path
 
-IS_TESTING_ENVIRONMENT: bool = 'pytest' in sys.modules
-
-# NOTE: You can experiment with these codes in your console like so:
-# `echo -e '\033[43m \033[30m hi \033[0m'`
+IS_TESTING_ENVIRONMENT: bool = "pytest" in sys.modules
 
 
-# Inspired by:
-# https://godoc.org/github.com/whitedevops/colors
-# https://github.com/tartley/colorama
 class AnsiCodes:
-    RESET_ALL: typing_extensions.Final = '\033[0m'
-    BOLD: typing_extensions.Final = '\033[1m'
-    DIM: typing_extensions.Final = '\033[2m'
-    UNDERLINED: typing_extensions.Final = '\033[4m'
-    BLINK: typing_extensions.Final = '\033[5m'
-    REVERSE: typing_extensions.Final = '\033[7m'
-    HIDDEN: typing_extensions.Final = '\033[8m'
-    RESET_BOLD: typing_extensions.Final = '\033[21m'
-    RESET_DIM: typing_extensions.Final = '\033[22m'
-    RESET_UNDERLINED: typing_extensions.Final = '\033[24m'
-    RESET_BLINK: typing_extensions.Final = '\033[25m'
-    RESET_REVERSE: typing_extensions.Final = '\033[27m'
-    RESET_HIDDEN: typing_extensions.Final = '\033[28m'
-    DEFAULT: typing_extensions.Final = '\033[39m'
-    BLACK: typing_extensions.Final = '\033[30m'
-    RED: typing_extensions.Final = '\033[31m'
-    GREEN: typing_extensions.Final = '\033[32m'
-    YELLOW: typing_extensions.Final = '\033[33m'
-    BLUE: typing_extensions.Final = '\033[34m'
-    MAGENTA: typing_extensions.Final = '\033[35m'
-    CYAN: typing_extensions.Final = '\033[36m'
-    LIGHT_GRAY: typing_extensions.Final = '\033[37m'
-    DARK_GRAY: typing_extensions.Final = '\033[90m'
-    LIGHT_RED: typing_extensions.Final = '\033[91m'
-    LIGHT_GREEN: typing_extensions.Final = '\033[92m'
-    LIGHT_YELLOW: typing_extensions.Final = '\033[93m'
-    LIGHT_BLUE: typing_extensions.Final = '\033[94m'
-    LIGHT_MAGENTA: typing_extensions.Final = '\033[95m'
-    LIGHT_CYAN: typing_extensions.Final = '\033[96m'
-    WHITE: typing_extensions.Final = '\033[97m'
-    BACKGROUND_DEFAULT: typing_extensions.Final = '\033[49m'
-    BACKGROUND_BLACK: typing_extensions.Final = '\033[40m'
-    BACKGROUND_RED: typing_extensions.Final = '\033[41m'
-    BACKGROUND_GREEN: typing_extensions.Final = '\033[42m'
-    BACKGROUND_YELLOW: typing_extensions.Final = '\033[43m'
-    BACKGROUND_BLUE: typing_extensions.Final = '\033[44m'
-    BACKGROUND_MAGENTA: typing_extensions.Final = '\033[45m'
-    BACKGROUND_CYAN: typing_extensions.Final = '\033[46m'
-    BACKGROUND_LIGHT_GRAY: typing_extensions.Final = '\033[47m'
-    BACKGROUND_DARK_GRAY: typing_extensions.Final = '\033[100m'
-    BACKGROUND_LIGHT_RED: typing_extensions.Final = '\033[101m'
-    BACKGROUND_LIGHT_GREEN: typing_extensions.Final = '\033[102m'
-    BACKGROUND_LIGHT_YELLOW: typing_extensions.Final = '\033[103m'
-    BACKGROUND_LIGHT_BLUE: typing_extensions.Final = '\033[104m'
-    BACKGROUND_LIGHT_MAGENTA: typing_extensions.Final = '\033[105m'
-    BACKGROUND_LIGHT_CYAN: typing_extensions.Final = '\033[106m'
-    BACKGROUND_WHITE: typing_extensions.Final = '\033[107m'
+    """
+    Inspired by:
+    https://godoc.org/github.com/whitedevops/colors
+    https://github.com/tartley/colorama
+
+    NOTE: You can experiment with these codes in your console like so:
+    `echo -e '\033[43m \033[30m hi \033[0m'`
+    """
+
+    RESET_ALL: typing.Final = "\033[0m"
+    BOLD: typing.Final = "\033[1m"
+    DIM: typing.Final = "\033[2m"
+    UNDERLINED: typing.Final = "\033[4m"
+    BLINK: typing.Final = "\033[5m"
+    REVERSE: typing.Final = "\033[7m"
+    HIDDEN: typing.Final = "\033[8m"
+    RESET_BOLD: typing.Final = "\033[21m"
+    RESET_DIM: typing.Final = "\033[22m"
+    RESET_UNDERLINED: typing.Final = "\033[24m"
+    RESET_BLINK: typing.Final = "\033[25m"
+    RESET_REVERSE: typing.Final = "\033[27m"
+    RESET_HIDDEN: typing.Final = "\033[28m"
+    DEFAULT: typing.Final = "\033[39m"
+    BLACK: typing.Final = "\033[30m"
+    RED: typing.Final = "\033[31m"
+    GREEN: typing.Final = "\033[32m"
+    YELLOW: typing.Final = "\033[33m"
+    BLUE: typing.Final = "\033[34m"
+    MAGENTA: typing.Final = "\033[35m"
+    CYAN: typing.Final = "\033[36m"
+    LIGHT_GRAY: typing.Final = "\033[37m"
+    DARK_GRAY: typing.Final = "\033[90m"
+    LIGHT_RED: typing.Final = "\033[91m"
+    LIGHT_GREEN: typing.Final = "\033[92m"
+    LIGHT_YELLOW: typing.Final = "\033[93m"
+    LIGHT_BLUE: typing.Final = "\033[94m"
+    LIGHT_MAGENTA: typing.Final = "\033[95m"
+    LIGHT_CYAN: typing.Final = "\033[96m"
+    WHITE: typing.Final = "\033[97m"
+    BACKGROUND_DEFAULT: typing.Final = "\033[49m"
+    BACKGROUND_BLACK: typing.Final = "\033[40m"
+    BACKGROUND_RED: typing.Final = "\033[41m"
+    BACKGROUND_GREEN: typing.Final = "\033[42m"
+    BACKGROUND_YELLOW: typing.Final = "\033[43m"
+    BACKGROUND_BLUE: typing.Final = "\033[44m"
+    BACKGROUND_MAGENTA: typing.Final = "\033[45m"
+    BACKGROUND_CYAN: typing.Final = "\033[46m"
+    BACKGROUND_LIGHT_GRAY: typing.Final = "\033[47m"
+    BACKGROUND_DARK_GRAY: typing.Final = "\033[100m"
+    BACKGROUND_LIGHT_RED: typing.Final = "\033[101m"
+    BACKGROUND_LIGHT_GREEN: typing.Final = "\033[102m"
+    BACKGROUND_LIGHT_YELLOW: typing.Final = "\033[103m"
+    BACKGROUND_LIGHT_BLUE: typing.Final = "\033[104m"
+    BACKGROUND_LIGHT_MAGENTA: typing.Final = "\033[105m"
+    BACKGROUND_LIGHT_CYAN: typing.Final = "\033[106m"
+    BACKGROUND_WHITE: typing.Final = "\033[107m"
 
 
 class _ColoredFormatter(logging.Formatter):
-    """ Logging formatter with color.
+    """Logging formatter with color.
 
     Args:
         id_: An id to be printed along with all logs.
@@ -109,20 +108,26 @@ class _ColoredFormatter(logging.Formatter):
     def __init__(self, id_: int):
         super().__init__()
         logging.Formatter.__init__(
-            self, f"{AnsiCodes.DARK_GRAY}[%(asctime)s][{AnsiCodes.RESET_ALL}"
+            self,
+            f"{AnsiCodes.DARK_GRAY}[%(asctime)s][{AnsiCodes.RESET_ALL}"
             f"{self.ID_COLOR_ROTATION[id_ % len(self.ID_COLOR_ROTATION)]}{id_}{AnsiCodes.RESET_ALL}"
-            f"{AnsiCodes.DARK_GRAY}][%(name)s][%(levelname)s]{AnsiCodes.RESET_ALL} %(message)s")
+            f"{AnsiCodes.DARK_GRAY}][%(name)s][%(levelname)s]{AnsiCodes.RESET_ALL} %(message)s",
+        )
 
     def format(self, record: logging.LogRecord) -> str:
         if record.levelno > logging.WARNING:
-            record.levelname = AnsiCodes.RED + record.levelname + AnsiCodes.RESET_ALL
+            record.levelname = (
+                AnsiCodes.RED + record.levelname + AnsiCodes.RESET_ALL + AnsiCodes.DARK_GRAY
+            )
         elif record.levelno > logging.INFO:
-            record.levelname = AnsiCodes.YELLOW + record.levelname + AnsiCodes.RESET_ALL
+            record.levelname = (
+                AnsiCodes.YELLOW + record.levelname + AnsiCodes.RESET_ALL + AnsiCodes.DARK_GRAY
+            )
         return logging.Formatter.format(self, record)
 
 
 class _MaxLevelFilter(logging.Filter):
-    """ Filter out logs above a certain level.
+    """Filter out logs above a certain level.
 
     NOTE: This is the opposite of `logging.Handler.setLevel` which sets a mininum threshold.
     """
@@ -172,7 +177,7 @@ def set_basic_logging_config(id_: int = os.getpid()):
 
 @configurable
 def assert_enough_disk_space(min_space: float = HParam()):
-    """ Check if there is enough disk space.
+    """Check if there is enough disk space.
 
     Args:
         min_space: Minimum percentage of free disk space.
@@ -184,33 +189,34 @@ def assert_enough_disk_space(min_space: float = HParam()):
     assert available > min_space, f"Not enough available ({available} < {min_space}) disk space."
 
 
-def check_module_versions(requirements_path: Path = ROOT_PATH / 'requirements.txt'):
+def check_module_versions(requirements_path: Path = ROOT_PATH / "requirements.txt"):
     """ Check if installed module versions respect `requirements.txt` specifications. """
-    freeze = subprocess.check_output([sys.executable, '-m', 'pip', 'freeze'])
-    split = freeze.decode('utf-8').split()
+    freeze = subprocess.check_output([sys.executable, "-m", "pip", "freeze"])
+    split = freeze.decode("utf-8").split()
     for line in requirements_path.read_text().split():
         line = line.strip()
-        if '==' in line:
+        if "==" in line:
             specification = line.split()[0]
-            package = specification.split('==')[0]
-            installed = [p for p in split if p.split('==')[0] == package]
+            package = specification.split("==")[0]
+            installed = [p for p in split if p.split("==")[0] == package]
             if not len(installed) == 1:
                 raise RuntimeError(f"{package} not installed")
             if not specification == installed[0]:
                 # NOTE: RuntimeError could cause "Illegal seek" while running `pytest`.
                 raise RuntimeError(
-                    f"Found incorrect installed version ({specification} =/= {installed[0]})")
+                    f"Found incorrect installed version ({specification} =/= {installed[0]})"
+                )
 
 
 @configurable
 def set_seed(seed: int = HParam()):
     """ Set package random generator seed(s). """
-    logger.info('Setting seed to be %d', seed)
+    logger.info("Setting seed to be %d", seed)
     torchnlp.random.set_seed(seed)
 
 
 def bash_time_label(add_pid: bool = True) -> str:
-    """ Get a bash friendly string representing the time and process pid.
+    """Get a bash friendly string representing the time and process pid.
 
     NOTE: This string is optimized for sorting by ordering units of time from largest to smallest.
     NOTE: This string avoids any special bash characters, learn more:
@@ -221,7 +227,7 @@ def bash_time_label(add_pid: bool = True) -> str:
     Args:
         add_pid: If `True` add the process PID to the label.
     """
-    label = str(time.strftime('DATE-%Yy%mm%dd-%Hh%Mm%Ss', time.localtime()))
+    label = str(time.strftime("DATE-%Yy%mm%dd-%Hh%Mm%Ss", time.localtime()))
     if add_pid:
         label += f"_PID-{os.getpid()}"
     return label
@@ -229,11 +235,11 @@ def bash_time_label(add_pid: bool = True) -> str:
 
 def text_to_label(text: str) -> str:
     """ Get a label like 'hilary_noriega' from text like 'Hilary Noriega'. """
-    return text.lower().replace(' ', '_')
+    return text.lower().replace(" ", "_")
 
 
 def _duplicate_stream(from_: typing.TextIO, to: Path) -> typing.Callable[[], None]:
-    """ Duplicates writes to file object `from_` and writes them to `to`.
+    """Duplicates writes to file object `from_` and writes them to `to`.
 
     NOTE:
         With the various references below, we were unable to add C support. Find more details
@@ -261,7 +267,7 @@ def _duplicate_stream(from_: typing.TextIO, to: Path) -> typing.Callable[[], Non
 
     # Keep a file descriptor open to the original file object
     original_fileno = os.dup(from_.fileno())
-    tee = subprocess.Popen(['tee', '-a', str(to)], stdin=subprocess.PIPE)
+    tee = subprocess.Popen(["tee", "-a", str(to)], stdin=subprocess.PIPE)
     time.sleep(0.01)  # NOTE: `tee` needs time to open
     assert tee.stdin is not None
     os.dup2(tee.stdin.fileno(), from_.fileno())
@@ -290,24 +296,26 @@ def _duplicate_stream(from_: typing.TextIO, to: Path) -> typing.Callable[[], Non
     return stop
 
 
-class RecordStandardStreams():
-    """ Record output of `sys.stdout` and `sys.stderr` to a log file over an entire Python process.
+class RecordStandardStreams:
+    """Record output of `sys.stdout` and `sys.stderr` to a log file over an entire Python process.
 
     Args:
         directory: Directory to save log files in.
         log_filename
     """
 
-    def __init__(self,
-                 directory: Path = Path(tempfile.gettempdir()),
-                 log_filename: str = f"{bash_time_label()}.log"):
+    def __init__(
+        self,
+        directory: Path = Path(tempfile.gettempdir()),
+        log_filename: str = f"{bash_time_label()}.log",
+    ):
         self._check_invariants(directory, log_filename)
         self.log_path = directory / log_filename
         self._start()
 
     def _check_invariants(self, directory: Path, log_filename: str):
         assert directory.exists()
-        assert not (directory / log_filename).exists(), 'Cannot overwrite existing file.'
+        assert not (directory / log_filename).exists(), "Cannot overwrite existing file."
 
     def _start(self) -> RecordStandardStreams:
         """ Start recording `sys.stdout` and `sys.stderr`. """
@@ -316,7 +324,7 @@ class RecordStandardStreams():
         return self
 
     def _stop(self) -> RecordStandardStreams:
-        """ Stop recording `sys.stdout` and `sys.stderr`.
+        """Stop recording `sys.stdout` and `sys.stderr`.
 
         NOTE: `RecordStandardStreams` was designed to record a process from start to finish;
         therefore, there is no public `stop` function.
@@ -325,10 +333,10 @@ class RecordStandardStreams():
         self.stop_stream_stdout()
         return self
 
-    def update(self,
-               directory: Path,
-               log_filename: typing.Optional[str] = None) -> RecordStandardStreams:
-        """ Update the recorder to use new log paths without losing any logs.
+    def update(
+        self, directory: Path, log_filename: typing.Optional[str] = None
+    ) -> RecordStandardStreams:
+        """Update the recorder to use new log paths without losing any logs.
 
         Args:
             directory: Directory to save log files in.
@@ -344,7 +352,7 @@ class RecordStandardStreams():
 
 
 def save(path: Path, data: typing.Any, overwrite: bool = False):
-    """ Use `torch.save` to save an object to `path`.
+    """Use `torch.save` to save an object to `path`.
 
     Raises:
         (ValueError): If a file already exists at `path`.
@@ -355,37 +363,36 @@ def save(path: Path, data: typing.Any, overwrite: bool = False):
         overwrite: If `True` this allows for `path` to be overwritten.
     """
     if not overwrite and path.exists():
-        raise ValueError('File already exists (%s).', path)
+        raise ValueError("File already exists (%s).", path)
     torch.save(data, str(path))
-    logger.info('Saved: %s', str(path))
+    logger.info("Saved: %s", str(path))
 
 
-def load(path: Path, device: torch.device = torch.device('cpu')) -> typing.Any:
-    """ Use `torch.load` load an object from `path` onto `device`.
+def load(path: Path, device: torch.device = torch.device("cpu")) -> typing.Any:
+    """Use `torch.load` load an object from `path` onto `device`.
 
     Args:
         path: File to load.
         device: Device to load onto.
     """
-    logger.info('Loading: %s', path)
+    logger.info("Loading: %s", path)
     assert Path(path).is_file(), f"Path ({path}) must point to a file."
 
     def remap(storage, loc):
-        if 'cuda' in loc and device.type == 'cuda':
+        if "cuda" in loc and device.type == "cuda":
             return storage.cuda(device=device.index)
         return storage
 
     return torch.load(str(path), map_location=remap)
 
 
-_LoadMostRecentFileReturnType = typing.TypeVar('_LoadMostRecentFileReturnType')
+_LoadMostRecentFileReturnType = typing.TypeVar("_LoadMostRecentFileReturnType")
 
 
 def load_most_recent_file(
-        pattern: str,
-        read: typing.Callable[[Path],
-                              _LoadMostRecentFileReturnType]) -> _LoadMostRecentFileReturnType:
-    """ Get the most recently modified file.
+    pattern: str, read: typing.Callable[[Path], _LoadMostRecentFileReturnType]
+) -> _LoadMostRecentFileReturnType:
+    """Get the most recently modified file.
 
     Args:
         pattern: Pattern to search for files.
@@ -401,17 +408,18 @@ def load_most_recent_file(
     # https://stackoverflow.com/questions/237079/how-to-get-file-creation-modification-date-times-in-python/237084
     modified_time = [os.path.getmtime(c) for c in paths]
     assert len(modified_time) == len(
-        set(modified_time)), 'Multiple paths found with the same modification time'
+        set(modified_time)
+    ), "Multiple paths found with the same modification time"
     for path in lib.utils.sort_together(paths, modified_time, reverse=True):
         try:
             return read(Path(path))
-        except:
+        except BaseException:
             logger.exception(f"Failed to load file at {path}.")
-    raise ValueError('Unable to load recent file.')
+    raise ValueError("Unable to load recent file.")
 
 
 def get_untracked_files() -> str:
-    """ Get a formatted string describing untracked files by `git`.
+    """Get a formatted string describing untracked files by `git`.
 
     Learn more:
     https://stackoverflow.com/questions/3801321/git-list-only-untracked-files-also-custom-commands
@@ -420,12 +428,12 @@ def get_untracked_files() -> str:
         >>> get_untracked_files()
         'lib/untracked.py'
     """
-    command = 'git ls-files --others --exclude-standard'
+    command = "git ls-files --others --exclude-standard"
     return subprocess.check_output(command, shell=True).decode().strip()
 
 
 def has_untracked_files() -> bool:
-    """ Return `True` is the `git` service has untracked files.
+    """Return `True` is the `git` service has untracked files.
 
     Learn more:
     https://stackoverflow.com/questions/3801321/git-list-only-untracked-files-also-custom-commands
@@ -434,7 +442,7 @@ def has_untracked_files() -> bool:
 
 
 def get_last_git_commit_date() -> str:
-    """ Get a formatted string describing the last commit date by `git`.
+    """Get a formatted string describing the last commit date by `git`.
 
     Learn more:
     https://stackoverflow.com/questions/25563455/how-do-i-get-last-commit-date-from-git-repository
@@ -443,11 +451,11 @@ def get_last_git_commit_date() -> str:
         >>> get_last_git_commit_date()
         'Wed Sep 9 18:56:27 2020 -0700'
     """
-    return subprocess.check_output('git log -1 --format=%cd', shell=True).decode().strip()
+    return subprocess.check_output("git log -1 --format=%cd", shell=True).decode().strip()
 
 
 def get_git_branch_name() -> str:
-    """ Get a the name of the current `git` branch.
+    """Get a the name of the current `git` branch.
 
     Learn more:
     https://stackoverflow.com/questions/6245570/how-to-get-the-current-branch-name-in-git
@@ -456,11 +464,11 @@ def get_git_branch_name() -> str:
         >>> get_git_branch_name()
         'master'
     """
-    return subprocess.check_output('git rev-parse --abbrev-ref HEAD', shell=True).decode().strip()
+    return subprocess.check_output("git rev-parse --abbrev-ref HEAD", shell=True).decode().strip()
 
 
 def get_tracked_changes() -> str:
-    """ Get a list of changed (created, deleted, modified) tracked files by `git`.
+    """Get a list of changed (created, deleted, modified) tracked files by `git`.
 
     Learn more:
     https://stackoverflow.com/questions/9915543/git-list-of-new-modified-deleted-files/38677776
@@ -470,8 +478,11 @@ def get_tracked_changes() -> str:
         M bin/README.md
          M lib/environment.py
     """
-    return subprocess.check_output(
-        'git status --porcelain --untracked-files=no', shell=True).decode().strip()
+    return (
+        subprocess.check_output("git status --porcelain --untracked-files=no", shell=True)
+        .decode()
+        .strip()
+    )
 
 
 def has_tracked_changes() -> bool:
@@ -480,7 +491,7 @@ def has_tracked_changes() -> bool:
 
 
 def get_cuda_gpus() -> str:
-    """ Get a formatted string listing the system Nvidia CUDA enabled GPUs.
+    """Get a formatted string listing the system Nvidia CUDA enabled GPUs.
 
     Example:
         >>> get_gpus()
@@ -490,8 +501,8 @@ def get_cuda_gpus() -> str:
         GPU 3: Tesla T4 (UUID: GPU-2f28bad6-87a7-d0c2-60cf-91e7fa7f6ee8)
     """
     if torch.cuda.is_available():
-        return subprocess.check_output('nvidia-smi --list-gpus', shell=True).decode().strip()
-    return ''
+        return subprocess.check_output("nvidia-smi --list-gpus", shell=True).decode().strip()
+    return ""
 
 
 def get_num_cuda_gpus() -> int:
@@ -502,7 +513,7 @@ def get_num_cuda_gpus() -> int:
 
 
 def get_disks() -> typing.Optional[str]:
-    """ Get a formatted string listing the system disks.
+    """Get a formatted string listing the system disks.
 
     NOTE: This only supports `Linux` and it'll return `None` otherwise.
 
@@ -537,14 +548,15 @@ def get_disks() -> typing.Optional[str]:
             memory:fe018000-fe01bfff
             memory:fe900000-fe901fff
     """
-    if platform.system() == 'Linux':
-        return subprocess.check_output(
-            'lshw -class disk -class storage', shell=True).decode().strip()
+    if platform.system() == "Linux":
+        return (
+            subprocess.check_output("lshw -class disk -class storage", shell=True).decode().strip()
+        )
     return None
 
 
 def get_unique_cpus() -> typing.Optional[str]:
-    """ Get a formatted string listing the system unique CPUs.
+    """Get a formatted string listing the system unique CPUs.
 
     NOTE: This only supports `Linux` and it'll return `None` otherwise.
 
@@ -552,15 +564,20 @@ def get_unique_cpus() -> typing.Optional[str]:
         >>> get_unique_cpus()
         'Intel(R) Xeon(R) Platinum 8259CL CPU @ 2.50GHz'
     """
-    if platform.system() == 'Linux':
-        return subprocess.check_output(
-            "awk '/model name/ {$1=$2=$3=\"\"; print $0}' /proc/cpuinfo | uniq",
-            shell=True).decode().strip()
+    if platform.system() == "Linux":
+        return (
+            subprocess.check_output(
+                "awk '/model name/ {$1=$2=$3=\"\"; print $0}' /proc/cpuinfo | uniq",
+                shell=True,
+            )
+            .decode()
+            .strip()
+        )
     return None
 
 
 def get_total_physical_memory() -> typing.Optional[int]:
-    """ Get a system's total physical memory in kilobytes.
+    """Get a system's total physical memory in kilobytes.
 
     NOTE: This only supports `Linux` and it'll return `None` otherwise.
 
@@ -571,7 +588,7 @@ def get_total_physical_memory() -> typing.Optional[int]:
         >>> get_total_physical_memory()
         195688856
     """
-    if platform.system() == 'Linux':
+    if platform.system() == "Linux":
         command = "awk '/MemTotal/ {print $2}' /proc/meminfo"
         return int(subprocess.check_output(command, shell=True).decode().strip())
     return None

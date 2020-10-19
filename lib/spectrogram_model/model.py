@@ -1,71 +1,73 @@
 import logging
 import typing
-import typing_extensions
 
-from hparams import configurable
-from hparams import HParam
+import torch
+from hparams import HParam, configurable
 from torch import nn
 from torchnlp.utils import lengths_to_mask
 from tqdm import tqdm
-
-import torch
 
 from lib.spectrogram_model.decoder import AutoregressiveDecoder
 from lib.spectrogram_model.encoder import Encoder
 
 logger = logging.getLogger(__name__)
 
-SpectrogramModelGenerator = typing.Generator[typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor,
-                                                          torch.Tensor, torch.Tensor], None, None]
+SpectrogramModelGenerator = typing.Generator[
+    typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+    None,
+    None,
+]
 
 
 class SpectrogramModel(nn.Module):
-    """ Sequence to sequence model from tokens to a spectrogram.
+    """Sequence to sequence model from tokens to a spectrogram.
 
-      TODO: Update our weight initialization to best practices like these:
-      - https://github.com/pytorch/pytorch/issues/18182
-      - Gated RNN init on last slide:
-      https://web.stanford.edu/class/archive/cs/cs224n/cs224n.1184/lectures/lecture9.pdf
-      - Kaiming init for RELu instead of Xavier:
-      https://towardsdatascience.com/weight-initialization-in-neural-networks-a-journey-from-the-basics-to-kaiming-954fb9b47c79
-      - Block orthogonal LSTM initilization:
-      https://github.com/allenai/allennlp/pull/158
-      - Kaiming and Xavier both assume the input has a mean of 0 and std of 1; therefore, the
-      embeddings should be initialized with a normal distribution.
-      - The PyTorch init has little backing:
-      https://twitter.com/jeremyphoward/status/1107869607677681664
+    TODO: Update our weight initialization to best practices like these:
+    - https://github.com/pytorch/pytorch/issues/18182
+    - Gated RNN init on last slide:
+    https://web.stanford.edu/class/archive/cs/cs224n/cs224n.1184/lectures/lecture9.pdf
+    - Kaiming init for RELu instead of Xavier:
+    https://towardsdatascience.com/weight-initialization-in-neural-networks-a-journey-from-the-basics-to-kaiming-954fb9b47c79
+    - Block orthogonal LSTM initilization:
+    https://github.com/allenai/allennlp/pull/158
+    - Kaiming and Xavier both assume the input has a mean of 0 and std of 1; therefore, the
+    embeddings should be initialized with a normal distribution.
+    - The PyTorch init has little backing:
+    https://twitter.com/jeremyphoward/status/1107869607677681664
 
-      TODO: Write a test ensuring that given a input with std 1.0 the output of the network also has
-      an std of 1.0, following Kaiming's popular weight initialization approach:
-      https://towardsdatascience.com/weight-initialization-in-neural-networks-a-journey-from-the-basics-to-kaiming-954fb9b47c79
+    TODO: Write a test ensuring that given a input with std 1.0 the output of the network also has
+    an std of 1.0, following Kaiming's popular weight initialization approach:
+    https://towardsdatascience.com/weight-initialization-in-neural-networks-a-journey-from-the-basics-to-kaiming-954fb9b47c79
 
-      Reference:
-          * Tacotron 2 Paper:
-            https://arxiv.org/pdf/1712.05884.pdf
+    Reference:
+        * Tacotron 2 Paper:
+          https://arxiv.org/pdf/1712.05884.pdf
 
-      Args:
-        vocab_size: Maximum size of the vocabulary used to encode `tokens`.
-        num_speakers
-        speaker_embedding_size: Size of the speaker embedding dimensions.
-        num_frame_channels: Number of channels in each frame (sometimes refered to as
-            "Mel-frequency bins" or "FFT bins" or "FFT bands").
-        max_frames_per_token: The maximum sequential predictions to make before stopping.
-        output_scalar: The output of this model is scaled up by this value.
-        speaker_embed_dropout: The speaker embedding dropout probability.
-        stop_threshold: If the stop probability exceeds this value, this model stops generating
-            frames.
-      """
+    Args:
+      vocab_size: Maximum size of the vocabulary used to encode `tokens`.
+      num_speakers
+      speaker_embedding_size: Size of the speaker embedding dimensions.
+      num_frame_channels: Number of channels in each frame (sometimes refered to as
+          "Mel-frequency bins" or "FFT bins" or "FFT bands").
+      max_frames_per_token: The maximum sequential predictions to make before stopping.
+      output_scalar: The output of this model is scaled up by this value.
+      speaker_embed_dropout: The speaker embedding dropout probability.
+      stop_threshold: If the stop probability exceeds this value, this model stops generating
+          frames.
+    """
 
     @configurable
-    def __init__(self,
-                 vocab_size: int,
-                 num_speakers: int,
-                 speaker_embedding_size: int = HParam(),
-                 num_frame_channels: int = HParam(),
-                 max_frames_per_token: float = HParam(),
-                 output_scalar: float = HParam(),
-                 speaker_embed_dropout: float = HParam(),
-                 stop_threshold: float = HParam()):
+    def __init__(
+        self,
+        vocab_size: int,
+        num_speakers: int,
+        speaker_embedding_size: int = HParam(),
+        num_frame_channels: int = HParam(),
+        max_frames_per_token: float = HParam(),
+        output_scalar: float = HParam(),
+        speaker_embed_dropout: float = HParam(),
+        stop_threshold: float = HParam(),
+    ):
         super().__init__()
 
         self.max_frames_per_token = max_frames_per_token
@@ -74,16 +76,23 @@ class SpectrogramModel(nn.Module):
         self.vocab_size = vocab_size
 
         self.embed_speaker = nn.Sequential(
-            nn.Embedding(num_speakers, speaker_embedding_size), nn.Dropout(speaker_embed_dropout))
+            nn.Embedding(num_speakers, speaker_embedding_size),
+            nn.Dropout(speaker_embed_dropout),
+        )
         self.encoder = Encoder(vocab_size, speaker_embedding_size)
         self.decoder = AutoregressiveDecoder(num_frame_channels, speaker_embedding_size)
         self.stop_sigmoid = nn.Sigmoid()
-        self.register_buffer('output_scalar', torch.tensor(output_scalar).float())
-        self.mse_loss = torch.nn.MSELoss(reduction='none')
-        self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction='none')
+        self.register_buffer("output_scalar", torch.tensor(output_scalar).float())
+        self.mse_loss = torch.nn.MSELoss(reduction="none")
+        self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction="none")
 
-    def _is_stop(self, stop_token: torch.Tensor, num_tokens: torch.Tensor,
-                 window_start: torch.Tensor, reached_max: torch.Tensor) -> torch.Tensor:
+    def _is_stop(
+        self,
+        stop_token: torch.Tensor,
+        num_tokens: torch.Tensor,
+        window_start: torch.Tensor,
+        reached_max: torch.Tensor,
+    ) -> torch.Tensor:
         """
         Args:
             stop_token (torch.FloatTensor [*, batch_size, *])
@@ -111,7 +120,7 @@ class SpectrogramModel(nn.Module):
         speaker: torch.Tensor,
         use_tqdm: bool,
     ) -> SpectrogramModelGenerator:
-        """ Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
+        """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
         Args:
             tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
@@ -131,8 +140,9 @@ class SpectrogramModel(nn.Module):
         _, batch_size, _ = tokens.shape
         device = tokens.device
 
-        assert use_tqdm and batch_size == 1 or not use_tqdm, (
-            'Progress bar not applicable for batch generation.')
+        assert (
+            use_tqdm and batch_size == 1 or not use_tqdm
+        ), "Progress bar not applicable for batch generation."
 
         hidden_state = None
         frames, stop_tokens, alignments = [], [], []
@@ -140,12 +150,14 @@ class SpectrogramModel(nn.Module):
         stopped = torch.zeros(batch_size, dtype=torch.bool, device=device)
         max_lengths = torch.clamp((num_tokens.float() * self.max_frames_per_token).long(), min=1)
         max_tokens = num_tokens.max().cpu().item()
-        progress_bar = tqdm(leave=True, unit='char(s)', total=max_tokens) if use_tqdm else None
+        progress_bar = tqdm(leave=True, unit="char(s)", total=max_tokens) if use_tqdm else None
         keep_going = lambda: (
-            stopped.sum() < batch_size and lengths[~stopped].max() < max_lengths[~stopped].max())
+            stopped.sum() < batch_size and lengths[~stopped].max() < max_lengths[~stopped].max()
+        )
         while keep_going():
             frame, stop_token, alignment, hidden_state = self.decoder(
-                tokens, tokens_mask, num_tokens, speaker, hidden_state=hidden_state)
+                tokens, tokens_mask, num_tokens, speaker, hidden_state=hidden_state
+            )
 
             lengths[~stopped] += 1
             frame[:, stopped] *= 0
@@ -181,16 +193,16 @@ class SpectrogramModel(nn.Module):
         self,
         tokens: torch.Tensor,
         speaker: torch.Tensor,
-        num_tokens: typing.Optional[torch.Tensor] = None
+        num_tokens: typing.Optional[torch.Tensor] = None,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """ Normalize the representation of these arguments. """
         assert tokens.dtype == torch.long
-        assert tokens.shape[0] != 0, '`tokens` cannot be empty.'
+        assert tokens.shape[0] != 0, "`tokens` cannot be empty."
         # [num_tokens, batch_size] or [num_tokens] → [batch_size, num_tokens]
         tokens = tokens.view(tokens.shape[0], -1).transpose(0, 1)
 
         if num_tokens is None:
-            assert tokens.shape[0] == 1, 'Must provide `num_tokens` unless batch size is 1.'
+            assert tokens.shape[0] == 1, "Must provide `num_tokens` unless batch size is 1."
             num_tokens = torch.full((1,), tokens.shape[1], device=tokens.device, dtype=torch.long)
         else:
             assert num_tokens.dtype == torch.long
@@ -204,11 +216,11 @@ class SpectrogramModel(nn.Module):
         self,
         target_stop_token: torch.Tensor,
         target_frames: torch.Tensor,
-        target_lengths: typing.Optional[torch.Tensor] = None
+        target_lengths: typing.Optional[torch.Tensor] = None,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """ Normalize the representation of the target (ground truth) tensors. """
         assert target_frames.dtype == torch.float
-        assert target_frames.shape[0] != 0, '`target_frames` cannnot be empty.'
+        assert target_frames.shape[0] != 0, "`target_frames` cannnot be empty."
         num_frames = target_frames.shape[0]
         device = target_frames.device
         # [num_frames, num_frame_channels] or [num_frames, batch_size, num_frame_channels] →
@@ -216,7 +228,7 @@ class SpectrogramModel(nn.Module):
         target_frames = target_frames.view(num_frames, -1, self.num_frame_channels)
 
         if target_lengths is None:
-            assert num_frames == 1, ('Must provide `target_lengths` unless batch size is 1.')
+            assert num_frames == 1, "Must provide `target_lengths` unless batch size is 1."
             target_lengths = torch.full((1,), num_frames, device=device, dtype=torch.long)
         else:
             assert target_lengths.dtype == torch.long
@@ -236,9 +248,9 @@ class SpectrogramModel(nn.Module):
         target_frames: torch.Tensor,
         target_stop_token: torch.Tensor,
         num_tokens: typing.Optional[torch.Tensor] = None,
-        target_lengths: typing.Optional[torch.Tensor] = None
+        target_lengths: typing.Optional[torch.Tensor] = None,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """ Propagate the model forward for training.
+        """Propagate the model forward for training.
 
         TODO: Explore speeding up training with `JIT`.
 
@@ -267,7 +279,8 @@ class SpectrogramModel(nn.Module):
         is_batch = len(tokens.shape) == 2
         tokens, num_tokens, speaker = self._normalize_inputs(tokens, speaker, num_tokens)
         target_stop_token, target_frames, target_lengths = self._normalize_targets(
-            target_stop_token, target_frames, target_lengths)
+            target_stop_token, target_frames, target_lengths
+        )
         tokens_mask = lengths_to_mask(num_tokens, device=tokens.device)  # [batch_size, num_tokens]
         # [num_frames, batch_size]
         frames_mask = lengths_to_mask(target_lengths, device=target_frames.device).transpose(0, 1)
@@ -276,7 +289,12 @@ class SpectrogramModel(nn.Module):
         # [batch_size, num_tokens] → [num_tokens, batch_size, encoder_hidden_size]
         encoded_tokens = self.encoder(tokens, tokens_mask, num_tokens, speaker)
         frames, stop_tokens, alignments, hidden_state = self.decoder(
-            encoded_tokens, tokens_mask, num_tokens, speaker, target_frames / self.output_scalar)
+            encoded_tokens,
+            tokens_mask,
+            num_tokens,
+            speaker,
+            target_frames / self.output_scalar,
+        )
 
         frames = frames.masked_fill(~frames_mask.unsqueeze(2), 0) * self.output_scalar
         # [num_frames, batch_size, num_frame_channels] →
@@ -288,13 +306,15 @@ class SpectrogramModel(nn.Module):
         return_ = (frames, stop_tokens, alignments, spectrogram_loss, stop_token_loss)
         return return_ if is_batch else tuple([t.squeeze(1) for t in return_])  # type: ignore
 
-    def _generate(self,
-                  tokens: torch.Tensor,
-                  speaker: torch.Tensor,
-                  num_tokens: typing.Optional[torch.Tensor] = None,
-                  split_size: float = 32,
-                  use_tqdm: bool = False) -> SpectrogramModelGenerator:
-        """ Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
+    def _generate(
+        self,
+        tokens: torch.Tensor,
+        speaker: torch.Tensor,
+        num_tokens: typing.Optional[torch.Tensor] = None,
+        split_size: float = 32,
+        use_tqdm: bool = False,
+    ) -> SpectrogramModelGenerator:
+        """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size (optional)]): Sequences.
@@ -321,19 +341,17 @@ class SpectrogramModel(nn.Module):
         speaker = self.embed_speaker(speaker)  # [batch_size] → [batch_size, speaker_embedding_dim]
         # [batch_size, num_tokens] → [num_tokens, batch_size, encoder_hidden_size]
         encoded_tokens = self.encoder(tokens, tokens_mask, num_tokens, speaker)
-        generator = self._infer_generator(encoded_tokens, split_size, num_tokens, tokens_mask,
-                                          speaker, use_tqdm)
+        generator = self._infer_generator(
+            encoded_tokens, split_size, num_tokens, tokens_mask, speaker, use_tqdm
+        )
 
         squeeze_ = lambda t: t.squeeze(1)
         yield from ((i if is_batch else map(squeeze_, i)) for i in generator)  # type: ignore
 
     def _infer(
-        self,
-        *args,
-        filter_reached_max: bool = False,
-        **kwargs
+        self, *args, filter_reached_max: bool = False, **kwargs
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """ Generates a spectrogram given `tokens`, `speaker`, etc.
+        """Generates a spectrogram given `tokens`, `speaker`, etc.
 
         Args:
             *args: See `self.generate` to learn more.
@@ -352,18 +370,22 @@ class SpectrogramModel(nn.Module):
                 reached `self.max_frames_per_token`.
         """
         # TODO: Update typing once this issue is resolved https://github.com/python/mypy/issues/2582
-        items = list(self._generate(*args, split_size=float('inf'), **kwargs))  # type: ignore
-        assert len(items) == 1, 'Invariant Violation: Double check `split_size` logic.'
+        items = list(self._generate(*args, split_size=float("inf"), **kwargs))  # type: ignore
+        assert len(items) == 1, "Invariant Violation: Double check `split_size` logic."
         frames, stop_tokens, alignments, lengths, reached_max = items[0]
         if reached_max.sum() > 0:
-            logger.warning('%d sequences reached max frames', reached_max.sum())
+            logger.warning("%d sequences reached max frames", reached_max.sum())
         if filter_reached_max:
             filter_ = ~reached_max.squeeze(0)
             lengths = lengths[:, filter_]
-            frames, stop_tokens, alignments = tuple([
-                t[:int(lengths.squeeze().max()), filter_] if lengths.numel() > 0 else t[:, filter_]
-                for t in [frames, stop_tokens, alignments]
-            ])
+            frames, stop_tokens, alignments = tuple(
+                [
+                    t[: int(lengths.squeeze().max()), filter_]
+                    if lengths.numel() > 0
+                    else t[:, filter_]
+                    for t in [frames, stop_tokens, alignments]
+                ]
+            )
         return frames, stop_tokens, alignments, lengths, reached_max
 
     @typing.overload
@@ -373,7 +395,7 @@ class SpectrogramModel(nn.Module):
         speaker: torch.Tensor,
         target_frames: torch.Tensor,
         target_stop_token: torch.Tensor,
-        mode: typing_extensions.Literal['forward'] = 'forward',
+        mode: typing.Literal["forward"] = "forward",
         num_tokens: typing.Optional[torch.Tensor] = None,
         target_lengths: typing.Optional[torch.Tensor] = None,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -384,7 +406,7 @@ class SpectrogramModel(nn.Module):
         self,
         tokens: torch.Tensor,
         speaker: torch.Tensor,
-        mode: typing_extensions.Literal['infer'],
+        mode: typing.Literal["infer"],
         filter_reached_max: bool = False,
         num_tokens: typing.Optional[torch.Tensor] = None,
         use_tqdm: bool = False,
@@ -392,25 +414,31 @@ class SpectrogramModel(nn.Module):
         ...  # pragma: no cover
 
     @typing.overload
-    def __call__(self,
-                 tokens: torch.Tensor,
-                 speaker: torch.Tensor,
-                 mode: typing_extensions.Literal['generate'],
-                 num_tokens: typing.Optional[torch.Tensor] = None,
-                 split_size: float = 32,
-                 use_tqdm: bool = False) -> SpectrogramModelGenerator:
+    def __call__(
+        self,
+        tokens: torch.Tensor,
+        speaker: torch.Tensor,
+        mode: typing.Literal["generate"],
+        num_tokens: typing.Optional[torch.Tensor] = None,
+        split_size: float = 32,
+        use_tqdm: bool = False,
+    ) -> SpectrogramModelGenerator:
         ...  # pragma: no cover
 
-    def __call__(self,
-                 *args,
-                 mode: typing_extensions.Literal['infer', 'generate', 'forward'] = 'forward',
-                 **kwargs):
+    def __call__(
+        self,
+        *args,
+        mode: typing.Literal["infer", "generate", "forward"] = "forward",
+        **kwargs,
+    ):
         return super().__call__(*args, mode=mode, **kwargs)
 
-    def forward(self,
-                *args,
-                mode: typing_extensions.Literal['infer', 'generate', 'forward'] = 'forward',
-                **kwargs):
+    def forward(
+        self,
+        *args,
+        mode: typing.Literal["infer", "generate", "forward"] = "forward",
+        **kwargs,
+    ):
         """
         NOTE:
             - The `forward` function is special, learn more:
@@ -418,9 +446,9 @@ class SpectrogramModel(nn.Module):
             - Since the `forward` function is required to be executed, we use the parameter
               `mode` to overload the function.
         """
-        if mode == 'forward':
+        if mode == "forward":
             return self._forward(*args, **kwargs)
-        elif mode == 'generate':
+        elif mode == "generate":
             return self._generate(*args, **kwargs)
         else:
             return self._infer(*args, **kwargs)

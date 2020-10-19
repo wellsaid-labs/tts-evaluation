@@ -2,10 +2,6 @@
 # https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
 from __future__ import annotations
 
-from contextlib import contextmanager
-from functools import wraps
-from math import isclose
-
 import itertools
 import logging
 import math
@@ -14,24 +10,28 @@ import random
 import statistics
 import time
 import typing
+from contextlib import contextmanager
+from functools import wraps
 
 import torch
 import torch.utils.data
 
 logger = logging.getLogger(__name__)
 
-_RandomSampleReturnType = typing.TypeVar('_RandomSampleReturnType')
+_RandomSampleReturnType = typing.TypeVar("_RandomSampleReturnType")
 
 
-def random_sample(list_: typing.List[_RandomSampleReturnType],
-                  sample_size: int) -> typing.List[_RandomSampleReturnType]:
+def random_sample(
+    list_: typing.List[_RandomSampleReturnType], sample_size: int
+) -> typing.List[_RandomSampleReturnType]:
     """ Random sample function that doesn't error if `list_` is smaller than `sample_size`. """
     return random.sample(list_, min(len(list_), sample_size))
 
 
-def nested_to_flat_dict(dict_: typing.Dict[str, typing.Any],
-                        delimitator: str = '.') -> typing.Dict[str, typing.Any]:
-    """ Convert nested dictionary to a flat dictionary by concatenating keys with a `delimitator`.
+def nested_to_flat_dict(
+    dict_: typing.Dict[str, typing.Any], delimitator: str = "."
+) -> typing.Dict[str, typing.Any]:
+    """Convert nested dictionary to a flat dictionary by concatenating keys with a `delimitator`.
 
     Args:
         dict_
@@ -40,8 +40,9 @@ def nested_to_flat_dict(dict_: typing.Dict[str, typing.Any],
     return _nested_to_flat_dict(dict_=dict_, delimitator=delimitator, keys=[])
 
 
-def _nested_to_flat_dict(dict_: typing.Dict[str, typing.Any], delimitator: str,
-                         keys: typing.List[str]) -> typing.Dict[str, typing.Any]:
+def _nested_to_flat_dict(
+    dict_: typing.Dict[str, typing.Any], delimitator: str, keys: typing.List[str]
+) -> typing.Dict[str, typing.Any]:
     ret_ = {}
     for key in dict_:
         if isinstance(dict_[key], dict):
@@ -59,20 +60,21 @@ def mean(list_: typing.Iterable[float]) -> float:
     return statistics.mean(list_)  # NOTE: `statistics.mean` returns an error for an empty list
 
 
-_ChunksReturnType = typing.TypeVar('_ChunksReturnType')
+_ChunksReturnType = typing.TypeVar("_ChunksReturnType")
 
 
-def get_chunks(list_: typing.List[_ChunksReturnType],
-               n: int) -> typing.Generator[typing.List[_ChunksReturnType], None, None]:
+def get_chunks(
+    list_: typing.List[_ChunksReturnType], n: int
+) -> typing.Generator[typing.List[_ChunksReturnType], None, None]:
     """ Yield successive `n`-sized chunks from `list_`. """
     for i in range(0, len(list_), n):
-        yield list_[i:i + n]
+        yield list_[i : i + n]
 
 
-def get_weighted_stdev(tensor: torch.Tensor,
-                       dim: int = 0,
-                       mask: typing.Optional[torch.Tensor] = None) -> float:
-    """ Computed the average weighted standard deviation accross a dimension in `tensor`.
+def get_weighted_stdev(
+    tensor: torch.Tensor, dim: int = 0, mask: typing.Optional[torch.Tensor] = None
+) -> float:
+    """Computed the average weighted standard deviation accross a dimension in `tensor`.
 
     NOTE:
     - `tensor` must sum up to 1.0 on `dim`.
@@ -89,7 +91,9 @@ def get_weighted_stdev(tensor: torch.Tensor,
         mask (torch.BoolTensor [*, *])
     """
     # Expects normalized weightes total of 0, 1 to ensure correct variance decisions
-    assert all([isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()])
+    assert all(
+        math.isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()
+    )
 
     # Create position matrix where the index is the position and the value is the weight
     indicies = torch.arange(0, tensor.shape[dim], dtype=tensor.dtype, device=tensor.device)
@@ -98,10 +102,10 @@ def get_weighted_stdev(tensor: torch.Tensor,
     indicies = indicies.view(*shape).expand_as(tensor).float()
 
     weighted_mean = (indicies * tensor).sum(dim=dim) / tensor.sum(dim=dim)
-    weighted_variance = ((indicies - weighted_mean.unsqueeze(dim=dim))**2 * tensor).sum(dim=dim)
-    weighted_standard_deviation = weighted_variance**0.5
+    weighted_variance = ((indicies - weighted_mean.unsqueeze(dim=dim)) ** 2 * tensor).sum(dim=dim)
+    weighted_standard_deviation = weighted_variance ** 0.5
 
-    assert not torch.isnan(weighted_standard_deviation.min()), 'NaN detected.'
+    assert not torch.isnan(weighted_standard_deviation.min()), "NaN detected."
 
     if mask is not None:
         weighted_standard_deviation = weighted_standard_deviation.masked_select(mask)
@@ -109,32 +113,33 @@ def get_weighted_stdev(tensor: torch.Tensor,
     return weighted_standard_deviation.mean().item()
 
 
-""" Flatten a list of lists into a list. """
-flatten = lambda l: [item for sublist in l for item in sublist]
+def flatten(l: typing.List[typing.Any]) -> typing.List[typing.Any]:
+    """ Flatten a list of lists into a list. """
+    return sum(map(flatten, l), []) if isinstance(l, list) else [l]
 
 
 def flatten_parameters(model: torch.nn.Module) -> torch.nn.Module:
     """ Apply `flatten_parameters` to `model`. """
-    lambda_ = lambda m: m.flatten_parameters() if hasattr(m, 'flatten_parameters') else None
+    lambda_ = lambda m: m.flatten_parameters() if hasattr(m, "flatten_parameters") else None
     return model.apply(lambda_)
 
 
-_IdentityReturnType = typing.TypeVar('_IdentityReturnType')
+_IdentityReturnType = typing.TypeVar("_IdentityReturnType")
 
 
 def identity(x: _IdentityReturnType) -> _IdentityReturnType:
     return x
 
 
-_AccumulateAndSplitReturnType = typing.TypeVar('_AccumulateAndSplitReturnType')
+_AccumulateAndSplitReturnType = typing.TypeVar("_AccumulateAndSplitReturnType")
 
 
 def accumulate_and_split(
-        list_: typing.List[_AccumulateAndSplitReturnType],
-        thresholds: typing.List[float],
-        get_value=identity
+    list_: typing.List[_AccumulateAndSplitReturnType],
+    thresholds: typing.List[float],
+    get_value=identity,
 ) -> typing.Generator[typing.List[_AccumulateAndSplitReturnType], None, None]:
-    """ Split `list_` when the accumulated sum passes a threshold.
+    """Split `list_` when the accumulated sum passes a threshold.
 
     Args:
         list
@@ -149,14 +154,14 @@ def accumulate_and_split(
     for threshold in thresholds:
         lambda_ = lambda x: x < threshold + (totals[index - 1] if index > 0 else 0)
         count = len(list(itertools.takewhile(lambda_, totals[index:])))
-        yield list_[index:index + count]
+        yield list_[index : index + count]
         index = index + count
     if index < len(list_):
         yield list_[index:]
 
 
 def seconds_to_string(seconds: float) -> str:
-    """ Rewrite seconds as a string.
+    """Rewrite seconds as a string.
 
     Example:
         >>> seconds_to_string(123)
@@ -168,25 +173,25 @@ def seconds_to_string(seconds: float) -> str:
         >>> seconds_to_string(3600)
         '1h 0m 0s 0ms'
     """
-    assert seconds > 0, 'Seconds must be positive.'
+    assert seconds > 0, "Seconds must be positive."
     seconds, milliseconds = divmod(seconds, 1)
     milliseconds = round(milliseconds * 1000)
     days, seconds = divmod(seconds, 86400)
     hours, seconds = divmod(seconds, 3600)
     minutes, seconds = divmod(seconds, 60)
     if days > 0:
-        return '%dd %dh %dm %ds %dms' % (days, hours, minutes, seconds, milliseconds)
+        return "%dd %dh %dm %ds %dms" % (days, hours, minutes, seconds, milliseconds)
     elif hours > 0:
-        return '%dh %dm %ds %dms' % (hours, minutes, seconds, milliseconds)
+        return "%dh %dm %ds %dms" % (hours, minutes, seconds, milliseconds)
     elif minutes > 0:
-        return '%dm %ds %dms' % (minutes, seconds, milliseconds)
+        return "%dm %ds %dms" % (minutes, seconds, milliseconds)
     elif seconds > 0:
-        return '%ds %dms' % (seconds, milliseconds)
+        return "%ds %dms" % (seconds, milliseconds)
     else:
-        return '%dms' % (milliseconds)
+        return "%dms" % (milliseconds)
 
 
-_LogRuntimeFunction = typing.TypeVar('_LogRuntimeFunction', bound=typing.Callable[..., typing.Any])
+_LogRuntimeFunction = typing.TypeVar("_LogRuntimeFunction", bound=typing.Callable[..., typing.Any])
 
 
 def log_runtime(function: _LogRuntimeFunction) -> _LogRuntimeFunction:
@@ -197,18 +202,21 @@ def log_runtime(function: _LogRuntimeFunction) -> _LogRuntimeFunction:
         start = time.time()
         result = function(*args, **kwargs)
         elapsed = seconds_to_string(time.time() - start)
-        logger.info('`%s` ran for %s', function.__qualname__, elapsed)
+        logger.info("`%s` ran for %s", function.__qualname__, elapsed)
         return result
 
     return typing.cast(_LogRuntimeFunction, decorator)
 
 
-_SortTogetherItem = typing.TypeVar('_SortTogetherItem')
+_SortTogetherItem = typing.TypeVar("_SortTogetherItem")
 
 
-def sort_together(list_: typing.Iterable[_SortTogetherItem], key: typing.Iterable[typing.Any],
-                  **kwargs) -> typing.Iterable[_SortTogetherItem]:
-    """ Sort `list_` with `key` iterable.
+def sort_together(
+    list_: typing.Iterable[_SortTogetherItem],
+    key: typing.Iterable[typing.Any],
+    **kwargs,
+) -> typing.Iterable[_SortTogetherItem]:
+    """Sort `list_` with `key` iterable.
 
     Args:
         list_
@@ -223,7 +231,7 @@ def sort_together(list_: typing.Iterable[_SortTogetherItem], key: typing.Iterabl
 
 @contextmanager
 def Pool(*args, **kwargs) -> typing.Iterator[multiprocessing.pool.Pool]:
-    """ Alternative implementation of a `Pool` context manager. The original `multiprocessing.Pool`
+    """Alternative implementation of a `Pool` context manager. The original `multiprocessing.Pool`
     context manager calls `terminate` rather than `close` followed by `join`.
 
     Furthermore, it defaults to a 'forkserver' pool, a safer alternative to 'fork'.
@@ -233,17 +241,16 @@ def Pool(*args, **kwargs) -> typing.Iterator[multiprocessing.pool.Pool]:
     # https://github.com/pytorch/pytorch/issues/2245
     # https://codewithoutrules.com/2018/09/04/python-multiprocessing/
     # https://pythontic.com/multiprocessing/multiprocessing/introduction
-    pool = torch.multiprocessing.get_context('forkserver').Pool(*args, **kwargs)
+    pool = torch.multiprocessing.get_context("forkserver").Pool(*args, **kwargs)
     yield pool
     pool.close()  # Marks the pool as closed.
     pool.join()  # Waits for workers to exit.
 
 
-def pad_tensor(input_: torch.Tensor,
-               pad: typing.Tuple[int, int],
-               dim: int = 0,
-               **kwargs) -> torch.Tensor:
-    """ Pad a tensor dimension.
+def pad_tensor(
+    input_: torch.Tensor, pad: typing.Tuple[int, int], dim: int = 0, **kwargs
+) -> torch.Tensor:
+    """Pad a tensor dimension.
 
     Args:
         input_
@@ -251,15 +258,15 @@ def pad_tensor(input_: torch.Tensor,
         dim: The dimension to apply padding.
         **kwargs: Keyword arguments passed onto `torch.nn.functional.pad`.
     """
-    padding = [(0, 0) for _ in range(input_.dim())]
-    padding[dim] = pad
+    padding = [[0, 0] for _ in range(input_.dim())]
+    padding[dim] = list(pad)
     # NOTE: `torch.nn.functional.pad` accepts the last dimension first.
-    flat: typing.List[int] = flatten(reversed(padding))
+    flat: typing.List[int] = flatten(list(reversed(padding)))
     return torch.nn.functional.pad(input_, flat, **kwargs)
 
 
 def trim_tensors(*args: torch.Tensor, dim: int = 2) -> typing.Iterable[torch.Tensor]:
-    """ Trim the edges of each tensor in `args` such that each tensor's dimension `dim` has the same
+    """Trim the edges of each tensor in `args` such that each tensor's dimension `dim` has the same
     size.
 
     Args:
@@ -267,12 +274,12 @@ def trim_tensors(*args: torch.Tensor, dim: int = 2) -> typing.Iterable[torch.Ten
         dim: The dimension to trim.
     """
     minimum = min(a.shape[dim] for a in args)
-    assert all((a.shape[dim] - minimum) % 2 == 0 for a in args), 'Uneven padding'
+    assert all((a.shape[dim] - minimum) % 2 == 0 for a in args), "Uneven padding"
     return tuple([a.narrow(dim, (a.shape[dim] - minimum) // 2, minimum) for a in args])
 
 
 class LSTM(torch.nn.LSTM):
-    """ LSTM with a trainable initial hidden state.
+    """LSTM with a trainable initial hidden state.
 
     TODO: Add support for `PackedSequence`.
     """
@@ -281,24 +288,28 @@ class LSTM(torch.nn.LSTM):
         super().__init__(*args, **kwargs)
         num_directions = 2 if self.bidirectional else 1
         self.initial_hidden_state = torch.nn.Parameter(
-            torch.randn(self.num_layers * num_directions, 1, self.hidden_size))
+            torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
+        )
         self.initial_cell_state = torch.nn.Parameter(
-            torch.randn(self.num_layers * num_directions, 1, self.hidden_size))
+            torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
+        )
 
     def forward(  # type: ignore
         self,
         input: torch.Tensor,
-        hx: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
+        hx: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> typing.Tuple[torch.Tensor, typing.Tuple[torch.Tensor, torch.Tensor]]:
         if hx is None:
             batch_size = input.shape[0] if self.batch_first else input.shape[1]
-            hx = (self.initial_hidden_state.expand(-1, batch_size, -1).contiguous(),
-                  self.initial_cell_state.expand(-1, batch_size, -1).contiguous())
+            hx = (
+                self.initial_hidden_state.expand(-1, batch_size, -1).contiguous(),
+                self.initial_cell_state.expand(-1, batch_size, -1).contiguous(),
+            )
         return super().forward(input, hx=hx)
 
 
 class LSTMCell(torch.nn.LSTMCell):
-    """ LSTMCell with a trainable initial hidden state.
+    """LSTMCell with a trainable initial hidden state.
 
     TODO: Add support for `PackedSequence`.
     """
@@ -311,15 +322,17 @@ class LSTMCell(torch.nn.LSTMCell):
     def forward(
         self,
         input: torch.Tensor,
-        hx: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
+        hx: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
         if hx is None:
-            hx = (self.initial_hidden_state.expand(input.shape[0], -1).contiguous(),
-                  self.initial_cell_state.expand(input.shape[0], -1).contiguous())
+            hx = (
+                self.initial_hidden_state.expand(input.shape[0], -1).contiguous(),
+                self.initial_cell_state.expand(input.shape[0], -1).contiguous(),
+            )
         return super().forward(input, hx=hx)
 
 
-class Average():
+class Average:
     """ Track the average. """
 
     def __init__(self):
@@ -327,17 +340,26 @@ class Average():
 
     def reset(self) -> typing.Optional[float]:
         """ Reset the metric statistics and return the mean. """
-        average = self.total_value / self.total_count if (hasattr(self, 'total_value') and hasattr(
-            self, 'total_count') and self.total_count > 0) else None
+        average = (
+            self.total_value / self.total_count
+            if (
+                hasattr(self, "total_value")
+                and hasattr(self, "total_count")
+                and self.total_count > 0
+            )
+            else None
+        )
         self.last_update_value: typing.Optional[float] = None
         self.total_value: float = 0.0
         self.total_count: float = 0.0
         return average
 
-    def update(self,
-               value: typing.Union[torch.Tensor, float],
-               count: typing.Union[torch.Tensor, int] = 1) -> Average:
-        """ Update the mean.
+    def update(
+        self,
+        value: typing.Union[torch.Tensor, float],
+        count: typing.Union[torch.Tensor, int] = 1,
+    ) -> Average:
+        """Update the mean.
 
         Args:
             value

@@ -6,33 +6,38 @@ import typing
 
 from third_party import LazyLoader
 
-unidecode = LazyLoader('unidecode', globals(), 'unidecode')
-num2words = LazyLoader('num2words', globals(), 'num2words')
-
-from lib.datasets.utils import Example
-from lib.datasets.utils import precut_dataset_loader
-from lib.datasets.utils import Speaker
-
 import lib
+from lib.datasets.utils import Example, Speaker, precut_dataset_loader
+
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import num2words
+    import unidecode
+else:
+    unidecode = LazyLoader("unidecode", globals(), "unidecode")
+    num2words = LazyLoader("num2words", globals(), "num2words")
+
 
 logger = logging.getLogger(__name__)
 
-LINDA_JOHNSON = Speaker('Linda Johnson')
+LINDA_JOHNSON = Speaker("Linda Johnson")
 
 
-def lj_speech_dataset(root_directory_name: str = 'LJSpeech-1.1',
-                      url: str = 'http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2',
-                      speaker: Speaker = LINDA_JOHNSON,
-                      verbalize: bool = True,
-                      metadata_audio_column: typing.Union[int, str] = 0,
-                      metadata_audio_path: str = ('{directory}/{root_directory_name}/' +
-                                                  'wavs/{metadata_audio_column_value}.wav'),
-                      metadata_text_column: typing.Union[int, str] = 1,
-                      metadata_quoting: int = csv.QUOTE_NONE,
-                      metadata_delimiter: str = '|',
-                      metadata_header: typing.Optional[bool] = None,
-                      **kwargs) -> typing.List[Example]:
-    """ Load the Linda Johnson (LJ) Speech dataset.
+def lj_speech_dataset(
+    root_directory_name: str = "LJSpeech-1.1",
+    url: str = "http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2",
+    speaker: Speaker = LINDA_JOHNSON,
+    verbalize: bool = True,
+    metadata_audio_column: typing.Union[int, str] = 0,
+    metadata_audio_path: str = (
+        "{directory}/{root_directory_name}/wavs/{metadata_audio_column_value}.wav"
+    ),
+    metadata_text_column: typing.Union[int, str] = 1,
+    metadata_quoting: int = csv.QUOTE_NONE,
+    metadata_delimiter: str = "|",
+    metadata_header: typing.Optional[bool] = None,
+    **kwargs,
+) -> typing.List[Example]:
+    """Load the Linda Johnson (LJ) Speech dataset.
 
     This is a public domain speech dataset consisting of 13,100 short audio clips of a single
     speaker reading passages from 7 non-fiction books. A transcription is provided for each clip.
@@ -90,7 +95,8 @@ def lj_speech_dataset(root_directory_name: str = 'LJSpeech-1.1',
         metadata_audio_path=metadata_audio_path,
         metadata_text_column=metadata_text_column,
         metadata_audio_column=metadata_audio_column,
-        **kwargs)
+        **kwargs,
+    )
 
     def process_text(example):
         text = _normalize_whitespace(example.text)
@@ -130,32 +136,35 @@ punctuation.".
 # Reference: https://keithito.com/LJ-Speech-Dataset/
 # List of (regular expression, replacement) pairs for abbreviations:
 _abbreviations: typing.List[typing.Tuple[typing.Pattern, str]]
-_abbreviations = [(re.compile('\\b%s\\.' % x[0], re.IGNORECASE), x[1]) for x in [
-    ('mrs', 'misess'),
-    ('mr', 'mister'),
-    ('dr', 'doctor'),
-    ('st', 'saint'),
-    ('co', 'company'),
-    ('jr', 'junior'),
-    ('maj', 'major'),
-    ('gen', 'general'),
-    ('drs', 'doctors'),
-    ('rev', 'reverend'),
-    ('lt', 'lieutenant'),
-    ('hon', 'honorable'),
-    ('sgt', 'sergeant'),
-    ('capt', 'captain'),
-    ('esq', 'esquire'),
-    ('ltd', 'limited'),
-    ('col', 'colonel'),
-    ('ft', 'fort'),
-    ('messrs', 'messrs'),
-    ('no', 'number'),
-]]
+_abbreviations = [
+    (re.compile("\\b%s\\." % x[0], re.IGNORECASE), x[1])
+    for x in [
+        ("mrs", "misess"),
+        ("mr", "mister"),
+        ("dr", "doctor"),
+        ("st", "saint"),
+        ("co", "company"),
+        ("jr", "junior"),
+        ("maj", "major"),
+        ("gen", "general"),
+        ("drs", "doctors"),
+        ("rev", "reverend"),
+        ("lt", "lieutenant"),
+        ("hon", "honorable"),
+        ("sgt", "sergeant"),
+        ("capt", "captain"),
+        ("esq", "esquire"),
+        ("ltd", "limited"),
+        ("col", "colonel"),
+        ("ft", "fort"),
+        ("messrs", "messrs"),
+        ("no", "number"),
+    ]
+]
 
 
 def _match_case(source: str, target: str) -> str:
-    """ Match `source` letter case to `target` letter case.
+    """Match `source` letter case to `target` letter case.
 
     Args:
         source: Reference text for the letter case.
@@ -176,11 +185,13 @@ def _match_case(source: str, target: str) -> str:
     return target
 
 
-def _iterate_and_replace(regex: typing.Pattern[str],
-                         text: str,
-                         replace: typing.Callable[[str], str],
-                         group: int = 1) -> str:
-    """ Iterate over all `regex` matches in `text`, and replace the matched text.
+def _iterate_and_replace(
+    regex: typing.Pattern[str],
+    text: str,
+    replace: typing.Callable[[str], str],
+    group: int = 1,
+) -> str:
+    """Iterate over all `regex` matches in `text`, and replace the matched text.
 
     Args:
         regex: Pattern to match subtext.
@@ -203,7 +214,7 @@ def _iterate_and_replace(regex: typing.Pattern[str],
 
 
 def _expand_abbreviations(text: str) -> str:
-    """ Expand abbreviations in `text`.
+    """Expand abbreviations in `text`.
 
     Notes:
         * The supported abbreviations can be found at: `_abbreviations`.
@@ -219,11 +230,11 @@ def _expand_abbreviations(text: str) -> str:
 
 
 # Regular expression matching whitespace:
-_whitespace_re = re.compile(r'\s+')
+_whitespace_re = re.compile(r"\s+")
 
 
 def _normalize_whitespace(text: str) -> str:
-    """ Normalize white spaces in `text`.
+    """Normalize white spaces in `text`.
 
     Ensure there is only one white space at a time and no white spaces at the end.
 
@@ -231,39 +242,42 @@ def _normalize_whitespace(text: str) -> str:
         >>> _normalize_whitespace('Mr.     Gurney   ')
         'Mr. Gurney'
     """
-    return re.sub(_whitespace_re, ' ', text).strip()
+    return re.sub(_whitespace_re, " ", text).strip()
 
 
 def _normalize_quotations(text: str) -> str:
-    """ Normalize quotation marks from the text.
+    """Normalize quotation marks from the text.
 
     Example:
         >>> _normalize_quotations('“sponge,”')
         '"sponge,"'
     """
-    text = text.replace('“', '"')
-    text = text.replace('”', '"')
-    text = text.replace('’', '\'')
-    text = text.replace('‘', '\'')
+    text = text.replace("“", '"')
+    text = text.replace("”", '"')
+    text = text.replace("’", "'")
+    text = text.replace("‘", "'")
     return text
 
 
 _special_cases = {
-    'LJ044-0055': ('544 Camp Street New', 'five four four Camp Street New'),
-    'LJ028-0180': ('In the year 562', 'In the year five sixty-two'),
-    'LJ047-0063': ('602 Elsbeth Street', 'six oh two Elsbeth Street'),
-    'LJ047-0160': ('411 Elm Street', 'four one one Elm Street'),
-    'LJ047-0069': ('214 Neely Street', 'two one four Neely Street'),
-    'LJ040-0121': ('P.S. 117', 'P.S. one seventeen'),
-    'LJ032-0036': ('No. 2,202,130,462', 'No. two two zero two one three zero four six two'),
-    'LJ029-0193': ('100 extra off-duty', 'one hundred extra off-duty'),
+    "LJ044-0055": ("544 Camp Street New", "five four four Camp Street New"),
+    "LJ028-0180": ("In the year 562", "In the year five sixty-two"),
+    "LJ047-0063": ("602 Elsbeth Street", "six oh two Elsbeth Street"),
+    "LJ047-0160": ("411 Elm Street", "four one one Elm Street"),
+    "LJ047-0069": ("214 Neely Street", "two one four Neely Street"),
+    "LJ040-0121": ("P.S. 117", "P.S. one seventeen"),
+    "LJ032-0036": (
+        "No. 2,202,130,462",
+        "No. two two zero two one three zero four six two",
+    ),
+    "LJ029-0193": ("100 extra off-duty", "one hundred extra off-duty"),
 }
 
-_re_filename = re.compile('LJ[0-9]{3}-[0-9]{4}')
+_re_filename = re.compile("LJ[0-9]{3}-[0-9]{4}")
 
 
 def _verbalize_special_cases(audio: pathlib.Path, text: str) -> str:
-    """ Uses `_special_cases` to verbalize text.
+    """Uses `_special_cases` to verbalize text.
 
     Args:
         audio: Filename of the audio file (e.g. LJ044-0055)
@@ -279,11 +293,11 @@ def _verbalize_special_cases(audio: pathlib.Path, text: str) -> str:
     return text
 
 
-_re_time_of_day = re.compile(r'([0-9]{1,2}:[0-9]{1,2})')
+_re_time_of_day = re.compile(r"([0-9]{1,2}:[0-9]{1,2})")
 
 
 def _verbalize_time_of_day(text: str) -> str:
-    """ Verbalize time of day in text.
+    """Verbalize time of day in text.
 
     Example:
         >>> _verbalize_time_of_day('San Antonio at 1:30 p.m.,')
@@ -291,20 +305,20 @@ def _verbalize_time_of_day(text: str) -> str:
     """
 
     def _replace(match):
-        split = match.split(':')
+        split = match.split(":")
         assert len(split) == 2
         words = [num2words.num2words(int(num)) for num in split]
-        ret = ' '.join(words)
+        ret = " ".join(words)
         return ret
 
     return _iterate_and_replace(_re_time_of_day, text, _replace)
 
 
-_re_ordinals = re.compile(r'([0-9]+(st|nd|rd|th))')
+_re_ordinals = re.compile(r"([0-9]+(st|nd|rd|th))")
 
 
 def _verbalize_ordinals(text: str) -> str:
-    """ Verbalize ordinals in text.
+    """Verbalize ordinals in text.
 
     Example:
         >>> _verbalize_ordinals('between May 1st, 1827,')
@@ -312,18 +326,18 @@ def _verbalize_ordinals(text: str) -> str:
     """
 
     def _replace(match):
-        digit = ''.join([c for c in match if c.isdigit()])
+        digit = "".join([c for c in match if c.isdigit()])
         ret = num2words.num2words(int(digit), ordinal=True)
         return ret
 
     return _iterate_and_replace(_re_ordinals, text, _replace)
 
 
-_re_currency = re.compile(r'(\S*([$£]{1}[0-9\,\.]+\b))')
+_re_currency = re.compile(r"(\S*([$£]{1}[0-9\,\.]+\b))")
 
 
 def _verbalize_currency(text: str) -> str:
-    """ Verbalize currencies in text.
+    """Verbalize currencies in text.
 
     Example:
         >>> _verbalize_currency('inch BBL, unquote, cost $29.95.')
@@ -331,26 +345,26 @@ def _verbalize_currency(text: str) -> str:
     """
 
     def _replace(match):
-        digit = match[1:].replace(',', '')
-        ret = num2words.num2words(digit, to='currency', currency='USD')
-        ret = ret.replace(', zero cents', '')
-        ret = ret.replace('hundred and', 'hundred')
-        if '£' in match:
+        digit = match[1:].replace(",", "")
+        ret = num2words.num2words(digit, to="currency", currency="USD")
+        ret = ret.replace(", zero cents", "")
+        ret = ret.replace("hundred and", "hundred")
+        if "£" in match:
             # num2words has bugs with their GBP currency
-            ret = ret.replace('dollar', 'pound')
-            ret = ret.replace('cents', 'pence')
-            ret = ret.replace('cent', 'penny')
+            ret = ret.replace("dollar", "pound")
+            ret = ret.replace("cents", "pence")
+            ret = ret.replace("cent", "penny")
         return ret
 
     return _iterate_and_replace(_re_currency, text, _replace)
 
 
-_re_po_box = re.compile(r'([Bb]ox [0-9]+\b)')
-_re_serial_number = re.compile(r'(\b[A-Za-z]+[0-9]+\b)')
+_re_po_box = re.compile(r"([Bb]ox [0-9]+\b)")
+_re_serial_number = re.compile(r"(\b[A-Za-z]+[0-9]+\b)")
 
 
 def _verbalize_serial_numbers(text: str) -> str:
-    """ Verbalize serial numbers in text.
+    """Verbalize serial numbers in text.
 
     Example:
         >>> _verbalize_serial_numbers('Post Office Box 2915, Dallas, Texas')
@@ -360,10 +374,10 @@ def _verbalize_serial_numbers(text: str) -> str:
     """
 
     def _replace(match):
-        split = match.split(' ')
-        ret = ' '.join([num2words.num2words(int(t)) if t.isdigit() else t for t in list(split[-1])])
+        split = match.split(" ")
+        ret = " ".join([num2words.num2words(int(t)) if t.isdigit() else t for t in list(split[-1])])
         if len(split) == 2:
-            ret = split[0] + ' ' + ret
+            ret = split[0] + " " + ret
         return ret
 
     for regex in [_re_po_box, _re_serial_number]:
@@ -371,13 +385,13 @@ def _verbalize_serial_numbers(text: str) -> str:
     return text
 
 
-_re_year_thousand = re.compile(r'(\b[0-9]{4}\b)')
-_re_year_hundred = re.compile(r'\b(?:in|In) ([0-9]{3})\b')
-_re_year_bce = re.compile(r'\b([0-9]{3}) B\.C\b')
+_re_year_thousand = re.compile(r"(\b[0-9]{4}\b)")
+_re_year_hundred = re.compile(r"\b(?:in|In) ([0-9]{3})\b")
+_re_year_bce = re.compile(r"\b([0-9]{3}) B\.C\b")
 
 
 def _verbalize_year(text: str) -> str:
-    """ Verbalize years in text.
+    """Verbalize years in text.
 
     Example:
         >>> _verbalize_year('Newgate down to 1818,')
@@ -389,7 +403,7 @@ def _verbalize_year(text: str) -> str:
     """
 
     def _replace(match):
-        ret = num2words.num2words(int(match), lang='en', to='year')
+        ret = num2words.num2words(int(match), lang="en", to="year")
         return ret
 
     for regex in [_re_year_thousand, _re_year_hundred, _re_year_bce]:
@@ -397,11 +411,11 @@ def _verbalize_year(text: str) -> str:
     return text
 
 
-_re_numeral = re.compile(r'(?:Number|number) ([0-9]+)')
+_re_numeral = re.compile(r"(?:Number|number) ([0-9]+)")
 
 
 def _verbalize_numeral(text: str) -> str:
-    """ Verbalize numerals in text.
+    """Verbalize numerals in text.
 
     Example:
         >>> _verbalize_numeral(_expand_abbreviations('Exhibit No. 143 as the'))
@@ -409,18 +423,19 @@ def _verbalize_numeral(text: str) -> str:
     """
 
     def _replace(match):
-        ret = num2words.num2words(int(match), lang='en', to='year')
+        ret = num2words.num2words(int(match), lang="en", to="year")
         return ret
 
     return _iterate_and_replace(_re_numeral, text, _replace)
 
 
 _re_roman_number = re.compile(
-    r'\b(?:George|Charles|Napoleon|Henry|Nebuchadnezzar|William) ([IV]+\.{0,})')
+    r"\b(?:George|Charles|Napoleon|Henry|Nebuchadnezzar|William) ([IV]+\.{0,})"
+)
 
 
 def _verbalize_roman_number(text: str) -> str:
-    """ Verbalize roman numers in text.
+    """Verbalize roman numers in text.
 
     Example:
         >>> _verbalize_roman_number('William IV. was also the victim')
@@ -428,28 +443,28 @@ def _verbalize_roman_number(text: str) -> str:
     """
 
     def _replace(match):
-        if match[-1] == '.':
+        if match[-1] == ".":
             match = match[:-1]
 
         # 0 - 9 roman number to int
-        if 'V' not in match:
+        if "V" not in match:
             num = len(match)
-        elif 'IV' == match:
+        elif "IV" == match:
             num = 4
         else:
             num = 5 + len(match) - 1
 
-        ret = 'the ' + num2words.num2words(int(num), to='ordinal')
+        ret = "the " + num2words.num2words(int(num), to="ordinal")
         return ret
 
     return _iterate_and_replace(_re_roman_number, text, _replace)
 
 
-_re_number = re.compile(r'(\b[0-9]{1}[0-9\.\,]{0,}\b)')
+_re_number = re.compile(r"(\b[0-9]{1}[0-9\.\,]{0,}\b)")
 
 
 def _verbalize_number(text: str) -> str:
-    """ Verbalize numbers in text.
+    """Verbalize numbers in text.
 
     Example:
         >>> _verbalize_number('Chapter 4. The Assassin:')
@@ -465,9 +480,9 @@ def _verbalize_number(text: str) -> str:
     """
 
     def _replace(match):
-        match = match.replace(',', '')
+        match = match.replace(",", "")
         ret = num2words.num2words(float(match))
-        ret = ret.replace('hundred and', 'hundred')
+        ret = ret.replace("hundred and", "hundred")
         return ret
 
     return _iterate_and_replace(_re_number, text, _replace)

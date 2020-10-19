@@ -1,26 +1,27 @@
-from pathlib import Path
-from unittest import mock
-
 import logging
 import os
 import pathlib
 import sys
 import tempfile
+from pathlib import Path
+from unittest import mock
 
 import pytest
 
 import lib
 
 
-def _make_log_record(name='logger_name',
-                     level=logging.INFO,
-                     pathname='path/file.py',
-                     lineno=0,
-                     message='the message',
-                     args=tuple(),
-                     exc_info=None,
-                     func='function_name',
-                     sinfo=''):
+def _make_log_record(
+    name="logger_name",
+    level=logging.INFO,
+    pathname="path/file.py",
+    lineno=0,
+    message="the message",
+    args=tuple(),
+    exc_info=None,
+    func="function_name",
+    sinfo="",
+):
     return logging.LogRecord(name, level, pathname, lineno, message, args, exc_info, func, sinfo)
 
 
@@ -32,7 +33,7 @@ def test__colored_formatter__warning():
     formatted = formatter.format(record)
     assert record.message in formatted
     assert record.name in formatted
-    assert 'WARNING' in formatted
+    assert "WARNING" in formatted
 
 
 def test__colored_formatter__error__large_id():
@@ -43,7 +44,7 @@ def test__colored_formatter__error__large_id():
     formatted = formatter.format(record)
     assert record.message in formatted
     assert record.name in formatted
-    assert 'ERROR' in formatted
+    assert "ERROR" in formatted
 
 
 def test__max_level_filter():
@@ -80,23 +81,23 @@ def test_assert_enough_disk_space__not_enough():
         lib.environment.assert_enough_disk_space(min_space=1.0)
 
 
-@mock.patch('lib.environment.subprocess.check_output', return_value='torch==0.4.1'.encode())
-@mock.patch('lib.environment.Path.read_text', return_value='torch==0.4.1\n')
+@mock.patch("lib.environment.subprocess.check_output", return_value="torch==0.4.1".encode())
+@mock.patch("lib.environment.Path.read_text", return_value="torch==0.4.1\n")
 def test_check_module_versions(_, __):
     """ Test that `check_module_versions` passes. """
     lib.environment.check_module_versions()
 
 
-@mock.patch('lib.environment.subprocess.check_output', return_value='torch==0.4.1'.encode())
-@mock.patch('lib.environment.Path.read_text', return_value='torch==0.4.0\n')
+@mock.patch("lib.environment.subprocess.check_output", return_value="torch==0.4.1".encode())
+@mock.patch("lib.environment.Path.read_text", return_value="torch==0.4.0\n")
 def test_check_module_versions__wrong_version(_, __):
     """ Test that `check_module_versions` if the install version is incorrect. """
     with pytest.raises(RuntimeError):
         lib.environment.check_module_versions()
 
 
-@mock.patch('lib.environment.subprocess.check_output', return_value='tensorflow==0.4.0'.encode())
-@mock.patch('lib.environment.Path.read_text', return_value='torch==0.4.0\n')
+@mock.patch("lib.environment.subprocess.check_output", return_value="tensorflow==0.4.0".encode())
+@mock.patch("lib.environment.Path.read_text", return_value="torch==0.4.0\n")
 def test_check_module_versions__missing_install(_, __):
     """ Test that `check_module_versions` if a installation is missing. """
     with pytest.raises(RuntimeError):
@@ -110,53 +111,74 @@ def test_set_seed():
 
 def test_bash_time_label():
     label = lib.environment.bash_time_label()
-    assert 'PID-' in label
-    assert 'DATE-' in label
+    assert "PID-" in label
+    assert "DATE-" in label
 
 
 def test_bash_time_label__no_pid():
     label = lib.environment.bash_time_label(False)
-    assert 'PID-' not in label
-    assert 'DATE-' in label
+    assert "PID-" not in label
+    assert "DATE-" in label
 
 
 def test_bash_time_label__special_characters():
-    """ Test to ensure that no bash special characters appear in the label, learn more:
+    """Test to ensure that no bash special characters appear in the label, learn more:
     https://unix.stackexchange.com/questions/270977/what-characters-are-required-to-be-escaped-in-command-line-arguments
     """
     label = lib.environment.bash_time_label()
     # NOTE (michael p): `:` and `=` wasn't mentioned explicitly; however, in my shell it required
     # an escape.
-    for character in ([
-            '`', '~', '!', '#', '$', '&', '*', '(', ')', ' ', '\t', '\n', '{', '}', '[', ']', '|',
-            ';', '\'', '"', '<', '>', '?', '='
-    ] + [':']):
+    for character in [
+        "`",
+        "~",
+        "!",
+        "#",
+        "$",
+        "&",
+        "*",
+        "(",
+        ")",
+        " ",
+        "\t",
+        "\n",
+        "{",
+        "}",
+        "[",
+        "]",
+        "|",
+        ";",
+        "'",
+        '"',
+        "<",
+        ">",
+        "?",
+        "=",
+    ] + [":"]:
         assert character not in label
 
 
 def test_text_to_label():
-    assert lib.environment.text_to_label('Michael P') == 'michael_p'
+    assert lib.environment.text_to_label("Michael P") == "michael_p"
 
 
 def test_get_root_path():
-    """ Assuming there is `.git` directory on the root level, test if the `ROOT_PATH` is correct.
-    """
-    assert (lib.environment.ROOT_PATH / '.git').is_dir()
+    """Assuming there is `.git` directory on the root level, test if the `ROOT_PATH` is correct."""
+    assert (lib.environment.ROOT_PATH / ".git").is_dir()
 
 
 def test__duplicate_stream(capsys):
     """ Test if `_duplicate_stream` duplicates `sys.stdout`. """
     with tempfile.TemporaryDirectory() as directory:
-        file_path = Path(directory) / 'stdout.log'
+        file_path = Path(directory) / "stdout.log"
         with capsys.disabled():  # Disable capsys because it messes with sys.stdout
             logger = logging.getLogger(__name__)
             handler = logging.StreamHandler(sys.stdout)
             logger.addHandler(handler)
             stop = lib.environment._duplicate_stream(sys.stdout, file_path)
 
-            print('1')
-            logger.info('2')
-            os.system('echo 3')
+            print("1")
+            logger.info("2")
+            os.system("echo 3")
 
             # Flush and close
             stop()
@@ -164,7 +186,7 @@ def test__duplicate_stream(capsys):
 
         assert file_path.is_file()
         output = file_path.read_text()
-        assert set(output.split()) == set(['1', '2', '3'])
+        assert set(output.split()) == set(["1", "2", "3"])
 
 
 def test_record_standard_streams(capsys):
@@ -177,38 +199,38 @@ def test_record_standard_streams(capsys):
             handler.setLevel(logging.INFO)
             logger.addHandler(handler)
 
-            log_filename = 'test.log'
+            log_filename = "test.log"
 
             recorder = lib.environment.RecordStandardStreams(directory_path, log_filename)
 
             # Check if stdout gets captured
-            print('Test')
-            sys.stderr.write('Error\n')
-            logger.info('Test Logger')
+            print("Test")
+            sys.stderr.write("Error\n")
+            logger.info("Test Logger")
 
             assert (directory_path / log_filename).is_file()
 
-            new_log_filename = 'new.log'
+            new_log_filename = "new.log"
             recorder.update(directory_path, new_log_filename)
 
             assert not (directory_path / log_filename).is_file()
             assert (directory_path / new_log_filename).is_file()
 
-            print('Test Update')
+            print("Test Update")
 
             # Just `Test` print in stdout
-            lines = set((directory_path / new_log_filename).read_text().strip().split('\n'))
-            assert 'Test' in lines
-            assert 'Test Logger' in lines
-            assert 'Test Update' in lines
-            assert 'Error' in lines
+            lines = set((directory_path / new_log_filename).read_text().strip().split("\n"))
+            assert "Test" in lines
+            assert "Test Logger" in lines
+            assert "Test Update" in lines
+            assert "Error" in lines
 
 
 def test_load_and_save():
     """ Test `load` and `save` work on a random object. """
     with tempfile.TemporaryDirectory() as directory:
-        file_path = pathlib.Path(directory) / 'test_load_and_save'
-        object_ = frozenset(['testing'])
+        file_path = pathlib.Path(directory) / "test_load_and_save"
+        object_ = frozenset(["testing"])
         lib.environment.save(file_path, object_)
         assert lib.environment.load(file_path) == object_
 
@@ -216,23 +238,24 @@ def test_load_and_save():
 def test_save__overwrite():
     """ Test `save` overwrites existing files only explicitly. """
     with tempfile.TemporaryDirectory() as directory:
-        file_path = pathlib.Path(directory) / 'test_save__overwrite'
-        lib.environment.save(file_path, 'object')
+        file_path = pathlib.Path(directory) / "test_save__overwrite"
+        lib.environment.save(file_path, "object")
         with pytest.raises(ValueError):
-            lib.environment.save(file_path, 'object')
-        lib.environment.save(file_path, 'object', overwrite=True)
+            lib.environment.save(file_path, "object")
+        lib.environment.save(file_path, "object", overwrite=True)
 
 
 def test_load_most_recent_file():
     """ Test `load_most_recent_file` loads the most recent non-corrupted file. """
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory)
-        lib.environment.save(path / 'oldest', 'oldest')
-        lib.environment.save(path / 'recent', 'recent')
-        newest = path / 'newest'
-        newest.write_text('newest')
-        assert lib.environment.load_most_recent_file(str(path / '*'),
-                                                     lib.environment.load) == 'recent'
+        lib.environment.save(path / "oldest", "oldest")
+        lib.environment.save(path / "recent", "recent")
+        newest = path / "newest"
+        newest.write_text("newest")
+        assert (
+            lib.environment.load_most_recent_file(str(path / "*"), lib.environment.load) == "recent"
+        )
 
 
 def test_load_most_recent_file__no_files():
@@ -240,17 +263,17 @@ def test_load_most_recent_file__no_files():
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory)
         with pytest.raises(ValueError):
-            lib.environment.load_most_recent_file(str(path / '*'), lib.environment.load)
+            lib.environment.load_most_recent_file(str(path / "*"), lib.environment.load)
 
 
 def test_load_most_recent_file__corrupted():
     """ Test `load_most_recent_file` errors if only corrupted files are found. """
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory)
-        newest = path / 'newest'
-        newest.write_text('newest')
+        newest = path / "newest"
+        newest.write_text("newest")
         with pytest.raises(ValueError):
-            lib.environment.load_most_recent_file(str(path / '*'), lib.environment.load)
+            lib.environment.load_most_recent_file(str(path / "*"), lib.environment.load)
 
 
 def test_get_untracked_files():

@@ -11,24 +11,29 @@ import string
 import subprocess
 import typing
 from functools import lru_cache, partial
+from typing import get_args
 
 import ftfy
-import typing_extensions
+import spacy
 import unidecode
 from third_party import LazyLoader
 from tqdm import tqdm
-from typing_extensions import get_args  # type: ignore
 
 import lib
 
 if typing.TYPE_CHECKING:  # pragma: no cover
+    import en_core_web_md
+    import Levenshtein
+    import nltk
+    import normalise
     import spacy.lang.en
-
-en_core_web_md = LazyLoader("en_core_web_md", globals(), "en_core_web_md")
-Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
-nltk = LazyLoader("nltk", globals(), "nltk")
-normalise = LazyLoader("normalise", globals(), "normalise")
-spacy_en = LazyLoader("spacy_en", globals(), "spacy.lang.en")
+    from spacy.lang import en as spacy_en
+else:
+    en_core_web_md = LazyLoader("en_core_web_md", globals(), "en_core_web_md")
+    Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
+    nltk = LazyLoader("nltk", globals(), "nltk")
+    normalise = LazyLoader("normalise", globals(), "normalise")
+    spacy_en = LazyLoader("spacy_en", globals(), "spacy.lang.en")
 
 
 logger = logging.getLogger(__name__)

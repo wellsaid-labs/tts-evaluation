@@ -2,26 +2,22 @@
 # https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
 from __future__ import annotations
 
-from bisect import bisect_left
-from bisect import insort
+import logging
+import typing
+from bisect import bisect_left, insort
 from math import floor
 from types import TracebackType
 
-import typing
-
-from hparams import configurable
-from hparams import HParam
-from third_party import get_parameter_norm
-
-import logging
 import numpy as np
 import torch
+from hparams import HParam, configurable
+from third_party import get_parameter_norm
 
 logger = logging.getLogger(__name__)
 
 
-class AdaptiveGradientNormClipping():
-    """ Clip gradient norm based on the median gradient norm.
+class AdaptiveGradientNormClipping:
+    """Clip gradient norm based on the median gradient norm.
 
     Source (On the difficulty of training Recurrent Neural Networks):
         The proposed clipping is simple to implement and computationally efficient, but it does
@@ -68,15 +64,18 @@ class AdaptiveGradientNormClipping():
         half = int(half)
         return (self.sorted_window[half] + self.sorted_window[half - 1]) / 2
 
-    def clip_(self, parameters: typing.Union[torch.Tensor, typing.Iterable[torch.Tensor]]):
-        """ Clips gradient norm of an iterable of parameters, and update gradient norm history.
+    def clip_(
+        self, parameters: typing.Union[torch.Tensor, typing.Iterable[torch.Tensor]]
+    ):
+        """Clips gradient norm of an iterable of parameters, and update gradient norm history.
 
         Args:
             parameters: Tensor(s) that will have their gradients normalized.
         """
         if self.max_norm is not None:
             torch.nn.utils.clip_grad_norm_(
-                parameters, max_norm=self.max_norm, norm_type=self.norm_type)
+                parameters, max_norm=self.max_norm, norm_type=self.norm_type
+            )
         norm = get_parameter_norm(parameters, self.norm_type)
         if not np.isfinite(norm):
             raise ValueError(f"Gradient is not finite: {norm}")
@@ -84,8 +83,8 @@ class AdaptiveGradientNormClipping():
         self.max_norm = self._get_median()
 
 
-class ExponentialMovingParameterAverage():
-    """ Average the model parameters over time.
+class ExponentialMovingParameterAverage:
+    """Average the model parameters over time.
 
     Learn more:
     - On EMA implementation: http://www.programmersought.com/article/28492072406/
@@ -97,17 +96,23 @@ class ExponentialMovingParameterAverage():
     """
 
     @configurable
-    def __init__(self, parameters: typing.Iterable[torch.Tensor], beta: float = HParam()):
+    def __init__(
+        self, parameters: typing.Iterable[torch.Tensor], beta: float = HParam()
+    ):
         self.parameters = list(parameters)
         self.beta = beta
-        self.shadow = [param.clone().detach() * (1.0 - self.beta) for param in self.parameters]
+        self.shadow = [
+            param.clone().detach() * (1.0 - self.beta) for param in self.parameters
+        ]
         self.backup: typing.List[torch.Tensor] = []
         self.step = 1
 
     def update(self):
         """ Update the parameter average. """
         for i, param in enumerate(self.parameters):
-            self.shadow[i] = (1.0 - self.beta) * param.clone().detach() + self.beta * self.shadow[i]
+            self.shadow[i] = (
+                1.0 - self.beta
+            ) * param.clone().detach() + self.beta * self.shadow[i]
         self.step += 1
 
     def apply(self):
@@ -117,7 +122,7 @@ class ExponentialMovingParameterAverage():
             # The initial 0.0 average values introduce bias that is corrected, learn more:
             # https://www.coursera.org/lecture/deep-neural-network/bias-correction-in-exponentially-weighted-averages-XjuhD
             with torch.no_grad():
-                param.copy_(shadow / (1 - self.beta**(self.step)))
+                param.copy_(shadow / (1 - self.beta ** (self.step)))
 
     def restore(self):
         """ Restore the parameter values after `self.apply`. """
@@ -148,7 +153,7 @@ class ExponentialMovingParameterAverage():
 
 
 def warmup_lr_multiplier_schedule(step: int, warmup: int) -> float:
-    """ Basic learning rate multiplier schedule.
+    """Basic learning rate multiplier schedule.
 
     Args:
         step: The current step.

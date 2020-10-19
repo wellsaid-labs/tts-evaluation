@@ -1,37 +1,36 @@
+import pathlib
+import typing
 from collections import Counter
 from unittest import mock
 
-import pathlib
-import typing
-
 import pytest
 
+import lib
 from tests import _utils
 
-import lib
 
-
-def _make_example(alignments=(),
-                  audio_path=pathlib.Path('.'),
-                  speaker=lib.datasets.Speaker(''),
-                  text='',
-                  metadata={}):
+def _make_example(
+    alignments=(),
+    audio_path=pathlib.Path("."),
+    speaker=lib.datasets.Speaker(""),
+    text="",
+    metadata={},
+):
     """ Make a `lib.datasets.Example` for testing. """
     alignments = tuple([lib.datasets.Alignment(a, a) for a in alignments])
     return lib.datasets.Example(audio_path, speaker, alignments, text, metadata)
 
 
 def test_dataset_generator():
-    """ Test `lib.datasets.dataset_generator` samples uniformly given a uniform distribution of
-    alignments. """
+    """Test `lib.datasets.dataset_generator` samples uniformly given a uniform distribution of
+    alignments."""
     dataset = [_make_example(((0, 1), (1, 2), (2, 3)))]
     iterator = lib.datasets.dataset_generator(dataset, max_seconds=10)
     counter: typing.Counter[lib.datasets.Alignment] = Counter()
     for i in range(10000):
         counter.update(next(iterator).alignments)
-    total = sum(counter.values())
-    for alignment in dataset[0].alignments:
-        assert counter[alignment] / total == pytest.approx(1 / len(dataset[0].alignments), abs=0.01)
+    assert set(counter.keys()) == set(dataset[0].alignments)
+    _utils.assert_uniform_distribution(counter, abs=0.01)
 
 
 def test_dataset_generator__empty():
@@ -41,31 +40,34 @@ def test_dataset_generator__empty():
 
 
 def test_dataset_generator__singular():
-    """ Test `lib.datasets.dataset_generator` handles multiple examples with a singular alignment
-    of varying lengths. """
-    dataset = [_make_example(((0, 1),)), _make_example(((0, 10),)), _make_example(((0, 5),))]
+    """Test `lib.datasets.dataset_generator` handles multiple examples with a singular alignment
+    of varying lengths."""
+    dataset = [
+        _make_example(((0, 1),)),
+        _make_example(((0, 10),)),
+        _make_example(((0, 5),)),
+    ]
     iterator = lib.datasets.dataset_generator(dataset, max_seconds=10)
     counter: typing.Counter[lib.datasets.Alignment] = Counter()
     for i in range(10000):
         counter.update(next(iterator).alignments)
-    total = sum(counter.values())
-    alignments = lib.utils.flatten([d.alignments for d in dataset])
-    for alignment in alignments:
-        assert counter[alignment] / total == pytest.approx(1 / len(alignments), abs=0.01)
+    assert set(counter.keys()) == set(lib.utils.flatten([list(d.alignments) for d in dataset]))
+    _utils.assert_uniform_distribution(counter, abs=0.01)
 
 
 def test_dataset_generator__multiple_multiple():
-    """ Test `lib.datasets.dataset_generator` handles multiple scripts with a uniform alignment
-    distribution. """
-    dataset = [_make_example(((0, 1), (1, 2), (2, 3))), _make_example(((3, 4), (4, 5), (5, 6)))]
+    """Test `lib.datasets.dataset_generator` handles multiple scripts with a uniform alignment
+    distribution."""
+    dataset = [
+        _make_example(((0, 1), (1, 2), (2, 3))),
+        _make_example(((3, 4), (4, 5), (5, 6))),
+    ]
     iterator = lib.datasets.dataset_generator(dataset, max_seconds=10)
     counter: typing.Counter[lib.datasets.Alignment] = Counter()
     for i in range(10000):
         counter.update(next(iterator).alignments)
-    total = sum(counter.values())
-    alignments = lib.utils.flatten([d.alignments for d in dataset])
-    for alignment in alignments:
-        assert counter[alignment] / total == pytest.approx(1 / len(alignments), abs=0.01)
+    assert set(counter.keys()) == set(lib.utils.flatten([list(d.alignments) for d in dataset]))
+    _utils.assert_uniform_distribution(counter, abs=0.01)
 
 
 def test_dataset_generator__pause():
@@ -75,15 +77,12 @@ def test_dataset_generator__pause():
     counter: typing.Counter[lib.datasets.Alignment] = Counter()
     for i in range(10000):
         counter.update(next(iterator).alignments)
-
-    total = sum(counter.values())
-    for alignment in dataset[0].alignments:
-        assert counter[alignment] / total == (
-            pytest.approx(1 / len(dataset[0].alignments), abs=0.02))
+    assert set(counter.keys()) == set(dataset[0].alignments)
+    _utils.assert_uniform_distribution(counter, abs=0.02)
 
 
 def test_dataset_generator__multiple_unequal_examples__large_max_seconds():
-    """ Test `lib.datasets.dataset_generator` samples uniformly despite unequal example sizes,
+    """Test `lib.datasets.dataset_generator` samples uniformly despite unequal example sizes,
     and large max seconds.
 
     NOTE: With a large enough `max_seconds`, the entire example should be sampled most of the time.
@@ -100,17 +99,16 @@ def test_dataset_generator__multiple_unequal_examples__large_max_seconds():
         assert example.alignments is not None
         spans_counter[example.alignments] += 1
 
-    total_alignments = sum(alignments_counter.values())
-    unique_alignments = lib.utils.flatten([d.alignments for d in dataset])
-
-    for alignment in unique_alignments:
-        assert alignments_counter[alignment] / total_alignments == pytest.approx(
-            1 / len(unique_alignments), abs=0.01)
+    assert set(alignments_counter.keys()) == set(
+        lib.utils.flatten([list(d.alignments) for d in dataset])
+    )
+    _utils.assert_uniform_distribution(alignments_counter, abs=0.01)
 
     for example in dataset:
         assert example.alignments is not None
         assert spans_counter[example.alignments] / num_examples == pytest.approx(
-            1 / len(dataset), abs=0.01)
+            1 / len(dataset), abs=0.01
+        )
 
 
 def test_dataset_generator__unequal_alignment_sizes():
@@ -120,19 +118,22 @@ def test_dataset_generator__unequal_alignment_sizes():
     counter: typing.Counter[lib.datasets.Alignment] = Counter()
     for i in range(10000):
         counter.update(next(iterator).alignments)
-    total = sum(counter.values())
-    alignments = lib.utils.flatten([d.alignments for d in dataset])
-    for alignment in alignments:
-        assert counter[alignment] / total == pytest.approx(1 / len(alignments), abs=0.01)
+    assert set(counter.keys()) == set(lib.utils.flatten([list(d.alignments) for d in dataset]))
+    _utils.assert_uniform_distribution(counter, abs=0.01)
 
 
-@mock.patch('lib.datasets.utils.subprocess.run', return_value=None)
+@mock.patch("lib.datasets.utils.subprocess.run", return_value=None)
 def test_dataset_loader(_):
     """ Test `lib.datasets.dataset_loader` loads a dataset. """
-    examples = lib.datasets.dataset_loader('hilary_noriega', '', lib.datasets.HILARY_NORIEGA,
-                                           _utils.TEST_DATA_PATH / '_disk' / 'data')
-    alignments = tuple([
-        lib.datasets.Alignment(a[0], a[1]) for a in [
+    examples = lib.datasets.dataset_loader(
+        "hilary_noriega",
+        "",
+        lib.datasets.HILARY_NORIEGA,
+        _utils.TEST_DATA_PATH / "_disk" / "data",
+    )
+    alignments = [
+        lib.datasets.Alignment(a[0], a[1])
+        for a in [
             ((0, 6), (0.0, 0.6)),
             ((7, 9), (0.6, 0.8)),
             ((10, 13), (0.8, 0.8)),
@@ -142,17 +143,14 @@ def test_dataset_loader(_):
             ((35, 42), (2.5, 2.6)),
             ((43, 47), (2.6, 3.3)),
         ]
-    ])
+    ]
     assert examples[0] == lib.datasets.Example(
-        alignments=alignments,
-        text='Author of the danger trail, Philip Steels, etc.',
-        audio_path=_utils.TEST_DATA_PATH / '_disk/data/hilary_noriega/recordings/Script 1.wav',
+        alignments=tuple(alignments),
+        text="Author of the danger trail, Philip Steels, etc.",
+        audio_path=_utils.TEST_DATA_PATH / "_disk/data/hilary_noriega/recordings/Script 1.wav",
         speaker=lib.datasets.HILARY_NORIEGA,
-        metadata={
-            'Index': 0,
-            'Source': 'CMU',
-            'Title': 'CMU'
-        })
+        metadata={"Index": 0, "Source": "CMU", "Title": "CMU"},
+    )
 
 
 # NOTE: `lib.datasets.precut_dataset_loader` is tested in `lj_speech` as part of loading the

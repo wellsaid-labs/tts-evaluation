@@ -10,7 +10,8 @@ def test_pre_net():
     size = 64
     num_frame_channels = 60
     pre_net = lib.spectrogram_model.pre_net.PreNet(
-        size=size, num_frame_channels=num_frame_channels, num_layers=2, dropout=0.5)
+        size=size, num_frame_channels=num_frame_channels, num_layers=2, dropout=0.5
+    )
     input_ = torch.randn(num_frames, batch_size, num_frame_channels)
     output = pre_net(input_)
     assert output.dtype == torch.float

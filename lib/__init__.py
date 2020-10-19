@@ -1,4 +1,5 @@
-# NOTE: Other `lib` modules import `utils` and `environment`.
+# NOTE: Other `lib` modules import `utils` and `environment`; therefore, they need to be imported
+# first.
 from lib import utils  # isort: skip
 from lib import environment  # isort: skip
 from lib import (

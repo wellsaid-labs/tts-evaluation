@@ -14,7 +14,9 @@ def checkout(experiment: str):
     api = comet_ml.api.API()
     experiment_ = api.get_experiment_by_id(experiment)
     git = experiment_.get_git_metadata()
-    typer.secho(f"Checking out experiment {experiment_.get_name()}...", fg=typer.colors.MAGENTA)
+    typer.secho(
+        f"Checking out experiment {experiment_.get_name()}...", fg=typer.colors.MAGENTA
+    )
     subprocess.run(f"git checkout {git['branch']}", shell=True, check=True)
     subprocess.run(f"git checkout {git['parent']}", shell=True, check=True)
     patch.__wrapped__(experiment)  # type: ignore

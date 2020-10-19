@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import typing
-import typing_extensions
 
 import torch
 
@@ -18,21 +17,20 @@ def is_initialized() -> bool:
     return torch.distributed.is_available() and torch.distributed.is_initialized()
 
 
-def get_master_rank() -> typing_extensions.Literal[0]:
+def get_master_rank() -> typing.Literal[0]:
     """ Returns the rank of the master processs. """
     return 0
 
 
 def is_master() -> bool:
-    """ Returns `True` if distributed isn't initialized or if this process is the master process.
-    """
+    """Returns `True` if distributed isn't initialized or if this process is the master process."""
     if not is_initialized():
         return True
     return torch.distributed.get_rank() == get_master_rank()
 
 
-def assert_synced(value: float, message: str = ''):
-    """ Assert that `value` is the same between master and worker nodes.
+def assert_synced(value: float, message: str = ""):
+    """Assert that `value` is the same between master and worker nodes.
 
     NOTE: The `value` is split into digits to support large numbers like 128-bit hashes.
 
@@ -59,12 +57,12 @@ def assert_synced(value: float, message: str = ''):
 
 
 def spawn(*args, nprocs=None, **kwargs):
-    """ `torch.multiprocessing.spawn` wrapper.
+    """`torch.multiprocessing.spawn` wrapper.
 
     NOTE (michael): Without an assert, when `nprocs` is zero, `torch.multiprocessing.spawn`
     crashes in a nondescript way.
     """
-    assert torch.cuda.device_count() > 0, 'Unable to find CUDA devices.'
+    assert torch.cuda.device_count() > 0, "Unable to find CUDA devices."
     nprocs = torch.cuda.device_count() if nprocs is None else nprocs
     torch.multiprocessing.spawn(*args, nprocs=nprocs, **kwargs)  # type: ignore
 
@@ -74,9 +72,15 @@ class DistributedAverage(lib.utils.Average):
 
     def reset(self) -> typing.Optional[float]:
         super().reset()
-        average = self.post_sync_total_value / self.post_sync_total_count if (
-            hasattr(self, 'post_sync_total_value') and hasattr(self, 'post_sync_total_value') and
-            self.post_sync_total_count > 0) else None
+        average = (
+            self.post_sync_total_value / self.post_sync_total_count
+            if (
+                hasattr(self, "post_sync_total_value")
+                and hasattr(self, "post_sync_total_value")
+                and self.post_sync_total_count > 0
+            )
+            else None
+        )
         self.post_sync_total_value: float = 0.0
         self.post_sync_total_count: float = 0.0
         return average
@@ -90,5 +94,6 @@ class DistributedAverage(lib.utils.Average):
         torch.distributed.reduce(packed, dst=get_master_rank())
         self.post_sync_total_value, self.post_sync_total_count = tuple(packed.tolist())
         self.last_update_value = (self.post_sync_total_value - last_post_sync_total_value) / (
-            self.post_sync_total_count - last_post_sync_total_count)
+            self.post_sync_total_count - last_post_sync_total_count
+        )
         return self

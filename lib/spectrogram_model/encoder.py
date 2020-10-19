@@ -1,11 +1,8 @@
+import typing
 from functools import lru_cache
 
-import typing
-
 import torch
-
-from hparams import configurable
-from hparams import HParam
+from hparams import HParam, configurable
 from torch import nn
 from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
 from torchnlp.nn import LockedDropout
@@ -14,8 +11,9 @@ from lib.utils import LSTM
 
 
 @lru_cache(maxsize=8)
-def _roll_helper(length: int, device: torch.device, dimension: int,
-                 num_dimensions: int) -> typing.Tuple[torch.Tensor, int]:
+def _roll_helper(
+    length: int, device: torch.device, dimension: int, num_dimensions: int
+) -> typing.Tuple[torch.Tensor, int]:
     """ Helper to ensure `indices` and `dimension` are not recalculated unnecessarily. """
     with torch.no_grad():
         indices = torch.arange(0, length, device=device)
@@ -30,7 +28,7 @@ def _roll_helper(length: int, device: torch.device, dimension: int,
 
 
 def _roll(tensor: torch.Tensor, shift: torch.Tensor, dim: int = -1) -> torch.Tensor:
-    """ Shift a tensor along the specified dimension.
+    """Shift a tensor along the specified dimension.
 
     Args:
         tensor (torch.Tensor [*, dim, *]): The tensor to shift.
@@ -42,8 +40,9 @@ def _roll(tensor: torch.Tensor, shift: torch.Tensor, dim: int = -1) -> torch.Ten
         tensor (torch.Tensor [*, dim, *]): The tensor that was shifted.
     """
     shift = shift.unsqueeze(dim)
-    assert shift.dim() == tensor.dim(
-    ), 'The `shift` tensor must be the same size as `tensor` without the `dim` dimension.'
+    assert (
+        shift.dim() == tensor.dim()
+    ), "The `shift` tensor must be the same size as `tensor` without the `dim` dimension."
     indices, dim = _roll_helper(tensor.shape[dim], tensor.device, dim, tensor.dim())
     indices = indices.detach().expand(*tensor.shape)
     indices = (indices - shift) % tensor.shape[dim]
@@ -51,37 +50,34 @@ def _roll(tensor: torch.Tensor, shift: torch.Tensor, dim: int = -1) -> torch.Ten
 
 
 class _RightMaskedBiRNN(nn.Module):
-    """ A bidirectional RNN that ignores any masked input on the right side of the sequence.
+    """A bidirectional RNN that ignores any masked input on the right side of the sequence.
 
     NOTE: Unfortunatly, this RNN does not return the hidden state due to related performance
     implications. Similarly, it does not properly handle left side masking due to performance
     implications.
     """
 
-    def __init__(self,
-                 input_size: int,
-                 hidden_size: int,
-                 num_layers: int = 1,
-                 bias: bool = True,
-                 rnn_class: typing.Union[typing.Type[torch.nn.LSTM],
-                                         typing.Type[torch.nn.GRU]] = torch.nn.LSTM):
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        num_layers: int = 1,
+        bias: bool = True,
+        rnn_class: typing.Union[
+            typing.Type[torch.nn.LSTM], typing.Type[torch.nn.GRU]
+        ] = torch.nn.LSTM,
+    ):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.bias = bias
-        self.rnn_layers = nn.ModuleList([
-            nn.ModuleList([
-                rnn_class(
-                    input_size=input_size if i == 0 else hidden_size * 2,
-                    hidden_size=hidden_size,
-                    bias=bias),
-                rnn_class(
-                    input_size=input_size if i == 0 else hidden_size * 2,
-                    hidden_size=hidden_size,
-                    bias=bias)
-            ]) for i in range(num_layers)
-        ])
+        _rnn = lambda i: rnn_class(
+            input_size=input_size if i == 0 else hidden_size * 2, hidden_size=hidden_size, bias=bias
+        )
+        self.rnn_layers = nn.ModuleList(
+            [nn.ModuleList([_rnn(i), _rnn(i)]) for i in range(num_layers)]
+        )
 
     def _backward_pass(
         self,
@@ -90,7 +86,7 @@ class _RightMaskedBiRNN(nn.Module):
         tokens_mask: torch.Tensor,
         num_tokens: torch.Tensor,
     ) -> torch.Tensor:
-        """ Compute the backwards RNN pass.
+        """Compute the backwards RNN pass.
 
         Args:
             backward_rnn
@@ -123,7 +119,7 @@ class _RightMaskedBiRNN(nn.Module):
         return _roll(rnn_results, num_tokens, dim=0)
 
     def forward(self, tokens: torch.Tensor, tokens_mask: torch.Tensor, num_tokens: torch.Tensor):
-        """ Compute the RNN pass.
+        """Compute the RNN pass.
 
         Args:
             tokens (torch.FloatTensor [seq_len, batch_size, input_size])
@@ -154,19 +150,17 @@ class _RightMaskedBiRNN(nn.Module):
 
 
 class _LayerNorm(nn.LayerNorm):
-
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
 
 
 class _Conv1dLockedDropout(LockedDropout):
-
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         return super().forward(tensor.permute(2, 0, 1)).permute(1, 2, 0)
 
 
 class Encoder(nn.Module):
-    """ Encode a discrete sequence as a sequence of differentiable vector(s).
+    """Encode a discrete sequence as a sequence of differentiable vector(s).
 
     TODO: Parameterized `padding_index` with `HParam`.
 
@@ -183,54 +177,69 @@ class Encoder(nn.Module):
     """
 
     @configurable
-    def __init__(self,
-                 vocab_size: int,
-                 speaker_embedding_size: int,
-                 out_size: int = HParam(),
-                 hidden_size: int = HParam(),
-                 num_convolution_layers: int = HParam(),
-                 convolution_filter_size: int = HParam(),
-                 lstm_layers: int = HParam(),
-                 dropout: float = HParam(),
-                 padding_index: int = DEFAULT_PADDING_INDEX):
+    def __init__(
+        self,
+        vocab_size: int,
+        speaker_embedding_size: int,
+        out_size: int = HParam(),
+        hidden_size: int = HParam(),
+        num_convolution_layers: int = HParam(),
+        convolution_filter_size: int = HParam(),
+        lstm_layers: int = HParam(),
+        dropout: float = HParam(),
+        padding_index: int = DEFAULT_PADDING_INDEX,
+    ):
         super().__init__()
 
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
-        assert convolution_filter_size % 2 == 1, ('`convolution_filter_size` must be odd')
-        assert hidden_size % 2 == 0, '`hidden_size` must be divisable by even'
-        assert speaker_embedding_size < hidden_size, (
-            'The `hidden_size` must be larger than the `speaker_embedding_dim` to accommodate it.')
+        assert convolution_filter_size % 2 == 1, "`convolution_filter_size` must be odd"
+        assert hidden_size % 2 == 0, "`hidden_size` must be divisable by even"
+        assert (
+            speaker_embedding_size < hidden_size
+        ), "The `hidden_size` must be larger than the `speaker_embedding_dim` to accommodate it."
 
         self.embed_token = nn.Sequential(
             nn.Embedding(
-                vocab_size, hidden_size - speaker_embedding_size, padding_idx=padding_index),
-            nn.LayerNorm(hidden_size - speaker_embedding_size))
-        self.conv_layers = nn.ModuleList([
+                vocab_size,
+                hidden_size - speaker_embedding_size,
+                padding_idx=padding_index,
+            ),
+            nn.LayerNorm(hidden_size - speaker_embedding_size),
+        )
+        self.conv_layers = nn.ModuleList(
             nn.Sequential(
                 _Conv1dLockedDropout(dropout),
                 nn.Conv1d(
                     in_channels=hidden_size,
                     out_channels=hidden_size,
                     kernel_size=convolution_filter_size,
-                    padding=int((convolution_filter_size - 1) / 2)), nn.ReLU())
+                    padding=int((convolution_filter_size - 1) / 2),
+                ),
+                nn.ReLU(),
+            )
             for i in range(num_convolution_layers)
-        ])
+        )
         self.norm_layers = nn.ModuleList(
-            [_LayerNorm(hidden_size) for i in range(num_convolution_layers)])
+            _LayerNorm(hidden_size) for i in range(num_convolution_layers)
+        )
         self.lstm = _RightMaskedBiRNN(
             rnn_class=LSTM,
             input_size=hidden_size,
             hidden_size=hidden_size // 2,
-            num_layers=lstm_layers)
+            num_layers=lstm_layers,
+        )
         self.lstm_norm = nn.LayerNorm(hidden_size)
         self.lstm_dropout = LockedDropout(dropout)
         self.project_out = nn.Sequential(
-            LockedDropout(dropout), nn.Linear(hidden_size, out_size), nn.LayerNorm(out_size))
+            LockedDropout(dropout),
+            nn.Linear(hidden_size, out_size),
+            nn.LayerNorm(out_size),
+        )
 
         for module in self.conv_layers.modules():
             if isinstance(module, nn.Conv1d):
-                nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain('relu'))
+                nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain("relu"))
 
     def __call__(
         self,
@@ -287,8 +296,9 @@ class Encoder(nn.Module):
         tokens = tokens.permute(2, 0, 1)
         tokens_mask = tokens_mask.permute(2, 0, 1)
 
-        tokens = self.lstm_norm(tokens +
-                                self.lstm(self.lstm_dropout(tokens), tokens_mask, num_tokens))
+        tokens = self.lstm_norm(
+            tokens + self.lstm(self.lstm_dropout(tokens), tokens_mask, num_tokens)
+        )
 
         # [num_tokens, batch_size, hidden_size] →
         # [num_tokens, batch_size, out_dim]

@@ -1,9 +1,8 @@
 import string
 import typing
+from typing import get_args
 
 import pytest
-import typing_extensions
-from typing_extensions import get_args  # type: ignore
 
 import lib
 from lib.text import grapheme_to_phoneme

@@ -23,8 +23,17 @@ def run_before_test():
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
-            module=r".*torch.*",
             message=r".*Anomaly Detection has been enabled.*",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            module=r".*hparams.*",
+            message=r".*@configurable: No config for.*",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            module=r".*hparams.*",
+            message=r".*@configurable: Overwriting configured argument.*",
         )
         with torch.autograd.detect_anomaly():
             yield

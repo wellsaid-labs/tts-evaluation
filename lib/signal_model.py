@@ -6,12 +6,10 @@ import logging
 import math
 import typing
 
-from hparams import configurable
-from hparams import HParam
-from torch.nn.utils.weight_norm import WeightNorm
-
 import numpy as np
 import torch
+from hparams import HParam, configurable
+from torch.nn.utils.weight_norm import WeightNorm
 
 import lib
 
@@ -19,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 
 class L1L2Loss(torch.nn.Module):
-
     def __init__(self, *args, **kwargs):
         super().__init__()
         self.l1_loss = torch.nn.L1Loss(*args, **kwargs)
@@ -33,7 +30,7 @@ class L1L2Loss(torch.nn.Module):
 
 
 class _InterpolateAndConcat(torch.nn.Module):
-    """ Interpolates `concat` tensor, and concatenates it to `tensor`.
+    """Interpolates `concat` tensor, and concatenates it to `tensor`.
 
     Args:
         size: The hidden size of `concat`.
@@ -59,12 +56,12 @@ class _InterpolateAndConcat(torch.nn.Module):
         """
         concat = torch.nn.functional.interpolate(concat, scale_factor=self.scale_factor)
         assert concat.shape[1] == self.size
-        assert concat.shape[2] >= tensor.shape[2], 'Scale factor is too small.'
+        assert concat.shape[2] >= tensor.shape[2], "Scale factor is too small."
         return torch.cat(list(lib.utils.trim_tensors(tensor, concat)), dim=1)
 
 
 class _InterpolateAndMask(torch.nn.Module):
-    """ Interpolates `mask` tensor, and masks `tensor`.
+    """Interpolates `mask` tensor, and masks `tensor`.
 
     Args:
         scale_factor: Scale factor used to interpolate the `mask`.
@@ -88,8 +85,9 @@ class _InterpolateAndMask(torch.nn.Module):
         """
         with torch.no_grad():
             mask = torch.nn.functional.interpolate(
-                mask.float(), scale_factor=self.scale_factor).bool()
-        assert mask.shape[2] >= tensor.shape[2], 'Scale factor is too small.'
+                mask.float(), scale_factor=self.scale_factor
+            ).bool()
+        assert mask.shape[2] >= tensor.shape[2], "Scale factor is too small."
         tensor, mask = lib.utils.trim_tensors(tensor, mask)
         return tensor.masked_fill(~mask, 0.0)
 
@@ -136,23 +134,26 @@ class _PixelShuffle1d(torch.nn.Module):
 
 
 class _Sequential(torch.nn.Sequential):
-
-    def __call__(self,
-                 input_: torch.Tensor,
-                 mask: typing.Optional[torch.Tensor] = None,
-                 conditioning: typing.Optional[torch.Tensor] = None) -> torch.Tensor:
+    def __call__(
+        self,
+        input_: torch.Tensor,
+        mask: typing.Optional[torch.Tensor] = None,
+        conditioning: typing.Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         return super().__call__(input_, mask, conditioning)
 
-    def forward(self,
-                input_: torch.Tensor,
-                mask: typing.Optional[torch.Tensor] = None,
-                conditioning: typing.Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(
+        self,
+        input_: torch.Tensor,
+        mask: typing.Optional[torch.Tensor] = None,
+        conditioning: typing.Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         for module in self:
             if isinstance(module, _InterpolateAndConcat):
                 assert conditioning is not None
                 # NOTE: Drop elements from `conditioning` similar too:
                 # https://arxiv.org/abs/1809.11096
-                input_ = module(input_, conditioning[:, :module.size])
+                input_ = module(input_, conditioning[:, : module.size])
             elif isinstance(module, _InterpolateAndMask):
                 assert mask is not None
                 input_ = module(input_, mask)
@@ -166,7 +167,7 @@ class _Sequential(torch.nn.Sequential):
 
 
 class _Block(torch.nn.Module):
-    """ Building block for `SignalModel`.
+    """Building block for `SignalModel`.
 
     Args:
         in_channels: The input channel dimension size.
@@ -176,11 +177,13 @@ class _Block(torch.nn.Module):
         input_scale: The `input_` is longer than `conditioning` and `mask` by this factor.
     """
 
-    def __init__(self,
-                 in_channels: int,
-                 out_channels: int,
-                 upscale_factor: int = 1,
-                 input_scale: int = 1):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        upscale_factor: int = 1,
+        input_scale: int = 1,
+    ):
         super().__init__()
         assert out_channels <= in_channels
         self.shortcut = _Sequential(
@@ -188,7 +191,9 @@ class _Block(torch.nn.Module):
                 in_channels,
                 out_channels * upscale_factor,
                 kernel_size=1,
-            ), _PixelShuffle1d(upscale_factor))
+            ),
+            _PixelShuffle1d(upscale_factor),
+        )
         self.block = _Sequential(
             _InterpolateAndConcat(in_channels, input_scale),
             torch.nn.Conv1d(in_channels * 2, in_channels, kernel_size=1),
@@ -221,12 +226,14 @@ class _Block(torch.nn.Module):
         self.padding_required += (self.other_block[4].kernel_size[0] // 2) / output_scale
         self.padding_required += (self.other_block[-1].kernel_size[0] // 2) / output_scale
 
-    def __call__(self, input_: torch.Tensor, mask: torch.Tensor,
-                 conditioning: torch.Tensor) -> torch.Tensor:
+    def __call__(
+        self, input_: torch.Tensor, mask: torch.Tensor, conditioning: torch.Tensor
+    ) -> torch.Tensor:
         return super().__call__(input_, mask, conditioning)
 
-    def forward(self, input_: torch.Tensor, mask: torch.Tensor,
-                conditioning: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, input_: torch.Tensor, mask: torch.Tensor, conditioning: torch.Tensor
+    ) -> torch.Tensor:
         """
         NOTE: `other_num_frames` is defined as `other_num_frames >= num_frames / input_scale`
         and `other_num_frames % 2 == 0`.
@@ -243,15 +250,16 @@ class _Block(torch.nn.Module):
         """
         shape = input_.shape
         input_ = torch.add(
-            *lib.utils.trim_tensors(self.shortcut(input_), self.block(input_, mask, conditioning)))
+            *lib.utils.trim_tensors(self.shortcut(input_), self.block(input_, mask, conditioning))
+        )
         input_ = torch.add(
-            *lib.utils.trim_tensors(input_, self.other_block(input_, mask, conditioning)))
+            *lib.utils.trim_tensors(input_, self.other_block(input_, mask, conditioning))
+        )
         assert (shape[2] * self.upscale_factor - input_.shape[2]) % 2 == 0
         return input_
 
 
 class _LayerNorm(torch.nn.LayerNorm):
-
     def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
         return super().__call__(tensor)
 
@@ -259,7 +267,7 @@ class _LayerNorm(torch.nn.LayerNorm):
         return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
 
 
-def _has_weight_norm(module: torch.nn.Module, name: str = 'weight') -> bool:
+def _has_weight_norm(module: torch.nn.Module, name: str = "weight") -> bool:
     """ Check if module has `WeightNorm` decorator. """
     for k, hook in module._forward_pre_hooks.items():
         if isinstance(hook, WeightNorm) and hook.name == name:
@@ -268,7 +276,7 @@ def _has_weight_norm(module: torch.nn.Module, name: str = 'weight') -> bool:
 
 
 class SignalModel(torch.nn.Module):
-    """ Predicts a signal given a spectrogram.
+    """Predicts a signal given a spectrogram.
 
     Args:
         input_size: The input tensor channel dimension size.
@@ -281,12 +289,14 @@ class SignalModel(torch.nn.Module):
     """
 
     @configurable
-    def __init__(self,
-                 input_size: int = HParam(),
-                 hidden_size: int = HParam(),
-                 ratios: typing.List[int] = HParam(),
-                 max_channel_size: int = HParam(),
-                 mu: int = HParam()):
+    def __init__(
+        self,
+        input_size: int = HParam(),
+        hidden_size: int = HParam(),
+        ratios: typing.List[int] = HParam(),
+        max_channel_size: int = HParam(),
+        mu: int = HParam(),
+    ):
         super().__init__()
         self.ratios = ratios
         self.hidden_size = hidden_size
@@ -301,10 +311,15 @@ class SignalModel(torch.nn.Module):
         )
         _network: typing.List[torch.nn.Module] = [
             _Block(self.get_layer_size(0), self.get_layer_size(0)),
-            _Block(self.get_layer_size(0), self.get_layer_size(0))
+            _Block(self.get_layer_size(0), self.get_layer_size(0)),
         ]
         _network += [
-            _Block(self.get_layer_size(i), self.get_layer_size(i + 1), r, np.prod(ratios[:i]))
+            _Block(
+                self.get_layer_size(i),
+                self.get_layer_size(i + 1),
+                r,
+                np.prod(ratios[:i]),
+            )
             for i, r in enumerate(ratios)
         ]
         _network += [
@@ -312,7 +327,7 @@ class SignalModel(torch.nn.Module):
             torch.nn.GELU(),
             _InterpolateAndMask(self.upscale_factor),
             torch.nn.Conv1d(hidden_size, 2, kernel_size=3, padding=0),
-            _InterpolateAndMask(self.upscale_factor)
+            _InterpolateAndMask(self.upscale_factor),
         ]
         self.network = _Sequential(*tuple(_network))
 
@@ -320,7 +335,7 @@ class SignalModel(torch.nn.Module):
         self.condition = torch.nn.Conv1d(self.get_layer_size(0), max_size, kernel_size=1)
 
         self.padding = self.pre_net[1].kernel_size[0] // 2
-        self.padding += (1 / (self.upscale_factor) * (self.network[-2].kernel_size[0] // 2))
+        self.padding += 1 / (self.upscale_factor) * (self.network[-2].kernel_size[0] // 2)
         self.padding += sum([m.padding_required for m in self.modules() if isinstance(m, _Block)])
         self.excess_padding = math.ceil(self.padding) - self.padding
         self.padding = math.ceil(self.padding)
@@ -332,7 +347,7 @@ class SignalModel(torch.nn.Module):
         self.train(mode=True)
 
     def train(self, *args, **kwargs) -> SignalModel:
-        """ Sets the module in training or evaluation mode.
+        """Sets the module in training or evaluation mode.
 
         Learn more here: https://pytorch.org/docs/stable/nn.html#torch.nn.Module.train
         """
@@ -361,13 +376,16 @@ class SignalModel(torch.nn.Module):
     def get_layer_size(self, i: int) -> int:
         """ Get the hidden size of layer `i`. """
         assert i <= len(self.ratios)
-        initial_size = int(2**(len(self.ratios) // 2)) * self.hidden_size
-        layer_size = initial_size // 2**(i // 2)
+        initial_size = int(2 ** (len(self.ratios) // 2)) * self.hidden_size
+        layer_size = initial_size // 2 ** (i // 2)
         return min(layer_size, self.max_channel_size)
 
-    def _normalize_input(self, spectrogram: torch.Tensor,
-                         spectrogram_mask: typing.Optional[torch.Tensor],
-                         pad_input: bool) -> typing.Tuple[torch.Tensor, torch.Tensor]:
+    def _normalize_input(
+        self,
+        spectrogram: torch.Tensor,
+        spectrogram_mask: typing.Optional[torch.Tensor],
+        pad_input: bool,
+    ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             spectrogram (torch.FloatTensor [batch_size (optional), num_frames, frame_channels])
@@ -393,16 +411,20 @@ class SignalModel(torch.nn.Module):
 
         return spectrogram, spectrogram_mask
 
-    def __call__(self,
-                 spectrogram: torch.Tensor,
-                 spectrogram_mask: typing.Optional[torch.Tensor] = None,
-                 pad_input: bool = True) -> torch.Tensor:
+    def __call__(
+        self,
+        spectrogram: torch.Tensor,
+        spectrogram_mask: typing.Optional[torch.Tensor] = None,
+        pad_input: bool = True,
+    ) -> torch.Tensor:
         return super().__call__(spectrogram, spectrogram_mask, pad_input)
 
-    def forward(self,
-                spectrogram: torch.Tensor,
-                spectrogram_mask: typing.Optional[torch.Tensor] = None,
-                pad_input: bool = True) -> torch.Tensor:
+    def forward(
+        self,
+        spectrogram: torch.Tensor,
+        spectrogram_mask: typing.Optional[torch.Tensor] = None,
+        pad_input: bool = True,
+    ) -> torch.Tensor:
         """
         Args:
             spectrogram (torch.FloatTensor [batch_size (optional), num_frames, frame_channels])
@@ -416,8 +438,9 @@ class SignalModel(torch.nn.Module):
         """
         has_batch_dim = len(spectrogram.shape) == 3
 
-        spectrogram, spectrogram_mask = self._normalize_input(spectrogram, spectrogram_mask,
-                                                              pad_input)
+        spectrogram, spectrogram_mask = self._normalize_input(
+            spectrogram, spectrogram_mask, pad_input
+        )
 
         batch_size, num_frames, frame_channels = spectrogram.shape
         num_frames = num_frames - self.padding * 2
@@ -448,19 +471,22 @@ class SignalModel(torch.nn.Module):
         excess_padding = round(self.excess_padding * self.upscale_factor)
         if excess_padding > 0:  # [batch_size, num_frames * self.upscale_factor]
             signal = signal[:, excess_padding:-excess_padding]
-        assert signal.shape == (batch_size, self.upscale_factor * num_frames), signal.shape
+        assert signal.shape == (
+            batch_size,
+            self.upscale_factor * num_frames,
+        ), signal.shape
 
         # Remove clipped samples
         num_clipped_samples = ((signal > 1.0) | (signal < -1.0)).sum().item()
         if num_clipped_samples > 0:
-            logger.warning('%d samples clipped.', num_clipped_samples)
+            logger.warning("%d samples clipped.", num_clipped_samples)
         signal = torch.clamp(signal, -1.0, 1.0)
 
         return signal if has_batch_dim else signal.squeeze(0)
 
 
 class SpectrogramDiscriminator(torch.nn.Module):
-    """ Discriminates between predicted and real spectrograms.
+    """Discriminates between predicted and real spectrograms.
 
     Args:
         fft_length
@@ -496,12 +522,20 @@ class SpectrogramDiscriminator(torch.nn.Module):
                 if module.bias is not None:
                     torch.nn.init.zeros_(module.bias)
 
-    def __call__(self, spectrogram: torch.Tensor, db_spectrogram: torch.Tensor,
-                 db_mel_spectrogram: torch.Tensor) -> torch.Tensor:
+    def __call__(
+        self,
+        spectrogram: torch.Tensor,
+        db_spectrogram: torch.Tensor,
+        db_mel_spectrogram: torch.Tensor,
+    ) -> torch.Tensor:
         return super().__call__(spectrogram, db_spectrogram, db_mel_spectrogram)
 
-    def forward(self, spectrogram: torch.Tensor, db_spectrogram: torch.Tensor,
-                db_mel_spectrogram: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        spectrogram: torch.Tensor,
+        db_spectrogram: torch.Tensor,
+        db_mel_spectrogram: torch.Tensor,
+    ) -> torch.Tensor:
         """
         Args:
             spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
@@ -554,9 +588,9 @@ def generate_waveform(
                 is_stop = True
 
         padding_tuple = (0 if last_item else padding, padding if is_stop else 0)
-        frames = ([last_item[0][:, -padding * 2:]] if last_item else []) + [i[0] for i in items]
+        frames = ([last_item[0][:, -padding * 2 :]] if last_item else []) + [i[0] for i in items]
         frames_ = lib.utils.pad_tensor(torch.cat(frames, dim=1), pad=padding_tuple, dim=1)
-        mask = ([last_item[1][:, -padding * 2:]] if last_item else []) + [i[1] for i in items]
+        mask = ([last_item[1][:, -padding * 2 :]] if last_item else []) + [i[1] for i in items]
         mask_ = lib.utils.pad_tensor(torch.cat(mask, dim=1), pad=padding_tuple, dim=1)
 
         waveform = model(frames_, mask_, pad_input=False)

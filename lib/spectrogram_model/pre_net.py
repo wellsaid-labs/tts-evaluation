@@ -1,19 +1,18 @@
-from hparams import configurable
-from hparams import HParam
-
 import torch
+from hparams import HParam, configurable
 
 
 class _AlwaysDropout(torch.nn.Dropout):
     """ Adaptation of `nn.Dropout` to apply dropout during both evaluation and training. """
 
-    def forward(self, input):
+    def forward(self, input_: torch.Tensor) -> torch.Tensor:
         return torch.nn.functional.dropout(
-            input=input, p=self.p, training=True, inplace=self.inplace)
+            input=input_, p=self.p, training=True, inplace=self.inplace
+        )
 
 
 class PreNet(torch.nn.Module):
-    """ Pre-net processes encodes spectrogram frames.
+    """Pre-net processes encodes spectrogram frames.
 
     SOURCE (Tacotron 2):
         ...small pre-net containing 2 fully connected layers of 256 hidden ReLU units. We found that
@@ -37,26 +36,32 @@ class PreNet(torch.nn.Module):
     """
 
     @configurable
-    def __init__(self,
-                 num_frame_channels: int,
-                 size: int,
-                 num_layers: int = HParam(),
-                 dropout: float = HParam()):
+    def __init__(
+        self,
+        num_frame_channels: int,
+        size: int,
+        num_layers: int = HParam(),
+        dropout: float = HParam(),
+    ):
         super().__init__()
-        self.layers = torch.nn.Sequential(*tuple([
+        _layers = [
             torch.nn.Sequential(
                 torch.nn.Linear(
-                    in_features=num_frame_channels if i == 0 else size, out_features=size),
+                    in_features=num_frame_channels if i == 0 else size,
+                    out_features=size,
+                ),
                 torch.nn.ReLU(inplace=True),
                 torch.nn.LayerNorm(size),
                 _AlwaysDropout(p=dropout),
-            ) for i in range(num_layers)
-        ]))
+            )
+            for i in range(num_layers)
+        ]
+        self.layers = torch.nn.Sequential(*tuple(_layers))
 
         for module in self.layers.modules():
             if isinstance(module, torch.nn.Linear):
-                torch.nn.init.xavier_uniform_(
-                    module.weight, gain=torch.nn.init.calculate_gain('relu'))
+                gain = torch.nn.init.calculate_gain("relu")
+                torch.nn.init.xavier_uniform_(module.weight, gain=gain)
 
     def __call__(self, frames: torch.Tensor) -> torch.Tensor:
         return super().__call__(frames)

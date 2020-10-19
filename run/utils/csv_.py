@@ -11,17 +11,21 @@ app = typer.Typer(context_settings=dict(max_content_width=math.inf))
 
 
 @app.command()
-def combine(csvs: typing.List[pathlib.Path] = typer.Argument(..., help="List of CSVs to combine."),
-            csv: pathlib.Path = typer.Argument(..., help="Combined CSV filename.")):
-    """ Combine a list of CSVS input one CSV.
+def combine(
+    csvs: typing.List[pathlib.Path] = typer.Argument(
+        ..., help="List of CSVs to combine."
+    ),
+    csv: pathlib.Path = typer.Argument(..., help="Combined CSV filename."),
+):
+    """Combine a list of CSVS input one CSV.
 
     Also, this adds an additional '__csv' column with the original filename.
     """
     df = pandas.read_csv(csvs[0])
-    df['__csv'] = csvs[0]
+    df["__csv"] = csvs[0]
     for csv in csvs[1:]:
         df_csv = pandas.read_csv(csv)
-        df_csv['__csv'] = csv
+        df_csv["__csv"] = csv
         df = df.append(df_csv, ignore_index=True)
     df.to_csv(csv, index=False)
 

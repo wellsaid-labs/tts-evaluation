@@ -89,10 +89,15 @@ where the behavior found at 20 Hz is replicated.
 
 from __future__ import division, print_function
 
+import typing
+
 import numpy as np
 from third_party import LazyLoader
 
-scipy_interpolate = LazyLoader('scipy_interpolate', globals(), 'scipy.interpolate')
+if typing.TYPE_CHECKING:  # pragma: no cover
+    from scipy import interpolate as scipy_interpolate
+else:
+    scipy_interpolate = LazyLoader('scipy_interpolate', globals(), 'scipy.interpolate')
 
 __all__ = [
     "tabled_f", "tabled_alpha_f", "tabled_L_U", "tabled_T_f", "tabled_L_p", "tabled_L_N",

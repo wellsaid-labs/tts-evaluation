@@ -4,14 +4,13 @@ import numpy as np
 import pytest
 import torch
 
-from tests._utils import assert_almost_equal
-
 import lib
+from tests._utils import assert_almost_equal
 
 
 def test_adaptive_gradient_norm_clipping():
     """ Test `AdaptiveGradientNormClipping` clips the gradient norm correctly. """
-    clippers = lib.optimizers.AdaptiveGradientNormClipping(10, float('inf'))
+    clippers = lib.optimizers.AdaptiveGradientNormClipping(10, float("inf"))
 
     parameters = torch.tensor([1.0, 2.0, 3.0])
     parameters.grad = torch.tensor([1.0, 2.0, 3.0])
@@ -26,7 +25,7 @@ def test_adaptive_gradient_norm_clipping():
 
 def test_adaptive_gradient_norm_clipping__window():
     """ Test `AdaptiveGradientNormClipping` manages the window correctly. """
-    clippers = lib.optimizers.AdaptiveGradientNormClipping(3, float('inf'))
+    clippers = lib.optimizers.AdaptiveGradientNormClipping(3, float("inf"))
 
     parameters = torch.tensor([4.0])
     parameters.grad = torch.tensor([4.0])
@@ -59,7 +58,7 @@ def test_adaptive_gradient_norm_clipping__window():
 
 def test_adaptive_gradient_norm_clipping__large_gradient():
     """ Test `AdaptiveGradientNormClipping` errors given a large gradient. """
-    clippers = lib.optimizers.AdaptiveGradientNormClipping(3, float('inf'))
+    clippers = lib.optimizers.AdaptiveGradientNormClipping(3, float("inf"))
 
     parameters = torch.tensor([math.nan])
     parameters.grad = torch.tensor([math.nan])
@@ -73,7 +72,7 @@ def test_adaptive_gradient_norm_clipping__large_gradient():
 
 
 def test_exponential_moving_parameter_average():
-    """ Test `ExponentialMovingParameterAverage`'s bias correction implementation via this video:
+    """Test `ExponentialMovingParameterAverage`'s bias correction implementation via this video:
     https://pt.coursera.org/lecture/deep-neural-network/www.deeplearning.ai-XjuhD
     """
     values = [1.0, 2.0]
@@ -89,8 +88,9 @@ def test_exponential_moving_parameter_average():
     assert parameters[0].data[1] == values[1]
 
     ema.apply()
-    expected = ((1 - beta) * beta * values[0] + (1 - beta) * values[1]) / ((1 - beta) +
-                                                                           (1 - beta) * beta)
+    expected = ((1 - beta) * beta * values[0] + (1 - beta) * values[1]) / (
+        (1 - beta) + (1 - beta) * beta
+    )
     assert parameters[0].data[0] == expected
     assert parameters[0].data[1] == expected
 
@@ -118,7 +118,7 @@ def test_exponential_moving_parameter_average__identity():
 
 def test_exponential_moving_parameter_average__to():
     """ Test `ExponentialMovingParameterAverage.to` executes. """
-    device = torch.device('cpu')
+    device = torch.device("cpu")
     parameters = [torch.zeros(1)]
     parameters[0].to(device)
 
