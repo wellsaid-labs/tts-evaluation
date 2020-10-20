@@ -109,8 +109,8 @@ def _make_small_signal_model(
 
 
 def test_signal_model():
-    """Test `lib.signal_model.SignalModel` output is the right shape, in range and differentiable.
-    """
+    """Test `lib.signal_model.SignalModel` output is the right shape, in range and
+    differentiable."""
     model, spectrogram, (batch_size, num_frames, _) = _make_small_signal_model()
     out = model(spectrogram)
     assert out.shape == (batch_size, model.upscale_factor * num_frames)

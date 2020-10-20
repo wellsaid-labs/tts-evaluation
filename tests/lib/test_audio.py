@@ -692,6 +692,7 @@ def _db_spectrogram_to_loudness(db_spectrogram: torch.Tensor, window: torch.Tens
 def test__loudness():
     """Test that `lib.audio` can be used to measure loudness as defined by ITU-R BS.1770-4.
 
+    TODO: Test against the original DeMan algorithm: https://github.com/BrechtDeMan/loudness.py
     """
     for path in TEST_DATA_PATH.glob("*.wav"):
         metadata = lib.audio.get_audio_metadata([path])[0]
