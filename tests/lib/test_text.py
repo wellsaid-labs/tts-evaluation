@@ -227,8 +227,10 @@ def test__load_amepd():
 
 def _check_pronunciation(
     word: str,
-    part_of_speech_coarse: typing_extensions.Literal[lib.text.AMEPD_PART_OF_SPEECH_COARSE],
-    part_of_speech_fine: typing.Optional[typing_extensions.Literal["past", "pres"]] = None,
+    part_of_speech_coarse: typing.Optional[
+        typing.Literal[lib.text.AMEPD_PART_OF_SPEECH_COARSE]
+    ] = None,
+    part_of_speech_fine: typing.Optional[typing.Literal["past", "pres"]] = None,
     expected: typing.Optional[str] = None,
 ):
     result = lib.text.get_pronunciation(word, part_of_speech_coarse, part_of_speech_fine)
@@ -240,13 +242,13 @@ def _check_pronunciation(
 
 def test_get_pronunciation__out_of_vocabulary():
     """Test `lib.text.get_pronunciation` doesn't handle words outside it's vocabulary."""
-    _check_pronunciation("abcdefg", "noun", expected=None)
+    _check_pronunciation("abcdefg", expected=None)
 
 
 def test_get_pronunciation__apostrophes():
     """Test `lib.text.get_pronunciation` handles apostrophes at the end and beginning of a word."""
     _check_pronunciation("accountants'", "verb", "past", expected="AX K AW1 N T AX N T S")
-    _check_pronunciation("'bout", "adv", expected="B AW1 T")
+    _check_pronunciation("'bout", expected="B AW1 T")
 
 
 def test_get_pronunciation__disambiguate():
@@ -257,11 +259,16 @@ def test_get_pronunciation__disambiguate():
     _check_pronunciation("fly", "verb", "past", expected="F L AY1")
     _check_pronunciation("fly", "verb", expected="F L AY1")
     _check_pronunciation("fly", "noun", expected="F L AY1")
+    _check_pronunciation("fly", expected="F L AY1")
+    _check_pronunciation("fly", expected="F L AY1")
 
-    _check_pronunciation("read", "verb", expected=None)  # Options: verb@past, verb
-    _check_pronunciation("beloved", "adj", expected=None)  # Options: noun, adj@attr, adj@pred, verb
+    _check_pronunciation("read", expected=None)  # Options: verb@past, verb
+    _check_pronunciation("read", "verb", expected=None)
+    _check_pronunciation("beloved", expected=None)  # Options: noun, adj@attr, adj@pred, verb
+    _check_pronunciation("beloved", "adj", expected=None)
     # NOTE: Multiple variations that cannot be disambiguated with part-of-speech.
-    _check_pronunciation("reasonable", "adj", expected=None)  # Options: 1, 2
+    _check_pronunciation("reasonable", expected=None)  # Options: 1, 2
+    _check_pronunciation("reasonable", "adj", expected=None)
 
     # NOTE: This should be disambiguated correctly.
     _check_pronunciation("read", "verb", "past", expected="R EH1 D")
@@ -292,13 +299,84 @@ def test_get_initialism_pronunciation():
 def test_get_pronunciation__non_standard_words():
     """ Test `lib.text.get_pronunciation` errors given non-standard words."""
     with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("I B M", "noun")
+        lib.text.get_pronunciation("I B M")
     with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("I.B.M.", "noun")
+        lib.text.get_pronunciation("I.B.M.")
     with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("able-bodied", "adj")
+        lib.text.get_pronunciation("able-bodied")
     with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("ABC123", "noun")
+        lib.text.get_pronunciation("ABC123")
+
+
+def test_get_pronunciations():
+    """Test `lib.text.get_pronunciations` against basic cases: non-standard words, initialisms,
+    appostrophes, and abbreviations."""
+    nlp = lib.text.load_en_core_web_md()
+    get_pronunciations = lambda s: lib.text.get_pronunciations(nlp(s))
+    assert get_pronunciations("In 1968 the U.S. Army") == (
+        ("IH1", "N"),
+        None,  # Non-standard word ignored
+        None,
+        None,  # Non-standard word ignored
+        ("AA1", "R", "M", "IY0"),
+    )
+    assert get_pronunciations("Individual-Based Model (IBM)") == (
+        ("IH2", "N", "D", "IH0", "V", "IH1", "JH", "UW0", "AX", "L"),
+        None,
+        ("B", "EY1", "S", "T"),
+        ("M", "AA1", "D", "AX", "L"),
+        None,
+        ("AY1", "B", "IY1", "EH1", "M"),  # Initialism handled
+        None,
+    )
+    assert get_pronunciations("NASA's TV mission is to pioneer.") == (
+        ("N", "AE1", "S", "AX"),
+        None,  # NOTE: spaCy splits up apostrophes
+        None,  # Ambigious abbreviation is ignored
+        ("M", "IH1", "SH", "AX", "N"),
+        ("IH1", "Z"),
+        None,
+        ("P", "AY2", "AX", "N", "IH1", "R"),
+        None,
+    )
+    assert get_pronunciations("Youssou N'Dour is a Senegalese singer") == (
+        None,
+        ("N", "D", "AW1", "AXR"),  # Apostrophes handled
+        ("IH1", "Z"),
+        None,
+        ("S", "EH2", "N", "AX", "G", "AX", "L", "IY1", "Z"),
+        ("S", "IH1", "NG", "G", "AXR"),
+    )
+
+
+def test_get_pronunciations__part_of_speech():
+    """ Test `lib.text.get_pronunciations` with ambigious part of speech cases. """
+    nlp = lib.text.load_en_core_web_md()
+    get_pronunciations = lambda s: lib.text.get_pronunciations(nlp(s))
+    assert get_pronunciations("It was time to present the present.") == (
+        ("IH1", "T"),
+        None,
+        ("T", "AY1", "M"),
+        None,
+        ("P", "R", "IH0", "Z", "EH1", "N", "T"),  # Verb
+        None,
+        ("P", "R", "EH1", "Z", "AX", "N", "T"),  # Noun
+        None,
+    )
+    assert get_pronunciations("He has read the whole thing.") == (
+        ("HH", "IY1"),
+        None,
+        ("R", "EH1", "D"),  # Verb, Past Tense
+        None,
+        ("HH", "OW1", "L"),
+        ("TH", "IH1", "NG"),
+        None,
+    )
+    assert get_pronunciations("We read.") == (
+        ("W", "IY1"),
+        ("R", "IY1", "D"),  # Verb, Present Tense
+        None,
+    )
 
 
 def test_natural_keys():

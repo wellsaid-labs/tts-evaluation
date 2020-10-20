@@ -2,6 +2,7 @@
 # https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
 from __future__ import annotations
 
+import functools
 import itertools
 import logging
 import math
@@ -11,7 +12,6 @@ import statistics
 import time
 import typing
 from contextlib import contextmanager
-from functools import wraps
 
 import torch
 import torch.utils.data
@@ -197,7 +197,7 @@ _LogRuntimeFunction = typing.TypeVar("_LogRuntimeFunction", bound=typing.Callabl
 def log_runtime(function: _LogRuntimeFunction) -> _LogRuntimeFunction:
     """ Decorator for measuring the execution time of a function. """
 
-    @wraps(function)
+    @functools.wraps(function)
     def decorator(*args, **kwargs):
         start = time.time()
         result = function(*args, **kwargs)
@@ -372,3 +372,13 @@ class Average:
         self.total_count += count
         self.last_update_value = value
         return self
+
+
+def clamp(a: float, min_: float = -math.inf, max_: float = math.inf) -> float:
+    return max(min(a, max_), min_)
+
+
+@functools.lru_cache(maxsize=None)
+def call_once(callable_, *args, **kwargs):
+    """Call `callable_` only once with `args` and `kwargs` within the same process."""
+    return callable_(*args, **kwargs)

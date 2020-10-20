@@ -171,6 +171,8 @@ Other Dictionaries:
   https://github.com/rhdunn/en-GB-x-rp.dict
 - Scottish English Pronunciation Dictionary
   https://github.com/rhdunn/en-scotland.dict/blob/master/en-scotland.dict
+- eSpeak dictionary
+  https://github.com/espeak-ng/espeak-ng/blob/master/dictsource/en_list
 
 Partial Dictionaries:
 - Homographs:
@@ -179,6 +181,7 @@ Partial Dictionaries:
   - http://web.archive.org/web/20180816004508/http://www.minpairs.talktalk.net/graph.html
 - Acronyms
   - https://github.com/rhdunn/cmudict/blob/master/acronym
+  - https://github.com/allenai/scispacy#abbreviationdetector (Automatic)
 
 Notable People:
 - github.com/nshmyrev: Contributor to cmudict, pocketsphinx, kaldi, cmusphinx, alphacep
@@ -187,7 +190,7 @@ Notable People:
 
 # NOTE: AmEPD based their POS tags off this:
 # https://github.com/rhdunn/pos-tags/blob/master/cainteoir.ttl
-AMEPD_PART_OF_SPEECH_COARSE = typing_extensions.Literal[
+AMEPD_PART_OF_SPEECH_COARSE = typing.Literal[
     "adj",  # adjective
     "adv",  # adverb
     "conj",  # conjunction
@@ -200,16 +203,38 @@ AMEPD_PART_OF_SPEECH_COARSE = typing_extensions.Literal[
     "verb",
 ]
 
+SPACY_TO_AMEPD_POS: typing.Dict[int, typing.Optional[AMEPD_PART_OF_SPEECH_COARSE]] = {
+    spacy.symbols.ADJ: "adj",  # adjective -> adjective
+    spacy.symbols.ADP: None,  # adposition
+    spacy.symbols.ADV: "adv",  # adverb -> adverb
+    spacy.symbols.AUX: "verb",  # auxiliary
+    spacy.symbols.CONJ: "conj",  # conjunction -> conjunction
+    spacy.symbols.CCONJ: "conj",  # coordinating conjunction -> conjunction
+    spacy.symbols.DET: "det",  # determiner -> determiner
+    spacy.symbols.INTJ: "intj",  # interjection -> interjection
+    spacy.symbols.NOUN: "noun",  # noun -> noun
+    spacy.symbols.NUM: "num",  # numeral -> numeral
+    spacy.symbols.PART: None,  # particle
+    spacy.symbols.PRON: "noun",  # pronoun -> noun
+    spacy.symbols.PROPN: "noun",  # proper noun -> noun
+    spacy.symbols.PUNCT: None,  # punctuation
+    spacy.symbols.SCONJ: "conj",  # subordinating conjunction -> conjunction
+    spacy.symbols.SYM: None,  # symbol
+    spacy.symbols.VERB: "verb",  # verb -> verb
+    spacy.symbols.X: None,  # other
+    spacy.symbols.SPACE: None,
+}
+
+
 # NOTE: AmEPD has only one word that uses "attr" or "pred", as October 2020.
-AMEPD_PART_OF_SPEECH_FINE = typing_extensions.Literal[
+AMEPD_PART_OF_SPEECH_FINE = typing.Literal[
     "attr",  # NOTE: Stands for: "attributive"
     "pred",  # NOTE: Stands for: "predicative"
     "past",  # NOTE: "past" tense
 ]
 
-
 # fmt: off
-AMEPD_ARPABET = typing_extensions.Literal[
+AMEPD_ARPABET = typing.Literal[
     "N", "AX", "L", "S", "T", "R", "K", "IH0", "D", "M", "Z", "AXR", "IY0", "B", "EH1", "P", "AA1",
     "AE1", "IH1", "G", "F", "NG", "V", "IY1", "OW0", "EY1", "HH", "SH", "OW1", "W", "AO1", "AH1",
     "AY1", "UW1", "JH", "Y", "CH", "AA0", "ER1", "EH2", "AY2", "AE2", "EY2", "AA2", "TH", "IH2",
@@ -230,8 +255,8 @@ class AmEPDPartOfSpeech(typing.NamedTuple):
         fine: Fine-grained part-of-speech tags, like the tense.
     """
 
-    coarse: typing_extensions.Literal[AMEPD_PART_OF_SPEECH_COARSE]
-    fine: typing.Optional[typing.List[typing_extensions.Literal[AMEPD_PART_OF_SPEECH_FINE]]]
+    coarse: typing.Literal[AMEPD_PART_OF_SPEECH_COARSE]
+    fine: typing.Optional[typing.List[typing.Literal[AMEPD_PART_OF_SPEECH_FINE]]]
 
 
 class AmEPDMetadata(typing.NamedTuple):
@@ -296,6 +321,7 @@ def _load_amepd(
     """
     dictionary: typing.Dict[str, typing.List[AmEPDPronunciation]] = collections.defaultdict(list)
     entries = [l.split(comment_delimiter, 1)[0].strip() for l in path.read_text().split("\n")]
+    ignored_words = []
     for entry in entries:
         if len(entry) == 0:
             continue
@@ -318,7 +344,7 @@ def _load_amepd(
                 kwargs["pos"] = AmEPDPartOfSpeech(coarse, fine)  # type: ignore
 
         if any(c not in string.ascii_uppercase and c != "'" for c in word):
-            logger.warning("AmEPD non-ascii word in AmEPD dictionary: '%s'", word)
+            ignored_words.append(word)
             continue
 
         pronunciation = rest
@@ -358,16 +384,16 @@ def _load_amepd(
         )
 
         dictionary[word].append(AmEPDPronunciation(arpabet, **kwargs))  # type: ignore
+    logger.warning("Non-ascii word(s) in AmEPD dictionary ignored: %s", ", ".join(ignored_words))
     return dictionary
 
 
-def get_initialism_pronunciation(word: str) -> typing.Optional[typing.Tuple[AMEPD_ARPABET, ...]]:
+def get_initialism_pronunciation(word: str) -> typing.Tuple[AMEPD_ARPABET, ...]:
     """Get the ARABET pronunciation for an initialism."""
     _assert_valid_amepd_word(word)
     dictionary = _load_amepd()
     pronunciation: typing.List[AMEPD_ARPABET] = []
     for character in word:
-        # TODO: Create a constant for various values of `usage` in AmEPD.
         lambda_ = lambda p: p.metadata.usage == "stressed" or p.metadata.usage is None
         character_pronunciations = list(filter(lambda_, dictionary[character.upper()]))
         assert len(set(p.pronunciation for p in character_pronunciations)) == 1
@@ -377,8 +403,8 @@ def get_initialism_pronunciation(word: str) -> typing.Optional[typing.Tuple[AMEP
 
 def get_pronunciation(
     word: str,
-    pos_coarse: typing_extensions.Literal[AMEPD_PART_OF_SPEECH_COARSE],
-    pos_fine: typing.Optional[typing_extensions.Literal["past", "pres"]] = None,
+    pos_coarse: typing.Optional[typing.Literal[AMEPD_PART_OF_SPEECH_COARSE]] = None,
+    pos_fine: typing.Optional[typing.Literal["past", "pres"]] = None,
 ) -> typing.Optional[typing.Tuple[AMEPD_ARPABET, ...]]:
     """Get the ARABET pronunciation for `word`, unless it's ambigious or not available.
 
@@ -404,20 +430,52 @@ def get_pronunciation(
 
     # NOTE: In descending order of part-of-speech specificity, look for pronunciations.
     pos = AmEPDPartOfSpeech(pos_coarse, pos_fine)  # type: ignore
-    is_match = lambda p: p.pos is not None and p.pos.coarse == pos.coarse
-    if pos.fine is not None and any(p.pos == pos for p in pronunciations):
-        pronunciations = list(filter(lambda p: p.pos == pos, pronunciations))
-    elif pos.fine is not None and any(is_match(p) and p.pos.fine is None for p in pronunciations):
-        pronunciations = list(filter(lambda p: is_match(p) and p.pos.fine is None, pronunciations))
-    elif pos.coarse is not None and any(is_match(p) for p in pronunciations):
-        pronunciations = list(filter(is_match, pronunciations))
+    for rule in (
+        lambda p: pos.fine and p.pos == pos,
+        lambda p: pos.fine and p.pos and p.pos.coarse == pos.coarse and not p.pos.fine,
+        lambda p: pos.coarse and p.pos and p.pos.coarse == pos.coarse,
+    ):
+        if any(rule(p) for p in pronunciations):
+            pronunciations = list(filter(rule, pronunciations))
+            break
 
     if len(pronunciations) > 1:
-        logger.warning("Unable to disamgiuate pronunciation of '%s'.", word)
+        lib.utils.call_once(logger.warning, "Unable to disamgiuate pronunciation of '%s'.", word)
     elif len(pronunciations) == 0:
-        logger.warning("Unable to find pronunciation of '%s'.", word)
+        lib.utils.call_once(logger.warning, "Unable to find pronunciation of '%s'.", word)
 
     return pronunciations[0].pronunciation if len(pronunciations) == 1 else None
+
+
+_is_initialism_default = lambda t: len(_load_amepd()[t.text.upper()]) == 0 and t.text.isupper()
+
+
+def get_pronunciations(
+    doc: spacy.tokens.Doc,
+    is_initialism: typing.Callable[[spacy.tokens.token.Token], bool] = _is_initialism_default,
+) -> typing.Tuple[typing.Optional[typing.Tuple[AMEPD_ARPABET, ...]], ...]:
+    """Get the ARABET pronunciation for each token in `doc`.
+
+    Args:
+        doc
+        is_initialism: This callable disambiguates a normal word from an initialism.
+    """
+    return_: typing.List[typing.Optional[typing.Tuple[AMEPD_ARPABET, ...]]] = []
+    for token in doc:
+        if not all(c.isalpha() or c == "'" for c in token.text):
+            lib.utils.call_once(
+                logger.warning, "Words may only have letter(s) or apostrophe(s): '%s'", token.text
+            )
+            return_.append(None)
+        else:
+            pos = lib.text.SPACY_TO_AMEPD_POS[token.pos]
+            tense = spacy.lang.en.TAG_MAP[token.tag_].get("Tense", None)
+            prounciation = lib.text.get_pronunciation(token.text, pos, tense)
+            if is_initialism(token):
+                lib.utils.call_once(logger.warning, "Guessing '%s' is an initialism.", token.text)
+                prounciation = lib.text.get_initialism_pronunciation(token.text)
+            return_.append(prounciation)
+    return tuple(return_)
 
 
 def natural_keys(text: str) -> typing.List[typing.Union[str, int]]:
@@ -464,7 +522,7 @@ def normalize_vo_script(text: str, strip: bool = True) -> str:
 
 
 _READABLE_CHARACTERS = set(
-    lib.utils.flatten(normalize_vo_script(chr(i), strip=False) for i in range(0, 128))
+    lib.utils.flatten([normalize_vo_script(chr(i), strip=False) for i in range(0, 128)])
 )
 
 
@@ -572,7 +630,7 @@ def normalize_non_standard_words(text: str, variety: str = "AmE", **kwargs) -> s
 
     assert "".join(lib.utils.flatten(merged)) == text
     normalized = normalise.normalise([t[0] for t in merged], variety=variety, **kwargs)
-    return "".join(lib.utils.flatten([(n.strip(), m[1]) for n, m in zip(normalized, merged)]))
+    return "".join(lib.utils.flatten([[n.strip(), m[1]] for n, m in zip(normalized, merged)]))
 
 
 def format_alignment(

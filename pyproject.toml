@@ -2,7 +2,6 @@
 line-length = 100
 target-version = ['py37']
 
-
 [tool.isort]
 profile = 'black'
 src_paths = ['lib', 'tests', 'run']

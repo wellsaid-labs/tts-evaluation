@@ -78,9 +78,7 @@ def test_get_weighted_stdev__one_data_point():
 
 def test_get_weighted_stdev__bias():
     """ Test `lib.utils.get_weighted_stdev` computes the correct standard deviation. """
-    standard_deviation = lib.utils.get_weighted_stdev(
-        torch.Tensor([0.25, 0.25, 0.25, 0.25]), dim=0
-    )
+    standard_deviation = lib.utils.get_weighted_stdev(torch.Tensor([0.25, 0.25, 0.25, 0.25]), dim=0)
     # NOTE: Equal to the population standard deviation for 1, 2, 3, 4
     assert standard_deviation == pytest.approx(1.1180339887499)
 
@@ -305,7 +303,8 @@ def test_lstm__mono():
 
 
 def test_lstm_cell():
-    """Test `lib.utils.LSTMCell` and `torch.nn.LSTM` return the same output, given a hidden state."""
+    """Test `lib.utils.LSTMCell` and `torch.nn.LSTM` return the same output, given a
+    hidden state."""
     input_ = torch.randn(3, 10)
     hidden_state = (torch.randn(3, 20), torch.randn(3, 20))
 
@@ -348,3 +347,36 @@ def test_averaged_metric():
     assert metric.last_update_value == 0.25
     assert metric.reset() == 0.4
     assert metric.last_update_value is None
+
+
+def test_clamp():
+    """ Test `lib.utils.clamp` with basic cases. """
+    assert lib.utils.clamp(3, min_=1, max_=2) == 2
+    assert lib.utils.clamp(2, min_=1, max_=2) == 2
+    assert lib.utils.clamp(1, min_=1, max_=2) == 1
+    assert lib.utils.clamp(0, min_=1, max_=2) == 1
+
+
+def test_clamp__infinity():
+    """ Test `lib.utils.clamp` with infinity. """
+    assert lib.utils.clamp(3, min_=1, max_=math.inf) == 3
+    assert lib.utils.clamp(3, min_=-math.inf, max_=2) == 2
+    assert lib.utils.clamp(0, min_=1, max_=math.inf) == 1
+    assert lib.utils.clamp(0, min_=-math.inf, max_=2) == 0
+
+
+def test_call_once():
+    """ Test `lib.utils.call_once` only executes callable once with the same arguments. """
+    count = 0
+
+    def add_(a, b=0):
+        nonlocal count
+        count += 1
+        return a + b
+
+    assert lib.utils.call_once(add_, 0) == 0
+    assert count == 1
+    assert lib.utils.call_once(add_, 0) == 0
+    assert count == 1
+    assert lib.utils.call_once(add_, 0, 0) == 0
+    assert count == 2
