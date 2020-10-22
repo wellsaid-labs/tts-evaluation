@@ -12,7 +12,6 @@ from functools import lru_cache, partial
 from typing import get_args
 
 import ftfy
-import spacy
 import unidecode
 from third_party import LazyLoader
 from tqdm import tqdm
@@ -24,13 +23,14 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     import Levenshtein
     import nltk
     import normalise
-    import spacy.lang.en
+    import spacy
     from spacy.lang import en as spacy_en
 else:
     en_core_web_md = LazyLoader("en_core_web_md", globals(), "en_core_web_md")
     Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
     nltk = LazyLoader("nltk", globals(), "nltk")
     normalise = LazyLoader("normalise", globals(), "normalise")
+    spacy = LazyLoader("spacy", globals(), "spacy")
     spacy_en = LazyLoader("spacy_en", globals(), "spacy.lang.en")
 
 
@@ -468,7 +468,7 @@ def get_pronunciations(
         else:
             print(token, token.pos, token.pos_)
             pos = lib.text.SPACY_TO_AMEPD_POS[token.pos]
-            tense = spacy.lang.en.TAG_MAP[token.tag_].get("Tense", None)
+            tense = spacy_en.TAG_MAP[token.tag_].get("Tense", None)
             prounciation = lib.text.get_pronunciation(token.text, pos, tense)
             if is_initialism(token):
                 lib.utils.call_once(logger.warning, "Guessing '%s' is an initialism.", token.text)
@@ -537,14 +537,14 @@ def _nltk_download(dependency):
 
 
 @lru_cache(maxsize=None)
-def load_en_core_web_md(*args, **kwargs) -> spacy.lang.en.English:
-    """ Load and cache in memory a spaCy `spacy.lang.en.English` object. """
+def load_en_core_web_md(*args, **kwargs) -> spacy_en.English:
+    """ Load and cache in memory a spaCy `spacy_en.English` object. """
     return en_core_web_md.load(*args, **kwargs)
 
 
 @lru_cache(maxsize=None)
-def load_en_english(*args, **kwargs) -> spacy.lang.en.English:
-    """ Load and cache in memory a spaCy `spacy.lang.en.English` object. """
+def load_en_english(*args, **kwargs) -> spacy_en.English:
+    """ Load and cache in memory a spaCy `spacy_en.English` object. """
     return spacy_en.English()
 
 
