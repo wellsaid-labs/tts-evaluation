@@ -54,7 +54,7 @@ for directory in [
     SIGNAL_MODEL_EXPERIMENTS_PATH,
     SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
 ]:
-    directory.mkdir(exist_ok=True)
+    assert directory.exists(), "Directory has not been made."
 
 DATABASE_PATH = TEMP_PATH / "database.db"
 
