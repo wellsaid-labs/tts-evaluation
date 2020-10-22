@@ -1,6 +1,7 @@
 import string
 import typing
 from typing import get_args
+from unittest import mock
 
 import pytest
 
@@ -161,6 +162,13 @@ def test_grapheme_to_phoneme__white_spaces():
         grapheme_to_phoneme(["résumé résumé  résumé   résumé"], separator="|")[0]
         == "ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ"
     )
+
+
+@mock.patch("lib.text.logger.warning")
+def test_grapheme_to_phoneme__language_switching(mock_warning):
+    """ Test `grapheme_to_phoneme` logs a warning if the language is switched. """
+    assert grapheme_to_phoneme(["mon dieu"], separator="|")[0] == "m|ˈ|ɑː|n| |d|j|ˈ|ø"
+    assert mock_warning.called == 1
 
 
 def test_grapheme_to_phoneme__long_number():

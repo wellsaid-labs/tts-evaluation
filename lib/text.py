@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 def _grapheme_to_phoneme_helper(
     grapheme: str,
-    service: str = "espeak",
+    service: typing.Literal["espeak"] = "espeak",
     flags: typing.List[str] = ["--ipa=3", "-q", "-ven-us", "--stdin"],
     separator: str = "",
     service_separator: str = "_",
@@ -47,6 +47,7 @@ def _grapheme_to_phoneme_helper(
     """
     TODO: Since eSpeak does not preserve punctuation or white spaces, we shouldn't preserve
     white spaces via `strip` on the edges.
+    TODO: Support `espeak-ng` `service`, if needed.
 
     Args:
         grapheme
@@ -69,6 +70,11 @@ def _grapheme_to_phoneme_helper(
     ), "The separator is not unique."
 
     phoneme = " ".join([s.strip() for s in phoneme.strip().split("\n")])
+
+    if len(re.findall(r"\(.+?\)", phoneme)) > 0:
+        logger.warning(
+            '`%s` switched languages for phrase "%s" and outputed "%s".', service, grapheme, phoneme
+        )
 
     # NOTE: Remove language flags like `(en-us)` or `(fr)` that might be included for text like:
     # Grapheme: “MON DIEU”
