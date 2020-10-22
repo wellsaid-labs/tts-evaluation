@@ -207,7 +207,7 @@ SPACY_TO_AMEPD_POS: typing.Dict[int, typing.Optional[AMEPD_PART_OF_SPEECH_COARSE
     spacy.symbols.ADJ: "adj",  # adjective -> adjective
     spacy.symbols.ADP: None,  # adposition
     spacy.symbols.ADV: "adv",  # adverb -> adverb
-    spacy.symbols.AUX: "verb",  # auxiliary
+    spacy.symbols.AUX: "verb",  # auxiliary -> verb
     spacy.symbols.CONJ: "conj",  # conjunction -> conjunction
     spacy.symbols.CCONJ: "conj",  # coordinating conjunction -> conjunction
     spacy.symbols.DET: "det",  # determiner -> determiner
@@ -468,6 +468,7 @@ def get_pronunciations(
             )
             return_.append(None)
         else:
+            print(token, token.pos, token.pos_)
             pos = lib.text.SPACY_TO_AMEPD_POS[token.pos]
             tense = spacy.lang.en.TAG_MAP[token.tag_].get("Tense", None)
             prounciation = lib.text.get_pronunciation(token.text, pos, tense)
