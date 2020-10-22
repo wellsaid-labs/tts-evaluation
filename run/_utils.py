@@ -365,8 +365,8 @@ def _get_normalized_half_gaussian(length: int, standard_deviation: float) -> tor
     https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.gaussian_filter1d.html
 
     Args:
-        length (int): The size of the gaussian filter.
-        standard_deviation (float): The standard deviation of the guassian.
+        length: The size of the gaussian filter.
+        standard_deviation: The standard deviation of the guassian.
 
     Returns:
         (torch.FloatTensor [length,])
@@ -707,14 +707,14 @@ def batch_spectrogram_examples(
     )
 
 
-def worker_init_fn(worker_id, seed, device_index, digits=8):
+def worker_init_fn(worker_id: int, seed: int, device_index: int, digits: int = 8):
     """`worker_init_fn` for `torch.utils.data.DataLoader` that ensures each worker has a
     unique and deterministic random seed."""
     # NOTE: To ensure each worker generates different dataset examples, set a unique seed for
     # each worker.
     # Learn more: https://stackoverflow.com/questions/16008670/how-to-hash-a-string-into-8-digits
-    seed = hashlib.sha256(str([seed, device_index, worker_id]).encode("utf-8")).hexdigest()
-    lib.environment.set_seed(int(seed, 16) % 10 ** digits)
+    seed_ = hashlib.sha256(str([seed, device_index, worker_id]).encode("utf-8")).hexdigest()
+    lib.environment.set_seed(int(seed_, 16) % 10 ** digits)
 
 
 @contextlib.contextmanager
