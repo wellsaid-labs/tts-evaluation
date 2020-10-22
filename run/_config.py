@@ -368,7 +368,7 @@ def get_dataset(dev_size: int = 60 * 60) -> typing.Tuple[Dataset, Dataset]:
     NOTE: Elliot Miller is not included due to his unannotated character portrayals.
 
     Args:
-        dev_size (optional): Number of seconds per speaker in the development dataset.
+        dev_size: Number of seconds per speaker in the development dataset.
 
     Returns:
         train
@@ -475,8 +475,7 @@ def get_dataset_generator(
 
     speakers = list(dataset.keys())
     counter = {s: 1.0 for s in speakers}
-    while True:
-        # Sample speakers uniformly...
+    while True:  # NOTE: Sample speakers uniformly...
         total = sum(counter.values())
         distribution = [total / v for v in counter.values()]
         example = next(generators[random.choices(speakers, distribution)[0]])
