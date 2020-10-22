@@ -1,62 +1,86 @@
-from contextlib import contextmanager
-from functools import lru_cache
-from functools import partial
-
+import contextlib
+import dataclasses
+import functools
 import hashlib
 import io
 import json
 import logging
+import math
+import os
 import pathlib
 import random
+import sqlite3
 import subprocess
 import typing
-
-from hparams import configurable
-from hparams import HParam
-from scipy import ndimage
-from torchnlp.encoders.text import SequenceBatch
-from torchnlp.encoders.text import stack_and_pad_tensors
 
 import comet_ml
 import librosa
 import numpy
-import pyloudnorm
-import sqlite3
 import torch
+import tqdm
+from hparams import HParam, configurable
+from scipy import ndimage
+from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
 
-from src import environment
-from src import spectrogram_model
-from src.utils import cumulative_split
-from src.utils import flatten
-
-import src
+import lib
+import run
+from lib.utils import flatten
 
 logger = logging.getLogger(__name__)
+Dataset = typing.Dict[lib.datasets.Speaker, typing.List[lib.datasets.Example]]
 
-Dataset = typing.Dict[src.datasets.Speaker, typing.List[src.datasets.Example]]
 
+@dataclasses.dataclass(frozen=True)
+class Checkpoint:
 
-class SpectrogramModelCheckpoint(typing.NamedTuple):
-    """ Checkpoint used to restart spectrogram model training and evaluation.
-    """
     checkpoints_directory: pathlib.Path
     comet_ml_experiment_key: str
     comet_ml_project_name: str
-    input_encoder: src.spectrogram_model.InputEncoder
-    model: torch.nn.Module
-    optimizer: src.optimizers.Optimizer
-    scheduler: torch.optim.lr_scheduler.LambdaLR
     step: int
 
 
+@dataclasses.dataclass(frozen=True)
+class SpectrogramModelCheckpoint(Checkpoint):
+    """Checkpoint used to checkpoint spectrogram model training."""
+
+    input_encoder: lib.spectrogram_model.InputEncoder
+    model: lib.spectrogram_model.SpectrogramModel
+    optimizer: torch.optim.Adam
+    clipper: lib.optimizers.AdaptiveGradientNormClipping
+    scheduler: torch.optim.lr_scheduler.LambdaLR
+
+
+@dataclasses.dataclass(frozen=True)
+class SignalModelCheckpoint(Checkpoint):
+    """Checkpoint used to checkpoint signal model training.
+
+    TODO: Add relevant fields.
+    """
+
+    ...
+
+
+def maybe_make_experiment_directories_from_checkpoint(
+    checkpoint: Checkpoint,
+    *args,
+    **kwargs,
+) -> typing.Tuple[pathlib.Path, pathlib.Path]:
+    """For checkpoints saved in the `maybe_make_experiment_directories` directory structure,
+    this creates another "run" under the original experiment.
+    """
+    return maybe_make_experiment_directories(
+        checkpoint.checkpoints_directory.parent.parent, *args, **kwargs
+    )
+
+
 def maybe_make_experiment_directories(
-        experiment_root: pathlib.Path,
-        recorder: src.environment.RecordStandardStreams,
-        checkpoint: typing.Optional[SpectrogramModelCheckpoint] = None,
-        run_name: str = 'RUN_' + environment.bash_time_label(add_pid=False),
-        checkpoints_directory_name: str = 'checkpoints',
-        run_log_filename: str = 'run.log') -> typing.Tuple[pathlib.Path, pathlib.Path]:
-    """ Create a directory structure to store an experiment run, like so:
+    experiment_root: pathlib.Path,
+    recorder: lib.environment.RecordStandardStreams,
+    run_name: str = "RUN_" + lib.environment.bash_time_label(add_pid=False),
+    checkpoints_directory_name: str = "checkpoints",
+    run_log_filename: str = "run.log",
+) -> typing.Tuple[pathlib.Path, pathlib.Path]:
+    """Create a directory structure to store an experiment run, like so:
 
       {experiment_root}/
       └── {run_name}/
@@ -68,122 +92,92 @@ def maybe_make_experiment_directories(
           checkpoint is provided.
         recorder: This records the standard streams, and saves it.
         run_name: The name of this run.
-        checkpoints_directory_name: The name of the directory that houses checkpoints.
+        checkpoints_directory_name: The name of the directory that stores checkpoints.
         run_log_filename: The run log filename.
-        checkpoint: Prior checkpoint.
 
     Return:
         run_root: The root directory to store run files.
         checkpoints_directory: The directory to store checkpoints.
     """
-    logger.info('Updating directory structure...')
-    if checkpoint is not None:
-        experiment_root = checkpoint.checkpoints_directory.parent.parent
+    logger.info("Updating directory structure...")
+    experiment_root.mkdir(exist_ok=True)
     run_root = experiment_root / run_name
-    run_root.mkdir(parents=checkpoint is None)
+    run_root.mkdir()
     checkpoints_directory = run_root / checkpoints_directory_name
     checkpoints_directory.mkdir()
     recorder.update(run_root, log_filename=run_log_filename)
     return run_root, checkpoints_directory
 
 
-def update_audio_file_metadata(connection: sqlite3.Connection,
-                               audio_paths: typing.List[pathlib.Path]):
+def update_audio_file_metadata(
+    connection: sqlite3.Connection, audio_paths: typing.List[pathlib.Path]
+):
     """ Update table `audio_file_metadata` with metadata for `audio_paths`. """
     cursor = connection.cursor()
-    logger.info('Updating audio file metadata...')
-    cursor.execute("""CREATE TABLE IF NOT EXISTS audio_file_metadata (
+    logger.info("Updating audio file metadata...")
+    cursor.execute(
+        """CREATE TABLE IF NOT EXISTS audio_file_metadata (
       path text PRIMARY KEY,
       sample_rate integer,
       channels integer,
       encoding text,
       length float
-    )""")
+    )"""
+    )
     cursor.execute("""SELECT path FROM audio_file_metadata""")
-    absolute_paths: typing.List[str] = [str(a.absolute()) for a in audio_paths]
-    metadatas = src.audio.get_audio_metadata(
-        set(absolute_paths) - set([r[0] for r in cursor.fetchall()]))
+    absolute = [a.absolute() for a in audio_paths]
+    update = list(set(absolute) - set([pathlib.Path(r[0]) for r in cursor.fetchall()]))
+    metadatas = lib.audio.get_audio_metadata(update)
     cursor.executemany(
         """INSERT INTO audio_file_metadata (path, sample_rate, channels, encoding, length)
-    VALUES (?,?,?,?,?)""", [m._replace(path=m.path.absolute()) for m in metadatas])
+    VALUES (?,?,?,?,?)""",
+        [(str(p.absolute()), s, c, e, l) for (p, s, c, e, l) in metadatas],
+    )
     connection.commit()
 
 
-def fetch_audio_length(connection: sqlite3.Connection, audio_path: pathlib.Path) -> float:
-    """ Get length for `audio_path` from table `audio_file_metadata`. """
+def fetch_audio_file_metadata(
+    connection: sqlite3.Connection, audio_path: pathlib.Path
+) -> lib.audio.AudioFileMetadata:
+    """ Get `AudioFileMetadata` for `audio_path` from table `audio_file_metadata`. """
     cursor = connection.cursor()
-    cursor.execute('SELECT length FROM audio_file_metadata WHERE path=?',
-                   (str(audio_path.absolute()),))
-    return cursor.fetchone()[0]
+    cursor.execute("SELECT * FROM audio_file_metadata WHERE path=?", (str(audio_path.absolute()),))
+    row = cursor.fetchone()
+    assert row is not None, f"Metadata for audio path {audio_path} not found."
+    return lib.audio.AudioFileMetadata(pathlib.Path(row[0]), *row[1:])
 
 
-def handle_null_alignments(connection: sqlite3.Connection, dataset: Dataset) -> Dataset:
-    """ Update any `None` alignments with an alignment spaning the entire audio and text. """
-    logger.info('Updating null alignments...')
-    dataset = dataset.copy()
+def handle_null_alignments(connection: sqlite3.Connection, dataset: Dataset):
+    """Update any `None` alignments with an alignment spaning the entire audio and
+    text, in-place."""
+    logger.info("Updating null alignments...")
     for speaker, examples in dataset.items():
         updated = []
-        for example in examples:
-            # TODO: Fetch a batch of audio lengths, instead of fetching one at a time.
+        logger.info("Updating alignments for %s dataset...", speaker.name)
+        for example in tqdm.tqdm(examples):
             if example.alignments is None:
-                length = fetch_audio_length(connection, example.audio_path)
-                example._replace(
-                    alignments=([
-                        src.datasets.Alignment((0, len(example.text)), (0.0, length)),
-                    ]))
+                metadata = fetch_audio_file_metadata(connection, example.audio_path)
+                alignment = lib.datasets.Alignment((0, len(example.text)), (0.0, metadata.length))
+                example = example._replace(alignments=(alignment,))
             updated.append(example)
         dataset[speaker] = updated
-    return dataset
 
 
-# See https://spacy.io/api/annotation#pos-tagging for all available tags.
-_SPACY_PUNCT_TAG = 'PUNCT'
-
-
-def update_word_representations(connection: sqlite3.Connection, texts: typing.List[str],
-                                **kwargs: typing.Any):
-    """ Update `parsed_text` with various word representations.
-
-    Args:
-        cursor
-        texts
-        **kwargs: Keyword arguments passed to `grapheme_to_phoneme`.
-    """
-    logger.info('Parsing text with spaCy and eSpeak...')
-    cursor = connection.cursor()
-    cursor.execute("""CREATE TABLE IF NOT EXISTS parsed_text (
-      text text PRIMARY KEY,
-      phonemes text,
-      character_to_word json,
-      word_vectors numpy_ndarray)""")
-    cursor.execute('SELECT text FROM parsed_text')
-    fetched_texts = set([r[0] for r in cursor.fetchall()])
-    texts = list(set(texts) - fetched_texts)
-    nlp = src.text.load_en_core_web_md(disable=['parser', 'ner', 'tagger'])
-    docs = list(nlp.pipe(texts))
-    insert = []
-    for text, phonemes, doc in zip(texts, src.text.grapheme_to_phoneme(texts), docs):
-        character_to_word = [-1] * len(text)
-        for token in doc:
-            character_to_word[token.idx:token.idx + len(token.text)] = token.i
-        word_vectors = numpy.stack([t.vector for t in doc])
-        insert.append((text, phonemes, character_to_word, word_vectors))
-    cursor.executemany(
-        """INSERT INTO parsed_text (text, phonemes, character_to_word, word_vectors)
-      VALUES (?,?,?,?)""", insert)
-    connection.commit()
-
-
-def fetch_texts(connection: sqlite3.Connection) -> typing.List[str]:
-    cursor = connection.cursor()
-    cursor.execute('SELECT text FROM parsed_text')
-    return [r[0] for r in cursor.fetchall()]
-
-
-def fetch_phonemes(connection: sqlite3.Connection) -> typing.List[str]:
-    cursor = connection.cursor()
-    cursor.execute('SELECT phoneme FROM grapheme_to_phoneme')
-    return [r[0] for r in cursor.fetchall()]
+def _normalize_audio(
+    args: typing.Tuple[pathlib.Path, str, pathlib.Path],
+    encoding: str,
+    sample_rate: int,
+    channels: int,
+):
+    """ Helper function for `normalize_audio`. """
+    source, audio_filters, destination = args
+    destination.parent.mkdir(exist_ok=True, parents=True)
+    audio_filters = f"-af {audio_filters}" if audio_filters else ""
+    command = (
+        f"ffmpeg -i {source.absolute()} -acodec {encoding} -ar {sample_rate} -ac {channels} "
+        f"{audio_filters} {destination.absolute()}"
+    )
+    subprocess.run(command.split(), check=True)
 
 
 @configurable
@@ -192,9 +186,14 @@ def normalize_audio(
     encoding: str = HParam(),
     sample_rate: int = HParam(),
     channels: int = HParam(),
-    get_audio_filters: typing.Callable[[src.datasets.Speaker], str] = HParam()
-) -> Dataset:
-    """ Normalize audio with ffmpeg in `dataset`.
+    get_audio_filters: typing.Callable[[lib.datasets.Speaker], str] = HParam(),
+    num_processes: int = (
+        1 if lib.environment.IS_TESTING_ENVIRONMENT else typing.cast(int, os.cpu_count())
+    ),
+):
+    """Normalize audio with ffmpeg in `dataset`.
+
+    TODO: Consider using the ffmpeg SoX resampler, instead.
 
     Args:
         dataset
@@ -202,30 +201,41 @@ def normalize_audio(
         sample_rate: Input to `ffmpeg` `-ar` flag.
         channels: Input to `ffmpeg` `-ac` flag.
         get_audio_filters: Callable to generate input to `ffmpeg` `-af` flag.
+        num_processes
     """
-    # TODO: Normalize a batch of audio samples at the same tim via threads or something else.
-    logger.info('Normalizing dataset audio...')
-    dataset = dataset.copy()
-    command = 'ffmpeg -i %s -acodec %s -ar %s -ac %s -af %s %s.wav'
-    normalized_path = lambda a: a.parent / environment.TTS_DISK_CACHE_NAME / 'ffmpeg({}){}'.format(
-        a.stem, a.suffix)
+    logger.info("Normalizing dataset audio...")
+    normalize = lambda a: a.parent / run._environment.TTS_DISK_CACHE_NAME / f"ffmpeg({a.stem}).wav"
+    partial = functools.partial(
+        _normalize_audio, encoding=encoding, sample_rate=sample_rate, channels=channels
+    )
+    args_ = set(flatten([[(k, e.audio_path) for e in v] for k, v in dataset.items()]))
+    args = [(a, get_audio_filters(s), normalize(a)) for s, a in args_ if not normalize(a).exists()]
+    with lib.utils.Pool(num_processes) as pool:
+        list(tqdm.tqdm(pool.imap_unordered(partial, args), total=len(args)))
     for speaker, examples in dataset.items():
-        for audio_path in set([e.audio_path for e in examples]):
-            normalized = normalized_path(audio_path)
-            if not normalized.exists():
-                args = (audio_path.absolute(), encoding, sample_rate, channels,
-                        get_audio_filters(speaker), normalized.absolute())
-                subprocess.run((command % args).split(), check=True)
-        updated = [e._replace(audio_path=normalized_path(e.audio_path)) for e in examples]
-        dataset[speaker] = updated
-    return dataset
+        dataset[speaker] = [e._replace(audio_path=normalize(e.audio_path)) for e in examples]
 
 
-format_audio_filter = lambda n, **kw: 'n=' + ':'.join(['%s=%s' % i for i in kw.items()])
+format_ffmpeg_audio_filter = lambda n, **kw: f"{n}=" + ":".join(["%s=%s" % i for i in kw.items()])
 
 
-def adapt_numpy_array(array: numpy.ndarray) -> sqlite3.Binary:
-    """ `sqlite` adapter for a `numpy.ndarray`.
+@configurable
+def assert_audio_normalized(
+    connection: sqlite3.Connection,
+    audio_path: pathlib.Path,
+    encoding: str = HParam(),
+    sample_rate: int = HParam(),
+    channels: int = HParam(),
+):
+    """Assert `audio_path` metadata was normalized. """
+    metadata = fetch_audio_file_metadata(connection, audio_path)
+    assert metadata.sample_rate == sample_rate
+    assert metadata.channels == channels
+    assert metadata.encoding == encoding
+
+
+def _adapt_numpy_array(array: numpy.ndarray) -> sqlite3.Binary:
+    """`sqlite` adapter for a `numpy.ndarray`.
 
     Learn more: http://stackoverflow.com/a/31312102/190597
     """
@@ -235,8 +245,8 @@ def adapt_numpy_array(array: numpy.ndarray) -> sqlite3.Binary:
     return sqlite3.Binary(out.read())
 
 
-def convert_numpy_array(binary: bytes) -> numpy.ndarray:
-    """ `sqlite` converter for a `numpy.ndarray`.
+def _convert_numpy_array(binary: bytes) -> numpy.ndarray:
+    """`sqlite` converter for a `numpy.ndarray`.
 
     Learn more: http://stackoverflow.com/a/31312102/190597
     """
@@ -245,30 +255,28 @@ def convert_numpy_array(binary: bytes) -> numpy.ndarray:
     return numpy.load(out)
 
 
-def adapt_json(list_) -> str:
-    """ `sqlite` adapter for a json object.
+def _adapt_json(list_) -> str:
+    """`sqlite` adapter for a json object.
 
     TODO: Add typing for `json` once it is supported: https://github.com/python/typing/issues/182
     """
     return json.dumps(list_)
 
 
-def convert_json(text: bytes):
-    """ `sqlite` converter for a json object.
-    """
+def _convert_json(text: bytes):
+    """`sqlite` converter for a json object."""
     return json.loads(text)
 
 
-def connect(*args: typing.Any,
-            detect_types=sqlite3.PARSE_DECLTYPES,
-            **kwargs: typing.Any) -> sqlite3.Connection:
-    """ Opens a connection to the SQLite database file.
-    """
-    sqlite3.register_adapter(numpy.ndarray, adapt_numpy_array)
-    sqlite3.register_converter('numpy_ndarray', convert_numpy_array)
-    sqlite3.register_adapter(dict, adapt_json)
-    sqlite3.register_adapter(list, adapt_json)
-    sqlite3.register_converter('json', convert_json)
+def connect(
+    *args: typing.Any, detect_types=sqlite3.PARSE_DECLTYPES, **kwargs: typing.Any
+) -> sqlite3.Connection:
+    """Opens a connection to the SQLite database file."""
+    sqlite3.register_adapter(numpy.ndarray, _adapt_numpy_array)
+    sqlite3.register_converter("numpy_ndarray", _convert_numpy_array)
+    sqlite3.register_adapter(dict, _adapt_json)
+    sqlite3.register_adapter(list, _adapt_json)
+    sqlite3.register_converter("json", _convert_json)
     # TODO: Update typing once this issue is resolved https://github.com/python/mypy/issues/2582
     connection = sqlite3.connect(*args, detect_types=detect_types, **kwargs)  # type: ignore
     return connection
@@ -276,58 +284,63 @@ def connect(*args: typing.Any,
 
 def init_distributed(
     rank: int,
-    backend: str = 'nccl',
-    init_method: str = 'tcp://127.0.0.1:29500',
-    world_size: int = torch.cuda.device_count()
+    backend: str = "nccl",
+    init_method: str = "tcp://127.0.0.1:29500",
+    world_size: int = torch.cuda.device_count(),
 ) -> torch.device:
-    """ Initiate distributed for training.
+    """Initiate distributed for training.
 
     Learn more about distributed environments here:
     https://pytorch.org/tutorials/intermediate/dist_tuto.htm
     https://github.com/pytorch/examples/blob/master/imagenet/main.py
     """
     torch.distributed.init_process_group(
-        backend=backend, init_method=init_method, world_size=world_size)
-    device = torch.device('cuda', rank)
+        backend=backend, init_method=init_method, world_size=world_size
+    )
+    device = torch.device("cuda", rank)
     torch.cuda.set_device(device)
-    logger.info('Worker %d started.', torch.distributed.get_rank())
-    logger.info('%d GPUs found.', world_size)
+    logger.info("Worker %d started.", torch.distributed.get_rank())
+    logger.info("%d GPUs found.", world_size)
     return device
 
 
 def split_examples(
-    examples: typing.List[src.datasets.Example], dev_size: float
-) -> typing.Tuple[typing.List[src.datasets.Example], typing.List[src.datasets.Example]]:
-    """ Split a dataset into a development and train set.
+    examples: typing.List[lib.datasets.Example], dev_size: float
+) -> typing.Tuple[typing.List[lib.datasets.Example], typing.List[lib.datasets.Example]]:
+    """Split a dataset into a development and train set.
 
     Args:
-        dataset
+        examples
         dev_size: Number of seconds of audio data in the development set.
 
     Return:
         train: The rest of the data.
         dev: Dataset with `dev_size` of data.
     """
+    assert all(e.alignments is not None for e in examples)
     examples = examples.copy()
     random.shuffle(examples)
-    # NOTE: This assumes that a negligible amount of data is unusable in each example.
-    dev, train = cumulative_split(examples, [dev_size],
-                                  lambda e: e.alignments[-1][1][1] - e.alignments[0][1][0])
-    assert len(dev) > 0, 'The dev dataset has no examples.'
-    assert len(train) > 0, 'The train dataset has no examples.'
+    # NOTE: `len_` assumes that a negligible amount of data is unusable in each example.
+    len_ = lambda e: e.alignments[-1].audio[-1] - e.alignments[0].audio[0]
+    dev, train = tuple(lib.utils.accumulate_and_split(examples, [dev_size, math.inf], len_))
+    dev_size = sum([len_(e) for e in dev])
+    train_size = sum([len_(e) for e in dev])
+    assert train_size >= dev_size, "The `dev` dataset is larger than the `train` dataset."
+    assert len(dev) > 0, "The dev dataset has no examples."
+    assert len(train) > 0, "The train dataset has no examples."
     return train, dev
 
 
 class SpectrogramModelExample(typing.NamedTuple):
-    """ Preprocessed `Example` used to training or evaluating the spectrogram model.
-    """
+    """Preprocessed `Example` used to training or evaluating the spectrogram model."""
+
     audio_path: pathlib.Path
     audio: torch.Tensor  # torch.FloatTensor [num_samples]
     spectrogram: torch.Tensor  # torch.FloatTensor [num_frames, frame_channels]
     spectrogram_mask: torch.Tensor  # torch.FloatTensor [num_frames]
     spectrogram_extended_mask: torch.Tensor  # torch.FloatTensor [num_frames, frame_channels]
     stop_token: torch.Tensor  # torch.FloatTensor [num_frames]
-    speaker: src.datasets.Speaker
+    speaker: lib.datasets.Speaker
     encoded_speaker: torch.Tensor  # torch.LongTensor [1]
     text: str
     encoded_text: torch.Tensor  # torch.LongTensor [num_characters]
@@ -338,12 +351,12 @@ class SpectrogramModelExample(typing.NamedTuple):
     loudness_mask: torch.Tensor  # torch.BoolTensor [num_characters]
     speed: torch.Tensor  # torch.FloatTensor [num_characters]
     speed_mask: torch.Tensor  # torch.BoolTensor [num_characters]
-    alignments: typing.List[src.datasets.Alignment]
+    alignments: typing.Tuple[lib.datasets.Alignment, ...]
     metadata: typing.Dict[str, typing.Any]
 
 
 def _get_normalized_half_gaussian(length: int, standard_deviation: float) -> torch.Tensor:
-    """ Get a normalized half guassian distribution.
+    """Get a normalized half guassian distribution.
 
     Learn more:
     https://en.wikipedia.org/wiki/Half-normal_distribution
@@ -357,14 +370,16 @@ def _get_normalized_half_gaussian(length: int, standard_deviation: float) -> tor
         (torch.FloatTensor [length,])
     """
     gaussian_kernel = ndimage.gaussian_filter1d(
-        numpy.float_([0] * (length - 1) + [1]), sigma=standard_deviation)
+        numpy.float_([0] * (length - 1) + [1]), sigma=standard_deviation
+    )
     gaussian_kernel = gaussian_kernel / gaussian_kernel.max()
     return torch.tensor(gaussian_kernel).float()
 
 
-def _random_nonoverlapping_alignments(alignments: typing.List[src.datasets.Alignment],
-                                      max_alignments: int) -> typing.List[src.datasets.Alignment]:
-    """ Generate a random set of non-overlapping alignments, such that every point in the
+def _random_nonoverlapping_alignments(
+    alignments: typing.Tuple[lib.datasets.Alignment, ...], max_alignments: int
+) -> typing.Tuple[lib.datasets.Alignment, ...]:
+    """Generate a random set of non-overlapping alignments, such that every point in the
     time-series has an equal probability of getting sampled inside an alignment.
 
     NOTE: The length of the sampled alignments is non-uniform.
@@ -373,65 +388,116 @@ def _random_nonoverlapping_alignments(alignments: typing.List[src.datasets.Align
         alignments
         max_alignments: The maximum number of alignments to generate.
     """
-    samples = flatten([[(a.text[0], a.audio[0]), (a.text[-1], a.audio[-1])] for a in alignments])
-    num_cuts = random.randint(0, min(max_alignments, len(samples) - 1))
+    bounds = flatten([[(a.text[0], a.audio[0]), (a.text[-1], a.audio[-1])] for a in alignments])
+    num_cuts = random.randint(0, int(lib.utils.clamp(max_alignments, min_=0, max_=len(bounds) - 1)))
+
     if num_cuts == 0:
-        return []
+        return tuple()
+
     if num_cuts == 1:
-        return [src.datasets.Alignment(samples[0], samples[-1])] if random.choice(
-            (True, False)) else []
-    intervals = samples[:1] + random.sample(samples[1:-1], num_cuts - 1) + samples[-1:]
-    return [
-        src.datasets.Alignment(a, b)
-        for a, b in zip(intervals, intervals[1:])
-        if random.choice((True, False))
-    ]
+        alignment = lib.datasets.Alignment(
+            (bounds[0][0], bounds[-1][0]), (bounds[0][1], bounds[-1][1])
+        )
+        return tuple([alignment]) if random.choice((True, False)) else tuple()
 
-
-@lru_cache(maxsize=None)
-def _get_pyloudnorm_meter(*args, **kwargs):
-    return pyloudnorm.Meter(*args, **kwargs)
+    # NOTE: Functionally, this is similar to a 50% dropout on intervals.
+    # NOTE: Each alignment is expected to be included half of the time.
+    intervals = bounds[:1] + random.sample(bounds[1:-1], num_cuts - 1) + bounds[-1:]
+    return tuple(
+        [
+            lib.datasets.Alignment((a[0], b[0]), (a[1], b[1]))
+            for a, b in zip(intervals, intervals[1:])
+            if random.choice((True, False))
+        ]
+    )
 
 
 seconds_to_samples = lambda seconds, sample_rate: int(round(seconds * sample_rate))
 
 
-def _get_loudness(audio: numpy.ndarray, sample_rate: int, alignment: src.datasets.Alignment,
-                  loudness_implementation: str, loudness_precision: int) -> float:
-    """ Get the loudness in LUFS for an `alignment` in `audio`.
-    """
-    _seconds_to_samples = partial(seconds_to_samples, sample_rate=sample_rate)
-    meter = _get_pyloudnorm_meter(sample_rate, loudness_implementation)
+def _get_loudness(
+    audio: numpy.ndarray,
+    sample_rate: int,
+    alignment: lib.datasets.Alignment,
+    loudness_implementation: str,
+    loudness_precision: int,
+) -> float:
+    """Get the loudness in LUFS for an `alignment` in `audio`."""
+    _seconds_to_samples = functools.partial(seconds_to_samples, sample_rate=sample_rate)
+    meter = lib.audio.get_pyloudnorm_meter(sample_rate, loudness_implementation)
     slice_ = slice(_seconds_to_samples(alignment.audio[0]), _seconds_to_samples(alignment.audio[1]))
     return round(meter.integrated_loudness(audio[slice_]), loudness_precision)
 
 
+def _get_words(
+    text: str, start: int, stop: int
+) -> typing.Tuple[
+    typing.List[int],
+    torch.Tensor,
+    typing.Tuple[typing.Optional[typing.Tuple[lib.text.AMEPD_ARPABET, ...]], ...],
+]:
+    """Get word features for `text[start:stop]`, and a character-to-word mapping.
+
+    NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not. The options are:
+    1. Return two different sequences with two different character to word mappings.
+    2. Merge the words with apostrophes, and merge the related word vectors.
+    (Choosen) 3. Keep the apostrophes seperate, and miss some pronunciations.
+    NOTE: Contextual word-vectors would likely be more informative than word-vectors; however, they
+    are likely not as robust in the presence of OOV words due to intentional misspellings. Our
+    users intentionally misspell words to adjust the pronunciation.
+
+    TODO: Gather statistics on pronunciations available in the various datasets with additional
+    notebooks or scripts.
+    TODO: Filter out scripts with ambigious initialisms due to the lack of casing (i.e. everything
+    is uppercase)
+    TODO: How many OOV words does our dataset have?
+    """
+    doc = lib.text.load_en_core_web_md(disable=("parser", "ner"))(text)
+    stop = len(text) + stop if stop < 0 else stop
+
+    # NOTE: Check that words are not sliced by the boundary.
+    is_inside = lambda i: i >= start and i < stop
+    assert all([is_inside(t.idx) == is_inside(t.idx + len(t.text) - 1) for t in doc])
+    doc = [t for t in doc if is_inside(t.idx)]
+
+    character_to_word = [-1] * (stop - start)
+    for i, token in enumerate(doc):
+        token_start = token.idx - start
+        character_to_word[token_start : token_start + len(token.text)] = [i] * len(token.text)
+
+    assert len(doc) != 0, "Text has no words."
+    zeros = torch.zeros(doc[0].vector.size)
+    word_vectors = torch.from_numpy(
+        numpy.stack([zeros if w < 0 else doc[w].vector for w in character_to_word])
+    )
+    for token in doc:
+        if not token.has_vector:
+            lib.utils.call_once(logger.warning, "No word vector found for '%s'.", token.text)
+
+    word_pronunciations = lib.text.get_pronunciations(doc)
+
+    return character_to_word, word_vectors, word_pronunciations
+
+
 @configurable
 def get_spectrogram_example(
-        example: src.datasets.Example,
-        connection: sqlite3.Connection,
-        input_encoder: spectrogram_model.InputEncoder,
-        format_: str = HParam(),
-        encoding: str = HParam(),
-        sample_rate: int = HParam(),
-        channels: int = HParam(),
-        loudness_implementation: str = HParam(),
-        max_loudness_annotations: int = HParam(),
-        loudness_precision: int = HParam(),
-        max_speed_annotations: int = HParam(),
-        speed_precision: int = HParam(),
-        stop_token_range: int = HParam(),
-        stop_token_standard_deviation: float = HParam(),
+    example: lib.datasets.Example,
+    connection: sqlite3.Connection,
+    input_encoder: lib.spectrogram_model.InputEncoder,
+    loudness_implementation: str = HParam(),
+    max_loudness_annotations: int = HParam(),
+    loudness_precision: int = HParam(),
+    max_speed_annotations: int = HParam(),
+    speed_precision: int = HParam(),
+    stop_token_range: int = HParam(),
+    stop_token_standard_deviation: float = HParam(),
+    sample_rate: int = HParam(),
 ) -> SpectrogramModelExample:
     """
     Args:
         example
         connection
         input_encoder
-        format_: Input to `ffmpeg` `-f` flag.
-        encoding: Input to `ffmpeg` `-acodec` flag.
-        sample_rate: Input to `ffmpeg` `-ar` flag.
-        channels: Input to `ffmpeg` `-ac` flag.
         loudness_implementation: See `pyloudnorm.Meter` for various loudness implementations.
         max_loudness_annotations: The maximum expected loudness intervals within a text segment.
         loudness_precision: The number of decimal places to round LUFS.
@@ -440,60 +506,57 @@ def get_spectrogram_example(
         stop_token_range: The range of uncertainty there is in the exact `stop_token` location.
         stop_token_standard_deviation: The standard deviation of uncertainty there is in the exact
             `stop_token` location.
+        sample_rate
     """
-    assert example.alignments is not None
     alignments = example.alignments
-    start_second = alignments[0].audio[0]
-    num_seconds = alignments[-1].audio[-1] - alignments[0].audio[0]
+    assert alignments is not None
+    assert_audio_normalized(connection, example.audio_path, sample_rate=sample_rate)
+
     num_characters = alignments[-1].text[-1] - alignments[0].text[0]
-    text = example.text[alignments[0].text[0]:alignments[-1].text[-1]]
+    num_seconds = alignments[-1].audio[-1] - alignments[0].audio[0]
 
-    command = 'ffmpeg -ss %f -i %s -ss %f -f %s -acodec %s -ar %s -ac %s pipe:' % (
-        start_second, example.audio_path, num_seconds, format_, encoding, sample_rate, channels)
-    audio = numpy.frombuffer(subprocess.check_output(command.split()), numpy.float32)
+    text = example.text[alignments[0].text[0] : alignments[-1].text[-1]]
+    audio = lib.audio.read_audio_slice(example.audio_path, alignments[0].audio[0], num_seconds)
 
-    cursor = connection.cursor()
-    cursor.execute('SELECT * FROM parsed_text WHERE text = ?', (example.text,))
-    _, phonemes, character_to_word, word_vectors = cursor.fetchone()[0]
+    character_to_word, word_vectors, _ = _get_words(
+        example.text, alignments[0].text[0], alignments[-1].text[-1]
+    )
 
-    encoded_text, encoded_letter_case, encoded_phonemes, encoded_speaker = input_encoder.encode(
-        (text, phonemes, example.speaker))
+    # NOTE: Since eSpeak is a black-box, we cannot align the phonemes to the graphemes; therefore,
+    # unfortunately, determining the correct pronunciation requires context which we can't provide.
+    phonemes = lib.text.grapheme_to_phoneme([text])[0]
 
-    character_to_word_slice = character_to_word[alignments[0].text[0]:alignments[-1].text[-1]]
-    # Ensure the alignment doesn't cut a word in half.
-    if alignments[0].text[0] > 0:
-        assert character_to_word[alignments[0].text[0] - 1] != character_to_word_slice[0]
-    if alignments[-1].text[-1] < len(character_to_word) - 1:
-        assert character_to_word_slice[-1] != character_to_word[alignments[-1].text[-1] + 1]
-    expanded_word_vectors = torch.stack([
-        torch.zeros(word_vectors.shape[1]) if w < 0 else torch.from_numpy(word_vectors[w])
-        for w in character_to_word_slice
-    ])
+    arg = (text, phonemes, example.speaker)
+    encoded_text, encoded_letter_case, encoded_phonemes, encoded_speaker = input_encoder.encode(arg)
 
-    # Make loudness annotation
     loudness = torch.zeros(num_characters)
     loudness_mask = torch.ones(num_characters)
     for alignment in _random_nonoverlapping_alignments(alignments, max_loudness_annotations):
         slice_ = slice(alignment.text[0], alignment.text[1])
-        loudness[slice_] = _get_loudness(audio, sample_rate, alignment, loudness_implementation,
-                                         loudness_precision)
+        loudness[slice_] = _get_loudness(
+            audio, sample_rate, alignment, loudness_implementation, loudness_precision
+        )
         loudness_mask[slice_] = 0.0
 
-    # Make speed annotations
     speed = torch.zeros(num_characters)
     speed_mask = torch.ones(num_characters)
     for alignment in _random_nonoverlapping_alignments(alignments, max_speed_annotations):
         slice_ = slice(alignment.text[0], alignment.text[1])
+        # TODO: Instead of using characters per second, we could estimate the number of phonemes
+        # with `grapheme_to_phoneme`. This might be slow, so we'd need to do so in a batch.
+        # `grapheme_to_phoneme` can only estimate the number of phonemes because we can't
+        # incorperate sufficient context to get the actual phonemes pronounced by the speaker.
         speed[slice_] = round(
             (alignment.text[1] - alignment.text[0]) / (alignment.audio[1] - alignment.audio[0]),
-            speed_precision)
+            speed_precision,
+        )
         speed_mask[slice_] = 0.0
 
-    # TODO: The RMS function is a naive computation of loudness; therefore, it'd likely
-    # be more accurate to use our spectrogram for trimming with augmentations like A-weighting.
     # TODO: The RMS function that trim uses mentions that it's likely better to use a
     # spectrogram if it's available:
     # https://librosa.github.io/librosa/generated/librosa.feature.rms.html?highlight=rms#librosa.feature.rms
+    # TODO: The RMS function is a naive computation of loudness; therefore, it'd likely
+    # be more accurate to use our spectrogram for trimming with augmentations like A-weighting.
     # TODO: `pad_remainder` could possibly add distortion if it's appended to non-zero samples;
     # therefore, it'd likely be beneficial to have a small fade-in and fade-out before
     # appending the zero samples.
@@ -504,11 +567,8 @@ def get_spectrogram_example(
     # TODO: Instead of padding with zeros, we should consider padding with real-data.
     audio = audio.pad_remainder(audio)
     _, trim = librosa.effects.trim(audio)
-    audio = audio[trim[0]:trim[1]]
+    audio = audio[trim[0] : trim[1]]
 
-    # TODO: Now that `get_signal_to_db_mel_spectrogram` is implemented in PyTorch, we could
-    # batch process spectrograms. This would likely be faster. Also, it could be fast to
-    # compute spectrograms on-demand.
     audio = torch.tensor(audio, requires_grad=False)
     with torch.no_grad():
         db_mel_spectrogram = audio.get_signal_to_db_mel_spectrogram()(audio, aligned=True)
@@ -540,84 +600,94 @@ def get_spectrogram_example(
         text=text,
         encoded_text=encoded_text,
         encoded_letter_case=encoded_letter_case,
-        word_vectors=expanded_word_vectors,
+        word_vectors=word_vectors,
         encoded_phonemes=encoded_phonemes,
         loudness=loudness,
         loudness_mask=loudness_mask,
         speed=speed,
         speed_mask=speed_mask,
-        alignments=example.alignments,
-        metadata=example.metadata)
+        alignments=alignments,
+        metadata=example.metadata,
+    )
 
 
 class SpectrogramModelExampleBatch(typing.NamedTuple):
-    """ Batch of preprocessed `Example` used to training or evaluating the spectrogram model.
-    """
+    """Batch of preprocessed `Example` used to training or evaluating the spectrogram model."""
+
     audio_path: typing.List[pathlib.Path]
 
     audio: typing.List[torch.Tensor]
 
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size, frame_channels],
     #                  torch.LongTensor [1, batch_size])
-    spectrogram: SequenceBatch[torch.Tensor, torch.Tensor]
+    spectrogram: SequenceBatch
 
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
-    spectrogram_mask: SequenceBatch[torch.Tensor, torch.Tensor]
+    spectrogram_mask: SequenceBatch
 
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size, frame_channels],
     #                  torch.LongTensor [1, batch_size])
-    spectrogram_extended_mask: SequenceBatch[torch.Tensor, torch.Tensor]
+    spectrogram_extended_mask: SequenceBatch
 
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
-    stop_token: SequenceBatch[torch.Tensor, torch.Tensor]
+    stop_token: SequenceBatch
 
-    speaker: typing.List[src.datasets.Speaker]
+    speaker: typing.List[lib.datasets.Speaker]
 
     # SequenceBatch[torch.LongTensor [1, batch_size], torch.LongTensor [1, batch_size])
-    encoded_speaker: SequenceBatch[torch.Tensor, torch.Tensor]
+    encoded_speaker: SequenceBatch
 
     text: typing.List[str]
 
     # SequenceBatch[torch.LongTensor [num_characters, batch_size], torch.LongTensor [1, batch_size])
-    encoded_text: SequenceBatch[torch.Tensor, torch.Tensor]
+    encoded_text: SequenceBatch
 
     # SequenceBatch[torch.LongTensor [num_characters, batch_size], torch.LongTensor [1, batch_size])
-    encoded_letter_case: SequenceBatch[torch.Tensor, torch.Tensor]
+    encoded_letter_case: SequenceBatch
 
     # SequenceBatch[torch.LongTensor [num_characters, batch_size], torch.LongTensor [1, batch_size])
-    word_vectors: SequenceBatch[torch.Tensor, torch.Tensor]
+    word_vectors: SequenceBatch
 
     # SequenceBatch[torch.LongTensor [num_phonemes, batch_size], torch.LongTensor [1, batch_size])
-    encoded_phonemes: SequenceBatch[torch.Tensor, torch.Tensor]
+    encoded_phonemes: SequenceBatch
 
     # SequenceBatch[torch.FloatTensor [num_characters, batch_size],
     #               torch.LongTensor [1, batch_size])
-    loudness: SequenceBatch[torch.Tensor, torch.Tensor]
+    loudness: SequenceBatch
 
     # SequenceBatch[torch.BoolTensor [num_characters, batch_size], torch.LongTensor [1, batch_size])
-    loudness_mask: SequenceBatch[torch.Tensor, torch.Tensor]
+    loudness_mask: SequenceBatch
 
     # SequenceBatch[torch.FloatTensor [num_characters, batch_size],
     #               torch.LongTensor [1, batch_size])
-    speed: SequenceBatch[torch.Tensor, torch.Tensor]
+    speed: SequenceBatch
 
     # SequenceBatch[torch.BoolTensor [num_characters, batch_size], torch.LongTensor [1, batch_size])
-    speed_mask: SequenceBatch[torch.Tensor, torch.Tensor]
+    speed_mask: SequenceBatch
 
-    alignments: typing.List[typing.List[src.datasets.Alignment]]
+    alignments: typing.List[typing.Tuple[lib.datasets.Alignment, ...]]
 
     metadata: typing.List[typing.Dict[str, typing.Any]]
 
 
 def batch_spectrogram_examples(
-        examples: typing.List[SpectrogramModelExample]) -> SpectrogramModelExampleBatch:
+    examples: typing.List[SpectrogramModelExample],
+) -> SpectrogramModelExampleBatch:
+    """
+    TODO: For performance reasons, we could consider moving some computations from
+    `get_spectrogram_example` to this function for batch processing. This technique would be
+    efficient to use with `DataLoader` because `collate_fn` runs in the same worker process
+    as the basic loader. There is no fancy threading to load multiple examples at the same
+    time.
+    """
     return SpectrogramModelExampleBatch(
         audio_path=[e.audio_path for e in examples],
         audio=[e.audio for e in examples],
         spectrogram=stack_and_pad_tensors([e.spectrogram for e in examples], dim=1),
         spectrogram_mask=stack_and_pad_tensors([e.spectrogram_mask for e in examples], dim=1),
         spectrogram_extended_mask=stack_and_pad_tensors(
-            [e.spectrogram_extended_mask for e in examples], dim=1),
+            [e.spectrogram_extended_mask for e in examples], dim=1
+        ),
         stop_token=stack_and_pad_tensors([e.stop_token for e in examples], dim=1),
         speaker=[e.speaker for e in examples],
         encoded_speaker=stack_and_pad_tensors([e.encoded_speaker for e in examples], dim=1),
@@ -631,21 +701,27 @@ def batch_spectrogram_examples(
         speed=stack_and_pad_tensors([e.speed for e in examples], dim=1),
         speed_mask=stack_and_pad_tensors([e.speed_mask for e in examples], dim=1),
         alignments=[e.alignments for e in examples],
-        metadata=[e.metadata for e in examples])
+        metadata=[e.metadata for e in examples],
+    )
 
 
-def worker_init_fn(worker_id, seed, device_index, digits=16):
+def worker_init_fn(worker_id, seed, device_index, digits=8):
+    """`worker_init_fn` for `torch.utils.data.DataLoader` that ensures each worker has a
+    unique and deterministic random seed."""
     # NOTE: To ensure each worker generates different dataset examples, set a unique seed for
     # each worker.
     # Learn more: https://stackoverflow.com/questions/16008670/how-to-hash-a-string-into-8-digits
-    seed = hashlib.sha256(str([seed, device_index, worker_id]).encode('utf-8')).hexdigest()
-    environment.set_seed(int(seed, 16) % 10**digits)
+    seed = hashlib.sha256(str([seed, device_index, worker_id]).encode("utf-8")).hexdigest()
+    lib.environment.set_seed(int(seed, 16) % 10 ** digits)
 
 
-@contextmanager
-def model_context(model: torch.nn.Module, comet_ml: typing.Union[comet_ml.Experiment,
-                                                                 comet_ml.ExistingExperiment],
-                  name: str, is_train: bool):
+@contextlib.contextmanager
+def model_context(
+    model: torch.nn.Module,
+    comet_ml: typing.Union[comet_ml.Experiment, comet_ml.ExistingExperiment],
+    name: str,
+    is_train: bool,
+):
     with comet_ml.context_manager(name):
         mode = model.training
         model.train(mode=is_train)
@@ -654,35 +730,52 @@ def model_context(model: torch.nn.Module, comet_ml: typing.Union[comet_ml.Experi
         model.train(mode=mode)
 
 
-def get_rms_level(spectrogram: torch.Tensor,
-                  mask: typing.Optional[torch.Tensor] = None,
-                  **kwargs) -> float:
-    """ Get the RMS level given a spectrogram.
+"""
+TODO: In order to support `get_rms_level`, the signal used to compute the spectrogram should
+be padded appropriately. At the moment, the spectrogram is padded such that it's length
+is a multiple of the signal length.
+
+The current spectrogram does not work with `get_rms_level` because the boundary samples are
+underrepresented in the resulting spectrogram. Except for the boundaries, every sample
+appears 4 times in the resulting spectrogram assuming there is a 75% overlap between frames. The
+boundary samples appear less than 4 times. For example, the first and last sample appear
+only once in the spectrogram.
+
+In order to correct this, we'd need to add 3 additional frames to either end of the spectrogram.
+Unfortunately, adding a constant number of frames to either end is incompatible with the orignal
+impelementation where the resulting spectrogram length is a multiple of the signal length.
+
+Fortunately, this requirement can be relaxed. The signal model can be adjusted to accept 3
+additional frames on either side of the spectrogram. This would also ensure that the signal model
+has adequate information about the boundary samples.
+"""
+
+
+@configurable
+def get_rms_level(
+    db_spectrogram: torch.Tensor,
+    mask: typing.Optional[torch.Tensor] = None,
+    signal_length: typing.Optional[int] = None,
+    frame_hop: int = HParam(),
+    **kwargs,
+) -> float:
+    """Get the dB RMS level given a dB spectrogram.
+
+    NOTE: Without the `signal_length` and `frame_hop` parameters, this function estimates the
+    RMS level from the `db_spectrogram`. The estimate assumes that each frame is equal without
+    any deference to the boundaries. As the `db_spectrogram` grows in length, the estimate
+    gets more accurate.
 
     Args:
-        spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
+        db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
         mask (torch.FloatTensor [num_frames, batch_size])
-        **kwargs: Additional key word arguments passed to `framed_rms_from_power_spectrogram`.
+        **kwargs: Additional key word arguments passed to `power_spectrogram_to_framed_rms`.
 
     Returns:
-        The RMS level in decibels of the spectrogram.
+        The RMS level in decibels of the dB spectrogram.
     """
-    device = spectrogram.device
-    spectrogram = src.audio.db_to_power(spectrogram.transpose(0, 1))
-    target_rms = src.audio.framed_rms_from_power_spectrogram(spectrogram, **kwargs)
-    mask = torch.ones(*target_rms.shape, device=device) if mask is None else mask.transpose(0, 1)
-
-    # TODO: This conversion from framed RMS to global RMS is not accurate. The original
-    # spectrogram is padded such that it's length is some constant multiple (256x) of the signal
-    # length. In order to accurately convert a framed RMS to a global RMS, each sample
-    # has to appear an equal number of times in the frames. Supposing there is 25% overlap,
-    # that means each sample has to appear 4 times. That nessecarly means that the first and
-    # last sample needs to be evaluated 3x more times, adding 6 frames to the total number of
-    # frames. Adding a constant number of frames, is not compatible with a constant multiple
-    # supposing any sequence length must be supported. To fix this, we need to remove the
-    # requirement for a constant multiple. The requirement comes from the signal model that
-    # upsamples via constant multiples at the moment. We could adjust the signal model so that
-    # it upsamples -6 frames then a constant multiple, each time. A change like this
-    # would ensure that the first and last frame have 4x overlapping frames to describe
-    # the audio sequence, increase performance at the boundary.
-    return src.audio.power_to_db((target_rms * mask).pow(2).sum() / (mask.sum())).item()
+    spectrogram = lib.audio.db_to_power(db_spectrogram.transpose(0, 1))
+    rms = lib.audio.power_spectrogram_to_framed_rms(spectrogram, **kwargs).numpy()
+    mask_ = numpy.ones(rms.shape) if mask is None else mask.transpose(0, 1).numpy()
+    divisor = mask_.sum() if signal_length is None else signal_length / frame_hop
+    return lib.audio.power_to_db(torch.tensor(((rms * mask_) ** 2).sum() / divisor)).item()
