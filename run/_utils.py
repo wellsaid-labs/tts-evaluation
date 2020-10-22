@@ -27,7 +27,6 @@ import run
 from lib.utils import flatten
 
 logger = logging.getLogger(__name__)
-Dataset = typing.Dict[lib.datasets.Speaker, typing.List[lib.datasets.Example]]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -147,7 +146,7 @@ def fetch_audio_file_metadata(
     return lib.audio.AudioFileMetadata(pathlib.Path(row[0]), *row[1:])
 
 
-def handle_null_alignments(connection: sqlite3.Connection, dataset: Dataset):
+def handle_null_alignments(connection: sqlite3.Connection, dataset: run._config.Dataset):
     """Update any `None` alignments with an alignment spaning the entire audio and
     text, in-place."""
     logger.info("Updating null alignments...")
@@ -165,6 +164,7 @@ def handle_null_alignments(connection: sqlite3.Connection, dataset: Dataset):
 
 def _normalize_audio(
     args: typing.Tuple[pathlib.Path, str, pathlib.Path],
+    format: str,
     encoding: str,
     sample_rate: int,
     channels: int,
@@ -174,15 +174,16 @@ def _normalize_audio(
     destination.parent.mkdir(exist_ok=True, parents=True)
     audio_filters = f"-af {audio_filters}" if audio_filters else ""
     command = (
-        f"ffmpeg -i {source.absolute()} -acodec {encoding} -ar {sample_rate} -ac {channels} "
-        f"{audio_filters} {destination.absolute()}"
+        f"ffmpeg -i {source.absolute()} -f {format} -acodec {encoding} -ar {sample_rate} "
+        f"-ac {channels} {audio_filters} {destination.absolute()}"
     )
     subprocess.run(command.split(), check=True)
 
 
 @configurable
 def normalize_audio(
-    dataset: Dataset,
+    dataset: run._config.Dataset,
+    format: str = HParam(),
     encoding: str = HParam(),
     sample_rate: int = HParam(),
     channels: int = HParam(),
@@ -197,6 +198,7 @@ def normalize_audio(
 
     Args:
         dataset
+        format: Input to `ffmpeg` `-f` flag.
         encoding: Input to `ffmpeg` `-acodec` flag.
         sample_rate: Input to `ffmpeg` `-ar` flag.
         channels: Input to `ffmpeg` `-ac` flag.
@@ -204,7 +206,7 @@ def normalize_audio(
         num_processes
     """
     logger.info("Normalizing dataset audio...")
-    normalize = lambda a: a.parent / run._environment.TTS_DISK_CACHE_NAME / f"ffmpeg({a.stem}).wav"
+    normalize = lambda a: a.parent / run._config.TTS_DISK_CACHE_NAME / f"ffmpeg({a.stem}).wav"
     partial = functools.partial(
         _normalize_audio, encoding=encoding, sample_rate=sample_rate, channels=channels
     )
