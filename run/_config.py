@@ -35,13 +35,7 @@ SAMPLE_RATE = 24000
 # Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
 FRAME_CHANNELS = 128
 PHONEME_SEPARATOR = "|"
-_LOUD_NORM_AUDIO_FILTER = run._utils.format_ffmpeg_audio_filter(
-    "loudnorm",
-    integrated_loudness=-21,
-    loudness_range=4,
-    true_peak=-6.1,
-    print_format="summary",
-)
+
 TTS_DISK_CACHE_NAME = ".tts_cache"  # NOTE: Hidden directory stored in other directories for caching
 DISK_PATH = lib.environment.ROOT_PATH / "disk"
 DATA_PATH = DISK_PATH / "data"
@@ -85,6 +79,13 @@ def configure_audio_processing():
     sox_encoding = "32-bit Floating Point PCM"
     ffmpeg_encoding = "pcm_f32le"
     ffmpeg_format = "f32le"
+    loud_norm_audio_filter = run._utils.format_ffmpeg_audio_filter(
+        "loudnorm",
+        integrated_loudness=-21,
+        loudness_range=4,
+        true_peak=-6.1,
+        print_format="summary",
+    )
 
     # SOURCE (Tacotron 2):
     # mel spectrograms are computed through a shorttime Fourier transform (STFT)
@@ -193,7 +194,7 @@ def configure_audio_processing():
             encoding=ffmpeg_encoding,
             sample_rate=SAMPLE_RATE,
             channels=channels,
-            get_audio_filters=lambda _: ",".join([_LOUD_NORM_AUDIO_FILTER]),
+            get_audio_filters=lambda _: ",".join([loud_norm_audio_filter]),
         ),
         run._utils.assert_audio_normalized: HParams(
             encoding=sox_encoding, sample_rate=SAMPLE_RATE, channels=channels

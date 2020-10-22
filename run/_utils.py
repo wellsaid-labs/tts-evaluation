@@ -164,7 +164,6 @@ def handle_null_alignments(connection: sqlite3.Connection, dataset: run._config.
 
 def _normalize_audio(
     args: typing.Tuple[pathlib.Path, str, pathlib.Path],
-    format: str,
     encoding: str,
     sample_rate: int,
     channels: int,
@@ -174,8 +173,8 @@ def _normalize_audio(
     destination.parent.mkdir(exist_ok=True, parents=True)
     audio_filters = f"-af {audio_filters}" if audio_filters else ""
     command = (
-        f"ffmpeg -i {source.absolute()} -f {format} -acodec {encoding} -ar {sample_rate} "
-        f"-ac {channels} {audio_filters} {destination.absolute()}"
+        f"ffmpeg -i {source.absolute()} -acodec {encoding} -ar {sample_rate} -ac {channels} "
+        f"{audio_filters} {destination.absolute()}"
     )
     subprocess.run(command.split(), check=True)
 
@@ -183,7 +182,6 @@ def _normalize_audio(
 @configurable
 def normalize_audio(
     dataset: run._config.Dataset,
-    format: str = HParam(),
     encoding: str = HParam(),
     sample_rate: int = HParam(),
     channels: int = HParam(),
@@ -198,7 +196,6 @@ def normalize_audio(
 
     Args:
         dataset
-        format: Input to `ffmpeg` `-f` flag.
         encoding: Input to `ffmpeg` `-acodec` flag.
         sample_rate: Input to `ffmpeg` `-ar` flag.
         channels: Input to `ffmpeg` `-ac` flag.
@@ -208,7 +205,10 @@ def normalize_audio(
     logger.info("Normalizing dataset audio...")
     normalize = lambda a: a.parent / run._config.TTS_DISK_CACHE_NAME / f"ffmpeg({a.stem}).wav"
     partial = functools.partial(
-        _normalize_audio, encoding=encoding, sample_rate=sample_rate, channels=channels
+        _normalize_audio,
+        encoding=encoding,
+        sample_rate=sample_rate,
+        channels=channels,
     )
     args_ = set(flatten([[(k, e.audio_path) for e in v] for k, v in dataset.items()]))
     args = [(a, get_audio_filters(s), normalize(a)) for s, a in args_ if not normalize(a).exists()]
