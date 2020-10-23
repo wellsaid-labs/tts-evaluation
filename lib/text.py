@@ -13,6 +13,7 @@ from functools import lru_cache, partial
 from typing import get_args
 
 import ftfy
+import hparams
 import unidecode
 from third_party import LazyLoader
 from tqdm import tqdm
@@ -115,10 +116,6 @@ def _grapheme_to_phoneme(grapheme: str, separator: str = "", **kwargs) -> str:
     return return_
 
 
-# See https://spacy.io/api/annotation#pos-tagging for all available tags.
-_SPACY_PUNCT_TAG = "PUNCT"
-
-
 def _grapheme_to_phoneme_preserve_punctuation(
     doc: spacy.tokens.Doc, separator: str = "", **kwargs
 ) -> str:
@@ -132,14 +129,11 @@ def _grapheme_to_phoneme_preserve_punctuation(
     Returns:
         Phonemes with the original punctuation (as defined by spaCy).
     """
-    if len(doc) == 0:
-        return ""
-
     assert not separator or all(
         separator not in t.text for t in doc
     ), "The separator is not unique."
 
-    # NOTE: `is_punct` is not contextual while `pos_ == _SPACY_PUNCT_TAG` is, see:
+    # NOTE: `is_punct` is not contextual while `pos == spacy.symbols.PUNCT` is, see:
     # https://github.com/explosion/spaCy/issues/998. This enables us to phonemize cases like:
     # - "form of non-linguistic representations"  (ADJ)
     # - "The psychopaths' empathic reaction"  (PART)
@@ -147,7 +141,7 @@ def _grapheme_to_phoneme_preserve_punctuation(
     # - "to public interest/national security" (SYM)
     # - "spectacular, grand // desco da" (SYM)
     return_ = []
-    for is_punct, group in itertools.groupby(doc, lambda t: t.pos_ == _SPACY_PUNCT_TAG):
+    for is_punct, group in itertools.groupby(doc, lambda t: t.pos == spacy.symbols.PUNCT):
         phrase = "".join([t.text_with_ws for t in group])
         is_alpha_numeric = any(c.isalpha() or c.isdigit() for c in phrase)
         if is_punct and is_alpha_numeric:
@@ -181,6 +175,7 @@ def grapheme_to_phoneme(
     ...
 
 
+@hparams.configurable
 def grapheme_to_phoneme(graphemes, chunk_size: int = 128, **kwargs):
     """Convert graphemes into phonemes and preserve punctuation.
 
@@ -395,6 +390,9 @@ def _load_amepd(
 ) -> typing.Dict[str, typing.List[AmEPDPronunciation]]:
     """Load the American English Pronunciation Dictionary.
 
+    TODO: Use `pydantic` for type checking the loaded data. Learn more:
+    https://pydantic-docs.helpmanual.io/
+
     NOTE: Loanwords from other languages are ignored to ensure ASCII compatibility.
     """
     dictionary: typing.Dict[str, typing.List[AmEPDPronunciation]] = collections.defaultdict(list)
@@ -546,7 +544,6 @@ def get_pronunciations(
             )
             return_.append(None)
         else:
-            print(token, token.pos, token.pos_)
             pos = lib.text.SPACY_TO_AMEPD_POS[token.pos]
             tense = spacy_en.TAG_MAP[token.tag_].get("Tense", None)
             prounciation = lib.text.get_pronunciation(token.text, pos, tense)

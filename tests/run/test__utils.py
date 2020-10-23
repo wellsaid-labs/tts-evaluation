@@ -274,8 +274,8 @@ def test__get_loudness():
 def test__get_words():
     """ Test `run._utils._get_words` parses a sentence correctly. """
     text = "It was time to present the present abcdefghi."
-    character_to_word, word_vectors, word_pronunciations = run._utils._get_words(
-        text, start=0, stop=len(text)
+    character_to_word, word_vectors, word_pronunciations, phonemes = run._utils._get_words(
+        text, start=0, stop=len(text), separator="|"
     )
     # fmt: off
     assert character_to_word == [0, 0, -1, 1, 1, 1, -1, 2, 2, 2, 2, -1, 3, 3, -1, 4, 4, 4, 4, 4, 4,
@@ -301,6 +301,10 @@ def test__get_words():
         None,
         None,
     )
+    assert phonemes == (
+        "ɪ|t| |w|ʌ|z| |t|ˈ|aɪ|m| |t|ə| |p|ɹ|ɪ|z|ˈ|ɛ|n|t| "
+        "|ð|ə| |p|ɹ|ˈ|ɛ|z|ə|n|t| |ɐ|b|k|d|ˈ|ɛ|f|ɡ|i|."
+    )
 
 
 def test__get_words__bad_slice():
@@ -323,8 +327,8 @@ def test__get_words__bad_slice():
 def test__get_words__slice():
     """ Test `run._utils._get_words` parses a sentence correctly. """
     text = "It was time to present the present abcdefghi."
-    character_to_word, word_vectors, word_pronunciations = run._utils._get_words(
-        text, start=3, stop=len(text)
+    character_to_word, word_vectors, word_pronunciations, phonemes = run._utils._get_words(
+        text, start=3, stop=len(text), separator="|"
     )
     # fmt: off
     assert character_to_word == [0, 0, 0, -1, 1, 1, 1, 1, -1, 2, 2, -1, 3, 3, 3, 3, 3, 3, 3, -1, 4,
@@ -342,6 +346,9 @@ def test__get_words__slice():
         ("P", "R", "EH1", "Z", "AX", "N", "T"),  # Noun
         None,
         None,
+    )
+    assert phonemes == (
+        "w|ʌ|z| |t|ˈ|aɪ|m| |t|ə| |p|ɹ|ɪ|z|ˈ|ɛ|n|t| |ð|ə| |p|ɹ|ˈ|ɛ|z|ə|n|t| |ɐ|b|k|d|ˈ|ɛ|f|ɡ|i|."
     )
 
 

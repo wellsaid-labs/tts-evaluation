@@ -10,7 +10,7 @@ def test_input_encoder():
     phoneme_seperator = "|"
     speakers = [lib.datasets.MARK_ATHERLAY, lib.datasets.MARY_ANN]
     encoder = lib.spectrogram_model.input_encoder.InputEncoder(
-        graphemes, phonemes, phoneme_seperator, speakers
+        graphemes, phonemes, speakers, phoneme_seperator
     )
     input_ = ("a", "ˈ|eɪ", lib.datasets.MARK_ATHERLAY)
     assert encoder._get_case("A") == encoder._CASE_LABELS[0]

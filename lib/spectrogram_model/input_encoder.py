@@ -1,6 +1,7 @@
 import logging
 import typing
 
+import hparams
 import torch
 from torchnlp.encoders import Encoder, LabelEncoder
 from torchnlp.encoders.text import CharacterEncoder, DelimiterEncoder
@@ -16,8 +17,8 @@ class InputEncoder(Encoder):
     Args:
         graphemes
         phonemes
-        phoneme_seperator: Deliminator to split phonemes.
         speakers
+        phoneme_seperator: Deliminator to split phonemes.
         **args: Additional arguments passed to `super()`.
         **kwargs: Additional key-word arguments passed to `super()`.
     """
@@ -29,12 +30,13 @@ class InputEncoder(Encoder):
         "other",
     ]
 
+    @hparams.configurable
     def __init__(
         self,
         graphemes: typing.List[str],
         phonemes: typing.List[str],
-        phoneme_seperator: str,
         speakers: typing.List[lib.datasets.Speaker],
+        phoneme_seperator: str = hparams.HParam(),
         *args,
         **kwargs,
     ):

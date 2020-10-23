@@ -432,11 +432,12 @@ def _get_loudness(
 
 
 def _get_words(
-    text: str, start: int, stop: int
+    text: str, start: int, stop: int, **kwargs
 ) -> typing.Tuple[
     typing.List[int],
     torch.Tensor,
     typing.Tuple[typing.Optional[typing.Tuple[lib.text.AMEPD_ARPABET, ...]], ...],
+    str,
 ]:
     """Get word features for `text[start:stop]`, and a character-to-word mapping.
 
@@ -458,16 +459,21 @@ def _get_words(
     stop = len(text) + stop if stop < 0 else stop
 
     # NOTE: Check that words are not sliced by the boundary.
+    assert start >= 0 and start <= len(text) and stop >= 0 and stop <= len(text) and stop >= start
     is_inside = lambda i: i >= start and i < stop
     assert all([is_inside(t.idx) == is_inside(t.idx + len(t.text) - 1) for t in doc])
-    doc = [t for t in doc if is_inside(t.idx)]
+    slice_ = slice(
+        next((i for i, t in enumerate(doc) if is_inside(t.idx)), None),
+        next((i + 1 for i, t in reversed(list(enumerate(doc))) if is_inside(t.idx)), None),
+    )
+    doc = doc[slice_]
+    assert len(doc) != 0, "No words were selected."
 
     character_to_word = [-1] * (stop - start)
     for i, token in enumerate(doc):
         token_start = token.idx - start
         character_to_word[token_start : token_start + len(token.text)] = [i] * len(token.text)
 
-    assert len(doc) != 0, "Text has no words."
     zeros = torch.zeros(doc[0].vector.size)
     word_vectors = torch.from_numpy(
         numpy.stack([zeros if w < 0 else doc[w].vector for w in character_to_word])
@@ -478,7 +484,11 @@ def _get_words(
 
     word_pronunciations = lib.text.get_pronunciations(doc)
 
-    return character_to_word, word_vectors, word_pronunciations
+    # NOTE: Since eSpeak, unfortunately, doesn't take extra context to determining the
+    # pronunciation. This means it'll sometimes be wrong in ambigious cases.
+    phonemes = lib.text.grapheme_to_phoneme(doc, **kwargs)
+
+    return character_to_word, word_vectors, word_pronunciations, phonemes
 
 
 @configurable
@@ -520,13 +530,9 @@ def get_spectrogram_example(
     text = example.text[alignments[0].text[0] : alignments[-1].text[-1]]
     audio = lib.audio.read_audio_slice(example.audio_path, alignments[0].audio[0], num_seconds)
 
-    character_to_word, word_vectors, _ = _get_words(
+    character_to_word, word_vectors, _, phonemes = _get_words(
         example.text, alignments[0].text[0], alignments[-1].text[-1]
     )
-
-    # NOTE: Since eSpeak is a black-box, we cannot align the phonemes to the graphemes; therefore,
-    # unfortunately, determining the correct pronunciation requires context which we can't provide.
-    phonemes = lib.text.grapheme_to_phoneme([text])[0]
 
     arg = (text, phonemes, example.speaker)
     encoded_text, encoded_letter_case, encoded_phonemes, encoded_speaker = input_encoder.encode(arg)

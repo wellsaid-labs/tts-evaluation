@@ -360,6 +360,17 @@ def configure_models():
     add_config(config)
 
 
+def configure():
+    """ Configure modules. """
+    configure_audio_processing()
+    configure_models()
+    config = {
+        lib.text.grapheme_to_phoneme: HParams(seperator=PHONEME_SEPARATOR),
+        lib.environment.set_seed: HParams(seed=RANDOM_SEED),
+    }
+    add_config(config)
+
+
 Dataset = typing.Dict[lib.datasets.Speaker, typing.List[lib.datasets.Example]]
 
 

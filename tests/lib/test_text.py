@@ -200,6 +200,7 @@ _(_ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_)_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n"""
     assert grapheme_to_phoneme("Hello world", separator="_") == "h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d"
     assert grapheme_to_phoneme("How are you?", separator="_") == "h_ˈ_aʊ_ _ɑːɹ_ _j_uː_?"
     assert grapheme_to_phoneme("I'm great!", separator="_") == "aɪ_m_ _ɡ_ɹ_ˈ_eɪ_t_!"
+    assert grapheme_to_phoneme("") == ""
 
 
 def test_grapheme_to_phoneme__doc_input():
