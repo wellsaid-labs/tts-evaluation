@@ -16,7 +16,7 @@ from third_party import get_parameter_norm
 logger = logging.getLogger(__name__)
 
 
-class AdaptiveGradientNormClipping:
+class AdaptiveGradientNormClipper:
     """Clip gradient norm based on the median gradient norm.
 
     Source (On the difficulty of training Recurrent Neural Networks):
@@ -35,18 +35,26 @@ class AdaptiveGradientNormClipping:
         a step if the norm of the gradient exceeds four standard deviations of the moving average.
 
     Args:
+        parameters
         window_size: Number of data points used to calculate the median gradient norm.
         norm_type: The "p" in p-norm. This includes `inf` for infinity norm.
     """
 
     @configurable
-    def __init__(self, window_size: int = HParam(), norm_type: float = HParam()):
+    def __init__(
+        self,
+        parameters: typing.Iterable[torch.Tensor],
+        window_size: int = HParam(),
+        norm_type: float = HParam(),
+    ):
         super().__init__()
         self.max_norm: typing.Optional[float] = None
         self.norm_type: float = norm_type
         self.sorted_window: typing.List[float] = []
         self.window_size: int = window_size
         self.window: typing.List[float] = []
+        # NOTE: `self.parameters` is a reference, and it shouldn't be broken.
+        self.parameters = parameters
 
     def _insert(self, norm: float):
         """ Insert `norm` into `window` and `sorted_window`, and remove the oldest value. """
@@ -64,17 +72,14 @@ class AdaptiveGradientNormClipping:
         half = int(half)
         return (self.sorted_window[half] + self.sorted_window[half - 1]) / 2
 
-    def clip_(self, parameters: typing.Union[torch.Tensor, typing.Iterable[torch.Tensor]]):
-        """Clips gradient norm of an iterable of parameters, and update gradient norm history.
-
-        Args:
-            parameters: Tensor(s) that will have their gradients normalized.
-        """
+    def clip(self):
+        """Clips gradient norm of an iterable of `self.parameters`, and update gradient norm
+        history."""
         if self.max_norm is not None:
             torch.nn.utils.clip_grad_norm_(
-                parameters, max_norm=self.max_norm, norm_type=self.norm_type
+                self.parameters, max_norm=self.max_norm, norm_type=self.norm_type
             )
-        norm = get_parameter_norm(parameters, self.norm_type)
+        norm = get_parameter_norm(self.parameters, self.norm_type)
         if not np.isfinite(norm):
             raise ValueError(f"Gradient is not finite: {norm}")
         self._insert(norm)
@@ -88,6 +93,12 @@ class ExponentialMovingParameterAverage:
     - On EMA implementation: http://www.programmersought.com/article/28492072406/
     - On EMA effectiveness: https://arxiv.org/abs/1806.04498
 
+    NOTE: A `to` function is not built in for consistency with `torch.optim`. The expectation
+    is that `ExponentialMovingParameterAverage` is instantiated on or `lib.environment.load` onto
+    the device it'll be used on. Learn more about how PyTorch handles this:
+    https://github.com/pytorch/pytorch/pull/3658
+    https://github.com/pytorch/pytorch/blob/master/torch/optim/optimizer.py#L132
+
     Args:
         parameters: Tensor(s) that'll be tracked over time.
         beta: Beta used to weight the exponential mean.
@@ -95,6 +106,7 @@ class ExponentialMovingParameterAverage:
 
     @configurable
     def __init__(self, parameters: typing.Iterable[torch.Tensor], beta: float = HParam()):
+        # NOTE: `self.parameters` is a reference, and it shouldn't be broken.
         self.parameters = list(parameters)
         self.beta = beta
         self.shadow = [param.clone().detach() * (1.0 - self.beta) for param in self.parameters]
@@ -134,14 +146,6 @@ class ExponentialMovingParameterAverage:
         exc_traceback: typing.Optional[TracebackType],
     ):
         self.restore()
-
-    def to(self, device: torch.device) -> ExponentialMovingParameterAverage:
-        """ Move the parameters to `device`. """
-        # NOTE: `self.parameters` are external and should be moved outside of this function.
-        for list_ in [self.shadow, self.backup]:
-            for i, param in enumerate(list_):
-                list_[i] = param.to(device)
-        return self
 
 
 def warmup_lr_multiplier_schedule(step: int, warmup: int) -> float:

@@ -8,67 +8,62 @@ import lib
 from tests._utils import assert_almost_equal
 
 
-def test_adaptive_gradient_norm_clipping():
-    """ Test `AdaptiveGradientNormClipping` clips the gradient norm correctly. """
-    clippers = lib.optimizers.AdaptiveGradientNormClipping(10, float("inf"))
+def test_adaptive_gradient_norm_clipper_():
+    """ Test `AdaptiveGradientNormClipper` clips the gradient norm correctly. """
+    parameters = torch.zeros(3)
+    clippers = lib.optimizers.AdaptiveGradientNormClipper(parameters, 10, float("inf"))
 
-    parameters = torch.tensor([1.0, 2.0, 3.0])
     parameters.grad = torch.tensor([1.0, 2.0, 3.0])
-    clippers.clip_(parameters)
+    clippers.clip()
     assert_almost_equal(parameters.grad, torch.tensor([1.0, 2.0, 3.0]))
 
-    parameters = torch.tensor([5.0, 5.0, 5.0])
     parameters.grad = torch.tensor([5.0, 5.0, 5.0])
-    clippers.clip_(parameters)
+    clippers.clip()
     assert_almost_equal(parameters.grad, torch.tensor([3.0, 3.0, 3.0]), decimal=4)
 
 
-def test_adaptive_gradient_norm_clipping__window():
-    """ Test `AdaptiveGradientNormClipping` manages the window correctly. """
-    clippers = lib.optimizers.AdaptiveGradientNormClipping(3, float("inf"))
+def test_adaptive_gradient_norm_clipper__window():
+    """ Test `AdaptiveGradientNormClipper` manages the window correctly. """
+    parameters = torch.zeros(1)
+    clippers = lib.optimizers.AdaptiveGradientNormClipper(parameters, 3, float("inf"))
 
-    parameters = torch.tensor([4.0])
     parameters.grad = torch.tensor([4.0])
-    clippers.clip_(parameters)
+    clippers.clip()
     np.testing.assert_almost_equal(clippers.window, [4.0])
     np.testing.assert_almost_equal(clippers.sorted_window, [4.0])
     assert clippers._get_median() == 4.0
 
-    parameters = torch.tensor([3.0])
     parameters.grad = torch.tensor([3.0])
-    clippers.clip_(parameters)
+    clippers.clip()
     np.testing.assert_almost_equal(clippers.window, [4.0, 3.0])
     np.testing.assert_almost_equal(clippers.sorted_window, [3.0, 4.0])
     assert clippers._get_median() == 3.5
 
-    parameters = torch.tensor([2.0])
     parameters.grad = torch.tensor([2.0])
-    clippers.clip_(parameters)
+    clippers.clip()
     np.testing.assert_almost_equal(clippers.window, [4.0, 3.0, 2.0])
     np.testing.assert_almost_equal(clippers.sorted_window, [2.0, 3.0, 4.0])
     assert clippers._get_median() == 3.0
 
-    parameters = torch.tensor([1.0])
     parameters.grad = torch.tensor([1.0])
-    clippers.clip_(parameters)
+    clippers.clip()
     np.testing.assert_almost_equal(clippers.window, [3.0, 2.0, 1.0])
     np.testing.assert_almost_equal(clippers.sorted_window, [1.0, 2.0, 3.0])
     assert clippers._get_median() == 2.0
 
 
-def test_adaptive_gradient_norm_clipping__large_gradient():
-    """ Test `AdaptiveGradientNormClipping` errors given a large gradient. """
-    clippers = lib.optimizers.AdaptiveGradientNormClipping(3, float("inf"))
+def test_adaptive_gradient_norm_clipper__large_gradient():
+    """ Test `AdaptiveGradientNormClipper` errors given a large gradient. """
+    parameters = torch.zeros(1)
+    clippers = lib.optimizers.AdaptiveGradientNormClipper(parameters, 3, float("inf"))
 
-    parameters = torch.tensor([math.nan])
     parameters.grad = torch.tensor([math.nan])
     with pytest.raises(ValueError):
-        clippers.clip_(parameters)
+        clippers.clip()
 
-    parameters = torch.tensor([math.inf])
     parameters.grad = torch.tensor([math.inf])
     with pytest.raises(ValueError):
-        clippers.clip_(parameters)
+        clippers.clip()
 
 
 def test_exponential_moving_parameter_average():
@@ -114,18 +109,6 @@ def test_exponential_moving_parameter_average__identity():
     ema.update()
     with ema:
         assert parameters[0].data[0] == 2.0
-
-
-def test_exponential_moving_parameter_average__to():
-    """ Test `ExponentialMovingParameterAverage.to` executes. """
-    device = torch.device("cpu")
-    parameters = [torch.zeros(1)]
-    parameters[0].to(device)
-
-    ema = lib.optimizers.ExponentialMovingParameterAverage(parameters, beta=0.98)
-    ema = ema.to(device)
-    ema.update()
-    ema = ema.to(device)
 
 
 def test_warmup_lr_multiplier_schedule():
