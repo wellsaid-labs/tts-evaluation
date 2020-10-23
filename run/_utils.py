@@ -45,7 +45,7 @@ class SpectrogramModelCheckpoint(Checkpoint):
     input_encoder: lib.spectrogram_model.InputEncoder
     model: lib.spectrogram_model.SpectrogramModel
     optimizer: torch.optim.Adam
-    clipper: lib.optimizers.AdaptiveGradientNormClipping
+    clipper: lib.optimizers.AdaptiveGradientNormClipper
     scheduler: torch.optim.lr_scheduler.LambdaLR
 
 
