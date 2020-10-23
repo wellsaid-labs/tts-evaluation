@@ -4,6 +4,7 @@ import pprint
 import random
 import typing
 
+import comet_ml
 import torch
 from hparams import HParams, add_config, configurable
 from third_party import LazyLoader
@@ -149,8 +150,7 @@ def configure_audio_processing():
             num_mel_bins=FRAME_CHANNELS,
             # SOURCE (Tacotron 2):
             # Prior to log compression, the filterbank output magnitudes are clipped to a
-            # minimum value of 0.01 in order to limit dynamic range in the logarithmic
-            # domain.
+            # minimum value of 0.01 in order to limit dynamic range in the logarithmic domain.
             # NOTE: The `min_decibel` is set to ensure there is around 100 dB of dynamic range,
             # allowing us to make the most use of the maximum 96 dB dynamic range a 16-bit audio
             # file can provide. This is assuming that a full-scale 997 Hz sine wave is the maximum
@@ -167,8 +167,8 @@ def configure_audio_processing():
             fft_length=fft_length,
             frame_hop=frame_hop,
             # SOURCE (Tacotron 1):
-            # We found that raising the predicted magnitudes by a power of 1.2 before
-            # feeding to Griffin-Lim reduces artifacts
+            # We found that raising the predicted magnitudes by a power of 1.2 before feeding to
+            # Griffin-Lim reduces artifacts
             power=1.20,
             # SOURCE (Tacotron 1):
             # We observed that Griffin-Lim converges after 50 iterations (in fact, about 30
@@ -326,7 +326,7 @@ def configure_models():
 
     config = {
         # NOTE: Window size smoothing parameter is not sensitive.
-        lib.optimizers.AdaptiveGradientNormClipping.__init__: HParams(window_size=128, norm_type=2),
+        lib.optimizers.AdaptiveGradientNormClipper.__init__: HParams(window_size=128, norm_type=2),
         # NOTE: The `beta` parameter is not sensitive.
         lib.optimizers.ExponentialMovingParameterAverage.__init__: HParams(beta=0.9999),
         lib.signal_model.SignalModel.__init__: HParams(
@@ -363,7 +363,29 @@ def configure_models():
 Dataset = typing.Dict[lib.datasets.Speaker, typing.List[lib.datasets.Example]]
 
 
-def get_dataset(dev_size: int = 60 * 60) -> typing.Tuple[Dataset, Dataset]:
+def _get_dataset_stats(train: Dataset, dev: Dataset) -> typing.Dict[str, typing.Union[str, int]]:
+    """Get `train` and `dev` dataset statistics.
+
+    TODO: Test this.
+    """
+    # NOTE: `len_` assumes the entire example is usable.
+    len_ = lambda d: sum(e.alignments[-1].audio[1] - e.alignments[0].audio[0] for e in d)
+    stats: typing.Dict[str, typing.Union[int, str]] = {}
+    for data, name in [(train, "train"), (dev, "dev")]:
+        stats[f"{name}_num_examples"] = sum(len(e) for e in data.values())
+        stats[f"{name}_num_characters"] = sum(sum(len(e.text) for e in v) for v in data.values())
+        stats[f"{name}_num_seconds"] = lib.utils.seconds_to_string(
+            sum(len_(e) for e in data.values())
+        )
+        for speaker, examples in data.items():
+            label = lib.environment.text_to_label(speaker.name)
+            stats[f"{name}_{label}_num_examples"] = len(examples)
+            stats[f"{name}_{label}_num_characters"] = sum(len_(e.text) for e in examples)
+            stats[f"{name}_{label}_num_seconds"] = lib.utils.seconds_to_string(len_(examples))
+    return stats
+
+
+def _get_dataset(dev_size: int = 60 * 60) -> typing.Tuple[Dataset, Dataset]:
     """Define the dataset to train and evaluate the TTS models on.
 
     NOTE: Elliot Miller is not included due to his unannotated character portrayals.
@@ -388,6 +410,7 @@ def get_dataset(dev_size: int = 60 * 60) -> typing.Tuple[Dataset, Dataset]:
         for speaker, examples in iterator:
             train[speaker], dev[speaker] = run._utils.split_examples(examples, dev_size)
 
+        #  NOTE: Elliot Miller is not included due to his unannotated character portrayals.
         train[lib.datasets.LINDA_JOHNSON] = lib.datasets.lj_speech_dataset()
         train[lib.datasets.JUDY_BIEBER] = lib.datasets.m_ailabs_en_us_judy_bieber_speech_dataset()
         train[lib.datasets.MARY_ANN] = lib.datasets.m_ailabs_en_us_mary_ann_speech_dataset()
@@ -395,14 +418,26 @@ def get_dataset(dev_size: int = 60 * 60) -> typing.Tuple[Dataset, Dataset]:
             lib.datasets.ELIZABETH_KLETT
         ] = lib.datasets.m_ailabs_en_uk_elizabeth_klett_speech_dataset()
 
-        # NOTE: This distribution measurement assumes the entire dataset is usable.
-        len_ = lambda d: lib.utils.seconds_to_string(
-            sum(e.alignments[-1].audio[1] - e.alignments[0].audio[0] for e in d)
-        )
-        get_distribution = lambda d: pprint.pformat({k: len_(v) for k, v in d.items()})
-        logger.info("Training dataset distribution:\n%s", get_distribution(train))
-        logger.info("Development dataset distribution:\n%s", get_distribution(train))
         return train, dev
+
+
+def get_dataset(
+    comet_ml: typing.Union[comet_ml.Experiment, comet_ml.ExistingExperiment],
+    dev_size: int = 60 * 60,
+) -> typing.Tuple[Dataset, Dataset]:
+    """Define the dataset to train and evaluate the TTS models on.
+
+    Args:
+        comet_ml
+        dev_size: Number of seconds per speaker in the development dataset.
+
+    Returns:
+        train
+        dev
+    """
+    train, dev = _get_dataset(dev_size)
+    comet_ml.log_parameters(_get_dataset_stats(train, dev))
+    return train, dev
 
 
 def _include_example(example: lib.datasets.Example) -> bool:
@@ -485,3 +520,19 @@ def get_dataset_generator(
         if seconds < max_seconds and include_example(example):
             yield example
             counter[speaker] += seconds
+
+
+# NOTE: It's theoretically impossible to know all the phonemes eSpeak might predict because
+# the predictions vary with context. We cannot practically generate every possible permutation
+# to generate the vocab.
+# TODO: Remove this once `grapheme_to_phoneme` is deprecated.
+# fmt: off
+DATASET_PHONETIC_CHARACTERS = [
+    '\n', ' ', '!', '"', "'", '(', ')', '*', ',', '-', '.', '/', ':', ';', '?', '[', ']', 'aɪ',
+    'aɪə', 'aɪɚ', 'aɪʊ', 'aɪʊɹ', 'aʊ', 'b', 'd', 'dʒ', 'eɪ', 'f', 'h', 'i', 'iə', 'iː', 'j',
+    'k', 'l', 'm', 'n', 'nʲ', 'n̩', 'oʊ', 'oː', 'oːɹ', 'p', 'r', 's', 't', 'tʃ', 'uː', 'v', 'w',
+    'x', 'z', 'æ', 'æː', 'ð', 'ø', 'ŋ', 'ɐ', 'ɐː', 'ɑː', 'ɑːɹ', 'ɑ̃', 'ɔ', 'ɔɪ', 'ɔː', 'ɔːɹ',
+    'ə', 'əl', 'ɚ', 'ɛ', 'ɛɹ', 'ɜː', 'ɡ', 'ɣ', 'ɪ', 'ɪɹ', 'ɫ', 'ɹ', 'ɾ', 'ʃ', 'ʊ', 'ʊɹ', 'ʌ',
+    'ʒ', 'ʔ', 'ˈ', 'ˌ', 'θ', 'ᵻ'
+]
+# fmt: on
