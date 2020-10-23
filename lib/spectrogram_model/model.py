@@ -83,7 +83,12 @@ class SpectrogramModel(nn.Module):
         self.decoder = AutoregressiveDecoder(num_frame_channels, speaker_embedding_size)
         self.stop_sigmoid = nn.Sigmoid()
         self.register_buffer("output_scalar", torch.tensor(output_scalar).float())
+        # SOURCE: Tacotron 2
+        # We minimize the summed mean squared error (MSE) from before and after the post-net to aid
+        # convergence.
         self.mse_loss = torch.nn.MSELoss(reduction="none")
+        # SOURCE (Tacotron 2 Author):
+        # The author confirmed they used BCE loss in Google Chat.
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction="none")
 
     def _is_stop(

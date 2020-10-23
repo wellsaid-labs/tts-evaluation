@@ -1,4 +1,5 @@
 import collections
+import itertools
 import json
 import logging
 import os
@@ -45,8 +46,6 @@ def _grapheme_to_phoneme_helper(
     service_separator: str = "_",
 ) -> str:
     """
-    TODO: Since eSpeak does not preserve punctuation or white spaces, we shouldn't preserve
-    white spaces via `strip` on the edges.
     TODO: Support `espeak-ng` `service`, if needed.
 
     Args:
@@ -116,10 +115,74 @@ def _grapheme_to_phoneme(grapheme: str, separator: str = "", **kwargs) -> str:
     return return_
 
 
+# See https://spacy.io/api/annotation#pos-tagging for all available tags.
+_SPACY_PUNCT_TAG = "PUNCT"
+
+
+def _grapheme_to_phoneme_preserve_punctuation(
+    doc: spacy.tokens.Doc, separator: str = "", **kwargs
+) -> str:
+    """Convert grapheme to phoneme while preserving punctuation.
+
+    Args:
+        doc
+        separator: The separator used to separate phonemes, stress, and punctuation.
+        **kwargs: Key-word arguments passed to `_grapheme_to_phoneme`.
+
+    Returns:
+        Phonemes with the original punctuation (as defined by spaCy).
+    """
+    if len(doc) == 0:
+        return ""
+
+    assert not separator or all(
+        separator not in t.text for t in doc
+    ), "The separator is not unique."
+
+    # NOTE: `is_punct` is not contextual while `pos_ == _SPACY_PUNCT_TAG` is, see:
+    # https://github.com/explosion/spaCy/issues/998. This enables us to phonemize cases like:
+    # - "form of non-linguistic representations"  (ADJ)
+    # - "The psychopaths' empathic reaction"  (PART)
+    # - "judgement, name & face memory" (CCONJ)
+    # - "to public interest/national security" (SYM)
+    # - "spectacular, grand // desco da" (SYM)
+    return_ = []
+    for is_punct, group in itertools.groupby(doc, lambda t: t.pos_ == _SPACY_PUNCT_TAG):
+        phrase = "".join([t.text_with_ws for t in group])
+        is_alpha_numeric = any(c.isalpha() or c.isdigit() for c in phrase)
+        if is_punct and is_alpha_numeric:
+            logger.warning("Punctuation contains alphanumeric characters: %s" % phrase)
+        if is_punct and not is_alpha_numeric:
+            return_.extend(list(phrase))
+        else:
+            return_.append(_grapheme_to_phoneme(phrase, separator=separator, **kwargs))
+    return separator.join([t for t in return_ if len(t) > 0])
+
+
+# TODO: With `spacy` v3 and their type hints up, we can change these signatures to include
+# `spacy.tokens.Doc`.
+
+
+@typing.overload
 def grapheme_to_phoneme(
-    graphemes: typing.List[str], chunk_size: int = 128, **kwargs
+    graphemes: typing.List[str],
+    chunk_size: int = 128,
+    **kwargs,
 ) -> typing.List[str]:
-    """Convert graphemes into phonemes without perserving punctuation or white-spaces.
+    ...
+
+
+@typing.overload
+def grapheme_to_phoneme(
+    graphemes: str,
+    chunk_size: int = 128,
+    **kwargs,
+) -> str:
+    ...
+
+
+def grapheme_to_phoneme(graphemes, chunk_size: int = 128, **kwargs):
+    """Convert graphemes into phonemes and preserve punctuation.
 
     NOTE: `espeak` can give different results for the same argument, sometimes. For example,
     "Fitness that's invigorating, not intimidating!" sometimes returns...
@@ -135,11 +198,22 @@ def grapheme_to_phoneme(
     Args:
         graphemes: The graphemes to convert to phonemes.
         chunk_size: `chunk_size` parameter passed to `imap` for multiprocessing.
-        **kwargs: Key-word arguments passed to `_grapheme_to_phoneme`.
+        **kwargs: Key-word arguments passed to `_grapheme_to_phoneme_preserve_punctuation`.
     """
-    part = partial(_grapheme_to_phoneme, **kwargs)
+    assert chunk_size >= 1
+    is_list = isinstance(graphemes, list)
+    graphemes = graphemes if is_list else [graphemes]
+    part = partial(_grapheme_to_phoneme_preserve_punctuation, **kwargs)
+
+    if any(isinstance(g, str) for g in graphemes):
+        items = {i: g for i, g in enumerate(graphemes) if isinstance(g, str)}
+        nlp = load_en_core_web_md(disable=("parser", "ner"))
+        for i, doc in zip(items.keys(), nlp.pipe(items.values())):
+            graphemes[i] = doc
+
     if len(graphemes) < chunk_size:
-        return [part(g) for g in graphemes]
+        return_ = [part(g) for g in graphemes]
+        return return_[slice(0, len(graphemes)) if is_list else 0]  # type: ignore
 
     logger.info("Getting phonemes for %d graphemes.", len(graphemes))
     with lib.utils.Pool(1 if lib.environment.IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
