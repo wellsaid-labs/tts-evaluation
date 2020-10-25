@@ -332,48 +332,6 @@ class LSTMCell(torch.nn.LSTMCell):
         return super().forward(input, hx=hx)
 
 
-class Average:
-    """ Track the average. """
-
-    def __init__(self):
-        self.reset()
-
-    def reset(self) -> typing.Optional[float]:
-        """ Reset the metric statistics and return the mean. """
-        average = (
-            self.total_value / self.total_count
-            if (
-                hasattr(self, "total_value")
-                and hasattr(self, "total_count")
-                and self.total_count > 0
-            )
-            else None
-        )
-        self.last_update_value: typing.Optional[float] = None
-        self.total_value: float = 0.0
-        self.total_count: float = 0.0
-        return average
-
-    def update(
-        self,
-        value: typing.Union[torch.Tensor, float],
-        count: typing.Union[torch.Tensor, int] = 1,
-    ) -> Average:
-        """Update the mean.
-
-        Args:
-            value
-            count: Number of times to add value / frequency of value.
-        """
-        value = typing.cast(float, value.item()) if isinstance(value, torch.Tensor) else value
-        count = typing.cast(int, count.item()) if isinstance(count, torch.Tensor) else count
-        assert count > 0, f"Count ({count}) must be positive."
-        self.total_value += value * count
-        self.total_count += count
-        self.last_update_value = value
-        return self
-
-
 def clamp(a: float, min_: float = -math.inf, max_: float = math.inf) -> float:
     return max(min(a, max_), min_)
 

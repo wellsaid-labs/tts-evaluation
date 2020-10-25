@@ -7,9 +7,11 @@ import typing
 
 import torch
 
-import lib
-
 logger = logging.getLogger(__name__)
+
+
+# TODO: Rename `master` to `main`, learn more:
+# https://www.wired.com/story/tech-confronts-use-labels-master-slave/
 
 
 def is_initialized() -> bool:
@@ -29,31 +31,75 @@ def is_master() -> bool:
     return torch.distributed.get_rank() == get_master_rank()
 
 
-def assert_synced(value: float, message: str = ""):
+_default_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def assert_synced(value: float, message: str = "", device=_default_device):
     """Assert that `value` is the same between master and worker nodes.
 
     NOTE: The `value` is split into digits to support large numbers like 128-bit hashes.
+    TODO: Factor out a utility function to `torch.distributed.broadcast` 128-bit bit numbers.
 
     Args:
         value: Value to check.
         message: Assert message.
     """
-    torch_ = torch.cuda if torch.cuda.is_available() else torch
     if is_master():
-        length = torch_.LongTensor([len(str(value))])  # type: ignore
+        length = torch.tensor([len(str(value))], dtype=torch.long, device=device)
     else:
-        length = torch_.LongTensor(1)  # type: ignore
+        length = torch.zeros(1, dtype=torch.long, device=device)
     torch.distributed.broadcast(length, src=get_master_rank())
-    length = length.item()
-    assert len(str(value)) == length, message
-    value_tensor = torch_.LongTensor([int(d) for d in str(value)])  # type: ignore
+    length_ = int(length.item())
+    assert len(str(value)) == length_, message
+    value_tensor = torch.tensor([int(d) for d in str(value)], dtype=torch.long, device=device)
     if is_master():
         torch.distributed.broadcast(value_tensor, src=get_master_rank())
         master_value = value_tensor
     else:
-        master_value = torch_.LongTensor(length)  # type: ignore
+        master_value = torch.zeros(length_, dtype=torch.long, device=device)
         torch.distributed.broadcast(master_value, src=get_master_rank())
     assert torch.equal(master_value, value_tensor), message
+
+
+def reduce_(value: float, dst: int = get_master_rank(), device=_default_device, **kwargs) -> float:
+    """Reduce `value` from all processes via a reduction operation
+    like `torch.distributed.ReduceOp.SUM`."""
+    packed = torch.tensor([value], dtype=torch.float, device=device)
+    torch.distributed.reduce(packed, dst=dst, **kwargs)
+    return packed.item()
+
+
+def gather(
+    value: float, dst: int = get_master_rank(), device=_default_device, **kwargs
+) -> typing.List[float]:
+    """ Gather `value` from all processes into a `list` on the `dst` process. """
+    world_size = torch.distributed.get_world_size()
+    return_ = [torch.zeros(1, device=device, dtype=torch.float) for _ in range(world_size)]
+    tensor = torch.tensor([value], device=device, dtype=torch.float)
+    torch.distributed.gather(tensor, return_ if is_master() else None, dst=dst, **kwargs)
+    return [t.item() for t in return_]
+
+
+def all_gather(value: float, device=_default_device, **kwargs) -> typing.List[float]:
+    """ Gather `value` from all processes into a `list`. """
+    world_size = torch.distributed.get_world_size()
+    return_ = [torch.zeros(1, device=device, dtype=torch.float) for _ in range(world_size)]
+    tensor = torch.tensor([value], device=device, dtype=torch.float)
+    torch.distributed.all_gather(return_, tensor, **kwargs)
+    return [t.item() for t in return_]
+
+
+def gather_list(
+    values: typing.List[float], dst: int = get_master_rank(), device=_default_device, **kwargs
+) -> typing.List[typing.List[float]]:
+    """ Gather `values` from all processes into a `list` on the `dst` process. """
+    lengths = [int(l) for l in all_gather(len(values), device=device, **kwargs)]
+    max_ = max(lengths)
+    return_ = [torch.zeros(max_, device=device, dtype=torch.float) for _ in lengths]
+    tensor = torch.tensor(values, device=device, dtype=torch.float)
+    tensor = torch.nn.functional.pad(tensor, [0, max_ - len(values)])
+    torch.distributed.gather(tensor, return_ if is_master() else None, dst=dst, **kwargs)
+    return [t.tolist()[:l] for t, l in zip(return_, lengths)]
 
 
 def spawn(*args, nprocs=None, **kwargs):
@@ -62,38 +108,7 @@ def spawn(*args, nprocs=None, **kwargs):
     NOTE (michael): Without an assert, when `nprocs` is zero, `torch.multiprocessing.spawn`
     crashes in a nondescript way.
     """
-    assert torch.cuda.device_count() > 0, "Unable to find CUDA devices."
-    nprocs = torch.cuda.device_count() if nprocs is None else nprocs
-    torch.multiprocessing.spawn(*args, nprocs=nprocs, **kwargs)  # type: ignore
-
-
-class DistributedAverage(lib.utils.Average):
-    """ Track the average in a distributed environment. """
-
-    def reset(self) -> typing.Optional[float]:
-        super().reset()
-        average = (
-            self.post_sync_total_value / self.post_sync_total_count
-            if (
-                hasattr(self, "post_sync_total_value")
-                and hasattr(self, "post_sync_total_value")
-                and self.post_sync_total_count > 0
-            )
-            else None
-        )
-        self.post_sync_total_value: float = 0.0
-        self.post_sync_total_count: float = 0.0
-        return average
-
-    def sync(self) -> DistributedAverage:
-        """ Synchronize measurements accross multiple processes. """
-        last_post_sync_total_value = self.post_sync_total_value
-        last_post_sync_total_count = self.post_sync_total_count
-        torch_ = torch.cuda if torch.cuda.is_available() else torch
-        packed = torch_.FloatTensor([self.total_value, self.total_count])  # type: ignore
-        torch.distributed.reduce(packed, dst=get_master_rank())
-        self.post_sync_total_value, self.post_sync_total_count = tuple(packed.tolist())
-        self.last_update_value = (self.post_sync_total_value - last_post_sync_total_value) / (
-            self.post_sync_total_count - last_post_sync_total_count
-        )
-        return self
+    if torch.cuda.is_available():
+        assert torch.cuda.device_count() > 0, "Unable to find CUDA devices."
+        nprocs = torch.cuda.device_count() if nprocs is None else nprocs
+    return torch.multiprocessing.spawn(*args, nprocs=nprocs, **kwargs)  # type: ignore

@@ -75,13 +75,13 @@ class AdaptiveGradientNormClipper:
     def clip(self):
         """Clips gradient norm of an iterable of `self.parameters`, and update gradient norm
         history."""
+        norm = get_parameter_norm(self.parameters, self.norm_type)
+        if not np.isfinite(norm):
+            raise ValueError(f"Gradient is not finite: {norm}")
         if self.max_norm is not None:
             torch.nn.utils.clip_grad_norm_(
                 self.parameters, max_norm=self.max_norm, norm_type=self.norm_type
             )
-        norm = get_parameter_norm(self.parameters, self.norm_type)
-        if not np.isfinite(norm):
-            raise ValueError(f"Gradient is not finite: {norm}")
         self._insert(norm)
         self.max_norm = self._get_median()
 

@@ -338,17 +338,6 @@ def test_lstm_cell__hidden_state():
     assert_almost_equal(updated_hidden_state[1], other_updated_hidden_state[1])
 
 
-def test_averaged_metric():
-    """ Test `lib.utils.Average` is able to track the average over multiple iterations. """
-    metric = lib.utils.Average()
-    assert metric.last_update_value is None
-    metric.update(torch.tensor([0.5]), torch.tensor(3))
-    metric.update(0.25, 2)
-    assert metric.last_update_value == 0.25
-    assert metric.reset() == 0.4
-    assert metric.last_update_value is None
-
-
 def test_clamp():
     """ Test `lib.utils.clamp` with basic cases. """
     assert lib.utils.clamp(3, min_=1, max_=2) == 2

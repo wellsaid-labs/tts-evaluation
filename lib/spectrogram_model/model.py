@@ -132,7 +132,7 @@ class SpectrogramModel(nn.Module):
             split_size
             num_tokens (torch.LongTensor [batch_size])
             tokens_mask (torch.BoolTensor [batch_size, num_tokens])
-            speaker (torch.LongTensor [batch_size, speaker_embedding_dim])
+            speaker (torch.LongTensor [batch_size, speaker_embedding_size])
             use_tqdm: Add a progress bar for non-batch generation.
 
         Returns:
@@ -290,7 +290,7 @@ class SpectrogramModel(nn.Module):
         # [num_frames, batch_size]
         frames_mask = lengths_to_mask(target_lengths, device=target_frames.device).transpose(0, 1)
 
-        speaker = self.embed_speaker(speaker)  # [batch_size] → [batch_size, speaker_embedding_dim]
+        speaker = self.embed_speaker(speaker)  # [batch_size] → [batch_size, speaker_embedding_size]
         # [batch_size, num_tokens] → [num_tokens, batch_size, encoder_hidden_size]
         encoded_tokens = self.encoder(tokens, tokens_mask, num_tokens, speaker)
         frames, stop_tokens, alignments, hidden_state = self.decoder(
@@ -343,7 +343,7 @@ class SpectrogramModel(nn.Module):
         tokens, num_tokens, speaker = self._normalize_inputs(tokens, speaker, num_tokens)
         tokens_mask = lengths_to_mask(num_tokens, device=tokens.device)  # [batch_size, num_tokens]
 
-        speaker = self.embed_speaker(speaker)  # [batch_size] → [batch_size, speaker_embedding_dim]
+        speaker = self.embed_speaker(speaker)  # [batch_size] → [batch_size, speaker_embedding_size]
         # [batch_size, num_tokens] → [num_tokens, batch_size, encoder_hidden_size]
         encoded_tokens = self.encoder(tokens, tokens_mask, num_tokens, speaker)
         generator = self._infer_generator(
