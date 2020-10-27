@@ -60,6 +60,14 @@ for directory in [
 DATABASE_PATH = TEMP_PATH / "database.db"
 
 
+class Context(enum.Enum):
+    """ Constants and labels for contextualizing the use-case. """
+
+    TRAIN: typing.Final = "train"
+    EVALUATE: typing.Final = "evaluate"
+    EVALUATE_INFERENCE: typing.Final = "evaluate_inference"
+
+
 def _get_window(window: str, window_length: int, window_hop: int) -> torch.Tensor:
     """Get a `torch.Tensor` window that passes `scipy.signal.check_COLA`.
 

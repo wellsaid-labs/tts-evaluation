@@ -730,16 +730,15 @@ def worker_init_fn(worker_id: int, seed: int, device_index: int, digits: int = 8
 
 
 @contextlib.contextmanager
-def model_context(
+def set_context(
+    context: run._config.Context,
     model: torch.nn.Module,
-    comet_ml: typing.Union[comet_ml.Experiment, comet_ml.ExistingExperiment],
-    name: str,
-    is_train: bool,
+    comet_ml: comet_ml.Experiment,
 ):
-    with comet_ml.context_manager(name):
+    with comet_ml.context_manager(context.value):
         mode = model.training
-        model.train(mode=is_train)
-        with torch.set_grad_enabled(mode=is_train):
+        model.train(mode=context == run._config.Context.TRAIN)
+        with torch.set_grad_enabled(mode=context == run._config.Context.TRAIN):
             yield
         model.train(mode=mode)
 
