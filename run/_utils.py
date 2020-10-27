@@ -340,12 +340,12 @@ class SpectrogramModelExample(typing.NamedTuple):
     audio: torch.Tensor  # torch.FloatTensor [num_samples]
     spectrogram: torch.Tensor  # torch.FloatTensor [num_frames, frame_channels]
     spectrogram_mask: torch.Tensor  # torch.FloatTensor [num_frames]
-    spectrogram_extended_mask: torch.Tensor  # torch.FloatTensor [num_frames, frame_channels]
     stop_token: torch.Tensor  # torch.FloatTensor [num_frames]
     speaker: lib.datasets.Speaker
     encoded_speaker: torch.Tensor  # torch.LongTensor [1]
     text: str
     encoded_text: torch.Tensor  # torch.LongTensor [num_characters]
+    encoded_text_mask: torch.Tensor  # torch.FloatTensor [num_characters]
     encoded_letter_case: torch.Tensor  # torch.LongTensor [num_characters]
     word_vectors: torch.Tensor  # torch.FloatTensor [num_characters]
     encoded_phonemes: torch.Tensor  # List [num_words] torch.LongTensor [num_phonemes]
@@ -538,16 +538,16 @@ def get_spectrogram_example(
     encoded_text, encoded_letter_case, encoded_phonemes, encoded_speaker = input_encoder.encode(arg)
 
     loudness = torch.zeros(num_characters)
-    loudness_mask = torch.ones(num_characters)
+    loudness_mask = torch.zeros(num_characters)
     for alignment in _random_nonoverlapping_alignments(alignments, max_loudness_annotations):
         slice_ = slice(alignment.text[0], alignment.text[1])
         loudness[slice_] = _get_loudness(
             audio, sample_rate, alignment, loudness_implementation, loudness_precision
         )
-        loudness_mask[slice_] = 0.0
+        loudness_mask[slice_] = 1.0
 
     speed = torch.zeros(num_characters)
-    speed_mask = torch.ones(num_characters)
+    speed_mask = torch.zeros(num_characters)
     for alignment in _random_nonoverlapping_alignments(alignments, max_speed_annotations):
         slice_ = slice(alignment.text[0], alignment.text[1])
         # TODO: Instead of using characters per second, we could estimate the number of phonemes
@@ -558,7 +558,7 @@ def get_spectrogram_example(
             (alignment.text[1] - alignment.text[0]) / (alignment.audio[1] - alignment.audio[0]),
             speed_precision,
         )
-        speed_mask[slice_] = 0.0
+        speed_mask[slice_] = 1.0
 
     # TODO: The RMS function that trim uses mentions that it's likely better to use a
     # spectrogram if it's available:
@@ -600,13 +600,13 @@ def get_spectrogram_example(
         audio_path=example.audio_path,
         audio=audio,
         spectrogram=db_mel_spectrogram,
-        spectrogram_mask=torch.ones(db_mel_spectrogram.shape[0]),
-        spectrogram_extended_mask=torch.ones(*db_mel_spectrogram.shape),
+        spectrogram_mask=torch.ones(db_mel_spectrogram.shape[0], dtype=torch.bool),
         stop_token=stop_token,
         speaker=example.speaker,
         encoded_speaker=encoded_speaker,
         text=text,
         encoded_text=encoded_text,
+        encoded_text_mask=torch.ones(encoded_text.shape[0], dtype=torch.bool),
         encoded_letter_case=encoded_letter_case,
         word_vectors=word_vectors,
         encoded_phonemes=encoded_phonemes,
@@ -622,20 +622,19 @@ def get_spectrogram_example(
 class SpectrogramModelExampleBatch(typing.NamedTuple):
     """Batch of preprocessed `Example` used to training or evaluating the spectrogram model."""
 
+    length: int
+
     audio_path: typing.List[pathlib.Path]
 
     audio: typing.List[torch.Tensor]
 
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size, frame_channels],
-    #                  torch.LongTensor [1, batch_size])
+    #               torch.LongTensor [1, batch_size])
     spectrogram: SequenceBatch
 
-    # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
+    # NOTE: Mask padding with `False`.
+    # SequenceBatch[torch.BoolTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     spectrogram_mask: SequenceBatch
-
-    # SequenceBatch[torch.FloatTensor [num_frames, batch_size, frame_channels],
-    #                  torch.LongTensor [1, batch_size])
-    spectrogram_extended_mask: SequenceBatch
 
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
@@ -646,6 +645,10 @@ class SpectrogramModelExampleBatch(typing.NamedTuple):
     encoded_speaker: SequenceBatch
 
     text: typing.List[str]
+
+    # NOTE: Mask padding with `False`.
+    # SequenceBatch[torch.BoolTensor [num_characters, batch_size], torch.LongTensor [1, batch_size])
+    encoded_text_mask: SequenceBatch
 
     # SequenceBatch[torch.LongTensor [num_characters, batch_size], torch.LongTensor [1, batch_size])
     encoded_text: SequenceBatch
@@ -663,14 +666,18 @@ class SpectrogramModelExampleBatch(typing.NamedTuple):
     #               torch.LongTensor [1, batch_size])
     loudness: SequenceBatch
 
-    # SequenceBatch[torch.BoolTensor [num_characters, batch_size], torch.LongTensor [1, batch_size])
+    # NOTE: Mask padding with zeros.
+    # SequenceBatch[torch.FloatTensor [num_characters, batch_size],
+    #               torch.LongTensor [1, batch_size])
     loudness_mask: SequenceBatch
 
     # SequenceBatch[torch.FloatTensor [num_characters, batch_size],
     #               torch.LongTensor [1, batch_size])
     speed: SequenceBatch
 
-    # SequenceBatch[torch.BoolTensor [num_characters, batch_size], torch.LongTensor [1, batch_size])
+    # NOTE: Mask padding with zeros.
+    # SequenceBatch[torch.FloatTensor [num_characters, batch_size],
+    #               torch.LongTensor [1, batch_size])
     speed_mask: SequenceBatch
 
     alignments: typing.List[typing.Tuple[lib.datasets.Alignment, ...]]
