@@ -179,6 +179,9 @@ def set_basic_logging_config(id_: int = os.getpid()):
 def assert_enough_disk_space(min_space: float = HParam()):
     """Check if there is enough disk space.
 
+    TODO: In order to support different disk sizes, run the check against an absolute vs relative
+    value.
+
     Args:
         min_space: Minimum percentage of free disk space.
     """
@@ -351,6 +354,11 @@ class RecordStandardStreams:
         return self
 
 
+# NOTE: PyTorch recommends that people use ".pt" extension:
+# https://pytorch.org/docs/stable/generated/torch.save.html
+PT_EXTENSION = ".pt"
+
+
 def save(path: Path, data: typing.Any, overwrite: bool = False):
     """Use `torch.save` to save an object to `path`.
 
@@ -362,6 +370,7 @@ def save(path: Path, data: typing.Any, overwrite: bool = False):
         data: Data to save.
         overwrite: If `True` this allows for `path` to be overwritten.
     """
+    assert path.suffix == PT_EXTENSION
     if not overwrite and path.exists():
         raise ValueError("File already exists (%s).", path)
     torch.save(data, str(path))
@@ -376,7 +385,9 @@ def load(path: Path, device: torch.device = torch.device("cpu")) -> typing.Any:
         device: Device to load onto.
     """
     logger.info("Loading: %s", path)
-    assert Path(path).is_file(), f"Path ({path}) must point to a file."
+
+    assert path.suffix == PT_EXTENSION
+    assert path.is_file(), f"Path ({path}) must point to a file."
 
     def remap(storage, loc):
         if "cuda" in loc and device.type == "cuda":
@@ -391,7 +402,7 @@ _LoadMostRecentFileReturnType = typing.TypeVar("_LoadMostRecentFileReturnType")
 
 def load_most_recent_file(
     pattern: str, read: typing.Callable[[Path], _LoadMostRecentFileReturnType]
-) -> _LoadMostRecentFileReturnType:
+) -> typing.Tuple[Path, _LoadMostRecentFileReturnType]:
     """Get the most recently modified file.
 
     Args:
@@ -412,7 +423,7 @@ def load_most_recent_file(
     ), "Multiple paths found with the same modification time"
     for path in lib.utils.sort_together(paths, modified_time, reverse=True):
         try:
-            return read(Path(path))
+            return Path(path), read(Path(path))
         except BaseException:
             logger.exception(f"Failed to load file at {path}.")
     raise ValueError("Unable to load recent file.")

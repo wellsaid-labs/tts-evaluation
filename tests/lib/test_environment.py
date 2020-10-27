@@ -9,6 +9,7 @@ from unittest import mock
 import pytest
 
 import lib
+from lib.environment import PT_EXTENSION, load_most_recent_file
 
 
 def _make_log_record(
@@ -229,7 +230,7 @@ def test_record_standard_streams(capsys):
 def test_load_and_save():
     """ Test `load` and `save` work on a random object. """
     with tempfile.TemporaryDirectory() as directory:
-        file_path = pathlib.Path(directory) / "test_load_and_save"
+        file_path = pathlib.Path(directory) / f"test_load_and_save{PT_EXTENSION}"
         object_ = frozenset(["testing"])
         lib.environment.save(file_path, object_)
         assert lib.environment.load(file_path) == object_
@@ -238,7 +239,7 @@ def test_load_and_save():
 def test_save__overwrite():
     """ Test `save` overwrites existing files only explicitly. """
     with tempfile.TemporaryDirectory() as directory:
-        file_path = pathlib.Path(directory) / "test_save__overwrite"
+        file_path = pathlib.Path(directory) / f"test_save__overwrite{PT_EXTENSION}"
         lib.environment.save(file_path, "object")
         with pytest.raises(ValueError):
             lib.environment.save(file_path, "object")
@@ -249,13 +250,14 @@ def test_load_most_recent_file():
     """ Test `load_most_recent_file` loads the most recent non-corrupted file. """
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory)
-        lib.environment.save(path / "oldest", "oldest")
-        lib.environment.save(path / "recent", "recent")
+        expected_path = path / f"recent{PT_EXTENSION}"
+        lib.environment.save(path / f"oldest{PT_EXTENSION}", "oldest")
+        lib.environment.save(expected_path, "recent")
         newest = path / "newest"
-        newest.write_text("newest")
-        assert (
-            lib.environment.load_most_recent_file(str(path / "*"), lib.environment.load) == "recent"
-        )
+        newest.write_text("newest")  # NOTE: Add corrupted file
+        loaded_path, loaded_object = load_most_recent_file(str(path / "*"), lib.environment.load)
+        assert loaded_object == "recent"
+        assert loaded_path == expected_path
 
 
 def test_load_most_recent_file__no_files():
@@ -263,17 +265,17 @@ def test_load_most_recent_file__no_files():
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory)
         with pytest.raises(ValueError):
-            lib.environment.load_most_recent_file(str(path / "*"), lib.environment.load)
+            load_most_recent_file(str(path / "*"), lib.environment.load)
 
 
 def test_load_most_recent_file__corrupted():
     """ Test `load_most_recent_file` errors if only corrupted files are found. """
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory)
-        newest = path / "newest"
+        newest = path / f"newest{PT_EXTENSION}"
         newest.write_text("newest")
         with pytest.raises(ValueError):
-            lib.environment.load_most_recent_file(str(path / "*"), lib.environment.load)
+            load_most_recent_file(str(path / "*"), lib.environment.load)
 
 
 def test_get_untracked_files():
