@@ -116,13 +116,9 @@ def test_reduce():
     torch.multiprocessing.spawn(partial, nprocs=nprocs)
 
 
-def test_gather():
-    """ Test `lib.distributed.gather` gathers values from work processes to the main process. """
-    nprocs = 2
-    partial = functools.partial(
-        assert_, nprocs=nprocs, callable_=lib.distributed.gather, expected=list(range(nprocs))
-    )
-    torch.multiprocessing.spawn(partial, nprocs=nprocs)
+def test_reduce__identity():
+    """ Test `lib.distributed.reduce_` functions outside of a distributed environment. """
+    assert lib.distributed.reduce_(0) == 0
 
 
 def test_all_gather():
@@ -138,6 +134,11 @@ def test_all_gather():
     torch.multiprocessing.spawn(partial, nprocs=nprocs)
 
 
+def test_all_gather__identity():
+    """ Test `lib.distributed.all_gather` functions outside of a distributed environment. """
+    assert lib.distributed.all_gather(0) == [0]
+
+
 def _gather_list(rank):
     """ Helper function for `test_gather_list`. """
     return lib.distributed.gather_list([rank] * rank)
@@ -150,3 +151,8 @@ def test_gather_list():
         assert_, nprocs=nprocs, callable_=_gather_list, expected=[[], [1], [2, 2]]
     )
     torch.multiprocessing.spawn(partial, nprocs=nprocs)
+
+
+def test_gather_list__identity():
+    """ Test `lib.distributed.gather_list` functions outside of a distributed environment. """
+    assert lib.distributed.gather_list([0]) == [[0]]

@@ -64,24 +64,17 @@ def assert_synced(value: float, message: str = "", device=_default_device):
 def reduce_(value: float, dst: int = get_master_rank(), device=_default_device, **kwargs) -> float:
     """Reduce `value` from all processes via a reduction operation
     like `torch.distributed.ReduceOp.SUM`."""
+    if not is_initialized():
+        return value
     packed = torch.tensor([value], dtype=torch.float, device=device)
     torch.distributed.reduce(packed, dst=dst, **kwargs)
     return packed.item()
 
 
-def gather(
-    value: float, dst: int = get_master_rank(), device=_default_device, **kwargs
-) -> typing.List[float]:
-    """ Gather `value` from all processes into a `list` on the `dst` process. """
-    world_size = torch.distributed.get_world_size()
-    return_ = [torch.zeros(1, device=device, dtype=torch.float) for _ in range(world_size)]
-    tensor = torch.tensor([value], device=device, dtype=torch.float)
-    torch.distributed.gather(tensor, return_ if is_master() else None, dst=dst, **kwargs)
-    return [t.item() for t in return_]
-
-
 def all_gather(value: float, device=_default_device, **kwargs) -> typing.List[float]:
     """ Gather `value` from all processes into a `list`. """
+    if not is_initialized():
+        return [value]
     world_size = torch.distributed.get_world_size()
     return_ = [torch.zeros(1, device=device, dtype=torch.float) for _ in range(world_size)]
     tensor = torch.tensor([value], device=device, dtype=torch.float)
@@ -93,6 +86,8 @@ def gather_list(
     values: typing.List[float], dst: int = get_master_rank(), device=_default_device, **kwargs
 ) -> typing.List[typing.List[float]]:
     """ Gather `values` from all processes into a `list` on the `dst` process. """
+    if not is_initialized():
+        return [values]
     lengths = [int(l) for l in all_gather(len(values), device=device, **kwargs)]
     max_ = max(lengths)
     return_ = [torch.zeros(max_, device=device, dtype=torch.float) for _ in lengths]
