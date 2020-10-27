@@ -286,6 +286,8 @@ class SpectrogramModel(nn.Module):
         target_stop_token, target_frames, target_lengths = self._normalize_targets(
             target_stop_token, target_frames, target_lengths
         )
+        # TODO: These masks are readily available during training. Should we pass them in as
+        # parameters?
         tokens_mask = lengths_to_mask(num_tokens, device=tokens.device)  # [batch_size, num_tokens]
         # [num_frames, batch_size]
         frames_mask = lengths_to_mask(target_lengths, device=target_frames.device).transpose(0, 1)
