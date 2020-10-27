@@ -761,6 +761,14 @@ impelementation where the resulting spectrogram length is a multiple of the sign
 Fortunately, this requirement can be relaxed. The signal model can be adjusted to accept 3
 additional frames on either side of the spectrogram. This would also ensure that the signal model
 has adequate information about the boundary samples.
+
+NOTE: Our approximate implementation of RMS-level is consistent with EBU R128 / ITU-R BS.1770
+loudness implementations. For example, see these implementations:
+https://github.com/BrechtDeMan/loudness.py
+https://github.com/csteinmetz1/pyloudnorm
+They don't even pad the signal to ensure every sample is represented.
+NOTE: For most signals, the underrepresentation of the first 85 milliseconds (assuming a frame
+length of 2048, frame hop of 512 and a sample rate of 24000), doesn't practically matter.
 """
 
 
@@ -768,16 +776,9 @@ has adequate information about the boundary samples.
 def get_rms_level(
     db_spectrogram: torch.Tensor,
     mask: typing.Optional[torch.Tensor] = None,
-    signal_length: typing.Optional[int] = None,
-    frame_hop: int = HParam(),
     **kwargs,
-) -> float:
-    """Get the dB RMS level given a dB spectrogram.
-
-    NOTE: Without the `signal_length` and `frame_hop` parameters, this function estimates the
-    RMS level from the `db_spectrogram`. The estimate assumes that each frame is equal without
-    any deference to the boundaries. As the `db_spectrogram` grows in length, the estimate
-    gets more accurate.
+) -> torch.Tensor:
+    """Get the sum of the power RMS level for each frame in the spectrogram.
 
     Args:
         db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
@@ -785,9 +786,13 @@ def get_rms_level(
         **kwargs: Additional key word arguments passed to `power_spectrogram_to_framed_rms`.
 
     Returns:
-        The RMS level in decibels of the dB spectrogram.
+        torch.FloatTensor [batch_size]
     """
     spectrogram = lib.audio.db_to_power(db_spectrogram.transpose(0, 1))
+    # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
+    rms = lib.audio.power_spectrogram_to_framed_rms(spectrogram, **kwargs)
+    return (rms if mask is None else rms * mask.transpose(0, 1)).pow(2).sum(dim=1)
+
     rms = lib.audio.power_spectrogram_to_framed_rms(spectrogram, **kwargs).numpy()
     mask_ = numpy.ones(rms.shape) if mask is None else mask.transpose(0, 1).numpy()
     divisor = mask_.sum() if signal_length is None else signal_length / frame_hop

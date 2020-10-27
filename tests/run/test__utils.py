@@ -362,15 +362,14 @@ def test_worker_init_fn():
     assert torch.randn(1).item() == -1.5076009035110474
 
 
-def test_model_context():
-    """Test `run._utils.model_context` updates comet, module, and grad context. """
+def test_set_context():
+    """Test `run._utils.set_context` updates comet, module, and grad context. """
     comet = lib.visualize.CometMLExperiment(disabled=True)
     rnn = torch.nn.LSTM(10, 20, 2).eval()
     assert not rnn.training
-    context = "context"
-    with run._utils.model_context(rnn, comet, context, True):
+    with run._utils.set_context(run._config.Context.TRAIN, rnn, comet):
         assert rnn.training
-        assert comet.context == context
+        assert comet.context == run._config.Context.TRAIN.value
         output, _ = rnn(torch.randn(5, 3, 10))
         assert not output.requires_grad
     assert not rnn.training
@@ -383,7 +382,7 @@ def _get_db_spectrogram(signal, **kwargs) -> torch.Tensor:
 
 
 def test_get_rms_level():
-    """ Test `run._utils.get_rms_level` gets a dB RMS level from a dB spectrogram. """
+    """ Test `run._utils.get_rms_level` gets an approximate dB RMS level from a dB spectrogram. """
     frame_length = 1024
     frame_hop = frame_length // 4
     window = torch.ones(frame_length)
@@ -395,14 +394,15 @@ def test_get_rms_level():
         window=window,
         center=False,
     )
-    square = _db_spectrogram(lib.audio.full_scale_square_wave())
-    sine = _db_spectrogram(lib.audio.full_scale_sine_wave())
-    assert run._utils.get_rms_level(square, window=window, frame_hop=frame_hop) == pytest.approx(
-        0.0, abs=1e-6
+    db_spectrogram = torch.cat(
+        [
+            _db_spectrogram(lib.audio.full_scale_square_wave()),
+            _db_spectrogram(lib.audio.full_scale_sine_wave()),
+        ],
+        dim=1,
     )
-    assert run._utils.get_rms_level(sine, window=window, frame_hop=frame_hop) == pytest.approx(
-        -3.0102469, abs=1e-6
-    )
+    rms = run._utils.get_rms_level(db_spectrogram, window=window)
+    _utils.assert_almost_equal(rms / db_spectrogram.shape[0], torch.Tensor([1.0000001, 0.500006]))
 
 
 def test_get_rms_level__precise():
@@ -419,11 +419,12 @@ def test_get_rms_level__precise():
         window=window,
         center=False,
     )
-    square = _db_spectrogram(lib.audio.full_scale_square_wave(sample_rate))
-    sine = _db_spectrogram(lib.audio.full_scale_sine_wave(sample_rate))
-    assert run._utils.get_rms_level(
-        square, window=window, frame_hop=frame_hop, signal_length=sample_rate
-    ) == pytest.approx(0.0, abs=1e-6)
-    assert run._utils.get_rms_level(
-        sine, window=window, frame_hop=frame_hop, signal_length=sample_rate
-    ) == pytest.approx(-3.0103001594543457, abs=1e-6)
+    db_spectrogram = torch.cat(
+        [
+            _db_spectrogram(lib.audio.full_scale_square_wave()),
+            _db_spectrogram(lib.audio.full_scale_sine_wave()),
+        ],
+        dim=1,
+    )
+    rms = run._utils.get_rms_level(db_spectrogram, window=window)
+    _utils.assert_almost_equal(rms / (sample_rate / frame_hop), torch.Tensor([1.0, 0.49999998418]))
