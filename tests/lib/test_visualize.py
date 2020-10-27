@@ -20,10 +20,8 @@ def test_plot_alignments():
     assert isinstance(lib.visualize.plot_alignments(torch.rand(5, 6)), matplotlib.figure.Figure)
 
 
-def test_plot_line_graph_of_logits():
-    assert isinstance(
-        lib.visualize.plot_line_graph_of_logits(torch.rand(5)), matplotlib.figure.Figure
-    )
+def test_plot_logits():
+    assert isinstance(lib.visualize.plot_logits(torch.rand(5)), matplotlib.figure.Figure)
 
 
 def test_plot_waveform():

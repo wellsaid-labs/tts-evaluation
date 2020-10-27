@@ -150,9 +150,7 @@ def plot_alignments(alignment: typing.Union[torch.Tensor, np.ndarray]) -> matplo
     return figure
 
 
-def plot_line_graph_of_logits(
-    logits: typing.Union[torch.Tensor, np.ndarray]
-) -> matplotlib.figure.Figure:
+def plot_logits(logits: typing.Union[torch.Tensor, np.ndarray]) -> matplotlib.figure.Figure:
     """Given a time-series of logits, plot a line graph.
 
     Args:
