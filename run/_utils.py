@@ -696,18 +696,17 @@ def batch_spectrogram_examples(
     time.
     """
     return SpectrogramModelExampleBatch(
+        length=len(examples),
         audio_path=[e.audio_path for e in examples],
         audio=[e.audio for e in examples],
         spectrogram=stack_and_pad_tensors([e.spectrogram for e in examples], dim=1),
         spectrogram_mask=stack_and_pad_tensors([e.spectrogram_mask for e in examples], dim=1),
-        spectrogram_extended_mask=stack_and_pad_tensors(
-            [e.spectrogram_extended_mask for e in examples], dim=1
-        ),
         stop_token=stack_and_pad_tensors([e.stop_token for e in examples], dim=1),
         speaker=[e.speaker for e in examples],
         encoded_speaker=stack_and_pad_tensors([e.encoded_speaker for e in examples], dim=1),
         text=[e.text for e in examples],
         encoded_text=stack_and_pad_tensors([e.encoded_text for e in examples], dim=1),
+        encoded_text_mask=stack_and_pad_tensors([e.encoded_text_mask for e in examples], dim=1),
         encoded_letter_case=stack_and_pad_tensors([e.encoded_letter_case for e in examples], dim=1),
         word_vectors=stack_and_pad_tensors([e.word_vectors for e in examples], dim=1),
         encoded_phonemes=stack_and_pad_tensors([e.encoded_phonemes for e in examples], dim=1),
