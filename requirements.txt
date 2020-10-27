@@ -33,7 +33,6 @@ pytest-xdist
 # Linting
 flake8
 mypy
-typing_extensions
 
 # Auto Formatter
 black
