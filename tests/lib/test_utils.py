@@ -52,41 +52,40 @@ def test_get_chunks():
     assert list(lib.utils.get_chunks([1, 2, 3, 4], 3)) == [[1, 2, 3], [4]]
 
 
-def test_get_weighted_stdev():
-    tensor = torch.Tensor(
-        [[[0.33333, 0.33333, 0.33334], [0, 0.5, 0.5]], [[0, 0.5, 0.5], [0, 0.5, 0.5]]]
+def test_get_weighted_std():
+    """Test `lib.utils.get_weighted_std` on a basic case, and respects weighting.
+
+    NOTE: 0.50 is equal to the population standard deviation for 1, 2
+    NOTE: 0.81649658093 is equal to the population standard deviation for 1, 2, 3
+    """
+    tensor = torch.tensor(
+        [[[0.3333333, 0.3333333, 0.3333334], [0, 0.5, 0.5]], [[0, 0.5, 0.5], [0, 0.5, 0.5]]]
     )
-    assert lib.utils.get_weighted_stdev(tensor, dim=2) == pytest.approx(0.5791246294975281)
-
-
-def test_get_weighted_stdev__mask():
-    """ Test `lib.utils.get_weighted_stdev` respects the mask. """
-    tensor = torch.Tensor(
-        [[[0.33333, 0.33333, 0.33334], [0, 0.5, 0.5]], [[0, 0.5, 0.5], [0, 0.5, 0.5]]]
+    assert_almost_equal(
+        lib.utils.get_weighted_std(tensor, dim=2),
+        torch.tensor([[0.8164966106414795, 0.50], [0.50, 0.50]]),
     )
-    mask = torch.BoolTensor([[1, 0], [0, 0]])
-    standard_deviation = lib.utils.get_weighted_stdev(tensor, dim=2, mask=mask)
-    # NOTE: Equal to the population standard deviation for 1, 2, 3
-    assert standard_deviation == pytest.approx(0.81649658093, rel=1.0e-04)
 
 
-def test_get_weighted_stdev__one_data_point():
-    """Test `lib.utils.get_weighted_stdev` computes the correct standard deviation for one data
+def test_get_weighted_std__one_data_point():
+    """Test `lib.utils.get_weighted_std` computes the correct standard deviation for one data
     point."""
-    assert lib.utils.get_weighted_stdev(torch.Tensor([0, 1, 0]), dim=0) == 0.0
+    assert lib.utils.get_weighted_std(torch.tensor([0, 1, 0]), dim=0) == torch.zeros(1)
 
 
-def test_get_weighted_stdev__bias():
-    """ Test `lib.utils.get_weighted_stdev` computes the correct standard deviation. """
-    standard_deviation = lib.utils.get_weighted_stdev(torch.Tensor([0.25, 0.25, 0.25, 0.25]), dim=0)
-    # NOTE: Equal to the population standard deviation for 1, 2, 3, 4
-    assert standard_deviation == pytest.approx(1.1180339887499)
+def test_get_weighted_std__bias():
+    """Test `lib.utils.get_weighted_std` computes the correct standard deviation.
+
+    NOTE: Equal to the population standard deviation for 1, 2, 3, 4
+    """
+    standard_deviation = lib.utils.get_weighted_std(torch.tensor([0.25, 0.25, 0.25, 0.25]), dim=0)
+    assert standard_deviation.item() == pytest.approx(1.1180339887499)
 
 
-def test_get_weighted_stdev__error():
-    """ Test `lib.utils.get_weighted_stdev` errors if the distribution is not normalized. """
+def test_get_weighted_std__error():
+    """ Test `lib.utils.get_weighted_std` errors if the distribution is not normalized. """
     with pytest.raises(AssertionError):
-        lib.utils.get_weighted_stdev(torch.Tensor([0, 0.25, 0.25, 0.25]), dim=0)
+        lib.utils.get_weighted_std(torch.tensor([0, 0.25, 0.25, 0.25]), dim=0)
 
 
 def test_flatten():

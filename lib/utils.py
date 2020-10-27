@@ -71,10 +71,8 @@ def get_chunks(
         yield list_[i : i + n]
 
 
-def get_weighted_stdev(
-    tensor: torch.Tensor, dim: int = 0, mask: typing.Optional[torch.Tensor] = None
-) -> float:
-    """Computed the average weighted standard deviation accross a dimension in `tensor`.
+def get_weighted_std(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
+    """Computed the weighted standard deviation accross a dimension in `tensor`.
 
     NOTE:
     - `tensor` must sum up to 1.0 on `dim`.
@@ -84,11 +82,11 @@ def get_weighted_stdev(
     Learn more:
     - https://en.wikipedia.org/wiki/Weighted_arithmetic_mean
     - https://mathoverflow.net/questions/11803/unbiased-estimate-of-the-variance-of-a-weighted-mean
+    - https://www.rapidtables.com/calc/math/standard-deviation-calculator.html
 
     Args:
         tensor (torch.FloatTensor [*, dim, *])
         dim: Compute standard deviation along `dim` in `tensor`.
-        mask (torch.BoolTensor [*, *])
     """
     # Expects normalized weightes total of 0, 1 to ensure correct variance decisions
     assert all(
@@ -107,10 +105,7 @@ def get_weighted_stdev(
 
     assert not torch.isnan(weighted_standard_deviation.min()), "NaN detected."
 
-    if mask is not None:
-        weighted_standard_deviation = weighted_standard_deviation.masked_select(mask)
-
-    return weighted_standard_deviation.mean().item()
+    return weighted_standard_deviation
 
 
 def flatten(l: typing.List[typing.Any]) -> typing.List[typing.Any]:
