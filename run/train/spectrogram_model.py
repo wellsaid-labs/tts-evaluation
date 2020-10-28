@@ -621,6 +621,7 @@ def _run_step(
         target_stop_token=batch.stop_token.tensor,
         num_tokens=batch.encoded_text.lengths,
         target_lengths=batch.spectrogram.lengths,
+        mode=lib.spectrogram_model.Mode.FORWARD,
     )
 
     if state.model.training:
@@ -760,7 +761,7 @@ def _run_inference(
         batch.encoded_text.tensor,
         batch.encoded_speaker.tensor,
         batch.encoded_text.lengths,
-        mode="infer",
+        mode=lib.spectrogram_model.Mode.INFER,
     )
 
     if visualize:

@@ -1,3 +1,4 @@
+import enum
 import logging
 import typing
 
@@ -17,6 +18,12 @@ SpectrogramModelGenerator = typing.Generator[
     None,
     None,
 ]
+
+
+class Mode(enum.Enum):
+    INFER: typing.Final = enum.auto()
+    GENERATE: typing.Final = enum.auto()
+    FORWARD: typing.Final = enum.auto()
 
 
 class SpectrogramModel(nn.Module):
@@ -402,7 +409,7 @@ class SpectrogramModel(nn.Module):
         speaker: torch.Tensor,
         target_frames: torch.Tensor,
         target_stop_token: torch.Tensor,
-        mode: typing.Literal["forward"] = "forward",
+        mode: typing.Literal[Mode.FORWARD] = Mode.FORWARD,
         num_tokens: typing.Optional[torch.Tensor] = None,
         target_lengths: typing.Optional[torch.Tensor] = None,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -413,7 +420,7 @@ class SpectrogramModel(nn.Module):
         self,
         tokens: torch.Tensor,
         speaker: torch.Tensor,
-        mode: typing.Literal["infer"],
+        mode: typing.Literal[Mode.INFER],
         filter_reached_max: bool = False,
         num_tokens: typing.Optional[torch.Tensor] = None,
         use_tqdm: bool = False,
@@ -425,7 +432,7 @@ class SpectrogramModel(nn.Module):
         self,
         tokens: torch.Tensor,
         speaker: torch.Tensor,
-        mode: typing.Literal["generate"],
+        mode: typing.Literal[Mode.GENERATE],
         num_tokens: typing.Optional[torch.Tensor] = None,
         split_size: float = 32,
         use_tqdm: bool = False,
@@ -435,7 +442,7 @@ class SpectrogramModel(nn.Module):
     def __call__(
         self,
         *args,
-        mode: typing.Literal["infer", "generate", "forward"] = "forward",
+        mode: Mode = Mode.FORWARD,
         **kwargs,
     ):
         return super().__call__(*args, mode=mode, **kwargs)
@@ -443,7 +450,7 @@ class SpectrogramModel(nn.Module):
     def forward(
         self,
         *args,
-        mode: typing.Literal["infer", "generate", "forward"] = "forward",
+        mode: Mode = Mode.FORWARD,
         **kwargs,
     ):
         """
@@ -453,9 +460,9 @@ class SpectrogramModel(nn.Module):
             - Since the `forward` function is required to be executed, we use the parameter
               `mode` to overload the function.
         """
-        if mode == "forward":
+        if mode == Mode.FORWARD:
             return self._forward(*args, **kwargs)
-        elif mode == "generate":
+        elif mode == Mode.GENERATE:
             return self._generate(*args, **kwargs)
         else:
             return self._infer(*args, **kwargs)
