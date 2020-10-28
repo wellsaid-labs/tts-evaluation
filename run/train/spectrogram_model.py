@@ -80,7 +80,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
             train_batch_size=train_batch_size,
             dev_batch_size=train_batch_size * 4,
             bucket_size_multiplier=10,
-            num_data_loader_workers=8,
+            num_workers=8,
         ),
         _DistributedMetrics.log: HParams(num_frame_channels=run._config.NUM_FRAME_CHANNELS),
         # SOURCE (Tacotron 2):
@@ -435,23 +435,21 @@ class _State:
         cls, checkpoint: pathlib.Path, device: torch.device, comet_ml: comet_ml.Experiment
     ):
         """ Recreate the spectrogram training state from a `checkpoint`. """
-        _, _, _, step, input_encoder, model, optimizer, clipper, scheduler = dataclasses.astuple(
+        _, _, _, step, encoder, model, optimizer, clipper, scheduler = dataclasses.astuple(
             typing.cast(SpectrogramModelCheckpoint, lib.environment.load(checkpoint, device=device))
         )
-        distributed_model = torch.nn.parallel.DistributedDataParallel(model, [device], device)
-        return cls(
-            input_encoder,
-            distributed_model,
-            optimizer,
-            clipper,
-            scheduler,
-            comet_ml,
-            device,
-            step=torch.tensor(step),
-        )
+        model_ = torch.nn.parallel.DistributedDataParallel(model, [device], device)
+        step = torch.tensor(step)
+        return cls(encoder, model_, optimizer, clipper, scheduler, comet_ml, device, step)
 
     @classmethod
-    def from_dataset(cls, train_dataset, connection, comet_ml, device):
+    def from_dataset(
+        cls,
+        train_dataset: run._config.Dataset,
+        connection: sqlite3.Connection,
+        comet_ml: comet_ml.Experiment,
+        device: torch.device,
+    ):
         """ Create spectrogram training state from the `train_dataset`. """
         input_encoder = cls._get_input_encoder(train_dataset, connection, comet_ml)
         model = cls._get_model(device, comet_ml, input_encoder)
@@ -535,7 +533,7 @@ def _get_data_loaders(
     train_batch_size: int = HParam(),
     dev_batch_size: int = HParam(),
     bucket_size_multiplier: int = HParam(),
-    num_data_loader_workers: int = HParam(),
+    num_workers: int = HParam(),
 ) -> typing.Tuple[DataLoader, DataLoader]:
     """ Initialize training and development data loaders.  """
     bucket_size = bucket_size_multiplier * train_batch_size
@@ -546,9 +544,7 @@ def _get_data_loaders(
         comet_ml=state.comet_ml,
         bucket_size=bucket_size,
     )
-    DataLoaderPartial = functools.partial(
-        DataLoader, num_workers=num_data_loader_workers, device=state.device
-    )
+    DataLoaderPartial = functools.partial(DataLoader, num_workers=num_workers, device=state.device)
     return (
         DataLoaderPartial(_IterableDatasetPartial(train_dataset), train_batch_size),
         DataLoaderPartial(_IterableDatasetPartial(dev_dataset), dev_batch_size),
