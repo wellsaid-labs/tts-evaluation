@@ -24,7 +24,8 @@ from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
 
 import lib
 import run
-from lib.utils import flatten
+from lib.utils import flatten, seconds_to_string
+from run._config import Cadence, Context, Dataset, DatasetType, get_dataset_label
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +61,7 @@ class SignalModelCheckpoint(Checkpoint):
 
 
 def maybe_make_experiment_directories_from_checkpoint(
-    checkpoint: Checkpoint,
-    *args,
-    **kwargs,
+    checkpoint: Checkpoint, *args, **kwargs
 ) -> typing.Tuple[pathlib.Path, pathlib.Path]:
     """For checkpoints saved in the `maybe_make_experiment_directories` directory structure,
     this creates another "run" under the original experiment.
@@ -146,7 +145,7 @@ def fetch_audio_file_metadata(
     return lib.audio.AudioFileMetadata(pathlib.Path(row[0]), *row[1:])
 
 
-def handle_null_alignments(connection: sqlite3.Connection, dataset: run._config.Dataset):
+def handle_null_alignments(connection: sqlite3.Connection, dataset: Dataset):
     """Update any `None` alignments with an alignment spaning the entire audio and
     text, in-place."""
     logger.info("Updating null alignments...")
@@ -181,7 +180,7 @@ def _normalize_audio(
 
 @configurable
 def normalize_audio(
-    dataset: run._config.Dataset,
+    dataset: Dataset,
     encoding: str = HParam(),
     sample_rate: int = HParam(),
     channels: int = HParam(),
@@ -730,15 +729,11 @@ def worker_init_fn(worker_id: int, seed: int, device_index: int, digits: int = 8
 
 
 @contextlib.contextmanager
-def set_context(
-    context: run._config.Context,
-    model: torch.nn.Module,
-    comet_ml: comet_ml.Experiment,
-):
+def set_context(context: Context, model: torch.nn.Module, comet_ml: comet_ml.Experiment):
     with comet_ml.context_manager(context.value):
         mode = model.training
-        model.train(mode=context == run._config.Context.TRAIN)
-        with torch.set_grad_enabled(mode=context == run._config.Context.TRAIN):
+        model.train(mode=context == Context.TRAIN)
+        with torch.set_grad_enabled(mode=context == Context.TRAIN):
             yield
         model.train(mode=mode)
 
@@ -774,9 +769,7 @@ length of 2048, frame hop of 512 and a sample rate of 24000), doesn't practicall
 
 @configurable
 def get_rms_level(
-    db_spectrogram: torch.Tensor,
-    mask: typing.Optional[torch.Tensor] = None,
-    **kwargs,
+    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None, **kwargs
 ) -> torch.Tensor:
     """Get the sum of the power RMS level for each frame in the spectrogram.
 
@@ -793,7 +786,23 @@ def get_rms_level(
     rms = lib.audio.power_spectrogram_to_framed_rms(spectrogram, **kwargs)
     return (rms if mask is None else rms * mask.transpose(0, 1)).pow(2).sum(dim=1)
 
-    rms = lib.audio.power_spectrogram_to_framed_rms(spectrogram, **kwargs).numpy()
-    mask_ = numpy.ones(rms.shape) if mask is None else mask.transpose(0, 1).numpy()
-    divisor = mask_.sum() if signal_length is None else signal_length / frame_hop
-    return lib.audio.power_to_db(torch.tensor(((rms * mask_) ** 2).sum() / divisor)).item()
+
+def get_dataset_stats(train: Dataset, dev: Dataset) -> typing.Dict[str, typing.Union[str, int]]:
+    """Get `train` and `dev` dataset statistics.
+
+    TODO: Test this.
+    """
+    # NOTE: `len_` assumes the entire example is usable.
+    len_ = lambda d: sum(e.alignments[-1].audio[1] - e.alignments[0].audio[0] for e in d)
+    stats: typing.Dict[str, typing.Union[int, str]] = {}
+    for data, type_ in [(train, DatasetType.TRAIN), (dev, DatasetType.DEV)]:
+        label = functools.partial(get_dataset_label, cadence=Cadence.STATIC, type_=type_)
+        stats[label("num_examples")] = sum(len(e) for e in data.values())
+        stats[label("num_characters")] = sum(sum(len(e.text) for e in v) for v in data.values())
+        stats[label("num_seconds")] = seconds_to_string(sum(len_(e) for e in data.values()))
+        for speaker, examples in data.items():
+            label = functools.partial(label, speaker=speaker)
+            stats[label("num_examples")] = len(examples)
+            stats[label("num_characters")] = sum(len_(e.text) for e in examples)
+            stats[label("num_seconds")] = seconds_to_string(len_(examples))
+    return stats

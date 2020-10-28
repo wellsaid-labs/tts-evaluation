@@ -22,7 +22,16 @@ from torchnlp.utils import get_total_parameters, lengths_to_mask, tensors_to
 import lib
 import run
 from lib.utils import flatten
-from run._config import SPECTROGRAM_MODEL_EXPERIMENTS_PATH, Context, Labels
+from run._config import (
+    SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
+    Cadence,
+    Context,
+    DatasetType,
+    Label,
+    get_config_label,
+    get_dataset_label,
+    get_model_label,
+)
 from run._utils import (
     SpectrogramModelCheckpoint,
     SpectrogramModelExampleBatch,
@@ -211,7 +220,7 @@ class _DistributedMetrics:
             return
 
         mask = lambda t: t.masked_select(spectrogram_mask)
-        weighted_stdev = lib.utils.get_weighted_stdev(alignments, dim=2)
+        weighted_stdev = lib.utils.get_weighted_std(alignments, dim=2)
         self.append(self.predicted_frame_alignment_std, mask(weighted_stdev))
         self.append(self.predicted_frame_alignment_norm, mask(alignments.norm(norm, dim=2)))
 
@@ -269,24 +278,25 @@ class _DistributedMetrics:
     def log(
         self,
         comet_ml: comet_ml.Experiment,
-        reduce_: typing.Callable[[typing.List[float]], float] = lambda l: l[-1],
+        reduce_: typing.Callable[[typing.List[float]], float],
+        dataset_type: DatasetType,
+        cadence: Cadence,
         num_frame_channels=HParam(),
-        **kwargs,
     ):
         """Log `self` to `comet_ml`.
 
         Args:
             comet_ml
             reduce_: If there is a list of measurements, this callable is used to reduce it.
-            num_frame_channels
-            **kwargs: Additional key-word arguments for `Labels`.
+            ...
         """
         div = lambda n, d, r=reduce_: r(n) / r(d) if len(n) > 0 and len(d) > 0 else None
         power_to_db = lambda t: lib.audio.power_to_db(torch.tensor(reduce_(t)))
         predicted_rms = div(self.predicted_frame_rms_level, self.num_frames_predicted, power_to_db)
         rms = div(self.frame_rms_level, self.num_frames, power_to_db)
 
-        model_stats = {
+        Stats = typing.Dict[str, typing.Optional[float]]
+        model_stats: Stats = {
             "alignment_norm": div(self.predicted_frame_alignment_norm, self.num_frames_predicted),
             "alignment_std": div(self.predicted_frame_alignment_std, self.num_frames_predicted),
             "average_relative_speed": div(self.num_frames_predicted, self.num_frames),
@@ -299,31 +309,31 @@ class _DistributedMetrics:
                 predicted_rms - rms if predicted_rms is not None and rms is not None else None
             ),
         }
-        dataset_stats = {
+        dataset_stats: Stats = {
             "data_loader_queue_size": div(self.data_queue_size, [1] * len(self.data_queue_size)),
             "average_rms_level": rms,
         }
-        for stats, format_ in [(model_stats, Labels.MODEL), (dataset_stats, Labels.DATASET)]:
+        partial = functools.partial(get_dataset_label, type_=dataset_type)
+        iterator: typing.List[typing.Tuple[Stats, typing.Callable[..., Label]]]
+        iterator = [(model_stats, get_model_label), (dataset_stats, partial)]
+        for stats, get_label in iterator:
             for name, value in stats.items():
                 if value is not None:
-                    comet_ml.log_metric(format_(name=name, **kwargs), value)
+                    comet_ml.log_metric(get_label(name, cadence=cadence), value)
 
         for speaker, count in self.num_frames_per_speaker.items():
-            label = lib.environment.text_to_label(speaker.name)
-            label = Labels.DATASET_SPEAKER(speaker=label, name="frequency", **kwargs)
+            label = partial("frequency", cadence=cadence, speaker=speaker)
             comet_ml.log_metric(label, count / sum(self.num_frames_per_speaker.values()))
 
         for bucket, count in self.num_examples_per_text_length.items():
             lower = bucket * self.text_length_bucket_size
             upper = (bucket + 1) * self.text_length_bucket_size
-            label = Labels.DATASET(name=f"{lower}_{upper}", **kwargs)
+            label = partial(f"{lower}_{upper}", cadence=cadence)
             comet_ml.log_metric(label, count / sum(self.num_examples_per_text_length.values()))
 
-        iterator = zip(self.num_tokens_per_speaker.items(), self.num_skips_per_speaker.values())
-        for (speaker, num_tokens), num_skips in iterator:
-            label = lib.environment.text_to_label(speaker.name)
-            label = Labels.MODEL_SPEAKER(speaker=label, name="skips", **kwargs)
-            comet_ml.log_metric(label, num_skips / num_tokens)
+        zip_ = zip(self.num_tokens_per_speaker.items(), self.num_skips_per_speaker.values())
+        for (speaker, num_tokens), num_skips in zip_:
+            comet_ml.log_metric(get_model_label("skips", cadence, speaker), num_skips / num_tokens)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -349,7 +359,9 @@ class _State:
             run._config.DATASET_PHONETIC_CHARACTERS,
             list(train_dataset.keys()),
         )
-        label = lambda n: Labels.DATASET(cadence=Labels.STATIC, name=n)
+        label = functools.partial(
+            get_dataset_label, cadence=Cadence.STATIC, type_=DatasetType.TRAIN
+        )
         stats = {
             label("grapheme_vocab_size"): input_encoder.grapheme_encoder.vocab_size,
             label("grapheme_vocab"): sorted(input_encoder.grapheme_encoder.vocab),
@@ -377,7 +389,7 @@ class _State:
             input_encoder.speaker_encoder.vocab_size,
         ).to(device)
         comet_ml.set_model_graph(str(model))
-        label = Labels.MODEL(cadence=Labels.STATIC, name="num_parameters")
+        label = get_model_label("num_parameters", Cadence.STATIC)
         comet_ml.log_parameter(label, get_total_parameters(model))
         return model
 
@@ -419,7 +431,9 @@ class _State:
         )
 
     @classmethod
-    def from_checkpoint(cls, checkpoint, device, comet_ml):
+    def from_checkpoint(
+        cls, checkpoint: pathlib.Path, device: torch.device, comet_ml: comet_ml.Experiment
+    ):
         """ Recreate the spectrogram training state from a `checkpoint`. """
         _, _, _, step, input_encoder, model, optimizer, clipper, scheduler = dataclasses.astuple(
             typing.cast(SpectrogramModelCheckpoint, lib.environment.load(checkpoint, device=device))
@@ -547,7 +561,8 @@ def _visualize_source_vs_target(
     predicted_spectrogram: torch.Tensor,
     predicted_stop_token: torch.Tensor,
     predicted_alignments: torch.Tensor,
-    **kwargs,
+    dataset_type: DatasetType,
+    cadence: Cadence,
 ):
     """Visualize predictions as compared to the original `batch`.
 
@@ -572,8 +587,8 @@ def _visualize_source_vs_target(
     predicted_delta = abs(gold_spectrogram - predicted_spectrogram)
     predicted_alignments = predicted_alignments[:spectrogram_length, item, :text_length]
     predicted_stop_token = predicted_stop_token[:spectrogram_length, item]
-    model = lambda n: Labels.MODEL(**kwargs, name=n)
-    dataset = lambda n: Labels.DATASET(**kwargs, name=n)
+    model = functools.partial(get_model_label, cadence=cadence)
+    dataset = functools.partial(get_dataset_label, cadence=cadence, type_=dataset_type)
     figures = {
         model("spectrogram_delta"): lib.visualize.plot_mel_spectrogram(predicted_delta),
         model("predicted_spectrogram"): lib.visualize.plot_mel_spectrogram(predicted_spectrogram),
@@ -590,6 +605,7 @@ def _run_step(
     metrics: _DistributedMetrics,
     batch: SpectrogramModelExampleBatch,
     data_loader: DataLoader,
+    dataset_type: DatasetType,
     visualize: bool = False,
     spectrogram_loss_scalar: float = HParam(),
     stop_token_min_loss: float = HParam(),
@@ -633,7 +649,7 @@ def _run_step(
         (spectrogram_loss_ + stop_token_loss_).backward()
 
         log_metric = lambda n, v: state.comet_ml.log_metric(
-            Labels.MODEL(cadence=Labels.STEP, name=n), v
+            get_model_label(n, cadence=Cadence.STEP), v
         )
         log_metric("grad_norm/two", get_parameter_norm(state.model.parameters(), 2))
         log_metric("grad_norm/inf", get_parameter_norm(state.model.parameters(), math.inf))
@@ -648,7 +664,7 @@ def _run_step(
 
     if visualize:
         _visualize_source_vs_target(
-            state, batch, frames, stop_token, alignment, cadence=Labels.STEP
+            state, batch, frames, stop_token, alignment, dataset_type, Cadence.STEP
         )
 
     # Update metrics, and log those updates.
@@ -671,7 +687,7 @@ def _run_step(
     metrics.append(metrics.stop_token_loss, stop_token_loss)
     if isinstance(data_loader.loader, _MultiProcessingDataLoaderIter):
         metrics.append(metrics.data_queue_size, data_loader.loader._data_queue.qsize())
-    metrics.log(state.comet_ml, cadence=Labels.STEP)
+    metrics.log(state.comet_ml, lambda l: l[-1], dataset_type, Cadence.STEP)
 
 
 def _visualize_inferred(
@@ -680,7 +696,8 @@ def _visualize_inferred(
     predicted_spectrogram: torch.Tensor,
     predicted_stop_token: torch.Tensor,
     predicted_alignments: torch.Tensor,
-    **kwargs,
+    dataset_type: DatasetType,
+    cadence: Cadence,
 ):
     """Run in inference mode and visualize results.
 
@@ -703,8 +720,8 @@ def _visualize_inferred(
     gold_spectrogram = batch.spectrogram.tensor[:num_frames, item]
     predicted_alignments = predicted_alignments[:num_frames, item, :text_length]
 
-    model = lambda n: Labels.MODEL(**kwargs, name=n)
-    dataset = lambda n: Labels.DATASET(**kwargs, name=n)
+    model = functools.partial(get_model_label, cadence=cadence)
+    dataset = functools.partial(get_dataset_label, cadence=cadence, type_=dataset_type)
     figures = {
         dataset("gold_spectrogram"): lib.visualize.plot_mel_spectrogram(gold_spectrogram),
         model("predicted_spectrogram"): lib.visualize.plot_mel_spectrogram(predicted_spectrogram),
@@ -732,6 +749,7 @@ def _run_inference(
     metrics: _DistributedMetrics,
     batch: SpectrogramModelExampleBatch,
     data_loader: DataLoader,
+    dataset_type: DatasetType,
     visualize: bool = False,
 ):
     """Run the model in inference mode, and measure it's results.
@@ -750,7 +768,9 @@ def _run_inference(
     )
 
     if visualize:
-        _visualize_inferred(state, batch, frames, stop_tokens, alignments, cadence=Labels.STEP)
+        _visualize_inferred(
+            state, batch, frames, stop_tokens, alignments, dataset_type, Cadence.STEP
+        )
 
     if lengths.numel() > 0:
         # NOTE: Remove predictions that diverged (reached max) as to not skew other metrics. We
@@ -779,7 +799,7 @@ def _run_inference(
 
 
 BatchHandler = typing.Callable[
-    [_State, _DistributedMetrics, SpectrogramModelExampleBatch, DataLoader, bool], None
+    [_State, _DistributedMetrics, SpectrogramModelExampleBatch, DataLoader, DatasetType, bool], None
 ]
 
 
@@ -809,23 +829,24 @@ def _run_worker(
         logger.info("Running Epoch %d, Step %d", epoch, state.step.item())
         comet_ml.log_current_epoch(epoch)
 
-        iterator: typing.List[typing.Tuple[Context, DataLoader, BatchHandler]] = [
-            (Context.TRAIN, train_loader, _run_step),
-            (Context.EVALUATE, dev_loader, _run_step),
-            (Context.EVALUATE_INFERENCE, dev_loader, _run_inference),
+        iterator: typing.List[typing.Tuple[Context, DatasetType, DataLoader, BatchHandler]] = [
+            (Context.TRAIN, DatasetType.TRAIN, train_loader, _run_step),
+            (Context.EVALUATE, DatasetType.DEV, dev_loader, _run_step),
+            (Context.EVALUATE_INFERENCE, DatasetType.DEV, dev_loader, _run_inference),
         ]
-        for context, data_loader, handle_batch in iterator:
+        for context, dataset_type, data_loader, handle_batch in iterator:
             with _set_context(context):
                 # TODO: `metrics` are not propagated and we might want to incorperate that for
                 # dataset metrics like `num_frames_per_speaker` or `num_examples_per_text_length`.
                 # In order to do so, we'd also need to checkpoint those metrics.
                 metrics = _DistributedMetrics()
                 for i, batch in zip(range(num_steps_per_epoch), data_loader):
-                    handle_batch(state, metrics, batch, data_loader, i == 0)
-                metrics.log(comet_ml=comet_ml, reduce_=sum, cadence=Labels.MULTI_STEP)
+                    handle_batch(state, metrics, batch, data_loader, dataset_type, i == 0)
+                    metrics.log(comet_ml, lambda l: l[-1], dataset_type, Cadence.STEP)
+                metrics.log(comet_ml, sum, dataset_type, Cadence.MULTI_STEP)
 
         lib.environment.save(
-            checkpoints_directory / f"step_{state.step.item()}{lib.environment.TORCH_EXTENSION}",
+            checkpoints_directory / f"step_{state.step.item()}{lib.environment.PT_EXTENSION}",
             state.to_checkpoint(checkpoints_directory),
         )
         comet_ml.log_epoch_end(epoch)
@@ -846,6 +867,7 @@ def _run(
     # NOTE: Load, preprocess, and cache dataset values.
     connection = run._utils.connect(run._config.DATABASE_PATH)
     train_dataset, dev_dataset = run._config.get_dataset(comet_ml)
+    comet_ml.log_parameters(run._utils.get_dataset_stats(train_dataset, dev_dataset))
     all_examples = lambda: list(chain(*tuple(chain(train_dataset.values(), dev_dataset.values()))))
     run._utils.update_audio_file_metadata(connection, [e.audio_path for e in all_examples()])
     for dataset in [train_dataset, dev_dataset]:
@@ -879,21 +901,21 @@ def _setup(
     # configured? Should we throw an error if not? Or should we create a new experiment, and ensure
     # that each experiments parameters are immutable?
     parameters = _configure(parsed)
-    params = {Labels.CONFIG(cadence=Labels.STATIC, name=k): v for k, v in parameters.items()}
+    params = {get_config_label(k, Cadence.STATIC): v for k, v in parameters.items()}
     comet_ml.log_parameters(params)
     return parsed, recorder
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-def restart(
+def resume(
     context: typer.Context,
     checkpoint: typing.Optional[pathlib.Path] = typer.Argument(
         None, help="Checkpoint file to restart training from."
     ),
 ):
-    """Restart training from CHECKPOINT. If CHECKPOINT is not given, the most recent checkpoint
+    """Resume training from CHECKPOINT. If CHECKPOINT is not given, the most recent checkpoint
     file is loaded."""
-    pattern = str(SPECTROGRAM_MODEL_EXPERIMENTS_PATH / f"**/*{lib.environment.TORCH_EXTENSION}")
+    pattern = str(SPECTROGRAM_MODEL_EXPERIMENTS_PATH / f"**/*{lib.environment.PT_EXTENSION}")
     if checkpoint:
         loaded = lib.environment.load(checkpoint)
     else:

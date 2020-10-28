@@ -1,10 +1,10 @@
+import enum
 import logging
 import math
 import pprint
 import random
 import typing
 
-import comet_ml
 import torch
 from hparams import HParams, add_config, configurable
 from third_party import LazyLoader
@@ -12,6 +12,7 @@ from torchnlp.random import fork_rng
 
 import lib
 import run
+from lib.datasets import Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import IPython
@@ -34,7 +35,7 @@ SAMPLE_RATE = 24000
 # 125 Hz to 7.6 kHz, followed by log dynamic range compression.
 # SOURCE (Tacotron 2 Author):
 # Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
-FRAME_CHANNELS = 128
+NUM_FRAME_CHANNELS = 128
 PHONEME_SEPARATOR = "|"
 
 TTS_DISK_CACHE_NAME = ".tts_cache"  # NOTE: Hidden directory stored in other directories for caching
@@ -66,6 +67,45 @@ class Context(enum.Enum):
     TRAIN: typing.Final = "train"
     EVALUATE: typing.Final = "evaluate"
     EVALUATE_INFERENCE: typing.Final = "evaluate_inference"
+
+
+class Cadence(enum.Enum):
+    STEP: typing.Final = "step"
+    MULTI_STEP: typing.Final = "multi_step"
+    STATIC: typing.Final = "static"
+
+
+class DatasetType(enum.Enum):
+    TRAIN: typing.Final = "train"
+    DEV: typing.Final = "dev"
+
+
+Label = typing.NewType("Label", str)
+
+
+def get_dataset_label(
+    name: str, cadence: Cadence, type_: DatasetType, speaker: typing.Optional[Speaker] = None
+) -> Label:
+    """ Label something related to a dataset. """
+    kwargs = dict(cadence=cadence, type=type_, name=name)
+    if speaker is None:
+        return Label("{cadence}/dataset/{type}/{name}".format(**kwargs))
+    speaker_ = lib.environment.text_to_label(speaker.name)
+    return Label("{cadence}/dataset/{type}/{speaker}/{name}".format(speaker=speaker_, **kwargs))
+
+
+def get_model_label(name: str, cadence: Cadence, speaker: typing.Optional[Speaker] = None) -> Label:
+    """ Label something related to the model. """
+    kwargs = dict(cadence=cadence, name=name)
+    if speaker is None:
+        return Label("{cadence}/model/{name}".format(**kwargs))
+    speaker_ = lib.environment.text_to_label(speaker.name)
+    return Label("{cadence}/model/{speaker}/{name}".format(speaker=speaker_, **kwargs))
+
+
+def get_config_label(name: str, cadence: Cadence) -> Label:
+    """ Label something related to a configuration. """
+    return Label("{cadence}/config/{name}".format(cadence=cadence, name=name))
 
 
 def _get_window(window: str, window_length: int, window_hop: int) -> torch.Tensor:
@@ -155,7 +195,7 @@ def configure_audio_processing():
             fft_length=fft_length,
             frame_hop=frame_hop,
             sample_rate=SAMPLE_RATE,
-            num_mel_bins=FRAME_CHANNELS,
+            num_mel_bins=NUM_FRAME_CHANNELS,
             # SOURCE (Tacotron 2):
             # Prior to log compression, the filterbank output magnitudes are clipped to a
             # minimum value of 0.01 in order to limit dynamic range in the logarithmic domain.
@@ -266,7 +306,7 @@ def configure_models():
             # bi-directional [19] LSTM [20] layer containing 512 units (256) in each
             # direction) to generate the encoded features.
             lstm_layers=1,
-            out_dim=encoder_output_size,
+            out_size=encoder_output_size,
         ),
         lib.spectrogram_model.attention.LocationRelativeAttention.__init__: HParams(
             # SOURCE (Tacotron 2):
@@ -289,7 +329,7 @@ def configure_models():
             # SOURCE (Tacotron 2):
             # The prediction from the previous time step is first passed through a small
             # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
-            pre_net_hidden_size=256,
+            pre_net_size=256,
             # SOURCE (Tacotron 2):
             # The prenet output and attention context vector are concatenated and
             # passed through a stack of 2 uni-directional LSTM layers with 1024 units.
@@ -302,16 +342,16 @@ def configure_models():
             num_layers=2
         ),
         lib.spectrogram_model.model.SpectrogramModel.__init__: HParams(
-            frame_channels=FRAME_CHANNELS,
+            num_frame_channels=NUM_FRAME_CHANNELS,
             # SOURCE (Transfer Learning from Speaker Verification to Multispeaker Text-To-Speech
             #         Synthesis):
             # The paper mentions their proposed model uses a 256 dimension embedding.
             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to learn more about
             # this parameter.
-            speaker_embedding_dim=128,
+            speaker_embedding_size=128,
         ),
         lib.signal_model.SignalModel.__init__: HParams(
-            input_size=FRAME_CHANNELS, hidden_size=32, max_channel_size=512
+            input_size=NUM_FRAME_CHANNELS, hidden_size=32, max_channel_size=512
         ),
         # NOTE: We found this hidden size to be effective on Comet in April 2020.
         lib.signal_model.SpectrogramDiscriminator.__init__: HParams(hidden_size=512),
@@ -379,32 +419,10 @@ def configure():
     add_config(config)
 
 
-Dataset = typing.Dict[lib.datasets.Speaker, typing.List[lib.datasets.Example]]
+Dataset = typing.Dict[Speaker, typing.List[lib.datasets.Example]]
 
 
-def _get_dataset_stats(train: Dataset, dev: Dataset) -> typing.Dict[str, typing.Union[str, int]]:
-    """Get `train` and `dev` dataset statistics.
-
-    TODO: Test this.
-    """
-    # NOTE: `len_` assumes the entire example is usable.
-    len_ = lambda d: sum(e.alignments[-1].audio[1] - e.alignments[0].audio[0] for e in d)
-    stats: typing.Dict[str, typing.Union[int, str]] = {}
-    for data, name in [(train, "train"), (dev, "dev")]:
-        stats[f"{name}_num_examples"] = sum(len(e) for e in data.values())
-        stats[f"{name}_num_characters"] = sum(sum(len(e.text) for e in v) for v in data.values())
-        stats[f"{name}_num_seconds"] = lib.utils.seconds_to_string(
-            sum(len_(e) for e in data.values())
-        )
-        for speaker, examples in data.items():
-            label = lib.environment.text_to_label(speaker.name)
-            stats[f"{name}_{label}_num_examples"] = len(examples)
-            stats[f"{name}_{label}_num_characters"] = sum(len_(e.text) for e in examples)
-            stats[f"{name}_{label}_num_seconds"] = lib.utils.seconds_to_string(len_(examples))
-    return stats
-
-
-def _get_dataset(dev_size: int = 60 * 60) -> typing.Tuple[Dataset, Dataset]:
+def get_dataset(dev_size: int = 60 * 60) -> typing.Tuple[Dataset, Dataset]:
     """Define the dataset to train and evaluate the TTS models on.
 
     NOTE: Elliot Miller is not included due to his unannotated character portrayals.
@@ -440,25 +458,6 @@ def _get_dataset(dev_size: int = 60 * 60) -> typing.Tuple[Dataset, Dataset]:
         return train, dev
 
 
-def get_dataset(
-    comet_ml: typing.Union[comet_ml.Experiment, comet_ml.ExistingExperiment],
-    dev_size: int = 60 * 60,
-) -> typing.Tuple[Dataset, Dataset]:
-    """Define the dataset to train and evaluate the TTS models on.
-
-    Args:
-        comet_ml
-        dev_size: Number of seconds per speaker in the development dataset.
-
-    Returns:
-        train
-        dev
-    """
-    train, dev = _get_dataset(dev_size)
-    comet_ml.log_parameters(_get_dataset_stats(train, dev))
-    return train, dev
-
-
 def _include_example(example: lib.datasets.Example) -> bool:
     """Return `True` iff `example` should be included in the dataset.
 
@@ -471,6 +470,9 @@ def _include_example(example: lib.datasets.Example) -> bool:
     - Does the starting and ending alignment make sense? Or does it cut off?
     - Get an accurate prediction of audio length by removing silence.
     - Don't filter out an entire example if it has numbers, and slice the example first.
+    - Should we filter out an entire example if there is a very long pause or a lot of words
+      missing? We might have a hard time with singular slices but we might know if a script
+      has a big screw up.
     """
     assert example.alignments is not None
     assert lib.text.is_normalized_vo_script(example.text)
