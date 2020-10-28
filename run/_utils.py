@@ -217,7 +217,9 @@ def normalize_audio(
         dataset[speaker] = [e._replace(audio_path=normalize(e.audio_path)) for e in examples]
 
 
-format_ffmpeg_audio_filter = lambda n, **kw: f"{n}=" + ":".join(["%s=%s" % i for i in kw.items()])
+def format_ffmpeg_audio_filter(name: str, **kwargs: typing.Union[str, int, float]):
+    """ Format audio filter flag for ffmpeg. """
+    return f"{name}=" + ":".join([f"{k}={v}" for k, v in kwargs.items()])
 
 
 @configurable

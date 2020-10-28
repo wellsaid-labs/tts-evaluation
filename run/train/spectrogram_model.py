@@ -457,7 +457,7 @@ class _State:
         return cls(input_encoder, distributed_model, *cls._get_optimizers(model), comet_ml, device)
 
 
-class _IterableDataset(torch.utils.data.IterableDataset):
+class _DataIterator(torch.utils.data.IterableDataset):
     def __init__(
         self,
         dataset: run._config.Dataset,
@@ -501,10 +501,10 @@ class _IterableDataset(torch.utils.data.IterableDataset):
             yield from sorted(examples, key=lambda e: e.spectrogram.shape[0])
 
 
-class DataLoader(collections.Iterable):
+class _DataLoader(collections.Iterable):
     """Load and batch examples given a dataset `iterator`."""
 
-    def __init__(self, iterator: _IterableDataset, batch_size: int, device: torch.device, **kwargs):
+    def __init__(self, iterator: _DataIterator, batch_size: int, device: torch.device, **kwargs):
         self.device = device
         self.iterator = iterator
         loader = torch.utils.data.dataloader.DataLoader(
@@ -534,20 +534,20 @@ def _get_data_loaders(
     dev_batch_size: int = HParam(),
     bucket_size_multiplier: int = HParam(),
     num_workers: int = HParam(),
-) -> typing.Tuple[DataLoader, DataLoader]:
+) -> typing.Tuple[_DataLoader, _DataLoader]:
     """ Initialize training and development data loaders.  """
     bucket_size = bucket_size_multiplier * train_batch_size
-    _IterableDatasetPartial = functools.partial(
-        _IterableDataset,
+    _DataIteratorPartial = functools.partial(
+        _DataIterator,
         connection=connection,
         input_encoder=state.input_encoder,
         comet_ml=state.comet_ml,
         bucket_size=bucket_size,
     )
-    DataLoaderPartial = functools.partial(DataLoader, num_workers=num_workers, device=state.device)
+    DataLoaderPartial = functools.partial(_DataLoader, num_workers=num_workers, device=state.device)
     return (
-        DataLoaderPartial(_IterableDatasetPartial(train_dataset), train_batch_size),
-        DataLoaderPartial(_IterableDatasetPartial(dev_dataset), dev_batch_size),
+        DataLoaderPartial(_DataIteratorPartial(train_dataset), train_batch_size),
+        DataLoaderPartial(_DataIteratorPartial(dev_dataset), dev_batch_size),
     )
 
 
@@ -600,7 +600,7 @@ def _run_step(
     state: _State,
     metrics: _DistributedMetrics,
     batch: SpectrogramModelExampleBatch,
-    data_loader: DataLoader,
+    data_loader: _DataLoader,
     dataset_type: DatasetType,
     visualize: bool = False,
     spectrogram_loss_scalar: float = HParam(),
@@ -744,7 +744,7 @@ def _run_inference(
     state: _State,
     metrics: _DistributedMetrics,
     batch: SpectrogramModelExampleBatch,
-    data_loader: DataLoader,
+    data_loader: _DataLoader,
     dataset_type: DatasetType,
     visualize: bool = False,
 ):
@@ -794,8 +794,9 @@ def _run_inference(
     metrics.append(metrics.num_reached_max_frames, reached_max)
 
 
-BatchHandler = typing.Callable[
-    [_State, _DistributedMetrics, SpectrogramModelExampleBatch, DataLoader, DatasetType, bool], None
+_BatchHandler = typing.Callable[
+    [_State, _DistributedMetrics, SpectrogramModelExampleBatch, _DataLoader, DatasetType, bool],
+    None,
 ]
 
 
@@ -825,7 +826,7 @@ def _run_worker(
         logger.info("Running Epoch %d, Step %d", epoch, state.step.item())
         comet_ml.log_current_epoch(epoch)
 
-        iterator: typing.List[typing.Tuple[Context, DatasetType, DataLoader, BatchHandler]] = [
+        iterator: typing.List[typing.Tuple[Context, DatasetType, _DataLoader, _BatchHandler]] = [
             (Context.TRAIN, DatasetType.TRAIN, train_loader, _run_step),
             (Context.EVALUATE, DatasetType.DEV, dev_loader, _run_step),
             (Context.EVALUATE_INFERENCE, DatasetType.DEV, dev_loader, _run_inference),
