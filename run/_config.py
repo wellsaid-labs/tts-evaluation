@@ -408,35 +408,45 @@ def configure():
 Dataset = typing.Dict[Speaker, typing.List[datasets.Example]]
 
 
-@fork_rng_wrap(seed=123)
-def get_dataset(dev_size: int = 60 * 60) -> typing.Tuple[Dataset, Dataset]:
-    """Define the dataset to train and develop the TTS models with.
+def get_dataset(path=DATA_PATH) -> Dataset:
+    """Define a TTS dataset.
 
     NOTE: Elliot Miller is not included due to his unannotated character portrayals.
 
     Args:
+        path: Directory to cache the dataset.
+    """
+    logger.info("Loading dataset...")
+    return {
+        datasets.HILARY_NORIEGA: datasets.hilary_noriega_speech_dataset(path),
+        datasets.LINDA_JOHNSON: datasets.lj_speech_dataset(path),
+        datasets.JUDY_BIEBER: datasets.m_ailabs_en_us_judy_bieber_speech_dataset(path),
+        datasets.MARY_ANN: datasets.m_ailabs_en_us_mary_ann_speech_dataset(path),
+        datasets.ELIZABETH_KLETT: datasets.m_ailabs_en_uk_elizabeth_klett_speech_dataset(path),
+    }
+
+
+@fork_rng_wrap(seed=123)
+def split_dataset(
+    dataset: Dataset, dev_speakers=set([datasets.HILARY_NORIEGA]), dev_size: int = 60 * 60
+) -> typing.Tuple[Dataset, Dataset]:
+    """Split the dataset into a train set and development set.
+
+    NOTE: The RNG state should never change; otherwise, the training and dev datasets may be
+    different from experiment to experiment.
+
+    Args:
+        ...
+        dev_speakers: Speakers to include in the development set.
         dev_size: Number of seconds per speaker in the development dataset.
     """
-    # NOTE: This `seed` should never change; otherwise, the training and dev datasets may be
-    # different from experiment to experiment.
-    logger.info("Loading dataset...")
-    dev = {}
-    train = {}
-
-    iterator = [
-        (datasets.HILARY_NORIEGA, datasets.hilary_noriega_speech_dataset(DATA_PATH)),
-    ]
-    for speaker, examples in iterator:
-        train[speaker], dev[speaker] = run._utils.split_examples(examples, dev_size)
-
-    train[datasets.LINDA_JOHNSON] = datasets.lj_speech_dataset(DATA_PATH)
-    train[datasets.JUDY_BIEBER] = datasets.m_ailabs_en_us_judy_bieber_speech_dataset(DATA_PATH)
-    train[datasets.MARY_ANN] = datasets.m_ailabs_en_us_mary_ann_speech_dataset(DATA_PATH)
-    train[datasets.ELIZABETH_KLETT] = datasets.m_ailabs_en_uk_elizabeth_klett_speech_dataset(
-        DATA_PATH
-    )
-
-    return train, dev
+    dev, train = {}, {}
+    for speaker, examples in dataset.items():
+        if speaker in dev_speakers:
+            train[speaker], dev[speaker] = run._utils.split_examples(examples, dev_size)
+        else:
+            train[speaker] = examples
+    return dev, train
 
 
 def _include_example(example: datasets.Example) -> bool:

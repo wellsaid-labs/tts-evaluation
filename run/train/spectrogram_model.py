@@ -863,14 +863,14 @@ def _run(
 
     # NOTE: Load, preprocess, and cache dataset values.
     connection = run._utils.connect(run._config.DATABASE_PATH)
-    train_dataset, dev_dataset = run._config.get_dataset(comet_ml)
+    dataset = run._config.get_dataset()
+    all_examples = lambda: list(chain(*tuple(dataset.values())))
+    run._utils.update_audio_file_metadata(connection, [e.audio_path for e in all_examples()])
+    run._utils.normalize_audio(dataset)
+    run._utils.update_audio_file_metadata(connection, [e.audio_path for e in all_examples()])
+    run._utils.handle_null_alignments(connection, dataset)
+    train_dataset, dev_dataset = run._config.split_dataset(dataset)
     comet_ml.log_parameters(run._utils.get_dataset_stats(train_dataset, dev_dataset))
-    all_examples = lambda: list(chain(*tuple(chain(train_dataset.values(), dev_dataset.values()))))
-    run._utils.update_audio_file_metadata(connection, [e.audio_path for e in all_examples()])
-    for dataset in [train_dataset, dev_dataset]:
-        run._utils.handle_null_alignments(connection, dataset)
-        run._utils.normalize_audio(dataset)
-    run._utils.update_audio_file_metadata(connection, [e.audio_path for e in all_examples()])
 
     return lib.distributed.spawn(
         _run_worker.get_configured_partial(),  # type: ignore
