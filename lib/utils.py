@@ -109,7 +109,11 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
 
 
 def flatten(l: typing.List[typing.Any]) -> typing.List[typing.Any]:
-    """ Flatten a list of lists into a list. """
+    """Flatten a list of lists into a list.
+
+    TODO: Add proper typing once recursive typing is supported in `mypy`:
+    https://github.com/python/mypy/issues/731
+    """
     return sum(map(flatten, l), []) if isinstance(l, list) else [l]
 
 

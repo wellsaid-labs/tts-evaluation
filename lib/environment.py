@@ -22,7 +22,7 @@ import lib
 
 logger = logging.getLogger(__name__)
 
-ROOT_PATH = Path(__file__).parents[1].resolve()  # Repository root path
+ROOT_PATH: Path = Path(__file__).parents[1].resolve()  # Repository root path
 
 IS_TESTING_ENVIRONMENT: bool = "pytest" in sys.modules
 

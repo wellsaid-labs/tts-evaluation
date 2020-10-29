@@ -39,14 +39,14 @@ class AudioFileMetadata(typing.NamedTuple):
     Args:
       path: The audio file path.
       sample_rate: The sample rate of the audio.
-      channels: The number of audio channels in the audio file.
+      num_channels: The number of audio channels in the audio file.
       encoding: The encoding of the audio file (e.g. "32-bit Floating Point PCM").
       length: The duration of the audio file in seconds.
     """
 
     path: Path
     sample_rate: int
-    channels: int
+    num_channels: int
     encoding: str
     length: float
 
@@ -61,12 +61,12 @@ def _parse_audio_metadata(metadata: str) -> AudioFileMetadata:
     """
     splits = [s.split(":", maxsplit=1)[1].strip() for s in metadata.strip().split("\n")]
     audio_path = str(splits[0][1:-1])
-    channels = int(splits[1])
+    num_channels = int(splits[1])
     sample_rate = int(splits[2])
     assert splits[4].split()[3] == "samples"
     length = float(splits[4].split()[2]) / sample_rate
     encoding = splits[-1]
-    return AudioFileMetadata(Path(audio_path), sample_rate, channels, encoding, length)
+    return AudioFileMetadata(Path(audio_path), sample_rate, num_channels, encoding, length)
 
 
 def _get_audio_metadata_helper(
@@ -161,6 +161,54 @@ def write_audio(
     if audio.size > 0:
         assert np.max(audio) <= 1.0 and np.min(audio) >= -1.0, "Signal must be in range [-1, 1]."
     scipy_wavfile.write(path, sample_rate, audio)
+
+
+AudioFilter = typing.NewType("AudioFilter", str)
+
+
+def format_ffmpeg_audio_filter(name: str, **kwargs: typing.Union[str, int, float]) -> AudioFilter:
+    """ Format ffmpeg audio filter flag "-af". """
+    return typing.cast(AudioFilter, f"{name}=" + ":".join([f"{k}={v}" for k, v in kwargs.items()]))
+
+
+AudioFilters = typing.NewType("AudioFilters", str)
+
+
+def format_ffmpeg_audio_filters(filters: typing.List[AudioFilter]) -> AudioFilters:
+    """ Format ffmpeg audio filter flag "-af". """
+    return typing.cast(AudioFilters, ",".join(filters))
+
+
+@configurable
+def normalize_audio(
+    source: Path,
+    destination: Path,
+    encoding: str = HParam(),
+    sample_rate: int = HParam(),
+    num_channels: int = HParam(),
+    audio_filters: AudioFilters = AudioFilters(""),
+):
+    """Normalize the audio `encoding`, `sample_rate` and `num_channels`. Additionally, this
+    can apply `audio_filters`."""
+    command = "" if len(audio_filters) == 0 else f"-af {audio_filters}"
+    command = (
+        f"ffmpeg -i {source.absolute()} -acodec {encoding} -ar {sample_rate} -ac {num_channels} "
+        f"{command} {destination.absolute()}"
+    )
+    subprocess.run(command.split(), check=True)
+
+
+@configurable
+def assert_audio_normalized(
+    metadata: AudioFileMetadata,
+    encoding: str = HParam(),
+    sample_rate: int = HParam(),
+    num_channels: int = HParam(),
+):
+    """Assert audio `metadata` was normalized. """
+    assert metadata.sample_rate == sample_rate
+    assert metadata.num_channels == num_channels
+    assert metadata.encoding == encoding
 
 
 @configurable

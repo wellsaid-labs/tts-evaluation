@@ -11,7 +11,7 @@ from hparams import HParams
 from torchnlp.random import fork_rng
 
 import lib
-from lib.spectrogram_model import SpectrogramModel
+from lib.spectrogram_model import Mode, SpectrogramModel
 from lib.spectrogram_model.attention import (
     LocationRelativeAttention,
     LocationRelativeAttentionHiddenState,
@@ -274,7 +274,7 @@ def test_spectrogram_model():
         _mock_model(model)
 
         frames, stop_tokens, alignments, lengths, reached_max = model(
-            tokens, speaker, num_tokens=num_tokens, mode="infer", use_tqdm=True
+            tokens, speaker, num_tokens=num_tokens, mode=Mode.INFER, use_tqdm=True
         )
 
         assert frames.dtype == torch.float
@@ -379,7 +379,7 @@ def test_spectrogram_model__stop():
         _mock_model(model)
 
         frames, stop_tokens, alignments, lengths, reached_max = model(
-            tokens, speaker, num_tokens=num_tokens, mode="infer"
+            tokens, speaker, num_tokens=num_tokens, mode=Mode.INFER
         )
 
         max_lengths = torch.clamp((num_tokens.float() * params.max_frames_per_token).long(), min=1)
@@ -404,7 +404,7 @@ def test_spectrogram_model__infer_train():
 
     with fork_rng(seed=123):
         frames, stop_token, alignment, lengths, *_ = model(
-            tokens, speaker, num_tokens=num_tokens, mode="infer"
+            tokens, speaker, num_tokens=num_tokens, mode=Mode.INFER
         )
 
     with fork_rng(seed=123):
@@ -415,7 +415,7 @@ def test_spectrogram_model__infer_train():
             target_frames=frames,
             target_lengths=lengths,
             target_stop_token=torch.zeros(frames.shape[0], params.batch_size),
-            mode="forward",
+            mode=Mode.FORWARD,
         )
 
     assert_almost_equal(frames, aligned_frames)
@@ -431,12 +431,14 @@ def test_spectrogram_model__infer_generate():
 
     with fork_rng(seed=123):
         frames, stop_token, alignment, lengths, reached_max = model.eval()(
-            tokens, speaker, num_tokens=num_tokens, mode="infer"
+            tokens, speaker, num_tokens=num_tokens, mode=Mode.INFER
         )
 
     for i in [1, 8, 11]:
         with fork_rng(seed=123):
-            generator = model(tokens, speaker, num_tokens=num_tokens, mode="generate", split_size=i)
+            generator = model(
+                tokens, speaker, num_tokens=num_tokens, mode=Mode.GENERATE, split_size=i
+            )
             generated = tuple(zip(*list(generator)))
 
         assert_almost_equal(frames, torch.cat(generated[0]))
@@ -469,14 +471,14 @@ def test_spectrogram_model__infer_batch_padding_invariance():
             batch_alignment,
             batch_lengths,
             batch_reached_max,
-        ) = model.eval()(tokens, speaker, num_tokens=num_tokens, mode="infer")
+        ) = model.eval()(tokens, speaker, num_tokens=num_tokens, mode=Mode.INFER)
 
     for i in range(params.batch_size):
         set_stop_token_rand_offset(i)
         num_tokens_ = typing.cast(int, num_tokens[i].item())
         with fork_rng(seed=123):
             frames, stop_token, alignment, lengths, reached_max = model(
-                tokens[:num_tokens_, i : i + 1], speaker[:, i : i + 1], mode="infer"
+                tokens[:num_tokens_, i : i + 1], speaker[:, i : i + 1], mode=Mode.INFER
             )
         length = typing.cast(int, batch_lengths[0, i].item())
         assert_almost_equal(reached_max, batch_reached_max[:, i : i + 1])
@@ -551,7 +553,7 @@ def test_spectrogram_model__filter_reached_max():
             speaker,
             num_tokens=num_tokens,
             filter_reached_max=True,
-            mode="infer",
+            mode=Mode.INFER,
         )
 
         num_reached_max = reached_max.sum().item()
@@ -594,7 +596,7 @@ def test_spectrogram_model__filter_reached_max_all():
     torch.nn.init.constant_(model.decoder.linear_stop_token[-1].bias, -math.inf)
 
     frames, stop_tokens, alignments, lengths, reached_max = model(
-        tokens, speaker, num_tokens=num_tokens, filter_reached_max=True, mode="infer"
+        tokens, speaker, num_tokens=num_tokens, filter_reached_max=True, mode=Mode.INFER
     )
 
     assert frames.dtype == torch.float
@@ -773,7 +775,7 @@ def test_spectrogram_model__version():
         model = _make_spectrogram_model(params, stop_threshold=0.5)
         with torch.no_grad():
             frames, stop_tokens, alignments, lengths, reached_max = model(
-                tokens, speaker, num_tokens=num_tokens, mode="infer"
+                tokens, speaker, num_tokens=num_tokens, mode=Mode.INFER
             )
 
         for name, parameter in model.named_parameters():
@@ -803,7 +805,7 @@ def test_spectrogram_model__version():
             target_frames=frames,
             target_lengths=lengths,
             target_stop_token=torch.zeros(frames.shape[0], params.batch_size),
-            mode="forward",
+            mode=Mode.FORWARD,
         )
 
         (spectrogram_loss.sum() + stop_token_loss.sum()).backward()

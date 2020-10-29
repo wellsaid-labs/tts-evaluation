@@ -1,5 +1,6 @@
 import itertools
 import pathlib
+import shutil
 import tempfile
 from functools import partial
 
@@ -81,7 +82,7 @@ def test__parse_audio_metadata():
     assert metadata == lib.audio.AudioFileMetadata(
         path=pathlib.Path("data/Heather Doe/03 Recordings/Heather_4-21.wav"),
         sample_rate=44100,
-        channels=1,
+        num_channels=1,
         encoding="24-bit Signed Integer PCM",
         length=13588.089818594104,
     )
@@ -92,7 +93,7 @@ def test_get_audio_metadata():
     assert lib.audio.get_audio_metadata([TEST_DATA_LJ])[0] == lib.audio.AudioFileMetadata(
         path=TEST_DATA_LJ,
         sample_rate=24000,
-        channels=1,
+        num_channels=1,
         encoding="32-bit Floating Point PCM",
         length=7.583958333333333,
     )
@@ -105,7 +106,7 @@ def test_get_audio_metadata__large_batch():
         assert metadata == lib.audio.AudioFileMetadata(
             path=TEST_DATA_LJ,
             sample_rate=24000,
-            channels=1,
+            num_channels=1,
             encoding="32-bit Floating Point PCM",
             length=7.583958333333333,
         )
@@ -118,7 +119,7 @@ def test_get_audio_metadata__multiple_channels():
     ] == lib.audio.AudioFileMetadata(
         path=TEST_DATA_LJ_MULTI_CHANNEL,
         sample_rate=24000,
-        channels=2,
+        num_channels=2,
         encoding="32-bit Floating Point PCM",
         length=7.583958333333333,
     )
@@ -163,7 +164,7 @@ def test_write_audio__read_audio():
         lib.audio.write_audio(copy, audio)
         copy_metadata = lib.audio.get_audio_metadata([copy])[0]
         assert metadata.sample_rate == copy_metadata.sample_rate
-        assert metadata.channels == copy_metadata.channels
+        assert metadata.num_channels == copy_metadata.num_channels
         assert metadata.encoding == copy_metadata.encoding
         assert metadata.length == copy_metadata.length
         np.testing.assert_almost_equal(audio, lib.audio.read_audio(copy))
@@ -191,6 +192,78 @@ def test_write_audio__bounds():
         path = pathlib.Path(directory) / "invalid.wav"
         with pytest.raises(AssertionError):
             lib.audio.write_audio(path, np.array([1.1, 1.2, -3.0, -2.0], dtype=np.float64))
+
+
+def test_format_ffmpeg_audio_filter():
+    """Test `lib.audio.format_ffmpeg_audio_filter` parameterizes an `ffmpeg` audio
+    filter correctly."""
+    result = lib.audio.format_ffmpeg_audio_filter(
+        "loudnorm",
+        integrated_loudness=-21,
+        loudness_range=4,
+        true_peak=-6.1,
+        print_format="summary",
+    )
+    assert result == lib.audio.AudioFilter(
+        "loudnorm=integrated_loudness=-21:loudness_range=4:true_peak=-6.1:print_format=summary"
+    )
+
+
+def test_format_ffmpeg_audio_filters():
+    """Test `lib.audio.format_ffmpeg_audio_filters` parameterizes an `ffmpeg` audio
+    filter, with multiple filters, correctly."""
+    result = lib.audio.format_ffmpeg_audio_filters(
+        [
+            lib.audio.format_ffmpeg_audio_filter(
+                "acompressor",
+                threshold=0.032,
+                ratio=12,
+                attack=325,
+                release=390,
+                knee=6,
+                detection="rms",
+                makeup=4,
+            ),
+            lib.audio.format_ffmpeg_audio_filter("equalizer", f=200, t="q", w=0.6, g=-2.4),
+            lib.audio.format_ffmpeg_audio_filter(
+                "loudnorm",
+                integrated_loudness=-21,
+                loudness_range=4,
+                true_peak=-6.1,
+                print_format="summary",
+            ),
+        ]
+    )
+    assert result == lib.audio.AudioFilters(
+        "acompressor=threshold=0.032:ratio=12:attack=325:release=390:knee=6:detection=rms:makeup=4,"
+        "equalizer=f=200:t=q:w=0.6:g=-2.4,loudnorm=integrated_loudness=-21:loudness_range=4:"
+        "true_peak=-6.1:print_format=summary"
+    )
+
+
+def test_normalize_audio__assert_audio_normalized():
+    """Test `lib.audio.normalize_audio` normalizes audio and `lib.audio.assert_audio_normalized`
+    checks."""
+    sox_encoding = "16-bit Signed Integer PCM"
+    ffmpeg_encoding = "pcm_s16le"
+    sample_rate = 8000
+    num_channels = 2
+    with tempfile.TemporaryDirectory() as path:
+        directory = pathlib.Path(path)
+        audio_path = directory / TEST_DATA_LJ.name
+        shutil.copy(TEST_DATA_LJ, audio_path)
+        new_audio_path = directory / ("new_" + TEST_DATA_LJ.name)
+        lib.audio.normalize_audio(
+            audio_path, new_audio_path, ffmpeg_encoding, sample_rate, num_channels
+        )
+        metadata = lib.audio.get_audio_metadata([audio_path])[0]
+        new_metadata = lib.audio.AudioFileMetadata(
+            new_audio_path, sample_rate, num_channels, sox_encoding, 7.584
+        )
+        assert lib.audio.get_audio_metadata([new_audio_path])[0] == new_metadata
+    lib.audio.assert_audio_normalized(new_metadata, sox_encoding, sample_rate, num_channels)
+    with pytest.raises(AssertionError):
+        lib.audio.assert_audio_normalized(metadata, sox_encoding, sample_rate, num_channels)
 
 
 def test_pad_remainder():
