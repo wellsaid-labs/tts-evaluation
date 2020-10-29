@@ -87,7 +87,7 @@ def get_dataset_label(
     name: str, cadence: Cadence, type_: DatasetType, speaker: typing.Optional[Speaker] = None
 ) -> Label:
     """ Label something related to a dataset. """
-    kwargs = dict(cadence=cadence, type=type_, name=name)
+    kwargs = dict(cadence=cadence.value, type=type_.value, name=name)
     if speaker is None:
         return Label("{cadence}/dataset/{type}/{name}".format(**kwargs))
     speaker_ = lib.environment.text_to_label(speaker.name)
@@ -96,7 +96,7 @@ def get_dataset_label(
 
 def get_model_label(name: str, cadence: Cadence, speaker: typing.Optional[Speaker] = None) -> Label:
     """ Label something related to the model. """
-    kwargs = dict(cadence=cadence, name=name)
+    kwargs = dict(cadence=cadence.value, name=name)
     if speaker is None:
         return Label("{cadence}/model/{name}".format(**kwargs))
     speaker_ = lib.environment.text_to_label(speaker.name)
@@ -105,7 +105,7 @@ def get_model_label(name: str, cadence: Cadence, speaker: typing.Optional[Speake
 
 def get_config_label(name: str, cadence: Cadence) -> Label:
     """ Label something related to a configuration. """
-    return Label("{cadence}/config/{name}".format(cadence=cadence, name=name))
+    return Label("{cadence}/config/{name}".format(cadence=cadence.value, name=name))
 
 
 def _get_window(window: str, window_length: int, window_hop: int) -> torch.Tensor:

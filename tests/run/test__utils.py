@@ -391,3 +391,58 @@ def test_get_rms_level__precise():
     )
     rms = run._utils.get_rms_level(db_spectrogram, window=window)
     _utils.assert_almost_equal(rms / (sample_rate / frame_hop), torch.Tensor([1.0, 0.49999998418]))
+
+
+def test_get_dataset_stats():
+    """ Test `run._utils.get_dataset_stats` measures dataset statistics correctly. """
+    _example = lambda a, b, s: lib.datasets.Example(
+        pathlib.Path(str(a)), s, (lib.datasets.Alignment((a, b), (a * 10, b * 10)),), "t" * (b - a)
+    )
+    a = lib.datasets.Speaker("a")
+    b = lib.datasets.Speaker("b")
+    train = {a: [_example(0, 2, a), _example(2, 4, a)], b: [_example(0, 1, a)]}
+    stats = run._utils.get_dataset_stats(train, {})
+    get_dataset_label = lambda n, t, s=None: run._config.get_dataset_label(
+        n, cadence=run._config.Cadence.STATIC, type_=t, speaker=s
+    )
+    assert stats == {
+        get_dataset_label("num_examples", run._config.DatasetType.TRAIN): 3,
+        get_dataset_label("num_characters", run._config.DatasetType.TRAIN): 5,
+        get_dataset_label("num_seconds", run._config.DatasetType.TRAIN): "50s 0ms",
+        get_dataset_label("num_examples", run._config.DatasetType.TRAIN, a): 2,
+        get_dataset_label("num_characters", run._config.DatasetType.TRAIN, a): 4,
+        get_dataset_label("num_seconds", run._config.DatasetType.TRAIN, a): "40s 0ms",
+        get_dataset_label("num_examples", run._config.DatasetType.TRAIN, b): 1,
+        get_dataset_label("num_characters", run._config.DatasetType.TRAIN, b): 1,
+        get_dataset_label("num_seconds", run._config.DatasetType.TRAIN, b): "10s 0ms",
+        get_dataset_label("num_examples", run._config.DatasetType.DEV): 0,
+        get_dataset_label("num_characters", run._config.DatasetType.DEV): 0,
+        get_dataset_label("num_seconds", run._config.DatasetType.DEV): "0ms",
+    }
+
+
+def test_get_num_skipped():
+    """ Test `run._utils.get_num_skipped` counts skipped tokens correctly. """
+    alignments_ = [
+        [[1, 0, 0], [0, 1, 0], [0, 0, 1]],  # Test no skips
+        [[1, 0, 0], [0, 1, 0], [0, 1, 0]],  # Test skipped
+        [[1, 0, 0], [0, 1, 0], [0, 1, 0]],
+        [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+    ]
+    alignments = torch.tensor(alignments_).transpose(0, 1).float()
+    spectrogram_mask_ = [
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 0],  # Test that a masked frame is ignored
+    ]
+    spectrogram_mask = torch.tensor(spectrogram_mask_).transpose(0, 1).bool()
+    token_mask_ = [
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 0],  # Test that a masked token cannot be skipped
+        [1, 1, 1],
+    ]
+    token_mask = torch.tensor(token_mask_).bool()
+    num_skips = run._utils.get_num_skipped(alignments, token_mask, spectrogram_mask)
+    assert num_skips.tolist() == [0.0, 1.0, 0.0, 1.0]

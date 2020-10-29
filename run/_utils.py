@@ -753,12 +753,9 @@ def get_rms_level(
 
 
 def get_dataset_stats(train: Dataset, dev: Dataset) -> typing.Dict[str, typing.Union[str, int]]:
-    """Get `train` and `dev` dataset statistics.
-
-    TODO: Test this.
-    """
+    """Get `train` and `dev` dataset statistics."""
     # NOTE: `len_` assumes the entire example is usable.
-    len_ = lambda d: sum(e.alignments[-1].audio[1] - e.alignments[0].audio[0] for e in d)
+    len_ = lambda d: sum(e.alignments[-1].audio[-1] - e.alignments[0].audio[0] for e in d)
     stats: typing.Dict[str, typing.Union[int, str]] = {}
     for data, type_ in [(train, DatasetType.TRAIN), (dev, DatasetType.DEV)]:
         label = functools.partial(get_dataset_label, cadence=Cadence.STATIC, type_=type_)
@@ -768,6 +765,34 @@ def get_dataset_stats(train: Dataset, dev: Dataset) -> typing.Dict[str, typing.U
         for speaker, examples in data.items():
             label = functools.partial(label, speaker=speaker)
             stats[label("num_examples")] = len(examples)
-            stats[label("num_characters")] = sum(len_(e.text) for e in examples)
+            stats[label("num_characters")] = sum(len(e.text) for e in examples)
             stats[label("num_seconds")] = seconds_to_string(len_(examples))
     return stats
+
+
+def get_num_skipped(
+    alignments: torch.Tensor, token_mask: torch.Tensor, spectrogram_mask: torch.Tensor
+) -> torch.Tensor:
+    """Given `alignments` from frames to tokens, this computes the number of tokens that were
+    skipped.
+
+    NOTE: This function assumes a token is attended to if it has the most focus of all the other
+    tokens for some frame.
+
+    Args:
+        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+        token_mask (torch.BoolTensor [batch_size, num_tokens])
+        spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
+
+    Returns:
+        torch.FloatTensor [batch_size]
+    """
+    indices = alignments.max(dim=2, keepdim=True).indices
+    device = alignments.device
+    one = torch.ones(*alignments.shape, device=device, dtype=torch.long)
+    # [num_frames, batch_size, num_tokens]
+    num_skipped = torch.zeros(*alignments.shape, device=device, dtype=torch.long)
+    num_skipped = num_skipped.scatter(dim=2, index=indices, src=one)
+    # [num_frames, batch_size, num_tokens] → [batch_size, num_tokens]
+    num_skipped = num_skipped.masked_fill(~spectrogram_mask.unsqueeze(-1), 0).sum(dim=0)
+    return (num_skipped.masked_fill(~token_mask, -1) == 0).float().sum(dim=1)
