@@ -34,15 +34,15 @@ def test_get_config_label():
 
 
 def test_configure_audio_processing():
-    """ Test `run._config.configure_audio_processing` executes. """
+    """ Test `run._config.configure_audio_processing` finds and configures modules. """
     run._config.configure_audio_processing()
 
 
 def test_configure_models():
-    """ Test `run._config.configure_models` executes. """
+    """ Test `run._config.configure_models` finds and configures modules. """
     run._config.configure_models()
 
 
 def test_configure():
-    """ Test `run._config.configure` executes. """
+    """ Test `run._config.configure` finds and configures modules. """
     run._config.configure()

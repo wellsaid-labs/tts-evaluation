@@ -50,7 +50,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
     """ Configure modules for spectrogram model training, and return parameters. """
     run._config.configure()
     train_batch_size = 56
-    torch.nn.adam.Adam.__init__ = configurable(torch.nn.adam.Adam.__init__)  # type: ignore
+    torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)  # type: ignore
     config = {
         _State._get_optimizers: HParams(
             lr_multiplier_schedule=functools.partial(
@@ -58,7 +58,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
             ),
             # SOURCE (Tacotron 2):
             # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
-            optimizer=torch.optim.adam.Adam,
+            optimizer=torch.optim.Adam,
         ),
         _run_worker: HParams(num_steps_per_epoch=1000),
         _run_step: HParams(
@@ -87,7 +87,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
         # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
         # NOTE: No L2 regularization performed better based on Comet experiments in March 2020.
-        torch.optim.adam.Adam.__init__: HParams(
+        torch.optim.Adam.__init__: HParams(
             eps=10 ** -6,
             weight_decay=0,
             lr=10 ** -3,
@@ -339,7 +339,7 @@ class _DistributedMetrics:
 class _State:
     input_encoder: lib.spectrogram_model.InputEncoder
     model: torch.nn.parallel.DistributedDataParallel
-    optimizer: torch.optim.adam.Adam
+    optimizer: torch.optim.Adam
     clipper: lib.optimizers.AdaptiveGradientNormClipper
     scheduler: torch.optim.lr_scheduler.LambdaLR
     comet_ml: comet_ml.Experiment
@@ -396,10 +396,10 @@ class _State:
     @configurable
     def _get_optimizers(
         model: torch.nn.Module,
-        optimizer_init: typing.Type[torch.optim.adam.Adam] = HParam(),
+        optimizer: typing.Type[torch.optim.Adam] = HParam(),
         lr_multiplier_schedule: typing.Callable[[int], float] = HParam(),
     ) -> typing.Tuple[
-        torch.optim.adam.Adam,
+        torch.optim.Adam,
         lib.optimizers.AdaptiveGradientNormClipper,
         torch.optim.lr_scheduler.LambdaLR,
     ]:
@@ -410,10 +410,10 @@ class _State:
         https://github.com/pytorch/pytorch/issues/2830
         """
         params = list(filter(lambda p: p.requires_grad, model.parameters()))
-        optimizer = optimizer_init(params)
+        optimizer_ = optimizer(params)
         clipper = lib.optimizers.AdaptiveGradientNormClipper(params)
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_multiplier_schedule)
-        return optimizer, clipper, scheduler
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer_, lr_multiplier_schedule)
+        return optimizer_, clipper, scheduler
 
     def to_checkpoint(self, **kwargs):
         """ Create a checkpoint to save the spectrogram training state. """
