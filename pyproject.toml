@@ -7,7 +7,7 @@ profile = 'black'
 src_paths = ['lib', 'tests', 'run']
 line_length = 100
 
-[tool.pytest]
+[tool.pytest.ini_options]
 testpaths = ['lib', 'tests', 'run']
 addopts = '--cov=lib run --cov-report html:coverage --cov-report=term-missing --durations=10'
 filterwarnings = [
