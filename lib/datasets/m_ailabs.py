@@ -176,6 +176,7 @@ def _m_ailabs_speech_dataset(
     url: str,
     check_files: typing.List[str],
     books: typing.List[Book],
+    root_directory_name: str = "M-AILABS",
     metadata_pattern: str = "**/metadata.csv",
     metadata_path_column: str = "metadata_path",
     metadata_audio_column: typing.Union[str, int] = 0,
@@ -193,6 +194,7 @@ def _m_ailabs_speech_dataset(
         url: URL of the dataset `tar.gz` file.
         check_files: These file(s) should exist if the download was successful.
         books: List of books to load.
+        root_directory_name: Name of the dataset directory.
         metadata_pattern: Pattern for all `metadata.csv` files containing (filename, text)
             information.
         metadata_path_column: Column name to store the metadata path.
@@ -208,7 +210,8 @@ def _m_ailabs_speech_dataset(
         >>> train, dev = m_ailabs_speech_dataset() # doctest: +SKIP
     """
     logger.info("Loading `M-AILABS %s` speech dataset", extracted_name)
-    directory = Path(directory)
+    directory = Path(directory) / root_directory_name
+    directory.mkdir(exist_ok=True)
     download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
 
     # NOTE: This makes sure that the download succeeds by checking against defined books in

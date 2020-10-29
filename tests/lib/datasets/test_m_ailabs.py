@@ -16,13 +16,15 @@ def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_is_file):
     archive = _utils.TEST_DATA_PATH / "datasets" / "M-AILABS" / "en_US.tgz"
     with tempfile.TemporaryDirectory() as path:
         directory = pathlib.Path(path)
-        shutil.copy(archive, directory / archive.name)
+        (directory / archive.parent.name).mkdir()
+        shutil.copy(archive, directory / archive.parent.name / archive.name)
         data = lib.datasets.m_ailabs.m_ailabs_en_us_speech_dataset(directory=directory)
         assert len(data) == 2046
         assert sum([len(r.text) for r in data]) == 226649
         assert data[0] == lib.datasets.Example(
             audio_path=pathlib.Path(
                 directory
+                / archive.parent.name
                 / "en_US/by_book/female/judy_bieber"
                 / "dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav"
             ),

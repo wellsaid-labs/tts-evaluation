@@ -8,11 +8,12 @@ import typing
 import torch
 from hparams import HParams, add_config, configurable
 from third_party import LazyLoader
-from torchnlp.random import fork_rng
+from torchnlp.random import fork_rng_wrap
 
 import lib
 import run
-from lib.datasets import Speaker
+from datasets import Speaker
+from lib import datasets
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import IPython
@@ -404,46 +405,41 @@ def configure():
     add_config(config)
 
 
-Dataset = typing.Dict[Speaker, typing.List[lib.datasets.Example]]
+Dataset = typing.Dict[Speaker, typing.List[datasets.Example]]
 
 
+@fork_rng_wrap(seed=123)
 def get_dataset(dev_size: int = 60 * 60) -> typing.Tuple[Dataset, Dataset]:
-    """Define the dataset to train and evaluate the TTS models on.
+    """Define the dataset to train and develop the TTS models with.
 
     NOTE: Elliot Miller is not included due to his unannotated character portrayals.
 
     Args:
         dev_size: Number of seconds per speaker in the development dataset.
-
-    Returns:
-        train
-        dev
     """
     # NOTE: This `seed` should never change; otherwise, the training and dev datasets may be
     # different from experiment to experiment.
-    with fork_rng(seed=123):
-        logger.info("Loading dataset...")
-        dev = {}
-        train = {}
+    logger.info("Loading dataset...")
+    dev = {}
+    train = {}
 
-        iterator = [
-            (lib.datasets.HILARY_NORIEGA, lib.datasets.hilary_noriega_speech_dataset()),
-        ]
-        for speaker, examples in iterator:
-            train[speaker], dev[speaker] = run._utils.split_examples(examples, dev_size)
+    iterator = [
+        (datasets.HILARY_NORIEGA, datasets.hilary_noriega_speech_dataset(DATA_PATH)),
+    ]
+    for speaker, examples in iterator:
+        train[speaker], dev[speaker] = run._utils.split_examples(examples, dev_size)
 
-        #  NOTE: Elliot Miller is not included due to his unannotated character portrayals.
-        train[lib.datasets.LINDA_JOHNSON] = lib.datasets.lj_speech_dataset()
-        train[lib.datasets.JUDY_BIEBER] = lib.datasets.m_ailabs_en_us_judy_bieber_speech_dataset()
-        train[lib.datasets.MARY_ANN] = lib.datasets.m_ailabs_en_us_mary_ann_speech_dataset()
-        train[
-            lib.datasets.ELIZABETH_KLETT
-        ] = lib.datasets.m_ailabs_en_uk_elizabeth_klett_speech_dataset()
+    train[datasets.LINDA_JOHNSON] = datasets.lj_speech_dataset(DATA_PATH)
+    train[datasets.JUDY_BIEBER] = datasets.m_ailabs_en_us_judy_bieber_speech_dataset(DATA_PATH)
+    train[datasets.MARY_ANN] = datasets.m_ailabs_en_us_mary_ann_speech_dataset(DATA_PATH)
+    train[datasets.ELIZABETH_KLETT] = datasets.m_ailabs_en_uk_elizabeth_klett_speech_dataset(
+        DATA_PATH
+    )
 
-        return train, dev
+    return train, dev
 
 
-def _include_example(example: lib.datasets.Example) -> bool:
+def _include_example(example: datasets.Example) -> bool:
     """Return `True` iff `example` should be included in the dataset.
 
     TODO: Potential update(s) to our example filters:
@@ -487,8 +483,8 @@ def _include_example(example: lib.datasets.Example) -> bool:
     # NOTE: Filter out the North & South book because it uses English in a way that's not consistent
     # with editor usage, for example: "To-morrow, you will-- Come back to-night, John!"
     if example.metadata is not None and (
-        example.metadata["books"] == lib.datasets.m_ailabs.MIDNIGHT_PASSENGER
-        or example.metadata["books"] == lib.datasets.m_ailabs.NORTH_AND_SOUTH
+        example.metadata["books"] == datasets.m_ailabs.MIDNIGHT_PASSENGER
+        or example.metadata["books"] == datasets.m_ailabs.NORTH_AND_SOUTH
     ):
         return False
 
@@ -497,9 +493,9 @@ def _include_example(example: lib.datasets.Example) -> bool:
 
 def get_dataset_generator(
     dataset: Dataset,
-    include_example: typing.Callable[[lib.datasets.Example], bool] = _include_example,
+    include_example: typing.Callable[[datasets.Example], bool] = _include_example,
     max_seconds=15,
-) -> typing.Generator[lib.datasets.Example, None, None]:
+) -> typing.Generator[datasets.Example, None, None]:
     """Define the dataset generator to train and evaluate the TTS models on.
 
     Args:
@@ -511,7 +507,7 @@ def get_dataset_generator(
     for speaker, examples in dataset.items():
         # NOTE: Some datasets were pre-cut, and `is_singles` preserves their distribution.
         is_singles = all([e.alignments is None or len(e.alignments) == 1 for e in examples])
-        generators[speaker] = lib.datasets.dataset_generator(
+        generators[speaker] = datasets.dataset_generator(
             examples, max_seconds=max_seconds if is_singles else math.inf
         )
 

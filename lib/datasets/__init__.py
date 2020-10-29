@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from lib.datasets.lj_speech import LINDA_JOHNSON, lj_speech_dataset
 from lib.datasets.m_ailabs import (
     ELIZABETH_KLETT,
@@ -27,13 +29,16 @@ MARK_ATHERLAY = Speaker("Mark Atherlay")
 SAM_SCHOLL = Speaker("Sam Scholl")
 
 
-def hilary_noriega_speech_dataset(speaker: Speaker = HILARY_NORIEGA, **kwargs):
-    return _dataset_loader(speaker, **kwargs)
+def hilary_noriega_speech_dataset(*args, speaker: Speaker = HILARY_NORIEGA, **kwargs):
+    return _dataset_loader(*args, speaker=speaker, **kwargs)  # type: ignore
 
 
-def _dataset_loader(speaker: Speaker, gcs_path: str = "gs://wellsaid_labs_datasets/", **kwargs):
+WSL_GCS_PATH = "gs://wellsaid_labs_datasets/"
+
+
+def _dataset_loader(directory: Path, speaker: Speaker, gcs_path: str = WSL_GCS_PATH, **kwargs):
     label = HILARY_NORIEGA.name.lower().replace(" ", "_")
-    return dataset_loader(label, gcs_path + label, speaker, **kwargs)
+    return dataset_loader(directory, label, gcs_path + label, speaker, **kwargs)
 
 
 __all__ = [

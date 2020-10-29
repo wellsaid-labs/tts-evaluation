@@ -126,10 +126,10 @@ def test_dataset_generator__unequal_alignment_sizes():
 def test_dataset_loader(_):
     """ Test `lib.datasets.dataset_loader` loads a dataset. """
     examples = lib.datasets.dataset_loader(
+        _utils.TEST_DATA_PATH / "_disk" / "data",
         "hilary_noriega",
         "",
         lib.datasets.HILARY_NORIEGA,
-        _utils.TEST_DATA_PATH / "_disk" / "data",
     )
     alignments = [
         lib.datasets.Alignment(a[0], a[1])

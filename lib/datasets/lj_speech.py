@@ -23,6 +23,7 @@ LINDA_JOHNSON = Speaker("Linda Johnson")
 
 
 def lj_speech_dataset(
+    directory: pathlib.Path,
     root_directory_name: str = "LJSpeech-1.1",
     url: str = "http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2",
     speaker: Speaker = LINDA_JOHNSON,
@@ -76,7 +77,7 @@ def lj_speech_dataset(
             metadata file.
         metadata_delimiter: Delimiter for the metadata file.
         metadata_header: If `True`, `metadata_file` has a header to parse.
-        **kwargs: Key word arguments passed to `_dataset_loader`.
+        **kwargs: Key word arguments passed to `precut_dataset_loader`.
 
     Returns: List of voice-over examples in the dataset.
 
@@ -86,6 +87,7 @@ def lj_speech_dataset(
         >>> train, dev = lj_speech_dataset() # doctest: +SKIP
     """
     data = precut_dataset_loader(
+        directory=directory,
         root_directory_name=root_directory_name,
         url=url,
         speaker=speaker,

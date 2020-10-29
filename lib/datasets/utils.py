@@ -139,10 +139,10 @@ def dataset_generator(
 
 
 def dataset_loader(
+    directory: Path,
     root_directory_name: str,
     gcs_path: str,
     speaker: Speaker,
-    directory: Path,
     alignments_directory_name: str = "alignments",
     recordings_directory_name: str = "recordings",
     scripts_directory_name: str = "scripts",
@@ -168,10 +168,10 @@ def dataset_loader(
         - The scripts only contain ASCII characters.
 
     Args:
+        directory: Directory to cache the dataset.
         root_directory_name: Name of the directory inside `directory` to store data.
         gcs_path: The base GCS path storing the data.
         speaker: The speaker represented by this dataset.
-        directory: Directory to cache the dataset.
         alignments_gcs_path: The name of the alignments directory on GCS.
         recordings_gcs_path: The name of the voice over directory on GCS.
         scripts_gcs_path: The name of the voice over script directory on GCS.
@@ -221,10 +221,10 @@ def dataset_loader(
 
 
 def precut_dataset_loader(
+    directory: Path,
     root_directory_name: str,
     url: str,
     speaker: Speaker,
-    directory: Path,
     url_filename: typing.Optional[str] = None,
     check_files: typing.List[str] = ["{metadata_filename}"],
     metadata_filename: str = "{directory}/{root_directory_name}/metadata.csv",
@@ -250,10 +250,10 @@ def precut_dataset_loader(
         - The dataset is stored in a `tar` or `zip` at some url.
 
     Args:
+        directory: Directory to cache the dataset.
         root_directory_name: Name of the directory inside `directory` to store data.
         url: URL of the dataset file.
         speaker: The dataset speaker.
-        directory: Directory to cache the dataset.
         url_filename: Name of the file downloaded; Otherwise, a filename is extracted from the url.
         check_files: The download is considered successful, if these files exist.
         metadata_filename: The filename for the metadata file.
