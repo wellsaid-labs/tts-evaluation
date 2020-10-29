@@ -61,14 +61,6 @@ for directory in [
 DATABASE_PATH = TEMP_PATH / "database.db"
 
 
-class Context(enum.Enum):
-    """ Constants and labels for contextualizing the use-case. """
-
-    TRAIN: typing.Final = "train"
-    EVALUATE: typing.Final = "evaluate"
-    EVALUATE_INFERENCE: typing.Final = "evaluate_inference"
-
-
 class Cadence(enum.Enum):
     STEP: typing.Final = "step"
     MULTI_STEP: typing.Final = "multi_step"
@@ -115,9 +107,8 @@ def _get_window(window: str, window_length: int, window_hop: int) -> torch.Tenso
     https://github.com/pytorch/audio/issues/452
     """
     window = librosa.filters.get_window(window, window_length)
-    window_tensor = torch.tensor(window).float()
     assert scipy.signal.check_COLA(window, window_length, window_length - window_hop)
-    return window_tensor
+    return torch.tensor(window).float()
 
 
 def configure_audio_processing():

@@ -1,5 +1,6 @@
 import contextlib
 import dataclasses
+import enum
 import functools
 import hashlib
 import io
@@ -24,7 +25,7 @@ from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
 import lib
 import run
 from lib.utils import flatten, seconds_to_string
-from run._config import Cadence, Context, Dataset, DatasetType, get_dataset_label
+from run._config import Cadence, Dataset, DatasetType, get_dataset_label
 
 logger = logging.getLogger(__name__)
 
@@ -502,27 +503,25 @@ def get_spectrogram_example(
     encoded_text, encoded_letter_case, encoded_phonemes, encoded_speaker = input_encoder.encode(arg)
 
     loudness = torch.zeros(num_characters)
-    loudness_mask = torch.zeros(num_characters)
+    loudness_mask = torch.zeros(num_characters, dtype=torch.bool)
     for alignment in _random_nonoverlapping_alignments(alignments, max_loudness_annotations):
         slice_ = slice(alignment.text[0], alignment.text[1])
         loudness[slice_] = _get_loudness(
             audio, sample_rate, alignment, loudness_implementation, loudness_precision
         )
-        loudness_mask[slice_] = 1.0
+        loudness_mask[slice_] = True
 
     speed = torch.zeros(num_characters)
-    speed_mask = torch.zeros(num_characters)
+    speed_mask = torch.zeros(num_characters, dtype=torch.bool)
     for alignment in _random_nonoverlapping_alignments(alignments, max_speed_annotations):
         slice_ = slice(alignment.text[0], alignment.text[1])
         # TODO: Instead of using characters per second, we could estimate the number of phonemes
         # with `grapheme_to_phoneme`. This might be slow, so we'd need to do so in a batch.
         # `grapheme_to_phoneme` can only estimate the number of phonemes because we can't
         # incorperate sufficient context to get the actual phonemes pronounced by the speaker.
-        speed[slice_] = round(
-            (alignment.text[1] - alignment.text[0]) / (alignment.audio[1] - alignment.audio[0]),
-            speed_precision,
-        )
-        speed_mask[slice_] = 1.0
+        char_per_second = (slice_.stop - slice_.start) / (alignment.audio[1] - alignment.audio[0])
+        speed[slice_] = round(char_per_second, speed_precision)
+        speed_mask[slice_] = True
 
     # TODO: The RMS function that trim uses mentions that it's likely better to use a
     # spectrogram if it's available:
@@ -630,8 +629,8 @@ class SpectrogramModelExampleBatch(typing.NamedTuple):
     #               torch.LongTensor [1, batch_size])
     loudness: SequenceBatch
 
-    # NOTE: Mask padding with zeros.
-    # SequenceBatch[torch.FloatTensor [num_characters, batch_size],
+    # NOTE: Mask padding with `False`.
+    # SequenceBatch[torch.BoolTensor [num_characters, batch_size],
     #               torch.LongTensor [1, batch_size])
     loudness_mask: SequenceBatch
 
@@ -639,8 +638,8 @@ class SpectrogramModelExampleBatch(typing.NamedTuple):
     #               torch.LongTensor [1, batch_size])
     speed: SequenceBatch
 
-    # NOTE: Mask padding with zeros.
-    # SequenceBatch[torch.FloatTensor [num_characters, batch_size],
+    # NOTE: Mask padding with `False`.
+    # SequenceBatch[torch.BoolTensor [num_characters, batch_size],
     #               torch.LongTensor [1, batch_size])
     speed_mask: SequenceBatch
 
@@ -691,6 +690,14 @@ def worker_init_fn(worker_id: int, seed: int, device_index: int, digits: int = 8
     # Learn more: https://stackoverflow.com/questions/16008670/how-to-hash-a-string-into-8-digits
     seed_ = hashlib.sha256(str([seed, device_index, worker_id]).encode("utf-8")).hexdigest()
     lib.environment.set_seed(int(seed_, 16) % 10 ** digits)
+
+
+class Context(enum.Enum):
+    """ Constants and labels for contextualizing the use-case. """
+
+    TRAIN: typing.Final = "train"
+    EVALUATE: typing.Final = "evaluate"
+    EVALUATE_INFERENCE: typing.Final = "evaluate_inference"
 
 
 @contextlib.contextmanager

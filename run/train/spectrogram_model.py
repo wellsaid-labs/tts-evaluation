@@ -25,7 +25,6 @@ from lib.utils import flatten
 from run._config import (
     SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
     Cadence,
-    Context,
     DatasetType,
     Label,
     get_config_label,
@@ -33,6 +32,7 @@ from run._config import (
     get_model_label,
 )
 from run._utils import (
+    Context,
     SpectrogramModelCheckpoint,
     SpectrogramModelExampleBatch,
     get_rms_level,
