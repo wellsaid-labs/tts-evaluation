@@ -12,8 +12,8 @@ from torchnlp.random import fork_rng_wrap
 
 import lib
 import run
-from datasets import Speaker
 from lib import datasets
+from lib.datasets import Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import IPython
