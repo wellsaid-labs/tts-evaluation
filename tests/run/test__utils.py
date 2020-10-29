@@ -106,6 +106,10 @@ def test_handle_null_alignments():
 
 def test_normalize_audio():
     """Test `run._utils.normalize_audio` normalizes audio in `dataset`."""
+    sample_rate = 8000
+    num_channels = 2
+    ffmpeg_encoding = "pcm_s16le"
+    sox_encoding = "16-bit Signed Integer PCM"
     with tempfile.TemporaryDirectory() as path:
         directory = pathlib.Path(path)
         audio_path = directory / TEST_DATA_LJ.name
@@ -114,58 +118,17 @@ def test_normalize_audio():
         dataset = {lib.datasets.LINDA_JOHNSON: [example]}
         run._utils.normalize_audio(
             dataset,
-            encoding="pcm_s16le",
-            sample_rate=8000,
-            channels=2,
-            get_audio_filters=lambda _: "",
+            encoding=ffmpeg_encoding,
+            sample_rate=sample_rate,
+            num_channels=num_channels,
+            audio_filters=lib.audio.AudioFilters(""),
         )
         assert len(dataset[lib.datasets.LINDA_JOHNSON]) == 1
         new_audio_path = dataset[lib.datasets.LINDA_JOHNSON][0].audio_path
         assert new_audio_path.absolute() != audio_path.absolute()
         assert lib.audio.get_audio_metadata([new_audio_path])[0] == lib.audio.AudioFileMetadata(
-            path=new_audio_path,
-            sample_rate=8000,
-            channels=2,
-            encoding="16-bit Signed Integer PCM",
-            length=7.584,
+            new_audio_path, sample_rate, num_channels, sox_encoding, 7.584
         )
-
-
-def test_format_ffmpeg_audio_filter():
-    """Test `run._utils.format_ffmpeg_audio_filter` parameterizes an `ffmpeg` audio
-    filter correctly."""
-    expected = (
-        "loudnorm=integrated_loudness=-21:loudness_range=4:true_peak=-6.1:print_format=summary"
-    )
-    result = run._utils.format_ffmpeg_audio_filter(
-        "loudnorm",
-        integrated_loudness=-21,
-        loudness_range=4,
-        true_peak=-6.1,
-        print_format="summary",
-    )
-    assert result == expected
-
-
-def test_assert_audio_normalized():
-    """Test `run._utils.assert_audio_normalized` handles a basic case."""
-    connection = run._utils.connect(":memory:")
-    metadata = lib.audio.get_audio_metadata([TEST_DATA_LJ])[0]
-    run._utils.update_audio_file_metadata(connection, [TEST_DATA_LJ])
-    assert_audio_normalized = lambda e, s, c: run._utils.assert_audio_normalized(
-        connection, TEST_DATA_LJ, e, s, c
-    )
-
-    assert_audio_normalized(metadata.encoding, metadata.sample_rate, metadata.channels)
-
-    with pytest.raises(AssertionError):
-        assert_audio_normalized("", metadata.sample_rate, metadata.channels)
-
-    with pytest.raises(AssertionError):
-        assert_audio_normalized(metadata.encoding, metadata.sample_rate + 1, metadata.channels)
-
-    with pytest.raises(AssertionError):
-        assert_audio_normalized(metadata.encoding, metadata.sample_rate, metadata.channels + 1)
 
 
 def test_split_examples():

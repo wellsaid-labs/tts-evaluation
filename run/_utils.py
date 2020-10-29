@@ -119,7 +119,7 @@ def update_audio_file_metadata(
         """CREATE TABLE IF NOT EXISTS audio_file_metadata (
       path text PRIMARY KEY,
       sample_rate integer,
-      channels integer,
+      num_channels integer,
       encoding text,
       length float
     )"""
@@ -129,7 +129,7 @@ def update_audio_file_metadata(
     update = list(set(absolute) - set([pathlib.Path(r[0]) for r in cursor.fetchall()]))
     metadatas = lib.audio.get_audio_metadata(update)
     cursor.executemany(
-        """INSERT INTO audio_file_metadata (path, sample_rate, channels, encoding, length)
+        """INSERT INTO audio_file_metadata (path, sample_rate, num_channels, encoding, length)
     VALUES (?,?,?,?,?)""",
         [(str(p.absolute()), s, c, e, l) for (p, s, c, e, l) in metadatas],
     )

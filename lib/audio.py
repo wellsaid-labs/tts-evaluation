@@ -186,7 +186,7 @@ def normalize_audio(
     encoding: str = HParam(),
     sample_rate: int = HParam(),
     num_channels: int = HParam(),
-    audio_filters: AudioFilters = AudioFilters(""),
+    audio_filters: AudioFilters = HParam(),
 ):
     """Normalize the audio `encoding`, `sample_rate` and `num_channels`. Additionally, this
     can apply `audio_filters`."""

@@ -198,15 +198,9 @@ def test_format_ffmpeg_audio_filter():
     """Test `lib.audio.format_ffmpeg_audio_filter` parameterizes an `ffmpeg` audio
     filter correctly."""
     result = lib.audio.format_ffmpeg_audio_filter(
-        "loudnorm",
-        integrated_loudness=-21,
-        loudness_range=4,
-        true_peak=-6.1,
-        print_format="summary",
+        "loudnorm", i=-21, lra=4, tp=-6.1, print_format="summary"
     )
-    assert result == lib.audio.AudioFilter(
-        "loudnorm=integrated_loudness=-21:loudness_range=4:true_peak=-6.1:print_format=summary"
-    )
+    assert result == lib.audio.AudioFilter("loudnorm=i=-21:lra=4:tp=-6.1:print_format=summary")
 
 
 def test_format_ffmpeg_audio_filters():
@@ -226,18 +220,13 @@ def test_format_ffmpeg_audio_filters():
             ),
             lib.audio.format_ffmpeg_audio_filter("equalizer", f=200, t="q", w=0.6, g=-2.4),
             lib.audio.format_ffmpeg_audio_filter(
-                "loudnorm",
-                integrated_loudness=-21,
-                loudness_range=4,
-                true_peak=-6.1,
-                print_format="summary",
+                "loudnorm", i=-21, lra=4, tp=-6.1, print_format="summary"
             ),
         ]
     )
     assert result == lib.audio.AudioFilters(
         "acompressor=threshold=0.032:ratio=12:attack=325:release=390:knee=6:detection=rms:makeup=4,"
-        "equalizer=f=200:t=q:w=0.6:g=-2.4,loudnorm=integrated_loudness=-21:loudness_range=4:"
-        "true_peak=-6.1:print_format=summary"
+        "equalizer=f=200:t=q:w=0.6:g=-2.4,loudnorm=i=-21:lra=4:tp=-6.1:print_format=summary"
     )
 
 
@@ -248,13 +237,17 @@ def test_normalize_audio__assert_audio_normalized():
     ffmpeg_encoding = "pcm_s16le"
     sample_rate = 8000
     num_channels = 2
+    loudnorm = lib.audio.format_ffmpeg_audio_filter(
+        "loudnorm", i=-21, lra=4, tp=-6.1, print_format="summary"
+    )
+    audio_filter = lib.audio.format_ffmpeg_audio_filters([loudnorm])
     with tempfile.TemporaryDirectory() as path:
         directory = pathlib.Path(path)
         audio_path = directory / TEST_DATA_LJ.name
         shutil.copy(TEST_DATA_LJ, audio_path)
         new_audio_path = directory / ("new_" + TEST_DATA_LJ.name)
         lib.audio.normalize_audio(
-            audio_path, new_audio_path, ffmpeg_encoding, sample_rate, num_channels
+            audio_path, new_audio_path, ffmpeg_encoding, sample_rate, num_channels, audio_filter
         )
         metadata = lib.audio.get_audio_metadata([audio_path])[0]
         new_metadata = lib.audio.AudioFileMetadata(

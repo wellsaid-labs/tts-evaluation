@@ -128,11 +128,7 @@ def configure_audio_processing():
     sox_encoding = "32-bit Floating Point PCM"
     ffmpeg_encoding = "pcm_f32le"
     loud_norm_audio_filter = lib.audio.format_ffmpeg_audio_filter(
-        "loudnorm",
-        integrated_loudness=-21,
-        loudness_range=4,
-        true_peak=-6.1,
-        print_format="summary",
+        "loudnorm", i=-21, lra=4, tp=-6.1, print_format="summary"
     )
 
     # SOURCE (Tacotron 2):
