@@ -122,13 +122,12 @@ def _get_window(window: str, window_length: int, window_hop: int) -> torch.Tenso
 
 def configure_audio_processing():
     """ Configure modules that process audio. """
-    channels = 1  # NOTE: The signal model output is 1-channel, similar to Tacotron-2.
+    num_channels = 1  # NOTE: The signal model output is 1-channel, similar to Tacotron-2.
     # NOTE: The SoX and FFmpeg encodings are the same.
     # NOTE: The signal model output is 32-bit.
     sox_encoding = "32-bit Floating Point PCM"
     ffmpeg_encoding = "pcm_f32le"
-    ffmpeg_format = "f32le"
-    loud_norm_audio_filter = run._utils.format_ffmpeg_audio_filter(
+    loud_norm_audio_filter = lib.audio.format_ffmpeg_audio_filter(
         "loudnorm",
         integrated_loudness=-21,
         loudness_range=4,
@@ -189,6 +188,15 @@ def configure_audio_processing():
         lib.visualize.plot_spectrogram: HParams(sample_rate=SAMPLE_RATE, frame_hop=frame_hop),
         lib.visualize.plot_mel_spectrogram: HParams(**hertz_bounds),
         lib.audio.write_audio: HParams(sample_rate=SAMPLE_RATE),
+        lib.audio.normalize_audio: HParams(
+            encoding=ffmpeg_encoding,
+            sample_rate=SAMPLE_RATE,
+            num_channels=num_channels,
+            audio_filters=lib.audio.format_ffmpeg_audio_filters([loud_norm_audio_filter]),
+        ),
+        lib.audio.assert_audio_normalized: HParams(
+            encoding=sox_encoding, sample_rate=SAMPLE_RATE, num_channels=num_channels
+        ),
         lib.audio.pad_remainder: HParams(multiple=frame_hop, mode="constant", constant_values=0.0),
         lib.audio.signal_to_framed_rms: HParams(frame_length=frame_size, hop_length=frame_hop),
         lib.audio.SignalTodBMelSpectrogram.__init__: HParams(
@@ -236,16 +244,6 @@ def configure_audio_processing():
         ),
         lib.signal_model.SignalModel.__init__: HParams(
             ratios=[2] * int(math.log2(frame_hop)),
-        ),
-        run._utils.normalize_audio: HParams(
-            format=ffmpeg_format,
-            encoding=ffmpeg_encoding,
-            sample_rate=SAMPLE_RATE,
-            channels=channels,
-            get_audio_filters=lambda _: ",".join([loud_norm_audio_filter]),
-        ),
-        run._utils.assert_audio_normalized: HParams(
-            encoding=sox_encoding, sample_rate=SAMPLE_RATE, channels=channels
         ),
         run._utils.get_spectrogram_example: HParams(
             loudness_implementation="DeMan",

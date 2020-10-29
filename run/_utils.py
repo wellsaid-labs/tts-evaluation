@@ -10,7 +10,6 @@ import os
 import pathlib
 import random
 import sqlite3
-import subprocess
 import typing
 
 import comet_ml
@@ -84,6 +83,9 @@ def maybe_make_experiment_directories(
       └── {run_name}/
           ├── run.log
           └── {checkpoints_directory_name}/
+
+    TODO: Could this structure be encoded in some data structure? For example, we could return an
+    object called an `ExperimentDirectory` that has `children` called `RunsDirectory`.
 
     Args:
         experiment_root: Top-level directory to store an experiment, unless a
@@ -161,80 +163,40 @@ def handle_null_alignments(connection: sqlite3.Connection, dataset: Dataset):
         dataset[speaker] = updated
 
 
-def _normalize_audio(
-    args: typing.Tuple[pathlib.Path, str, pathlib.Path],
-    encoding: str,
-    sample_rate: int,
-    channels: int,
-):
+def _normalize_audio(args: typing.Tuple[pathlib.Path, pathlib.Path], **kwargs):
     """ Helper function for `normalize_audio`. """
-    source, audio_filters, destination = args
+    source, destination = args
     destination.parent.mkdir(exist_ok=True, parents=True)
-    audio_filters = f"-af {audio_filters}" if audio_filters else ""
-    command = (
-        f"ffmpeg -i {source.absolute()} -acodec {encoding} -ar {sample_rate} -ac {channels} "
-        f"{audio_filters} {destination.absolute()}"
-    )
-    subprocess.run(command.split(), check=True)
+    lib.audio.normalize_audio(source, destination, **kwargs)
 
 
-@configurable
+def _normalize_path(path: pathlib.Path) -> pathlib.Path:
+    """ Helper function for `normalize_audio`. """
+    return path.parent / run._config.TTS_DISK_CACHE_NAME / f"ffmpeg({path.stem}).wav"
+
+
 def normalize_audio(
     dataset: Dataset,
-    encoding: str = HParam(),
-    sample_rate: int = HParam(),
-    channels: int = HParam(),
-    get_audio_filters: typing.Callable[[lib.datasets.Speaker], str] = HParam(),
     num_processes: int = (
         1 if lib.environment.IS_TESTING_ENVIRONMENT else typing.cast(int, os.cpu_count())
     ),
+    **kwargs,
 ):
     """Normalize audio with ffmpeg in `dataset`.
 
     TODO: Consider using the ffmpeg SoX resampler, instead.
-
-    Args:
-        dataset
-        encoding: Input to `ffmpeg` `-acodec` flag.
-        sample_rate: Input to `ffmpeg` `-ar` flag.
-        channels: Input to `ffmpeg` `-ac` flag.
-        get_audio_filters: Callable to generate input to `ffmpeg` `-af` flag.
-        num_processes
     """
     logger.info("Normalizing dataset audio...")
-    normalize = lambda a: a.parent / run._config.TTS_DISK_CACHE_NAME / f"ffmpeg({a.stem}).wav"
-    partial = functools.partial(
-        _normalize_audio,
-        encoding=encoding,
-        sample_rate=sample_rate,
-        channels=channels,
+    args_: typing.Set[pathlib.Path] = set(
+        flatten([[e.audio_path for e in v] for k, v in dataset.items()])
     )
-    args_ = set(flatten([[(k, e.audio_path) for e in v] for k, v in dataset.items()]))
-    args = [(a, get_audio_filters(s), normalize(a)) for s, a in args_ if not normalize(a).exists()]
+    args = [(p, _normalize_path(p)) for p in args_ if not _normalize_path(p).exists()]
+    partial = functools.partial(_normalize_audio, **kwargs)
     with lib.utils.Pool(num_processes) as pool:
         list(tqdm.tqdm(pool.imap_unordered(partial, args), total=len(args)))
+
     for speaker, examples in dataset.items():
-        dataset[speaker] = [e._replace(audio_path=normalize(e.audio_path)) for e in examples]
-
-
-def format_ffmpeg_audio_filter(name: str, **kwargs: typing.Union[str, int, float]):
-    """ Format audio filter flag for ffmpeg. """
-    return f"{name}=" + ":".join([f"{k}={v}" for k, v in kwargs.items()])
-
-
-@configurable
-def assert_audio_normalized(
-    connection: sqlite3.Connection,
-    audio_path: pathlib.Path,
-    encoding: str = HParam(),
-    sample_rate: int = HParam(),
-    channels: int = HParam(),
-):
-    """Assert `audio_path` metadata was normalized. """
-    metadata = fetch_audio_file_metadata(connection, audio_path)
-    assert metadata.sample_rate == sample_rate
-    assert metadata.channels == channels
-    assert metadata.encoding == encoding
+        dataset[speaker] = [e._replace(audio_path=_normalize_path(e.audio_path)) for e in examples]
 
 
 def _adapt_numpy_array(array: numpy.ndarray) -> sqlite3.Binary:
@@ -523,7 +485,8 @@ def get_spectrogram_example(
     """
     alignments = example.alignments
     assert alignments is not None
-    assert_audio_normalized(connection, example.audio_path, sample_rate=sample_rate)
+    metadata = fetch_audio_file_metadata(connection, example.audio_path)
+    lib.audio.assert_audio_normalized(metadata, sample_rate=sample_rate)
 
     num_characters = alignments[-1].text[-1] - alignments[0].text[0]
     num_seconds = alignments[-1].audio[-1] - alignments[0].audio[0]
