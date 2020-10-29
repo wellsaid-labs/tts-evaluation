@@ -172,7 +172,7 @@ def seconds_to_string(seconds: float) -> str:
         >>> seconds_to_string(3600)
         '1h 0m 0s 0ms'
     """
-    assert seconds > 0, "Seconds must be positive."
+    assert seconds >= 0, "Seconds must be positive."
     seconds, milliseconds = divmod(seconds, 1)
     milliseconds = round(milliseconds * 1000)
     days, seconds = divmod(seconds, 86400)
