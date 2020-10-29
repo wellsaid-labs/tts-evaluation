@@ -114,12 +114,12 @@ class _DistributedMetrics:
             positive integer indicating that the `data_loader` is loading faster than the data is
             getting ingested; otherwise, the `data_loader` is bottlenecking training by loading too
             slowly.
-        predicted_frame_alignment_norm: This measures the p-norm of an alignment from the frame to
-            the input. As the alignment consolidates on a couple tokens in the input, this metric
-            goes from zero to one.
+        predicted_frame_alignment_norm: This measures the p-norm of an alignment from a frame to the
+            tokens. As the alignment per frame consolidates on a couple tokens in the input, this
+            metric goes from zero to one.
         predicted_frame_alignment_std: This measures the discrete standard deviation of an alignment
-            from the frame to the input. As the alignment is localized to a couple sequential tokens
-            in the input, this metric goes to zero.
+            from a frame to the tokens. As the alignment per frame is localized to a couple
+            sequential tokens in the input, this metric goes to zero.
         num_skips_per_speaker: In the predicted alignment, this tracks the number of tokens
             that were skipped per speaker. This could indicate that the model has issues, or that
             the dataset is flawed.
@@ -208,6 +208,8 @@ class _DistributedMetrics:
         norm: float = math.inf,
     ):
         """
+        TODO: Reduce the boiler plate required to track a metric per speaker.
+
         Args:
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
             spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
@@ -220,16 +222,13 @@ class _DistributedMetrics:
             return
 
         mask = lambda t: t.masked_select(spectrogram_mask)
-        weighted_stdev = lib.utils.get_weighted_std(alignments, dim=2)
-        self.append(self.predicted_frame_alignment_std, mask(weighted_stdev))
+        weighted_std = lib.utils.get_weighted_std(alignments, dim=2)
+        self.append(self.predicted_frame_alignment_std, mask(weighted_std))
         self.append(self.predicted_frame_alignment_norm, mask(alignments.norm(norm, dim=2)))
 
+        num_skipped = run._utils.get_num_skipped(alignments, token_mask, spectrogram_mask)
+
         iterate = lambda t: flatten(lib.distributed.gather_list(t.squeeze().tolist()))
-        indices = alignments.max(dim=2, keepdim=True).indices
-        one = torch.ones(1, device=alignments.device)
-        num_skipped = torch.zeros(*alignments.shape)  # [num_frames, batch_size, num_tokens]
-        num_skipped = num_skipped.scatter(dim=2, index=indices, src=one).sum(dim=0)
-        num_skipped = (num_skipped.masked_fill(token_mask, -one) == 0).sum(dim=1)
         iterator = zip(iterate(speakers), iterate(num_skipped), iterate(num_tokens))
         for speaker_index, _num_skipped, _num_tokens in iterator:
             speaker = input_encoder.speaker_encoder.index_to_token[speaker_index]
