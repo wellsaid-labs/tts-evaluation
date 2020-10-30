@@ -11,7 +11,7 @@ import typing
 from itertools import chain
 
 # NOTE: `comet_ml` needs to be imported before torch
-import comet_ml  # noqa
+import comet_ml
 import hparams
 import torch
 import typer
@@ -277,16 +277,16 @@ class _DistributedMetrics:
     @configurable
     def log(
         self,
-        comet_ml: comet_ml.Experiment,
+        comet: comet_ml.Experiment,
         reduce_: typing.Callable[[typing.List[float]], float],
         dataset_type: DatasetType,
         cadence: Cadence,
         num_frame_channels=HParam(),
     ):
-        """Log `self` to `comet_ml`.
+        """Log `self` to `comet`.
 
         Args:
-            comet_ml
+            comet
             reduce_: If there is a list of measurements, this callable is used to reduce it.
             ...
         """
@@ -319,21 +319,21 @@ class _DistributedMetrics:
         for stats, get_label in iterator:
             for name, value in stats.items():
                 if value is not None:
-                    comet_ml.log_metric(get_label(name, cadence=cadence), value)
+                    comet.log_metric(get_label(name, cadence=cadence), value)
 
         for speaker, count in self.num_frames_per_speaker.items():
             label = partial("frequency", cadence=cadence, speaker=speaker)
-            comet_ml.log_metric(label, count / sum(self.num_frames_per_speaker.values()))
+            comet.log_metric(label, count / sum(self.num_frames_per_speaker.values()))
 
         for bucket, count in self.num_examples_per_text_length.items():
             lower = bucket * self.text_length_bucket_size
             upper = (bucket + 1) * self.text_length_bucket_size
             label = partial(f"{lower}_{upper}", cadence=cadence)
-            comet_ml.log_metric(label, count / sum(self.num_examples_per_text_length.values()))
+            comet.log_metric(label, count / sum(self.num_examples_per_text_length.values()))
 
         zip_ = zip(self.num_tokens_per_speaker.items(), self.num_skips_per_speaker.values())
         for (speaker, num_tokens), num_skips in zip_:
-            comet_ml.log_metric(get_model_label("skips", cadence, speaker), num_skips / num_tokens)
+            comet.log_metric(get_model_label("skips", cadence, speaker), num_skips / num_tokens)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -343,7 +343,7 @@ class _State:
     optimizer: torch.optim.Adam
     clipper: lib.optimizers.AdaptiveGradientNormClipper
     scheduler: torch.optim.lr_scheduler.LambdaLR
-    comet_ml: comet_ml.Experiment
+    comet: comet_ml.Experiment
     device: torch.device
     step: torch.Tensor = torch.tensor(0, dtype=torch.long)
 
@@ -351,7 +351,7 @@ class _State:
     def _get_input_encoder(
         train_dataset: run._config.Dataset,
         connection: sqlite3.Connection,
-        comet_ml: comet_ml.Experiment,
+        comet: comet_ml.Experiment,
     ) -> lib.spectrogram_model.InputEncoder:
         """ Initialize an input encoder to encode model input. """
         input_encoder = lib.spectrogram_model.InputEncoder(
@@ -370,13 +370,13 @@ class _State:
             label("num_speakers"): input_encoder.speaker_encoder.vocab_size,
             label("speakers"): sorted(input_encoder.speaker_encoder.vocab),
         }
-        comet_ml.log_parameters(stats)
+        comet.log_parameters(stats)
         return input_encoder
 
     @staticmethod
     def _get_model(
         device: torch.device,
-        comet_ml: comet_ml.Experiment,
+        comet: comet_ml.Experiment,
         input_encoder: lib.spectrogram_model.InputEncoder,
     ) -> lib.spectrogram_model.SpectrogramModel:
         """Initialize a model onto `device`.
@@ -388,9 +388,9 @@ class _State:
             input_encoder.grapheme_encoder.vocab_size,
             input_encoder.speaker_encoder.vocab_size,
         ).to(device)
-        comet_ml.set_model_graph(str(model))
+        comet.set_model_graph(str(model))
         label = get_model_label("num_parameters", Cadence.STATIC)
-        comet_ml.log_parameter(label, get_total_parameters(model))
+        comet.log_parameter(label, get_total_parameters(model))
         return model
 
     @staticmethod
@@ -419,8 +419,8 @@ class _State:
     def to_checkpoint(self, **kwargs):
         """ Create a checkpoint to save the spectrogram training state. """
         return SpectrogramModelCheckpoint(
-            comet_ml_experiment_key=self.comet_ml.get_key(),
-            comet_ml_project_name=self.comet_ml.project_name,
+            comet_experiment_key=self.comet.get_key(),
+            comet_project_name=self.comet.project_name,
             input_encoder=self.input_encoder,
             model=typing.cast(lib.spectrogram_model.SpectrogramModel, self.model.module),
             optimizer=self.optimizer,
@@ -432,7 +432,7 @@ class _State:
 
     @classmethod
     def from_checkpoint(
-        cls, checkpoint: pathlib.Path, device: torch.device, comet_ml: comet_ml.Experiment
+        cls, checkpoint: pathlib.Path, device: torch.device, comet: comet_ml.Experiment
     ):
         """ Recreate the spectrogram training state from a `checkpoint`. """
         _, _, _, step, encoder, model, optimizer, clipper, scheduler = dataclasses.astuple(
@@ -440,21 +440,21 @@ class _State:
         )
         model_ = torch.nn.parallel.DistributedDataParallel(model, [device], device)
         step = torch.tensor(step)
-        return cls(encoder, model_, optimizer, clipper, scheduler, comet_ml, device, step)
+        return cls(encoder, model_, optimizer, clipper, scheduler, comet, device, step)
 
     @classmethod
     def from_dataset(
         cls,
         train_dataset: run._config.Dataset,
         connection: sqlite3.Connection,
-        comet_ml: comet_ml.Experiment,
+        comet: comet_ml.Experiment,
         device: torch.device,
     ):
         """ Create spectrogram training state from the `train_dataset`. """
-        input_encoder = cls._get_input_encoder(train_dataset, connection, comet_ml)
-        model = cls._get_model(device, comet_ml, input_encoder)
+        input_encoder = cls._get_input_encoder(train_dataset, connection, comet)
+        model = cls._get_model(device, comet, input_encoder)
         distributed_model = torch.nn.parallel.DistributedDataParallel(model, [device], device)
-        return cls(input_encoder, distributed_model, *cls._get_optimizers(model), comet_ml, device)
+        return cls(input_encoder, distributed_model, *cls._get_optimizers(model), comet, device)
 
 
 class _DataIterator(torch.utils.data.IterableDataset):
@@ -464,7 +464,7 @@ class _DataIterator(torch.utils.data.IterableDataset):
         database: pathlib.Path,
         bucket_size: int,
         input_encoder: lib.spectrogram_model.InputEncoder,
-        comet_ml: comet_ml.Experiment,
+        comet: comet_ml.Experiment,
         text_length_bucket_size: int = 10,
     ):
         """Generate examples from `run._config.Dataset`.
@@ -548,7 +548,7 @@ def _get_data_loaders(
     _DataIteratorPartial = functools.partial(
         _DataIterator,
         input_encoder=state.input_encoder,
-        comet_ml=state.comet_ml,
+        comet=state.comet,
         bucket_size=bucket_size,
         database=database,
     )
@@ -600,7 +600,7 @@ def _visualize_source_vs_target(
         model("stop_token"): lib.visualize.plot_logits(predicted_stop_token),
         dataset("gold_spectrogram"): lib.visualize.plot_mel_spectrogram(gold_spectrogram),
     }
-    comet_ml.log_figures(figures)
+    state.comet.log_figures(figures)
 
 
 @configurable
@@ -618,7 +618,7 @@ def _run_step(
 
     Args:
         ...
-        visualize: If `True` visualize the results with `comet_ml`.
+        visualize: If `True` visualize the results with `comet`.
         spectrogram_loss_scalar: This scales the spectrogram loss by some value.
         stop_token_min_loss: This thresholds the stop token loss to prevent overfitting.
     """
@@ -653,7 +653,7 @@ def _run_step(
 
         (spectrogram_loss_ + stop_token_loss_).backward()
 
-        log_metric = lambda n, v: state.comet_ml.log_metric(
+        log_metric = lambda n, v: state.comet.log_metric(
             get_model_label(n, cadence=Cadence.STEP), v
         )
         log_metric("grad_norm/two", get_parameter_norm(state.model.parameters(), 2))
@@ -665,7 +665,7 @@ def _run_step(
         state.optimizer.step()
         state.step.add_(1)
         state.scheduler.step()
-        state.comet_ml.set_step(state.step.item())
+        state.comet.set_step(state.step.item())
 
     if visualize:
         _visualize_source_vs_target(
@@ -692,7 +692,7 @@ def _run_step(
     metrics.append(metrics.stop_token_loss, stop_token_loss)
     if isinstance(data_loader.loader, _MultiProcessingDataLoaderIter):
         metrics.append(metrics.data_queue_size, data_loader.loader._data_queue.qsize())
-    metrics.log(state.comet_ml, lambda l: l[-1], dataset_type, Cadence.STEP)
+    metrics.log(state.comet, lambda l: l[-1], dataset_type, Cadence.STEP)
 
 
 def _visualize_inferred(
@@ -733,15 +733,15 @@ def _visualize_inferred(
         model("alignment"): lib.visualize.plot_alignments(predicted_alignments),
         model("stop_token"): lib.visualize.plot_logits(predicted_stop_token[:num_frames, item]),
     }
-    state.comet_ml.log_figures(figures)
+    state.comet.log_figures(figures)
     audio = {
         "predicted_griffin_lim_audio": lib.audio.griffin_lim(predicted_spectrogram.cpu().numpy()),
         "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.numpy()),
         "gold_audio": batch.audio[item].numpy(),
     }
-    state.comet_ml.log_audio(
+    state.comet.log_audio(
         audio=audio,
-        context=comet_ml.context,
+        context=state.comet.context,
         text=batch.text[item],
         speaker=batch.speaker[item],
         predicted_loudness=get_rms_level(predicted_spectrogram.unsqueeze(1)),
@@ -763,7 +763,7 @@ def _run_inference(
 
     Args:
         ...
-        visualize: If `True` visualize the results with `comet_ml`.
+        visualize: If `True` visualize the results with `comet`.
     """
     frames, stop_tokens, alignments, lengths, reached_max = state.model(
         batch.encoded_text.tensor,
@@ -817,23 +817,23 @@ def _run_worker(
     checkpoint: typing.Optional[pathlib.Path],
     train_dataset: run._config.Dataset,
     dev_dataset: run._config.Dataset,
-    comet_ml_partial: typing.Callable[..., comet_ml.Experiment],
+    comet_partial: typing.Callable[..., comet_ml.Experiment],
     config: typing.Dict[str, typing.Any],
     num_steps_per_epoch: int = HParam(),
 ) -> typing.NoReturn:
     """ Train and evaluate the spectrogram model on a loop. """
     lib.environment.set_basic_logging_config(device_index)
     device = run._utils.init_distributed(device_index)
-    comet_ml = comet_ml_partial(disabled=not lib.distributed.is_master(), auto_output_logging=False)
+    comet = comet_partial(disabled=not lib.distributed.is_master(), auto_output_logging=False)
     _configure(config)
     connection = run._utils.connect(run._config.DATABASE_PATH)
-    state = _State.from_dataset(train_dataset, connection, comet_ml, device)
+    state = _State.from_dataset(train_dataset, connection, comet, device)
     train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
-    _set_context = functools.partial(set_context, model=state.model, comet_ml=comet_ml)
+    _set_context = functools.partial(set_context, model=state.model, comet=comet)
     while True:
         epoch = state.step.item() // num_steps_per_epoch
         logger.info("Running Epoch %d, Step %d", epoch, state.step.item())
-        comet_ml.log_current_epoch(epoch)
+        comet.log_current_epoch(epoch)
 
         iterator: typing.List[typing.Tuple[Context, DatasetType, _DataLoader, _BatchHandler]] = [
             (Context.TRAIN, DatasetType.TRAIN, train_loader, _run_step),
@@ -848,21 +848,21 @@ def _run_worker(
                 metrics = _DistributedMetrics()
                 for i, batch in zip(range(num_steps_per_epoch), data_loader):
                     handle_batch(state, metrics, batch, data_loader, dataset_type, i == 0)
-                    metrics.log(comet_ml, lambda l: l[-1], dataset_type, Cadence.STEP)
-                metrics.log(comet_ml, sum, dataset_type, Cadence.MULTI_STEP)
+                    metrics.log(comet, lambda l: l[-1], dataset_type, Cadence.STEP)
+                metrics.log(comet, sum, dataset_type, Cadence.MULTI_STEP)
 
         lib.environment.save(
             checkpoints_directory / f"step_{state.step.item()}{lib.environment.PT_EXTENSION}",
             state.to_checkpoint(checkpoints_directory),
         )
-        comet_ml.log_epoch_end(epoch)
+        comet.log_epoch_end(epoch)
 
 
 def _run(
     run_root: pathlib.Path,
     checkpoints_path: pathlib.Path,
     config: typing.Dict[str, typing.Any],
-    comet_ml: comet_ml.Experiment,
+    comet: comet_ml.Experiment,
     checkpoint: typing.Optional[pathlib.Path] = None,
     minimum_disk_space: float = 0.2,
 ):
@@ -878,7 +878,7 @@ def _run(
     run._utils.update_audio_file_metadata(connection, [e.audio_path for e in all_examples()])
     run._utils.handle_null_alignments(connection, dataset)
     train_dataset, dev_dataset = run._config.split_dataset(dataset)
-    comet_ml.log_parameters(run._utils.get_dataset_stats(train_dataset, dev_dataset))
+    comet.log_parameters(run._utils.get_dataset_stats(train_dataset, dev_dataset))
 
     return lib.distributed.spawn(
         _run_worker.get_configured_partial(),  # type: ignore
@@ -888,14 +888,14 @@ def _run(
             checkpoint,
             train_dataset,
             dev_dataset,
-            functools.partial(lib.visualize.CometMLExperiment, experiment_key=comet_ml.get_key()),
+            functools.partial(lib.visualize.CometMLExperiment, experiment_key=comet.get_key()),
             config,
         ),
     )
 
 
 def _setup(
-    comet_ml: comet_ml.Experiment, config: typing.List[str]
+    comet: comet_ml.Experiment, config: typing.List[str]
 ) -> typing.Tuple[typing.Dict[str, typing.Any], lib.environment.RecordStandardStreams]:
     """ Setup the environment logging and modules. """
     lib.environment.set_basic_logging_config()
@@ -907,7 +907,7 @@ def _setup(
     # that each experiments parameters are immutable?
     parameters = _configure(parsed)
     params = {get_config_label(k, Cadence.STATIC): v for k, v in parameters.items()}
-    comet_ml.log_parameters(params)
+    comet.log_parameters(params)
     return parsed, recorder
 
 
@@ -926,10 +926,10 @@ def resume(
     else:
         checkpoint, loaded = lib.environment.load_most_recent_file(pattern, lib.environment.load)
     checkpoint_ = typing.cast(SpectrogramModelCheckpoint, loaded)
-    comet_ml = lib.visualize.CometMLExperiment(experiment_key=checkpoint_.comet_ml_experiment_key)
-    config, recorder = _setup(comet_ml, context.args)
+    comet = lib.visualize.CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
+    config, recorder = _setup(comet, context.args)
     paths = maybe_make_experiment_directories_from_checkpoint(checkpoint_, recorder)
-    _run(*paths, config, comet_ml, checkpoint)
+    _run(*paths, config, comet, checkpoint)
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -940,14 +940,14 @@ def start(
     tags: typing.List[str] = typer.Argument([], help="Experiment tags."),
 ):
     """ Start a training run in PROJECT named NAME with TAGS. """
-    comet_ml = lib.visualize.CometMLExperiment(project_name=project)
-    comet_ml.set_name(name)
-    comet_ml.add_tags(tags)
-    config, recorder = _setup(comet_ml, context.args)
+    comet = lib.visualize.CometMLExperiment(project_name=project)
+    comet.set_name(name)
+    comet.add_tags(tags)
+    config, recorder = _setup(comet, context.args)
     experiment_root = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / lib.environment.bash_time_label()
     run_root, checkpoints_path = maybe_make_experiment_directories(experiment_root, recorder)
-    comet_ml.log_other("directory", str(run_root))
-    _run(run_root, checkpoints_path, config, comet_ml)
+    comet.log_other("directory", str(run_root))
+    _run(run_root, checkpoints_path, config, comet)
 
 
 if __name__ == "__main__":  # pragma: no cover

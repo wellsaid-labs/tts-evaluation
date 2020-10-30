@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 class Checkpoint:
 
     checkpoints_directory: pathlib.Path
-    comet_ml_experiment_key: str
-    comet_ml_project_name: str
+    comet_experiment_key: str
+    comet_project_name: str
     step: int
 
 
@@ -705,8 +705,8 @@ class Context(enum.Enum):
 
 
 @contextlib.contextmanager
-def set_context(context: Context, model: torch.nn.Module, comet_ml: comet_ml.Experiment):
-    with comet_ml.context_manager(context.value):
+def set_context(context: Context, model: torch.nn.Module, comet: comet_ml.Experiment):
+    with comet.context_manager(context.value):
         mode = model.training
         model.train(mode=(context == Context.TRAIN))
         with torch.set_grad_enabled(mode=(context == Context.TRAIN)):
