@@ -8,7 +8,7 @@ import typing
 import torch
 from hparams import HParams, add_config, configurable
 from third_party import LazyLoader
-from torchnlp.random import fork_rng_wrap
+from torchnlp.random import fork_rng
 
 import lib
 import run
@@ -399,7 +399,7 @@ def configure():
     configure_audio_processing()
     configure_models()
     config = {
-        lib.text.grapheme_to_phoneme: HParams(seperator=PHONEME_SEPARATOR),
+        lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
         lib.environment.set_seed: HParams(seed=RANDOM_SEED),
     }
     add_config(config)
@@ -426,9 +426,10 @@ def get_dataset(path=DATA_PATH) -> Dataset:
     }
 
 
-@fork_rng_wrap(seed=123)
 def split_dataset(
-    dataset: Dataset, dev_speakers=set([datasets.HILARY_NORIEGA]), dev_size: int = 60 * 60
+    dataset: Dataset,
+    dev_speakers: typing.Set[lib.datasets.Speaker] = set([datasets.HILARY_NORIEGA]),
+    dev_size: int = 60 * 60,
 ) -> typing.Tuple[Dataset, Dataset]:
     """Split the dataset into a train set and development set.
 
@@ -441,11 +442,12 @@ def split_dataset(
         dev_size: Number of seconds per speaker in the development dataset.
     """
     dev, train = {}, {}
-    for speaker, examples in dataset.items():
-        if speaker in dev_speakers:
-            train[speaker], dev[speaker] = run._utils.split_examples(examples, dev_size)
-        else:
-            train[speaker] = examples
+    with fork_rng(seed=123):
+        for speaker, examples in dataset.items():
+            if speaker in dev_speakers:
+                train[speaker], dev[speaker] = run._utils.split_examples(examples, dev_size)
+            else:
+                train[speaker] = examples
     return dev, train
 
 
@@ -492,9 +494,11 @@ def _include_example(example: datasets.Example) -> bool:
     # other samples from the same speaker.
     # NOTE: Filter out the North & South book because it uses English in a way that's not consistent
     # with editor usage, for example: "To-morrow, you will-- Come back to-night, John!"
-    if example.metadata is not None and (
-        example.metadata["books"] == datasets.m_ailabs.MIDNIGHT_PASSENGER
-        or example.metadata["books"] == datasets.m_ailabs.NORTH_AND_SOUTH
+    books = (datasets.m_ailabs.MIDNIGHT_PASSENGER, datasets.m_ailabs.NORTH_AND_SOUTH)
+    if (
+        example.metadata is not None
+        and "books" in example.metadata
+        and (example.metadata["books"] in books)
     ):
         return False
 

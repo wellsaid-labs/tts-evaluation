@@ -18,7 +18,7 @@ class InputEncoder(Encoder):
         graphemes
         phonemes
         speakers
-        phoneme_seperator: Deliminator to split phonemes.
+        phoneme_separator: Deliminator to split phonemes.
         **args: Additional arguments passed to `super()`.
         **kwargs: Additional key-word arguments passed to `super()`.
     """
@@ -36,7 +36,7 @@ class InputEncoder(Encoder):
         graphemes: typing.List[str],
         phonemes: typing.List[str],
         speakers: typing.List[lib.datasets.Speaker],
-        phoneme_seperator: str = hparams.HParam(),
+        phoneme_separator: str = hparams.HParam(),
         *args,
         **kwargs,
     ):
@@ -44,9 +44,9 @@ class InputEncoder(Encoder):
         self.grapheme_encoder = CharacterEncoder(
             [g.lower() for g in graphemes], enforce_reversible=True
         )
-        self.phoneme_seperator = phoneme_seperator
+        self.phoneme_separator = phoneme_separator
         self.phoneme_encoder = DelimiterEncoder(
-            phoneme_seperator, phonemes, enforce_reversible=True
+            phoneme_separator, phonemes, enforce_reversible=True
         )
         self.case_encoder = LabelEncoder(
             self._CASE_LABELS, reserved_labels=[], enforce_reversible=True

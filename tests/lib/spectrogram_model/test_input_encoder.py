@@ -7,10 +7,10 @@ def test_input_encoder():
     """ Test `lib.spectrogram_model.input_encoder.InputEncoder` handles a basic case. """
     graphemes = ["abc", "def"]
     phonemes = ["ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|", "d|ˈ|ɛ|f"]
-    phoneme_seperator = "|"
+    phoneme_separator = "|"
     speakers = [lib.datasets.MARK_ATHERLAY, lib.datasets.MARY_ANN]
     encoder = lib.spectrogram_model.input_encoder.InputEncoder(
-        graphemes, phonemes, speakers, phoneme_seperator
+        graphemes, phonemes, speakers, phoneme_separator
     )
     input_ = ("a", "ˈ|eɪ", lib.datasets.MARK_ATHERLAY)
     assert encoder._get_case("A") == encoder._CASE_LABELS[0]

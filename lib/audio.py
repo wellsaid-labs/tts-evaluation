@@ -189,11 +189,14 @@ def normalize_audio(
     audio_filters: AudioFilters = HParam(),
 ):
     """Normalize the audio `encoding`, `sample_rate` and `num_channels`. Additionally, this
-    can apply `audio_filters`."""
+    can apply `audio_filters`.
+
+    Learn more: https://superuser.com/questions/326629/how-can-i-make-ffmpeg-be-quieter-less-verbose
+    """
     command = "" if len(audio_filters) == 0 else f"-af {audio_filters}"
     command = (
-        f"ffmpeg -i {source.absolute()} -acodec {encoding} -ar {sample_rate} -ac {num_channels} "
-        f"{command} {destination.absolute()}"
+        f"ffmpeg -hide_banner -loglevel warning -nostats -i {source.absolute()} -acodec {encoding} "
+        f"-ar {sample_rate} -ac {num_channels} {command} {destination.absolute()}"
     )
     subprocess.run(command.split(), check=True)
 

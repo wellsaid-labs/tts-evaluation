@@ -81,6 +81,7 @@ class SpectrogramModel(nn.Module):
         self.num_frame_channels = num_frame_channels
         self.stop_threshold = stop_threshold
         self.vocab_size = vocab_size
+        self.num_speakers = num_speakers
 
         self.embed_speaker = nn.Sequential(
             nn.Embedding(num_speakers, speaker_embedding_size),

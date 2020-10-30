@@ -164,11 +164,13 @@ def handle_null_alignments(connection: sqlite3.Connection, dataset: Dataset):
         dataset[speaker] = updated
 
 
-def _normalize_audio(args: typing.Tuple[pathlib.Path, pathlib.Path], **kwargs):
+def _normalize_audio(
+    args: typing.Tuple[pathlib.Path, pathlib.Path], callable_: typing.Callable[..., None]
+):
     """ Helper function for `normalize_audio`. """
     source, destination = args
     destination.parent.mkdir(exist_ok=True, parents=True)
-    lib.audio.normalize_audio(source, destination, **kwargs)
+    callable_(source, destination)
 
 
 def _normalize_path(path: pathlib.Path) -> pathlib.Path:
@@ -192,7 +194,9 @@ def normalize_audio(
         flatten([[e.audio_path for e in v] for k, v in dataset.items()])
     )
     args = [(p, _normalize_path(p)) for p in args_ if not _normalize_path(p).exists()]
-    partial = functools.partial(_normalize_audio, **kwargs)
+    partial = lib.audio.normalize_audio.get_configured_partial()  # type: ignore
+    partial = functools.partial(partial, **kwargs)
+    partial = functools.partial(_normalize_audio, callable_=partial)
     with lib.utils.Pool(num_processes) as pool:
         list(tqdm.tqdm(pool.imap_unordered(partial, args), total=len(args)))
 
@@ -536,13 +540,13 @@ def get_spectrogram_example(
     # padding does not affect the spectrogram due to overlap between the padding and the
     # real audio.
     # TODO: Instead of padding with zeros, we should consider padding with real-data.
-    audio = audio.pad_remainder(audio)
+    audio = lib.audio.pad_remainder(audio)
     _, trim = librosa.effects.trim(audio)
     audio = audio[trim[0] : trim[1]]
 
     audio = torch.tensor(audio, requires_grad=False)
     with torch.no_grad():
-        db_mel_spectrogram = audio.get_signal_to_db_mel_spectrogram()(audio, aligned=True)
+        db_mel_spectrogram = lib.audio.get_signal_to_db_mel_spectrogram()(audio, aligned=True)
 
     # NOTE: The exact stop token distribution is uncertain because there are multiple valid
     # stopping points after someone has finished speaking. For example, the audio can be cutoff
@@ -704,8 +708,8 @@ class Context(enum.Enum):
 def set_context(context: Context, model: torch.nn.Module, comet_ml: comet_ml.Experiment):
     with comet_ml.context_manager(context.value):
         mode = model.training
-        model.train(mode=context == Context.TRAIN)
-        with torch.set_grad_enabled(mode=context == Context.TRAIN):
+        model.train(mode=(context == Context.TRAIN))
+        with torch.set_grad_enabled(mode=(context == Context.TRAIN)):
             yield
         model.train(mode=mode)
 

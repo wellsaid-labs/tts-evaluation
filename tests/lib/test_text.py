@@ -151,7 +151,7 @@ def test__grapheme_to_phoneme__service_separator():
 
 
 def test__grapheme_to_phoneme__unique_separator():
-    """ Test `_grapheme_to_phoneme` errors if `seperator` is not unique. """
+    """ Test `_grapheme_to_phoneme` errors if `separator` is not unique. """
     with pytest.raises(AssertionError):
         _grapheme_to_phoneme("Hello World", separator="ə")
 
@@ -234,7 +234,7 @@ def test_grapheme_to_phoneme__white_space():
 
 
 def test_grapheme_to_phoneme__unique_separator():
-    """ Test `grapheme_to_phoneme` errors if `seperator` is not unique. """
+    """ Test `grapheme_to_phoneme` errors if `separator` is not unique. """
     with pytest.raises(AssertionError):
         grapheme_to_phoneme("Hello World!", separator="!")
 

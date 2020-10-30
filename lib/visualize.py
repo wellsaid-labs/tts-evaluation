@@ -340,6 +340,9 @@ def _add_comet_ml_set_step(experiment: comet_ml.Experiment):
     def set_step(self, *args, **kwargs):
         return_ = _set_step(*args, **kwargs)
 
+        if self.curr_step is None:
+            return return_
+
         nonlocal last_step_time
         nonlocal last_step
 

@@ -49,6 +49,7 @@ def test_comet_ml_experiment():
     comet = lib.visualize.CometMLExperiment(disabled=True)
     with comet.set_context("train"):
         assert comet.context == "train"
+        comet.set_step(None)
         comet.set_step(0)
         comet.set_step(0)
         comet.set_step(1)

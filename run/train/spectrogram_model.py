@@ -12,6 +12,7 @@ from itertools import chain
 
 # NOTE: `comet_ml` needs to be imported before torch
 import comet_ml  # noqa
+import hparams
 import torch
 import typer
 from hparams import HParam, HParams, add_config, configurable, get_config, parse_hparam_args
@@ -95,7 +96,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
             betas=(0.9, 0.999),
         ),
         lib.spectrogram_model.input_encoder.InputEncoder.__init__: HParams(
-            phoneme_seperator=run._config.PHONEME_SEPARATOR
+            phoneme_separator=run._config.PHONEME_SEPARATOR
         ),
     }
     add_config(config)
@@ -344,7 +345,7 @@ class _State:
     scheduler: torch.optim.lr_scheduler.LambdaLR
     comet_ml: comet_ml.Experiment
     device: torch.device
-    step: torch.Tensor = torch.tensor(1)
+    step: torch.Tensor = torch.tensor(0, dtype=torch.long)
 
     @staticmethod
     def _get_input_encoder(
@@ -384,7 +385,7 @@ class _State:
         https://discuss.pytorch.org/t/proper-distributeddataparallel-usage/74564
         """
         model = lib.spectrogram_model.SpectrogramModel(
-            input_encoder.text_encoder.vocab_size,
+            input_encoder.grapheme_encoder.vocab_size,
             input_encoder.speaker_encoder.vocab_size,
         ).to(device)
         comet_ml.set_model_graph(str(model))
@@ -460,8 +461,8 @@ class _DataIterator(torch.utils.data.IterableDataset):
     def __init__(
         self,
         dataset: run._config.Dataset,
+        database: pathlib.Path,
         bucket_size: int,
-        connection: sqlite3.Connection,
         input_encoder: lib.spectrogram_model.InputEncoder,
         comet_ml: comet_ml.Experiment,
         text_length_bucket_size: int = 10,
@@ -479,24 +480,24 @@ class _DataIterator(torch.utils.data.IterableDataset):
         super().__init__()
         self.dataset = dataset
         self.bucket_size = bucket_size
-        self.connection = connection
+        self.database = database
         self.input_encoder = input_encoder
-        self.num_frames = 0
-        self.num_examples = 0
-
-    @property
-    def average_spectrogram_length(self) -> float:
-        return self.num_frames / self.num_examples
+        self.config = get_config()
 
     def __iter__(self) -> typing.Iterator[run._utils.SpectrogramModelExample]:
+        # TODO: Add a method for transfering global configuration between processes without private
+        # variables.
+        # TODO: After the global configuration is transfered, the functions need to be rechecked
+        # like for a configuration, just in case the configuration is on a new process.
+        hparams.hparams._configuration = self.config
+        # NOTE: `sqlite3.Connection` cannot be pickled, so it needs to be created on each process.
+        connection = run._utils.connect(self.database)
         generator = run._config.get_dataset_generator(self.dataset)
         while True:
             examples = [
-                get_spectrogram_example(next(generator), self.connection, self.input_encoder)
+                get_spectrogram_example(next(generator), connection, self.input_encoder)
                 for _ in range(self.bucket_size)
             ]
-            self.num_examples += len(examples)
-            self.num_frames += sum([e.spectrogram.shape[0] for e in examples])
             yield from sorted(examples, key=lambda e: e.spectrogram.shape[0])
 
 
@@ -505,9 +506,8 @@ class _DataLoader(collections.Iterable):
 
     def __init__(self, iterator: _DataIterator, batch_size: int, device: torch.device, **kwargs):
         self.device = device
-        self.iterator = iterator
         loader = torch.utils.data.dataloader.DataLoader(
-            self.iterator,
+            iterator,
             pin_memory=True,
             batch_size=batch_size,
             worker_init_fn=functools.partial(
@@ -517,31 +517,40 @@ class _DataLoader(collections.Iterable):
             **kwargs,
         )
         self.loader = iter(loader)
+        self.num_frames = 0
+        self.num_examples = 0
+
+    @property
+    def average_spectrogram_length(self) -> float:
+        return self.num_frames / self.num_examples
 
     def __iter__(self) -> typing.Iterator[SpectrogramModelExampleBatch]:
         while True:
-            yield tensors_to(next(self.loader), device=self.device, non_blocking=True)
+            batch = next(self.loader)
+            self.num_frames += batch.spectrogram.lengths.float().sum().item()
+            self.num_examples += batch.length
+            yield tensors_to(batch, device=self.device, non_blocking=True)
 
 
 @configurable
 def _get_data_loaders(
     state: _State,
-    connection: sqlite3.Connection,
     train_dataset: run._config.Dataset,
     dev_dataset: run._config.Dataset,
     train_batch_size: int = HParam(),
     dev_batch_size: int = HParam(),
     bucket_size_multiplier: int = HParam(),
     num_workers: int = HParam(),
+    database: pathlib.Path = run._config.DATABASE_PATH,
 ) -> typing.Tuple[_DataLoader, _DataLoader]:
     """ Initialize training and development data loaders.  """
     bucket_size = bucket_size_multiplier * train_batch_size
     _DataIteratorPartial = functools.partial(
         _DataIterator,
-        connection=connection,
         input_encoder=state.input_encoder,
         comet_ml=state.comet_ml,
         bucket_size=bucket_size,
+        database=database,
     )
     DataLoaderPartial = functools.partial(_DataLoader, num_workers=num_workers, device=state.device)
     return (
@@ -632,7 +641,7 @@ def _run_step(
         # NOTE: We average accross `batch_size` and `frame_channels` so that the loss magnitude is
         # invariant to those variables.
 
-        average_spectrogram_length = data_loader.iterator.average_spectrogram_length
+        average_spectrogram_length = data_loader.average_spectrogram_length
 
         # spectrogram_loss [num_frames, batch_size, frame_channels] → [1]
         spectrogram_loss_ = (spectrogram_loss.sum(dim=0) / average_spectrogram_length).mean()
@@ -654,9 +663,9 @@ def _run_step(
 
         state.clipper.clip()
         state.optimizer.step()
+        state.step.add_(1)
         state.scheduler.step()
         state.comet_ml.set_step(state.step.item())
-        state.step.add_(1.0)
 
     if visualize:
         _visualize_source_vs_target(
@@ -819,10 +828,10 @@ def _run_worker(
     _configure(config)
     connection = run._utils.connect(run._config.DATABASE_PATH)
     state = _State.from_dataset(train_dataset, connection, comet_ml, device)
-    train_loader, dev_loader = _get_data_loaders(state, connection, train_dataset, dev_dataset)
+    train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
     _set_context = functools.partial(set_context, model=state.model, comet_ml=comet_ml)
     while True:
-        epoch = state.step // num_steps_per_epoch
+        epoch = state.step.item() // num_steps_per_epoch
         logger.info("Running Epoch %d, Step %d", epoch, state.step.item())
         comet_ml.log_current_epoch(epoch)
 
@@ -865,7 +874,6 @@ def _run(
     connection = run._utils.connect(run._config.DATABASE_PATH)
     dataset = run._config.get_dataset()
     all_examples = lambda: list(chain(*tuple(dataset.values())))
-    run._utils.update_audio_file_metadata(connection, [e.audio_path for e in all_examples()])
     run._utils.normalize_audio(dataset)
     run._utils.update_audio_file_metadata(connection, [e.audio_path for e in all_examples()])
     run._utils.handle_null_alignments(connection, dataset)
