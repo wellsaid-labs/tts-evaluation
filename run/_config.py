@@ -250,9 +250,6 @@ def configure_audio_processing():
             stop_token_standard_deviation=2,
             sample_rate=SAMPLE_RATE,
         ),
-        run._utils.get_rms_level: HParams(
-            frame_hop=frame_hop,
-        ),
     }
     add_config(config)
 

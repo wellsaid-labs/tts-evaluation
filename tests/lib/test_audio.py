@@ -1,6 +1,7 @@
 import itertools
 import pathlib
 import shutil
+import subprocess
 import tempfile
 from functools import partial
 
@@ -123,6 +124,15 @@ def test_get_audio_metadata__multiple_channels():
         encoding="32-bit Floating Point PCM",
         length=7.583958333333333,
     )
+
+
+def test_get_audio_metadata__bad_file():
+    """Test `lib.audio.get_audio_metadata` errors given a none-audio file."""
+    with tempfile.NamedTemporaryFile() as file_:
+        path = pathlib.Path(file_.name)
+        path.write_text("corrupted")
+        with pytest.raises(subprocess.CalledProcessError):
+            lib.audio.get_audio_metadata([path])
 
 
 def test_read_audio():
