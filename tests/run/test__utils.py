@@ -345,7 +345,7 @@ def test_set_context():
         assert rnn.training
         assert comet.context == run._utils.Context.TRAIN.value
         output, _ = rnn(torch.randn(5, 3, 10))
-        assert not output.requires_grad
+        assert output.requires_grad
     assert not rnn.training
 
 
