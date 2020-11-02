@@ -4,6 +4,7 @@ import functools
 import logging
 import math
 import pathlib
+import platform
 import random
 import sqlite3
 import sys
@@ -22,6 +23,7 @@ from torchnlp.utils import get_total_parameters, lengths_to_mask, tensors_to
 
 import lib
 import run
+from lib.environment import load, load_most_recent_file, save
 from lib.utils import flatten
 from run._config import (
     SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
@@ -106,237 +108,6 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
 
 
 @dataclasses.dataclass(frozen=True)
-class _DistributedMetrics:
-    """Track metrics with measurements taken on every process for every step.
-
-    Args:
-        batch_size: The batch size at each step.
-        data_queue_size: This measures the data loader queue each step. This metric should be a
-            positive integer indicating that the `data_loader` is loading faster than the data is
-            getting ingested; otherwise, the `data_loader` is bottlenecking training by loading too
-            slowly.
-        predicted_frame_alignment_norm: This measures the p-norm of an alignment from a frame to the
-            tokens. As the alignment per frame consolidates on a couple tokens in the input, this
-            metric goes from zero to one.
-        predicted_frame_alignment_std: This measures the discrete standard deviation of an alignment
-            from a frame to the tokens. As the alignment per frame is localized to a couple
-            sequential tokens in the input, this metric goes to zero.
-        num_skips_per_speaker: In the predicted alignment, this tracks the number of tokens
-            that were skipped per speaker. This could indicate that the model has issues, or that
-            the dataset is flawed.
-        num_tokens_per_speaker: The number of tokens per speaker for each step.
-        frame_rms_level: This measures the sum of the RMS level for each frame in each step.
-        text_length_bucket_size: This is a constant value bucket size for reporting the text
-            length distribution.
-        num_examples_per_text_length: For each text length bucket, this counts the number of
-            examples.
-        num_frames_per_speaker: For each speaker, this counts the number of spectrogram frames
-            each step.
-        num_frames_predicted: This measures the number of frames predicte each step.
-        num_frames: This measures the number of frames in each step.
-        num_reached_max_frames: This measures the number of predicted spectrograms that reach max
-            frames each step.
-        predicted_frame_rms_level: This measures the sum of the RMS level for each predicted frame
-            in each step.
-        spectrogram_loss: This measures the difference between the original and predicted
-            spectrogram each step.
-        stop_token_loss: This measures the difference between the original and predicted stop token
-            distribution each step.
-        stop_token_num_correct: This measures the number of correct stop token predictions each
-            step.
-    """
-
-    batch_size: typing.List[float] = dataclasses.field(default_factory=list)
-    data_queue_size: typing.List[float] = dataclasses.field(default_factory=list)
-    predicted_frame_alignment_norm: typing.List[float] = dataclasses.field(default_factory=list)
-    predicted_frame_alignment_std: typing.List[float] = dataclasses.field(default_factory=list)
-    num_skips_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    num_tokens_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    frame_rms_level: typing.List[float] = dataclasses.field(default_factory=list)
-    text_length_bucket_size: int = 10
-    num_examples_per_text_length: typing.Dict[int, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    num_frames_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    num_frames_predicted: typing.List[float] = dataclasses.field(default_factory=list)
-    num_frames: typing.List[float] = dataclasses.field(default_factory=list)
-    num_reached_max_frames: typing.List[float] = dataclasses.field(default_factory=list)
-    predicted_frame_rms_level: typing.List[float] = dataclasses.field(default_factory=list)
-    spectrogram_loss: typing.List[float] = dataclasses.field(default_factory=list)
-    stop_token_loss: typing.List[float] = dataclasses.field(default_factory=list)
-    stop_token_num_correct: typing.List[float] = dataclasses.field(default_factory=list)
-
-    @staticmethod
-    def append(metric: typing.List[float], value: typing.Union[int, float, torch.Tensor]):
-        """Append measurement to a `metric`.
-
-        NOTE: The measurements will accrue on the master process only.
-        """
-        value = float(value.sum().item() if isinstance(value, torch.Tensor) else value)
-        metric.append(lib.distributed.reduce_(value))
-
-    def update_dataset_metrics(
-        self,
-        batch: SpectrogramModelExampleBatch,
-        input_encoder: lib.spectrogram_model.InputEncoder,
-    ):
-        self.append(self.batch_size, batch.length)
-        self.append(self.num_frames, batch.spectrogram)
-
-        for text in flatten(lib.distributed.gather_list([len(t) for t in batch.text])):
-            self.num_examples_per_text_length[text // self.text_length_bucket_size] += 1
-
-        lambda_ = lambda t: flatten(lib.distributed.gather_list(t.squeeze().tolist()))
-        iterator = zip(lambda_(batch.encoded_speaker.tensor), lambda_(batch.spectrogram.lengths))
-        for speaker_index, num_frames in iterator:
-            speaker = input_encoder.speaker_encoder.index_to_token[speaker_index]
-            self.num_frames_per_speaker[speaker] += num_frames
-
-    def update_alignment_metrics(
-        self,
-        alignments: torch.Tensor,
-        spectrogram_mask: torch.Tensor,
-        token_mask: torch.Tensor,
-        num_tokens: torch.Tensor,
-        speakers: torch.Tensor,
-        input_encoder: lib.spectrogram_model.InputEncoder,
-        norm: float = math.inf,
-    ):
-        """
-        TODO: Reduce the boiler plate required to track a metric per speaker.
-
-        Args:
-            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-            spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
-            token_mask (torch.BoolTensor [batch_size, num_tokens])
-            num_tokens (torch.LongTensor [batch_size])
-            speakers (torch.LongTensor [batch_size])
-            ...
-        """
-        if spectrogram_mask.sum() == 0 or token_mask.sum() == 0:
-            return
-
-        mask = lambda t: t.masked_select(spectrogram_mask)
-        weighted_std = lib.utils.get_weighted_std(alignments, dim=2)
-        self.append(self.predicted_frame_alignment_std, mask(weighted_std))
-        self.append(self.predicted_frame_alignment_norm, mask(alignments.norm(norm, dim=2)))
-
-        num_skipped = run._utils.get_num_skipped(alignments, token_mask, spectrogram_mask)
-
-        iterate = lambda t: flatten(lib.distributed.gather_list(t.squeeze().tolist()))
-        iterator = zip(iterate(speakers), iterate(num_skipped), iterate(num_tokens))
-        for speaker_index, _num_skipped, _num_tokens in iterator:
-            speaker = input_encoder.speaker_encoder.index_to_token[speaker_index]
-            self.num_skips_per_speaker[speaker] += _num_skipped
-            self.num_tokens_per_speaker[speaker] += _num_tokens
-
-    def update_rms_level_metrics(
-        self,
-        target_spectrogram: torch.Tensor,
-        predicted_spectrogram: torch.Tensor,
-        target_mask: typing.Optional[torch.Tensor] = None,
-        predicted_mask: typing.Optional[torch.Tensor] = None,
-        **kwargs,
-    ):
-        """
-        Args:
-            target (torch.FloatTensor [num_frames, batch_size, frame_channels])
-            predicted (torch.FloatTensor [num_frames, batch_size, frame_channels])
-            target_mask (torch.FloatTensor [num_frames, batch_size])
-            predicted_mask (torch.FloatTensor [num_frames, batch_size])
-            **kwargs: Additional key word arguments passed to `get_rms_level`.
-        """
-        lambda_ = lambda t, m: get_rms_level(t, m, **kwargs)
-        self.append(self.frame_rms_level, lambda_(target_spectrogram, target_mask))
-        self.append(self.predicted_frame_rms_level, lambda_(predicted_spectrogram, predicted_mask))
-
-    def update_stop_token_accuracy(
-        self,
-        target: torch.Tensor,
-        predicted_logits: torch.Tensor,
-        stop_threshold: float,
-        mask: torch.Tensor,
-    ):
-        """
-        Args:
-            target (torch.FloatTensor [num_frames, batch_size])
-            predicted_logits (torch.FloatTensor [num_frames, batch_size])
-            stop_threshold
-            mask (torch.BoolTensor [num_frames, batch_size])
-        """
-        bool_ = lambda t: (t > stop_threshold).masked_select(mask)
-        is_correct = bool_(target) == bool_(torch.sigmoid(predicted_logits))
-        self.append(self.stop_token_num_correct, is_correct)
-
-    @configurable
-    def log(
-        self,
-        comet: comet_ml.Experiment,
-        reduce_: typing.Callable[[typing.List[float]], float],
-        dataset_type: DatasetType,
-        cadence: Cadence,
-        num_frame_channels=HParam(),
-    ):
-        """Log `self` to `comet`.
-
-        Args:
-            comet
-            reduce_: If there is a list of measurements, this callable is used to reduce it.
-            ...
-        """
-        div = lambda n, d, r=reduce_: r(n) / r(d) if len(n) > 0 and len(d) > 0 else None
-        power_to_db = lambda t: lib.audio.power_to_db(torch.tensor(reduce_(t)))
-        predicted_rms = div(self.predicted_frame_rms_level, self.num_frames_predicted, power_to_db)
-        rms = div(self.frame_rms_level, self.num_frames, power_to_db)
-
-        Stats = typing.Dict[str, typing.Optional[float]]
-        model_stats: Stats = {
-            "alignment_norm": div(self.predicted_frame_alignment_norm, self.num_frames_predicted),
-            "alignment_std": div(self.predicted_frame_alignment_std, self.num_frames_predicted),
-            "average_relative_speed": div(self.num_frames_predicted, self.num_frames),
-            "stop_token_accuracy": div(self.stop_token_num_correct, self.num_frames),
-            "stop_token_loss": div(self.stop_token_loss, self.num_frames),
-            "reached_max_frames": div(self.num_reached_max_frames, self.batch_size),
-            "spectrogram_loss": div(self.spectrogram_loss, self.num_frames * num_frame_channels),
-            "average_predicted_rms_level": predicted_rms,
-            "average_rms_level_delta": (
-                predicted_rms - rms if predicted_rms is not None and rms is not None else None
-            ),
-        }
-        dataset_stats: Stats = {
-            "data_loader_queue_size": div(self.data_queue_size, [1] * len(self.data_queue_size)),
-            "average_rms_level": rms,
-        }
-        partial = functools.partial(get_dataset_label, type_=dataset_type)
-        iterator: typing.List[typing.Tuple[Stats, typing.Callable[..., Label]]]
-        iterator = [(model_stats, get_model_label), (dataset_stats, partial)]
-        for stats, get_label in iterator:
-            for name, value in stats.items():
-                if value is not None:
-                    comet.log_metric(get_label(name, cadence=cadence), value)
-
-        for speaker, count in self.num_frames_per_speaker.items():
-            label = partial("frequency", cadence=cadence, speaker=speaker)
-            comet.log_metric(label, count / sum(self.num_frames_per_speaker.values()))
-
-        for bucket, count in self.num_examples_per_text_length.items():
-            lower = bucket * self.text_length_bucket_size
-            upper = (bucket + 1) * self.text_length_bucket_size
-            label = partial(f"{lower}_{upper}", cadence=cadence)
-            comet.log_metric(label, count / sum(self.num_examples_per_text_length.values()))
-
-        zip_ = zip(self.num_tokens_per_speaker.items(), self.num_skips_per_speaker.values())
-        for (speaker, num_tokens), num_skips in zip_:
-            comet.log_metric(get_model_label("skips", cadence, speaker), num_skips / num_tokens)
-
-
-@dataclasses.dataclass(frozen=True)
 class _State:
     input_encoder: lib.spectrogram_model.InputEncoder
     model: torch.nn.parallel.DistributedDataParallel
@@ -350,14 +121,16 @@ class _State:
     @staticmethod
     def _get_input_encoder(
         train_dataset: run._config.Dataset,
+        dev_dataset: run._config.Dataset,
         connection: sqlite3.Connection,
         comet: comet_ml.Experiment,
     ) -> lib.spectrogram_model.InputEncoder:
         """ Initialize an input encoder to encode model input. """
+        examples = chain(*tuple(chain(train_dataset.values(), dev_dataset.values())))
         input_encoder = lib.spectrogram_model.InputEncoder(
-            flatten([[e.text for e in d] for d in train_dataset.values()]),
+            flatten([e.text for e in examples]),
             run._config.DATASET_PHONETIC_CHARACTERS,
-            list(train_dataset.keys()),
+            list(train_dataset.keys()) + list(dev_dataset.keys()),
         )
         label = functools.partial(
             get_dataset_label, cadence=Cadence.STATIC, type_=DatasetType.TRAIN
@@ -432,11 +205,14 @@ class _State:
 
     @classmethod
     def from_checkpoint(
-        cls, checkpoint: pathlib.Path, device: torch.device, comet: comet_ml.Experiment
+        cls,
+        checkpoint: SpectrogramModelCheckpoint,
+        comet: comet_ml.Experiment,
+        device: torch.device,
     ):
         """ Recreate the spectrogram training state from a `checkpoint`. """
         _, _, _, step, encoder, model, optimizer, clipper, scheduler = dataclasses.astuple(
-            typing.cast(SpectrogramModelCheckpoint, lib.environment.load(checkpoint, device=device))
+            checkpoint
         )
         model_ = torch.nn.parallel.DistributedDataParallel(model, [device], device)
         step = torch.tensor(step)
@@ -446,12 +222,13 @@ class _State:
     def from_dataset(
         cls,
         train_dataset: run._config.Dataset,
+        dev_dataset: run._config.Dataset,
         connection: sqlite3.Connection,
         comet: comet_ml.Experiment,
         device: torch.device,
     ):
         """ Create spectrogram training state from the `train_dataset`. """
-        input_encoder = cls._get_input_encoder(train_dataset, connection, comet)
+        input_encoder = cls._get_input_encoder(train_dataset, dev_dataset, connection, comet)
         model = cls._get_model(device, comet, input_encoder)
         distributed_model = torch.nn.parallel.DistributedDataParallel(model, [device], device)
         return cls(input_encoder, distributed_model, *cls._get_optimizers(model), comet, device)
@@ -557,6 +334,246 @@ def _get_data_loaders(
         DataLoaderPartial(_DataIteratorPartial(train_dataset), train_batch_size),
         DataLoaderPartial(_DataIteratorPartial(dev_dataset), dev_batch_size),
     )
+
+
+@dataclasses.dataclass(frozen=True)
+class _DistributedMetrics:
+    """Track metrics with measurements taken on every process for every step.
+
+    Args:
+        batch_size: The batch size at each step.
+        data_queue_size: This measures the data loader queue each step. This metric should be a
+            positive integer indicating that the `data_loader` is loading faster than the data is
+            getting ingested; otherwise, the `data_loader` is bottlenecking training by loading too
+            slowly.
+        predicted_frame_alignment_norm: This measures the p-norm of an alignment from a frame to the
+            tokens. As the alignment per frame consolidates on a couple tokens in the input, this
+            metric goes from zero to one.
+        predicted_frame_alignment_std: This measures the discrete standard deviation of an alignment
+            from a frame to the tokens. As the alignment per frame is localized to a couple
+            sequential tokens in the input, this metric goes to zero.
+        num_skips_per_speaker: In the predicted alignment, this tracks the number of tokens
+            that were skipped per speaker. This could indicate that the model has issues, or that
+            the dataset is flawed.
+        num_tokens_per_speaker: The number of tokens per speaker for each step.
+        frame_rms_level: This measures the sum of the RMS level for each frame in each step.
+        text_length_bucket_size: This is a constant value bucket size for reporting the text
+            length distribution.
+        num_examples_per_text_length: For each text length bucket, this counts the number of
+            examples.
+        num_frames_per_speaker: For each speaker, this counts the number of spectrogram frames
+            each step.
+        num_frames_predicted: This measures the number of frames predicte each step.
+        num_frames: This measures the number of frames in each step.
+        num_reached_max_frames: This measures the number of predicted spectrograms that reach max
+            frames each step.
+        predicted_frame_rms_level: This measures the sum of the RMS level for each predicted frame
+            in each step.
+        spectrogram_loss: This measures the difference between the original and predicted
+            spectrogram each step.
+        stop_token_loss: This measures the difference between the original and predicted stop token
+            distribution each step.
+        stop_token_num_correct: This measures the number of correct stop token predictions each
+            step.
+    """
+
+    batch_size: typing.List[float] = dataclasses.field(default_factory=list)
+    data_queue_size: typing.List[float] = dataclasses.field(default_factory=list)
+    predicted_frame_alignment_norm: typing.List[float] = dataclasses.field(default_factory=list)
+    predicted_frame_alignment_std: typing.List[float] = dataclasses.field(default_factory=list)
+    num_skips_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
+        default_factory=lambda: collections.defaultdict(float)
+    )
+    num_tokens_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
+        default_factory=lambda: collections.defaultdict(float)
+    )
+    frame_rms_level: typing.List[float] = dataclasses.field(default_factory=list)
+    text_length_bucket_size: int = 10
+    num_examples_per_text_length: typing.Dict[int, float] = dataclasses.field(
+        default_factory=lambda: collections.defaultdict(float)
+    )
+    num_frames_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
+        default_factory=lambda: collections.defaultdict(float)
+    )
+    num_frames_predicted: typing.List[float] = dataclasses.field(default_factory=list)
+    num_frames: typing.List[float] = dataclasses.field(default_factory=list)
+    num_reached_max_frames: typing.List[float] = dataclasses.field(default_factory=list)
+    predicted_frame_rms_level: typing.List[float] = dataclasses.field(default_factory=list)
+    spectrogram_loss: typing.List[float] = dataclasses.field(default_factory=list)
+    stop_token_loss: typing.List[float] = dataclasses.field(default_factory=list)
+    stop_token_num_correct: typing.List[float] = dataclasses.field(default_factory=list)
+
+    @staticmethod
+    def append(metric: typing.List[float], value: typing.Union[int, float, torch.Tensor]):
+        """Append measurement to a `metric`.
+
+        NOTE: The measurements will accrue on the master process only.
+        """
+        value = float(value.sum().item() if isinstance(value, torch.Tensor) else value)
+        metric.append(lib.distributed.reduce_(value))
+
+    def update_dataset_metrics(
+        self,
+        batch: SpectrogramModelExampleBatch,
+        input_encoder: lib.spectrogram_model.InputEncoder,
+    ):
+        self.append(self.batch_size, batch.length)
+        self.append(self.num_frames, batch.spectrogram.lengths)
+
+        for text in flatten(lib.distributed.gather_list([len(t) for t in batch.text])):
+            self.num_examples_per_text_length[text // self.text_length_bucket_size] += 1
+
+        lambda_ = lambda t: flatten(lib.distributed.gather_list(t.squeeze().tolist()))
+        iterator = zip(lambda_(batch.encoded_speaker.tensor), lambda_(batch.spectrogram.lengths))
+        for speaker_index, num_frames in iterator:
+            speaker = input_encoder.speaker_encoder.index_to_token[speaker_index]
+            self.num_frames_per_speaker[speaker] += num_frames
+
+    def update_alignment_metrics(
+        self,
+        alignments: torch.Tensor,
+        spectrogram_mask: torch.Tensor,
+        token_mask: torch.Tensor,
+        num_tokens: torch.Tensor,
+        speakers: torch.Tensor,
+        input_encoder: lib.spectrogram_model.InputEncoder,
+        norm: float = math.inf,
+    ):
+        """
+        TODO: Reduce the boiler plate required to track a metric per speaker.
+
+        Args:
+            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+            spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
+            token_mask (torch.BoolTensor [batch_size, num_tokens])
+            num_tokens (torch.LongTensor [batch_size])
+            speakers (torch.LongTensor [batch_size])
+            ...
+        """
+        if spectrogram_mask.sum() == 0 or token_mask.sum() == 0:
+            return
+
+        mask = lambda t: t.masked_select(spectrogram_mask)
+        weighted_std = lib.utils.get_weighted_std(alignments, dim=2)
+        self.append(self.predicted_frame_alignment_std, mask(weighted_std))
+        self.append(self.predicted_frame_alignment_norm, mask(alignments.norm(norm, dim=2)))
+
+        num_skipped = run._utils.get_num_skipped(alignments, token_mask, spectrogram_mask)
+
+        iterate = lambda t: flatten(lib.distributed.gather_list(t.squeeze().tolist()))
+        iterator = zip(iterate(speakers), iterate(num_skipped), iterate(num_tokens))
+        for speaker_index, _num_skipped, _num_tokens in iterator:
+            speaker = input_encoder.speaker_encoder.index_to_token[speaker_index]
+            self.num_skips_per_speaker[speaker] += _num_skipped
+            self.num_tokens_per_speaker[speaker] += _num_tokens
+
+    def update_rms_level_metrics(
+        self,
+        target_spectrogram: torch.Tensor,
+        predicted_spectrogram: torch.Tensor,
+        target_mask: typing.Optional[torch.Tensor] = None,
+        predicted_mask: typing.Optional[torch.Tensor] = None,
+        **kwargs,
+    ):
+        """
+        Args:
+            target (torch.FloatTensor [num_frames, batch_size, frame_channels])
+            predicted (torch.FloatTensor [num_frames, batch_size, frame_channels])
+            target_mask (torch.FloatTensor [num_frames, batch_size])
+            predicted_mask (torch.FloatTensor [num_frames, batch_size])
+            **kwargs: Additional key word arguments passed to `get_rms_level`.
+        """
+        lambda_ = lambda t, m: get_rms_level(t, m, **kwargs)
+        self.append(self.frame_rms_level, lambda_(target_spectrogram, target_mask))
+        self.append(self.predicted_frame_rms_level, lambda_(predicted_spectrogram, predicted_mask))
+
+    def update_stop_token_accuracy(
+        self,
+        target: torch.Tensor,
+        predicted_logits: torch.Tensor,
+        stop_threshold: float,
+        mask: torch.Tensor,
+    ):
+        """
+        Args:
+            target (torch.FloatTensor [num_frames, batch_size])
+            predicted_logits (torch.FloatTensor [num_frames, batch_size])
+            stop_threshold
+            mask (torch.BoolTensor [num_frames, batch_size])
+        """
+        bool_ = lambda t: (t > stop_threshold).masked_select(mask)
+        is_correct = bool_(target) == bool_(torch.sigmoid(predicted_logits))
+        self.append(self.stop_token_num_correct, is_correct)
+
+    def update_data_queue_size(self, data_loader: _DataLoader):
+        # NOTE: `qsize` is not implemented on MacOS, learn more:
+        # https://docs.python.org/3/library/multiprocessing.html#multiprocessing.Queue.qsize
+        if (
+            isinstance(data_loader.loader, _MultiProcessingDataLoaderIter)
+            and platform.system() != "Darwin"
+        ):
+            self.append(self.data_queue_size, data_loader.loader._data_queue.qsize())
+
+    @configurable
+    def log(
+        self,
+        comet: comet_ml.Experiment,
+        reduce_: typing.Callable[[typing.List[float]], float],
+        dataset_type: DatasetType,
+        cadence: Cadence,
+        num_frame_channels=HParam(),
+    ):
+        """Log `self` to `comet`.
+
+        Args:
+            comet
+            reduce_: If there is a list of measurements, this callable is used to reduce it.
+            ...
+        """
+        div = lambda n, d, r=reduce_: r(n) / r(d) if len(n) > 0 and len(d) > 0 else None
+        power_to_db = lambda t: lib.audio.power_to_db(torch.tensor(reduce_(t)))
+        predicted_rms = div(self.predicted_frame_rms_level, self.num_frames_predicted, power_to_db)
+        rms = div(self.frame_rms_level, self.num_frames, power_to_db)
+
+        Stats = typing.Dict[str, typing.Optional[float]]
+        model_stats: Stats = {
+            "alignment_norm": div(self.predicted_frame_alignment_norm, self.num_frames_predicted),
+            "alignment_std": div(self.predicted_frame_alignment_std, self.num_frames_predicted),
+            "average_relative_speed": div(self.num_frames_predicted, self.num_frames),
+            "stop_token_accuracy": div(self.stop_token_num_correct, self.num_frames),
+            "stop_token_loss": div(self.stop_token_loss, self.num_frames),
+            "reached_max_frames": div(self.num_reached_max_frames, self.batch_size),
+            "spectrogram_loss": div(self.spectrogram_loss, self.num_frames * num_frame_channels),
+            "average_predicted_rms_level": predicted_rms,
+            "average_rms_level_delta": (
+                predicted_rms - rms if predicted_rms is not None and rms is not None else None
+            ),
+        }
+        dataset_stats: Stats = {
+            "data_loader_queue_size": div(self.data_queue_size, [1] * len(self.data_queue_size)),
+            "average_rms_level": rms,
+        }
+        partial = functools.partial(get_dataset_label, type_=dataset_type)
+        iterator: typing.List[typing.Tuple[Stats, typing.Callable[..., Label]]]
+        iterator = [(model_stats, get_model_label), (dataset_stats, partial)]
+        for stats, get_label in iterator:
+            for name, value in stats.items():
+                if value is not None:
+                    comet.log_metric(get_label(name, cadence=cadence), value)
+
+        for speaker, count in self.num_frames_per_speaker.items():
+            label = partial("frequency", cadence=cadence, speaker=speaker)
+            comet.log_metric(label, count / sum(self.num_frames_per_speaker.values()))
+
+        for bucket, count in self.num_examples_per_text_length.items():
+            lower = bucket * self.text_length_bucket_size
+            upper = (bucket + 1) * self.text_length_bucket_size
+            label = partial(f"{lower}_{upper}", cadence=cadence)
+            comet.log_metric(label, count / sum(self.num_examples_per_text_length.values()))
+
+        zip_ = zip(self.num_tokens_per_speaker.items(), self.num_skips_per_speaker.values())
+        for (speaker, num_tokens), num_skips in zip_:
+            comet.log_metric(get_model_label("skips", cadence, speaker), num_skips / num_tokens)
 
 
 def _visualize_source_vs_target(
@@ -688,10 +705,9 @@ def _run_step(
         typing.cast(float, state.model.module.stop_threshold),
         batch.spectrogram_mask.tensor,
     )
+    metrics.update_data_queue_size(data_loader)
     metrics.append(metrics.spectrogram_loss, spectrogram_loss)
     metrics.append(metrics.stop_token_loss, stop_token_loss)
-    if isinstance(data_loader.loader, _MultiProcessingDataLoaderIter):
-        metrics.append(metrics.data_queue_size, data_loader.loader._data_queue.qsize())
     metrics.log(state.comet, lambda l: l[-1], dataset_type, Cadence.STEP)
 
 
@@ -780,26 +796,27 @@ def _run_inference(
     if lengths.numel() > 0:
         # NOTE: Remove predictions that diverged (reached max) as to not skew other metrics. We
         # count these sequences seperatly with `reached_max_frames`.
-        bool_ = ~reached_max.squeeze()
+        bool_ = ~reached_max.view(-1)
+        max_frames = int(lengths[:, bool_].max())
+        max_tokens = int(batch.encoded_text.lengths[:, bool_].max())
         metrics.append(metrics.batch_size, batch.length - reached_max.sum().item())
         metrics.append(metrics.num_frames, batch.spectrogram.lengths[:, bool_])
         metrics.append(metrics.num_frames_predicted, lengths[:, bool_])
         metrics.update_rms_level_metrics(
-            batch.spectrogram.tensor[:, bool_],
-            frames[:, bool_],
-            batch.spectrogram_mask.tensor[:, bool_],
+            batch.spectrogram.tensor[:max_frames, bool_],
+            frames[:max_frames, bool_],
+            batch.spectrogram_mask.tensor[:max_frames, bool_],
             lengths_to_mask(lengths[:, bool_], device=lengths.device).transpose(0, 1),
         )
         metrics.update_alignment_metrics(
-            alignments[:, bool_],
-            batch.spectrogram_mask.tensor[:, bool_],
-            batch.encoded_text_mask.tensor[:, bool_],
-            batch.encoded_text.lengths[:, bool_],
+            alignments[:max_frames, bool_, :max_tokens],
+            batch.spectrogram_mask.tensor[:max_frames, bool_],
+            batch.encoded_text_mask.tensor[:max_tokens, bool_],
+            batch.encoded_text.lengths[:max_tokens, bool_],
             batch.encoded_speaker.tensor[:, bool_],
             state.input_encoder,
         )
-    if isinstance(data_loader.loader, _MultiProcessingDataLoaderIter):
-        metrics.append(metrics.data_queue_size, data_loader.loader._data_queue.qsize())
+    metrics.update_data_queue_size(data_loader)
     metrics.append(metrics.num_reached_max_frames, reached_max)
 
 
@@ -827,7 +844,11 @@ def _run_worker(
     comet = comet_partial(disabled=not lib.distributed.is_master(), auto_output_logging=False)
     _configure(config)
     connection = run._utils.connect(run._config.DATABASE_PATH)
-    state = _State.from_dataset(train_dataset, connection, comet, device)
+    if checkpoint is None:
+        state = _State.from_dataset(train_dataset, dev_dataset, connection, comet, device)
+    else:
+        checkpoint_ = typing.cast(SpectrogramModelCheckpoint, load(checkpoint, device=device))
+        state = _State.from_checkpoint(checkpoint_, comet, device)
     train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
     _set_context = functools.partial(set_context, model=state.model, comet=comet)
     while True:
@@ -851,9 +872,9 @@ def _run_worker(
                     metrics.log(comet, lambda l: l[-1], dataset_type, Cadence.STEP)
                 metrics.log(comet, sum, dataset_type, Cadence.MULTI_STEP)
 
-        lib.environment.save(
+        save(
             checkpoints_directory / f"step_{state.step.item()}{lib.environment.PT_EXTENSION}",
-            state.to_checkpoint(checkpoints_directory),
+            state.to_checkpoint(checkpoints_directory=checkpoints_directory),
         )
         comet.log_epoch_end(epoch)
 
@@ -922,9 +943,9 @@ def resume(
     file is loaded."""
     pattern = str(SPECTROGRAM_MODEL_EXPERIMENTS_PATH / f"**/*{lib.environment.PT_EXTENSION}")
     if checkpoint:
-        loaded = lib.environment.load(checkpoint)
+        loaded = load(checkpoint)
     else:
-        checkpoint, loaded = lib.environment.load_most_recent_file(pattern, lib.environment.load)
+        checkpoint, loaded = load_most_recent_file(pattern, load)
     checkpoint_ = typing.cast(SpectrogramModelCheckpoint, loaded)
     comet = lib.visualize.CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
     config, recorder = _setup(comet, context.args)
