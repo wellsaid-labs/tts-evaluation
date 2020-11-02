@@ -9,8 +9,5 @@ line_length = 100
 
 [tool.pytest.ini_options]
 testpaths = ['lib', 'tests', 'run']
-addopts = '--cov=lib --cov=run --cov-report html:coverage --cov-report=term-missing --durations=10'
-filterwarnings = [
-    'ignore::UserWarning:hparams.*:'
-]
+addopts = '-p no:warnings --cov=lib --cov=run --cov-report html:coverage --cov-report=term-missing --durations=10'
 
