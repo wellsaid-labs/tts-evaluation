@@ -355,6 +355,34 @@ def test_spectrogram_model__train():
     (spectrogram_loss.sum() + stop_token_loss.sum()).backward()
 
 
+def test_spectrogram_model__reached_max_all():
+    """ Test `spectrogram_model.SpectrogramModel` handles `reached_max`. """
+    (tokens, speaker, num_tokens, *_), params = _make_inputs(batch_size=32)
+    model = _make_spectrogram_model(params, dropout=0)
+
+    # NOTE: Make sure that stop-token is not predicted; therefore, reaching `max_frames_per_token`.
+    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].weight, -math.inf)
+    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].bias, -math.inf)
+
+    frames, stop_tokens, alignments, lengths, reached_max = model(
+        tokens, speaker, num_tokens=num_tokens, mode=Mode.INFER
+    )
+
+    assert frames.dtype == torch.float
+    assert frames.shape == (params.max_frames, params.batch_size, params.num_frame_channels)
+
+    assert stop_tokens.dtype == torch.float
+    assert stop_tokens.shape == (params.max_frames, params.batch_size)
+
+    assert alignments.dtype == torch.float
+    assert alignments.shape == (params.max_frames, params.batch_size, params.max_num_tokens)
+
+    assert lengths.shape == (1, params.batch_size)
+
+    assert reached_max.dtype == torch.bool
+    assert reached_max.sum().item() == params.batch_size
+
+
 def test_spectrogram_model__is_stop():
     """ Test `spectrogram_model.SpectrogramModel._is_stop` basic cases. """
     _, params = _make_inputs()
@@ -539,79 +567,6 @@ def test_spectrogram_model__train_batch_padding_invariance():
     assert_almost_equal(stop_token, batch_stop_token[:length, i])
     assert_almost_equal(alignment, batch_alignment[:length, i, :num_tokens_])
     [assert_almost_equal(r, e) for r, e in zip(grad, batch_grad)]
-
-
-def test_spectrogram_model__filter_reached_max():
-    """ Test `spectrogram_model.SpectrogramModel` `filter_reached_max` filters outputs. """
-    with fork_rng(seed=123):
-        (tokens, speaker, num_tokens, *_), params = _make_inputs(batch_size=32)
-        model = _make_spectrogram_model(params, dropout=0)
-        _mock_model(model)
-
-        frames, stop_tokens, alignments, lengths, reached_max = model(
-            tokens,
-            speaker,
-            num_tokens=num_tokens,
-            filter_reached_max=True,
-            mode=Mode.INFER,
-        )
-
-        num_reached_max = reached_max.sum().item()
-        max_length = lengths.max().item()
-
-        assert frames.dtype == torch.float
-        assert frames.shape == (
-            max_length,
-            params.batch_size - num_reached_max,
-            params.num_frame_channels,
-        )
-
-        assert stop_tokens.dtype == torch.float
-        assert stop_tokens.shape == (max_length, params.batch_size - num_reached_max)
-
-        assert alignments.dtype == torch.float
-        assert alignments.shape == (
-            max_length,
-            params.batch_size - num_reached_max,
-            params.max_num_tokens,
-        )
-
-        assert lengths.shape == (1, params.batch_size - num_reached_max)
-
-        for length in lengths[0].tolist():
-            assert length > 0
-            assert length <= max_length
-
-        assert reached_max.dtype == torch.bool
-        assert reached_max.sum().item() >= 0
-
-
-def test_spectrogram_model__filter_reached_max_all():
-    """ Test `spectrogram_model.SpectrogramModel` `filter_reached_max` filters all outputs. """
-    (tokens, speaker, num_tokens, *_), params = _make_inputs(batch_size=32)
-    model = _make_spectrogram_model(params, dropout=0)
-
-    # NOTE: Make sure that stop-token is not predicted; therefore, reaching `max_frames_per_token`.
-    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].weight, -math.inf)
-    torch.nn.init.constant_(model.decoder.linear_stop_token[-1].bias, -math.inf)
-
-    frames, stop_tokens, alignments, lengths, reached_max = model(
-        tokens, speaker, num_tokens=num_tokens, filter_reached_max=True, mode=Mode.INFER
-    )
-
-    assert frames.dtype == torch.float
-    assert frames.shape == (params.max_frames, 0, params.num_frame_channels)
-
-    assert stop_tokens.dtype == torch.float
-    assert stop_tokens.shape == (params.max_frames, 0)
-
-    assert alignments.dtype == torch.float
-    assert alignments.shape == (params.max_frames, 0, params.max_num_tokens)
-
-    assert lengths.shape == (1, 0)
-
-    assert reached_max.dtype == torch.bool
-    assert reached_max.sum().item() == params.batch_size
 
 
 _expected_parameters = {

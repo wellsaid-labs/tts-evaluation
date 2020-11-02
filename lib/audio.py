@@ -191,7 +191,8 @@ def normalize_audio(
     """Normalize the audio `encoding`, `sample_rate` and `num_channels`. Additionally, this
     can apply `audio_filters`.
 
-    Learn more: https://superuser.com/questions/326629/how-can-i-make-ffmpeg-be-quieter-less-verbose
+    Learn more about `-hide_banner`, `-loglevel` and `-nostats`:
+    https://superuser.com/questions/326629/how-can-i-make-ffmpeg-be-quieter-less-verbose
     """
     command = "" if len(audio_filters) == 0 else f"-af {audio_filters}"
     command = (

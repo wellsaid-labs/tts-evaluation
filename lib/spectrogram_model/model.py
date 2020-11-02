@@ -273,9 +273,10 @@ class SpectrogramModel(nn.Module):
             target_frames (torch.FloatTensor [num_frames, batch_size (optional),
                 num_frame_channels]): Ground truth frames for "teacher forcing" and loss.
             target_stop_token (torch.FloatTensor [num_frames, batch_size (optional)])
-            num_tokens (torch.LongTensor [batch_size] or None): Number of tokens in each sequence.
-            target_lengths (torch.LongTensor [batch_size] or None): Number of frames in each
-                sequence.
+            num_tokens (torch.LongTensor [1, batch_size (optional)] or None): Number of tokens in
+                each sequence.
+            target_lengths (torch.LongTensor [1, batch_size (optional)] or None): Number of frames
+                in each sequence.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size (optional), num_frame_channels]):
@@ -334,7 +335,8 @@ class SpectrogramModel(nn.Module):
         Args:
             tokens (torch.LongTensor [num_tokens, batch_size (optional)]): Sequences.
             speaker (torch.LongTensor [1, batch_size (optional)]): Speaker encodings.
-            num_tokens (torch.LongTensor [batch_size] or None): Number of tokens in each sequence.
+            num_tokens (torch.LongTensor [1, batch_size (optional)] or None): Number of tokens in
+                each sequence.
             split_size: The maximum length of a sequence returned by the generator.
             use_tqdm: If `True` then this adds a `tqdm` progress bar.
 
@@ -364,14 +366,9 @@ class SpectrogramModel(nn.Module):
         yield from ((i if is_batch else map(squeeze_, i)) for i in generator)  # type: ignore
 
     def _infer(
-        self, *args, filter_reached_max: bool = False, **kwargs
+        self, *args, **kwargs
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Generates a spectrogram given `tokens`, `speaker`, etc.
-
-        Args:
-            *args: See `self.generate` to learn more.
-            filter_reached_max: If `True` filter out sequences that overflowed from the batch.
-            **kwargs: See `self.generate` to learn more.
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size (optional), num_frame_channels]):
@@ -390,17 +387,6 @@ class SpectrogramModel(nn.Module):
         frames, stop_tokens, alignments, lengths, reached_max = items[0]
         if reached_max.sum() > 0:
             logger.warning("%d sequences reached max frames", reached_max.sum())
-        if filter_reached_max:
-            filter_ = ~reached_max.squeeze(0)
-            lengths = lengths[:, filter_]
-            frames, stop_tokens, alignments = tuple(
-                [
-                    t[: int(lengths.squeeze().max()), filter_]
-                    if lengths.numel() > 0
-                    else t[:, filter_]
-                    for t in [frames, stop_tokens, alignments]
-                ]
-            )
         return frames, stop_tokens, alignments, lengths, reached_max
 
     @typing.overload
@@ -422,7 +408,6 @@ class SpectrogramModel(nn.Module):
         tokens: torch.Tensor,
         speaker: torch.Tensor,
         mode: typing.Literal[Mode.INFER],
-        filter_reached_max: bool = False,
         num_tokens: typing.Optional[torch.Tensor] = None,
         use_tqdm: bool = False,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
