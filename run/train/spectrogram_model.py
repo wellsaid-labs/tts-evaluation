@@ -909,7 +909,7 @@ def _run(
             checkpoint,
             train_dataset,
             dev_dataset,
-            functools.partial(lib.visualize.CometMLExperiment, experiment_key=comet.get_key()),
+            functools.partial(run._utils.CometMLExperiment, experiment_key=comet.get_key()),
             config,
         ),
     )
@@ -927,7 +927,7 @@ def _setup(
     # configured? Should we throw an error if not? Or should we create a new experiment, and ensure
     # that each experiments parameters are immutable?
     parameters = _configure(parsed)
-    params = {get_config_label(k, Cadence.STATIC): v for k, v in parameters.items()}
+    params = {get_config_label(k): v for k, v in parameters.items()}
     comet.log_parameters(params)
     return parsed, recorder
 
@@ -947,7 +947,7 @@ def resume(
     else:
         checkpoint, loaded = load_most_recent_file(pattern, load)
     checkpoint_ = typing.cast(SpectrogramModelCheckpoint, loaded)
-    comet = lib.visualize.CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
+    comet = run._utils.CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
     config, recorder = _setup(comet, context.args)
     paths = maybe_make_experiment_directories_from_checkpoint(checkpoint_, recorder)
     _run(*paths, config, comet, checkpoint)
@@ -961,7 +961,7 @@ def start(
     tags: typing.List[str] = typer.Argument([], help="Experiment tags."),
 ):
     """ Start a training run in PROJECT named NAME with TAGS. """
-    comet = lib.visualize.CometMLExperiment(project_name=project)
+    comet = run._utils.CometMLExperiment(project_name=project)
     comet.set_name(name)
     comet.add_tags(tags)
     config, recorder = _setup(comet, context.args)

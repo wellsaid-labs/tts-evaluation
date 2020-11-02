@@ -5,10 +5,12 @@ import sqlite3
 import tempfile
 import typing
 
+import hparams
 import numpy as np
 import pytest
 import torch
 import torchnlp
+from matplotlib import pyplot
 
 import lib
 import run
@@ -16,6 +18,15 @@ from tests import _utils
 
 TEST_DATA_PATH = _utils.TEST_DATA_PATH / "test_audio"
 TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
+
+
+@pytest.fixture(autouse=True)
+def run_around_tests():
+    """ Set a basic configuration. """
+    sample_rate = 24000
+    hparams.add_config({lib.audio.write_audio: hparams.HParams(sample_rate=sample_rate)})
+    yield
+    hparams.clear_config()
 
 
 def test_maybe_make_experiment_directories(capsys):
@@ -327,12 +338,12 @@ def test_worker_init_fn():
 
 def test_set_context():
     """Test `run._utils.set_context` updates comet, module, and grad context. """
-    comet = lib.visualize.CometMLExperiment(disabled=True)
+    comet = run._utils.CometMLExperiment(disabled=True)
     rnn = torch.nn.LSTM(10, 20, 2).eval()
     assert not rnn.training
-    with run._utils.set_context(run._config.Context.TRAIN, rnn, comet):
+    with run._utils.set_context(run._utils.Context.TRAIN, rnn, comet):
         assert rnn.training
-        assert comet.context == run._config.Context.TRAIN.value
+        assert comet.context == run._utils.Context.TRAIN.value
         output, _ = rnn(torch.randn(5, 3, 10))
         assert not output.requires_grad
     assert not rnn.training
@@ -446,3 +457,25 @@ def test_get_num_skipped():
     token_mask = torch.tensor(token_mask_).bool()
     num_skips = run._utils.get_num_skipped(alignments, token_mask, spectrogram_mask)
     assert num_skips.tolist() == [0.0, 1.0, 0.0, 1.0]
+
+
+def test_comet_ml_experiment():
+    """Test if `run._utils.CometMLExperimentw` initializes, and the patched functions execute."""
+    comet = run._utils.CometMLExperiment(disabled=True)
+    with comet.set_context("train"):
+        assert comet.context == "train"
+        comet.set_step(None)
+        comet.set_step(0)
+        comet.set_step(0)
+        comet.set_step(1)
+        comet.log_audio(
+            metadata="random metadata",
+            audio={"predicted_audio": torch.rand(100), "gold_audio": torch.rand(100)},
+        )
+        figure = pyplot.figure()
+        pyplot.close(figure)
+        comet.log_figures({"figure": figure}, overwrite=True)
+        comet.log_current_epoch(0)
+        comet.log_epoch_end(0)
+        comet.set_name("name")
+        comet.add_tags(["tag"])

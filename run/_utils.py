@@ -11,21 +11,33 @@ import os
 import pathlib
 import random
 import sqlite3
+import time
+import types
 import typing
 
-import comet_ml
-import librosa
 import numpy
 import torch
 import tqdm
 from hparams import HParam, configurable
-from scipy import ndimage
+from third_party import LazyLoader
 from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
 
 import lib
 import run
 from lib.utils import flatten, seconds_to_string
-from run._config import Cadence, Dataset, DatasetType, get_dataset_label
+from run._config import Cadence, Dataset, DatasetType, get_dataset_label, get_model_label
+
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import comet_ml
+    import librosa
+    import matplotlib
+    from scipy import ndimage
+else:
+    comet_ml = LazyLoader("comet_ml", globals(), "comet_ml")
+    librosa = LazyLoader("librosa", globals(), "librosa")
+    matplotlib = LazyLoader("matplotlib", globals(), "matplotlib")
+    ndimage = LazyLoader("ndimage", globals(), "scipy.ndimage")
+
 
 logger = logging.getLogger(__name__)
 
@@ -807,3 +819,252 @@ def get_num_skipped(
     # [num_frames, batch_size, num_tokens] → [batch_size, num_tokens]
     num_skipped = num_skipped.masked_fill(~spectrogram_mask.unsqueeze(-1), 0).sum(dim=0)
     return (num_skipped.masked_fill(~token_mask, -1) == 0).float().sum(dim=1)
+
+
+# Comet HTML for ``log_html`` base styles.
+_BASE_HTML_STYLING = """
+<link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/meyer-reset/2.0/reset.css"
+      type="text/css">
+<style>
+  body {
+    background-color: #f4f4f5;
+  }
+
+  p {
+    font-family: 'Roboto', system-ui, sans-serif;
+    margin-bottom: .5em;
+  }
+
+  b {
+    font-weight: bold
+  }
+
+  section {
+    padding: 1.5em;
+    border-bottom: 2px solid #E8E8E8;
+    background: white;
+  }
+</style>
+"""
+
+
+def CometMLExperiment(
+    project_name: typing.Optional[str] = None,
+    experiment_key: typing.Optional[str] = None,
+    workspace: typing.Optional[str] = None,
+    **kwargs,
+) -> comet_ml.Experiment:
+    """Create a `comet_ml.Experiment` or `comet_ml.ExistingExperiment` object with several
+    adjustments.
+
+    Args:
+        project_name
+        experiment_key: Existing experiment identifier.
+        workspace
+        **kwargs: Other kwargs to pass to comet `Experiment` and / or `ExistingExperiment`
+    """
+    if lib.environment.has_untracked_files():
+        raise ValueError(
+            "Experiment is not reproducible, Comet does not track untracked files. "
+            f"Please track these files via `git`:\n{lib.environment.get_untracked_files()}"
+        )
+
+    kwargs.update({"project_name": project_name, "workspace": workspace})
+    if experiment_key is None:
+        experiment = comet_ml.Experiment(**kwargs)
+        experiment.log_html(_BASE_HTML_STYLING)
+    else:
+        experiment = comet_ml.ExistingExperiment(previous_experiment=experiment_key, **kwargs)
+
+    # TODO: Collect additional environment details like CUDA, CUDANN, NVIDIA Driver versions
+    # with this script:
+    # https://github.com/pytorch/pytorch/blob/master/torch/utils/collect_env.py
+
+    log_other = lambda k, v: experiment.log_other(run._config.get_environment_label(k), v)
+
+    log_other("last_git_commit_date", lib.environment.get_last_git_commit_date())
+    log_other("git_branch", lib.environment.get_git_branch_name())
+    log_other("has_git_patch", str(lib.environment.has_tracked_changes()))
+    log_other("gpus", lib.environment.get_cuda_gpus())
+    log_other("num_gpus", lib.environment.get_num_cuda_gpus())
+    log_other("disks", lib.environment.get_disks())
+    log_other("unique_cpus", lib.environment.get_unique_cpus())
+    log_other("num_cpus", os.cpu_count())
+    log_other("total_physical_memory", lib.environment.get_total_physical_memory())
+
+    _add_comet_ml_set_step(experiment)
+    _add_comet_ml_set_context(experiment)
+    _add_comet_ml_log_epoch(experiment)
+    _add_comet_ml_log_audio(experiment)
+    _add_comet_ml_log_figures(experiment)
+    _add_comet_ml_set_name(experiment)
+    _add_comet_ml_add_tags(experiment)
+
+    return experiment
+
+
+def _add_comet_ml_set_step(experiment: comet_ml.Experiment):
+    """Monkey patch `Experiment.set_step`.
+
+    This adds the metric 'step/seconds_per_step', it measures the number of seconds each step takes.
+    """
+    _set_step = experiment.set_step
+    last_step_time = None
+    last_step = None
+
+    def set_step(self, *args, **kwargs):
+        return_ = _set_step(*args, **kwargs)
+
+        if self.curr_step is None:
+            return return_
+
+        nonlocal last_step_time
+        nonlocal last_step
+
+        if last_step_time is None and last_step is None:
+            last_step_time = time.time()
+            last_step = self.curr_step
+        elif self.curr_step > last_step:
+            seconds_per_step = (time.time() - last_step_time) / (self.curr_step - last_step)
+            last_step_time = time.time()
+            # NOTE: Ensure that the variable `last_step` is updated before `log_metric` is called.
+            # This prevents infinite recursion via `self.curr_step > last_step`.
+            last_step = self.curr_step
+            label = get_model_label("seconds_per_step", Cadence.STEP)
+            self.log_metric(label, seconds_per_step)
+
+        return return_
+
+    # Learn more:
+    # https://stackoverflow.com/questions/972/adding-a-method-to-an-existing-object-instance
+    experiment.set_step = types.MethodType(set_step, experiment)
+
+
+def _add_comet_ml_set_context(experiment: comet_ml.Experiment):
+    """Add `set_context` to `comet_ml.Experiment` to support a custom context."""
+
+    @contextlib.contextmanager
+    def set_context(self, context):
+        old_context = self.context
+        self.context = context
+        yield self
+        self.context = old_context
+
+    experiment.set_context = types.MethodType(set_context, experiment)
+
+
+def _add_comet_ml_log_epoch(experiment: comet_ml.Experiment):
+    """Monkey patch `Experiment.log_current_epoch` and `Experiment.log_epoch_end`.
+
+    This adds the metrics 'steps_per_second' and 'epoch/steps_per_second'.
+    """
+    _log_current_epoch = experiment.log_current_epoch
+    _log_epoch_end = experiment.log_epoch_end
+    last_epoch_time = None
+    last_epoch_step = None
+    first_epoch_time = None
+    first_epoch_step = None
+
+    def log_current_epoch(self, *args, **kwargs):
+        nonlocal last_epoch_time
+        nonlocal last_epoch_step
+        nonlocal first_epoch_time
+        nonlocal first_epoch_step
+
+        last_epoch_step = self.curr_step
+        last_epoch_time = time.time()
+        if first_epoch_time is None and first_epoch_step is None:
+            first_epoch_step = self.curr_step
+            first_epoch_time = time.time()
+
+        return _log_current_epoch(*args, **kwargs)
+
+    def log_epoch_end(self, *args, **kwargs):
+        # NOTE: Logs an average `steps_per_second` for each epoch.
+        if last_epoch_step is not None and last_epoch_time is not None:
+            label = get_model_label("steps_per_second", Cadence.MULTI_STEP)
+            metric = (self.curr_step - last_epoch_step) / (time.time() - last_epoch_time)
+            self.log_metric(label, metric)
+
+        # NOTE: Logs an average `steps_per_second` since the training started.
+        if first_epoch_time is not None and first_epoch_step is not None:
+            with experiment.set_context(None):
+                label = get_model_label("steps_per_second", Cadence.RUN)
+                metric = (self.curr_step - first_epoch_step) / (time.time() - first_epoch_time)
+                self.log_metric(label, metric)
+
+        return _log_epoch_end(*args, **kwargs)
+
+    experiment.log_current_epoch = types.MethodType(log_current_epoch, experiment)
+    experiment.log_epoch_end = types.MethodType(log_epoch_end, experiment)
+
+
+def _add_comet_ml_log_audio(experiment: comet_ml.Experiment):
+    """Add `log_audio` to `comet_ml.Experiment` to support logging audio.
+
+    NOTE: This assumes that the HTML has `_BASE_HTML_STYLING`.
+    """
+
+    def _upload_audio(file_name: str, data: typing.Union[numpy.ndarray, torch.Tensor]) -> str:
+        """Upload the audio and return the URL."""
+        file_ = io.BytesIO()
+        lib.audio.write_audio(file_, data)
+        asset = experiment.log_asset(file_, file_name=file_name)
+        return asset["web"] if asset is not None else asset
+
+    def log_audio(
+        self,
+        audio: typing.Dict[str, typing.Union[numpy.ndarray, torch.Tensor]] = {},
+        **kwargs,
+    ):
+        """Audio with related metadata to Comet in the HTML tab.
+
+        Args:
+            audio
+            **kwargs: Additional metadata to include.
+        """
+        items = [f"<p><b>Step:</b> {self.curr_step}</p>"]
+        param_to_label = lambda s: s.title().replace("_", " ")
+        items.extend([f"<p><b>{param_to_label(k)}:</b> {v}</p>" for k, v in kwargs.items()])
+        for key, data in audio.items():
+            name = param_to_label(key)
+            file_name = f"step={self.curr_step},name={name},experiment={self.get_key()}"
+            url = _upload_audio(file_name, data)
+            items.append(f"<p><b>{name}:</b></p>")
+            items.append(f'<audio controls preload="metadata" src="{url}"></audio>')
+        experiment.log_html("<section>{}</section>".format("\n".join(items)))
+
+    experiment.log_audio = types.MethodType(log_audio, experiment)
+
+
+def _add_comet_ml_log_figures(experiment: comet_ml.Experiment):
+    """ Add `log_figures` to `comet_ml.Experiment` to support logging multiple figures. """
+
+    def log_figures(self, dict_: typing.Dict[str, matplotlib.figure.Figure], **kwargs):
+        """ Log multiple figures from `dict_` via `experiment.log_figure`. """
+        return [self.log_figure(k, v, **kwargs) for k, v in dict_.items()]
+
+    experiment.log_figures = types.MethodType(log_figures, experiment)
+
+
+def _add_comet_ml_set_name(experiment: comet_ml.Experiment):
+    """ Monkey patch `Experiment.set_name` with additional logging. """
+    _set_name = experiment.set_name
+
+    def set_name(self, name, *args, **kwargs):
+        logger.info('Experiment name set to "%s"', name)
+        return _set_name(name, *args, **kwargs)
+
+    experiment.set_name = types.MethodType(set_name, experiment)
+
+
+def _add_comet_ml_add_tags(experiment: comet_ml.Experiment):
+    """ Monkey patch `Experiment.add_tags` with additional logging. """
+    _add_tags = experiment.add_tags
+
+    def add_tags(self, tags, *args, **kwargs):
+        logger.info("Added tags to experiment: %s", tags)
+        return _add_tags(tags, *args, **kwargs)
+
+    experiment.add_tags = types.MethodType(add_tags, experiment)

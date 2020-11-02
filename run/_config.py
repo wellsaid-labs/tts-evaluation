@@ -65,6 +65,7 @@ DATABASE_PATH = TEMP_PATH / "database.db"
 class Cadence(enum.Enum):
     STEP: typing.Final = "step"
     MULTI_STEP: typing.Final = "multi_step"
+    RUN: typing.Final = "run"  # NOTE: Measures statistic over the course of a "run"
     STATIC: typing.Final = "static"
 
 
@@ -96,9 +97,14 @@ def get_model_label(name: str, cadence: Cadence, speaker: typing.Optional[Speake
     return Label("{cadence}/model/{speaker}/{name}".format(speaker=speaker_, **kwargs))
 
 
-def get_config_label(name: str, cadence: Cadence) -> Label:
+def get_config_label(name: str, cadence: Cadence = Cadence.STATIC) -> Label:
     """ Label something related to a configuration. """
     return Label("{cadence}/config/{name}".format(cadence=cadence.value, name=name))
+
+
+def get_environment_label(name: str, cadence: Cadence = Cadence.STATIC) -> Label:
+    """ Label something related to a environment. """
+    return Label("{cadence}/environment/{name}".format(cadence=cadence.value, name=name))
 
 
 def _get_window(window: str, window_length: int, window_hop: int) -> torch.Tensor:

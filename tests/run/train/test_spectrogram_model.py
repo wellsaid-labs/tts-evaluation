@@ -87,7 +87,7 @@ def test_integration(mock_urlretrieve):
     }
 
     # Create training state
-    comet = lib.visualize.CometMLExperiment(disabled=True)
+    comet = run._utils.CometMLExperiment(disabled=True)
     device = torch.device("cpu")
     with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:
         module.side_effect = _mock_distributed_data_parallel
