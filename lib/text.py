@@ -103,12 +103,10 @@ def _grapheme_to_phoneme_helper(
 def _grapheme_to_phoneme(grapheme: str, separator: str = "", **kwargs) -> str:
     # NOTE: `grapheme` is split on new lines because `espeak` is inconsistent in it's handling of
     # new lines.
-    return_ = (separator + "\n" + separator).join(
-        [
-            _grapheme_to_phoneme_helper(s, separator=separator, **kwargs)
-            for s in grapheme.split("\n")
-        ]
-    )
+    split = [
+        _grapheme_to_phoneme_helper(s, separator=separator, **kwargs) for s in grapheme.split("\n")
+    ]
+    return_ = (separator + "\n" + separator).join(split)
     # NOTE: We need to remove double separators from when there are consecutive new lines like
     # "\n\n\n", for example.
     if len(separator) > 0:
@@ -159,7 +157,7 @@ def _grapheme_to_phoneme_preserve_punctuation(
 
 @typing.overload
 def grapheme_to_phoneme(
-    graphemes: typing.List[str],
+    graphemes: typing.Union[typing.Tuple[str], typing.List[str]],
     chunk_size: int = 128,
     **kwargs,
 ) -> typing.List[str]:
@@ -196,8 +194,8 @@ def grapheme_to_phoneme(graphemes, chunk_size: int = 128, **kwargs):
         **kwargs: Key-word arguments passed to `_grapheme_to_phoneme_preserve_punctuation`.
     """
     assert chunk_size >= 1
-    is_list = isinstance(graphemes, list)
-    graphemes = graphemes if is_list else [graphemes]
+    is_iterable = isinstance(graphemes, collections.abc.Iterable)
+    graphemes = list(graphemes) if is_iterable else [graphemes]
     part = partial(_grapheme_to_phoneme_preserve_punctuation, **kwargs)
 
     if any(isinstance(g, str) for g in graphemes):
@@ -208,7 +206,7 @@ def grapheme_to_phoneme(graphemes, chunk_size: int = 128, **kwargs):
 
     if len(graphemes) < chunk_size:
         return_ = [part(g) for g in graphemes]
-        return return_[slice(0, len(graphemes)) if is_list else 0]  # type: ignore
+        return return_[slice(0, len(graphemes)) if is_iterable else 0]  # type: ignore
 
     logger.info("Getting phonemes for %d graphemes.", len(graphemes))
     with lib.utils.Pool(1 if lib.environment.IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:

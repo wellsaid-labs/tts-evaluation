@@ -19,7 +19,7 @@ Example:
     PREFIX=gs://wellsaid_labs_datasets/hilary_noriega
     GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
     python -m run.preprocess.sync_script_with_audio \
-      --voice_over "$PREFIX/preprocessed_recordings/Script 1.wav" \
+      --voice-over "$PREFIX/preprocessed_recordings/Script 1.wav" \
       --script "$PREFIX/scripts/Script 1 - Hilary.csv" \
       --destination "$PREFIX/"
 
@@ -29,19 +29,19 @@ Example (Multiple Speakers):
     PREPROCESSED=preprocessed_recordings \
     GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
     python -m run.preprocess.sync_script_with_audio \
-      --voice_over "$PREFIX/hilary_noriega/$PREPROCESSED/Script 1.wav" \
+      --voice-over "$PREFIX/hilary_noriega/$PREPROCESSED/Script 1.wav" \
       --script "$PREFIX/hilary_noriega/scripts/Script 1 - Hilary.csv" \
       --destination "$PREFIX/hilary_noriega/" \
-      --voice_over "$PREFIX/sam_scholl/$PREPROCESSED/WSL Sam4.wav" \
+      --voice-over "$PREFIX/sam_scholl/$PREPROCESSED/WSL Sam4.wav" \
       --script "$PREFIX/sam_scholl/scripts/Script 4.csv" \
       --destination "$PREFIX/sam_scholl/" \
-      --voice_over "$PREFIX/frank_bonacquisti/$PREPROCESSED/WSL-Script 001.wav" \
+      --voice-over "$PREFIX/frank_bonacquisti/$PREPROCESSED/WSL-Script 001.wav" \
       --script "$PREFIX/frank_bonacquisti/scripts/Script 1.csv" \
       --destination "$PREFIX/frank_bonacquisti/" \
-      --voice_over "$PREFIX/adrienne_walker_heller/$PREPROCESSED/WSL - Adrienne WalkerScript1.wav" \
+      --voice-over "$PREFIX/adrienne_walker_heller/$PREPROCESSED/WSL - Adrienne WalkerScript1.wav" \
       --script "$PREFIX/adrienne_walker_heller/scripts/Script 1.csv" \
       --destination "$PREFIX/adrienne_walker_heller/" \
-      --voice_over "$PREFIX/heather_doe/$PREPROCESSED/Heather_99-101.wav" \
+      --voice-over "$PREFIX/heather_doe/$PREPROCESSED/Heather_99-101.wav" \
       --script "$PREFIX/heather_doe/scripts/Scripts 99-101.csv" \
       --destination "$PREFIX/heather_doe/"
 
@@ -50,7 +50,7 @@ Example (Batch):
     PREFIX=gs://wellsaid_labs_datasets/hilary_noriega
     GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
     python -m run.preprocess.sync_script_with_audio \
-      --voice_over "${(@f)$(gsutil ls "$PREFIX/preprocessed_recordings/*.wav" | sort -h)}" \
+      --voice-over "${(@f)$(gsutil ls "$PREFIX/preprocessed_recordings/*.wav" | sort -h)}" \
       --script "${(@f)$(gsutil ls "$PREFIX/scripts/*.csv" | sort -h)}" \
       --destination $PREFIX/
 """
@@ -70,7 +70,6 @@ import typer
 from google.cloud import speech_v1p1beta1 as speech
 from google.cloud import storage
 from google.cloud.speech_v1p1beta1 import types
-from google.protobuf.json_format import MessageToDict
 from Levenshtein import distance
 from tqdm import tqdm
 
@@ -192,7 +191,10 @@ def _remove_punctuation(string: str) -> str:
     return MULTIPLE_WHITE_SPACES_REGEX.sub(" ", PUNCTUATION_REGEX.sub(" ", string).strip())
 
 
-_grapheme_to_phoneme = partial(lib.text.grapheme_to_phoneme, separator="|")
+# NOTE: Use private `_grapheme_to_phoneme` for performance...
+_grapheme_to_phoneme = lru_cache(maxsize=2 ** 20)(
+    partial(lib.text._grapheme_to_phoneme, separator="|")
+)
 
 
 @lru_cache(maxsize=2 ** 20)
@@ -214,7 +216,7 @@ def is_sound_alike(a: str, b: str) -> bool:
     return_ = (
         a.lower() == b.lower()
         or _remove_punctuation(a.lower()) == _remove_punctuation(b.lower())
-        or _grapheme_to_phoneme([a])[0] == _grapheme_to_phoneme([b])[0]
+        or _grapheme_to_phoneme(a) == _grapheme_to_phoneme(b)
     )
     if return_:
         STATS.sound_alike.add(frozenset([a, b]))
@@ -536,8 +538,12 @@ def run_stt(
         config = copy(stt_config)
         config.speech_contexts.append(_get_speech_context("\n".join(script)))
         audio = types.RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
-        operations.append(speech.SpeechClient().long_running_recognize(config, audio))
-        logger.info('STT operation %s "%s" started.', operations[-1].operation.name, dest_blob.name)
+        operations.append(speech.SpeechClient().long_running_recognize(config=config, audio=audio))
+        logger.info(
+            'STT operation %s "%s" started.',
+            operations[-1].operation.name,
+            blob_to_gcs_uri(dest_blob),
+        )
 
     progress = [0] * len(operations)
     progress_bar = tqdm(total=100)
@@ -548,9 +554,14 @@ def run_stt(
 
             metadata = operation.metadata
             if operation.done():
-                dest_blobs[i].upload_from_string(json.dumps(MessageToDict(operation.result())))
+                # Learn more:
+                # https://stackoverflow.com/questions/64470470/how-to-convert-google-cloud-natural-language-entity-sentiment-response-to-json-d
+                response = operation.result()
+                dest_blobs[i].upload_from_string(response.__class__.to_json(response))
                 logger.info(
-                    'STT operation %s "%s" finished.', operation.operation.name, dest_blobs[i].name
+                    'STT operation %s "%s" finished.',
+                    operation.operation.name,
+                    blob_to_gcs_uri(dest_blobs[i]),
                 )
                 operations[i] = None
                 progress[i] = 100
@@ -584,7 +595,9 @@ def _sync_and_upload(
     stt_results = [json.loads(b.download_as_string()) for b in stt_blobs]
 
     for script, stt_result, alignment_blob in zip(scripts, stt_results, alignment_blobs):
-        logger.info('Running alignment "%s" and uploading results...', alignment_blob.name)
+        logger.info(
+            'Running alignment "%s" and uploading results...', blob_to_gcs_uri(alignment_blob)
+        )
         alignment = align_stt_with_script(script, stt_result)
         alignment_blob.upload_from_string(json.dumps(alignment))
 
@@ -606,20 +619,20 @@ def _sync_and_upload(
 
 def main(
     voice_over: typing.List[str] = typer.Option(..., help="GCS link(s) to audio file(s)."),
-    script: typing.List[str] = typer.Option(..., help="GCS link(s) to the script(s)."),
+    script: typing.List[str] = typer.Option(..., help="GCS link(s) to the script(s) CSV files."),
     destination: typing.List[str] = typer.Option(
         ..., help="GCS location(s) to upload alignment(s) and speech-to-text result(s)."
     ),
-    text_column: str = typer.Option("Content", help="Column name with script text in SCRIPTS."),
+    text_column: str = typer.Option("Content", help="Column name with script text in --scripts."),
     stt_folder: str = typer.Option(
         "speech_to_text_results/",
-        help="Upload speech-to-text results to this folder in DESTINATIONS.",
+        help="Upload speech-to-text results to this folder in --destinations.",
     ),
     alignments_folder: str = typer.Option(
-        "alignments/", help="Upload alignment results to this folder in DESTINATIONS."
+        "alignments/", help="Upload alignment results to this folder in --destinations."
     ),
 ):
-    """ Align SCRIPTS with VOICE_OVERS and upload alignments to DESTINATIONS. """
+    """ Align --scripts with --voice-overs and upload alignments to --destinations. """
     if len(voice_over) > len(destination):
         ratio = len(voice_over) // len(destination)
         destination = list(chain.from_iterable(repeat(x, ratio) for x in destination))
@@ -630,8 +643,8 @@ def main(
     dest_blobs = [gcs_uri_to_blob(d) for d in destination]
     audio_blobs = [gcs_uri_to_blob(v) for v in voice_over]
     script_blobs = [gcs_uri_to_blob(v) for v in script]
-    for audio_blob, script_blob, dest_blob in zip(audio_blobs, script_blobs, dest_blobs):
-        args = (audio_blob.name, script_blob.name, dest_blob.name)
+    for item in zip(audio_blobs, script_blobs, dest_blobs):
+        args = tuple([blob_to_gcs_uri(blob) for blob in item])
         logger.info('Processing... \n "%s" \n "%s" \n and saving to... "%s"', *args)
 
     filenames = [b.name.split("/")[-1].split(".")[0] + ".json" for b in audio_blobs]
