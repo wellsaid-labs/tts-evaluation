@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 import torch
 import torch.nn
+import torch.nn.functional
 from hparams import HParams
 
 import lib
