@@ -18,7 +18,7 @@ import lib
 import run
 from tests import _utils
 
-TEST_DATA_PATH = _utils.TEST_DATA_PATH / "test_audio"
+TEST_DATA_PATH = _utils.TEST_DATA_PATH / "audio"
 TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
 
 
@@ -66,7 +66,7 @@ def test_maybe_make_experiment_directories_from_checkpoint(capsys):
             checkpoints_directory.mkdir(parents=True)
             recorder = lib.environment.RecordStandardStreams()
             run_name = "new_run"
-            checkpoint = run._utils.Checkpoint(checkpoints_directory, "", "", 0)
+            checkpoint = run._utils.Checkpoint(checkpoints_directory, "", 0)
             run_root, _ = run._utils.maybe_make_experiment_directories_from_checkpoint(
                 checkpoint, recorder, run_name=run_name
             )

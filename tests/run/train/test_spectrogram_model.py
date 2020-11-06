@@ -46,7 +46,7 @@ def test_integration(mock_urlretrieve):
     connection = run._utils.connect(path)
 
     # Test loading data
-    directory = _utils.TEST_DATA_PATH / "_disk" / "data"
+    directory = _utils.TEST_DATA_PATH / "datasets"
     temp_directory = pathlib.Path(tempfile.TemporaryDirectory().name)
     shutil.copytree(directory, temp_directory)
     books = [lib.datasets.m_ailabs.DOROTHY_AND_WIZARD_OZ]

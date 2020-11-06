@@ -130,7 +130,7 @@ def test_dataset_generator__unequal_alignment_sizes():
 def test_dataset_loader(_):
     """ Test `lib.datasets.dataset_loader` loads a dataset. """
     examples = lib.datasets.dataset_loader(
-        _utils.TEST_DATA_PATH / "_disk" / "data",
+        _utils.TEST_DATA_PATH / "datasets",
         "hilary_noriega",
         "",
         lib.datasets.HILARY_NORIEGA,
@@ -151,7 +151,7 @@ def test_dataset_loader(_):
     assert examples[0] == lib.datasets.Example(
         alignments=tuple(alignments),
         text="Author of the danger trail, Philip Steels, etc.",
-        audio_path=_utils.TEST_DATA_PATH / "_disk/data/hilary_noriega/recordings/Script 1.wav",
+        audio_path=_utils.TEST_DATA_PATH / "datasets/hilary_noriega/recordings/Script 1.wav",
         speaker=lib.datasets.HILARY_NORIEGA,
         metadata={"Index": 0, "Source": "CMU", "Title": "CMU"},
     )

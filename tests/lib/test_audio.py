@@ -17,7 +17,7 @@ from hparams import HParams
 import lib
 from tests import _utils
 
-TEST_DATA_PATH = _utils.TEST_DATA_PATH / "test_audio"
+TEST_DATA_PATH = _utils.TEST_DATA_PATH / "audio"
 TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
 TEST_DATA_LJ_MULTI_CHANNEL = TEST_DATA_PATH / "channels(bit(rate(lj_speech,24000),32),2).wav"
 
