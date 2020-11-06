@@ -5,6 +5,7 @@ from functools import partial
 import pytest
 import torch
 
+import lib
 import lib.spectrogram_model.attention
 from lib.spectrogram_model.attention import (
     LocationRelativeAttention,
@@ -177,6 +178,8 @@ def test_location_relative_attention():
     tokens_mask[:, -1].fill_(0)
     num_tokens = _make_num_tokens(tokens_mask)
     last_hidden_state = hidden_state
+    context = torch.empty(0)
+    alignment = torch.empty(0)
     for j in range(3):
         context, alignment, hidden_state = module(
             tokens, tokens_mask, num_tokens, query, last_hidden_state

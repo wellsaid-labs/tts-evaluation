@@ -14,6 +14,9 @@ import typing
 from contextlib import contextmanager
 
 import torch
+import torch.multiprocessing
+import torch.nn
+import torch.nn.functional
 import torch.utils.data
 
 logger = logging.getLogger(__name__)
@@ -65,7 +68,7 @@ _ChunksReturnType = typing.TypeVar("_ChunksReturnType")
 
 def get_chunks(
     list_: typing.List[_ChunksReturnType], n: int
-) -> typing.Generator[typing.List[_ChunksReturnType], None, None]:
+) -> typing.Iterator[typing.List[_ChunksReturnType]]:
     """ Yield successive `n`-sized chunks from `list_`. """
     for i in range(0, len(list_), n):
         yield list_[i : i + n]
@@ -108,13 +111,19 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
     return weighted_standard_deviation
 
 
-def flatten(l: typing.List[typing.Any]) -> typing.List[typing.Any]:
-    """Flatten a list of lists into a list.
+# Learn more about this typing:
+# https://github.com/microsoft/pyright/issues/1147
+_FlattenReturnType = typing.TypeVar("_FlattenReturnType")
+_FlattenInputType = typing.Union[
+    _FlattenReturnType, typing.Sequence[typing.Union[_FlattenReturnType, "_FlattenInputType"]]
+]
 
-    TODO: Add proper typing once recursive typing is supported in `mypy`:
-    https://github.com/python/mypy/issues/731
-    """
-    return sum(map(flatten, l), []) if isinstance(l, list) else [l]
+
+def flatten(l: _FlattenInputType) -> typing.List[_FlattenReturnType]:
+    """Flatten a list of lists into a list."""
+    if isinstance(l, list):
+        return sum(map(flatten, l), [])
+    return [l]
 
 
 def flatten_parameters(model: torch.nn.Module) -> torch.nn.Module:
@@ -137,7 +146,7 @@ def accumulate_and_split(
     list_: typing.List[_AccumulateAndSplitReturnType],
     thresholds: typing.List[float],
     get_value=identity,
-) -> typing.Generator[typing.List[_AccumulateAndSplitReturnType], None, None]:
+) -> typing.Iterator[typing.List[_AccumulateAndSplitReturnType]]:
     """Split `list_` when the accumulated sum passes a threshold.
 
     Args:
@@ -335,7 +344,12 @@ def clamp(a: float, min_: float = -math.inf, max_: float = math.inf) -> float:
     return max(min(a, max_), min_)
 
 
+_CallOnceReturnType = typing.TypeVar("_CallOnceReturnType")
+
+
 @functools.lru_cache(maxsize=None)
-def call_once(callable_, *args, **kwargs):
+def call_once(
+    callable_: typing.Callable[..., _CallOnceReturnType], *args, **kwargs
+) -> _CallOnceReturnType:
     """Call `callable_` only once with `args` and `kwargs` within the same process."""
     return callable_(*args, **kwargs)

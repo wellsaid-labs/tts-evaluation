@@ -2,6 +2,8 @@ import functools
 
 import pytest
 import torch
+import torch.distributed
+import torch.multiprocessing
 
 import lib
 

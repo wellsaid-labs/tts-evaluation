@@ -216,7 +216,7 @@ def _m_ailabs_speech_dataset(
 
     # NOTE: This makes sure that the download succeeds by checking against defined books in
     # `books`.
-    metadata_paths = list((directory / extracted_name).glob("**/metadata.csv"))
+    metadata_paths = list((directory / extracted_name).glob(metadata_pattern))
     downloaded_books = set([_path_to_book(path, directory=directory) for path in metadata_paths])
     assert len(set(books) - downloaded_books) == 0
 
@@ -228,10 +228,10 @@ def _m_ailabs_speech_dataset(
     )
     return [
         Example(
-            text=row[metadata_text_column].strip(),
+            text=row[metadata_text_column].strip(),  # type: ignore
             audio_path=Path(
                 row[metadata_path_column].parent,
-                metadata_audio_path_template.format(row[metadata_audio_column]),
+                metadata_audio_path_template.format(row[metadata_audio_column]),  # type: ignore
             ),
             speaker=_path_to_book(row[metadata_path_column], directory=directory).speaker,
             metadata={"book": _path_to_book(row[metadata_path_column], directory=directory)},
@@ -301,8 +301,14 @@ def _book_to_data(
         logger.warning("%s is empty, skipping for now", str(metadata_path))
         yield from []
     else:
-        data_frame = pandas.read_csv(
-            metadata_path, delimiter=delimiter, header=header, quoting=quoting
+        data_frame = typing.cast(
+            pandas.DataFrame,
+            pandas.read_csv(
+                filepath_or_buffer=metadata_path,
+                delimiter=delimiter,
+                header=header,  # type: ignore
+                quoting=quoting,
+            ),
         )
         data_frame[metadata_path_column] = metadata_path
         yield from (row.to_dict() for _, row in data_frame.iterrows())

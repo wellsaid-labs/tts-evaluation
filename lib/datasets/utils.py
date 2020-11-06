@@ -1,5 +1,6 @@
 import json
 import logging
+import pathlib
 import pprint
 import random
 import subprocess
@@ -58,12 +59,10 @@ class Example(typing.NamedTuple):
     speaker: Speaker
     alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None
     text: str = ""
-    metadata: typing.Dict[str, typing.Any] = {}
+    metadata: typing.Dict[typing.Union[str, int], typing.Any] = {}
 
 
-def dataset_generator(
-    data: typing.List[Example], max_seconds: float
-) -> typing.Generator[Example, None, None]:
+def dataset_generator(data: typing.List[Example], max_seconds: float) -> typing.Iterator[Example]:
     """Randomly generate `Example`(s) that are at most `max_seconds` long.
 
     NOTE:
@@ -195,8 +194,12 @@ def dataset_loader(
         subprocess.run(command.split(), check=True)
 
     files = (sorted(d.iterdir(), key=lambda p: lib.text.natural_keys(p.name)) for d in directories)
+    iterator = typing.cast(
+        typing.Iterator[typing.Tuple[pathlib.Path, pathlib.Path, pathlib.Path]],
+        zip(*tuple(files)),
+    )
     examples = []
-    for alignment_file_path, recording_file_path, script_file_path in zip(*tuple(files)):
+    for alignment_file_path, recording_file_path, script_file_path in iterator:
         scripts = pandas.read_csv(str(script_file_path.absolute()))
         script_alignments: typing.List[typing.List[typing.List[typing.List[float]]]]
         script_alignments = json.loads(alignment_file_path.read_text())

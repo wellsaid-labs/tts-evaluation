@@ -322,14 +322,17 @@ def test_get_num_cuda_gpus():
 
 def test_get_disks():
     """ Test if `get_disks` executes without error. """
-    assert isinstance(lib.environment.get_disks(), (type(None), str))
+    out = lib.environment.get_disks()
+    assert out is None or isinstance(out, str)
 
 
 def test_get_unique_cpus():
     """ Test if `get_unique_cpus` executes without error. """
-    assert isinstance(lib.environment.get_unique_cpus(), (type(None), str))
+    out = lib.environment.get_unique_cpus()
+    assert out is None or isinstance(out, str)
 
 
 def test_get_total_physical_memory():
     """ Test if `get_total_physical_memory` executes without error. """
-    assert isinstance(lib.environment.get_total_physical_memory(), (type(None), int))
+    out = lib.environment.get_total_physical_memory()
+    assert out is None or isinstance(out, int)

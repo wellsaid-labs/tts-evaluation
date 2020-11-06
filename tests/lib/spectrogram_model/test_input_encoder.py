@@ -1,6 +1,7 @@
 import torch
 
-import lib.spectrogram_model.input_encoder
+import lib
+import lib.spectrogram_model
 
 
 def test_input_encoder():
@@ -9,9 +10,7 @@ def test_input_encoder():
     phonemes = ["ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|", "d|ˈ|ɛ|f"]
     phoneme_separator = "|"
     speakers = [lib.datasets.MARK_ATHERLAY, lib.datasets.MARY_ANN]
-    encoder = lib.spectrogram_model.input_encoder.InputEncoder(
-        graphemes, phonemes, speakers, phoneme_separator
-    )
+    encoder = lib.spectrogram_model.InputEncoder(graphemes, phonemes, speakers, phoneme_separator)
     input_ = ("a", "ˈ|eɪ", lib.datasets.MARK_ATHERLAY)
     assert encoder._get_case("A") == encoder._CASE_LABELS[0]
     assert encoder._get_case("a") == encoder._CASE_LABELS[1]

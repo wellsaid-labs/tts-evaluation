@@ -9,6 +9,9 @@ from third_party import LazyLoader
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
     import matplotlib
+    import matplotlib.cm
+    import matplotlib.colors
+    import matplotlib.figure
     from librosa import display as librosa_display
     from matplotlib import pyplot
 else:
@@ -111,7 +114,7 @@ turbo_colormap_data = [
 # fmt: on
 
 try:
-    pyplot.style.use("ggplot")
+    pyplot.style.use("ggplot")  # type: ignore
     matplotlib.cm.register_cmap("turbo", cmap=matplotlib.colors.ListedColormap(turbo_colormap_data))
 except NameError:
     logger.info("Ignoring optional `matplotlib` dependency.")
@@ -127,7 +130,7 @@ def plot_alignments(alignment: typing.Union[torch.Tensor, np.ndarray]) -> matplo
     alignment = alignment.detach().cpu().numpy() if torch.is_tensor(alignment) else alignment
     alignment = np.transpose(alignment)
     figure, axis = pyplot.subplots()
-    im = axis.imshow(
+    im = axis.imshow(  # type: ignore
         alignment,
         cmap="turbo",
         aspect="auto",
@@ -136,7 +139,7 @@ def plot_alignments(alignment: typing.Union[torch.Tensor, np.ndarray]) -> matplo
         vmin=0,
         vmax=1,
     )
-    figure.colorbar(im, ax=axis, orientation="horizontal")
+    figure.colorbar(im, ax=axis, orientation="horizontal")  # type: ignore
     pyplot.xlabel("Decoded Sequence")
     pyplot.ylabel("Encoded Sequence")
     pyplot.close(figure)

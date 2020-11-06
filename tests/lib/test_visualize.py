@@ -1,4 +1,5 @@
 import matplotlib
+import matplotlib.figure
 import torch
 
 import lib

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from lib.datasets import m_ailabs
 from lib.datasets.lj_speech import LINDA_JOHNSON, lj_speech_dataset
 from lib.datasets.m_ailabs import (
     ELIZABETH_KLETT,
@@ -49,6 +50,7 @@ __all__ = [
     "dataset_loader",
     "precut_dataset_loader",
     "lj_speech_dataset",
+    "m_ailabs",
     "m_ailabs_en_us_judy_bieber_speech_dataset",
     "m_ailabs_en_us_mary_ann_speech_dataset",
     "m_ailabs_en_us_elliot_miller_speech_dataset",

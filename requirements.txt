@@ -4,7 +4,7 @@ scipy
 
 # NOTE: For optimized `torch` install, visit https://pytorch.org and follow the "Get Started"
 # guide.
-torch==1.6.0
+torch==1.7.0
 
 # Language Library
 git+https://github.com/PetrochukM/PyTorch-NLP.git
@@ -32,7 +32,6 @@ pytest-xdist
 
 # Linting
 flake8
-mypy
 
 # Auto Formatter
 black

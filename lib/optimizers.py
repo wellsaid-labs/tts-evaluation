@@ -10,6 +10,7 @@ from types import TracebackType
 
 import numpy as np
 import torch
+import torch.nn
 from hparams import HParam, configurable
 from third_party import get_parameter_norm
 
@@ -76,7 +77,7 @@ class AdaptiveGradientNormClipper:
         """Clips gradient norm of an iterable of `self.parameters`, and update gradient norm
         history."""
         norm = get_parameter_norm(self.parameters, self.norm_type)
-        if not np.isfinite(norm):
+        if not np.isfinite(norm):  # type: ignore
             raise ValueError(f"Gradient is not finite: {norm}")
         if self.max_norm is not None:
             torch.nn.utils.clip_grad_norm_(

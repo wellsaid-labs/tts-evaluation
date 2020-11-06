@@ -6,19 +6,23 @@ import random
 import typing
 
 import torch
+import torch.nn
 from hparams import HParams, add_config, configurable
 from third_party import LazyLoader
 from torchnlp.random import fork_rng
 
 import lib
+import lib.datasets.m_ailabs
 import run
 from lib import datasets
 from lib.datasets import Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import IPython
+    import IPython.display
     import librosa
     import scipy
+    import scipy.signal
 else:
     librosa = LazyLoader("librosa", globals(), "librosa")
     scipy = LazyLoader("scipy", globals(), "scipy")
@@ -227,7 +231,7 @@ def configure_audio_processing():
             get_weighting=lib.audio.iso226_weighting,
             **hertz_bounds,
         ),
-        lib.spectrogram_model.model.SpectrogramModel.__init__: HParams(
+        lib.spectrogram_model.SpectrogramModel.__init__: HParams(
             # NOTE: This is based on one of the slowest legitimate example in the dataset:
             # "rate(WSL_SMurphyScript34-39,24000)/script_52_chunk_9.wav"
             # NOTE: This configuration is related to the dataset preprocessing step:
@@ -330,7 +334,7 @@ def configure_models():
             # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
             num_layers=2
         ),
-        lib.spectrogram_model.model.SpectrogramModel.__init__: HParams(
+        lib.spectrogram_model.SpectrogramModel.__init__: HParams(
             num_frame_channels=NUM_FRAME_CHANNELS,
             # SOURCE (Transfer Learning from Speaker Verification to Multispeaker Text-To-Speech
             #         Synthesis):
@@ -354,7 +358,7 @@ def configure_models():
         # applied only to layers in the pre-net of the autoregressive decoder.
         lib.spectrogram_model.pre_net.PreNet.__init__: HParams(dropout=0.5),
         # NOTE: This dropout approach proved effective in Comet in March 2020.
-        lib.spectrogram_model.model.SpectrogramModel.__init__: HParams(speaker_embed_dropout=0.1),
+        lib.spectrogram_model.SpectrogramModel.__init__: HParams(speaker_embed_dropout=0.1),
         lib.spectrogram_model.attention.LocationRelativeAttention.__init__: HParams(dropout=0.1),
         lib.spectrogram_model.decoder.AutoregressiveDecoder.__init__: HParams(stop_net_dropout=0.5),
         lib.spectrogram_model.encoder.Encoder.__init__: HParams(dropout=0.1),
@@ -372,7 +376,7 @@ def configure_models():
             # American and Japanese standards.
             mu=255,
         ),
-        lib.spectrogram_model.model.SpectrogramModel.__init__: HParams(
+        lib.spectrogram_model.SpectrogramModel.__init__: HParams(
             # NOTE: The spectrogram values range from -50 to 50. Thie scalar rescales the
             # spectrogram to a more reasonable range for deep learning.
             output_scalar=10.0,
@@ -512,7 +516,7 @@ def get_dataset_generator(
     dataset: Dataset,
     include_example: typing.Callable[[datasets.Example], bool] = _include_example,
     max_seconds=15,
-) -> typing.Generator[datasets.Example, None, None]:
+) -> typing.Iterator[datasets.Example]:
     """Define the dataset generator to train and evaluate the TTS models on.
 
     Args:
@@ -538,7 +542,7 @@ def get_dataset_generator(
         seconds = example.alignments[-1][1][1] - example.alignments[0][1][0]
         if seconds < max_seconds and include_example(example):
             yield example
-            counter[speaker] += seconds
+            counter[example.speaker] += seconds
 
 
 # NOTE: It's theoretically impossible to know all the phonemes eSpeak might predict because

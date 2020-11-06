@@ -50,6 +50,8 @@ def test_autoregressive_decoder():
     tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
     speaker = torch.zeros(batch_size, module.speaker_embedding_size)
     hidden_state = None
+    frames = torch.empty(0)
+    stop_token = torch.empty(0)
     for _ in range(3):
         frames, stop_token, alignment, hidden_state = module(
             tokens=tokens,

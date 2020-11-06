@@ -4,6 +4,7 @@ import typing
 import numpy
 import pytest
 import torch
+import torch.nn
 from torchnlp.random import fork_rng
 
 import lib
@@ -45,7 +46,7 @@ def test_mean():
     """ Test `lib.utils.mean` handles empty and non-empty iterables. """
     assert lib.utils.mean([1, 2, 3]) == 2
     assert lib.utils.mean(range(3)) == 1
-    assert numpy.isnan(lib.utils.mean([]))
+    assert numpy.isnan(lib.utils.mean([]))  # type: ignore
 
 
 def test_get_chunks():
@@ -362,9 +363,9 @@ def test_call_once():
         count += 1
         return a + b
 
-    assert lib.utils.call_once(add_, 0) == 0
+    assert lib.utils.call_once(add_, 0) == 0  # type: ignore
     assert count == 1
-    assert lib.utils.call_once(add_, 0) == 0
+    assert lib.utils.call_once(add_, 0) == 0  # type: ignore
     assert count == 1
-    assert lib.utils.call_once(add_, 0, 0) == 0
+    assert lib.utils.call_once(add_, 0, 0) == 0  # type: ignore
     assert count == 2

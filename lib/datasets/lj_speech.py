@@ -11,9 +11,7 @@ from lib.datasets.utils import Example, Speaker, precut_dataset_loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import num2words
-    import unidecode
 else:
-    unidecode = LazyLoader("unidecode", globals(), "unidecode")
     num2words = LazyLoader("num2words", globals(), "num2words")
 
 

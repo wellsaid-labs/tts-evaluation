@@ -8,6 +8,8 @@ import typing
 
 import numpy as np
 import torch
+import torch.nn
+import torch.nn.functional
 from hparams import HParam, configurable
 from torch.nn.utils.weight_norm import WeightNorm
 
@@ -133,6 +135,9 @@ class _PixelShuffle1d(torch.nn.Module):
         return shuffle_out.view(batch_size, channels, steps * self.upscale_factor)
 
 
+_SequentialSelfType = typing.TypeVar("_SequentialSelfType", bound="_Sequential")
+
+
 class _Sequential(torch.nn.Sequential):
     def __call__(
         self,
@@ -164,6 +169,11 @@ class _Sequential(torch.nn.Sequential):
             else:
                 input_ = module(input_)
         return input_
+
+    def __getitem__(
+        self: _SequentialSelfType, idx: typing.Union[int, slice]
+    ) -> typing.Union[_SequentialSelfType, torch.nn.Module]:
+        return super().__getitem__(idx)
 
 
 class _Block(torch.nn.Module):
@@ -221,10 +231,15 @@ class _Block(torch.nn.Module):
         )
         self.upscale_factor = upscale_factor
         output_scale = input_scale * upscale_factor
-        self.padding_required = (self.block[4].kernel_size[0] // 2) / input_scale
-        self.padding_required += (self.block[-1].kernel_size[0] // 2) / output_scale
-        self.padding_required += (self.other_block[4].kernel_size[0] // 2) / output_scale
-        self.padding_required += (self.other_block[-1].kernel_size[0] // 2) / output_scale
+        self.padding_required = 0.0
+        for module, scale_factor in [
+            (self.block[4], input_scale),
+            (self.block[-1], output_scale),
+            (self.other_block[4], output_scale),
+            (self.other_block[-1], output_scale),
+        ]:
+            assert isinstance(module, torch.nn.Conv1d)
+            self.padding_required += (module.kernel_size[0] // 2) / scale_factor
 
     def __call__(
         self, input_: torch.Tensor, mask: torch.Tensor, conditioning: torch.Tensor
@@ -273,6 +288,9 @@ def _has_weight_norm(module: torch.nn.Module, name: str = "weight") -> bool:
         if isinstance(hook, WeightNorm) and hook.name == name:
             return True
     return False
+
+
+_SignalModelSelfType = typing.TypeVar("_SignalModelSelfType", bound="SignalModel")
 
 
 class SignalModel(torch.nn.Module):
@@ -334,11 +352,13 @@ class SignalModel(torch.nn.Module):
         max_size = max([m.size for m in self.modules() if isinstance(m, _InterpolateAndConcat)])
         self.condition = torch.nn.Conv1d(self.get_layer_size(0), max_size, kernel_size=1)
 
-        self.padding = self.pre_net[1].kernel_size[0] // 2
-        self.padding += 1 / (self.upscale_factor) * (self.network[-2].kernel_size[0] // 2)
-        self.padding += sum([m.padding_required for m in self.modules() if isinstance(m, _Block)])
-        self.excess_padding = math.ceil(self.padding) - self.padding
-        self.padding = math.ceil(self.padding)
+        padding: float = typing.cast(torch.nn.Conv1d, self.pre_net[1]).kernel_size[0] // 2
+        padding += (
+            typing.cast(torch.nn.Conv1d, self.network[-2]).kernel_size[0] // 2
+        ) / self.upscale_factor
+        padding += sum([m.padding_required for m in self.modules() if isinstance(m, _Block)])
+        self.excess_padding: int = round((math.ceil(padding) - padding) * self.upscale_factor)
+        self.padding: int = math.ceil(padding)
 
         # NOTE: We initialize the convolution parameters before weight norm factorizes them.
         self.reset_parameters()
@@ -346,21 +366,21 @@ class SignalModel(torch.nn.Module):
         # NOTE: The `torch.nn.Module` by default is initialized to `self.training = True`.
         self.train(mode=True)
 
-    def train(self, *args, **kwargs) -> SignalModel:
+    def train(self: _SignalModelSelfType, *args, **kwargs) -> _SignalModelSelfType:
         """Sets the module in training or evaluation mode.
 
         Learn more here: https://pytorch.org/docs/stable/nn.html#torch.nn.Module.train
         """
-        return_ = super().train(*args, **kwargs)
+        super().train(*args, **kwargs)
         if not lib.distributed.is_initialized() or self.training:
             for module in self._get_weight_norm_modules():
                 if self.training and not _has_weight_norm(module):
                     torch.nn.utils.weight_norm(module)
                 if not self.training and _has_weight_norm(module):
                     torch.nn.utils.remove_weight_norm(module)
-        return return_
+        return self
 
-    def _get_weight_norm_modules(self) -> typing.Generator[torch.nn.Module, None, None]:
+    def _get_weight_norm_modules(self) -> typing.Iterator[torch.nn.Module]:
         """ Get all modules that should have their weight(s) normalized. """
         for module in self.modules():
             if isinstance(module, torch.nn.Conv1d):
@@ -468,9 +488,8 @@ class SignalModel(torch.nn.Module):
         # https://librosa.github.io/librosa/_modules/librosa/core/audio.html#mu_expand
         signal = torch.sign(signal) / self.mu * (torch.pow(1 + self.mu, torch.abs(signal)) - 1)
 
-        excess_padding = round(self.excess_padding * self.upscale_factor)
-        if excess_padding > 0:  # [batch_size, num_frames * self.upscale_factor]
-            signal = signal[:, excess_padding:-excess_padding]
+        if self.excess_padding > 0:  # [batch_size, num_frames * self.upscale_factor]
+            signal = signal[:, self.excess_padding : -self.excess_padding]
         assert signal.shape == (
             batch_size,
             self.upscale_factor * num_frames,
@@ -575,6 +594,7 @@ def generate_waveform(
     spectrogram_mask = spectrogram_mask if spectrogram_mask is None else iter(spectrogram_mask)
     spectrogram = iter(spectrogram)
     is_stop = False
+    has_batch_dim = None
     while not is_stop:
         items: typing.List[typing.Tuple[torch.Tensor, torch.Tensor]] = []
         while sum([i[0].shape[1] for i in items]) < padding * 2 and not is_stop:
@@ -586,6 +606,7 @@ def generate_waveform(
                 items.append(model._normalize_input(item_frames, item_mask, False))
             except StopIteration:
                 is_stop = True
+        assert has_batch_dim is not None, "Spectrogram iterator must not be empty."
 
         padding_tuple = (0 if last_item else padding, padding if is_stop else 0)
         frames = ([last_item[0][:, -padding * 2 :]] if last_item else []) + [i[0] for i in items]

@@ -9,7 +9,9 @@ import hparams
 import numpy as np
 import pytest
 import torch
+import torch.nn
 import torchnlp
+import torchnlp.random
 from matplotlib import pyplot
 
 import lib
@@ -238,10 +240,10 @@ def test__get_loudness():
     implementation = "K-weighting"
     meter = lib.audio.get_pyloudnorm_meter(sample_rate, implementation)
     with torchnlp.random.fork_rng(12345):
-        audio = np.random.rand(sample_rate * length) * 2 - 1
+        audio = np.random.rand(sample_rate * length) * 2 - 1  # type: ignore
         alignment = lib.datasets.Alignment((0, length), (0, length))
         loundess = run._utils._get_loudness(audio, sample_rate, alignment, implementation, 1)
-        assert np.isfinite(loundess)
+        assert np.isfinite(loundess)  # type: ignore
         assert round(meter.integrated_loudness(audio), 1) == loundess
 
 
@@ -258,7 +260,10 @@ def test__get_words():
     # fmt: on
     assert word_vectors.shape == (len(text), 300)
     # NOTE: `-1`/`7` and "present"/"present" have the same word vector.
-    assert np.unique(word_vectors, axis=0).shape == (len(set(character_to_word)) - 2, 300)
+    assert np.unique(word_vectors, axis=0).shape == (  # type: ignore
+        len(set(character_to_word)) - 2,
+        300,
+    )
     assert word_vectors[0].sum() != 0
     slice_ = slice(-11, -1)
     assert character_to_word[slice_] == [-1, 7, 7, 7, 7, 7, 7, 7, 7, 7]
@@ -310,7 +315,10 @@ def test__get_words__slice():
     # fmt: on
     assert word_vectors.shape == (len(text) - 3, 300)
     # NOTE: `-1`/`7` and "present"/"present" have the same word vector.
-    assert np.unique(word_vectors, axis=0).shape == (len(set(character_to_word)) - 2, 300)
+    assert np.unique(word_vectors, axis=0).shape == (  # type: ignore
+        len(set(character_to_word)) - 2,
+        300,
+    )
     assert word_pronunciations == (
         None,
         ("T", "AY1", "M"),
@@ -462,19 +470,19 @@ def test_get_num_skipped():
 def test_comet_ml_experiment():
     """Test if `run._utils.CometMLExperimentw` initializes, and the patched functions execute."""
     comet = run._utils.CometMLExperiment(disabled=True)
-    with comet.set_context("train"):
-        assert comet.context == "train"
+    with comet.context_manager(run._utils.Context.TRAIN):
+        assert comet.context == str(run._utils.Context.TRAIN)
         comet.set_step(None)
         comet.set_step(0)
         comet.set_step(0)
         comet.set_step(1)
-        comet.log_audio(
+        comet.log_html_audio(
             metadata="random metadata",
             audio={"predicted_audio": torch.rand(100), "gold_audio": torch.rand(100)},
         )
         figure = pyplot.figure()
         pyplot.close(figure)
-        comet.log_figures({"figure": figure}, overwrite=True)
+        comet.log_figures({run._config.Label("figure"): figure})
         comet.log_current_epoch(0)
         comet.log_epoch_end(0)
         comet.set_name("name")

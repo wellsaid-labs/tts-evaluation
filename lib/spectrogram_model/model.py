@@ -3,8 +3,8 @@ import logging
 import typing
 
 import torch
+import torch.nn
 from hparams import HParam, configurable
-from torch import nn
 from torchnlp.utils import lengths_to_mask
 from tqdm import tqdm
 
@@ -13,10 +13,8 @@ from lib.spectrogram_model.encoder import Encoder
 
 logger = logging.getLogger(__name__)
 
-SpectrogramModelGenerator = typing.Generator[
-    typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
-    None,
-    None,
+SpectrogramModelGenerator = typing.Iterator[
+    typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
 ]
 
 
@@ -26,7 +24,7 @@ class Mode(enum.Enum):
     FORWARD: typing.Final = enum.auto()
 
 
-class SpectrogramModel(nn.Module):
+class SpectrogramModel(torch.nn.Module):
     """Sequence to sequence model from tokens to a spectrogram.
 
     TODO: Update our weight initialization to best practices like these:
@@ -83,13 +81,13 @@ class SpectrogramModel(nn.Module):
         self.vocab_size = vocab_size
         self.num_speakers = num_speakers
 
-        self.embed_speaker = nn.Sequential(
-            nn.Embedding(num_speakers, speaker_embedding_size),
-            nn.Dropout(speaker_embed_dropout),
+        self.embed_speaker = torch.nn.Sequential(
+            torch.nn.Embedding(num_speakers, speaker_embedding_size),
+            torch.nn.Dropout(speaker_embed_dropout),
         )
         self.encoder = Encoder(vocab_size, speaker_embedding_size)
         self.decoder = AutoregressiveDecoder(num_frame_channels, speaker_embedding_size)
-        self.stop_sigmoid = nn.Sigmoid()
+        self.stop_sigmoid = torch.nn.Sigmoid()
         self.register_buffer("output_scalar", torch.tensor(output_scalar).float())
         # SOURCE: Tacotron 2
         # We minimize the summed mean squared error (MSE) from before and after the post-net to aid
@@ -381,8 +379,8 @@ class SpectrogramModel(nn.Module):
             reached_max (torch.BoolTensor [1, batch_size (optional)]): If `True` the sequence has
                 reached `self.max_frames_per_token`.
         """
-        # TODO: Update typing once this issue is resolved https://github.com/python/mypy/issues/2582
-        items = list(self._generate(*args, split_size=float("inf"), **kwargs))  # type: ignore
+        kwargs.update({"split_size": float("inf")})
+        items = list(self._generate(*args, **kwargs))
         assert len(items) == 1, "Invariant Violation: Double check `split_size` logic."
         frames, stop_tokens, alignments, lengths, reached_max = items[0]
         if reached_max.sum() > 0:

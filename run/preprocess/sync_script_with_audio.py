@@ -69,8 +69,8 @@ import pandas
 import typer
 from google.cloud import speech_v1p1beta1 as speech
 from google.cloud import storage
-from google.cloud.speech_v1p1beta1 import types
-from Levenshtein import distance
+from google.cloud.speech_v1p1beta1 import RecognitionAudio, RecognitionConfig, SpeechContext
+from Levenshtein import distance  # type: ignore
 from tqdm import tqdm
 
 import lib
@@ -108,7 +108,7 @@ class SttToken(typing.NamedTuple):
     end_audio: float
 
 
-SST_CONFIG = types.RecognitionConfig(
+SST_CONFIG = RecognitionConfig(
     language_code="en-US",
     model="video",
     use_enhanced=True,
@@ -224,7 +224,7 @@ def is_sound_alike(a: str, b: str) -> bool:
     return False
 
 
-def gcs_uri_to_blob(gcs_uri: str) -> storage.blob.Blob:
+def gcs_uri_to_blob(gcs_uri: str) -> storage.Blob:
     """Parse GCS URI  (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") and return a `Blob`.
 
     NOTE: This function requires GCS authorization.
@@ -235,10 +235,11 @@ def gcs_uri_to_blob(gcs_uri: str) -> storage.blob.Blob:
     storage_client = storage.Client()
     bucket = storage_client.get_bucket(path_segments[0])
     blob = bucket.get_blob("/".join(path_segments[1:]))
+    assert blob is not None, "The URI cannot be found."
     return blob
 
 
-def blob_to_gcs_uri(blob: storage.blob.Blob) -> str:
+def blob_to_gcs_uri(blob: storage.Blob) -> str:
     """ Get GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") from `blob`. """
     return "gs://" + blob.bucket.name + "/" + blob.name
 
@@ -247,6 +248,7 @@ def _format_gap(
     scripts: typing.List[str], tokens: typing.List[ScriptToken], stt_tokens: typing.List[SttToken]
 ) -> typing.Iterable[str]:
     """ Format the span of `tokens` and `stt_tokens` that lie between two alignments, the gap. """
+    minus: typing.Callable[[str], str]
     minus = lambda t: f'\n{AnsiCodes.RED}--- "{t}"{AnsiCodes.RESET_ALL}\n'
     if len(tokens) > 2 or len(stt_tokens) > 0:
         if tokens[0].script_index != tokens[-1].script_index:
@@ -337,7 +339,7 @@ def _fix_alignments(
     """
     stt_tokens = stt_tokens.copy()
     alignments = alignments.copy()
-    iterator = zip([(-1, -1)] + alignments, alignments + [(len(tokens), len(stt_tokens))])
+    iterator = zip([(int(-1), int(-1))] + alignments, alignments + [(len(tokens), len(stt_tokens))])
     for i, (last, next_) in reversed(list(enumerate(iterator))):
         has_gap = next_[0] - last[0] > 1 and next_[1] - last[1] > 1
         if not (has_gap and tokens[last[0] + 1].script_index == tokens[next_[0] - 1].script_index):
@@ -371,7 +373,8 @@ def _fix_alignments(
     return tokens, stt_tokens, alignments
 
 
-_default_get_window_size = lambda a, b: max(round(a * 0.05), 256) + abs(a - b)
+_default_get_window_size: typing.Callable[[int, int], int]
+_default_get_window_size = lambda a, b: int(max(round(a * 0.05), 256) + abs(a - b))
 
 
 def align_stt_with_script(
@@ -458,7 +461,7 @@ def align_stt_with_script(
 
 def _get_speech_context(
     script: str, max_phrase_length: int = 100, min_overlap: float = 0.25
-) -> typing.List[str]:
+) -> SpeechContext:
     """Given the voice-over script generate `SpeechContext` to help Speech-to-Text recognize
     specific words or phrases more frequently.
 
@@ -496,20 +499,20 @@ def _get_speech_context(
             phrases.append(script[start:end])
             start = overlap if min_overlap > 0.0 else span[0]
     phrases.append(script[start:])
-    return types.SpeechContext(phrases=list(set(phrases)))
+    return SpeechContext(phrases=list(set(phrases)))
 
 
 def run_stt(
-    audio_blobs: typing.List[storage.blob.Blob],
+    audio_blobs: typing.List[storage.Blob],
     scripts: typing.List[str],
-    dest_blobs: typing.List[storage.blob.Blob],
+    dest_blobs: typing.List[storage.Blob],
     poll_interval: float = 1 / 50,
-    stt_config: types.RecognitionConfig = SST_CONFIG,
+    stt_config: RecognitionConfig = SST_CONFIG,
 ):
     """Run speech-to-text on `audio_blobs` and save them at `dest_blobs`.
 
     NOTE:
-    - The documentation for `types.RecognitionConfig` does not include all the available
+    - The documentation for `RecognitionConfig` does not include all the available
       options. All the potential parameters are included here:
       https://cloud.google.com/speech-to-text/docs/reference/rest/v1p1beta1/RecognitionConfig
     - Time offset values are only included for the first alternative provided in the recognition
@@ -536,8 +539,8 @@ def run_stt(
     operations = []
     for audio_blob, script, dest_blob in zip(audio_blobs, scripts, dest_blobs):
         config = copy(stt_config)
-        config.speech_contexts.append(_get_speech_context("\n".join(script)))
-        audio = types.RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
+        config.speech_contexts.append(_get_speech_context("\n".join(script)))  # type: ignore
+        audio = RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
         operations.append(speech.SpeechClient().long_running_recognize(config=config, audio=audio))
         logger.info(
             'STT operation %s "%s" started.',
@@ -572,11 +575,11 @@ def run_stt(
 
 
 def _sync_and_upload(
-    audio_blobs: typing.List[storage.blob.Blob],
-    script_blobs: typing.List[storage.blob.Blob],
-    dest_blobs: typing.List[storage.blob.Blob],
-    stt_blobs: typing.List[storage.blob.Blob],
-    alignment_blobs: typing.List[storage.blob.Blob],
+    audio_blobs: typing.List[storage.Blob],
+    script_blobs: typing.List[storage.Blob],
+    dest_blobs: typing.List[storage.Blob],
+    stt_blobs: typing.List[storage.Blob],
+    alignment_blobs: typing.List[storage.Blob],
     text_column: str,
     recorder: lib.environment.RecordStandardStreams,
 ):
@@ -584,13 +587,18 @@ def _sync_and_upload(
     logger.info("Downloading voice-over scripts...")
     scripts_ = [s.download_as_string().decode("utf-8") for s in script_blobs]
     scripts: typing.List[typing.List[str]] = [
-        pandas.read_csv(StringIO(s))[text_column].tolist() for s in scripts_
+        typing.cast(pandas.DataFrame, pandas.read_csv(StringIO(s)))[text_column].tolist()
+        for s in scripts_
     ]
 
     logger.info("Maybe running speech-to-text and caching results...")
     filtered = list(filter(lambda i: not i[-1].exists(), zip(audio_blobs, scripts, stt_blobs)))
     if len(filtered) > 0:
-        run_stt(*zip(*filtered))
+        args = typing.cast(
+            typing.Tuple[typing.List[storage.Blob], typing.List[str], typing.List[storage.Blob]],
+            zip(*filtered),
+        )
+        run_stt(*args)
     stt_results: typing.List[SttResult]
     stt_results = [json.loads(b.download_as_string()) for b in stt_blobs]
 

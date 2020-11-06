@@ -3,6 +3,7 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
+import typing
 from functools import partial
 
 import hparams
@@ -10,6 +11,7 @@ import librosa
 import numpy as np
 import pytest
 import torch
+import torch.nn
 from hparams import HParams
 
 import lib
@@ -762,7 +764,7 @@ def _db_spectrogram_to_loudness(db_spectrogram: torch.Tensor, window: torch.Tens
         return -70.0
     relative_gate = lib.audio.power_to_db(loudness.pow(2).mean()) - 10
     loudness = torch.tensor([v for v in loudness if lib.audio.amplitude_to_db(v) >= relative_gate])
-    return lib.audio.power_to_db(loudness.pow(2).mean()).item()
+    return typing.cast(float, lib.audio.power_to_db(loudness.pow(2).mean()).item())
 
 
 def test__loudness():

@@ -1,8 +1,9 @@
 import typing
 
 import torch
+import torch.nn
+import torch.nn.functional
 from hparams import HParam, configurable
-from torch import nn
 
 from lib.spectrogram_model.attention import (
     LocationRelativeAttention,
@@ -32,7 +33,7 @@ class AutoregressiveDecoderHiddenState(typing.NamedTuple):
     lstm_two_hidden_state: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
 
 
-class AutoregressiveDecoder(nn.Module):
+class AutoregressiveDecoder(torch.nn.Module):
     """Predicts the next spectrogram frame, given the previous spectrogram frame.
 
     Reference:
@@ -68,10 +69,10 @@ class AutoregressiveDecoder(nn.Module):
 
         initial_state_input_size = speaker_embedding_size + encoder_output_size
         initial_state_ouput_size = num_frame_channels + 1 + encoder_output_size
-        self.initial_state = nn.Sequential(
-            nn.Linear(initial_state_input_size, initial_state_input_size),
-            nn.ReLU(),
-            nn.Linear(initial_state_input_size, initial_state_ouput_size),
+        self.initial_state = torch.nn.Sequential(
+            torch.nn.Linear(initial_state_input_size, initial_state_input_size),
+            torch.nn.ReLU(),
+            torch.nn.Linear(initial_state_input_size, initial_state_ouput_size),
         )
 
         self.pre_net = PreNet(num_frame_channels=num_frame_channels, size=pre_net_size)
@@ -84,13 +85,13 @@ class AutoregressiveDecoder(nn.Module):
             hidden_size=lstm_hidden_size,
         )
         self.attention = LocationRelativeAttention(query_hidden_size=lstm_hidden_size)
-        self.linear_out = nn.Linear(
+        self.linear_out = torch.nn.Linear(
             in_features=lstm_hidden_size + self.encoder_output_size + speaker_embedding_size,
             out_features=num_frame_channels,
         )
-        self.linear_stop_token = nn.Sequential(
-            nn.Dropout(stop_net_dropout),
-            nn.Linear(lstm_hidden_size, 1),
+        self.linear_stop_token = torch.nn.Sequential(
+            torch.nn.Dropout(stop_net_dropout),
+            torch.nn.Linear(lstm_hidden_size, 1),
         )
 
     def _make_initial_hidden_state(

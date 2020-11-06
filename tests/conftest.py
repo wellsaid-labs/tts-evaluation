@@ -6,10 +6,10 @@ matplotlib.use("Agg")
 
 # Fix this weird error: https://github.com/pytorch/pytorch/issues/2083
 import torch  # noqa: F401, E402  # isort: skip
-
 import warnings  # noqa: E402
 
 import pytest  # noqa: E402
+import torch.autograd  # noqa: E402
 from hparams import set_lazy_resolution  # noqa: E402
 
 import lib  # noqa: E402

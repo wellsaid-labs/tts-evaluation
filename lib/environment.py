@@ -15,6 +15,7 @@ import typing
 from pathlib import Path
 
 import torch
+import torch.cuda
 import torchnlp.random
 from hparams import HParam, configurable
 

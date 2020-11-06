@@ -6,6 +6,10 @@ import logging
 import typing
 
 import torch
+import torch.cuda
+import torch.distributed
+import torch.nn
+import torch.nn.functional
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +72,7 @@ def reduce_(value: float, dst: int = get_master_rank(), device=_default_device, 
         return value
     packed = torch.tensor([value], dtype=torch.float, device=device)
     torch.distributed.reduce(packed, dst=dst, **kwargs)
-    return packed.item()
+    return typing.cast(float, packed.item())
 
 
 def all_gather(value: float, device=_default_device, **kwargs) -> typing.List[float]:
@@ -79,7 +83,7 @@ def all_gather(value: float, device=_default_device, **kwargs) -> typing.List[fl
     return_ = [torch.zeros(1, device=device, dtype=torch.float) for _ in range(world_size)]
     tensor = torch.tensor([value], device=device, dtype=torch.float)
     torch.distributed.all_gather(return_, tensor, **kwargs)
-    return [t.item() for t in return_]
+    return [typing.cast(float, t.item()) for t in return_]
 
 
 def gather_list(

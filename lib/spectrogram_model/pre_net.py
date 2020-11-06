@@ -1,4 +1,6 @@
 import torch
+import torch.nn
+import torch.nn.functional
 from hparams import HParam, configurable
 
 

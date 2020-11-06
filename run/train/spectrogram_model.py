@@ -12,9 +12,14 @@ import typing
 from itertools import chain
 
 # NOTE: `comet_ml` needs to be imported before torch
-import comet_ml
+import comet_ml  # type: ignore # noqa
 import hparams
+import hparams.hparams
 import torch
+import torch.nn
+import torch.optim
+import torch.utils
+import torch.utils.data
 import typer
 from hparams import HParam, HParams, add_config, configurable, get_config, parse_hparam_args
 from third_party import get_parameter_norm
@@ -35,6 +40,7 @@ from run._config import (
     get_model_label,
 )
 from run._utils import (
+    CometMLExperiment,
     Context,
     SpectrogramModelCheckpoint,
     SpectrogramModelExampleBatch,
@@ -97,7 +103,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
             amsgrad=True,
             betas=(0.9, 0.999),
         ),
-        lib.spectrogram_model.input_encoder.InputEncoder.__init__: HParams(
+        lib.spectrogram_model.InputEncoder.__init__: HParams(
             phoneme_separator=run._config.PHONEME_SEPARATOR
         ),
     }
@@ -114,7 +120,7 @@ class _State:
     optimizer: torch.optim.Adam
     clipper: lib.optimizers.AdaptiveGradientNormClipper
     scheduler: torch.optim.lr_scheduler.LambdaLR
-    comet: comet_ml.Experiment
+    comet: CometMLExperiment
     device: torch.device
     step: torch.Tensor = torch.tensor(0, dtype=torch.long)
 
@@ -123,7 +129,7 @@ class _State:
         train_dataset: run._config.Dataset,
         dev_dataset: run._config.Dataset,
         connection: sqlite3.Connection,
-        comet: comet_ml.Experiment,
+        comet: CometMLExperiment,
     ) -> lib.spectrogram_model.InputEncoder:
         """ Initialize an input encoder to encode model input. """
         examples = chain(*tuple(chain(train_dataset.values(), dev_dataset.values())))
@@ -149,7 +155,7 @@ class _State:
     @staticmethod
     def _get_model(
         device: torch.device,
-        comet: comet_ml.Experiment,
+        comet: CometMLExperiment,
         input_encoder: lib.spectrogram_model.InputEncoder,
     ) -> lib.spectrogram_model.SpectrogramModel:
         """Initialize a model onto `device`.
@@ -193,7 +199,6 @@ class _State:
         """ Create a checkpoint to save the spectrogram training state. """
         return SpectrogramModelCheckpoint(
             comet_experiment_key=self.comet.get_key(),
-            comet_project_name=self.comet.project_name,
             input_encoder=self.input_encoder,
             model=typing.cast(lib.spectrogram_model.SpectrogramModel, self.model.module),
             optimizer=self.optimizer,
@@ -207,13 +212,11 @@ class _State:
     def from_checkpoint(
         cls,
         checkpoint: SpectrogramModelCheckpoint,
-        comet: comet_ml.Experiment,
+        comet: CometMLExperiment,
         device: torch.device,
     ):
         """ Recreate the spectrogram training state from a `checkpoint`. """
-        _, _, _, step, encoder, model, optimizer, clipper, scheduler = dataclasses.astuple(
-            checkpoint
-        )
+        _, _, step, encoder, model, optimizer, clipper, scheduler = dataclasses.astuple(checkpoint)
         model_ = torch.nn.parallel.DistributedDataParallel(model, [device], device)
         step = torch.tensor(step)
         return cls(encoder, model_, optimizer, clipper, scheduler, comet, device, step)
@@ -224,7 +227,7 @@ class _State:
         train_dataset: run._config.Dataset,
         dev_dataset: run._config.Dataset,
         connection: sqlite3.Connection,
-        comet: comet_ml.Experiment,
+        comet: CometMLExperiment,
         device: torch.device,
     ):
         """ Create spectrogram training state from the `train_dataset`. """
@@ -241,7 +244,7 @@ class _DataIterator(torch.utils.data.IterableDataset):
         database: pathlib.Path,
         bucket_size: int,
         input_encoder: lib.spectrogram_model.InputEncoder,
-        comet: comet_ml.Experiment,
+        comet: CometMLExperiment,
         text_length_bucket_size: int = 10,
     ):
         """Generate examples from `run._config.Dataset`.
@@ -306,7 +309,10 @@ class _DataLoader(collections.Iterable):
             batch = next(self.loader)
             self.num_frames += batch.spectrogram.lengths.float().sum().item()
             self.num_examples += batch.length
-            yield tensors_to(batch, device=self.device, non_blocking=True)
+            yield typing.cast(
+                SpectrogramModelExampleBatch,
+                tensors_to(batch, device=self.device, non_blocking=True),
+            )
 
 
 @configurable
@@ -512,12 +518,15 @@ class _DistributedMetrics:
             isinstance(data_loader.loader, _MultiProcessingDataLoaderIter)
             and platform.system() != "Darwin"
         ):
-            self.append(self.data_queue_size, data_loader.loader._data_queue.qsize())
+            self.append(
+                self.data_queue_size,
+                typing.cast(_MultiProcessingDataLoaderIter, data_loader.loader)._data_queue.qsize(),
+            )
 
     @configurable
     def log(
         self,
-        comet: comet_ml.Experiment,
+        comet: CometMLExperiment,
         reduce_: typing.Callable[[typing.List[float]], float],
         dataset_type: DatasetType,
         cadence: Cadence,
@@ -682,7 +691,7 @@ def _run_step(
         state.optimizer.step()
         state.step.add_(1)
         state.scheduler.step()
-        state.comet.set_step(state.step.item())
+        state.comet.set_step(typing.cast(int, state.step.item()))
 
     if visualize:
         _visualize_source_vs_target(
@@ -755,7 +764,7 @@ def _visualize_inferred(
         "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.numpy()),
         "gold_audio": batch.audio[item].numpy(),
     }
-    state.comet.log_audio(
+    state.comet.log_html_audio(
         audio=audio,
         context=state.comet.context,
         text=batch.text[item],
@@ -834,7 +843,7 @@ def _run_worker(
     checkpoint: typing.Optional[pathlib.Path],
     train_dataset: run._config.Dataset,
     dev_dataset: run._config.Dataset,
-    comet_partial: typing.Callable[..., comet_ml.Experiment],
+    comet_partial: typing.Callable[..., CometMLExperiment],
     config: typing.Dict[str, typing.Any],
     num_steps_per_epoch: int = HParam(),
 ) -> typing.NoReturn:
@@ -852,7 +861,7 @@ def _run_worker(
     train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
     _set_context = functools.partial(set_context, model=state.model, comet=comet)
     while True:
-        epoch = state.step.item() // num_steps_per_epoch
+        epoch = int(state.step.item() // num_steps_per_epoch)
         logger.info("Running Epoch %d, Step %d", epoch, state.step.item())
         comet.log_current_epoch(epoch)
 
@@ -883,7 +892,7 @@ def _run(
     run_root: pathlib.Path,
     checkpoints_path: pathlib.Path,
     config: typing.Dict[str, typing.Any],
-    comet: comet_ml.Experiment,
+    comet: CometMLExperiment,
     checkpoint: typing.Optional[pathlib.Path] = None,
     minimum_disk_space: float = 0.2,
 ):
@@ -916,7 +925,7 @@ def _run(
 
 
 def _setup(
-    comet: comet_ml.Experiment, config: typing.List[str]
+    comet: CometMLExperiment, config: typing.List[str]
 ) -> typing.Tuple[typing.Dict[str, typing.Any], lib.environment.RecordStandardStreams]:
     """ Setup the environment logging and modules. """
     lib.environment.set_basic_logging_config()
@@ -967,7 +976,7 @@ def start(
     config, recorder = _setup(comet, context.args)
     experiment_root = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / lib.environment.bash_time_label()
     run_root, checkpoints_path = maybe_make_experiment_directories(experiment_root, recorder)
-    comet.log_other("directory", str(run_root))
+    comet.log_other(run._config.get_environment_label("directory"), str(run_root))
     _run(run_root, checkpoints_path, config, comet)
 
 

@@ -8,6 +8,8 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn
+import torch.nn.functional
 from hparams import HParam, configurable
 from third_party import LazyLoader
 from third_party.iso226 import iso226_spl_itpl
@@ -19,12 +21,12 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
     import pyloudnorm
     from scipy import signal as scipy_signal
-    from scipy.io.wavfile import scipy_wavfile
+    from scipy.io import wavfile
 else:
     pyloudnorm = LazyLoader("pyloudnorm", globals(), "pyloudnorm")
     librosa = LazyLoader("librosa", globals(), "librosa")
     scipy_signal = LazyLoader("scipy_signal", globals(), "scipy.signal")
-    scipy_wavfile = LazyLoader("scipy_wavfile", globals(), "scipy.io.wavfile")
+    wavfile = LazyLoader("wavfile", globals(), "scipy.io.wavfile")
 
 
 logger = logging.getLogger(__name__)
@@ -94,9 +96,10 @@ def get_audio_metadata(
     """
     len_ = lambda p: len(str(p))
     total = sum([len_(p) for p in paths])
-    chunks = list(
-        lib.utils.accumulate_and_split(paths, [max_arg_length] * (total // max_arg_length), len_)
+    chunks_ = lib.utils.accumulate_and_split(
+        paths, [float(max_arg_length)] * (total // max_arg_length), len_
     )
+    chunks = list(chunks_)
     if len(chunks) == 1:
         return _get_audio_metadata_helper(chunks[0])
 
@@ -117,7 +120,8 @@ def read_audio(path: Path) -> np.ndarray:
     """
     command = f"ffmpeg -i {path} -f f32le -acodec pcm_f32le -ac 1 pipe:"
     return np.frombuffer(
-        subprocess.check_output(command.split(), stderr=subprocess.DEVNULL), np.float32
+        subprocess.check_output(command.split(), stderr=subprocess.DEVNULL),
+        np.float32,  # type: ignore
     )
 
 
@@ -135,7 +139,8 @@ def read_audio_slice(path: Path, start: float, length: float) -> np.ndarray:
     """
     command = f"ffmpeg -ss {start} -i {path} -to {length} -f f32le -acodec pcm_f32le -ac 1 pipe:"
     return np.frombuffer(
-        subprocess.check_output(command.split(), stderr=subprocess.DEVNULL), np.float32
+        subprocess.check_output(command.split(), stderr=subprocess.DEVNULL),
+        np.float32,  # type: ignore
     )
 
 
@@ -157,10 +162,10 @@ def write_audio(
     if not overwrite and isinstance(path, Path) and path.exists():
         raise ValueError(f"File exists at {path}.")
     audio = audio.detach().cpu().numpy() if isinstance(audio, torch.Tensor) else audio
-    assert audio.dtype == np.float32
-    if audio.size > 0:
+    assert audio.dtype == np.float32  # type: ignore
+    if typing.cast(int, audio.size) > 0:
         assert np.max(audio) <= 1.0 and np.min(audio) >= -1.0, "Signal must be in range [-1, 1]."
-    scipy_wavfile.write(path, sample_rate, audio)
+    wavfile.write(path, sample_rate, audio)
 
 
 AudioFilter = typing.NewType("AudioFilter", str)
@@ -308,8 +313,8 @@ def full_scale_sine_wave(
     Returns:
         `np.ndarray` of length `sample_rate`
     """
-    x = np.arange(sample_rate, dtype=np.float32)
-    return np.sin(2 * np.pi * frequency * (x / sample_rate)).astype(np.float32)
+    x = np.arange(sample_rate, dtype=np.float32)  # type: ignore
+    return np.sin(2 * np.pi * frequency * (x / sample_rate)).astype(np.float32)  # type: ignore
 
 
 def full_scale_square_wave(
@@ -320,8 +325,9 @@ def full_scale_square_wave(
     Returns:
         `np.ndarray` of length `sample_rate`
     """
-    x = np.arange(sample_rate, dtype=np.float32)
-    return scipy_signal.square(2 * np.pi * frequency * (x / sample_rate)).astype(np.float32)
+    x = np.arange(sample_rate, dtype=np.float32)  # type: ignore
+    x = scipy_signal.square(2 * np.pi * frequency * (x / sample_rate))  # type: ignore
+    return x.astype(np.float32)  # type: ignore
 
 
 def _k_weighting(frequencies: np.ndarray, fs: int) -> np.ndarray:
@@ -329,9 +335,9 @@ def _k_weighting(frequencies: np.ndarray, fs: int) -> np.ndarray:
     f0 = 1681.9744509555319
     G = 3.99984385397
     Q = 0.7071752369554193
-    K = np.tan(np.pi * f0 / fs)
-    Vh = np.power(10.0, G / 20.0)
-    Vb = np.power(Vh, 0.499666774155)
+    K = np.tan(np.pi * f0 / fs)  # type: ignore
+    Vh = np.power(10.0, G / 20.0)  # type: ignore
+    Vb = np.power(Vh, 0.499666774155)  # type: ignore
     a0_ = 1.0 + K / Q + K * K
     b0 = (Vh + Vb * K / Q + K * K) / a0_
     b1 = 2.0 * (K * K - Vh) / a0_
@@ -341,12 +347,12 @@ def _k_weighting(frequencies: np.ndarray, fs: int) -> np.ndarray:
     a2 = (1.0 - K / Q + K * K) / a0_
 
     h1 = scipy_signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]
-    h1 = 20 * np.log10(abs(h1))
+    h1 = 20 * np.log10(np.absolute(h1))  # type: ignore
 
     # pre-filter 2
     f0 = 38.13547087613982
     Q = 0.5003270373253953
-    K = np.tan(np.pi * f0 / fs)
+    K = np.tan(np.pi * f0 / fs)  # type: ignore
     a0 = 1.0
     a1 = 2.0 * (K * K - 1.0) / (1.0 + K / Q + K * K)
     a2 = (1.0 - K / Q + K * K) / (1.0 + K / Q + K * K)
@@ -355,7 +361,7 @@ def _k_weighting(frequencies: np.ndarray, fs: int) -> np.ndarray:
     b2 = 1.0
 
     h2 = scipy_signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]
-    h2 = 20 * np.log10(abs(h2))
+    h2 = 20 * np.log10(np.absolute(h2))  # type: ignore
 
     return h1 + h2
 
@@ -434,7 +440,9 @@ def iso226_weighting(frequencies: np.ndarray) -> np.ndarray:
     interpolator = iso226_spl_itpl(hfe=True)
     # SOURCE: https://en.wikipedia.org/wiki/A-weighting
     # The offsets ensure the normalisation to 0 dB at 1000 Hz.
-    return -interpolator(frequencies) + interpolator(np.array([REFERENCE_FREQUENCY]))
+    return -typing.cast(np.ndarray, interpolator(frequencies)) + interpolator(
+        np.array([REFERENCE_FREQUENCY])
+    )
 
 
 def identity_weighting(frequencies: np.ndarray) -> np.ndarray:
@@ -515,7 +523,7 @@ def signal_to_rms(signal: np.ndarray) -> np.ndarray:
     Returns:
         np.ndarray [1]
     """
-    return np.sqrt(np.mean(np.abs(signal) ** 2))
+    return np.sqrt(np.mean(np.abs(signal) ** 2))  # type: ignore
 
 
 @configurable
@@ -534,8 +542,12 @@ def signal_to_framed_rms(
     Returns:
         np.ndarray [1]
     """
-    frames = librosa.util.frame(signal, frame_length=frame_length, hop_length=hop_length)
-    return np.sqrt(np.mean(np.abs(frames ** 2), axis=0))
+    frames = librosa.util.frame(  # type: ignore
+        signal,
+        frame_length=frame_length,
+        hop_length=hop_length,
+    )
+    return np.sqrt(np.mean(np.abs(frames ** 2), axis=0))  # type: ignore
 
 
 @configurable
@@ -670,7 +682,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         self.eps = eps
 
         mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=self.fft_length, **kwargs)
-        frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=self.fft_length)
+        frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=self.fft_length)  # type: ignore
         weighting = torch.tensor(get_weighting(frequencies)).float().view(-1, 1)
         weighting = db_to_power(weighting)
         self.register_buffer("mel_basis", torch.tensor(mel_basis).float())
@@ -826,15 +838,15 @@ def _db_mel_spectrogram_to_spectrogram(
     """
     num_mel_bins = db_mel_spectrogram.shape[1]
     mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=fft_length, **kwargs)
-    frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=fft_length)
+    frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=fft_length)  # type: ignore
     weighting = get_weighting(frequencies)
     weighting = db_to_power(weighting)
     inverse_mel_basis = np.linalg.pinv(mel_basis)  # NOTE: Approximate inverse matrix of `mel_basis`
     power_mel_spectrogram = db_to_power(db_mel_spectrogram)
     assert isinstance(power_mel_spectrogram, np.ndarray)
-    power_spectrogram = np.dot(inverse_mel_basis, power_mel_spectrogram.transpose()).transpose()
-    power_spectrogram = np.maximum(0.0, power_spectrogram)
-    return np.sqrt(power_spectrogram / weighting)
+    power_spectrogram = np.transpose(np.dot(inverse_mel_basis, np.transpose(power_mel_spectrogram)))
+    power_spectrogram = np.maximum(0.0, power_spectrogram)  # type: ignore
+    return np.sqrt(power_spectrogram / weighting)  # type: ignore
 
 
 @configurable
@@ -905,9 +917,9 @@ def griffin_lim(
         large_values = (waveform < -1).sum() + (waveform > 1).sum()
         if large_values > 0:
             logger.warning("Griffin-lim waveform clipped %d samples.", large_values)
-        return np.clip(waveform, -1, 1).astype(np.float32)
+        return np.clip(waveform, -1, 1).astype(np.float32)  # type: ignore
     except Exception:
         logger.exception("Griffin-lim encountered an issue and was unable to render audio.")
         # NOTE: Return no audio for valid inputs that fail due to an overflow error or a small
         # spectrogram.
-        return np.array([], dtype=np.float32)
+        return np.array([], dtype=np.float32)  # type: ignore

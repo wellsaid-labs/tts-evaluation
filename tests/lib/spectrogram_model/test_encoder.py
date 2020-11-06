@@ -2,6 +2,7 @@ import typing
 from functools import partial
 
 import torch
+import torch.nn
 from torchnlp.random import fork_rng
 
 import lib.spectrogram_model.encoder
@@ -130,7 +131,9 @@ def test__right_masked_bi_rnn__jagged_mask():
     )
     result = masked_bi_rnn(tokens, tokens_mask, num_tokens)
 
-    forward_lstm, backward_lstm = masked_bi_rnn.rnn_layers[0]
+    forward_lstm, backward_lstm = typing.cast(
+        typing.Tuple[torch.nn.LSTM, torch.nn.LSTM], masked_bi_rnn.rnn_layers[0]
+    )
     expected = torch.zeros(tokens.shape[0], tokens.shape[1], hidden_size * 2)
     expected[:, :, :hidden_size] = forward_lstm(tokens)[0].masked_fill(~tokens_mask.unsqueeze(2), 0)
     expected[:3, 0:1, hidden_size:] = backward_lstm(tokens[:3, 0:1].flip(0))[0].flip(0)

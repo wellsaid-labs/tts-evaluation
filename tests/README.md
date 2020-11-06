@@ -1,3 +1,3 @@
 # Tests
 
-This directory contains tests for our source code in `src`.
+This directory contains tests for our source code.

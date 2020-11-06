@@ -4,8 +4,8 @@ import typing
 from functools import lru_cache
 
 import torch
+import torch.nn
 from hparams import HParam, configurable
-from torch import nn
 from torchnlp.nn import LockedDropout
 
 logger = logging.getLogger(__name__)
@@ -80,7 +80,7 @@ class LocationRelativeAttentionHiddenState(typing.NamedTuple):
     window_start: torch.Tensor
 
 
-class LocationRelativeAttention(nn.Module):
+class LocationRelativeAttention(torch.nn.Module):
     """Query using the Bahdanau attention mechanism given location features.
 
     Reference:
@@ -116,15 +116,15 @@ class LocationRelativeAttention(nn.Module):
         self.hidden_size = hidden_size
         self.window_length = window_length
         self.cumulative_alignment_padding = int((convolution_filter_size - 1) / 2)
-        self.alignment_conv = nn.Conv1d(
+        self.alignment_conv = torch.nn.Conv1d(
             in_channels=1,
             out_channels=hidden_size,
             kernel_size=convolution_filter_size,
             padding=0,
         )
-        self.project_query = nn.Linear(query_hidden_size, hidden_size)
-        self.project_scores = nn.Sequential(
-            LockedDropout(dropout), nn.Linear(hidden_size, 1, bias=False)
+        self.project_query = torch.nn.Linear(query_hidden_size, hidden_size)
+        self.project_scores = torch.nn.Sequential(
+            LockedDropout(dropout), torch.nn.Linear(hidden_size, 1, bias=False)
         )
 
     def __call__(

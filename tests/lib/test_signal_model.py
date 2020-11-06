@@ -3,6 +3,7 @@ import math
 import typing
 
 import torch
+import torch.nn
 from torchnlp.random import fork_rng
 from torchnlp.utils import lengths_to_mask
 
@@ -381,8 +382,8 @@ _expected_grads = {
     "network.1.block.4.weight_g": torch.tensor(-0.015950),
     "network.1.block.4.weight_v": torch.tensor(0.067614),
     "network.1.block.8.bias": torch.tensor(0.048052),
-    "network.1.block.8.weight_g": torch.tensor(-0.298613),
-    "network.1.block.8.weight_v": torch.tensor(2.785087),
+    "network.1.block.8.weight_g": torch.tensor(-0.298614),
+    "network.1.block.8.weight_v": torch.tensor(2.785088),
     "network.1.other_block.1.bias": torch.tensor(0.021341),
     "network.1.other_block.1.weight_g": torch.tensor(-0.022065),
     "network.1.other_block.1.weight_v": torch.tensor(-0.166280),
@@ -418,7 +419,7 @@ _expected_grads = {
     "network.3.weight_v": torch.tensor(-9.279540),
     "network.6.bias": torch.tensor(46.350098),
     "network.6.weight_g": torch.tensor(6.817425),
-    "network.6.weight_v": torch.tensor(-129.049683),
+    "network.6.weight_v": torch.tensor(-129.049698),
     "condition.bias": torch.tensor(-0.028309),
     "condition.weight_g": torch.tensor(-0.044978),
     "condition.weight_v": torch.tensor(0.001236),

@@ -2,8 +2,8 @@ import typing
 from functools import lru_cache
 
 import torch
+import torch.nn
 from hparams import HParam, configurable
-from torch import nn
 from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
 from torchnlp.nn import LockedDropout
 
@@ -49,7 +49,7 @@ def _roll(tensor: torch.Tensor, shift: torch.Tensor, dim: int = -1) -> torch.Ten
     return torch.gather(tensor, dim, indices)
 
 
-class _RightMaskedBiRNN(nn.Module):
+class _RightMaskedBiRNN(torch.nn.Module):
     """A bidirectional RNN that ignores any masked input on the right side of the sequence.
 
     NOTE: Unfortunatly, this RNN does not return the hidden state due to related performance
@@ -75,8 +75,8 @@ class _RightMaskedBiRNN(nn.Module):
         _rnn = lambda i: rnn_class(
             input_size=input_size if i == 0 else hidden_size * 2, hidden_size=hidden_size, bias=bias
         )
-        self.rnn_layers = nn.ModuleList(
-            [nn.ModuleList([_rnn(i), _rnn(i)]) for i in range(num_layers)]
+        self.rnn_layers = torch.nn.ModuleList(
+            [torch.nn.ModuleList([_rnn(i), _rnn(i)]) for i in range(num_layers)]
         )
 
     def _backward_pass(
@@ -130,10 +130,14 @@ class _RightMaskedBiRNN(nn.Module):
             (torch.FloatTensor [seq_len, batch_size, hidden_size * 2]): Output features predicted
                 by the RNN.
         """
+        RecurrentNeuralNetwork = typing.Union[torch.nn.LSTM, torch.nn.GRU]
         output = tokens
         tokens_mask_expanded = tokens_mask.view(tokens_mask.shape[0], tokens_mask.shape[1], 1)
         tokens_mask = tokens_mask.view(tokens_mask.shape[0], tokens_mask.shape[1])
-        for forward_rnn, backward_rnn in self.rnn_layers:
+        for forward_rnn, backward_rnn in typing.cast(
+            typing.Iterable[typing.Tuple[RecurrentNeuralNetwork, RecurrentNeuralNetwork]],
+            iter(self.rnn_layers),
+        ):
             # [seq_len, batch_size, input_size or hidden_size * 2] →
             # [seq_len, batch_size, hidden_size * 2]
             forward_output, _ = forward_rnn(output)
@@ -149,7 +153,7 @@ class _RightMaskedBiRNN(nn.Module):
         return output
 
 
-class _LayerNorm(nn.LayerNorm):
+class _LayerNorm(torch.nn.LayerNorm):
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
 
@@ -159,7 +163,7 @@ class _Conv1dLockedDropout(LockedDropout):
         return super().forward(tensor.permute(2, 0, 1)).permute(1, 2, 0)
 
 
-class Encoder(nn.Module):
+class Encoder(torch.nn.Module):
     """Encode a discrete sequence as a sequence of differentiable vector(s).
 
     TODO: Parameterized `padding_index` with `HParam`.
@@ -199,28 +203,28 @@ class Encoder(nn.Module):
             speaker_embedding_size < hidden_size
         ), "The `hidden_size` must be larger than the `speaker_embedding_dim` to accommodate it."
 
-        self.embed_token = nn.Sequential(
-            nn.Embedding(
+        self.embed_token = torch.nn.Sequential(
+            torch.nn.Embedding(
                 vocab_size,
                 hidden_size - speaker_embedding_size,
                 padding_idx=padding_index,
             ),
-            nn.LayerNorm(hidden_size - speaker_embedding_size),
+            torch.nn.LayerNorm(hidden_size - speaker_embedding_size),
         )
-        self.conv_layers = nn.ModuleList(
-            nn.Sequential(
+        self.conv_layers = torch.nn.ModuleList(
+            torch.nn.Sequential(
                 _Conv1dLockedDropout(dropout),
-                nn.Conv1d(
+                torch.nn.Conv1d(
                     in_channels=hidden_size,
                     out_channels=hidden_size,
                     kernel_size=convolution_filter_size,
                     padding=int((convolution_filter_size - 1) / 2),
                 ),
-                nn.ReLU(),
+                torch.nn.ReLU(),
             )
             for i in range(num_convolution_layers)
         )
-        self.norm_layers = nn.ModuleList(
+        self.norm_layers = torch.nn.ModuleList(
             _LayerNorm(hidden_size) for i in range(num_convolution_layers)
         )
         self.lstm = _RightMaskedBiRNN(
@@ -229,17 +233,19 @@ class Encoder(nn.Module):
             hidden_size=hidden_size // 2,
             num_layers=lstm_layers,
         )
-        self.lstm_norm = nn.LayerNorm(hidden_size)
+        self.lstm_norm = torch.nn.LayerNorm(hidden_size)
         self.lstm_dropout = LockedDropout(dropout)
-        self.project_out = nn.Sequential(
+        self.project_out = torch.nn.Sequential(
             LockedDropout(dropout),
-            nn.Linear(hidden_size, out_size),
-            nn.LayerNorm(out_size),
+            torch.nn.Linear(hidden_size, out_size),
+            torch.nn.LayerNorm(out_size),
         )
 
         for module in self.conv_layers.modules():
-            if isinstance(module, nn.Conv1d):
-                nn.init.xavier_uniform_(module.weight, gain=nn.init.calculate_gain("relu"))
+            if isinstance(module, torch.nn.Conv1d):
+                torch.nn.init.xavier_uniform_(
+                    module.weight, gain=torch.nn.init.calculate_gain("relu")
+                )
 
     def __call__(
         self,

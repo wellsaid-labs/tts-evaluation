@@ -1,4 +1,3 @@
-import collections
 import itertools
 import json
 import logging
@@ -9,6 +8,7 @@ import shlex
 import string
 import subprocess
 import typing
+from collections import defaultdict
 from functools import lru_cache, partial
 from typing import get_args
 
@@ -26,6 +26,7 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     import nltk
     import normalise
     import spacy
+    import spacy.tokens
     from spacy.lang import en as spacy_en
 else:
     en_core_web_md = LazyLoader("en_core_web_md", globals(), "en_core_web_md")
@@ -139,7 +140,8 @@ def _grapheme_to_phoneme_preserve_punctuation(
     # - "to public interest/national security" (SYM)
     # - "spectacular, grand // desco da" (SYM)
     return_ = []
-    for is_punct, group in itertools.groupby(doc, lambda t: t.pos == spacy.symbols.PUNCT):
+    iterator = itertools.groupby(doc, lambda t: t.pos == spacy.symbols.PUNCT)  # type: ignore
+    for is_punct, group in iterator:
         phrase = "".join([t.text_with_ws for t in group])
         is_alpha_numeric = any(c.isalpha() or c.isdigit() for c in phrase)
         if is_punct and is_alpha_numeric:
@@ -194,7 +196,7 @@ def grapheme_to_phoneme(graphemes, chunk_size: int = 128, **kwargs):
         **kwargs: Key-word arguments passed to `_grapheme_to_phoneme_preserve_punctuation`.
     """
     assert chunk_size >= 1
-    is_iterable = isinstance(graphemes, collections.abc.Iterable)
+    is_iterable = not isinstance(graphemes, (str, spacy.tokens.Doc, spacy.tokens.span.Span))
     graphemes = list(graphemes) if is_iterable else [graphemes]
     part = partial(_grapheme_to_phoneme_preserve_punctuation, **kwargs)
 
@@ -275,25 +277,25 @@ AMEPD_PART_OF_SPEECH_COARSE = typing.Literal[
 ]
 
 SPACY_TO_AMEPD_POS: typing.Dict[int, typing.Optional[AMEPD_PART_OF_SPEECH_COARSE]] = {
-    spacy.symbols.ADJ: "adj",  # adjective -> adjective
-    spacy.symbols.ADP: None,  # adposition
-    spacy.symbols.ADV: "adv",  # adverb -> adverb
-    spacy.symbols.AUX: "verb",  # auxiliary -> verb
-    spacy.symbols.CONJ: "conj",  # conjunction -> conjunction
-    spacy.symbols.CCONJ: "conj",  # coordinating conjunction -> conjunction
-    spacy.symbols.DET: "det",  # determiner -> determiner
-    spacy.symbols.INTJ: "intj",  # interjection -> interjection
-    spacy.symbols.NOUN: "noun",  # noun -> noun
-    spacy.symbols.NUM: "num",  # numeral -> numeral
-    spacy.symbols.PART: None,  # particle
-    spacy.symbols.PRON: "noun",  # pronoun -> noun
-    spacy.symbols.PROPN: "noun",  # proper noun -> noun
-    spacy.symbols.PUNCT: None,  # punctuation
-    spacy.symbols.SCONJ: "conj",  # subordinating conjunction -> conjunction
-    spacy.symbols.SYM: None,  # symbol
-    spacy.symbols.VERB: "verb",  # verb -> verb
-    spacy.symbols.X: None,  # other
-    spacy.symbols.SPACE: None,
+    spacy.symbols.ADJ: "adj",  # type: ignore # adjective -> adjective
+    spacy.symbols.ADP: None,  # type: ignore # adposition
+    spacy.symbols.ADV: "adv",  # type: ignore # adverb -> adverb
+    spacy.symbols.AUX: "verb",  # type: ignore # auxiliary -> verb
+    spacy.symbols.CONJ: "conj",  # type: ignore # conjunction -> conjunction
+    spacy.symbols.CCONJ: "conj",  # type: ignore # coordinating conjunction -> conjunction
+    spacy.symbols.DET: "det",  # type: ignore # determiner -> determiner
+    spacy.symbols.INTJ: "intj",  # type: ignore # interjection -> interjection
+    spacy.symbols.NOUN: "noun",  # type: ignore # noun -> noun
+    spacy.symbols.NUM: "num",  # type: ignore # numeral -> numeral
+    spacy.symbols.PART: None,  # type: ignore # particle
+    spacy.symbols.PRON: "noun",  # type: ignore # pronoun -> noun
+    spacy.symbols.PROPN: "noun",  # type: ignore # proper noun -> noun
+    spacy.symbols.PUNCT: None,  # type: ignore # punctuation
+    spacy.symbols.SCONJ: "conj",  # type: ignore # subordinating conjunction -> conjunction
+    spacy.symbols.SYM: None,  # type: ignore # symbol
+    spacy.symbols.VERB: "verb",  # type: ignore # verb -> verb
+    spacy.symbols.X: None,  # type: ignore # other
+    spacy.symbols.SPACE: None,  # type: ignore
 }
 
 
@@ -393,7 +395,7 @@ def _load_amepd(
 
     NOTE: Loanwords from other languages are ignored to ensure ASCII compatibility.
     """
-    dictionary: typing.Dict[str, typing.List[AmEPDPronunciation]] = collections.defaultdict(list)
+    dictionary: typing.Dict[str, typing.List[AmEPDPronunciation]] = defaultdict(list)
     entries = [l.split(comment_delimiter, 1)[0].strip() for l in path.read_text().split("\n")]
     ignored_words = []
     for entry in entries:
@@ -432,7 +434,7 @@ def _load_amepd(
                 assert len(split) == 1 or len(split) == 2
                 if len(split) == 1:
                     (structured,) = split
-                elif len(split) == 2:
+                else:
                     structured, unstructured = split
                     kwargs["note"] = unstructured
                 metadata = json.loads(structured)
@@ -514,9 +516,17 @@ def get_pronunciation(
             break
 
     if len(pronunciations) > 1:
-        lib.utils.call_once(logger.warning, "Unable to disamgiuate pronunciation of '%s'.", word)
+        lib.utils.call_once(
+            logger.warning,  # type: ignore
+            "Unable to disamgiuate pronunciation of '%s'.",
+            word,
+        )
     elif len(pronunciations) == 0:
-        lib.utils.call_once(logger.warning, "Unable to find pronunciation of '%s'.", word)
+        lib.utils.call_once(
+            logger.warning,  # type: ignore
+            "Unable to find pronunciation of '%s'.",
+            word,
+        )
 
     return pronunciations[0].pronunciation if len(pronunciations) == 1 else None
 
@@ -538,7 +548,9 @@ def get_pronunciations(
     for token in doc:
         if not all(c.isalpha() or c == "'" for c in token.text):
             lib.utils.call_once(
-                logger.warning, "Words may only have letter(s) or apostrophe(s): '%s'", token.text
+                logger.warning,  # type: ignore
+                "Words may only have letter(s) or apostrophe(s): '%s'",
+                token.text,
             )
             return_.append(None)
         else:
@@ -546,7 +558,11 @@ def get_pronunciations(
             tense = spacy_en.TAG_MAP[token.tag_].get("Tense", None)
             prounciation = lib.text.get_pronunciation(token.text, pos, tense)
             if is_initialism(token):
-                lib.utils.call_once(logger.warning, "Guessing '%s' is an initialism.", token.text)
+                lib.utils.call_once(
+                    logger.warning,  # type: ignore
+                    "Guessing '%s' is an initialism.",
+                    token.text,
+                )
                 prounciation = lib.text.get_initialism_pronunciation(token.text)
             return_.append(prounciation)
     return tuple(return_)
@@ -589,7 +605,7 @@ def normalize_vo_script(text: str, strip: bool = True) -> str:
     text = ftfy.fix_text(text)
     text = text.replace("\f", "\n")
     text = text.replace("\t", "  ")
-    text = unidecode.unidecode(text)
+    text = str(unidecode.unidecode(text))
     if strip:
         text = text.strip()
     return text
@@ -817,8 +833,8 @@ def align_tokens(
         window_length = len(other_tokens)
 
     alignment_window_length = min(2 * window_length + 1, len(other_tokens) + 1)
-    row_one: typing.List[typing.Optional[int]] = [None] * alignment_window_length
-    row_two: typing.List[typing.Optional[int]] = [None] * alignment_window_length
+    row_one = typing.cast(typing.List[typing.Optional[int]], [None] * alignment_window_length)
+    row_two = typing.cast(typing.List[typing.Optional[int]], [None] * alignment_window_length)
     # NOTE: This operation copies a reference to the initial list `alignment_window_length` times.
     # Example:
     # >>> list_of_lists = [[]] * 10
@@ -876,7 +892,7 @@ def align_tokens(
                 token = tokens[i]
                 other_token = other_tokens[j - 1]
                 if token == other_token or allow_substitution(token, other_token):
-                    substition_cost = Levenshtein.distance(token, other_token)
+                    substition_cost = Levenshtein.distance(token, other_token)  # type: ignore
                     substition_cost = row_one[j - 1 - row_one_window[0]] + substition_cost
                     alignment = (j - 1, i) if flipped else (i, j - 1)
                     substition_path = row_one_paths[j - 1 - row_one_window[0]]
