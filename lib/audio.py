@@ -38,12 +38,16 @@ class AudioFileMetadata(typing.NamedTuple):
     `sample_rate` should technically be called the `frame_rate` because it measures the number of
     frames per second.
 
+    Learn more: http://sox.sourceforge.net/soxi.html
+
     Args:
       path: The audio file path.
       sample_rate: The sample rate of the audio.
       num_channels: The number of audio channels in the audio file.
       encoding: The encoding of the audio file (e.g. "32-bit Floating Point PCM").
       length: The duration of the audio file in seconds.
+      bit_rate: The number of bits per second.
+      precision: The estimated sample precision in bits.
     """
 
     path: Path
@@ -51,6 +55,8 @@ class AudioFileMetadata(typing.NamedTuple):
     num_channels: int
     encoding: str
     length: float
+    bit_rate: str
+    precision: str
 
 
 def _parse_audio_metadata(metadata: str) -> AudioFileMetadata:
@@ -62,13 +68,18 @@ def _parse_audio_metadata(metadata: str) -> AudioFileMetadata:
     TODO: Adapt `ffmpeg --i` for consistency.
     """
     splits = [s.split(":", maxsplit=1)[1].strip() for s in metadata.strip().split("\n")]
+    assert len(splits) == 8
     audio_path = str(splits[0][1:-1])
     num_channels = int(splits[1])
     sample_rate = int(splits[2])
+    precision = splits[3]
     assert splits[4].split()[3] == "samples"
     length = float(splits[4].split()[2]) / sample_rate
+    bit_rate = splits[-2]
     encoding = splits[-1]
-    return AudioFileMetadata(Path(audio_path), sample_rate, num_channels, encoding, length)
+    return AudioFileMetadata(
+        Path(audio_path), sample_rate, num_channels, encoding, length, bit_rate, precision
+    )
 
 
 def _get_audio_metadata_helper(chunk: typing.List[Path]) -> typing.List[AudioFileMetadata]:

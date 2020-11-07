@@ -203,11 +203,13 @@ def dataset_loader(
         scripts = pandas.read_csv(str(script_file_path.absolute()))
         script_alignments: typing.List[typing.List[typing.List[typing.List[float]]]]
         script_alignments = json.loads(alignment_file_path.read_text())
-        assert len(scripts) == len(script_alignments)
+        assert len(scripts) == len(
+            script_alignments
+        ), f"Each script ({script_file_path}) doesn't have an alignment ({alignment_file_path})."
         for (_, script), alignments in zip(scripts.iterrows(), script_alignments):
             assert lib.text.is_normalized_vo_script(
                 script[text_column]
-            ), "The script must be normalized."
+            ), f"The script text must be normalized: {script[text_column]}"
             example_alignments = [
                 Alignment((int(a[0][0]), int(a[0][1])), (a[1][0], a[1][1])) for a in alignments
             ]

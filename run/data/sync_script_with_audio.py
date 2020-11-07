@@ -163,10 +163,7 @@ MULTIPLE_WHITE_SPACES_REGEX = re.compile(r"\s\s+")
 PUNCTUATION_REGEX = re.compile(r"[^\w\s]")
 
 
-@lru_cache(maxsize=2 ** 20)
-def _normalize_text(text: str) -> str:
-    """ Normalize text for alignment. """
-    return lib.text.normalize_vo_script(text)
+normalize_vo_script = lru_cache(maxsize=2 ** 20)(lib.text.normalize_vo_script)
 
 
 def format_ratio(a: float, b: float) -> str:
@@ -211,8 +208,8 @@ def is_sound_alike(a: str, b: str) -> bool:
         >>> is_sound_alike('financingA', 'financing a')
         True
     """
-    a = _normalize_text(a)
-    b = _normalize_text(b)
+    a = normalize_vo_script(a)
+    b = normalize_vo_script(b)
     return_ = (
         a.lower() == b.lower()
         or _remove_punctuation(a.lower()) == _remove_punctuation(b.lower())
@@ -424,8 +421,8 @@ def align_stt_with_script(
 
     # Align `script_tokens` and `stt_tokens`.
     args = (
-        [_normalize_text(t.text.lower()) for t in script_tokens],
-        [_normalize_text(t.text.lower()) for t in stt_tokens],
+        [normalize_vo_script(t.text.lower()) for t in script_tokens],
+        [normalize_vo_script(t.text.lower()) for t in stt_tokens],
         get_window_size(len(script_tokens), len(stt_tokens)),
     )
     alignments = lib.text.align_tokens(*args, allow_substitution=is_sound_alike)[1]
@@ -456,6 +453,7 @@ def align_stt_with_script(
             audio=(stt_tokens[alignment[1]].start_audio, stt_tokens[alignment[1]].end_audio),
         )
         return_[script_tokens[alignment[0]].script_index].append(alignment_)
+    assert len(return_) == len(scripts)
     return return_
 
 
@@ -485,7 +483,7 @@ def _get_speech_context(
         ['a b c', 'c d e', 'e f g', 'g h i', 'i j']
 
     """
-    spans = [(m.start(), m.end()) for m in re.finditer(r"\S+", _normalize_text(script))]
+    spans = [(m.start(), m.end()) for m in re.finditer(r"\S+", normalize_vo_script(script))]
     phrases = []
     start = 0
     end = 0
@@ -590,6 +588,9 @@ def _sync_and_upload(
         typing.cast(pandas.DataFrame, pandas.read_csv(StringIO(s)))[text_column].tolist()
         for s in scripts_
     ]
+    assert all(
+        lib.text.is_normalized_vo_script(t) for t in lib.utils.flatten(scripts)
+    ), "Scripts cannot contain funky characters."
 
     logger.info("Maybe running speech-to-text and caching results...")
     filtered = list(filter(lambda i: not i[-1].exists(), zip(audio_blobs, scripts, stt_blobs)))
@@ -626,7 +627,13 @@ def _sync_and_upload(
 
 
 def main(
-    voice_over: typing.List[str] = typer.Option(..., help="GCS link(s) to audio file(s)."),
+    voice_over: typing.List[str] = typer.Option(
+        ...,
+        help=(
+            "GCS link(s) to audio file(s) with a supported audio "
+            "encoding (https://cloud.google.com/speech-to-text/docs/encoding)."
+        ),
+    ),
     script: typing.List[str] = typer.Option(..., help="GCS link(s) to the script(s) CSV files."),
     destination: typing.List[str] = typer.Option(
         ..., help="GCS location(s) to upload alignment(s) and speech-to-text result(s)."
