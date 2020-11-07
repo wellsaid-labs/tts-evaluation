@@ -140,7 +140,7 @@ def test_normalize_audio():
         new_audio_path = dataset[lib.datasets.LINDA_JOHNSON][0].audio_path
         assert new_audio_path.absolute() != audio_path.absolute()
         assert lib.audio.get_audio_metadata([new_audio_path])[0] == lib.audio.AudioFileMetadata(
-            new_audio_path, sample_rate, num_channels, sox_encoding, 7.584
+            new_audio_path, sample_rate, num_channels, sox_encoding, 7.584, "256k", "16-bit"
         )
 
 

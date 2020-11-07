@@ -136,7 +136,9 @@ def update_audio_file_metadata(
       sample_rate integer,
       num_channels integer,
       encoding text,
-      length float
+      length float,
+      bit_rate text,
+      precision text
     )"""
     )
     cursor.execute("""SELECT path FROM audio_file_metadata""")
@@ -144,9 +146,16 @@ def update_audio_file_metadata(
     update = list(set(absolute) - set([pathlib.Path(r[0]) for r in cursor.fetchall()]))
     metadatas = lib.audio.get_audio_metadata(update)
     cursor.executemany(
-        """INSERT INTO audio_file_metadata (path, sample_rate, num_channels, encoding, length)
-    VALUES (?,?,?,?,?)""",
-        [(str(p.absolute()), s, c, e, l) for (p, s, c, e, l) in metadatas],
+        """INSERT INTO audio_file_metadata (
+          path,
+          sample_rate,
+          num_channels,
+          encoding,
+          length,
+          bit_rate,
+          precision)
+          VALUES (?,?,?,?,?,?,?)""",
+        [(str(p.absolute()), *a) for (p, *a) in metadatas],
     )
     connection.commit()
 

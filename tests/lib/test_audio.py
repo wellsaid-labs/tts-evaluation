@@ -89,6 +89,8 @@ def test__parse_audio_metadata():
         num_channels=1,
         encoding="24-bit Signed Integer PCM",
         length=13588.089818594104,
+        bit_rate="1.06M",
+        precision="24-bit",
     )
 
 
@@ -100,6 +102,8 @@ def test_get_audio_metadata():
         num_channels=1,
         encoding="32-bit Floating Point PCM",
         length=7.583958333333333,
+        bit_rate="768k",
+        precision="25-bit",
     )
 
 
@@ -113,6 +117,8 @@ def test_get_audio_metadata__large_batch():
             num_channels=1,
             encoding="32-bit Floating Point PCM",
             length=7.583958333333333,
+            bit_rate="768k",
+            precision="25-bit",
         )
 
 
@@ -126,6 +132,8 @@ def test_get_audio_metadata__multiple_channels():
         num_channels=2,
         encoding="32-bit Floating Point PCM",
         length=7.583958333333333,
+        bit_rate="1.54M",
+        precision="25-bit",
     )
 
 
@@ -264,7 +272,7 @@ def test_normalize_audio__assert_audio_normalized():
         )
         metadata = lib.audio.get_audio_metadata([audio_path])[0]
         new_metadata = lib.audio.AudioFileMetadata(
-            new_audio_path, sample_rate, num_channels, sox_encoding, 7.584
+            new_audio_path, sample_rate, num_channels, sox_encoding, 7.584, "256k", "16-bit"
         )
         assert lib.audio.get_audio_metadata([new_audio_path])[0] == new_metadata
     lib.audio.assert_audio_normalized(new_metadata, sox_encoding, sample_rate, num_channels)
