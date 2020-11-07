@@ -18,7 +18,7 @@ Example:
 
     PREFIX=gs://wellsaid_labs_datasets/hilary_noriega
     GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
-    python -m run.preprocess.sync_script_with_audio \
+    python -m run.data.sync_script_with_audio \
       --voice-over "$PREFIX/preprocessed_recordings/Script 1.wav" \
       --script "$PREFIX/scripts/Script 1 - Hilary.csv" \
       --destination "$PREFIX/"
@@ -28,7 +28,7 @@ Example (Multiple Speakers):
     PREFIX=gs://wellsaid_labs_datasets
     PREPROCESSED=preprocessed_recordings \
     GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
-    python -m run.preprocess.sync_script_with_audio \
+    python -m run.data.sync_script_with_audio \
       --voice-over "$PREFIX/hilary_noriega/$PREPROCESSED/Script 1.wav" \
       --script "$PREFIX/hilary_noriega/scripts/Script 1 - Hilary.csv" \
       --destination "$PREFIX/hilary_noriega/" \
@@ -49,7 +49,7 @@ Example (Batch):
 
     PREFIX=gs://wellsaid_labs_datasets/hilary_noriega
     GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
-    python -m run.preprocess.sync_script_with_audio \
+    python -m run.data.sync_script_with_audio \
       --voice-over "${(@f)$(gsutil ls "$PREFIX/preprocessed_recordings/*.wav" | sort -h)}" \
       --script "${(@f)$(gsutil ls "$PREFIX/scripts/*.csv" | sort -h)}" \
       --destination $PREFIX/

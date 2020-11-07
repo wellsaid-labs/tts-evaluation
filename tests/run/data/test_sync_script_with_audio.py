@@ -3,7 +3,7 @@ import typing
 
 from lib.environment import AnsiCodes
 from lib.utils import flatten
-from run.preprocess.sync_script_with_audio import (
+from run.data.sync_script_with_audio import (
     ScriptToken,
     SttToken,
     _fix_alignments,
