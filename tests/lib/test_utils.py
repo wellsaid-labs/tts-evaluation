@@ -8,6 +8,7 @@ import torch.nn
 from torchnlp.random import fork_rng
 
 import lib
+from lib.utils import pad_tensor
 from tests._utils import assert_almost_equal
 
 
@@ -182,29 +183,15 @@ def test_pool():
 
 
 def test_pad_tensor():
-    """ Test `lib.utils.pad_tensor` for various `dim`. """
-    assert lib.utils.pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=0).shape == (
-        5,
-        4,
-        5,
-    )
-    assert lib.utils.pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=-1).shape == (
-        3,
-        4,
-        7,
-    )
-    assert lib.utils.pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=1).shape == (
-        3,
-        6,
-        5,
-    )
+    """ Test `pad_tensor` for various `dim`. """
+    assert pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=0).shape == (5, 4, 5)
+    assert pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=-1).shape == (3, 4, 7)
+    assert pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=1).shape == (3, 6, 5)
 
 
 def test_pad_tensor__kwargs():
-    """ Test `lib.utils.pad_tensor` `kwargs` are passed along. """
-    assert (
-        lib.utils.pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=1, value=1.0).sum() == 2 * 3 * 5
-    )
+    """ Test `pad_tensor` `kwargs` are passed along. """
+    assert pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=1, value=1.0).sum() == 2 * 3 * 5
 
 
 def test_trim_tensors():

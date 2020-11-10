@@ -3,6 +3,7 @@ import typing
 from collections import Counter
 from unittest import mock
 
+import numpy as np
 import pytest
 
 import lib
@@ -170,6 +171,21 @@ def test_dataset_loader(_):
         speaker=lib.datasets.HILARY_NORIEGA,
         metadata={"Index": 0, "Source": "CMU", "Title": "CMU"},
     )
+
+
+def test_example_and_span__load_audio():
+    """ Test `lib.datasets.Example` and `lib.datasets.Span` load and cache audio. """
+    audio_path = _utils.TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
+    metadata = lib.audio.get_audio_metadata([audio_path])[0]
+    example = lib.datasets.Example(
+        audio_path=audio_path,
+        speaker=lib.datasets.LINDA_JOHNSON,
+        alignments=(lib.datasets.Alignment((0, 0), (0.0, metadata.length)),),
+        text="",
+        metadata={},
+    )
+    span = lib.datasets.Span(example, (0, 1))
+    np.testing.assert_almost_equal(example.audio, span.audio)
 
 
 # NOTE: `lib.datasets.precut_dataset_loader` is tested in `lj_speech` as part of loading the

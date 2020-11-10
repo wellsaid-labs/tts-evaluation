@@ -44,6 +44,10 @@ class Speaker(typing.NamedTuple):
     gender: typing.Optional[str] = None
 
 
+read_audio_slice = functools.lru_cache(maxsize=None)(lib.audio.read_audio_slice)
+read_audio = functools.lru_cache(maxsize=None)(lib.audio.read_audio)
+
+
 @dataclasses.dataclass(frozen=True)
 class Example:
     """Given a script (`text`), this is an `Example` voice-over stored at the `audio_path`.
@@ -63,9 +67,8 @@ class Example:
     metadata: typing.Dict
 
     @property
-    @functools.lru_cache(maxsize=1)
     def audio(self):
-        return lib.audio.read_audio(self.audio_path)
+        return read_audio(self.audio_path)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -89,6 +92,7 @@ class Span:
     alignments: typing.Tuple[Alignment, ...] = dataclasses.field(init=False)
 
     def __post_init__(self):
+        assert self.slice[1] - self.slice[0], "Cannot create `Span` without any `Alignments`."
         # Learn more about using `__setattr__`:
         # https://stackoverflow.com/questions/53756788/how-to-set-the-value-of-dataclass-field-in-post-init-when-frozen-true
         set = object.__setattr__
@@ -112,10 +116,9 @@ class Span:
         return tuple(alignments)
 
     @property
-    @functools.lru_cache(maxsize=1)
     def audio(self):
         start = self.alignments_slice[0].audio[0]
-        return lib.audio.read_audio_slice(self.example.audio_path, start, self.audio_length)
+        return read_audio_slice(self.example.audio_path, start, self.audio_length)
 
 
 def _overlap(start: float, end: float, other_start: float, other_end: float) -> float:
