@@ -60,7 +60,7 @@ import logging
 import re
 import time
 import typing
-from copy import copy
+from copy import deepcopy
 from functools import lru_cache, partial
 from io import StringIO
 from itertools import chain, groupby, repeat
@@ -231,9 +231,8 @@ def gcs_uri_to_blob(gcs_uri: str) -> storage.Blob:
     path_segments = gcs_uri[5:].split("/")
     storage_client = storage.Client()
     bucket = storage_client.get_bucket(path_segments[0])
-    blob = bucket.get_blob("/".join(path_segments[1:]))
-    assert blob is not None, "The URI cannot be found."
-    return blob
+    name = "/".join(path_segments[1:])
+    return bucket.blob(name)
 
 
 def blob_to_gcs_uri(blob: storage.Blob) -> str:
@@ -536,7 +535,7 @@ def run_stt(
     """
     operations = []
     for audio_blob, script, dest_blob in zip(audio_blobs, scripts, dest_blobs):
-        config = copy(stt_config)
+        config = deepcopy(stt_config)
         config.speech_contexts.append(_get_speech_context("\n".join(script)))  # type: ignore
         audio = RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
         operations.append(speech.SpeechClient().long_running_recognize(config=config, audio=audio))
@@ -558,7 +557,9 @@ def run_stt(
                 # Learn more:
                 # https://stackoverflow.com/questions/64470470/how-to-convert-google-cloud-natural-language-entity-sentiment-response-to-json-d
                 response = operation.result()
-                dest_blobs[i].upload_from_string(response.__class__.to_json(response))
+                dest_blobs[i].upload_from_string(
+                    response.__class__.to_json(response), content_type="application/json"
+                )
                 logger.info(
                     'STT operation %s "%s" finished.',
                     operation.operation.name,
@@ -608,7 +609,7 @@ def _sync_and_upload(
             'Running alignment "%s" and uploading results...', blob_to_gcs_uri(alignment_blob)
         )
         alignment = align_stt_with_script(script, stt_result)
-        alignment_blob.upload_from_string(json.dumps(alignment))
+        alignment_blob.upload_from_string(json.dumps(alignment), content_type="application/json")
 
     _words_unaligned = format_ratio(
         STATS.total_tokens - STATS.total_aligned_tokens, STATS.total_tokens
@@ -640,7 +641,7 @@ def main(
     ),
     text_column: str = typer.Option("Content", help="Column name with script text in --scripts."),
     stt_folder: str = typer.Option(
-        "speech_to_text_results/",
+        "speech_to_text/",
         help="Upload speech-to-text results to this folder in --destinations.",
     ),
     alignments_folder: str = typer.Option(

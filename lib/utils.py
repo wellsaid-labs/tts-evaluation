@@ -340,7 +340,10 @@ class LSTMCell(torch.nn.LSTMCell):
         return super().forward(input, hx=hx)
 
 
-def clamp(a: float, min_: float = -math.inf, max_: float = math.inf) -> float:
+_ClampReturnType = typing.TypeVar("_ClampReturnType")
+
+
+def clamp(a: _ClampReturnType, min_: float = -math.inf, max_: float = math.inf) -> _ClampReturnType:
     return max(min(a, max_), min_)
 
 

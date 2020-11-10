@@ -1,3 +1,4 @@
+import typing
 from pathlib import Path
 
 from lib.datasets import m_ailabs
@@ -30,16 +31,20 @@ MARK_ATHERLAY = Speaker("Mark Atherlay")
 SAM_SCHOLL = Speaker("Sam Scholl")
 
 
-def hilary_noriega_speech_dataset(*args, speaker: Speaker = HILARY_NORIEGA, **kwargs):
+def hilary_noriega_speech_dataset(
+    *args, speaker: Speaker = HILARY_NORIEGA, **kwargs
+) -> typing.List[Example]:
     return _dataset_loader(*args, speaker=speaker, **kwargs)  # type: ignore
 
 
-WSL_GCS_PATH = "gs://wellsaid_labs_datasets/"
+WSL_GCS_PATH = "gs://wellsaid_labs_datasets"
 
 
-def _dataset_loader(directory: Path, speaker: Speaker, gcs_path: str = WSL_GCS_PATH, **kwargs):
+def _dataset_loader(
+    directory: Path, speaker: Speaker, gcs_path: str = WSL_GCS_PATH, **kwargs
+) -> typing.List[Example]:
     label = HILARY_NORIEGA.name.lower().replace(" ", "_")
-    return dataset_loader(directory, label, gcs_path + label, speaker, **kwargs)
+    return dataset_loader(directory, label, f"{gcs_path}/{label}/processed", speaker, **kwargs)
 
 
 __all__ = [

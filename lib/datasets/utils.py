@@ -62,6 +62,12 @@ class Example(typing.NamedTuple):
     metadata: typing.Dict[typing.Union[str, int], typing.Any] = {}
 
 
+def _overlap(start: float, end: float, other_start: float, other_end: float) -> float:
+    """ Get the percentage overlap. """
+    if other_end == other_start:
+        return 1.0 if other_start >= start and other_end <= end else 0.0
+    return (min(end, other_end) - max(start, other_start)) / (other_end - other_start)
+
 def dataset_generator(data: typing.List[Example], max_seconds: float) -> typing.Iterator[Example]:
     """Randomly generate `Example`(s) that are at most `max_seconds` long.
 
@@ -121,11 +127,10 @@ def dataset_generator(data: typing.List[Example], max_seconds: float) -> typing.
             lookup[index][int(start) - offset(example) : int(end) - offset(example) + 1]
         )
         get = lambda i: example.alignments[i].audio
-        overlap = lambda i: (min(end, get(i)[1]) - max(start, get(i)[0])) / (get(i)[1] - get(i)[0])
         random_ = lru_cache(maxsize=None)(lambda i: random.random())
         bounds = (
-            next((i for i in part if overlap(i) >= random_(i)), None),
-            next((i for i in reversed(part) if overlap(i) >= random_(i)), None),
+            next((i for i in part if _overlap(start, end, *get(i)) >= random_(i)), None),
+            next((i for i in reversed(part) if _overlap(start, end, *get(i)) >= random_(i)), None),
         )
         if (
             bounds[0] is not None
@@ -143,8 +148,11 @@ def dataset_loader(
     gcs_path: str,
     speaker: Speaker,
     alignments_directory_name: str = "alignments",
+    alignments_suffix: str = ".json",
     recordings_directory_name: str = "recordings",
+    recordings_suffix: str = ".wav",
     scripts_directory_name: str = "scripts",
+    scripts_suffix: str = ".csv",
     text_column: str = "Content",
 ) -> typing.List[Example]:
     """Load an alignment text-to-speech (TTS) dataset from GCS.
@@ -172,8 +180,11 @@ def dataset_loader(
         gcs_path: The base GCS path storing the data.
         speaker: The speaker represented by this dataset.
         alignments_gcs_path: The name of the alignments directory on GCS.
+        alignments_suffix
         recordings_gcs_path: The name of the voice over directory on GCS.
+        recordings_suffix
         scripts_gcs_path: The name of the voice over script directory on GCS.
+        scripts_suffix
         text_column: The voice over script column in the CSV script files.
 
     Returns: List of voice-over examples in the dataset.
@@ -188,12 +199,15 @@ def dataset_loader(
         scripts_directory_name,
     ]
     directories = [root / d for d in names]
-    for directory, suffix in zip(directories, (".json", "", ".csv")):
+    suffixes = (alignments_suffix, recordings_suffix, scripts_suffix)
+    files = []
+    for directory, suffix in zip(directories, suffixes):
         directory.mkdir(exist_ok=True)
         command = f"gsutil -m cp -n {gcs_path}/{directory.name}/*{suffix} {directory}/"
         subprocess.run(command.split(), check=True)
+        files_ = [p for p in directory.iterdir() if p.suffix == suffix]
+        files.append(sorted(files_, key=lambda p: lib.text.natural_keys(p.name)))
 
-    files = (sorted(d.iterdir(), key=lambda p: lib.text.natural_keys(p.name)) for d in directories)
     iterator = typing.cast(
         typing.Iterator[typing.Tuple[pathlib.Path, pathlib.Path, pathlib.Path]],
         zip(*tuple(files)),
@@ -203,20 +217,16 @@ def dataset_loader(
         scripts = pandas.read_csv(str(script_file_path.absolute()))
         script_alignments: typing.List[typing.List[typing.List[typing.List[float]]]]
         script_alignments = json.loads(alignment_file_path.read_text())
-        assert len(scripts) == len(
-            script_alignments
-        ), f"Each script ({script_file_path}) doesn't have an alignment ({alignment_file_path})."
+        error = f"Each script ({script_file_path}) must have an alignment ({alignment_file_path})."
+        assert len(scripts) == len(script_alignments), error
         for (_, script), alignments in zip(scripts.iterrows(), script_alignments):
-            assert lib.text.is_normalized_vo_script(
-                script[text_column]
-            ), f"The script text must be normalized: {script[text_column]}"
-            example_alignments = [
+            alignments_ = [
                 Alignment((int(a[0][0]), int(a[0][1])), (a[1][0], a[1][1])) for a in alignments
             ]
             example = Example(
                 audio_path=recording_file_path,
                 speaker=speaker,
-                alignments=tuple(example_alignments),
+                alignments=tuple(alignments_),
                 text=script[text_column],
                 metadata={k: v for k, v in script.items() if k not in (text_column,)},
             )

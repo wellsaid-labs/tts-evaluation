@@ -41,6 +41,23 @@ def test_dataset_generator__empty():
     assert next(iterator, None) is None
 
 
+def test_dataset_generator__zero():
+    """Test `lib.datasets.dataset_generator` handles alignments of zero length."""
+    dataset = [
+        _make_example(((0, 1),)),
+        _make_example(((1, 1),)),
+        _make_example(((1, 2),)),
+    ]
+    iterator = lib.datasets.dataset_generator(dataset, max_seconds=10)
+    counter: typing.Counter[Alignment] = Counter()
+    for _ in range(10000):
+        counter.update(typing.cast(typing.Tuple[Alignment], next(iterator).alignments))
+    alignments_ = [dataset[0].alignments, dataset[-1].alignments]
+    alignments = [list(typing.cast(typing.Tuple[Alignment], a)) for a in alignments_]
+    assert set(counter.keys()) == set(flatten(alignments))
+    _utils.assert_uniform_distribution(counter, abs=0.01)
+
+
 def test_dataset_generator__singular():
     """Test `lib.datasets.dataset_generator` handles multiple examples with a singular alignment
     of varying lengths."""

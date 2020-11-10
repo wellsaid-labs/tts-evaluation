@@ -24,7 +24,7 @@ def main(
         "(e.g. ~/.ssh/michaelp_amazon_web_services)",
     ),
     template: pathlib.Path = typer.Option(
-        lib.environment.ROOT_PATH / "bin" / "utils" / "lsyncd.conf.lua",
+        lib.environment.ROOT_PATH / "run" / "utils" / "lsyncd.conf.lua",
         help="The path to a lsyncd config and template.",
     ),
 ):
@@ -41,7 +41,7 @@ def main(
     with tempfile.NamedTemporaryFile() as file_:
         path = pathlib.Path(file_.name)
         path.write_text(config)
-        os.execvp("sudo", ["sudo", "lsyncd", str(path)])
+        os.execvp("lsyncd", ["lsyncd", str(path)])
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -175,7 +175,8 @@ def write_audio(
     audio = audio.detach().cpu().numpy() if isinstance(audio, torch.Tensor) else audio
     assert audio.dtype == np.float32  # type: ignore
     if typing.cast(int, audio.size) > 0:
-        assert np.max(audio) <= 1.0 and np.min(audio) >= -1.0, "Signal must be in range [-1, 1]."
+        error = f"Signal must be in range [-1, 1] rather than [{np.min(audio)}, {np.max(audio)}]."
+        assert np.max(audio) <= 1.0 and np.min(audio) >= -1.0, error
     wavfile.write(path, sample_rate, audio)
 
 
@@ -199,6 +200,7 @@ def format_ffmpeg_audio_filters(filters: typing.List[AudioFilter]) -> AudioFilte
 def normalize_audio(
     source: Path,
     destination: Path,
+    suffix: str = HParam(),
     encoding: str = HParam(),
     sample_rate: int = HParam(),
     num_channels: int = HParam(),
@@ -210,6 +212,7 @@ def normalize_audio(
     Learn more about `-hide_banner`, `-loglevel` and `-nostats`:
     https://superuser.com/questions/326629/how-can-i-make-ffmpeg-be-quieter-less-verbose
     """
+    assert destination.suffix == suffix, f'The normalized file must be of type "{suffix}".'
     command = "" if len(audio_filters) == 0 else f"-af {audio_filters}"
     command = (
         f"ffmpeg -hide_banner -loglevel warning -nostats -i {source.absolute()} -acodec {encoding} "
@@ -221,11 +224,13 @@ def normalize_audio(
 @configurable
 def assert_audio_normalized(
     metadata: AudioFileMetadata,
+    suffix: str = HParam(),
     encoding: str = HParam(),
     sample_rate: int = HParam(),
     num_channels: int = HParam(),
 ):
     """Assert audio `metadata` was normalized. """
+    assert metadata.path.suffix == suffix
     assert metadata.sample_rate == sample_rate
     assert metadata.num_channels == num_channels
     assert metadata.encoding == encoding

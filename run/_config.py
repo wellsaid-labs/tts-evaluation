@@ -61,7 +61,7 @@ for directory in [
     SIGNAL_MODEL_EXPERIMENTS_PATH,
     SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
 ]:
-    assert directory.exists(), "Directory has not been made."
+    directory.mkdir(exist_ok=True)
 
 DATABASE_PATH = TEMP_PATH / "database.db"
 
@@ -129,6 +129,7 @@ def configure_audio_processing():
     # NOTE: The signal model output is 32-bit.
     sox_encoding = "32-bit Floating Point PCM"
     ffmpeg_encoding = "pcm_f32le"
+    suffix = ".wav"
     loud_norm_audio_filter = lib.audio.format_ffmpeg_audio_filter(
         "loudnorm", i=-21, lra=4, tp=-6.1, print_format="summary"
     )
@@ -187,13 +188,14 @@ def configure_audio_processing():
         lib.visualize.plot_mel_spectrogram: HParams(**hertz_bounds),
         lib.audio.write_audio: HParams(sample_rate=SAMPLE_RATE),
         lib.audio.normalize_audio: HParams(
+            suffix=suffix,
             encoding=ffmpeg_encoding,
             sample_rate=SAMPLE_RATE,
             num_channels=num_channels,
             audio_filters=lib.audio.format_ffmpeg_audio_filters([loud_norm_audio_filter]),
         ),
         lib.audio.assert_audio_normalized: HParams(
-            encoding=sox_encoding, sample_rate=SAMPLE_RATE, num_channels=num_channels
+            suffix=suffix, encoding=sox_encoding, sample_rate=SAMPLE_RATE, num_channels=num_channels
         ),
         lib.audio.pad_remainder: HParams(multiple=frame_hop, mode="constant", constant_values=0.0),
         lib.audio.signal_to_framed_rms: HParams(frame_length=frame_size, hop_length=frame_hop),

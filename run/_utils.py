@@ -526,7 +526,7 @@ def get_spectrogram_example(
     text = example.text[alignments[0].text[0] : alignments[-1].text[-1]]
     audio = lib.audio.read_audio_slice(example.audio_path, alignments[0].audio[0], num_seconds)
 
-    character_to_word, word_vectors, _, phonemes = _get_words(
+    _, word_vectors, _, phonemes = _get_words(
         example.text, alignments[0].text[0], alignments[-1].text[-1]
     )
 
