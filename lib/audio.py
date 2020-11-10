@@ -1,5 +1,6 @@
 import logging
 import math
+import multiprocessing.pool
 import os
 import subprocess
 import typing
@@ -114,10 +115,10 @@ def get_audio_metadata(
     if len(chunks) == 1:
         return _get_audio_metadata_helper(chunks[0])
 
-    logger.info("Getting audio metadata for %d audio files.", len(paths))
+    logger.info("Getting audio metadata for %d audio files in %d chunks.", len(paths), len(chunks))
     return_ = []
     with tqdm(total=len(paths)) as progress_bar:
-        with lib.utils.Pool(num_processes) as pool:
+        with multiprocessing.pool.ThreadPool(min(num_processes, len(chunks))) as pool:
             for result in pool.imap_unordered(_get_audio_metadata_helper, chunks):
                 return_.extend(result)
                 progress_bar.update(len(result))
