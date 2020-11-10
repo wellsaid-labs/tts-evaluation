@@ -37,10 +37,12 @@ verbalize_test_cases = {
 }
 
 
+@mock.patch("lib.audio.get_audio_metadata")
 @mock.patch("urllib.request.urlretrieve")
-def test_lj_speech_dataset(mock_urlretrieve):
+def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata):
     """ Test `lib.datasets.lj_speech_dataset` loads and verbalizes the data. """
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
+    mock_get_audio_metadata.side_effect = _utils.get_audio_metadata_side_effect
     archive = _utils.TEST_DATA_PATH / "datasets" / "LJSpeech-1.1.tar.bz2"
 
     with tempfile.TemporaryDirectory() as path:
@@ -52,7 +54,7 @@ def test_lj_speech_dataset(mock_urlretrieve):
         assert data[0] == lib.datasets.Example(
             audio_path=directory / "LJSpeech-1.1/wavs/LJ001-0001.wav",
             speaker=lib.datasets.LINDA_JOHNSON,
-            alignments=None,
+            alignments=(lib.datasets.Alignment(text=(0, 151), audio=(0.0, 0)),),
             text=(
                 "Printing, in the only sense with which we are at present concerned, differs "
                 "from most if not from all the arts and crafts represented in the Exhibition"

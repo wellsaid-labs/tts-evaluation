@@ -1,7 +1,6 @@
 import collections
 import pathlib
 import shutil
-import sqlite3
 import tempfile
 import typing
 
@@ -74,49 +73,6 @@ def test_maybe_make_experiment_directories_from_checkpoint(capsys):
             assert run_root.name == run_name
 
 
-def test_update_audio_file_metadata__fetch_audio_file_metadata():
-    """Test `run._utils.update_audio_file_metadata` updates our database. Furthermore, test that
-    this handles absolute and relative paths. Lastly, test `run._utils.fetch_audio_file_metadata`
-    fetchs the correct metadata."""
-    connection = run._utils.connect(":memory:")
-    audio_paths = [TEST_DATA_LJ]
-    metadata = lib.audio.get_audio_metadata(audio_paths)[0]
-    run._utils.update_audio_file_metadata(connection, audio_paths)
-    run._utils.update_audio_file_metadata(
-        connection, [TEST_DATA_LJ.relative_to(lib.environment.ROOT_PATH)]
-    )
-    assert run._utils.fetch_audio_file_metadata(connection, audio_paths[0]) == metadata
-
-
-def test_fetch_audio_file_metadata__no_table():
-    """Test `run._utils.fetch_audio_file_metadata` fails gracefully with no sql table."""
-    connection = run._utils.connect(":memory:")
-    with pytest.raises(sqlite3.OperationalError):
-        run._utils.fetch_audio_file_metadata(connection, TEST_DATA_LJ)
-
-
-def test_fetch_audio_file_metadata__empty_table():
-    """Test `run._utils.fetch_audio_file_metadata` fails gracefully with an empty sql table."""
-    connection = run._utils.connect(":memory:")
-    run._utils.update_audio_file_metadata(connection, [])
-    with pytest.raises(AssertionError):
-        run._utils.fetch_audio_file_metadata(connection, TEST_DATA_LJ)
-
-
-def test_handle_null_alignments():
-    """Test `run._utils.test_handle_null_alignments` updates `alignments=None` an `Example`. """
-    connection = run._utils.connect(":memory:")
-    metadata = lib.audio.get_audio_metadata([TEST_DATA_LJ])[0]
-    example = lib.datasets.Example(audio_path=TEST_DATA_LJ, speaker=lib.datasets.LINDA_JOHNSON)
-    run._utils.update_audio_file_metadata(connection, [example.audio_path])
-    dataset = {lib.datasets.LINDA_JOHNSON: [example]}
-    run._utils.handle_null_alignments(connection, dataset)
-    assert len(dataset[lib.datasets.LINDA_JOHNSON]) == 1
-    result = dataset[lib.datasets.LINDA_JOHNSON][0]
-    assert result.alignments is not None
-    assert result.alignments == (lib.datasets.Alignment((0, 0), (0, metadata.length)),)
-
-
 def test_normalize_audio():
     """Test `run._utils.normalize_audio` normalizes audio in `dataset`."""
     sample_rate = 8000
@@ -127,7 +83,13 @@ def test_normalize_audio():
         directory = pathlib.Path(path)
         audio_path = directory / TEST_DATA_LJ.name
         shutil.copy(TEST_DATA_LJ, audio_path)
-        example = lib.datasets.Example(audio_path=audio_path, speaker=lib.datasets.LINDA_JOHNSON)
+        example = lib.datasets.Example(
+            audio_path=audio_path,
+            speaker=lib.datasets.LINDA_JOHNSON,
+            alignments=tuple(),
+            text="",
+            metadata={},
+        )
         dataset = {lib.datasets.LINDA_JOHNSON: [example]}
         run._utils.normalize_audio(
             dataset,
@@ -148,7 +110,7 @@ def test_split_examples():
     """Test `run._utils.split_examples` randomly splits `examples` into train and dev lists. """
     with torchnlp.random.fork_rng(123):
         _example = lambda a, s: lib.datasets.Example(
-            pathlib.Path(str(a)), s, (lib.datasets.Alignment((0, a), (0, a)),)
+            pathlib.Path(str(a)), s, (lib.datasets.Alignment((0, a), (0, a)),), "", {}
         )
         a = lib.datasets.Speaker("a")
         b = lib.datasets.Speaker("b")
@@ -414,8 +376,12 @@ def test_get_rms_level__precise():
 
 def test_get_dataset_stats():
     """ Test `run._utils.get_dataset_stats` measures dataset statistics correctly. """
-    _example = lambda a, b, s: lib.datasets.Example(
-        pathlib.Path(str(a)), s, (lib.datasets.Alignment((a, b), (a * 10, b * 10)),), "t" * (b - a)
+    _example = lambda a, b, speaker: lib.datasets.Example(
+        pathlib.Path(str(a)),
+        speaker,
+        (lib.datasets.Alignment((a, b), (a * 10, b * 10)),),
+        "t" * (b - a),
+        {},
     )
     a = lib.datasets.Speaker("a")
     b = lib.datasets.Speaker("b")

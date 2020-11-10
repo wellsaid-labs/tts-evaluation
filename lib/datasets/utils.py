@@ -1,3 +1,5 @@
+import dataclasses
+import functools
 import json
 import logging
 import pathlib
@@ -16,10 +18,8 @@ from torchnlp.download import download_file_maybe_extract
 import lib
 
 if typing.TYPE_CHECKING:  # pragma: no cover
-    import librosa
     import pandas
 else:
-    librosa = LazyLoader("librosa", globals(), "librosa")
     pandas = LazyLoader("pandas", globals(), "pandas")
 
 logger = logging.getLogger(__name__)
@@ -44,8 +44,9 @@ class Speaker(typing.NamedTuple):
     gender: typing.Optional[str] = None
 
 
-class Example(typing.NamedTuple):
-    """Given the `text`, this is an `Example` voice-over stored at the `audio_path`.
+@dataclasses.dataclass(frozen=True)
+class Example:
+    """Given a script (`text`), this is an `Example` voice-over stored at the `audio_path`.
 
     Args:
         alignments: List of alignments between `text` and `audio_path`.
@@ -57,9 +58,64 @@ class Example(typing.NamedTuple):
 
     audio_path: Path
     speaker: Speaker
-    alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None
-    text: str = ""
-    metadata: typing.Dict[typing.Union[str, int], typing.Any] = {}
+    alignments: typing.Tuple[Alignment, ...]
+    text: str
+    metadata: typing.Dict
+
+    @property
+    @functools.lru_cache(maxsize=1)
+    def audio(self):
+        return lib.audio.read_audio(self.audio_path)
+
+
+@dataclasses.dataclass(frozen=True)
+class Span:
+    """Span of `text` and voice-over sliced from `example`.
+
+    Args:
+        example: Example voice-over of a script.
+        slice: The start and end of an `alignments` span.
+        ...
+    """
+
+    example: Example
+    slice: typing.Tuple[int, int]
+    alignments_slice: typing.Tuple[Alignment, ...] = dataclasses.field(init=False)
+    speaker: Speaker = dataclasses.field(init=False)
+    audio_path: Path = dataclasses.field(init=False)
+    metadata: typing.Dict = dataclasses.field(init=False)
+    text: str = dataclasses.field(init=False)
+    audio_length: float = dataclasses.field(init=False)
+    alignments: typing.Tuple[Alignment, ...] = dataclasses.field(init=False)
+
+    def __post_init__(self):
+        # Learn more about using `__setattr__`:
+        # https://stackoverflow.com/questions/53756788/how-to-set-the-value-of-dataclass-field-in-post-init-when-frozen-true
+        set = object.__setattr__
+        set(self, "speaker", self.example.speaker)
+        set(self, "audio_path", self.example.audio_path)
+        set(self, "metadata", self.example.metadata)
+        set(self, "alignments_slice", self.example.alignments[slice(*self.slice)])
+        text_slice = slice(self.alignments_slice[0].text[0], self.alignments_slice[-1].text[-1])
+        set(self, "text", self.example.text[text_slice])
+        audio_length = self.alignments_slice[-1].audio[-1] - self.alignments_slice[0].audio[0]
+        set(self, "audio_length", audio_length)
+        set(self, "alignments", self._get_alignments())
+
+    def _get_alignments(self) -> typing.Tuple[Alignment, ...]:
+        subtract = lambda t, o: (t[0] - o, t[1] - o)
+        first = self.alignments_slice[0]
+        alignments = [
+            Alignment(subtract(a.text, first.text[0]), subtract(a.audio, first.audio[0]))
+            for a in self.alignments_slice
+        ]
+        return tuple(alignments)
+
+    @property
+    @functools.lru_cache(maxsize=1)
+    def audio(self):
+        start = self.alignments_slice[0].audio[0]
+        return lib.audio.read_audio_slice(self.example.audio_path, start, self.audio_length)
 
 
 def _overlap(start: float, end: float, other_start: float, other_end: float) -> float:
@@ -68,7 +124,8 @@ def _overlap(start: float, end: float, other_start: float, other_end: float) -> 
         return 1.0 if other_start >= start and other_end <= end else 0.0
     return (min(end, other_end) - max(start, other_start)) / (other_end - other_start)
 
-def dataset_generator(data: typing.List[Example], max_seconds: float) -> typing.Iterator[Example]:
+
+def span_generator(data: typing.List[Example], max_seconds: float) -> typing.Iterator[Span]:
     """Randomly generate `Example`(s) that are at most `max_seconds` long.
 
     NOTE:
@@ -95,7 +152,8 @@ def dataset_generator(data: typing.List[Example], max_seconds: float) -> typing.
     # example length; therefore, the entire example tends to be selected every time.
     if max_seconds == float("inf"):
         while True:
-            yield random.choice(data)
+            example = random.choice(data)
+            yield Span(example, slice=(0, len(example.alignments)))
 
     min_ = lambda e: e.alignments[0].audio[0]
     max_ = lambda e: e.alignments[-1].audio[1]
@@ -105,7 +163,6 @@ def dataset_generator(data: typing.List[Example], max_seconds: float) -> typing.
     lookup: typing.List[typing.List[typing.List[int]]]
     lookup = [[[] for _ in range(ceil(max_(e)) - offset(e) + 1)] for e in data]
     for i, example in enumerate(data):
-        assert example.alignments is not None, "`alignments` must be defined."
         for j, alignment in enumerate(example.alignments):
             for k in range(int(floor(alignment.audio[0])), int(ceil(alignment.audio[1])) + 1):
                 lookup[i][k - offset(example)].append(j)
@@ -116,7 +173,6 @@ def dataset_generator(data: typing.List[Example], max_seconds: float) -> typing.
         # NOTE: The `weight` is based on `start` (i.e. the number of spans)
         index = int(torch.multinomial(weights + length, 1).item())
         example = data[index]
-        assert example.alignments is not None, "`alignments` must be defined."
         # NOTE: Uniformly sample a span of audio.
         start = random.uniform(min_(example) - length, max_(example))
         end = min(start + length, max_(example))
@@ -139,7 +195,8 @@ def dataset_generator(data: typing.List[Example], max_seconds: float) -> typing.
             and get(bounds[1])[1] - get(bounds[0])[0] > 0
             and get(bounds[1])[1] - get(bounds[0])[0] <= max_seconds
         ):
-            yield example._replace(alignments=tuple(example.alignments[bounds[0] : bounds[1] + 1]))
+            slice_ = typing.cast(typing.Tuple[int, int], (bounds[0], bounds[1] + 1))
+            yield Span(example, slice=slice_)
 
 
 def dataset_loader(
@@ -193,14 +250,11 @@ def dataset_loader(
 
     root = (Path(directory) / root_directory_name).absolute()
     root.mkdir(exist_ok=True)
-    names = [
-        alignments_directory_name,
-        recordings_directory_name,
-        scripts_directory_name,
-    ]
-    directories = [root / d for d in names]
+    names = [alignments_directory_name, recordings_directory_name, scripts_directory_name]
     suffixes = (alignments_suffix, recordings_suffix, scripts_suffix)
-    files = []
+    directories = [root / d for d in names]
+
+    files: typing.List[typing.List[pathlib.Path]] = []
     for directory, suffix in zip(directories, suffixes):
         directory.mkdir(exist_ok=True)
         command = f"gsutil -m cp -n {gcs_path}/{directory.name}/*{suffix} {directory}/"
@@ -208,11 +262,8 @@ def dataset_loader(
         files_ = [p for p in directory.iterdir() if p.suffix == suffix]
         files.append(sorted(files_, key=lambda p: lib.text.natural_keys(p.name)))
 
-    iterator = typing.cast(
-        typing.Iterator[typing.Tuple[pathlib.Path, pathlib.Path, pathlib.Path]],
-        zip(*tuple(files)),
-    )
     examples = []
+    iterator = typing.cast(typing.Iterator[typing.Tuple[pathlib.Path, ...]], zip(*tuple(files)))
     for alignment_file_path, recording_file_path, script_file_path in iterator:
         scripts = pandas.read_csv(str(script_file_path.absolute()))
         script_alignments: typing.List[typing.List[typing.List[typing.List[float]]]]
@@ -281,6 +332,7 @@ def precut_dataset_loader(
     Returns: List of voice-over examples in the dataset.
     """
     logger.info("Loading `%s` speech dataset", root_directory_name)
+
     directory = Path(directory)
     metadata_filename = metadata_filename.format(
         directory=directory, root_directory_name=root_directory_name
@@ -293,22 +345,29 @@ def precut_dataset_loader(
         check_files=check_files,
         filename=url_filename,
     )
+
+    data_frame = pandas.read_csv(Path(metadata_filename), **kwargs)
+    _get_audio_path = lambda r: Path(
+        metadata_audio_path.format(
+            directory=directory,
+            root_directory_name=root_directory_name,
+            metadata_audio_column_value=r[metadata_audio_column],
+        )
+    )
+    audio_paths = [_get_audio_path(r) for _, r in data_frame.iterrows()]
+    audio_metadatas = lib.audio.get_audio_metadata(audio_paths)
+    texts = [r[metadata_text_column] for _, r in data_frame.iterrows()]
+    _get_metadata = lambda r: {
+        k: v for k, v in r.items() if k not in [metadata_text_column, metadata_audio_column]
+    }
+    iterator = zip(audio_paths, audio_metadatas, texts, data_frame.iterrows())
     return [
         Example(
-            text=row[metadata_text_column],
-            audio_path=Path(
-                metadata_audio_path.format(
-                    directory=directory,
-                    root_directory_name=root_directory_name,
-                    metadata_audio_column_value=row[metadata_audio_column],
-                )
-            ),
+            audio_path=audio_path,
             speaker=speaker,
-            metadata={
-                k: v
-                for k, v in row.items()
-                if k not in [metadata_text_column, metadata_audio_column]
-            },
+            alignments=(Alignment((0, len(text)), (0.0, audio_metadata.length)),),
+            text=text,
+            metadata=_get_metadata(row),
         )
-        for _, row in pandas.read_csv(Path(metadata_filename), **kwargs).iterrows()
+        for audio_path, audio_metadata, text, (_, row) in iterator
     ]

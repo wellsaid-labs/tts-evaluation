@@ -96,9 +96,7 @@ def _get_audio_metadata_helper(chunk: typing.List[Path]) -> typing.List[AudioFil
 def get_audio_metadata(
     paths: typing.List[Path],
     max_arg_length: int = 2 ** 16,
-    num_processes: int = (
-        1 if lib.environment.IS_TESTING_ENVIRONMENT else typing.cast(int, os.cpu_count())
-    ),
+    max_parallel: int = typing.cast(int, os.cpu_count()),
 ) -> typing.List[AudioFileMetadata]:
     """Get the audio metadatas for a list of files.
 
@@ -106,6 +104,8 @@ def get_audio_metadata(
     https://unix.stackexchange.com/questions/45143/what-is-a-canonical-way-to-find-the-actual-maximum-argument-list-length
     https://stackoverflow.com/questions/19354870/bash-command-line-and-input-limit
     """
+    if len(paths) == 0:
+        return []
     len_ = lambda p: len(str(p))
     total = sum([len_(p) for p in paths])
     chunks_ = lib.utils.accumulate_and_split(
@@ -118,7 +118,7 @@ def get_audio_metadata(
     logger.info("Getting audio metadata for %d audio files in %d chunks.", len(paths), len(chunks))
     return_ = []
     with tqdm(total=len(paths)) as progress_bar:
-        with multiprocessing.pool.ThreadPool(min(num_processes, len(chunks))) as pool:
+        with multiprocessing.pool.ThreadPool(min(max_parallel, len(chunks))) as pool:
             for result in pool.imap_unordered(_get_audio_metadata_helper, chunks):
                 return_.extend(result)
                 progress_bar.update(len(result))

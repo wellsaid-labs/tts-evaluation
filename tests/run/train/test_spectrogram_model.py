@@ -1,4 +1,3 @@
-import itertools
 import pathlib
 import shutil
 import tempfile
@@ -40,10 +39,6 @@ def test_integration(mock_urlretrieve):
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
 
     _configure({})
-    file_ = tempfile.NamedTemporaryFile()
-    path = pathlib.Path(file_.name)
-    # NOTE: Use a disk database to support multiple processes.
-    connection = run._utils.connect(path)
 
     # Test loading data
     directory = _utils.TEST_DATA_PATH / "datasets"
@@ -56,10 +51,7 @@ def test_integration(mock_urlretrieve):
     }
 
     # Test splitting data
-    examples = lambda: list(itertools.chain(*tuple(dataset.values())))
     run._utils.normalize_audio(dataset)
-    run._utils.update_audio_file_metadata(connection, [e.audio_path for e in examples()])
-    run._utils.handle_null_alignments(connection, dataset)
     dev_speakers = set([JUDY_BIEBER])
     dev_dataset, train_dataset = run._config.split_dataset(dataset, dev_speakers, 3)
 
@@ -91,7 +83,7 @@ def test_integration(mock_urlretrieve):
     device = torch.device("cpu")
     with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:
         module.side_effect = _mock_distributed_data_parallel
-        state = _State.from_dataset(train_dataset, dev_dataset, connection, comet, device)
+        state = _State.from_dataset(train_dataset, dev_dataset, comet, device)
     assert state.model.module == state.model  # Enusre the mock worked
     # fmt: off
     assert state.input_encoder.grapheme_encoder.vocab == [
@@ -105,7 +97,7 @@ def test_integration(mock_urlretrieve):
 
     batch_size = 1
     train_loader, dev_loader = _get_data_loaders(
-        state, train_dataset, dev_dataset, batch_size, batch_size, 100, 1, path
+        state, train_dataset, dev_dataset, batch_size, batch_size, 100, 1
     )
 
     # Test `_run_step` with `_DistributedMetrics` and `_State`
@@ -118,7 +110,7 @@ def test_integration(mock_urlretrieve):
         assert state.step.item() == 1
         assert metrics.batch_size == [batch.length]
         assert metrics.num_frames == [batch.spectrogram.lengths[0].item()]
-        assert metrics.num_examples_per_text_length == {
+        assert metrics.num_spans_per_text_length == {
             len(batch.text[0]) // metrics.text_length_bucket_size: 1.0
         }
         assert metrics.num_frames_per_speaker == {

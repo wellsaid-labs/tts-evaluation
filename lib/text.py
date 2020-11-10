@@ -10,6 +10,7 @@ import subprocess
 import typing
 from collections import defaultdict
 from functools import lru_cache, partial
+from multiprocessing.pool import ThreadPool
 from typing import get_args
 
 import ftfy
@@ -176,7 +177,7 @@ def grapheme_to_phoneme(
 
 
 @hparams.configurable
-def grapheme_to_phoneme(graphemes, chunk_size: int = 128, **kwargs):
+def grapheme_to_phoneme(graphemes, chunk_size: int = 128, max_parallel=os.cpu_count(), **kwargs):
     """Convert graphemes into phonemes and preserve punctuation.
 
     NOTE: `espeak` can give different results for the same argument, sometimes. For example,
@@ -193,6 +194,7 @@ def grapheme_to_phoneme(graphemes, chunk_size: int = 128, **kwargs):
     Args:
         graphemes: The graphemes to convert to phonemes.
         chunk_size: `chunk_size` parameter passed to `imap` for multiprocessing.
+        max_parallel
         **kwargs: Key-word arguments passed to `_grapheme_to_phoneme_preserve_punctuation`.
     """
     assert chunk_size >= 1
@@ -211,7 +213,7 @@ def grapheme_to_phoneme(graphemes, chunk_size: int = 128, **kwargs):
         return return_[slice(0, len(graphemes)) if is_iterable else 0]  # type: ignore
 
     logger.info("Getting phonemes for %d graphemes.", len(graphemes))
-    with lib.utils.Pool(1 if lib.environment.IS_TESTING_ENVIRONMENT else os.cpu_count()) as pool:
+    with ThreadPool(min(max_parallel, len(graphemes))) as pool:
         return list(tqdm(pool.imap(part, graphemes, chunksize=chunk_size), total=len(graphemes)))
 
 

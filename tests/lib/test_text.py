@@ -203,6 +203,11 @@ _(_ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_)_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n"""
     assert grapheme_to_phoneme("") == ""
 
 
+def test_grapheme_to_phoneme__empty():
+    """ Test `grapheme_to_phoneme` against an empty list. """
+    assert grapheme_to_phoneme([]) == []
+
+
 def test_grapheme_to_phoneme__doc_input():
     """ Test `grapheme_to_phoneme` with a spaCy input. """
     nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))

@@ -1,4 +1,5 @@
 import csv
+import dataclasses
 import logging
 import pathlib
 import re
@@ -84,41 +85,22 @@ def lj_speech_dataset(
         >>> from lib.datasets import lj_speech_dataset # doctest: +SKIP
         >>> train, dev = lj_speech_dataset() # doctest: +SKIP
     """
-    data = precut_dataset_loader(
-        directory=directory,
-        root_directory_name=root_directory_name,
-        url=url,
-        speaker=speaker,
-        delimiter=metadata_delimiter,
-        header=metadata_header,
-        quoting=metadata_quoting,
-        metadata_audio_path=metadata_audio_path,
-        metadata_text_column=metadata_text_column,
-        metadata_audio_column=metadata_audio_column,
-        **kwargs,
-    )
-
-    def process_text(example):
-        text = _normalize_whitespace(example.text)
-        text = _normalize_quotations(text)
-
-        if verbalize:
-            text = _verbalize_special_cases(example.audio_path, text)
-            text = _expand_abbreviations(text)
-            text = _verbalize_time_of_day(text)
-            text = _verbalize_ordinals(text)
-            text = _verbalize_currency(text)
-            text = _verbalize_serial_numbers(text)
-            text = _verbalize_year(text)
-            text = _verbalize_numeral(text)
-            text = _verbalize_number(text)
-            text = _verbalize_roman_number(text)
-
-        # NOTE: Messes up pound sign (£); therefore, this is after `_verbalize_currency`
-        text = lib.text.normalize_vo_script(text)
-        return example._replace(text=text)
-
-    return [process_text(example) for example in data]
+    return [
+        _process_text(example, verbalize)
+        for example in precut_dataset_loader(
+            directory=directory,
+            root_directory_name=root_directory_name,
+            url=url,
+            speaker=speaker,
+            delimiter=metadata_delimiter,
+            header=metadata_header,
+            quoting=metadata_quoting,
+            metadata_audio_path=metadata_audio_path,
+            metadata_text_column=metadata_text_column,
+            metadata_audio_column=metadata_audio_column,
+            **kwargs,
+        )
+    ]
 
 
 """
@@ -132,6 +114,28 @@ with numbers, ordinals, and monetary units expanded into full words (UTF-8).” 
 mentioned: "We use verbalized data so numbers are extended. There is no need to lowercase or remove
 punctuation.".
 """
+
+
+def _process_text(example: Example, verbalize: bool):
+    text = _normalize_whitespace(example.text)
+    text = _normalize_quotations(text)
+
+    if verbalize:
+        text = _verbalize_special_cases(example.audio_path, text)
+        text = _expand_abbreviations(text)
+        text = _verbalize_time_of_day(text)
+        text = _verbalize_ordinals(text)
+        text = _verbalize_currency(text)
+        text = _verbalize_serial_numbers(text)
+        text = _verbalize_year(text)
+        text = _verbalize_numeral(text)
+        text = _verbalize_number(text)
+        text = _verbalize_roman_number(text)
+
+    # NOTE: Messes up pound sign (£); therefore, this is after `_verbalize_currency`
+    text = lib.text.normalize_vo_script(text)
+    return dataclasses.replace(example, text=text)
+
 
 # Reference: https://keithito.com/LJ-Speech-Dataset/
 # List of (regular expression, replacement) pairs for abbreviations:

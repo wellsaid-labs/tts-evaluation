@@ -6,7 +6,6 @@ import math
 import pathlib
 import platform
 import random
-import sqlite3
 import sys
 import typing
 from itertools import chain
@@ -43,9 +42,9 @@ from run._utils import (
     CometMLExperiment,
     Context,
     SpectrogramModelCheckpoint,
-    SpectrogramModelExampleBatch,
+    SpectrogramModelSpanBatch,
     get_rms_level,
-    get_spectrogram_example,
+    get_spectrogram_model_span,
     maybe_make_experiment_directories,
     maybe_make_experiment_directories_from_checkpoint,
     set_context,
@@ -128,7 +127,6 @@ class _State:
     def _get_input_encoder(
         train_dataset: run._config.Dataset,
         dev_dataset: run._config.Dataset,
-        connection: sqlite3.Connection,
         comet: CometMLExperiment,
     ) -> lib.spectrogram_model.InputEncoder:
         """ Initialize an input encoder to encode model input. """
@@ -226,12 +224,11 @@ class _State:
         cls,
         train_dataset: run._config.Dataset,
         dev_dataset: run._config.Dataset,
-        connection: sqlite3.Connection,
         comet: CometMLExperiment,
         device: torch.device,
     ):
         """ Create spectrogram training state from the `train_dataset`. """
-        input_encoder = cls._get_input_encoder(train_dataset, dev_dataset, connection, comet)
+        input_encoder = cls._get_input_encoder(train_dataset, dev_dataset, comet)
         model = cls._get_model(device, comet, input_encoder)
         distributed_model = torch.nn.parallel.DistributedDataParallel(model, [device], device)
         return cls(input_encoder, distributed_model, *cls._get_optimizers(model), comet, device)
@@ -244,16 +241,14 @@ class _DataIterator(torch.utils.data.IterableDataset):
         database: pathlib.Path,
         bucket_size: int,
         input_encoder: lib.spectrogram_model.InputEncoder,
-        comet: CometMLExperiment,
-        text_length_bucket_size: int = 10,
     ):
-        """Generate examples from `run._config.Dataset`.
+        """Generate spans from `run._config.Dataset`.
 
-        TODO: Filter examples based on additional data from `get_spectrogram_example`.
+        TODO: Filter spans based on additional data from `get_spectrogram_model_span`.
 
         Args:
             ...
-            bucket_size: A batch of examples is sampled and sorted to minimize padding.
+            bucket_size: A batch of spans is sampled and sorted to minimize padding.
             ...
             text_length_bucket_size: The buckets size for tracking the text length distribution.
         """
@@ -264,25 +259,23 @@ class _DataIterator(torch.utils.data.IterableDataset):
         self.input_encoder = input_encoder
         self.config = get_config()
 
-    def __iter__(self) -> typing.Iterator[run._utils.SpectrogramModelExample]:
+    def __iter__(self) -> typing.Iterator[run._utils.SpectrogramModelSpan]:
         # TODO: Add a method for transfering global configuration between processes without private
         # variables.
         # TODO: After the global configuration is transfered, the functions need to be rechecked
         # like for a configuration, just in case the configuration is on a new process.
         hparams.hparams._configuration = self.config
-        # NOTE: `sqlite3.Connection` cannot be pickled, so it needs to be created on each process.
-        connection = run._utils.connect(self.database)
-        generator = run._config.get_dataset_generator(self.dataset)
+        generator = run._config.span_generator(self.dataset)
         while True:
-            examples = [
-                get_spectrogram_example(next(generator), connection, self.input_encoder)
+            spans = [
+                get_spectrogram_model_span(next(generator), self.input_encoder)
                 for _ in range(self.bucket_size)
             ]
-            yield from sorted(examples, key=lambda e: e.spectrogram.shape[0])
+            yield from sorted(spans, key=lambda e: e.spectrogram.shape[0])
 
 
 class _DataLoader(collections.Iterable):
-    """Load and batch examples given a dataset `iterator`."""
+    """Load and batch spans given a dataset `iterator`."""
 
     def __init__(self, iterator: _DataIterator, batch_size: int, device: torch.device, **kwargs):
         self.device = device
@@ -293,24 +286,24 @@ class _DataLoader(collections.Iterable):
             worker_init_fn=functools.partial(
                 run._utils.worker_init_fn, seed=run._config.RANDOM_SEED, device_index=device.index
             ),
-            collate_fn=run._utils.batch_spectrogram_examples,
+            collate_fn=run._utils.batch_spectrogram_spans,
             **kwargs,
         )
         self.loader = iter(loader)
         self.num_frames = 0
-        self.num_examples = 0
+        self.num_spans = 0
 
     @property
     def average_spectrogram_length(self) -> float:
-        return self.num_frames / self.num_examples
+        return self.num_frames / self.num_spans
 
-    def __iter__(self) -> typing.Iterator[SpectrogramModelExampleBatch]:
+    def __iter__(self) -> typing.Iterator[SpectrogramModelSpanBatch]:
         while True:
             batch = next(self.loader)
             self.num_frames += batch.spectrogram.lengths.float().sum().item()
-            self.num_examples += batch.length
+            self.num_spans += batch.length
             yield typing.cast(
-                SpectrogramModelExampleBatch,
+                SpectrogramModelSpanBatch,
                 tensors_to(batch, device=self.device, non_blocking=True),
             )
 
@@ -324,16 +317,11 @@ def _get_data_loaders(
     dev_batch_size: int = HParam(),
     bucket_size_multiplier: int = HParam(),
     num_workers: int = HParam(),
-    database: pathlib.Path = run._config.DATABASE_PATH,
 ) -> typing.Tuple[_DataLoader, _DataLoader]:
     """ Initialize training and development data loaders.  """
     bucket_size = bucket_size_multiplier * train_batch_size
     _DataIteratorPartial = functools.partial(
-        _DataIterator,
-        input_encoder=state.input_encoder,
-        comet=state.comet,
-        bucket_size=bucket_size,
-        database=database,
+        _DataIterator, input_encoder=state.input_encoder, comet=state.comet, bucket_size=bucket_size
     )
     DataLoaderPartial = functools.partial(_DataLoader, num_workers=num_workers, device=state.device)
     return (
@@ -365,8 +353,7 @@ class _DistributedMetrics:
         frame_rms_level: This measures the sum of the RMS level for each frame in each step.
         text_length_bucket_size: This is a constant value bucket size for reporting the text
             length distribution.
-        num_examples_per_text_length: For each text length bucket, this counts the number of
-            examples.
+        num_spans_per_text_length: For each text length bucket, this counts the number of spans.
         num_frames_per_speaker: For each speaker, this counts the number of spectrogram frames
             each step.
         num_frames_predicted: This measures the number of frames predicte each step.
@@ -395,7 +382,7 @@ class _DistributedMetrics:
     )
     frame_rms_level: typing.List[float] = dataclasses.field(default_factory=list)
     text_length_bucket_size: int = 10
-    num_examples_per_text_length: typing.Dict[int, float] = dataclasses.field(
+    num_spans_per_text_length: typing.Dict[int, float] = dataclasses.field(
         default_factory=lambda: collections.defaultdict(float)
     )
     num_frames_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
@@ -420,14 +407,14 @@ class _DistributedMetrics:
 
     def update_dataset_metrics(
         self,
-        batch: SpectrogramModelExampleBatch,
+        batch: SpectrogramModelSpanBatch,
         input_encoder: lib.spectrogram_model.InputEncoder,
     ):
         self.append(self.batch_size, batch.length)
         self.append(self.num_frames, batch.spectrogram.lengths)
 
         for text in flatten(lib.distributed.gather_list([len(t) for t in batch.text])):
-            self.num_examples_per_text_length[text // self.text_length_bucket_size] += 1
+            self.num_spans_per_text_length[text // self.text_length_bucket_size] += 1
 
         lambda_ = lambda t: flatten(lib.distributed.gather_list(t.squeeze().tolist()))
         iterator = zip(lambda_(batch.encoded_speaker.tensor), lambda_(batch.spectrogram.lengths))
@@ -574,11 +561,11 @@ class _DistributedMetrics:
             label = partial("frequency", cadence=cadence, speaker=speaker)
             comet.log_metric(label, count / sum(self.num_frames_per_speaker.values()))
 
-        for bucket, count in self.num_examples_per_text_length.items():
+        for bucket, count in self.num_spans_per_text_length.items():
             lower = bucket * self.text_length_bucket_size
             upper = (bucket + 1) * self.text_length_bucket_size
             label = partial(f"{lower}_{upper}", cadence=cadence)
-            comet.log_metric(label, count / sum(self.num_examples_per_text_length.values()))
+            comet.log_metric(label, count / sum(self.num_spans_per_text_length.values()))
 
         zip_ = zip(self.num_tokens_per_speaker.items(), self.num_skips_per_speaker.values())
         for (speaker, num_tokens), num_skips in zip_:
@@ -587,7 +574,7 @@ class _DistributedMetrics:
 
 def _visualize_source_vs_target(
     state: _State,
-    batch: SpectrogramModelExampleBatch,
+    batch: SpectrogramModelSpanBatch,
     predicted_spectrogram: torch.Tensor,
     predicted_stop_token: torch.Tensor,
     predicted_alignments: torch.Tensor,
@@ -633,7 +620,7 @@ def _visualize_source_vs_target(
 def _run_step(
     state: _State,
     metrics: _DistributedMetrics,
-    batch: SpectrogramModelExampleBatch,
+    batch: SpectrogramModelSpanBatch,
     data_loader: _DataLoader,
     dataset_type: DatasetType,
     visualize: bool = False,
@@ -722,7 +709,7 @@ def _run_step(
 
 def _visualize_inferred(
     state: _State,
-    batch: SpectrogramModelExampleBatch,
+    batch: SpectrogramModelSpanBatch,
     predicted_spectrogram: torch.Tensor,
     predicted_stop_token: torch.Tensor,
     predicted_alignments: torch.Tensor,
@@ -777,14 +764,14 @@ def _visualize_inferred(
 def _run_inference(
     state: _State,
     metrics: _DistributedMetrics,
-    batch: SpectrogramModelExampleBatch,
+    batch: SpectrogramModelSpanBatch,
     data_loader: _DataLoader,
     dataset_type: DatasetType,
     visualize: bool = False,
 ):
     """Run the model in inference mode, and measure it's results.
 
-    TODO: Consider calling `update_dataset_metrics`, and filtering the examples which overflowed.
+    TODO: Consider calling `update_dataset_metrics`, and filtering the spans which overflowed.
 
     Args:
         ...
@@ -830,7 +817,7 @@ def _run_inference(
 
 
 _BatchHandler = typing.Callable[
-    [_State, _DistributedMetrics, SpectrogramModelExampleBatch, _DataLoader, DatasetType, bool],
+    [_State, _DistributedMetrics, SpectrogramModelSpanBatch, _DataLoader, DatasetType, bool],
     None,
 ]
 
@@ -852,9 +839,8 @@ def _run_worker(
     device = run._utils.init_distributed(device_index)
     comet = comet_partial(disabled=not lib.distributed.is_master(), auto_output_logging=False)
     _configure(config)
-    connection = run._utils.connect(run._config.DATABASE_PATH)
     if checkpoint is None:
-        state = _State.from_dataset(train_dataset, dev_dataset, connection, comet, device)
+        state = _State.from_dataset(train_dataset, dev_dataset, comet, device)
     else:
         checkpoint_ = typing.cast(SpectrogramModelCheckpoint, load(checkpoint, device=device))
         state = _State.from_checkpoint(checkpoint_, comet, device)
@@ -873,7 +859,7 @@ def _run_worker(
         for context, dataset_type, data_loader, handle_batch in iterator:
             with _set_context(context):
                 # TODO: `metrics` are not propagated and we might want to incorperate that for
-                # dataset metrics like `num_frames_per_speaker` or `num_examples_per_text_length`.
+                # dataset metrics like `num_frames_per_speaker` or `num_spans_per_text_length`.
                 # In order to do so, we'd also need to checkpoint those metrics.
                 metrics = _DistributedMetrics()
                 for i, batch in zip(range(num_steps_per_epoch), data_loader):
@@ -901,12 +887,8 @@ def _run(
     lib.environment.assert_enough_disk_space(minimum_disk_space)
 
     # NOTE: Load, preprocess, and cache dataset values.
-    connection = run._utils.connect(run._config.DATABASE_PATH)
     dataset = run._config.get_dataset()
-    all_examples = lambda: list(chain(*tuple(dataset.values())))
     run._utils.normalize_audio(dataset)
-    run._utils.update_audio_file_metadata(connection, [e.audio_path for e in all_examples()])
-    run._utils.handle_null_alignments(connection, dataset)
     train_dataset, dev_dataset = run._config.split_dataset(dataset)
     comet.log_parameters(run._utils.get_dataset_stats(train_dataset, dev_dataset))
 

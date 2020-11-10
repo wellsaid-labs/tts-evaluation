@@ -63,8 +63,6 @@ for directory in [
 ]:
     directory.mkdir(exist_ok=True)
 
-DATABASE_PATH = TEMP_PATH / "database.db"
-
 
 class Cadence(enum.Enum):
     STEP: typing.Final = "step"
@@ -245,7 +243,7 @@ def configure_audio_processing():
         lib.signal_model.SignalModel.__init__: HParams(
             ratios=[2] * int(math.log2(frame_hop)),
         ),
-        run._utils.get_spectrogram_example: HParams(
+        run._utils.get_spectrogram_model_span: HParams(
             loudness_implementation="DeMan",
             max_loudness_annotations=5,
             loudness_precision=0,
@@ -476,17 +474,23 @@ def _include_example(example: datasets.Example) -> bool:
       missing? We might have a hard time with singular slices but we might know if a script
       has a big screw up.
     """
-    assert example.alignments is not None
     assert lib.text.is_normalized_vo_script(example.text)
+
+    if (
+        len(example.alignments) == 0
+        or example.alignments[0].audio[0] == example.alignments[-1].audio[-1]
+    ):
+        logger.warning("Example has no alignments: %s", example)
+        return False
 
     text = example.text[example.alignments[0].text[0] : example.alignments[-1].text[-1]]
 
-    # NOTE: Filter any example(s) that are invalid or zero length.
-    if (
-        len(text) == 0
-        or not example.audio_path.is_file()
-        or example.alignments[0].audio[0] == example.alignments[-1].audio[-1]
-    ):
+    if len(text) == 0:
+        logger.warning("Example has no text: %s", example)
+        return False
+
+    if not (example.audio_path.exists() and example.audio_path.is_file()):
+        logger.warning("Audio path is invalid: %s", example.audio_path)
         return False
 
     # NOTE: Filter out any example(s) with digits because the pronunciation is fundamentally

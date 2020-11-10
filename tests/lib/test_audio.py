@@ -107,6 +107,11 @@ def test_get_audio_metadata():
     )
 
 
+def test_get_audio_metadata__empty():
+    """ Test `lib.audio.get_audio_metadata` handles an empty list. """
+    assert lib.audio.get_audio_metadata([]) == []
+
+
 def test_get_audio_metadata__large_batch():
     """ Test `lib.audio.get_audio_metadata` handles a large batch.  """
     metadatas = lib.audio.get_audio_metadata([TEST_DATA_LJ] * 100, max_arg_length=124)

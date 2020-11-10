@@ -29,6 +29,7 @@ from pathlib import Path
 from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 
+import lib
 from lib.datasets.utils import Example, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -91,13 +92,7 @@ def m_ailabs_en_us_mary_ann_speech_dataset(*args, books=[MIDNIGHT_PASSENGER, NOR
 
 def m_ailabs_en_us_elliot_miller_speech_dataset(
     *args,
-    books=[
-        PIRATES_OF_ERSATZ,
-        POISONED_PEN,
-        SILENT_BULLET,
-        HUNTERS_SPACE,
-        PINK_FAIRY_BOOK,
-    ],
+    books=[PIRATES_OF_ERSATZ, POISONED_PEN, SILENT_BULLET, HUNTERS_SPACE, PINK_FAIRY_BOOK],
 ):
     return m_ailabs_en_us_speech_dataset(*args, books=books)  # type: ignore
 
@@ -137,14 +132,7 @@ def m_ailabs_en_us_speech_dataset(
     NOTE: Based on 100 clips from the M-AILABS dataset, around 10% of the clips would end too early.
     Furthermore, it seemed like the text was verbalized accuractely.
     """
-    return _m_ailabs_speech_dataset(
-        directory=directory,
-        extracted_name=extracted_name,
-        url=url,
-        check_files=check_files,
-        books=books,
-        **kwargs,
-    )
+    return _m_ailabs_speech_dataset(directory, extracted_name, url, check_files, books, **kwargs)
 
 
 def m_ailabs_en_uk_speech_dataset(
@@ -160,14 +148,7 @@ def m_ailabs_en_uk_speech_dataset(
     The dataset is 4GB compressed. The file to be downloaded is called `en_US.tgz`. It contains
     45 hours of audio. When extracted, it creates a list of 2 books.
     """
-    return _m_ailabs_speech_dataset(
-        directory=directory,
-        extracted_name=extracted_name,
-        url=url,
-        check_files=check_files,
-        books=books,
-        **kwargs,
-    )
+    return _m_ailabs_speech_dataset(directory, extracted_name, url, check_files, books, **kwargs)
 
 
 def _m_ailabs_speech_dataset(
@@ -180,8 +161,11 @@ def _m_ailabs_speech_dataset(
     metadata_pattern: str = "**/metadata.csv",
     metadata_path_column: str = "metadata_path",
     metadata_audio_column: typing.Union[str, int] = 0,
-    metadata_audio_path_template: str = "wavs/{}.wav",
+    metadata_audio_path: str = "wavs/{}.wav",
     metadata_text_column: typing.Union[str, int] = 2,
+    metadata_quoting: int = csv.QUOTE_NONE,
+    metadata_delimiter: str = "|",
+    metadata_header: typing.Optional[bool] = None,
 ) -> typing.List[Example]:
     """Download, extract, and process a M-AILABS dataset.
 
@@ -199,55 +183,58 @@ def _m_ailabs_speech_dataset(
             information.
         metadata_path_column: Column name to store the metadata path.
         metadata_audio_column: Column name or index with the audio filename.
-        metadata_audio_path_template: Given the audio column, this template determines the filename.
+        metadata_audio_path: Given the audio column, this template determines the filename.
         metadata_text_column: Column name or index with the audio transcript.
+        metadata_quoting: Control field quoting behavior per `csv.QUOTE_*` constants for the
+            metadata file.
+        metadata_delimiter: Delimiter for the metadata file.
+        metadata_header: If `True`, `metadata_file` has a header to parse.
 
     Returns: List of voice-over examples in the dataset.
-
-    Example:
-        >>> from lib.hparams import set_hparams # doctest: +SKIP
-        >>> from lib.datasets import m_ailabs_speech_dataset # doctest: +SKIP
-        >>> train, dev = m_ailabs_speech_dataset() # doctest: +SKIP
     """
     logger.info("Loading `M-AILABS %s` speech dataset", extracted_name)
     directory = Path(directory) / root_directory_name
     directory.mkdir(exist_ok=True)
     download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
 
-    # NOTE: This makes sure that the download succeeds by checking against defined books in
-    # `books`.
+    # NOTE: This makes sure that the download succeeds by checking against defined books in `books`.
     metadata_paths = list((directory / extracted_name).glob(metadata_pattern))
     downloaded_books = set([_path_to_book(path, directory=directory) for path in metadata_paths])
     assert len(set(books) - downloaded_books) == 0
 
-    data = _read_m_ailabs_data(
+    generator = _read_m_ailabs_data(
         books,
-        directory=directory,
-        extracted_name=extracted_name,
-        metadata_path_column=metadata_path_column,
+        directory,
+        extracted_name,
+        metadata_path_column,
+        quoting=metadata_quoting,
+        header=metadata_header,
+        delimiter=metadata_delimiter,
     )
+    data = list(generator)
+    _get_audio_path = lambda r: Path(
+        r[metadata_path_column].parent,
+        metadata_audio_path.format(r[metadata_audio_column]),  # type: ignore
+    )
+    audio_paths = [_get_audio_path(r) for r in data]
+    audio_metadatas = lib.audio.get_audio_metadata(audio_paths)
+    texts = [r[metadata_text_column].strip() for r in data]  # type: ignore
+    books = [_path_to_book(r[metadata_path_column], directory=directory) for r in data]
+    iterator = zip(audio_paths, audio_metadatas, texts, books)
     return [
         Example(
-            text=row[metadata_text_column].strip(),  # type: ignore
-            audio_path=Path(
-                row[metadata_path_column].parent,
-                metadata_audio_path_template.format(row[metadata_audio_column]),  # type: ignore
-            ),
-            speaker=_path_to_book(row[metadata_path_column], directory=directory).speaker,
-            metadata={"book": _path_to_book(row[metadata_path_column], directory=directory)},
+            audio_path=audio_path,
+            speaker=book.speaker,
+            alignments=(lib.datasets.Alignment((0, len(text)), (0.0, audio_metadata.length)),),
+            text=text,
+            metadata={"book": book},
         )
-        for row in data
+        for audio_path, audio_metadata, text, book in iterator
     ]
 
 
 def _book_to_path(book: Book, directory: Path, extracted_name: str) -> Path:
-    """Given a book of `Book` type, returns the relative path to its metadata.csv file.
-
-    Examples:
-        >>> from lib.environment import DATA_PATH
-        >>> _book_to_path(SKY_ISLAND, DATA_PATH / 'M-AILABS', 'en_US').relative_to(DATA_PATH)
-        PosixPath('M-AILABS/en_US/by_book/female/judy_bieber/sky_island/metadata.csv')
-    """
+    """Given a book of `Book` type, returns the relative path to its metadata.csv file."""
     name = book.speaker.name.lower().replace(" ", "_")
     assert book.speaker.gender is not None
     gender = book.speaker.gender.lower()
@@ -255,65 +242,35 @@ def _book_to_path(book: Book, directory: Path, extracted_name: str) -> Path:
 
 
 def _path_to_book(metadata_path: Path, directory: Path) -> Book:
-    """Given a path to a book's metadata.csv, returns the corresponding `Book` object.
-
-    Examples:
-        >>> from lib.environment import DATA_PATH
-        >>> path = DATA_PATH / 'M-AILABS/en_US/by_book/female/judy_bieber/sky_island/metadata.csv'
-        >>> _path_to_book(metadata_path=path, directory=DATA_PATH / 'M-AILABS') # noqa: E501
-        Book(speaker=Speaker(name='Judy Bieber', gender=FEMALE), title='sky_island')
-    """
+    """Given a path to a book's metadata.csv, returns the corresponding `Book` object."""
+    # EXAMPLE: "en_US/by_book/female/judy_bieber/dorothy_and_wizard_oz/metadata.csv"
     metadata_path = metadata_path.relative_to(directory)
-    # EXAMPLE: metadata_path=en_US/by_book/female/judy_bieber/dorothy_and_wizard_oz/metadata.csv
     speaker_gender, speaker_name, book_title = metadata_path.parts[2:5]
     speaker = Speaker(speaker_name.replace("_", " ").title(), speaker_gender.lower())
     return Book(speaker, book_title)
 
 
 def _book_to_data(
-    book: Book,
-    directory: Path,
-    extracted_name: str,
-    quoting: int = csv.QUOTE_NONE,
-    delimiter: str = "|",
-    header: typing.Optional[bool] = None,
-    metadata_path_column: str = "metadata_path",
-    index: bool = False,
-):
+    book: Book, directory: Path, extracted_name: str, metadata_path_column: str, **kwargs
+) -> typing.Iterator[typing.Dict]:
     """Given a book, yield pairs of (text, audio_path) for that book.
 
     Args:
         book
         directory: Directory that M-AILABS was downloaded.
-        extracted_name :  Name of the extracted dataset directory.
-        quoting: Control field quoting behavior per csv.QUOTE_* constants for the metadata file.
-        delimiter: Delimiter for the metadata file.
-        header: If `True`, `metadata_file` has a header to parse.
+        extracted_name: Name of the extracted dataset directory.
         metadata_path_column: Column name to store the metadata_path.
-        index: If `True`, return the index as the first element of the tuple in
-            `pandas.DataFrame.itertuples`.
-
-    Returns:
-        iterable
     """
     metadata_path = _book_to_path(book, directory=directory, extracted_name=extracted_name)
     if os.stat(str(metadata_path)).st_size == 0:
         logger.warning("%s is empty, skipping for now", str(metadata_path))
         yield from []
     else:
-        data_frame = typing.cast(
-            pandas.DataFrame,
-            pandas.read_csv(
-                filepath_or_buffer=metadata_path,
-                delimiter=delimiter,
-                header=header,  # type: ignore
-                quoting=quoting,
-            ),
-        )
+        data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(metadata_path, **kwargs))
         data_frame[metadata_path_column] = metadata_path
         yield from (row.to_dict() for _, row in data_frame.iterrows())
 
 
-def _read_m_ailabs_data(books: typing.List[Book], **kwargs):
+def _read_m_ailabs_data(books: typing.List[Book], *args, **kwargs) -> typing.Iterator[typing.Dict]:
     for book in books:
-        yield from _book_to_data(book, **kwargs)
+        yield from _book_to_data(book, *args, **kwargs)

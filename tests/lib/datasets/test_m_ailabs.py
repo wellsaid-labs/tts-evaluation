@@ -7,12 +7,14 @@ import lib
 from tests import _utils
 
 
+@mock.patch("lib.audio.get_audio_metadata")
 @mock.patch("pathlib.Path.is_file")
 @mock.patch("urllib.request.urlretrieve")
-def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_is_file):
-    """ Test `lib.datasets.lj_speech_dataset` loads the data. """
+def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_is_file, mock_get_audio_metadata):
+    """ Test `lib.datasets.m_ailabs_en_us_speech_dataset` loads the data. """
     mock_is_file.return_value = True
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
+    mock_get_audio_metadata.side_effect = _utils.get_audio_metadata_side_effect
     archive = _utils.TEST_DATA_PATH / "datasets" / "M-AILABS" / "en_US.tgz"
     with tempfile.TemporaryDirectory() as path:
         directory = pathlib.Path(path)
@@ -29,7 +31,7 @@ def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_is_file):
                 / "dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav"
             ),
             speaker=lib.datasets.JUDY_BIEBER,
-            alignments=None,
+            alignments=(lib.datasets.Alignment(text=(0, 14), audio=(0.0, 0)),),
             text="To My Readers.",
             metadata={
                 "book": lib.datasets.m_ailabs.Book(

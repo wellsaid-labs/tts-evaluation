@@ -23,121 +23,119 @@ def _make_example(
     return lib.datasets.Example(audio_path, speaker, alignments, text, metadata)
 
 
-def test_dataset_generator():
-    """Test `lib.datasets.dataset_generator` samples uniformly given a uniform distribution of
+def test_span_generator():
+    """Test `lib.datasets.span_generator` samples uniformly given a uniform distribution of
     alignments."""
     dataset = [_make_example(((0, 1), (1, 2), (2, 3)))]
-    iterator = lib.datasets.dataset_generator(dataset, max_seconds=10)
+    iterator = lib.datasets.span_generator(dataset, max_seconds=10)
     counter: typing.Counter[Alignment] = Counter()
-    for i in range(10000):
-        counter.update(typing.cast(typing.Tuple[Alignment], next(iterator).alignments))
+    for _ in range(10000):
+        counter.update(typing.cast(typing.Tuple[Alignment], next(iterator).alignments_slice))
     assert set(counter.keys()) == set(typing.cast(typing.Tuple[Alignment], dataset[0].alignments))
     _utils.assert_uniform_distribution(counter, abs=0.01)
 
 
-def test_dataset_generator__empty():
-    """ Test `lib.datasets.dataset_generator` handles an empty list. """
-    iterator = lib.datasets.dataset_generator([], max_seconds=10)
+def test_span_generator__empty():
+    """ Test `lib.datasets.span_generator` handles an empty list. """
+    iterator = lib.datasets.span_generator([], max_seconds=10)
     assert next(iterator, None) is None
 
 
-def test_dataset_generator__zero():
-    """Test `lib.datasets.dataset_generator` handles alignments of zero length."""
+def test_span_generator__zero():
+    """Test `lib.datasets.span_generator` handles alignments of zero length."""
     dataset = [
         _make_example(((0, 1),)),
         _make_example(((1, 1),)),
         _make_example(((1, 2),)),
     ]
-    iterator = lib.datasets.dataset_generator(dataset, max_seconds=10)
+    iterator = lib.datasets.span_generator(dataset, max_seconds=10)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
-        counter.update(typing.cast(typing.Tuple[Alignment], next(iterator).alignments))
+        counter.update(typing.cast(typing.Tuple[Alignment], next(iterator).alignments_slice))
     alignments_ = [dataset[0].alignments, dataset[-1].alignments]
     alignments = [list(typing.cast(typing.Tuple[Alignment], a)) for a in alignments_]
     assert set(counter.keys()) == set(flatten(alignments))
     _utils.assert_uniform_distribution(counter, abs=0.01)
 
 
-def test_dataset_generator__singular():
-    """Test `lib.datasets.dataset_generator` handles multiple examples with a singular alignment
+def test_span_generator__singular():
+    """Test `lib.datasets.span_generator` handles multiple examples with a singular alignment
     of varying lengths."""
     dataset = [
         _make_example(((0, 1),)),
         _make_example(((0, 10),)),
         _make_example(((0, 5),)),
     ]
-    iterator = lib.datasets.dataset_generator(dataset, max_seconds=10)
+    iterator = lib.datasets.span_generator(dataset, max_seconds=10)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
-        counter.update(typing.cast(typing.Tuple[Alignment], next(iterator).alignments))
+        counter.update(typing.cast(typing.Tuple[Alignment], next(iterator).alignments_slice))
     alignments = [list(typing.cast(typing.Tuple[Alignment], d.alignments)) for d in dataset]
     assert set(counter.keys()) == set(flatten(alignments))
     _utils.assert_uniform_distribution(counter, abs=0.01)
 
 
-def test_dataset_generator__multiple_multiple():
-    """Test `lib.datasets.dataset_generator` handles multiple scripts with a uniform alignment
+def test_span_generator__multiple_multiple():
+    """Test `lib.datasets.span_generator` handles multiple scripts with a uniform alignment
     distribution."""
     dataset = [
         _make_example(((0, 1), (1, 2), (2, 3))),
         _make_example(((3, 4), (4, 5), (5, 6))),
     ]
-    iterator = lib.datasets.dataset_generator(dataset, max_seconds=10)
+    iterator = lib.datasets.span_generator(dataset, max_seconds=10)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
-        counter.update(typing.cast(typing.Tuple[Alignment], next(iterator).alignments))
+        counter.update(typing.cast(typing.Tuple[Alignment], next(iterator).alignments_slice))
     alignments = [list(typing.cast(typing.Tuple[Alignment], d.alignments)) for d in dataset]
     assert set(counter.keys()) == set(flatten(alignments))
     _utils.assert_uniform_distribution(counter, abs=0.01)
 
 
-def test_dataset_generator__pause():
-    """ Test `lib.datasets.dataset_generator` samples uniformly despite a large pause. """
+def test_span_generator__pause():
+    """ Test `lib.datasets.span_generator` samples uniformly despite a large pause. """
     dataset = [_make_example(((0, 1), (1, 2), (2, 3), (20, 21), (40, 41)))]
-    iterator = lib.datasets.dataset_generator(dataset, max_seconds=4)
+    iterator = lib.datasets.span_generator(dataset, max_seconds=4)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
-        counter.update(typing.cast(typing.Tuple[Alignment], next(iterator).alignments))
+        counter.update(typing.cast(typing.Tuple[Alignment], next(iterator).alignments_slice))
     assert set(counter.keys()) == set(typing.cast(typing.Tuple[Alignment], dataset[0].alignments))
     _utils.assert_uniform_distribution(counter, abs=0.02)
 
 
-def test_dataset_generator__multiple_unequal_examples__large_max_seconds():
-    """Test `lib.datasets.dataset_generator` samples uniformly despite unequal example sizes,
+def test_span_generator__multiple_unequal_examples__large_max_seconds():
+    """Test `lib.datasets.span_generator` samples uniformly despite unequal example sizes,
     and large max seconds.
 
     NOTE: With a large enough `max_seconds`, the entire example should be sampled most of the time.
     """
     dataset = [_make_example(((0, 1),)), _make_example(((3, 4), (4, 5), (5, 6)))]
-    iterator = lib.datasets.dataset_generator(dataset, max_seconds=1000000)
+    iterator = lib.datasets.span_generator(dataset, max_seconds=1000000)
 
     alignments_counter: typing.Counter[Alignment] = Counter()
     spans_counter: typing.Counter[typing.Tuple[Alignment, ...]] = Counter()
     num_examples = 10000
-    for i in range(num_examples):
-        example = next(iterator)
-        alignments_counter.update(typing.cast(typing.Tuple[Alignment], example.alignments))
-        assert example.alignments is not None
-        spans_counter[example.alignments] += 1
+    for _ in range(num_examples):
+        span = next(iterator)
+        alignments_counter.update(typing.cast(typing.Tuple[Alignment], span.alignments_slice))
+        spans_counter[span.alignments_slice] += 1
 
     alignments = [list(typing.cast(typing.Tuple[Alignment], d.alignments)) for d in dataset]
     assert set(alignments_counter.keys()) == set(flatten(alignments))
     _utils.assert_uniform_distribution(alignments_counter, abs=0.01)
 
     for example in dataset:
-        assert example.alignments is not None
         assert spans_counter[example.alignments] / num_examples == pytest.approx(
             1 / len(dataset), abs=0.01
         )
 
 
-def test_dataset_generator__unequal_alignment_sizes():
-    """ Test `lib.datasets.dataset_generator` samples uniformly despite unequal alignment sizes. """
+def test_span_generator__unequal_alignment_sizes():
+    """ Test `lib.datasets.span_generator` samples uniformly despite unequal alignment sizes. """
     dataset = [_make_example(((0, 1), (1, 5), (5, 20)))]
-    iterator = lib.datasets.dataset_generator(dataset, max_seconds=20)
+    iterator = lib.datasets.span_generator(dataset, max_seconds=20)
     counter: typing.Counter[Alignment] = Counter()
-    for i in range(10000):
-        counter.update(typing.cast(typing.Tuple[Alignment], next(iterator).alignments))
+    for _ in range(10000):
+        counter.update(typing.cast(typing.Tuple[Alignment], next(iterator).alignments_slice))
     alignments = [list(typing.cast(typing.Tuple[Alignment], d.alignments)) for d in dataset]
     assert set(counter.keys()) == set(flatten(alignments))
     _utils.assert_uniform_distribution(counter, abs=0.01)

@@ -16,14 +16,17 @@ from lib.datasets.m_ailabs import (
 from lib.datasets.utils import (
     Alignment,
     Example,
+    Span,
     Speaker,
-    dataset_generator,
     dataset_loader,
     precut_dataset_loader,
+    span_generator,
 )
 
 # TODO: Consider not using the actors realnames in the codebase in an effort to protect their
 # privacy.
+# TODO: Consider updating M-AILABS and LJSpeech to Google Storage, so that we can download
+# and upload them faster. It'll also give us protection, if the datasets are deleted.
 
 HILARY_NORIEGA = Speaker("Hilary Noriega")
 ALICIA_HARRIS = Speaker("Alicia Harris")
@@ -31,10 +34,9 @@ MARK_ATHERLAY = Speaker("Mark Atherlay")
 SAM_SCHOLL = Speaker("Sam Scholl")
 
 
-def hilary_noriega_speech_dataset(
-    *args, speaker: Speaker = HILARY_NORIEGA, **kwargs
-) -> typing.List[Example]:
-    return _dataset_loader(*args, speaker=speaker, **kwargs)  # type: ignore
+def hilary_noriega_speech_dataset(*args, **kwargs) -> typing.List[Example]:
+    kwargs.update({"speaker": HILARY_NORIEGA})
+    return _dataset_loader(*args, **kwargs)
 
 
 WSL_GCS_PATH = "gs://wellsaid_labs_datasets"
@@ -43,15 +45,16 @@ WSL_GCS_PATH = "gs://wellsaid_labs_datasets"
 def _dataset_loader(
     directory: Path, speaker: Speaker, gcs_path: str = WSL_GCS_PATH, **kwargs
 ) -> typing.List[Example]:
-    label = HILARY_NORIEGA.name.lower().replace(" ", "_")
+    label = speaker.name.lower().replace(" ", "_")
     return dataset_loader(directory, label, f"{gcs_path}/{label}/processed", speaker, **kwargs)
 
 
 __all__ = [
     "Speaker",
     "Example",
+    "Span",
     "Alignment",
-    "dataset_generator",
+    "span_generator",
     "dataset_loader",
     "precut_dataset_loader",
     "lj_speech_dataset",
