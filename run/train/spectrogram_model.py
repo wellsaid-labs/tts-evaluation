@@ -416,7 +416,7 @@ class _DistributedMetrics:
         NOTE: The measurements will accrue on the master process only.
         """
         value = float(value.sum().item() if isinstance(value, torch.Tensor) else value)
-        metric.append(lib.distributed.reduce_(value))
+        metric.append(lib.distributed.reduce(value))
 
     def update_dataset_metrics(
         self,
@@ -527,7 +527,7 @@ class _DistributedMetrics:
     def log(
         self,
         comet: CometMLExperiment,
-        reduce_: typing.Callable[[typing.List[float]], float],
+        reduce: typing.Callable[[typing.List[float]], float],
         dataset_type: DatasetType,
         cadence: Cadence,
         num_frame_channels=HParam(),
@@ -536,11 +536,11 @@ class _DistributedMetrics:
 
         Args:
             comet
-            reduce_: If there is a list of measurements, this callable is used to reduce it.
+            reduce: If there is a list of measurements, this callable is used to reduce it.
             ...
         """
-        div = lambda n, d, r=reduce_: r(n) / r(d) if len(n) > 0 and len(d) > 0 else None
-        power_to_db = lambda t: lib.audio.power_to_db(torch.tensor(reduce_(t)))
+        div = lambda n, d, r=reduce: r(n) / r(d) if len(n) > 0 and len(d) > 0 else None
+        power_to_db = lambda t: lib.audio.power_to_db(torch.tensor(reduce(t)))
         predicted_rms = div(self.predicted_frame_rms_level, self.num_frames_predicted, power_to_db)
         rms = div(self.frame_rms_level, self.num_frames, power_to_db)
 

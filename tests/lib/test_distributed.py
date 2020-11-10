@@ -110,17 +110,17 @@ def assert_(
 
 
 def test_reduce():
-    """ Test `lib.distributed.reduce_` reduces values from work processes to the main process. """
+    """ Test `lib.distributed.reduce` reduces values from work processes to the main process. """
     nprocs = 3
     partial = functools.partial(
-        assert_, nprocs=nprocs, callable_=lib.distributed.reduce_, expected=3
+        assert_, nprocs=nprocs, callable_=lib.distributed.reduce, expected=3
     )
     torch.multiprocessing.spawn(partial, nprocs=nprocs)
 
 
-def test_reduce__identity():
-    """ Test `lib.distributed.reduce_` functions outside of a distributed environment. """
-    assert lib.distributed.reduce_(0) == 0
+def test_reduce_identity():
+    """ Test `lib.distributed.reduce` functions outside of a distributed environment. """
+    assert lib.distributed.reduce(0) == 0
 
 
 def test_all_gather():

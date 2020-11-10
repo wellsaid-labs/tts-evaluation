@@ -65,7 +65,7 @@ def assert_synced(value: float, message: str = "", device=_default_device):
     assert torch.equal(master_value, value_tensor), message
 
 
-def reduce_(value: float, dst: int = get_master_rank(), device=_default_device, **kwargs) -> float:
+def reduce(value: float, dst: int = get_master_rank(), device=_default_device, **kwargs) -> float:
     """Reduce `value` from all processes via a reduction operation
     like `torch.distributed.ReduceOp.SUM`."""
     if not is_initialized():
