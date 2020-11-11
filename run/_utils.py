@@ -4,13 +4,12 @@ import enum
 import functools
 import hashlib
 import io
-import json
 import logging
 import math
+import multiprocessing.pool
 import os
 import pathlib
 import random
-import sqlite3
 import time
 import typing
 
@@ -124,69 +123,6 @@ def maybe_make_experiment_directories(
     return run_root, checkpoints_directory
 
 
-def update_audio_file_metadata(
-    connection: sqlite3.Connection, audio_paths: typing.List[pathlib.Path]
-):
-    """ Update table `audio_file_metadata` with metadata for `audio_paths`. """
-    cursor = connection.cursor()
-    logger.info("Updating audio file metadata...")
-    cursor.execute(
-        """CREATE TABLE IF NOT EXISTS audio_file_metadata (
-      path text PRIMARY KEY,
-      sample_rate integer,
-      num_channels integer,
-      encoding text,
-      length float,
-      bit_rate text,
-      precision text
-    )"""
-    )
-    cursor.execute("""SELECT path FROM audio_file_metadata""")
-    absolute = [a.absolute() for a in audio_paths]
-    update = list(set(absolute) - set([pathlib.Path(r[0]) for r in cursor.fetchall()]))
-    metadatas = lib.audio.get_audio_metadata(update)
-    cursor.executemany(
-        """INSERT INTO audio_file_metadata (
-          path,
-          sample_rate,
-          num_channels,
-          encoding,
-          length,
-          bit_rate,
-          precision)
-          VALUES (?,?,?,?,?,?,?)""",
-        [(str(p.absolute()), *a) for (p, *a) in metadatas],
-    )
-    connection.commit()
-
-
-def fetch_audio_file_metadata(
-    connection: sqlite3.Connection, audio_path: pathlib.Path
-) -> lib.audio.AudioFileMetadata:
-    """ Get `AudioFileMetadata` for `audio_path` from table `audio_file_metadata`. """
-    cursor = connection.cursor()
-    cursor.execute("SELECT * FROM audio_file_metadata WHERE path=?", (str(audio_path.absolute()),))
-    row = cursor.fetchone()
-    assert row is not None, f"Metadata for audio path {audio_path} not found."
-    return lib.audio.AudioFileMetadata(pathlib.Path(row[0]), *row[1:])
-
-
-def handle_null_alignments(connection: sqlite3.Connection, dataset: Dataset):
-    """Update any `None` alignments with an alignment spaning the entire audio and
-    text, in-place."""
-    logger.info("Updating null alignments...")
-    for speaker, examples in dataset.items():
-        updated = []
-        logger.info("Updating alignments for %s dataset...", speaker.name)
-        for example in tqdm.tqdm(examples):
-            if example.alignments is None:
-                metadata = fetch_audio_file_metadata(connection, example.audio_path)
-                alignment = lib.datasets.Alignment((0, len(example.text)), (0.0, metadata.length))
-                example = example._replace(alignments=(alignment,))
-            updated.append(example)
-        dataset[speaker] = updated
-
-
 def _normalize_audio(
     args: typing.Tuple[pathlib.Path, pathlib.Path], callable_: typing.Callable[..., None]
 ):
@@ -202,11 +138,7 @@ def _normalize_path(path: pathlib.Path) -> pathlib.Path:
 
 
 def normalize_audio(
-    dataset: Dataset,
-    num_processes: int = (
-        1 if lib.environment.IS_TESTING_ENVIRONMENT else typing.cast(int, os.cpu_count())
-    ),
-    **kwargs,
+    dataset: Dataset, num_processes: int = typing.cast(int, os.cpu_count()), **kwargs
 ):
     """Normalize audio with ffmpeg in `dataset`.
 
@@ -220,59 +152,13 @@ def normalize_audio(
     partial = lib.audio.normalize_audio.get_configured_partial()  # type: ignore
     partial = functools.partial(partial, **kwargs)
     partial = functools.partial(_normalize_audio, callable_=partial)
-    with lib.utils.Pool(num_processes) as pool:
+    with multiprocessing.pool.ThreadPool(num_processes) as pool:
         list(tqdm.tqdm(pool.imap_unordered(partial, args), total=len(args)))
 
     for speaker, examples in dataset.items():
-        dataset[speaker] = [e._replace(audio_path=_normalize_path(e.audio_path)) for e in examples]
-
-
-def _adapt_numpy_array(array: numpy.ndarray) -> sqlite3.Binary:
-    """`sqlite` adapter for a `numpy.ndarray`.
-
-    Learn more: http://stackoverflow.com/a/31312102/190597
-    """
-    out = io.BytesIO()
-    numpy.save(out, array)
-    out.seek(0)
-    return sqlite3.Binary(out.read())
-
-
-def _convert_numpy_array(binary: bytes) -> numpy.ndarray:
-    """`sqlite` converter for a `numpy.ndarray`.
-
-    Learn more: http://stackoverflow.com/a/31312102/190597
-    """
-    out = io.BytesIO(binary)
-    out.seek(0)
-    return numpy.load(out)
-
-
-def _adapt_json(list_) -> str:
-    """`sqlite` adapter for a json object.
-
-    TODO: Add typing for `json` once it is supported: https://github.com/python/typing/issues/182
-    """
-    return json.dumps(list_)
-
-
-def _convert_json(text: bytes):
-    """`sqlite` converter for a json object."""
-    return json.loads(text)
-
-
-def connect(
-    *args: typing.Any, detect_types=sqlite3.PARSE_DECLTYPES, **kwargs: typing.Any
-) -> sqlite3.Connection:
-    """Opens a connection to the SQLite database file."""
-    sqlite3.register_adapter(numpy.ndarray, _adapt_numpy_array)  # type: ignore
-    sqlite3.register_converter("numpy_ndarray", _convert_numpy_array)
-    sqlite3.register_adapter(dict, _adapt_json)
-    sqlite3.register_adapter(list, _adapt_json)
-    sqlite3.register_converter("json", _convert_json)
-    kwargs.update({"detect_types": detect_types})
-    connection = sqlite3.connect(*args, **kwargs)
-    return connection
+        dataset[speaker] = [
+            dataclasses.replace(e, audio_path=_normalize_path(e.audio_path)) for e in examples
+        ]
 
 
 def init_distributed(
@@ -310,7 +196,6 @@ def split_examples(
         train: The rest of the data.
         dev: Dataset with `dev_size` of data.
     """
-    assert all(e.alignments is not None for e in examples)
     examples = examples.copy()
     random.shuffle(examples)
     # NOTE: `len_` assumes that a negligible amount of data is unusable in each example.
