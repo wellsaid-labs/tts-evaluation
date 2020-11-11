@@ -238,7 +238,6 @@ class _DataIterator(torch.utils.data.IterableDataset):
     def __init__(
         self,
         dataset: run._config.Dataset,
-        database: pathlib.Path,
         bucket_size: int,
         input_encoder: lib.spectrogram_model.InputEncoder,
     ):
@@ -247,15 +246,13 @@ class _DataIterator(torch.utils.data.IterableDataset):
         TODO: Filter spans based on additional data from `get_spectrogram_model_span`.
 
         Args:
-            ...
+            dataset
             bucket_size: A batch of spans is sampled and sorted to minimize padding.
-            ...
-            text_length_bucket_size: The buckets size for tracking the text length distribution.
+            input_encoder
         """
         super().__init__()
         self.dataset = dataset
         self.bucket_size = bucket_size
-        self.database = database
         self.input_encoder = input_encoder
         self.config = get_config()
 
@@ -321,7 +318,7 @@ def _get_data_loaders(
     """ Initialize training and development data loaders.  """
     bucket_size = bucket_size_multiplier * train_batch_size
     _DataIteratorPartial = functools.partial(
-        _DataIterator, input_encoder=state.input_encoder, comet=state.comet, bucket_size=bucket_size
+        _DataIterator, input_encoder=state.input_encoder, bucket_size=bucket_size
     )
     DataLoaderPartial = functools.partial(_DataLoader, num_workers=num_workers, device=state.device)
     return (
