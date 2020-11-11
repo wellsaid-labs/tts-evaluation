@@ -209,8 +209,8 @@ def split_examples(
     return train, dev
 
 
-class SpectrogramModelExample(typing.NamedTuple):
-    """Preprocessed `Example` used to training or evaluating the spectrogram model."""
+class SpectrogramModelSpan(typing.NamedTuple):
+    """Preprocessed `Span` used to training or evaluating the spectrogram model."""
 
     audio_path: pathlib.Path
     audio: torch.Tensor  # torch.FloatTensor [num_samples]
@@ -372,9 +372,8 @@ def _get_words(
 
 
 @configurable
-def get_spectrogram_example(
-    example: lib.datasets.Example,
-    connection: sqlite3.Connection,
+def get_spectrogram_model_span(
+    span: lib.datasets.Span,
     input_encoder: lib.spectrogram_model.InputEncoder,
     loudness_implementation: str = HParam(),
     max_loudness_annotations: int = HParam(),
@@ -384,11 +383,10 @@ def get_spectrogram_example(
     stop_token_range: int = HParam(),
     stop_token_standard_deviation: float = HParam(),
     sample_rate: int = HParam(),
-) -> SpectrogramModelExample:
+) -> SpectrogramModelSpan:
     """
     Args:
-        example
-        connection
+        span
         input_encoder
         loudness_implementation: See `pyloudnorm.Meter` for various loudness implementations.
         max_loudness_annotations: The maximum expected loudness intervals within a text segment.
@@ -400,36 +398,28 @@ def get_spectrogram_example(
             `stop_token` location.
         sample_rate
     """
-    alignments = example.alignments
-    assert alignments is not None
-    metadata = fetch_audio_file_metadata(connection, example.audio_path)
+    metadata = lib.audio.get_audio_metadata([span.audio_path])[0]
     lib.audio.assert_audio_normalized(metadata, sample_rate=sample_rate)
 
-    num_characters = alignments[-1].text[-1] - alignments[0].text[0]
-    num_seconds = alignments[-1].audio[-1] - alignments[0].audio[0]
-
-    text = example.text[alignments[0].text[0] : alignments[-1].text[-1]]
-    audio = lib.audio.read_audio_slice(example.audio_path, alignments[0].audio[0], num_seconds)
-
     _, word_vectors, _, phonemes = _get_words(
-        example.text, alignments[0].text[0], alignments[-1].text[-1]
+        span.example.text, span.alignments_slice[0].text[0], span.alignments_slice[-1].text[-1]
     )
 
-    arg = (text, phonemes, example.speaker)
+    arg = (span.text, phonemes, span.speaker)
     encoded_text, encoded_letter_case, encoded_phonemes, encoded_speaker = input_encoder.encode(arg)
 
-    loudness = torch.zeros(num_characters)
-    loudness_mask = torch.zeros(num_characters, dtype=torch.bool)
-    for alignment in _random_nonoverlapping_alignments(alignments, max_loudness_annotations):
+    loudness = torch.zeros(len(span.text))
+    loudness_mask = torch.zeros(len(span.text), dtype=torch.bool)
+    for alignment in _random_nonoverlapping_alignments(span.alignments, max_loudness_annotations):
         slice_ = slice(alignment.text[0], alignment.text[1])
         loudness[slice_] = _get_loudness(
-            audio, sample_rate, alignment, loudness_implementation, loudness_precision
+            span.audio, sample_rate, alignment, loudness_implementation, loudness_precision
         )
         loudness_mask[slice_] = True
 
-    speed = torch.zeros(num_characters)
-    speed_mask = torch.zeros(num_characters, dtype=torch.bool)
-    for alignment in _random_nonoverlapping_alignments(alignments, max_speed_annotations):
+    speed = torch.zeros(len(span.text))
+    speed_mask = torch.zeros(len(span.text), dtype=torch.bool)
+    for alignment in _random_nonoverlapping_alignments(span.alignments, max_speed_annotations):
         slice_ = slice(alignment.text[0], alignment.text[1])
         # TODO: Instead of using characters per second, we could estimate the number of phonemes
         # with `grapheme_to_phoneme`. This might be slow, so we'd need to do so in a batch.
@@ -452,11 +442,10 @@ def get_spectrogram_example(
     # padding does not affect the spectrogram due to overlap between the padding and the
     # real audio.
     # TODO: Instead of padding with zeros, we should consider padding with real-data.
-    audio = lib.audio.pad_remainder(audio)
+    audio = lib.audio.pad_remainder(span.audio)
     _, trim = librosa.effects.trim(audio)
-    audio = audio[trim[0] : trim[1]]
+    audio = torch.tensor(audio[trim[0] : trim[1]], requires_grad=False)
 
-    audio = torch.tensor(audio, requires_grad=False)
     with torch.no_grad():
         db_mel_spectrogram = lib.audio.get_signal_to_db_mel_spectrogram()(audio, aligned=True)
 
@@ -475,15 +464,15 @@ def get_spectrogram_example(
     max_len = min(len(stop_token), len(gaussian_kernel))
     stop_token[-max_len:] = gaussian_kernel[-max_len:]
 
-    return SpectrogramModelExample(
-        audio_path=example.audio_path,
+    return SpectrogramModelSpan(
+        audio_path=span.audio_path,
         audio=audio,
         spectrogram=db_mel_spectrogram,
         spectrogram_mask=torch.ones(db_mel_spectrogram.shape[0], dtype=torch.bool),
         stop_token=stop_token,
-        speaker=example.speaker,
+        speaker=span.speaker,
         encoded_speaker=encoded_speaker,
-        text=text,
+        text=span.text,
         encoded_text=encoded_text,
         encoded_text_mask=torch.ones(encoded_text.shape[0], dtype=torch.bool),
         encoded_letter_case=encoded_letter_case,
@@ -493,12 +482,12 @@ def get_spectrogram_example(
         loudness_mask=loudness_mask,
         speed=speed,
         speed_mask=speed_mask,
-        alignments=alignments,
-        metadata=example.metadata,
+        alignments=span.alignments,
+        metadata=span.metadata,
     )
 
 
-class SpectrogramModelExampleBatch(typing.NamedTuple):
+class SpectrogramModelSpanBatch(typing.NamedTuple):
     """Batch of preprocessed `Example` used to training or evaluating the spectrogram model."""
 
     length: int
@@ -564,9 +553,9 @@ class SpectrogramModelExampleBatch(typing.NamedTuple):
     metadata: typing.List[typing.Dict[typing.Union[str, int], typing.Any]]
 
 
-def batch_spectrogram_examples(
-    examples: typing.List[SpectrogramModelExample],
-) -> SpectrogramModelExampleBatch:
+def batch_spectrogram_spans(
+    examples: typing.List[SpectrogramModelSpan],
+) -> SpectrogramModelSpanBatch:
     """
     TODO: For performance reasons, we could consider moving some computations from
     `get_spectrogram_example` to this function for batch processing. This technique would be
@@ -574,7 +563,7 @@ def batch_spectrogram_examples(
     as the basic loader. There is no fancy threading to load multiple examples at the same
     time.
     """
-    return SpectrogramModelExampleBatch(
+    return SpectrogramModelSpanBatch(
         length=len(examples),
         audio_path=[e.audio_path for e in examples],
         audio=[e.audio for e in examples],
