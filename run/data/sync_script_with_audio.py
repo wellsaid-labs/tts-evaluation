@@ -3,56 +3,13 @@
 Given a voice-over and a voice-over script, this python script generates an alignment between text
 spans and audio spans. Also this script will help detect inconsistencies between the two.
 
-Prior:
+Usage Example:
 
-    Setup a service account for your local machine that allows you to write to the
-    `wellsaid_labs_datasets` bucket in Google Cloud Storage. Start by creating a service account
-    using the Google Cloud Console. Give the service account the
-    "Google Cloud Storage Object Admin" role (f.y.i. the "Role" menu scrolls). Name the service
-    account something similar to "michael-wsl-datasets". Download a key as JSON and put it
-    somewhere secure locally:
-
-    $ mv ~/Downloads/voice-research-255602-1a5538456fc3.json gcs_credentials.json
-
-Example:
-
-    PREFIX=gs://wellsaid_labs_datasets/hilary_noriega
-    GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
+    PREFIX=gs://wellsaid_labs_datasets/hilary_noriega/processed
     python -m run.data.sync_script_with_audio \
-      --voice-over "$PREFIX/preprocessed_recordings/Script 1.wav" \
-      --script "$PREFIX/scripts/Script 1 - Hilary.csv" \
+      --voice-over "$PREFIX/recordings/script_1.wav" \
+      --script "$PREFIX/scripts/script_1_-_hilary.csv" \
       --destination "$PREFIX/"
-
-Example (Multiple Speakers):
-
-    PREFIX=gs://wellsaid_labs_datasets
-    PREPROCESSED=preprocessed_recordings \
-    GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
-    python -m run.data.sync_script_with_audio \
-      --voice-over "$PREFIX/hilary_noriega/$PREPROCESSED/Script 1.wav" \
-      --script "$PREFIX/hilary_noriega/scripts/Script 1 - Hilary.csv" \
-      --destination "$PREFIX/hilary_noriega/" \
-      --voice-over "$PREFIX/sam_scholl/$PREPROCESSED/WSL Sam4.wav" \
-      --script "$PREFIX/sam_scholl/scripts/Script 4.csv" \
-      --destination "$PREFIX/sam_scholl/" \
-      --voice-over "$PREFIX/frank_bonacquisti/$PREPROCESSED/WSL-Script 001.wav" \
-      --script "$PREFIX/frank_bonacquisti/scripts/Script 1.csv" \
-      --destination "$PREFIX/frank_bonacquisti/" \
-      --voice-over "$PREFIX/adrienne_walker_heller/$PREPROCESSED/WSL - Adrienne WalkerScript1.wav" \
-      --script "$PREFIX/adrienne_walker_heller/scripts/Script 1.csv" \
-      --destination "$PREFIX/adrienne_walker_heller/" \
-      --voice-over "$PREFIX/heather_doe/$PREPROCESSED/Heather_99-101.wav" \
-      --script "$PREFIX/heather_doe/scripts/Scripts 99-101.csv" \
-      --destination "$PREFIX/heather_doe/"
-
-Example (Batch):
-
-    PREFIX=gs://wellsaid_labs_datasets/hilary_noriega
-    GOOGLE_APPLICATION_CREDENTIALS=gcs_credentials.json \
-    python -m run.data.sync_script_with_audio \
-      --voice-over "${(@f)$(gsutil ls "$PREFIX/preprocessed_recordings/*.wav" | sort -h)}" \
-      --script "${(@f)$(gsutil ls "$PREFIX/scripts/*.csv" | sort -h)}" \
-      --destination $PREFIX/
 """
 import dataclasses
 import json
@@ -78,34 +35,33 @@ from lib.environment import AnsiCodes
 
 lib.environment.set_basic_logging_config()
 logger = logging.getLogger(__name__)
+storage_client = storage.Client()
 
 
 class ScriptToken(typing.NamedTuple):
     """
     Args:
-      text: The script text.
-      start_text: The script text offset.
-      end_text: This is equal to `start_text + len(text)`, if `text` and `start_text` are defined.
-      script_index: The index of the script from which the text comes from.
+        script_index: The index of the script from which the text comes from.
+        text: The script text.
+        slice: The start and end script character index of `text`.
     """
 
     script_index: int
     text: typing.Optional[str] = None
-    start_text: typing.Optional[int] = None
-    end_text: typing.Optional[int] = None
+    slice: typing.Tuple[typing.Optional[int], typing.Optional[int]] = (None, None)
 
 
 class SttToken(typing.NamedTuple):
     """
     Args:
-      text: The predicted STT text.
-      start_audio: The beginning of the audio span in seconds.
-      end_audio: The end of the audio span in seconds.
+        text: The predicted STT text.
+        audio: The start and end seconds of the corresponding audio snippet.
+        slice: The start and end transcript character index of `text`.
     """
 
     text: str
-    start_audio: float
-    end_audio: float
+    audio: typing.Tuple[float, float]
+    slice: typing.Tuple[int, int]
 
 
 SST_CONFIG = RecognitionConfig(
@@ -222,15 +178,14 @@ def is_sound_alike(a: str, b: str) -> bool:
 
 
 def gcs_uri_to_blob(gcs_uri: str) -> storage.Blob:
-    """Parse GCS URI  (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") and return a `Blob`.
+    """Parse GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") and return a `Blob`.
 
     NOTE: This function requires GCS authorization.
     """
     assert len(gcs_uri) > 5, "The URI must be longer than 5 characters to be a valid GCS link."
     assert gcs_uri[:5] == "gs://", "The URI provided is not a valid GCS link."
     path_segments = gcs_uri[5:].split("/")
-    storage_client = storage.Client()
-    bucket = storage_client.get_bucket(path_segments[0])
+    bucket = storage_client.bucket(path_segments[0])
     name = "/".join(path_segments[1:])
     return bucket.blob(name)
 
@@ -248,22 +203,22 @@ def _format_gap(
     minus = lambda t: f'\n{AnsiCodes.RED}--- "{t}"{AnsiCodes.RESET_ALL}\n'
     if len(tokens) > 2 or len(stt_tokens) > 0:
         if tokens[0].script_index != tokens[-1].script_index:
-            yield minus(scripts[tokens[0].script_index][tokens[0].end_text :])
+            yield minus(scripts[tokens[0].script_index][tokens[0].slice[-1] :])
             yield "=" * 100
             for i in range(tokens[0].script_index + 1, tokens[-1].script_index):
                 yield minus(scripts[i])
                 yield "=" * 100
-            yield minus(scripts[tokens[-1].script_index][: tokens[-1].start_text])
+            yield minus(scripts[tokens[-1].script_index][: tokens[-1].slice[0]])
         else:
-            yield minus(scripts[tokens[0].script_index][tokens[0].end_text : tokens[-1].start_text])
+            yield minus(scripts[tokens[0].script_index][tokens[0].slice[-1] : tokens[-1].slice[0]])
         text = " ".join([t.text for t in stt_tokens])
         yield f'{AnsiCodes.GREEN}+++ "{text}"{AnsiCodes.RESET_ALL}\n'
     elif len(tokens) == 2 and tokens[0].script_index == tokens[-1].script_index:
-        yield scripts[tokens[0].script_index][tokens[0].end_text : tokens[-1].start_text]
+        yield scripts[tokens[0].script_index][tokens[0].slice[-1] : tokens[-1].slice[0]]
     elif len(tokens) == 2:
-        yield scripts[tokens[0].script_index][tokens[0].end_text :]
+        yield scripts[tokens[0].script_index][tokens[0].slice[-1] :]
         yield "\n" + "=" * 100 + "\n"
-        yield scripts[tokens[-1].script_index][: tokens[-1].start_text]
+        yield scripts[tokens[-1].script_index][: tokens[-1].slice[0]]
 
 
 def format_differences(
@@ -288,8 +243,8 @@ def format_differences(
     > +++ "3,600"
     > native trees, shrubs, and plants.
     """
-    tokens = [ScriptToken(end_text=0, script_index=0)] + tokens
-    tokens += [ScriptToken(start_text=len(scripts[-1]), script_index=len(scripts) - 1)]
+    tokens = [ScriptToken(slice=(None, 0), script_index=0)] + tokens
+    tokens += [ScriptToken(slice=(len(scripts[-1]), None), script_index=len(scripts) - 1)]
     alignments = [(a + 1, b) for a, b in alignments]
 
     groups: typing.List[typing.Tuple[typing.Optional[int], typing.List[typing.Tuple[int, int]]]]
@@ -308,7 +263,7 @@ def format_differences(
                 stt_tokens[before[-1][1] + 1 : current[0][1]],
             )
             for last, next_ in zip(current, current[1:] + [None]):  # type: ignore
-                yield scripts[i][tokens[last[0]].start_text : tokens[last[0]].end_text]
+                yield scripts[i][tokens[last[0]].slice[0] : tokens[last[0]].slice[-1]]
                 if next_:
                     yield from _format_gap(
                         scripts,
@@ -342,12 +297,12 @@ def _fix_alignments(
             continue
 
         script_index = tokens[last[0] + 1].script_index
-        slice_ = slice(tokens[last[0] + 1].start_text, tokens[next_[0] - 1].end_text)
-        token = ScriptToken(script_index, scripts[script_index][slice_], slice_.start, slice_.stop)
+        slice_ = (tokens[last[0] + 1].slice[0], tokens[next_[0] - 1].slice[-1])
+        token = ScriptToken(script_index, scripts[script_index][slice(*slice_)], slice_)
         stt_token = SttToken(
             " ".join([t.text for t in stt_tokens[last[1] + 1 : next_[1]]]),
-            stt_tokens[last[1] + 1].start_audio,
-            stt_tokens[next_[1] - 1].end_audio,
+            (stt_tokens[last[1] + 1].audio[0], stt_tokens[next_[1] - 1].audio[-1]),
+            (stt_tokens[last[1] + 1].slice[0], stt_tokens[next_[1] - 1].slice[-1]),
         )
 
         if is_sound_alike(token.text, stt_token.text):
@@ -373,11 +328,43 @@ _default_get_window_size: typing.Callable[[int, int], int]
 _default_get_window_size = lambda a, b: int(max(round(a * 0.05), 256) + abs(a - b))
 
 
+def _flatten_stt_result(stt_result: SttResult) -> typing.Tuple[str, typing.List[SttToken]]:
+    """ Flatten a `SttResult` into a list of `SttToken` tokens and a transcript. """
+    stt_tokens = []
+    transcript = ""
+    offset = 0
+    for result in [r["alternatives"][0] for r in stt_result["results"] if r["alternatives"][0]]:
+        transcript += result["transcript"]
+        for word in result["words"]:
+            audio = (float(word["startTime"][:-1]), float(word["endTime"][:-1]))
+            slice_ = (offset, offset + len(word["word"]))
+            stt_tokens.append(SttToken(word["word"], audio, slice_))
+            assert transcript[slice(*slice_)] == word["word"]
+            offset += len(word["word"]) + 1
+    message = "Alignments should not overlap."
+    pairs = zip(stt_tokens[:-1], stt_tokens[1:])
+    assert all([a.audio[-1] <= b.audio[0] for a, b in pairs]), message
+    message = "Google SST should be white-space tokenized."
+    assert " ".join(t.text for t in stt_tokens).strip() == transcript.strip(), message
+    return transcript, stt_tokens
+
+
+class Alignments(typing.TypedDict):
+    """
+    Args:
+        transcript: The audio transcript used to align the script to the voice-over.
+        alignments: For each script, this contains a list of alignments.
+    """
+
+    transcript: str
+    alignments: typing.List[typing.List[lib.datasets.Alignment]]
+
+
 def align_stt_with_script(
     scripts: typing.List[str],
     stt_result: SttResult,
     get_window_size: typing.Callable[[int, int], int] = _default_get_window_size,
-) -> typing.List[typing.List[lib.datasets.Alignment]]:
+) -> Alignments:
     """Align an STT result(s) with the related script(s). Uses white-space tokenization.
 
     NOTE: The `get_window_size` default used with `align_tokens` was set based off empirical
@@ -391,32 +378,13 @@ def align_stt_with_script(
         stt_result: The speech-to-text results for the related voice-over.
         get_window_size: Callable for computing the maximum window size in tokens for aligning the
             STT results with the provided script.
-
-    Returns: For each script, this returns a list of tuples aligning a span of text to a span of
-        audio.
     """
     script_tokens_ = [
-        [ScriptToken(i, m.group(0), m.start(), m.end()) for m in re.finditer(r"\S+", script)]
+        [ScriptToken(i, m.group(0), (m.start(), m.end())) for m in re.finditer(r"\S+", script)]
         for i, script in enumerate(scripts)
     ]
-    script_tokens = lib.utils.flatten(script_tokens_)
-
-    stt_result_ = [r["alternatives"][0] for r in stt_result["results"] if r["alternatives"][0]]
-    for result in stt_result_:
-        expectation = " ".join([w["word"] for w in result["words"]]).strip()
-        # NOTE: This is `True` as of June 21st, 2019.
-        # TODO: Should we also double check there are no overlapping alignments?
-        assert (
-            expectation == result["transcript"].strip()
-        ), "Expecting SST to be white-space tokenized."
-    stt_tokens_ = [
-        [
-            SttToken(w["word"], float(w["startTime"][:-1]), float(w["endTime"][:-1]))
-            for w in r["words"]
-        ]
-        for r in stt_result_
-    ]
-    stt_tokens = lib.utils.flatten(stt_tokens_)
+    script_tokens: typing.List[ScriptToken] = lib.utils.flatten(script_tokens_)
+    transcript, stt_tokens = _flatten_stt_result(stt_result)
 
     # Align `script_tokens` and `stt_tokens`.
     args = (
@@ -441,18 +409,16 @@ def align_stt_with_script(
         "".join(format_differences(scripts, alignments, script_tokens, stt_tokens)),
     )
 
-    return_: typing.List[typing.List[lib.datasets.Alignment]]
-    return_ = [[] for _ in range(len(scripts))]
+    return_ = Alignments(transcript=transcript, alignments=[[] for _ in range(len(scripts))])
     for alignment in alignments:
+        stt_token = stt_tokens[alignment[1]]
+        script_token = script_tokens[alignment[0]]
         alignment_ = lib.datasets.Alignment(
-            text=(
-                typing.cast(int, script_tokens[alignment[0]].start_text),
-                typing.cast(int, script_tokens[alignment[0]].end_text),
-            ),
-            audio=(stt_tokens[alignment[1]].start_audio, stt_tokens[alignment[1]].end_audio),
+            script=typing.cast(typing.Tuple[int, int], script_token.slice),
+            audio=stt_token.audio,
+            transcript=stt_token.slice,
         )
-        return_[script_tokens[alignment[0]].script_index].append(alignment_)
-    assert len(return_) == len(scripts)
+        return_["alignments"][script_token.script_index].append(alignment_)
     return return_
 
 
