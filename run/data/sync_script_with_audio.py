@@ -341,9 +341,10 @@ def _flatten_stt_result(stt_result: SttResult) -> typing.Tuple[str, typing.List[
             stt_tokens.append(SttToken(word["word"], audio, slice_))
             assert transcript[slice(*slice_)] == word["word"]
             offset += len(word["word"]) + 1
-    message = "Alignments should not overlap."
-    pairs = zip(stt_tokens[:-1], stt_tokens[1:])
-    assert all([a.audio[-1] <= b.audio[0] for a, b in pairs]), message
+    for prev, next in zip(stt_tokens[:-1], stt_tokens[1:]):
+        if prev.audio[-1] > next.audio[0]:
+            # NOTE: Unfortunately, in rare cases, this does happen.
+            logging.warning("Alignments overlap: %s > %s", prev, next)
     message = "Google SST should be white-space tokenized."
     assert " ".join(t.text for t in stt_tokens).strip() == transcript.strip(), message
     return transcript, stt_tokens
