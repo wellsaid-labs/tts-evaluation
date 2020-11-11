@@ -24,6 +24,8 @@ pyloudnorm
 # Visualization Library
 matplotlib
 comet-ml[cpu_logging]==3.2.0
+tabulate
+streamlit
 
 # Testing
 pytest
@@ -53,3 +55,4 @@ gunicorn
 # GCP
 google-cloud-speech
 google-cloud-storage
+google-api-python-client
