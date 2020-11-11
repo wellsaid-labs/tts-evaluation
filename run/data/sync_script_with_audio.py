@@ -99,6 +99,17 @@ class SttResult(typing.TypedDict):
     results: typing.List[_SttAlternatives]
 
 
+class Alignments(typing.TypedDict):
+    """
+    Args:
+        transcript: The audio transcript used to align the script to the voice-over.
+        alignments: For each script, this contains a list of alignments.
+    """
+
+    transcript: str
+    alignments: typing.List[typing.List[lib.datasets.Alignment]]
+
+
 @dataclasses.dataclass
 class Stats:
     """
@@ -344,21 +355,10 @@ def _flatten_stt_result(stt_result: SttResult) -> typing.Tuple[str, typing.List[
     for prev, next in zip(stt_tokens[:-1], stt_tokens[1:]):
         if prev.audio[-1] > next.audio[0]:
             # NOTE: Unfortunately, in rare cases, this does happen.
-            logging.warning("Alignments overlap: %s > %s", prev, next)
+            logging.warning("These alignments overlap: %s > %s", prev, next)
     message = "Google SST should be white-space tokenized."
     assert " ".join(t.text for t in stt_tokens).strip() == transcript.strip(), message
     return transcript, stt_tokens
-
-
-class Alignments(typing.TypedDict):
-    """
-    Args:
-        transcript: The audio transcript used to align the script to the voice-over.
-        alignments: For each script, this contains a list of alignments.
-    """
-
-    transcript: str
-    alignments: typing.List[typing.List[lib.datasets.Alignment]]
 
 
 def align_stt_with_script(
