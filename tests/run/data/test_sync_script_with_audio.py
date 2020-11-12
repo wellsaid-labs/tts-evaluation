@@ -44,7 +44,7 @@ def test__get_speech_context__overlap():
 def _get_script_tokens(scripts: typing.List[str]) -> typing.List[ScriptToken]:
     """ Create a list of `ScriptToken`s for testing. """
     tokens = [
-        [ScriptToken(i, m.group(0), m.start(), m.end()) for m in re.finditer(r"\S+", script)]
+        [ScriptToken(i, m.group(0), (m.start(), m.end())) for m in re.finditer(r"\S+", script)]
         for i, script in enumerate(scripts)
     ]
     return flatten(tokens)
@@ -53,7 +53,10 @@ def _get_script_tokens(scripts: typing.List[str]) -> typing.List[ScriptToken]:
 def _get_stt_tokens(stt_results: typing.List[str]) -> typing.List[SttToken]:
     """ Create a list of `SttToken`s for testing. """
     tokens = [
-        [SttToken(m.group(0), float("nan"), float("nan")) for m in re.finditer(r"\S+", stt_result)]
+        [
+            SttToken(m.group(0), (float("nan"), float("nan")), (m.start(), m.end()))
+            for m in re.finditer(r"\S+", stt_result)
+        ]
         for stt_result in stt_results
     ]
     return flatten(tokens)
