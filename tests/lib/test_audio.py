@@ -266,6 +266,7 @@ def test_normalize_audio__assert_audio_normalized():
     loudnorm = lib.audio.format_ffmpeg_audio_filter(
         "loudnorm", i=-21, lra=4, tp=-6.1, print_format="summary"
     )
+    suffix = ".wav"
     audio_filter = lib.audio.format_ffmpeg_audio_filters([loudnorm])
     with tempfile.TemporaryDirectory() as path:
         directory = pathlib.Path(path)
@@ -273,16 +274,22 @@ def test_normalize_audio__assert_audio_normalized():
         shutil.copy(TEST_DATA_LJ, audio_path)
         new_audio_path = directory / ("new_" + TEST_DATA_LJ.name)
         lib.audio.normalize_audio(
-            audio_path, new_audio_path, ffmpeg_encoding, sample_rate, num_channels, audio_filter
+            audio_path,
+            new_audio_path,
+            suffix,
+            ffmpeg_encoding,
+            sample_rate,
+            num_channels,
+            audio_filter,
         )
         metadata = lib.audio.get_audio_metadata([audio_path])[0]
         new_metadata = lib.audio.AudioFileMetadata(
             new_audio_path, sample_rate, num_channels, sox_encoding, 7.584, "256k", "16-bit"
         )
         assert lib.audio.get_audio_metadata([new_audio_path])[0] == new_metadata
-    lib.audio.assert_audio_normalized(new_metadata, sox_encoding, sample_rate, num_channels)
+    lib.audio.assert_audio_normalized(new_metadata, suffix, sox_encoding, sample_rate, num_channels)
     with pytest.raises(AssertionError):
-        lib.audio.assert_audio_normalized(metadata, sox_encoding, sample_rate, num_channels)
+        lib.audio.assert_audio_normalized(metadata, suffix, sox_encoding, sample_rate, num_channels)
 
 
 def test_pad_remainder():
