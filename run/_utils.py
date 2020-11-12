@@ -20,6 +20,7 @@ import torch.distributed
 import torch.nn
 import torch.optim
 import tqdm
+from google.cloud import storage
 from hparams import HParam, configurable
 from third_party import LazyLoader
 from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
@@ -929,3 +930,26 @@ def set_context(context: Context, model: torch.nn.Module, comet: CometMLExperime
         with torch.set_grad_enabled(mode=(context == Context.TRAIN)):
             yield
         model.train(mode=mode)
+
+
+@functools.lru_cache(maxsize=1)
+def get_storage_client() -> storage.Client:
+    return storage.Client()
+
+
+def gcs_uri_to_blob(gcs_uri: str) -> storage.Blob:
+    """Parse GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") and return a `Blob`.
+
+    NOTE: This function requires GCS authorization.
+    """
+    assert len(gcs_uri) > 5, "The URI must be longer than 5 characters to be a valid GCS link."
+    assert gcs_uri[:5] == "gs://", "The URI provided is not a valid GCS link."
+    path_segments = gcs_uri[5:].split("/")
+    bucket = get_storage_client().bucket(path_segments[0])
+    name = "/".join(path_segments[1:])
+    return bucket.blob(name)
+
+
+def blob_to_gcs_uri(blob: storage.Blob) -> str:
+    """ Get GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") from `blob`. """
+    return "gs://" + blob.bucket.name + "/" + blob.name

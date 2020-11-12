@@ -32,10 +32,10 @@ from tqdm import tqdm
 
 import lib
 from lib.environment import AnsiCodes
+from run._utils import blob_to_gcs_uri, gcs_uri_to_blob
 
 lib.environment.set_basic_logging_config()
 logger = logging.getLogger(__name__)
-storage_client = storage.Client()
 
 
 class ScriptToken(typing.NamedTuple):
@@ -186,24 +186,6 @@ def is_sound_alike(a: str, b: str) -> bool:
         STATS.sound_alike.add(frozenset([a, b]))
         return True
     return False
-
-
-def gcs_uri_to_blob(gcs_uri: str) -> storage.Blob:
-    """Parse GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") and return a `Blob`.
-
-    NOTE: This function requires GCS authorization.
-    """
-    assert len(gcs_uri) > 5, "The URI must be longer than 5 characters to be a valid GCS link."
-    assert gcs_uri[:5] == "gs://", "The URI provided is not a valid GCS link."
-    path_segments = gcs_uri[5:].split("/")
-    bucket = storage_client.bucket(path_segments[0])
-    name = "/".join(path_segments[1:])
-    return bucket.blob(name)
-
-
-def blob_to_gcs_uri(blob: storage.Blob) -> str:
-    """ Get GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") from `blob`. """
-    return "gs://" + blob.bucket.name + "/" + blob.name
 
 
 def _format_gap(
