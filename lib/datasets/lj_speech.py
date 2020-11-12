@@ -1,4 +1,3 @@
-import csv
 import dataclasses
 import logging
 import pathlib
@@ -6,9 +5,10 @@ import re
 import typing
 
 from third_party import LazyLoader
+from torchnlp.download import download_file_maybe_extract
 
 import lib
-from lib.datasets.utils import Example, Speaker, precut_dataset_loader
+from lib.datasets.utils import Example, Speaker, conventional_dataset_loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import num2words
@@ -17,7 +17,6 @@ else:
 
 
 logger = logging.getLogger(__name__)
-
 LINDA_JOHNSON = Speaker("Linda Johnson")
 
 
@@ -27,14 +26,7 @@ def lj_speech_dataset(
     url: str = "http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2",
     speaker: Speaker = LINDA_JOHNSON,
     verbalize: bool = True,
-    metadata_audio_column: typing.Union[int, str] = 0,
-    metadata_audio_path: str = (
-        "{directory}/{root_directory_name}/wavs/{metadata_audio_column_value}.wav"
-    ),
-    metadata_text_column: typing.Union[int, str] = 1,
-    metadata_quoting: int = csv.QUOTE_NONE,
-    metadata_delimiter: str = "|",
-    metadata_header: typing.Optional[bool] = None,
+    metadata_text_column: typing.Union[str, int] = 1,
     **kwargs,
 ) -> typing.List[Example]:
     """Load the Linda Johnson (LJ) Speech dataset.
@@ -64,43 +56,22 @@ def lj_speech_dataset(
           the President's Commission on the Assassination of President Kennedy. 1964.
 
     Args:
+        directory: Directory to cache the dataset.
         root_directory_name: Name of the extracted dataset directory.
         url: URL of the dataset `tar.gz` file.
         speaker
         verbalize: If `True`, verbalize the text.
-        metadata_audio_column: Column name or index with the audio filename.
-        metadata_audio_path: String template for the audio path given the `metadata_audio_column`
-            value.
-        metadata_text_column: Column name or index with the audio transcript.
-        metadata_quoting: Control field quoting behavior per `csv.QUOTE_*` constants for the
-            metadata file.
-        metadata_delimiter: Delimiter for the metadata file.
-        metadata_header: If `True`, `metadata_file` has a header to parse.
-        **kwargs: Key word arguments passed to `precut_dataset_loader`.
-
-    Returns: List of voice-over examples in the dataset.
-
-    Example:
-        >>> from lib.hparams import set_hparams # doctest: +SKIP
-        >>> from lib.datasets import lj_speech_dataset # doctest: +SKIP
-        >>> train, dev = lj_speech_dataset() # doctest: +SKIP
+        **kwargs: Key word arguments passed to `conventional_dataset_loader`.
     """
-    return [
-        _process_text(example, verbalize)
-        for example in precut_dataset_loader(
-            directory=directory,
-            root_directory_name=root_directory_name,
-            url=url,
-            speaker=speaker,
-            delimiter=metadata_delimiter,
-            header=metadata_header,
-            quoting=metadata_quoting,
-            metadata_audio_path=metadata_audio_path,
-            metadata_text_column=metadata_text_column,
-            metadata_audio_column=metadata_audio_column,
-            **kwargs,
-        )
-    ]
+    logger.info('Loading "LJSpeech-1.1" speech dataset...')
+    download_file_maybe_extract(url=url, directory=str(directory.absolute()))
+    examples = conventional_dataset_loader(
+        directory / root_directory_name,
+        speaker,
+        **kwargs,
+        metadata_text_column=metadata_text_column,
+    )
+    return [_process_text(example, verbalize) for example in examples]
 
 
 """
@@ -117,24 +88,24 @@ punctuation.".
 
 
 def _process_text(example: Example, verbalize: bool):
-    text = _normalize_whitespace(example.text)
-    text = _normalize_quotations(text)
+    script = _normalize_whitespace(example.script)
+    script = _normalize_quotations(script)
 
     if verbalize:
-        text = _verbalize_special_cases(example.audio_path, text)
-        text = _expand_abbreviations(text)
-        text = _verbalize_time_of_day(text)
-        text = _verbalize_ordinals(text)
-        text = _verbalize_currency(text)
-        text = _verbalize_serial_numbers(text)
-        text = _verbalize_year(text)
-        text = _verbalize_numeral(text)
-        text = _verbalize_number(text)
-        text = _verbalize_roman_number(text)
+        script = _verbalize_special_cases(example.audio_path, script)
+        script = _expand_abbreviations(script)
+        script = _verbalize_time_of_day(script)
+        script = _verbalize_ordinals(script)
+        script = _verbalize_currency(script)
+        script = _verbalize_serial_numbers(script)
+        script = _verbalize_year(script)
+        script = _verbalize_numeral(script)
+        script = _verbalize_number(script)
+        script = _verbalize_roman_number(script)
 
     # NOTE: Messes up pound sign (£); therefore, this is after `_verbalize_currency`
-    text = lib.text.normalize_vo_script(text)
-    return dataclasses.replace(example, text=text)
+    script = lib.text.normalize_vo_script(script)
+    return dataclasses.replace(example, script=script)
 
 
 # Reference: https://keithito.com/LJ-Speech-Dataset/

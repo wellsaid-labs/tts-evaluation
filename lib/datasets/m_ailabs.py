@@ -20,108 +20,82 @@ convention of the LJSpeech dataset.
 
 The current implementation uses types for books, genders, speakers to allows robust error checking.
 """
-import csv
 import logging
-import os
 import typing
 from pathlib import Path
 
-from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 
-import lib
-from lib.datasets.utils import Example, Speaker
-
-if typing.TYPE_CHECKING:  # pragma: no cover
-    import pandas
-else:
-    pandas = LazyLoader("pandas", globals(), "pandas")
+from lib.datasets.utils import Example, Speaker, conventional_dataset_loader
 
 logger = logging.getLogger(__name__)
+Dataset = typing.NewType("Dataset", str)
 
 
 class Book(typing.NamedTuple):
+    dataset: Dataset
     speaker: Speaker
     title: str
 
+
+UK_DATASET = Dataset("en_UK")
+US_DATASET = Dataset("en_US")
 
 JUDY_BIEBER = Speaker("Judy Bieber", "female")
 MARY_ANN = Speaker("Mary Ann", "female")
 ELLIOT_MILLER = Speaker("Elliot Miller", "male")
 ELIZABETH_KLETT = Speaker("Elizabeth Klett", "female")
 
-THE_SEA_FAIRIES = Book(JUDY_BIEBER, "the_sea_fairies")
-THE_MASTER_KEY = Book(JUDY_BIEBER, "the_master_key")
-RINKITINK_IN_OZ = Book(JUDY_BIEBER, "rinkitink_in_oz")
-DOROTHY_AND_WIZARD_OZ = Book(JUDY_BIEBER, "dorothy_and_wizard_oz")
-SKY_ISLAND = Book(JUDY_BIEBER, "sky_island")
-OZMA_OF_OZ = Book(JUDY_BIEBER, "ozma_of_oz")
-EMERALD_CITY_OF_OZ = Book(JUDY_BIEBER, "emerald_city_of_oz")
+THE_SEA_FAIRIES = Book(US_DATASET, JUDY_BIEBER, "the_sea_fairies")
+THE_MASTER_KEY = Book(US_DATASET, JUDY_BIEBER, "the_master_key")
+RINKITINK_IN_OZ = Book(US_DATASET, JUDY_BIEBER, "rinkitink_in_oz")
+DOROTHY_AND_WIZARD_OZ = Book(US_DATASET, JUDY_BIEBER, "dorothy_and_wizard_oz")
+SKY_ISLAND = Book(US_DATASET, JUDY_BIEBER, "sky_island")
+OZMA_OF_OZ = Book(US_DATASET, JUDY_BIEBER, "ozma_of_oz")
+EMERALD_CITY_OF_OZ = Book(US_DATASET, JUDY_BIEBER, "emerald_city_of_oz")
 
-MIDNIGHT_PASSENGER = Book(MARY_ANN, "midnight_passenger")
-NORTH_AND_SOUTH = Book(MARY_ANN, "northandsouth")
+MIDNIGHT_PASSENGER = Book(US_DATASET, MARY_ANN, "midnight_passenger")
+NORTH_AND_SOUTH = Book(US_DATASET, MARY_ANN, "northandsouth")
 
-PIRATES_OF_ERSATZ = Book(ELLIOT_MILLER, "pirates_of_ersatz")
-POISONED_PEN = Book(ELLIOT_MILLER, "poisoned_pen")
-SILENT_BULLET = Book(ELLIOT_MILLER, "silent_bullet")
-HUNTERS_SPACE = Book(ELLIOT_MILLER, "hunters_space")
-PINK_FAIRY_BOOK = Book(ELLIOT_MILLER, "pink_fairy_book")
+PIRATES_OF_ERSATZ = Book(US_DATASET, ELLIOT_MILLER, "pirates_of_ersatz")
+POISONED_PEN = Book(US_DATASET, ELLIOT_MILLER, "poisoned_pen")
+SILENT_BULLET = Book(US_DATASET, ELLIOT_MILLER, "silent_bullet")
+HUNTERS_SPACE = Book(US_DATASET, ELLIOT_MILLER, "hunters_space")
+PINK_FAIRY_BOOK = Book(US_DATASET, ELLIOT_MILLER, "pink_fairy_book")
 
-JANE_EYRE = Book(ELIZABETH_KLETT, "jane_eyre")
-WIVES_AND_DAUGHTERS = Book(ELIZABETH_KLETT, "wives_and_daughters")
+JANE_EYRE = Book(UK_DATASET, ELIZABETH_KLETT, "jane_eyre")
+WIVES_AND_DAUGHTERS = Book(UK_DATASET, ELIZABETH_KLETT, "wives_and_daughters")
+
+BOOKS = [v for v in locals().values() if isinstance(v, Book)]
+JUDY_BIEBER_BOOKS = [b for b in BOOKS if b.speaker == JUDY_BIEBER]
+MARY_ANN_BOOKS = [b for b in BOOKS if b.speaker == MARY_ANN]
+ELLIOT_MILLER_BOOKS = [b for b in BOOKS if b.speaker == ELLIOT_MILLER]
+ELIZABETH_KLETT_BOOKS = [b for b in BOOKS if b.speaker == ELIZABETH_KLETT]
+UK_BOOKS = [b for b in BOOKS if b.dataset == UK_DATASET]
+US_BOOKS = [b for b in BOOKS if b.dataset == US_DATASET]
 
 
-def m_ailabs_en_us_judy_bieber_speech_dataset(
-    *args,
-    books=[
-        THE_SEA_FAIRIES,
-        THE_MASTER_KEY,
-        RINKITINK_IN_OZ,
-        DOROTHY_AND_WIZARD_OZ,
-        SKY_ISLAND,
-        OZMA_OF_OZ,
-        EMERALD_CITY_OF_OZ,
-    ],
-):
+def m_ailabs_en_us_judy_bieber_speech_dataset(*args, books=JUDY_BIEBER_BOOKS):
     return m_ailabs_en_us_speech_dataset(*args, books=books)  # type: ignore
 
 
-def m_ailabs_en_us_mary_ann_speech_dataset(*args, books=[MIDNIGHT_PASSENGER, NORTH_AND_SOUTH]):
+def m_ailabs_en_us_mary_ann_speech_dataset(*args, books=MARY_ANN_BOOKS):
     return m_ailabs_en_us_speech_dataset(*args, books=books)  # type: ignore
 
 
-def m_ailabs_en_us_elliot_miller_speech_dataset(
-    *args,
-    books=[PIRATES_OF_ERSATZ, POISONED_PEN, SILENT_BULLET, HUNTERS_SPACE, PINK_FAIRY_BOOK],
-):
+def m_ailabs_en_us_elliot_miller_speech_dataset(*args, books=ELLIOT_MILLER_BOOKS):
     return m_ailabs_en_us_speech_dataset(*args, books=books)  # type: ignore
 
 
-def m_ailabs_en_uk_elizabeth_klett_speech_dataset(*args, books=[JANE_EYRE, JANE_EYRE]):
+def m_ailabs_en_uk_elizabeth_klett_speech_dataset(*args, books=ELIZABETH_KLETT_BOOKS):
     return m_ailabs_en_us_speech_dataset(*args, books=books)  # type: ignore
 
 
 def m_ailabs_en_us_speech_dataset(
     directory,
     url="http://www.caito.de/data/Training/stt_tts/en_US.tgz",
-    check_files=["en_US/by_book/info.txt"],
-    extracted_name="en_US",
-    books=[
-        THE_SEA_FAIRIES,
-        THE_MASTER_KEY,
-        RINKITINK_IN_OZ,
-        DOROTHY_AND_WIZARD_OZ,
-        SKY_ISLAND,
-        OZMA_OF_OZ,
-        EMERALD_CITY_OF_OZ,
-        MIDNIGHT_PASSENGER,
-        NORTH_AND_SOUTH,
-        PIRATES_OF_ERSATZ,
-        POISONED_PEN,
-        SILENT_BULLET,
-        HUNTERS_SPACE,
-        PINK_FAIRY_BOOK,
-    ],
+    extracted_name=str(US_DATASET),
+    books=US_BOOKS,
     **kwargs,
 ):
     """Download, extract, and process the M-AILABS `en_US` dataset.
@@ -132,15 +106,14 @@ def m_ailabs_en_us_speech_dataset(
     NOTE: Based on 100 clips from the M-AILABS dataset, around 10% of the clips would end too early.
     Furthermore, it seemed like the text was verbalized accuractely.
     """
-    return _m_ailabs_speech_dataset(directory, extracted_name, url, check_files, books, **kwargs)
+    return _m_ailabs_speech_dataset(directory, extracted_name, url, books, **kwargs)
 
 
 def m_ailabs_en_uk_speech_dataset(
     directory,
     url="http://www.caito.de/data/Training/stt_tts/en_UK.tgz",
-    check_files=["en_UK/by_book/info.txt"],
-    extracted_name="en_UK",
-    books=[JANE_EYRE, WIVES_AND_DAUGHTERS],
+    extracted_name=str(UK_DATASET),
+    books=UK_BOOKS,
     **kwargs,
 ):
     """Download, extract, and process the M-AILABS `en_UK` dataset.
@@ -148,24 +121,33 @@ def m_ailabs_en_uk_speech_dataset(
     The dataset is 4GB compressed. The file to be downloaded is called `en_US.tgz`. It contains
     45 hours of audio. When extracted, it creates a list of 2 books.
     """
-    return _m_ailabs_speech_dataset(directory, extracted_name, url, check_files, books, **kwargs)
+    return _m_ailabs_speech_dataset(directory, extracted_name, url, books, **kwargs)
+
+
+def _book_to_metdata_path(book: Book, root: Path) -> Path:
+    """Given a book of `Book` type, returns the relative path to its "metadata.csv" file."""
+    name = book.speaker.name.lower().replace(" ", "_")
+    assert book.speaker.gender is not None
+    gender = book.speaker.gender.lower()
+    return root / "by_book" / gender / name / book.title / "metadata.csv"
+
+
+def _metadata_path_to_book(metadata_path: Path, root: Path) -> Book:
+    """Given a path to a book's "metadata.csv", returns the corresponding `Book` object."""
+    # EXAMPLE: "by_book/female/judy_bieber/dorothy_and_wizard_oz/metadata.csv"
+    metadata_path = metadata_path.relative_to(root)
+    speaker_gender, speaker_name, book_title = metadata_path.parts[1:4]
+    speaker = Speaker(speaker_name.replace("_", " ").title(), speaker_gender.lower())
+    return Book(Dataset(root.name), speaker, book_title)
 
 
 def _m_ailabs_speech_dataset(
-    directory: typing.Union[str, Path],
+    directory: Path,
     extracted_name: str,
     url: str,
-    check_files: typing.List[str],
     books: typing.List[Book],
     root_directory_name: str = "M-AILABS",
     metadata_pattern: str = "**/metadata.csv",
-    metadata_path_column: str = "metadata_path",
-    metadata_audio_column: typing.Union[str, int] = 0,
-    metadata_audio_path: str = "wavs/{}.wav",
-    metadata_text_column: typing.Union[str, int] = 2,
-    metadata_quoting: int = csv.QUOTE_NONE,
-    metadata_delimiter: str = "|",
-    metadata_header: typing.Optional[bool] = None,
 ) -> typing.List[Example]:
     """Download, extract, and process a M-AILABS dataset.
 
@@ -176,101 +158,26 @@ def _m_ailabs_speech_dataset(
         directory: Directory to cache the dataset.
         extracted_name: Name of the extracted dataset directory.
         url: URL of the dataset `tar.gz` file.
-        check_files: These file(s) should exist if the download was successful.
         books: List of books to load.
         root_directory_name: Name of the dataset directory.
         metadata_pattern: Pattern for all `metadata.csv` files containing (filename, text)
             information.
-        metadata_path_column: Column name to store the metadata path.
-        metadata_audio_column: Column name or index with the audio filename.
-        metadata_audio_path: Given the audio column, this template determines the filename.
-        metadata_text_column: Column name or index with the audio transcript.
-        metadata_quoting: Control field quoting behavior per `csv.QUOTE_*` constants for the
-            metadata file.
-        metadata_delimiter: Delimiter for the metadata file.
-        metadata_header: If `True`, `metadata_file` has a header to parse.
-
-    Returns: List of voice-over examples in the dataset.
     """
-    logger.info("Loading `M-AILABS %s` speech dataset", extracted_name)
-    directory = Path(directory) / root_directory_name
+    logger.info('Loading "M-AILABS %s" speech dataset...', extracted_name)
+    directory = directory / root_directory_name
     directory.mkdir(exist_ok=True)
-    download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
+    download_file_maybe_extract(url=url, directory=str(directory))
+    directory = directory / extracted_name
 
-    # NOTE: This makes sure that the download succeeds by checking against defined books in `books`.
-    metadata_paths = list((directory / extracted_name).glob(metadata_pattern))
-    downloaded_books = set([_path_to_book(path, directory=directory) for path in metadata_paths])
-    assert len(set(books) - downloaded_books) == 0
+    metadata_paths = list(directory.glob(metadata_pattern))
+    downloaded_books = set([_metadata_path_to_book(p, directory) for p in metadata_paths])
+    assert len(set(books) - downloaded_books) == 0, "Unable to find every book in `books`."
 
-    generator = _read_m_ailabs_data(
-        books,
-        directory,
-        extracted_name,
-        metadata_path_column,
-        quoting=metadata_quoting,
-        header=metadata_header,
-        delimiter=metadata_delimiter,
-    )
-    data = list(generator)
-    _get_audio_path = lambda r: Path(
-        r[metadata_path_column].parent,
-        metadata_audio_path.format(r[metadata_audio_column]),  # type: ignore
-    )
-    audio_paths = [_get_audio_path(r) for r in data]
-    audio_metadatas = lib.audio.get_audio_metadata(audio_paths)
-    texts = [r[metadata_text_column].strip() for r in data]  # type: ignore
-    books = [_path_to_book(r[metadata_path_column], directory=directory) for r in data]
-    iterator = zip(audio_paths, audio_metadatas, texts, books)
-    return [
-        Example(
-            audio_path=audio_path,
-            speaker=book.speaker,
-            alignments=(lib.datasets.Alignment((0, len(text)), (0.0, audio_metadata.length)),),
-            text=text,
-            metadata={"book": book},
-        )
-        for audio_path, audio_metadata, text, book in iterator
-    ]
-
-
-def _book_to_path(book: Book, directory: Path, extracted_name: str) -> Path:
-    """Given a book of `Book` type, returns the relative path to its metadata.csv file."""
-    name = book.speaker.name.lower().replace(" ", "_")
-    assert book.speaker.gender is not None
-    gender = book.speaker.gender.lower()
-    return directory / extracted_name / "by_book" / gender / name / book.title / "metadata.csv"
-
-
-def _path_to_book(metadata_path: Path, directory: Path) -> Book:
-    """Given a path to a book's metadata.csv, returns the corresponding `Book` object."""
-    # EXAMPLE: "en_US/by_book/female/judy_bieber/dorothy_and_wizard_oz/metadata.csv"
-    metadata_path = metadata_path.relative_to(directory)
-    speaker_gender, speaker_name, book_title = metadata_path.parts[2:5]
-    speaker = Speaker(speaker_name.replace("_", " ").title(), speaker_gender.lower())
-    return Book(speaker, book_title)
-
-
-def _book_to_data(
-    book: Book, directory: Path, extracted_name: str, metadata_path_column: str, **kwargs
-) -> typing.Iterator[typing.Dict]:
-    """Given a book, yield pairs of (text, audio_path) for that book.
-
-    Args:
-        book
-        directory: Directory that M-AILABS was downloaded.
-        extracted_name: Name of the extracted dataset directory.
-        metadata_path_column: Column name to store the metadata_path.
-    """
-    metadata_path = _book_to_path(book, directory=directory, extracted_name=extracted_name)
-    if os.stat(str(metadata_path)).st_size == 0:
-        logger.warning("%s is empty, skipping for now", str(metadata_path))
-        yield from []
-    else:
-        data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(metadata_path, **kwargs))
-        data_frame[metadata_path_column] = metadata_path
-        yield from (row.to_dict() for _, row in data_frame.iterrows())
-
-
-def _read_m_ailabs_data(books: typing.List[Book], *args, **kwargs) -> typing.Iterator[typing.Dict]:
+    examples = []
     for book in books:
-        yield from _book_to_data(book, *args, **kwargs)
+        metadata_path = _book_to_metdata_path(book, directory)
+        loaded = conventional_dataset_loader(
+            metadata_path.parent, book.speaker, additional_metadata={"book": book}
+        )
+        examples.extend(loaded)
+    return examples

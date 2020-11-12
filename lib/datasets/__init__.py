@@ -18,8 +18,8 @@ from lib.datasets.utils import (
     Example,
     Span,
     Speaker,
+    conventional_dataset_loader,
     dataset_loader,
-    precut_dataset_loader,
     span_generator,
 )
 
@@ -32,6 +32,7 @@ HILARY_NORIEGA = Speaker("Hilary Noriega")
 ALICIA_HARRIS = Speaker("Alicia Harris")
 MARK_ATHERLAY = Speaker("Mark Atherlay")
 SAM_SCHOLL = Speaker("Sam Scholl")
+DataLoader = typing.Callable[[Path], typing.List[Example]]
 
 
 def hilary_noriega_speech_dataset(*args, **kwargs) -> typing.List[Example]:
@@ -53,10 +54,11 @@ __all__ = [
     "Speaker",
     "Example",
     "Span",
+    "DataLoader",
     "Alignment",
     "span_generator",
     "dataset_loader",
-    "precut_dataset_loader",
+    "conventional_dataset_loader",
     "lj_speech_dataset",
     "m_ailabs",
     "m_ailabs_en_us_judy_bieber_speech_dataset",

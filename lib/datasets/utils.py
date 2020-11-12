@@ -1,7 +1,9 @@
+import csv
 import dataclasses
 import functools
 import json
 import logging
+import os
 import pathlib
 import pprint
 import random
@@ -13,7 +15,6 @@ from pathlib import Path
 
 import torch
 from third_party import LazyLoader
-from torchnlp.download import download_file_maybe_extract
 
 import lib
 
@@ -30,12 +31,14 @@ class Alignment(typing.NamedTuple):
     """An aligned `text` and `audio` slice.
 
     Args:
-        text: The start and end of a slice of text in characters.
-        audio: The start and end of a slice of audio in seconds.
+        script: The start and end of a script slice in characters.
+        audio: The start and end of a audio recording slice in seconds.
+        transcript: The start and end of a trasnscript slice in characters.
     """
 
-    text: typing.Tuple[int, int]
+    script: typing.Tuple[int, int]
     audio: typing.Tuple[float, float]
+    transcript: typing.Tuple[int, int]
 
 
 class Speaker(typing.NamedTuple):
@@ -50,21 +53,23 @@ read_audio = functools.lru_cache(maxsize=None)(lib.audio.read_audio)
 
 @dataclasses.dataclass(frozen=True)
 class Example:
-    """Given a script (`text`), this is an `Example` voice-over stored at the `audio_path`.
+    """Given a `script`, this is an `Example` voice-over stored at `audio_path`.
 
     Args:
-        alignments: List of alignments between `text` and `audio_path`.
-        text: The text read in `audio_path`.
-        audio_path: A voice over of the `text.`
-        speaker: The voice.
-        metadata: Additional metadata associated with this example.
+        audio_path: A voice-over of the `script`.
+        speaker: An identifier of the voice.
+        script: The `script` the `speaker` was reading from.
+        transcript: The `transcript` of the `audio`.
+        alignments: Alignments that align the `script`, `transcript` and `audio`.
+        other_metadata: Additional metadata associated with this example.
     """
 
     audio_path: Path
     speaker: Speaker
+    script: str
+    transcript: str
     alignments: typing.Tuple[Alignment, ...]
-    text: str
-    metadata: typing.Dict
+    other_metadata: typing.Dict
 
     @property
     def audio(self):
@@ -73,59 +78,60 @@ class Example:
 
 @dataclasses.dataclass(frozen=True)
 class Span:
-    """Span of `text` and voice-over sliced from `example`.
+    """A span of voice-over derived from `example`.
 
     Args:
-        example: Example voice-over of a script.
-        slice: The start and end of an `alignments` span.
+        example: This is a `slice` of the `example` voice-over.
+        slice: The start and end of an `alignments` slice.
+        script: A span of text within `script`.
+        transcript: A span of text within `transcript`.
+        alignments: A span of alignments that align the `script`, `transcript` and `audio`.
         ...
     """
 
     example: Example
     slice: typing.Tuple[int, int]
-    alignments_slice: typing.Tuple[Alignment, ...] = dataclasses.field(init=False)
+    script: str = dataclasses.field(init=False)
+    transcript: str = dataclasses.field(init=False)
+    alignments: typing.Tuple[Alignment, ...] = dataclasses.field(init=False)
+    audio_length: float = dataclasses.field(init=False)
     speaker: Speaker = dataclasses.field(init=False)
     audio_path: Path = dataclasses.field(init=False)
-    metadata: typing.Dict = dataclasses.field(init=False)
-    text: str = dataclasses.field(init=False)
-    audio_length: float = dataclasses.field(init=False)
-    alignments: typing.Tuple[Alignment, ...] = dataclasses.field(init=False)
+    other_metadata: typing.Dict = dataclasses.field(init=False)
 
     def __post_init__(self):
         assert self.slice[1] - self.slice[0], "Cannot create `Span` without any `Alignments`."
+
         # Learn more about using `__setattr__`:
         # https://stackoverflow.com/questions/53756788/how-to-set-the-value-of-dataclass-field-in-post-init-when-frozen-true
         set = object.__setattr__
         set(self, "speaker", self.example.speaker)
         set(self, "audio_path", self.example.audio_path)
-        set(self, "metadata", self.example.metadata)
-        set(self, "alignments_slice", self.example.alignments[slice(*self.slice)])
-        text_slice = slice(self.alignments_slice[0].text[0], self.alignments_slice[-1].text[-1])
-        set(self, "text", self.example.text[text_slice])
-        audio_length = self.alignments_slice[-1].audio[-1] - self.alignments_slice[0].audio[0]
-        set(self, "audio_length", audio_length)
-        set(self, "alignments", self._get_alignments())
+        set(self, "other_metadata", self.example.other_metadata)
 
-    def _get_alignments(self) -> typing.Tuple[Alignment, ...]:
-        subtract = lambda t, o: (t[0] - o, t[1] - o)
-        first = self.alignments_slice[0]
-        alignments = [
-            Alignment(subtract(a.text, first.text[0]), subtract(a.audio, first.audio[0]))
-            for a in self.alignments_slice
-        ]
-        return tuple(alignments)
+        slice_ = self.example.alignments[slice(*self.slice)]
+        script = self.example.script[slice_[0].script[0] : slice_[-1].script[-1]]
+        audio_length = slice_[-1].audio[-1] - slice_[0].audio[0]
+        transcript = self.example.transcript[slice_[0].transcript[0] : slice_[-1].transcript[-1]]
+        subtract = lambda a, b: tuple([a[0] - b[0], a[1] - b[0]])
+        alignments = [tuple([subtract(a, b) for a, b in zip(a, slice_[0])]) for a in slice_]
+
+        set(self, "script", script)
+        set(self, "audio_length", audio_length)
+        set(self, "transcript", transcript)
+        set(self, "alignments", tuple([Alignment(*a) for a in alignments]))  # type: ignore
 
     @property
     def audio(self):
-        start = self.alignments_slice[0].audio[0]
+        start = self.example.alignments[slice(*self.slice)][0].audio[0]
         return read_audio_slice(self.example.audio_path, start, self.audio_length)
 
 
-def _overlap(start: float, end: float, other_start: float, other_end: float) -> float:
-    """ Get the percentage overlap. """
-    if other_end == other_start:
-        return 1.0 if other_start >= start and other_end <= end else 0.0
-    return (min(end, other_end) - max(start, other_start)) / (other_end - other_start)
+def _overlap(slice: typing.Tuple[float, float], other: typing.Tuple[float, float]) -> float:
+    """ Get the percentage overlap between `slice` and `other` slice. """
+    if other[-1] == other[0]:
+        return 1.0 if other[0] >= slice[0] and other[-1] <= slice[1] else 0.0
+    return (min(slice[1], other[-1]) - max(slice[0], other[0])) / (other[-1] - other[0])
 
 
 def span_generator(data: typing.List[Example], max_seconds: float) -> typing.Iterator[Span]:
@@ -188,8 +194,8 @@ def span_generator(data: typing.List[Example], max_seconds: float) -> typing.Ite
         get = lambda i: example.alignments[i].audio
         random_ = lru_cache(maxsize=None)(lambda i: random.random())
         bounds = (
-            next((i for i in part if _overlap(start, end, *get(i)) >= random_(i)), None),
-            next((i for i in reversed(part) if _overlap(start, end, *get(i)) >= random_(i)), None),
+            next((i for i in part if _overlap((start, end), get(i)) >= random_(i)), None),
+            next((i for i in reversed(part) if _overlap((start, end), get(i)) >= random_(i)), None),
         )
         if (
             bounds[0] is not None
@@ -269,47 +275,44 @@ def dataset_loader(
     iterator = typing.cast(typing.Iterator[typing.Tuple[pathlib.Path, ...]], zip(*tuple(files)))
     for alignment_file_path, recording_file_path, script_file_path in iterator:
         scripts = pandas.read_csv(str(script_file_path.absolute()))
-        script_alignments: typing.List[typing.List[typing.List[typing.List[float]]]]
-        script_alignments = json.loads(alignment_file_path.read_text())
+        json_ = json.loads(alignment_file_path.read_text())
+
         error = f"Each script ({script_file_path}) must have an alignment ({alignment_file_path})."
-        assert len(scripts) == len(script_alignments), error
-        for (_, script), alignments in zip(scripts.iterrows(), script_alignments):
-            alignments_ = [
-                Alignment((int(a[0][0]), int(a[0][1])), (a[1][0], a[1][1])) for a in alignments
-            ]
+        assert len(scripts) == len(json_["alignments"]), error
+
+        for (_, script), alignments in zip(scripts.iterrows(), json_["alignments"]):
+            args = [tuple([tuple(s) for s in a]) for a in alignments]
             example = Example(
                 audio_path=recording_file_path,
                 speaker=speaker,
-                alignments=tuple(alignments_),
-                text=script[text_column],
-                metadata={k: v for k, v in script.items() if k not in (text_column,)},
+                script=script[text_column],
+                transcript=json_["transcript"],
+                alignments=tuple([Alignment(*tuple(a)) for a in args]),  # type: ignore
+                other_metadata={k: v for k, v in script.items() if k not in (text_column,)},
             )
             examples.append(example)
 
     return examples
 
 
-def precut_dataset_loader(
+def conventional_dataset_loader(
     directory: Path,
-    root_directory_name: str,
-    url: str,
     speaker: Speaker,
-    url_filename: typing.Optional[str] = None,
-    check_files: typing.List[str] = ["{metadata_filename}"],
-    metadata_filename: str = "{directory}/{root_directory_name}/metadata.csv",
-    metadata_text_column: typing.Union[str, int] = "Content",
-    metadata_audio_column: typing.Union[str, int] = "WAV Filename",
-    metadata_audio_path: str = (
-        "{directory}/{root_directory_name}/wavs/{metadata_audio_column_value}"
-    ),
-    **kwargs,
+    metadata_path_template: str = "{directory}/metadata.csv",
+    metadata_audio_column: typing.Union[str, int] = 0,
+    metadata_text_column: typing.Union[str, int] = 2,
+    metadata_quoting: int = csv.QUOTE_NONE,
+    metadata_delimiter: str = "|",
+    metadata_header: typing.Optional[bool] = None,
+    audio_path_template: str = "{directory}/wavs/{file_name}.wav",
+    additional_metadata: typing.Dict = {},
 ) -> typing.List[Example]:
-    """Load a precut speech dataset.
+    """Load a conventional speech dataset.
 
-    A precut speech dataset has these invariants:
+    A conventional speech dataset has these invariants:
         - The dataset has already been segmented, and the segments have been audited.
         - The file structure is similar to:
-            {root_directory_name}/
+            {directory}/
                 metadata.csv
                 wavs/
                     audio1.wav
@@ -319,58 +322,42 @@ def precut_dataset_loader(
         - The dataset is stored in a `tar` or `zip` at some url.
 
     Args:
-        directory: Directory to cache the dataset.
-        root_directory_name: Name of the directory inside `directory` to store data.
-        url: URL of the dataset file.
+        directory: Directory the dataset is stored in.
         speaker: The dataset speaker.
-        url_filename: Name of the file downloaded; Otherwise, a filename is extracted from the url.
-        check_files: The download is considered successful, if these files exist.
-        metadata_filename: The filename for the metadata file.
-        metadata_text_column: Column name or index with the audio transcript.
-        metadata_audio_column: Column name or index with the audio filename.
-        metadata_audio_path: String template for the audio path given the `metadata_audio_column`
-            value.
-        **kwargs: Key word arguments passed to `pandas.read_csv`.
-
-    Returns: List of voice-over examples in the dataset.
+        metadata_path_template: A template specifying the location of the metadata file.
+        metadata_audio_column: The column name or index with the audio filename.
+        metadata_text_column: The column name or index with the audio transcript.
+        metadata_quoting
+        metadata_delimiter: The metadata file column delimiter.
+        metadata_header
+        audio_path_template: A template specifying the location of an audio file.
+        other_metadata: Additional metadata to include along with the returned examples.
     """
-    logger.info("Loading `%s` speech dataset", root_directory_name)
-
-    directory = Path(directory)
-    metadata_filename = metadata_filename.format(
-        directory=directory, root_directory_name=root_directory_name
+    metadata_path = Path(metadata_path_template.format(directory=directory))
+    if os.stat(str(metadata_path)).st_size == 0:
+        return []
+    df = pandas.read_csv(  # type: ignore
+        metadata_path,
+        delimiter=metadata_delimiter,
+        header=metadata_header,
+        quoting=metadata_quoting,
     )
-    check_files = [f.format(metadata_filename=metadata_filename) for f in check_files]
-    check_files = [str(Path(f).absolute()) for f in check_files]
-    download_file_maybe_extract(
-        url=url,
-        directory=str(directory.absolute()),
-        check_files=check_files,
-        filename=url_filename,
-    )
-
-    data_frame = pandas.read_csv(Path(metadata_filename), **kwargs)
-    _get_audio_path = lambda r: Path(
-        metadata_audio_path.format(
-            directory=directory,
-            root_directory_name=root_directory_name,
-            metadata_audio_column_value=r[metadata_audio_column],
-        )
-    )
-    audio_paths = [_get_audio_path(r) for _, r in data_frame.iterrows()]
-    audio_metadatas = lib.audio.get_audio_metadata(audio_paths)
-    texts = [r[metadata_text_column] for _, r in data_frame.iterrows()]
-    _get_metadata = lambda r: {
-        k: v for k, v in r.items() if k not in [metadata_text_column, metadata_audio_column]
-    }
-    iterator = zip(audio_paths, audio_metadatas, texts, data_frame.iterrows())
+    audio_paths = [
+        Path(audio_path_template.format(directory=directory, file_name=r[metadata_audio_column]))
+        for _, r in df.iterrows()
+    ]
+    handled_columns = [metadata_text_column, metadata_audio_column]
+    _get_other_metadata = lambda r: {k: v for k, v in r.items() if k not in handled_columns}
+    _get_alignments = lambda s, l: (Alignment((0, len(s)), (0.0, l), (0, len(s))),)
+    iterator = zip(audio_paths, lib.audio.get_audio_metadata(audio_paths), df.iterrows())
     return [
         Example(
             audio_path=audio_path,
             speaker=speaker,
-            alignments=(Alignment((0, len(text)), (0.0, audio_metadata.length)),),
-            text=text,
-            metadata=_get_metadata(row),
+            script=row[metadata_text_column].strip(),
+            transcript=row[metadata_text_column].strip(),
+            alignments=_get_alignments(row[metadata_text_column].strip(), audio_metadata.length),
+            other_metadata={**_get_other_metadata(row), **additional_metadata},
         )
-        for audio_path, audio_metadata, text, (_, row) in iterator
+        for audio_path, audio_metadata, (_, row) in iterator
     ]
