@@ -79,6 +79,7 @@ def test_normalize_audio():
     num_channels = 2
     ffmpeg_encoding = "pcm_s16le"
     sox_encoding = "16-bit Signed Integer PCM"
+    suffix = ".wav"
     with tempfile.TemporaryDirectory() as path:
         directory = pathlib.Path(path)
         audio_path = directory / TEST_DATA_LJ.name
@@ -93,6 +94,7 @@ def test_normalize_audio():
         dataset = {lib.datasets.LINDA_JOHNSON: [example]}
         run._utils.normalize_audio(
             dataset,
+            suffix=suffix,
             encoding=ffmpeg_encoding,
             sample_rate=sample_rate,
             num_channels=num_channels,
