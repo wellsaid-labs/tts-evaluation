@@ -125,16 +125,33 @@ def get_audio_metadata(
     return return_
 
 
+def clip_waveform(waveform: np.ndarray):
+    """Clip audio at the maximum and minimum amplitude.
+
+    TODO: In SoX, they implemented `--guard`, which: "Automatically invoke the gain effect to guard
+    against clipping". We could do the same.
+
+    NOTE: Clipping will cause distortion to the waveform, learn more:
+    https://en.wikipedia.org/wiki/Clipping_(audio)
+    """
+    num_clipped_samples = (waveform < -1).sum() + (waveform > 1).sum()
+    if num_clipped_samples > 0:
+        logger.warning("%d samples clipped.", num_clipped_samples)
+    return np.clip(waveform, -1.0, 1.0)
+
+
 def read_audio(path: Path) -> np.ndarray:
     """Read an audio file slice into a `np.float32` array.
 
     NOTE: Audio files with multiple channels will be mixed into a mono channel.
+    NOTE: `ffmpeg` may load audio that's not clipped.
     """
     command = f"ffmpeg -i {path} -f f32le -acodec pcm_f32le -ac 1 pipe:"
-    return np.frombuffer(
+    ndarray = np.frombuffer(
         subprocess.check_output(command.split(), stderr=subprocess.DEVNULL),
         np.float32,  # type: ignore
     )
+    return clip_waveform(ndarray)
 
 
 def read_audio_slice(path: Path, start: float, length: float) -> np.ndarray:
@@ -150,10 +167,11 @@ def read_audio_slice(path: Path, start: float, length: float) -> np.ndarray:
         length: The length of the audio segment.
     """
     command = f"ffmpeg -ss {start} -i {path} -to {length} -f f32le -acodec pcm_f32le -ac 1 pipe:"
-    return np.frombuffer(
+    ndarray = np.frombuffer(
         subprocess.check_output(command.split(), stderr=subprocess.DEVNULL),
         np.float32,  # type: ignore
     )
+    return clip_waveform(ndarray)
 
 
 @configurable
@@ -931,10 +949,7 @@ def griffin_lim(
         )
         # NOTE: Pad to ensure spectrogram and waveform align.
         waveform = np.pad(waveform, int(frame_hop // 2), mode="constant", constant_values=0)
-        large_values = (waveform < -1).sum() + (waveform > 1).sum()
-        if large_values > 0:
-            logger.warning("Griffin-lim waveform clipped %d samples.", large_values)
-        return np.clip(waveform, -1, 1).astype(np.float32)  # type: ignore
+        return clip_waveform(waveform).astype(np.float32)  # type: ignore
     except Exception:
         logger.exception("Griffin-lim encountered an issue and was unable to render audio.")
         # NOTE: Return no audio for valid inputs that fail due to an overflow error or a small
