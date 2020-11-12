@@ -426,13 +426,14 @@ def configure():
 def _include_example(example: datasets.Example) -> bool:
     """Return `True` iff `example` should be included in the dataset."""
     alignments = example.alignments
+    example_string = example.to_string("audio_path", "script", "other_metadata")
     if len(alignments) == 0 or alignments[0].audio[0] == alignments[-1].audio[-1]:
-        logger.warning("Example has little to no alignments: %s", alignments)
+        logger.warning("Example has little to no alignments: %s", example_string)
         return False
 
     text = example.script[alignments[0].script[0] : alignments[-1].script[-1]]
     if len(text) == 0:
-        logger.warning("Example has no text: %s", example)
+        logger.warning("Example has no text: %s", example_string)
         return False
 
     if not example.audio_path.exists() or not example.audio_path.is_file():

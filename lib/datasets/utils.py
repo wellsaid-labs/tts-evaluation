@@ -75,6 +75,10 @@ class Example:
     def audio(self):
         return read_audio(self.audio_path)
 
+    def to_string(self, *fields):
+        values = ", ".join(f"{f}={getattr(self, f)}" for f in fields)
+        return f"Example({values})"
+
 
 @dataclasses.dataclass(frozen=True)
 class Span:
@@ -125,6 +129,10 @@ class Span:
     def audio(self):
         start = self.example.alignments[slice(*self.slice)][0].audio[0]
         return read_audio_slice(self.example.audio_path, start, self.audio_length)
+
+    def to_string(self, *fields):
+        values = ", ".join(f"{f}={getattr(self, f)}" for f in fields)
+        return f"Example({values})"
 
 
 def _overlap(slice: typing.Tuple[float, float], other: typing.Tuple[float, float]) -> float:
