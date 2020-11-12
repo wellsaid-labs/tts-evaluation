@@ -50,16 +50,20 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata):
         shutil.copy(archive, directory / archive.name)
         data = lib.datasets.lj_speech_dataset(directory=directory)
         assert len(data) == 13100
-        assert sum([len(r.text) for r in data]) == 1310332
+        assert sum([len(r.script) for r in data]) == 1310332
         assert data[0] == lib.datasets.Example(
             audio_path=directory / "LJSpeech-1.1/wavs/LJ001-0001.wav",
             speaker=lib.datasets.LINDA_JOHNSON,
-            alignments=(lib.datasets.Alignment(text=(0, 151), audio=(0.0, 0)),),
-            text=(
+            script=(
                 "Printing, in the only sense with which we are at present concerned, differs "
                 "from most if not from all the arts and crafts represented in the Exhibition"
             ),
-            metadata={
+            transcript=(
+                "Printing, in the only sense with which we are at present concerned, differs "
+                "from most if not from all the arts and crafts represented in the Exhibition"
+            ),
+            alignments=(lib.datasets.Alignment((0, 151), (0.0, 0), (0, 151)),),
+            other_metadata={
                 2: (  # type: ignore
                     "Printing, in the only sense with which we are at present concerned, differs "
                     "from most if not from all the arts and crafts represented in the Exhibition"
@@ -75,5 +79,5 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata):
             assert _re_filename.match(basename)
             if basename in verbalize_test_cases:
                 seen += 1
-                assert verbalize_test_cases[basename] in row.text
+                assert verbalize_test_cases[basename] in row.script
         assert seen == len(verbalize_test_cases)
