@@ -230,7 +230,7 @@ class SpectrogramModelSpan(typing.NamedTuple):
     speed: torch.Tensor  # torch.FloatTensor [num_characters]
     speed_mask: torch.Tensor  # torch.BoolTensor [num_characters]
     alignments: typing.Tuple[lib.datasets.Alignment, ...]
-    metadata: typing.Dict[typing.Union[str, int], typing.Any]
+    other_metadata: typing.Dict[typing.Union[str, int], typing.Any]
 
 
 def _get_normalized_half_gaussian(length: int, standard_deviation: float) -> torch.Tensor:
@@ -266,28 +266,30 @@ def _random_nonoverlapping_alignments(
         alignments
         max_alignments: The maximum number of alignments to generate.
     """
-    bounds = flatten([[(a.text[0], a.audio[0]), (a.text[-1], a.audio[-1])] for a in alignments])
+    get_ = lambda a, i: tuple([getattr(a, f)[i] for f in lib.datasets.Alignment._fields])
+    # NOTE: Each of these is a synchronization point along which we can match up the script
+    # character, transcript character, and audio sample. We can use any of these points for
+    # cutting.
+    bounds = flatten([[get_(a, 0), get_(a, -1)] for a in alignments])
     num_cuts = random.randint(0, int(lib.utils.clamp(max_alignments, min_=0, max_=len(bounds) - 1)))
 
     if num_cuts == 0:
         return tuple()
 
     if num_cuts == 1:
-        alignment = lib.datasets.Alignment(
-            (bounds[0][0], bounds[-1][0]), (bounds[0][1], bounds[-1][1])
-        )
+        tuple_ = lambda i: (bounds[0][i], bounds[-1][i])
+        alignment = lib.datasets.Alignment(tuple_(0), tuple_(1), tuple_(2))
         return tuple([alignment]) if random.choice((True, False)) else tuple()
 
     # NOTE: Functionally, this is similar to a 50% dropout on intervals.
     # NOTE: Each alignment is expected to be included half of the time.
     intervals = bounds[:1] + random.sample(bounds[1:-1], num_cuts - 1) + bounds[-1:]
-    return tuple(
-        [
-            lib.datasets.Alignment((a[0], b[0]), (a[1], b[1]))
-            for a, b in zip(intervals, intervals[1:])
-            if random.choice((True, False))
-        ]
-    )
+    return_ = [
+        lib.datasets.Alignment((a[0], b[0]), (a[1], b[1]), (a[2], b[2]))
+        for a, b in zip(intervals, intervals[1:])
+        if random.choice((True, False))
+    ]
+    return tuple(return_)
 
 
 seconds_to_samples = lambda seconds, sample_rate: int(round(seconds * sample_rate))
@@ -401,26 +403,27 @@ def get_spectrogram_model_span(
     metadata = lib.audio.get_audio_metadata([span.audio_path])[0]
     lib.audio.assert_audio_normalized(metadata, sample_rate=sample_rate)
 
+    alignments = span.example.alignments[slice(*span.slice)]
     _, word_vectors, _, phonemes = _get_words(
-        span.example.text, span.alignments_slice[0].text[0], span.alignments_slice[-1].text[-1]
+        span.example.script, alignments[0].script[0], alignments[-1].script[-1]
     )
 
-    arg = (span.text, phonemes, span.speaker)
+    arg = (span.script, phonemes, span.speaker)
     encoded_text, encoded_letter_case, encoded_phonemes, encoded_speaker = input_encoder.encode(arg)
 
-    loudness = torch.zeros(len(span.text))
-    loudness_mask = torch.zeros(len(span.text), dtype=torch.bool)
+    loudness = torch.zeros(len(span.script))
+    loudness_mask = torch.zeros(len(span.script), dtype=torch.bool)
     for alignment in _random_nonoverlapping_alignments(span.alignments, max_loudness_annotations):
-        slice_ = slice(alignment.text[0], alignment.text[1])
+        slice_ = slice(alignment.script[0], alignment.script[1])
         loudness[slice_] = _get_loudness(
             span.audio, sample_rate, alignment, loudness_implementation, loudness_precision
         )
         loudness_mask[slice_] = True
 
-    speed = torch.zeros(len(span.text))
-    speed_mask = torch.zeros(len(span.text), dtype=torch.bool)
+    speed = torch.zeros(len(span.script))
+    speed_mask = torch.zeros(len(span.script), dtype=torch.bool)
     for alignment in _random_nonoverlapping_alignments(span.alignments, max_speed_annotations):
-        slice_ = slice(alignment.text[0], alignment.text[1])
+        slice_ = slice(alignment.script[0], alignment.script[1])
         # TODO: Instead of using characters per second, we could estimate the number of phonemes
         # with `grapheme_to_phoneme`. This might be slow, so we'd need to do so in a batch.
         # `grapheme_to_phoneme` can only estimate the number of phonemes because we can't
@@ -472,7 +475,7 @@ def get_spectrogram_model_span(
         stop_token=stop_token,
         speaker=span.speaker,
         encoded_speaker=encoded_speaker,
-        text=span.text,
+        text=span.script,
         encoded_text=encoded_text,
         encoded_text_mask=torch.ones(encoded_text.shape[0], dtype=torch.bool),
         encoded_letter_case=encoded_letter_case,
@@ -483,7 +486,7 @@ def get_spectrogram_model_span(
         speed=speed,
         speed_mask=speed_mask,
         alignments=span.alignments,
-        metadata=span.metadata,
+        other_metadata=span.other_metadata,
     )
 
 
@@ -550,7 +553,7 @@ class SpectrogramModelSpanBatch(typing.NamedTuple):
 
     alignments: typing.List[typing.Tuple[lib.datasets.Alignment, ...]]
 
-    metadata: typing.List[typing.Dict[typing.Union[str, int], typing.Any]]
+    other_metadata: typing.List[typing.Dict[typing.Union[str, int], typing.Any]]
 
 
 def batch_spectrogram_spans(
@@ -583,7 +586,7 @@ def batch_spectrogram_spans(
         speed=stack_and_pad_tensors([e.speed for e in examples], dim=1),
         speed_mask=stack_and_pad_tensors([e.speed_mask for e in examples], dim=1),
         alignments=[e.alignments for e in examples],
-        metadata=[e.metadata for e in examples],
+        other_metadata=[e.other_metadata for e in examples],
     )
 
 
@@ -653,15 +656,16 @@ def get_dataset_stats(
     # NOTE: `len_` assumes the entire example is usable.
     len_ = lambda d: sum(e.alignments[-1].audio[-1] - e.alignments[0].audio[0] for e in d)
     stats: typing.Dict[run._config.Label, typing.Union[int, str, float]] = {}
+    data: Dataset
     for data, type_ in [(train, DatasetType.TRAIN), (dev, DatasetType.DEV)]:
         label = functools.partial(get_dataset_label, cadence=Cadence.STATIC, type_=type_)
         stats[label("num_examples")] = sum(len(e) for e in data.values())
-        stats[label("num_characters")] = sum(sum(len(e.text) for e in v) for v in data.values())
+        stats[label("num_characters")] = sum(sum(len(e.script) for e in v) for v in data.values())
         stats[label("num_seconds")] = seconds_to_string(sum(len_(e) for e in data.values()))
         for speaker, examples in data.items():
             label = functools.partial(label, speaker=speaker)
             stats[label("num_examples")] = len(examples)
-            stats[label("num_characters")] = sum(len(e.text) for e in examples)
+            stats[label("num_characters")] = sum(len(e.script) for e in examples)
             stats[label("num_seconds")] = seconds_to_string(len_(examples))
     return stats
 

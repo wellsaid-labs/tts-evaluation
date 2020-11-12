@@ -1,6 +1,8 @@
+import dataclasses
 import enum
 import logging
 import math
+import pathlib
 import pprint
 import random
 import typing
@@ -42,6 +44,14 @@ SAMPLE_RATE = 24000
 # Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
 NUM_FRAME_CHANNELS = 128
 PHONEME_SEPARATOR = "|"
+DATASETS = {
+    # NOTE: Elliot Miller is not included due to his unannotated character portrayals.
+    datasets.HILARY_NORIEGA: datasets.hilary_noriega_speech_dataset,
+    datasets.LINDA_JOHNSON: datasets.lj_speech_dataset,
+    datasets.JUDY_BIEBER: datasets.m_ailabs_en_us_judy_bieber_speech_dataset,
+    datasets.MARY_ANN: datasets.m_ailabs_en_us_mary_ann_speech_dataset,
+    datasets.ELIZABETH_KLETT: datasets.m_ailabs_en_uk_elizabeth_klett_speech_dataset,
+}
 
 TTS_DISK_CACHE_NAME = ".tts_cache"  # NOTE: Hidden directory stored in other directories for caching
 DISK_PATH = lib.environment.ROOT_PATH / "disk"
@@ -51,7 +61,6 @@ TEMP_PATH = DISK_PATH / "temp"
 SAMPLES_PATH = DISK_PATH / "samples"
 SIGNAL_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "signal_model"
 SPECTROGRAM_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "spectrogram_model"
-
 for directory in [
     DISK_PATH,
     DATA_PATH,
@@ -77,6 +86,7 @@ class DatasetType(enum.Enum):
 
 
 Label = typing.NewType("Label", str)
+Dataset = typing.Dict[Speaker, typing.List[datasets.Example]]
 
 
 def get_dataset_label(
@@ -245,9 +255,9 @@ def configure_audio_processing():
         ),
         run._utils.get_spectrogram_model_span: HParams(
             loudness_implementation="DeMan",
-            max_loudness_annotations=5,
+            max_loudness_annotations=10,
             loudness_precision=0,
-            max_speed_annotations=5,
+            max_speed_annotations=10,
             speed_precision=0,
             # NOTE: The stop token uncertainty was approximated by a fully trained model that
             # learned the stop token distribution. The distribution looked like a gradual increase
@@ -405,6 +415,7 @@ def configure():
     """ Configure modules. """
     configure_audio_processing()
     configure_models()
+
     config = {
         lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
         lib.environment.set_seed: HParams(seed=RANDOM_SEED),
@@ -412,25 +423,61 @@ def configure():
     add_config(config)
 
 
-Dataset = typing.Dict[Speaker, typing.List[datasets.Example]]
+def _include_example(example: datasets.Example) -> bool:
+    """Return `True` iff `example` should be included in the dataset."""
+    alignments = example.alignments
+    if len(alignments) == 0 or alignments[0].audio[0] == alignments[-1].audio[-1]:
+        logger.warning("Example has little to no alignments: %s", alignments)
+        return False
+
+    text = example.script[alignments[0].script[0] : alignments[-1].script[-1]]
+    if len(text) == 0:
+        logger.warning("Example has no text: %s", example)
+        return False
+
+    if not example.audio_path.exists() or not example.audio_path.is_file():
+        logger.warning("Audio path doesn't exist or isn't a file: %s", example.audio_path)
+        return False
+
+    # NOTE: Filter out example(s) that don't have a lower case character because it'll make
+    # it difficult to classify initialisms.
+    if not any(c.islower() for c in example.script):
+        return False
+
+    # NOTE: Filter out Midnight Passenger because it has an inconsistent acoustic setup compared to
+    # other samples from the same speaker.
+    # NOTE: Filter out the North & South book because it uses English in a way that's not consistent
+    # with editor usage, for example: "To-morrow, you will-- Come back to-night, John!"
+    books = (datasets.m_ailabs.MIDNIGHT_PASSENGER, datasets.m_ailabs.NORTH_AND_SOUTH)
+    metadata = example.other_metadata
+    if metadata is not None and "books" in metadata and (metadata["books"] in books):
+        return False
+
+    return True
 
 
-def get_dataset(path=DATA_PATH) -> Dataset:
+def _handle_example(example: datasets.Example) -> datasets.Example:
+    """Update and/or check `example`."""
+    if example.speaker in set([datasets.JUDY_BIEBER, datasets.MARY_ANN, datasets.ELIZABETH_KLETT]):
+        example = dataclasses.replace(example, text=lib.text.normalize_vo_script(example.script))
+    else:
+        assert lib.text.is_normalized_vo_script(example.script)
+    return example
+
+
+def get_dataset(
+    datasets: typing.Dict[lib.datasets.Speaker, lib.datasets.DataLoader] = DATASETS,
+    path: pathlib.Path = DATA_PATH,
+) -> Dataset:
     """Define a TTS dataset.
 
-    NOTE: Elliot Miller is not included due to his unannotated character portrayals.
-
     Args:
+        datasets: Dictionary of datasets to load.
         path: Directory to cache the dataset.
     """
     logger.info("Loading dataset...")
-    return {
-        datasets.HILARY_NORIEGA: datasets.hilary_noriega_speech_dataset(path),
-        datasets.LINDA_JOHNSON: datasets.lj_speech_dataset(path),
-        datasets.JUDY_BIEBER: datasets.m_ailabs_en_us_judy_bieber_speech_dataset(path),
-        datasets.MARY_ANN: datasets.m_ailabs_en_us_mary_ann_speech_dataset(path),
-        datasets.ELIZABETH_KLETT: datasets.m_ailabs_en_uk_elizabeth_klett_speech_dataset(path),
-    }
+    lambda_ = lambda l: [_handle_example(e) for e in l if _include_example(e)]
+    return {k: lambda_(v(path)) for k, v in datasets.items()}
 
 
 def split_dataset(
@@ -458,97 +505,38 @@ def split_dataset(
     return dev, train
 
 
-def _include_example(example: datasets.Example) -> bool:
-    """Return `True` iff `example` should be included in the dataset.
-
-    TODO: Potential update(s) to our example filters:
-    - Use the speed of the example with phonemes or graphemes.
-    - Look for gaps in alignments:
-      - Is the gap a long pause?
-      - Is the gap loud?
-      - Does the gap have text?
-    - Does the starting and ending alignment make sense? Or does it cut off?
-    - Get an accurate prediction of audio length by removing silence.
-    - Don't filter out an entire example if it has numbers, and slice the example first.
-    - Should we filter out an entire example if there is a very long pause or a lot of words
-      missing? We might have a hard time with singular slices but we might know if a script
-      has a big screw up.
-    """
-    assert lib.text.is_normalized_vo_script(example.text)
-
-    if (
-        len(example.alignments) == 0
-        or example.alignments[0].audio[0] == example.alignments[-1].audio[-1]
-    ):
-        logger.warning("Example has no alignments: %s", example)
-        return False
-
-    text = example.text[example.alignments[0].text[0] : example.alignments[-1].text[-1]]
-
-    if len(text) == 0:
-        logger.warning("Example has no text: %s", example)
-        return False
-
-    if not (example.audio_path.exists() and example.audio_path.is_file()):
-        logger.warning("Audio path is invalid: %s", example.audio_path)
-        return False
-
+def _include_span(span: datasets.Span):
+    """Return `True` iff `span` should be included in the dataset."""
     # NOTE: Filter out any example(s) with digits because the pronunciation is fundamentally
     # ambigious, and it's much easier to handle this case with text normalization.
-    if any(c.isdigit() for c in text):
+    if any(c.isdigit() for c in span.script):
         return False
-
-    # NOTE: Filter out example(s) that don't have a lower case character because it'll make
-    # it difficult to classify initialisms.
-    if not any(c.islower() for c in example.text):
-        return False
-
-    # NOTE: Filter out Midnight Passenger because it has an inconsistent acoustic setup compared to
-    # other samples from the same speaker.
-    # NOTE: Filter out the North & South book because it uses English in a way that's not consistent
-    # with editor usage, for example: "To-morrow, you will-- Come back to-night, John!"
-    books = (datasets.m_ailabs.MIDNIGHT_PASSENGER, datasets.m_ailabs.NORTH_AND_SOUTH)
-    if (
-        example.metadata is not None
-        and "books" in example.metadata
-        and (example.metadata["books"] in books)
-    ):
-        return False
-
     return True
 
 
-def get_dataset_generator(
-    dataset: Dataset,
-    include_example: typing.Callable[[datasets.Example], bool] = _include_example,
-    max_seconds=15,
-) -> typing.Iterator[datasets.Example]:
+def span_generator(dataset: Dataset, max_seconds=15) -> typing.Iterator[datasets.Span]:
     """Define the dataset generator to train and evaluate the TTS models on.
 
     Args:
         dataset
-        include_example
-        max_seconds: The maximum seconds delimited by an `Example`.
+        max_seconds: The maximum seconds delimited by an `Span`.
     """
-    generators = {}
+    generators: typing.Dict[lib.datasets.Speaker, typing.Iterator[lib.datasets.Span]] = {}
     for speaker, examples in dataset.items():
-        # NOTE: Some datasets were pre-cut, and `is_singles` preserves their distribution.
-        is_singles = all([e.alignments is None or len(e.alignments) == 1 for e in examples])
-        generators[speaker] = datasets.dataset_generator(
-            examples, max_seconds=max_seconds if is_singles else math.inf
-        )
+        # NOTE: Some datasets are pre-cut, and `is_singles` preserves their distribution.
+        is_singles = all([len(e.alignments) == 1 for e in examples])
+        max_seconds_ = math.inf if is_singles else max_seconds
+        generators[speaker] = datasets.span_generator(examples, max_seconds_)
 
     speakers = list(dataset.keys())
     counter = {s: 1.0 for s in speakers}
-    while True:  # NOTE: Sample speakers uniformly...
+    while True:  # NOTE: This samples speakers uniformly.
         total = sum(counter.values())
         distribution = [total / v for v in counter.values()]
-        example = next(generators[random.choices(speakers, distribution)[0]])
-        assert example.alignments is not None, "To balance dataset, alignments must be defined."
-        seconds = example.alignments[-1][1][1] - example.alignments[0][1][0]
-        if seconds < max_seconds and include_example(example):
-            yield example
-            counter[example.speaker] += seconds
+        span = next(generators[random.choices(speakers, distribution)[0]])
+        if span.audio_length < max_seconds and _include_span(span):
+            yield span
+            counter[span.speaker] += span.audio_length
 
 
 # NOTE: It's theoretically impossible to know all the phonemes eSpeak might predict because

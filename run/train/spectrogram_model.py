@@ -132,7 +132,7 @@ class _State:
         """ Initialize an input encoder to encode model input. """
         examples = chain(*tuple(chain(train_dataset.values(), dev_dataset.values())))
         input_encoder = lib.spectrogram_model.InputEncoder(
-            flatten([e.text for e in examples]),
+            flatten([e.script for e in examples]),
             run._config.DATASET_PHONETIC_CHARACTERS,
             list(train_dataset.keys()) + list(dev_dataset.keys()),
         )

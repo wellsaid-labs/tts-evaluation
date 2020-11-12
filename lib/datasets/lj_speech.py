@@ -23,6 +23,7 @@ LINDA_JOHNSON = Speaker("Linda Johnson")
 def lj_speech_dataset(
     directory: pathlib.Path,
     root_directory_name: str = "LJSpeech-1.1",
+    check_files=["LJSpeech-1.1/README"],
     url: str = "http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2",
     speaker: Speaker = LINDA_JOHNSON,
     verbalize: bool = True,
@@ -58,13 +59,16 @@ def lj_speech_dataset(
     Args:
         directory: Directory to cache the dataset.
         root_directory_name: Name of the extracted dataset directory.
+        check_files
         url: URL of the dataset `tar.gz` file.
         speaker
         verbalize: If `True`, verbalize the text.
         **kwargs: Key word arguments passed to `conventional_dataset_loader`.
     """
     logger.info('Loading "LJSpeech-1.1" speech dataset...')
-    download_file_maybe_extract(url=url, directory=str(directory.absolute()))
+    download_file_maybe_extract(
+        url=url, directory=str(directory.absolute()), check_files=check_files
+    )
     examples = conventional_dataset_loader(
         directory / root_directory_name,
         speaker,

@@ -96,6 +96,7 @@ def m_ailabs_en_us_speech_dataset(
     url="http://www.caito.de/data/Training/stt_tts/en_US.tgz",
     extracted_name=str(US_DATASET),
     books=US_BOOKS,
+    check_files=["en_US/by_book/info.txt"],
     **kwargs,
 ):
     """Download, extract, and process the M-AILABS `en_US` dataset.
@@ -106,7 +107,7 @@ def m_ailabs_en_us_speech_dataset(
     NOTE: Based on 100 clips from the M-AILABS dataset, around 10% of the clips would end too early.
     Furthermore, it seemed like the text was verbalized accuractely.
     """
-    return _m_ailabs_speech_dataset(directory, extracted_name, url, books, **kwargs)
+    return _m_ailabs_speech_dataset(directory, extracted_name, url, books, check_files, **kwargs)
 
 
 def m_ailabs_en_uk_speech_dataset(
@@ -114,6 +115,7 @@ def m_ailabs_en_uk_speech_dataset(
     url="http://www.caito.de/data/Training/stt_tts/en_UK.tgz",
     extracted_name=str(UK_DATASET),
     books=UK_BOOKS,
+    check_files=["en_UK/by_book/info.txt"],
     **kwargs,
 ):
     """Download, extract, and process the M-AILABS `en_UK` dataset.
@@ -121,7 +123,7 @@ def m_ailabs_en_uk_speech_dataset(
     The dataset is 4GB compressed. The file to be downloaded is called `en_US.tgz`. It contains
     45 hours of audio. When extracted, it creates a list of 2 books.
     """
-    return _m_ailabs_speech_dataset(directory, extracted_name, url, books, **kwargs)
+    return _m_ailabs_speech_dataset(directory, extracted_name, url, books, check_files, **kwargs)
 
 
 def _book_to_metdata_path(book: Book, root: Path) -> Path:
@@ -146,6 +148,7 @@ def _m_ailabs_speech_dataset(
     extracted_name: str,
     url: str,
     books: typing.List[Book],
+    check_files: typing.List[str],
     root_directory_name: str = "M-AILABS",
     metadata_pattern: str = "**/metadata.csv",
 ) -> typing.List[Example]:
@@ -159,6 +162,7 @@ def _m_ailabs_speech_dataset(
         extracted_name: Name of the extracted dataset directory.
         url: URL of the dataset `tar.gz` file.
         books: List of books to load.
+        check_files
         root_directory_name: Name of the dataset directory.
         metadata_pattern: Pattern for all `metadata.csv` files containing (filename, text)
             information.
@@ -166,7 +170,7 @@ def _m_ailabs_speech_dataset(
     logger.info('Loading "M-AILABS %s" speech dataset...', extracted_name)
     directory = directory / root_directory_name
     directory.mkdir(exist_ok=True)
-    download_file_maybe_extract(url=url, directory=str(directory))
+    download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
     directory = directory / extracted_name
 
     metadata_paths = list(directory.glob(metadata_pattern))

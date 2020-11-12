@@ -87,9 +87,10 @@ def test_normalize_audio():
         example = lib.datasets.Example(
             audio_path=audio_path,
             speaker=lib.datasets.LINDA_JOHNSON,
+            script="",
+            transcript="",
             alignments=tuple(),
-            text="",
-            metadata={},
+            other_metadata={},
         )
         dataset = {lib.datasets.LINDA_JOHNSON: [example]}
         run._utils.normalize_audio(
@@ -112,7 +113,7 @@ def test_split_examples():
     """Test `run._utils.split_examples` randomly splits `examples` into train and dev lists. """
     with torchnlp.random.fork_rng(123):
         _example = lambda a, s: lib.datasets.Example(
-            pathlib.Path(str(a)), s, (lib.datasets.Alignment((0, a), (0, a)),), "", {}
+            pathlib.Path(str(a)), s, "", "", (lib.datasets.Alignment((0, a), (0, a), (0, a)),), {}
         )
         a = lib.datasets.Speaker("a")
         b = lib.datasets.Speaker("b")
@@ -151,7 +152,7 @@ def test__get_normalized_half_gaussian():
 def test__random_nonoverlapping_alignments():
     """Test `run._utils._random_nonoverlapping_alignments` generates the left-side of a gaussian
     distribution normalized from 0 to 1."""
-    _alignment = lambda a, b: lib.datasets.Alignment((a, b), (a, b))
+    _alignment = lambda a, b: lib.datasets.Alignment((a, b), (a, b), (a, b))
     alignments = tuple(
         [
             _alignment(0, 1),
@@ -165,7 +166,7 @@ def test__random_nonoverlapping_alignments():
     for i in range(100000):
         samples = run._utils._random_nonoverlapping_alignments(alignments, 3)
         for sample in samples:
-            for i in range(sample.text[0], sample.text[1]):
+            for i in range(sample.script[0], sample.script[1]):
                 counter[i] += 1
     assert set(counter.keys()) == set(range(0, 5))
     _utils.assert_uniform_distribution(counter, abs=0.02)
@@ -178,7 +179,7 @@ def test__random_nonoverlapping_alignments__empty():
 
 def test__random_nonoverlapping_alignments__large_max():
     """Test `run._utils._random_nonoverlapping_alignments` handles a large maximum. """
-    _alignment = lambda a, b: lib.datasets.Alignment((a, b), (a, b))
+    _alignment = lambda a, b: lib.datasets.Alignment((a, b), (a, b), (a, b))
     with torchnlp.random.fork_rng(1234):
         alignments = tuple(
             [
@@ -205,7 +206,7 @@ def test__get_loudness():
     meter = lib.audio.get_pyloudnorm_meter(sample_rate, implementation)
     with torchnlp.random.fork_rng(12345):
         audio = np.random.rand(sample_rate * length) * 2 - 1  # type: ignore
-        alignment = lib.datasets.Alignment((0, length), (0, length))
+        alignment = lib.datasets.Alignment((0, length), (0, length), (0, length))
         loundess = run._utils._get_loudness(audio, sample_rate, alignment, implementation, 1)
         assert np.isfinite(loundess)  # type: ignore
         assert round(meter.integrated_loudness(audio), 1) == loundess
@@ -381,8 +382,9 @@ def test_get_dataset_stats():
     _example = lambda a, b, speaker: lib.datasets.Example(
         pathlib.Path(str(a)),
         speaker,
-        (lib.datasets.Alignment((a, b), (a * 10, b * 10)),),
         "t" * (b - a),
+        "t" * (b - a),
+        (lib.datasets.Alignment((a, b), (a * 10, b * 10), (a, b)),),
         {},
     )
     a = lib.datasets.Speaker("a")
