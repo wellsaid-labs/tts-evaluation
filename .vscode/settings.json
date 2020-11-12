@@ -9,6 +9,7 @@
     "source.fixAll.eslint": true,
     "source.organizeImports": true
   },
+  "editor.wordWrapColumn": 100,
   "files.autoSave": "onFocusChange",
   "files.exclude": {
     "**/.git": true,
