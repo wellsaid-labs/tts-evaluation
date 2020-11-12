@@ -623,6 +623,27 @@ def is_normalized_vo_script(text: str) -> bool:
     return len(set(text) - _READABLE_CHARACTERS) == 0
 
 
+def add_spaces_between_sentences(doc: spacy.tokens.Doc) -> str:
+    """ Add spaces between sentences which are not seperated by a space. """
+    if len(doc) == 1:
+        return doc[0].text_with_ws
+    text = ""
+    for curr, next in zip(doc, doc[1:]):
+        # NOTE: Add whitespace if there isn't one at the sentence start.
+        if (
+            next.is_sent_start
+            and len(curr.whitespace_) == 0
+            and not curr.text[-1].isspace()
+            # NOTE: Edge case: Don't split apart punctuation
+            and not (next.is_punct and curr.is_punct)
+        ):
+            text += curr.text + " "
+        else:
+            text += curr.text_with_ws
+    text += next.text_with_ws  # type: ignore
+    return text
+
+
 @lru_cache(maxsize=None)
 def _nltk_download(dependency):
     """ Run `nltk.download` but only once per process. """

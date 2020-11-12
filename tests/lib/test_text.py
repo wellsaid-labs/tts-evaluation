@@ -562,6 +562,68 @@ def test_is_normalized_vo_script__unnormalized():
     # fmt: on
 
 
+def test_add_spaces_between_sentences():
+    """ Test `lib.text.add_spaces_between_sentences` adds a space between sentences. """
+    nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
+    script = (
+        "Business was involved in slavery, colonialism, and the cold war.The term "
+        "'business ethics' came into common use in the United States in the early 1970s."
+    )
+    assert lib.text.add_spaces_between_sentences(nlp(script)) == (
+        "Business was involved in slavery, colonialism, and the cold war. The term "
+        "'business ethics' came into common use in the United States in the early 1970s."
+    )
+    script = (
+        "Mix and match the textured shades for a funky effect.Hang on "
+        "to these fuzzy hangers from Domis."
+    )
+    assert lib.text.add_spaces_between_sentences(nlp(script)) == (
+        "Mix and match the textured shades for a funky effect. Hang on "
+        "to these fuzzy hangers from Domis."
+    )
+
+
+def test_add_spaces_between_sentences__new_lines():
+    """Test `lib.text.add_spaces_between_sentences` adds a space between sentences while handling
+    newlines."""
+    nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
+    script = """
+    The neuroscience of creativity looks at the operation of the brain during creative behaviour.
+    It has been addressed in the article "Creative Innovation: Possible Brain Mechanisms."
+    The authors write that "creative innovation might require coactivation and communication
+    between regions of the brain that ordinarily are not strongly connected." Highly creative
+    people who excel at creative innovation tend to differ from others in three ways:
+
+    they have a high level of specialized knowledge,
+    they are capable of divergent thinking mediated by the frontal lobe.
+    and they are able to modulate neurotransmitters such as norepinephrine in their
+    frontal lobe.Thus, the frontal lobe appears to be the part of the cortex that is most important
+    for creativity.
+    """
+    expected = """
+    The neuroscience of creativity looks at the operation of the brain during creative behaviour.
+    It has been addressed in the article "Creative Innovation: Possible Brain Mechanisms."
+    The authors write that "creative innovation might require coactivation and communication
+    between regions of the brain that ordinarily are not strongly connected." Highly creative
+    people who excel at creative innovation tend to differ from others in three ways:
+
+    they have a high level of specialized knowledge,
+    they are capable of divergent thinking mediated by the frontal lobe.
+    and they are able to modulate neurotransmitters such as norepinephrine in their
+    frontal lobe. Thus, the frontal lobe appears to be the part of the cortex that is most important
+    for creativity.
+    """
+    assert lib.text.add_spaces_between_sentences(nlp(script)) == expected
+
+
+def test_add_spaces_between_sentences__one_word():
+    """Test `lib.text.add_spaces_between_sentences` handles one word."""
+    nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
+    assert lib.text.add_spaces_between_sentences(nlp("Hi")) == "Hi"
+    assert lib.text.add_spaces_between_sentences(nlp("Hi  ")) == "Hi  "
+    assert lib.text.add_spaces_between_sentences(nlp("Hi.  ")) == "Hi.  "
+
+
 def test_normalize_non_standard_words():
     cases = [
         ("Mr. Gurney", "Mr. Gurney"),
