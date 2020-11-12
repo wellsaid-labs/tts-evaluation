@@ -132,7 +132,7 @@ class Span:
 
     def to_string(self, *fields):
         values = ", ".join(f"{f}={getattr(self, f)}" for f in fields)
-        return f"Example({values})"
+        return f"Span({values})"
 
 
 def _overlap(slice: typing.Tuple[float, float], other: typing.Tuple[float, float]) -> float:
