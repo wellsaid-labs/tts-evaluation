@@ -3,6 +3,8 @@
 Given a voice-over and a voice-over script, this python script generates an alignment between text
 spans and audio spans. Also this script will help detect inconsistencies between the two.
 
+TODO: Support creating a dataset with just a voice-over using Google STT for the transcript.
+
 Usage Example:
 
     PREFIX=gs://wellsaid_labs_datasets/hilary_noriega/processed
