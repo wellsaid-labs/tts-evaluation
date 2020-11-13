@@ -12,8 +12,8 @@ compute = googleapiclient.discovery.build("compute", "v1", credentials=credentia
 
 
 @app.command()
-def most_recent():
-    """Print the name of the most recent instance created."""
+def most_recent(filter: str = ""):
+    """Print the name of the most recent instance created containing the string FILTER."""
     # NOTE: This wasn't implemented with Google's Python SDK because:
     # - The client must query all zones, and preferably in parallel.
     # - The client must deal with pagination.
@@ -21,10 +21,13 @@ def most_recent():
     # - It isn't typed.
     # It's much easier to run the below command...
     command = (
-        "gcloud compute instances list --limit=1 --sort-by=creationTimestamp "
+        "gcloud compute instances list --sort-by=creationTimestamp "
         '--format="value(name,creationTimestamp)"'
     )
-    typer.echo(subprocess.check_output(command, shell=True).decode().strip().split()[0])
+    lines = subprocess.check_output(command, shell=True).decode().strip().split("\n")
+    machines = [l.split()[0].strip() for l in lines]
+    machines = [m for m in machines if filter in m]
+    typer.echo(machines[-1])
 
 
 @app.command()

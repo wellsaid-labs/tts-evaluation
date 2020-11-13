@@ -6,7 +6,7 @@ This will be walking you through the process of creating a text-to-speech datase
 
 Setup your local development environment by following [these instructions](LOCAL_SETUP.md).
 
-## 1. Upload a scripts and recordings
+## 1. Upload scripts and recordings
 
 First, you'll need to upload scripts and recordings to
 [wellsaid_labs_datasets](https://console.cloud.google.com/storage/browser/wellsaid_labs_datasets;tab=objects?project=voice-research-255602)
@@ -34,7 +34,7 @@ The script files must be in a CSV format that contains a column called "Content"
 the script the voice actor read. The audio files can be in any audio format that's compatible
 with `ffmpeg`. Lastly, there should be one script per audio file, similarly named.
 
-Aside from that, for this dataset to be useful, it must be consistent. The model will be a
+Aside from that, for this dataset to be useful, it must be consistent. The TTS will be a
 reflection of the dataset. For example, here are a couple of consistencies you should
 watch out for:
 
@@ -54,7 +54,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 
 1. Set these variables...
 
-   ```bash
+   ```zsh
    VM_NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-dataset-processing
    # NOTE: Pick a zone that's closest to the GCS bucket `wellsaid_labs_datasets`.
    VM_ZONE=your-vm-instance-zone # EXAMPLE: us-central1-a
@@ -67,7 +67,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 
 1. Create a VM, like so...
 
-   ```bash
+   ```zsh
    gcloud compute instances create $VM_NAME \
       --zone=$VM_ZONE \
       --machine-type=$VM_MACHINE_TYPE \
@@ -80,7 +80,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 
 1. From your local machine, `ssh` into your new VM instance, like so...
 
-   ```bash
+   ```zsh
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME --command="sudo chmod -R a+rwx /opt"
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME --command="mkdir /opt/wellsaid-labs"
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME
@@ -88,10 +88,10 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 
    These commands may exit with the return code 255, if so, try again.
 
-1. In another window, run `lsyncd` to sync your local files to your virtual machine...
+1. In another terminal window, run `lsyncd` to sync your local files to your virtual machine...
 
-   ```bash
-   VM_NAME=$(python -m run.utils.gcp_vm most-recent)
+   ```zsh
+   VM_NAME=$(python -m run.utils.gcp_vm most-recent --filter $USER)
    VM_ZONE=$(python -m run.utils.gcp_vm zone --name $VM_NAME)
    VM_IP=$(python -m run.utils.gcp_vm ip --name $VM_NAME --zone=$VM_ZONE)
    VM_USER=$(python -m run.utils.gcp_vm user --name $VM_NAME --zone=$VM_ZONE)
@@ -128,6 +128,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    cd /opt/wellsaid-labs/Text-to-Speech
    sudo apt-get update
    sudo apt-get install python3-venv python3-dev sox ffmpeg espeak gcc -y
+
    python3 -m venv venv
    . venv/bin/activate
    python -m pip install wheel pip --upgrade
@@ -183,7 +184,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 
 1. (Optional) From your local machine, review CSV normalization, like so...
 
-   ```bash
+   ```zsh
    NAME=actor_name # Example: hilary_noriega
    GCS_URI=gs://wellsaid_labs_datasets/$NAME
    python -m run.data diff "$GCS_URI/scripts/Script 1 - Hilary.csv" \
@@ -228,6 +229,6 @@ TODO
 
 1. Delete your instance...
 
-   ```bash
+   ```zsh
    gcloud compute instances delete $VM_NAME --zone=$VM_ZONE
    ```
