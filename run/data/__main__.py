@@ -198,18 +198,25 @@ def csv_normalize(paths: typing.List[pathlib.Path], dest: pathlib.Path):
     assert dest.exists(), "DEST must exist."
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
     partial = functools.partial(_csv_normalize, nlp=nlp)
-    progress_bar = tqdm.tqdm(total=len(paths))
-    for path in paths:
-        dest_path = dest / path.name
-        if dest_path.exists():
-            logger.error("Skipping, file already exists: %s", dest_path)
-            continue
-        data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(path))
-        data_frame = data_frame.applymap(partial)
-        data_frame.to_csv(dest_path, index=False)
-        num_edits = Levenshtein.distance(path.read_text(), dest_path.read_text())  # type: ignore
-        logger.info("Made %d edits to %s.", num_edits, path.name)
-        progress_bar.update()
+    results = []
+    with tqdm.tqdm(total=len(paths)) as progress_bar:
+        for path in paths:
+            dest_path = dest / path.name
+            if dest_path.exists():
+                logger.error("Skipping, file already exists: %s", dest_path)
+                continue
+            data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(path))
+            data_frame = data_frame.applymap(partial)
+            data_frame.to_csv(dest_path, index=False)
+
+            text = path.read_text()
+            num_edits = Levenshtein.distance(text, dest_path.read_text())  # type: ignore
+            results.append(((num_edits / len(text)) * 100, num_edits, len(text), path.name))
+
+            progress_bar.update()
+
+    headers = ["% Edited", "# Edits", "# Characters", "File Name"]
+    typer.echo("\n" + tabulate.tabulate(sorted(results), headers=headers))
 
 
 @csv_app.command()
