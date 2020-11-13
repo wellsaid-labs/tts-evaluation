@@ -63,6 +63,7 @@ def download():
 @app.command()
 def rename(directory: pathlib.Path):
     """ Normalize the name of every directory and file in DIRECTORY."""
+    assert directory.exists(), "DIRECTORY must exist."
     for path in directory.glob("**/*"):
         normalized = path.name.replace(" ", "_").lower()
         if normalized != path.name:
@@ -92,6 +93,7 @@ def diff(gcs_uri: str, other_gcs_uri: str):
 @audio_app.command()
 def loudness(paths: typing.List[pathlib.Path]):
     """ Print the loudness for each file in PATHS. """
+    assert all(p.exists() for p in paths), "Every path in PATHS must exist."
     # TODO: Get loudness faster by...
     # - Adding parallel processing with chunking for large audio files
     # - Find a faster loudness implementation
@@ -130,6 +132,7 @@ def _metadata(path: pathlib.Path) -> typing.Tuple[pathlib.Path, _SharedAudioFile
 @audio_app.command()
 def metadata(paths: typing.List[pathlib.Path], max_parallel: int = typer.Option(16)):
     """ Print the metadata for each file in PATHS. """
+    assert all(p.exists() for p in paths), "Every path in PATHS must exist."
     num_parallel = lib.utils.clamp(len(paths), max_=max_parallel)
     with multiprocessing.pool.ThreadPool(num_parallel) as pool:
         results = list(tqdm.tqdm(pool.imap_unordered(_metadata, paths), total=len(paths)))
@@ -148,6 +151,8 @@ def audio_normalize(
     encoding: typing.Optional[str] = typer.Option(None),
 ):
     """ Normalize audio file format(s) in PATHS and save to DEST. """
+    assert all(p.exists() for p in paths), "Every path in PATHS must exist."
+    assert dest.exists(), "DEST must exist."
     params = hparams.HParams(audio_filters=lib.audio.AudioFilters(""))
     if encoding is not None:
         params.update(encoding=encoding)
@@ -180,9 +185,8 @@ def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
     text = text.replace("™", "")
     # NOTE: Remove HTML tags
     text = re.sub("<.*?>", "", text)
-    # NOTE: Fix for a missing space between end and beginning of a sentence. Example match is
-    # deliminated with angle brackets, see here:
-    #   the cold w<ar.T>he term 'business ethics'
+    # NOTE: Fix for a missing space between end and beginning of a sentence. For example:
+    #   the cold war.The term 'business ethics'
     text = lib.text.add_spaces_between_sentences(nlp(text))
     return text
 
@@ -190,6 +194,8 @@ def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
 @csv_app.command("normalize")
 def csv_normalize(paths: typing.List[pathlib.Path], dest: pathlib.Path):
     """Normalize csv file(s) in PATHS and save to DEST."""
+    assert all(p.exists() for p in paths), "Every path in PATHS must exist."
+    assert dest.exists(), "DEST must exist."
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
     partial = functools.partial(_csv_normalize, nlp=nlp)
     progress_bar = tqdm.tqdm(total=len(paths))
@@ -215,6 +221,8 @@ def combine(
 
     Also, this adds an additional "__csv" column with the original filename.
     """
+    assert all(c.exists() for c in csvs), "Every path in CSVS must exist."
+    assert csv.parent.exists(), "CSV parent directory must exist."
     df = pandas.read_csv(csvs[0])
     df["__csv"] = csvs[0]
     for csv in csvs[1:]:
@@ -225,26 +233,28 @@ def combine(
 
 
 @csv_app.command()
-def shuffle(
-    source: pathlib.Path = typer.Option(...), destination: pathlib.Path = typer.Option(...)
-):
-    """ Shuffle SOURCE csv and save it to DESTINATION. """
+def shuffle(source: pathlib.Path = typer.Option(...), dest: pathlib.Path = typer.Option(...)):
+    """ Shuffle SOURCE csv and save it to DEST. """
+    assert source.exists(), "SOURCE must exist."
+    assert dest.parent.exists(), "DEST parent directory must exist."
     df = pandas.read_csv(source)
     df = typing.cast(pandas.DataFrame, df.iloc[np.random.permutation(len(df))])  # type: ignore
-    df.to_csv(destination, index=False)
+    df.to_csv(dest, index=False)
 
 
 @csv_app.command()
 def prefix(
     source: pathlib.Path = typer.Option(...),
-    destination: pathlib.Path = typer.Option(...),
+    dest: pathlib.Path = typer.Option(...),
     column: str = typer.Option(...),
     prefix: str = typer.Option(...),
 ):
     """ Add a PREFIX to every value in the SOURCE csv under COLUMN and save to DESTINATION. """
+    assert source.exists(), "SOURCE must exist."
+    assert dest.parent.exists(), "DEST parent directory must exist."
     df = pandas.read_csv(source)
     df[column] = prefix + df[column].astype(str)
-    df.to_csv(destination, index=False)
+    df.to_csv(dest, index=False)
 
 
 if __name__ == "__main__":
