@@ -624,6 +624,44 @@ def test_add_spaces_between_sentences__one_word():
     assert lib.text.add_spaces_between_sentences(nlp("Hi.  ")) == "Hi.  "
 
 
+def test_add_spaces_between_sentences__regression():
+    """Test `lib.text.add_spaces_between_sentences` handles these regression tests on Hilary's
+    data."""
+    nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
+    scripts = [
+        (
+            "This joint focus highlights both the theoretical and practical importance of the "
+            "relationship: researchers are interested not only if the constructs are related, but "
+            "also how and why."
+        ),
+        (
+            "This theorem allows one to use the assumption of a normal distribution when dealing "
+            'with x-bar. "Sufficiently large" depends on the population\'s distribution and what '
+            "range of x-bar is being considered; for practical the easiest approach may be to "
+            "take a number of samples of a desired size and see if their means are normally "
+            "distributed."
+        ),
+        (
+            "In short, we can say that our company is...\n\n"
+            "AE1.11: Administrative  Assistant: Your job plays a key role in the success of our "
+            "company."
+        ),
+        (
+            "Twice a year, day and night fall into balance, lasting for nearly equal lengths. "
+            'Known as "equinoxes", Latin for "equal night" they occur in March and September, '
+            "and along with solstices, mark the changing of seasons as earth travels around the "
+            "sun."
+        ),
+        (
+            "Figure Concepts, where participants were given simple drawings of objects and "
+            "individuals and asked to find qualities or features that are common by two or more "
+            "drawings; these were scored for uncommonness."
+        ),
+    ]
+    for script in scripts:
+        assert lib.text.add_spaces_between_sentences(nlp(script)) == script
+
+
 def test_normalize_non_standard_words():
     cases = [
         ("Mr. Gurney", "Mr. Gurney"),

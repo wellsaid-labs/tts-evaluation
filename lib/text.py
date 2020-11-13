@@ -636,6 +636,12 @@ def add_spaces_between_sentences(doc: spacy.tokens.Doc) -> str:
             and not curr.text[-1].isspace()
             # NOTE: Edge case: Don't split apart punctuation
             and not (next.is_punct and curr.is_punct)
+            # NOTE: Edge case: Don't split apart if `curr` is already followed by a punctuation
+            # and a white-space.
+            and not (next.is_punct and len(next.whitespace_) > 0)
+            # NOTE: Edge case: Don't split apart if there are two sentences back to back, for
+            # some reason.
+            and not curr.is_sent_start
         ):
             text += curr.text + " "
         else:
