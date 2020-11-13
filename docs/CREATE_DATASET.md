@@ -1,43 +1,20 @@
-# Pre-Processing Datasets Example Workflow
+# Getting Started Creating a Text-to-Speech Dataset
 
-This documentation will walk you through preprocessing the data from one of our actors on MacOS.
-
-For more software details, please visit `src/bin/sync_script_with_audio.py` and read the inline
-documentation.
+This will be walking you through the process of creating a text-to-speech dataset.
 
 ## Prerequisites
 
-1. Setup your local development environment by following [these instructions](LOCAL_SETUP.md).
+Setup your local development environment by following [these instructions](LOCAL_SETUP.md).
 
-2. Install `gcloud compute` by following the instructions
-   [here](https://cloud.google.com/compute/docs/gcloud-compute/)
+## 1. Upload a scripts and recordings
 
-3. Ask a team member to grant you access to our GCP project called "voice-research".
-
-## TODO
-
-1. How do you verify the metadata in the audio is consistent?
-2. How does the actor upload there data to Google Cloud Storage?
-3. What is required to create a good dataset? We're not going to cover the entire section here.
-4. In this guide, do we need to define machine learning, and how to create a consistent and
-    unambiguous task? This guide is likely for beginners to pre-process a dataset; however, it's not
-    for a complete beginner. We don't need to revisit
-6. Add a section for transfering from Google Drive?
-7. Create a script to double check the metadata for a dataset and the text normalization?
-8. Create an alignment file for a dataset without a transcript?
-
-## 1. Data
-
-This data will be used to train our text-to-speech model.
-
-You'll find the data for each voice-actor working with WellSaid Labs in the
-[wellsaid_labs_datasets](https://console.cloud.google.com/storage/browser/wellsaid_labs_datasets;tab=objects?project=voice-research-255602&prefix=)
-Google Storage Bucket. Find the actor whose data needs to be processed and note the directory
-structure should look like this:
+First, you'll need to upload scripts and recordings to
+[wellsaid_labs_datasets](https://console.cloud.google.com/storage/browser/wellsaid_labs_datasets;tab=objects?project=voice-research-255602)
+. The uploaded directory should look similar to this example...
 
 ```bash
 └── wellsaid_labs_datasets
-    ├── actor_name
+    ├── hilary_noriega
     │   ├── scripts
     │   │   ├── DIPHONE_Script-1.csv
     │   │   ├── DIPHONE_Script-2.csv
@@ -53,46 +30,45 @@ structure should look like this:
     └── ....
 ```
 
-As in any other data modeling, the problem must be clearly defined. For example, the data should not
-include random and unexplained variations in the voice-over. This is a non exhaustive list of
-consistencies to pay attention too:
+The script files must be in a CSV format that contains a column called "Content" filled in with
+the script the voice actor read. The audio files can be in any audio format that's compatible
+with `ffmpeg`. Lastly, there should be one script per audio file, similarly named.
 
-- All files in `/scripts/` must be `.csv` files.
-- All files in `/recordings/` must be audio files.
-- There must be the same number of script files as there are audio files.
-- The script and audio files must be named similarly. More specifically, the examples use
-  `sort --human-numeric-sort` to pair the script and audio files together. Pay attention to the sort
-  order of the files in each directory; you may need to do some renaming.
-- The file size of each audio file stored in `recordings` are _similar_ in size and appropriate for
-  the length of the script text.
-- The script files are normalized such that any odd characters or phrases that the voice actor
-  ignored have been removed or replaced.
-- The audio files are self-consistent, for example:
-  - They should have similar metadata like format, sample rate, and channels.
-  - Aside from changes in the content, the voice-over sounds similar.
-  - Unless there is additional context given, the voice-over does not change prosody or language.
+Aside from that, for this dataset to be useful, it must be consistent. The model will be a
+reflection of the dataset. For example, here are a couple of consistencies you should
+watch out for:
 
-## 2. Preprocess Audio (Optional)
+- Aside from changes in the content, the voice-over pitch, timbre (tone color) and loudness
+  should stay consistent.
+- Unless there is additional context given, the voice-over should not change prosody or language.
+- The voice-over noise level shouldn't change.
+- The environment in which the voice-over is recorded in, should not change.
+- The script should be an accurate transcription of the recordings, and it should not contain any
+  funky characters.
 
-Google speech-to-text requires that the audio submitted is one of
-[these formats](https://cloud.google.com/speech-to-text/docs/reference/rest/v1p1beta1/RecognitionConfig#audioencoding)
-. You'll need to process your audio data, if it's not one of the accepted formats. These are the
-steps to-do so:
+## 2. Process data
+
+### Make a virtual machine (VM)
+
+In order to process the scripts and recordings, you'll need to make a virtual machine.
 
 1. Set these variables...
 
    ```bash
-   VM_NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-dataset-preprocessing
-
-   # Pick a zone that's closest to the GCS bucket `wellsaid_labs_datasets`.
+   VM_NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-dataset-processing
+   # NOTE: Pick a zone that's closest to the GCS bucket `wellsaid_labs_datasets`.
    VM_ZONE=your-vm-instance-zone # EXAMPLE: us-central1-a
+
+   PROJECT=voice-research-255602
+   VM_MACHINE_TYPE=n1-standard-2
+   gcloud config set project $PROJECT
+   gcloud auth application-default set-quota-project $PROJECT
    ```
 
-1. Create a VM to preprocess the audio data, like so...
+1. Create a VM, like so...
 
    ```bash
-   VM_MACHINE_TYPE=n1-standard-2
-   gcloud compute --project=voice-research-255602 instances create $VM_NAME \
+   gcloud compute instances create $VM_NAME \
       --zone=$VM_ZONE \
       --machine-type=$VM_MACHINE_TYPE \
       --boot-disk-size=512GB \
@@ -102,104 +78,159 @@ steps to-do so:
       --image-project=ubuntu-os-cloud
    ```
 
-1. From your local repository, ssh into your new VM instance, like so:
+1. From your local machine, `ssh` into your new VM instance, like so...
 
    ```bash
+   gcloud compute ssh --zone=$VM_ZONE $VM_NAME --command="sudo chmod -R a+rwx /opt"
+   gcloud compute ssh --zone=$VM_ZONE $VM_NAME --command="mkdir /opt/wellsaid-labs"
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
-   Continue to run this command until it succeeds.
-
-1. Install these packages, like so...
+1. In another window, run `lsyncd` to sync your local files to your virtual machine...
 
    ```bash
+   VM_NAME=$(python -m run.utils.gcp_vm most-recent)
+   VM_ZONE=$(python -m run.utils.gcp_vm zone --name $VM_NAME)
+   VM_IP=$(python -m run.utils.gcp_vm ip --name $VM_NAME --zone=$VM_ZONE)
+   VM_USER=$(python -m run.utils.gcp_vm user --name $VM_NAME --zone=$VM_ZONE)
+   sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
+                                    --public-dns $VM_IP \
+                                    --user $VM_USER \
+                                    --identity-file ~/.ssh/google_compute_engine
+   ```
+
+### Download your data onto the VM
+
+1. Set these variables...
+
+   ```bash
+   NAME=actor_name # Example: hilary_noriega
+   ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
+   PROCESSED=$ROOT/processed
+   ```
+
+2. Download the dataset, like so...
+
+   ```bash
+   GCS_URI=gs://wellsaid_labs_datasets/$NAME
+   mkdir -p $ROOT
+   gsutil -m cp -r -n $GCS_URI $ROOT
+   ```
+
+### Process data
+
+1. Install these dependencies onto the VM, like so...
+
+   ```bash
+   cd /opt/wellsaid-labs/Text-to-Speech
    sudo apt-get update
-   sudo apt-get install ffmpeg -y
+   sudo apt-get install python3-venv python3-dev sox ffmpeg espeak gcc -y
+   python3 -m venv venv
+   . venv/bin/activate
+   python -m pip install wheel pip --upgrade
+   python -m pip install -r requirements.txt --upgrade
    ```
 
-1. Download the audio files, like so...
+1. Normalize file names...
 
    ```bash
-   DOWNLOAD_GCS_URI=gs://wellsaid_labs_datasets/.../recordings/*.wav # Example: gs://wellsaid_labs_datasets/hilary_noriega/recordings/*.wav
-   DOWNLOAD_PATH=~/downloads/
-   mkdir $DOWNLOAD_PATH
-   gsutil -m cp -n $DOWNLOAD_GCS_URI $DOWNLOAD_PATH
+   python -m run.data rename $ROOT/
    ```
 
-1. Preprocess the files into 16kHz mono 16-bit WAV files, like so...
+1. (Optional) Review dataset audio file metadata for inconsistencies...
 
    ```bash
-   PREPROCESSED_PATH=~/preprocessed/
-   SAMPLE_RATE=16000
-   NUM_CHANNELS=1
-   CODEC=pcm_s16le
-   mkdir $PREPROCESSED_PATH
-   cd $DOWNLOAD_PATH
-   for i in *.wav; do ffmpeg -i "$i" -acodec $CODEC -ac $NUM_CHANNELS -ar $SAMPLE_RATE "$PREPROCESSED_PATH${i%.*}.wav"; done;
-   cd ~/
+   python -m run.data audio metadata $ROOT/recordings/*.wav
    ```
 
-1. Upload the preprocessed files back to GCS, like so...
+1. Normalize audio file format...
 
    ```bash
-   UPLOAD_GCS_URI=gs://wellsaid_labs_datasets/.../preprocessed_recordings/ # Example: gs://wellsaid_labs_datasets/hilary_noriega/preprocessed_recordings/
-   gsutil -m cp $PREPROCESSED_PATH*.wav $UPLOAD_GCS_URI
+   mkdir -p $PROCESSED/recordings
+   python -m run.data audio normalize $ROOT/recordings/*.wav $PROCESSED/recordings
    ```
 
-1. You can now exit your VM with the `exit` command.
+1. Normalize audio file format for
+   [Google speech-to-text](https://cloud.google.com/speech-to-text/docs/encoding)...
+
+   ```bash
+   mkdir -p $PROCESSED/speech_to_text
+   python -m run.data audio normalize $ROOT/recordings/*.wav $PROCESSED/speech_to_text \
+                                      --encoding='pcm_s16le'
+   ```
+
+1. (Optional) Review audio file loudness for inconsistencies...
+
+   ```bash
+   python -m run.data audio loudness $PROCESSED/recordings/*.wav
+   ```
+
+1. Normalize CSV file text...
+
+   ```bash
+   mkdir -p $PROCESSED/scripts
+   python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts
+   ```
+
+1. Upload the processed files back to GCS, like so...
+
+   ```bash
+   gsutil -m cp -r -n $PROCESSED/* $GCS_URI/processed
+   ```
+
+1. (Optional) From your local machine, review CSV normalization, like so...
+
+   ```bash
+   python -m run.data diff "$GCS_URI/scripts/Script 1 - Hilary.csv" \
+                           "$GCS_URI/processed/scripts/script_1_-_hilary.csv"
+   ```
+
+1. Generate time alignments that synchronize the scripts and recordings...
+
+   ```bash
+   RECORDINGS=$(gsutil ls "$GCS_URI/speech_to_text/*.wav" | python -m run.utils.sort)
+   SCRIPTS=$(gsutil ls "$GCS_URI/scripts/*.csv" | python -m run.utils.sort)
+   python -m run.data.sync_script_with_audio \
+      $(python -m run.utils.prefix --voice-over $RECORDINGS) \
+      $(python -m run.utils.prefix --script $SCRIPTS) \
+      --destination $GCS_URI/
+   ```
+
+   ```zsh
+   python -m run.data.sync_script_with_audio \
+     $(printf -- '--voice-over\0%s\0' $RECORDINGS | xargs -0) \
+     $(printf -- '--script\0%s\0' $SCRIPTS | xargs -0) \
+     --destination $GCS_URI/
+   ```
+
+   Learn more about the above command, here:
+   https://unix.stackexchange.com/questions/445430/expand-glob-with-flag-inserted-before-each-filename
+
+   Audit the results of the synchronization, and re-run the script if necessary. The issues that may
+   arise are:
+
+    - The sorting didn't work, and the script files didn't match up with the voice-over files,
+      correctly.
+    - The voice-over includes too much, or too little audio.
+    - The voice-over skips phrases in the script. For example, the script has odd characters or
+      duplicate phrases that are not read by the voice-actor.
+    - Google’s speech recognition make's a mistake.
+
+    Most of these issues can be resolved by updating the script or recording, and rerunning the
+    synchronization.
+
+## 3. Review dataset
+
+TODO
+
+## 4. Clean up
+
+1. Kill your `lsyncd` process by typing `Ctrl-C`.
+
+1. Exit your VM with the `exit` command.
 
 1. Delete your instance...
 
-    ```bash
-    gcloud compute instances delete $VM_NAME --zone=$VM_ZONE
-    ```
-
-## 3. Synchronize Script with Audio
-
-Follow the inline documentation for `src/bin/sync_script_with_audio.py` to synchronize the script
-with the audio, and to save an alignment file. You'll need to audit the results of the
-synchronization, and re-run the script if necessary. The issues that may arise are:
-
-- The voice-over skips parts of the script.
-- The script has odd characters that are not read by the voice-actor.
-- There are a large number of unaligned words.
-- The dataset length is shorter or longer than expected.
-- The voice-over is cutoff, and it does not have enough hours of audio.
-
-In order to mitigate these errors, please check: (TODO)
-
-- [ ] That the original audio files have reasonable and consistent file sizes.
-- [ ] The script reports less than 0.5% "unaligned characters"; otherwise, the transcript likely
-      doesn't match the audio.
-- [ ] The dataset created is of a reasonable length. For example, the script should log that
-      the final Actor Shmactor dataset is ~14 hours in length.
-- [ ] The longest "unaligned substring" is small; otherwise, the transcript likely doesn't match
-      the audio.
-- [ ] The `/processed/wavs/` files are named consistently; otherwise, the audio formats of the
-      original files are not the same. This could mean that the audio was recorded inconsistently.
-      For example, some of Actor Shmactor's audio files required a `bits` normalization and others
-      required a `rate` normalization.
-- [ ] The metadata has the same number of entries as the number of audio files; otherwise, the
-      script may have been run in a compromised state.
-- [ ] There are only two logs files; otherwise, the script may have been run in a compromised state.
-- [ ] "Unable to align" logs for any red text, they represents text that wasn't included in the
-      final dataset. It is expected for a word or two to be not included; however, its not
-      expected for a long phrase not to be included unless the transcript or audio has mistakes.
-- [ ] "unaligned text spans between SST and transcript" logs for any red text, they represent
-      text that was included in the final dataset but maybe wasn't spoken in the audio. It is
-      expected for a word or two to be included despite not being detected in the audio; however,
-      its not expected for a long phrase to be included but not detected at all.
-
-Finally, please run this notebook as a final check: `notebooks/QA Datasets/Sample Dataset.ipynb`.
-The notebook will enable you to check for any weird characters in the finished dataset. Also, it
-will allow you to listen to a random sample of audio to ensure that the final dataset was
-processed correctly. (TODO)
-
-If you find any errors have occurred, please update the transcript or audio files and rerun the
-scripts. In the end, we want to have an accurate transcript, audio files, and processed dataset.
-(TODO)
-
-## Afterwards
-
-TODO: Add the dataset to the code base
-TODO: The dataset will be automatically process during runtime.
+   ```bash
+   gcloud compute instances delete $VM_NAME --zone=$VM_ZONE
+   ```
