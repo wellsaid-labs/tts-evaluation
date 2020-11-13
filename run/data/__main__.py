@@ -187,7 +187,7 @@ def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
     text = re.sub("<.*?>", "", text)
     # NOTE: Fix for a missing space between end and beginning of a sentence. For example:
     #   the cold war.The term 'business ethics'
-    text = lib.text.add_spaces_between_sentences(nlp(text))
+    text = lib.text.add_space_between_sentences(nlp(text))
     return text
 
 

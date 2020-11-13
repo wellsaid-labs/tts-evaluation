@@ -562,14 +562,14 @@ def test_is_normalized_vo_script__unnormalized():
     # fmt: on
 
 
-def test_add_spaces_between_sentences():
-    """ Test `lib.text.add_spaces_between_sentences` adds a space between sentences. """
+def test_add_space_between_sentences():
+    """ Test `lib.text.add_space_between_sentences` adds a space between sentences. """
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
     script = (
         "Business was involved in slavery, colonialism, and the cold war.The term "
         "'business ethics' came into common use in the United States in the early 1970s."
     )
-    assert lib.text.add_spaces_between_sentences(nlp(script)) == (
+    assert lib.text.add_space_between_sentences(nlp(script)) == (
         "Business was involved in slavery, colonialism, and the cold war. The term "
         "'business ethics' came into common use in the United States in the early 1970s."
     )
@@ -577,14 +577,14 @@ def test_add_spaces_between_sentences():
         "Mix and match the textured shades for a funky effect.Hang on "
         "to these fuzzy hangers from Domis."
     )
-    assert lib.text.add_spaces_between_sentences(nlp(script)) == (
+    assert lib.text.add_space_between_sentences(nlp(script)) == (
         "Mix and match the textured shades for a funky effect. Hang on "
         "to these fuzzy hangers from Domis."
     )
 
 
-def test_add_spaces_between_sentences__new_lines():
-    """Test `lib.text.add_spaces_between_sentences` adds a space between sentences while handling
+def test_add_space_between_sentences__new_lines():
+    """Test `lib.text.add_space_between_sentences` adds a space between sentences while handling
     newlines."""
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
     script = """
@@ -613,22 +613,22 @@ def test_add_spaces_between_sentences__new_lines():
     frontal lobe. Thus, the frontal lobe appears to be the part of the cortex that is most important
     for creativity.
     """
-    assert lib.text.add_spaces_between_sentences(nlp(script)) == expected
+    assert lib.text.add_space_between_sentences(nlp(script)) == expected
 
 
-def test_add_spaces_between_sentences__one_word():
-    """Test `lib.text.add_spaces_between_sentences` handles one word."""
+def test_add_space_between_sentences__one_word():
+    """Test `lib.text.add_space_between_sentences` handles one word."""
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
-    assert lib.text.add_spaces_between_sentences(nlp("Hi")) == "Hi"
-    assert lib.text.add_spaces_between_sentences(nlp("Hi  ")) == "Hi  "
-    assert lib.text.add_spaces_between_sentences(nlp("Hi.  ")) == "Hi.  "
+    assert lib.text.add_space_between_sentences(nlp("Hi")) == "Hi"
+    assert lib.text.add_space_between_sentences(nlp("Hi  ")) == "Hi  "
+    assert lib.text.add_space_between_sentences(nlp("Hi.  ")) == "Hi.  "
 
 
-def test_add_spaces_between_sentences__regression():
-    """Test `lib.text.add_spaces_between_sentences` handles these regression tests on Hilary's
+def test_add_space_between_sentences__regression():
+    """Test `lib.text.add_space_between_sentences` handles these regression tests on Hilary's
     data."""
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
-    not_fixed = [
+    fixed = [
         (
             "The business' actions and decisions should be primarily ethical before it happens to "
             'become an ethical or even legal issue. "In the case of the government, community, and '
@@ -642,11 +642,6 @@ def test_add_spaces_between_sentences__regression():
             "would that men should do to you, do ye even so to them: for this is the law "
             'and the prophets."'
         ),
-    ]
-    for script in not_fixed:
-        assert lib.text.add_spaces_between_sentences(nlp(script)) != script
-
-    fixed = [
         (
             "This joint focus highlights both the theoretical and practical importance of the "
             "relationship: researchers are interested not only if the constructs are related, but "
@@ -677,7 +672,7 @@ def test_add_spaces_between_sentences__regression():
         ),
     ]
     for script in fixed:
-        assert lib.text.add_spaces_between_sentences(nlp(script)) == script
+        assert lib.text.add_space_between_sentences(nlp(script)) == script
 
 
 def test_normalize_non_standard_words():

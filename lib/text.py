@@ -623,25 +623,28 @@ def is_normalized_vo_script(text: str) -> bool:
     return len(set(text) - _READABLE_CHARACTERS) == 0
 
 
-def add_spaces_between_sentences(doc: spacy.tokens.Doc) -> str:
+def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:
     """ Add spaces between sentences which are not seperated by a space. """
     if len(doc) == 1:
         return doc[0].text_with_ws
     text = ""
     for curr, next in zip(doc, doc[1:]):
         # NOTE: Add whitespace if there isn't one at the sentence start.
+        prev = None if curr.i == 0 else doc[curr.i - 1]
         if (
             next.is_sent_start
             and len(curr.whitespace_) == 0
             and not curr.text[-1].isspace()
-            # NOTE: Edge case: Don't split apart punctuation
+            # CASE: Don't split apart punctuation
             and not (next.is_punct and curr.is_punct)
-            # NOTE: Edge case: Don't split apart if `curr` is already followed by a punctuation
-            # and a white-space.
+            # CASE: Don't split apart if `curr` is already followed by a punctuation and a
+            # white-space.
             and not (next.is_punct and len(next.whitespace_) > 0)
-            # NOTE: Edge case: Don't split apart if there are two sentences back to back, for
-            # some reason.
+            # CASE: Don't split apart if there are two sentences back to back, for some reason.
             and not curr.is_sent_start
+            # CASE: Don't split apart if `curr` is already preceded by a punctuation and a
+            # white-space.
+            and not (prev is not None and prev.is_punct and len(prev.whitespace_) > 0)
         ):
             text += curr.text + " "
         else:
