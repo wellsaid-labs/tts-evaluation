@@ -203,9 +203,6 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
      --destination $GCS_URI/
    ```
 
-   Learn more about the above command, here:
-   https://unix.stackexchange.com/questions/445430/expand-glob-with-flag-inserted-before-each-filename
-
    Audit the results of the synchronization, and re-run the script if necessary. The issues that may
    arise are:
 
@@ -214,7 +211,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
     - The voice-over includes too much, or too little audio.
     - The voice-over skips phrases in the script. For example, the script has odd characters or
       duplicate phrases that are not read by the voice-actor.
-    - Google’s speech recognition make's a mistake.
+    - Google’s speech recognition made a mistake.
 
     Most of these issues can be resolved by updating the script or recording, and rerunning the
     synchronization.
