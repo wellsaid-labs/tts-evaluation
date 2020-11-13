@@ -8,6 +8,8 @@ Please install the below requirements:
 
 - [Docker](https://www.docker.com/products/docker-desktop)
 - [brew](https://brew.sh/)
+- [Visual Studio Code](https://code.visualstudio.com/docs/setup/mac). In addition to the
+  initial steps, please run through the section called "Launching from the command line".
 
 Afterwards, please install other system dependencies, like so:
 

@@ -86,6 +86,8 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
+   These commands may exit with the return code 255, if so, try again.
+
 1. In another window, run `lsyncd` to sync your local files to your virtual machine...
 
    ```bash
@@ -114,7 +116,8 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    ```bash
    GCS_URI=gs://wellsaid_labs_datasets/$NAME
    mkdir -p $ROOT
-   gsutil -m cp -r -n $GCS_URI $ROOT
+   gsutil -m cp -r -n $GCS_URI/scripts $ROOT/
+   gsutil -m cp -r -n $GCS_URI/recordings $ROOT/
    ```
 
 ### Process data
@@ -181,6 +184,8 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. (Optional) From your local machine, review CSV normalization, like so...
 
    ```bash
+   NAME=actor_name # Example: hilary_noriega
+   GCS_URI=gs://wellsaid_labs_datasets/$NAME
    python -m run.data diff "$GCS_URI/scripts/Script 1 - Hilary.csv" \
                            "$GCS_URI/processed/scripts/script_1_-_hilary.csv"
    ```
@@ -188,19 +193,12 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. Generate time alignments that synchronize the scripts and recordings...
 
    ```bash
-   RECORDINGS=$(gsutil ls "$GCS_URI/speech_to_text/*.wav" | python -m run.utils.sort)
-   SCRIPTS=$(gsutil ls "$GCS_URI/scripts/*.csv" | python -m run.utils.sort)
+   RECORDINGS=$(gsutil ls "$GCS_URI/processed/speech_to_text/*.wav" | python -m run.utils.sort)
+   SCRIPTS=$(gsutil ls "$GCS_URI/processed/scripts/*.csv" | python -m run.utils.sort)
    python -m run.data.sync_script_with_audio \
       $(python -m run.utils.prefix --voice-over $RECORDINGS) \
       $(python -m run.utils.prefix --script $SCRIPTS) \
-      --destination $GCS_URI/
-   ```
-
-   ```zsh
-   python -m run.data.sync_script_with_audio \
-     $(printf -- '--voice-over\0%s\0' $RECORDINGS | xargs -0) \
-     $(printf -- '--script\0%s\0' $SCRIPTS | xargs -0) \
-     --destination $GCS_URI/
+      --destination $GCS_URI/processed/
    ```
 
    Audit the results of the synchronization, and re-run the script if necessary. The issues that may

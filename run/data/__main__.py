@@ -6,6 +6,7 @@ import math
 import multiprocessing
 import pathlib
 import re
+import shlex
 import subprocess
 import tempfile
 import time
@@ -23,9 +24,11 @@ import run
 from run._utils import gcs_uri_to_blob
 
 if typing.TYPE_CHECKING:  # pragma: no cover
+    import Levenshtein
     import pandas
     from spacy.lang import en as spacy_en
 else:
+    Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
     pandas = LazyLoader("pandas", globals(), "pandas")
     spacy_en = LazyLoader("spacy_en", globals(), "spacy.lang.en")
 
@@ -67,23 +70,23 @@ def rename(directory: pathlib.Path):
             path.rename(path.parent / normalized)
 
 
-@app.command("diff")
-def diff(gcs_uri: str, other_gcs_uri: str):
-    """ View diff between GCS-URI and OTHER-GCS-URI. """
+def _download(gcs_uri: str) -> typing.Tuple[typing.IO[bytes], str]:
+    """ Helper function for `diff`. """
     blob = gcs_uri_to_blob(gcs_uri)
-    file_ = tempfile.NamedTemporaryFile()
+    file_ = tempfile.NamedTemporaryFile(prefix=blob.name.split(".")[0].split("/")[-1])
     path = pathlib.Path(file_.name)
     blob.download_to_filename(str(path))
+    return file_, shlex.quote(str(path.absolute()))
 
-    other_blob = gcs_uri_to_blob(other_gcs_uri)
-    other_file = tempfile.NamedTemporaryFile()
-    other_path = pathlib.Path(other_file.name)
-    other_blob.download_to_filename(str(other_path))
 
-    subprocess.run(f"code --diff {path.absolute()} {other_path.absolute()}", shell=True)
-
+@app.command("diff")
+def diff(gcs_uri: str, other_gcs_uri: str):
+    """View diff between GCS-URI and OTHER-GCS-URI."""
+    file_, path = _download(gcs_uri)
+    other_file, other_path = _download(other_gcs_uri)
+    subprocess.run(f"code --diff {path} {other_path}", shell=True)
     while True:
-        time.sleep(1)  # NOTE: Keep the temporary files around, until the process is exited.
+        time.sleep(1)  # NOTE: Keep the temporary files around until the process is exited.
 
 
 @audio_app.command()
@@ -170,7 +173,6 @@ def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
       https://pypi.org/project/pyspellchecker/
       https://textblob.readthedocs.io/en/dev/quickstart.html#spelling-correction
     - Visualize any text changes for quality assurance
-    - Remove any stray HTML
     - Visualize any strange words that may need to be normalized
     """
     text = lib.text.normalize_vo_script(text)
@@ -190,14 +192,18 @@ def csv_normalize(paths: typing.List[pathlib.Path], dest: pathlib.Path):
     """Normalize csv file(s) in PATHS and save to DEST."""
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
     partial = functools.partial(_csv_normalize, nlp=nlp)
-    for path in tqdm.tqdm(paths):
+    progress_bar = tqdm.tqdm(total=len(paths))
+    for path in paths:
         dest_path = dest / path.name
         if dest_path.exists():
             logger.error("Skipping, file already exists: %s", dest_path)
-        else:
-            data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(path))
-            data_frame = data_frame.applymap(partial)
-            data_frame.to_csv(dest_path, index=False)
+            continue
+        data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(path))
+        data_frame = data_frame.applymap(partial)
+        data_frame.to_csv(dest_path, index=False)
+        num_edits = Levenshtein.distance(path.read_text(), dest_path.read_text())  # type: ignore
+        logger.info("Made %d edits to %s.", num_edits, path.name)
+        progress_bar.update()
 
 
 @csv_app.command()
