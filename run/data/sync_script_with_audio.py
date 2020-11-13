@@ -340,6 +340,11 @@ def _flatten_stt_result(stt_result: SttResult) -> typing.Tuple[str, typing.List[
         if prev.audio[-1] > next.audio[0]:
             # NOTE: Unfortunately, in rare cases, this does happen.
             logging.warning("These alignments overlap: %s > %s", prev, next)
+    # NOTE: Unfortunately, Google STT, in rare cases, will predict a token with punctuation, for
+    # example:
+    # "Military theory and practice contributed approaches to managing the newly-popular
+    # factories.given."
+    # Google STT predicted the token "factories.given." in the above transcript it predicted.
     message = "Google SST should be white-space tokenized."
     assert " ".join(t.text for t in stt_tokens).strip() == transcript.strip(), message
     return transcript, stt_tokens

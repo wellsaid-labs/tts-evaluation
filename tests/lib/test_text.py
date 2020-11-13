@@ -628,7 +628,25 @@ def test_add_spaces_between_sentences__regression():
     """Test `lib.text.add_spaces_between_sentences` handles these regression tests on Hilary's
     data."""
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
-    scripts = [
+    not_fixed = [
+        (
+            "The business' actions and decisions should be primarily ethical before it happens to "
+            'become an ethical or even legal issue. "In the case of the government, community, and '
+            "society what was merely an ethical issue can become a legal debate and eventually "
+            'law."'
+        ),
+        (
+            "In Sharia law, followed by many Muslims, banking specifically prohibits charging "
+            "interest on loans. Traditional Confucian thought discourages profit-seeking. "
+            'Christianity offers the Golden Rule command, "Therefore all things whatsoever ye '
+            "would that men should do to you, do ye even so to them: for this is the law "
+            'and the prophets."'
+        ),
+    ]
+    for script in not_fixed:
+        assert lib.text.add_spaces_between_sentences(nlp(script)) != script
+
+    fixed = [
         (
             "This joint focus highlights both the theoretical and practical importance of the "
             "relationship: researchers are interested not only if the constructs are related, but "
@@ -658,7 +676,7 @@ def test_add_spaces_between_sentences__regression():
             "drawings; these were scored for uncommonness."
         ),
     ]
-    for script in scripts:
+    for script in fixed:
         assert lib.text.add_spaces_between_sentences(nlp(script)) == script
 
 
