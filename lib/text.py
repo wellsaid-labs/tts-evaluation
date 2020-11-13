@@ -625,31 +625,25 @@ def is_normalized_vo_script(text: str) -> bool:
 
 def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:
     """ Add spaces between sentences which are not seperated by a space. """
-    if len(doc) == 1:
-        return doc[0].text_with_ws
-    text = ""
-    for curr, next in zip(doc, doc[1:]):
-        # NOTE: Add whitespace if there isn't one at the sentence start.
-        prev = None if curr.i == 0 else doc[curr.i - 1]
+    if len(doc) <= 2:
+        return str(doc)
+    text = doc[0].text_with_ws
+    for prev, curr, next in zip(doc, doc[1:], doc[2:]):
+        # NOTE: Add a whitespace after `curr` if it's wedged in between two words with no
+        # white space following it.
+        # NOTE: This approach avois tricky cases involving multiple sequential punctuation marks.
         if (
             next.is_sent_start
             and len(curr.whitespace_) == 0
+            # NOTE: This handles newlines and other special characters
             and not curr.text[-1].isspace()
-            # CASE: Don't split apart punctuation
-            and not (next.is_punct and curr.is_punct)
-            # CASE: Don't split apart if `curr` is already followed by a punctuation and a
-            # white-space.
-            and not (next.is_punct and len(next.whitespace_) > 0)
-            # CASE: Don't split apart if there are two sentences back to back, for some reason.
-            and not curr.is_sent_start
-            # CASE: Don't split apart if `curr` is already preceded by a punctuation and a
-            # white-space.
-            and not (prev is not None and prev.is_punct and len(prev.whitespace_) > 0)
+            and prev.text.isalnum()
+            and next.text.isalnum()
         ):
             text += curr.text + " "
         else:
             text += curr.text_with_ws
-    text += next.text_with_ws  # type: ignore
+    text += doc[-1].text_with_ws
     return text
 
 
