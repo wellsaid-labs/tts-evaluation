@@ -97,6 +97,12 @@ def test_flatten():
     assert lib.utils.flatten([[[[]]], [], [[]], [[], []]]) == []
 
 
+def test_list_to_tuple():
+    assert lib.utils.list_to_tuple([[1, 2], [3, 4], [5]]) == ((1, 2), (3, 4), (5,))
+    excepted = ((1,), (2, 3), (4, (5, (6, (7, (8,))))))
+    assert lib.utils.list_to_tuple([[1], [2, 3], [4, [5, [6, [7, [8]]]]]]) == excepted
+
+
 class MockModel(torch.nn.Module):
     # REFERENCE: http://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html
 

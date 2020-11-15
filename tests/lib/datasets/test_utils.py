@@ -211,8 +211,9 @@ def test_example_span__identity():
     assert example.speaker == span.speaker
     assert example.audio_path == span.audio_path
     assert example.other_metadata == span.other_metadata
-    assert example.to_string("audio_path", "other_metadata") == span.to_string(
-        "audio_path", "other_metadata"
+    assert (
+        example.to_string("audio_path", "other_metadata")[len(example.__class__.__name__) :]
+        == span.to_string("audio_path", "other_metadata")[len(span.__class__.__name__) :]
     )
     np.testing.assert_almost_equal(example.audio, span.audio)
 

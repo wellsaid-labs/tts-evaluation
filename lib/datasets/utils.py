@@ -17,6 +17,7 @@ import torch
 from third_party import LazyLoader
 
 import lib
+from lib.utils import list_to_tuple
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import pandas
@@ -77,7 +78,7 @@ class Example:
 
     def to_string(self, *fields):
         values = ", ".join(f"{f}={getattr(self, f)}" for f in fields)
-        return f"Example({values})"
+        return f"{self.__class__.__name__}({values})"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -132,7 +133,7 @@ class Span:
 
     def to_string(self, *fields):
         values = ", ".join(f"{f}={getattr(self, f)}" for f in fields)
-        return f"Span({values})"
+        return f"{self.__class__.__name__}({values})"
 
 
 def _overlap(slice: typing.Tuple[float, float], other: typing.Tuple[float, float]) -> float:
@@ -289,13 +290,12 @@ def dataset_loader(
         assert len(scripts) == len(json_["alignments"]), error
 
         for (_, script), alignments in zip(scripts.iterrows(), json_["alignments"]):
-            args = [tuple([tuple(s) for s in a]) for a in alignments]
             example = Example(
                 audio_path=recording_file_path,
                 speaker=speaker,
                 script=script[text_column],
                 transcript=json_["transcript"],
-                alignments=tuple([Alignment(*tuple(a)) for a in args]),  # type: ignore
+                alignments=tuple(Alignment(*a) for a in list_to_tuple(alignments)),  # type: ignore
                 other_metadata={k: v for k, v in script.items() if k not in (text_column,)},
             )
             examples.append(example)

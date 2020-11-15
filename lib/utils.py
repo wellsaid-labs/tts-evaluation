@@ -126,6 +126,20 @@ def flatten(l: _FlattenInputType) -> typing.List[_FlattenReturnType]:
     return [l]
 
 
+_ListToTupleVariable = typing.TypeVar("_ListToTupleVariable")
+_ListToTupleInputType = typing.Union[
+    _ListToTupleVariable,
+    typing.Sequence[typing.Union[_ListToTupleVariable, "_ListToTupleInputType"]],
+]
+
+
+def list_to_tuple(l: _ListToTupleInputType) -> _ListToTupleInputType:
+    """Turn a list of lists into a tuple of tuples."""
+    if isinstance(l, list):
+        return tuple(map(list_to_tuple, l))
+    return l
+
+
 def flatten_parameters(model: torch.nn.Module) -> torch.nn.Module:
     """ Apply `flatten_parameters` to `model`. """
     lambda_ = lambda m: m.flatten_parameters() if hasattr(m, "flatten_parameters") else None
