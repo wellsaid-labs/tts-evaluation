@@ -9,10 +9,10 @@ import json
 import logging
 import os
 import pathlib
-import pprint
 import random
 import subprocess
 import typing
+from dataclasses import fields
 from functools import lru_cache
 from math import ceil, floor
 from pathlib import Path
@@ -29,7 +29,6 @@ else:
     pandas = LazyLoader("pandas", globals(), "pandas")
 
 logger = logging.getLogger(__name__)
-pprinter = pprint.PrettyPrinter(indent=4)
 
 
 read_audio_slice = functools.lru_cache(maxsize=None)(lib.audio.read_audio_slice)
@@ -38,6 +37,8 @@ read_audio = functools.lru_cache(maxsize=None)(lib.audio.read_audio)
 
 def _handle_get_item_key(length: int, key: typing.Any) -> slice:
     """ Normalize `__getitem__` key. """
+    if length == 0 and isinstance(key, slice) and key.start is None and key.stop is None:
+        return slice(0, 0)
     items = list(range(length))[key]
     return slice(items[0], items[-1] + 1) if isinstance(items, list) else slice(items, items + 1)
 
@@ -73,8 +74,8 @@ class Passage:
         transcript: The `transcript` of the `audio`.
         alignments: Alignments that align the `script`, `transcript` and `audio`.
         other_metadata: Additional metadata associated with this passage.
-        left: The passage immediately to the left.
-        right: The passage immediately to the right.
+        index: The index of `self` in `self.passages`.
+        passages: Other neighboring passages, for context.
     """
 
     audio_path: Path
@@ -83,8 +84,12 @@ class Passage:
     transcript: str
     alignments: typing.Tuple[Alignment, ...]
     other_metadata: typing.Dict
-    left: typing.Optional[Passage] = None
-    right: typing.Optional[Passage] = None
+    index: int = 0
+    passages: typing.List[Passage] = None  # type: ignore
+
+    def __post_init__(self):
+        if self.index == 0 and self.passages is None:
+            self.passages = [self]
 
     @property
     def audio(self):
@@ -97,18 +102,14 @@ class Passage:
     def __getitem__(self, key) -> Span:
         return Span(self, _handle_get_item_key(len(self.alignments), key))
 
-    @staticmethod
-    def link(passages: typing.List[Passage]) -> typing.List[Passage]:
-        """ Set `left` and `right` attributes of a passage in `passages`. """
-        placeholder: typing.List[typing.Optional[Passage]] = [None]
-        prevs = placeholder + typing.cast(typing.List[typing.Optional[Passage]], passages[:-1])
-        nexts = typing.cast(typing.List[typing.Optional[Passage]], passages[1:]) + placeholder
-        for prev, curr, next in zip(prevs, passages, nexts):
-            assert curr.left is None, "Passage already linked"
-            curr.left = prev
-            assert curr.right is None, "Passage already linked"
-            curr.right = next
-        return passages
+    def key(self):
+        return tuple(getattr(self, f.name) for f in fields(self) if f.name != "passages")
+
+    def __hash__(self):
+        return hash(self.key())
+
+    def __eq__(self, other: typing.Any):
+        return self.key() == other.key() if isinstance(other, Passage) else NotImplemented
 
 
 @dataclasses.dataclass(frozen=True)
@@ -205,9 +206,6 @@ def span_generator(passages: typing.List[Passage], max_seconds: float) -> typing
         while True:
             yield random.choice(passages)[:]
 
-    assert all(
-        p.audio_path == passages[0].audio_path for p in passages
-    ), "Each passage must be from the same recording."
     min_ = lambda passage: passage.alignments[0].audio[0]
     max_ = lambda passage: passage.alignments[-1].audio[1]
     offset = lambda passage: floor(min_(passage))
@@ -330,10 +328,11 @@ def dataset_loader(
                 transcript=json_["transcript"],
                 alignments=tuple(Alignment(*a) for a in list_to_tuple(alignments)),  # type: ignore
                 other_metadata={k: v for k, v in script.items() if k not in (text_column,)},
+                index=len(passages),
+                passages=passages,
             )
             passages.append(passage)
-        return_.extend(Passage.link(passages))
-
+        return_.extend(passages)
     return return_
 
 
@@ -392,7 +391,7 @@ def conventional_dataset_loader(
     _get_other_metadata = lambda r: {k: v for k, v in r.items() if k not in handled_columns}
     _get_alignments = lambda s, l: (Alignment((0, len(s)), (0.0, l), (0, len(s))),)
     iterator = zip(audio_paths, lib.audio.get_audio_metadata(audio_paths), df.iterrows())
-    # TODO: These passages could be linked together, consider that.
+    # TODO: These passages could be linked together, with `passages`, consider that.
     return [
         Passage(
             audio_path=audio_path,

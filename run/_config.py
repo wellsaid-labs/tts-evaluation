@@ -425,13 +425,18 @@ def configure():
 def _include_passage(passage: datasets.Passage) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
     details = passage.to_string("audio_path", "script", "other_metadata")
-    span = passage[:]
-    if len(span.alignments) == 0 or span.audio_length:
+
+    if len(passage.alignments) == 0:
         logger.warning("Passage (%s) has little to no alignments.", details)
         return False
 
-    if len(passage[:].script) == 0:
-        logger.warning("Passage (%s) has no text.", details)
+    span = passage[:]
+    if span.audio_length == 0.0:
+        logger.warning("Passage (%s) has no aligned audio.", details)
+        return False
+
+    if len(span.script) == 0:
+        logger.warning("Passage (%s) has no aligned text.", details)
         return False
 
     if not passage.audio_path.exists() or not passage.audio_path.is_file():

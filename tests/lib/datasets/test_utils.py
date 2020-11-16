@@ -1,4 +1,5 @@
 import pathlib
+import pickle
 import typing
 from collections import Counter
 from unittest import mock
@@ -14,11 +15,11 @@ from tests import _utils
 
 
 def _make_passage(
-    alignments=(),
-    audio_path=pathlib.Path("."),
-    speaker=lib.datasets.Speaker(""),
-    script="",
-    metadata={},
+    alignments=tuple(),
+    audio_path: pathlib.Path = pathlib.Path("."),
+    speaker: lib.datasets.Speaker = lib.datasets.Speaker(""),
+    script: str = "",
+    metadata: typing.Dict = {},
 ) -> lib.datasets.Passage:
     """ Make a `lib.datasets.Passage` for testing. """
     alignments = tuple([Alignment(a, a, a) for a in alignments])
@@ -182,8 +183,8 @@ def test_dataset_loader(_):
         ),
         alignments=tuple(alignments),
         other_metadata={"Index": 0, "Source": "CMU", "Title": "CMU"},
-        left=None,
-        right=passages[1],
+        index=0,
+        passages=passages,
     )
     assert passages[1].script == "Not at this particular case, Tom, apologized Whittemore."
 
@@ -219,6 +220,8 @@ def test_passage_span__identity():
         == span.to_string("audio_path", "other_metadata")[len(span.__class__.__name__) :]
     )
     np.testing.assert_almost_equal(passage.audio, span.audio)
+    pickle.dumps(passage)
+    pickle.dumps(span)
 
 
 def test__overlap():
