@@ -383,6 +383,7 @@ def align_stt_with_script(
         get_window_size(len(script_tokens), len(stt_tokens)),
     )
     alignments = lib.text.align_tokens(*args, allow_substitution=is_sound_alike)[1]
+    # TODO: Should `_fix_alignments` align between scripts? Is that data valuable?
     script_tokens, stt_tokens, alignments = _fix_alignments(
         scripts, alignments, script_tokens, stt_tokens
     )

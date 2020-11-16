@@ -1,4 +1,3 @@
-import dataclasses
 import logging
 import pathlib
 import re
@@ -8,7 +7,7 @@ from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 
 import lib
-from lib.datasets.utils import Example, Speaker, conventional_dataset_loader
+from lib.datasets.utils import Passage, Speaker, conventional_dataset_loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import num2words
@@ -23,13 +22,13 @@ LINDA_JOHNSON = Speaker("Linda Johnson")
 def lj_speech_dataset(
     directory: pathlib.Path,
     root_directory_name: str = "LJSpeech-1.1",
-    check_files=["LJSpeech-1.1/README"],
+    check_files=["LJSpeech-1.1/metadata.csv"],
     url: str = "http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2",
     speaker: Speaker = LINDA_JOHNSON,
     verbalize: bool = True,
     metadata_text_column: typing.Union[str, int] = 1,
     **kwargs,
-) -> typing.List[Example]:
+) -> typing.List[Passage]:
     """Load the Linda Johnson (LJ) Speech dataset.
 
     This is a public domain speech dataset consisting of 13,100 short audio clips of a single
@@ -69,13 +68,13 @@ def lj_speech_dataset(
     download_file_maybe_extract(
         url=url, directory=str(directory.absolute()), check_files=check_files
     )
-    examples = conventional_dataset_loader(
+    passages = conventional_dataset_loader(
         directory / root_directory_name,
         speaker,
         **kwargs,
         metadata_text_column=metadata_text_column,
     )
-    return [_process_text(example, verbalize) for example in examples]
+    return [_process_text(passage, verbalize) for passage in passages]
 
 
 """
@@ -91,12 +90,12 @@ punctuation.".
 """
 
 
-def _process_text(example: Example, verbalize: bool):
-    script = _normalize_whitespace(example.script)
+def _process_text(passage: Passage, verbalize: bool):
+    script = _normalize_whitespace(passage.script)
     script = _normalize_quotations(script)
 
     if verbalize:
-        script = _verbalize_special_cases(example.audio_path, script)
+        script = _verbalize_special_cases(passage.audio_path, script)
         script = _expand_abbreviations(script)
         script = _verbalize_time_of_day(script)
         script = _verbalize_ordinals(script)
@@ -109,7 +108,8 @@ def _process_text(example: Example, verbalize: bool):
 
     # NOTE: Messes up pound sign (£); therefore, this is after `_verbalize_currency`
     script = lib.text.normalize_vo_script(script)
-    return dataclasses.replace(example, script=script)
+    passage.script = script
+    return passage
 
 
 # Reference: https://keithito.com/LJ-Speech-Dataset/

@@ -147,7 +147,7 @@ def normalize_audio(
     """
     logger.info("Normalizing dataset audio...")
     args_: typing.Set[pathlib.Path] = set(
-        flatten([[e.audio_path for e in v] for k, v in dataset.items()])
+        flatten([[p.audio_path for p in v] for _, v in dataset.items()])
     )
     args = [(p, _normalize_path(p)) for p in args_ if not _normalize_path(p).exists()]
     partial = lib.audio.normalize_audio.get_configured_partial()  # type: ignore
@@ -156,10 +156,9 @@ def normalize_audio(
     with multiprocessing.pool.ThreadPool(num_processes) as pool:
         list(tqdm.tqdm(pool.imap_unordered(partial, args), total=len(args)))
 
-    for speaker, examples in dataset.items():
-        dataset[speaker] = [
-            dataclasses.replace(e, audio_path=_normalize_path(e.audio_path)) for e in examples
-        ]
+    for passages in dataset.values():
+        for passage in passages:
+            passage.audio_path = _normalize_path(passage.audio_path)
 
 
 def init_distributed(
@@ -184,29 +183,29 @@ def init_distributed(
     return device
 
 
-def split_examples(
-    examples: typing.List[lib.datasets.Example], dev_size: float
-) -> typing.Tuple[typing.List[lib.datasets.Example], typing.List[lib.datasets.Example]]:
+def split_passages(
+    passages: typing.List[lib.datasets.Passage], dev_size: float
+) -> typing.Tuple[typing.List[lib.datasets.Passage], typing.List[lib.datasets.Passage]]:
     """Split a dataset into a development and train set.
 
     Args:
-        examples
+        passages
         dev_size: Number of seconds of audio data in the development set.
 
     Return:
         train: The rest of the data.
         dev: Dataset with `dev_size` of data.
     """
-    examples = examples.copy()
-    random.shuffle(examples)
-    # NOTE: `len_` assumes that a negligible amount of data is unusable in each example.
-    len_ = lambda e: e.alignments[-1].audio[-1] - e.alignments[0].audio[0]
-    dev, train = tuple(lib.utils.accumulate_and_split(examples, [dev_size, math.inf], len_))
-    dev_size = sum([len_(e) for e in dev])
-    train_size = sum([len_(e) for e in dev])
+    passages = passages.copy()
+    random.shuffle(passages)
+    # NOTE: `len_` assumes that a negligible amount of data is unusable in each passage.
+    len_ = lambda p: p[:].audio_length
+    dev, train = tuple(lib.utils.accumulate_and_split(passages, [dev_size, math.inf], len_))
+    dev_size = sum([len_(p) for p in dev])
+    train_size = sum([len_(p) for p in train])
     assert train_size >= dev_size, "The `dev` dataset is larger than the `train` dataset."
-    assert len(dev) > 0, "The dev dataset has no examples."
-    assert len(train) > 0, "The train dataset has no examples."
+    assert len(dev) > 0, "The dev dataset has no passages."
+    assert len(train) > 0, "The train dataset has no passages."
     return train, dev
 
 
@@ -354,9 +353,8 @@ def _get_words(
         character_to_word[token_start : token_start + len(token.text)] = [i] * len(token.text)
 
     zeros = torch.zeros(doc[0].vector.size)
-    word_vectors = torch.from_numpy(
-        numpy.stack([zeros if w < 0 else doc[w].vector for w in character_to_word])
-    )
+    word_vectors_ = numpy.stack([zeros if w < 0 else doc[w].vector for w in character_to_word])
+    word_vectors = torch.from_numpy(word_vectors_)
     for token in doc:
         if not token.has_vector:
             lib.utils.call_once(
@@ -404,9 +402,9 @@ def get_spectrogram_model_span(
     metadata = lib.audio.get_audio_metadata([span.audio_path])[0]
     lib.audio.assert_audio_normalized(metadata, sample_rate=sample_rate)
 
-    alignments = span.example.alignments[slice(*span.slice)]
+    alignments = span.passage.alignments[span.span]
     _, word_vectors, _, phonemes = _get_words(
-        span.example.script, alignments[0].script[0], alignments[-1].script[-1]
+        span.passage.script, alignments[0].script[0], alignments[-1].script[-1]
     )
 
     arg = (span.script, phonemes, span.speaker)
@@ -492,7 +490,7 @@ def get_spectrogram_model_span(
 
 
 class SpectrogramModelSpanBatch(typing.NamedTuple):
-    """Batch of preprocessed `Example` used to training or evaluating the spectrogram model."""
+    """Batch of preprocessed `Span` used to training or evaluating the spectrogram model."""
 
     length: int
 
@@ -557,44 +555,44 @@ class SpectrogramModelSpanBatch(typing.NamedTuple):
     other_metadata: typing.List[typing.Dict[typing.Union[str, int], typing.Any]]
 
 
-def batch_spectrogram_spans(
-    examples: typing.List[SpectrogramModelSpan],
+def batch_spectrogram_model_spans(
+    spans: typing.List[SpectrogramModelSpan],
 ) -> SpectrogramModelSpanBatch:
     """
     TODO: For performance reasons, we could consider moving some computations from
-    `get_spectrogram_example` to this function for batch processing. This technique would be
+    `get_spectrogram_model_span` to this function for batch processing. This technique would be
     efficient to use with `DataLoader` because `collate_fn` runs in the same worker process
-    as the basic loader. There is no fancy threading to load multiple examples at the same
+    as the basic loader. There is no fancy threading to load multiple spans at the same
     time.
     """
     return SpectrogramModelSpanBatch(
-        length=len(examples),
-        audio_path=[e.audio_path for e in examples],
-        audio=[e.audio for e in examples],
-        spectrogram=stack_and_pad_tensors([e.spectrogram for e in examples], dim=1),
-        spectrogram_mask=stack_and_pad_tensors([e.spectrogram_mask for e in examples], dim=1),
-        stop_token=stack_and_pad_tensors([e.stop_token for e in examples], dim=1),
-        speaker=[e.speaker for e in examples],
-        encoded_speaker=stack_and_pad_tensors([e.encoded_speaker for e in examples], dim=1),
-        text=[e.text for e in examples],
-        encoded_text=stack_and_pad_tensors([e.encoded_text for e in examples], dim=1),
-        encoded_text_mask=stack_and_pad_tensors([e.encoded_text_mask for e in examples], dim=1),
-        encoded_letter_case=stack_and_pad_tensors([e.encoded_letter_case for e in examples], dim=1),
-        word_vectors=stack_and_pad_tensors([e.word_vectors for e in examples], dim=1),
-        encoded_phonemes=stack_and_pad_tensors([e.encoded_phonemes for e in examples], dim=1),
-        loudness=stack_and_pad_tensors([e.loudness for e in examples], dim=1),
-        loudness_mask=stack_and_pad_tensors([e.loudness_mask for e in examples], dim=1),
-        speed=stack_and_pad_tensors([e.speed for e in examples], dim=1),
-        speed_mask=stack_and_pad_tensors([e.speed_mask for e in examples], dim=1),
-        alignments=[e.alignments for e in examples],
-        other_metadata=[e.other_metadata for e in examples],
+        length=len(spans),
+        audio_path=[s.audio_path for s in spans],
+        audio=[s.audio for s in spans],
+        spectrogram=stack_and_pad_tensors([p.spectrogram for p in spans], dim=1),
+        spectrogram_mask=stack_and_pad_tensors([s.spectrogram_mask for s in spans], dim=1),
+        stop_token=stack_and_pad_tensors([s.stop_token for s in spans], dim=1),
+        speaker=[s.speaker for s in spans],
+        encoded_speaker=stack_and_pad_tensors([s.encoded_speaker for s in spans], dim=1),
+        text=[s.text for s in spans],
+        encoded_text=stack_and_pad_tensors([s.encoded_text for s in spans], dim=1),
+        encoded_text_mask=stack_and_pad_tensors([s.encoded_text_mask for s in spans], dim=1),
+        encoded_letter_case=stack_and_pad_tensors([s.encoded_letter_case for s in spans], dim=1),
+        word_vectors=stack_and_pad_tensors([s.word_vectors for s in spans], dim=1),
+        encoded_phonemes=stack_and_pad_tensors([s.encoded_phonemes for s in spans], dim=1),
+        loudness=stack_and_pad_tensors([s.loudness for s in spans], dim=1),
+        loudness_mask=stack_and_pad_tensors([s.loudness_mask for s in spans], dim=1),
+        speed=stack_and_pad_tensors([s.speed for s in spans], dim=1),
+        speed_mask=stack_and_pad_tensors([s.speed_mask for s in spans], dim=1),
+        alignments=[s.alignments for s in spans],
+        other_metadata=[s.other_metadata for s in spans],
     )
 
 
 def worker_init_fn(worker_id: int, seed: int, device_index: int, digits: int = 8):
     """`worker_init_fn` for `torch.utils.data.DataLoader` that ensures each worker has a
     unique and deterministic random seed."""
-    # NOTE: To ensure each worker generates different dataset examples, set a unique seed for
+    # NOTE: To ensure each worker generates different dataset spans, set a unique seed for
     # each worker.
     # Learn more: https://stackoverflow.com/questions/16008670/how-to-hash-a-string-into-8-digits
     seed_ = hashlib.sha256(str([seed, device_index, worker_id]).encode("utf-8")).hexdigest()
@@ -654,20 +652,20 @@ def get_dataset_stats(
     train: Dataset, dev: Dataset
 ) -> typing.Dict[run._config.Label, typing.Union[str, int, float]]:
     """Get `train` and `dev` dataset statistics."""
-    # NOTE: `len_` assumes the entire example is usable.
-    len_ = lambda d: sum(e.alignments[-1].audio[-1] - e.alignments[0].audio[0] for e in d)
+    # NOTE: `len_` assumes the entire passage is usable.
+    len_ = lambda d: sum(p.alignments[-1].audio[-1] - p.alignments[0].audio[0] for p in d)
     stats: typing.Dict[run._config.Label, typing.Union[int, str, float]] = {}
     data: Dataset
     for data, type_ in [(train, DatasetType.TRAIN), (dev, DatasetType.DEV)]:
         label = functools.partial(get_dataset_label, cadence=Cadence.STATIC, type_=type_)
-        stats[label("num_examples")] = sum(len(e) for e in data.values())
-        stats[label("num_characters")] = sum(sum(len(e.script) for e in v) for v in data.values())
-        stats[label("num_seconds")] = seconds_to_string(sum(len_(e) for e in data.values()))
-        for speaker, examples in data.items():
+        stats[label("num_passages")] = sum(len(p) for p in data.values())
+        stats[label("num_characters")] = sum(sum(len(p.script) for p in v) for v in data.values())
+        stats[label("num_seconds")] = seconds_to_string(sum(len_(p) for p in data.values()))
+        for speaker, passages in data.items():
             label = functools.partial(label, speaker=speaker)
-            stats[label("num_examples")] = len(examples)
-            stats[label("num_characters")] = sum(len(e.script) for e in examples)
-            stats[label("num_seconds")] = seconds_to_string(len_(examples))
+            stats[label("num_passages")] = len(passages)
+            stats[label("num_characters")] = sum(len(p.script) for p in passages)
+            stats[label("num_seconds")] = seconds_to_string(len_(passages))
     return stats
 
 

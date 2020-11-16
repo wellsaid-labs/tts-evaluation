@@ -84,7 +84,7 @@ def test_normalize_audio():
         directory = pathlib.Path(path)
         audio_path = directory / TEST_DATA_LJ.name
         shutil.copy(TEST_DATA_LJ, audio_path)
-        example = lib.datasets.Example(
+        passage = lib.datasets.Passage(
             audio_path=audio_path,
             speaker=lib.datasets.LINDA_JOHNSON,
             script="",
@@ -92,7 +92,7 @@ def test_normalize_audio():
             alignments=tuple(),
             other_metadata={},
         )
-        dataset = {lib.datasets.LINDA_JOHNSON: [example]}
+        dataset = {lib.datasets.LINDA_JOHNSON: [passage]}
         run._utils.normalize_audio(
             dataset,
             suffix=suffix,
@@ -109,33 +109,33 @@ def test_normalize_audio():
         )
 
 
-def test_split_examples():
-    """Test `run._utils.split_examples` randomly splits `examples` into train and dev lists. """
+def test_split_passages():
+    """Test `run._utils.split_passages` randomly splits `passages` into train and dev lists. """
     with torchnlp.random.fork_rng(123):
-        _example = lambda a, s: lib.datasets.Example(
+        _passage = lambda a, s: lib.datasets.Passage(
             pathlib.Path(str(a)), s, "", "", (lib.datasets.Alignment((0, a), (0, a), (0, a)),), {}
         )
         a = lib.datasets.Speaker("a")
         b = lib.datasets.Speaker("b")
-        train, dev = run._utils.split_examples(
+        train, dev = run._utils.split_passages(
             [
-                _example(1, a),
-                _example(2, a),
-                _example(3, a),
-                _example(1, b),
-                _example(2, b),
-                _example(3, b),
+                _passage(1, a),
+                _passage(2, a),
+                _passage(3, a),
+                _passage(1, b),
+                _passage(2, b),
+                _passage(3, b),
             ],
             6,
         )
-        assert train == [_example(3, b), _example(3, a), _example(1, a)]
-        assert dev == [_example(1, b), _example(2, b), _example(2, a)]
+        assert train == [_passage(3, b), _passage(3, a), _passage(1, a)]
+        assert dev == [_passage(1, b), _passage(2, b), _passage(2, a)]
 
 
-def test_split_examples__empty_list():
-    """Test `run._utils.split_examples` errors if there are not enough examples. """
+def test_split_passages__empty_list():
+    """Test `run._utils.split_passages` errors if there are not enough passages. """
     with pytest.raises(AssertionError):
-        run._utils.split_examples([], 6)
+        run._utils.split_passages([], 6)
 
 
 def test__get_normalized_half_gaussian():
@@ -379,7 +379,7 @@ def test_get_rms_level__precise():
 
 def test_get_dataset_stats():
     """ Test `run._utils.get_dataset_stats` measures dataset statistics correctly. """
-    _example = lambda a, b, speaker: lib.datasets.Example(
+    _passage = lambda a, b, speaker: lib.datasets.Passage(
         pathlib.Path(str(a)),
         speaker,
         "t" * (b - a),
@@ -389,22 +389,22 @@ def test_get_dataset_stats():
     )
     a = lib.datasets.Speaker("a")
     b = lib.datasets.Speaker("b")
-    train = {a: [_example(0, 2, a), _example(2, 4, a)], b: [_example(0, 1, a)]}
+    train = {a: [_passage(0, 2, a), _passage(2, 4, a)], b: [_passage(0, 1, a)]}
     stats = run._utils.get_dataset_stats(train, {})
     get_dataset_label = lambda n, t, s=None: run._config.get_dataset_label(
         n, cadence=run._config.Cadence.STATIC, type_=t, speaker=s
     )
     assert stats == {
-        get_dataset_label("num_examples", run._config.DatasetType.TRAIN): 3,
+        get_dataset_label("num_passages", run._config.DatasetType.TRAIN): 3,
         get_dataset_label("num_characters", run._config.DatasetType.TRAIN): 5,
         get_dataset_label("num_seconds", run._config.DatasetType.TRAIN): "50s 0ms",
-        get_dataset_label("num_examples", run._config.DatasetType.TRAIN, a): 2,
+        get_dataset_label("num_passages", run._config.DatasetType.TRAIN, a): 2,
         get_dataset_label("num_characters", run._config.DatasetType.TRAIN, a): 4,
         get_dataset_label("num_seconds", run._config.DatasetType.TRAIN, a): "40s 0ms",
-        get_dataset_label("num_examples", run._config.DatasetType.TRAIN, b): 1,
+        get_dataset_label("num_passages", run._config.DatasetType.TRAIN, b): 1,
         get_dataset_label("num_characters", run._config.DatasetType.TRAIN, b): 1,
         get_dataset_label("num_seconds", run._config.DatasetType.TRAIN, b): "10s 0ms",
-        get_dataset_label("num_examples", run._config.DatasetType.DEV): 0,
+        get_dataset_label("num_passages", run._config.DatasetType.DEV): 0,
         get_dataset_label("num_characters", run._config.DatasetType.DEV): 0,
         get_dataset_label("num_seconds", run._config.DatasetType.DEV): "0ms",
     }

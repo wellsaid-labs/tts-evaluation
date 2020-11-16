@@ -130,9 +130,9 @@ class _State:
         comet: CometMLExperiment,
     ) -> lib.spectrogram_model.InputEncoder:
         """ Initialize an input encoder to encode model input. """
-        examples = chain(*tuple(chain(train_dataset.values(), dev_dataset.values())))
+        passages = chain(*tuple(chain(train_dataset.values(), dev_dataset.values())))
         input_encoder = lib.spectrogram_model.InputEncoder(
-            flatten([e.script for e in examples]),
+            flatten([p.script for p in passages]),
             run._config.DATASET_PHONETIC_CHARACTERS,
             list(train_dataset.keys()) + list(dev_dataset.keys()),
         )
@@ -268,7 +268,7 @@ class _DataIterator(torch.utils.data.IterableDataset):
                 get_spectrogram_model_span(next(generator), self.input_encoder)
                 for _ in range(self.bucket_size)
             ]
-            yield from sorted(spans, key=lambda e: e.spectrogram.shape[0])
+            yield from sorted(spans, key=lambda s: s.spectrogram.shape[0])
 
 
 class _DataLoader(collections.Iterable):
@@ -283,7 +283,7 @@ class _DataLoader(collections.Iterable):
             worker_init_fn=functools.partial(
                 run._utils.worker_init_fn, seed=run._config.RANDOM_SEED, device_index=device.index
             ),
-            collate_fn=run._utils.batch_spectrogram_spans,
+            collate_fn=run._utils.batch_spectrogram_model_spans,
             **kwargs,
         )
         self.loader = iter(loader)

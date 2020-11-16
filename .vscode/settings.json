@@ -48,5 +48,6 @@
     "markdown",
     "latex",
     "plaintext"
-  ]
+  ],
+  "python.analysis.autoImportCompletions": false
 }

@@ -15,7 +15,7 @@ from lib.datasets.m_ailabs import (
 )
 from lib.datasets.utils import (
     Alignment,
-    Example,
+    Passage,
     Span,
     Speaker,
     conventional_dataset_loader,
@@ -32,10 +32,10 @@ HILARY_NORIEGA = Speaker("Hilary Noriega")
 ALICIA_HARRIS = Speaker("Alicia Harris")
 MARK_ATHERLAY = Speaker("Mark Atherlay")
 SAM_SCHOLL = Speaker("Sam Scholl")
-DataLoader = typing.Callable[[Path], typing.List[Example]]
+DataLoader = typing.Callable[[Path], typing.List[Passage]]
 
 
-def hilary_noriega_speech_dataset(*args, **kwargs) -> typing.List[Example]:
+def hilary_noriega_speech_dataset(*args, **kwargs) -> typing.List[Passage]:
     kwargs.update({"speaker": HILARY_NORIEGA})
     return _dataset_loader(*args, **kwargs)
 
@@ -45,14 +45,14 @@ WSL_GCS_PATH = "gs://wellsaid_labs_datasets"
 
 def _dataset_loader(
     directory: Path, speaker: Speaker, gcs_path: str = WSL_GCS_PATH, **kwargs
-) -> typing.List[Example]:
+) -> typing.List[Passage]:
     label = speaker.name.lower().replace(" ", "_")
     return dataset_loader(directory, label, f"{gcs_path}/{label}/processed", speaker, **kwargs)
 
 
 __all__ = [
     "Speaker",
-    "Example",
+    "Passage",
     "Span",
     "DataLoader",
     "Alignment",

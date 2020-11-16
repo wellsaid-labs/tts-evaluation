@@ -51,7 +51,7 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata):
         data = lib.datasets.lj_speech_dataset(directory=directory)
         assert len(data) == 13100
         assert sum([len(r.script) for r in data]) == 1310332
-        assert data[0] == lib.datasets.Example(
+        assert data[0] == lib.datasets.Passage(
             audio_path=directory / "LJSpeech-1.1/wavs/LJ001-0001.wav",
             speaker=lib.datasets.LINDA_JOHNSON,
             script=(

@@ -1,4 +1,3 @@
-import dataclasses
 import enum
 import logging
 import math
@@ -86,7 +85,7 @@ class DatasetType(enum.Enum):
 
 
 Label = typing.NewType("Label", str)
-Dataset = typing.Dict[Speaker, typing.List[datasets.Example]]
+Dataset = typing.Dict[Speaker, typing.List[datasets.Passage]]
 
 
 def get_dataset_label(
@@ -243,9 +242,9 @@ def configure_audio_processing():
         ),
         lib.spectrogram_model.SpectrogramModel.__init__: HParams(
             # NOTE: This is based on one of the slowest legitimate example in the dataset:
-            # "rate(WSL_SMurphyScript34-39,24000)/script_52_chunk_9.wav"
+            # "rate(WSL_SMurphyScript34-39,24000)/script_52_chunk_9.wav" # TODO: Rethink?
             # NOTE: This configuration is related to the dataset preprocessing step:
-            # `_filter_too_much_audio_per_character` # TODO: Remove
+            # `_filter_too_much_audio_per_character` # TODO: Remove?
             # NOTE: This number was configured with the help of this notebook:
             # `QA_Datasets/Sample_Dataset.ipynb`
             max_frames_per_token=(0.16 / (frame_hop / SAMPLE_RATE)),
@@ -423,26 +422,25 @@ def configure():
     add_config(config)
 
 
-def _include_example(example: datasets.Example) -> bool:
-    """Return `True` iff `example` should be included in the dataset."""
-    alignments = example.alignments
-    example_string = example.to_string("audio_path", "script", "other_metadata")
-    if len(alignments) == 0 or alignments[0].audio[0] == alignments[-1].audio[-1]:
-        logger.warning("Example has little to no alignments: %s", example_string)
+def _include_passage(passage: datasets.Passage) -> bool:
+    """Return `True` iff `passage` should be included in the dataset."""
+    details = passage.to_string("audio_path", "script", "other_metadata")
+    span = passage[:]
+    if len(span.alignments) == 0 or span.audio_length:
+        logger.warning("Passage (%s) has little to no alignments.", details)
         return False
 
-    text = example.script[alignments[0].script[0] : alignments[-1].script[-1]]
-    if len(text) == 0:
-        logger.warning("Example has no text: %s", example_string)
+    if len(passage[:].script) == 0:
+        logger.warning("Passage (%s) has no text.", details)
         return False
 
-    if not example.audio_path.exists() or not example.audio_path.is_file():
-        logger.warning("Audio path doesn't exist or isn't a file: %s", example.audio_path)
+    if not passage.audio_path.exists() or not passage.audio_path.is_file():
+        logger.warning("Passage audio path (%s) isn't a file.", passage.audio_path)
         return False
 
-    # NOTE: Filter out example(s) that don't have a lower case character because it'll make
+    # NOTE: Filter out passages(s) that don't have a lower case character because it'll make
     # it difficult to classify initialisms.
-    if not any(c.islower() for c in example.script):
+    if not any(c.islower() for c in passage.script):
         return False
 
     # NOTE: Filter out Midnight Passenger because it has an inconsistent acoustic setup compared to
@@ -450,20 +448,20 @@ def _include_example(example: datasets.Example) -> bool:
     # NOTE: Filter out the North & South book because it uses English in a way that's not consistent
     # with editor usage, for example: "To-morrow, you will-- Come back to-night, John!"
     books = (datasets.m_ailabs.MIDNIGHT_PASSENGER, datasets.m_ailabs.NORTH_AND_SOUTH)
-    metadata = example.other_metadata
+    metadata = passage.other_metadata
     if metadata is not None and "books" in metadata and (metadata["books"] in books):
         return False
 
     return True
 
 
-def _handle_example(example: datasets.Example) -> datasets.Example:
-    """Update and/or check `example`."""
-    if example.speaker in set([datasets.JUDY_BIEBER, datasets.MARY_ANN, datasets.ELIZABETH_KLETT]):
-        example = dataclasses.replace(example, text=lib.text.normalize_vo_script(example.script))
+def _handle_passage(passage: datasets.Passage) -> datasets.Passage:
+    """Update and/or check `passage`."""
+    if passage.speaker in set([datasets.JUDY_BIEBER, datasets.MARY_ANN, datasets.ELIZABETH_KLETT]):
+        passage.script = lib.text.normalize_vo_script(passage.script)
     else:
-        assert lib.text.is_normalized_vo_script(example.script)
-    return example
+        assert lib.text.is_normalized_vo_script(passage.script)
+    return passage
 
 
 def get_dataset(
@@ -477,7 +475,7 @@ def get_dataset(
         path: Directory to cache the dataset.
     """
     logger.info("Loading dataset...")
-    lambda_ = lambda l: [_handle_example(e) for e in l if _include_example(e)]
+    lambda_ = lambda l: [_handle_passage(p) for p in l if _include_passage(p)]
     return {k: lambda_(v(path)) for k, v in datasets.items()}
 
 
@@ -498,17 +496,17 @@ def split_dataset(
     """
     dev, train = {}, {}
     with fork_rng(seed=123):
-        for speaker, examples in dataset.items():
+        for speaker, passages in dataset.items():
             if speaker in dev_speakers:
-                train[speaker], dev[speaker] = run._utils.split_examples(examples, dev_size)
+                train[speaker], dev[speaker] = run._utils.split_passages(passages, dev_size)
             else:
-                train[speaker] = examples
+                train[speaker] = passages
     return dev, train
 
 
 def _include_span(span: datasets.Span):
     """Return `True` iff `span` should be included in the dataset."""
-    # NOTE: Filter out any example(s) with digits because the pronunciation is fundamentally
+    # NOTE: Filter out any passage(s) with digits because the pronunciation is fundamentally
     # ambigious, and it's much easier to handle this case with text normalization.
     if any(c.isdigit() for c in span.script):
         return False
@@ -523,11 +521,11 @@ def span_generator(dataset: Dataset, max_seconds=15) -> typing.Iterator[datasets
         max_seconds: The maximum seconds delimited by an `Span`.
     """
     generators: typing.Dict[lib.datasets.Speaker, typing.Iterator[lib.datasets.Span]] = {}
-    for speaker, examples in dataset.items():
-        # NOTE: Some datasets are pre-cut, and `is_singles` preserves their distribution.
-        is_singles = all([len(e.alignments) == 1 for e in examples])
+    for speaker, passages in dataset.items():
+        # NOTE: Some datasets are pre-cut, and this conditional preserves their distribution.
+        is_singles = all([len(p.alignments) == 1 for p in passages])
         max_seconds_ = math.inf if is_singles else max_seconds
-        generators[speaker] = datasets.span_generator(examples, max_seconds_)
+        generators[speaker] = datasets.span_generator(passages, max_seconds_)
 
     speakers = list(dataset.keys())
     counter = {s: 1.0 for s in speakers}

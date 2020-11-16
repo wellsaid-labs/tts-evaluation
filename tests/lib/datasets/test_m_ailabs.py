@@ -23,7 +23,7 @@ def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_is_file, mock_get_audio_
         data = lib.datasets.m_ailabs.m_ailabs_en_us_speech_dataset(directory=directory)
         assert len(data) == 2046
         assert sum([len(r.script) for r in data]) == 226649
-        assert data[0] == lib.datasets.Example(
+        assert data[0] == lib.datasets.Passage(
             audio_path=pathlib.Path(
                 directory
                 / archive.parent.name

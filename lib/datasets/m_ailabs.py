@@ -26,7 +26,7 @@ from pathlib import Path
 
 from torchnlp.download import download_file_maybe_extract
 
-from lib.datasets.utils import Example, Speaker, conventional_dataset_loader
+from lib.datasets.utils import Passage, Speaker, conventional_dataset_loader
 
 logger = logging.getLogger(__name__)
 Dataset = typing.NewType("Dataset", str)
@@ -151,7 +151,7 @@ def _m_ailabs_speech_dataset(
     check_files: typing.List[str],
     root_directory_name: str = "M-AILABS",
     metadata_pattern: str = "**/metadata.csv",
-) -> typing.List[Example]:
+) -> typing.List[Passage]:
     """Download, extract, and process a M-AILABS dataset.
 
     NOTE: The original URL is `http://www.caito.de/2019/01/the-m-ailabs-speech-dataset/`. Use
@@ -177,11 +177,11 @@ def _m_ailabs_speech_dataset(
     downloaded_books = set([_metadata_path_to_book(p, directory) for p in metadata_paths])
     assert len(set(books) - downloaded_books) == 0, "Unable to find every book in `books`."
 
-    examples = []
+    passages = []
     for book in books:
         metadata_path = _book_to_metdata_path(book, directory)
         loaded = conventional_dataset_loader(
             metadata_path.parent, book.speaker, additional_metadata={"book": book}
         )
-        examples.extend(loaded)
-    return examples
+        passages.extend(loaded)
+    return passages
