@@ -61,19 +61,19 @@ def test_integration(mock_urlretrieve):
         n, cadence=Cadence.STATIC, type_=t, speaker=s
     )
     assert stats == {
-        get_dataset_label("num_examples", DatasetType.TRAIN): 3,
+        get_dataset_label("num_passages", DatasetType.TRAIN): 3,
         get_dataset_label("num_characters", DatasetType.TRAIN): 58,
         get_dataset_label("num_seconds", DatasetType.TRAIN): "5s 777ms",
-        get_dataset_label("num_examples", DatasetType.TRAIN, JUDY_BIEBER): 2,
+        get_dataset_label("num_passages", DatasetType.TRAIN, JUDY_BIEBER): 2,
         get_dataset_label("num_characters", DatasetType.TRAIN, JUDY_BIEBER): 29,
         get_dataset_label("num_seconds", DatasetType.TRAIN, JUDY_BIEBER): "3s 820ms",
-        get_dataset_label("num_examples", DatasetType.TRAIN, LINDA_JOHNSON): 1,
+        get_dataset_label("num_passages", DatasetType.TRAIN, LINDA_JOHNSON): 1,
         get_dataset_label("num_characters", DatasetType.TRAIN, LINDA_JOHNSON): 29,
         get_dataset_label("num_seconds", DatasetType.TRAIN, LINDA_JOHNSON): "1s 958ms",
-        get_dataset_label("num_examples", DatasetType.DEV): 1,
+        get_dataset_label("num_passages", DatasetType.DEV): 1,
         get_dataset_label("num_characters", DatasetType.DEV): 34,
         get_dataset_label("num_seconds", DatasetType.DEV): "2s 650ms",
-        get_dataset_label("num_examples", DatasetType.DEV, JUDY_BIEBER): 1,
+        get_dataset_label("num_passages", DatasetType.DEV, JUDY_BIEBER): 1,
         get_dataset_label("num_characters", DatasetType.DEV, JUDY_BIEBER): 34,
         get_dataset_label("num_seconds", DatasetType.DEV, JUDY_BIEBER): "2s 650ms",
     }
