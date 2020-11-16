@@ -25,6 +25,7 @@ from io import StringIO
 from itertools import chain, groupby, repeat
 
 import pandas
+import tabulate
 import typer
 from google.cloud import speech_v1p1beta1 as speech
 from google.cloud import storage
@@ -119,11 +120,38 @@ class Stats:
         total_aligned_tokens: The total number of tokens aligned.
         total_tokens: The total number of tokens processed.
         sound_alike: Set of all tokens that sound-a-like.
+        ...
     """
 
     total_aligned_tokens: int = 0
     total_tokens: int = 0
-    sound_alike: set = dataclasses.field(default_factory=set)
+    sound_alike: typing.Set[frozenset] = dataclasses.field(default_factory=set)
+    script_unaligned: typing.Set[str] = dataclasses.field(default_factory=set)
+    transcript_unaligned: typing.Set[str] = dataclasses.field(default_factory=set)
+
+    def log(self):
+        total_unaligned_tokens = self.total_tokens - self.total_aligned_tokens
+        words_unaligned = format_ratio(total_unaligned_tokens, self.total_tokens)
+        logger.info("Total word(s) unaligned: %s", words_unaligned)
+
+        sound_alike = [tuple(p) for p in self.sound_alike]
+        sound_alike = [(distance(*p), *p) for p in sound_alike]
+        headers = ["Edit Distance", "", ""]
+        sound_alike_ = tabulate.tabulate(sorted(sound_alike, reverse=True)[:50], headers=headers)
+        logger.info("Most different sound-a-like word(s):\n%s", sound_alike_)
+
+        _quote = f"{AnsiCodes.DARK_GRAY}'{AnsiCodes.RESET_ALL}"
+        quote = lambda s: f"{_quote}{s}{_quote}"
+        script_unaligned = [quote(s.strip()) for s in self.script_unaligned]
+        logger.info(
+            f"Longest {AnsiCodes.RED}unaligned script span(s){AnsiCodes.RESET_ALL}:\n%s",
+            "\n".join(sorted(script_unaligned, key=len, reverse=True)[:50]),
+        )
+        transcript_unaligned = [quote(s.strip()) for s in self.transcript_unaligned]
+        logger.info(
+            f"Longest {AnsiCodes.GREEN}unaligned transcript span(s){AnsiCodes.RESET_ALL}:\n%s",
+            "\n".join(sorted(transcript_unaligned, key=len, reverse=True)[:50]),
+        )
 
 
 STATS = Stats()
@@ -190,24 +218,34 @@ def is_sound_alike(a: str, b: str) -> bool:
     return False
 
 
+def _minus(text: str):
+    """ Helper function for `_format_gap`. """
+    STATS.script_unaligned.add(text)
+    return f'\n{AnsiCodes.RED}--- "{text}"{AnsiCodes.RESET_ALL}\n'
+
+
+def _plus(text: str):
+    """ Helper function for `_format_gap`. """
+    STATS.transcript_unaligned.add(text)
+    return f'{AnsiCodes.GREEN}+++ "{text}"{AnsiCodes.RESET_ALL}\n'
+
+
 def _format_gap(
     scripts: typing.List[str], tokens: typing.List[ScriptToken], stt_tokens: typing.List[SttToken]
 ) -> typing.Iterable[str]:
     """ Format the span of `tokens` and `stt_tokens` that lie between two alignments, the gap. """
-    minus: typing.Callable[[str], str]
-    minus = lambda t: f'\n{AnsiCodes.RED}--- "{t}"{AnsiCodes.RESET_ALL}\n'
     if len(tokens) > 2 or len(stt_tokens) > 0:
         if tokens[0].script_index != tokens[-1].script_index:
-            yield minus(scripts[tokens[0].script_index][tokens[0].slice[-1] :])
+            yield _minus(scripts[tokens[0].script_index][tokens[0].slice[-1] :])
             yield "=" * 100
             for i in range(tokens[0].script_index + 1, tokens[-1].script_index):
-                yield minus(scripts[i])
+                yield _minus(scripts[i])
                 yield "=" * 100
-            yield minus(scripts[tokens[-1].script_index][: tokens[-1].slice[0]])
+            yield _minus(scripts[tokens[-1].script_index][: tokens[-1].slice[0]])
         else:
-            yield minus(scripts[tokens[0].script_index][tokens[0].slice[-1] : tokens[-1].slice[0]])
+            yield _minus(scripts[tokens[0].script_index][tokens[0].slice[-1] : tokens[-1].slice[0]])
         text = " ".join([t.text for t in stt_tokens])
-        yield f'{AnsiCodes.GREEN}+++ "{text}"{AnsiCodes.RESET_ALL}\n'
+        yield _plus(text)
     elif len(tokens) == 2 and tokens[0].script_index == tokens[-1].script_index:
         yield scripts[tokens[0].script_index][tokens[0].slice[-1] : tokens[-1].slice[0]]
     elif len(tokens) == 2:
@@ -568,15 +606,7 @@ def _sync_and_upload(
         alignment = align_stt_with_script(script, stt_result)
         alignment_blob.upload_from_string(json.dumps(alignment), content_type="application/json")
 
-    _words_unaligned = format_ratio(
-        STATS.total_tokens - STATS.total_aligned_tokens, STATS.total_tokens
-    )
-    logger.info("Total word(s) unaligned: %s", _words_unaligned)
-    _sound_alike = [tuple(p) for p in STATS.sound_alike]
-    _sound_alike = sorted(_sound_alike, key=lambda i: distance(i[0], i[-1]), reverse=True)
-    logger.info(
-        "First fifty sound-a-like word(s): %s", "\n".join([str(p) for p in _sound_alike][:50])
-    )
+    STATS.log()
 
     logger.info("Uploading logs...")
     for dest_blob in set(dest_blobs):
