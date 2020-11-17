@@ -61,11 +61,18 @@ def download():
 
 
 @app.command()
-def rename(directory: pathlib.Path):
+def rename(
+    directory: pathlib.Path,
+    only_numbers: bool = typer.Option(
+        False, help="Include only dashes and numbers in the normalized file name."
+    ),
+):
     """ Normalize the name of every directory and file in DIRECTORY."""
     assert directory.exists(), "DIRECTORY must exist."
     for path in directory.glob("**/*"):
         normalized = path.name.replace(" ", "_").lower()
+        if only_numbers:
+            normalized = "-".join(re.findall(r"\d+", normalized))
         if normalized != path.name:
             logger.info('Renaming file name "%s" to "%s"', path.name, normalized)
             path.rename(path.parent / normalized)

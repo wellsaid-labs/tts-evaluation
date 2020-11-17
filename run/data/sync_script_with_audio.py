@@ -372,7 +372,10 @@ def _flatten_stt_result(stt_result: SttResult) -> typing.Tuple[str, typing.List[
             audio = (float(word["startTime"][:-1]), float(word["endTime"][:-1]))
             slice_ = (offset, offset + len(word["word"]))
             stt_tokens.append(SttToken(word["word"], audio, slice_))
-            assert transcript[slice(*slice_)] == word["word"]
+            if transcript[slice(*slice_)] != word["word"]:
+                message = "The transcript ('%s') doesn't align with the words ('%s')."
+                logging.warning(message, transcript[slice(*slice_)], word["word"])
+                offset -= 1  # NOTE: Google may have forgotten a space, so we corrected for that.
             offset += len(word["word"]) + 1
     for prev, next in zip(stt_tokens[:-1], stt_tokens[1:]):
         if prev.audio[-1] > next.audio[0]:
@@ -383,8 +386,8 @@ def _flatten_stt_result(stt_result: SttResult) -> typing.Tuple[str, typing.List[
     # "Military theory and practice contributed approaches to managing the newly-popular
     # factories.given."
     # Google STT predicted the token "factories.given." in the above transcript it predicted.
-    message = "Google SST should be white-space tokenized."
-    assert " ".join(t.text for t in stt_tokens).strip() == transcript.strip(), message
+    if " ".join(t.text for t in stt_tokens).strip() != transcript.strip():
+        logger.warning("Google SST may not be white-space tokenized.")
     return transcript, stt_tokens
 
 
@@ -498,7 +501,7 @@ def run_stt(
     audio_blobs: typing.List[storage.Blob],
     scripts: typing.List[str],
     dest_blobs: typing.List[storage.Blob],
-    poll_interval: float = 1 / 50,
+    poll_interval: float = 1 / 10,
     stt_config: RecognitionConfig = SST_CONFIG,
 ):
     """Run speech-to-text on `audio_blobs` and save them at `dest_blobs`.
