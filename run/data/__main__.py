@@ -76,6 +76,8 @@ def rename(
         if normalized != path.name:
             logger.info('Renaming file name "%s" to "%s"', path.name, normalized)
             path.rename(path.parent / normalized)
+        else:
+            logger.info("Skipping, file already exists: %s", path.parent / normalized)
 
 
 def _download(gcs_uri: str) -> typing.Tuple[typing.IO[bytes], str]:
