@@ -220,10 +220,10 @@ def csv_normalize(
                 continue
 
             text = path.read_text()
-            if text.count("\t") > len(text.split("\n")) // 2:
+            if not tab_seperated and text.count("\t") > len(text.split("\n")) // 2:
                 logger.warning(
-                    "There are a lot of tabs (%d), this might be a TSV file. "
-                    "Try including --tab-seperated to correctly parse this file.",
+                    "There are a lot of tabs (%d) so this might be a TSV file. "
+                    "Add the flag --tab-seperated to parse it as a TSV file.",
                     text.count("\t"),
                 )
 
