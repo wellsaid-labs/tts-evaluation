@@ -222,9 +222,10 @@ def csv_normalize(
             text = path.read_text()
             if not tab_seperated and text.count("\t") > len(text.split("\n")) // 2:
                 logger.warning(
-                    "There are a lot of tabs (%d) so this might be a TSV file. "
-                    "Add the flag --tab-seperated to parse it as a TSV file.",
+                    "There are a lot of tabs (%d) so this (%s) might be a TSV file. "
+                    "Add the flag --tab-seperated to parse this file as a TSV file.",
                     text.count("\t"),
+                    path,
                 )
 
             seperator = "\t" if tab_seperated else ","
@@ -232,6 +233,7 @@ def csv_normalize(
             data_frame = data_frame.applymap(partial)
             data_frame.to_csv(dest_path, index=False)
 
+            # TODO: Count the number of alphanumeric edits instead of punctuation mark edits.
             num_edits = Levenshtein.distance(text, dest_path.read_text())  # type: ignore
             results.append(((num_edits / len(text)) * 100, num_edits, len(text), path.name))
 
