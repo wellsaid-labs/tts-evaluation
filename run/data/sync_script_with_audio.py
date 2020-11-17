@@ -537,11 +537,8 @@ def run_stt(
         config.speech_contexts.append(_get_speech_context("\n".join(script)))  # type: ignore
         audio = RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
         operations.append(speech.SpeechClient().long_running_recognize(config=config, audio=audio))
-        logger.info(
-            'STT operation %s "%s" started.',
-            operations[-1].operation.name,
-            blob_to_gcs_uri(dest_blob),
-        )
+        message = 'STT operation %s "%s" started.'
+        logger.info(message, operations[-1].operation.name, blob_to_gcs_uri(dest_blob))
 
     progress = [0] * len(operations)
     progress_bar = tqdm(total=100)
@@ -555,14 +552,10 @@ def run_stt(
                 # Learn more:
                 # https://stackoverflow.com/questions/64470470/how-to-convert-google-cloud-natural-language-entity-sentiment-response-to-json-d
                 response = operation.result()
-                dest_blobs[i].upload_from_string(
-                    response.__class__.to_json(response), content_type="application/json"
-                )
-                logger.info(
-                    'STT operation %s "%s" finished.',
-                    operation.operation.name,
-                    blob_to_gcs_uri(dest_blobs[i]),
-                )
+                json_ = response.__class__.to_json(response)
+                dest_blobs[i].upload_from_string(json_, content_type="application/json")
+                message = 'STT operation %s "%s" finished.'
+                logger.info(message, operation.operation.name, blob_to_gcs_uri(dest_blobs[i]))
                 operations[i] = None
                 progress[i] = 100
             elif metadata is not None and metadata.progress_percent is not None:
@@ -587,9 +580,8 @@ def _sync_and_upload(
         typing.cast(pandas.DataFrame, pandas.read_csv(StringIO(s)))[text_column].tolist()
         for s in scripts_
     ]
-    assert all(
-        lib.text.is_normalized_vo_script(t) for t in lib.utils.flatten(scripts)
-    ), "Scripts cannot contain funky characters."
+    message = "Scripts cannot contain funky characters."
+    assert all(lib.text.is_normalized_vo_script(t) for t in lib.utils.flatten(scripts)), message
 
     logger.info("Maybe running speech-to-text and caching results...")
     filtered = list(filter(lambda i: not i[-1].exists(), zip(audio_blobs, scripts, stt_blobs)))
@@ -603,9 +595,8 @@ def _sync_and_upload(
     stt_results = [json.loads(b.download_as_string()) for b in stt_blobs]
 
     for script, stt_result, alignment_blob in zip(scripts, stt_results, alignment_blobs):
-        logger.info(
-            'Running alignment "%s" and uploading results...', blob_to_gcs_uri(alignment_blob)
-        )
+        message = 'Running alignment "%s" and uploading results...'
+        logger.info(message, blob_to_gcs_uri(alignment_blob))
         alignment = align_stt_with_script(script, stt_result)
         alignment_blob.upload_from_string(json.dumps(alignment), content_type="application/json")
 
@@ -643,6 +634,9 @@ def main(
         ratio = len(voice_over) // len(destination)
         destination = list(chain.from_iterable(repeat(x, ratio) for x in destination))
 
+    message = "There should be the same number of voice-overs (%d) and scripts (%d)."
+    assert len(voice_over) == len(script), message % (len(voice_over), len(script))
+
     # NOTE: Save a log of the execution for future reference
     recorder = lib.environment.RecordStandardStreams()
 
@@ -654,10 +648,9 @@ def main(
         logger.info('Processing... \n "%s" \n "%s" \n and saving to... "%s"', *args)
 
     filenames = [b.name.split("/")[-1].split(".")[0] + ".json" for b in audio_blobs]
-    stt_blobs = [b.bucket.blob(b.name + stt_folder + n) for b, n in zip(dest_blobs, filenames)]
-    alignment_blobs = [
-        b.bucket.blob(b.name + alignments_folder + n) for b, n in zip(dest_blobs, filenames)
-    ]
+    iterator = zip(dest_blobs, filenames)
+    stt_blobs = [b.bucket.blob(b.name + stt_folder + n) for b, n in iterator]
+    alignment_blobs = [b.bucket.blob(b.name + alignments_folder + n) for b, n in iterator]
 
     _sync_and_upload(
         audio_blobs, script_blobs, dest_blobs, stt_blobs, alignment_blobs, text_column, recorder
