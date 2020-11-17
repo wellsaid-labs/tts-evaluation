@@ -574,6 +574,11 @@ def _sync_and_upload(
     recorder: lib.environment.RecordStandardStreams,
 ):
     """ Sync `script_blobs` with `audio_blobs` and upload to `alignment_blobs`. """
+    assert len(audio_blobs) == len(script_blobs), "Expected the same number of blobs."
+    assert len(audio_blobs) == len(dest_blobs), "Expected the same number of blobs."
+    assert len(audio_blobs) == len(stt_blobs), "Expected the same number of blobs."
+    assert len(audio_blobs) == len(alignment_blobs), "Expected the same number of blobs."
+
     logger.info("Downloading voice-over scripts...")
     scripts_ = [s.download_as_string().decode("utf-8") for s in script_blobs]
     scripts: typing.List[typing.List[str]] = [
@@ -648,7 +653,7 @@ def main(
         logger.info('Processing... \n "%s" \n "%s" \n and saving to... "%s"', *args)
 
     filenames = [b.name.split("/")[-1].split(".")[0] + ".json" for b in audio_blobs]
-    iterator = zip(dest_blobs, filenames)
+    iterator = list(zip(dest_blobs, filenames))
     stt_blobs = [b.bucket.blob(b.name + stt_folder + n) for b, n in iterator]
     alignment_blobs = [b.bucket.blob(b.name + alignments_folder + n) for b, n in iterator]
 
