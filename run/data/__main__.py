@@ -201,7 +201,11 @@ def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
 
 
 @csv_app.command("normalize")
-def csv_normalize(paths: typing.List[pathlib.Path], dest: pathlib.Path):
+def csv_normalize(
+    paths: typing.List[pathlib.Path],
+    dest: pathlib.Path,
+    tab_seperated: bool = typer.Option(False, help="Parse this file as a TSV."),
+):
     """Normalize csv file(s) in PATHS and save to DEST."""
     assert all(p.exists() for p in paths), "Every path in PATHS must exist."
     assert dest.exists(), "DEST must exist."
@@ -214,11 +218,20 @@ def csv_normalize(paths: typing.List[pathlib.Path], dest: pathlib.Path):
             if dest_path.exists():
                 logger.error("Skipping, file already exists: %s", dest_path)
                 continue
-            data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(path))
+
+            text = path.read_text()
+            if text.count("\t") > len(text.split("\n")) // 2:
+                logger.warning(
+                    "There are a lot of tabs (%d), this might be a TSV file. "
+                    "Try including --tab-seperated to correctly parse this file.",
+                    text.count("\t"),
+                )
+
+            seperator = "\t" if tab_seperated else ","
+            data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(path, sep=seperator))
             data_frame = data_frame.applymap(partial)
             data_frame.to_csv(dest_path, index=False)
 
-            text = path.read_text()
             num_edits = Levenshtein.distance(text, dest_path.read_text())  # type: ignore
             results.append(((num_edits / len(text)) * 100, num_edits, len(text), path.name))
 
