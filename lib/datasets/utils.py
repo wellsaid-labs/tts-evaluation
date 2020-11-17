@@ -8,7 +8,6 @@ import functools
 import json
 import logging
 import os
-import pathlib
 import random
 import subprocess
 import typing
@@ -68,7 +67,7 @@ class Passage:
     """A voiced passage.
 
     Args:
-        audio_path: A voice-over of the `script`.
+        audio_file: A voice-over of the `script`.
         speaker: An identifier of the voice.
         script: The `script` the `speaker` was reading from.
         transcript: The `transcript` of the `audio`.
@@ -78,7 +77,7 @@ class Passage:
         passages: Other neighboring passages, for context.
     """
 
-    audio_path: Path
+    audio_file: lib.audio.AudioFileMetadata
     speaker: Speaker
     script: str
     transcript: str
@@ -93,7 +92,7 @@ class Passage:
 
     @property
     def audio(self):
-        return read_audio(self.audio_path)
+        return read_audio(self.audio_file.path)
 
     def to_string(self, *fields):
         values = ", ".join(f"{f}={getattr(self, f)}" for f in fields)
@@ -102,14 +101,15 @@ class Passage:
     def __getitem__(self, key) -> Span:
         return Span(self, _handle_get_item_key(len(self.alignments), key))
 
+    @property
     def key(self):
         return tuple(getattr(self, f.name) for f in fields(self) if f.name != "passages")
 
     def __hash__(self):
-        return hash(self.key())
+        return hash(self.key)
 
     def __eq__(self, other: typing.Any):
-        return self.key() == other.key() if isinstance(other, Passage) else NotImplemented
+        return self.key == other.key if isinstance(other, Passage) else NotImplemented
 
 
 @dataclasses.dataclass(frozen=True)
@@ -130,7 +130,7 @@ class Span:
     script: str = dataclasses.field(init=False)
     transcript: str = dataclasses.field(init=False)
     alignments: typing.Tuple[Alignment, ...] = dataclasses.field(init=False)
-    audio_path: Path = dataclasses.field(init=False)
+    audio_file: lib.audio.AudioFileMetadata = dataclasses.field(init=False)
     audio_length: float = dataclasses.field(init=False)
     speaker: Speaker = dataclasses.field(init=False)
     other_metadata: typing.Dict = dataclasses.field(init=False)
@@ -142,7 +142,7 @@ class Span:
         # https://stackoverflow.com/questions/53756788/how-to-set-the-value-of-dataclass-field-in-post-init-when-frozen-true
         set = object.__setattr__
         set(self, "speaker", self.passage.speaker)
-        set(self, "audio_path", self.passage.audio_path)
+        set(self, "audio_file", self.passage.audio_file)
         set(self, "other_metadata", self.passage.other_metadata)
 
         span = self.passage.alignments[self.span]
@@ -160,14 +160,17 @@ class Span:
     @property
     def audio(self):
         start = self.passage.alignments[self.span][0].audio[0]
-        return read_audio_slice(self.passage.audio_path, start, self.audio_length)
+        return read_audio_slice(self.passage.audio_file.path, start, self.audio_length)
 
     def to_string(self, *fields):
         values = ", ".join(f"{f}={getattr(self, f)}" for f in fields)
         return f"{self.__class__.__name__}({values})"
 
     def __getitem__(self, key) -> Span:
-        return Span(self.passage, _handle_get_item_key(len(self.alignments), key))
+        slice_ = _handle_get_item_key(len(self.alignments), key)
+        slice_ = slice(slice_.start + self.span.start, slice_.stop + self.span.start)
+        return Span(self.passage, slice_)
+
 
 
 def _overlap(slice: typing.Tuple[float, float], other: typing.Tuple[float, float]) -> float:
@@ -302,7 +305,7 @@ def dataset_loader(
     suffixes = (alignments_suffix, recordings_suffix, scripts_suffix)
     directories = [root / d for d in names]
 
-    files: typing.List[typing.List[pathlib.Path]] = []
+    files: typing.List[typing.List[Path]] = []
     for directory, suffix in zip(directories, suffixes):
         directory.mkdir(exist_ok=True)
         command = f"gsutil -m cp -n {gcs_path}/{directory.name}/*{suffix} {directory}/"
@@ -311,18 +314,20 @@ def dataset_loader(
         files.append(sorted(files_, key=lambda p: lib.text.natural_keys(p.name)))
 
     return_ = []
-    iterator = typing.cast(typing.Iterator[typing.Tuple[pathlib.Path, ...]], zip(*tuple(files)))
-    for alignment_file_path, recording_file_path, script_file_path in iterator:
-        scripts = pandas.read_csv(str(script_file_path.absolute()))
-        json_ = json.loads(alignment_file_path.read_text())
+    audio_file_metadatas = lib.audio.get_audio_metadata(files[1])
+    Iterator = typing.Iterator[typing.Tuple[Path, Path, Path, lib.audio.AudioFileMetadata]]
+    iterator = typing.cast(Iterator, zip(*tuple(files), audio_file_metadatas))
+    for alignment_path, recording_path, script_path, recording_file_metadata in iterator:
+        scripts = pandas.read_csv(str(script_path.absolute()))
+        json_ = json.loads(alignment_path.read_text())
 
-        error = f"Each script ({script_file_path}) must have an alignment ({alignment_file_path})."
+        error = f"Each script ({script_path}) must have an alignment ({alignment_path})."
         assert len(scripts) == len(json_["alignments"]), error
 
         passages = []
         for (_, script), alignments in zip(scripts.iterrows(), json_["alignments"]):
             passage = Passage(
-                audio_path=recording_file_path,
+                audio_file=recording_file_metadata,
                 speaker=speaker,
                 script=script[text_column],
                 transcript=json_["transcript"],
@@ -390,16 +395,16 @@ def conventional_dataset_loader(
     handled_columns = [metadata_text_column, metadata_audio_column]
     _get_other_metadata = lambda r: {k: v for k, v in r.items() if k not in handled_columns}
     _get_alignments = lambda s, l: (Alignment((0, len(s)), (0.0, l), (0, len(s))),)
-    iterator = zip(audio_paths, lib.audio.get_audio_metadata(audio_paths), df.iterrows())
+    iterator = zip(lib.audio.get_audio_metadata(audio_paths), df.iterrows())
     # TODO: These passages could be linked together, with `passages`, consider that.
     return [
         Passage(
-            audio_path=audio_path,
+            audio_file=audio_metadata,
             speaker=speaker,
             script=row[metadata_text_column].strip(),
             transcript=row[metadata_text_column].strip(),
             alignments=_get_alignments(row[metadata_text_column].strip(), audio_metadata.length),
             other_metadata={**_get_other_metadata(row), **additional_metadata},
         )
-        for audio_path, audio_metadata, (_, row) in iterator
+        for audio_metadata, (_, row) in iterator
     ]
