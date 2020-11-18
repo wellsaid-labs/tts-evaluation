@@ -43,15 +43,11 @@ app.add_typer(csv_app, name="csv")
 run._config.configure()
 
 
-def _get_length(path: pathlib.Path) -> float:
-    """ Helper for `_get_total_length`."""
-    return lib.audio.get_audio_metadata([path])[0].length
-
-
 def _get_total_length(paths: typing.List[pathlib.Path], max_parallel: int = 16) -> float:
     """ Get the sum of the lengths of each audio file in `paths`. """
+    len_ = lambda p: lib.audio.get_audio_metadata(typing.cast(pathlib.Path, p)).length
     with multiprocessing.pool.ThreadPool(max_parallel) as pool:
-        return sum(tqdm.tqdm(pool.imap_unordered(_get_length, paths), total=len(paths)))
+        return sum(tqdm.tqdm(pool.imap_unordered(len_, paths), total=len(paths)))
 
 
 @app.command()
@@ -109,7 +105,7 @@ def loudness(paths: typing.List[pathlib.Path]):
     results = []
     progress_bar = tqdm.tqdm(total=round(_get_total_length(paths)))
     for path in paths:
-        metadata = lib.audio.get_audio_metadata([path])[0]
+        metadata = lib.audio.get_audio_metadata(path)
         meter = lib.audio.get_pyloudnorm_meter(metadata.sample_rate, "DeMan")
         audio = lib.audio.read_audio(path)
         lufs = meter.integrated_loudness(audio)
@@ -128,7 +124,7 @@ class _SharedAudioFileMetadata(typing.NamedTuple):
 
 def _metadata(path: pathlib.Path) -> typing.Tuple[pathlib.Path, _SharedAudioFileMetadata]:
     """ Helper for the `metadata` command."""
-    metadata = lib.audio.get_audio_metadata([path])[0]
+    metadata = lib.audio.get_audio_metadata(path)
     return path, _SharedAudioFileMetadata(
         sample_rate=metadata.sample_rate,
         num_channels=metadata.num_channels,
@@ -174,7 +170,7 @@ def audio_normalize(
             logger.error("Skipping, file already exists: %s", dest_path)
         else:
             lib.audio.normalize_audio(path, dest_path)
-            progress_bar.update(round(lib.audio.get_audio_metadata([path])[0].length))
+            progress_bar.update(round(lib.audio.get_audio_metadata(path).length))
 
 
 def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
@@ -221,12 +217,11 @@ def csv_normalize(
 
             text = path.read_text()
             if not tab_seperated and text.count("\t") > len(text.split("\n")) // 2:
-                logger.warning(
+                message = (
                     "There are a lot of tabs (%d) so this (%s) might be a TSV file. "
-                    "Add the flag --tab-seperated to parse this file as a TSV file.",
-                    text.count("\t"),
-                    path,
+                    "Add the flag --tab-seperated to parse this file as a TSV file."
                 )
+                logger.warning(message, text.count("\t"), path)
 
             seperator = "\t" if tab_seperated else ","
             data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(path, sep=seperator))
