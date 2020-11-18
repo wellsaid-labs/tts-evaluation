@@ -146,19 +146,20 @@ def normalize_audio(
     TODO: Consider using the ffmpeg SoX resampler, instead.
     """
     logger.info("Normalizing dataset audio...")
-    args_: typing.Set[pathlib.Path] = set(
-        flatten([[p.audio_path for p in v] for _, v in dataset.items()])
-    )
-    args = [(p, _normalize_path(p)) for p in args_ if not _normalize_path(p).exists()]
+    audio_paths_ = [[p.audio_file.path for p in v] for v in dataset.values()]
+    audio_paths: typing.Set[pathlib.Path] = set(flatten(audio_paths_))
     partial = lib.audio.normalize_audio.get_configured_partial()  # type: ignore
     partial = functools.partial(partial, **kwargs)
     partial = functools.partial(_normalize_audio, callable_=partial)
+    args = [(p, _normalize_path(p)) for p in audio_paths if not _normalize_path(p).exists()]
     with multiprocessing.pool.ThreadPool(num_processes) as pool:
         list(tqdm.tqdm(pool.imap_unordered(partial, args), total=len(args)))
 
+    metadatas = lib.audio.get_audio_metadata([_normalize_path(p) for p in audio_paths])
+    lookup = {p: m for p, m in zip(audio_paths, metadatas)}
     for passages in dataset.values():
         for passage in passages:
-            passage.audio_path = _normalize_path(passage.audio_path)
+            passage.audio_file = lookup[passage.audio_file.path]
 
 
 def init_distributed(
@@ -200,7 +201,7 @@ def split_passages(
     random.shuffle(passages)
     # NOTE: `len_` assumes that a negligible amount of data is unusable in each passage.
     len_ = lambda p: p[:].audio_length
-    dev, train = tuple(lib.utils.accumulate_and_split(passages, [dev_size, math.inf], len_))
+    dev, train = tuple(lib.utils.split(passages, [dev_size, math.inf], len_))
     dev_size = sum([len_(p) for p in dev])
     train_size = sum([len_(p) for p in train])
     assert train_size >= dev_size, "The `dev` dataset is larger than the `train` dataset."
@@ -212,7 +213,7 @@ def split_passages(
 class SpectrogramModelSpan(typing.NamedTuple):
     """Preprocessed `Span` used to training or evaluating the spectrogram model."""
 
-    audio_path: pathlib.Path
+    audio_file: lib.audio.AudioFileMetadata
     audio: torch.Tensor  # torch.FloatTensor [num_samples]
     spectrogram: torch.Tensor  # torch.FloatTensor [num_frames, frame_channels]
     spectrogram_mask: torch.Tensor  # torch.FloatTensor [num_frames]
@@ -399,8 +400,7 @@ def get_spectrogram_model_span(
             `stop_token` location.
         sample_rate
     """
-    metadata = lib.audio.get_audio_metadata([span.audio_path])[0]
-    lib.audio.assert_audio_normalized(metadata, sample_rate=sample_rate)
+    lib.audio.assert_audio_normalized(span.audio_file, sample_rate=sample_rate)
 
     alignments = span.passage.alignments[span.span]
     _, word_vectors, _, phonemes = _get_words(
@@ -467,7 +467,7 @@ def get_spectrogram_model_span(
     stop_token[-max_len:] = gaussian_kernel[-max_len:]
 
     return SpectrogramModelSpan(
-        audio_path=span.audio_path,
+        audio_file=span.audio_file,
         audio=audio,
         spectrogram=db_mel_spectrogram,
         spectrogram_mask=torch.ones(db_mel_spectrogram.shape[0], dtype=torch.bool),
@@ -494,7 +494,7 @@ class SpectrogramModelSpanBatch(typing.NamedTuple):
 
     length: int
 
-    audio_path: typing.List[pathlib.Path]
+    audio_file: typing.List[lib.audio.AudioFileMetadata]
 
     audio: typing.List[torch.Tensor]
 
@@ -567,7 +567,7 @@ def batch_spectrogram_model_spans(
     """
     return SpectrogramModelSpanBatch(
         length=len(spans),
-        audio_path=[s.audio_path for s in spans],
+        audio_file=[s.audio_file for s in spans],
         audio=[s.audio for s in spans],
         spectrogram=stack_and_pad_tensors([p.spectrogram for p in spans], dim=1),
         spectrogram_mask=stack_and_pad_tensors([s.spectrogram_mask for s in spans], dim=1),

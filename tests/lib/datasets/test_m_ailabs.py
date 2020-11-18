@@ -23,13 +23,11 @@ def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_is_file, mock_get_audio_
         data = lib.datasets.m_ailabs.m_ailabs_en_us_speech_dataset(directory=directory)
         assert len(data) == 2046
         assert sum([len(r.script) for r in data]) == 226649
+        path = directory / archive.parent.name / "en_US/by_book/female/judy_bieber"
+        path = path / "dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav"
+        metadata = lib.audio.get_audio_metadata(path)
         assert data[0] == lib.datasets.Passage(
-            audio_path=pathlib.Path(
-                directory
-                / archive.parent.name
-                / "en_US/by_book/female/judy_bieber"
-                / "dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav"
-            ),
+            audio_file=metadata,
             speaker=lib.datasets.JUDY_BIEBER,
             script="To My Readers.",
             transcript="To My Readers.",

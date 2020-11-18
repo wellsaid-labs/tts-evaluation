@@ -2,6 +2,7 @@ import logging
 import math
 import multiprocessing.pool
 import os
+import shlex
 import subprocess
 import typing
 from functools import lru_cache
@@ -86,43 +87,57 @@ def _parse_audio_metadata(metadata: str) -> AudioFileMetadata:
 def _get_audio_metadata_helper(chunk: typing.List[Path]) -> typing.List[AudioFileMetadata]:
     # NOTE: `-V1` ignores non-actionable warnings, SoX tends to spam the command line with strict
     # formating warnings like: "sox WARN wav: wave header missing extended part of fmt chunk".
-    command = ["sox", "--i", "-V1"] + [str(p) for p in chunk]
-    metadatas = subprocess.check_output(command).decode()
+    command = " ".join(["sox", "--i", "-V1"] + [shlex.quote(str(p)) for p in chunk])
+    metadatas = subprocess.check_output(command, shell=True).decode()
     splits = metadatas.strip().split("\n\n")
     splits = splits[:-1] if "Total Duration" in splits[-1] else splits
     return [_parse_audio_metadata(metadata) for metadata in splits]
 
 
-def get_audio_metadata(
-    paths: typing.List[Path],
+def _get_audio_metadata(
+    *paths: Path,
     max_arg_length: int = 2 ** 16,
     max_parallel: int = typing.cast(int, os.cpu_count()),
-) -> typing.List[AudioFileMetadata]:
+) -> typing.Iterator[AudioFileMetadata]:
+    assert len(set(paths)) == len(paths), "Duplicate paths found."
+    if len(paths) == 0:
+        return
+
+    len_ = lambda p: len(str(p))
+    splits = [float(max_arg_length)] * (sum([len_(p) for p in paths]) // max_arg_length)
+    chunks = list(lib.utils.split(list(paths), splits, len_))
+    if len(chunks) == 1:
+        yield from _get_audio_metadata_helper(chunks[0])
+    else:
+        message = "Getting audio metadata for %d audio files in %d chunks."
+        logger.info(message, len(paths), len(chunks))
+        with tqdm(total=len(paths)) as progress_bar:
+            with multiprocessing.pool.ThreadPool(min(max_parallel, len(chunks))) as pool:
+                for result in pool.imap_unordered(_get_audio_metadata_helper, chunks):
+                    yield from result
+                    progress_bar.update(len(result))
+
+
+@typing.overload
+def get_audio_metadata(paths: typing.List[Path], **kwargs) -> typing.List[AudioFileMetadata]:
+    ...
+
+
+@typing.overload
+def get_audio_metadata(paths: Path, **kwargs) -> AudioFileMetadata:
+    ...
+
+
+def get_audio_metadata(paths, **kwargs):
     """Get the audio metadatas for a list of files.
 
     NOTE: It's difficult to determine the bash maximum argument length, learn more:
     https://unix.stackexchange.com/questions/45143/what-is-a-canonical-way-to-find-the-actual-maximum-argument-list-length
     https://stackoverflow.com/questions/19354870/bash-command-line-and-input-limit
     """
-    if len(paths) == 0:
-        return []
-    len_ = lambda p: len(str(p))
-    total = sum([len_(p) for p in paths])
-    chunks_ = lib.utils.accumulate_and_split(
-        paths, [float(max_arg_length)] * (total // max_arg_length), len_
-    )
-    chunks = list(chunks_)
-    if len(chunks) == 1:
-        return _get_audio_metadata_helper(chunks[0])
-
-    logger.info("Getting audio metadata for %d audio files in %d chunks.", len(paths), len(chunks))
-    return_ = []
-    with tqdm(total=len(paths)) as progress_bar:
-        with multiprocessing.pool.ThreadPool(min(max_parallel, len(chunks))) as pool:
-            for result in pool.imap_unordered(_get_audio_metadata_helper, chunks):
-                return_.extend(result)
-                progress_bar.update(len(result))
-    return return_
+    is_list = isinstance(paths, list)
+    metadatas = list(_get_audio_metadata(*tuple(paths if is_list else [paths]), **kwargs))
+    return metadatas if is_list else metadatas[0]
 
 
 def clip_waveform(waveform: np.ndarray):

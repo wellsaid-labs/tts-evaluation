@@ -51,8 +51,9 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata):
         data = lib.datasets.lj_speech_dataset(directory=directory)
         assert len(data) == 13100
         assert sum([len(r.script) for r in data]) == 1310332
+        metadata = lib.audio.get_audio_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav")
         assert data[0] == lib.datasets.Passage(
-            audio_path=directory / "LJSpeech-1.1/wavs/LJ001-0001.wav",
+            audio_file=metadata,
             speaker=lib.datasets.LINDA_JOHNSON,
             script=(
                 "Printing, in the only sense with which we are at present concerned, differs "
@@ -75,7 +76,7 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata):
         _re_filename = re.compile("LJ[0-9]{3}-[0-9]{4}")
         seen = 0
         for row in data:
-            basename = row.audio_path.name[:10]
+            basename = row.audio_file.path.name[:10]
             assert _re_filename.match(basename)
             if basename in verbalize_test_cases:
                 seen += 1

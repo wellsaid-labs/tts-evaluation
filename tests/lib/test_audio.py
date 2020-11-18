@@ -96,7 +96,7 @@ def test__parse_audio_metadata():
 
 def test_get_audio_metadata():
     """ Test `lib.audio.get_audio_metadata` returns the right metadata. """
-    assert lib.audio.get_audio_metadata([TEST_DATA_LJ])[0] == lib.audio.AudioFileMetadata(
+    assert lib.audio.get_audio_metadata(TEST_DATA_LJ) == lib.audio.AudioFileMetadata(
         path=TEST_DATA_LJ,
         sample_rate=24000,
         num_channels=1,
@@ -129,9 +129,7 @@ def test_get_audio_metadata__large_batch():
 
 def test_get_audio_metadata__multiple_channels():
     """Test `lib.audio.get_audio_metadata` returns the right metadata for multiple channel audio."""
-    assert lib.audio.get_audio_metadata([TEST_DATA_LJ_MULTI_CHANNEL])[
-        0
-    ] == lib.audio.AudioFileMetadata(
+    assert lib.audio.get_audio_metadata(TEST_DATA_LJ_MULTI_CHANNEL) == lib.audio.AudioFileMetadata(
         path=TEST_DATA_LJ_MULTI_CHANNEL,
         sample_rate=24000,
         num_channels=2,
@@ -148,12 +146,12 @@ def test_get_audio_metadata__bad_file():
         path = pathlib.Path(file_.name)
         path.write_text("corrupted")
         with pytest.raises(subprocess.CalledProcessError):
-            lib.audio.get_audio_metadata([path])
+            lib.audio.get_audio_metadata(path)
 
 
 def test_read_audio():
     """ Test `lib.audio.read_audio` reads audio that is consistent with it's metadata. """
-    metadata = lib.audio.get_audio_metadata([TEST_DATA_LJ])[0]
+    metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     audio = lib.audio.read_audio(TEST_DATA_LJ)
     assert audio.dtype == np.float32
     assert audio.shape == (metadata.sample_rate * metadata.length,)
@@ -161,7 +159,7 @@ def test_read_audio():
 
 def test_read_audio_slice():
     """ Test `lib.audio.read_audio_slice` cuts a slice of the correct length. """
-    metadata = lib.audio.get_audio_metadata([TEST_DATA_LJ])[0]
+    metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     start = 1
     length = 2
     slice_ = lib.audio.read_audio_slice(TEST_DATA_LJ, start, length)
@@ -174,7 +172,7 @@ def test_read_audio_slice():
 
 def test_read_audio_slice__identity():
     """ Test `lib.audio.read_audio_slice` is consistent with `lib.audio.read_audio`. """
-    metadata = lib.audio.get_audio_metadata([TEST_DATA_LJ])[0]
+    metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     audio = lib.audio.read_audio_slice(TEST_DATA_LJ, 0.0, metadata.length)
     np.testing.assert_almost_equal(audio, lib.audio.read_audio(TEST_DATA_LJ))
 
@@ -183,12 +181,12 @@ def test_write_audio__read_audio():
     """Test `lib.audio.write_audio` is consistent with `lib.audio.read_audio` given a 32-bit wav
     file.
     """
-    metadata = lib.audio.get_audio_metadata([TEST_DATA_LJ])[0]
+    metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     audio = lib.audio.read_audio(TEST_DATA_LJ)
     with tempfile.TemporaryDirectory() as directory:
         copy = pathlib.Path(directory) / "copy.wav"
         lib.audio.write_audio(copy, audio)
-        copy_metadata = lib.audio.get_audio_metadata([copy])[0]
+        copy_metadata = lib.audio.get_audio_metadata(copy)
         assert metadata.sample_rate == copy_metadata.sample_rate
         assert metadata.num_channels == copy_metadata.num_channels
         assert metadata.encoding == copy_metadata.encoding
@@ -282,11 +280,11 @@ def test_normalize_audio__assert_audio_normalized():
             num_channels,
             audio_filter,
         )
-        metadata = lib.audio.get_audio_metadata([audio_path])[0]
+        metadata = lib.audio.get_audio_metadata(audio_path)
         new_metadata = lib.audio.AudioFileMetadata(
             new_audio_path, sample_rate, num_channels, sox_encoding, 7.584, "256k", "16-bit"
         )
-        assert lib.audio.get_audio_metadata([new_audio_path])[0] == new_metadata
+        assert lib.audio.get_audio_metadata(new_audio_path) == new_metadata
     lib.audio.assert_audio_normalized(new_metadata, suffix, sox_encoding, sample_rate, num_channels)
     with pytest.raises(AssertionError):
         lib.audio.assert_audio_normalized(metadata, suffix, sox_encoding, sample_rate, num_channels)
@@ -634,7 +632,7 @@ def test_signal_to_db_mel_spectrogram():
     n_mels = 128
     min_decibel = -50.0
 
-    metadata = lib.audio.get_audio_metadata([TEST_DATA_LJ])[0]
+    metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     signal = lib.audio.read_audio(TEST_DATA_LJ)
 
     # Learn more about this algorithm here:
@@ -761,7 +759,7 @@ def test_signal_to_db_mel_spectrogram__alignment():
     fft_length = 2048
     frame_size = 1200
     frame_hop = frame_size // 4
-    metadata = lib.audio.get_audio_metadata([TEST_DATA_LJ])[0]
+    metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     signal = lib.audio.read_audio(TEST_DATA_LJ)
     signal = lib.audio.pad_remainder(signal, frame_hop)
     module = lib.audio.get_signal_to_db_mel_spectrogram(
@@ -794,7 +792,7 @@ def test__loudness():
     TODO: Test against the original DeMan algorithm: https://github.com/BrechtDeMan/loudness.py
     """
     for path in TEST_DATA_PATH.glob("*.wav"):
-        metadata = lib.audio.get_audio_metadata([path])[0]
+        metadata = lib.audio.get_audio_metadata(path)
         signal = lib.audio.read_audio(path)
 
         # NOTE: The original implementation doesn't pad the signal at all; therefore, the boundary
@@ -837,7 +835,7 @@ def test__loudness():
 
 def test_griffin_lim():
     """ Test that `lib.audio.griffin_lim` executes. """
-    metadata = lib.audio.get_audio_metadata([TEST_DATA_LJ])[0]
+    metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     signal = lib.audio.read_audio(TEST_DATA_LJ)
     signal = lib.audio.pad_remainder(signal)
     module = lib.audio.get_signal_to_db_mel_spectrogram(sample_rate=metadata.sample_rate)

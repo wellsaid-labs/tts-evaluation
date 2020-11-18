@@ -126,33 +126,26 @@ def test_identity():
     assert lib.utils.identity(2) == 2
 
 
-def test_accumulate_and_split():
-    """ Test `lib.utils.accumulate_and_split` splits once. """
-    assert list(lib.utils.accumulate_and_split([1, 2, 3, 4, 5], [4])) == [
-        [1, 2],
-        [3, 4, 5],
-    ]
+def test_split():
+    """ Test `lib.utils.split` splits once. """
+    assert list(lib.utils.split([1, 2, 3, 4, 5], [4])) == [[1, 2], [3, 4, 5]]
 
 
-def test_accumulate_and_split__empty_split():
-    """ Test `lib.utils.accumulate_and_split` returns empty splits if threshold is not met. """
-    assert list(lib.utils.accumulate_and_split([3], [2])) == [[], [3]]
-    assert list(lib.utils.accumulate_and_split([1, 2, 3, 4, 5], [8, 3])) == [
-        [1, 2, 3],
-        [],
-        [4, 5],
-    ]
+def test_split__empty_split():
+    """ Test `lib.utils.split` returns empty splits if threshold is not met. """
+    assert list(lib.utils.split([3], [2])) == [[], [3]]
+    assert list(lib.utils.split([1, 2, 3, 4, 5], [8, 3])) == [[1, 2, 3], [], [4, 5]]
 
 
-def test_accumulate_and_split__infinity():
-    """ Test `lib.utils.accumulate_and_split` handles infinite thresholds and overflow. """
+def test_split__infinity():
+    """ Test `lib.utils.split` handles infinite thresholds and overflow. """
     expected = [[1, 2, 3], [4, 5], []]
-    assert list(lib.utils.accumulate_and_split([1, 2, 3, 4, 5], [8, float("inf"), 3])) == expected
+    assert list(lib.utils.split([1, 2, 3, 4, 5], [8, float("inf"), 3])) == expected
 
 
-def test_accumulate_and_split__no_thresholds():
-    """ Test `lib.utils.accumulate_and_split` handles no thresholds. """
-    assert list(lib.utils.accumulate_and_split([1, 2, 3, 4, 5], [])) == [[1, 2, 3, 4, 5]]
+def test_split__no_thresholds():
+    """ Test `lib.utils.split` handles no thresholds. """
+    assert list(lib.utils.split([1, 2, 3, 4, 5], [])) == [[1, 2, 3, 4, 5]]
 
 
 def test_log_runtime():

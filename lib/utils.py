@@ -153,28 +153,24 @@ def identity(x: _IdentityReturnType) -> _IdentityReturnType:
     return x
 
 
-_AccumulateAndSplitReturnType = typing.TypeVar("_AccumulateAndSplitReturnType")
+_SplitReturnType = typing.TypeVar("_SplitReturnType")
 
 
-def accumulate_and_split(
-    list_: typing.List[_AccumulateAndSplitReturnType],
-    thresholds: typing.List[float],
-    get_value=identity,
-) -> typing.Iterator[typing.List[_AccumulateAndSplitReturnType]]:
+def split(
+    list_: typing.List[_SplitReturnType], splits: typing.List[float], value=identity
+) -> typing.Iterator[typing.List[_SplitReturnType]]:
     """Split `list_` when the accumulated sum passes a threshold.
 
     Args:
-        list
-        thresholds
-        get_value: Given a list item, determine the value of the list item.
+        ...
+        value: Given a list item, determine the value of the list item.
 
-    Returns:
-        Slice(s) of the list.
+    Returns: Slice(s) of the list.
     """
-    totals = list(itertools.accumulate([get_value(i) for i in list_]))
+    totals = list(itertools.accumulate([value(i) for i in list_]))
     index = 0
-    for threshold in thresholds:
-        lambda_ = lambda x: x < threshold + (totals[index - 1] if index > 0 else 0)
+    for split in splits:
+        lambda_ = lambda x: x < split + (totals[index - 1] if index > 0 else 0)
         count = len(list(itertools.takewhile(lambda_, totals[index:])))
         yield list_[index : index + count]
         index = index + count

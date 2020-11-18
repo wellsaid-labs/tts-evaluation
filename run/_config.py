@@ -439,10 +439,6 @@ def _include_passage(passage: datasets.Passage) -> bool:
         logger.warning("Passage (%s) has no aligned text.", details)
         return False
 
-    if not passage.audio_path.exists() or not passage.audio_path.is_file():
-        logger.warning("Passage audio path (%s) isn't a file.", passage.audio_path)
-        return False
-
     # NOTE: Filter out passages(s) that don't have a lower case character because it'll make
     # it difficult to classify initialisms.
     if not any(c.islower() for c in passage.script):
