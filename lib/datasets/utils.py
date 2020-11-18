@@ -20,7 +20,7 @@ import torch
 from third_party import LazyLoader
 
 import lib
-from lib.audio import get_audio_metadata
+from lib.audio import AudioFileMetadata, get_audio_metadata
 from lib.utils import flatten, list_to_tuple
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -91,7 +91,7 @@ class Passage:
             continuous timeline from passage to passage.
     """
 
-    audio_file: lib.audio.AudioFileMetadata
+    audio_file: AudioFileMetadata
     speaker: Speaker
     script: str
     transcript: str
@@ -223,7 +223,7 @@ class Span:
     script: str = dataclasses.field(init=False)
     transcript: str = dataclasses.field(init=False)
     alignments: typing.Tuple[Alignment, ...] = dataclasses.field(init=False)
-    audio_file: lib.audio.AudioFileMetadata = dataclasses.field(init=False)
+    audio_file: AudioFileMetadata = dataclasses.field(init=False)
     audio_length: float = dataclasses.field(init=False)
     speaker: Speaker = dataclasses.field(init=False)
     other_metadata: typing.Dict = dataclasses.field(init=False)
@@ -413,8 +413,8 @@ def dataset_loader(
         files.append(sorted(files_, key=lambda p: lib.text.natural_keys(p.name)))
 
     return_ = []
-    audio_file_metadatas = lib.audio.get_audio_metadata(files[1])
-    Iterator = typing.Iterator[typing.Tuple[Path, Path, Path, lib.audio.AudioFileMetadata]]
+    audio_file_metadatas = get_audio_metadata(files[1])
+    Iterator = typing.Iterator[typing.Tuple[Path, Path, Path, AudioFileMetadata]]
     iterator = typing.cast(Iterator, zip(*tuple(files), audio_file_metadatas))
     for alignment_path, _, script_path, recording_file_metadata in iterator:
         scripts = pandas.read_csv(str(script_path.absolute()))
