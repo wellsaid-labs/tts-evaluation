@@ -21,7 +21,7 @@ from third_party import LazyLoader
 
 import lib
 from lib.audio import get_audio_metadata
-from lib.utils import list_to_tuple
+from lib.utils import flatten, list_to_tuple
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import pandas
@@ -29,10 +29,9 @@ else:
     pandas = LazyLoader("pandas", globals(), "pandas")
 
 logger = logging.getLogger(__name__)
-
-
 read_audio_slice = functools.lru_cache(maxsize=None)(lib.audio.read_audio_slice)
 read_audio = functools.lru_cache(maxsize=None)(lib.audio.read_audio)
+UnalignedType = typing.Tuple[str, str, typing.Tuple[float, float]]
 
 
 def _handle_get_item_key(length: int, key: typing.Any) -> slice:
@@ -78,10 +77,10 @@ class Passage:
         speaker: An identifier of the voice.
         script: The `script` the `speaker` was reading from.
         transcript: The `transcript` of the `audio`.
-        alignments: Alignments that align the `script`, `transcript` and `audio`.
-        other_metadata: Additional metadata associated with this passage.
+        alignments: Alignments (sorted) that align the `script`, `transcript` and `audio`.
         index: The index of `self` in `self.passages`.
-        passages: Other neighboring passages, for context.
+        passages: Other neighboring passages (sorted), for context.
+        other_metadata: Additional metadata associated with this passage.
     """
 
     audio_file: lib.audio.AudioFileMetadata
@@ -89,21 +88,21 @@ class Passage:
     script: str
     transcript: str
     alignments: typing.Tuple[Alignment, ...]
-    other_metadata: typing.Dict
     index: int = 0
     passages: typing.List[Passage] = None  # type: ignore
+    other_metadata: typing.Dict = dataclasses.field(default_factory=dict)
 
     def __post_init__(self):
-        if self.index == 0 and self.passages is None:
+        if self.passages is None:
             self.passages = [self]
+        self._check_invariants()
 
     @property
     def audio(self):
         return read_audio(self.audio_file.path)
 
     def to_string(self, *fields):
-        values = ", ".join(f"{f}={getattr(self, f)}" for f in fields)
-        return f"{self.__class__.__name__}({values})"
+        return _to_string(self, *fields)
 
     def __getitem__(self, key) -> Span:
         return Span(self, _handle_get_item_key(len(self.alignments), key))
@@ -117,6 +116,78 @@ class Passage:
 
     def __eq__(self, other: typing.Any):
         return self.key == other.key if isinstance(other, Passage) else NotImplemented
+
+    @property
+    def prev(self) -> typing.Optional[Passage]:
+        assert self.passages[self.index] == self
+        return self.passages[self.index - 1] if self.index != 0 else None
+
+    @property
+    def next(self) -> typing.Optional[Passage]:
+        assert self.passages[self.index] == self
+        return self.passages[self.index + 1] if self.index != len(self.passages) - 1 else None
+
+    def _merge(self, a: Alignment, other: Passage, b: Alignment) -> Alignment:
+        """ Merge `a` and `b` if `self` and `other_passage` align. """
+        replace = lambda attr: a._replace(**{attr: getattr(b, attr)})
+        a = replace("script") if other.script == self.script and len(self.script) > 0 else a
+        matching_transcript = other.transcript == self.transcript and len(self.transcript) > 0
+        a = replace("transcript") if matching_transcript else a
+        matching_audio = other.audio_file == self.audio_file and self.audio_file.length > 0
+        return replace("audio") if matching_audio else a
+
+    def _prev_alignment(self) -> Alignment:
+        """ Helper function for `_unaligned`. """
+        alignment = Alignment(script=(0, 0), audio=(0, 0), transcript=(0, 0))
+        prev = self.prev
+        return alignment if prev is None else self._merge(alignment, prev, prev.alignments[-1])
+
+    def _next_alignment(self) -> Alignment:
+        """ Helper function for `_unaligned`. """
+        script = (len(self.script), len(self.script))
+        transcript = (len(self.transcript), len(self.transcript))
+        audio = (self.audio_file.length, self.audio_file.length)
+        alignment = Alignment(script=script, audio=audio, transcript=transcript)
+        next = self.next
+        return alignment if next is None else self._merge(alignment, next, next.alignments[0])
+
+    def _unaligned(self) -> typing.Iterator[UnalignedType]:
+        alignments = [self._prev_alignment()] + list(self.alignments) + [self._next_alignment()]
+        message = "Alignments in `passages` that share a `transcript`, `audio_file`, or "
+        message += "`script` must be continuous."
+        for prev, next in zip(alignments, alignments[1:]):
+            print(prev, next)
+            assert prev.script[-1] <= next.script[0], message
+            assert prev.transcript[-1] <= next.transcript[0], message
+            script = self.script[prev.script[-1] : next.script[0]]
+            transcript = self.transcript[prev.transcript[-1] : next.transcript[0]]
+            yield (script, transcript, (prev.audio[-1], next.audio[0]))
+
+    @property
+    def unaligned(self) -> typing.List[UnalignedType]:
+        """List of unaligned `script` text, `transcript` text, and `audio` spans between each
+        alignment.
+
+        If the `passages` are part of a continuous `transcript`, `script` or `audio_file`, then the
+        `unaligned` text or audio may bleed into other passages at the edges.
+
+        NOTE: This property may change if `self.passages` is mutated.
+        """
+        return list(self._unaligned())
+
+    def _check_invariants(self):
+        """ Check datastructure invariants. """
+        pairs = zip(self.alignments, self.alignments[1:])
+        assert all(a.script[0] <= a.script[1] for a in self.alignments)
+        assert all(a.audio[0] <= a.audio[1] for a in self.alignments)
+        assert all(a.transcript[0] <= a.transcript[1] for a in self.alignments)
+        assert all(a.script[1] <= b.script[0] for a, b in pairs)
+        assert all(a.transcript[1] <= b.transcript[0] for a, b in pairs)
+        if len(self.alignments) != 0:
+            max_ = lambda attr: max(flatten([list(getattr(a, attr)) for a in self.alignments]))
+            assert max_("audio") <= self.audio_file.length
+            assert max_("script") <= len(self.script)
+            assert max_("transcript") <= len(self.transcript)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -141,6 +212,7 @@ class Span:
     audio_length: float = dataclasses.field(init=False)
     speaker: Speaker = dataclasses.field(init=False)
     other_metadata: typing.Dict = dataclasses.field(init=False)
+    unaligned: typing.List[UnalignedType] = dataclasses.field(init=False)
 
     def __post_init__(self):
         assert self.span.stop - self.span.start, "Cannot create `Span` without any `Alignments`."
@@ -151,6 +223,7 @@ class Span:
         set(self, "speaker", self.passage.speaker)
         set(self, "audio_file", self.passage.audio_file)
         set(self, "other_metadata", self.passage.other_metadata)
+        set(self, "unaligned", self.passage.unaligned[slice(self.span.start, self.span.stop + 1)])
 
         span = self.passage.alignments[self.span]
         script = self.passage.script[span[0].script[0] : span[-1].script[-1]]
@@ -239,8 +312,8 @@ def span_generator(passages: typing.List[Passage], max_seconds: float) -> typing
         start = max(start, min_(passage))
 
         # NOTE: Based on the overlap, decide which alignments to include in the span.
-        part_ = lookup[index][int(start) - offset(passage) : int(end) - offset(passage) + 1]
-        part = lib.utils.flatten(part_)
+        slice_ = slice(int(start) - offset(passage), int(end) - offset(passage) + 1)
+        part = flatten(lookup[index][slice_])
         get = lambda i: passage.alignments[i].audio
         random_ = lru_cache(maxsize=None)(lambda i: random.random())
         bounds = (
@@ -346,6 +419,11 @@ def dataset_loader(
     return return_
 
 
+def _exists(path: Path) -> bool:
+    """ Helper function for `conventional_dataset_loader` that can be easily mocked. """
+    return path.exists() and path.is_file()
+
+
 def conventional_dataset_loader(
     directory: Path,
     speaker: Speaker,
@@ -371,6 +449,8 @@ def conventional_dataset_loader(
         - The metadata CSV file contains a mapping of audio transcriptions to audio filenames.
         - The dataset contains one speaker.
         - The dataset is stored in a `tar` or `zip` at some url.
+
+    TODO: These passages could be linked together with `Passage.passages`, consider that.
 
     Args:
         directory: Directory the dataset is stored in.
@@ -400,14 +480,13 @@ def conventional_dataset_loader(
     handled_columns = [metadata_text_column, metadata_audio_column]
     _get_other_metadata = lambda r: {k: v for k, v in r.items() if k not in handled_columns}
     _get_alignments = lambda s, l: (Alignment((0, len(s)), (0.0, l), (0, len(s))),)
-    zip_ = []
+    audio_paths_, rows = [], []
     for audio_path, (_, row) in zip(audio_paths, df.iterrows()):
-        if not audio_path.exists() or not audio_path.is_file():
+        if not _exists(audio_path):
             logger.warning("Skipping, audio path (%s) isn't a file.", audio_path)
             continue
-        zip_.append((audio_path, row))
-    audio_paths_, rows = typing.cast(typing.Tuple[typing.List[Path], typing.Dict], zip(*zip_))
-    # TODO: These passages could be linked together, with `passages`, consider that.
+        audio_paths_.append(audio_path)
+        rows.append(row)
     return [
         Passage(
             audio_file=audio_metadata,

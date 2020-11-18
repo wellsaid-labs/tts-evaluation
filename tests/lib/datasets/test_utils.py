@@ -1,4 +1,5 @@
-import pathlib
+import functools
+import math
 import pickle
 import typing
 from collections import Counter
@@ -8,35 +9,41 @@ import numpy as np
 import pytest
 
 import lib
-from lib.datasets import Alignment
+from lib.datasets import Alignment, Passage
 from lib.datasets.utils import _overlap
 from lib.utils import flatten
-from tests import _utils
+from tests._utils import (
+    TEST_DATA_PATH,
+    assert_uniform_distribution,
+    get_audio_metadata_side_effect,
+    make_passage,
+    subprocess_run_side_effect,
+)
 
 
-def _make_passage(
-    alignments=tuple(),
-    audio_path: pathlib.Path = pathlib.Path("."),
-    speaker: lib.datasets.Speaker = lib.datasets.Speaker(""),
-    script: str = "",
-    metadata: typing.Dict = {},
-) -> lib.datasets.Passage:
-    """ Make a `lib.datasets.Passage` for testing. """
-    alignments = tuple([Alignment(a, a, a) for a in alignments])
-    return lib.datasets.Passage(audio_path, speaker, script, script, alignments, metadata)
+def _make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):
+    """ Make an `Alignment` for testing. """
+    return lib.datasets.Alignment(script, audio, transcript)
+
+
+def _make_alignments(
+    alignments=typing.Tuple[typing.Tuple[int, int]]
+) -> typing.Tuple[lib.datasets.Alignment, ...]:
+    """ Make a tuple of `Alignment`(s) for testing. """
+    return tuple([_make_alignment(a, a, a) for a in alignments])
 
 
 def test_span_generator():
     """Test `lib.datasets.span_generator` samples uniformly given a uniform distribution of
     alignments."""
-    dataset = [_make_passage(((0, 1), (1, 2), (2, 3)))]
+    dataset = [make_passage(_make_alignments(((0, 1), (1, 2), (2, 3))))]
     iterator = lib.datasets.span_generator(dataset, max_seconds=10)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
         counter.update(span.passage.alignments[span.span])
     assert set(counter.keys()) == set(typing.cast(typing.Tuple[Alignment], dataset[0].alignments))
-    _utils.assert_uniform_distribution(counter, abs=0.015)
+    assert_uniform_distribution(counter, abs=0.015)
 
 
 def test_span_generator__empty():
@@ -48,9 +55,9 @@ def test_span_generator__empty():
 def test_span_generator__zero():
     """Test `lib.datasets.span_generator` handles alignments of zero length."""
     dataset = [
-        _make_passage(((0, 1),)),
-        _make_passage(((1, 1),)),
-        _make_passage(((1, 2),)),
+        make_passage(_make_alignments(((0, 1),))),
+        make_passage(_make_alignments(((1, 1),))),
+        make_passage(_make_alignments(((1, 2),))),
     ]
     iterator = lib.datasets.span_generator(dataset, max_seconds=10)
     counter: typing.Counter[Alignment] = Counter()
@@ -60,16 +67,16 @@ def test_span_generator__zero():
     alignments_ = [dataset[0].alignments, dataset[-1].alignments]
     alignments = [list(typing.cast(typing.Tuple[Alignment], a)) for a in alignments_]
     assert set(counter.keys()) == set(flatten(alignments))
-    _utils.assert_uniform_distribution(counter, abs=0.015)
+    assert_uniform_distribution(counter, abs=0.015)
 
 
 def test_span_generator__singular():
     """Test `lib.datasets.span_generator` handles multiple passages with a singular alignment
     of varying lengths."""
     dataset = [
-        _make_passage(((0, 1),)),
-        _make_passage(((0, 10),)),
-        _make_passage(((0, 5),)),
+        make_passage(_make_alignments(((0, 1),))),
+        make_passage(_make_alignments(((0, 10),))),
+        make_passage(_make_alignments(((0, 5),))),
     ]
     iterator = lib.datasets.span_generator(dataset, max_seconds=10)
     counter: typing.Counter[Alignment] = Counter()
@@ -78,15 +85,15 @@ def test_span_generator__singular():
         counter.update(span.passage.alignments[span.span])
     alignments = [list(typing.cast(typing.Tuple[Alignment], d.alignments)) for d in dataset]
     assert set(counter.keys()) == set(flatten(alignments))
-    _utils.assert_uniform_distribution(counter, abs=0.015)
+    assert_uniform_distribution(counter, abs=0.015)
 
 
 def test_span_generator__multiple_multiple():
     """Test `lib.datasets.span_generator` handles multiple scripts with a uniform alignment
     distribution."""
     dataset = [
-        _make_passage(((0, 1), (1, 2), (2, 3))),
-        _make_passage(((3, 4), (4, 5), (5, 6))),
+        make_passage(_make_alignments(((0, 1), (1, 2), (2, 3)))),
+        make_passage(_make_alignments(((3, 4), (4, 5), (5, 6)))),
     ]
     iterator = lib.datasets.span_generator(dataset, max_seconds=10)
     counter: typing.Counter[Alignment] = Counter()
@@ -95,19 +102,19 @@ def test_span_generator__multiple_multiple():
         counter.update(span.passage.alignments[span.span])
     alignments = [list(typing.cast(typing.Tuple[Alignment], d.alignments)) for d in dataset]
     assert set(counter.keys()) == set(flatten(alignments))
-    _utils.assert_uniform_distribution(counter, abs=0.015)
+    assert_uniform_distribution(counter, abs=0.015)
 
 
 def test_span_generator__pause():
     """ Test `lib.datasets.span_generator` samples uniformly despite a large pause. """
-    dataset = [_make_passage(((0, 1), (1, 2), (2, 3), (20, 21), (40, 41)))]
+    dataset = [make_passage(_make_alignments(((0, 1), (1, 2), (2, 3), (20, 21), (40, 41))))]
     iterator = lib.datasets.span_generator(dataset, max_seconds=4)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
         counter.update(span.passage.alignments[span.span])
     assert set(counter.keys()) == set(typing.cast(typing.Tuple[Alignment], dataset[0].alignments))
-    _utils.assert_uniform_distribution(counter, abs=0.02)
+    assert_uniform_distribution(counter, abs=0.02)
 
 
 def test_span_generator__multiple_unequal_passages__large_max_seconds():
@@ -116,7 +123,10 @@ def test_span_generator__multiple_unequal_passages__large_max_seconds():
 
     NOTE: With a large enough `max_seconds`, the entire passage should be sampled most of the time.
     """
-    dataset = [_make_passage(((0, 1),)), _make_passage(((3, 4), (4, 5), (5, 6)))]
+    dataset = [
+        make_passage(_make_alignments(((0, 1),))),
+        make_passage(_make_alignments(((3, 4), (4, 5), (5, 6)))),
+    ]
     iterator = lib.datasets.span_generator(dataset, max_seconds=1000000)
 
     alignments_counter: typing.Counter[Alignment] = Counter()
@@ -130,7 +140,7 @@ def test_span_generator__multiple_unequal_passages__large_max_seconds():
 
     alignments = [list(typing.cast(typing.Tuple[Alignment], d.alignments)) for d in dataset]
     assert set(alignments_counter.keys()) == set(flatten(alignments))
-    _utils.assert_uniform_distribution(alignments_counter, abs=0.015)
+    assert_uniform_distribution(alignments_counter, abs=0.015)
 
     for passage in dataset:
         assert spans_counter[passage.alignments] / num_passages == pytest.approx(
@@ -140,7 +150,7 @@ def test_span_generator__multiple_unequal_passages__large_max_seconds():
 
 def test_span_generator__unequal_alignment_sizes():
     """ Test `lib.datasets.span_generator` samples uniformly despite unequal alignment sizes. """
-    dataset = [_make_passage(((0, 1), (1, 5), (5, 20)))]
+    dataset = [make_passage(_make_alignments(((0, 1), (1, 5), (5, 20))))]
     iterator = lib.datasets.span_generator(dataset, max_seconds=20)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
@@ -148,14 +158,17 @@ def test_span_generator__unequal_alignment_sizes():
         counter.update(span.passage.alignments[span.span])
     alignments = [list(typing.cast(typing.Tuple[Alignment], d.alignments)) for d in dataset]
     assert set(counter.keys()) == set(flatten(alignments))
-    _utils.assert_uniform_distribution(counter, abs=0.015)
+    assert_uniform_distribution(counter, abs=0.015)
 
 
+@mock.patch("lib.audio.get_audio_metadata")
 @mock.patch("lib.datasets.utils.subprocess.run", return_value=None)
-def test_dataset_loader(_):
+def test_dataset_loader(mock_run, mock_get_audio_metadata):
     """ Test `lib.datasets.dataset_loader` loads a dataset. """
+    mock_get_audio_metadata.side_effect = get_audio_metadata_side_effect
+    mock_run.side_effect = functools.partial(subprocess_run_side_effect, _command="gsutil")
     passages = lib.datasets.dataset_loader(
-        _utils.TEST_DATA_PATH / "datasets",
+        TEST_DATA_PATH / "datasets",
         "hilary_noriega",
         "",
         lib.datasets.HILARY_NORIEGA,
@@ -173,8 +186,10 @@ def test_dataset_loader(_):
             ((43, 47), (2.6, 3.3), (41, 45)),
         ]
     ]
-    assert passages[0] == lib.datasets.Passage(
-        audio_path=_utils.TEST_DATA_PATH / "datasets/hilary_noriega/recordings/Script 1.wav",
+
+    path = TEST_DATA_PATH / "datasets/hilary_noriega/recordings/Script 1.wav"
+    assert passages[0] == Passage(
+        audio_file=lib.audio.get_audio_metadata([path])[0],
         speaker=lib.datasets.HILARY_NORIEGA,
         script="Author of the danger trail, Philip Steels, etc.",
         transcript=(
@@ -192,20 +207,19 @@ def test_dataset_loader(_):
 def test_passage_span__identity():
     """Test `lib.datasets.Passage` and `lib.datasets.Span` are the same after a identity
     operation."""
-    audio_path = _utils.TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
-    metadata = lib.audio.get_audio_metadata([audio_path])[0]
+    audio_path = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
+    metadata = lib.audio.get_audio_metadata(audio_path)
     script = (
         "The examination and testimony of the experts enabled the Commission to conclude "
         "that five shots may have been fired,"
     )
-    passage = lib.datasets.Passage(
-        audio_path=audio_path,
+    alignment = lib.datasets.Alignment((0, len(script)), (0.0, metadata.length), (0, len(script)))
+    passage = Passage(
+        audio_file=metadata,
         speaker=lib.datasets.LINDA_JOHNSON,
         script=script,
         transcript=script,
-        alignments=(
-            lib.datasets.Alignment((0, len(script)), (0.0, metadata.length), (0, len(script))),
-        ),
+        alignments=(alignment,),
         other_metadata={"chapter": 37},
     )
     span = passage[:]
@@ -213,15 +227,71 @@ def test_passage_span__identity():
     assert passage.transcript == span.transcript
     assert passage.alignments == span.alignments
     assert passage.speaker == span.speaker
-    assert passage.audio_path == span.audio_path
+    assert passage.audio_file == span.audio_file
+    assert passage.unaligned == span.unaligned
     assert passage.other_metadata == span.other_metadata
     assert (
-        passage.to_string("audio_path", "other_metadata")[len(passage.__class__.__name__) :]
-        == span.to_string("audio_path", "other_metadata")[len(span.__class__.__name__) :]
+        passage.to_string("audio_file", "other_metadata")[len(passage.__class__.__name__) :]
+        == span.to_string("audio_file", "other_metadata")[len(span.__class__.__name__) :]
     )
     np.testing.assert_almost_equal(passage.audio, span.audio)
     pickle.dumps(passage)
     pickle.dumps(span)
+
+
+def test_passage_span__unaligned():
+    """Test `lib.datasets.Passage` and `lib.datasets.Span` get the correct unalignments under a
+    variety of circumstances."""
+    passages = []
+    script = "abcdefghijklmnopqrstuvwxyz"
+    transcript = script
+    find = lambda a, b: (a.index(b), a.index(b) + 1)
+    add_passage = lambda split, tokens: passages.append(
+        make_passage(
+            script=split,
+            alignments=tuple(_make_alignment(find(split, t), find(transcript, t)) for t in tokens),
+            transcript=transcript,
+            index=len(passages),
+            passages=passages,
+        )
+    )
+
+    # TEST: Largely no issues, except one in the middle.
+    split, script = script[:6], script[6:]
+    add_passage(split, ["a", "b", "c", "e", "f"])  # NOTE: split='abcdef'
+
+    # TEST: Right edge has an issue, along with one in the middle.
+    split, script = script[:3], script[3:]
+    add_passage(split, ["g", "i"])  # NOTE: split='ghi'
+
+    # TEST: Left edge has an issue.
+    split, script = script[:3], script[3:]
+    add_passage(split, ["l"])  # NOTE: split='jkl'
+
+    # TEST: Right edge has an issue.
+    split, script = script[:3], script[3:]
+    add_passage(split, ["m"])  # NOTE: split='mno'
+
+    # TEST: Both edges have an issue, and there is no rightward passage.
+    split, script = script[:3], script[3:]
+    add_passage(split, ["q"])  # NOTE: split='pqr'
+
+    a = (0.0, 0.0)
+    expected = [("", "", a), ("", "", a), ("", "", a), ("d", "d", a), ("", "", a), ("", "", a)]
+    assert passages[0].unaligned == expected
+    assert passages[0][:].unaligned == passages[0].unaligned
+    assert passages[1].unaligned == [("", "", a), ("h", "h", a), ("", "jk", a)]
+    assert passages[1][:].unaligned == passages[1].unaligned
+    assert passages[2].unaligned == [("jk", "jk", a), ("", "", a)]
+    assert passages[2][:].unaligned == passages[2].unaligned
+    assert passages[3].unaligned == [("", "", a), ("no", "nop", a)]
+    assert passages[3][:].unaligned == passages[3].unaligned
+    assert passages[4].unaligned == [("p", "nop", a), ("r", "rstuvwxyz", (0.0, math.inf))]
+    assert passages[4][:].unaligned == passages[4].unaligned
+
+    # TEST: Test `spans` get the correct span.
+    assert passages[0][2:4][:].unaligned == [("", "", a), ("d", "d", a), ("", "", a)]
+    assert passages[1][1][:].unaligned == [("h", "h", a), ("", "jk", a)]
 
 
 def test__overlap():

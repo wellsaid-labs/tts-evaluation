@@ -52,17 +52,35 @@ def make_metadata(
     )
 
 
+def make_passage(
+    alignments: typing.Tuple[lib.datasets.Alignment, ...],
+    audio_file: lib.audio.AudioFileMetadata = make_metadata(),
+    speaker: lib.datasets.Speaker = lib.datasets.Speaker(""),
+    script: typing.Optional[str] = None,
+    transcript: typing.Optional[str] = None,
+    **kwargs,
+) -> lib.datasets.Passage:
+    """ Make a `Passage` for testing. """
+    max_ = lambda attr: max([getattr(a, attr)[1] for a in alignments])
+    make_str = lambda attr: "." * max_(attr) if len(alignments) else ""
+    script = make_str("script") if script is None else script
+    transcript = make_str("transcript") if transcript is None else transcript
+    return lib.datasets.Passage(audio_file, speaker, script, transcript, alignments, **kwargs)
+
+
 def get_audio_metadata_side_effect(
-    paths: typing.List[pathlib.Path],
+    paths: typing.Union[pathlib.Path, typing.List[pathlib.Path]],
     _func=lib.audio.get_audio_metadata,
     **kwargs,
-) -> typing.List[lib.audio.AudioFileMetadata]:
+) -> typing.Union[lib.audio.AudioFileMetadata, typing.List[lib.audio.AudioFileMetadata]]:
     """`get_audio_metadata.side_effect` that returns placeholder metadata if the path doesn't
     exist."""
+    is_list = isinstance(paths, list)
+    paths = paths if isinstance(paths, list) else [paths]
     existing = [p for p in paths if p.exists() and p.is_file()]
-    metadatas = _func(existing, **kwargs)
-    # TODO: Handle `get_audio_metadata` non-list return type.
-    return [metadatas.pop(0) if p.exists() else make_metadata(path=p) for p in paths]
+    metadatas: typing.List[lib.audio.AudioFileMetadata] = _func(existing, **kwargs)
+    metadatas = [metadatas.pop(0) if p.exists() else make_metadata(path=p) for p in paths]
+    return metadatas if is_list else metadatas[0]
 
 
 # NOTE: `unittest.mock.side_effect` for functions with a second parameter url.

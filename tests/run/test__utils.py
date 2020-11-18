@@ -18,9 +18,14 @@ import run
 from lib.audio import AudioFileMetadata
 from lib.datasets import Alignment
 from run._config import Cadence, DatasetType, get_dataset_label
-from tests import _utils
+from tests._utils import (
+    TEST_DATA_PATH,
+    assert_almost_equal,
+    assert_uniform_distribution,
+    make_passage,
+)
 
-TEST_DATA_PATH = _utils.TEST_DATA_PATH / "audio"
+TEST_DATA_PATH = TEST_DATA_PATH / "audio"
 TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
 
 
@@ -31,18 +36,6 @@ def run_around_tests():
     hparams.add_config({lib.audio.write_audio: hparams.HParams(sample_rate=sample_rate)})
     yield
     hparams.clear_config()
-
-
-def _make_passage(
-    alignments: typing.Tuple[Alignment, ...],
-    speaker: lib.datasets.Speaker,
-    metadata=_utils.make_metadata(),
-) -> lib.datasets.Passage:
-    """ Make `Passage` for testing. """
-    range_ = lambda a: "".join([str(i) for i in range(a)])
-    script = range_(max([a.script[1] for a in alignments])) if len(alignments) != 0 else ""
-    transcript = range_(max([a.transcript[1] for a in alignments])) if len(alignments) != 0 else ""
-    return lib.datasets.Passage(metadata, speaker, script, transcript, alignments)
 
 
 def test_maybe_make_experiment_directories(capsys):
@@ -101,7 +94,7 @@ def test_normalize_audio():
         audio_path = directory / TEST_DATA_LJ.name
         shutil.copy(TEST_DATA_LJ, audio_path)
         metadata = AudioFileMetadata(audio_path, *args)
-        passage = _make_passage(tuple(), speaker=lib.datasets.LINDA_JOHNSON, metadata=metadata)
+        passage = make_passage(tuple(), speaker=lib.datasets.LINDA_JOHNSON, metadata=metadata)
         dataset = {lib.datasets.LINDA_JOHNSON: [passage]}
         run._utils.normalize_audio(
             dataset,
@@ -119,7 +112,7 @@ def test_normalize_audio():
 
 def test_split_passages():
     """Test `run._utils.split_passages` randomly splits `passages` into train and dev lists. """
-    _make = lambda a, s: _make_passage((Alignment((0, a), (0, a), (0, a)),), s)
+    _make = lambda a, s: make_passage((Alignment((0, a), (0, a), (0, a)),), s)
     with torchnlp.random.fork_rng(123):
         a = lib.datasets.Speaker("a")
         b = lib.datasets.Speaker("b")
@@ -138,12 +131,10 @@ def test_split_passages__empty_list():
 def test__get_normalized_half_gaussian():
     """Test `run._utils._get_normalized_half_gaussian` generates the left-side of a gaussian
     distribution normalized from 0 to 1."""
-    _utils.assert_almost_equal(
-        run._utils._get_normalized_half_gaussian(8, 2),
-        torch.tensor(
-            [0.0015184, 0.0070632, 0.0292409, 0.0952311, 0.2443498, 0.4946532, 0.7909854, 1.0]
-        ),
+    expected = torch.tensor(
+        [0.0015184, 0.0070632, 0.0292409, 0.0952311, 0.2443498, 0.4946532, 0.7909854, 1.0]
     )
+    assert_almost_equal(run._utils._get_normalized_half_gaussian(8, 2), expected)
 
 
 def test__random_nonoverlapping_alignments():
@@ -166,7 +157,7 @@ def test__random_nonoverlapping_alignments():
             for i in range(sample.script[0], sample.script[1]):
                 counter[i] += 1
     assert set(counter.keys()) == set(range(0, 5))
-    _utils.assert_uniform_distribution(counter, abs=0.02)
+    assert_uniform_distribution(counter, abs=0.02)
 
 
 def test__random_nonoverlapping_alignments__empty():
@@ -346,7 +337,7 @@ def test_get_rms_level():
         dim=1,
     )
     rms = run._utils.get_rms_level(db_spectrogram, window=window)
-    _utils.assert_almost_equal(rms / db_spectrogram.shape[0], torch.Tensor([1.0000001, 0.500006]))
+    assert_almost_equal(rms / db_spectrogram.shape[0], torch.Tensor([1.0000001, 0.500006]))
 
 
 def test_get_rms_level__precise():
@@ -371,12 +362,12 @@ def test_get_rms_level__precise():
         dim=1,
     )
     rms = run._utils.get_rms_level(db_spectrogram, window=window)
-    _utils.assert_almost_equal(rms / (sample_rate / frame_hop), torch.Tensor([1.0, 0.49999998418]))
+    assert_almost_equal(rms / (sample_rate / frame_hop), torch.Tensor([1.0, 0.49999998418]))
 
 
 def test_get_dataset_stats():
     """ Test `run._utils.get_dataset_stats` measures dataset statistics correctly. """
-    _passage = lambda a, b, s: _make_passage((Alignment((a, b), (a * 10, b * 10), (a, b)),), s)
+    _passage = lambda a, b, s: make_passage((Alignment((a, b), (a * 10, b * 10), (a, b)),), s)
     a = lib.datasets.Speaker("a")
     b = lib.datasets.Speaker("b")
     train = {a: [_passage(0, 2, a), _passage(0, 2, a)], b: [_passage(0, 1, a)]}

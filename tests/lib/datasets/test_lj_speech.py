@@ -1,3 +1,4 @@
+import math
 import pathlib
 import re
 import shutil
@@ -37,9 +38,10 @@ verbalize_test_cases = {
 }
 
 
-@mock.patch("lib.audio.get_audio_metadata")
+@mock.patch("lib.datasets.utils._exists", return_value=True)
+@mock.patch("lib.datasets.utils.get_audio_metadata")
 @mock.patch("urllib.request.urlretrieve")
-def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata):
+def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata, _):
     """ Test `lib.datasets.lj_speech_dataset` loads and verbalizes the data. """
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
     mock_get_audio_metadata.side_effect = _utils.get_audio_metadata_side_effect
@@ -51,9 +53,8 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata):
         data = lib.datasets.lj_speech_dataset(directory=directory)
         assert len(data) == 13100
         assert sum([len(r.script) for r in data]) == 1310332
-        metadata = lib.audio.get_audio_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav")
         assert data[0] == lib.datasets.Passage(
-            audio_file=metadata,
+            audio_file=_utils.make_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav"),
             speaker=lib.datasets.LINDA_JOHNSON,
             script=(
                 "Printing, in the only sense with which we are at present concerned, differs "
@@ -63,7 +64,7 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata):
                 "Printing, in the only sense with which we are at present concerned, differs "
                 "from most if not from all the arts and crafts represented in the Exhibition"
             ),
-            alignments=(lib.datasets.Alignment((0, 151), (0.0, 0), (0, 151)),),
+            alignments=(lib.datasets.Alignment((0, 151), (0.0, math.inf), (0, 151)),),
             other_metadata={
                 2: (  # type: ignore
                     "Printing, in the only sense with which we are at present concerned, differs "
