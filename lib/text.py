@@ -41,7 +41,7 @@ else:
 logger = logging.getLogger(__name__)
 
 
-def _grapheme_to_phoneme_helper(
+def _line_grapheme_to_phoneme(
     grapheme: str,
     service: typing.Literal["espeak"] = "espeak",
     flags: typing.List[str] = ["--ipa=3", "-q", "-ven-us", "--stdin"],
@@ -102,12 +102,11 @@ def _grapheme_to_phoneme_helper(
     return phoneme.strip(separator)
 
 
-def _grapheme_to_phoneme(grapheme: str, separator: str = "", **kwargs) -> str:
+def _multiline_grapheme_to_phoneme(grapheme: str, separator: str = "", **kwargs) -> str:
     # NOTE: `grapheme` is split on new lines because `espeak` is inconsistent in it's handling of
     # new lines.
-    split = [
-        _grapheme_to_phoneme_helper(s, separator=separator, **kwargs) for s in grapheme.split("\n")
-    ]
+    splits = grapheme.split("\n")
+    split = [_line_grapheme_to_phoneme(s, separator=separator, **kwargs) for s in splits]
     return_ = (separator + "\n" + separator).join(split)
     # NOTE: We need to remove double separators from when there are consecutive new lines like
     # "\n\n\n", for example.
@@ -116,7 +115,7 @@ def _grapheme_to_phoneme(grapheme: str, separator: str = "", **kwargs) -> str:
     return return_
 
 
-def _grapheme_to_phoneme_preserve_punctuation(
+def _grapheme_to_phoneme_with_punctuation(
     doc: spacy.tokens.Doc, separator: str = "", **kwargs
 ) -> str:
     """Convert grapheme to phoneme while preserving punctuation.
@@ -124,10 +123,9 @@ def _grapheme_to_phoneme_preserve_punctuation(
     Args:
         doc
         separator: The separator used to separate phonemes, stress, and punctuation.
-        **kwargs: Key-word arguments passed to `_grapheme_to_phoneme`.
+        **kwargs: Key-word arguments passed to `_multiline_grapheme_to_phoneme`.
 
-    Returns:
-        Phonemes with the original punctuation (as defined by spaCy).
+    Returns: Phonemes with the original punctuation (as defined by spaCy).
     """
     assert not separator or all(
         separator not in t.text for t in doc
@@ -150,34 +148,35 @@ def _grapheme_to_phoneme_preserve_punctuation(
         if is_punct and not is_alpha_numeric:
             return_.extend(list(phrase))
         else:
-            return_.append(_grapheme_to_phoneme(phrase, separator=separator, **kwargs))
+            return_.append(_multiline_grapheme_to_phoneme(phrase, separator=separator, **kwargs))
     return separator.join([t for t in return_ if len(t) > 0])
 
 
-# TODO: With `spacy` v3 and their type hints up, we can change these signatures to include
-# `spacy.tokens.Doc`.
-
-
-@typing.overload
-def grapheme_to_phoneme(
-    graphemes: typing.Union[typing.Tuple[str], typing.List[str]],
+def _grapheme_to_phoneme(
+    *graphemes: typing.Union[str, spacy.tokens.Doc, spacy.tokens.span.Span],
     chunk_size: int = 128,
+    max_parallel: int = typing.cast(int, os.cpu_count()),
     **kwargs,
-) -> typing.List[str]:
-    ...
+) -> typing.Iterator[str]:
+    # NOTE: Create a `spacy.tokens.Doc` for every `str`.
+    docs = list(graphemes)
+    if any(isinstance(d, str) for d in docs):
+        items = {i: d for i, d in enumerate(docs) if isinstance(d, str)}
+        nlp = load_en_core_web_md(disable=("parser", "ner"))
+        for i, doc in zip(items.keys(), nlp.pipe(items.values())):
+            docs[i] = doc
 
-
-@typing.overload
-def grapheme_to_phoneme(
-    graphemes: str,
-    chunk_size: int = 128,
-    **kwargs,
-) -> str:
-    ...
+    partial_ = partial(_grapheme_to_phoneme_with_punctuation, **kwargs)
+    if len(docs) < chunk_size:
+        yield from (partial_(d) for d in docs)
+    else:
+        logger.info("Getting phonemes for %d graphemes.", len(docs))
+        with ThreadPool(min(max_parallel, len(docs))) as pool:
+            yield from tqdm(pool.imap(partial_, docs, chunksize=chunk_size), total=len(docs))
 
 
 @hparams.configurable
-def grapheme_to_phoneme(graphemes, chunk_size: int = 128, max_parallel=os.cpu_count(), **kwargs):
+def grapheme_to_phoneme(graphemes, **kwargs):
     """Convert graphemes into phonemes and preserve punctuation.
 
     NOTE: `espeak` can give different results for the same argument, sometimes. For example,
@@ -190,31 +189,15 @@ def grapheme_to_phoneme(graphemes, chunk_size: int = 128, max_parallel=os.cpu_co
     - CMU dictionary or https://github.com/kylebgorman/wikipron for most words
     - spaCy for homographs similar to https://github.com/Kyubyong/g2p
     - A neural network trained on CMU dictionary for words not in the dictionaries.
+    TODO: Type this function once `spacy` supports typing.
 
     Args:
         graphemes: The graphemes to convert to phonemes.
-        chunk_size: `chunk_size` parameter passed to `imap` for multiprocessing.
-        max_parallel
-        **kwargs: Key-word arguments passed to `_grapheme_to_phoneme_preserve_punctuation`.
+        **kwargs: Key-word arguments passed to `_grapheme_to_phoneme`.
     """
-    assert chunk_size >= 1
-    is_iterable = not isinstance(graphemes, (str, spacy.tokens.Doc, spacy.tokens.span.Span))
-    graphemes = list(graphemes) if is_iterable else [graphemes]
-    part = partial(_grapheme_to_phoneme_preserve_punctuation, **kwargs)
-
-    if any(isinstance(g, str) for g in graphemes):
-        items = {i: g for i, g in enumerate(graphemes) if isinstance(g, str)}
-        nlp = load_en_core_web_md(disable=("parser", "ner"))
-        for i, doc in zip(items.keys(), nlp.pipe(items.values())):
-            graphemes[i] = doc
-
-    if len(graphemes) < chunk_size:
-        return_ = [part(g) for g in graphemes]
-        return return_[slice(0, len(graphemes)) if is_iterable else 0]  # type: ignore
-
-    logger.info("Getting phonemes for %d graphemes.", len(graphemes))
-    with ThreadPool(min(max_parallel, len(graphemes))) as pool:
-        return list(tqdm(pool.imap(part, graphemes, chunksize=chunk_size), total=len(graphemes)))
+    if isinstance(graphemes, (list, tuple)):
+        return list(_grapheme_to_phoneme(*tuple(graphemes), **kwargs))
+    return tuple(_grapheme_to_phoneme(graphemes, **kwargs))[0]
 
 
 """ Learn more about pronunciation dictionarys:

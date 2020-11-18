@@ -6,11 +6,11 @@ from unittest import mock
 import pytest
 
 import lib
-from lib.text import _grapheme_to_phoneme, grapheme_to_phoneme
+from lib.text import _multiline_grapheme_to_phoneme, grapheme_to_phoneme
 
 
-def test__grapheme_to_phoneme():
-    """ Test `_grapheme_to_phoneme` against basic cases. """
+def test__multiline_grapheme_to_phoneme():
+    """ Test `_multiline_grapheme_to_phoneme` against basic cases. """
     in_ = [
         "and Trot fed it a handful of fresh blue clover and smoothed and petted it until the lamb "
         "was eager to follow her wherever she might go.",
@@ -115,18 +115,18 @@ _ _ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n""",
         "_p_l_ˈ_eɪ_n_ _h_ˈ_aʊ_s_\n_\n_ð_ə_ _m_ˈ_æ_n",
     ]
     for grapheme, phoneme in zip(in_, out):
-        assert _grapheme_to_phoneme(grapheme, separator="_") == phoneme
+        assert _multiline_grapheme_to_phoneme(grapheme, separator="_") == phoneme
 
 
-def test__grapheme_to_phoneme__special_bash_character():
-    """ Test `_grapheme_to_phoneme` handles double quotes, a bash special character. """
+def test__multiline_grapheme_to_phoneme__special_bash_character():
+    """ Test `_multiline_grapheme_to_phoneme` handles double quotes, a bash special character. """
     in_ = '"It is commonly argued that the notion of'
     out = "ɪ_t_ _ɪ_z_ _k_ˈ_ɑː_m_ə_n_l_i_ _ˈ_ɑːɹ_ɡ_j_uː_d_ _ð_æ_t_ð_ə_ _n_ˈ_oʊ_ʃ_ə_n_ _ʌ_v"
-    assert _grapheme_to_phoneme(in_, separator="_") == out
+    assert _multiline_grapheme_to_phoneme(in_, separator="_") == out
 
 
-def test__grapheme_to_phoneme__stripping():
-    """ Test `_grapheme_to_phoneme` respects white spaces on the edges. """
+def test__multiline_grapheme_to_phoneme__stripping():
+    """ Test `_multiline_grapheme_to_phoneme` respects white spaces on the edges. """
     in_ = [
         "  Hello World  ",
         "Hello World  ",
@@ -142,29 +142,29 @@ def test__grapheme_to_phoneme__stripping():
         " _\n_\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_\n_ ",
     ]
     for grapheme, phoneme in zip(in_, out):
-        assert _grapheme_to_phoneme(grapheme, separator="_") == phoneme
+        assert _multiline_grapheme_to_phoneme(grapheme, separator="_") == phoneme
 
 
-def test__grapheme_to_phoneme__service_separator():
-    """ Test `_grapheme_to_phoneme` works when `separator == service_separator`. """
-    assert _grapheme_to_phoneme("Hello World", separator="_") == "h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d"
+def test__multiline_grapheme_to_phoneme__service_separator():
+    """ Test `_multiline_grapheme_to_phoneme` works when `separator == service_separator`. """
+    assert _multiline_grapheme_to_phoneme("Hello World", separator="_") == "h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d"
 
 
-def test__grapheme_to_phoneme__unique_separator():
-    """ Test `_grapheme_to_phoneme` errors if `separator` is not unique. """
+def test__multiline_grapheme_to_phoneme__unique_separator():
+    """ Test `_multiline_grapheme_to_phoneme` errors if `separator` is not unique. """
     with pytest.raises(AssertionError):
-        _grapheme_to_phoneme("Hello World", separator="ə")
+        _multiline_grapheme_to_phoneme("Hello World", separator="ə")
 
 
 @mock.patch("lib.text.logger.warning")
-def test__grapheme_to_phoneme__language_switching(mock_warning):
-    """ Test `_grapheme_to_phoneme` logs a warning if the language is switched. """
-    assert _grapheme_to_phoneme("mon dieu", separator="|") == "m|ˈ|ɑː|n| |d|j|ˈ|ø"
+def test__multiline_grapheme_to_phoneme__language_switching(mock_warning):
+    """ Test `_multiline_grapheme_to_phoneme` logs a warning if the language is switched. """
+    assert _multiline_grapheme_to_phoneme("mon dieu", separator="|") == "m|ˈ|ɑː|n| |d|j|ˈ|ø"
     assert mock_warning.called == 1
 
 
-def test__grapheme_to_phoneme__long_number():
-    """Test `_grapheme_to_phoneme` is UNABLE to handle long numbers.
+def test__multiline_grapheme_to_phoneme__long_number():
+    """Test `_multiline_grapheme_to_phoneme` is UNABLE to handle long numbers.
 
     NOTE: eSpeak stops before outputing "7169399375105820974944592". Feel free to test this, like
     so: `espeak --ipa=3 -q -ven-us 3.141592653589793238462643383279502884197`.
@@ -172,7 +172,7 @@ def test__grapheme_to_phoneme__long_number():
     Learn more here: https://github.com/wellsaid-labs/Text-to-Speech/issues/299
     """
     in_ = "3.141592653589793238462643383279502884197169399375105820974944592"
-    assert _grapheme_to_phoneme(in_, separator="|") == (
+    assert _multiline_grapheme_to_phoneme(in_, separator="|") == (
         "θ|ɹ|ˈ|iː| |p|ɔɪ|n|t| |w|ˈ|ʌ|n| |f|ˈ|oːɹ| |w|ˈ|ʌ|n| |f|ˈ|aɪ|v| |n|ˈ|aɪ|n| |t|ˈ|uː| "
         "|s|ˈ|ɪ|k|s| |f|ˈ|aɪ|v| |θ|ɹ|ˈ|iː| |f|ˈ|aɪ|v| |ˈ|eɪ|t| |n|ˈ|aɪ|n| |s|ˈ|ɛ|v|ə|n| "
         "|n|ˈ|aɪ|n| |θ|ɹ|ˈ|iː| |t|ˈ|uː| |θ|ɹ|ˈ|iː| |ˈ|eɪ|t| |f|ˈ|oːɹ| |s|ˈ|ɪ|k|s| |t|ˈ|uː| "
