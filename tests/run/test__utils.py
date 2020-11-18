@@ -1,8 +1,8 @@
 import collections
-import pathlib
 import shutil
 import tempfile
 import typing
+from pathlib import Path
 
 import hparams
 import numpy as np
@@ -15,6 +15,9 @@ from matplotlib import pyplot
 
 import lib
 import run
+from lib.audio import AudioFileMetadata
+from lib.datasets import Alignment
+from run._config import Cadence, DatasetType, get_dataset_label
 from tests import _utils
 
 TEST_DATA_PATH = _utils.TEST_DATA_PATH / "audio"
@@ -30,11 +33,23 @@ def run_around_tests():
     hparams.clear_config()
 
 
+def _make_passage(
+    alignments: typing.Tuple[Alignment, ...],
+    speaker: lib.datasets.Speaker,
+    metadata=_utils.make_metadata(),
+) -> lib.datasets.Passage:
+    """ Make `Passage` for testing. """
+    range_ = lambda a: "".join([str(i) for i in range(a)])
+    script = range_(max([a.script[1] for a in alignments])) if len(alignments) != 0 else ""
+    transcript = range_(max([a.transcript[1] for a in alignments])) if len(alignments) != 0 else ""
+    return lib.datasets.Passage(metadata, speaker, script, transcript, alignments)
+
+
 def test_maybe_make_experiment_directories(capsys):
     """ Test `maybe_make_experiment_directories` creates a directory structure. """
     with tempfile.TemporaryDirectory() as directory:
         with capsys.disabled():  # NOTE: Disable capsys because it messes with `sys.stdout`
-            path = pathlib.Path(directory)
+            path = Path(directory)
             recorder = lib.environment.RecordStandardStreams()
             run_name = "run_name"
             checkpoints_directory_name = "checkpoints"
@@ -60,7 +75,7 @@ def test_maybe_make_experiment_directories_from_checkpoint(capsys):
     """ Test `maybe_make_experiment_directories_from_checkpoint` creates a directory structure. """
     with tempfile.TemporaryDirectory() as directory:
         with capsys.disabled():  # NOTE: Disable capsys because it messes with `sys.stdout`
-            path = pathlib.Path(directory)
+            path = Path(directory)
             checkpoints_directory = path / "run_name" / "checkpoint_directory_name"
             checkpoints_directory.mkdir(parents=True)
             recorder = lib.environment.RecordStandardStreams()
@@ -80,18 +95,13 @@ def test_normalize_audio():
     ffmpeg_encoding = "pcm_s16le"
     sox_encoding = "16-bit Signed Integer PCM"
     suffix = ".wav"
+    args = (sample_rate, num_channels, sox_encoding, 7.584, "256k", "16-bit")
     with tempfile.TemporaryDirectory() as path:
-        directory = pathlib.Path(path)
+        directory = Path(path)
         audio_path = directory / TEST_DATA_LJ.name
         shutil.copy(TEST_DATA_LJ, audio_path)
-        passage = lib.datasets.Passage(
-            audio_path=audio_path,
-            speaker=lib.datasets.LINDA_JOHNSON,
-            script="",
-            transcript="",
-            alignments=tuple(),
-            other_metadata={},
-        )
+        metadata = AudioFileMetadata(audio_path, *args)
+        passage = _make_passage(tuple(), speaker=lib.datasets.LINDA_JOHNSON, metadata=metadata)
         dataset = {lib.datasets.LINDA_JOHNSON: [passage]}
         run._utils.normalize_audio(
             dataset,
@@ -102,34 +112,21 @@ def test_normalize_audio():
             audio_filters=lib.audio.AudioFilters(""),
         )
         assert len(dataset[lib.datasets.LINDA_JOHNSON]) == 1
-        new_audio_path = dataset[lib.datasets.LINDA_JOHNSON][0].audio_path
-        assert new_audio_path.absolute() != audio_path.absolute()
-        assert lib.audio.get_audio_metadata([new_audio_path])[0] == lib.audio.AudioFileMetadata(
-            new_audio_path, sample_rate, num_channels, sox_encoding, 7.584, "256k", "16-bit"
-        )
+        new_path = dataset[lib.datasets.LINDA_JOHNSON][0].audio_file.path
+        assert new_path.absolute() != audio_path.absolute()
+        assert lib.audio.get_audio_metadata(new_path) == AudioFileMetadata(new_path, *args)
 
 
 def test_split_passages():
     """Test `run._utils.split_passages` randomly splits `passages` into train and dev lists. """
+    _make = lambda a, s: _make_passage((Alignment((0, a), (0, a), (0, a)),), s)
     with torchnlp.random.fork_rng(123):
-        _passage = lambda a, s: lib.datasets.Passage(
-            pathlib.Path(str(a)), s, "", "", (lib.datasets.Alignment((0, a), (0, a), (0, a)),), {}
-        )
         a = lib.datasets.Speaker("a")
         b = lib.datasets.Speaker("b")
-        train, dev = run._utils.split_passages(
-            [
-                _passage(1, a),
-                _passage(2, a),
-                _passage(3, a),
-                _passage(1, b),
-                _passage(2, b),
-                _passage(3, b),
-            ],
-            6,
-        )
-        assert train == [_passage(3, b), _passage(3, a), _passage(1, a)]
-        assert dev == [_passage(1, b), _passage(2, b), _passage(2, a)]
+        passages = [_make(1, a), _make(2, a), _make(3, a), _make(1, b), _make(2, b), _make(3, b)]
+        train, dev = run._utils.split_passages(passages, 6)
+        assert train == [_make(3, b), _make(3, a), _make(1, a)]
+        assert dev == [_make(1, b), _make(2, b), _make(2, a)]
 
 
 def test_split_passages__empty_list():
@@ -152,7 +149,7 @@ def test__get_normalized_half_gaussian():
 def test__random_nonoverlapping_alignments():
     """Test `run._utils._random_nonoverlapping_alignments` generates the left-side of a gaussian
     distribution normalized from 0 to 1."""
-    _alignment = lambda a, b: lib.datasets.Alignment((a, b), (a, b), (a, b))
+    _alignment = lambda a, b: Alignment((a, b), (a, b), (a, b))
     alignments = tuple(
         [
             _alignment(0, 1),
@@ -179,7 +176,7 @@ def test__random_nonoverlapping_alignments__empty():
 
 def test__random_nonoverlapping_alignments__large_max():
     """Test `run._utils._random_nonoverlapping_alignments` handles a large maximum. """
-    _alignment = lambda a, b: lib.datasets.Alignment((a, b), (a, b), (a, b))
+    _alignment = lambda a, b: Alignment((a, b), (a, b), (a, b))
     with torchnlp.random.fork_rng(1234):
         alignments = tuple(
             [
@@ -206,7 +203,7 @@ def test__get_loudness():
     meter = lib.audio.get_pyloudnorm_meter(sample_rate, implementation)
     with torchnlp.random.fork_rng(12345):
         audio = np.random.rand(sample_rate * length) * 2 - 1  # type: ignore
-        alignment = lib.datasets.Alignment((0, length), (0, length), (0, length))
+        alignment = Alignment((0, length), (0, length), (0, length))
         loundess = run._utils._get_loudness(audio, sample_rate, alignment, implementation, 1)
         assert np.isfinite(loundess)  # type: ignore
         assert round(meter.integrated_loudness(audio), 1) == loundess
@@ -379,34 +376,26 @@ def test_get_rms_level__precise():
 
 def test_get_dataset_stats():
     """ Test `run._utils.get_dataset_stats` measures dataset statistics correctly. """
-    _passage = lambda a, b, speaker: lib.datasets.Passage(
-        pathlib.Path(str(a)),
-        speaker,
-        "t" * (b - a),
-        "t" * (b - a),
-        (lib.datasets.Alignment((a, b), (a * 10, b * 10), (a, b)),),
-        {},
-    )
+    _passage = lambda a, b, s: _make_passage((Alignment((a, b), (a * 10, b * 10), (a, b)),), s)
     a = lib.datasets.Speaker("a")
     b = lib.datasets.Speaker("b")
-    train = {a: [_passage(0, 2, a), _passage(2, 4, a)], b: [_passage(0, 1, a)]}
+    train = {a: [_passage(0, 2, a), _passage(0, 2, a)], b: [_passage(0, 1, a)]}
     stats = run._utils.get_dataset_stats(train, {})
-    get_dataset_label = lambda n, t, s=None: run._config.get_dataset_label(
-        n, cadence=run._config.Cadence.STATIC, type_=t, speaker=s
-    )
+    static = Cadence.STATIC
+    get_label = lambda n, t, s=None: get_dataset_label(n, cadence=static, type_=t, speaker=s)
     assert stats == {
-        get_dataset_label("num_passages", run._config.DatasetType.TRAIN): 3,
-        get_dataset_label("num_characters", run._config.DatasetType.TRAIN): 5,
-        get_dataset_label("num_seconds", run._config.DatasetType.TRAIN): "50s 0ms",
-        get_dataset_label("num_passages", run._config.DatasetType.TRAIN, a): 2,
-        get_dataset_label("num_characters", run._config.DatasetType.TRAIN, a): 4,
-        get_dataset_label("num_seconds", run._config.DatasetType.TRAIN, a): "40s 0ms",
-        get_dataset_label("num_passages", run._config.DatasetType.TRAIN, b): 1,
-        get_dataset_label("num_characters", run._config.DatasetType.TRAIN, b): 1,
-        get_dataset_label("num_seconds", run._config.DatasetType.TRAIN, b): "10s 0ms",
-        get_dataset_label("num_passages", run._config.DatasetType.DEV): 0,
-        get_dataset_label("num_characters", run._config.DatasetType.DEV): 0,
-        get_dataset_label("num_seconds", run._config.DatasetType.DEV): "0ms",
+        get_label("num_passages", DatasetType.TRAIN): 3,
+        get_label("num_characters", DatasetType.TRAIN): 5,
+        get_label("num_seconds", DatasetType.TRAIN): "50s 0ms",
+        get_label("num_passages", DatasetType.TRAIN, a): 2,
+        get_label("num_characters", DatasetType.TRAIN, a): 4,
+        get_label("num_seconds", DatasetType.TRAIN, a): "40s 0ms",
+        get_label("num_passages", DatasetType.TRAIN, b): 1,
+        get_label("num_characters", DatasetType.TRAIN, b): 1,
+        get_label("num_seconds", DatasetType.TRAIN, b): "10s 0ms",
+        get_label("num_passages", DatasetType.DEV): 0,
+        get_label("num_characters", DatasetType.DEV): 0,
+        get_label("num_seconds", DatasetType.DEV): "0ms",
     }
 
 

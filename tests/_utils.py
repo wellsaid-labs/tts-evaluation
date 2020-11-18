@@ -1,4 +1,4 @@
-import functools
+import math
 import pathlib
 import subprocess
 import typing
@@ -42,7 +42,7 @@ def make_metadata(
     sample_rate=0,
     num_channels=0,
     encoding="",
-    length=0,
+    length=math.inf,
     bit_rate="",
     precision="",
 ) -> lib.audio.AudioFileMetadata:
@@ -59,19 +59,10 @@ def get_audio_metadata_side_effect(
 ) -> typing.List[lib.audio.AudioFileMetadata]:
     """`get_audio_metadata.side_effect` that returns placeholder metadata if the path doesn't
     exist."""
-    partial = functools.partial(
-        lib.audio.AudioFileMetadata,
-        sample_rate=0,
-        num_channels=0,
-        encoding="",
-        length=0,
-        bit_rate="",
-        precision="",
-    )
     existing = [p for p in paths if p.exists() and p.is_file()]
     metadatas = _func(existing, **kwargs)
     # TODO: Handle `get_audio_metadata` non-list return type.
-    return [metadatas.pop(0) if p.exists() else partial(p) for p in paths]
+    return [metadatas.pop(0) if p.exists() else make_metadata(path=p) for p in paths]
 
 
 # NOTE: `unittest.mock.side_effect` for functions with a second parameter url.
