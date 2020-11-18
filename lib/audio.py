@@ -104,7 +104,9 @@ def _get_audio_metadata(
     https://unix.stackexchange.com/questions/45143/what-is-a-canonical-way-to-find-the-actual-maximum-argument-list-length
     https://stackoverflow.com/questions/19354870/bash-command-line-and-input-limit
     """
-    assert len(set(paths)) == len(paths), "Duplicate paths found."
+    if len(set(paths)) != len(paths):
+        logger.warning("`_get_audio_metadata` was called with duplicate paths.")
+
     if len(paths) == 0:
         return
 
