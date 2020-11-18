@@ -66,14 +66,19 @@ def rename(
     """ Normalize the name of every directory and file in DIRECTORY."""
     assert directory.exists(), "DIRECTORY must exist."
     for path in directory.glob("**/*"):
-        normalized = path.name.replace(" ", "_").lower()
+        stem = path.stem.replace(" ", "_").lower()
         if only_numbers:
-            normalized = "-".join(re.findall(r"\d+", normalized))
-        if normalized != path.name:
-            logger.info('Renaming file name "%s" to "%s"', path.name, normalized)
-            path.rename(path.parent / normalized)
+            if any(c.isdigit() for c in stem):
+                stem = "-".join(re.findall(r"\d+", stem))
+            else:
+                logger.warning("Skipping, path has no numbers: %s", path)
+
+        updated = path.parent / (stem + path.suffix)
+        if updated != path:
+            logger.info('Renaming file name "%s" to "%s"', path.name, updated.name)
+            path.rename(updated)
         else:
-            logger.info("Skipping, file already exists: %s", path.parent / normalized)
+            logger.info("Skipping, file already exists: %s", updated)
 
 
 def _download(gcs_uri: str) -> typing.Tuple[typing.IO[bytes], str]:
