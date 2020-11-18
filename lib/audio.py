@@ -183,6 +183,8 @@ def read_audio_slice(path: Path, start: float, length: float) -> np.ndarray:
         start: The start of the audio segment.
         length: The length of the audio segment.
     """
+    if length == 0:
+        return np.array([], dtype=np.float32)  # type: ignore
     command = f"ffmpeg -ss {start} -i {path} -to {length} -f f32le -acodec pcm_f32le -ac 1 pipe:"
     ndarray = np.frombuffer(
         subprocess.check_output(command.split(), stderr=subprocess.DEVNULL),

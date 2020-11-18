@@ -51,6 +51,8 @@ def _to_string(self: typing.Union[Span, Passage], *fields: str) -> str:
 class Alignment(typing.NamedTuple):
     """An aligned `script`, `audio` and `transcript` slice.
 
+    TODO: Reorder these to `script`, `transcript`, and `audio` for consistency.
+
     Args:
         script: The start and end of a script slice in characters.
         audio: The start and end of a audio recording slice in seconds.
@@ -229,6 +231,10 @@ class Span:
     other_metadata: typing.Dict = dataclasses.field(init=False)
     unaligned: typing.List[UnalignedType] = dataclasses.field(init=False)
 
+    @staticmethod
+    def _subtract(a: typing.Tuple[float, float], b: typing.Tuple[float, float]):
+        return tuple([a[0] - b[0], a[1] - b[0]])
+
     def __post_init__(self):
         self._check_invariants()
 
@@ -244,8 +250,7 @@ class Span:
         script = self.passage.script[span[0].script[0] : span[-1].script[-1]]
         audio_length = span[-1].audio[-1] - span[0].audio[0]
         transcript = self.passage.transcript[span[0].transcript[0] : span[-1].transcript[-1]]
-        subtract = lambda a, b: tuple([a[0] - b[0], a[1] - b[0]])
-        alignments = [tuple([subtract(a, b) for a, b in zip(a, span[0])]) for a in span]
+        alignments = [tuple([self._subtract(a, b) for a, b in zip(a, span[0])]) for a in span]
 
         set(self, "script", script)
         set(self, "audio_length", audio_length)

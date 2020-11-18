@@ -26,6 +26,7 @@ matplotlib
 comet-ml[cpu_logging]==3.2.0
 tabulate
 streamlit
+altair
 
 # Testing
 pytest
