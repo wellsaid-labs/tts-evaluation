@@ -55,9 +55,9 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. Set these variables...
 
    ```zsh
-   VM_NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-dataset-processing
+   VM_NAME=$USER"-dataset-processing" # EXAMPLE: michaelp-dataset-processing
    # NOTE: Pick a zone that's closest to the GCS bucket `wellsaid_labs_datasets`.
-   VM_ZONE=your-vm-instance-zone # EXAMPLE: us-central1-a
+   VM_ZONE=us-central1-a # EXAMPLE: us-central1-a
 
    PROJECT=voice-research-255602
    VM_MACHINE_TYPE=n1-standard-2
@@ -109,12 +109,43 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    NAME=actor_name # Example: hilary_noriega
    ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
    PROCESSED=$ROOT/processed
+
+
+   NAME=susan_murphy
+   ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
+   PROCESSED=$ROOT/processed
+   GCS_URI=gs://wellsaid_labs_datasets/$NAME
+
+   NAME=steven_wahlberg
+   ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
+   PROCESSED=$ROOT/processed
+   GCS_URI=gs://wellsaid_labs_datasets/$NAME
+
+   NAME=sam_scholl
+   ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
+   PROCESSED=$ROOT/processed
+   GCS_URI=gs://wellsaid_labs_datasets/$NAME
+
+   NAME=megan_sinclair
+   ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
+   PROCESSED=$ROOT/processed
+   GCS_URI=gs://wellsaid_labs_datasets/$NAME
+
+   NAME=mark_atherlay
+   ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
+   PROCESSED=$ROOT/processed
+   GCS_URI=gs://wellsaid_labs_datasets/$NAME
+
+   NAME=
+   ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
+   PROCESSED=$ROOT/processed
+   GCS_URI=gs://wellsaid_labs_datasets/$NAME
    ```
 
 2. Download the dataset, like so...
 
    ```bash
-   GCS_URI=gs://wellsaid_labs_datasets/$NAME
+   # GCS_URI=gs://wellsaid_labs_datasets/$NAME
    mkdir -p $ROOT
    gsutil -m cp -r -n $GCS_URI/scripts $ROOT/
    gsutil -m cp -r -n $GCS_URI/recordings $ROOT/
@@ -139,6 +170,9 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 
    ```bash
    python -m run.data rename $ROOT/
+
+   # OR
+   python -m run.data rename --only-numbers $ROOT/
    ```
 
 1. (Optional) Review dataset audio file metadata for inconsistencies...
@@ -174,6 +208,9 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    ```bash
    mkdir -p $PROCESSED/scripts
    python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts
+
+   # OR
+   python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts --tab-separated
    ```
 
 1. Upload the processed files back to GCS, like so...
@@ -207,15 +244,15 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    Audit the results of the synchronization, and re-run the script if necessary. The issues that may
    arise are:
 
-    - The sorting didn't work, and the script files didn't match up with the voice-over files,
-      correctly.
-    - The voice-over includes too much, or too little audio.
-    - The voice-over skips phrases in the script. For example, the script has odd characters or
-      duplicate phrases that are not read by the voice-actor.
-    - Google’s speech recognition made a mistake.
+   - The sorting didn't work, and the script files didn't match up with the voice-over files,
+     correctly.
+   - The voice-over includes too much, or too little audio.
+   - The voice-over skips phrases in the script. For example, the script has odd characters or
+     duplicate phrases that are not read by the voice-actor.
+   - Google’s speech recognition made a mistake.
 
-    Most of these issues can be resolved by updating the script or recording, and rerunning the
-    synchronization.
+   Most of these issues can be resolved by updating the script or recording, and rerunning the
+   synchronization.
 
 ## 3. Review dataset
 
