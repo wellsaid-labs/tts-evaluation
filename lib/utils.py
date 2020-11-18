@@ -366,3 +366,7 @@ def call_once(
 ) -> _CallOnceReturnType:
     """Call `callable_` only once with `args` and `kwargs` within the same process."""
     return callable_(*args, **kwargs)
+
+
+def mazel_tov() -> str:
+    return random.choice(["🎉", "✨", "👍", "🤗", "😊"])
