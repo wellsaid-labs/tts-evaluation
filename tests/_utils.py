@@ -1,5 +1,6 @@
 import functools
 import pathlib
+import subprocess
 import typing
 import urllib.request
 
@@ -30,6 +31,27 @@ def assert_uniform_distribution(counter: typing.Counter, **kwargs):
         assert value / total == pytest.approx(1 / len(counter), **kwargs)
 
 
+def subprocess_run_side_effect(command, *args, _command: str = "", _func=subprocess.run, **kwargs):
+    """`subprocess.run.side_effect` that only returns if `_command` not in `command`. """
+    if _command not in command:
+        return _func(command, *args, **kwargs)
+
+
+def make_metadata(
+    path: pathlib.Path = pathlib.Path("."),
+    sample_rate=0,
+    num_channels=0,
+    encoding="",
+    length=0,
+    bit_rate="",
+    precision="",
+) -> lib.audio.AudioFileMetadata:
+    """ Make a `AudioFileMetadata` for testing. """
+    return lib.audio.AudioFileMetadata(
+        path, sample_rate, num_channels, encoding, length, bit_rate, precision
+    )
+
+
 def get_audio_metadata_side_effect(
     paths: typing.List[pathlib.Path],
     _func=lib.audio.get_audio_metadata,
@@ -46,8 +68,9 @@ def get_audio_metadata_side_effect(
         bit_rate="",
         precision="",
     )
-    existing = [p for p in paths if p.exists()]
+    existing = [p for p in paths if p.exists() and p.is_file()]
     metadatas = _func(existing, **kwargs)
+    # TODO: Handle `get_audio_metadata` non-list return type.
     return [metadatas.pop(0) if p.exists() else partial(p) for p in paths]
 
 
