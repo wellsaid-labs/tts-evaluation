@@ -95,7 +95,7 @@ def _process_text(passage: Passage, verbalize: bool):
     script = _normalize_quotations(script)
 
     if verbalize:
-        script = _verbalize_special_cases(passage.audio_path, script)
+        script = _verbalize_special_cases(passage.audio_file.path, script)
         script = _expand_abbreviations(script)
         script = _verbalize_time_of_day(script)
         script = _verbalize_ordinals(script)
