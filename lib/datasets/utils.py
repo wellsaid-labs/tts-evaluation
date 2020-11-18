@@ -49,7 +49,7 @@ def _to_string(self: typing.Union[Span, Passage], *fields: str) -> str:
 
 
 class Alignment(typing.NamedTuple):
-    """An aligned `text` and `audio` slice.
+    """An aligned `script`, `audio` and `transcript` slice.
 
     Args:
         script: The start and end of a script slice in characters.
@@ -68,6 +68,12 @@ class Speaker(typing.NamedTuple):
     gender: typing.Optional[str] = None
 
 
+class IsConnected(typing.NamedTuple):
+    script: bool
+    audio: bool
+    transcript: bool
+
+
 @dataclasses.dataclass
 class Passage:
     """A voiced passage.
@@ -81,6 +87,8 @@ class Passage:
         index: The index of `self` in `self.passages`.
         passages: Other neighboring passages (sorted), for context.
         other_metadata: Additional metadata associated with this passage.
+        is_connected: Iff `True`, the `script`, `audio` or `transcript` alignments are on a
+            continuous timeline from passage to passage.
     """
 
     audio_file: lib.audio.AudioFileMetadata
@@ -90,6 +98,7 @@ class Passage:
     alignments: typing.Tuple[Alignment, ...]
     index: int = 0
     passages: typing.List[Passage] = None  # type: ignore
+    is_connected: IsConnected = IsConnected(False, False, False)
     other_metadata: typing.Dict = dataclasses.field(default_factory=dict)
 
     def __post_init__(self):
@@ -128,18 +137,18 @@ class Passage:
         return self.passages[self.index + 1] if self.index != len(self.passages) - 1 else None
 
     def _merge(self, a: Alignment, other: Passage, b: Alignment) -> Alignment:
-        """ Merge `a` and `b` if `self` and `other_passage` align. """
-        replace = lambda attr: a._replace(**{attr: getattr(b, attr)})
-        a = replace("script") if other.script == self.script and len(self.script) > 0 else a
-        matching_transcript = other.transcript == self.transcript and len(self.transcript) > 0
-        a = replace("transcript") if matching_transcript else a
-        matching_audio = other.audio_file == self.audio_file and self.audio_file.length > 0
-        return replace("audio") if matching_audio else a
+        """Merge alignments `a` and `b` iff they are part of a larger continuous timeline."""
+        assert b in other.alignments
+        a = a._replace(script=b.script) if self.is_connected.script else a
+        a = a._replace(transcript=b.transcript) if self.is_connected.transcript else a
+        return a._replace(audio=b.audio) if self.is_connected.audio else a
 
     def _prev_alignment(self) -> Alignment:
         """ Helper function for `_unaligned`. """
         alignment = Alignment(script=(0, 0), audio=(0, 0), transcript=(0, 0))
         prev = self.prev
+        while prev is not None and len(prev.alignments) == 0:
+            prev = prev.prev
         return alignment if prev is None else self._merge(alignment, prev, prev.alignments[-1])
 
     def _next_alignment(self) -> Alignment:
@@ -149,6 +158,8 @@ class Passage:
         audio = (self.audio_file.length, self.audio_file.length)
         alignment = Alignment(script=script, audio=audio, transcript=transcript)
         next = self.next
+        while next is not None and len(next.alignments) == 0:
+            next = next.next
         return alignment if next is None else self._merge(alignment, next, next.alignments[0])
 
     def _unaligned(self) -> typing.Iterator[UnalignedType]:
@@ -156,7 +167,6 @@ class Passage:
         message = "Alignments in `passages` that share a `transcript`, `audio_file`, or "
         message += "`script` must be continuous."
         for prev, next in zip(alignments, alignments[1:]):
-            print(prev, next)
             assert prev.script[-1] <= next.script[0], message
             assert prev.transcript[-1] <= next.transcript[0], message
             script = self.script[prev.script[-1] : next.script[0]]
@@ -183,11 +193,16 @@ class Passage:
         assert all(a.transcript[0] <= a.transcript[1] for a in self.alignments)
         assert all(a.script[1] <= b.script[0] for a, b in pairs)
         assert all(a.transcript[1] <= b.transcript[0] for a, b in pairs)
+        # NOTE: The `audio` alignments may overlap by a little bit, at the edges.
+        assert all(a.audio[0] <= b.audio[1] for a, b in pairs)
         if len(self.alignments) != 0:
-            max_ = lambda attr: max(flatten([list(getattr(a, attr)) for a in self.alignments]))
-            assert max_("audio") <= self.audio_file.length
-            assert max_("script") <= len(self.script)
-            assert max_("transcript") <= len(self.transcript)
+            get_ = lambda f: flatten([list(getattr(a, f)) for a in self.alignments])
+            assert max(get_("audio")) <= self.audio_file.length
+            assert max(get_("script")) <= len(self.script)
+            assert max(get_("transcript")) <= len(self.transcript)
+            assert min(get_("audio")) >= 0
+            assert min(get_("script")) >= 0
+            assert min(get_("transcript")) >= 0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -215,7 +230,7 @@ class Span:
     unaligned: typing.List[UnalignedType] = dataclasses.field(init=False)
 
     def __post_init__(self):
-        assert self.span.stop - self.span.start, "Cannot create `Span` without any `Alignments`."
+        self._check_invariants()
 
         # Learn more about using `__setattr__`:
         # https://stackoverflow.com/questions/53756788/how-to-set-the-value-of-dataclass-field-in-post-init-when-frozen-true
@@ -249,6 +264,12 @@ class Span:
         slice_ = _handle_get_item_key(len(self.alignments), key)
         slice_ = slice(slice_.start + self.span.start, slice_.stop + self.span.start)
         return Span(self.passage, slice_)
+
+    def _check_invariants(self):
+        """ Check datastructure invariants. """
+        assert self.span.stop - self.span.start, "`Span` must have `Alignments`."
+        assert self.span.stop <= len(self.passage.alignments) and self.span.stop >= 0
+        assert self.span.start < len(self.passage.alignments) and self.span.start >= 0
 
 
 def _overlap(slice: typing.Tuple[float, float], other: typing.Tuple[float, float]) -> float:
@@ -413,6 +434,7 @@ def dataset_loader(
                 other_metadata={k: v for k, v in script.items() if k not in (text_column,)},
                 index=len(passages),
                 passages=passages,
+                is_connected=IsConnected(script=False, transcript=True, audio=True),
             )
             passages.append(passage)
         return_.extend(passages)
