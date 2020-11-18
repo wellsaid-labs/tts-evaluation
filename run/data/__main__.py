@@ -204,7 +204,7 @@ def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
 def csv_normalize(
     paths: typing.List[pathlib.Path],
     dest: pathlib.Path,
-    tab_seperated: bool = typer.Option(False, help="Parse this file as a TSV."),
+    tab_separated: bool = typer.Option(False, help="Parse this file as a TSV."),
 ):
     """Normalize csv file(s) in PATHS and save to DEST."""
     assert all(p.exists() for p in paths), "Every path in PATHS must exist."
@@ -220,15 +220,15 @@ def csv_normalize(
                 continue
 
             text = path.read_text()
-            if not tab_seperated and text.count("\t") > len(text.split("\n")) // 2:
+            if not tab_separated and text.count("\t") > len(text.split("\n")) // 2:
                 message = (
                     "There are a lot of tabs (%d) so this (%s) might be a TSV file. "
-                    "Add the flag --tab-seperated to parse this file as a TSV file."
+                    "Add the flag --tab-separated to parse this file as a TSV file."
                 )
                 logger.warning(message, text.count("\t"), path)
 
-            seperator = "\t" if tab_seperated else ","
-            data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(path, sep=seperator))
+            separator = "\t" if tab_separated else ","
+            data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(path, sep=separator))
             data_frame = data_frame.applymap(partial)
             data_frame.to_csv(dest_path, index=False)
 

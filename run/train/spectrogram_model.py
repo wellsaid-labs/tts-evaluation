@@ -788,7 +788,7 @@ def _run_inference(
 
     if lengths.numel() > 0:
         # NOTE: Remove predictions that diverged (reached max) as to not skew other metrics. We
-        # count these sequences seperatly with `reached_max_frames`.
+        # count these sequences separatly with `reached_max_frames`.
         bool_ = ~reached_max.view(-1)
         max_frames = int(lengths[:, bool_].max())
         max_tokens = int(batch.encoded_text.lengths[:, bool_].max())

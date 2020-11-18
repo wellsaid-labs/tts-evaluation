@@ -323,7 +323,7 @@ def _get_words(
     NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not. The options are:
     1. Return two different sequences with two different character to word mappings.
     2. Merge the words with apostrophes, and merge the related word vectors.
-    (Choosen) 3. Keep the apostrophes seperate, and miss some pronunciations.
+    (Choosen) 3. Keep the apostrophes separate, and miss some pronunciations.
     NOTE: Contextual word-vectors would likely be more informative than word-vectors; however, they
     are likely not as robust in the presence of OOV words due to intentional misspellings. Our
     users intentionally misspell words to adjust the pronunciation.

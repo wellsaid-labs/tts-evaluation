@@ -607,7 +607,7 @@ def is_normalized_vo_script(text: str) -> bool:
 
 
 def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:
-    """ Add spaces between sentences which are not seperated by a space. """
+    """ Add spaces between sentences which are not separated by a space. """
     if len(doc) <= 2:
         return str(doc)
     text = doc[0].text_with_ws
