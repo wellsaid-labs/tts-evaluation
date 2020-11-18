@@ -800,7 +800,6 @@ def align_tokens(
     tokens: typing.Union[typing.List[str], str],
     other_tokens: typing.Union[typing.List[str], str],
     window_length: typing.Optional[int] = None,
-    all_alignments: bool = False,
     allow_substitution: typing.Callable[[str, str], bool] = lambda a, b: True,
 ) -> typing.Tuple[int, typing.List[typing.Tuple[int, int]]]:
     """Compute the alignment between `tokens` and `other_tokens`.
