@@ -67,11 +67,10 @@ def rename(
     assert directory.exists(), "DIRECTORY must exist."
     for path in directory.glob("**/*"):
         stem = path.stem.replace(" ", "_").lower()
-        if only_numbers:
-            if any(c.isdigit() for c in stem):
-                stem = "-".join(re.findall(r"\d+", stem))
-            else:
-                logger.warning("Skipping, path has no numbers: %s", path)
+        if only_numbers and any(c.isdigit() for c in stem):
+            stem = "-".join(re.findall(r"\d+", stem))
+        elif only_numbers:
+            logger.warning("Skipping, path has no numbers: %s", path)
 
         updated = path.parent / (stem + path.suffix)
         if updated != path:

@@ -94,7 +94,7 @@ def test_normalize_audio():
         audio_path = directory / TEST_DATA_LJ.name
         shutil.copy(TEST_DATA_LJ, audio_path)
         metadata = AudioFileMetadata(audio_path, *args)
-        passage = make_passage(tuple(), speaker=lib.datasets.LINDA_JOHNSON, metadata=metadata)
+        passage = make_passage(tuple(), lib.datasets.LINDA_JOHNSON, metadata)
         dataset = {lib.datasets.LINDA_JOHNSON: [passage]}
         run._utils.normalize_audio(
             dataset,

@@ -54,8 +54,8 @@ def make_metadata(
 
 def make_passage(
     alignments: typing.Tuple[lib.datasets.Alignment, ...],
-    audio_file: lib.audio.AudioFileMetadata = make_metadata(),
     speaker: lib.datasets.Speaker = lib.datasets.Speaker(""),
+    audio_file: lib.audio.AudioFileMetadata = make_metadata(),
     script: typing.Optional[str] = None,
     transcript: typing.Optional[str] = None,
     **kwargs,
