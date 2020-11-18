@@ -99,6 +99,11 @@ def _get_audio_metadata(
     max_arg_length: int = 2 ** 16,
     max_parallel: int = typing.cast(int, os.cpu_count()),
 ) -> typing.Iterator[AudioFileMetadata]:
+    """
+    NOTE: It's difficult to determine the bash maximum argument length, learn more:
+    https://unix.stackexchange.com/questions/45143/what-is-a-canonical-way-to-find-the-actual-maximum-argument-list-length
+    https://stackoverflow.com/questions/19354870/bash-command-line-and-input-limit
+    """
     assert len(set(paths)) == len(paths), "Duplicate paths found."
     if len(paths) == 0:
         return
@@ -129,12 +134,7 @@ def get_audio_metadata(paths: Path, **kwargs) -> AudioFileMetadata:
 
 
 def get_audio_metadata(paths, **kwargs):
-    """Get the audio metadatas for a list of files.
-
-    NOTE: It's difficult to determine the bash maximum argument length, learn more:
-    https://unix.stackexchange.com/questions/45143/what-is-a-canonical-way-to-find-the-actual-maximum-argument-list-length
-    https://stackoverflow.com/questions/19354870/bash-command-line-and-input-limit
-    """
+    """Get the audio metadatas for a list of files."""
     is_list = isinstance(paths, list)
     metadatas = list(_get_audio_metadata(*tuple(paths if is_list else [paths]), **kwargs))
     return metadatas if is_list else metadatas[0]
