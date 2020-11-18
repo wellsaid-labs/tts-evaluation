@@ -20,6 +20,7 @@ import torch
 from third_party import LazyLoader
 
 import lib
+from lib.audio import get_audio_metadata
 from lib.utils import list_to_tuple
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -40,6 +41,12 @@ def _handle_get_item_key(length: int, key: typing.Any) -> slice:
         return slice(0, 0)
     items = list(range(length))[key]
     return slice(items[0], items[-1] + 1) if isinstance(items, list) else slice(items, items + 1)
+
+
+def _to_string(self: typing.Union[Span, Passage], *fields: str) -> str:
+    """ Create a string representation of a `dataclass` with a limited number of `fields`. """
+    values = ", ".join(f"{f}={getattr(self, f)}" for f in fields)
+    return f"{self.__class__.__name__}({values})"
 
 
 class Alignment(typing.NamedTuple):
@@ -163,14 +170,12 @@ class Span:
         return read_audio_slice(self.passage.audio_file.path, start, self.audio_length)
 
     def to_string(self, *fields):
-        values = ", ".join(f"{f}={getattr(self, f)}" for f in fields)
-        return f"{self.__class__.__name__}({values})"
+        return _to_string(self, *fields)
 
     def __getitem__(self, key) -> Span:
         slice_ = _handle_get_item_key(len(self.alignments), key)
         slice_ = slice(slice_.start + self.span.start, slice_.stop + self.span.start)
         return Span(self.passage, slice_)
-
 
 
 def _overlap(slice: typing.Tuple[float, float], other: typing.Tuple[float, float]) -> float:
@@ -317,7 +322,7 @@ def dataset_loader(
     audio_file_metadatas = lib.audio.get_audio_metadata(files[1])
     Iterator = typing.Iterator[typing.Tuple[Path, Path, Path, lib.audio.AudioFileMetadata]]
     iterator = typing.cast(Iterator, zip(*tuple(files), audio_file_metadatas))
-    for alignment_path, recording_path, script_path, recording_file_metadata in iterator:
+    for alignment_path, _, script_path, recording_file_metadata in iterator:
         scripts = pandas.read_csv(str(script_path.absolute()))
         json_ = json.loads(alignment_path.read_text())
 
@@ -395,7 +400,13 @@ def conventional_dataset_loader(
     handled_columns = [metadata_text_column, metadata_audio_column]
     _get_other_metadata = lambda r: {k: v for k, v in r.items() if k not in handled_columns}
     _get_alignments = lambda s, l: (Alignment((0, len(s)), (0.0, l), (0, len(s))),)
-    iterator = zip(lib.audio.get_audio_metadata(audio_paths), df.iterrows())
+    zip_ = []
+    for audio_path, (_, row) in zip(audio_paths, df.iterrows()):
+        if not audio_path.exists() or not audio_path.is_file():
+            logger.warning("Skipping, audio path (%s) isn't a file.", audio_path)
+            continue
+        zip_.append((audio_path, row))
+    audio_paths_, rows = typing.cast(typing.Tuple[typing.List[Path], typing.Dict], zip(*zip_))
     # TODO: These passages could be linked together, with `passages`, consider that.
     return [
         Passage(
@@ -406,5 +417,5 @@ def conventional_dataset_loader(
             alignments=_get_alignments(row[metadata_text_column].strip(), audio_metadata.length),
             other_metadata={**_get_other_metadata(row), **additional_metadata},
         )
-        for audio_metadata, (_, row) in iterator
+        for audio_metadata, row in zip(get_audio_metadata(audio_paths_), rows)
     ]
