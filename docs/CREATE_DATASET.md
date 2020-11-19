@@ -111,13 +111,19 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    PROCESSED=$ROOT/processed
    ```
 
-2. Download the dataset, like so...
+1. Download the dataset, like so...
 
    ```bash
    GCS_URI=gs://wellsaid_labs_datasets/$NAME
    mkdir -p $ROOT
    gsutil -m cp -r -n $GCS_URI/scripts $ROOT/
    gsutil -m cp -r -n $GCS_URI/recordings $ROOT/
+   ```
+
+1. (Optional) Ensure the directories have similar numberings...
+
+   ```bash
+   python -m run.utils.numberings $ROOT/scripts $ROOT/recordings
    ```
 
 ### Process data
