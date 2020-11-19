@@ -141,7 +141,7 @@ class _MaxLevelFilter(logging.Filter):
         return record.levelno <= self.maxLevel
 
 
-def set_basic_logging_config(id_: int = os.getpid()):
+def set_basic_logging_config(id_: int = os.getpid(), reset=False):
     """
     Inspired by: `logging.basicConfig`
 
@@ -157,8 +157,14 @@ def set_basic_logging_config(id_: int = os.getpid()):
 
     Args:
         id_: An id to be printed along with all logs.
+        reset: Reset root logger handlers.
     """
     root = logging.getLogger()
+
+    if reset:
+        while root.hasHandlers():
+            root.removeHandler(root.handlers[0])
+
     if len(root.handlers) == 0:
         root.setLevel(logging.INFO)
 

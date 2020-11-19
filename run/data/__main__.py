@@ -56,6 +56,24 @@ def download():
     run._config.get_dataset()
 
 
+def _file_numberings(directory: pathlib.Path) -> typing.List[str]:
+    """ Get every file numbering in `directory`. """
+    numbers = lambda n: "-".join(re.findall(r"\d+", n))
+    return sorted([numbers(p.stem) for p in directory.iterdir() if p.is_file()])
+
+
+@app.command()
+def numberings(directory: pathlib.Path, other_directory: pathlib.Path):
+    """ Check that DIRECTORY and OTHER_DIRECTORY have files with similar numberings. """
+    assert directory.exists(), "DIRECTORY must exist."
+    assert other_directory.exists(), "OTHER_DIRECTORY must exist."
+    numberings = _file_numberings(directory)
+    other_numberings = _file_numberings(other_directory)
+    message = f"Directories did not have equal numberings:\n{numberings}\n{other_numberings}"
+    assert numberings == other_numberings, message
+    logger.info(f"The file numberings match up! {lib.utils.mazel_tov()}")
+
+
 @app.command()
 def rename(
     directory: pathlib.Path,

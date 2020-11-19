@@ -424,7 +424,7 @@ def configure():
 
 def _include_passage(passage: datasets.Passage) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
-    details = passage.to_string("audio_path", "script", "other_metadata")
+    details = passage.to_string("audio_file", "script", "other_metadata")
 
     if len(passage.alignments) == 0:
         logger.warning("Passage (%s) has little to no alignments.", details)

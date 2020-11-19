@@ -369,4 +369,4 @@ def call_once(
 
 
 def mazel_tov() -> str:
-    return random.choice(["🎉", "✨", "👍", "🤗", "😊"])
+    return random.choice(["🎉", "✨", "🤗", "🍾", "🥂", "🥳"])

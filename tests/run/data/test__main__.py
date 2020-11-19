@@ -1,9 +1,14 @@
+import contextlib
 import functools
+import random
 import tempfile
+import typing
 from pathlib import Path
 from unittest import mock
 
-from run.data.__main__ import logger, rename
+import pytest
+
+from run.data.__main__ import logger, numberings, rename
 
 
 def _rename_side_effect(path: Path, _expected=Path):
@@ -36,3 +41,58 @@ def test_rename():
             "Copy of WSL_SMurphyScript.wav", "copy_of_wsl_smurphyscript.wav", only_numbers=True
         )
         assert warning_mock.called
+
+
+@contextlib.contextmanager
+def _mock_directory() -> typing.Iterator[
+    typing.Tuple[Path, Path, typing.List[Path], typing.List[Path]]
+]:
+    with tempfile.TemporaryDirectory() as directory_:
+        directory = Path(directory_)
+        recordings_path = directory / "recordings"
+        recordings_path.mkdir()
+        recordings = []
+        for name in [
+            "Copy of WSL - Adrienne WalkerScript10.wav",
+            "WSL_EliseRandall_DIPHONE_Script-1.wav",
+            "WSL_EliseRandall_ENTHUSIASTIC_Script-1.wav",
+            "Copy of WSL - Adrienne WalkerScript16-21.wav",
+        ]:
+            recordings.append(recordings_path / name)
+            recordings[-1].touch()
+
+        scripts_path = directory / "scripts"
+        scripts_path.mkdir()
+        scripts = []
+        for name in [
+            "Script10.csv",
+            "DIPHONE_Script-1.csv",
+            "ENTHUSIASTIC_Script1.csv",
+            "Script16-21.csv",
+        ]:
+            scripts.append(scripts_path / name)
+            scripts[-1].touch()
+
+        yield (recordings_path, scripts_path, recordings, scripts)
+
+
+def test_numberings():
+    """ Test `__main__.numberings` against a basic case. """
+    with _mock_directory() as (recordings_path, scripts_path, _, __):
+        numberings(recordings_path, scripts_path)
+
+
+def test_numberings__duplicate_numbering():
+    """ Test `__main__.numberings` handles duplicate numberings. """
+    with _mock_directory() as (recordings_path, scripts_path, recordings, scripts):
+        scripts[1].unlink()
+        with pytest.raises(AssertionError):
+            numberings(recordings_path, scripts_path)
+
+
+def test_numberings__missing():
+    """ Test `__main__.numberings` handles a missing file. """
+    with _mock_directory() as (recordings_path, scripts_path, recordings, scripts):
+        random.choice(recordings + scripts).unlink()
+        with pytest.raises(AssertionError):
+            numberings(recordings_path, scripts_path)

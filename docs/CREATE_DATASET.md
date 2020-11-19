@@ -142,7 +142,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    GCS_URI=gs://wellsaid_labs_datasets/$NAME
    ```
 
-2. Download the dataset, like so...
+1. Download the dataset, like so...
 
    ```bash
    # GCS_URI=gs://wellsaid_labs_datasets/$NAME
@@ -158,12 +158,18 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    ```bash
    cd /opt/wellsaid-labs/Text-to-Speech
    sudo apt-get update
-   sudo apt-get install python3-venv python3-dev sox ffmpeg espeak gcc -y
+   sudo apt-get install python3-venv python3-dev sox ffmpeg espeak gcc libsox-fmt-mp3 -y
 
    python3 -m venv venv
    . venv/bin/activate
    python -m pip install wheel pip --upgrade
    python -m pip install -r requirements.txt --upgrade
+   ```
+
+1. (Optional) Ensure the directories have similar numberings...
+
+   ```bash
+   python -m run.data numberings $ROOT/scripts $ROOT/recordings
    ```
 
 1. Normalize file names...
@@ -216,7 +222,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. Upload the processed files back to GCS, like so...
 
    ```bash
-   gsutil -m cp -r -n $PROCESSED/* $GCS_URI/processed
+   gsutil -m cp -r -n $PROCESSED/ $GCS_URI/processed
    ```
 
 1. (Optional) From your local machine, review CSV normalization, like so...

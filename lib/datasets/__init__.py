@@ -15,6 +15,7 @@ from lib.datasets.m_ailabs import (
 )
 from lib.datasets.utils import (
     Alignment,
+    IsConnected,
     Passage,
     Span,
     Speaker,
@@ -56,6 +57,7 @@ __all__ = [
     "Span",
     "DataLoader",
     "Alignment",
+    "IsConnected",
     "span_generator",
     "dataset_loader",
     "conventional_dataset_loader",

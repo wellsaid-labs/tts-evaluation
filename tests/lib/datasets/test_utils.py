@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 import lib
-from lib.datasets import Alignment, Passage
+from lib.datasets import Alignment, IsConnected, Passage
 from lib.datasets.utils import _overlap
 from lib.utils import flatten
 from tests._utils import (
@@ -200,6 +200,7 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
         other_metadata={"Index": 0, "Source": "CMU", "Title": "CMU"},
         index=0,
         passages=passages,
+        is_connected=IsConnected(False, True, True),
     )
     assert passages[1].script == "Not at this particular case, Tom, apologized Whittemore."
 
@@ -239,21 +240,40 @@ def test_passage_span__identity():
     pickle.dumps(span)
 
 
+_find = lambda a, b: (a.index(b), a.index(b) + 1)
+
+
+def _add_passage(
+    script: str,
+    tokens: typing.List[str],
+    passages: typing.List[lib.datasets.Passage],
+    transcript: str,
+    find_transcript: typing.Callable[[str, str], typing.Tuple[int, int]] = _find,
+    find_script: typing.Callable[[str, str], typing.Tuple[int, int]] = _find,
+    **kwargs,
+):
+    """ Helper function for `test_passage_span__unaligned*`. """
+    found = [(find_script(script, t), find_transcript(transcript, t)) for t in tokens]
+    passages.append(
+        make_passage(
+            script=script,
+            alignments=tuple(_make_alignment(*arg) for arg in found),
+            transcript=transcript,
+            index=len(passages),
+            passages=passages,
+            **kwargs,
+        )
+    )
+
+
 def test_passage_span__unaligned():
     """Test `lib.datasets.Passage` and `lib.datasets.Span` get the correct unalignments under a
     variety of circumstances."""
     passages = []
     script = "abcdefghijklmnopqrstuvwxyz"
-    transcript = script
-    find = lambda a, b: (a.index(b), a.index(b) + 1)
-    add_passage = lambda split, tokens: passages.append(
-        make_passage(
-            script=split,
-            alignments=tuple(_make_alignment(find(split, t), find(transcript, t)) for t in tokens),
-            transcript=transcript,
-            index=len(passages),
-            passages=passages,
-        )
+    is_connected = IsConnected(False, True, True)
+    add_passage = functools.partial(
+        _add_passage, passages=passages, transcript=script, is_connected=is_connected
     )
 
     # TEST: Largely no issues, except one in the middle.
@@ -292,6 +312,28 @@ def test_passage_span__unaligned():
     # TEST: Test `spans` get the correct span.
     assert passages[0][2:4][:].unaligned == [("", "", a), ("d", "d", a), ("", "", a)]
     assert passages[1][1][:].unaligned == [("h", "h", a), ("", "jk", a)]
+
+
+def test_passage_span__unaligned__zero_alignments():
+    """Test `lib.datasets.Passage` and `lib.datasets.Span` get the correct unalignments if one
+    of the passages has zero alignments."""
+    passages = []
+    script = "abcdef"
+    is_connected = IsConnected(False, True, True)
+    add_passage = functools.partial(
+        _add_passage, passages=passages, transcript=script, is_connected=is_connected
+    )
+
+    split, script = script[:3], script[3:]
+    add_passage(split, ["b"])  # NOTE: split='abc'
+    add_passage("", [])
+    split, script = script[:3], script[3:]
+    add_passage(split, ["e"])  # NOTE: split='abc'
+
+    a = (0.0, 0.0)
+    assert passages[0].unaligned == [("a", "a", a), ("c", "cd", a)]
+    assert passages[1].unaligned == [("", "cd", a)]
+    assert passages[2].unaligned == [("d", "cd", a), ("f", "f", (0.0, math.inf))]
 
 
 def test__overlap():

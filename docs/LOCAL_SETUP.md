@@ -41,10 +41,11 @@ Install Python dependencies, like so:
 ```bash
 # Start a virtual environment, learn more:
 # https://realpython.com/python-virtual-environments-a-primer/
-python -m venv venv
+python3 -m venv venv
 . venv/bin/activate
 
 # Install Python dependencies
+python -m pip install pip --upgrade
 python -m pip install -r requirements.txt --upgrade
 ```
 
