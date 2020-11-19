@@ -503,6 +503,7 @@ def run_stt(
     dest_blobs: typing.List[storage.Blob],
     poll_interval: float = 1 / 10,
     stt_config: RecognitionConfig = STT_CONFIG,
+    max_connections: int = 256,
 ):
     """Run speech-to-text on `audio_blobs` and save them at `dest_blobs`.
 
@@ -530,38 +531,44 @@ def run_stt(
         dest_blobs: List of GCS blobs to upload results too.
         poll_interval: The interval between each poll of STT progress.
         stt_config
+        max_connections
     """
-    operations = []
-    for audio_blob, script, dest_blob in zip(audio_blobs, scripts, dest_blobs):
-        config = deepcopy(stt_config)
-        config.speech_contexts.append(_get_speech_context("\n".join(script)))  # type: ignore
-        audio = RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
-        operations.append(speech.SpeechClient().long_running_recognize(config=config, audio=audio))
-        message = 'STT operation %s "%s" started.'
-        logger.info(message, operations[-1].operation.name, blob_to_gcs_uri(dest_blob))
+    chunks = lib.utils.get_chunks(list(zip(audio_blobs, scripts, dest_blobs)), max_connections)
+    logger.info("Running STT in %d jobs.", len(chunks))
+    for chunk in chunks:
+        operations = []
+        for audio_blob, script, dest_blob in chunk:
+            config = deepcopy(stt_config)
+            config.speech_contexts.append(_get_speech_context("\n".join(script)))  # type: ignore
+            audio = RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
+            operations.append(
+                speech.SpeechClient().long_running_recognize(config=config, audio=audio)
+            )
+            message = 'STT operation %s "%s" started.'
+            logger.info(message, operations[-1].operation.name, blob_to_gcs_uri(dest_blob))
 
-    progress = [0] * len(operations)
-    progress_bar = tqdm(total=100)
-    while not all(o is None for o in operations):
-        for i, operation in enumerate(operations):
-            if operation is None:
-                continue
+        progress = [0] * len(operations)
+        progress_bar = tqdm(total=100)
+        while not all(o is None for o in operations):
+            for i, operation in enumerate(operations):
+                if operation is None:
+                    continue
 
-            metadata = operation.metadata
-            if operation.done():
-                # Learn more:
-                # https://stackoverflow.com/questions/64470470/how-to-convert-google-cloud-natural-language-entity-sentiment-response-to-json-d
-                response = operation.result()
-                json_ = response.__class__.to_json(response)
-                dest_blobs[i].upload_from_string(json_, content_type="application/json")
-                message = 'STT operation %s "%s" finished.'
-                logger.info(message, operation.operation.name, blob_to_gcs_uri(dest_blobs[i]))
-                operations[i] = None
-                progress[i] = 100
-            elif metadata is not None and metadata.progress_percent is not None:
-                progress[i] = metadata.progress_percent
-            progress_bar.update(min(progress) - progress_bar.n)
-            time.sleep(poll_interval)
+                metadata = operation.metadata
+                if operation.done():
+                    # Learn more:
+                    # https://stackoverflow.com/questions/64470470/how-to-convert-google-cloud-natural-language-entity-sentiment-response-to-json-d
+                    response = operation.result()
+                    json_ = response.__class__.to_json(response)
+                    dest_blobs[i].upload_from_string(json_, content_type="application/json")
+                    message = 'STT operation %s "%s" finished.'
+                    logger.info(message, operation.operation.name, blob_to_gcs_uri(dest_blobs[i]))
+                    operations[i] = None
+                    progress[i] = 100
+                elif metadata is not None and metadata.progress_percent is not None:
+                    progress[i] = metadata.progress_percent
+                progress_bar.update(min(progress) - progress_bar.n)
+                time.sleep(poll_interval)
 
 
 def _sync_and_upload(
