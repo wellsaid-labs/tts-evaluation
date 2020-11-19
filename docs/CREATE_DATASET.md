@@ -120,12 +120,6 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    gsutil -m cp -r -n $GCS_URI/recordings $ROOT/
    ```
 
-1. (Optional) Ensure the directories have similar numberings...
-
-   ```bash
-   python -m run.utils.numberings $ROOT/scripts $ROOT/recordings
-   ```
-
 ### Process data
 
 1. Install these dependencies onto the VM, like so...
@@ -139,6 +133,12 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    . venv/bin/activate
    python -m pip install wheel pip --upgrade
    python -m pip install -r requirements.txt --upgrade
+   ```
+
+1. (Optional) Ensure the directories have similar numberings...
+
+   ```bash
+   python -m run.utils.numberings $ROOT/scripts $ROOT/recordings
    ```
 
 1. Normalize file names...
