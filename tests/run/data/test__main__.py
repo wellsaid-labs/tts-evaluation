@@ -28,25 +28,11 @@ def _assert_rename(name: str, renamed: str, **kwargs):
             rename(path.parent, **kwargs)
 
 
-def test_rename():
-    """ Test `__main__.rename` against a couple of basic cases. """
-    _assert_rename(
-        "Copy of WSL_SMurphyScript16-21.wav",
-        "copy_of_wsl_smurphyscript16-21.wav",
-        only_numbers=False,
-    )
-    _assert_rename("Copy of WSL_SMurphyScript16-21.wav", "16-21.wav", only_numbers=True)
-    with mock.patch.object(logger, "warning") as warning_mock:
-        _assert_rename(
-            "Copy of WSL_SMurphyScript.wav", "copy_of_wsl_smurphyscript.wav", only_numbers=True
-        )
-        assert warning_mock.called
-
-
 @contextlib.contextmanager
 def _mock_directory() -> typing.Iterator[
-    typing.Tuple[Path, Path, typing.List[Path], typing.List[Path]]
+    typing.Tuple[Path, Path, Path, typing.List[Path], typing.List[Path]]
 ]:
+    """ Create a temporary directory with empty files for testing. """
     with tempfile.TemporaryDirectory() as directory_:
         directory = Path(directory_)
         recordings_path = directory / "recordings"
@@ -73,18 +59,41 @@ def _mock_directory() -> typing.Iterator[
             scripts.append(scripts_path / name)
             scripts[-1].touch()
 
-        yield (recordings_path, scripts_path, recordings, scripts)
+        yield (directory, recordings_path, scripts_path, recordings, scripts)
+
+
+def test_rename():
+    """ Test `__main__.rename` against a couple of basic cases. """
+    _assert_rename(
+        "Copy of WSL_SMurphyScript16-21.wav",
+        "copy_of_wsl_smurphyscript16-21.wav",
+        only_numbers=False,
+    )
+    _assert_rename("Copy of WSL_SMurphyScript16-21.wav", "16-21.wav", only_numbers=True)
+    with mock.patch.object(logger, "warning") as warning_mock:
+        _assert_rename(
+            "Copy of WSL_SMurphyScript.wav", "copy_of_wsl_smurphyscript.wav", only_numbers=True
+        )
+        assert warning_mock.called
+
+
+def test_rename__duplicate():
+    """ Test `__main__.rename` against duplicate numberings. """
+    with _mock_directory() as (directory, *_):
+        with pytest.raises(AssertionError) as info:
+            rename(directory, only_numbers=True)
+        assert "duplicate file names" in str(info.value)
 
 
 def test_numberings():
     """ Test `__main__.numberings` against a basic case. """
-    with _mock_directory() as (recordings_path, scripts_path, _, __):
+    with _mock_directory() as (_, recordings_path, scripts_path, *_):
         numberings(recordings_path, scripts_path)
 
 
 def test_numberings__duplicate_numbering():
     """ Test `__main__.numberings` handles duplicate numberings. """
-    with _mock_directory() as (recordings_path, scripts_path, recordings, scripts):
+    with _mock_directory() as (_, recordings_path, scripts_path, _, scripts):
         scripts[1].unlink()
         with pytest.raises(AssertionError):
             numberings(recordings_path, scripts_path)
@@ -92,7 +101,7 @@ def test_numberings__duplicate_numbering():
 
 def test_numberings__missing():
     """ Test `__main__.numberings` handles a missing file. """
-    with _mock_directory() as (recordings_path, scripts_path, recordings, scripts):
+    with _mock_directory() as (_, recordings_path, scripts_path, recordings, scripts):
         random.choice(recordings + scripts).unlink()
         with pytest.raises(AssertionError):
             numberings(recordings_path, scripts_path)

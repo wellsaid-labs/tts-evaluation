@@ -83,13 +83,20 @@ def rename(
 ):
     """ Normalize the name of every directory and file in DIRECTORY."""
     assert directory.exists(), "DIRECTORY must exist."
-    for path in directory.glob("**/*"):
+
+    paths = list(directory.glob("**/*"))
+    updates = []
+    for path in paths:
         stem = path.stem.replace(" ", "_").lower()
         if only_numbers and any(c.isdigit() for c in stem):
             stem = "-".join(re.findall(r"\d+", stem))
         elif only_numbers:
             logger.warning("Skipping, path has no numbers: %s", path)
+        updates.append((path, stem))
+    message = "Found duplicate file names after normalization."
+    assert len(updates) == len(set([s for _, s in updates])), message
 
+    for path, stem in updates:
         updated = path.parent / (stem + path.suffix)
         if updated != path:
             logger.info('Renaming file name "%s" to "%s"', path.name, updated.name)
