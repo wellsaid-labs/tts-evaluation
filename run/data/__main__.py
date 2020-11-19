@@ -58,19 +58,17 @@ def download():
 
 def _file_numberings(directory: pathlib.Path) -> typing.List[str]:
     """ Get every file numbering in `directory`. """
-    return ["-".join(re.findall(r"\d+", p.stem)) for p in directory.iterdir() if p.is_file()]
+    numbers = lambda n: "-".join(re.findall(r"\d+", n))
+    return sorted([numbers(p.stem) for p in directory.iterdir() if p.is_file()])
 
 
 @app.command()
 def numberings(directory: pathlib.Path, other_directory: pathlib.Path):
     """ Check that DIRECTORY and OTHER_DIRECTORY have files with similar numberings. """
-    files = set(_file_numberings(directory))
-    difference = files.symmetric_difference(set(_file_numberings(other_directory)))
-    message = (
-        "Directories did not have equal numberings. "
-        f"File(s) numbered {difference} were only found in one of the two directories."
-    )
-    assert len(difference) == 0, message
+    numberings = _file_numberings(directory)
+    other_numberings = _file_numberings(other_directory)
+    message = f"Directories did not have equal numberings:\n{numberings}\n{other_numberings}"
+    assert numberings == other_numberings, message
     logger.info(f"The file numberings match up! {lib.utils.mazel_tov()}")
 
 
