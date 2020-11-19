@@ -498,6 +498,47 @@ def _get_speech_context(
     return SpeechContext(phrases=list(set(phrases)))
 
 
+def _run_stt(
+    audio_blobs: typing.List[storage.Blob],
+    scripts: typing.List[str],
+    dest_blobs: typing.List[storage.Blob],
+    poll_interval: float,
+    stt_config: RecognitionConfig,
+):
+    """ Helper function for `run_stt`. """
+    operations = []
+    for audio_blob, script, dest_blob in zip(audio_blobs, scripts, dest_blobs):
+        config = deepcopy(stt_config)
+        config.speech_contexts.append(_get_speech_context("\n".join(script)))  # type: ignore
+        audio = RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
+        operations.append(speech.SpeechClient().long_running_recognize(config=config, audio=audio))
+        message = 'STT operation %s "%s" started.'
+        logger.info(message, operations[-1].operation.name, blob_to_gcs_uri(dest_blob))
+
+    progress = [0] * len(operations)
+    progress_bar = tqdm(total=100)
+    while not all(o is None for o in operations):
+        for i, operation in enumerate(operations):
+            if operation is None:
+                continue
+
+            metadata = operation.metadata
+            if operation.done():
+                # Learn more:
+                # https://stackoverflow.com/questions/64470470/how-to-convert-google-cloud-natural-language-entity-sentiment-response-to-json-d
+                response = operation.result()
+                json_ = response.__class__.to_json(response)
+                dest_blobs[i].upload_from_string(json_, content_type="application/json")
+                message = 'STT operation %s "%s" finished.'
+                logger.info(message, operation.operation.name, blob_to_gcs_uri(dest_blobs[i]))
+                operations[i] = None
+                progress[i] = 100
+            elif metadata is not None and metadata.progress_percent is not None:
+                progress[i] = metadata.progress_percent
+            progress_bar.update(min(progress) - progress_bar.n)
+            time.sleep(poll_interval)
+
+
 def run_stt(
     audio_blobs: typing.List[storage.Blob],
     scripts: typing.List[str],
@@ -522,6 +563,8 @@ def run_stt(
       $ gcloud ml speech operations describe 5187645621111131232
     - Google STT with `enable_automatic_punctuation=False` still predicts hyphens. This can cause
       issues downstream if a non-hyphenated word is expected.
+    - The progress bar tracks the progress of the slowest operation since all the operations
+      run in parallel.
 
     TODO: Look into how many requests are made every poll, in order to better calibrate against
     Google's quota.
@@ -537,42 +580,11 @@ def run_stt(
     """
     assert len(audio_blobs) == len(scripts)
     assert len(audio_blobs) == len(dest_blobs)
-    batches = list(get_chunks(list(zip(audio_blobs, scripts, dest_blobs)), max_connections))
-    logger.info("Running %d STT operation(s) in %d batches.", len(audio_blobs), len(batches))
-    for batch in batches:
-        operations = []
-        for audio_blob, script, dest_blob in batch:
-            config = deepcopy(stt_config)
-            config.speech_contexts.append(_get_speech_context("\n".join(script)))  # type: ignore
-            audio = RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
-            operations.append(
-                speech.SpeechClient().long_running_recognize(config=config, audio=audio)
-            )
-            message = 'STT operation %s "%s" started.'
-            logger.info(message, operations[-1].operation.name, blob_to_gcs_uri(dest_blob))
-
-        progress = [0] * len(operations)
-        progress_bar = tqdm(total=100)
-        while not all(o is None for o in operations):
-            for i, operation in enumerate(operations):
-                if operation is None:
-                    continue
-
-                metadata = operation.metadata
-                if operation.done():
-                    # Learn more:
-                    # https://stackoverflow.com/questions/64470470/how-to-convert-google-cloud-natural-language-entity-sentiment-response-to-json-d
-                    response = operation.result()
-                    json_ = response.__class__.to_json(response)
-                    dest_blobs[i].upload_from_string(json_, content_type="application/json")
-                    message = 'STT operation %s "%s" finished.'
-                    logger.info(message, operation.operation.name, blob_to_gcs_uri(dest_blobs[i]))
-                    operations[i] = None
-                    progress[i] = 100
-                elif metadata is not None and metadata.progress_percent is not None:
-                    progress[i] = metadata.progress_percent
-                progress_bar.update(min(progress) - progress_bar.n)
-                time.sleep(poll_interval)
+    chunk = partial(get_chunks, max_connections=max_connections)
+    batches = list(zip(chunk(audio_blobs), chunk(scripts), chunk(dest_blobs)))
+    logger.info("Running %d STT operation(s) in %d batch(es).", len(audio_blobs), len(batches))
+    for args in batches:
+        _run_stt(*args, poll_interval, stt_config)
 
 
 def _sync_and_upload(
