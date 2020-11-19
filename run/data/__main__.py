@@ -194,7 +194,7 @@ def audio_normalize(
 
     progress_bar = tqdm.tqdm(total=round(_get_total_length(paths)))
     for path in paths:
-        dest_path = dest / path.name
+        dest_path = lib.audio.normalize_suffix(dest / path.name)
         if dest_path.exists():
             logger.error("Skipping, file already exists: %s", dest_path)
         else:

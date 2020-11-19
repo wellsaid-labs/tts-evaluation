@@ -201,6 +201,7 @@ def configure_audio_processing():
             num_channels=num_channels,
             audio_filters=lib.audio.format_ffmpeg_audio_filters([loud_norm_audio_filter]),
         ),
+        lib.audio.normalize_suffix: HParams(suffix=suffix),
         lib.audio.assert_audio_normalized: HParams(
             suffix=suffix, encoding=sox_encoding, sample_rate=SAMPLE_RATE, num_channels=num_channels
         ),
