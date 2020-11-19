@@ -65,6 +65,8 @@ def _file_numberings(directory: pathlib.Path) -> typing.List[str]:
 @app.command()
 def numberings(directory: pathlib.Path, other_directory: pathlib.Path):
     """ Check that DIRECTORY and OTHER_DIRECTORY have files with similar numberings. """
+    assert directory.exists(), "DIRECTORY must exist."
+    assert other_directory.exists(), "OTHER_DIRECTORY must exist."
     numberings = _file_numberings(directory)
     other_numberings = _file_numberings(other_directory)
     message = f"Directories did not have equal numberings:\n{numberings}\n{other_numberings}"

@@ -140,7 +140,7 @@ class Stats:
         sound_alike_ = tabulate.tabulate(sorted(sound_alike, reverse=True)[:50], headers=headers)
         logger.info("Most different sound-a-like word(s):\n%s", sound_alike_)
 
-        _quote = f"{AnsiCodes.DARK_GRAY}'{AnsiCodes.RESET_ALL}"
+        _quote = f'{AnsiCodes.DARK_GRAY}"{AnsiCodes.RESET_ALL}'
         quote = lambda s: f"{_quote}{s}{_quote}"
         script_unaligned = [quote(s.strip()) for s in self.script_unaligned]
         logger.info(

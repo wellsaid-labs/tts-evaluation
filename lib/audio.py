@@ -69,16 +69,26 @@ def _parse_audio_metadata(metadata: str) -> AudioFileMetadata:
 
     TODO: Adapt `ffmpeg --i` for consistency.
     """
-    splits = [s.split(":", maxsplit=1)[1].strip() for s in metadata.strip().split("\n")]
-    assert len(splits) == 8
+    lines = metadata.strip().split("\n")
+    assert [s.split(":", maxsplit=1)[0].strip() for s in lines][:8] == [
+        "Input File",
+        "Channels",
+        "Sample Rate",
+        "Precision",
+        "Duration",
+        "File Size",
+        "Bit Rate",
+        "Sample Encoding",
+    ]
+    splits = [s.split(":", maxsplit=1)[1].strip() for s in lines]
     audio_path = str(splits[0][1:-1])
     num_channels = int(splits[1])
     sample_rate = int(splits[2])
     precision = splits[3]
     assert splits[4].split()[3] == "samples"
     length = float(splits[4].split()[2]) / sample_rate
-    bit_rate = splits[-2]
-    encoding = splits[-1]
+    bit_rate = splits[6]
+    encoding = splits[7]
     return AudioFileMetadata(
         Path(audio_path), sample_rate, num_channels, encoding, length, bit_rate, precision
     )

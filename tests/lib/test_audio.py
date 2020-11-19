@@ -94,6 +94,30 @@ def test__parse_audio_metadata():
     )
 
 
+def test__parse_audio_metadata__mp3():
+    """ Test `lib.audio._parse_audio_metadata` parses the metadata, with a comment, correctly. """
+    metadata = lib.audio._parse_audio_metadata(
+        """Input File     : 'data/beth_cameron/recordings/4.mp3'
+    Channels       : 1
+    Sample Rate    : 44100
+    Precision      : 16-bit
+    Duration       : 00:12:18.62 = 32573274 samples = 55396.7 CDDA sectors
+    File Size      : 23.6M
+    Bit Rate       : 256k
+    Sample Encoding: MPEG audio (layer I, II or III)
+    Comment        : 'Title=WellSaid_Script4'"""
+    )
+    assert metadata == lib.audio.AudioFileMetadata(
+        path=pathlib.Path("data/beth_cameron/recordings/4.mp3"),
+        sample_rate=44100,
+        num_channels=1,
+        encoding="MPEG audio (layer I, II or III)",
+        length=738.6229931972789,
+        bit_rate="256k",
+        precision="16-bit",
+    )
+
+
 def test_get_audio_metadata():
     """ Test `lib.audio.get_audio_metadata` returns the right metadata. """
     assert lib.audio.get_audio_metadata(TEST_DATA_LJ) == lib.audio.AudioFileMetadata(
