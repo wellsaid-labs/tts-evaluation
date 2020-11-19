@@ -67,7 +67,7 @@ class SttToken(typing.NamedTuple):
     slice: typing.Tuple[int, int]
 
 
-SST_CONFIG = RecognitionConfig(
+STT_CONFIG = RecognitionConfig(
     language_code="en-US",
     model="video",
     use_enhanced=True,
@@ -387,7 +387,7 @@ def _flatten_stt_result(stt_result: SttResult) -> typing.Tuple[str, typing.List[
     # factories.given."
     # Google STT predicted the token "factories.given." in the above transcript it predicted.
     if " ".join(t.text for t in stt_tokens).strip() != transcript.strip():
-        logger.warning("Google SST may not be white-space tokenized.")
+        logger.warning("Google STT may not be white-space tokenized.")
     return transcript, stt_tokens
 
 
@@ -502,7 +502,7 @@ def run_stt(
     scripts: typing.List[str],
     dest_blobs: typing.List[storage.Blob],
     poll_interval: float = 1 / 10,
-    stt_config: RecognitionConfig = SST_CONFIG,
+    stt_config: RecognitionConfig = STT_CONFIG,
 ):
     """Run speech-to-text on `audio_blobs` and save them at `dest_blobs`.
 
