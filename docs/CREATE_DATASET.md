@@ -109,6 +109,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    NAME=actor_name # Example: hilary_noriega
    ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
    PROCESSED=$ROOT/processed
+   ENCODING=.wav
    ```
 
 1. Download the dataset, like so...
@@ -150,14 +151,14 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. (Optional) Review dataset audio file metadata for inconsistencies...
 
    ```bash
-   python -m run.data audio metadata $ROOT/recordings/*.wav
+   python -m run.data audio metadata $ROOT/recordings/*$ENCODING
    ```
 
 1. Normalize audio file format...
 
    ```bash
    mkdir -p $PROCESSED/recordings
-   python -m run.data audio normalize $ROOT/recordings/*.wav $PROCESSED/recordings
+   python -m run.data audio normalize $ROOT/recordings/*$ENCODING $PROCESSED/recordings
    ```
 
 1. Normalize audio file format for
@@ -165,14 +166,14 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 
    ```bash
    mkdir -p $PROCESSED/speech_to_text
-   python -m run.data audio normalize $ROOT/recordings/*.wav $PROCESSED/speech_to_text \
+   python -m run.data audio normalize $ROOT/recordings/*$ENCODING $PROCESSED/speech_to_text \
                                       --encoding='pcm_s16le'
    ```
 
 1. (Optional) Review audio file loudness for inconsistencies...
 
    ```bash
-   python -m run.data audio loudness $PROCESSED/recordings/*.wav
+   python -m run.data audio loudness $PROCESSED/recordings/*$ENCODING
    ```
 
 1. Normalize CSV file text...
@@ -202,7 +203,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. Generate time alignments that synchronize the scripts and recordings...
 
    ```bash
-   RECORDINGS=$(gsutil ls "$GCS_URI/processed/speech_to_text/*.wav" | python -m run.utils.sort)
+   RECORDINGS=$(gsutil ls "$GCS_URI/processed/speech_to_text/*$ENCODING" | python -m run.utils.sort)
    SCRIPTS=$(gsutil ls "$GCS_URI/processed/scripts/*.csv" | python -m run.utils.sort)
    python -m run.data.sync_script_with_audio \
       $(python -m run.utils.prefix --voice-over $RECORDINGS) \
