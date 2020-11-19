@@ -35,6 +35,7 @@ from tqdm import tqdm
 
 import lib
 from lib.environment import AnsiCodes
+from lib.utils import get_chunks
 from run._utils import blob_to_gcs_uri, gcs_uri_to_blob
 
 lib.environment.set_basic_logging_config()
@@ -531,13 +532,16 @@ def run_stt(
         dest_blobs: List of GCS blobs to upload results too.
         poll_interval: The interval between each poll of STT progress.
         stt_config
-        max_connections
+        max_connections: The maximum number of connections to create at a time, learn more:
+            https://unix.stackexchange.com/questions/36841/why-is-number-of-open-files-limited-in-linux
     """
-    chunks = lib.utils.get_chunks(list(zip(audio_blobs, scripts, dest_blobs)), max_connections)
-    logger.info("Running STT in %d jobs.", len(chunks))
-    for chunk in chunks:
+    assert len(audio_blobs) == len(scripts)
+    assert len(audio_blobs) == len(dest_blobs)
+    batches = list(get_chunks(list(zip(audio_blobs, scripts, dest_blobs)), max_connections))
+    logger.info("Running %d STT operation(s) in %d batches.", len(audio_blobs), len(batches))
+    for batch in batches:
         operations = []
-        for audio_blob, script, dest_blob in chunk:
+        for audio_blob, script, dest_blob in batch:
             config = deepcopy(stt_config)
             config.speech_contexts.append(_get_speech_context("\n".join(script)))  # type: ignore
             audio = RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
