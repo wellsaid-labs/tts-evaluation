@@ -138,7 +138,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. (Optional) Ensure the directories have similar numberings...
 
    ```bash
-   python -m run.utils.numberings $ROOT/scripts $ROOT/recordings
+   python -m run.data numberings $ROOT/scripts $ROOT/recordings
    ```
 
 1. Normalize file names...
