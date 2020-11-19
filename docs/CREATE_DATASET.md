@@ -185,7 +185,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. Upload the processed files back to GCS, like so...
 
    ```bash
-   gsutil -m cp -r -n $PROCESSED/* $GCS_URI/processed
+   gsutil -m cp -r -n $PROCESSED/ $GCS_URI/processed
    ```
 
 1. (Optional) From your local machine, review CSV normalization, like so...
