@@ -74,6 +74,16 @@ def numberings(directory: pathlib.Path, other_directory: pathlib.Path):
     logger.info(f"The file numberings match up! {lib.utils.mazel_tov()}")
 
 
+def _normalize_file_name(name):
+    """Learn more about this normalization:
+    https://stackoverflow.com/questions/29916065/how-to-do-camelcase-split-in-python
+    https://stackoverflow.com/questions/7593969/regex-to-split-camelcase-or-titlecase-advanced/7599674#7599674
+    """
+    name = name.replace("_", " ")
+    name = re.sub("([^a-z]+)", r" \1", name)
+    return "_".join(re.sub("([A-Z][a-z]+)", r" \1", name).split()).lower()
+
+
 @app.command()
 def rename(
     directory: pathlib.Path,
@@ -87,17 +97,20 @@ def rename(
     paths = list(directory.glob("**/*"))
     updates = []
     for path in paths:
-        stem = path.stem.replace(" ", "_").lower()
+        stem = _normalize_file_name(path.stem)
         if only_numbers and any(c.isdigit() for c in stem):
             stem = "-".join(re.findall(r"\d+", stem))
         elif only_numbers:
-            logger.warning("Skipping, path has no numbers: %s", path)
-        updates.append((path, stem))
-    message = "Found duplicate file names after normalization."
-    assert len(updates) == len(set([s for _, s in updates])), message
+            logger.error("Skipping, path has no numbers: %s", path)
+        updates.append((path, path.parent / (stem + path.suffix)))
 
-    for path, stem in updates:
-        updated = path.parent / (stem + path.suffix)
+    unique = set()
+    for _, updated in updates:
+        message = f"Found duplicate file name ({updated.name}) after normalization."
+        assert updated not in unique, message
+        unique.add(updated)
+
+    for path, updated in updates:
         if updated != path:
             logger.info('Renaming file name "%s" to "%s"', path.name, updated.name)
             path.rename(updated)

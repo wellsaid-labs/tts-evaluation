@@ -8,7 +8,7 @@ from unittest import mock
 
 import pytest
 
-from run.data.__main__ import logger, numberings, rename
+from run.data.__main__ import _normalize_file_name, logger, numberings, rename
 
 
 def _rename_side_effect(path: Path, _expected=Path):
@@ -62,19 +62,34 @@ def _mock_directory() -> typing.Iterator[
         yield (directory, recordings_path, scripts_path, recordings, scripts)
 
 
+def test__normalize_file_name():
+    """ Test `__main__._normalize_file_name` handles all kinds of casing and numbering. """
+    norm = _normalize_file_name
+    assert norm("ENTHUSIASTIC_Script1") == "enthusiastic_script_1"
+    assert norm("Script16-21") == "script_16-21"
+    assert norm("Copy of WSL_SMurphyScript16-21") == "copy_of_wsl_s_murphy_script_16-21"
+    assert norm("A1BondedTermite_111315") == "a1_bonded_termite_111315"
+    assert norm("Applewood(PSL Group)_022317") == "applewood_(psl_group_)_022317"
+    assert norm("WhiteCanyonMotors_IVRPrompts_020116") == "white_canyon_motors_ivr_prompts_020116"
+    assert norm("VisionaryCentreForWomen_061218") == "visionary_centre_for_women_061218"
+    assert norm("SmileStudio87_010419") == "smile_studio_87_010419"
+
+
 def test_rename():
     """ Test `__main__.rename` against a couple of basic cases. """
     _assert_rename(
         "Copy of WSL_SMurphyScript16-21.wav",
-        "copy_of_wsl_smurphyscript16-21.wav",
+        "copy_of_wsl_s_murphy_script_16-21.wav",
         only_numbers=False,
     )
     _assert_rename("Copy of WSL_SMurphyScript16-21.wav", "16-21.wav", only_numbers=True)
-    with mock.patch.object(logger, "warning") as warning_mock:
+    with mock.patch.object(logger, "error") as error_mock:
         _assert_rename(
-            "Copy of WSL_SMurphyScript.wav", "copy_of_wsl_smurphyscript.wav", only_numbers=True
+            "Copy of WSL_SMurphyScript.mp3",
+            "copy_of_wsl_s_murphy_script.mp3",
+            only_numbers=True,
         )
-        assert warning_mock.called
+        assert error_mock.called
 
 
 def test_rename__duplicate():
@@ -82,7 +97,7 @@ def test_rename__duplicate():
     with _mock_directory() as (directory, *_):
         with pytest.raises(AssertionError) as info:
             rename(directory, only_numbers=True)
-        assert "duplicate file names" in str(info.value)
+        assert "duplicate file name" in str(info.value)
 
 
 def test_numberings():
