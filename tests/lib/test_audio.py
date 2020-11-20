@@ -278,6 +278,12 @@ def test_format_ffmpeg_audio_filters():
     )
 
 
+def test_normalize_suffix():
+    """Test `lib.audio.normalize_suffix` normalizes suffix."""
+    expected = pathlib.Path("directory/test.wav")
+    assert lib.audio.normalize_suffix(pathlib.Path("directory/test.mp3"), ".wav") == expected
+
+
 def test_normalize_audio__assert_audio_normalized():
     """Test `lib.audio.normalize_audio` normalizes audio and `lib.audio.assert_audio_normalized`
     checks."""

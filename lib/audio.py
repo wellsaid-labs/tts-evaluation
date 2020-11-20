@@ -245,6 +245,13 @@ def format_ffmpeg_audio_filters(filters: typing.List[AudioFilter]) -> AudioFilte
 
 
 @configurable
+def normalize_suffix(path: Path, suffix: str = HParam()) -> Path:
+    """ Normalize the final suffix to `suffix`. """
+    assert len(path.suffixes) == 1, "`path` has multiple suffixes."
+    return path.parent / (path.stem + suffix)
+
+
+@configurable
 def normalize_audio(
     source: Path,
     destination: Path,

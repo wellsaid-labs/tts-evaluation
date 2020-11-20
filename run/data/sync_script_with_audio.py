@@ -35,6 +35,7 @@ from tqdm import tqdm
 
 import lib
 from lib.environment import AnsiCodes
+from lib.utils import get_chunks
 from run._utils import blob_to_gcs_uri, gcs_uri_to_blob
 
 lib.environment.set_basic_logging_config()
@@ -67,7 +68,7 @@ class SttToken(typing.NamedTuple):
     slice: typing.Tuple[int, int]
 
 
-SST_CONFIG = RecognitionConfig(
+STT_CONFIG = RecognitionConfig(
     language_code="en-US",
     model="video",
     use_enhanced=True,
@@ -387,7 +388,7 @@ def _flatten_stt_result(stt_result: SttResult) -> typing.Tuple[str, typing.List[
     # factories.given."
     # Google STT predicted the token "factories.given." in the above transcript it predicted.
     if " ".join(t.text for t in stt_tokens).strip() != transcript.strip():
-        logger.warning("Google SST may not be white-space tokenized.")
+        logger.warning("Google STT may not be white-space tokenized.")
     return transcript, stt_tokens
 
 
@@ -497,40 +498,14 @@ def _get_speech_context(
     return SpeechContext(phrases=list(set(phrases)))
 
 
-def run_stt(
+def _run_stt(
     audio_blobs: typing.List[storage.Blob],
     scripts: typing.List[str],
     dest_blobs: typing.List[storage.Blob],
-    poll_interval: float = 1 / 10,
-    stt_config: RecognitionConfig = SST_CONFIG,
+    poll_interval: float,
+    stt_config: RecognitionConfig,
 ):
-    """Run speech-to-text on `audio_blobs` and save them at `dest_blobs`.
-
-    NOTE:
-    - The documentation for `RecognitionConfig` does not include all the available
-      options. All the potential parameters are included here:
-      https://cloud.google.com/speech-to-text/docs/reference/rest/v1p1beta1/RecognitionConfig
-    - Time offset values are only included for the first alternative provided in the recognition
-      response, learn more here: https://cloud.google.com/speech-to-text/docs/async-time-offsets
-    - Careful not to exceed default 300 requests a second quota. If you do exceed it, note that
-      Google STT will not respond to requests for up to 30 minutes.
-    - The `stt_config` defaults are set based on:
-      https://blog.timbunce.org/2018/05/15/a-comparison-of-automatic-speech-recognition-asr-systems/
-    - You can preview the running operations via the command line. For example:
-      $ gcloud ml speech operations describe 5187645621111131232
-    - Google STT with `enable_automatic_punctuation=False` still predicts hyphens. This can cause
-      issues downstream if a non-hyphenated word is expected.
-
-    TODO: Look into how many requests are made every poll, in order to better calibrate against
-    Google's quota.
-
-    Args:
-        audio_blobs: List of GCS voice-over blobs.
-        scripts: List of voice-over scripts. These are used to give hints to the STT.
-        dest_blobs: List of GCS blobs to upload results too.
-        poll_interval: The interval between each poll of STT progress.
-        stt_config
-    """
+    """ Helper function for `run_stt`. """
     operations = []
     for audio_blob, script, dest_blob in zip(audio_blobs, scripts, dest_blobs):
         config = deepcopy(stt_config)
@@ -562,6 +537,55 @@ def run_stt(
                 progress[i] = metadata.progress_percent
             progress_bar.update(min(progress) - progress_bar.n)
             time.sleep(poll_interval)
+
+
+def run_stt(
+    audio_blobs: typing.List[storage.Blob],
+    scripts: typing.List[str],
+    dest_blobs: typing.List[storage.Blob],
+    poll_interval: float = 1 / 10,
+    stt_config: RecognitionConfig = STT_CONFIG,
+    max_connections: int = 256,
+):
+    """Run speech-to-text on `audio_blobs` and save them at `dest_blobs`.
+
+    NOTE:
+    - The documentation for `RecognitionConfig` does not include all the available
+      options. All the potential parameters are included here:
+      https://cloud.google.com/speech-to-text/docs/reference/rest/v1p1beta1/RecognitionConfig
+    - Time offset values are only included for the first alternative provided in the recognition
+      response, learn more here: https://cloud.google.com/speech-to-text/docs/async-time-offsets
+    - Careful not to exceed default 300 requests a second quota. If you do exceed it, note that
+      Google STT will not respond to requests for up to 30 minutes.
+    - The `stt_config` defaults are set based on:
+      https://blog.timbunce.org/2018/05/15/a-comparison-of-automatic-speech-recognition-asr-systems/
+    - You can preview the running operations via the command line. For example:
+      $ gcloud ml speech operations describe 5187645621111131232
+    - Google STT with `enable_automatic_punctuation=False` still predicts hyphens. This can cause
+      issues downstream if a non-hyphenated word is expected.
+    - The progress bar tracks the progress of the slowest operation since all the operations
+      run in parallel.
+
+    TODO: Look into how many requests are made every poll, in order to better calibrate against
+    Google's quota.
+
+    Args:
+        audio_blobs: List of GCS voice-over blobs.
+        scripts: List of voice-over scripts. These are used to give hints to the STT.
+        dest_blobs: List of GCS blobs to upload results too.
+        poll_interval: The interval between each poll of STT progress.
+        stt_config
+        max_connections: The maximum number of connections to create at a time, learn more:
+            https://unix.stackexchange.com/questions/36841/why-is-number-of-open-files-limited-in-linux
+            https://unix.stackexchange.com/questions/157351/why-are-tcp-ip-sockets-considered-open-files
+    """
+    assert len(audio_blobs) == len(scripts)
+    assert len(audio_blobs) == len(dest_blobs)
+    chunk = partial(get_chunks, n=max_connections)
+    batches = list(zip(chunk(audio_blobs), chunk(scripts), chunk(dest_blobs)))
+    logger.info("Running %d STT operation(s) in %d batch(es).", len(audio_blobs), len(batches))
+    for args in batches:
+        _run_stt(*args, poll_interval, stt_config)
 
 
 def _sync_and_upload(
