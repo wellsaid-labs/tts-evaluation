@@ -80,7 +80,8 @@ def _normalize_file_name(name):
     https://stackoverflow.com/questions/7593969/regex-to-split-camelcase-or-titlecase-advanced/7599674#7599674
     """
     name = name.replace("_", " ")
-    name = re.sub("([^a-z]+)", r" \1", name)
+    name = re.sub("([^a-z\)\]]+)", r" \1", name)
+    name = re.sub("([\|]+)", r" \1 ", name)
     return "_".join(re.sub("([A-Z][a-z]+)", r" \1", name).split()).lower()
 
 
