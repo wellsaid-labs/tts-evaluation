@@ -412,8 +412,11 @@ def dataset_loader(
     files: typing.List[typing.List[Path]] = []
     for directory, suffix in zip(directories, suffixes):
         directory.mkdir(exist_ok=True)
-        command = f"gsutil -m cp -n {gcs_path}/{directory.name}/*{suffix} {directory}/"
-        subprocess.run(command.split(), check=True)
+        # TODO: Remove "GSUtil:parallel_process_count=1" when this issue is resolved:
+        # https://github.com/GoogleCloudPlatform/gsutil/pull/1107
+        command = 'gsutil -o "GSUtil:parallel_process_count=1" -m cp -n '
+        command += f"{gcs_path}/{directory.name}/*{suffix} {directory}/"
+        subprocess.run(command.split(), check=True, shell=True)
         files_ = [p for p in directory.iterdir() if p.suffix == suffix]
         files.append(sorted(files_, key=lambda p: lib.text.natural_keys(p.name)))
 

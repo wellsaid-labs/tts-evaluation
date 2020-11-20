@@ -219,6 +219,20 @@ def audio_normalize(
             progress_bar.update(round(lib.audio.get_audio_metadata(path).length))
 
 
+@csv_app.command()
+def text(paths: typing.List[pathlib.Path], dest: pathlib.Path, column="Content"):
+    """Convert text file(s) in PATHS to CSV file(s), and save to DEST with one row and one
+    column."""
+    assert all(p.exists() for p in paths), "Every path in PATHS must exist."
+    assert dest.exists(), "DEST must exist."
+    for path in tqdm.tqdm(paths):
+        dest_path = dest / (path.stem + ".csv")
+        if dest_path.exists():
+            logger.error("Skipping, file already exists: %s", dest_path)
+            continue
+        pandas.DataFrame({column: [path.read_text()]}).to_csv(dest_path, index=False)
+
+
 def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
     """Helper for the `csv_normalize` command.
 
@@ -254,31 +268,28 @@ def csv_normalize(
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
     partial = functools.partial(_csv_normalize, nlp=nlp)
     results = []
-    with tqdm.tqdm(total=len(paths)) as progress_bar:
-        for path in paths:
-            dest_path = dest / path.name
-            if dest_path.exists():
-                logger.error("Skipping, file already exists: %s", dest_path)
-                continue
+    for path in tqdm.tqdm(paths):
+        dest_path = dest / path.name
+        if dest_path.exists():
+            logger.error("Skipping, file already exists: %s", dest_path)
+            continue
 
-            text = path.read_text()
-            if not tab_separated and text.count("\t") > len(text.split("\n")) // 2:
-                message = (
-                    "There are a lot of tabs (%d) so this (%s) might be a TSV file. "
-                    "Add the flag --tab-separated to parse this file as a TSV file."
-                )
-                logger.warning(message, text.count("\t"), path)
+        text = path.read_text()
+        if not tab_separated and text.count("\t") > len(text.split("\n")) // 2:
+            message = (
+                "There are a lot of tabs (%d) so this (%s) might be a TSV file. "
+                "Add the flag --tab-separated to parse this file as a TSV file."
+            )
+            logger.warning(message, text.count("\t"), path)
 
-            separator = "\t" if tab_separated else ","
-            data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(path, sep=separator))
-            data_frame = data_frame.applymap(partial)
-            data_frame.to_csv(dest_path, index=False)
+        separator = "\t" if tab_separated else ","
+        data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(path, sep=separator))
+        data_frame = data_frame.applymap(partial)
+        data_frame.to_csv(dest_path, index=False)
 
-            # TODO: Count the number of alphanumeric edits instead of punctuation mark edits.
-            num_edits = Levenshtein.distance(text, dest_path.read_text())  # type: ignore
-            results.append(((num_edits / len(text)) * 100, num_edits, len(text), path.name))
-
-            progress_bar.update()
+        # TODO: Count the number of alphanumeric edits instead of punctuation mark edits.
+        num_edits = Levenshtein.distance(text, dest_path.read_text())  # type: ignore
+        results.append(((num_edits / len(text)) * 100, num_edits, len(text), path.name))
 
     headers = ["% Edited", "# Edits", "# Characters", "File Name"]
     typer.echo("\n" + tabulate.tabulate(sorted(results), headers=headers))
