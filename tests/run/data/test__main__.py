@@ -65,9 +65,9 @@ def _mock_directory() -> typing.Iterator[
 def test__normalize_file_name():
     """ Test `__main__._normalize_file_name` handles all kinds of casing and numbering. """
     norm = _normalize_file_name
-    assert norm("ENTHUSIASTIC_Script1") == "enthusiastic_script_1"
-    assert norm("Script16-21") == "script_16-21"
-    assert norm("Copy of WSL_SMurphyScript16-21") == "copy_of_wsl_s_murphy_script_16-21"
+    assert norm("ENTHUSIASTIC_Script1") == "enthusiastic_script1"
+    assert norm("Script16-21") == "script16-21"
+    assert norm("Copy of WSL_SMurphyScript16-21") == "copy_of_wsl_s_murphy_script16-21"
     assert norm("A1BondedTermite_111315") == "a1_bonded_termite_111315"
     assert norm("Applewood(PSL Group)_022317") == "applewood_(psl_group)_022317"
     assert norm("Applewood[PSL Group]_022317") == "applewood_[psl_group]_022317"
@@ -75,7 +75,9 @@ def test__normalize_file_name():
     assert norm("applewood|psl Group_022317") == "applewood_|_psl_group_022317"
     assert norm("WhiteCanyonMotors_IVRPrompts_020116") == "white_canyon_motors_ivr_prompts_020116"
     assert norm("VisionaryCentreForWomen_061218") == "visionary_centre_for_women_061218"
-    assert norm("SmileStudio87_010419") == "smile_studio_87_010419"
+    assert norm("SmileStudio87_010419") == "smile_studio87_010419"
+    expected = "wsl_elise_randall_enthusiastic_script-9"
+    assert norm("WSL_EliseRandall_ENTHUSIASTIC_Script-9") == expected
 
 
 def test_rename():
