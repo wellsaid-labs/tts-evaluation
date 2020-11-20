@@ -577,10 +577,11 @@ def run_stt(
         stt_config
         max_connections: The maximum number of connections to create at a time, learn more:
             https://unix.stackexchange.com/questions/36841/why-is-number-of-open-files-limited-in-linux
+            https://unix.stackexchange.com/questions/157351/why-are-tcp-ip-sockets-considered-open-files
     """
     assert len(audio_blobs) == len(scripts)
     assert len(audio_blobs) == len(dest_blobs)
-    chunk = partial(get_chunks, max_connections=max_connections)
+    chunk = partial(get_chunks, n=max_connections)
     batches = list(zip(chunk(audio_blobs), chunk(scripts), chunk(dest_blobs)))
     logger.info("Running %d STT operation(s) in %d batch(es).", len(audio_blobs), len(batches))
     for args in batches:
