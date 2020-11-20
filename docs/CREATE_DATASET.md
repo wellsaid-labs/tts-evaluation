@@ -173,7 +173,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. (Optional) Review audio file loudness for inconsistencies...
 
    ```bash
-   python -m run.data audio loudness $PROCESSED/recordings/*$ENCODING
+   python -m run.data audio loudness $PROCESSED/recordings/*.wav
    ```
 
 1. Normalize CSV file text...
@@ -203,7 +203,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. Generate time alignments that synchronize the scripts and recordings...
 
    ```bash
-   RECORDINGS=$(gsutil ls "$GCS_URI/processed/speech_to_text/*$ENCODING" | python -m run.utils.sort)
+   RECORDINGS=$(gsutil ls "$GCS_URI/processed/speech_to_text/*.wav" | python -m run.utils.sort)
    SCRIPTS=$(gsutil ls "$GCS_URI/processed/scripts/*.csv" | python -m run.utils.sort)
    python -m run.data.sync_script_with_audio \
       $(python -m run.utils.prefix --voice-over $RECORDINGS) \
