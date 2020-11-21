@@ -207,6 +207,9 @@ class Passage:
             assert min(get_("transcript")) >= 0
 
 
+SpanType = typing.TypeVar("SpanType", bound="Span")
+
+
 @dataclasses.dataclass(frozen=True)
 class Span:
     """A span of the voiced passage.
@@ -265,10 +268,10 @@ class Span:
     def to_string(self, *fields):
         return _to_string(self, *fields)
 
-    def __getitem__(self, key) -> Span:
+    def __getitem__(self: SpanType, key) -> SpanType:
         slice_ = _handle_get_item_key(len(self.alignments), key)
         slice_ = slice(slice_.start + self.span.start, slice_.stop + self.span.start)
-        return Span(self.passage, slice_)
+        return self.__class__(self.passage, slice_)
 
     def _check_invariants(self):
         """ Check datastructure invariants. """
