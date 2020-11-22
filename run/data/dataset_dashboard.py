@@ -1,14 +1,13 @@
 """ Streamlit application for reviewing the dataset.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/data/review_dataset.py
+    $ PYTHONPATH=. streamlit run run/data/dataset_dashboard.py
 """
 from __future__ import annotations
 
 import base64
 import collections
 import contextlib
-import copy
 import dataclasses
 import functools
 import io
@@ -27,6 +26,8 @@ import streamlit as st
 import torch
 import tqdm
 from librosa.util import utils as librosa_utils
+from third_party import session_state
+from torchnlp.random import fork_rng
 
 import lib
 import run
@@ -37,6 +38,7 @@ from run._config import Dataset
 
 lib.environment.set_basic_logging_config(reset=True)
 alt.data_transformers.disable_max_rows()
+st.set_page_config(layout="wide")
 logger = logging.getLogger(__name__)
 
 ALIGNMENT_PRECISION = 0.1
@@ -44,15 +46,47 @@ AUDIO_COLUMN = "audio"
 DEFAULT_COLUMNS = [AUDIO_COLUMN, "script", "transcript"]
 HASH_FUNCS = {Passage: lambda p: p.key}
 
-read_audio_slice = functools.lru_cache(maxsize=None)(lib.audio.read_audio_slice)
-read_audio = functools.lru_cache(maxsize=None)(lib.audio.read_audio)
-
 # TODO: Visualize a passage, and the alignments that would be valid "anchor" alignments. This
 # would put in context what the characteristics are for an "anchor" alignment, and it'll help
 # us better understand what the coverage of those alignments are.
 # TODO: Print the phoneme coverage of the dataset, we're using. How much of the CMUDict
 # does it cover? What's the distribution of that coverage? How many words in the dataset
 # are missed by CMUDict and what are they?
+
+
+_SessionCacheInputType = typing.TypeVar(
+    "_SessionCacheInputType", bound=typing.Callable[..., typing.Any]
+)
+
+
+def _session_cache(
+    func: typing.Optional[_SessionCacheInputType] = None, **kwargs
+) -> _SessionCacheInputType:
+    """ `lru_cache` wrapper for `streamlit` that caches accross reruns. """
+    if not func:
+        return functools.partial(_session_cache, **kwargs)
+
+    session = session_state.get(cache={})
+
+    use_session_cache = st.sidebar.checkbox(f"Cache `{func.__qualname__}`", value=True)
+    if func.__qualname__ not in session["cache"] or not use_session_cache:
+        logger.info("Creating `%s` cache.", func.__qualname__)
+        session["cache"][func.__qualname__] = functools.lru_cache(**kwargs)(func)
+
+    return session["cache"][func.__qualname__]
+
+
+@_session_cache(maxsize=None)
+def _read_audio_slice(*args, **kwargs):
+    return lib.audio.read_audio_slice(*args, **kwargs)
+
+
+def _round(x, bucket_size):
+    return bucket_size * round(x / bucket_size)
+
+
+assert _round(0.3, 1) == 0
+assert _round(0.4, 0.25) == 0.5
 
 
 def _static_symlink(target: pathlib.Path) -> pathlib.Path:
@@ -81,17 +115,12 @@ def _map(
     list_: typing.List[_MapInputType],
     func: typing.Callable[[_MapInputType], _MapReturnType],
     chunk_size=8,
-    max_parallel=os.cpu_count(),
+    max_parallel=os.cpu_count() * 3,
 ) -> typing.List[_MapReturnType]:
     """ Apply `func` to `list_` in parallel. """
     with multiprocessing.pool.ThreadPool(processes=max_parallel) as pool:
         iterator = pool.imap(func, list_, chunksize=chunk_size)
         return list(tqdm.tqdm(iterator, total=len(list_)))
-
-
-@st.cache(allow_output_mutation=True, show_spinner=False)
-def _load_amepd():
-    return lib.text._load_amepd()
 
 
 def _signal_to_db_rms(signal: np.ndarray) -> float:
@@ -120,6 +149,11 @@ class Span(lib.datasets.Span):
         mistranscriptions = [(a, b) for a, b, _ in self.unaligned if self._isalnum(a + b)]
         set(self, "mistranscriptions", [(a.strip(), b.strip()) for a, b in mistranscriptions])
         set(self, "seconds_per_character", self.audio_length / len(self.script))
+
+    @property
+    def audio(self):
+        start = self.passage.alignments[self.span][0].audio[0]
+        return _read_audio_slice(self.passage.audio_file.path, start, self.audio_length)
 
     def _audio(self, second, interval):
         index = lambda i: clamp(round(i * self.audio_file.sample_rate), 0, self.audio.shape[0])
@@ -191,7 +225,7 @@ def _bucket_and_visualize(
         if math.isnan(item):
             nan_count += 1
         else:
-            buckets[round(bucket_size * round(item / bucket_size), ndigits)] += 1
+            buckets[round(_round(item, bucket_size), ndigits)] += 1
     if nan_count > 0:
         logger.warning("Ignoring %d NaNs...", nan_count)
     df = pd.DataFrame({x: buckets.keys(), y: buckets.values()})
@@ -230,17 +264,6 @@ def _get_alignment_ngrams(dataset: Dataset, n: int = 1) -> typing.Iterator[Span]
             yield from (Span(passage, s) for s in _ngrams(passage.alignments, n=n))
 
 
-@st.cache(allow_output_mutation=True, show_spinner=False)
-def _get_dataset(speaker_names: typing.List[str]) -> Dataset:
-    """Load dataset."""
-    logger.info("Loading dataset...")
-    datasets = {k: v for k, v in run._config.DATASETS.items() if k.name in speaker_names}
-    dataset = run._config.get_dataset(datasets)
-    logger.info(f"Finished loading dataset! {mazel_tov()}")
-    return dataset
-
-
-@st.cache(allow_output_mutation=True, show_spinner=False, hash_funcs=HASH_FUNCS)
 def _get_spans(dataset: Dataset, num_samples: int, slice_: bool = True) -> typing.List[Span]:
     """Generate spans from our datasets."""
     logger.info("Generating spans...")
@@ -250,6 +273,16 @@ def _get_spans(dataset: Dataset, num_samples: int, slice_: bool = True) -> typin
     return_ = [Span(s.passage, s.span) for s in tqdm.tqdm(spans)]
     logger.info(f"Finished generating spans! {mazel_tov()}")
     return return_
+
+
+@_session_cache(maxsize=None)
+def _get_dataset(speaker_names: typing.FrozenSet[str]) -> Dataset:
+    """Load dataset."""
+    logger.info("Loading dataset...")
+    datasets = {k: v for k, v in run._config.DATASETS.items() if k.name in speaker_names}
+    dataset = run._config.get_dataset(datasets)
+    logger.info(f"Finished loading dataset! {mazel_tov()}")
+    return dataset
 
 
 def _span_coverage(dataset, spans) -> float:
@@ -300,24 +333,13 @@ def _visualize_spans(
     logger.info(f"Finished visualizing spans! {mazel_tov()}")
 
 
-class _SidebarConfig(typing.NamedTuple):
-    speakers: typing.Set[str]
-    num_samples: int
-
-
-def _get_sidebar_config() -> _SidebarConfig:
-    sidebar = st.sidebar
-    question = "Which dataset(s) do you want to load?"
-    speaker_names = [k.name for k in run._config.DATASETS.keys()]
-    speakers: typing.Set[str] = set(st.sidebar.multiselect(question, speaker_names))
-    question = "How many spans(s) do you want to generate?"
-    num_samples = sidebar.number_input(question, 0, None, 2500)
-    return _SidebarConfig(speakers, num_samples)
-
-
-def _analyze_dataset(dataset: Dataset):
+def _maybe_analyze_dataset(dataset: Dataset):
     logger.info("Analyzing dataset...")
     st.header("Raw Dataset Analysis")
+    st.markdown("In this section, we analyze the dataset prior to segmentation.")
+    if not st.checkbox("Analyze", key=_maybe_analyze_dataset.__name__):
+        return
+
     unigrams = list(_get_alignment_ngrams(dataset, n=1))
     trigrams = list(_get_alignment_ngrams(dataset, n=3))
     aligned_seconds = sum(flatten([[p[:].audio_length for p in v] for v in dataset.values()]))
@@ -325,8 +347,7 @@ def _analyze_dataset(dataset: Dataset):
     total_seconds = sum([f.length for f in files])
 
     st.markdown(
-        f"In this section, we analyze the dataset prior to segmentation. At a high-level, this "
-        "dataset has:\n"
+        f"At a high-level, this dataset has:\n"
         f"- **{seconds_to_string(total_seconds)}** of audio\n"
         f"- **{seconds_to_string(aligned_seconds)}** of aligned audio\n"
         f"- **{len(unigrams):,}** alignments.\n"
@@ -375,14 +396,16 @@ def _analyze_dataset(dataset: Dataset):
     logger.info(f"Finished analyzing dataset! {mazel_tov()}")
 
 
-def _analyze_spans(dataset: Dataset, spans: typing.List[Span]):
+def _maybe_analyze_spans(dataset: Dataset, spans: typing.List[Span]):
     logger.info("Analyzing spans...")
     st.header("Dataset Segmentation Analysis")
     audio_length = sum([s.audio_length for s in spans])
+    st.markdown("In this section, we analyze the dataset after segmentation via `Span`s. ")
+    if not st.checkbox("Analyze", key=_maybe_analyze_spans.__name__):
+        return
     st.markdown(
-        "In this section, we analyze the dataset after segmentation via `Spans`. "
         f"There are **{len(spans)} ({seconds_to_string(audio_length)})** spans to analyze, "
-        f"representing of **{_span_coverage(dataset, spans):.0%}** all alignments."
+        f"representing of **{_span_coverage(dataset, spans):.2%}** all alignments."
     )
 
     with beta_expander("Survey of Span Onset RMS dB"):
@@ -406,12 +429,17 @@ def _analyze_spans(dataset: Dataset, spans: typing.List[Span]):
     logger.info(f"Finished analyzing spans! {mazel_tov()}")
 
 
-def _analyze_filtered_spans(
-    dataset: Dataset, spans: typing.List[Span], sidebar_config: _SidebarConfig
-):
+def _maybe_analyze_filtered_spans(dataset: Dataset, spans: typing.List[Span]):
     """Filter out spans that are not ideal for training."""
     logger.info("Analyzing filtered spans...")
     st.header("Dataset Filtered Segmentation Analysis")
+    st.markdown(
+        "In this section, we analyze the dataset after segmentation and filtering. "
+        "This is the final step in our dataset preprocessing. "
+    )
+    if not st.checkbox("Analyze", key=_maybe_analyze_filtered_spans.__name__):
+        return
+
     lambda_ = lambda s: (s.min_rms(0), s.min_rms(s.audio_length))
     onset_rms, outset_rms = tuple(zip(*_map(spans, lambda_)))
     total = len(spans)
@@ -428,13 +456,11 @@ def _analyze_filtered_spans(
     spans, onset_rms, outset_rms = tuple(zip(*filtered))  # type: ignore
     audio_length = sum([s.audio_length for s in spans])
     st.markdown(
-        "In this section, we analyze the dataset after segmentation and filtering. "
-        "This is the final step in our dataset preprocessing. "
-        f"The filtered segmentations represent **{len(filtered) / total:.0%}** of the "
+        f"The filtered segmentations represent **{len(filtered) / total:.2%}** of the "
         f"original spans. In total, there are **{len(spans)} "
         f"({seconds_to_string(audio_length)})**"
         " spans to analyze, representing of "
-        f"**{_span_coverage(dataset, spans):.0%}** all alignments."
+        f"**{_span_coverage(dataset, spans):.2%}** all alignments."
     )
 
     with beta_expander("Random Sample of Filtered Spans"):
@@ -465,20 +491,27 @@ def _analyze_filtered_spans(
 
 def main():
     run._config.configure()
-    st.set_page_config(layout="wide")
     st.title("Dasaset Dashboard")
     st.write("The dataset dashboard is an effort to understand our dataset and dataset processing.")
 
-    sidebar_config = _get_sidebar_config()
-    if len(sidebar_config.speakers) == 0:
+    sidebar = st.sidebar
+    question = "Which dataset(s) do you want to load?"
+    speaker_names = [k.name for k in run._config.DATASETS.keys()]
+    speakers: typing.FrozenSet[str] = frozenset(st.sidebar.multiselect(question, speaker_names))
+    question = "How many spans(s) do you want to generate?"
+    num_samples = sidebar.number_input(question, 0, None, 100)
+
+    if len(speakers) == 0:
         st.stop()
 
-    dataset: Dataset = copy.deepcopy(_get_dataset(sidebar_config.speakers))
-    _analyze_dataset(dataset)
-    spans: typing.List[Span]
-    spans = copy.deepcopy(_get_spans(dataset, sidebar_config.num_samples))
-    _analyze_spans(dataset, spans)
-    _analyze_filtered_spans(dataset, spans, sidebar_config)
+    dataset = _get_dataset(speakers)
+    with fork_rng(123):
+        spans = _get_spans(dataset, num_samples=num_samples)
+
+    _maybe_analyze_dataset(dataset)
+    _maybe_analyze_spans(dataset, spans)
+    _maybe_analyze_filtered_spans(dataset, spans)
+
     logger.info(f"Done! {mazel_tov()}")
 
 
