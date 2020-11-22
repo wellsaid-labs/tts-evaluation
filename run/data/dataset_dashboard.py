@@ -159,8 +159,9 @@ class Span(lib.datasets.Span):
         index = lambda i: clamp(round(i * self.audio_file.sample_rate), 0, self.audio.shape[0])
         return self.audio[index(second - interval[0]) : index(second + interval[1])]
 
-    def rms(self, second: float, interval: typing.Tuple[float, float] = (0.01, 0.01)) -> float:
-        return round(_signal_to_db_rms(self._audio(second, interval)), 1)
+    @property
+    def rms(self) -> float:
+        return round(_signal_to_db_rms(self.audio), 1)
 
     def min_rms(
         self,
@@ -175,6 +176,7 @@ class Span(lib.datasets.Span):
             audio,
             int(frame_length * self.audio_file.sample_rate),
             int(hop_length * self.audio_file.sample_rate),
+            axis=0,
         )
         return round(min([_signal_to_db_rms(f) for f in frames]), 1)
 
@@ -202,8 +204,10 @@ def _visualize_signal(
     Learn more about envelopes: https://en.wikipedia.org/wiki/Envelope_detector
     """
     ratio = sample_rate // max_sample_rate
-    frames = librosa_utils.frame(signal, frame_length=ratio, hop_length=ratio)  # type: ignore
-    envelope = np.max(np.abs(frames), axis=0)
+    frames = librosa_utils.frame(signal, ratio, ratio, axis=0)  # type: ignore
+    assert frames.shape[1] == ratio
+    envelope = np.max(np.abs(frames), axis=-1)
+    assert envelope.shape[0] == frames.shape[0]
     seconds = np.arange(0, signal.shape[0] / sample_rate, ratio / sample_rate)
     waveform = alt.Chart(pd.DataFrame({"seconds": seconds, "y_max": envelope, "y_min": -envelope}))
     waveform = waveform.mark_area().encode(x="seconds:Q", y="y_min:Q", y2="y_max:Q")
@@ -257,10 +261,31 @@ assert _get_ngrams([1, 2, 3, 4, 5, 6], n=1) == [[1], [2], [3], [4], [5], [6]]
 assert _get_ngrams([1, 2, 3, 4, 5, 6], n=3) == [[1, 2, 3], [2, 3, 4], [3, 4, 5], [4, 5, 6]]
 
 
-def _get_alignment_ngrams(dataset: Dataset, n: int = 1) -> typing.Iterator[Span]:
-    """ Get ngram `Span`s with `n` alignments. """
+@_session_cache(maxsize=None)
+def _get_dataset(speaker_names: typing.FrozenSet[str]) -> Dataset:
+    """Load dataset."""
+    logger.info("Loading dataset...")
+    datasets = {k: v for k, v in run._config.DATASETS.items() if k.name in speaker_names}
+    dataset = run._config.get_dataset(datasets)
+    logger.info(f"Finished loading dataset! {mazel_tov()}")
+    return dataset
+
+
+def _get_passages(dataset: Dataset) -> typing.Iterator[Passage]:
     for _, passages in dataset.items():
-        for passage in passages:
+        yield from passages
+
+
+def _get_alignment_ngrams(
+    dataset: Dataset,
+    n: int = 1,
+    max_passages=128,
+) -> typing.Iterator[Span]:
+    """ Get ngram `Span`s with `n` alignments. """
+    passages = list(_get_passages(dataset))
+    with fork_rng(123):
+        sample = random.sample(passages, min(len(passages), max_passages))
+    for passage in tqdm.tqdm(sample):
             yield from (Span(passage, s) for s in _ngrams(passage.alignments, n=n))
 
 
@@ -273,16 +298,6 @@ def _get_spans(dataset: Dataset, num_samples: int, slice_: bool = True) -> typin
     return_ = [Span(s.passage, s.span) for s in tqdm.tqdm(spans)]
     logger.info(f"Finished generating spans! {mazel_tov()}")
     return return_
-
-
-@_session_cache(maxsize=None)
-def _get_dataset(speaker_names: typing.FrozenSet[str]) -> Dataset:
-    """Load dataset."""
-    logger.info("Loading dataset...")
-    datasets = {k: v for k, v in run._config.DATASETS.items() if k.name in speaker_names}
-    dataset = run._config.get_dataset(datasets)
-    logger.info(f"Finished loading dataset! {mazel_tov()}")
-    return dataset
 
 
 def _span_coverage(dataset, spans) -> float:
@@ -350,15 +365,16 @@ def _maybe_analyze_dataset(dataset: Dataset):
         f"At a high-level, this dataset has:\n"
         f"- **{seconds_to_string(total_seconds)}** of audio\n"
         f"- **{seconds_to_string(aligned_seconds)}** of aligned audio\n"
-        f"- **{len(unigrams):,}** alignments.\n"
+        f"- **{sum([len(p.alignments) for p in _get_passages(dataset)]):,}** alignments.\n"
     )
+    st.markdown(f"Analyzing a random sample of **{len(unigrams):,}** alignments...")
 
     with beta_expander("Random Sample of Alignments"):
         for span in random.sample(trigrams, 25):
             cols = st.beta_columns([2, 1])
             rules = list(span.alignments[1].audio)
             cols[0].altair_chart(_visualize_signal(span.audio, rules), use_container_width=True)
-            loudness = f"({span[1].rms(0)} dB, {span[1].rms(span[1].audio_length)} dB)"
+            loudness = f"({span[1].min_rms(0)} dB, {span[1].min_rms(span[1].audio_length)} dB)"
             cols[1].markdown(
                 f"- Edge Loudness: **({loudness})**\n"
                 f"- **{round(span[1].seconds_per_character, 2)}** Seconds per character\n"
@@ -382,7 +398,7 @@ def _maybe_analyze_dataset(dataset: Dataset):
         iterator = [len(s.script) for s in unigrams]
         _bucket_and_visualize(iterator, ALIGNMENT_PRECISION, x="Characters")
         st.write("The longest alignments: ")
-        sample = sorted([s for s in unigrams], key=lambda s: len(s.script), reverse=True)[:50]
+        sample = sorted(unigrams, key=lambda s: len(s.script), reverse=True)[:50]
         st.table([{"script": s.script, "transcript": s.transcript} for s in sample])
 
     for attr in ["seconds_per_character"]:
@@ -392,6 +408,16 @@ def _maybe_analyze_dataset(dataset: Dataset):
             st.write("The fastest alignments:")
             sample = sorted(unigrams, key=lambda s: getattr(s, attr))[:50]
             _visualize_spans(sample, DEFAULT_COLUMNS + ["audio_length"] + [attr])
+
+    with beta_expander("Survey of Alignment Loudness (in dB)"):
+        st.write("The alignment count for each dB bucket:")
+        with fork_rng(123):
+            sample = random.sample(unigrams, min(len(unigrams), 4096))
+        _bucket_and_visualize(_map(sample, lambda s: s.rms), ALIGNMENT_PRECISION, x="dB")
+        st.write("The quietest alignments: ")
+        sample = [s for s in sample if not math.isnan(s.rms)]
+        display = sorted(sample, key=lambda s: s.rms)[:50]
+        _visualize_spans(display, other_columns={"rms": [s.rms for s in display]})
 
     logger.info(f"Finished analyzing dataset! {mazel_tov()}")
 
@@ -424,7 +450,7 @@ def _maybe_analyze_spans(dataset: Dataset, spans: typing.List[Span]):
         )
         st.write("A random sample of mistranscriptions:")
         unaligned = [{"script": m[0], "transcript": m[1]} for m in mistranscriptions]
-        st.table(random.sample(unaligned, 50))
+        st.table(unaligned)
 
     logger.info(f"Finished analyzing spans! {mazel_tov()}")
 
