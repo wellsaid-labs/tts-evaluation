@@ -15,21 +15,24 @@ import io
 import logging
 import math
 import multiprocessing.pool
+import os
 import pathlib
 import random
 import typing
 
 import altair as alt
-import librosa
 import numpy as np
 import pandas as pd
 import streamlit as st
 import torch
 import tqdm
+from librosa.util import utils as librosa_utils
 
 import lib
 import run
-from lib.utils import clamp, mazel_tov
+from lib.audio import amplitude_to_db, signal_to_rms
+from lib.datasets import Alignment, Passage
+from lib.utils import clamp, flatten, mazel_tov, seconds_to_string
 from run._config import Dataset
 
 lib.environment.set_basic_logging_config(reset=True)
@@ -39,23 +42,28 @@ logger = logging.getLogger(__name__)
 ALIGNMENT_PRECISION = 0.1
 AUDIO_COLUMN = "audio"
 DEFAULT_COLUMNS = [AUDIO_COLUMN, "script", "transcript"]
-HASH_FUNCS = {lib.datasets.Passage: lambda p: p.key}
+HASH_FUNCS = {Passage: lambda p: p.key}
 
 read_audio_slice = functools.lru_cache(maxsize=None)(lib.audio.read_audio_slice)
 read_audio = functools.lru_cache(maxsize=None)(lib.audio.read_audio)
 
+# TODO: Visualize a passage, and the alignments that would be valid "anchor" alignments. This
+# would put in context what the characteristics are for an "anchor" alignment, and it'll help
+# us better understand what the coverage of those alignments are.
+# TODO: Print the phoneme coverage of the dataset, we're using. How much of the CMUDict
+# does it cover? What's the distribution of that coverage? How many words in the dataset
+# are missed by CMUDict and what are they?
 
-def _static_symlink(
-    target: pathlib.Path,
-    root: pathlib.Path = pathlib.Path(st.__file__).parent / "static",
-    static: pathlib.Path = pathlib.Path("static") / "_private",
-) -> pathlib.Path:
+
+def _static_symlink(target: pathlib.Path) -> pathlib.Path:
     """System link `target` to `root / static`, and return the linked location.
 
     Learn more:
     https://github.com/st/st/issues/400#issuecomment-648580840
     https://github.com/st/st/issues/1567
     """
+    root = pathlib.Path(st.__file__).parent / "static"
+    static = pathlib.Path("static") / "_private"
     assert root.exists()
     (root / static).mkdir(exist_ok=True)
     target = target.relative_to(lib.environment.ROOT_PATH)
@@ -65,9 +73,39 @@ def _static_symlink(
     return static / target
 
 
+_MapInputType = typing.TypeVar("_MapInputType")
+_MapReturnType = typing.TypeVar("_MapReturnType")
+
+
+def _map(
+    list_: typing.List[_MapInputType],
+    func: typing.Callable[[_MapInputType], _MapReturnType],
+    chunk_size=8,
+    max_parallel=os.cpu_count(),
+) -> typing.List[_MapReturnType]:
+    """ Apply `func` to `list_` in parallel. """
+    with multiprocessing.pool.ThreadPool(processes=max_parallel) as pool:
+        iterator = pool.imap(func, list_, chunksize=chunk_size)
+        return list(tqdm.tqdm(iterator, total=len(list_)))
+
+
+@st.cache(allow_output_mutation=True, show_spinner=False)
+def _load_amepd():
+    return lib.text._load_amepd()
+
+
+def _signal_to_db_rms(signal: np.ndarray) -> float:
+    return typing.cast(float, amplitude_to_db(torch.tensor(signal_to_rms(signal))).item())
+
+
 @dataclasses.dataclass(frozen=True)
 class Span(lib.datasets.Span):
-    """ `lib.datasets.Span` with additional attributes. """
+    """`lib.datasets.Span` with additional attributes.
+
+    Attributes:
+        mistranscriptions: List of unaligned alphanumeric `script` and `transcript` text.
+        seconds_per_character: The average speed seconds per character.
+    """
 
     mistranscriptions: typing.List[typing.Tuple[str, str]] = dataclasses.field(init=False)
     seconds_per_character: float = dataclasses.field(init=False)
@@ -83,28 +121,33 @@ class Span(lib.datasets.Span):
         set(self, "mistranscriptions", [(a.strip(), b.strip()) for a, b in mistranscriptions])
         set(self, "seconds_per_character", self.audio_length / len(self.script))
 
-    def insta_rms(self, second: float, interval: float = 0.005) -> float:
-        """ Get the instantaneous loudness at `second`. """
-        sample_rate = self.audio_file.sample_rate
-        max_ = self.audio.shape[0]
-        slice_ = (
-            round((second - interval) * sample_rate),
-            round((second + interval) * sample_rate),
-        )
-        audio = self.audio[clamp(slice_[0], min_=0) : clamp(slice_[1], max_=max_)]
-        db = lib.audio.amplitude_to_db(torch.tensor(lib.audio.signal_to_rms(audio))).item()
-        return round(db, 1)
+    def _audio(self, second, interval):
+        index = lambda i: clamp(round(i * self.audio_file.sample_rate), 0, self.audio.shape[0])
+        return self.audio[index(second - interval[0]) : index(second + interval[1])]
 
-    def __getitem__(self, key) -> Span:
-        span = super().__getitem__(key)
-        return Span(span.passage, span.span)
+    def rms(self, second: float, interval: typing.Tuple[float, float] = (0.01, 0.01)) -> float:
+        return round(_signal_to_db_rms(self._audio(second, interval)), 1)
+
+    def min_rms(
+        self,
+        second: float,
+        interval: typing.Tuple[float, float] = (ALIGNMENT_PRECISION / 2, ALIGNMENT_PRECISION / 2),
+        frame_length: float = ALIGNMENT_PRECISION / 10,
+        hop_length: float = ALIGNMENT_PRECISION / 40,
+    ):
+        """ Get the minimum RMS within `interval`. """
+        audio = self._audio(second, interval)
+        frames = librosa_utils.frame(
+            audio,
+            int(frame_length * self.audio_file.sample_rate),
+            int(hop_length * self.audio_file.sample_rate),
+        )
+        return round(min([_signal_to_db_rms(f) for f in frames]), 1)
 
     def as_dict(self) -> typing.Dict[str, typing.Any]:
-        return {
-            f.name: getattr(self, f.name)
-            for f in dataclasses.fields(self)
-            if f.type != lib.datasets.Passage
-        }
+        """ Get a non-circular `dict`. """
+        fields = dataclasses.fields(self)
+        return {f.name: getattr(self, f.name) for f in fields if f.type != Passage}
 
 
 @contextlib.contextmanager
@@ -120,66 +163,70 @@ def _visualize_signal(
     max_sample_rate: int = 4096,
     sample_rate: int = 24000,
 ) -> alt.Chart:
-    """Visualize a waveform, similar to:
-    https://librosa.org/doc/main/generated/librosa.display.waveplot.html"""
+    """Visualize a signal envelope similar to `librosa.display.waveplot`.
+
+    Learn more about envelopes: https://en.wikipedia.org/wiki/Envelope_detector
+    """
     ratio = sample_rate // max_sample_rate
-    frames = librosa.util.frame(signal, frame_length=ratio, hop_length=ratio)  # type: ignore
-    downsampled = np.max(np.abs(frames), axis=0)
-    data = {
-        "seconds": np.arange(0, signal.shape[0] / sample_rate, ratio / sample_rate),
-        "y_max": downsampled,
-        "y_min": -downsampled,
-    }
-    waveform = alt.Chart(pd.DataFrame(data)).mark_area()
-    waveform = waveform.encode(x="seconds:Q", y="y_min:Q", y2="y_max:Q")
+    frames = librosa_utils.frame(signal, frame_length=ratio, hop_length=ratio)  # type: ignore
+    envelope = np.max(np.abs(frames), axis=0)
+    seconds = np.arange(0, signal.shape[0] / sample_rate, ratio / sample_rate)
+    waveform = alt.Chart(pd.DataFrame({"seconds": seconds, "y_max": envelope, "y_min": -envelope}))
+    waveform = waveform.mark_area().encode(x="seconds:Q", y="y_min:Q", y2="y_max:Q")
     line = alt.Chart(pd.DataFrame({"x": rules})).mark_rule(color="darkred").encode(x="x")
     return (line + waveform).interactive()
 
 
 def _bucket_and_visualize(
-    iterator: typing.Iterable[typing.Union[float, int]],
+    iterable: typing.Iterable[typing.Union[float, int]],
     bucket_size: float = 1,
     ndigits: int = 7,
+    x: str = "Buckets",
+    y: str = "Count",
 ):
-    """ Bucket `iterator` and display a bar chart. """
+    """ Bucket `iterable` and display a bar chart. """
     buckets = collections.defaultdict(int)
     nan_count = 0
-    for item in iterator:
+    for item in iterable:
         if math.isnan(item):
             nan_count += 1
         else:
             buckets[round(bucket_size * round(item / bucket_size), ndigits)] += 1
-    logger.warning("Ignoring %d NaNs...", nan_count)
-    df = pd.DataFrame({"buckets": buckets.keys(), "count": buckets.values()})
-    df = df.set_index("buckets")
-    st.bar_chart(df)
+    if nan_count > 0:
+        logger.warning("Ignoring %d NaNs...", nan_count)
+    df = pd.DataFrame({x: buckets.keys(), y: buckets.values()})
+    st.altair_chart(
+        alt.Chart(df).mark_bar().encode(x=x, y=y, tooltip=[x, y]).interactive(),
+        use_container_width=True,
+    )
 
 
 def _get_pause_lengths_in_seconds(dataset: Dataset) -> typing.Iterator[float]:
     for _, passages in dataset.items():
         for passage in passages:
-            for curr, next in zip(passage.alignments, passage.alignments[1:]):
-                yield next.audio[0] - curr.audio[1]
+            for prev, next in zip(passage.alignments, passage.alignments[1:]):
+                yield next.audio[0] - prev.audio[1]
 
 
-def _ngrams(list_: typing.Sequence, n: int = 1) -> typing.Iterator[slice]:
-    left = math.floor((n - 1) / 2)
-    right = math.ceil((n + 1) / 2)
-    iterator = range(left, len(list_) - right + 1)
-    yield from (slice(i - left, i + right) for i in iterator)
+def _get_alignments(dataset: Dataset) -> typing.Iterator[typing.Tuple[Passage, Alignment]]:
+    for _, passages in dataset.items():
+        for passage in passages:
+            yield from [(passage, a) for a in passage.alignments]
+
+
+def _ngrams(list_: typing.Sequence, n: int) -> typing.Iterator[slice]:
+    yield from (slice(i, i + n) for i in range(len(list_) - n + 1))
 
 
 _get_ngrams = lambda l, n: [l[s] for s in _ngrams(l, n)]
 assert _get_ngrams([1, 2, 3, 4, 5, 6], n=1) == [[1], [2], [3], [4], [5], [6]]
-assert _get_ngrams([1, 2, 3, 4, 5, 6], n=2) == [[1, 2], [2, 3], [3, 4], [4, 5], [5, 6]]
 assert _get_ngrams([1, 2, 3, 4, 5, 6], n=3) == [[1, 2, 3], [2, 3, 4], [3, 4, 5], [4, 5, 6]]
-assert _get_ngrams([1, 2, 3, 4, 5], n=3) == [[1, 2, 3], [2, 3, 4], [3, 4, 5]]
 
 
 def _get_alignment_ngrams(dataset: Dataset, n: int = 1) -> typing.Iterator[Span]:
     """ Get ngram `Span`s with `n` alignments. """
     for _, passages in dataset.items():
-        for passage in tqdm.tqdm(passages):
+        for passage in passages:
             yield from (Span(passage, s) for s in _ngrams(passage.alignments, n=n))
 
 
@@ -194,7 +241,7 @@ def _get_dataset(speaker_names: typing.List[str]) -> Dataset:
 
 
 @st.cache(allow_output_mutation=True, show_spinner=False, hash_funcs=HASH_FUNCS)
-def _get_spans(dataset: Dataset, slice_: bool, num_samples: int) -> typing.List[Span]:
+def _get_spans(dataset: Dataset, num_samples: int, slice_: bool = True) -> typing.List[Span]:
     """Generate spans from our datasets."""
     logger.info("Generating spans...")
     kwargs = {} if slice_ else {"max_seconds": math.inf}
@@ -205,9 +252,16 @@ def _get_spans(dataset: Dataset, slice_: bool, num_samples: int) -> typing.List[
     return return_
 
 
-@st.cache(allow_output_mutation=True, show_spinner=False)
-def _load_amepd():
-    return lib.text._load_amepd()
+def _span_coverage(dataset, spans) -> float:
+    """ Get the percentage of the `dataset` these `spans` cover. """
+    alignments = set([(p.key, a) for (p, a) in _get_alignments(dataset)])
+    total = len(alignments)
+    for span in spans:
+        for i in range(span.span.start, span.span.stop):
+            key = (span.passage.key, span.passage.alignments[i])
+            if key in alignments:
+                alignments.remove(key)
+    return 1 - (len(alignments) / total)
 
 
 def _audio_to_base64(audio: np.ndarray) -> str:
@@ -217,8 +271,8 @@ def _audio_to_base64(audio: np.ndarray) -> str:
     return base64.b64encode(in_memory_file.read()).decode("utf-8")
 
 
-def _audio_formatter(audio: typing.Union[np.ndarray, pathlib.Path]) -> str:
-    """ Create an `audio` HTML element. """
+def _audio_to_html(audio: typing.Union[np.ndarray, pathlib.Path]) -> str:
+    """Create an `audio` HTML element."""
     if isinstance(audio, pathlib.Path):
         return f'<audio controls="" src="/{_static_symlink(audio)}"></audio>'
     return f'<audio controls="" src="data:audio/wav;base64,{_audio_to_base64(audio)}"></audio>'
@@ -227,21 +281,21 @@ def _audio_formatter(audio: typing.Union[np.ndarray, pathlib.Path]) -> str:
 def _visualize_spans(
     spans: typing.List[Span],
     columns: typing.List[str] = DEFAULT_COLUMNS,
-    additional_data: typing.Dict[str, typing.List] = {},
+    other_columns: typing.Dict[str, typing.Union[typing.List, typing.Tuple]] = {},
     slice_: bool = True,
     max_spans: int = 50,
 ):
-    """ Visualize spans as a table. """
+    """Visualize spans as a table."""
     spans = spans[:max_spans]
     logger.info("Visualizing %d spans..." % len(spans))
     df = pd.DataFrame([s.as_dict() for s in spans])
     with multiprocessing.pool.ThreadPool() as pool:
-        lambda_ = lambda s: s.audio if slice_ else s.audio_file.path
-        df[AUDIO_COLUMN] = pool.map(lambda_, spans)
+        assert AUDIO_COLUMN not in df.columns
+        df[AUDIO_COLUMN] = pool.map(lambda s: s.audio if slice_ else s.audio_file.path, spans)
     df = df[columns]
-    for key, values in additional_data.items():
+    for key, values in other_columns.items():
         df[key] = values[:max_spans]
-    html = df.to_html(formatters={AUDIO_COLUMN: _audio_formatter}, escape=False, justify="left")
+    html = df.to_html(formatters={AUDIO_COLUMN: _audio_to_html}, escape=False, justify="left")
     st.markdown(html, unsafe_allow_html=True)
     logger.info(f"Finished visualizing spans! {mazel_tov()}")
 
@@ -249,7 +303,6 @@ def _visualize_spans(
 class _SidebarConfig(typing.NamedTuple):
     speakers: typing.Set[str]
     num_samples: int
-    slice_: bool
 
 
 def _get_sidebar_config() -> _SidebarConfig:
@@ -257,149 +310,175 @@ def _get_sidebar_config() -> _SidebarConfig:
     question = "Which dataset(s) do you want to load?"
     speaker_names = [k.name for k in run._config.DATASETS.keys()]
     speakers: typing.Set[str] = set(st.sidebar.multiselect(question, speaker_names))
-
     question = "How many spans(s) do you want to generate?"
     num_samples = sidebar.number_input(question, 0, None, 2500)
-
-    slice_ = sidebar.checkbox("Generate Spans", value=True)
-    return _SidebarConfig(speakers, num_samples, slice_)
-
-
-def _get_seconds_per_phoneme(word: str, audio_length: float) -> float:
-    words = [w.strip("., \t\n\f").upper() for w in word.split("-")]
-    if all(w in _load_amepd() for w in words):
-        num_phonemes = sum([len(_load_amepd()[w][0].pronunciation) for w in words])
-        return round(audio_length / num_phonemes, 2)
-    return math.nan
+    return _SidebarConfig(speakers, num_samples)
 
 
 def _analyze_dataset(dataset: Dataset):
     logger.info("Analyzing dataset...")
-
+    st.header("Raw Dataset Analysis")
     unigrams = list(_get_alignment_ngrams(dataset, n=1))
     trigrams = list(_get_alignment_ngrams(dataset, n=3))
+    aligned_seconds = sum(flatten([[p[:].audio_length for p in v] for v in dataset.values()]))
+    files = set(flatten([[p.audio_file for p in v] for v in dataset.values()]))
+    total_seconds = sum([f.length for f in files])
 
-    with beta_expander("Alignment Random Sample Analysis"):
-        st.write("A sample of the alignments.")
+    st.markdown(
+        f"In this section, we analyze the dataset prior to segmentation. At a high-level, this "
+        "dataset has:\n"
+        f"- **{seconds_to_string(total_seconds)}** of audio\n"
+        f"- **{seconds_to_string(aligned_seconds)}** of aligned audio\n"
+        f"- **{len(unigrams):,}** alignments.\n"
+    )
+
+    with beta_expander("Random Sample of Alignments"):
         for span in random.sample(trigrams, 25):
             cols = st.beta_columns([2, 1])
             rules = list(span.alignments[1].audio)
             cols[0].altair_chart(_visualize_signal(span.audio, rules), use_container_width=True)
-
-            start_rms = span[1].insta_rms(0)
-            end_rms = span[1].insta_rms(span[1].audio_length)
-            seconds_per_phoneme = _get_seconds_per_phoneme(span[1].script, span[1].audio_length)
+            loudness = f"({span[1].rms(0)} dB, {span[1].rms(span[1].audio_length)} dB)"
             cols[1].markdown(
-                f"- Instantaneous Loudness: ({start_rms}, {end_rms})\n"
-                f"- {round(span[1].audio_length / len(span[1].script), 2)} Seconds per character\n"
-                f"- {seconds_per_phoneme} Seconds per phoneme\n"
+                f"- Edge Loudness: **({loudness})**\n"
+                f"- **{round(span[1].seconds_per_character, 2)}** Seconds per character\n"
             )
+            long = _audio_to_html(span.audio)
+            markdown = f"**Listen:** '{span.script}'\n\n{_audio_to_html(span[1].audio)}\n\n{long}"
+            cols[1].markdown(markdown, unsafe_allow_html=True)
 
-            if span.audio_length > 0:
-                short = _audio_formatter(span[1].audio)
-                long = _audio_formatter(span.audio)
-                markdown = f"**Listen:** '{span.script}'\n\n{short}\n\n{long}"
-                cols[1].markdown(markdown, unsafe_allow_html=True)
+    with beta_expander("Survey of Pause Lengths (in seconds)"):
+        st.write("The pause count for each length bucket:")
+        iterator = _get_pause_lengths_in_seconds(dataset)
+        _bucket_and_visualize(iterator, ALIGNMENT_PRECISION, x="Seconds")
 
-    with beta_expander("Pause Length Analysis"):
-        st.write("The pause count for each length, in seconds, bucket.")
-        _bucket_and_visualize(_get_pause_lengths_in_seconds(dataset), ALIGNMENT_PRECISION)
+    with beta_expander("Survey of Alignment Lengths (in seconds)"):
+        st.write("The alignment count for each length bucket:")
+        iterator = [s.audio_length for s in unigrams]
+        _bucket_and_visualize(iterator, ALIGNMENT_PRECISION, x="Seconds")
 
-    with beta_expander("Alignment Length (in seconds) Analysis"):
-        st.write("The alignment count for each length, in seconds, bucket.")
-        _bucket_and_visualize([s.audio_length for s in unigrams], ALIGNMENT_PRECISION)
+    with beta_expander("Survey of Alignment Lengths (in characters)"):
+        st.write("The alignment count for each length bucket:")
+        iterator = [len(s.script) for s in unigrams]
+        _bucket_and_visualize(iterator, ALIGNMENT_PRECISION, x="Characters")
+        st.write("The longest alignments: ")
+        sample = sorted([s for s in unigrams], key=lambda s: len(s.script), reverse=True)[:50]
+        st.table([{"script": s.script, "transcript": s.transcript} for s in sample])
 
-    with beta_expander("Alignment Length (in characters) Analysis"):
-        st.write("The alignment count for each length, in characters, bucket.")
-        _bucket_and_visualize([len(s.script) for s in unigrams], ALIGNMENT_PRECISION)
-        st.write("Longest alignments: ")
-        columns = lambda s: {"script": s.script, "transcript": s.transcript}
-        key = lambda d: len(d["script"])
-        st.table(sorted([columns(s) for s in unigrams if len(s.script) > 25], key=key))
-
-    with beta_expander("Alignment Speed Analysis"):
-        st.write("The alignment count for each speed, in seconds per character, bucket.")
-        _bucket_and_visualize([s.seconds_per_character for s in unigrams], 0.01)
-        filtered = [s for s in unigrams if s.seconds_per_character > 0.1]
-        filtered = sorted(filtered, key=lambda s: s.seconds_per_character)
-        _visualize_spans(filtered, DEFAULT_COLUMNS + ["seconds_per_character"])
+    for attr in ["seconds_per_character"]:
+        with beta_expander(f"Survey of Alignment Speeds (`{attr}`)"):
+            st.write("The alignment count for each speed bucket:")
+            _bucket_and_visualize([getattr(s, attr) for s in unigrams], 0.01, x=attr)
+            st.write("The fastest alignments:")
+            sample = sorted(unigrams, key=lambda s: getattr(s, attr))[:50]
+            _visualize_spans(sample, DEFAULT_COLUMNS + ["audio_length"] + [attr])
 
     logger.info(f"Finished analyzing dataset! {mazel_tov()}")
 
 
-def _analyze_spans(spans: typing.List[Span]):
+def _analyze_spans(dataset: Dataset, spans: typing.List[Span]):
     logger.info("Analyzing spans...")
+    st.header("Dataset Segmentation Analysis")
+    audio_length = sum([s.audio_length for s in spans])
+    st.markdown(
+        "In this section, we analyze the dataset after segmentation via `Spans`. "
+        f"There are **{len(spans)} ({seconds_to_string(audio_length)})** spans to analyze, "
+        f"representing of **{_span_coverage(dataset, spans):.0%}** all alignments."
+    )
 
-    with multiprocessing.pool.ThreadPool() as pool:
-        iterator = pool.imap_unordered(lambda s: s.insta_rms(0), spans, chunksize=16)
-        values = list(tqdm.tqdm(iterator, total=len(spans)))
-        with beta_expander("Span Onset RMS dB Analysis"):
-            st.write("The span onset RMS dB count for each loudness, in dB, bucket.")
-            _bucket_and_visualize(values)
+    with beta_expander("Survey of Span Onset RMS dB"):
+        st.write("The span count for each onset RMS dB bucket:")
+        iterator = _map(spans, lambda s: typing.cast(Span, s).min_rms(0))
+        _bucket_and_visualize(iterator, x="RMS dB")
 
-    with beta_expander("Span Mistranscription Analysis"):
-        st.write("The span mistranscription count for each length, in characters, bucket.")
+    with beta_expander("Survey of Span Mistranscriptions"):
+        st.write("The span mistranscription count for each length bucket:")
         mistranscriptions = [s.mistranscriptions for s in spans if len(s.mistranscriptions) > 0]
-        st.write(f"{len(mistranscriptions)} spans have one or more mistranscriptions.")
-        mistranscriptions = lib.utils.flatten([s.mistranscriptions for s in spans])
-        _bucket_and_visualize([len(m[0]) for m in mistranscriptions if len(m[0]) > 0])
-        st.write("Mistranscriptions: ")
+        mistranscriptions = flatten([s.mistranscriptions for s in spans])
+        iterator = [len(m[0]) for m in mistranscriptions if len(m[0]) > 0]
+        _bucket_and_visualize(iterator, x="Characters")
+        st.write(
+            f"Note that **{len(mistranscriptions)}** spans have one or more mistranscriptions."
+        )
+        st.write("A random sample of mistranscriptions:")
         unaligned = [{"script": m[0], "transcript": m[1]} for m in mistranscriptions]
         st.table(random.sample(unaligned, 50))
 
     logger.info(f"Finished analyzing spans! {mazel_tov()}")
 
 
-def _analyze_filtered_spans(spans: typing.List[Span], sidebar_config: _SidebarConfig):
+def _analyze_filtered_spans(
+    dataset: Dataset, spans: typing.List[Span], sidebar_config: _SidebarConfig
+):
     """Filter out spans that are not ideal for training."""
-    with beta_expander("Filtered Span Analysis"):
-        with multiprocessing.pool.ThreadPool() as pool:
-            lambda_ = lambda s: (s.insta_rms(0), s.insta_rms(s.audio_length))
-            iterator = pool.imap_unordered(lambda_, spans, chunksize=16)
-            rms = list(tqdm.tqdm(iterator, total=len(spans)))
+    logger.info("Analyzing filtered spans...")
+    st.header("Dataset Filtered Segmentation Analysis")
+    lambda_ = lambda s: (s.min_rms(0), s.min_rms(s.audio_length))
+    onset_rms, outset_rms = tuple(zip(*_map(spans, lambda_)))
+    total = len(spans)
+    is_include = (
+        lambda s, r0, r1: r0 < -30
+        and r1 < -30
+        and len(s.mistranscriptions) == 0
+        and s[0].seconds_per_character >= 0.03
+        and s[0].seconds_per_character <= 0.2
+        and s[-1].seconds_per_character >= 0.03
+        and s[-1].seconds_per_character <= 0.2
+    )
+    filtered = [a for a in zip(spans, onset_rms, outset_rms) if is_include(*a)]
+    spans, onset_rms, outset_rms = tuple(zip(*filtered))  # type: ignore
+    audio_length = sum([s.audio_length for s in spans])
+    st.markdown(
+        "In this section, we analyze the dataset after segmentation and filtering. "
+        "This is the final step in our dataset preprocessing. "
+        f"The filtered segmentations represent **{len(filtered) / total:.0%}** of the "
+        f"original spans. In total, there are **{len(spans)} "
+        f"({seconds_to_string(audio_length)})**"
+        " spans to analyze, representing of "
+        f"**{_span_coverage(dataset, spans):.0%}** all alignments."
+    )
 
-        total = len(spans)
-        is_include = lambda s, r: r[0] < -40 and r[1] < -40 and len(s.mistranscriptions) == 0
-        res = [(s, r) for s, r in zip(spans, rms) if is_include(s, r)]
-        st.write(
-            f"Filtered out **{round(((total - len(res)) / total) * 100)}%** of spans, and the "
-            "remaining spans should be ideal for training..."
-        )
-        additional_columns = {
-            "onset_rms": [r[0] for (_, r) in res],
-            "outset_rms": [r[1] for (_, r) in res],
-            "alignments_seconds_per_character": [
-                [str(round(s[i].seconds_per_character, 2)) for i, _ in enumerate(s.alignments)]
-                for (s, _) in res
-            ],
-            "aligned_words": [[s[i].script for i, _ in enumerate(s.alignments)] for (s, _) in res],
+    with beta_expander("Random Sample of Filtered Spans"):
+        speed = lambda s: str(round(s.seconds_per_character, 2))
+        more_columns = {
+            "onset_rms": onset_rms,
+            "outset_rms": outset_rms,
+            "speed_of_alignments": [[speed(s[i]) for i in range(len(s.alignments))] for s in spans],
+            "aligned_words": [[s[i].script for i in range(len(s.alignments))] for s in spans],
         }
-        _visualize_spans(
-            [s for (s, _) in res],
-            DEFAULT_COLUMNS,
-            additional_columns,
-            sidebar_config.slice_,
-            max_spans=25,
-        )
+        _visualize_spans(spans, other_columns=more_columns)
+
+    for label, lambda_, bucket_size in [
+        ("loudness", lambda s: round(_signal_to_db_rms(s.audio), 1), 1),
+        ("speed", lambda s: s.seconds_per_character, 0.01),
+    ]:
+        with beta_expander(f"Survey of Span {label.title()}"):
+            st.write(f"The span count for each {label} bucket:")
+            values = [lambda_(s) for s in spans]
+            _bucket_and_visualize(values, bucket_size)
+            sorted_ = sorted(zip(spans, values), key=lambda i: i[1])
+            spans, values = tuple(zip(*sorted_))  # type: ignore
+            st.write("The smallest valued spans:")
+            _visualize_spans(spans[:50], other_columns={label: values[:50]})  # type: ignore
+            st.write("The largest valued spans:")
+            _visualize_spans(spans[-50:], other_columns={label: values[-50:]})  # type: ignore
 
 
 def main():
     run._config.configure()
     st.set_page_config(layout="wide")
-    st.title("Training Data Review")
+    st.title("Dasaset Dashboard")
+    st.write("The dataset dashboard is an effort to understand our dataset and dataset processing.")
 
     sidebar_config = _get_sidebar_config()
     if len(sidebar_config.speakers) == 0:
         st.stop()
 
     dataset: Dataset = copy.deepcopy(_get_dataset(sidebar_config.speakers))
-    st.header("Dataset Analysis")
     _analyze_dataset(dataset)
     spans: typing.List[Span]
-    spans = copy.deepcopy(_get_spans(dataset, sidebar_config.slice_, sidebar_config.num_samples))
-    st.header("Span Analysis")
-    _analyze_spans(spans)
-    _analyze_filtered_spans(spans, sidebar_config)
+    spans = copy.deepcopy(_get_spans(dataset, sidebar_config.num_samples))
+    _analyze_spans(dataset, spans)
+    _analyze_filtered_spans(dataset, spans, sidebar_config)
     logger.info(f"Done! {mazel_tov()}")
 
 

@@ -120,7 +120,8 @@ class Passage:
 
     @property
     def key(self):
-        return tuple(getattr(self, f.name) for f in fields(self) if f.name != "passages")
+        not_included = ("passages", "other_metadata")
+        return tuple(getattr(self, f.name) for f in fields(self) if f.name not in not_included)
 
     def __hash__(self):
         return hash(self.key)
@@ -415,11 +416,13 @@ def dataset_loader(
     files: typing.List[typing.List[Path]] = []
     for directory, suffix in zip(directories, suffixes):
         directory.mkdir(exist_ok=True)
-        # TODO: Remove "GSUtil:parallel_process_count=1" when this issue is resolved:
+        # TODO: Add `-m` when this issue is resolved:
         # https://github.com/GoogleCloudPlatform/gsutil/pull/1107
-        command = 'gsutil -o "GSUtil:parallel_process_count=1" -m cp -n '
+        # TODO: It's faster to run `gsutil` without `-m` if the data already exists on disk;
+        # therefore, if the directory already exists, we should skip multiprocessing.
+        command = "gsutil cp -n "
         command += f"{gcs_path}/{directory.name}/*{suffix} {directory}/"
-        subprocess.run(command.split(), check=True, shell=True)
+        subprocess.run(command.split(), check=True)
         files_ = [p for p in directory.iterdir() if p.suffix == suffix]
         files.append(sorted(files_, key=lambda p: lib.text.natural_keys(p.name)))
 

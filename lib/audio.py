@@ -594,6 +594,8 @@ def signal_to_rms(signal: np.ndarray) -> np.ndarray:
     Returns:
         np.ndarray [1]
     """
+    if signal.shape[0] == 0:
+        return np.array([np.nan])
     return np.sqrt(np.mean(np.abs(signal) ** 2))  # type: ignore
 
 
