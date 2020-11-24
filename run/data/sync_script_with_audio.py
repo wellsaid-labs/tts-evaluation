@@ -438,7 +438,7 @@ def align_stt_with_script(
         format_ratio(len(script_tokens) - len(alignments), len(script_tokens)),
     )
     logger.info(
-        "Failed to align: %s",
+        "Failed to align:\n%s",
         "".join(format_differences(scripts, alignments, script_tokens, stt_tokens)),
     )
 

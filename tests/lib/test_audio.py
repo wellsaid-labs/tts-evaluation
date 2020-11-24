@@ -118,6 +118,32 @@ def test__parse_audio_metadata__mp3():
     )
 
 
+def test__parse_audio_metadata__multiline_comments():
+    """ Test `lib.audio._parse_audio_metadata` parses the metadata, with a multiline comment. """
+    metadata = lib.audio._parse_audio_metadata(
+        """Input File     : 'coldcomforthvac_061915.mp3'
+    Channels       : 1
+    Sample Rate    : 44100
+    Precision      : 16-bit
+    Duration       : 00:04:57.33 = 13112253 samples = 22299.8 CDDA sectors
+    File Size      : 9.51M
+    Bit Rate       : 256k
+    Sample Encoding: MPEG audio (layer I, II or III)
+    Comments       :
+    Year=2015
+    Genre=0"""
+    )
+    assert metadata == lib.audio.AudioFileMetadata(
+        path=pathlib.Path("coldcomforthvac_061915.mp3"),
+        sample_rate=44100,
+        num_channels=1,
+        encoding="MPEG audio (layer I, II or III)",
+        length=297.33,
+        bit_rate="256k",
+        precision="16-bit",
+    )
+
+
 def test_get_audio_metadata():
     """ Test `lib.audio.get_audio_metadata` returns the right metadata. """
     assert lib.audio.get_audio_metadata(TEST_DATA_LJ) == lib.audio.AudioFileMetadata(

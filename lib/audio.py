@@ -69,8 +69,8 @@ def _parse_audio_metadata(metadata: str) -> AudioFileMetadata:
 
     TODO: Adapt `ffmpeg --i` for consistency.
     """
-    lines = metadata.strip().split("\n")
-    assert [s.split(":", maxsplit=1)[0].strip() for s in lines][:8] == [
+    lines = metadata.strip().split("\n")[:8]
+    assert [s.split(":", maxsplit=1)[0].strip() for s in lines] == [
         "Input File",
         "Channels",
         "Sample Rate",
@@ -594,6 +594,8 @@ def signal_to_rms(signal: np.ndarray) -> np.ndarray:
     Returns:
         np.ndarray [1]
     """
+    if signal.shape[0] == 0:
+        return np.array([np.nan])
     return np.sqrt(np.mean(np.abs(signal) ** 2))  # type: ignore
 
 

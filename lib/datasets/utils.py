@@ -120,7 +120,8 @@ class Passage:
 
     @property
     def key(self):
-        return tuple(getattr(self, f.name) for f in fields(self) if f.name != "passages")
+        not_included = ("passages", "other_metadata")
+        return tuple(getattr(self, f.name) for f in fields(self) if f.name not in not_included)
 
     def __hash__(self):
         return hash(self.key)
@@ -207,6 +208,9 @@ class Passage:
             assert min(get_("transcript")) >= 0
 
 
+SpanType = typing.TypeVar("SpanType", bound="Span")
+
+
 @dataclasses.dataclass(frozen=True)
 class Span:
     """A span of the voiced passage.
@@ -265,10 +269,10 @@ class Span:
     def to_string(self, *fields):
         return _to_string(self, *fields)
 
-    def __getitem__(self, key) -> Span:
+    def __getitem__(self: SpanType, key) -> SpanType:
         slice_ = _handle_get_item_key(len(self.alignments), key)
         slice_ = slice(slice_.start + self.span.start, slice_.stop + self.span.start)
-        return Span(self.passage, slice_)
+        return self.__class__(self.passage, slice_)
 
     def _check_invariants(self):
         """ Check datastructure invariants. """
@@ -412,7 +416,12 @@ def dataset_loader(
     files: typing.List[typing.List[Path]] = []
     for directory, suffix in zip(directories, suffixes):
         directory.mkdir(exist_ok=True)
-        command = f"gsutil -m cp -n {gcs_path}/{directory.name}/*{suffix} {directory}/"
+        # TODO: Add `-m` when this issue is resolved:
+        # https://github.com/GoogleCloudPlatform/gsutil/pull/1107
+        # TODO: It's faster to run `gsutil` without `-m` if the data already exists on disk;
+        # therefore, if the directory already exists, we should skip multiprocessing.
+        command = "gsutil cp -n "
+        command += f"{gcs_path}/{directory.name}/*{suffix} {directory}/"
         subprocess.run(command.split(), check=True)
         files_ = [p for p in directory.iterdir() if p.suffix == suffix]
         files.append(sorted(files_, key=lambda p: lib.text.natural_keys(p.name)))
