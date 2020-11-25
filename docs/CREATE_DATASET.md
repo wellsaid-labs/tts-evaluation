@@ -164,6 +164,12 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    python -m run.data audio normalize $ROOT/recordings/*$ENCODING $PROCESSED/recordings
    ```
 
+1. (Optional) Review audio file loudness for inconsistencies...
+
+   ```bash
+   python -m run.data audio loudness $PROCESSED/recordings/*$ENCODING > $PROCESSED/$NAME_loudness.txt
+   ```
+
 1. Normalize audio file format for
    [Google speech-to-text](https://cloud.google.com/speech-to-text/docs/encoding)...
 
@@ -171,12 +177,6 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    mkdir -p $PROCESSED/speech_to_text
    python -m run.data audio normalize $ROOT/recordings/*$ENCODING $PROCESSED/speech_to_text \
                                       --encoding='pcm_s16le'
-   ```
-
-1. (Optional) Review audio file loudness for inconsistencies...
-
-   ```bash
-   python -m run.data audio loudness $PROCESSED/recordings/*.wav
    ```
 
 1. Normalize CSV file text...
