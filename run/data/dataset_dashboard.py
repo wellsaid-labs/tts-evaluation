@@ -578,8 +578,10 @@ def _maybe_analyze_dataset(dataset: Dataset):
         (lambda s: len(s.script), "Alignment Lengths", "Characters", 1),
         (lambda s: s.seconds_per_character(), "Alignment Speeds", "Seconds per character", 0.01),
         (lambda s: s.rms, "Loudness", "dB", 1),
-        (lambda s: s.rms_(0), "Onset Loudness", "dB", 5),
-        (lambda s: s.rms_(s.audio_length), "Outset Loudness", "dB", 5),
+        (lambda s: s.rms_edges()[0], "Onset Loudness", "dB", 5),
+        (lambda s: s.rms_edges()[1], "Outset Loudness", "dB", 5),
+        (lambda s: s.fuzzy_rms_edges()[0], "Fuzzy Onset Loudness", "dB", 5),
+        (lambda s: s.fuzzy_rms_edges()[1], "Fuzzy Outset Loudness", "dB", 5),
         (lambda s: s.longest_inner_silence(), "Long Silences", "Seconds", 0.1),
     ]:
         with beta_expander(f"Survey of {title} (in {unit.lower()})"):
