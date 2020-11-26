@@ -43,11 +43,9 @@ app.add_typer(csv_app, name="csv")
 run._config.configure()
 
 
-def _get_total_length(paths: typing.List[pathlib.Path], max_parallel: int = 16) -> float:
+def _get_total_length(paths: typing.List[pathlib.Path]) -> float:
     """ Get the sum of the lengths of each audio file in `paths`. """
-    len_ = lambda p: lib.audio.get_audio_metadata(typing.cast(pathlib.Path, p)).length
-    with multiprocessing.pool.ThreadPool(max_parallel) as pool:
-        return sum(tqdm.tqdm(pool.imap_unordered(len_, paths), total=len(paths)))
+    return sum([m.length for m in lib.audio.get_audio_metadata(paths)])
 
 
 @app.command()
@@ -58,20 +56,44 @@ def download():
 
 def _file_numberings(directory: pathlib.Path) -> typing.List[str]:
     """ Get every file numbering in `directory`. """
-    numbers = lambda n: "-".join(re.findall(r"\d+", n))
+    numbers = lambda n: "-".join([str(int(n)) for n in re.findall(r"\d+", n)])
     return sorted([numbers(p.stem) for p in directory.iterdir() if p.is_file()])
 
 
 @app.command()
-def numberings(directory: pathlib.Path, other_directory: pathlib.Path):
+def numberings(
+    directory: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
+    other_directory: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
+):
     """ Check that DIRECTORY and OTHER_DIRECTORY have files with similar numberings. """
-    assert directory.exists(), "DIRECTORY must exist."
-    assert other_directory.exists(), "OTHER_DIRECTORY must exist."
     numberings = _file_numberings(directory)
     other_numberings = _file_numberings(other_directory)
     message = f"Directories did not have equal numberings:\n{numberings}\n{other_numberings}"
     assert numberings == other_numberings, message
     logger.info(f"The file numberings match up! {lib.utils.mazel_tov()}")
+
+
+@app.command()
+def pair(
+    recording: typing.List[pathlib.Path] = typer.Option(..., exists=True, dir_okay=False),
+    script: typing.List[pathlib.Path] = typer.Option(..., exists=True, dir_okay=False),
+):
+    """Sort and analyze pairs consisting of a RECORING and a SCRIPT."""
+    assert len(recording) == len(script)
+    rows = []
+    iterator = tqdm.tqdm(zip(lib.audio.get_audio_metadata(recording), script), len(script))
+    for metadata, script_ in iterator:
+        num_characters = len(script_.read_text())
+        row = {
+            "Script Name": script_.name,
+            "Recording Name": metadata.path.name,
+            "Number of Characters": num_characters,
+            "Number of Seconds": metadata.length,
+            "Seconds per Character": metadata.length / float(num_characters),
+        }
+        rows.append(row)
+    rows = sorted(rows, key=lambda r: r["Seconds per Character"])
+    typer.echo(tabulate.tabulate(rows, headers="keys"))
 
 
 def _normalize_file_name(name):
@@ -85,19 +107,19 @@ def _normalize_file_name(name):
     name = re.sub("([^a-z0-9\)\]\-]+)", r" \1", name)
     # NOTE: Put a spaces surrounding a "|" character.
     name = re.sub("([\|]+)", r" \1 ", name)
-    return "_".join(re.sub("([A-Z][a-z]+)", r" \1", name).split()).lower()
+    name = "_".join(re.sub("([A-Z][a-z]+)", r" \1", name).split()).lower()
+    return name.replace("_-", "-").replace("-_", "-")
+
+
+_ONLY_NUMBERS_HELP = "Include only dashes and numbers in the normalized file name."
 
 
 @app.command()
 def rename(
-    directory: pathlib.Path,
-    only_numbers: bool = typer.Option(
-        False, help="Include only dashes and numbers in the normalized file name."
-    ),
+    directory: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
+    only_numbers: bool = typer.Option(False, help=_ONLY_NUMBERS_HELP),
 ):
     """ Normalize the name of every directory and file in DIRECTORY."""
-    assert directory.exists(), "DIRECTORY must exist."
-
     paths = list(directory.glob("**/*"))
     updates = []
     for path in paths:
@@ -142,9 +164,8 @@ def diff(gcs_uri: str, other_gcs_uri: str):
 
 
 @audio_app.command()
-def loudness(paths: typing.List[pathlib.Path]):
+def loudness(paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False)):
     """ Print the loudness for each file in PATHS. """
-    assert all(p.exists() for p in paths), "Every path in PATHS must exist."
     # TODO: Get loudness faster by...
     # - Adding parallel processing with chunking for large audio files
     # - Find a faster loudness implementation
@@ -181,9 +202,11 @@ def _metadata(path: pathlib.Path) -> typing.Tuple[pathlib.Path, _SharedAudioFile
 
 
 @audio_app.command()
-def metadata(paths: typing.List[pathlib.Path], max_parallel: int = typer.Option(16)):
+def metadata(
+    paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
+    max_parallel: int = typer.Option(16),
+):
     """ Print the metadata for each file in PATHS. """
-    assert all(p.exists() for p in paths), "Every path in PATHS must exist."
     num_parallel = lib.utils.clamp(len(paths), max_=max_parallel)
     with multiprocessing.pool.ThreadPool(num_parallel) as pool:
         results = list(tqdm.tqdm(pool.imap_unordered(_metadata, paths), total=len(paths)))
@@ -197,13 +220,11 @@ def metadata(paths: typing.List[pathlib.Path], max_parallel: int = typer.Option(
 
 @audio_app.command("normalize")
 def audio_normalize(
-    paths: typing.List[pathlib.Path],
-    dest: pathlib.Path,
+    paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
+    dest: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
     encoding: typing.Optional[str] = typer.Option(None),
 ):
-    """ Normalize audio file format(s) in PATHS and save to DEST. """
-    assert all(p.exists() for p in paths), "Every path in PATHS must exist."
-    assert dest.exists(), "DEST must exist."
+    """ Normalize audio file format(s) in PATHS and save to directory DEST. """
     params = hparams.HParams(audio_filters=lib.audio.AudioFilters(""))
     if encoding is not None:
         params.update(encoding=encoding)
@@ -220,11 +241,13 @@ def audio_normalize(
 
 
 @csv_app.command()
-def text(paths: typing.List[pathlib.Path], dest: pathlib.Path, column="Content"):
-    """Convert text file(s) in PATHS to CSV file(s), and save to DEST with one row and one
+def text(
+    paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
+    dest: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
+    column="Content",
+):
+    """Convert text file(s) in PATHS to CSV file(s), and save to directory DEST with one row and one
     column."""
-    assert all(p.exists() for p in paths), "Every path in PATHS must exist."
-    assert dest.exists(), "DEST must exist."
     for path in tqdm.tqdm(paths):
         dest_path = dest / (path.stem + ".csv")
         if dest_path.exists():
@@ -258,13 +281,11 @@ def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
 
 @csv_app.command("normalize")
 def csv_normalize(
-    paths: typing.List[pathlib.Path],
-    dest: pathlib.Path,
+    paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
+    dest: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
     tab_separated: bool = typer.Option(False, help="Parse this file as a TSV."),
 ):
-    """Normalize csv file(s) in PATHS and save to DEST."""
-    assert all(p.exists() for p in paths), "Every path in PATHS must exist."
-    assert dest.exists(), "DEST must exist."
+    """Normalize csv file(s) in PATHS and save to directory DEST."""
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
     partial = functools.partial(_csv_normalize, nlp=nlp)
     results = []
@@ -297,29 +318,32 @@ def csv_normalize(
 
 @csv_app.command()
 def combine(
-    csvs: typing.List[pathlib.Path] = typer.Argument(..., help="List of CSVs to combine."),
-    csv: pathlib.Path = typer.Argument(..., help="Combined CSV filename."),
+    csvs: typing.List[pathlib.Path] = typer.Option(..., exists=True, dir_okay=False),
+    dest: pathlib.Path = typer.Argument(...),
 ):
-    """Combine a list of CSVS into one CSV.
+    """Combine a list of CSVS into DEST csv.
 
     Also, this adds an additional "__csv" column with the original filename.
     """
-    assert all(c.exists() for c in csvs), "Every path in CSVS must exist."
-    assert csv.parent.exists(), "CSV parent directory must exist."
+    assert dest.parent.exists(), "DEST parent directory must exist."
+    assert not dest.exists(), "DEST must not exist."
     df = pandas.read_csv(csvs[0])
     df["__csv"] = csvs[0]
     for csv in csvs[1:]:
         df_csv = pandas.read_csv(csv)
         df_csv["__csv"] = csv
         df = df.append(df_csv, ignore_index=True)
-    df.to_csv(csv, index=False)
+    df.to_csv(dest, index=False)
 
 
 @csv_app.command()
-def shuffle(source: pathlib.Path = typer.Option(...), dest: pathlib.Path = typer.Option(...)):
-    """ Shuffle SOURCE csv and save it to DEST. """
-    assert source.exists(), "SOURCE must exist."
+def shuffle(
+    source: pathlib.Path = typer.Option(..., exists=True, dir_okay=False),
+    dest: pathlib.Path = typer.Option(...),
+):
+    """ Shuffle SOURCE csv and save it to DEST csv. """
     assert dest.parent.exists(), "DEST parent directory must exist."
+    assert not dest.exists(), "DEST must not exist."
     df = pandas.read_csv(source)
     df = typing.cast(pandas.DataFrame, df.iloc[np.random.permutation(len(df))])  # type: ignore
     df.to_csv(dest, index=False)
@@ -327,14 +351,14 @@ def shuffle(source: pathlib.Path = typer.Option(...), dest: pathlib.Path = typer
 
 @csv_app.command()
 def prefix(
-    source: pathlib.Path = typer.Option(...),
+    source: pathlib.Path = typer.Option(..., exists=True, dir_okay=False),
     dest: pathlib.Path = typer.Option(...),
     column: str = typer.Option(...),
     prefix: str = typer.Option(...),
 ):
-    """ Add a PREFIX to every value in the SOURCE csv under COLUMN and save to DESTINATION. """
-    assert source.exists(), "SOURCE must exist."
+    """ Add a PREFIX to every value in the SOURCE csv under COLUMN and save to DEST csv. """
     assert dest.parent.exists(), "DEST parent directory must exist."
+    assert not dest.exists(), "DEST must not exist."
     df = pandas.read_csv(source)
     df[column] = prefix + df[column].astype(str)
     df.to_csv(dest, index=False)

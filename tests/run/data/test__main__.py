@@ -78,13 +78,14 @@ def test__normalize_file_name():
     assert norm("SmileStudio87_010419") == "smile_studio87_010419"
     expected = "wsl_elise_randall_enthusiastic_script-9"
     assert norm("WSL_EliseRandall_ENTHUSIASTIC_Script-9") == expected
+    assert norm("Copy of WSL-Script 003") == "copy_of_wsl-script_003"
 
 
 def test_rename():
     """ Test `__main__.rename` against a couple of basic cases. """
     _assert_rename(
         "Copy of WSL_SMurphyScript16-21.wav",
-        "copy_of_wsl_s_murphy_script_16-21.wav",
+        "copy_of_wsl_s_murphy_script16-21.wav",
         only_numbers=False,
     )
     _assert_rename("Copy of WSL_SMurphyScript16-21.wav", "16-21.wav", only_numbers=True)

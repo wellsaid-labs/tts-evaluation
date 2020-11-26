@@ -148,6 +148,15 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    python -m run.data rename $ROOT/
    ```
 
+1. (Optional) Ensure the recording and script pairings make sense...
+
+   ```bash
+   RECORDINGS=$(ls $ROOT/recordings/*$ENCODING | python -m run.utils.sort)
+   SCRIPTS=$(ls $ROOT/scripts/*.csv | python -m run.utils.sort)
+   python -m run.data pair $(python -m run.utils.prefix --recording $RECORDINGS) \
+      $(python -m run.utils.prefix --script $SCRIPTS)
+   ```
+
 1. (Optional) Review dataset audio file metadata for inconsistencies...
 
    ```bash
