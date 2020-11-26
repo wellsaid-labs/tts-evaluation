@@ -195,7 +195,7 @@ def read_audio_slice(path: Path, start: float, length: float) -> np.ndarray:
     """
     if length == 0:
         return np.array([], dtype=np.float32)  # type: ignore
-    command = f"ffmpeg -ss {start} -i {path} -to {length} -f f32le -acodec pcm_f32le -ac 1 pipe:"
+    command = f"ffmpeg -ss {start} -t {length} -i {path} -f f32le -acodec pcm_f32le -ac 1 pipe:"
     ndarray = np.frombuffer(
         subprocess.check_output(command.split(), stderr=subprocess.DEVNULL),
         np.float32,  # type: ignore
