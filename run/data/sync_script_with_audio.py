@@ -507,12 +507,18 @@ def _run_stt(
     dest_blobs: typing.List[storage.Blob],
     poll_interval: float,
     stt_config: RecognitionConfig,
+    add_speech_context: bool = False,
 ):
-    """ Helper function for `run_stt`. """
+    """Helper function for `run_stt`.
+
+    NOTE: Add speech context may result in this issue:
+    https://issuetracker.google.com/u/1/issues/174239874
+    """
     operations = []
     for audio_blob, script, dest_blob in zip(audio_blobs, scripts, dest_blobs):
         config = deepcopy(stt_config)
-        config.speech_contexts.append(_get_speech_context("\n".join(script)))  # type: ignore
+        if add_speech_context:
+            config.speech_contexts.append(_get_speech_context("\n".join(script)))  # type: ignore
         audio = RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
         operations.append(speech.SpeechClient().long_running_recognize(config=config, audio=audio))
         message = 'STT operation %s "%s" started.'
