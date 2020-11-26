@@ -462,7 +462,7 @@ def align_stt_with_script(
 
 
 def _get_speech_context(
-    script: str, max_phrase_length: int = 100, min_overlap: float = 0.25
+    script: str, max_phrase_length: int = 100, max_overlap: float = 0.25
 ) -> SpeechContext:
     """Given the voice-over script generate `SpeechContext` to help Speech-to-Text recognize
     specific words or phrases more frequently.
@@ -478,7 +478,7 @@ def _get_speech_context(
     Args:
         script
         max_phrase_length: The maximum character length of a phrase.
-        min_overlap: The minimum overlap between two consecutive phrases.
+        max_overlap: The maximum overlap between two consecutive phrases.
 
     Example:
         >>> sorted(_get_speech_context('a b c d e f g h i j', 5, 0.0).phrases)
@@ -489,17 +489,14 @@ def _get_speech_context(
     """
     spans = [(m.start(), m.end()) for m in re.finditer(r"\S+", normalize_vo_script(script))]
     phrases = []
-    start = 0
-    end = 0
-    overlap = 0
-    for span in spans:
-        if span[0] - start <= round(max_phrase_length * (1 - min_overlap)):
-            overlap = span[0]
-        if span[1] - start <= max_phrase_length:
-            end = span[1]
-        else:
-            phrases.append(script[start:end])
-            start = overlap if min_overlap > 0.0 else span[0]
+    start, next_start = 0, 0
+    for prev, next in zip(spans, spans[1:]):
+        if next_start == start and next[0] - start >= round(max_phrase_length * (1 - max_overlap)):
+            next_start = next[0]
+        if next[1] - start > max_phrase_length:
+            if prev[1] - start <= max_phrase_length:
+                phrases.append(script[start : prev[1]])
+            start = next_start
     phrases.append(script[start:])
     return SpeechContext(phrases=list(set(phrases)))
 
