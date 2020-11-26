@@ -78,6 +78,8 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
       --image-project=ubuntu-os-cloud
    ```
 
+   ❓ NOTE: 24-hours of VM usage can cost up to 3$.
+
 1. From your local machine, `ssh` into your new VM instance, like so...
 
    ```zsh
@@ -219,6 +221,8 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
       $(python -m run.utils.prefix --script $SCRIPTS) \
       --destination $GCS_URI/processed/
    ```
+
+   ❓ NOTE: 20-hours of audio can cost up to 50$ to transcribe.
 
    Audit the results of the synchronization, and re-run the script if necessary. The issues that may
    arise are:
