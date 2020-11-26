@@ -511,8 +511,8 @@ def _run_stt(
 ):
     """Helper function for `run_stt`.
 
-    NOTE: Add speech context may result in this issue:
-    https://issuetracker.google.com/u/1/issues/174239874
+    NOTE: Speech context helps speech recognition, a lot, and it decreases timestamp accuracy,
+    a lot. See this issue: https://issuetracker.google.com/u/1/issues/174239874
     """
     operations = []
     for audio_blob, script, dest_blob in zip(audio_blobs, scripts, dest_blobs):
