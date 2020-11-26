@@ -534,7 +534,7 @@ def _run_stt(
                 # https://stackoverflow.com/questions/64470470/how-to-convert-google-cloud-natural-language-entity-sentiment-response-to-json-d
                 response: LongRunningRecognizeResponse = operation.result()
                 json_ = MessageToDict(LongRunningRecognizeResponse.pb(response))
-                dest_blobs[i].upload_from_string(json_, content_type="application/json")
+                dest_blobs[i].upload_from_string(json.dumps(json_), content_type="application/json")
                 message = 'STT operation %s "%s" finished.'
                 logger.info(message, operation.operation.name, blob_to_gcs_uri(dest_blobs[i]))
                 operations[i] = None
