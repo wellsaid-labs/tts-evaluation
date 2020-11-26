@@ -9,7 +9,7 @@ Usage Example:
 
     PREFIX=gs://wellsaid_labs_datasets/hilary_noriega/processed
     python -m run.data.sync_script_with_audio \
-      --voice-over "$PREFIX/recordings/script_1.wav" \
+      --voice-over "$PREFIX/speech_to_text/script_1.wav" \
       --script "$PREFIX/scripts/script_1_-_hilary.csv" \
       --destination "$PREFIX/"
 """
@@ -29,7 +29,13 @@ import tabulate
 import typer
 from google.cloud import speech_v1p1beta1 as speech
 from google.cloud import storage
-from google.cloud.speech_v1p1beta1 import RecognitionAudio, RecognitionConfig, SpeechContext
+from google.cloud.speech_v1p1beta1 import (
+    LongRunningRecognizeResponse,
+    RecognitionAudio,
+    RecognitionConfig,
+    SpeechContext,
+)
+from google.protobuf.json_format import MessageToDict
 from Levenshtein import distance  # type: ignore
 from tqdm import tqdm
 
@@ -526,8 +532,8 @@ def _run_stt(
             if operation.done():
                 # Learn more:
                 # https://stackoverflow.com/questions/64470470/how-to-convert-google-cloud-natural-language-entity-sentiment-response-to-json-d
-                response = operation.result()
-                json_ = response.__class__.to_json(response)
+                response: LongRunningRecognizeResponse = operation.result()
+                json_ = MessageToDict(LongRunningRecognizeResponse.pb(response))
                 dest_blobs[i].upload_from_string(json_, content_type="application/json")
                 message = 'STT operation %s "%s" finished.'
                 logger.info(message, operation.operation.name, blob_to_gcs_uri(dest_blobs[i]))
