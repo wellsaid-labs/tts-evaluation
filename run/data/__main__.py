@@ -81,7 +81,7 @@ def pair(
     """Sort and analyze pairs consisting of a RECORING and a SCRIPT."""
     assert len(recording) == len(script)
     rows = []
-    iterator = tqdm.tqdm(zip(lib.audio.get_audio_metadata(recording), script), len(script))
+    iterator = tqdm.tqdm(zip(lib.audio.get_audio_metadata(recording), script), total=len(script))
     for metadata, script_ in iterator:
         num_characters = len(script_.read_text())
         row = {
@@ -215,7 +215,8 @@ def metadata(
     for path, metadata in results:
         groups[metadata].append(path)
     for metadata, paths in groups.items():
-        logger.info("Found %d files with `%s` metadata:\n%s", len(paths), metadata, paths)
+        list_ = "\n".join([str(p.relative_to(p.parent.parent)) for p in paths])
+        logger.info("Found %d files with `%s` metadata:\n%s", len(paths), metadata, list_)
 
 
 @audio_app.command("normalize")
