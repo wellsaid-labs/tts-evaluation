@@ -56,7 +56,7 @@ def download():
 
 def _file_numberings(directory: pathlib.Path) -> typing.List[str]:
     """ Get every file numbering in `directory`. """
-    numbers = lambda n: "-".join([str(int(n)) for n in re.findall(r"\d+", n)])
+    numbers = lambda n: "-".join([str(int(i)) for i in re.findall(r"\d+", n)])
     return sorted([numbers(p.stem) for p in directory.iterdir() if p.is_file()])
 
 
