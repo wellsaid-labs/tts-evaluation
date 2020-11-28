@@ -41,6 +41,11 @@ def hilary_noriega_speech_dataset(*args, **kwargs) -> typing.List[Passage]:
     return _dataset_loader(*args, **kwargs)
 
 
+def sam_scholl_speech_dataset(*args, **kwargs) -> typing.List[Passage]:
+    kwargs.update({"speaker": SAM_SCHOLL})
+    return _dataset_loader(*args, **kwargs)
+
+
 WSL_GCS_PATH = "gs://wellsaid_labs_datasets"
 
 
