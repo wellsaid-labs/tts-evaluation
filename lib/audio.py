@@ -163,7 +163,8 @@ def clip_waveform(waveform: np.ndarray):
     """
     num_clipped_samples = (waveform < -1).sum() + (waveform > 1).sum()
     if num_clipped_samples > 0:
-        logger.warning("%d samples clipped.", num_clipped_samples)
+        max_sample = np.max(np.absolute(waveform))
+        logger.warning("%d samples clipped (%f max sample)", num_clipped_samples, max_sample)
     return np.clip(waveform, -1.0, 1.0)
 
 
@@ -193,6 +194,8 @@ def read_audio_slice(path: Path, start: float, length: float) -> np.ndarray:
         start: The start of the audio segment.
         length: The length of the audio segment.
     """
+    # TODO: Should we implement automatic gain control?
+    # https://en.wikipedia.org/wiki/Automatic_gain_control
     if length == 0:
         return np.array([], dtype=np.float32)  # type: ignore
     command = f"ffmpeg -ss {start} -t {length} -i {path} -f f32le -acodec pcm_f32le -ac 1 pipe:"
