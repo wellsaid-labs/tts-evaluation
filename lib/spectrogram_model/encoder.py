@@ -83,7 +83,6 @@ class _RightMaskedBiRNN(torch.nn.Module):
         self,
         backward_rnn: typing.Union[torch.nn.LSTM, torch.nn.GRU],
         tokens: torch.Tensor,
-        tokens_mask: torch.Tensor,
         num_tokens: torch.Tensor,
     ) -> torch.Tensor:
         """Compute the backwards RNN pass.
@@ -91,7 +90,6 @@ class _RightMaskedBiRNN(torch.nn.Module):
         Args:
             backward_rnn
             tokens (torch.FloatTensor [seq_len, batch_size, backward_rnn.input_size])
-            tokens_mask (torch.BoolTensor [seq_len, batch_size])
             num_tokens (torch.LongTensor [batch_size])
 
         Returns:
@@ -134,17 +132,15 @@ class _RightMaskedBiRNN(torch.nn.Module):
         output = tokens
         tokens_mask_expanded = tokens_mask.view(tokens_mask.shape[0], tokens_mask.shape[1], 1)
         tokens_mask = tokens_mask.view(tokens_mask.shape[0], tokens_mask.shape[1])
-        for forward_rnn, backward_rnn in typing.cast(
-            typing.Iterable[typing.Tuple[RecurrentNeuralNetwork, RecurrentNeuralNetwork]],
-            iter(self.rnn_layers),
-        ):
+        Iterable = typing.Iterable[typing.Tuple[RecurrentNeuralNetwork, RecurrentNeuralNetwork]]
+        for forward_rnn, backward_rnn in typing.cast(Iterable, iter(self.rnn_layers)):
             # [seq_len, batch_size, input_size or hidden_size * 2] →
             # [seq_len, batch_size, hidden_size * 2]
             forward_output, _ = forward_rnn(output)
 
             # [seq_len, batch_size, input_size or hidden_size * 2] →
             # [seq_len, batch_size, hidden_size * 2]
-            backward_output = self._backward_pass(backward_rnn, output, tokens_mask, num_tokens)
+            backward_output = self._backward_pass(backward_rnn, output, num_tokens)
 
             # [seq_len, batch_size, hidden_size] (concat) [seq_len, batch_size, hidden_size] →
             # [seq_len, batch_size, hidden_size * 2]
@@ -243,9 +239,8 @@ class Encoder(torch.nn.Module):
 
         for module in self.conv_layers.modules():
             if isinstance(module, torch.nn.Conv1d):
-                torch.nn.init.xavier_uniform_(
-                    module.weight, gain=torch.nn.init.calculate_gain("relu")
-                )
+                gain = torch.nn.init.calculate_gain("relu")
+                torch.nn.init.xavier_uniform_(module.weight, gain=gain)
 
     def __call__(
         self,
