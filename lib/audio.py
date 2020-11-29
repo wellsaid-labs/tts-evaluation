@@ -787,8 +787,8 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
     ) -> typing.Union[typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]:
         """Compute a dB-mel-scaled spectrogram from signal.
 
-        NOTE: Iff a batch of signals is padded with zeros and the signal length is a multiple
-        of `self.frame_hop`, then this function is invariant to batch size.
+        NOTE: Iff a batch of signals is padded sufficiently with zeros and the signal length is a
+        multiple of `self.frame_hop`, then this function is invariant to batch size.
 
         Args:
             signal (torch.FloatTensor [batch_size (optional), signal_length])
