@@ -154,7 +154,7 @@ def _grapheme_to_phoneme_with_punctuation(
 
 def _grapheme_to_phoneme(
     *graphemes: typing.Union[str, spacy.tokens.Doc, spacy.tokens.span.Span],
-    chunk_size: int = 128,
+    chunk_size: int = 4,
     max_parallel: int = typing.cast(int, os.cpu_count()),
     **kwargs,
 ) -> typing.Iterator[str]:
@@ -183,13 +183,15 @@ def grapheme_to_phoneme(graphemes, **kwargs):
     "Fitness that's invigorating, not intimidating!" sometimes returns...
     1. "f|ˈ|ɪ|t|n|ə|s| |ð|æ|t|s| |ɪ|n|v|ˈ|ɪ|ɡ|ɚ|ɹ|ˌ|eɪ|ɾ|ɪ|ŋ|,| "...
     2. "f|ˈ|ɪ|t|n|ə|s| |ð|æ|t|s| |ɪ|n|v|ˈ|ɪ|ɡ|oː|ɹ|ˌ|eɪ|ɾ|ɪ|ŋ|,| "...
+    NOTE: Since eSpeak, unfortunately, doesn't take extra context to determining the pronunciation.
+    This means it'll sometimes be wrong in ambigious cases on the text edges.
 
     TODO: Replace the eSpeak with a in-house solution including:
     - `lib.text.normalize_non_standard_words`
     - CMU dictionary or https://github.com/kylebgorman/wikipron for most words
     - spaCy for homographs similar to https://github.com/Kyubyong/g2p
     - A neural network trained on CMU dictionary for words not in the dictionaries.
-    TODO: Type this function once `spacy` supports typing.
+    TODO: Type this function once spaCy supports typing.
 
     Args:
         graphemes: The graphemes to convert to phonemes.
