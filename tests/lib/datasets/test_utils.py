@@ -235,7 +235,7 @@ def test_passage_span__identity():
         passage.to_string("audio_file", "other_metadata")[len(passage.__class__.__name__) :]
         == span.to_string("audio_file", "other_metadata")[len(span.__class__.__name__) :]
     )
-    np.testing.assert_almost_equal(passage.audio, span.audio)
+    np.testing.assert_almost_equal(passage.audio(), span.audio())
     pickle.dumps(passage)
     pickle.dumps(span)
 

@@ -108,7 +108,6 @@ class Passage:
             self.passages = [self]
         self._check_invariants()
 
-    @property
     def audio(self):
         return read_audio(self.audio_file.path)
 
@@ -226,6 +225,9 @@ class Span:
 
     passage: Passage
     span: slice
+    script_span: slice = dataclasses.field(init=False)
+    audio_span: slice = dataclasses.field(init=False)
+    transcript_span: slice = dataclasses.field(init=False)
     script: str = dataclasses.field(init=False)
     transcript: str = dataclasses.field(init=False)
     alignments: typing.Tuple[Alignment, ...] = dataclasses.field(init=False)
@@ -256,12 +258,14 @@ class Span:
         transcript = self.passage.transcript[span[0].transcript[0] : span[-1].transcript[-1]]
         alignments = [tuple([self._subtract(a, b) for a, b in zip(a, span[0])]) for a in span]
 
+        set(self, "script_span", slice(span[0].script[0], span[-1].script[-1]))
+        set(self, "audio_span", slice(span[0].audio[0], span[-1].audio[-1]))
+        set(self, "transcript_span", slice(span[0].transcript[0], span[-1].transcript[-1]))
         set(self, "script", script)
         set(self, "audio_length", audio_length)
         set(self, "transcript", transcript)
         set(self, "alignments", tuple(Alignment(*a) for a in alignments))  # type: ignore
 
-    @property
     def audio(self):
         start = self.passage.alignments[self.span][0].audio[0]
         return read_audio_slice(self.passage.audio_file.path, start, self.audio_length)

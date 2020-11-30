@@ -647,7 +647,7 @@ def load_en_core_web_md(*args, **kwargs) -> spacy_en.English:
 @lru_cache(maxsize=None)
 def load_en_english(*args, **kwargs) -> spacy_en.English:
     """ Load and cache in memory a spaCy `spacy_en.English` object. """
-    return spacy_en.English()
+    return spacy_en.English(*args, **kwargs)
 
 
 def normalize_non_standard_words(text: str, variety: str = "AmE", **kwargs) -> str:

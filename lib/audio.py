@@ -152,7 +152,9 @@ def get_audio_metadata(paths, **kwargs):
     return metadatas if is_list else metadatas[0]
 
 
-seconds_to_samples = lambda seconds, sample_rate: int(round(seconds * sample_rate))
+@configurable
+def seconds_to_samples(seconds: float, sample_rate: int = HParam()) -> int:
+    return int(round(seconds * sample_rate))
 
 
 def clip_waveform(waveform: np.ndarray):

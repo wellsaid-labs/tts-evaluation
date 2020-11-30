@@ -190,6 +190,7 @@ def configure_audio_processing():
         logger.info("Ignoring optional `IPython` configurations.")
 
     config = {
+        lib.audio.seconds_to_samples: HParams(sample_rate=SAMPLE_RATE),
         lib.visualize.plot_waveform: HParams(sample_rate=SAMPLE_RATE),
         lib.visualize.plot_spectrogram: HParams(sample_rate=SAMPLE_RATE, frame_hop=frame_hop),
         lib.visualize.plot_mel_spectrogram: HParams(**hertz_bounds),
@@ -253,12 +254,14 @@ def configure_audio_processing():
         lib.signal_model.SignalModel.__init__: HParams(
             ratios=[2] * int(math.log2(frame_hop)),
         ),
-        run._utils.get_spectrogram_model_span: HParams(
-            loudness_implementation="DeMan",
-            max_loudness_annotations=10,
-            loudness_precision=0,
-            max_speed_annotations=10,
-            speed_precision=0,
+        run._spectrogram_model._get_loudness: HParams(
+            loudness_implementation="DeMan", loudness_precision=0
+        ),
+        run._spectrogram_model._random_loudness_annotations: HParams(max_loudness_annotations=10),
+        run._spectrogram_model._random_speed_annotations: HParams(
+            max_speed_annotations=10, speed_precision=2
+        ),
+        run._spectrogram_model._make_stop_token: HParams(
             # NOTE: The stop token uncertainty was approximated by a fully trained model that
             # learned the stop token distribution. The distribution looked like a gradual increase
             # over 4 - 8 frames in January 2020, on Comet.
@@ -268,7 +271,6 @@ def configure_audio_processing():
             # decreasing `length` by 2x, also.
             stop_token_range=10,
             stop_token_standard_deviation=2,
-            sample_rate=SAMPLE_RATE,
         ),
     }
     add_config(config)
