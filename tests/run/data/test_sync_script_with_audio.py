@@ -41,6 +41,14 @@ def test__get_speech_context__overlap():
     )
 
 
+def test__get_speech_context__continuous():
+    """Test `_get_speech_context` ignores long continuous sequences of text longer than the
+    `max_phrase_length`."""
+    assert set(_get_speech_context("abcdef g h i j", 5, 0.2).phrases) == set(  # type: ignore
+        ["g h i", "i j"]
+    )
+
+
 def _get_script_tokens(scripts: typing.List[str]) -> typing.List[ScriptToken]:
     """ Create a list of `ScriptToken`s for testing. """
     tokens = [

@@ -78,6 +78,8 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
       --image-project=ubuntu-os-cloud
    ```
 
+   ❓ NOTE: 24-hours of VM usage can cost up to 3$.
+
 1. From your local machine, `ssh` into your new VM instance, like so...
 
    ```zsh
@@ -91,10 +93,10 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. In another terminal window, run `lsyncd` to sync your local files to your virtual machine...
 
    ```zsh
-   VM_NAME=$(python -m run.utils.gcp_vm most-recent --filter $USER)
-   VM_ZONE=$(python -m run.utils.gcp_vm zone --name $VM_NAME)
-   VM_IP=$(python -m run.utils.gcp_vm ip --name $VM_NAME --zone=$VM_ZONE)
-   VM_USER=$(python -m run.utils.gcp_vm user --name $VM_NAME --zone=$VM_ZONE)
+   VM_NAME=$(python -m run.utils.gcp most-recent --filter $USER)
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
+   VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
    sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
                                     --public-dns $VM_IP \
                                     --user $VM_USER \
@@ -149,6 +151,15 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 
    # OR
    python -m run.data rename --only-numbers $ROOT/
+   ```
+
+1. (Optional) Ensure the recording and script pairings make sense...
+
+   ```bash
+   RECORDINGS=$(ls $ROOT/recordings/*$ENCODING | python -m run.utils.sort)
+   SCRIPTS=$(ls $ROOT/scripts/*.csv | python -m run.utils.sort)
+   python -m run.data pair $(python -m run.utils.prefix --recording $RECORDINGS) \
+      $(python -m run.utils.prefix --script $SCRIPTS)
    ```
 
 1. (Optional) Review dataset audio file metadata for inconsistencies...
@@ -216,6 +227,8 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
       $(python -m run.utils.prefix --script $SCRIPTS) \
       --destination $GCS_URI/processed/
    ```
+
+   ❓ NOTE: 20-hours of audio can cost up to 50$ to transcribe.
 
    Audit the results of the synchronization, and re-run the script if necessary. The issues that may
    arise are:

@@ -560,10 +560,14 @@ def _maybe_analyze_dataset(dataset: Dataset):
 
     with beta_expander("Survey of Pause Lengths (in seconds)"):
         st.write("The pause count for each length bucket:")
-        iterator = _get_pause_lengths_in_seconds(dataset)
+        iterator = list(_get_pause_lengths_in_seconds(dataset))
         _bucket_and_visualize(iterator, ALIGNMENT_PRECISION, x="Seconds")
+        st.write(
+            f"**{sum([p > 0 for p in iterator])/len(iterator):.2%}** of pauses are "
+            "longer than zero."
+        )
 
-    samples = _random_sample(unigrams, 128)
+    samples = _random_sample(unigrams, 512)
     st.markdown(f"Below this analyzes a random sample of **{len(samples):,}** alignments...")
 
     with beta_expander("Random Sample of Alignments (Tabular)"):
@@ -574,8 +578,10 @@ def _maybe_analyze_dataset(dataset: Dataset):
         (lambda s: len(s.script), "Alignment Lengths", "Characters", 1),
         (lambda s: s.seconds_per_character(), "Alignment Speeds", "Seconds per character", 0.01),
         (lambda s: s.rms, "Loudness", "dB", 1),
-        (lambda s: s.rms_(0), "Onset Loudness", "dB", 5),
-        (lambda s: s.rms_(0), "Outset Loudness", "dB", 5),
+        (lambda s: s.rms_edges()[0], "Onset Loudness", "dB", 5),
+        (lambda s: s.rms_edges()[1], "Outset Loudness", "dB", 5),
+        (lambda s: s.fuzzy_rms_edges()[0], "Fuzzy Onset Loudness", "dB", 5),
+        (lambda s: s.fuzzy_rms_edges()[1], "Fuzzy Outset Loudness", "dB", 5),
         (lambda s: s.longest_inner_silence(), "Long Silences", "Seconds", 0.1),
     ]:
         with beta_expander(f"Survey of {title} (in {unit.lower()})"):
@@ -593,11 +599,9 @@ def _maybe_analyze_dataset(dataset: Dataset):
 
     with beta_expander("Random Sample of Filtered Alignments"):
         is_include = (
-            lambda s: s.seconds_per_character() >= 0.04
-            and s.seconds_per_character() <= 0.16
-            and s.rms >= -40
-            and s.rms_edges()[0] <= -25
-            and s.rms_edges()[1] <= -25
+            lambda s: s.audio_length > 0.1
+            and s.seconds_per_character() >= 0.04
+            and (s.rms_edges()[0] < -25 and s.rms_edges()[1] < -25)
             and s.longest_inner_silence() < 0.1
         )
         display = [s for s in samples if is_include(s)]
@@ -658,14 +662,13 @@ def _maybe_analyze_filtered_spans(dataset: Dataset, spans: typing.List[Span]):
 
     total = len(spans)
     _is_include = (
-        lambda s: (s.seconds_per_character() >= 0.04 and s.seconds_per_character() <= 0.16)
-        and s.rms >= -40
+        lambda s: s.audio_length > 0.1
+        and s.seconds_per_character() >= 0.04
+        and (s.rms_edges()[0] < -25 and s.rms_edges()[1] < -25)
         and s.longest_inner_silence() < 0.1
     )
     is_include = lambda s: (
-        len(s.mistranscriptions) == 0
-        and (_is_include(s[0]) and _is_include(s[-1]))
-        and (len(s.alignments) < 4 or (_is_include(s[1]) and _is_include(s[-2])))
+        len(s.mistranscriptions) == 0 and (_is_include(s[0]) and _is_include(s[-1]))
     )
     spans = [s for s, i in zip(spans, _map(spans, is_include)) if i]
     st.markdown(

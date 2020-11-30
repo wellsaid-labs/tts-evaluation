@@ -14,6 +14,7 @@ import torch
 import torch.nn
 import torch.nn.functional
 from hparams import HParams
+from torchnlp.encoders.text import stack_and_pad_tensors
 
 import lib
 from tests import _utils
@@ -197,6 +198,11 @@ def test_get_audio_metadata__bad_file():
         path.write_text("corrupted")
         with pytest.raises(subprocess.CalledProcessError):
             lib.audio.get_audio_metadata(path)
+
+
+def test_seconds_to_samples():
+    """Test `lib.audio.seconds_to_samples` handles a basic case."""
+    assert lib.audio.seconds_to_samples(1.5, 24000) == 36000
 
 
 def test_read_audio():
@@ -807,7 +813,26 @@ def test_signal_to_db_mel_spectrogram__batch():
     module = lib.audio.get_signal_to_db_mel_spectrogram()
     results = module(tensor)
     result = module(tensor[0])
-    np.testing.assert_almost_equal(results[0].detach().numpy(), result.detach().numpy(), decimal=5)
+    _utils.assert_almost_equal(results[0], result, decimal=5)
+
+
+def test_signal_to_db_mel_spectrogram__padded_batch():
+    """ Test `lib.audio.SignalTodBMelSpectrogram` is invariant to the batch size and padding. """
+    fft_length = 2048
+    hop_length = fft_length // 4
+    window = torch.from_numpy(librosa.filters.get_window("hann", fft_length)).float()
+    batch_size = 10
+    signals_ = []
+    for i in range(batch_size):
+        signal = lib.audio.pad_remainder(torch.randn(2400 + i * 300).numpy(), hop_length)
+        signals_.append(torch.from_numpy(signal))
+    signals = stack_and_pad_tensors(signals_)
+    module = lib.audio.SignalTodBMelSpectrogram(fft_length, hop_length, window=window)
+    expectations = module(signals.tensor, aligned=True)
+    for i in range(batch_size):
+        result = module(signals_[i], aligned=True)
+        expected = expectations[i][: signals.lengths[i] // hop_length]
+        _utils.assert_almost_equal(expected, result, decimal=5)
 
 
 def test_signal_to_db_mel_spectrogram__alignment():

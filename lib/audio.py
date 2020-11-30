@@ -152,6 +152,11 @@ def get_audio_metadata(paths, **kwargs):
     return metadatas if is_list else metadatas[0]
 
 
+@configurable
+def seconds_to_samples(seconds: float, sample_rate: int = HParam()) -> int:
+    return int(round(seconds * sample_rate))
+
+
 def clip_waveform(waveform: np.ndarray):
     """Clip audio at the maximum and minimum amplitude.
 
@@ -163,7 +168,8 @@ def clip_waveform(waveform: np.ndarray):
     """
     num_clipped_samples = (waveform < -1).sum() + (waveform > 1).sum()
     if num_clipped_samples > 0:
-        logger.warning("%d samples clipped.", num_clipped_samples)
+        max_sample = np.max(np.absolute(waveform))
+        logger.warning("%d samples clipped (%f max sample)", num_clipped_samples, max_sample)
     return np.clip(waveform, -1.0, 1.0)
 
 
@@ -193,9 +199,11 @@ def read_audio_slice(path: Path, start: float, length: float) -> np.ndarray:
         start: The start of the audio segment.
         length: The length of the audio segment.
     """
+    # TODO: Should we implement automatic gain control?
+    # https://en.wikipedia.org/wiki/Automatic_gain_control
     if length == 0:
         return np.array([], dtype=np.float32)  # type: ignore
-    command = f"ffmpeg -ss {start} -i {path} -to {length} -f f32le -acodec pcm_f32le -ac 1 pipe:"
+    command = f"ffmpeg -ss {start} -t {length} -i {path} -f f32le -acodec pcm_f32le -ac 1 pipe:"
     ndarray = np.frombuffer(
         subprocess.check_output(command.split(), stderr=subprocess.DEVNULL),
         np.float32,  # type: ignore
@@ -784,12 +792,15 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
     ) -> typing.Union[typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]:
         """Compute a dB-mel-scaled spectrogram from signal.
 
+        NOTE: Iff a batch of signals is padded sufficiently with zeros and the signal length is a
+        multiple of `self.frame_hop`, then this function is invariant to batch size.
+
         Args:
             signal (torch.FloatTensor [batch_size (optional), signal_length])
             intermediate: If `True`, along with a `db_mel_spectrogram`, this
                 returns a `db_spectrogram` and `spectrogram`.
             aligned: If `True` the returned spectrogram is aligned to the signal
-                such that `signal.shape[1] / self.frame_hop == db_mel_spectrogram.shape[1]`
+                such that `signal.shape[1] // self.frame_hop == db_mel_spectrogram.shape[1]`
 
         Returns:
             db_mel_spectrogram (torch.FloatTensor
@@ -823,15 +834,14 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             # NOTE: Center the signal such that the resulting spectrogram and audio are aligned.
             # Learn more here:
             # https://librosa.github.io/librosa/_modules/librosa/core/spectrum.html#stft
-            # NOTE: The number of spectrogram frames generated is:
-            # `(signal.shape[1] - frame_size + frame_hop) // frame_hop`
-            padding = (self.fft_length - self.frame_hop) // 2
-            padded_signal = torch.nn.functional.pad(
-                signal, [padding, padding], mode="constant", value=0
-            )
+            padding_ = (self.fft_length - self.frame_hop) // 2
+            padding = [padding_, padding_]
+            padded_signal = torch.nn.functional.pad(signal, padding, mode="constant", value=0)
         else:
             padded_signal = signal
 
+        # NOTE: The number of spectrogram frames generated is:
+        # `(signal.shape[1] - frame_size + frame_hop) // frame_hop`
         spectrogram = torch.stft(
             padded_signal,
             n_fft=self.fft_length,
@@ -846,7 +856,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
 
         # NOTE: `torch.norm` is too slow to use in this case
         # https://github.com/pytorch/pytorch/issues/34279
-        # spectrogram [batch_size, fft_length // 2 + 1, num_frames]
+        # power_spectrogram [batch_size, fft_length // 2 + 1, num_frames]
         power_spectrogram = spectrogram.pow(2).sum(-1)
 
         # NOTE: Perceived loudness (for example, the sone scale) corresponds fairly well to the dB

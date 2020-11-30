@@ -1,6 +1,5 @@
 import collections
 import dataclasses
-import functools
 import logging
 import math
 import pathlib
@@ -8,6 +7,7 @@ import platform
 import random
 import sys
 import typing
+from functools import partial
 from itertools import chain
 
 # NOTE: `comet_ml` needs to be imported before torch
@@ -38,16 +38,21 @@ from run._config import (
     get_dataset_label,
     get_model_label,
 )
+from run._spectrogram_model import (
+    Checkpoint,
+    InputEncoder,
+    SpanBatch,
+    get_num_skipped,
+    get_rms_level,
+    make_span_batch,
+)
 from run._utils import (
     CometMLExperiment,
     Context,
-    SpectrogramModelCheckpoint,
-    SpectrogramModelSpanBatch,
-    get_rms_level,
-    get_spectrogram_model_span,
     maybe_make_experiment_directories,
     maybe_make_experiment_directories_from_checkpoint,
     set_context,
+    worker_init_fn,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,7 +66,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
     torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)  # type: ignore
     config = {
         _State._get_optimizers: HParams(
-            lr_multiplier_schedule=functools.partial(
+            lr_multiplier_schedule=partial(
                 lib.optimizers.warmup_lr_multiplier_schedule, warmup=500
             ),
             # SOURCE (Tacotron 2):
@@ -102,7 +107,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
             amsgrad=True,
             betas=(0.9, 0.999),
         ),
-        lib.spectrogram_model.InputEncoder.__init__: HParams(
+        run._spectrogram_model.InputEncoder.__init__: HParams(
             phoneme_separator=run._config.PHONEME_SEPARATOR
         ),
     }
@@ -114,7 +119,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
 
 @dataclasses.dataclass(frozen=True)
 class _State:
-    input_encoder: lib.spectrogram_model.InputEncoder
+    input_encoder: InputEncoder
     model: torch.nn.parallel.DistributedDataParallel
     optimizer: torch.optim.Adam
     clipper: lib.optimizers.AdaptiveGradientNormClipper
@@ -128,17 +133,15 @@ class _State:
         train_dataset: run._config.Dataset,
         dev_dataset: run._config.Dataset,
         comet: CometMLExperiment,
-    ) -> lib.spectrogram_model.InputEncoder:
+    ) -> InputEncoder:
         """ Initialize an input encoder to encode model input. """
         passages = chain(*tuple(chain(train_dataset.values(), dev_dataset.values())))
-        input_encoder = lib.spectrogram_model.InputEncoder(
+        input_encoder = InputEncoder(
             flatten([p.script for p in passages]),
             run._config.DATASET_PHONETIC_CHARACTERS,
             list(train_dataset.keys()) + list(dev_dataset.keys()),
         )
-        label = functools.partial(
-            get_dataset_label, cadence=Cadence.STATIC, type_=DatasetType.TRAIN
-        )
+        label = partial(get_dataset_label, cadence=Cadence.STATIC, type_=DatasetType.TRAIN)
         stats = {
             label("grapheme_vocab_size"): input_encoder.grapheme_encoder.vocab_size,
             label("grapheme_vocab"): sorted(input_encoder.grapheme_encoder.vocab),
@@ -154,7 +157,7 @@ class _State:
     def _get_model(
         device: torch.device,
         comet: CometMLExperiment,
-        input_encoder: lib.spectrogram_model.InputEncoder,
+        input_encoder: InputEncoder,
     ) -> lib.spectrogram_model.SpectrogramModel:
         """Initialize a model onto `device`.
 
@@ -195,7 +198,7 @@ class _State:
 
     def to_checkpoint(self, **kwargs):
         """ Create a checkpoint to save the spectrogram training state. """
-        return SpectrogramModelCheckpoint(
+        return Checkpoint(
             comet_experiment_key=self.comet.get_key(),
             input_encoder=self.input_encoder,
             model=typing.cast(lib.spectrogram_model.SpectrogramModel, self.model.module),
@@ -209,7 +212,7 @@ class _State:
     @classmethod
     def from_checkpoint(
         cls,
-        checkpoint: SpectrogramModelCheckpoint,
+        checkpoint: Checkpoint,
         comet: CometMLExperiment,
         device: torch.device,
     ):
@@ -235,12 +238,7 @@ class _State:
 
 
 class _DataIterator(torch.utils.data.IterableDataset):
-    def __init__(
-        self,
-        dataset: run._config.Dataset,
-        bucket_size: int,
-        input_encoder: lib.spectrogram_model.InputEncoder,
-    ):
+    def __init__(self, dataset: run._config.Dataset, bucket_size: int):
         """Generate spans from `run._config.Dataset`.
 
         TODO: Filter spans based on additional data from `get_spectrogram_model_span`.
@@ -248,15 +246,13 @@ class _DataIterator(torch.utils.data.IterableDataset):
         Args:
             dataset
             bucket_size: A batch of spans is sampled and sorted to minimize padding.
-            input_encoder
         """
         super().__init__()
         self.dataset = dataset
         self.bucket_size = bucket_size
-        self.input_encoder = input_encoder
         self.config = get_config()
 
-    def __iter__(self) -> typing.Iterator[run._utils.SpectrogramModelSpan]:
+    def __iter__(self) -> typing.Iterator[lib.datasets.Span]:
         # TODO: Add a method for transfering global configuration between processes without private
         # variables.
         # TODO: After the global configuration is transfered, the functions need to be rechecked
@@ -264,26 +260,30 @@ class _DataIterator(torch.utils.data.IterableDataset):
         hparams.hparams._configuration = self.config
         generator = run._config.span_generator(self.dataset)
         while True:
-            spans = [
-                get_spectrogram_model_span(next(generator), self.input_encoder)
-                for _ in range(self.bucket_size)
-            ]
-            yield from sorted(spans, key=lambda s: s.spectrogram.shape[0])
+            spans = [next(generator) for _ in range(self.bucket_size)]
+            yield from sorted(spans, key=lambda s: s.audio_length)
 
 
 class _DataLoader(collections.Iterable):
     """Load and batch spans given a dataset `iterator`."""
 
-    def __init__(self, iterator: _DataIterator, batch_size: int, device: torch.device, **kwargs):
+    def __init__(
+        self,
+        iterator: _DataIterator,
+        batch_size: int,
+        device: torch.device,
+        input_encoder: InputEncoder,
+        **kwargs,
+    ):
         self.device = device
         loader = torch.utils.data.dataloader.DataLoader(
             iterator,
             pin_memory=True,
             batch_size=batch_size,
-            worker_init_fn=functools.partial(
-                run._utils.worker_init_fn, seed=run._config.RANDOM_SEED, device_index=device.index
+            worker_init_fn=partial(
+                worker_init_fn, seed=run._config.RANDOM_SEED, device_index=device.index
             ),
-            collate_fn=run._utils.batch_spectrogram_model_spans,
+            collate_fn=partial(make_span_batch, input_encoder=input_encoder),
             **kwargs,
         )
         self.loader = iter(loader)
@@ -294,15 +294,12 @@ class _DataLoader(collections.Iterable):
     def average_spectrogram_length(self) -> float:
         return self.num_frames / self.num_spans
 
-    def __iter__(self) -> typing.Iterator[SpectrogramModelSpanBatch]:
+    def __iter__(self) -> typing.Iterator[SpanBatch]:
         while True:
             batch = next(self.loader)
             self.num_frames += batch.spectrogram.lengths.float().sum().item()
             self.num_spans += batch.length
-            yield typing.cast(
-                SpectrogramModelSpanBatch,
-                tensors_to(batch, device=self.device, non_blocking=True),
-            )
+            yield typing.cast(SpanBatch, tensors_to(batch, device=self.device, non_blocking=True))
 
 
 @configurable
@@ -317,10 +314,10 @@ def _get_data_loaders(
 ) -> typing.Tuple[_DataLoader, _DataLoader]:
     """ Initialize training and development data loaders.  """
     bucket_size = bucket_size_multiplier * train_batch_size
-    _DataIteratorPartial = functools.partial(
-        _DataIterator, input_encoder=state.input_encoder, bucket_size=bucket_size
+    _DataIteratorPartial = partial(_DataIterator, bucket_size=bucket_size)
+    DataLoaderPartial = partial(
+        _DataLoader, num_workers=num_workers, device=state.device, input_encoder=state.input_encoder
     )
-    DataLoaderPartial = functools.partial(_DataLoader, num_workers=num_workers, device=state.device)
     return (
         DataLoaderPartial(_DataIteratorPartial(train_dataset), train_batch_size),
         DataLoaderPartial(_DataIteratorPartial(dev_dataset), dev_batch_size),
@@ -402,11 +399,7 @@ class _DistributedMetrics:
         value = float(value.sum().item() if isinstance(value, torch.Tensor) else value)
         metric.append(lib.distributed.reduce(value))
 
-    def update_dataset_metrics(
-        self,
-        batch: SpectrogramModelSpanBatch,
-        input_encoder: lib.spectrogram_model.InputEncoder,
-    ):
+    def update_dataset_metrics(self, batch: SpanBatch, input_encoder: InputEncoder):
         self.append(self.batch_size, batch.length)
         self.append(self.num_frames, batch.spectrogram.lengths)
 
@@ -426,7 +419,7 @@ class _DistributedMetrics:
         token_mask: torch.Tensor,
         num_tokens: torch.Tensor,
         speakers: torch.Tensor,
-        input_encoder: lib.spectrogram_model.InputEncoder,
+        input_encoder: InputEncoder,
         norm: float = math.inf,
     ):
         """
@@ -448,7 +441,7 @@ class _DistributedMetrics:
         self.append(self.predicted_frame_alignment_std, mask(weighted_std))
         self.append(self.predicted_frame_alignment_norm, mask(alignments.norm(norm, dim=2)))
 
-        num_skipped = run._utils.get_num_skipped(alignments, token_mask, spectrogram_mask)
+        num_skipped = get_num_skipped(alignments, token_mask, spectrogram_mask)
 
         iterate = lambda t: flatten(lib.distributed.gather_list(t.squeeze().tolist()))
         iterator = zip(iterate(speakers), iterate(num_skipped), iterate(num_tokens))
@@ -546,22 +539,22 @@ class _DistributedMetrics:
             "data_loader_queue_size": div(self.data_queue_size, [1] * len(self.data_queue_size)),
             "average_rms_level": rms,
         }
-        partial = functools.partial(get_dataset_label, type_=dataset_type)
+        partial_ = partial(get_dataset_label, type_=dataset_type)
         iterator: typing.List[typing.Tuple[Stats, typing.Callable[..., Label]]]
-        iterator = [(model_stats, get_model_label), (dataset_stats, partial)]
+        iterator = [(model_stats, get_model_label), (dataset_stats, partial_)]
         for stats, get_label in iterator:
             for name, value in stats.items():
                 if value is not None:
                     comet.log_metric(get_label(name, cadence=cadence), value)
 
         for speaker, count in self.num_frames_per_speaker.items():
-            label = partial("frequency", cadence=cadence, speaker=speaker)
+            label = partial_("frequency", cadence=cadence, speaker=speaker)
             comet.log_metric(label, count / sum(self.num_frames_per_speaker.values()))
 
         for bucket, count in self.num_spans_per_text_length.items():
             lower = bucket * self.text_length_bucket_size
             upper = (bucket + 1) * self.text_length_bucket_size
-            label = partial(f"{lower}_{upper}", cadence=cadence)
+            label = partial_(f"{lower}_{upper}", cadence=cadence)
             comet.log_metric(label, count / sum(self.num_spans_per_text_length.values()))
 
         zip_ = zip(self.num_tokens_per_speaker.items(), self.num_skips_per_speaker.values())
@@ -571,7 +564,7 @@ class _DistributedMetrics:
 
 def _visualize_source_vs_target(
     state: _State,
-    batch: SpectrogramModelSpanBatch,
+    batch: SpanBatch,
     predicted_spectrogram: torch.Tensor,
     predicted_stop_token: torch.Tensor,
     predicted_alignments: torch.Tensor,
@@ -601,8 +594,8 @@ def _visualize_source_vs_target(
     predicted_delta = abs(gold_spectrogram - predicted_spectrogram)
     predicted_alignments = predicted_alignments[:spectrogram_length, item, :text_length]
     predicted_stop_token = predicted_stop_token[:spectrogram_length, item]
-    model = functools.partial(get_model_label, cadence=cadence)
-    dataset = functools.partial(get_dataset_label, cadence=cadence, type_=dataset_type)
+    model = partial(get_model_label, cadence=cadence)
+    dataset = partial(get_dataset_label, cadence=cadence, type_=dataset_type)
     figures = {
         model("spectrogram_delta"): lib.visualize.plot_mel_spectrogram(predicted_delta),
         model("predicted_spectrogram"): lib.visualize.plot_mel_spectrogram(predicted_spectrogram),
@@ -617,7 +610,7 @@ def _visualize_source_vs_target(
 def _run_step(
     state: _State,
     metrics: _DistributedMetrics,
-    batch: SpectrogramModelSpanBatch,
+    batch: SpanBatch,
     data_loader: _DataLoader,
     dataset_type: DatasetType,
     visualize: bool = False,
@@ -706,7 +699,7 @@ def _run_step(
 
 def _visualize_inferred(
     state: _State,
-    batch: SpectrogramModelSpanBatch,
+    batch: SpanBatch,
     predicted_spectrogram: torch.Tensor,
     predicted_stop_token: torch.Tensor,
     predicted_alignments: torch.Tensor,
@@ -734,8 +727,8 @@ def _visualize_inferred(
     gold_spectrogram = batch.spectrogram.tensor[:num_frames, item]
     predicted_alignments = predicted_alignments[:num_frames, item, :text_length]
 
-    model = functools.partial(get_model_label, cadence=cadence)
-    dataset = functools.partial(get_dataset_label, cadence=cadence, type_=dataset_type)
+    model = partial(get_model_label, cadence=cadence)
+    dataset = partial(get_dataset_label, cadence=cadence, type_=dataset_type)
     figures = {
         dataset("gold_spectrogram"): lib.visualize.plot_mel_spectrogram(gold_spectrogram),
         model("predicted_spectrogram"): lib.visualize.plot_mel_spectrogram(predicted_spectrogram),
@@ -761,7 +754,7 @@ def _visualize_inferred(
 def _run_inference(
     state: _State,
     metrics: _DistributedMetrics,
-    batch: SpectrogramModelSpanBatch,
+    batch: SpanBatch,
     data_loader: _DataLoader,
     dataset_type: DatasetType,
     visualize: bool = False,
@@ -814,8 +807,7 @@ def _run_inference(
 
 
 _BatchHandler = typing.Callable[
-    [_State, _DistributedMetrics, SpectrogramModelSpanBatch, _DataLoader, DatasetType, bool],
-    None,
+    [_State, _DistributedMetrics, SpanBatch, _DataLoader, DatasetType, bool], None
 ]
 
 
@@ -839,10 +831,10 @@ def _run_worker(
     if checkpoint is None:
         state = _State.from_dataset(train_dataset, dev_dataset, comet, device)
     else:
-        checkpoint_ = typing.cast(SpectrogramModelCheckpoint, load(checkpoint, device=device))
+        checkpoint_ = typing.cast(Checkpoint, load(checkpoint, device=device))
         state = _State.from_checkpoint(checkpoint_, comet, device)
     train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
-    _set_context = functools.partial(set_context, model=state.model, comet=comet)
+    _set_context = partial(set_context, model=state.model, comet=comet)
     while True:
         epoch = int(state.step.item() // num_steps_per_epoch)
         logger.info("Running Epoch %d, Step %d", epoch, state.step.item())
@@ -897,7 +889,7 @@ def _run(
             checkpoint,
             train_dataset,
             dev_dataset,
-            functools.partial(run._utils.CometMLExperiment, experiment_key=comet.get_key()),
+            partial(run._utils.CometMLExperiment, experiment_key=comet.get_key()),
             config,
         ),
     )
@@ -934,7 +926,7 @@ def resume(
         loaded = load(checkpoint)
     else:
         checkpoint, loaded = load_most_recent_file(pattern, load)
-    checkpoint_ = typing.cast(SpectrogramModelCheckpoint, loaded)
+    checkpoint_ = typing.cast(Checkpoint, loaded)
     comet = run._utils.CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
     config, recorder = _setup(comet, context.args)
     paths = maybe_make_experiment_directories_from_checkpoint(checkpoint_, recorder)
