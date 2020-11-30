@@ -824,12 +824,13 @@ def test_signal_to_db_mel_spectrogram__padded_batch():
     batch_size = 10
     signals_ = []
     for i in range(batch_size):
-        signals_.append(lib.audio.pad_remainder(torch.randn(2400 + i * 300).numpy(), hop_length))
-    signals = stack_and_pad_tensors([torch.from_numpy(s) for s in signals_])
+        signal = lib.audio.pad_remainder(torch.randn(2400 + i * 300).numpy(), hop_length)
+        signals_.append(torch.from_numpy(signal))
+    signals = stack_and_pad_tensors(signals_)
     module = lib.audio.SignalTodBMelSpectrogram(fft_length, hop_length, window=window)
     expectations = module(signals.tensor, aligned=True)
     for i in range(batch_size):
-        result = module(signals.tensor[i][: signals.lengths[i]], aligned=True)
+        result = module(signals_[i], aligned=True)
         expected = expectations[i][: signals.lengths[i] // hop_length]
         _utils.assert_almost_equal(expected, result, decimal=5)
 
