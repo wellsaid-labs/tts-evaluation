@@ -152,6 +152,9 @@ def get_audio_metadata(paths, **kwargs):
     return metadatas if is_list else metadatas[0]
 
 
+seconds_to_samples = lambda seconds, sample_rate: int(round(seconds * sample_rate))
+
+
 def clip_waveform(waveform: np.ndarray):
     """Clip audio at the maximum and minimum amplitude.
 

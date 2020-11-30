@@ -200,6 +200,11 @@ def test_get_audio_metadata__bad_file():
             lib.audio.get_audio_metadata(path)
 
 
+def test_seconds_to_samples():
+    """Test `lib.audio.seconds_to_samples` handles a basic case."""
+    assert lib.audio.seconds_to_samples(1.5, 24000) == 36000
+
+
 def test_read_audio():
     """ Test `lib.audio.read_audio` reads audio that is consistent with it's metadata. """
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
