@@ -130,7 +130,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    ```bash
    cd /opt/wellsaid-labs/Text-to-Speech
    sudo apt-get update
-   sudo apt-get install python3-venv python3-dev sox ffmpeg espeak gcc libsox-fmt-mp3 -y
+   . run/utils/apt_install.sh
 
    python3 -m venv venv
    . venv/bin/activate
