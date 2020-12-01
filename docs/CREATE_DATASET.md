@@ -237,11 +237,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
     Most of these issues can be resolved by updating the script or recording, and rerunning the
     synchronization.
 
-## 3. Review dataset
-
-TODO
-
-## 4. Clean up
+## 3. Clean up
 
 1. Kill your `lsyncd` process by typing `Ctrl-C`.
 
