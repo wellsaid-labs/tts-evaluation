@@ -1,5 +1,9 @@
 echo 'Running startup script...'
 
+AWS_CREDENTIALS='{aws_credentials}'
+VM_REGION='{vm_region}'
+VM_NAME='{vm_name}'
+
 echo 'Adding credentials to AWS instance...'
 mkdir ~/.aws
 echo $AWS_CREDENTIALS >~/.aws/credentials
@@ -17,15 +21,6 @@ OLD_HOST_NAME=$(hostname)
 echo "Updating hostname from $OLD_HOST_NAME to $VM_NAME..."
 hostnamectl set-hostname $VM_NAME
 
-if [ -f /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT ]; then
-  echo 'Restarting from the latest checkpoint...'
-  runuser -l $VM_USER -c "screen -dmL bash -c \
-      'cd /opt/wellsaid-labs/Text-to-Speech;
-      . venv/bin/activate;
-      PYTHONPATH=. python $TRAIN_SCRIPT_PATH --checkpoint;'"
-fi
-
-echo "Setting environment variables..."
-echo "TRAIN_SCRIPT_PATH=$TRAIN_SCRIPT_PATH" >>/etc/environment
+{more_bash_script}
 
 echo 'Finished startup script! :)'
