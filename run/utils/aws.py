@@ -96,7 +96,7 @@ class _SpotInstanceState(str, Enum):
 
 def _find_instance(name_tag: str, name: str) -> None:
     """ Find instance named `name`. """
-    response = client.describe_instances(Filters=[{"Key": name_tag, "Value": name}])
+    response = client.describe_instances(Filters=[{"Key": f"tag:{name_tag}", "Value": name}])
     assert len(response["Reservations"]) == 1
     response = response["Reservations"][0]
     if len(response["Instances"]) == 0:
@@ -190,9 +190,8 @@ def spot_instance(
 ):
     """Create a Spot Instance named NAME with the corresponding IMAGE-ID, MACHINE-TYPE, DISK-SIZE
     and STARTUP-SCRIPT."""
-    requests = client.describe_spot_instance_requests(
-        Filters=[{"Name": f"tag:{name_tag}", "Values": [name]}]
-    )["SpotInstanceRequests"]
+    filters = [{"Name": f"tag:{name_tag}", "Values": [name]}]
+    requests = client.describe_spot_instance_requests(Filters=filters)["SpotInstanceRequests"]
     assert len(requests) == 0, f"Spot request named '{name}' already exists."
     assert _find_instance(name_tag, name) is None, f"Instance named '{name}' already exists."
 
