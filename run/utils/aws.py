@@ -19,10 +19,10 @@ from enum import Enum
 import boto3
 import tabulate
 import typer
+from botocore.exceptions import ClientError
 
 import lib
 
-lib.environment.set_basic_logging_config()
 logger = logging.getLogger(__name__)
 app = typer.Typer(context_settings=dict(max_content_width=math.inf))
 client = boto3.client("ec2")
@@ -67,11 +67,18 @@ def interruptions(
 
 def _maybe_import_key_pair(ssh_key_path: pathlib.Path):
     """ Import public SSH key to AWS, if doesn't already exist. """
-    pairs = client.describe_key_pairs(KeyNames=[ssh_key_path.name])["KeyPairs"]
-    if len(pairs) > 0:
-        message = "Skipping key-pair import, found %d key-pair(s) named '%s'."
-        logger.info(message, len(pairs), ssh_key_path.name)
-        return
+    try:
+        pairs = client.describe_key_pairs(KeyNames=[ssh_key_path.name])["KeyPairs"]
+        if len(pairs) > 0:
+            message = "Skipping key-pair import, found %d key-pair(s) named '%s'."
+            logger.info(message, len(pairs), ssh_key_path.name)
+            return
+    except ClientError:
+        # NOTE: `describe_key_pairs` cannot find the key, it'll throw this error:
+        # "botocore.exceptions.ClientError: An error occurred (InvalidKeyPair.NotFound) when
+        # calling the DescribeKeyPairs operation: The key pair 'michaelp_amazon_web_services' does
+        # not exist"
+        pass
     public_ssh_key_path = ssh_key_path.parent / (ssh_key_path.name + ".pub")
     assert public_ssh_key_path.exists(), f"Expected public key at {public_ssh_key_path}"
     public_ssh_key = public_ssh_key_path.read_bytes()
@@ -236,6 +243,8 @@ def spot_instance(
 ):
     """Create a spot instance named NAME with the corresponding IMAGE-ID, MACHINE-TYPE, DISK-SIZE
     and STARTUP-SCRIPT."""
+    lib.environment.set_basic_logging_config()
+
     message = f"Spot request named '{name}' already exists."
     assert _find_spot_instance_request(name_tag, name) is None, message
     assert _find_instance(name_tag, name) is None, f"Instance named '{name}' already exists."
@@ -269,6 +278,7 @@ def spot_instance(
         "UserData": base64.b64encode(user_data.encode("ascii")).decode("ascii"),
     }
     if availability_zone is not None:
+        availability_zone = f"{client.meta.region_name}{availability_zone}"
         launch_specification["Placement"] = {"AvailabilityZone": availability_zone}
     response = client.request_spot_instances(
         Type=type,
