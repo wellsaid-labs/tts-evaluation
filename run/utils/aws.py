@@ -58,8 +58,9 @@ def interruptions(
         data = json.loads(url.read().decode())
     filtered = []
     for region, rates in data["spot_advisor"].items():
-        if machine_type in rates[operating_system]:
-            filtered.append((data["ranges"][rates[operating_system][machine_type]["r"]], region))
+        if machine_type in rates[operating_system.value]:
+            rate = data["ranges"][rates[operating_system.value][machine_type]["r"]]
+            filtered.append((rate, region))
     filtered = sorted(filtered, key=lambda k: k[0]["index"])
     filtered = [(rate["label"], region) for rate, region in filtered]
     typer.echo(tabulate.tabulate(filtered, headers=["Frequency of interruption", "Region"]))
@@ -150,13 +151,13 @@ def _wait_until_spot_instance_request_is_fulfilled(
     """ Wait until spot request and it's corresponding instance are running. """
     logger.info("Waiting until instance is created...")
     response = None
-    while response is None or response["State"] != _SpotInstanceRequestState.ACTIVE:
+    while response is None or response["State"] != _SpotInstanceRequestState.ACTIVE.value:
         response = _find_spot_instance_request(name_tag, name)
         if response is not None:
             logger.info("Spot request status: '%s'", response["Status"]["Message"])
         time.sleep(poll_interval)
 
-    while response is None or response["State"]["Name"] != _InstanceState.RUNNING:
+    while response is None or response["State"]["Name"] != _InstanceState.RUNNING.value:
         response = _find_instance(name_tag, name)
         if response is not None:
             logger.info("Instance status: '%s'", response["StateReason"]["Message"])
@@ -281,8 +282,8 @@ def spot_instance(
         availability_zone = f"{client.meta.region_name}{availability_zone}"
         launch_specification["Placement"] = {"AvailabilityZone": availability_zone}
     response = client.request_spot_instances(
-        Type=type,
-        InstanceInterruptionBehavior=interruption_behavior,
+        Type=type.value,
+        InstanceInterruptionBehavior=interruption_behavior.value,
         LaunchSpecification=launch_specification,
     )
     request_id = response["SpotInstanceRequests"][0]["SpotInstanceRequestId"]
