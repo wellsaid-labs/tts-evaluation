@@ -26,6 +26,8 @@ import lib
 logger = logging.getLogger(__name__)
 app = typer.Typer(context_settings=dict(max_content_width=math.inf))
 client = boto3.client("ec2")
+session = boto3.Session()
+credentials = session.get_credentials().get_frozen_credentials()
 
 
 @app.command()
@@ -146,7 +148,7 @@ def _find_instance(name_tag: str, name: str) -> None:
 
 
 def _wait_until_spot_instance_request_is_fulfilled(
-    name_tag: str, name: str, poll_interval: float = 5.0
+    name_tag: str, name: str, poll_interval: float = 1.0
 ):
     """ Wait until spot request and it's corresponding instance are running. """
     logger.info("Waiting until instance is created...")
@@ -157,10 +159,16 @@ def _wait_until_spot_instance_request_is_fulfilled(
             logger.info("Spot request status: '%s'", response["Status"]["Message"])
         time.sleep(poll_interval)
 
+    response = None
     while response is None or response["State"]["Name"] != _InstanceState.RUNNING.value:
         response = _find_instance(name_tag, name)
         if response is not None:
-            logger.info("Instance status: '%s'", response["StateReason"]["Message"])
+            message = (
+                response["StateReason"]["Message"]
+                if "StateReason" in response
+                else response["State"]["Name"]
+            )
+            logger.info("Instance status: '%s'", message)
         time.sleep(poll_interval)
 
 
@@ -238,7 +246,6 @@ def spot_instance(
     type: _SpotInstanceType = _TYPE,
     interruption_behavior: _SpotInstanceInterruptionBehavior = _INTERRUPTION_BEHAVIOR,
     base_startup_script_path: pathlib.Path = _BASE_STARTUP_SCRIPT_PATH,
-    aws_credentials_path: pathlib.Path = pathlib.Path("~/.aws/credentials").expanduser(),
     availability_zone: typing.Optional[str] = typer.Option(None),
     name_tag: str = _NAME_TAG,
 ):
@@ -256,7 +263,8 @@ def spot_instance(
 
     base_startup_script = (base_startup_script_path).read_text()
     base_startup_script = base_startup_script.format(
-        aws_credentials=aws_credentials_path.read_text(),
+        access_key_id=credentials.access_key,
+        secret_access_key=credentials.secret_key,
         vm_region=client.meta.region_name,
         vm_name=name,
         more_bash_script=startup_script,
@@ -285,10 +293,15 @@ def spot_instance(
         Type=type.value,
         InstanceInterruptionBehavior=interruption_behavior.value,
         LaunchSpecification=launch_specification,
+        TagSpecifications=[
+            {
+                "ResourceType": "spot-instances-request",
+                "Tags": [{"Key": name_tag, "Value": name}],
+            }
+        ],
     )
     request_id = response["SpotInstanceRequests"][0]["SpotInstanceRequestId"]
     logger.info("Created spot instance request: %s", request_id)
-    client.create_tags(Resources=[request_id], Tags=[{"Key": name_tag, "Value": name}])
 
     _wait_until_spot_instance_request_is_fulfilled(name_tag, name)
 

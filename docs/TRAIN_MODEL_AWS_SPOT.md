@@ -82,7 +82,7 @@ Setup your local development environment by following [these instructions](LOCAL
 1. SSH into the instance...
 
    ```bash
-   VM_PUBLIC_DNS=$(python -m run.data.aws public-dns --name=$VM_NAME)
+   VM_PUBLIC_DNS=$(python -m run.utils.aws public-dns --name=$VM_NAME)
    ssh -i $AWS_SSH_KEY -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
       $VM_IMAGE_USER@$VM_PUBLIC_DNS
    ```
@@ -106,7 +106,7 @@ Setup your local development environment by following [these instructions](LOCAL
    VM_IMAGE_USER='ubuntu'
    AWS_SSH_KEY=~/.ssh/$USER"_amazon_web_services"
    VM_NAME=$(python -m run.utils.aws most-recent)
-   VM_PUBLIC_DNS=$(python -m run.data.aws public-dns --name=$VM_NAME)
+   VM_PUBLIC_DNS=$(python -m run.utils.aws public-dns --name=$VM_NAME)
    sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
                                     --public-dns $VM_PUBLIC_DNS \
                                     --user $VM_IMAGE_USER \
@@ -124,7 +124,6 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```bash
    sudo apt-get update
-   . run/utils/apt_install.sh
    ```
 
    If you get a `dkpg` error, wait a minute or so and try again.
@@ -146,6 +145,8 @@ Setup your local development environment by following [these instructions](LOCAL
    ```bash
    cd /opt/wellsaid-labs/Text-to-Speech
 
+   . run/utils/apt_install.sh
+
    # NOTE: You will always want to be in an active venv whenever you want to work with python.
    python3 -m venv venv
    . venv/bin/activate
@@ -164,14 +165,9 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Authorize GCP...
 
    ```bash
-   PROJECT=voice-research-255602
-
    . run/utils/gcp_install.sh
    gcloud init --console-only
-   gcloud auth login --no-launch-browser
    gcloud auth application-default login --no-launch-browser
-   gcloud config set project $PROJECT
-   gcloud auth application-default set-quota-project $PROJECT
    ```
 
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
