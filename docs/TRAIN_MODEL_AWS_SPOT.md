@@ -70,8 +70,8 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Create an EC2 instance for training...
 
    ```bash
-   python -m run.utils.aws --name=$VM_NAME --image-id=$VM_IMAGE_ID --machine-type=$VM_MACHINE_TYPE \
-      --ssh-key-path=$AWS_SSH_KEY --startup-script="$STARTUP_SCRIPT"
+   python -m run.utils.aws spot-instance --name=$VM_NAME --image-id=$VM_IMAGE_ID \
+      --machine-type=$VM_MACHINE_TYPE --ssh-key-path=$AWS_SSH_KEY --startup-script="$STARTUP_SCRIPT"
    ```
 
    This instance will stay online for seven days or until you cancel the spot request.
