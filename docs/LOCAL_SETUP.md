@@ -20,6 +20,7 @@ brew install sox # Audio processing
 brew install ffmpeg # Audio processing
 brew install espeak # Speech synthesizer
 brew install rsync lsyncd # File transfer
+brew install jq # Bash JSON parser
 ```
 
 ## 2. Clone the Repository
@@ -49,7 +50,7 @@ python -m pip install pip --upgrade
 python -m pip install -r requirements.txt --upgrade
 ```
 
-## 4. Configure Visualization Dependencies
+## 4. Comet
 
 This repository requires [Comet](https://www.comet.ml) for visualization, and you'll need to ask
 a team member to create you an account.
@@ -59,7 +60,7 @@ level directory. The file should contain the `api_key`, `rest_api_key` and `work
 configurations. Learn more on
 [this web page](https://www.comet.ml/docs/python-sdk/advanced/#python-configuration).
 
-## 5. Install Google Cloud SDK
+## 5. Google Cloud
 
 This repository relies on GCP, and you'll need to ask team member to get access to our GCP projects,
 "Voice Research" and "Voice Service".
@@ -78,6 +79,41 @@ gcloud auth login
 # NOTE: Authorize Google client libraries, learn more:
 # https://cloud.google.com/sdk/gcloud/reference/auth/application-default
 gcloud auth application-default login
+```
+
+## 6. Amazon Web Services
+
+You'll need to ask team member to get access to our AWS account via an IAM user.
+
+### Configure the AWS CLI
+
+1. Follow
+   [this guide](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_CreateAccessKey)
+   to create an access key.
+
+1. Set these bash variables with your new access key...
+
+   ```bash
+   AWS_ACCESS_KEY_ID='your-aws-access-key-id'
+   AWS_SECRET_ACCESS_KEY='your-aws-secret-access-key'
+   ```
+
+1. And run this..
+
+   ```bash
+   mkdir ~/.aws
+   echo "[default]
+   aws_access_key_id=$AWS_ACCESS_KEY_ID
+   aws_secret_access_key=$AWS_SECRET_ACCESS_KEY" > ~/.aws/credentials
+   ```
+
+### Configure AWS SSH
+
+You'll need an SSH key to use with your AWS account, you can create one like so...
+
+```bash
+AWS_KEY_PAIR_NAME=$USER"_amazon_web_services"
+ssh-keygen -t rsa -C $AWS_KEY_PAIR_NAME -f ~/.ssh/$AWS_KEY_PAIR_NAME -N ""
 ```
 
 ## Good job! 🎉
