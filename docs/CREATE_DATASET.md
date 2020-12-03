@@ -111,13 +111,13 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    NAME=actor_name # Example: hilary_noriega
    ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
    PROCESSED=$ROOT/processed
-   ENCODING=.wav
+   GCS_URI=gs://wellsaid_labs_datasets/$NAME
+   ENCODING=.wav # Example: .wav, .mp3
    ```
 
 1. Download the dataset, like so...
 
    ```bash
-   # GCS_URI=gs://wellsaid_labs_datasets/$NAME
    mkdir -p $ROOT
    gsutil -m cp -r -n $GCS_URI/scripts $ROOT/
    gsutil -m cp -r -n $GCS_URI/recordings $ROOT/
@@ -153,7 +153,19 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    python -m run.data rename --only-numbers $ROOT/
    ```
 
-1. (Optional) Ensure the recording and script pairings make sense...
+1. (Optional) Evaluate the recording and script files...
+
+   1. Ensure the recording and script pairings make sense.
+   1. Investigate any WAV or CSV outliers (very small files paired with very large files, for example, could indicate a mismatch or a bad file)
+   1. Ensure CSV files are <100k characters and WAV files are <5,500 seconds.
+
+      > **NOTE**: Any pairings longer than these limits must be split into smaller chunks in order to process:
+      >
+      > - Use an audio processing software (Adobe Audition, e.g.) to splice the audio into chunks ~1 hour or less
+      > - Use a CSV editor to splice the corresponding CSVs at the same spot (it's easier to do this in parallel so you don't split up rows of data!)
+      > - Upload these new chunks back to GCS
+      > - Move the longer original WAV and CSV files into an archive directory in GCS along with a note.txt file explaining why this archive exists
+      > - **Begin this process over from the top**
 
    ```bash
    RECORDINGS=$(ls $ROOT/recordings/*$ENCODING | python -m run.utils.sort)
@@ -178,7 +190,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. (Optional) Review audio file loudness for inconsistencies...
 
    ```bash
-   python -m run.data audio loudness $PROCESSED/recordings/*$ENCODING > $PROCESSED/$NAME_loudness.txt
+   python -m run.data audio loudness $PROCESSED/recordings/*$ENCODING > $PROCESSED/$NAME"_loudness.txt"
    ```
 
 1. Normalize audio file format for
