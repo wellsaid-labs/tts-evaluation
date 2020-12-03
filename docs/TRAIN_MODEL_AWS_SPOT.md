@@ -123,7 +123,7 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Install these packages, like so...
 
    ```bash
-   sudo apt-get update
+   sudo apt-get update -y
    ```
 
    If you get a `dkpg` error, wait a minute or so and try again.
@@ -147,7 +147,7 @@ Setup your local development environment by following [these instructions](LOCAL
 
    . run/utils/apt_install.sh
 
-   # NOTE: You will always want to be in an active venv whenever you want to work with python.
+   # NOTE: You will always want to be in an active `venv` whenever you want to work with python.
    python3 -m venv venv
    . venv/bin/activate
 
