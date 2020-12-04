@@ -1,14 +1,192 @@
 """Get details about Google Cloud virtual machine instances."""
+import logging
 import math
+import pathlib
 import subprocess
+import time
+import typing
+from enum import Enum
 
 import google.auth
+import google.auth.credentials
 import googleapiclient.discovery
+import googleapiclient.errors
 import typer
 
+import lib
+
+logger = logging.getLogger(__name__)
 app = typer.Typer(context_settings=dict(max_content_width=math.inf))
 credentials, project = google.auth.default()
 compute = googleapiclient.discovery.build("compute", "v1", credentials=credentials)
+
+
+class _OperationStatus(str, Enum):
+    DONE = "DONE"
+    RUNNING = "RUNNING"
+    PENDING = "PENDING"
+
+
+def _wait_for_operation(
+    operation: str, poll_interval: int = 1, is_global: bool = True, **kwargs
+) -> typing.Dict:
+    """ Wait for an operation to finish, and return the finished operation. """
+    while True:
+        client = compute.globalOperations() if is_global else compute.zoneOperations()
+        result = client.get(project=project, operation=operation, **kwargs).execute()
+        if result["status"] == _OperationStatus.DONE.value:
+            if "error" in result:
+                raise Exception(result["error"])
+            return result
+        time.sleep(poll_interval)
+
+
+class _InstanceStatus(str, Enum):
+    STAGING = "STAGING"
+    RUNNING = "RUNNING"
+
+
+@app.command()
+def make_instance(
+    name: str = typer.Option(...),
+    zone: str = typer.Option(...),
+    machine_type: str = typer.Option(...),
+    gpu_type: str = typer.Option(...),
+    gpu_count: int = typer.Option(...),
+    disk_size: int = typer.Option(...),
+    disk_type: str = typer.Option(...),
+    metadata: typing.List[str] = typer.Option(...),
+    metadata_from_file: typing.List[str] = typer.Option(...),
+    image_project: str = typer.Option(...),
+    image: str = typer.Option(...),
+):
+    """ Create a managed and preemptible instance. """
+    lib.environment.set_basic_logging_config()
+
+    image_ = compute.images().get(project=image_project, image=image).execute()
+    logger.info("Found image: %s", image_["selfLink"])
+
+    # NOTE: There is some predefined and special metadata, like startup-script:
+    # https://cloud.google.com/compute/docs/startupscript
+    splits = [m.split("=", maxsplit=1) for m in metadata]
+    metadata_ = [{"key": k, "value": v} for k, v in splits]
+    splits = [m.split("=", maxsplit=1) for m in metadata_from_file]
+    metadata_ += [{"key": k, "value": pathlib.Path(v).read_text()} for k, v in splits]
+    body = {
+        "name": name,
+        "properties": {
+            "machineType": machine_type,
+            "metadata": {"kind": "compute#metadata", "items": metadata_},
+            "guestAccelerators": [{"acceleratorCount": gpu_count, "acceleratorType": gpu_type}],
+            "disks": [
+                {
+                    "kind": "compute#attachedDisk",
+                    "type": "PERSISTENT",
+                    "boot": True,
+                    "autoDelete": True,
+                    "deviceName": name,
+                    "initializeParams": {
+                        "sourceImage": image_["selfLink"],
+                        "diskType": disk_type,
+                        "diskSizeGb": str(disk_size),
+                    },
+                }
+            ],
+            "networkInterfaces": [
+                {
+                    "kind": "compute#networkInterface",
+                    "network": f"projects/{project}/global/networks/default",
+                    "accessConfigs": [
+                        {
+                            "kind": "compute#accessConfig",
+                            "name": "External NAT",
+                            "type": "ONE_TO_ONE_NAT",
+                            "networkTier": "PREMIUM",
+                        }
+                    ],
+                }
+            ],
+            "scheduling": {"preemptible": True},
+            "serviceAccounts": [
+                {
+                    "email": "default",
+                    "scopes": ["https://www.googleapis.com/auth/cloud-platform"],
+                }
+            ],
+        },
+    }
+    template_op = compute.instanceTemplates().insert(project=project, body=body).execute()
+    template_op = _wait_for_operation(template_op["name"])
+    logger.info("Created instance template: %s", template_op["targetLink"])
+
+    body = {
+        "name": name,
+        "baseInstanceName": name,
+        "instanceTemplate": template_op["targetLink"],
+        "targetSize": 1,
+        "statefulPolicy": {
+            "preservedState": {"disks": {name: {"autoDelete": "ON_PERMANENT_INSTANCE_DELETION"}}}
+        },
+    }
+    client = compute.instanceGroupManagers()
+    manager_op = client.insert(project=project, zone=zone, body=body).execute()
+    manager_op = _wait_for_operation(manager_op["name"], zone=zone, is_global=False)
+    logger.info("Created instance group manager: %s", manager_op["targetLink"])
+
+
+@app.command()
+def watch_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
+    """ Print the instance status. """
+    lib.environment.set_basic_logging_config()
+
+    instance = None
+    client = compute.instanceGroupManagers()
+    while (
+        instance is None
+        or "instanceStatus" not in instance
+        or instance["instanceStatus"] != _InstanceStatus.RUNNING.value
+    ):
+        list_op = client.listManagedInstances(project=project, zone=zone, instanceGroupManager=name)
+        instance = list_op.execute()["managedInstances"][0]
+        if "instanceStatus" in instance:
+            logger.info("The status of the instance is '%s'.", instance["instanceStatus"])
+        else:
+            message = "Instance group manager is '%s' '%s'."
+            logger.info(message, instance["currentAction"], instance["instance"].split("/")[-1])
+            if len(instance["lastAttempt"]) > 0:
+                message = instance["lastAttempt"]["errors"]["errors"][0]["message"]
+                logger.warning("The last attempt failed because... '%s'", message)
+        time.sleep(5)
+
+
+@app.command()
+def delete_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
+    """ Delete the instance. """
+    lib.environment.set_basic_logging_config()
+
+    try:
+        client = compute.instanceGroupManagers()
+        manager_op = client.delete(project=project, zone=zone, instanceGroupManager=name).execute()
+        manager_op = _wait_for_operation(manager_op["name"], zone=zone, is_global=False)
+        logger.info("Deleted instance group manager: %s", manager_op["targetLink"])
+    except googleapiclient.errors.HttpError as error:
+        logger.warning(error._get_reason())
+
+    try:
+        client = compute.instanceGroups()
+        group_op = client.delete(project=project, zone=zone, instanceGroup=name).execute()
+        group_op = _wait_for_operation(group_op["name"], zone=zone, is_global=False)
+        logger.info("Deleted instance group: %s", group_op["targetLink"])
+    except googleapiclient.errors.HttpError as error:
+        logger.warning(error._get_reason())
+
+    try:
+        client = compute.instanceTemplates()
+        template_op = client.delete(project=project, instanceTemplate=name).execute()
+        template_op = _wait_for_operation(template_op["name"])
+        logger.info("Deleted instance template: %s", template_op["targetLink"])
+    except googleapiclient.errors.HttpError as error:
+        logger.warning(error._get_reason())
 
 
 @app.command()
