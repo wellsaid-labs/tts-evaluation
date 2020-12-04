@@ -7,6 +7,7 @@ import glob
 import logging
 import os
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -206,6 +207,7 @@ def check_module_versions(requirements_path: Path = ROOT_PATH / "requirements.tx
     for line in requirements_path.read_text().split():
         line = line.strip()
         if "==" in line:
+            line = re.sub(r"\[.*?\]", "", line)  # Remove brackets
             specification = line.split()[0]
             package = specification.split("==")[0]
             installed = [p for p in split if p.split("==")[0] == package]

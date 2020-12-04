@@ -89,6 +89,13 @@ def test_check_module_versions(_, __):
     lib.environment.check_module_versions()
 
 
+@mock.patch("lib.environment.subprocess.check_output", return_value="comet-ml==3.2.0".encode())
+@mock.patch("lib.environment.Path.read_text", return_value="comet-ml[cpu_logging]==3.2.0\n")
+def test_check_module_versions__brackets(_, __):
+    """ Test that `check_module_versions` handles brackets. """
+    lib.environment.check_module_versions()
+
+
 @mock.patch("lib.environment.subprocess.check_output", return_value="torch==0.4.1".encode())
 @mock.patch("lib.environment.Path.read_text", return_value="torch==0.4.0\n")
 def test_check_module_versions__wrong_version(_, __):
