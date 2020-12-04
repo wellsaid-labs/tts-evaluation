@@ -227,7 +227,7 @@ def set_seed(seed: int = HParam()):
     torchnlp.random.set_seed(seed)
 
 
-def bash_time_label(add_pid: bool = True) -> str:
+def bash_time_label(add_pid: bool = True, short: bool = False) -> str:
     """Get a bash friendly string representing the time and process pid.
 
     NOTE: This string is optimized for sorting by ordering units of time from largest to smallest.
@@ -238,10 +238,13 @@ def bash_time_label(add_pid: bool = True) -> str:
 
     Args:
         add_pid: If `True` add the process PID to the label.
+        short: Create a shorter label.
+            (e.g. DATE-2020y12m04d-10h37m52s_PID-82735 vs 20201204_103752_82735)
     """
-    label = str(time.strftime("DATE-%Yy%mm%dd-%Hh%Mm%Ss", time.localtime()))
+    template = "%Y%m%d_%H%M%S" if short else "DATE-%Yy%mm%dd-%Hh%Mm%Ss"
+    label = str(time.strftime(template, time.localtime()))
     if add_pid:
-        label += f"_PID-{os.getpid()}"
+        label += f"_{os.getpid()}" if short else f"_PID-{os.getpid()}"
     return label
 
 

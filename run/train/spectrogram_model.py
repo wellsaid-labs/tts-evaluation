@@ -938,7 +938,7 @@ def start(
     context: typer.Context,
     project: str = typer.Argument(..., help="Experiment project name."),
     name: str = typer.Argument("", help="Experiment name."),
-    tags: typing.List[str] = typer.Argument([], help="Experiment tags."),
+    tags: typing.List[str] = typer.Argument(..., help="Experiment tags."),
 ):
     """ Start a training run in PROJECT named NAME with TAGS. """
     comet = run._utils.CometMLExperiment(project_name=project)

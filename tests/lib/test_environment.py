@@ -123,6 +123,12 @@ def test_bash_time_label():
     assert "DATE-" in label
 
 
+def test_bash_time_label__short():
+    """ Test that a short bash time label has 3 parts. """
+    label = lib.environment.bash_time_label(short=True)
+    assert len(label.split("_")) == 3
+
+
 def test_bash_time_label__no_pid():
     label = lib.environment.bash_time_label(False)
     assert "PID-" not in label
