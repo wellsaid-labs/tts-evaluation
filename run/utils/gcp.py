@@ -1,4 +1,10 @@
-"""Get details about Google Cloud virtual machine instances."""
+"""Utilities for working with Google Cloud Platform (GCP).
+
+TODO:
+- Add a script for creating a batch of instances.
+- Add a script for imaging a machine and printing the progress.
+- Add a script for updating a machine's start up script for signal model training.
+"""
 import logging
 import math
 import pathlib
