@@ -1,6 +1,5 @@
-# Learn more: https://stackoverflow.com/questions/58733368/gcp-metadata-access-from-startup-script
-
 getMetadata() {
+  # Learn more: https://stackoverflow.com/questions/58733368/gcp-metadata-access-from-startup-script
   curl -fs http://metadata/computeMetadata/v1/instance/attributes/$1 \
     -H "Metadata-Flavor: Google"
 }
