@@ -33,10 +33,8 @@ pytest
 pytest-cov
 pytest-xdist
 
-# Linting
+# Static-analysis
 flake8
-
-# Auto Formatter
 black
 isort
 
