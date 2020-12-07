@@ -7,7 +7,12 @@ from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 
 import lib
-from lib.datasets.utils import Passage, Speaker, conventional_dataset_loader
+from lib.datasets.utils import (
+    Passage,
+    Speaker,
+    conventional_dataset_loader,
+    update_conventional_passage_script,
+)
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import num2words
@@ -108,8 +113,7 @@ def _process_text(passage: Passage, verbalize: bool):
 
     # NOTE: Messes up pound sign (£); therefore, this is after `_verbalize_currency`
     script = lib.text.normalize_vo_script(script)
-    passage.script = script
-    return passage
+    return update_conventional_passage_script(passage, script)
 
 
 # Reference: https://keithito.com/LJ-Speech-Dataset/

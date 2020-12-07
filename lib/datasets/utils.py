@@ -538,3 +538,14 @@ def conventional_dataset_loader(
         )
         for audio_metadata, row in zip(get_audio_metadata(audio_paths_), rows)
     ]
+
+
+def update_conventional_passage_script(passage: Passage, script: str) -> Passage:
+    """Update `passage.script` with `passage.transcript` and `passage.alignments` accordingly
+    in a conventional passage."""
+    passage.script = script
+    passage.transcript = script
+    assert len(passage.alignments) == 1
+    slice = (0, len(script))
+    passage.alignments = (passage.alignments[0]._replace(script=slice, transcript=slice),)
+    return passage

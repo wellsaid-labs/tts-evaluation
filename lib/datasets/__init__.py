@@ -22,6 +22,7 @@ from lib.datasets.utils import (
     conventional_dataset_loader,
     dataset_loader,
     span_generator,
+    update_conventional_passage_script,
 )
 
 # TODO: Consider not using the actors realnames in the codebase in an effort to protect their
@@ -60,6 +61,7 @@ __all__ = [
     "IsConnected",
     "span_generator",
     "dataset_loader",
+    "update_conventional_passage_script",
     "conventional_dataset_loader",
     "lj_speech_dataset",
     "m_ailabs",

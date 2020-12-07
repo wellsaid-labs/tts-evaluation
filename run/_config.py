@@ -462,7 +462,8 @@ def _include_passage(passage: datasets.Passage) -> bool:
 def _handle_passage(passage: datasets.Passage) -> datasets.Passage:
     """Update and/or check `passage`."""
     if passage.speaker in set([datasets.JUDY_BIEBER, datasets.MARY_ANN, datasets.ELIZABETH_KLETT]):
-        passage.script = lib.text.normalize_vo_script(passage.script)
+        script = lib.text.normalize_vo_script(passage.script)
+        passage = lib.datasets.update_conventional_passage_script(passage, script)
     else:
         assert lib.text.is_normalized_vo_script(passage.script)
     return passage
