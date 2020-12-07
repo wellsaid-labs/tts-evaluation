@@ -1,4 +1,5 @@
 import collections
+import math
 import typing
 
 import hparams
@@ -75,15 +76,24 @@ def test__get_loudness():
     sample_rate = 1000
     length = 10
     implementation = "K-weighting"
-    precision = 1
-    meter = lib.audio.get_pyloudnorm_meter(sample_rate, implementation)
+    precision = 5
+    block_size = 0.4
+    meter = lib.audio.get_pyloudnorm_meter(
+        sample_rate=sample_rate, filter_class=implementation, block_size=block_size
+    )
     with torchnlp.random.fork_rng(12345):
         audio = np.random.rand(sample_rate * length) * 2 - 1  # type: ignore
         alignment = Alignment((0, length), (0, length), (0, length))
         loundess = _spectrogram_model._get_loudness(
-            audio, sample_rate, alignment, implementation, precision
+            audio=audio,
+            alignment=alignment,
+            block_size=block_size,
+            precision=precision,
+            sample_rate=sample_rate,
+            filter_class=implementation,
         )
-        assert np.isfinite(loundess)  # type: ignore
+        assert loundess is not None
+        assert math.isfinite(loundess)
         assert round(meter.integrated_loudness(audio), precision) == loundess
 
 

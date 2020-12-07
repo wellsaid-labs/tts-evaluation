@@ -891,13 +891,18 @@ def get_signal_to_db_mel_spectrogram(*args, **kwargs) -> SignalTodBMelSpectrogra
     return SignalTodBMelSpectrogram(*args, **kwargs)
 
 
+@configurable
 @lru_cache(maxsize=None)
-def get_pyloudnorm_meter(*args, **kwargs) -> pyloudnorm.Meter:
+def get_pyloudnorm_meter(
+    sample_rate: int = HParam(),
+    filter_class: str = HParam(),
+    **kwargs,
+) -> pyloudnorm.Meter:
     """Get cached `pyloudnorm.Meter` module.
 
     NOTE: `pyloudnorm.Meter` is expensive to import, so we try to avoid it.
     """
-    return pyloudnorm.Meter(*args, **kwargs)
+    return pyloudnorm.Meter(rate=sample_rate, filter_class=filter_class, **kwargs)
 
 
 def _db_mel_spectrogram_to_spectrogram(
@@ -941,7 +946,6 @@ def griffin_lim(
     window: np.ndarray = HParam(),
     power: float = HParam(),
     iterations: int = HParam(),
-    use_tqdm: bool = False,
     **kwargs,
 ) -> np.ndarray:
     """Transform dB mel spectrogram to waveform with the Griffin-Lim algorithm.
@@ -974,7 +978,6 @@ def griffin_lim(
             frame. See the full specification for window at ``librosa.filters.get_window``.
         power: Amplification float used to reduce artifacts.
         iterations: Number of iterations of griffin lim to run.
-        use_tqdm: If `True` attach a progress bar during iteration.
 
     Returns:
         (np.ndarray [num_samples]): Predicted waveform.
@@ -988,6 +991,7 @@ def griffin_lim(
             **kwargs,
         )
         spectrogram = spectrogram.transpose()
+        spectrogram = np.power(spectrogram, power)
         waveform = librosa.core.griffinlim(
             spectrogram,
             n_iter=iterations,

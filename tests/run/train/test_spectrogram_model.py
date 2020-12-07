@@ -67,15 +67,18 @@ def test_integration(mock_urlretrieve):
         get_dataset_label("num_passages", DatasetType.TRAIN, JUDY_BIEBER): 2,
         get_dataset_label("num_characters", DatasetType.TRAIN, JUDY_BIEBER): 29,
         get_dataset_label("num_seconds", DatasetType.TRAIN, JUDY_BIEBER): "3s 820ms",
+        get_dataset_label("num_audio_files", DatasetType.TRAIN, JUDY_BIEBER): 2,
         get_dataset_label("num_passages", DatasetType.TRAIN, LINDA_JOHNSON): 1,
         get_dataset_label("num_characters", DatasetType.TRAIN, LINDA_JOHNSON): 29,
         get_dataset_label("num_seconds", DatasetType.TRAIN, LINDA_JOHNSON): "1s 958ms",
+        get_dataset_label("num_audio_files", DatasetType.TRAIN, LINDA_JOHNSON): 1,
         get_dataset_label("num_passages", DatasetType.DEV): 1,
         get_dataset_label("num_characters", DatasetType.DEV): 34,
         get_dataset_label("num_seconds", DatasetType.DEV): "2s 650ms",
         get_dataset_label("num_passages", DatasetType.DEV, JUDY_BIEBER): 1,
         get_dataset_label("num_characters", DatasetType.DEV, JUDY_BIEBER): 34,
         get_dataset_label("num_seconds", DatasetType.DEV, JUDY_BIEBER): "2s 650ms",
+        get_dataset_label("num_audio_files", DatasetType.DEV, JUDY_BIEBER): 1,
     }
 
     # Create training state

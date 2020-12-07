@@ -175,22 +175,22 @@ def _random_nonoverlapping_alignments(
 @configurable
 def _get_loudness(
     audio: numpy.ndarray,
-    sample_rate: int,
     alignment: lib.datasets.Alignment,
-    implementation: str = HParam(),
     block_size: float = HParam(),
     precision: int = HParam(),
+    **kwargs,
 ) -> typing.Optional[float]:
     """Get the loudness in LUFS for an `alignment` in `audio`.
 
     Args:
         ...
-        implementation: See `pyloudnorm.Meter` for various loudness implementations.
         precision: The number of decimal places to round LUFS.
         ...
     """
-    _to_samples = seconds_to_samples
-    meter = lib.audio.get_pyloudnorm_meter(sample_rate, implementation, block_size)
+    meter = lib.audio.get_pyloudnorm_meter(block_size=block_size, **kwargs)
+    if "sample_rate" in kwargs:
+        kwargs = {"sample_rate": kwargs["sample_rate"]}
+    _to_samples = functools.partial(seconds_to_samples, **kwargs)
     slice_ = audio[_to_samples(alignment.audio[0]) : _to_samples(alignment.audio[1])]
     if slice_.shape[0] >= _to_samples(block_size):
         return round(meter.integrated_loudness(slice_), precision)
@@ -213,7 +213,7 @@ def _random_loudness_annotations(
     loudness_mask = torch.zeros(len(span.script), dtype=torch.bool)
     for alignment in _random_nonoverlapping_alignments(span.alignments, max_annotations):
         slice_ = slice(alignment.script[0], alignment.script[1])
-        loudness_ = _get_loudness(signal, span.audio_file.sample_rate, alignment, **kwargs)
+        loudness_ = _get_loudness(signal, alignment, **kwargs)
         if loudness_ is not None:
             loudness[slice_] = loudness_
             loudness_mask[slice_] = True

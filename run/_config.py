@@ -242,6 +242,8 @@ def configure_audio_processing():
             get_weighting=lib.audio.iso226_weighting,
             **hertz_bounds,
         ),
+        # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
+        lib.audio.get_pyloudnorm_meter: HParams(sample_rate=SAMPLE_RATE, filter_class="DeMan"),
         lib.spectrogram_model.SpectrogramModel.__init__: HParams(
             # NOTE: This is based on one of the slowest legitimate example in the dataset:
             # "rate(WSL_SMurphyScript34-39,24000)/script_52_chunk_9.wav" # TODO: Rethink?
@@ -254,11 +256,8 @@ def configure_audio_processing():
         lib.signal_model.SignalModel.__init__: HParams(
             ratios=[2] * int(math.log2(frame_hop)),
         ),
-        # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
         # NOTE: A 0.400 `block_size` is standard for ITU-R BS.1770.
-        run._spectrogram_model._get_loudness: HParams(
-            implementation="DeMan", block_size=0.400, precision=0
-        ),
+        run._spectrogram_model._get_loudness: HParams(block_size=0.400, precision=0),
         run._spectrogram_model._random_loudness_annotations: HParams(max_annotations=10),
         run._spectrogram_model._random_speed_annotations: HParams(max_annotations=10, precision=2),
         run._spectrogram_model._make_stop_token: HParams(
@@ -269,8 +268,8 @@ def configure_audio_processing():
             # on average.
             # TODO: In July 2020, the spectrogram size was decreased by 2x, we should test
             # decreasing `length` by 2x, also.
-            stop_token_range=10,
-            stop_token_standard_deviation=2,
+            length=10,
+            standard_deviation=2,
         ),
     }
     add_config(config)
