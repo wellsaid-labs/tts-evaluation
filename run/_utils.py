@@ -148,7 +148,7 @@ def init_distributed(
     https://github.com/pytorch/examples/blob/master/imagenet/main.py
     """
     torch.distributed.init_process_group(
-        backend=backend, init_method=init_method, world_size=world_size
+        backend=backend, init_method=init_method, world_size=world_size, rank=rank
     )
     device = torch.device("cuda", rank)
     torch.cuda.set_device(device)
@@ -208,6 +208,7 @@ def get_dataset_stats(
         stats[label("num_seconds")] = seconds_to_string(sum(len_(p) for p in data.values()))
         for speaker, passages in data.items():
             label = functools.partial(label, speaker=speaker)
+            stats[label("num_audio_files")] = len(set(p.audio_file for p in passages))
             stats[label("num_passages")] = len(passages)
             stats[label("num_characters")] = sum(len(p.script) for p in passages)
             stats[label("num_seconds")] = seconds_to_string(len_(passages))

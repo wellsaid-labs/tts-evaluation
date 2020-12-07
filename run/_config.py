@@ -515,6 +515,10 @@ def _include_span(span: datasets.Span):
     # ambigious, and it's much easier to handle this case with text normalization.
     if any(c.isdigit() for c in span.script):
         return False
+
+    if span.audio_length <= 0.1:
+        return False
+
     return True
 
 

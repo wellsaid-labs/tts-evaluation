@@ -278,7 +278,7 @@ def normalize_audio(
     assert destination.suffix == suffix, f'The normalized file must be of type "{suffix}".'
     command = "" if len(audio_filters) == 0 else f"-af {audio_filters}"
     command = (
-        f"ffmpeg -hide_banner -loglevel warning -nostats -i {source.absolute()} -acodec {encoding} "
+        f"ffmpeg -hide_banner -loglevel error -nostats -i {source.absolute()} -acodec {encoding} "
         f"-ar {sample_rate} -ac {num_channels} {command} {destination.absolute()}"
     )
     subprocess.run(command.split(), check=True)
