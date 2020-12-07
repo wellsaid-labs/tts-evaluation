@@ -88,7 +88,7 @@ def m_ailabs_en_us_elliot_miller_speech_dataset(*args, books=ELLIOT_MILLER_BOOKS
 
 
 def m_ailabs_en_uk_elizabeth_klett_speech_dataset(*args, books=ELIZABETH_KLETT_BOOKS):
-    return m_ailabs_en_us_speech_dataset(*args, books=books)  # type: ignore
+    return m_ailabs_en_uk_speech_dataset(*args, books=books)  # type: ignore
 
 
 def m_ailabs_en_us_speech_dataset(
