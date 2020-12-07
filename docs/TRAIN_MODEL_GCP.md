@@ -82,39 +82,6 @@ Setup your local development environment by following [these instructions](LOCAL
    mkdir /opt/wellsaid-labs
    ```
 
-1. Install GPU drivers on your VM by installing
-   [CUDA-10-2](https://developer.nvidia.com/cuda-10.2-download-archive?target_os=Linux&target_arch=x86_64&target_distro=Ubuntu&target_version=1804&target_type=debnetwork)
-   , like so:
-
-   ```bash
-   wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin
-   sudo mv cuda-ubuntu1804.pin /etc/apt/preferences.d/cuda-repository-pin-600
-   sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub
-   sudo add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/ /"
-   sudo apt-get update
-   sudo apt-get -y install cuda
-   ```
-
-1. Verify CUDA installed correctly by running and ensuring no error messages print.
-
-   ```bash
-   nvidia-smi
-   ```
-
-1. Install Nvidia drivers...
-
-   ```bash
-   Would you like to install the Nvidia driver? [y/n] y
-   ```
-
-   If you get a `dkpg` error, wait a couple of minutes and try again, like so:
-
-   ```bash
-   sudo /opt/deeplearning/install-driver.sh
-   sudo reboot # Reboot, and ssh back in
-   nvidia-smi # Check that nvidia drivers are working
-   ```
-
 ### From your local repository
 
 1. Use `run.utils.lsyncd` to live sync your repository to your VM instance...
