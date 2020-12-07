@@ -97,7 +97,8 @@ def gather_list(
     return_ = [torch.zeros(max_, device=device, dtype=torch.float) for _ in lengths]
     tensor = torch.tensor(values, device=device, dtype=torch.float)
     tensor = torch.nn.functional.pad(tensor, [0, max_ - len(values)])
-    torch.distributed.gather(tensor, return_ if is_master() else None, dst=dst, **kwargs)
+    # NOTE: `ProcessGroupNCCL` does not support `gather`
+    torch.distributed.all_gather(return_, tensor, **kwargs)
     return [t.tolist()[:l] for t, l in zip(return_, lengths)]
 
 
