@@ -47,11 +47,6 @@ def _wait_for_operation(
         time.sleep(poll_interval)
 
 
-class _InstanceStatus(str, Enum):
-    STAGING = "STAGING"
-    RUNNING = "RUNNING"
-
-
 @app.command()
 def make_instance(
     name: str = typer.Option(...),
@@ -61,15 +56,15 @@ def make_instance(
     gpu_count: int = typer.Option(...),
     disk_size: int = typer.Option(...),
     disk_type: str = typer.Option(...),
-    metadata: typing.List[str] = typer.Option(...),
-    metadata_from_file: typing.List[str] = typer.Option(...),
     image_project: str = typer.Option(...),
     image: str = typer.Option(...),
+    metadata: typing.List[str] = typer.Option([]),
+    metadata_from_file: typing.List[str] = typer.Option([]),
 ):
-    """ Create a managed and preemptible instance. """
+    """ Create a managed and preemptible instance named NAME in ZONE. """
     lib.environment.set_basic_logging_config()
 
-    image_ = compute.images().get(project=image_project, image=image).execute()
+    image_ = compute.images().getFromFamily(project=image_project, family=image).execute()
     logger.info("Found image: %s", image_["selfLink"])
 
     # NOTE: There is some predefined and special metadata, like startup-script:
@@ -141,17 +136,15 @@ def make_instance(
 
 
 @app.command()
-def watch_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
-    """ Print the instance status. """
+def watch_instance(
+    name: str = typer.Option(...),
+    zone: str = typer.Option(...),
+    poll_interval: int = typer.Option(5),
+):
+    """ Print the status of instance named NAME in ZONE. """
     lib.environment.set_basic_logging_config()
-
-    instance = None
     client = compute.instanceGroupManagers()
-    while (
-        instance is None
-        or "instanceStatus" not in instance
-        or instance["instanceStatus"] != _InstanceStatus.RUNNING.value
-    ):
+    while True:
         list_op = client.listManagedInstances(project=project, zone=zone, instanceGroupManager=name)
         instance = list_op.execute()["managedInstances"][0]
         if "instanceStatus" in instance:
@@ -162,12 +155,12 @@ def watch_instance(name: str = typer.Option(...), zone: str = typer.Option(...))
             if len(instance["lastAttempt"]) > 0:
                 message = instance["lastAttempt"]["errors"]["errors"][0]["message"]
                 logger.warning("The last attempt failed because... '%s'", message)
-        time.sleep(5)
+        time.sleep(poll_interval)
 
 
 @app.command()
 def delete_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
-    """ Delete the instance. """
+    """ Delete the instance named NAME in ZONE. """
     lib.environment.set_basic_logging_config()
 
     try:

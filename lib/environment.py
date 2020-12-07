@@ -183,8 +183,7 @@ def set_basic_logging_config(id_: int = os.getpid(), reset=False):
         root.addHandler(handler)
 
 
-@configurable
-def assert_enough_disk_space(min_space: float = HParam()):
+def assert_enough_disk_space(min_space):
     """Check if there is enough disk space.
 
     TODO: In order to support different disk sizes, run the check against an absolute vs relative

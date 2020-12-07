@@ -1,0 +1,217 @@
+# Train a Model with Google Cloud Platform (GCP) Preemptible Instances
+
+This markdown will walk you through the steps required to train a model on an GCP virtual
+machine.
+
+Related Documentation:
+
+- Would you like to train a end-to-end TTS model? TODO
+
+## Prerequisites
+
+Setup your local development environment by following [these instructions](LOCAL_SETUP.md).
+
+## Train a Model with Amazon Web Services (AWS)
+
+### From your local repository
+
+1. Setup your environment variables...
+
+   ... for training the spectrogram model...
+
+   ```zsh
+   TRAIN_SCRIPT_PATH='run/train/spectrogram_model.py'
+   ```
+
+   ... for training the signal model...
+
+   ```zsh
+   TRAIN_SCRIPT_PATH='run/train/signal_model.py'
+   ```
+
+   ❓ LEARN MORE: See our machine type benchmarks [here](TODO).
+
+   Also set these environment variables...
+
+   ```zsh
+   ZONE='us-east1-c' # EXAMPLE: us-central1-a
+   NAME=$USER"-baseline" # EXAMPLE: michaelp-baseline
+   GCP_USER='michealp'
+   ```
+
+   💡 TIP: Don't place all your preemptible instances in the same zone, just in case one zone
+   runs out of capacity.
+
+1. Create an instance for training...
+
+   ```zsh
+   python -m run.utils.gcp make-instance \
+      --name=$NAME \
+      --zone=$ZONE \
+      --machine-type='n1-standard-16' \
+      --gpu-type='nvidia-tesla-t4' \
+      --gpu-count=2 \
+      --disk-size=512 \
+      --disk-type='pd-balanced' \
+      --image-project='ubuntu-os-cloud' \
+      --image='ubuntu-1804-lts' \
+      --metadata="startup-script-user=$GCP_USER" \
+      --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
+      --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
+   python -m run.utils.gcp watch-instance --name=$NAME --zone=$ZONE
+   ```
+
+   💡 TIP: The output of the startup script will be saved on the VM here:
+   `/var/log/syslog`
+
+1. SSH into the instance...
+
+   ```zsh
+   VM_NAME=$(python -m run.utils.gcp most-recent --filter $NAME)
+   gcloud compute ssh --zone=$ZONE $VM_NAME
+   ```
+
+   Continue to run this command until it succeeds.
+
+### On the instance
+
+1. Create a directory for our software...
+
+   ```bash
+   sudo chmod -R 777 /opt
+   mkdir /opt/wellsaid-labs
+   ```
+
+1. Install GPU drivers on your VM by installing
+   [CUDA-10-2](https://developer.nvidia.com/cuda-10.2-download-archive?target_os=Linux&target_arch=x86_64&target_distro=Ubuntu&target_version=1804&target_type=debnetwork)
+   , like so:
+
+   ```bash
+   wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin
+   sudo mv cuda-ubuntu1804.pin /etc/apt/preferences.d/cuda-repository-pin-600
+   sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub
+   sudo add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/ /"
+   sudo apt-get update
+   sudo apt-get -y install cuda
+   ```
+
+1. Verify CUDA installed correctly by running and ensuring no error messages print.
+
+   ```bash
+   nvidia-smi
+   ```
+
+1. Install Nvidia drivers...
+
+   ```bash
+   Would you like to install the Nvidia driver? [y/n] y
+   ```
+
+   If you get a `dkpg` error, wait a couple of minutes and try again, like so:
+
+   ```bash
+   sudo /opt/deeplearning/install-driver.sh
+   sudo reboot # Reboot, and ssh back in
+   nvidia-smi # Check that nvidia drivers are working
+   ```
+
+### From your local repository
+
+1. Use `run.utils.lsyncd` to live sync your repository to your VM instance...
+
+   ```bash
+   VM_NAME=$(python -m run.utils.gcp most-recent --filter $USER)
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
+   VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
+   sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
+                                    --public-dns $VM_IP \
+                                    --user $VM_USER \
+                                    --identity-file ~/.ssh/google_compute_engine
+   ```
+
+   When prompted, enter your sudo password.
+
+1. Leave this process running until you've started training. This will allow you to make any
+   hot-fixes to your code in case you run into an error.
+
+### On the instance
+
+1. Navigate to the repository, activate a virtual environment, and install package requirements...
+
+   ```bash
+   cd /opt/wellsaid-labs/Text-to-Speech
+
+   . run/utils/gcp/install_drivers.sh
+   . run/utils/apt_install.sh
+
+   # NOTE: You will always want to be in an active `venv` whenever you want to work with python.
+   python3 -m venv venv
+   . venv/bin/activate
+
+   python -m pip install wheel pip --upgrade
+   python -m pip install -r requirements.txt --upgrade
+
+   # NOTE: Set a flag to restart training if the instance is rebooted
+   touch /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
+   ```
+
+   💡 TIP: After setting up your VM, you may want to
+   [create an Google Machine Image](https://cloud.google.com/compute/docs/machine-images/create-machine-images)
+   so you don't need to setup your VM from scratch again.
+
+1. Authorize GCP...
+
+   ```bash
+   gcloud init --console-only
+   gcloud auth application-default login --no-launch-browser
+   ```
+
+1. Start a `screen` session...
+
+   ```bash
+   screen
+   ```
+
+1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
+
+   ```bash
+   COMET_PROJECT='1-stft-mike-2020-12'
+   EXPERIMENT_NAME='Baseline'
+   ```
+
+1. Start training...
+
+   ```bash
+   # NOTE: Kill any leftover processes from other runs...
+   pkill -9 python; sleep 5s; nvidia-smi; \
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start --project $COMET_PROJECT --name "$EXPERIMENT_NAME";
+   ```
+
+   💡 TIP: You may want to include the optional
+   `--spectrogram_model_checkpoint=$SPECTROGRAM_CHECKPOINT` argument.
+
+1. Detach from your screen session by typing `Ctrl-A` then `D`.
+
+1. You can now exit your VM with the `exit` command.
+
+### From your local repository
+
+1. Kill your `lsyncd` process by typing `Ctrl-C`.
+
+## Post Training Clean Up
+
+### From your local repository
+
+1. Setup your environment variables again...
+
+   ```bash
+   ZONE='us-central1-b' # EXAMPLE: us-central1-a
+   NAME=$USER"-baseline" # EXAMPLE: michaelp-baseline
+   ```
+
+1. Delete your instance...
+
+   ```bash
+   python -m run.utils.gcp delete-instance --name=$NAME --zone=$ZONE
+   ```

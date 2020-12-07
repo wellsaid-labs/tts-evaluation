@@ -10,4 +10,4 @@ sudo update-alternatives --set python3 /usr/bin/python3.8
 sudo apt-get install python3.8-venv python3.8-dev -y
 
 # Install other dependencies
-sudo apt-get install sox ffmpeg espeak gcc libsox-fmt-mp3 -y
+sudo apt-get install sox ffmpeg espeak gcc g++ libsox-fmt-mp3 -y

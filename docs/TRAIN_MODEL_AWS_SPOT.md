@@ -59,7 +59,7 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Setup a startup script for the instance, like so...
 
    ```bash
-   STARTUP_SCRIPT=$(cat run/utils/aws_checkpoint_start_up.sh)
+   STARTUP_SCRIPT=$(cat run/utils/aws/resume_training_on_start_up.sh)
    STARTUP_SCRIPT=${STARTUP_SCRIPT//'$VM_USER'/\'$VM_IMAGE_USER\'}
    STARTUP_SCRIPT=${STARTUP_SCRIPT//'$TRAIN_SCRIPT_PATH'/\'$TRAIN_SCRIPT_PATH\'}
    ```
@@ -165,7 +165,7 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Authorize GCP...
 
    ```bash
-   . run/utils/gcp_install.sh
+   . run/utils/aws/install_google_cloud_sdk.sh
    gcloud init --console-only
    gcloud auth application-default login --no-launch-browser
    ```
