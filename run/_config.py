@@ -418,10 +418,7 @@ def configure():
     configure_audio_processing()
     configure_models()
 
-    config = {
-        lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
-        lib.environment.set_seed: HParams(seed=RANDOM_SEED),
-    }
+    config = {lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR)}
     add_config(config)
 
 

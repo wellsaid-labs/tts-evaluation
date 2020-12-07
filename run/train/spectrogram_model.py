@@ -59,12 +59,18 @@ logger = logging.getLogger(__name__)
 app = typer.Typer()
 
 
+@configurable
+def _set_seed(seed=HParam()):
+    lib.environment.set_seed(seed)
+
+
 def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, typing.Any]:
     """ Configure modules for spectrogram model training, and return parameters. """
     run._config.configure()
     train_batch_size = 56
     torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)  # type: ignore
     config = {
+        _set_seed: HParams(seed=run._config.RANDOM_SEED),
         _State._get_optimizers: HParams(
             lr_multiplier_schedule=partial(
                 lib.optimizers.warmup_lr_multiplier_schedule, warmup=500
@@ -113,7 +119,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
     }
     add_config(config)
     add_config(more_config)
-    lib.environment.set_seed()
+    _set_seed()
     return lib.utils.nested_to_flat_dict(get_config())
 
 
@@ -315,9 +321,8 @@ def _get_data_loaders(
     """ Initialize training and development data loaders.  """
     bucket_size = bucket_size_multiplier * train_batch_size
     _DataIteratorPartial = partial(_DataIterator, bucket_size=bucket_size)
-    DataLoaderPartial = partial(
-        _DataLoader, num_workers=num_workers, device=state.device, input_encoder=state.input_encoder
-    )
+    kwargs = dict(num_workers=num_workers, device=state.device, input_encoder=state.input_encoder)
+    DataLoaderPartial = partial(_DataLoader, **kwargs)
     return (
         DataLoaderPartial(_DataIteratorPartial(train_dataset), train_batch_size),
         DataLoaderPartial(_DataIteratorPartial(dev_dataset), dev_batch_size),
@@ -814,7 +819,6 @@ _BatchHandler = typing.Callable[
 @configurable
 def _run_worker(
     device_index: int,
-    run_root: pathlib.Path,
     checkpoints_directory: pathlib.Path,
     checkpoint: typing.Optional[pathlib.Path],
     train_dataset: run._config.Dataset,
@@ -864,7 +868,6 @@ def _run_worker(
 
 
 def _run(
-    run_root: pathlib.Path,
     checkpoints_path: pathlib.Path,
     config: typing.Dict[str, typing.Any],
     comet: CometMLExperiment,
@@ -884,7 +887,6 @@ def _run(
     return lib.distributed.spawn(
         _run_worker.get_configured_partial(),  # type: ignore
         args=(
-            run_root,
             checkpoints_path,
             checkpoint,
             train_dataset,
@@ -929,8 +931,8 @@ def resume(
     checkpoint_ = typing.cast(Checkpoint, loaded)
     comet = run._utils.CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
     config, recorder = _setup(comet, context.args)
-    paths = maybe_make_experiment_directories_from_checkpoint(checkpoint_, recorder)
-    _run(*paths, config, comet, checkpoint)
+    _, checkpoints_path = maybe_make_experiment_directories_from_checkpoint(checkpoint_, recorder)
+    _run(checkpoints_path, config, comet, checkpoint)
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -948,7 +950,7 @@ def start(
     experiment_root = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / lib.environment.bash_time_label()
     run_root, checkpoints_path = maybe_make_experiment_directories(experiment_root, recorder)
     comet.log_other(run._config.get_environment_label("directory"), str(run_root))
-    _run(run_root, checkpoints_path, config, comet)
+    _run(checkpoints_path, config, comet)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -18,7 +18,6 @@ from pathlib import Path
 import torch
 import torch.cuda
 import torchnlp.random
-from hparams import HParam, configurable
 
 import lib
 
@@ -219,8 +218,7 @@ def check_module_versions(requirements_path: Path = ROOT_PATH / "requirements.tx
                 )
 
 
-@configurable
-def set_seed(seed: int = HParam()):
+def set_seed(seed: int):
     """ Set package random generator seed(s). """
     logger.info("Setting seed to be %d", seed)
     torchnlp.random.set_seed(seed)

@@ -473,7 +473,7 @@ def make_span_batch(
         docs[i] = span.as_doc()
 
     char_to_word = [_get_char_to_word(d) for d in docs]
-    phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs))
+    phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs, is_tqdm=False))
     iter_ = zip(spans, phonemes)
     decoded = [DecodedInput(s.script, p, s.speaker) for s, p in iter_]
     encoded = [input_encoder.encode(d) for d in decoded]

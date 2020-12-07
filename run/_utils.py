@@ -117,12 +117,14 @@ def normalize_audio(
     """Normalize audio with ffmpeg in `dataset`.
 
     TODO: Consider using the ffmpeg SoX resampler, instead.
+    TODO: In order to better estimate the performance, we could measure progress based on audio
+    file length.
+    TODO: In order to encourage parallelism, the longest files should be normalized first.
     """
     logger.info("Normalizing dataset audio...")
     audio_paths_ = [[p.audio_file.path for p in v] for v in dataset.values()]
     audio_paths: typing.Set[pathlib.Path] = set(flatten(audio_paths_))
-    partial = lib.audio.normalize_audio.get_configured_partial()  # type: ignore
-    partial = functools.partial(partial, **kwargs)
+    partial = functools.partial(lib.audio.normalize_audio, **kwargs)
     partial = functools.partial(_normalize_audio, callable_=partial)
     args = [(p, _normalize_path(p)) for p in audio_paths if not _normalize_path(p).exists()]
     with multiprocessing.pool.ThreadPool(num_processes) as pool:

@@ -156,6 +156,7 @@ def _grapheme_to_phoneme(
     *graphemes: typing.Union[str, spacy.tokens.Doc, spacy.tokens.span.Span],
     chunk_size: int = 4,
     max_parallel: int = typing.cast(int, os.cpu_count()),
+    is_tqdm: bool = True,
     **kwargs,
 ) -> typing.Iterator[str]:
     # NOTE: Create a `spacy.tokens.Doc` for every `str`.
@@ -172,7 +173,8 @@ def _grapheme_to_phoneme(
     else:
         logger.info("Getting phonemes for %d graphemes.", len(docs))
         with ThreadPool(min(max_parallel, len(docs))) as pool:
-            yield from tqdm(pool.imap(partial_, docs, chunksize=chunk_size), total=len(docs))
+            iterator = pool.imap(partial_, docs, chunksize=chunk_size)
+            yield from tqdm(iterator, total=len(docs)) if is_tqdm else iterator
 
 
 @hparams.configurable
