@@ -160,13 +160,6 @@ Setup your local development environment by following [these instructions](LOCAL
    [create an Google Machine Image](https://cloud.google.com/compute/docs/machine-images/create-machine-images)
    so you don't need to setup your VM from scratch again.
 
-1. Authorize GCP...
-
-   ```bash
-   gcloud init --console-only
-   gcloud auth application-default login --no-launch-browser
-   ```
-
 1. Start a `screen` session...
 
    ```bash
