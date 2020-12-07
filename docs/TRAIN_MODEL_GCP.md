@@ -34,9 +34,9 @@ Setup your local development environment by following [these instructions](LOCAL
    Also set these environment variables...
 
    ```zsh
-   ZONE='us-east1-c' # EXAMPLE: us-central1-a
-   NAME=$USER"-baseline" # EXAMPLE: michaelp-baseline
-   GCP_USER='michealp'
+   ZONE='your-vm-zone' # EXAMPLE: us-central1-a
+   NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
+   GCP_USER='your-gcp-user-name' # Example: michaelp
    ```
 
    💡 TIP: Don't place all your preemptible instances in the same zone, just in case one zone
@@ -136,8 +136,8 @@ Setup your local development environment by following [these instructions](LOCAL
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
 
    ```bash
-   COMET_PROJECT='1-stft-mike-2020-12'
-   EXPERIMENT_NAME='Baseline'
+   COMET_PROJECT='your-comet-project'
+   EXPERIMENT_NAME='Your experiment name'
    ```
 
 1. Start training...
@@ -166,8 +166,8 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Setup your environment variables again...
 
    ```bash
-   ZONE='us-central1-b' # EXAMPLE: us-central1-a
-   NAME=$USER"-baseline" # EXAMPLE: michaelp-baseline
+   ZONE='your-vm-zone' # EXAMPLE: us-central1-a
+   NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    ```
 
 1. Delete your instance...

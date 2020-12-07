@@ -254,13 +254,13 @@ def configure_audio_processing():
         lib.signal_model.SignalModel.__init__: HParams(
             ratios=[2] * int(math.log2(frame_hop)),
         ),
+        # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
+        # NOTE: A 0.400 `block_size` is standard for ITU-R BS.1770.
         run._spectrogram_model._get_loudness: HParams(
-            loudness_implementation="DeMan", loudness_precision=0
+            implementation="DeMan", block_size=0.400, precision=0
         ),
-        run._spectrogram_model._random_loudness_annotations: HParams(max_loudness_annotations=10),
-        run._spectrogram_model._random_speed_annotations: HParams(
-            max_speed_annotations=10, speed_precision=2
-        ),
+        run._spectrogram_model._random_loudness_annotations: HParams(max_annotations=10),
+        run._spectrogram_model._random_speed_annotations: HParams(max_annotations=10, precision=2),
         run._spectrogram_model._make_stop_token: HParams(
             # NOTE: The stop token uncertainty was approximated by a fully trained model that
             # learned the stop token distribution. The distribution looked like a gradual increase

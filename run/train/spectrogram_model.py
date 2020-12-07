@@ -1,4 +1,5 @@
 import collections
+import collections.abc
 import dataclasses
 import logging
 import math
@@ -270,7 +271,7 @@ class _DataIterator(torch.utils.data.IterableDataset):
             yield from sorted(spans, key=lambda s: s.audio_length)
 
 
-class _DataLoader(collections.Iterable):
+class _DataLoader(collections.abc.Iterable):
     """Load and batch spans given a dataset `iterator`."""
 
     def __init__(
@@ -281,6 +282,7 @@ class _DataLoader(collections.Iterable):
         input_encoder: InputEncoder,
         **kwargs,
     ):
+        logger.info("Creating `DataLoader` with `batch_size=%d`...", batch_size)
         self.device = device
         loader = torch.utils.data.dataloader.DataLoader(
             iterator,
@@ -295,6 +297,7 @@ class _DataLoader(collections.Iterable):
         self.loader = iter(loader)
         self.num_frames = 0
         self.num_spans = 0
+        logger.info("Created `DataLoader`.")
 
     @property
     def average_spectrogram_length(self) -> float:

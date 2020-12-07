@@ -177,65 +177,71 @@ def _get_loudness(
     audio: numpy.ndarray,
     sample_rate: int,
     alignment: lib.datasets.Alignment,
-    loudness_implementation: str = HParam(),
-    loudness_precision: int = HParam(),
-) -> float:
+    implementation: str = HParam(),
+    block_size: float = HParam(),
+    precision: int = HParam(),
+) -> typing.Optional[float]:
     """Get the loudness in LUFS for an `alignment` in `audio`.
 
     Args:
         ...
-        loudness_implementation: See `pyloudnorm.Meter` for various loudness implementations.
-        loudness_precision: The number of decimal places to round LUFS.
+        implementation: See `pyloudnorm.Meter` for various loudness implementations.
+        precision: The number of decimal places to round LUFS.
+        ...
     """
-    _seconds_to_samples = functools.partial(seconds_to_samples, sample_rate=sample_rate)
-    meter = lib.audio.get_pyloudnorm_meter(sample_rate, loudness_implementation)
-    slice_ = slice(_seconds_to_samples(alignment.audio[0]), _seconds_to_samples(alignment.audio[1]))
-    return round(meter.integrated_loudness(audio[slice_]), loudness_precision)
+    _to_samples = seconds_to_samples
+    meter = lib.audio.get_pyloudnorm_meter(sample_rate, implementation, block_size)
+    slice_ = audio[_to_samples(alignment.audio[0]) : _to_samples(alignment.audio[1])]
+    if slice_.shape[0] >= _to_samples(block_size):
+        return round(meter.integrated_loudness(slice_), precision)
+    return None
 
 
 @configurable
 def _random_loudness_annotations(
     span: lib.datasets.Span,
     signal: numpy.ndarray,
-    max_loudness_annotations: int = HParam(),
+    max_annotations: int = HParam(),
     **kwargs,
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
     """
     Args:
         ...
-        max_loudness_annotations: The maximum expected loudness intervals within a text segment.
+        max_annotations: The maximum expected loudness intervals within a text segment.
     """
     loudness = torch.zeros(len(span.script))
     loudness_mask = torch.zeros(len(span.script), dtype=torch.bool)
-    for alignment in _random_nonoverlapping_alignments(span.alignments, max_loudness_annotations):
+    for alignment in _random_nonoverlapping_alignments(span.alignments, max_annotations):
         slice_ = slice(alignment.script[0], alignment.script[1])
-        loudness[slice_] = _get_loudness(signal, span.audio_file.sample_rate, alignment, **kwargs)
-        loudness_mask[slice_] = True
+        loudness_ = _get_loudness(signal, span.audio_file.sample_rate, alignment, **kwargs)
+        if loudness_ is not None:
+            loudness[slice_] = loudness_
+            loudness_mask[slice_] = True
     return loudness, loudness_mask
 
 
 @configurable
 def _random_speed_annotations(
     span: lib.datasets.Span,
-    max_speed_annotations: int = HParam(),
-    speed_precision: int = HParam(),
+    max_annotations: int = HParam(),
+    precision: int = HParam(),
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
     """
     Args:
         span
-        max_speed_annotations: The maximum expected speed intervals within a text segment.
-        speed_precision: The number of decimal places to round phonemes per second.
+        max_annotations: The maximum expected speed intervals within a text segment.
+        precision: The number of decimal places to round phonemes per second.
     """
     speed = torch.zeros(len(span.script))
     speed_mask = torch.zeros(len(span.script), dtype=torch.bool)
-    for alignment in _random_nonoverlapping_alignments(span.alignments, max_speed_annotations):
+    for alignment in _random_nonoverlapping_alignments(span.alignments, max_annotations):
         slice_ = slice(alignment.script[0], alignment.script[1])
         # TODO: Instead of using characters per second, we could estimate the number of phonemes
         # with `grapheme_to_phoneme`. This might be slow, so we'd need to do so in a batch.
         # `grapheme_to_phoneme` can only estimate the number of phonemes because we can't
         # incorperate sufficient context to get the actual phonemes pronounced by the speaker.
         second_per_char = (alignment.audio[1] - alignment.audio[0]) / (slice_.stop - slice_.start)
-        speed[slice_] = round(second_per_char, speed_precision)
+        speed[slice_] = round(second_per_char, precision)
         speed_mask[slice_] = True
     return speed, speed_mask
 
@@ -323,9 +329,7 @@ def _get_normalized_half_gaussian(length: int, standard_deviation: float) -> tor
 
 @configurable
 def _make_stop_token(
-    spectrogram: SequenceBatch,
-    stop_token_range: int = HParam(),
-    stop_token_standard_deviation: float = HParam(),
+    spectrogram: SequenceBatch, length: int = HParam(), standard_deviation: float = HParam()
 ):
     """Create a batch of stop tokens from a spectrogram batch.
 
@@ -344,8 +348,8 @@ def _make_stop_token(
     Args:
         spectrogram (SequenceBatch[torch.FloatTensor [num_frames, batch_size, frame_channels],
             torch.LongTensor [1, batch_size]))
-        stop_token_range: The range of uncertainty there is in the exact `stop_token` location.
-        stop_token_standard_deviation: The standard deviation of uncertainty there is in the exact
+        length: The range of uncertainty there is in the exact `stop_token` location.
+        standard_deviation: The standard deviation of uncertainty there is in the exact
             `stop_token` location.
 
     Returns:
@@ -354,7 +358,7 @@ def _make_stop_token(
     """
     # [num_frames, batch_size, frame_channels] → [num_frames, batch_size]
     stop_token = spectrogram.tensor.new_zeros(spectrogram.tensor.shape[0:2])
-    gaussian_kernel = _get_normalized_half_gaussian(stop_token_range, stop_token_standard_deviation)
+    gaussian_kernel = _get_normalized_half_gaussian(length, standard_deviation)
     for i in range(spectrogram.tensor.shape[1]):
         stop_token_length = int(spectrogram.lengths[0, i].item())
         min_ = min(stop_token_length, gaussian_kernel.shape[0])

@@ -16,6 +16,7 @@ from functools import lru_cache
 from math import ceil, floor
 from pathlib import Path
 
+import numpy
 import torch
 from third_party import LazyLoader
 
@@ -266,11 +267,11 @@ class Span:
         set(self, "transcript", transcript)
         set(self, "alignments", tuple(Alignment(*a) for a in alignments))  # type: ignore
 
-    def audio(self):
+    def audio(self) -> numpy.ndarray:
         start = self.passage.alignments[self.span][0].audio[0]
         return read_audio_slice(self.passage.audio_file.path, start, self.audio_length)
 
-    def to_string(self, *fields):
+    def to_string(self, *fields) -> str:
         return _to_string(self, *fields)
 
     def __getitem__(self: SpanType, key) -> SpanType:
@@ -280,6 +281,7 @@ class Span:
 
     def _check_invariants(self):
         """ Check datastructure invariants. """
+        self.passage._check_invariants()
         assert self.span.stop - self.span.start, "`Span` must have `Alignments`."
         assert self.span.stop <= len(self.passage.alignments) and self.span.stop >= 0
         assert self.span.start < len(self.passage.alignments) and self.span.start >= 0
@@ -548,4 +550,20 @@ def update_conventional_passage_script(passage: Passage, script: str) -> Passage
     assert len(passage.alignments) == 1
     slice = (0, len(script))
     passage.alignments = (passage.alignments[0]._replace(script=slice, transcript=slice),)
+    return passage
+
+
+def update_passage_audio(passage: Passage, audio_file: AudioFileMetadata, tolerance: float = 0.001):
+    """Update `passage.audio_file` with a new `audio_file` that has a similar length to the old
+    audio file.
+
+    TODO: Should this be included in the `Passage` object?
+    """
+    message = "The audio files must have similar length."
+    assert abs(passage.audio_file.length - audio_file.length) < tolerance, message
+    clamp_ = lambda a: (min(a[0], audio_file.length), min(a[1], audio_file.length))
+    updated = tuple(a._replace(audio=clamp_(a.audio)) for a in passage.alignments)
+    passage.alignments = updated
+    passage.audio_file = audio_file
+    passage._check_invariants()
     return passage

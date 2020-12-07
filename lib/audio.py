@@ -126,11 +126,11 @@ def _get_audio_metadata(
     if len(chunks) == 1:
         yield from _get_audio_metadata_helper(chunks[0])
     else:
-        message = "Getting audio metadata for %d audio files in %d chunks."
+        message = "Getting audio metadata for %d audio files in %d chunks..."
         logger.info(message, len(paths), len(chunks))
         with tqdm(total=len(paths)) as progress_bar:
             with multiprocessing.pool.ThreadPool(min(max_parallel, len(chunks))) as pool:
-                for result in pool.imap_unordered(_get_audio_metadata_helper, chunks):
+                for result in pool.imap(_get_audio_metadata_helper, chunks):
                     yield from result
                     progress_bar.update(len(result))
 

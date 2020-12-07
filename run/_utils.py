@@ -134,7 +134,7 @@ def normalize_audio(
     lookup = {p: m for p, m in zip(audio_paths, metadatas)}
     for passages in dataset.values():
         for passage in passages:
-            passage.audio_file = lookup[passage.audio_file.path]
+            lib.datasets.update_passage_audio(passage, lookup[passage.audio_file.path])
 
 
 def init_distributed(

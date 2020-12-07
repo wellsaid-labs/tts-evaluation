@@ -171,7 +171,7 @@ def _grapheme_to_phoneme(
     if len(docs) < chunk_size:
         yield from (partial_(d) for d in docs)
     else:
-        logger.info("Getting phonemes for %d graphemes.", len(docs))
+        logger.info("Getting phonemes for %d graphemes...", len(docs))
         with ThreadPool(min(max_parallel, len(docs))) as pool:
             iterator = pool.imap(partial_, docs, chunksize=chunk_size)
             yield from tqdm(iterator, total=len(docs)) if is_tqdm else iterator
