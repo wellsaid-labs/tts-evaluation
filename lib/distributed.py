@@ -87,9 +87,12 @@ def all_gather(value: float, device=_default_device, **kwargs) -> typing.List[fl
 
 
 def gather_list(
-    values: typing.List[float], dst: int = get_master_rank(), device=_default_device, **kwargs
+    values: typing.List[float], device=_default_device, **kwargs
 ) -> typing.List[typing.List[float]]:
-    """ Gather `values` from all processes into a `list` on the `dst` process. """
+    """Gather `values` from all processes into a `list` on the `dst` process.
+
+    TODO: Support `typing.List[int]`.
+    """
     if not is_initialized():
         return [values]
     lengths = [int(l) for l in all_gather(len(values), device=device, **kwargs)]

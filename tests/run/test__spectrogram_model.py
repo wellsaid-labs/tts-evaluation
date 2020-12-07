@@ -197,7 +197,7 @@ def test_get_num_skipped():
         [1, 1, 0],  # Test that a masked token cannot be skipped
         [1, 1, 1],
     ]
-    token_mask = torch.tensor(token_mask_).bool()
+    token_mask = torch.tensor(token_mask_).transpose(0, 1).bool()
     num_skips = _spectrogram_model.get_num_skipped(alignments, token_mask, spectrogram_mask)
     assert num_skips.tolist() == [0.0, 1.0, 0.0, 1.0]
 

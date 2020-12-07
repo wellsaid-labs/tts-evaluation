@@ -417,7 +417,7 @@ class _DistributedMetrics:
         lambda_ = lambda t: flatten(lib.distributed.gather_list(t.squeeze().tolist()))
         iterator = zip(lambda_(batch.encoded_speaker.tensor), lambda_(batch.spectrogram.lengths))
         for speaker_index, num_frames in iterator:
-            speaker = input_encoder.speaker_encoder.index_to_token[speaker_index]
+            speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
             self.num_frames_per_speaker[speaker] += num_frames
 
     def update_alignment_metrics(
@@ -436,9 +436,9 @@ class _DistributedMetrics:
         Args:
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
             spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
-            token_mask (torch.BoolTensor [batch_size, num_tokens])
-            num_tokens (torch.LongTensor [batch_size])
-            speakers (torch.LongTensor [batch_size])
+            token_mask (torch.BoolTensor [num_tokens, batch_size])
+            num_tokens (torch.LongTensor [1, batch_size])
+            speakers (torch.LongTensor [1, batch_size])
             ...
         """
         if spectrogram_mask.sum() == 0 or token_mask.sum() == 0:

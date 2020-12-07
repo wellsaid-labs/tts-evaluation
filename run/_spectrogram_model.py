@@ -525,7 +525,7 @@ def get_num_skipped(
 
     Args:
         alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-        token_mask (torch.BoolTensor [batch_size, num_tokens])
+        token_mask (torch.BoolTensor [num_tokens, batch_size])
         spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
 
     Returns:
@@ -539,6 +539,7 @@ def get_num_skipped(
     num_skipped = num_skipped.scatter(dim=2, index=indices, src=one)
     # [num_frames, batch_size, num_tokens] → [batch_size, num_tokens]
     num_skipped = num_skipped.masked_fill(~spectrogram_mask.unsqueeze(-1), 0).sum(dim=0)
+    token_mask = token_mask.transpose(0, 1)
     return (num_skipped.masked_fill(~token_mask, -1) == 0).float().sum(dim=1)
 
 
