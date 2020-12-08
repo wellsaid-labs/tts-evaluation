@@ -537,6 +537,9 @@ def _run_stt(
                 # https://stackoverflow.com/questions/64470470/how-to-convert-google-cloud-natural-language-entity-sentiment-response-to-json-d
                 response: LongRunningRecognizeResponse = operation.result()
                 json_ = MessageToDict(LongRunningRecognizeResponse.pb(response))
+                # TODO: Along with `upload_from_string`, add blob metadata with the creation
+                # time. Google Storage has a strange implementation of creation date, and it'd be
+                # useful to add our own creation date timestamp, that doesn't get overwritten.
                 dest_blobs[i].upload_from_string(json.dumps(json_), content_type="application/json")
                 message = 'STT operation %s "%s" finished.'
                 logger.info(message, operation.operation.name, blob_to_gcs_uri(dest_blobs[i]))

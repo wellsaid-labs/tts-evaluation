@@ -549,6 +549,7 @@ class _DistributedMetrics:
         dataset_stats: Stats = {
             "data_loader_queue_size": div(self.data_queue_size, [1] * len(self.data_queue_size)),
             "average_rms_level": rms,
+            "average_num_frames": div(self.num_frames, self.batch_size),
             "max_num_frames": self.max_num_frames,
         }
         partial_ = partial(get_dataset_label, type_=dataset_type)
@@ -566,7 +567,7 @@ class _DistributedMetrics:
         for bucket, count in self.num_spans_per_text_length.items():
             lower = bucket * self.text_length_bucket_size
             upper = (bucket + 1) * self.text_length_bucket_size
-            label = partial_(f"{lower}_{upper}", cadence=cadence)
+            label = partial_(f"text_length_bucket_{lower}_{upper}", cadence=cadence)
             comet.log_metric(label, count / sum(self.num_spans_per_text_length.values()))
 
         zip_ = zip(self.num_tokens_per_speaker.items(), self.num_skips_per_speaker.values())
@@ -674,7 +675,8 @@ def _run_step(
         log_metric("grad_norm/two", get_parameter_norm(state.model.parameters(), 2))
         log_metric("grad_norm/inf", get_parameter_norm(state.model.parameters(), math.inf))
         log_metric("grad_norm/max_norm", state.clipper.max_norm)
-        [log_metric("parameter_%d/lr", g["lr"]) for i, g in enumerate(state.optimizer.param_groups)]
+        iterator = enumerate(state.optimizer.param_groups)
+        [log_metric(f"parameter_{i}/lr", g["lr"]) for i, g in iterator]
 
         state.clipper.clip()
         state.optimizer.step()
@@ -947,7 +949,7 @@ def start(
     context: typer.Context,
     project: str = typer.Argument(..., help="Experiment project name."),
     name: str = typer.Argument("", help="Experiment name."),
-    tags: typing.List[str] = typer.Argument(..., help="Experiment tags."),
+    tags: typing.List[str] = typer.Option([], help="Experiment tags."),
 ):
     """ Start a training run in PROJECT named NAME with TAGS. """
     comet = run._utils.CometMLExperiment(project_name=project)

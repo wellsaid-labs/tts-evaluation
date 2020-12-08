@@ -137,9 +137,6 @@ def configure_audio_processing():
     sox_encoding = "32-bit Floating Point PCM"
     ffmpeg_encoding = "pcm_f32le"
     suffix = ".wav"
-    loud_norm_audio_filter = lib.audio.format_ffmpeg_audio_filter(
-        "loudnorm", i=-21, lra=4, tp=-6.1, print_format="summary"
-    )
 
     # SOURCE (Tacotron 2):
     # mel spectrograms are computed through a shorttime Fourier transform (STFT)
@@ -200,7 +197,7 @@ def configure_audio_processing():
             encoding=ffmpeg_encoding,
             sample_rate=SAMPLE_RATE,
             num_channels=num_channels,
-            audio_filters=lib.audio.format_ffmpeg_audio_filters([loud_norm_audio_filter]),
+            audio_filters=lib.audio.AudioFilters(""),
         ),
         lib.audio.normalize_suffix: HParams(suffix=suffix),
         lib.audio.assert_audio_normalized: HParams(
