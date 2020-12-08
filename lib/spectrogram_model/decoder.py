@@ -153,6 +153,7 @@ class AutoregressiveDecoder(torch.nn.Module):
         speaker: torch.Tensor,
         target_frames: typing.Optional[torch.Tensor] = None,
         hidden_state: typing.Optional[AutoregressiveDecoderHiddenState] = None,
+        **kwargs,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, AutoregressiveDecoderHiddenState]:
         return super().__call__(
             tokens=tokens,
@@ -161,6 +162,7 @@ class AutoregressiveDecoder(torch.nn.Module):
             speaker=speaker,
             target_frames=target_frames,
             hidden_state=hidden_state,
+            **kwargs,
         )
 
     def forward(
@@ -171,6 +173,7 @@ class AutoregressiveDecoder(torch.nn.Module):
         speaker: torch.Tensor,
         target_frames: typing.Optional[torch.Tensor] = None,
         hidden_state: typing.Optional[AutoregressiveDecoderHiddenState] = None,
+        **kwargs,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, AutoregressiveDecoderHiddenState]:
         """
         Args:
@@ -252,6 +255,7 @@ class AutoregressiveDecoder(torch.nn.Module):
                 num_tokens=num_tokens,
                 query=frame.unsqueeze(0),
                 hidden_state=attention_hidden_state,
+                **kwargs,
             )
 
             frames_list.append(frame)

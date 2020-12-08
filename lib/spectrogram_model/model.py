@@ -1,5 +1,6 @@
 import enum
 import logging
+import math
 import typing
 
 import torch
@@ -130,6 +131,7 @@ class SpectrogramModel(torch.nn.Module):
         tokens_mask: torch.Tensor,
         speaker: torch.Tensor,
         use_tqdm: bool,
+        **kwargs,
     ) -> SpectrogramModelGenerator:
         """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
@@ -167,7 +169,7 @@ class SpectrogramModel(torch.nn.Module):
         )
         while keep_going():
             frame, stop_token, alignment, hidden_state = self.decoder(
-                tokens, tokens_mask, num_tokens, speaker, hidden_state=hidden_state
+                tokens, tokens_mask, num_tokens, speaker, hidden_state=hidden_state, **kwargs
             )
 
             lengths[~stopped] += 1
@@ -302,7 +304,7 @@ class SpectrogramModel(torch.nn.Module):
         speaker = self.embed_speaker(speaker)  # [batch_size] → [batch_size, speaker_embedding_size]
         # [batch_size, num_tokens] → [num_tokens, batch_size, encoder_hidden_size]
         encoded_tokens = self.encoder(tokens, tokens_mask, num_tokens, speaker)
-        frames, stop_tokens, alignments, hidden_state = self.decoder(
+        frames, stop_tokens, alignments, _ = self.decoder(
             encoded_tokens,
             tokens_mask,
             num_tokens,
@@ -327,6 +329,7 @@ class SpectrogramModel(torch.nn.Module):
         num_tokens: typing.Optional[torch.Tensor] = None,
         split_size: float = 32,
         use_tqdm: bool = False,
+        token_skip_warning: float = math.inf,
     ) -> SpectrogramModelGenerator:
         """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
@@ -337,6 +340,8 @@ class SpectrogramModel(torch.nn.Module):
                 each sequence.
             split_size: The maximum length of a sequence returned by the generator.
             use_tqdm: If `True` then this adds a `tqdm` progress bar.
+            token_skip_warning: If the attention skips more than `token_skip_warning`, then
+                a `logger.warning` will be logged.
 
         Generator Returns:
             frames (torch.FloatTensor [num_frames, batch_size (optional), num_frame_channels]):
@@ -356,9 +361,8 @@ class SpectrogramModel(torch.nn.Module):
         speaker = self.embed_speaker(speaker)  # [batch_size] → [batch_size, speaker_embedding_size]
         # [batch_size, num_tokens] → [num_tokens, batch_size, encoder_hidden_size]
         encoded_tokens = self.encoder(tokens, tokens_mask, num_tokens, speaker)
-        generator = self._infer_generator(
-            encoded_tokens, split_size, num_tokens, tokens_mask, speaker, use_tqdm
-        )
+        args = (encoded_tokens, split_size, num_tokens, tokens_mask, speaker, use_tqdm)
+        generator = self._infer_generator(*args, token_skip_warning=token_skip_warning)
 
         squeeze_ = lambda t: t.squeeze(1)
         yield from ((i if is_batch else map(squeeze_, i)) for i in generator)  # type: ignore
@@ -408,6 +412,7 @@ class SpectrogramModel(torch.nn.Module):
         mode: typing.Literal[Mode.INFER],
         num_tokens: typing.Optional[torch.Tensor] = None,
         use_tqdm: bool = False,
+        token_skip_warning: float = math.inf,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         ...  # pragma: no cover
 
@@ -420,6 +425,7 @@ class SpectrogramModel(torch.nn.Module):
         num_tokens: typing.Optional[torch.Tensor] = None,
         split_size: float = 32,
         use_tqdm: bool = False,
+        token_skip_warning: float = math.inf,
     ) -> SpectrogramModelGenerator:
         ...  # pragma: no cover
 
