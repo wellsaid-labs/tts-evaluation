@@ -25,37 +25,42 @@ from lib.datasets.utils import (
     update_conventional_passage_script,
     update_passage_audio,
 )
+from lib.datasets.wsl_datasets import (
+    ADRIENNE_WALKER_HELLER,
+    ALICIA_HARRIS,
+    ALICIA_HARRIS__MANUAL_POST,
+    BETH_CAMERON,
+    BETH_CAMERON__CUSTOM,
+    ELISE_RANDALL,
+    FRANK_BONACQUISTI,
+    GEORGE_DRAKE_JR,
+    HANUMAN_WELCH,
+    HEATHER_DOE,
+    HILARY_NORIEGA,
+    JACK_RUTKOWSKI,
+    JACK_RUTKOWSKI__MANUAL_POST,
+    JOHN_HUNERLACH__NARRATION,
+    JOHN_HUNERLACH__RADIO,
+    MARK_ATHERLAY,
+    MEGAN_SINCLAIR,
+    SAM_SCHOLL,
+    SAM_SCHOLL__MANUAL_POST,
+    STEVEN_WAHLBERG,
+    SUSAN_MURPHY,
+    WSL_DATASETS,
+)
 
-# TODO: Consider not using the actors realnames in the codebase in an effort to protect their
-# privacy.
 # TODO: Consider updating M-AILABS and LJSpeech to Google Storage, so that we can download
 # and upload them faster. It'll also give us protection, if the datasets are deleted.
 
-HILARY_NORIEGA = Speaker("Hilary Noriega")
-ALICIA_HARRIS = Speaker("Alicia Harris")
-MARK_ATHERLAY = Speaker("Mark Atherlay")
-SAM_SCHOLL = Speaker("Sam Scholl")
+
 DataLoader = typing.Callable[[Path], typing.List[Passage]]
-
-
-def hilary_noriega_speech_dataset(*args, **kwargs) -> typing.List[Passage]:
-    kwargs.update({"speaker": HILARY_NORIEGA})
-    return _dataset_loader(*args, **kwargs)
-
-
-def sam_scholl_speech_dataset(*args, **kwargs) -> typing.List[Passage]:
-    kwargs.update({"speaker": SAM_SCHOLL})
-    return _dataset_loader(*args, **kwargs)
-
-
-WSL_GCS_PATH = "gs://wellsaid_labs_datasets"
-
-
-def _dataset_loader(
-    directory: Path, speaker: Speaker, gcs_path: str = WSL_GCS_PATH, **kwargs
-) -> typing.List[Passage]:
-    label = speaker.name.lower().replace(" ", "_")
-    return dataset_loader(directory, label, f"{gcs_path}/{label}/processed", speaker, **kwargs)
+DATASETS = typing.cast(typing.Dict[Speaker, DataLoader], WSL_DATASETS)
+DATASETS[LINDA_JOHNSON] = lj_speech_dataset  # type: ignore
+DATASETS[JUDY_BIEBER] = m_ailabs_en_us_judy_bieber_speech_dataset
+DATASETS[MARY_ANN] = m_ailabs_en_us_mary_ann_speech_dataset
+DATASETS[ELLIOT_MILLER] = m_ailabs_en_us_elliot_miller_speech_dataset
+DATASETS[ELIZABETH_KLETT] = m_ailabs_en_uk_elizabeth_klett_speech_dataset
 
 
 __all__ = [
@@ -76,12 +81,34 @@ __all__ = [
     "m_ailabs_en_us_mary_ann_speech_dataset",
     "m_ailabs_en_us_elliot_miller_speech_dataset",
     "m_ailabs_en_uk_elizabeth_klett_speech_dataset",
+    "ADRIENNE_WALKER_HELLER",
+    "ALICIA_HARRIS__MANUAL_POST",
     "ALICIA_HARRIS",
+    "ALICIA_HARRIS",
+    "BETH_CAMERON__CUSTOM",
+    "BETH_CAMERON",
+    "ELISE_RANDALL",
     "ELIZABETH_KLETT",
     "ELLIOT_MILLER",
+    "FRANK_BONACQUISTI",
+    "GEORGE_DRAKE_JR",
+    "HANUMAN_WELCH",
+    "HEATHER_DOE",
+    "HILARY_NORIEGA",
+    "JACK_RUTKOWSKI__MANUAL_POST",
+    "JACK_RUTKOWSKI",
+    "JOHN_HUNERLACH__NARRATION",
+    "JOHN_HUNERLACH__RADIO",
     "JUDY_BIEBER",
     "LINDA_JOHNSON",
     "MARK_ATHERLAY",
+    "MARK_ATHERLAY",
     "MARY_ANN",
+    "MEGAN_SINCLAIR",
+    "SAM_SCHOLL__MANUAL_POST",
     "SAM_SCHOLL",
+    "SAM_SCHOLL",
+    "STEVEN_WAHLBERG",
+    "SUSAN_MURPHY",
+    "DATASETS",
 ]

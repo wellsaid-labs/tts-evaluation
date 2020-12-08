@@ -1,3 +1,4 @@
+import copy
 import enum
 import logging
 import math
@@ -16,7 +17,7 @@ import lib
 import lib.datasets.m_ailabs
 import run
 from lib import datasets
-from lib.datasets import Speaker
+from lib.datasets import DATASETS, WSL_DATASETS, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import IPython
@@ -43,15 +44,9 @@ SAMPLE_RATE = 24000
 # Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
 NUM_FRAME_CHANNELS = 128
 PHONEME_SEPARATOR = "|"
-DATASETS = {
-    # NOTE: Elliot Miller is not included due to his unannotated character portrayals.
-    datasets.HILARY_NORIEGA: datasets.hilary_noriega_speech_dataset,
-    datasets.LINDA_JOHNSON: datasets.lj_speech_dataset,
-    datasets.JUDY_BIEBER: datasets.m_ailabs_en_us_judy_bieber_speech_dataset,
-    datasets.MARY_ANN: datasets.m_ailabs_en_us_mary_ann_speech_dataset,
-    datasets.ELIZABETH_KLETT: datasets.m_ailabs_en_uk_elizabeth_klett_speech_dataset,
-    datasets.SAM_SCHOLL: datasets.sam_scholl_speech_dataset,
-}
+DATASETS = copy.copy(DATASETS)
+# NOTE: Elliot Miller is not included due to his unannotated character portrayals.
+del DATASETS[datasets.ELLIOT_MILLER]
 
 TTS_DISK_CACHE_NAME = ".tts_cache"  # NOTE: Hidden directory stored in other directories for caching
 DISK_PATH = lib.environment.ROOT_PATH / "disk"
@@ -480,9 +475,7 @@ def get_dataset(
 
 def split_dataset(
     dataset: Dataset,
-    dev_speakers: typing.Set[lib.datasets.Speaker] = set(
-        [datasets.HILARY_NORIEGA, datasets.SAM_SCHOLL]
-    ),
+    dev_speakers: typing.Set[lib.datasets.Speaker] = set(WSL_DATASETS.keys()),
     dev_size: int = 60 * 60,
 ) -> typing.Tuple[Dataset, Dataset]:
     """Split the dataset into a train set and development set.
