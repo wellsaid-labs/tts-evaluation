@@ -48,10 +48,31 @@ def _get_total_length(paths: typing.List[pathlib.Path]) -> float:
     return sum([m.length for m in lib.audio.get_audio_metadata(paths)])
 
 
+def _is_include(
+    speaker_name: str,
+    include: typing.List[str],
+    exclude: typing.List[str],
+    normalize: typing.Callable[[str], str] = lambda s: s.lower(),
+) -> bool:
+    """Include `speaker_name` if it matches any substring in `include` and it doesn't match
+    any substring in `exclude`."""
+    is_exclude = any(normalize(e) in normalize(speaker_name) for e in exclude)
+    return any(normalize(i) in normalize(speaker_name) for i in include) and not is_exclude
+
+
 @app.command()
-def download():
-    """Download the dataset."""
-    run._config.get_dataset()
+def download(
+    include: typing.List[str] = typer.Option(
+        [""], help="Only download speakers whose name includes the substring(s) --include."
+    ),
+    exclude: typing.List[str] = typer.Option(
+        [], help="Only download speakers whose name excludes the substring(s) --exclude."
+    ),
+):
+    """Download dataset(s). """
+    is_include = functools.partial(_is_include, include=include, exclude=exclude)
+    datasets = {k: v for k, v in lib.datasets.DATASETS.items() if is_include(k.name)}
+    [loader(run._config.DATA_PATH) for loader in datasets.values()]
 
 
 def _file_numberings(directory: pathlib.Path) -> typing.List[str]:
