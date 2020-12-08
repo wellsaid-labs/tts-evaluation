@@ -50,6 +50,7 @@ DATASETS = {
     datasets.JUDY_BIEBER: datasets.m_ailabs_en_us_judy_bieber_speech_dataset,
     datasets.MARY_ANN: datasets.m_ailabs_en_us_mary_ann_speech_dataset,
     datasets.ELIZABETH_KLETT: datasets.m_ailabs_en_uk_elizabeth_klett_speech_dataset,
+    datasets.SAM_SCHOLL: datasets.sam_scholl_speech_dataset,
 }
 
 TTS_DISK_CACHE_NAME = ".tts_cache"  # NOTE: Hidden directory stored in other directories for caching

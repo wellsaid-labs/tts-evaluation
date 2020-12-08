@@ -55,9 +55,9 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. Set these variables...
 
    ```zsh
-   VM_NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-dataset-processing
+   VM_NAME=$USER"-dataset-processing" # EXAMPLE: michaelp-dataset-processing
    # NOTE: Pick a zone that's closest to the GCS bucket `wellsaid_labs_datasets`.
-   VM_ZONE=your-vm-instance-zone # EXAMPLE: us-central1-a
+   VM_ZONE=us-central1-a # EXAMPLE: us-central1-a
 
    PROJECT=voice-research-255602
    VM_MACHINE_TYPE=n1-standard-2
@@ -111,13 +111,13 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    NAME=actor_name # Example: hilary_noriega
    ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
    PROCESSED=$ROOT/processed
-   ENCODING=.wav
+   GCS_URI=gs://wellsaid_labs_datasets/$NAME
+   ENCODING=.wav # Example: .wav, .mp3
    ```
 
 1. Download the dataset, like so...
 
    ```bash
-   GCS_URI=gs://wellsaid_labs_datasets/$NAME
    mkdir -p $ROOT
    gsutil -m cp -r -n $GCS_URI/scripts $ROOT/
    gsutil -m cp -r -n $GCS_URI/recordings $ROOT/
@@ -148,9 +148,24 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 
    ```bash
    python -m run.data rename $ROOT/
+
+   # OR
+   python -m run.data rename --only-numbers $ROOT/
    ```
 
-1. (Optional) Ensure the recording and script pairings make sense...
+1. (Optional) Evaluate the recording and script files...
+
+   1. Ensure the recording and script pairings make sense.
+   1. Investigate any WAV or CSV outliers (very small files paired with very large files, for example, could indicate a mismatch or a bad file)
+   1. Ensure CSV files are <100k characters and WAV files are <5,500 seconds.
+
+      > **NOTE**: Any pairings longer than these limits must be split into smaller chunks in order to process:
+      >
+      > - Use an audio processing software (Adobe Audition, e.g.) to splice the audio into chunks ~1 hour or less
+      > - Use a CSV editor to splice the corresponding CSVs at the same spot (it's easier to do this in parallel so you don't split up rows of data!)
+      > - Upload these new chunks back to GCS
+      > - Move the longer original WAV and CSV files into an archive directory in GCS along with a note.txt file explaining why this archive exists
+      > - **Begin this process over from the top**
 
    ```bash
    RECORDINGS=$(ls $ROOT/recordings/*$ENCODING | python -m run.utils.sort)
@@ -172,6 +187,12 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    python -m run.data audio normalize $ROOT/recordings/*$ENCODING $PROCESSED/recordings
    ```
 
+1. (Optional) Review audio file loudness for inconsistencies...
+
+   ```bash
+   python -m run.data audio loudness $PROCESSED/recordings/*$ENCODING > $PROCESSED/$NAME"_loudness.txt"
+   ```
+
 1. Normalize audio file format for
    [Google speech-to-text](https://cloud.google.com/speech-to-text/docs/encoding)...
 
@@ -181,17 +202,14 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
                                       --encoding='pcm_s16le'
    ```
 
-1. (Optional) Review audio file loudness for inconsistencies...
-
-   ```bash
-   python -m run.data audio loudness $PROCESSED/recordings/*.wav
-   ```
-
 1. Normalize CSV file text...
 
    ```bash
    mkdir -p $PROCESSED/scripts
    python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts
+
+   # OR
+   python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts --tab-separated
    ```
 
 1. Upload the processed files back to GCS, like so...
@@ -227,15 +245,15 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    Audit the results of the synchronization, and re-run the script if necessary. The issues that may
    arise are:
 
-    - The sorting didn't work, and the script files didn't match up with the voice-over files,
-      correctly.
-    - The voice-over includes too much, or too little audio.
-    - The voice-over skips phrases in the script. For example, the script has odd characters or
-      duplicate phrases that are not read by the voice-actor.
-    - Google’s speech recognition made a mistake.
+   - The sorting didn't work, and the script files didn't match up with the voice-over files,
+     correctly.
+   - The voice-over includes too much, or too little audio.
+   - The voice-over skips phrases in the script. For example, the script has odd characters or
+     duplicate phrases that are not read by the voice-actor.
+   - Google’s speech recognition made a mistake.
 
-    Most of these issues can be resolved by updating the script or recording, and rerunning the
-    synchronization.
+   Most of these issues can be resolved by updating the script or recording, and rerunning the
+   synchronization.
 
 ## 3. Clean up
 
