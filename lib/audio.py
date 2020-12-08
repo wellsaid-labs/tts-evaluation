@@ -849,6 +849,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             win_length=self.window.shape[0],
             window=self.window,
             center=False,
+            return_complex=False,
         )
 
         if aligned:

@@ -221,6 +221,7 @@ def test_get_rms_level():
         win_length=len(window),
         window=window,
         center=False,
+        return_complex=False,
     )
     db_spectrogram_ = [
         _db_spectrogram(lib.audio.full_scale_square_wave()),

@@ -570,6 +570,7 @@ def test_power_spectrogram_to_framed_rms__full_scale_square_wave():
         win_length=window.shape[0],
         window=window,
         center=False,
+        return_complex=False,
     )
     spectrogram = torch.norm(spectrogram, dim=-1)
     power_spectrogram = lib.audio.amplitude_to_power(spectrogram).transpose(0, 1)
@@ -591,6 +592,7 @@ def test_power_spectrogram_to_framed_rms__full_scale_sine_wave__sample_rates():
         win_length=window.shape[0],
         window=window,
         center=False,
+        return_complex=False,
     )
     spectrogram = torch.norm(spectrogram.double(), dim=-1)
     power_spectrogram = lib.audio.amplitude_to_power(spectrogram).transpose(0, 1)
@@ -615,6 +617,7 @@ def test_power_spectrogram_to_framed_rms__sample_rates():
             win_length=window.shape[0],
             window=window,
             center=False,
+            return_complex=False,
         )
         spectrogram = torch.norm(spectrogram.double(), dim=-1)
         power_spectrogram = lib.audio.amplitude_to_power(spectrogram).transpose(0, 1)
@@ -643,6 +646,7 @@ def test_power_spectrogram_to_framed_rms__window_correction__padding():
             win_length=window.shape[0],
             window=window,
             center=False,
+            return_complex=False,
         )
         spectrogram = torch.norm(spectrogram, dim=-1)
         power_spectrogram = lib.audio.amplitude_to_power(spectrogram).transpose(0, 1)
@@ -673,6 +677,7 @@ def test_power_spectrogram_to_framed_rms__batch():
         win_length=frame_length,
         window=window,
         center=False,
+        return_complex=False,
     )
     batched_spectrogram = torch.norm(batched_spectrogram, dim=-1)
     batched_power_spectrogram = lib.audio.amplitude_to_power(batched_spectrogram).transpose(1, 2)
@@ -783,7 +788,13 @@ def test_signal_to_db_mel_spectrogram__intermediate():
     )
 
     expected_spectrogram = torch.stft(
-        tensor, n_fft, hop_length, win_length=n_fft, window=window, center=False
+        tensor,
+        n_fft,
+        hop_length,
+        win_length=n_fft,
+        window=window,
+        center=False,
+        return_complex=False,
     )
     expected_spectrogram = torch.norm(expected_spectrogram, dim=-1).transpose(-2, -1)
     np.testing.assert_allclose(
