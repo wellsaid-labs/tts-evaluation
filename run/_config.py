@@ -480,7 +480,9 @@ def get_dataset(
 
 def split_dataset(
     dataset: Dataset,
-    dev_speakers: typing.Set[lib.datasets.Speaker] = set([datasets.HILARY_NORIEGA]),
+    dev_speakers: typing.Set[lib.datasets.Speaker] = set(
+        [datasets.HILARY_NORIEGA, datasets.SAM_SCHOLL]
+    ),
     dev_size: int = 60 * 60,
 ) -> typing.Tuple[Dataset, Dataset]:
     """Split the dataset into a train set and development set.

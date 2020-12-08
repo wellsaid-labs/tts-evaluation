@@ -148,24 +148,25 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 
    ```bash
    python -m run.data rename $ROOT/
-
-   # OR
-   python -m run.data rename --only-numbers $ROOT/
    ```
 
 1. (Optional) Evaluate the recording and script files...
 
    1. Ensure the recording and script pairings make sense.
-   1. Investigate any WAV or CSV outliers (very small files paired with very large files, for example, could indicate a mismatch or a bad file)
-   1. Ensure CSV files are <100k characters and WAV files are <5,500 seconds.
+   1. Investigate any WAV or CSV outliers (very small files paired with very large files, for
+      example, could indicate a mismatch or a bad file)
+   1. Ensure CSV files are < 100k characters and WAV files are < 1.5 hours (5,400 seconds). The
+      files should be split up if they are too big before proceeding.
 
-      > **NOTE**: Any pairings longer than these limits must be split into smaller chunks in order to process:
+      > **NOTE**: Any pairings longer than these limits must be split into smaller chunks in order
+      > to process:
       >
-      > - Use an audio processing software (Adobe Audition, e.g.) to splice the audio into chunks ~1 hour or less
-      > - Use a CSV editor to splice the corresponding CSVs at the same spot (it's easier to do this in parallel so you don't split up rows of data!)
+      > - Use an audio processing software (Adobe Audition, e.g.) to splice the audio into chunks
+      > ~1 hour or less
+      > - Use a CSV editor to splice the corresponding CSVs at the same spot
       > - Upload these new chunks back to GCS
-      > - Move the longer original WAV and CSV files into an archive directory in GCS along with a note.txt file explaining why this archive exists
-      > - **Begin this process over from the top**
+      > - Move the longer original WAV and CSV files into an archive directory in GCS along with a
+      > README.txt file explaining why this archive exists
 
    ```bash
    RECORDINGS=$(ls $ROOT/recordings/*$ENCODING | python -m run.utils.sort)
@@ -190,7 +191,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. (Optional) Review audio file loudness for inconsistencies...
 
    ```bash
-   python -m run.data audio loudness $PROCESSED/recordings/*$ENCODING > $PROCESSED/$NAME"_loudness.txt"
+   python -m run.data audio loudness $PROCESSED/recordings/*$ENCODING
    ```
 
 1. Normalize audio file format for
@@ -207,10 +208,9 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    ```bash
    mkdir -p $PROCESSED/scripts
    python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts
-
-   # OR
-   python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts --tab-separated
    ```
+
+   💡 TIP: Add the flag `--tab-separated` to process a TSV file.
 
 1. Upload the processed files back to GCS, like so...
 
