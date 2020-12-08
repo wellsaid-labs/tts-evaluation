@@ -35,10 +35,10 @@ _wsl_speakers = [s for s in locals().values() if isinstance(s, Speaker)]
 
 def _dataset_loader(directory: Path, speaker: Speaker, **kwargs) -> typing.List[Passage]:
     label = _speaker_to_label[speaker]
-    gcs_path = f"gs://wellsaid_labs_datasets/{label}/processed"
     suffix = _manual_post_suffix if _manual_post_suffix in label else ""
     label = label.replace(_manual_post_suffix, "")
     kwargs = dict(recordings_directory_name="recordings" + suffix, **kwargs)
+    gcs_path = f"gs://wellsaid_labs_datasets/{label}/processed"
     return dataset_loader(directory, label, gcs_path, speaker, **kwargs)
 
 
