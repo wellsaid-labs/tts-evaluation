@@ -332,7 +332,7 @@ def _get_data_loaders(
     )
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass
 class _DistributedMetrics:
     """Track metrics with measurements taken on every process for every step.
 
@@ -360,6 +360,7 @@ class _DistributedMetrics:
             each step.
         num_frames_predicted: This measures the number of frames predicte each step.
         num_frames: This measures the number of frames in each step.
+        max_num_frames: The maximum number of frames, in a spectrogram, seen.
         num_reached_max_frames: This measures the number of predicted spectrograms that reach max
             frames each step.
         predicted_frame_rms_level: This measures the sum of the RMS level for each predicted frame
@@ -392,6 +393,7 @@ class _DistributedMetrics:
     )
     num_frames_predicted: typing.List[float] = dataclasses.field(default_factory=list)
     num_frames: typing.List[float] = dataclasses.field(default_factory=list)
+    max_num_frames: int = dataclasses.field(default_factory=int)
     num_reached_max_frames: typing.List[float] = dataclasses.field(default_factory=list)
     predicted_frame_rms_level: typing.List[float] = dataclasses.field(default_factory=list)
     spectrogram_loss: typing.List[float] = dataclasses.field(default_factory=list)
@@ -419,6 +421,7 @@ class _DistributedMetrics:
         for speaker_index, num_frames in iterator:
             speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
             self.num_frames_per_speaker[speaker] += num_frames
+            self.max_num_frames = max(self.max_num_frames, num_frames)
 
     def update_alignment_metrics(
         self,
@@ -454,7 +457,7 @@ class _DistributedMetrics:
         iterate = lambda t: flatten(lib.distributed.gather_list(t.squeeze().tolist()))
         iterator = zip(iterate(speakers), iterate(num_skipped), iterate(num_tokens))
         for speaker_index, _num_skipped, _num_tokens in iterator:
-            speaker = input_encoder.speaker_encoder.index_to_token[speaker_index]
+            speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
             self.num_skips_per_speaker[speaker] += _num_skipped
             self.num_tokens_per_speaker[speaker] += _num_tokens
 
@@ -546,6 +549,7 @@ class _DistributedMetrics:
         dataset_stats: Stats = {
             "data_loader_queue_size": div(self.data_queue_size, [1] * len(self.data_queue_size)),
             "average_rms_level": rms,
+            "max_num_frames": self.max_num_frames,
         }
         partial_ = partial(get_dataset_label, type_=dataset_type)
         iterator: typing.List[typing.Tuple[Stats, typing.Callable[..., Label]]]

@@ -495,14 +495,14 @@ def split_dataset(
         dev_speakers: Speakers to include in the development set.
         dev_size: Number of seconds per speaker in the development dataset.
     """
-    dev, train = {}, {}
+    train, dev = {}, {}
     with fork_rng(seed=123):
         for speaker, passages in dataset.items():
             if speaker in dev_speakers:
                 train[speaker], dev[speaker] = run._utils.split_passages(passages, dev_size)
             else:
                 train[speaker] = passages
-    return dev, train
+    return train, dev
 
 
 def _include_span(span: datasets.Span):

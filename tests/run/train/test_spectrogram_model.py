@@ -53,7 +53,7 @@ def test_integration(mock_urlretrieve):
     # Test splitting data
     run._utils.normalize_audio(dataset)
     dev_speakers = set([JUDY_BIEBER])
-    dev_dataset, train_dataset = run._config.split_dataset(dataset, dev_speakers, 3)
+    train_dataset, dev_dataset = run._config.split_dataset(dataset, dev_speakers, 3)
 
     # Check dataset statistics are correct
     stats = run._utils.get_dataset_stats(train_dataset, dev_dataset)
@@ -64,6 +64,7 @@ def test_integration(mock_urlretrieve):
         get_dataset_label("num_passages", DatasetType.TRAIN): 3,
         get_dataset_label("num_characters", DatasetType.TRAIN): 58,
         get_dataset_label("num_seconds", DatasetType.TRAIN): "5s 777ms",
+        get_dataset_label("num_audio_files", DatasetType.TRAIN): 3,
         get_dataset_label("num_passages", DatasetType.TRAIN, JUDY_BIEBER): 2,
         get_dataset_label("num_characters", DatasetType.TRAIN, JUDY_BIEBER): 29,
         get_dataset_label("num_seconds", DatasetType.TRAIN, JUDY_BIEBER): "3s 820ms",
@@ -75,6 +76,7 @@ def test_integration(mock_urlretrieve):
         get_dataset_label("num_passages", DatasetType.DEV): 1,
         get_dataset_label("num_characters", DatasetType.DEV): 34,
         get_dataset_label("num_seconds", DatasetType.DEV): "2s 650ms",
+        get_dataset_label("num_audio_files", DatasetType.DEV): 1,
         get_dataset_label("num_passages", DatasetType.DEV, JUDY_BIEBER): 1,
         get_dataset_label("num_characters", DatasetType.DEV, JUDY_BIEBER): 34,
         get_dataset_label("num_seconds", DatasetType.DEV, JUDY_BIEBER): "2s 650ms",

@@ -155,6 +155,7 @@ def test_get_dataset_stats():
         get_label("num_passages", DatasetType.TRAIN): 3,
         get_label("num_characters", DatasetType.TRAIN): 5,
         get_label("num_seconds", DatasetType.TRAIN): "50s 0ms",
+        get_label("num_audio_files", DatasetType.TRAIN): 1,  # NOTE: This counts unique audio files.
         get_label("num_passages", DatasetType.TRAIN, a): 2,
         get_label("num_characters", DatasetType.TRAIN, a): 4,
         get_label("num_seconds", DatasetType.TRAIN, a): "40s 0ms",
@@ -166,6 +167,7 @@ def test_get_dataset_stats():
         get_label("num_passages", DatasetType.DEV): 0,
         get_label("num_characters", DatasetType.DEV): 0,
         get_label("num_seconds", DatasetType.DEV): "0ms",
+        get_label("num_audio_files", DatasetType.DEV): 0,
     }
 
 

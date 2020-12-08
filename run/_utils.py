@@ -4,6 +4,7 @@ import enum
 import functools
 import hashlib
 import io
+import itertools
 import logging
 import math
 import multiprocessing.pool
@@ -199,21 +200,18 @@ def get_dataset_stats(
     train: Dataset, dev: Dataset
 ) -> typing.Dict[run._config.Label, typing.Union[str, int, float]]:
     """Get `train` and `dev` dataset statistics."""
-    # NOTE: `len_` assumes the entire passage is usable.
-    len_ = lambda d: sum(p.alignments[-1].audio[-1] - p.alignments[0].audio[0] for p in d)
     stats: typing.Dict[run._config.Label, typing.Union[int, str, float]] = {}
     data: Dataset
     for data, type_ in [(train, DatasetType.TRAIN), (dev, DatasetType.DEV)]:
-        label = functools.partial(get_dataset_label, cadence=Cadence.STATIC, type_=type_)
-        stats[label("num_passages")] = sum(len(p) for p in data.values())
-        stats[label("num_characters")] = sum(sum(len(p.script) for p in v) for v in data.values())
-        stats[label("num_seconds")] = seconds_to_string(sum(len_(p) for p in data.values()))
-        for speaker, passages in data.items():
-            label = functools.partial(label, speaker=speaker)
+        label_ = functools.partial(get_dataset_label, cadence=Cadence.STATIC, type_=type_)
+        passages_ = flatten([[p for p in v] for v in data.values()])
+        for speaker, passages in itertools.chain(list(data.items()), [(None, passages_)]):
+            label = label_ if speaker is None else functools.partial(label_, speaker=speaker)
             stats[label("num_audio_files")] = len(set(p.audio_file for p in passages))
             stats[label("num_passages")] = len(passages)
             stats[label("num_characters")] = sum(len(p.script) for p in passages)
-            stats[label("num_seconds")] = seconds_to_string(len_(passages))
+            num_seconds = seconds_to_string(sum(p[:].audio_length for p in passages))
+            stats[label("num_seconds")] = num_seconds
     return stats
 
 

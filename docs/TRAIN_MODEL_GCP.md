@@ -145,7 +145,7 @@ Setup your local development environment by following [these instructions](LOCAL
    ```bash
    # NOTE: Kill any leftover processes from other runs...
    pkill -9 python; sleep 5s; nvidia-smi; \
-   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start --project $COMET_PROJECT --name "$EXPERIMENT_NAME";
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PROJECT "$EXPERIMENT_NAME";
    ```
 
    💡 TIP: You may want to include the optional
