@@ -430,7 +430,7 @@ def dataset_loader(
         command += f"{gcs_path}/{directory.name}/*{suffix} {directory}/"
         subprocess.run(command.split(), check=True)
         files_ = [p for p in directory.iterdir() if p.suffix == suffix]
-        files.append(sorted(files_, key=lambda p: lib.text.natural_keys(p.name)))
+        files.append(sorted(files_, key=lambda p: lib.text.numbers_then_natural_keys(p.name)))
 
     return_ = []
     audio_file_metadatas = get_audio_metadata(files[1])
