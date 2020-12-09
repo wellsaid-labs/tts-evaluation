@@ -157,6 +157,11 @@ def seconds_to_samples(seconds: float, sample_rate: int = HParam()) -> int:
     return int(round(seconds * sample_rate))
 
 
+@configurable
+def samples_to_seconds(samples: int, sample_rate: int = HParam()) -> float:
+    return float(samples) / sample_rate
+
+
 def clip_waveform(waveform: np.ndarray):
     """Clip audio at the maximum and minimum amplitude.
 

@@ -19,6 +19,7 @@ import os
 import pathlib
 import random
 import typing
+import warnings
 
 import altair as alt
 import numpy as np
@@ -34,7 +35,7 @@ from torchnlp.random import fork_rng
 import lib
 import run
 from lib.audio import amplitude_to_db, signal_to_rms
-from lib.datasets import Alignment, Passage
+from lib.datasets import DATASETS, Alignment, Passage
 from lib.utils import clamp, flatten, mazel_tov, seconds_to_string
 from run._config import Dataset
 
@@ -177,6 +178,16 @@ def _signal_to_db_rms(signal: np.ndarray) -> float:
 assert _signal_to_db_rms(lib.audio.full_scale_sine_wave()) == pytest.approx(-3.0103001594543457)
 
 
+def _signal_to_loudness(signal: np.ndarray, sample_rate: int, block_size: float = 0.4) -> float:
+    """Get the loudness in LUFS of `signal`."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        meter = lib.audio.get_pyloudnorm_meter(block_size=block_size, sample_rate=sample_rate)
+        if signal.shape[0] >= lib.audio.seconds_to_samples(block_size, sample_rate):
+            return round(meter.integrated_loudness(signal), 1)
+        return math.nan
+
+
 def _frame(array: np.ndarray, frame_length: int, hop_length: int) -> np.ndarray:
     return librosa_utils.frame(array, frame_length, hop_length, axis=0)
 
@@ -191,24 +202,12 @@ np.testing.assert_array_equal(
 )
 
 
-def _min_rms_index(frames: np.ndarray, hop_length: int, reverse: bool = False) -> int:
-    """ Get the index of the frame with the smallest RMS level. """
-    iterable = list(frames)  # type: ignore
-    iterable = list(reversed(iterable)) if reverse else iterable
-    _, i = min([(_signal_to_db_rms(f), i) for i, f in enumerate(iterable)])
-    return i * hop_length
-
-
-assert _min_rms_index(np.array([[1, 0, -1], [0, -1, 0], [0, 0, 0], [1, 0, 1]]), 3) == 6
-assert _min_rms_index(np.array([[1, 0, 1], [0, -1, 0], [0, 0, 0], [1, 0, 1]]), 3, reverse=True) == 3
-
-
 def _visualize_signal(
     signal: np.ndarray,
+    sample_rate: int,
     rules: typing.List[float] = [],
     labels: typing.List[str] = [],
     max_sample_rate: int = 2000,
-    sample_rate: int = 24000,
 ) -> alt.Chart:
     """Visualize a signal envelope similar to `librosa.display.waveplot`.
 
@@ -288,7 +287,7 @@ def _get_alignment_ngrams(passages: typing.List[Passage], n: int = 1) -> typing.
 def _get_dataset(speaker_names: typing.FrozenSet[str]) -> Dataset:
     """Load dataset."""
     logger.info("Loading dataset...")
-    datasets = {k: v for k, v in run._config.DATASETS.items() if k.name in speaker_names}
+    datasets = {k: v for k, v in DATASETS.items() if k.name in speaker_names}
     dataset = run._config.get_dataset(datasets)
     logger.info(f"Finished loading dataset! {mazel_tov()}")
     return dataset
@@ -305,14 +304,14 @@ class Span(lib.datasets.Span):
     mistranscriptions: typing.List[typing.Tuple[str, str]] = dataclasses.field(init=False)
 
     @staticmethod
-    def _isalnum(s: str):
+    def _is_alnum(s: str):
         return any(c.isalnum() for c in s)
 
     def __post_init__(self):
         super().__post_init__()
 
         set = object.__setattr__
-        mistranscriptions = [(a, b) for a, b, _ in self.unaligned if self._isalnum(a + b)]
+        mistranscriptions = [(a, b) for a, b, _ in self.unaligned if self._is_alnum(a + b)]
         set(self, "mistranscriptions", [(a.strip(), b.strip()) for a, b in mistranscriptions])
 
         self._test_implementation()
@@ -323,7 +322,6 @@ class Span(lib.datasets.Span):
         assert self._samples_to_seconds(self._seconds_to_samples(0.0)) == 0.0
         assert self._hop_length * 4 == self._frame_length
 
-    @property
     def audio(self) -> np.ndarray:
         start = self.passage.alignments[self.span][0].audio[0]
         return _read_audio_slice(self.passage.audio_file.path, start, self.audio_length)
@@ -333,9 +331,8 @@ class Span(lib.datasets.Span):
         fields = dataclasses.fields(self)
         return {f.name: getattr(self, f.name) for f in fields if f.type != Passage}
 
-    @property
     def rms(self) -> float:
-        return round(_signal_to_db_rms(self.audio), 1)
+        return round(_signal_to_db_rms(self.audio()), 1)
 
     @property
     def _frame_length(self) -> int:
@@ -347,76 +344,40 @@ class Span(lib.datasets.Span):
         return self._frame_length // 4
 
     def _seconds_to_samples(self, seconds: float) -> int:
-        return round(seconds * self.audio_file.sample_rate)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return lib.audio.seconds_to_samples(seconds, self.audio_file.sample_rate)
 
     def _samples_to_seconds(self, samples: int) -> float:
-        return float(samples) / self.audio_file.sample_rate
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return lib.audio.samples_to_seconds(samples, self.audio_file.sample_rate)
 
     def _frame(self, signal: np.ndarray) -> np.ndarray:
         return _frame(signal, self._frame_length, self._hop_length)
 
-    def _min_rms_index(self, signal: np.ndarray, **kwargs) -> int:
-        return _min_rms_index(self._frame(signal), hop_length=self._hop_length, **kwargs)
-
-    def adjusted(self, uncertainty: float = ALIGNMENT_PRECISION / 2) -> typing.Tuple[float, float]:
-        """ Get a more precise audio slice by cutting at the minimum loudness. """
-        clamp_ = lambda x: clamp(x, min_=0, max_=self.passage.audio_file.length)
-        start = self.passage.alignments[self.span][0].audio[0]
-        end = start + self.audio_length
-
-        end_start = clamp_(end - uncertainty)
-        end_end = clamp_(end + uncertainty)
-        start_start = clamp_(start - uncertainty)
-        start_end = clamp_(start + uncertainty)
-        end_uncertainty = self._seconds_to_samples(end_end - end_start)
-        start_uncertainty = self._seconds_to_samples(start_end - start_start)
-
-        audio = _read_audio_slice(self.passage.audio_file.path, start_start, end_end - start_start)
-
-        _min_rms_index = lambda *a, **k: self._samples_to_seconds(self._min_rms_index(*a, **k))
-        adjusted_start = _min_rms_index(audio[:start_uncertainty])
-        adjusted_end = _min_rms_index(audio[-end_uncertainty:], reverse=True)
-
-        assert adjusted_end <= self._samples_to_seconds(end_uncertainty) and adjusted_end >= 0
-        assert adjusted_start <= self._samples_to_seconds(start_uncertainty) and adjusted_start >= 0
-
-        return (start_start + adjusted_start, end_end - adjusted_end)
-
-    @property
-    def adjusted_audio(self) -> np.ndarray:
-        start, end = self.adjusted()
-        return _read_audio_slice(self.passage.audio_file.path, start, end - start)
-
-    def audio_interval(self, second: float, interval: float) -> np.ndarray:
+    def audio_interval(self, second: float, interval: typing.Tuple[float, float]) -> np.ndarray:
         """ Get the audio surrounding `second`. """
         clamp_ = lambda x: clamp(x, min_=0, max_=self.passage.audio_file.length)
         second = self.passage.alignments[self.span][0].audio[0] + second
-        start = clamp_(second - interval)
-        end = clamp_(second + interval)
+        start = clamp_(second - interval[0])
+        end = clamp_(second + interval[1])
         return _read_audio_slice(self.passage.audio_file.path, start, end - start)
 
-    def fuzzy_rms(self, second: float, uncertainty: float = ALIGNMENT_PRECISION / 2) -> float:
-        """ Get the minimum RMS level within `uncertainty` at `second`. """
-        frames = list(self._frame(self.audio_interval(second, uncertainty)))  # type: ignore
-        return round(min([_signal_to_db_rms(f) for f in frames]), 1)
-
-    def fuzzy_rms_edges(self) -> typing.Tuple[float, float]:
-        """ Get the minimum RMS level close to the edges of `self`. """
-        return (self.fuzzy_rms(0), self.fuzzy_rms(self.audio_length))
-
-    def rms_(self, second: float, uncertainty: float = ALIGNMENT_PRECISION / 10) -> float:
+    def rms_(self, second: float, interval: typing.Tuple[float, float]) -> float:
         """ Get the RMS level at `second`.  """
-        audio = self.audio_interval(second, uncertainty)
+        audio = self.audio_interval(second, interval)
         return round(_signal_to_db_rms(audio), 1)
 
     def rms_edges(self) -> typing.Tuple[float, float]:
         """ Get the RMS level surrounding to the edges of `self`.  """
-        return (self.rms_(0), self.rms_(self.audio_length))
+        interval = (ALIGNMENT_PRECISION / 2, ALIGNMENT_PRECISION / 2)
+        return (self.rms_(0, interval), self.rms_(self.audio_length, interval))
 
     def _is_silent(self, threshold: int = -50) -> typing.List[bool]:
         """ For an evenly spaced list of audio frames, determine if they are silent or not. """
         padding = self._frame_length - self._hop_length
-        padded = np.pad(self.audio, (padding, padding))
+        padded = np.pad(self.audio(), (padding, padding))
         frames = list(self._frame(padded))  # type: ignore
         return [_signal_to_db_rms(f) < threshold for f in frames]
 
@@ -439,10 +400,11 @@ class Span(lib.datasets.Span):
         """ Get the number of continuous silences. """
         return sum([k for k, _ in itertools.groupby(self._is_silent())])
 
-    def seconds_per_character(self):
+    def seconds_per_character(self, remove_silence=True):
         if self.audio_length == 0:
             return 0
-        return (self.audio_length - self.silence()) / len(self.script)
+        audio_length = self.audio_length - (self.silence() if remove_silence else 0)
+        return audio_length / len(self.script)
 
 
 def _get_spans(dataset: Dataset, num_samples: int, slice_: bool = True) -> typing.List[Span]:
@@ -477,8 +439,7 @@ def _span_columns(spans: typing.List[Span]) -> typing.Dict[str, typing.List[typi
     return {
         "transcript": [[s[i].transcript for i in iter_(s)] for s in spans],
         "edges": map_(spans, lambda s: s.rms_edges()),
-        "loudness": map_(spans, lambda s: [round(s[i].rms, 2) for i in iter_(s)]),
-        "length": [[round(s[i].audio_length, 2) for i in iter_(s)] for s in spans],
+        "loudness": map_(spans, lambda s: [round(s[i].rms(), 2) for i in iter_(s)]),
         "longest silence": map_(
             spans, lambda s: [round(s[i].longest_inner_silence(), 2) for i in iter_(s)]
         ),
@@ -490,7 +451,7 @@ def _visualize_spans(
     spans: typing.List[Span],
     columns: typing.List[str] = DEFAULT_COLUMNS,
     other_columns: typing.Dict[str, typing.List[typing.Any]] = {},
-    get_audio: typing.Callable[[Span], np.ndarray] = lambda s: s.audio,
+    get_audio: typing.Callable[[Span], np.ndarray] = lambda s: s.audio(),
     max_spans: int = 50,
 ):
     """Visualize spans as a table."""
@@ -538,23 +499,20 @@ def _maybe_analyze_dataset(dataset: Dataset):
         for span in _random_sample(trigrams, 25):
             cols = st.beta_columns([2, 1, 1])
             rules = list(span.alignments[1].audio)
-            offset = span.passage.alignments[span.span][0].audio[0]
-            rules += [a - offset for a in span[1].adjusted()]
-            labels = ["original", "original", "adjusted", "adjusted"]
-            chart = _visualize_signal(span.audio, rules, labels)
+            labels = ["alignment", "alignment"]
+            chart = _visualize_signal(span.audio(), span.audio_file.sample_rate, rules, labels)
             cols[0].altair_chart(chart, use_container_width=True)
             cols[1].markdown(
                 f"- Script: **{span.script}**\n"
-                f"- Loudness: **{span[1].rms}**\n"
+                f"- Loudness: **{span[1].rms()}**\n"
                 f"- Edge loudness: **{span[1].rms_edges()}**\n"
-                f"- Fuzzy edge loudness: **{span[1].fuzzy_rms_edges()}**\n"
                 f"- Audio length: **{round(span[1].audio_length, 2)}**\n"
                 f"- Num characters: **{len(span[1].script)}**\n"
                 f"- **{round(span[1].silence(), 2)}** Seconds of silence\n"
                 f"- **{round(span[1].longest_inner_silence(), 2)}** Longest Silence\n"
                 f"- **{round(span[1].seconds_per_character(), 2)}** Seconds per character\n"
             )
-            playlist = [span[1].audio, span[1].adjusted_audio, span.audio]
+            playlist = [span[1].audio(), span.audio()]
             html = "\n\n".join([_audio_to_html(a) for a in playlist])
             cols[2].markdown(html, unsafe_allow_html=True)
 
@@ -576,12 +534,16 @@ def _maybe_analyze_dataset(dataset: Dataset):
     for func, title, unit, bucket_size in [
         (lambda s: s.audio_length, "Alignment Lengths", "Seconds", ALIGNMENT_PRECISION),
         (lambda s: len(s.script), "Alignment Lengths", "Characters", 1),
+        (
+            lambda s: s.seconds_per_character(remove_silence=False),
+            "Alignment Speeds (with silence)",
+            "Seconds per character",
+            0.01,
+        ),
         (lambda s: s.seconds_per_character(), "Alignment Speeds", "Seconds per character", 0.01),
-        (lambda s: s.rms, "Loudness", "dB", 1),
+        (lambda s: s.rms(), "Loudness", "dB", 1),
         (lambda s: s.rms_edges()[0], "Onset Loudness", "dB", 5),
         (lambda s: s.rms_edges()[1], "Outset Loudness", "dB", 5),
-        (lambda s: s.fuzzy_rms_edges()[0], "Fuzzy Onset Loudness", "dB", 5),
-        (lambda s: s.fuzzy_rms_edges()[1], "Fuzzy Outset Loudness", "dB", 5),
         (lambda s: s.longest_inner_silence(), "Long Silences", "Seconds", 0.1),
     ]:
         with beta_expander(f"Survey of {title} (in {unit.lower()})"):
@@ -661,14 +623,20 @@ def _maybe_analyze_filtered_spans(dataset: Dataset, spans: typing.List[Span]):
         return
 
     total = len(spans)
+    pause = lambda u: u[-1][-1] - u[-1][0]
     _is_include = (
         lambda s: s.audio_length > 0.1
         and s.seconds_per_character() >= 0.04
-        and (s.rms_edges()[0] < -25 and s.rms_edges()[1] < -25)
         and s.longest_inner_silence() < 0.1
     )
+    interval = ALIGNMENT_PRECISION
     is_include = lambda s: (
-        len(s.mistranscriptions) == 0 and (_is_include(s[0]) and _is_include(s[-1]))
+        len(s.mistranscriptions) == 0
+        and (
+            (pause(s.unaligned[0]) > 0 or s.rms_(0, (interval, 0)) < 40)
+            and (pause(s.unaligned[-1]) > 0 or s.rms_(s.audio_length, (0, interval)) < 40)
+        )
+        and (_is_include(s[0]) and _is_include(s[-1]))
     )
     spans = [s for s, i in zip(spans, _map(spans, is_include)) if i]
     st.markdown(
@@ -682,12 +650,13 @@ def _maybe_analyze_filtered_spans(dataset: Dataset, spans: typing.List[Span]):
         _visualize_spans(spans[:50], other_columns=_span_columns(spans[:50]))
 
     for label, func, bucket_size in [
-        ("loudness", lambda s: round(_signal_to_db_rms(s.audio), 1), 1),
+        ("loudness", lambda s: _signal_to_loudness(s.audio(), s.audio_file.sample_rate), 1),
         ("speed", lambda s: s.seconds_per_character(), 0.01),
     ]:
         with beta_expander(f"Survey of Span {label.title()}"):
             st.write("The span count for each bucket:")
             _bucket_and_visualize(_map(spans, func), bucket_size)
+            spans = [s for s in spans if not math.isnan(func(s))]
             display = sorted(spans, key=func)
             values = [func(s) for s in display]
             st.write("The smallest valued spans:")
@@ -702,9 +671,11 @@ if __name__ == "__main__":
     st.write("The dataset dashboard is an effort to understand our dataset and dataset processing.")
 
     sidebar = st.sidebar
+    load_all = sidebar.checkbox("Load all dataset(s) by default")
     question = "Which dataset(s) do you want to load?"
-    speaker_names = [k.name for k in run._config.DATASETS.keys()]
-    speakers: typing.FrozenSet[str] = frozenset(st.sidebar.multiselect(question, speaker_names))
+    speaker_names = [k.name for k in DATASETS.keys()]
+    args = (question, speaker_names, speaker_names if load_all else None)
+    speakers: typing.FrozenSet[str] = frozenset(st.sidebar.multiselect(*args))
     question = "How many spans(s) do you want to generate?"
     num_samples: int = sidebar.number_input(question, 0, None, 100)
     if len(speakers) == 0:

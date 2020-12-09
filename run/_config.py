@@ -184,6 +184,7 @@ def configure_audio_processing():
 
     config = {
         lib.audio.seconds_to_samples: HParams(sample_rate=SAMPLE_RATE),
+        lib.audio.samples_to_seconds: HParams(sample_rate=SAMPLE_RATE),
         lib.visualize.plot_waveform: HParams(sample_rate=SAMPLE_RATE),
         lib.visualize.plot_spectrogram: HParams(sample_rate=SAMPLE_RATE, frame_hop=frame_hop),
         lib.visualize.plot_mel_spectrogram: HParams(**hertz_bounds),
