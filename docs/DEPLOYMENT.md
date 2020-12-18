@@ -23,8 +23,7 @@ Refer to the above guides in case there are missing details in the below steps.
 
    ```bash
    PROJECT_ID="voice-service-255602"
-   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v8.01 .
-   docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v8.01 .
+   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v8.02 .
    ```
 
 1. Check the worker image size:
@@ -38,8 +37,7 @@ Refer to the above guides in case there are missing details in the below steps.
 1. Push the build:
 
    ```bash
-   docker push gcr.io/${PROJECT_ID}/speech-api:v8.01
-   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v8.01
+   docker push gcr.io/${PROJECT_ID}/speech-api:v8.02
    ```
 
 1. Test the build:
@@ -53,7 +51,7 @@ Refer to the above guides in case there are missing details in the below steps.
 
    ```bash
    docker run --rm -p 8000:8000 -e "AUTOSCALE_LOOP=5000 YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api:v8.01
+      gcr.io/${PROJECT_ID}/speech-api:v8.02
    ```
 
 1. Update the Kubernetes deployment manifest (e.g. `src/service/deployment.yaml`) with the updated

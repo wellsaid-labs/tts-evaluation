@@ -35,7 +35,7 @@ COPY third_party/ third_party/
 
 # Install Python Dependencies
 RUN apt-get update --fix-missing \
-  && apt-get install -y --no-install-recommends git-core \
+  && apt-get install -y --no-install-recommends git-core gcc g++ \
   # TODO: Consider the ideas here to reduce the size of numpy installation:
   # https://towardsdatascience.com/how-to-shrink-numpy-scipy-pandas-and-matplotlib-for-your-data-product-4ec8d7e86ee4
   && venv/bin/pip install --no-cache-dir numpy \
@@ -44,7 +44,7 @@ RUN apt-get update --fix-missing \
   torch==1.5.0+cpu -f https://download.pytorch.org/whl/torch_stable.html \
   unidecode \
   tqdm \
-  spacy \
+  'spacy==2.2.*' \
   https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-2.2.5/en_core_web_sm-2.2.5.tar.gz#egg=en_core_web_sm \
   git+https://github.com/PetrochukM/HParams.git \
   git+https://github.com/PetrochukM/PyTorch-NLP.git \

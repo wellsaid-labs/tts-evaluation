@@ -1147,6 +1147,7 @@ if (require.main === module) {
     v6: new PodPool(process.env.V6_WORKER_POD_IMAGE, 0),
     v7: new PodPool(process.env.V7_WORKER_POD_IMAGE, 0),
     v8: new PodPool(process.env.V8_WORKER_POD_IMAGE, 2),
+    "uneeq.v1": new PodPool(process.env.UNEEQ_V1_WORKER_POD_IMAGE, 1),
   };
   app.locals.podPools.latest = app.locals.podPools.v8;
 

@@ -38,6 +38,8 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       speakers.splice(1, 1); // Macy is not available in v6 / v7
     } else if (version == "lincoln.v1") {
       speakers = [11541];
+    } else if (version == "uneeq.v1") {
+      speakers = [13268907, 95313811];
     }
     speakerOptionElements.forEach(option => {
       option.disabled = !speakers.includes(parseInt(option.value));

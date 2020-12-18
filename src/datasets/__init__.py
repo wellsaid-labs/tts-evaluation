@@ -296,6 +296,9 @@ def lincoln_speech_dataset(
     return _dataset_loader(extracted_name, url, speaker, url_filename, create_root, **kwargs)
 
 
+JOSIE_CUSTOM = Speaker('Josie (Custom)', Gender.FEMALE)
+JOSIE_CUSTOM_LOUDNESS = Speaker('Josie (Custom, Loudness Standardized)', Gender.FEMALE)
+
 __all__ = [
     'Speaker', 'Gender', 'lj_speech_dataset', 'm_ailabs_en_us_speech_dataset',
     'm_ailabs_en_uk_speech_dataset', 'hilary_speech_dataset', 'heather_speech_dataset',
@@ -306,5 +309,6 @@ __all__ = [
     'ELISE_RANDALL', 'NADINE_NAGAMATSU', 'MEGAN_SINCLAIR', 'GEORGE_DRAKE', 'ALICIA_HARRIS',
     'FRANK_BONACQUISTI', 'ADRIENNE_WALKER_HELLER', 'SUSAN_MURPHY', 'SAM_SCHOLL', 'SEAN_HANNITY',
     'BETH_CAMERON', 'BETH_CAMERON_CUSTOM', 'HEATHER_DOE', 'HILARY_NORIEGA', 'MARY_ANN',
-    'JUDY_BIEBER', 'ELLIOT_MILLER', 'ELIZABETH_KLETT', 'LINDA_JOHNSON', 'LINCOLN_CUSTOM'
+    'JUDY_BIEBER', 'ELLIOT_MILLER', 'ELIZABETH_KLETT', 'LINDA_JOHNSON', 'LINCOLN_CUSTOM',
+    'JOSIE_CUSTOM', 'JOSIE_CUSTOM_LOUDNESS'
 ]
