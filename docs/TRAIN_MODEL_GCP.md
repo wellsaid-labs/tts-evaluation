@@ -48,13 +48,13 @@ Setup your local development environment by following [these instructions](LOCAL
    python -m run.utils.gcp make-instance \
       --name=$NAME \
       --zone=$ZONE \
-      --machine-type='n1-standard-16' \
+      --machine-type='n1-standard-32' \
       --gpu-type='nvidia-tesla-t4' \
-      --gpu-count=2 \
+      --gpu-count=4 \
       --disk-size=512 \
       --disk-type='pd-balanced' \
       --image-project='ubuntu-os-cloud' \
-      --image='ubuntu-1804-lts' \
+      --image-family='ubuntu-1804-lts' \
       --metadata="startup-script-user=$GCP_USER" \
       --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
       --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
@@ -113,7 +113,7 @@ Setup your local development environment by following [these instructions](LOCAL
    . run/utils/apt_install.sh
 
    # NOTE: You will always want to be in an active `venv` whenever you want to work with python.
-   python3 -m venv venv
+   python3.8 -m venv venv
    . venv/bin/activate
 
    python -m pip install wheel pip --upgrade
@@ -175,3 +175,5 @@ Setup your local development environment by following [these instructions](LOCAL
    ```bash
    python -m run.utils.gcp delete-instance --name=$NAME --zone=$ZONE
    ```
+
+   You may need to run the above a couple of times.

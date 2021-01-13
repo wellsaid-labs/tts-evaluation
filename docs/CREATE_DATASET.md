@@ -132,7 +132,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    sudo apt-get update
    . run/utils/apt_install.sh
 
-   python3 -m venv venv
+   python3.8 -m venv venv
    . venv/bin/activate
    python -m pip install wheel pip --upgrade
    python -m pip install -r requirements.txt --upgrade

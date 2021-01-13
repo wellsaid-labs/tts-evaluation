@@ -3,7 +3,7 @@ sudo apt update -y
 sudo apt-get install ubuntu-drivers-common -y
 sudo ubuntu-drivers autoinstall
 
-# Reload drivers, in order to avoid a reboot
+# Reload drivers
 sudo rmmod nvidia_uvm
 sudo modprobe nvidia_uvm
 

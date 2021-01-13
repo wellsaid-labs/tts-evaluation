@@ -57,14 +57,14 @@ def make_instance(
     disk_size: int = typer.Option(...),
     disk_type: str = typer.Option(...),
     image_project: str = typer.Option(...),
-    image: str = typer.Option(...),
+    image_family: str = typer.Option(...),
     metadata: typing.List[str] = typer.Option([]),
     metadata_from_file: typing.List[str] = typer.Option([]),
 ):
     """ Create a managed and preemptible instance named NAME in ZONE. """
     lib.environment.set_basic_logging_config()
 
-    image_ = compute.images().getFromFamily(project=image_project, family=image).execute()
+    image_ = compute.images().getFromFamily(project=image_project, family=image_family).execute()
     logger.info("Found image: %s", image_["selfLink"])
 
     # NOTE: There is some predefined and special metadata, like startup-script:

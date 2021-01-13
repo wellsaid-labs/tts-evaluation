@@ -4,7 +4,6 @@ import logging
 import os
 import pathlib
 import re
-import shlex
 import string
 import subprocess
 import typing
@@ -65,8 +64,7 @@ def _line_grapheme_to_phoneme(
     # NOTE: The `--sep` flag is not supported by older versions of `espeak`.
     # NOTE: We recommend using `--stdin` otherwise `espeak` might misinterpret an input like
     # "--For this community," as a flag.
-    command = "echo %s | %s %s" % (shlex.quote(grapheme), service, " ".join(flags))
-    phoneme = subprocess.check_output(command, shell=True).decode("utf-8")
+    phoneme = subprocess.check_output([service] + flags, input=grapheme.encode()).decode("utf-8")
     assert (
         not separator or separator == service_separator or separator not in phoneme
     ), "The separator is not unique."

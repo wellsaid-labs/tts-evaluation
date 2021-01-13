@@ -148,7 +148,7 @@ Setup your local development environment by following [these instructions](LOCAL
    . run/utils/apt_install.sh
 
    # NOTE: You will always want to be in an active `venv` whenever you want to work with python.
-   python3 -m venv venv
+   python3.8 -m venv venv
    . venv/bin/activate
 
    python -m pip install wheel pip --upgrade
