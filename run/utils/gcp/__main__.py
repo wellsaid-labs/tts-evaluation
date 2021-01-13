@@ -204,7 +204,10 @@ def most_recent(filter: str = ""):
     lines = subprocess.check_output(command, shell=True).decode().strip().split("\n")
     machines = [l.split()[0].strip() for l in lines]
     machines = [m for m in machines if filter in m]
-    typer.echo(machines[-1])
+    if len(machines) == 0:
+        logger.error("Cannot find machine.")
+    else:
+        typer.echo(machines[-1])
 
 
 @app.command()
