@@ -2,7 +2,6 @@ import logging
 import math
 import multiprocessing.pool
 import os
-import shlex
 import subprocess
 import typing
 from functools import lru_cache
@@ -97,8 +96,8 @@ def _parse_audio_metadata(metadata: str) -> AudioFileMetadata:
 def _get_audio_metadata_helper(chunk: typing.List[Path]) -> typing.List[AudioFileMetadata]:
     # NOTE: `-V1` ignores non-actionable warnings, SoX tends to spam the command line with strict
     # formating warnings like: "sox WARN wav: wave header missing extended part of fmt chunk".
-    command = " ".join(["sox", "--i", "-V1"] + [shlex.quote(str(p)) for p in chunk])
-    metadatas = subprocess.check_output(command, shell=True).decode()
+    command = ["sox", "--i", "-V1"] + [str(p) for p in chunk]
+    metadatas = subprocess.check_output(command).decode()
     splits = metadatas.strip().split("\n\n")
     splits = splits[:-1] if "Total Duration" in splits[-1] else splits
     return [_parse_audio_metadata(metadata) for metadata in splits]
