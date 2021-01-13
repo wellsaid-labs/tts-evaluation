@@ -30,6 +30,7 @@ sync {
   },
   exclude = {
       ".ipynb_checkpoints/**", -- Jupyter files
+      ".mypy_cache/**", -- Mypy files
       ".DS_Store", -- Macbook files
       "__pycache__**",
       "htmlcov/**", -- PyTest Coverage files
