@@ -205,7 +205,7 @@ def most_recent(filter: str = ""):
     machines = [l.split()[0].strip() for l in lines]
     machines = [m for m in machines if filter in m]
     if len(machines) == 0:
-        logger.error("Cannot find machine.")
+        logger.error("No instance found.")
     else:
         typer.echo(machines[-1])
 
