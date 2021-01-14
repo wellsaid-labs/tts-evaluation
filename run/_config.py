@@ -2,6 +2,7 @@ import copy
 import enum
 import logging
 import math
+import multiprocessing
 import pathlib
 import pprint
 import random
@@ -470,8 +471,10 @@ def get_dataset(
         path: Directory to cache the dataset.
     """
     logger.info("Loading dataset...")
+    with multiprocessing.pool.ThreadPool() as pool:
     lambda_ = lambda l: [_handle_passage(p) for p in l if _include_passage(p)]
-    return {k: lambda_(v(path)) for k, v in datasets.items()}
+        items = list(pool.map(lambda i: (i[0], lambda_(i[1](path))), datasets.items()))
+    return {k: v for k, v in items}
 
 
 def split_dataset(
