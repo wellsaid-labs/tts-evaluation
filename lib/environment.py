@@ -498,11 +498,8 @@ def get_tracked_changes() -> str:
         M bin/README.md
          M lib/environment.py
     """
-    return (
-        subprocess.check_output("git status --porcelain --untracked-files=no", shell=True)
-        .decode()
-        .strip()
-    )
+    command = "git status --porcelain --untracked-files=no"
+    return subprocess.check_output(command, shell=True).decode().strip()
 
 
 def has_tracked_changes() -> bool:
@@ -569,9 +566,8 @@ def get_disks() -> typing.Optional[str]:
             memory:fe900000-fe901fff
     """
     if platform.system() == "Linux":
-        return (
-            subprocess.check_output("lshw -class disk -class storage", shell=True).decode().strip()
-        )
+        command = "lshw -class disk -class storage"
+        return subprocess.check_output(command, shell=True).decode().strip()
     return None
 
 
@@ -585,14 +581,8 @@ def get_unique_cpus() -> typing.Optional[str]:
         'Intel(R) Xeon(R) Platinum 8259CL CPU @ 2.50GHz'
     """
     if platform.system() == "Linux":
-        return (
-            subprocess.check_output(
-                "awk '/model name/ {$1=$2=$3=\"\"; print $0}' /proc/cpuinfo | uniq",
-                shell=True,
-            )
-            .decode()
-            .strip()
-        )
+        command = "awk '/model name/ {$1=$2=$3=\"\"; print $0}' /proc/cpuinfo | uniq"
+        return subprocess.check_output(command, shell=True).decode().strip()
     return None
 
 
