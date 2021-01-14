@@ -112,6 +112,9 @@ class Passage:
     def audio(self):
         return read_audio(self.audio_file.path)
 
+    def aligned_audio_length(self) -> float:
+        return self.alignments[-1].audio[-1] - self.alignments[0].audio[0]
+
     def to_string(self, *fields):
         return _to_string(self, *fields)
 
@@ -565,5 +568,4 @@ def update_passage_audio(passage: Passage, audio_file: AudioFileMetadata, tolera
     updated = tuple(a._replace(audio=clamp_(a.audio)) for a in passage.alignments)
     passage.alignments = updated
     passage.audio_file = audio_file
-    passage._check_invariants()
     return passage

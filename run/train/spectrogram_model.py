@@ -893,6 +893,7 @@ def _run(
     train_dataset, dev_dataset = run._config.split_dataset(dataset)
     comet.log_parameters(run._utils.get_dataset_stats(train_dataset, dev_dataset))
 
+    logger.info("Spawning workers %s", lib.utils.mazel_tov())
     return lib.distributed.spawn(
         _run_worker.get_configured_partial(),  # type: ignore
         args=(

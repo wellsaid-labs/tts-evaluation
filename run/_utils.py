@@ -136,6 +136,7 @@ def normalize_audio(
     for passages in dataset.values():
         for passage in passages:
             lib.datasets.update_passage_audio(passage, lookup[passage.audio_file.path])
+    logger.info("Normalized dataset audio %s", lib.utils.mazel_tov())
 
 
 def init_distributed(
@@ -176,7 +177,7 @@ def split_passages(
     passages = passages.copy()
     random.shuffle(passages)
     # NOTE: `len_` assumes that a negligible amount of data is unusable in each passage.
-    len_ = lambda p: p[:].audio_length
+    len_ = lambda p: p.aligned_audio_length()
     dev, train = tuple(lib.utils.split(passages, [dev_size, math.inf], len_))
     dev_size = sum([len_(p) for p in dev])
     train_size = sum([len_(p) for p in train])
@@ -210,7 +211,7 @@ def get_dataset_stats(
             stats[label("num_audio_files")] = len(set(p.audio_file for p in passages))
             stats[label("num_passages")] = len(passages)
             stats[label("num_characters")] = sum(len(p.script) for p in passages)
-            num_seconds = seconds_to_string(sum(p[:].audio_length for p in passages))
+            num_seconds = seconds_to_string(sum(p.aligned_audio_length() for p in passages))
             stats[label("num_seconds")] = num_seconds
     return stats
 

@@ -231,6 +231,7 @@ def test_passage_span__identity():
     assert passage.audio_file == span.audio_file
     assert passage.unaligned == span.unaligned
     assert passage.other_metadata == span.other_metadata
+    assert passage.aligned_audio_length() == span.audio_length
     assert (
         passage.to_string("audio_file", "other_metadata")[len(passage.__class__.__name__) :]
         == span.to_string("audio_file", "other_metadata")[len(span.__class__.__name__) :]

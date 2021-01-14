@@ -479,7 +479,9 @@ def _maybe_analyze_dataset(dataset: Dataset):
         return
 
     files = set(flatten([[p.audio_file for p in v] for v in dataset.values()]))
-    aligned_seconds = sum(flatten([[p[:].audio_length for p in v] for v in dataset.values()]))
+    aligned_seconds = sum(
+        flatten([[p.aligned_audio_length() for p in v] for v in dataset.values()])
+    )
     st.markdown(
         f"At a high-level, this dataset has:\n"
         f"- **{seconds_to_string(sum([f.length for f in files]))}** of audio\n"
