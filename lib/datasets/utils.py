@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 import dataclasses
-import functools
 import json
 import logging
 import os
@@ -30,8 +29,6 @@ else:
     pandas = LazyLoader("pandas", globals(), "pandas")
 
 logger = logging.getLogger(__name__)
-read_audio_slice = functools.lru_cache(maxsize=None)(lib.audio.read_audio_slice)
-read_audio = functools.lru_cache(maxsize=None)(lib.audio.read_audio)
 UnalignedType = typing.Tuple[str, str, typing.Tuple[float, float]]
 
 
@@ -110,7 +107,7 @@ class Passage:
         self._check_invariants()
 
     def audio(self):
-        return read_audio(self.audio_file.path)
+        return lib.audio.read_audio(self.audio_file.path)
 
     def aligned_audio_length(self) -> float:
         return self.alignments[-1].audio[-1] - self.alignments[0].audio[0]
@@ -272,7 +269,7 @@ class Span:
 
     def audio(self) -> numpy.ndarray:
         start = self.passage.alignments[self.span][0].audio[0]
-        return read_audio_slice(self.passage.audio_file.path, start, self.audio_length)
+        return lib.audio.read_audio_slice(self.passage.audio_file.path, start, self.audio_length)
 
     def to_string(self, *fields) -> str:
         return _to_string(self, *fields)
