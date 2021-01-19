@@ -282,10 +282,9 @@ class _DataLoader(collections.abc.Iterable):
         input_encoder: InputEncoder,
         **kwargs,
     ):
-        logger.info("Creating `DataLoader` with `batch_size=%d`...", batch_size)
-        self.device = device
         world_size = lib.distributed.get_world_size()
         assert batch_size % world_size == 0, "Batch size must be divisable by `world_size`."
+        logger.info("Creating `DataLoader` with `batch_size=%d`...", batch_size // world_size)
         loader = torch.utils.data.dataloader.DataLoader(
             iterator,
             pin_memory=True,
@@ -651,7 +650,7 @@ def _run_step(
     )
 
     if state.model.training:
-        state.optimizer.zero_grad()
+        state.model.zero_grad(set_to_none=True)
 
         # NOTE: We sum over the `num_frames` dimension to ensure that we don't bias based on
         # `num_frames`. For example, a larger `num_frames` means that the denominator is larger;
