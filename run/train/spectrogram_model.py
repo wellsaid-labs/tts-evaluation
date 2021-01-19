@@ -284,10 +284,12 @@ class _DataLoader(collections.abc.Iterable):
     ):
         logger.info("Creating `DataLoader` with `batch_size=%d`...", batch_size)
         self.device = device
+        world_size = lib.distributed.get_world_size()
+        assert batch_size % world_size == 0, "Batch size must be divisable by `world_size`."
         loader = torch.utils.data.dataloader.DataLoader(
             iterator,
             pin_memory=True,
-            batch_size=batch_size,
+            batch_size=batch_size // world_size,
             worker_init_fn=partial(
                 worker_init_fn, seed=run._config.RANDOM_SEED, device_index=device.index
             ),

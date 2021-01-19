@@ -35,6 +35,10 @@ def is_master() -> bool:
     return torch.distributed.get_rank() == get_master_rank()
 
 
+def get_world_size() -> int:
+    return torch.distributed.get_world_size() if is_initialized() else 1
+
+
 _default_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
