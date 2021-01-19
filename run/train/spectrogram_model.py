@@ -282,13 +282,12 @@ class _DataLoader(collections.abc.Iterable):
         input_encoder: InputEncoder,
         **kwargs,
     ):
-        world_size = lib.distributed.get_world_size()
-        assert batch_size % world_size == 0, "Batch size must be divisable by `world_size`."
-        logger.info("Creating `DataLoader` with `batch_size=%d`...", batch_size // world_size)
+        logger.info("Creating `DataLoader` with `batch_size=%d`...", batch_size)
+        self.device = device
         loader = torch.utils.data.dataloader.DataLoader(
             iterator,
             pin_memory=True,
-            batch_size=batch_size // world_size,
+            batch_size=batch_size,
             worker_init_fn=partial(
                 worker_init_fn, seed=run._config.RANDOM_SEED, device_index=device.index
             ),
@@ -323,6 +322,11 @@ def _get_data_loaders(
     num_workers: int = HParam(),
 ) -> typing.Tuple[_DataLoader, _DataLoader]:
     """ Initialize training and development data loaders.  """
+    world_size = lib.distributed.get_world_size()
+    assert train_batch_size % world_size == 0, "Train batch size must be divisable by `world_size`."
+    assert dev_batch_size % world_size == 0, "Dev batch size must be divisable by `world_size`."
+    train_batch_size = train_batch_size // world_size
+    dev_batch_size = dev_batch_size // world_size
     bucket_size = bucket_size_multiplier * train_batch_size
     _DataIteratorPartial = partial(_DataIterator, bucket_size=bucket_size)
     kwargs = dict(num_workers=num_workers, device=state.device, input_encoder=state.input_encoder)
