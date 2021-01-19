@@ -472,7 +472,7 @@ def get_dataset(
     """
     logger.info("Loading dataset...")
     with multiprocessing.pool.ThreadPool() as pool:
-    lambda_ = lambda l: [_handle_passage(p) for p in l if _include_passage(p)]
+        lambda_ = lambda l: [_handle_passage(p) for p in l if _include_passage(p)]
         items = list(pool.map(lambda i: (i[0], lambda_(i[1](path))), datasets.items()))
     return {k: v for k, v in items}
 
