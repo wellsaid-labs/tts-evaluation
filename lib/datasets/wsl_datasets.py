@@ -37,10 +37,10 @@ SUSAN_MURPHY = Speaker("susan_murphy", "Susan Murphy")
 def _dataset_loader(directory: Path, speaker: Speaker, **kwargs) -> typing.List[Passage]:
     manual_post_suffix = "__manual_post"
     suffix = manual_post_suffix if manual_post_suffix in speaker.label else ""
+    label = speaker.label.replace(manual_post_suffix, "")
     kwargs = dict(recordings_directory_name="recordings" + suffix, **kwargs)
-
-    gcs_path = f"gs://wellsaid_labs_datasets/{speaker.label}/processed"
-    return dataset_loader(directory, speaker.label, gcs_path, speaker, **kwargs)
+    gcs_path = f"gs://wellsaid_labs_datasets/{label}/processed"
+    return dataset_loader(directory, label, gcs_path, speaker, **kwargs)
 
 
 _wsl_speakers = [s for s in locals().values() if isinstance(s, Speaker)]
