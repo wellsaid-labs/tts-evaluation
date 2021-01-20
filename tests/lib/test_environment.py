@@ -171,10 +171,6 @@ def test_bash_time_label__special_characters():
         assert character not in label
 
 
-def test_text_to_label():
-    assert lib.environment.text_to_label("Michael P") == "michael_p"
-
-
 def test_get_root_path():
     """Assuming there is `.git` directory on the root level, test if the `ROOT_PATH` is correct."""
     assert (lib.environment.ROOT_PATH / ".git").is_dir()

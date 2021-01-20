@@ -64,7 +64,8 @@ class Alignment(typing.NamedTuple):
 
 class Speaker(typing.NamedTuple):
     # NOTE: `gender` is not a required property for a `Speaker`.
-    name: str
+    label: str
+    name: typing.Optional[str] = None
     gender: typing.Optional[str] = None
 
 

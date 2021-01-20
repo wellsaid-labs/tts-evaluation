@@ -92,8 +92,8 @@ def get_dataset_label(
     kwargs = dict(cadence=cadence.value, type=type_.value, name=name)
     if speaker is None:
         return Label("{cadence}/dataset/{type}/{name}".format(**kwargs))
-    speaker_ = lib.environment.text_to_label(speaker.name)
-    return Label("{cadence}/dataset/{type}/{speaker}/{name}".format(speaker=speaker_, **kwargs))
+    label = "{cadence}/dataset/{type}/{speaker}/{name}"
+    return Label(label.format(speaker=speaker.label, **kwargs))
 
 
 def get_model_label(name: str, cadence: Cadence, speaker: typing.Optional[Speaker] = None) -> Label:
@@ -101,8 +101,7 @@ def get_model_label(name: str, cadence: Cadence, speaker: typing.Optional[Speake
     kwargs = dict(cadence=cadence.value, name=name)
     if speaker is None:
         return Label("{cadence}/model/{name}".format(**kwargs))
-    speaker_ = lib.environment.text_to_label(speaker.name)
-    return Label("{cadence}/model/{speaker}/{name}".format(speaker=speaker_, **kwargs))
+    return Label("{cadence}/model/{speaker}/{name}".format(speaker=speaker.label, **kwargs))
 
 
 def get_config_label(name: str, cadence: Cadence = Cadence.STATIC) -> Label:

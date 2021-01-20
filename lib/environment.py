@@ -245,11 +245,6 @@ def bash_time_label(add_pid: bool = True, short: bool = False) -> str:
     return label
 
 
-def text_to_label(text: str) -> str:
-    """ Get a label like 'hilary_noriega' from text like 'Hilary Noriega'. """
-    return text.lower().replace(" ", "_")
-
-
 def _duplicate_stream(from_: typing.TextIO, to: Path) -> typing.Callable[[], None]:
     """Duplicates writes to file object `from_` and writes them to `to`.
 

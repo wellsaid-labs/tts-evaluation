@@ -41,10 +41,10 @@ class Book(typing.NamedTuple):
 UK_DATASET = Dataset("en_UK")
 US_DATASET = Dataset("en_US")
 
-JUDY_BIEBER = Speaker("Judy Bieber", "female")
-MARY_ANN = Speaker("Mary Ann", "female")
-ELLIOT_MILLER = Speaker("Elliot Miller", "male")
-ELIZABETH_KLETT = Speaker("Elizabeth Klett", "female")
+JUDY_BIEBER = Speaker("judy_bieber", gender="female")
+MARY_ANN = Speaker("mary_ann", gender="female")
+ELLIOT_MILLER = Speaker("elliot_miller", gender="male")
+ELIZABETH_KLETT = Speaker("elizabeth_klett", gender="female")
 
 THE_SEA_FAIRIES = Book(US_DATASET, JUDY_BIEBER, "the_sea_fairies")
 THE_MASTER_KEY = Book(US_DATASET, JUDY_BIEBER, "the_master_key")
@@ -128,18 +128,17 @@ def m_ailabs_en_uk_speech_dataset(
 
 def _book_to_metdata_path(book: Book, root: Path) -> Path:
     """Given a book of `Book` type, returns the relative path to its "metadata.csv" file."""
-    name = book.speaker.name.lower().replace(" ", "_")
     assert book.speaker.gender is not None
     gender = book.speaker.gender.lower()
-    return root / "by_book" / gender / name / book.title / "metadata.csv"
+    return root / "by_book" / gender / book.speaker.label / book.title / "metadata.csv"
 
 
 def _metadata_path_to_book(metadata_path: Path, root: Path) -> Book:
     """Given a path to a book's "metadata.csv", returns the corresponding `Book` object."""
     # EXAMPLE: "by_book/female/judy_bieber/dorothy_and_wizard_oz/metadata.csv"
     metadata_path = metadata_path.relative_to(root)
-    speaker_gender, speaker_name, book_title = metadata_path.parts[1:4]
-    speaker = Speaker(speaker_name.replace("_", " ").title(), speaker_gender.lower())
+    speaker_gender, speaker_label, book_title = metadata_path.parts[1:4]
+    speaker = Speaker(speaker_label, gender=speaker_gender.lower())
     return Book(Dataset(root.name), speaker, book_title)
 
 

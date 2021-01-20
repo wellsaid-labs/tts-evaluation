@@ -21,7 +21,7 @@ else:
 
 
 logger = logging.getLogger(__name__)
-LINDA_JOHNSON = Speaker("Linda Johnson")
+LINDA_JOHNSON = Speaker("linda_johnson")
 
 
 def lj_speech_dataset(

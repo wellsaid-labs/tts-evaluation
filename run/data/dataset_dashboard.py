@@ -287,7 +287,7 @@ def _get_alignment_ngrams(passages: typing.List[Passage], n: int = 1) -> typing.
 def _get_dataset(speaker_names: typing.FrozenSet[str]) -> Dataset:
     """Load dataset."""
     logger.info("Loading dataset...")
-    datasets = {k: v for k, v in DATASETS.items() if k.name in speaker_names}
+    datasets = {k: v for k, v in DATASETS.items() if k.label in speaker_names}
     dataset = run._config.get_dataset(datasets)
     logger.info(f"Finished loading dataset! {mazel_tov()}")
     return dataset
@@ -675,8 +675,8 @@ if __name__ == "__main__":
     sidebar = st.sidebar
     load_all = sidebar.checkbox("Load all dataset(s) by default")
     question = "Which dataset(s) do you want to load?"
-    speaker_names = [k.name for k in DATASETS.keys()]
-    args = (question, speaker_names, speaker_names if load_all else None)
+    speaker_labels = [k.label for k in DATASETS.keys()]
+    args = (question, speaker_labels, speaker_labels if load_all else None)
     speakers: typing.FrozenSet[str] = frozenset(st.sidebar.multiselect(*args))
     question = "How many spans(s) do you want to generate?"
     num_samples: int = sidebar.number_input(question, 0, None, 100)
