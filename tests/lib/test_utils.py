@@ -103,6 +103,12 @@ def test_list_to_tuple():
     assert lib.utils.list_to_tuple([[1], [2, 3], [4, [5, [6, [7, [8]]]]]]) == excepted
 
 
+def test_tuple_to_list():
+    assert lib.utils.tuple_to_list(((1, 2), (3, 4), (5,))) == [[1, 2], [3, 4], [5]]
+    excepted = [[1], [2, 3], [4, [5, [6, [7, [8]]]]]]
+    assert lib.utils.tuple_to_list(((1,), (2, 3), (4, (5, (6, (7, (8,))))))) == excepted
+
+
 class MockModel(torch.nn.Module):
     # REFERENCE: http://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html
 

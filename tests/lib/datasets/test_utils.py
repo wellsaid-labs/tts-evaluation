@@ -156,9 +156,25 @@ def test_span_generator__unequal_alignment_sizes():
     for _ in range(10000):
         span = next(iterator)
         counter.update(span.passage.alignments[span.span])
-    alignments = [list(typing.cast(typing.Tuple[Alignment], d.alignments)) for d in dataset]
-    assert set(counter.keys()) == set(flatten(alignments))
+    assert set(counter.keys()) == set(typing.cast(typing.Tuple[Alignment], dataset[0].alignments))
     assert_uniform_distribution(counter, abs=0.015)
+
+
+def test_span_generator__unequal_alignment_sizes__boundary_bias():
+    """Test `lib.datasets.span_generator` is biased at the boundary, in some scenarios.
+
+    NOTE: The `max_seconds` filtering introduces bias by predominately filtering out this sequence:
+    `[(1, 2), (2, 3), (3, 11), (11, 12)]`. That leads to an oversampling of `(11, 12)`.
+    """
+    dataset = [make_passage(_make_alignments(((0, 1), (1, 2), (2, 3), (3, 11), (11, 12))))]
+    iterator = lib.datasets.span_generator(dataset, max_seconds=10)
+    counter: typing.Counter[Alignment] = Counter()
+    for _ in range(10000):
+        span = next(iterator)
+        counter.update(span.passage.alignments[span.span])
+    assert set(counter.keys()) == set(typing.cast(typing.Tuple[Alignment], dataset[0].alignments))
+    with pytest.raises(AssertionError):
+        assert_uniform_distribution(counter, abs=0.015)
 
 
 @mock.patch("lib.audio.get_audio_metadata")
@@ -345,6 +361,10 @@ def test__overlap():
     assert _overlap((0, 1), (-1, 0)) == 0.0
     assert _overlap((0, 1), (-0.5, 0.5)) == 0.5
     assert _overlap((0, 1), (0.5, 1.5)) == 0.5
+    assert _overlap((0.5, 2), (0, 1)) == 0.5
+    assert _overlap((0, 2), (0, 1)) == 1.0
+    assert _overlap((-1.5, 0.5), (0, 1)) == 0.5
+    assert _overlap((-1, 1), (0, 1)) == 1.0
 
 
 # NOTE: `lib.datasets.conventional_dataset_loader` is tested in `lj_speech` as part of loading the

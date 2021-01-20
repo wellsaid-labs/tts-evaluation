@@ -757,8 +757,8 @@ def _visualize_inferred(
     state.comet.log_figures(figures)
     audio = {
         "predicted_griffin_lim_audio": lib.audio.griffin_lim(predicted_spectrogram.cpu().numpy()),
-        "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.numpy()),
-        "gold_audio": batch.audio[item].numpy(),
+        "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.cpu().numpy()),
+        "gold_audio": batch.audio[item].cpu().numpy(),
     }
     state.comet.log_html_audio(
         audio=audio,

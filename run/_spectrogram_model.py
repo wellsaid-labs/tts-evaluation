@@ -1,6 +1,7 @@
 import dataclasses
 import functools
 import multiprocessing.pool
+import os
 import random
 import typing
 
@@ -434,7 +435,9 @@ class SpanBatch(typing.NamedTuple):
 
 
 def make_span_batch(
-    spans: typing.List[lib.datasets.Span], input_encoder: InputEncoder
+    spans: typing.List[lib.datasets.Span],
+    input_encoder: InputEncoder,
+    max_parallel: int = typing.cast(int, os.cpu_count()),
 ) -> SpanBatch:
     """
     TODO: For performance reasons, we could consider moving some computations from
@@ -481,7 +484,7 @@ def make_span_batch(
     iter_ = zip(spans, phonemes)
     decoded = [DecodedInput(s.script, p, s.speaker) for s, p in iter_]
     encoded = [input_encoder.encode(d) for d in decoded]
-    with multiprocessing.pool.ThreadPool() as pool:
+    with multiprocessing.pool.ThreadPool(min(max_parallel, len(spans))) as pool:
         signals_: typing.List[numpy.ndarray] = list(pool.map(lambda s: s.audio(), spans))
     loudness = [_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)]
     signals = [_pad_and_trim_signal(s) for s in signals_]

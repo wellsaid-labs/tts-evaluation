@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import dataclasses
+import functools
 import json
 import logging
 import os
@@ -11,7 +12,6 @@ import random
 import subprocess
 import typing
 from dataclasses import fields
-from functools import lru_cache
 from math import ceil, floor
 from pathlib import Path
 
@@ -308,6 +308,7 @@ def span_generator(passages: typing.List[Passage], max_seconds: float) -> typing
     TODO: A sufficiently large pause would slow this algorithm to a hault because it'd be
     sampled continuously and ignored. We could handle that better by excluding large samples
     from the sampling distribution.
+    TODO: Add a parameter for step size to trade-off between memory and performance.
 
     Args:
         passages
@@ -325,17 +326,20 @@ def span_generator(passages: typing.List[Passage], max_seconds: float) -> typing
 
     min_ = lambda passage: passage.alignments[0].audio[0]
     max_ = lambda passage: passage.alignments[-1].audio[1]
-    offset = lambda passage: floor(min_(passage))
+    offset = lambda i, passage: i - floor(min_(passage))
 
     # NOTE: `lookup` allows fast lookups of alignments for a point in time.
-    lookup: typing.List[typing.List[typing.List[int]]]
-    lookup = [[[] for _ in range(ceil(max_(p)) - offset(p) + 1)] for p in passages]
+    lookup_: typing.List[typing.List[typing.List[int]]]
+    lookup_ = [[[] for _ in range(offset(ceil(max_(p)), p) + 1)] for p in passages]
     for i, passage in enumerate(passages):
         for j, alignment in enumerate(passage.alignments):
             for k in range(int(floor(alignment.audio[0])), int(ceil(alignment.audio[1])) + 1):
-                lookup[i][k - offset(passage)].append(j)
+                lookup_[i][offset(k, passage)].append(j)
+    lookup = typing.cast(typing.Tuple[typing.Tuple[typing.Tuple[int]]], list_to_tuple(lookup_))
 
     weights = torch.tensor([float(max_(p) - min_(p)) for p in passages])
+    random_ = functools.lru_cache(maxsize=None)(lambda _: random.random())
+    get_alignment = lambda p, i: p.alignments[i].audio
     while True:
         length = random.uniform(0, max_seconds)
         # NOTE: The `weight` is based on `start` (i.e. the number of spans)
@@ -348,10 +352,10 @@ def span_generator(passages: typing.List[Passage], max_seconds: float) -> typing
         start = max(start, min_(passage))
 
         # NOTE: Based on the overlap, decide which alignments to include in the span.
-        slice_ = slice(int(start) - offset(passage), int(end) - offset(passage) + 1)
-        part = flatten(lookup[index][slice_])
-        get = lambda i: passage.alignments[i].audio
-        random_ = lru_cache(maxsize=None)(lambda i: random.random())
+        slice_ = slice(floor(offset(start, passage)), ceil((offset(end, passage))) + 1)
+        part = flatten(lib.utils.tuple_to_list(lookup[index][slice_]))
+        random_.cache_clear()
+        get = functools.partial(get_alignment, passage)
         bounds = (
             next((i for i in part if _overlap((start, end), get(i)) >= random_(i)), None),
             next((i for i in reversed(part) if _overlap((start, end), get(i)) >= random_(i)), None),
@@ -436,6 +440,7 @@ def dataset_loader(
     audio_file_metadatas = get_audio_metadata(files[1])
     Iterator = typing.Iterator[typing.Tuple[Path, Path, Path, AudioFileMetadata]]
     iterator = typing.cast(Iterator, zip(*tuple(files), audio_file_metadatas))
+    is_connected = IsConnected(script=False, transcript=True, audio=True)
     for alignment_path, _, script_path, recording_file_metadata in iterator:
         scripts = pandas.read_csv(str(script_path.absolute()))
         json_ = json.loads(alignment_path.read_text())
@@ -454,7 +459,7 @@ def dataset_loader(
                 other_metadata={k: v for k, v in script.items() if k not in (text_column,)},
                 index=len(passages),
                 passages=passages,
-                is_connected=IsConnected(script=False, transcript=True, audio=True),
+                is_connected=is_connected,
             )
             passages.append(passage)
         return_.extend(passages)
