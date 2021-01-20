@@ -80,7 +80,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
             # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
             optimizer=torch.optim.Adam,
         ),
-        _run_worker: HParams(num_steps_per_epoch=1000),
+        _run_worker: HParams(num_examples_per_epoch=1000 * train_batch_size),
         _run_step: HParams(
             # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
             spectrogram_loss_scalar=1 / 100,
@@ -134,6 +134,7 @@ class _State:
     comet: CometMLExperiment
     device: torch.device
     step: torch.Tensor = torch.tensor(0, dtype=torch.long)
+    num_examples: torch.Tensor = torch.tensor(0, dtype=torch.long)
 
     @staticmethod
     def _get_input_encoder(
@@ -212,6 +213,7 @@ class _State:
             optimizer=self.optimizer,
             clipper=self.clipper,
             scheduler=self.scheduler,
+            num_examples=int(self.num_examples.item()),
             step=int(self.step.item()),
             **kwargs,
         )
@@ -224,10 +226,13 @@ class _State:
         device: torch.device,
     ):
         """ Recreate the spectrogram training state from a `checkpoint`. """
-        _, _, step, encoder, model, optimizer, clipper, scheduler = dataclasses.astuple(checkpoint)
+        tuple_ = dataclasses.astuple(checkpoint)
+        _, _, step, num_examples, encoder, model, optimizer, clipper, scheduler = tuple_
         model_ = torch.nn.parallel.DistributedDataParallel(model, [device], device)
         step = torch.tensor(step)
-        return cls(encoder, model_, optimizer, clipper, scheduler, comet, device, step)
+        num_examples = torch.tensor(num_examples)
+        args = (encoder, model_, optimizer, clipper, scheduler, comet, device, step, num_examples)
+        return cls(*args)
 
     @classmethod
     def from_dataset(
@@ -284,6 +289,7 @@ class _DataLoader(collections.abc.Iterable):
     ):
         logger.info("Creating `DataLoader` with `batch_size=%d`...", batch_size)
         self.device = device
+        self.batch_size = batch_size
         loader = torch.utils.data.dataloader.DataLoader(
             iterator,
             pin_memory=True,
@@ -674,9 +680,8 @@ def _run_step(
 
         (spectrogram_loss_ + stop_token_loss_).backward()
 
-        log_metric = lambda n, v: state.comet.log_metric(
-            get_model_label(n, cadence=Cadence.STEP), v
-        )
+        label_ = partial(get_model_label, cadence=Cadence.STEP)
+        log_metric = lambda n, v: state.comet.log_metric(label_(n), v)
         log_metric("grad_norm/two", get_parameter_norm(state.model.parameters(), 2))
         log_metric("grad_norm/inf", get_parameter_norm(state.model.parameters(), math.inf))
         log_metric("grad_norm/max_norm", state.clipper.max_norm)
@@ -686,6 +691,7 @@ def _run_step(
         state.clipper.clip()
         state.optimizer.step()
         state.step.add_(1)
+        state.num_examples.add_(batch.length)
         state.scheduler.step()
         state.comet.set_step(typing.cast(int, state.step.item()))
 
@@ -839,7 +845,7 @@ def _run_worker(
     dev_dataset: run._config.Dataset,
     comet_partial: typing.Callable[..., CometMLExperiment],
     config: typing.Dict[str, typing.Any],
-    num_steps_per_epoch: int = HParam(),
+    num_examples_per_epoch: int = HParam(),
 ) -> typing.NoReturn:
     """ Train and evaluate the spectrogram model on a loop. """
     lib.environment.set_basic_logging_config(device_index)
@@ -854,8 +860,9 @@ def _run_worker(
     train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
     _set_context = partial(set_context, model=state.model, comet=comet)
     while True:
-        epoch = int(state.step.item() // num_steps_per_epoch)
-        logger.info("Running Epoch %d, Step %d", epoch, state.step.item())
+        epoch = int(state.num_examples.item() // num_examples_per_epoch)
+        message = "Running Epoch %d (Step %d, Example %d)"
+        logger.info(message, epoch, state.step.item(), state.num_examples.item())
         comet.log_current_epoch(epoch)
 
         iterator: typing.List[typing.Tuple[Context, DatasetType, _DataLoader, _BatchHandler]] = [
@@ -869,9 +876,14 @@ def _run_worker(
                 # dataset metrics like `num_frames_per_speaker` or `num_spans_per_text_length`.
                 # In order to do so, we'd also need to checkpoint those metrics.
                 metrics = _DistributedMetrics()
-                for i, batch in zip(range(num_steps_per_epoch), data_loader):
+                message = "The epoch size isn't divisable by the batch size."
+                assert num_examples_per_epoch % data_loader.batch_size == 0, message
+                num_steps = int(num_examples_per_epoch // data_loader.batch_size)
+                logger.info("Running %d examples over %d steps.", num_examples_per_epoch, num_steps)
+                for i, batch in zip(range(num_steps), data_loader):
                     handle_batch(state, metrics, batch, data_loader, dataset_type, i == 0)
-                    metrics.log(comet, lambda l: l[-1], dataset_type, Cadence.STEP)
+                    if Context.TRAIN == context:
+                        metrics.log(comet, lambda l: l[-1], dataset_type, Cadence.STEP)
                 metrics.log(comet, sum, dataset_type, Cadence.MULTI_STEP)
 
         save(

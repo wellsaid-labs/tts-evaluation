@@ -46,6 +46,7 @@ class Checkpoint:
     checkpoints_directory: pathlib.Path
     comet_experiment_key: str
     step: int
+    num_examples: int
 
 
 def maybe_make_experiment_directories_from_checkpoint(
@@ -442,6 +443,7 @@ class CometMLExperiment:
 @contextlib.contextmanager
 def set_context(context: Context, model: torch.nn.Module, comet: CometMLExperiment):
     with comet.context_manager(context.value):
+        logger.info("Setting context to '%s'.", context.value)
         mode = model.training
         model.train(mode=(context == Context.TRAIN))
         with torch.set_grad_enabled(mode=(context == Context.TRAIN)):
