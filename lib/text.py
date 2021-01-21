@@ -142,7 +142,7 @@ def _grapheme_to_phoneme_with_punctuation(
         phrase = "".join([t.text_with_ws for t in group])
         is_alpha_numeric = any(c.isalpha() or c.isdigit() for c in phrase)
         if is_punct and is_alpha_numeric:
-            logger.warning("Punctuation contains alphanumeric characters: %s" % phrase)
+            logger.debug("Punctuation contains alphanumeric characters: %s" % phrase)
         if is_punct and not is_alpha_numeric:
             return_.extend(list(phrase))
         else:

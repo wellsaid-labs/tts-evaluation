@@ -173,7 +173,7 @@ def clip_waveform(waveform: np.ndarray):
     num_clipped_samples = (waveform < -1).sum() + (waveform > 1).sum()
     if num_clipped_samples > 0:
         max_sample = np.max(np.absolute(waveform))
-        logger.warning("%d samples clipped (%f max sample)", num_clipped_samples, max_sample)
+        logger.debug("%d samples clipped (%f max sample)", num_clipped_samples, max_sample)
     return np.clip(waveform, -1.0, 1.0)
 
 

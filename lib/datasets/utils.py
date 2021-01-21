@@ -87,9 +87,9 @@ class Passage:
         alignments: Alignments (sorted) that align the `script`, `transcript` and `audio`.
         index: The index of `self` in `self.passages`.
         passages: Other neighboring passages (sorted), for context.
-        other_metadata: Additional metadata associated with this passage.
         is_connected: Iff `True`, the `script`, `audio` or `transcript` alignments are on a
             continuous timeline from passage to passage.
+        other_metadata: Additional metadata associated with this passage.
     """
 
     audio_file: AudioFileMetadata
@@ -190,15 +190,19 @@ class Passage:
         return list(self._unaligned())
 
     def _check_invariants(self):
-        """ Check datastructure invariants. """
+        """ Check datastructure invariants.
+
+        NOTE: The `audio` alignments may overlap by a little bit, at the edges.
+        NOTE: `self.index` may not be in `self.passages`.
+        """
         pairs = zip(self.alignments, self.alignments[1:])
         assert all(a.script[0] <= a.script[1] for a in self.alignments)
         assert all(a.audio[0] <= a.audio[1] for a in self.alignments)
         assert all(a.transcript[0] <= a.transcript[1] for a in self.alignments)
         assert all(a.script[1] <= b.script[0] for a, b in pairs)
         assert all(a.transcript[1] <= b.transcript[0] for a, b in pairs)
-        # NOTE: The `audio` alignments may overlap by a little bit, at the edges.
         assert all(a.audio[0] <= b.audio[1] for a, b in pairs)
+
         if len(self.alignments) != 0:
             get_ = lambda f: flatten([list(getattr(a, f)) for a in self.alignments])
             assert max(get_("audio")) <= self.audio_file.length
@@ -207,6 +211,11 @@ class Passage:
             assert min(get_("audio")) >= 0
             assert min(get_("script")) >= 0
             assert min(get_("transcript")) >= 0
+
+        if self.index < len(self.passages):
+            assert self.passages[self.index] == self
+        for passage in self.passages:
+            assert passage.passages == self.passages
 
 
 SpanType = typing.TypeVar("SpanType", bound="Span")
