@@ -213,9 +213,9 @@ class Passage:
             assert min(get_("transcript")) >= 0
 
         if self.index < len(self.passages):
-            assert self.passages[self.index] == self
+            assert self.passages[self.index] is self
         for passage in self.passages:
-            assert passage.passages == self.passages
+            assert passage.passages is self.passages
 
 
 SpanType = typing.TypeVar("SpanType", bound="Span")
