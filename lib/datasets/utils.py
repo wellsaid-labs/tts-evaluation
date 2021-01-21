@@ -190,7 +190,7 @@ class Passage:
         return list(self._unaligned())
 
     def _check_invariants(self):
-        """ Check datastructure invariants.
+        """Check datastructure invariants.
 
         NOTE: The `audio` alignments may overlap by a little bit, at the edges.
         NOTE: `self.index` may not be in `self.passages`.
