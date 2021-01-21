@@ -137,7 +137,7 @@ class _State:
     num_examples: torch.Tensor = torch.tensor(0, dtype=torch.long)
 
     def update_num_examples(self, count: int):
-        self.num_examples.add_(lib.distributed.reduce(count))
+        self.num_examples.add_(int(lib.distributed.reduce(count)))
 
     @staticmethod
     def _get_input_encoder(
