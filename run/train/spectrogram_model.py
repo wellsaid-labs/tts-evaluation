@@ -136,6 +136,9 @@ class _State:
     step: torch.Tensor = torch.tensor(0, dtype=torch.long)
     num_examples: torch.Tensor = torch.tensor(0, dtype=torch.long)
 
+    def update_num_examples(self, count: int):
+        self.num_examples.add_(lib.distributed.reduce(count))
+
     @staticmethod
     def _get_input_encoder(
         train_dataset: run._config.Dataset,
@@ -691,7 +694,7 @@ def _run_step(
         state.clipper.clip()
         state.optimizer.step()
         state.step.add_(1)
-        state.num_examples.add_(batch.length)
+        state.update_num_examples(batch.length)
         state.scheduler.step()
         state.comet.set_step(typing.cast(int, state.step.item()))
 
@@ -877,8 +880,9 @@ def _run_worker(
                 # In order to do so, we'd also need to checkpoint those metrics.
                 metrics = _DistributedMetrics()
                 message = "The epoch size isn't divisable by the batch size."
-                assert num_examples_per_epoch % data_loader.batch_size == 0, message
-                num_steps = int(num_examples_per_epoch // data_loader.batch_size)
+                total_batch_size = lib.distributed.get_world_size() * data_loader.batch_size
+                assert num_examples_per_epoch % total_batch_size == 0, message
+                num_steps = int(num_examples_per_epoch // total_batch_size)
                 logger.info("Running %d examples over %d steps.", num_examples_per_epoch, num_steps)
                 for i, batch in zip(range(num_steps), data_loader):
                     handle_batch(state, metrics, batch, data_loader, dataset_type, i == 0)
