@@ -295,7 +295,9 @@ def _overlap(slice: typing.Tuple[float, float], other: typing.Tuple[float, float
     return (min(slice[1], other[-1]) - max(slice[0], other[0])) / (other[-1] - other[0])
 
 
-def span_generator(passages: typing.List[Passage], max_seconds: float) -> typing.Iterator[Span]:
+def span_generator(
+    passages: typing.List[Passage], max_seconds: float, step: float = 10.0, eps=1e-8
+) -> typing.Iterator[Span]:
     """Randomly generate `Span`(s) that are at most `max_seconds` long.
 
     NOTE:
@@ -314,8 +316,11 @@ def span_generator(passages: typing.List[Passage], max_seconds: float) -> typing
     Args:
         passages
         max_seconds: The maximum interval length.
+        step: A lower step size is more performant but uses more memory, and vice versa.
+        eps: Add small number so that the end point is also included within the range.
     """
     assert max_seconds > 0, "The maximum interval length must be a positive number."
+    assert step > 0, "Step must be a positive number."
     if len(passages) == 0:
         return
 
@@ -327,15 +332,16 @@ def span_generator(passages: typing.List[Passage], max_seconds: float) -> typing
 
     min_ = lambda passage: passage.alignments[0].audio[0]
     max_ = lambda passage: passage.alignments[-1].audio[1]
-    offset = lambda i, passage: i - floor(min_(passage))
+    map_ = lambda i, passage: (i - min_(passage)) / step
+    slice_ = lambda i, j, p: (int(floor(map_(i, p))), int(ceil((map_(j, p) + eps))))
 
     # NOTE: `lookup` allows fast lookups of alignments for a point in time.
     lookup_: typing.List[typing.List[typing.List[int]]]
-    lookup_ = [[[] for _ in range(offset(ceil(max_(p)), p) + 1)] for p in passages]
+    lookup_ = [[[] for _ in range(ceil(map_(max_(p), p) + eps))] for p in passages]
     for i, passage in enumerate(passages):
         for j, alignment in enumerate(passage.alignments):
-            for k in range(int(floor(alignment.audio[0])), int(ceil(alignment.audio[1])) + 1):
-                lookup_[i][offset(k, passage)].append(j)
+            for k in range(*slice_(alignment.audio[0], alignment.audio[1], passage)):
+                lookup_[i][k].append(j)
     lookup = typing.cast(typing.Tuple[typing.Tuple[typing.Tuple[int]]], list_to_tuple(lookup_))
 
     weights = torch.tensor([float(max_(p) - min_(p)) for p in passages])
@@ -353,8 +359,7 @@ def span_generator(passages: typing.List[Passage], max_seconds: float) -> typing
         start = max(start, min_(passage))
 
         # NOTE: Based on the overlap, decide which alignments to include in the span.
-        slice_ = slice(floor(offset(start, passage)), ceil((offset(end, passage))) + 1)
-        part = flatten(lib.utils.tuple_to_list(lookup[index][slice_]))
+        part = flatten(lib.utils.tuple_to_list(lookup[index][slice(*slice_(start, end, passage))]))
         random_.cache_clear()
         get = functools.partial(get_alignment, passage)
         bounds = (
