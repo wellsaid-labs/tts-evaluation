@@ -204,20 +204,18 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
     ]
 
     path = TEST_DATA_PATH / "datasets/hilary_noriega/recordings/Script 1.wav"
-    assert passages[0] == Passage(
-        audio_file=lib.audio.get_audio_metadata([path])[0],
-        speaker=lib.datasets.HILARY_NORIEGA,
-        script="Author of the danger trail, Philip Steels, etc.",
-        transcript=(
-            "author of the danger Trail Philip Steels Etc. Not at this particular case Tom "
-            "apologized Whitmore for the 20th time that evening the two men shook hands"
-        ),
-        alignments=tuple(alignments),
-        other_metadata={"Index": 0, "Source": "CMU", "Title": "CMU"},
-        index=0,
-        passages=passages,
-        is_connected=IsConnected(False, True, True),
+    assert passages[0].audio_file == lib.audio.get_audio_metadata([path])[0]
+    assert passages[0].speaker == lib.datasets.HILARY_NORIEGA
+    assert passages[0].script == "Author of the danger trail, Philip Steels, etc."
+    assert passages[0].transcript == (
+        "author of the danger Trail Philip Steels Etc. Not at this particular case Tom "
+        "apologized Whitmore for the 20th time that evening the two men shook hands"
     )
+    assert passages[0].alignments == tuple(alignments)
+    assert passages[0].other_metadata == {"Index": 0, "Source": "CMU", "Title": "CMU"}
+    assert passages[0].index == 0
+    assert passages[0].passages == passages
+    assert passages[0].is_connected == IsConnected(False, True, True)
     assert passages[1].script == "Not at this particular case, Tom, apologized Whittemore."
 
 
