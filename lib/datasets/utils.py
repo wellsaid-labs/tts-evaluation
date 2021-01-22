@@ -178,7 +178,7 @@ class Passage:
         """
         return list(self._unaligned())
 
-    def _check_invariants(self):
+    def _check_invariants(self, eps=1e-8):
         """Check datastructure invariants.
 
         NOTE: The `audio` alignments may overlap by a little bit, at the edges.
@@ -194,7 +194,7 @@ class Passage:
 
         if len(self.alignments) != 0:
             get_ = lambda f: flatten([list(getattr(a, f)) for a in self.alignments])
-            assert max(get_("audio")) <= self.audio_file.length
+            assert max(get_("audio")) <= self.audio_file.length + eps
             assert max(get_("script")) <= len(self.script)
             assert max(get_("transcript")) <= len(self.transcript)
             assert min(get_("audio")) >= 0
