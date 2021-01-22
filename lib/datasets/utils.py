@@ -10,12 +10,14 @@ import logging
 import os
 import random
 import subprocess
+import sys
 import typing
 from dataclasses import fields
 from math import ceil, floor
 from pathlib import Path
 
 import numpy
+import pyximport
 import torch
 from third_party import LazyLoader
 
@@ -30,6 +32,9 @@ else:
 
 logger = logging.getLogger(__name__)
 UnalignedType = typing.Tuple[str, str, typing.Tuple[float, float]]
+pyximport.install(language_level=sys.version_info[0])
+
+from lib.datasets.alignment import Alignment  # type: ignore
 
 
 def _handle_get_item_key(length: int, key: typing.Any) -> slice:
@@ -44,22 +49,6 @@ def _to_string(self: typing.Union[Span, Passage], *fields: str) -> str:
     """ Create a string representation of a `dataclass` with a limited number of `fields`. """
     values = ", ".join(f"{f}={getattr(self, f)}" for f in fields)
     return f"{self.__class__.__name__}({values})"
-
-
-class Alignment(typing.NamedTuple):
-    """An aligned `script`, `audio` and `transcript` slice.
-
-    TODO: Reorder these to `script`, `transcript`, and `audio` for consistency.
-
-    Args:
-        script: The start and end of a script slice in characters.
-        audio: The start and end of a audio recording slice in seconds.
-        transcript: The start and end of a trasnscript slice in characters.
-    """
-
-    script: typing.Tuple[int, int]
-    audio: typing.Tuple[float, float]
-    transcript: typing.Tuple[int, int]
 
 
 class Speaker(typing.NamedTuple):
