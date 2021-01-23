@@ -11,8 +11,6 @@ class Alignment(typing.NamedTuple):
 
 Learn more:
 https://habr.com/en/post/458518/
-
-TODO: Store all alignments together in a `numpy.ndarray` to further reduce their size.
 """
 
 _attrs = [
@@ -64,4 +62,11 @@ cdef class Alignment:
         return all(getattr(self, a) == getattr(other, a) for a in _attrs)
 
     def __hash__(self):
-        return hash((getattr(self, a) for a in _attrs))
+        return hash(tuple(getattr(self, a) for a in _attrs))
+
+    def __repr__(self):
+        return str(self)
+
+    def __str__(self):
+        template = "%s(script=%r, audio=%r, transcript=%r)"
+        return template % (self.__class__.__name__, self.script, self.audio, self.transcript)

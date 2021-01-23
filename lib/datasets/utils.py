@@ -294,7 +294,7 @@ def _overlap(slice: typing.Tuple[float, float], other: typing.Tuple[float, float
 
 
 def span_generator(
-    passages: typing.List[Passage], max_seconds: float, step: float = 10.0, eps=1e-8
+    passages: typing.List[Passage], max_seconds: float, step: float = 1.0, eps=1e-8
 ) -> typing.Iterator[Span]:
     """Randomly generate `Span`(s) that are at most `max_seconds` long.
 
@@ -309,7 +309,6 @@ def span_generator(
     TODO: A sufficiently large pause would slow this algorithm to a hault because it'd be
     sampled continuously and ignored. We could handle that better by excluding large samples
     from the sampling distribution.
-    TODO: Add a parameter for step size to trade-off between memory and performance.
 
     Args:
         passages
@@ -343,8 +342,8 @@ def span_generator(
     lookup = typing.cast(typing.Tuple[typing.Tuple[typing.Tuple[int]]], list_to_tuple(lookup_))
 
     weights = torch.tensor([float(max_(p) - min_(p)) for p in passages])
-    random_ = functools.lru_cache(maxsize=None)(lambda _: random.random())
-    get_alignment = lambda p, i: p.alignments[i].audio
+    _is_include = lambda a: _overlap((start, end), a.audio) >= random.random()
+    is_include = functools.lru_cache(maxsize=None)(_is_include)
     while True:
         length = random.uniform(0, max_seconds)
         # NOTE: The `weight` is based on `start` (i.e. the number of spans)
@@ -358,20 +357,36 @@ def span_generator(
 
         # NOTE: Based on the overlap, decide which alignments to include in the span.
         part = flatten(lib.utils.tuple_to_list(lookup[index][slice(*slice_(start, end, passage))]))
-        random_.cache_clear()
-        get = functools.partial(get_alignment, passage)
+        is_include.cache_clear()
         bounds = (
-            next((i for i in part if _overlap((start, end), get(i)) >= random_(i)), None),
-            next((i for i in reversed(part) if _overlap((start, end), get(i)) >= random_(i)), None),
+            next((i for i in part if is_include(passage.alignments[i])), None),
+            next((i for i in reversed(part) if is_include(passage.alignments[i])), None),
         )
-        if (
-            bounds[0] is not None
-            and bounds[1] is not None
-            and bounds[0] <= bounds[1]
-            and get(bounds[1])[1] - get(bounds[0])[0] > 0
-            and get(bounds[1])[1] - get(bounds[0])[0] <= max_seconds
-        ):
-            yield passage[bounds[0] : bounds[1] + 1]
+        if bounds[0] is not None and bounds[1] is not None and bounds[0] <= bounds[1]:
+            span = passage[bounds[0] : bounds[1] + 1]
+            if span.audio_length > 0 and span.audio_length <= max_seconds:
+                yield span
+
+
+"""
+Using `guppy3`, the Jan 22nd, 2021 dataset looks like...
+```
+Partition of a set of 4578413 objects. Total size = 385490981 bytes.
+ Index  Count   %     Size   % Cumulative  % Kind (class / dict of class)
+     0 727737  16 116632104  30 116632104  30 str
+     1 2525494  55 101019760  26 217651864  56 lib.datasets.alignment.Alignment
+     2 260557   6 36257560   9 253909424  66 tuple
+     3 120064   3 30428016   8 284337440  74 dict (no owner)
+     4 142635   3 18853592   5 303191032  79 list
+     5 101351   2 14594544   4 317785576  82 dict of lib.datasets.utils.Passage
+     6  44833   1  8010866   2 325796442  85 types.CodeType
+     7  87171   2  7022892   2 332819334  86 bytes
+     8  66526   1  6918704   2 339738038  88 pathlib.PosixPath
+     9  66513   1  6385248   2 346123286  90 lib.audio.AudioFileMetadata
+```
+TODO: The alignments data is stored in many seperate `Alignment` objects. Storing that data
+in a `np.array` should reduce the space required for `Alignment` objects by half.
+"""
 
 
 def dataset_loader(
