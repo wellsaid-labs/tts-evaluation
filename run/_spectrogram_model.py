@@ -31,10 +31,12 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
     import spacy.tokens
     from scipy import ndimage
+    from spacy.lang import en as spacy_en
 else:
     librosa = LazyLoader("librosa", globals(), "librosa")
     ndimage = LazyLoader("ndimage", globals(), "scipy.ndimage")
     spacy = LazyLoader("spacy", globals(), "spacy")
+    spacy_en = LazyLoader("spacy_en", globals(), "spacy.lang.en")
 
 
 class EncodedInput(typing.NamedTuple):
@@ -437,6 +439,7 @@ class SpanBatch(typing.NamedTuple):
 def make_span_batch(
     spans: typing.List[lib.datasets.Span],
     input_encoder: InputEncoder,
+    nlp: spacy_en.English,
     max_parallel: int = typing.cast(int, os.cpu_count()),
 ) -> SpanBatch:
     """
@@ -471,7 +474,6 @@ def make_span_batch(
     for span in spans:
         lib.audio.assert_audio_normalized(span.audio_file)
 
-    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
     docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
     for i in range(length):
         script_span = spans[i].script_span
@@ -480,7 +482,8 @@ def make_span_batch(
         docs[i] = span.as_doc()
 
     char_to_word = [_get_char_to_word(d) for d in docs]
-    phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs, is_tqdm=False))
+    kwargs = {"is_tqdm": False, "max_parallel": max_parallel}
+    phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs, **kwargs))
     iter_ = zip(spans, phonemes)
     decoded = [DecodedInput(s.script, p, s.speaker) for s, p in iter_]
     encoded = [input_encoder.encode(d) for d in decoded]

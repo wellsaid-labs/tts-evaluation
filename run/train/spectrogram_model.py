@@ -1,8 +1,10 @@
 import collections
 import collections.abc
 import dataclasses
+import gc
 import logging
 import math
+import os
 import pathlib
 import platform
 import random
@@ -20,6 +22,7 @@ import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
+import tqdm
 import typer
 from hparams import HParam, HParams, add_config, configurable, get_config, parse_hparam_args
 from third_party import get_parameter_norm
@@ -293,6 +296,8 @@ class _DataLoader(collections.abc.Iterable):
         logger.info("Creating `DataLoader` with `batch_size=%d`...", batch_size)
         self.device = device
         self.batch_size = batch_size
+        max_parallel = int(os.cpu_count() // lib.distributed.get_world_size())
+        nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
         loader = torch.utils.data.dataloader.DataLoader(
             iterator,
             pin_memory=True,
@@ -300,9 +305,13 @@ class _DataLoader(collections.abc.Iterable):
             worker_init_fn=partial(
                 worker_init_fn, seed=run._config.RANDOM_SEED, device_index=device.index
             ),
-            collate_fn=partial(make_span_batch, input_encoder=input_encoder),
+            collate_fn=partial(
+                make_span_batch, input_encoder=input_encoder, max_parallel=max_parallel, nlp=nlp
+            ),
+            multiprocessing_context="fork",
             **kwargs,
         )
+        gc.freeze()
         self.loader = iter(loader)
         self.num_frames = 0
         self.num_spans = 0
@@ -547,6 +556,10 @@ class _DistributedMetrics:
         rms = div(self.frame_rms_level, self.num_frames, power_to_db)
 
         Stats = typing.Dict[str, typing.Optional[float]]
+
+        spectrogram_loss = div(self.spectrogram_loss, self.num_frames)
+        if spectrogram_loss is not None:
+            spectrogram_loss /= num_frame_channels
         model_stats: Stats = {
             "alignment_norm": div(self.predicted_frame_alignment_norm, self.num_frames_predicted),
             "alignment_std": div(self.predicted_frame_alignment_std, self.num_frames_predicted),
@@ -554,7 +567,7 @@ class _DistributedMetrics:
             "stop_token_accuracy": div(self.stop_token_num_correct, self.num_frames),
             "stop_token_loss": div(self.stop_token_loss, self.num_frames),
             "reached_max_frames": div(self.num_reached_max_frames, self.batch_size),
-            "spectrogram_loss": div(self.spectrogram_loss, self.num_frames * num_frame_channels),
+            "spectrogram_loss": spectrogram_loss,
             "average_predicted_rms_level": predicted_rms,
             "average_rms_level_delta": (
                 predicted_rms - rms if predicted_rms is not None and rms is not None else None
@@ -879,12 +892,17 @@ def _run_worker(
                 # dataset metrics like `num_frames_per_speaker` or `num_spans_per_text_length`.
                 # In order to do so, we'd also need to checkpoint those metrics.
                 metrics = _DistributedMetrics()
+
                 message = "The epoch size isn't divisable by the batch size."
                 total_batch_size = lib.distributed.get_world_size() * data_loader.batch_size
                 assert num_examples_per_epoch % total_batch_size == 0, message
                 num_steps = int(num_examples_per_epoch // total_batch_size)
                 logger.info("Running %d examples over %d steps.", num_examples_per_epoch, num_steps)
-                for i, batch in zip(range(num_steps), data_loader):
+                loader = zip(range(num_steps), data_loader)
+                if lib.distributed.is_master():
+                    loader = tqdm.tqdm(loader, total=num_steps)
+
+                for i, batch in loader:
                     handle_batch(state, metrics, batch, data_loader, dataset_type, i == 0)
                     if Context.TRAIN == context:
                         metrics.log(comet, lambda l: l[-1], dataset_type, Cadence.STEP)
