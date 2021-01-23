@@ -735,7 +735,6 @@ def _run_step(
     metrics.update_data_queue_size(data_loader)
     metrics.append(metrics.spectrogram_loss, spectrogram_loss)
     metrics.append(metrics.stop_token_loss, stop_token_loss)
-    metrics.log(state.comet, lambda l: l[-1], dataset_type, Cadence.STEP)
 
 
 def _visualize_inferred(
@@ -893,8 +892,8 @@ def _run_worker(
                 # In order to do so, we'd also need to checkpoint those metrics.
                 metrics = _DistributedMetrics()
 
-                message = "The epoch size isn't divisable by the batch size."
                 total_batch_size = lib.distributed.get_world_size() * data_loader.batch_size
+                message = "The epoch size isn't divisable by the batch size."
                 assert num_examples_per_epoch % total_batch_size == 0, message
                 num_steps = int(num_examples_per_epoch // total_batch_size)
                 logger.info("Running %d examples over %d steps.", num_examples_per_epoch, num_steps)
