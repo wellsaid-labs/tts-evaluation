@@ -73,6 +73,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
     run._config.configure()
     train_batch_size = 56
     torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)  # type: ignore
+    train_epoch_num_examples = 100 * train_batch_size
     config = {
         _set_seed: HParams(seed=run._config.RANDOM_SEED),
         _State._get_optimizers: HParams(
@@ -83,7 +84,13 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
             # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
             optimizer=torch.optim.Adam,
         ),
-        _run_worker: HParams(num_examples_per_epoch=1000 * train_batch_size),
+        _run_worker: HParams(
+            train_epoch_num_examples=train_epoch_num_examples,
+            # NOTE: This parameter was set approximately based on the size of each respective
+            # dataset. The development dataset is about 20 times smaller than the training dataset
+            # based on the number of characters in each dataset.
+            dev_epoch_num_examples=train_epoch_num_examples // 20,
+        ),
         _run_step: HParams(
             # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
             spectrogram_loss_scalar=1 / 100,
@@ -407,7 +414,7 @@ class _DistributedMetrics:
         default_factory=lambda: collections.defaultdict(float)
     )
     frame_rms_level: typing.List[float] = dataclasses.field(default_factory=list)
-    text_length_bucket_size: int = 10
+    text_length_bucket_size: int = 25
     num_spans_per_text_length: typing.Dict[int, float] = dataclasses.field(
         default_factory=lambda: collections.defaultdict(float)
     )
@@ -819,12 +826,12 @@ def _run_inference(
             state, batch, frames, stop_tokens, alignments, dataset_type, Cadence.STEP
         )
 
-    if lengths.numel() > 0:
-        # NOTE: Remove predictions that diverged (reached max) as to not skew other metrics. We
-        # count these sequences separatly with `reached_max_frames`.
-        bool_ = ~reached_max.view(-1)
-        max_frames = int(lengths[:, bool_].max())
-        max_tokens = int(batch.encoded_text.lengths[:, bool_].max())
+    # NOTE: Remove predictions that diverged (reached max) as to not skew other metrics. We
+    # count these sequences separatly with `reached_max_frames`.
+    bool_ = ~reached_max.view(-1)
+    if bool_.sum() > 0:
+        max_frames = lengths[:, bool_].max()
+        max_tokens = batch.encoded_text.lengths[:, bool_].max()
         metrics.append(metrics.batch_size, batch.length - reached_max.sum().item())
         metrics.append(metrics.num_frames, batch.spectrogram.lengths[:, bool_])
         metrics.append(metrics.num_frames_predicted, lengths[:, bool_])
@@ -860,7 +867,8 @@ def _run_worker(
     dev_dataset: run._config.Dataset,
     comet_partial: typing.Callable[..., CometMLExperiment],
     config: typing.Dict[str, typing.Any],
-    num_examples_per_epoch: int = HParam(),
+    train_epoch_num_examples: int = HParam(),
+    dev_epoch_num_examples: int = HParam(),
 ) -> typing.NoReturn:
     """ Train and evaluate the spectrogram model on a loop. """
     lib.environment.set_basic_logging_config(device_index)
@@ -874,18 +882,19 @@ def _run_worker(
         state = _State.from_checkpoint(checkpoint_, comet, device)
     train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
     _set_context = partial(set_context, model=state.model, comet=comet)
+    dev_args = (DatasetType.DEV, dev_loader, dev_epoch_num_examples)
+    contexts: typing.List[typing.Tuple[Context, DatasetType, _DataLoader, int, _BatchHandler]] = [
+        (Context.TRAIN, DatasetType.TRAIN, train_loader, train_epoch_num_examples, _run_step),
+        (Context.EVALUATE, *dev_args, _run_step),
+        (Context.EVALUATE_INFERENCE, *dev_args, _run_inference),
+    ]
     while True:
-        epoch = int(state.num_examples.item() // num_examples_per_epoch)
+        epoch = int(state.num_examples.item() // train_epoch_num_examples)
         message = "Running Epoch %d (Step %d, Example %d)"
         logger.info(message, epoch, state.step.item(), state.num_examples.item())
         comet.log_current_epoch(epoch)
 
-        iterator: typing.List[typing.Tuple[Context, DatasetType, _DataLoader, _BatchHandler]] = [
-            (Context.TRAIN, DatasetType.TRAIN, train_loader, _run_step),
-            (Context.EVALUATE, DatasetType.DEV, dev_loader, _run_step),
-            (Context.EVALUATE_INFERENCE, DatasetType.DEV, dev_loader, _run_inference),
-        ]
-        for context, dataset_type, data_loader, handle_batch in iterator:
+        for context, dataset_type, data_loader, epoch_num_examles, handle_batch in contexts:
             with _set_context(context):
                 # TODO: `metrics` are not propagated and we might want to incorperate that for
                 # dataset metrics like `num_frames_per_speaker` or `num_spans_per_text_length`.
@@ -894,9 +903,9 @@ def _run_worker(
 
                 total_batch_size = lib.distributed.get_world_size() * data_loader.batch_size
                 message = "The epoch size isn't divisable by the batch size."
-                assert num_examples_per_epoch % total_batch_size == 0, message
-                num_steps = int(num_examples_per_epoch // total_batch_size)
-                logger.info("Running %d examples over %d steps.", num_examples_per_epoch, num_steps)
+                assert epoch_num_examles % total_batch_size == 0, message
+                num_steps = int(epoch_num_examles // total_batch_size)
+                logger.info("Running %d examples over %d steps.", epoch_num_examles, num_steps)
                 loader = zip(range(num_steps), data_loader)
                 if lib.distributed.is_master():
                     loader = tqdm.tqdm(loader, total=num_steps)
@@ -907,10 +916,9 @@ def _run_worker(
                         metrics.log(comet, lambda l: l[-1], dataset_type, Cadence.STEP)
                 metrics.log(comet, sum, dataset_type, Cadence.MULTI_STEP)
 
-        save(
-            checkpoints_directory / f"step_{state.step.item()}{lib.environment.PT_EXTENSION}",
-            state.to_checkpoint(checkpoints_directory=checkpoints_directory),
-        )
+        if lib.distributed.is_master():
+            path = checkpoints_directory / f"step_{state.step.item()}{lib.environment.PT_EXTENSION}"
+            save(path, state.to_checkpoint(checkpoints_directory=checkpoints_directory))
         comet.log_epoch_end(epoch)
 
 
