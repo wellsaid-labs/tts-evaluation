@@ -291,6 +291,11 @@ def _get_alignment_ngrams(passages: typing.List[Passage], n: int = 1) -> typing.
         yield from (Span(passage, s) for s in _ngrams(passage.alignments, n=n))
 
 
+def _get_num_alignments(dataset: Dataset) -> int:
+    """ Get number of `Alignment`s in `dataset`. """
+    return sum([len(p.alignments) for p in _get_passages(dataset)])
+
+
 @_session_cache(maxsize=None)
 def _get_dataset(speaker_names: typing.FrozenSet[str]) -> Dataset:
     """Load dataset."""
@@ -429,14 +434,11 @@ def _get_spans(dataset: Dataset, num_samples: int, slice_: bool = True) -> typin
 
 def _span_coverage(dataset: Dataset, spans: typing.List[Span]) -> float:
     """ Get the percentage of the `dataset` these `spans` cover. """
-    alignments = set([(p.key, a) for (p, a) in _get_alignments(dataset)])
-    total = len(alignments)
+    logger.info("Getting span coverage of dataset...")
+    alignments = set()
     for span in spans:
-        for i in range(span.span.start, span.span.stop):
-            key = (span.passage.key, span.passage.alignments[i])
-            if key in alignments:
-                alignments.remove(key)
-    return 1 - (len(alignments) / total)
+        alignments.update((span.passage.key, i) for i in range(span.span.start, span.span.stop))
+    return len(alignments) / _get_num_alignments(dataset)
 
 
 def _span_columns(spans: typing.List[Span]) -> typing.Dict[str, typing.List[typing.Any]]:
@@ -494,7 +496,7 @@ def _maybe_analyze_dataset(dataset: Dataset):
         f"At a high-level, this dataset has:\n"
         f"- **{seconds_to_string(sum([f.length for f in files]))}** of audio\n"
         f"- **{seconds_to_string(aligned_seconds)}** of aligned audio\n"
-        f"- **{sum([len(p.alignments) for p in _get_passages(dataset)]):,}** alignments.\n"
+        f"- **{_get_num_alignments(dataset):,}** alignments.\n"
     )
 
     passages = _random_sample(list(_get_passages(dataset)), 128)
