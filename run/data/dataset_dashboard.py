@@ -387,21 +387,38 @@ class Span(lib.datasets.Span):
         interval = (ALIGNMENT_PRECISION / 2, ALIGNMENT_PRECISION / 2)
         return (self.rms_(0, interval), self.rms_(self.audio_length, interval))
 
-    def _is_silent(self, threshold: int = -50) -> typing.List[bool]:
+    def silence(self) -> float:
+        """ Get the length of silence in `self`. """
+        return sum((b - a) for _, _, (a, b) in self.unaligned[1:-1])
+
+    def longest_silence(self) -> float:
+        """ Get the length of the longest silence, excluding the edges. """
+        if len(self.alignments) <= 1:
+            return 0.0
+        return max((b - a) for _, _, (a, b) in self.unaligned[1:-1])
+
+    def num_silences(self) -> int:
+        """ Get the number of silences. """
+        return sum((b - a) > 0 for _, _, (a, b) in self.unaligned[1:-1])
+
+    def seconds_per_character(self) -> float:
+        return sum(a.audio[-1] - a.audio[0] for a in self.alignments) / len(self.script)
+
+    def _rms_is_silent(self, threshold: int = -50) -> typing.List[bool]:
         """ For an evenly spaced list of audio frames, determine if they are silent or not. """
         padding = self._frame_length - self._hop_length
         padded = np.pad(self.audio(), (padding, padding))
         frames = list(self._frame(padded))  # type: ignore
         return [_signal_to_db_rms(f) < threshold for f in frames]
 
-    def silence(self) -> float:
+    def rms_silence(self) -> float:
         """ Get the length of silence in `self`. """
-        _is_silent = self._is_silent()
+        _is_silent = self._rms_is_silent()
         return (sum(_is_silent) / len(_is_silent)) * self.audio_length
 
-    def longest_inner_silence(self) -> float:
+    def longest_rms_silence(self) -> float:
         """ Get the length of the longest silence, excluding the edges. """
-        frames = self._is_silent()
+        frames = self._rms_is_silent()
         groups = [(k, list(g)) for k, g in itertools.groupby(frames)][1:-1]
         groups_len = [len(g) for k, g in groups if k]
         if len(groups_len) == 0:
@@ -409,15 +426,14 @@ class Span(lib.datasets.Span):
         max_group = max(groups_len)
         return (max_group / len(frames)) * self.audio_length
 
-    def num_silences(self):
+    def num_rms_silences(self) -> int:
         """ Get the number of continuous silences. """
-        return sum([k for k, _ in itertools.groupby(self._is_silent())])
+        return sum([k for k, _ in itertools.groupby(self._rms_is_silent())])
 
-    def seconds_per_character(self, remove_silence=True):
+    def rms_seconds_per_character(self) -> float:
         if self.audio_length == 0:
             return 0
-        audio_length = self.audio_length - (self.silence() if remove_silence else 0)
-        return audio_length / len(self.script)
+        return (self.audio_length - self.rms_silence()) / len(self.script)
 
 
 def _get_spans(dataset: Dataset, num_samples: int, slice_: bool = True) -> typing.List[Span]:
@@ -451,7 +467,7 @@ def _span_columns(spans: typing.List[Span]) -> typing.Dict[str, typing.List[typi
         "edges": map_(spans, lambda s: s.rms_edges()),
         "loudness": map_(spans, lambda s: [round(s[i].rms(), 2) for i in iter_(s)]),
         "longest silence": map_(
-            spans, lambda s: [round(s[i].longest_inner_silence(), 2) for i in iter_(s)]
+            spans, lambda s: [round(s[i].longest_rms_silence(), 2) for i in iter_(s)]
         ),
         "speed": [[round(s[i].seconds_per_character(), 2) for i in iter_(s)] for s in spans],
     }
@@ -520,8 +536,8 @@ def _maybe_analyze_dataset(dataset: Dataset):
                 f"- Edge loudness: **{span[1].rms_edges()}**\n"
                 f"- Audio length: **{round(span[1].audio_length, 2)}**\n"
                 f"- Num characters: **{len(span[1].script)}**\n"
-                f"- **{round(span[1].silence(), 2)}** Seconds of silence\n"
-                f"- **{round(span[1].longest_inner_silence(), 2)}** Longest Silence\n"
+                f"- **{round(span[1].rms_silence(), 2)}** Seconds of silence\n"
+                f"- **{round(span[1].longest_rms_silence(), 2)}** Longest silence\n"
                 f"- **{round(span[1].seconds_per_character(), 2)}** Seconds per character\n"
             )
             playlist = [span[1].audio(), span.audio()]
@@ -546,17 +562,17 @@ def _maybe_analyze_dataset(dataset: Dataset):
     for func, title, unit, bucket_size in [
         (lambda s: s.audio_length, "Alignment Lengths", "Seconds", ALIGNMENT_PRECISION),
         (lambda s: len(s.script), "Alignment Lengths", "Characters", 1),
+        (lambda s: s.seconds_per_character(), "Alignment Speeds", "Seconds per character", 0.01),
         (
-            lambda s: s.seconds_per_character(remove_silence=False),
-            "Alignment Speeds (with silence)",
+            lambda s: s.rms_seconds_per_character(),
+            "Alignment Speeds (rms)",
             "Seconds per character",
             0.01,
         ),
-        (lambda s: s.seconds_per_character(), "Alignment Speeds", "Seconds per character", 0.01),
         (lambda s: s.rms(), "Loudness", "dB", 1),
         (lambda s: s.rms_edges()[0], "Onset Loudness", "dB", 5),
         (lambda s: s.rms_edges()[1], "Outset Loudness", "dB", 5),
-        (lambda s: s.longest_inner_silence(), "Long Silences", "Seconds", 0.1),
+        (lambda s: s.longest_rms_silence(), "Long Silences (rms)", "Seconds", 0.1),
     ]:
         with beta_expander(f"Survey of {title} (in {unit.lower()})"):
             st.write("The alignment count for each bucket:")
