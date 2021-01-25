@@ -839,6 +839,7 @@ def _run_inference(
     if bool_.sum() > 0:
         max_frames = lengths[:, bool_].max()
         max_tokens = batch.encoded_text.lengths[:, bool_].max()
+        predicted_mask = lengths_to_mask(lengths[:, bool_], device=lengths.device).transpose(0, 1)
         metrics.append(metrics.batch_size, batch.length - reached_max.sum().item())
         metrics.append(metrics.num_frames, batch.spectrogram.lengths[:, bool_])
         metrics.append(metrics.num_frames_predicted, lengths[:, bool_])
@@ -846,11 +847,11 @@ def _run_inference(
             batch.spectrogram.tensor[:max_frames, bool_],
             frames[:max_frames, bool_],
             batch.spectrogram_mask.tensor[:max_frames, bool_],
-            lengths_to_mask(lengths[:, bool_], device=lengths.device).transpose(0, 1),
+            predicted_mask,
         )
         metrics.update_alignment_metrics(
             alignments[:max_frames, bool_, :max_tokens],
-            batch.spectrogram_mask.tensor[:max_frames, bool_],
+            predicted_mask,
             batch.encoded_text_mask.tensor[:max_tokens, bool_],
             batch.encoded_text.lengths[:max_tokens, bool_],
             batch.encoded_speaker.tensor[:, bool_],
@@ -895,6 +896,7 @@ def _run_worker(
         (Context.EVALUATE, *dev_args, _run_step),
         (Context.EVALUATE_INFERENCE, *dev_args, _run_inference),
     ]
+
     while True:
         epoch = int(state.step.item() // train_steps_per_epoch)
         message = "Running Epoch %d (Step %d, Example %d)"
