@@ -453,7 +453,7 @@ class _DistributedMetrics:
         for text in flatten(lib.distributed.gather_list([len(t) for t in batch.text])):
             self.num_spans_per_text_length[text // self.text_length_bucket_size] += 1
 
-        lambda_ = lambda t: flatten(lib.distributed.gather_list(t.squeeze().tolist()))
+        lambda_ = lambda t: flatten(lib.distributed.gather_list(t.view(-1).tolist()))
         iterator = zip(lambda_(batch.encoded_speaker.tensor), lambda_(batch.spectrogram.lengths))
         for speaker_index, num_frames in iterator:
             speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
@@ -491,7 +491,7 @@ class _DistributedMetrics:
 
         num_skipped = get_num_skipped(alignments, token_mask, spectrogram_mask)
 
-        iterate = lambda t: flatten(lib.distributed.gather_list(t.squeeze().tolist()))
+        iterate = lambda t: flatten(lib.distributed.gather_list(t.view(-1).tolist()))
         iterator = zip(iterate(speakers), iterate(num_skipped), iterate(num_tokens))
         for speaker_index, _num_skipped, _num_tokens in iterator:
             speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
