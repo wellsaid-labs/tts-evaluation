@@ -473,7 +473,9 @@ def get_dataset(
     with multiprocessing.pool.ThreadPool() as pool:
         lambda_ = lambda l: [_handle_passage(p) for p in l if _include_passage(p)]
         items = list(pool.map(lambda i: (i[0], lambda_(i[1](path))), datasets.items()))
-    return {k: v for k, v in items}
+    dataset = {k: v for k, v in items}
+    run._utils.normalize_audio(dataset)
+    return dataset
 
 
 def split_dataset(
