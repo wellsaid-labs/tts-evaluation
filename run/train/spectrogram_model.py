@@ -71,9 +71,17 @@ def _set_seed(seed=HParam()):
 def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, typing.Any]:
     """ Configure modules for spectrogram model training, and return parameters. """
     run._config.configure()
+
     train_batch_size = 56
+    dev_batch_size = train_batch_size * 4
+    train_steps_per_epoch = 400
+    # NOTE: This parameter was set approximately based on the size of each respective
+    # dataset. The development dataset is about 20 times smaller than the training dataset
+    # based on the number of characters in each dataset.
+    dev_steps_per_epoch = (train_steps_per_epoch / (dev_batch_size / train_batch_size)) / 20
+    assert dev_steps_per_epoch % 1 == 0, "The number of steps must be an integer."
+
     torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)  # type: ignore
-    train_epoch_num_examples = 100 * train_batch_size
     config = {
         _set_seed: HParams(seed=run._config.RANDOM_SEED),
         _State._get_optimizers: HParams(
@@ -85,11 +93,8 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
             optimizer=torch.optim.Adam,
         ),
         _run_worker: HParams(
-            train_epoch_num_examples=train_epoch_num_examples,
-            # NOTE: This parameter was set approximately based on the size of each respective
-            # dataset. The development dataset is about 20 times smaller than the training dataset
-            # based on the number of characters in each dataset.
-            dev_epoch_num_examples=train_epoch_num_examples // 20,
+            train_steps_per_epoch=train_steps_per_epoch,
+            dev_steps_per_epoch=dev_steps_per_epoch,
         ),
         _run_step: HParams(
             # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
@@ -108,7 +113,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
             # single GPU.
             # NOTE: Batch size parameters set after experimentation on a 2 Px100 GPU.
             train_batch_size=train_batch_size,
-            dev_batch_size=train_batch_size * 4,
+            dev_batch_size=dev_batch_size,
             bucket_size_multiplier=10,
             num_workers=8,
         ),
@@ -283,6 +288,8 @@ class _DataIterator(torch.utils.data.IterableDataset):
         # TODO: After the global configuration is transfered, the functions need to be rechecked
         # like for a configuration, just in case the configuration is on a new process.
         hparams.hparams._configuration = self.config
+        # NOTE: Our training procedure is similar to BERT, the examples are randomly sampled
+        # from a large corpus of data.
         generator = run._config.span_generator(self.dataset)
         while True:
             spans = [next(generator) for _ in range(self.bucket_size)]
@@ -867,8 +874,8 @@ def _run_worker(
     dev_dataset: run._config.Dataset,
     comet_partial: typing.Callable[..., CometMLExperiment],
     config: typing.Dict[str, typing.Any],
-    train_epoch_num_examples: int = HParam(),
-    dev_epoch_num_examples: int = HParam(),
+    train_steps_per_epoch: int = HParam(),
+    dev_steps_per_epoch: int = HParam(),
 ) -> typing.NoReturn:
     """ Train and evaluate the spectrogram model on a loop. """
     lib.environment.set_basic_logging_config(device_index)
@@ -882,34 +889,27 @@ def _run_worker(
         state = _State.from_checkpoint(checkpoint_, comet, device)
     train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
     _set_context = partial(set_context, model=state.model, comet=comet)
-    dev_args = (DatasetType.DEV, dev_loader, dev_epoch_num_examples)
+    dev_args = (DatasetType.DEV, dev_loader, dev_steps_per_epoch)
     contexts: typing.List[typing.Tuple[Context, DatasetType, _DataLoader, int, _BatchHandler]] = [
-        (Context.TRAIN, DatasetType.TRAIN, train_loader, train_epoch_num_examples, _run_step),
+        (Context.TRAIN, DatasetType.TRAIN, train_loader, train_steps_per_epoch, _run_step),
         (Context.EVALUATE, *dev_args, _run_step),
         (Context.EVALUATE_INFERENCE, *dev_args, _run_inference),
     ]
     while True:
-        epoch = int(state.num_examples.item() // train_epoch_num_examples)
+        epoch = int(state.step.item() // train_steps_per_epoch)
         message = "Running Epoch %d (Step %d, Example %d)"
         logger.info(message, epoch, state.step.item(), state.num_examples.item())
         comet.log_current_epoch(epoch)
 
-        for context, dataset_type, data_loader, epoch_num_examles, handle_batch in contexts:
+        for context, dataset_type, data_loader, num_steps, handle_batch in contexts:
             with _set_context(context):
                 # TODO: `metrics` are not propagated and we might want to incorperate that for
                 # dataset metrics like `num_frames_per_speaker` or `num_spans_per_text_length`.
                 # In order to do so, we'd also need to checkpoint those metrics.
                 metrics = _DistributedMetrics()
-
-                total_batch_size = lib.distributed.get_world_size() * data_loader.batch_size
-                message = "The epoch size isn't divisable by the batch size."
-                assert epoch_num_examles % total_batch_size == 0, message
-                num_steps = int(epoch_num_examles // total_batch_size)
-                logger.info("Running %d examples over %d steps.", epoch_num_examles, num_steps)
                 loader = zip(range(num_steps), data_loader)
                 if lib.distributed.is_master():
                     loader = tqdm.tqdm(loader, total=num_steps)
-
                 for i, batch in loader:
                     handle_batch(state, metrics, batch, data_loader, dataset_type, i == 0)
                     if Context.TRAIN == context:
