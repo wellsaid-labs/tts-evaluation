@@ -539,14 +539,10 @@ class _DistributedMetrics:
     def update_data_queue_size(self, data_loader: _DataLoader):
         # NOTE: `qsize` is not implemented on MacOS, learn more:
         # https://docs.python.org/3/library/multiprocessing.html#multiprocessing.Queue.qsize
-        if (
-            isinstance(data_loader.loader, _MultiProcessingDataLoaderIter)
-            and platform.system() != "Darwin"
-        ):
-            self.append(
-                self.data_queue_size,
-                typing.cast(_MultiProcessingDataLoaderIter, data_loader.loader)._data_queue.qsize(),
-            )
+        is_multiprocessing = isinstance(data_loader.loader, _MultiProcessingDataLoaderIter)
+        if is_multiprocessing and platform.system() != "Darwin":
+            iterator = typing.cast(_MultiProcessingDataLoaderIter, data_loader.loader)
+            self.append(self.data_queue_size, iterator._data_queue.qsize())
 
     @configurable
     def log(
