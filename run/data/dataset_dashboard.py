@@ -279,12 +279,6 @@ def _get_pause_lengths_in_seconds(dataset: Dataset) -> typing.Iterator[float]:
             yield next.audio[0] - prev.audio[1]
 
 
-def _get_alignments(dataset: Dataset) -> typing.Iterator[typing.Tuple[Passage, Alignment]]:
-    """ Get every `Alignment` in `dataset`. """
-    for passage in _get_passages(dataset):
-        yield from [(passage, a) for a in passage.alignments]
-
-
 def _get_alignment_ngrams(passages: typing.List[Passage], n: int = 1) -> typing.Iterator[Span]:
     """ Get ngram `Span`s with `n` alignments. """
     for passage in tqdm.tqdm(passages):
