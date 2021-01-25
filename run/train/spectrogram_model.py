@@ -74,11 +74,11 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
 
     train_batch_size = 56
     dev_batch_size = train_batch_size * 4
-    train_steps_per_epoch = 400
+    train_steps_per_epoch = 512
     # NOTE: This parameter was set approximately based on the size of each respective
-    # dataset. The development dataset is about 20 times smaller than the training dataset
+    # dataset. The development dataset is about 16 times smaller than the training dataset
     # based on the number of characters in each dataset.
-    dev_steps_per_epoch = (train_steps_per_epoch / (dev_batch_size / train_batch_size)) / 20
+    dev_steps_per_epoch = (train_steps_per_epoch / (dev_batch_size / train_batch_size)) / 16
     assert dev_steps_per_epoch % 1 == 0, "The number of steps must be an integer."
 
     torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)  # type: ignore
