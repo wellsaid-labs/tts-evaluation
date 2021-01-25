@@ -278,6 +278,9 @@ def normalize_audio(
 
     Learn more about `-hide_banner`, `-loglevel` and `-nostats`:
     https://superuser.com/questions/326629/how-can-i-make-ffmpeg-be-quieter-less-verbose
+
+    TODO: If the `source` is already normalized, could the performance of this function be
+    improved?
     """
     assert destination.suffix == suffix, f'The normalized file must be of type "{suffix}".'
     command = "" if len(audio_filters) == 0 else f"-af {audio_filters}"

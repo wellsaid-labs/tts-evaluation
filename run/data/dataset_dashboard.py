@@ -70,6 +70,13 @@ assert _round(0.3, 1) == 0
 assert _round(0.4, 0.25) == 0.5
 
 
+def _floor(x: float, bucket_size: float) -> float:
+    """Bin `x` into buckets."""
+    return bucket_size * math.floor(x / bucket_size)
+
+
+assert _floor(0.899958, 0.000500) == 0.8995
+
 _MapInputType = typing.TypeVar("_MapInputType")
 _MapReturnType = typing.TypeVar("_MapReturnType")
 
@@ -225,7 +232,8 @@ def _visualize_signal(
     assert frames.shape[1] == ratio
     envelope = np.max(np.abs(frames), axis=-1)
     assert envelope.shape[0] == frames.shape[0]
-    seconds = np.arange(0, signal.shape[0] / sample_rate, ratio / sample_rate)
+    stop = _floor(signal.shape[0] / sample_rate, ratio / sample_rate)
+    seconds = np.arange(0, stop, ratio / sample_rate)
     waveform = alt.Chart(pd.DataFrame({"seconds": seconds, "y_max": envelope, "y_min": -envelope}))
     y = alt.Y("y_min:Q", scale=alt.Scale(domain=(-1.0, 1.0)))
     waveform = waveform.mark_area().encode(x="seconds:Q", y=y, y2="y_max:Q")
