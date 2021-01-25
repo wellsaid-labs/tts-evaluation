@@ -94,7 +94,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
         ),
         _run_worker: HParams(
             train_steps_per_epoch=train_steps_per_epoch,
-            dev_steps_per_epoch=dev_steps_per_epoch,
+            dev_steps_per_epoch=int(dev_steps_per_epoch),
         ),
         _run_step: HParams(
             # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
