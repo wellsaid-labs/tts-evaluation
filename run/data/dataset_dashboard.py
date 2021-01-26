@@ -450,7 +450,7 @@ def _get_spans(dataset: Dataset, num_samples: int, slice_: bool = True) -> typin
     """Generate spans from our datasets."""
     logger.info("Generating spans...")
     kwargs = {} if slice_ else {"max_seconds": math.inf}
-    generator = run._config.span_generator(dataset, **kwargs)
+    generator = run._config.SpanGenerator(dataset, **kwargs)
     with fork_rng(123):
         spans = [next(generator) for _ in tqdm.tqdm(range(num_samples), total=num_samples)]
     return_ = [Span(s.passage, s.span) for s in tqdm.tqdm(spans)]

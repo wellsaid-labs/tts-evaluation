@@ -286,16 +286,7 @@ class Span:
         assert self.span.start < len(self.passage.alignments) and self.span.start >= 0
 
 
-def _overlap(slice: typing.Tuple[float, float], other: typing.Tuple[float, float]) -> float:
-    """ Get the percentage overlap between `slice` and the `other` slice. """
-    if other[-1] == other[0]:
-        return 1.0 if other[0] >= slice[0] and other[-1] <= slice[1] else 0.0
-    return (min(slice[1], other[-1]) - max(slice[0], other[0])) / (other[-1] - other[0])
-
-
-def span_generator(
-    passages: typing.List[Passage], max_seconds: float, step: float = 1.0, eps=1e-8
-) -> typing.Iterator[Span]:
+class SpanGenerator(typing.Iterator[Span]):
     """Randomly generate `Span`(s) that are at most `max_seconds` long.
 
     NOTE:
@@ -316,56 +307,101 @@ def span_generator(
         step: A lower step size is more performant but uses more memory, and vice versa.
         eps: Add small number so that the end point is also included within the range.
     """
-    assert max_seconds > 0, "The maximum interval length must be a positive number."
-    assert step > 0, "Step must be a positive number."
-    if len(passages) == 0:
-        return
 
-    # NOTE: For a sufficiently large `max_seconds`, the span length tends to be larger than the
-    # passage length; therefore, the entire passage tends to be selected every time.
-    if max_seconds == float("inf"):
+    def __init__(
+        self, passages: typing.List[Passage], max_seconds: float, step: float = 1.0, eps=1e-8
+    ):
+        assert max_seconds > 0, "The maximum interval length must be a positive number."
+        assert step > 0, "Step must be a positive number."
+        self._passages = passages
+        self._max_seconds = max_seconds
+        self._step = step
+        self._eps = eps
+        self._weights = torch.tensor([float(self._max(p) - self._min(p)) for p in passages])
+        self._lookup = None if self._max_seconds == float("inf") else self._make_lookup()
+
+    @staticmethod
+    def _min(passage: Passage) -> float:
+        """ Get the minimum audio second. """
+        return passage.alignments[0].audio[0]
+
+    @staticmethod
+    def _max(passage: Passage) -> float:
+        """ Get the maximum audio second. """
+        return passage.alignments[-1].audio[1]
+
+    @staticmethod
+    def _overlap(slice: typing.Tuple[float, float], other: typing.Tuple[float, float]) -> float:
+        """ Get the percentage overlap between `slice` and the `other` slice. """
+        if other[-1] == other[0]:
+            return 1.0 if other[0] >= slice[0] and other[-1] <= slice[1] else 0.0
+        return (min(slice[1], other[-1]) - max(slice[0], other[0])) / (other[-1] - other[0])
+
+    def _map(self, i: float, passage: Passage) -> float:
+        """ Map `i` into a different a positive number space compressed by `self.step`. """
+        return (i - SpanGenerator._min(passage)) / self._step
+
+    def _start(self, start: float, passage: Passage) -> int:
+        """ Get an integer smaller than or equal to `start`. """
+        return int(floor(self._map(start, passage)))
+
+    def _stop(self, stop: float, passage: Passage) -> int:
+        """ Get an integer bigger than `stop`. """
+        return int(ceil(self._map(stop, passage) + self._eps))
+
+    def _make_lookup(self) -> typing.Tuple[typing.Tuple[typing.Tuple[int]]]:
+        """ Create a lookup table mapping positive integers to alignments. """
+        lookup_: typing.List[typing.List[typing.List[int]]]
+        lookup_ = [[[] for _ in range(self._stop(self._max(p), p))] for p in self._passages]
+        for i, passage in enumerate(self._passages):
+            for j, alignment in enumerate(passage.alignments):
+                start = self._start(alignment.audio[0], passage)
+                for k in range(start, self._stop(alignment.audio[1], passage)):
+                    lookup_[i][k].append(j)
+        return typing.cast(typing.Tuple[typing.Tuple[typing.Tuple[int]]], list_to_tuple(lookup_))
+
+    @staticmethod
+    @functools.lru_cache(maxsize=None)
+    def _is_include(start: float, end: float, alignment: Alignment):
+        return SpanGenerator._overlap((start, end), alignment.audio) >= random.random()
+
+    def __iter__(self) -> typing.Iterator[Span]:
+        return self
+
+    def __next__(self) -> Span:
+        if len(self._passages) == 0:
+            raise StopIteration()
+
+        # NOTE: For a sufficiently large `max_seconds`, the span length tends to be larger than the
+        # passage length; therefore, the entire passage tends to be selected every time.
+        if self._max_seconds == float("inf"):
+            return random.choice(self._passages)[:]
+
         while True:
-            yield random.choice(passages)[:]
+            length = random.uniform(0, self._max_seconds)
 
-    min_ = lambda passage: passage.alignments[0].audio[0]
-    max_ = lambda passage: passage.alignments[-1].audio[1]
-    map_ = lambda i, passage: (i - min_(passage)) / step
-    slice_ = lambda i, j, p: (int(floor(map_(i, p))), int(ceil((map_(j, p) + eps))))
+            # NOTE: The `weight` is based on `start` (i.e. the number of spans)
+            index = int(torch.multinomial(self._weights + length, 1).item())
+            passage = self._passages[index]
 
-    # NOTE: `lookup` allows fast lookups of alignments for a point in time.
-    lookup_: typing.List[typing.List[typing.List[int]]]
-    lookup_ = [[[] for _ in range(ceil(map_(max_(p), p) + eps))] for p in passages]
-    for i, passage in enumerate(passages):
-        for j, alignment in enumerate(passage.alignments):
-            for k in range(*slice_(alignment.audio[0], alignment.audio[1], passage)):
-                lookup_[i][k].append(j)
-    lookup = typing.cast(typing.Tuple[typing.Tuple[typing.Tuple[int]]], list_to_tuple(lookup_))
+            # NOTE: Uniformly sample a span of audio.
+            start = random.uniform(self._min(passage) - length, self._max(passage))
+            end = min(start + length, self._max(passage))
+            start = max(start, self._min(passage))
 
-    weights = torch.tensor([float(max_(p) - min_(p)) for p in passages])
-    _is_include = lambda a: _overlap((start, end), a.audio) >= random.random()
-    is_include = functools.lru_cache(maxsize=None)(_is_include)
-    while True:
-        length = random.uniform(0, max_seconds)
-        # NOTE: The `weight` is based on `start` (i.e. the number of spans)
-        index = int(torch.multinomial(weights + length, 1).item())
-        passage = passages[index]
-
-        # NOTE: Uniformly sample a span of audio.
-        start = random.uniform(min_(passage) - length, max_(passage))
-        end = min(start + length, max_(passage))
-        start = max(start, min_(passage))
-
-        # NOTE: Based on the overlap, decide which alignments to include in the span.
-        part = flatten(lib.utils.tuple_to_list(lookup[index][slice(*slice_(start, end, passage))]))
-        is_include.cache_clear()
-        bounds = (
-            next((i for i in part if is_include(passage.alignments[i])), None),
-            next((i for i in reversed(part) if is_include(passage.alignments[i])), None),
-        )
-        if bounds[0] is not None and bounds[1] is not None and bounds[0] <= bounds[1]:
-            span = passage[bounds[0] : bounds[1] + 1]
-            if span.audio_length > 0 and span.audio_length <= max_seconds:
-                yield span
+            # NOTE: Based on the overlap, decide which alignments to include in the span.
+            _slice = slice(self._start(start, passage), self._stop(end, passage))
+            part = flatten(lib.utils.tuple_to_list(self._lookup[index][_slice]))
+            self._is_include.cache_clear()
+            _is_include = functools.partial(self._is_include, start, end)
+            bounds = (
+                next((i for i in part if _is_include(passage.alignments[i])), None),
+                next((i for i in reversed(part) if _is_include(passage.alignments[i])), None),
+            )
+            if bounds[0] is not None and bounds[1] is not None and bounds[0] <= bounds[1]:
+                span = passage[bounds[0] : bounds[1] + 1]
+                if span.audio_length > 0 and span.audio_length <= self._max_seconds:
+                    return span
 
 
 """

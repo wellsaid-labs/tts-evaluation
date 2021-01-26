@@ -18,10 +18,10 @@ from lib.datasets.utils import (
     IsConnected,
     Passage,
     Span,
+    SpanGenerator,
     Speaker,
     conventional_dataset_loader,
     dataset_loader,
-    span_generator,
     update_conventional_passage_script,
     update_passage_audio,
 )
@@ -64,13 +64,13 @@ DATASETS[ELIZABETH_KLETT] = m_ailabs_en_uk_elizabeth_klett_speech_dataset
 
 
 __all__ = [
-    "Speaker",
-    "Passage",
-    "Span",
-    "DataLoader",
     "Alignment",
     "IsConnected",
-    "span_generator",
+    "Passage",
+    "Span",
+    "SpanGenerator",
+    "Speaker",
+    "conventional_dataset_loader",
     "dataset_loader",
     "update_conventional_passage_script",
     "update_passage_audio",

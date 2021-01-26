@@ -524,29 +524,37 @@ def _include_span(span: datasets.Span):
     return True
 
 
-def span_generator(dataset: Dataset, max_seconds=15) -> typing.Iterator[datasets.Span]:
+class SpanGenerator(typing.Iterator[datasets.Span]):
     """Define the dataset generator to train and evaluate the TTS models on.
 
     Args:
         dataset
         max_seconds: The maximum seconds delimited by an `Span`.
     """
-    generators: typing.Dict[lib.datasets.Speaker, typing.Iterator[lib.datasets.Span]] = {}
-    for speaker, passages in dataset.items():
-        # NOTE: Some datasets are pre-cut, and this conditional preserves their distribution.
-        is_singles = all([len(p.alignments) == 1 for p in passages])
-        max_seconds_ = math.inf if is_singles else max_seconds
-        generators[speaker] = datasets.span_generator(passages, max_seconds_)
 
-    speakers = list(dataset.keys())
-    counter = {s: 1.0 for s in speakers}
-    while True:  # NOTE: This samples speakers uniformly.
-        total = sum(counter.values())
-        distribution = [total / v for v in counter.values()]
-        span = next(generators[random.choices(speakers, distribution)[0]])
-        if span.audio_length < max_seconds and _include_span(span):
-            yield span
-            counter[span.speaker] += span.audio_length
+    def __init__(self, dataset: Dataset, max_seconds: int = 15):
+        self.max_seconds = max_seconds
+        self.dataset = self.dataset
+        self.generators: typing.Dict[lib.datasets.Speaker, typing.Iterator[lib.datasets.Span]] = {}
+        for speaker, passages in dataset.items():
+            # NOTE: Some datasets are pre-cut, and this conditional preserves their distribution.
+            is_singles = all([len(p.alignments) == 1 for p in passages])
+            max_seconds_ = math.inf if is_singles else max_seconds
+            self.generators[speaker] = datasets.SpanGenerator(passages, max_seconds_)
+        self.speakers = list(dataset.keys())
+        self.counter = {s: 1.0 for s in self.speakers}
+
+    def __iter__(self) -> typing.Iterator[datasets.Span]:
+        return self
+
+    def __next__(self) -> datasets.Span:
+        while True:  # NOTE: This samples speakers uniformly.
+            total = sum(self.counter.values())
+            distribution = [total / v for v in self.counter.values()]
+            span = next(self.generators[random.choices(self.speakers, distribution)[0]])
+            if span.audio_length < self.max_seconds and _include_span(span):
+                self.counter[span.speaker] += span.audio_length
+                return span
 
 
 # NOTE: It's theoretically impossible to know all the phonemes eSpeak might predict because
