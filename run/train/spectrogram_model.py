@@ -753,6 +753,7 @@ def _visualize_inferred(
     predicted_spectrogram: torch.Tensor,
     predicted_stop_token: torch.Tensor,
     predicted_alignments: torch.Tensor,
+    predicted_lengths: torch.Tensor,
     dataset_type: DatasetType,
     cadence: Cadence,
 ):
@@ -766,16 +767,19 @@ def _visualize_inferred(
             each frame.
         predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention
             alignment between `frames` and `tokens`.
+        predicted_lengths (torch.LongTensor [1, batch_size]): The sequence length.
         ...
     """
     item = random.randint(0, batch.length - 1)
     num_frames = int(batch.spectrogram.lengths[0, item].item())
+    num_frames_predicted = int(predicted_lengths[0, item].item())
     text_length = int(batch.encoded_text.lengths[0, item].item())
-    # spectrogram [num_frames, frame_channels]
-    predicted_spectrogram = predicted_spectrogram[:num_frames, item]
     # gold_spectrogram [num_frames, frame_channels]
     gold_spectrogram = batch.spectrogram.tensor[:num_frames, item]
-    predicted_alignments = predicted_alignments[:num_frames, item, :text_length]
+    # spectrogram [num_frames, frame_channels]
+    predicted_spectrogram = predicted_spectrogram[:num_frames_predicted, item]
+    predicted_alignments = predicted_alignments[:num_frames_predicted, item, :text_length]
+    predicted_stop_token = predicted_stop_token[:num_frames_predicted, item]
 
     model = partial(get_model_label, cadence=cadence)
     dataset = partial(get_dataset_label, cadence=cadence, type_=dataset_type)
@@ -783,7 +787,7 @@ def _visualize_inferred(
         dataset("gold_spectrogram"): lib.visualize.plot_mel_spectrogram(gold_spectrogram),
         model("predicted_spectrogram"): lib.visualize.plot_mel_spectrogram(predicted_spectrogram),
         model("alignment"): lib.visualize.plot_alignments(predicted_alignments),
-        model("stop_token"): lib.visualize.plot_logits(predicted_stop_token[:num_frames, item]),
+        model("stop_token"): lib.visualize.plot_logits(predicted_stop_token),
     }
     state.comet.log_figures(figures)
     audio = {
@@ -826,7 +830,7 @@ def _run_inference(
 
     if visualize:
         _visualize_inferred(
-            state, batch, frames, stop_tokens, alignments, dataset_type, Cadence.STEP
+            state, batch, frames, stop_tokens, alignments, lengths, dataset_type, Cadence.STEP
         )
 
     # NOTE: Remove predictions that diverged (reached max) as to not skew other metrics. We
@@ -933,7 +937,6 @@ def _run(
 
     # NOTE: Load, preprocess, and cache dataset values.
     dataset = run._config.get_dataset()
-    run._utils.normalize_audio(dataset)
     train_dataset, dev_dataset = run._config.split_dataset(dataset)
     comet.log_parameters(run._utils.get_dataset_stats(train_dataset, dev_dataset))
 
