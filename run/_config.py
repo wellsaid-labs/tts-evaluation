@@ -504,13 +504,21 @@ def split_dataset(
 
 
 def _include_span(span: datasets.Span):
-    """Return `True` iff `span` should be included in the dataset."""
+    """Return `True` iff `span` should be included in the dataset.
+
+    TODO: The `span` is still cut-off sometimes, and it's difficult to detect if it is. Instead
+    of cutting `span`s via `Alignment`s, we should cut `span`s based on pausing.
+    """
     # NOTE: Filter out any passage(s) with digits because the pronunciation is fundamentally
     # ambigious, and it's much easier to handle this case with text normalization.
     if any(c.isdigit() for c in span.script):
         return False
 
-    if span.audio_length <= 0.1:
+    if any(any(c.isalnum() for c in (a + b)) for a, b, _, in span.unaligned):
+        return False
+
+    is_not_aligned = lambda s: s.audio_length <= 0.1 and s.seconds_per_character() < 0.04
+    if is_not_aligned(span[0]) or is_not_aligned(span[-1]):
         return False
 
     return True
