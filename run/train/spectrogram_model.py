@@ -74,7 +74,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
 
     train_batch_size = 56
     dev_batch_size = train_batch_size * 4
-    train_steps_per_epoch = 512
+    train_steps_per_epoch = 1024
     # NOTE: This parameter was set approximately based on the size of each respective
     # dataset. The development dataset is about 16 times smaller than the training dataset
     # based on the number of characters in each dataset.
@@ -114,7 +114,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
             # NOTE: Batch size parameters set after experimentation on a 2 Px100 GPU.
             train_batch_size=train_batch_size,
             dev_batch_size=dev_batch_size,
-            bucket_size_multiplier=10,
+            bucket_size_multiplier=8,
             num_workers=8,
         ),
         _DistributedMetrics.log: HParams(num_frame_channels=run._config.NUM_FRAME_CHANNELS),

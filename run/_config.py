@@ -517,7 +517,7 @@ def _include_span(span: datasets.Span):
     if any(any(c.isalnum() for c in (a + b)) for a, b, _, in span.unaligned):
         return False
 
-    is_not_aligned = lambda s: s.audio_length <= 0.1 and s.seconds_per_character() < 0.04
+    is_not_aligned = lambda s: s.audio_length < 0.2 and (s.audio_length / len(s.script)) < 0.04
     if is_not_aligned(span[0]) or is_not_aligned(span[-1]):
         return False
 
