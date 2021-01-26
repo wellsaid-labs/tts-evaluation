@@ -329,6 +329,22 @@ class Span(lib.datasets.Span):
         assert self._samples_to_seconds(self._seconds_to_samples(0.0)) == 0.0
         assert self._hop_length * 4 == self._frame_length
 
+    def prev(self) -> typing.Optional[Span]:
+        """Get the previous alignment before `self`.
+
+        NOTE: Unless the `Passages` are completely connected, it doesn't make sense to
+        get the next alignment in the next passage.
+        """
+        if self.span.start != 0:
+            return Span(self.passage, slice(self.span.start - 1, self.span.start))
+        return None
+
+    def next(self) -> typing.Optional[Span]:
+        """ Get the next alignment after `self`. """
+        if self.span.stop != len(self.passage.alignments):
+            return Span(self.passage, slice(self.span.stop, self.span.stop + 1))
+        return None
+
     def audio(self) -> np.ndarray:
         start = self.passage.alignments[self.span][0].audio[0]
         return _read_audio_slice(self.passage.audio_file.path, start, self.audio_length)
@@ -455,14 +471,9 @@ def _span_columns(spans: typing.List[Span]) -> typing.Dict[str, typing.List[typi
     """ Get generic statistics about `spans`. """
     logger.info("Getting %d generic span columns...", len(spans))
     iter_ = lambda s: range(len(s.alignments))
-    map_ = functools.partial(_map, progress_bar=False)
     return {
-        "transcript": [[s[i].transcript for i in iter_(s)] for s in spans],
-        "edges": map_(spans, lambda s: s.rms_edges()),
-        "loudness": map_(spans, lambda s: [round(s[i].rms(), 2) for i in iter_(s)]),
-        "longest silence": map_(
-            spans, lambda s: [round(s[i].longest_rms_silence(), 2) for i in iter_(s)]
-        ),
+        "mistranscriptions": [s.mistranscriptions for s in spans],
+        "seconds": [[round(s[i].audio_length, 2) for i in iter_(s)] for s in spans],
         "speed": [[round(s[i].seconds_per_character(), 2) for i in iter_(s)] for s in spans],
     }
 
@@ -571,23 +582,18 @@ def _maybe_analyze_dataset(dataset: Dataset):
         with beta_expander(f"Survey of {title} (in {unit.lower()})"):
             st.write("The alignment count for each bucket:")
             _bucket_and_visualize(_map(samples, func), bucket_size, x=unit)
-
-            display = [s for s in samples if not math.isnan(func(s))]
-            st.write("The smallest valued alignments: ")
-            display = sorted(display, key=func)
-            _visualize_spans(display[:25], other_columns=_span_columns(display[:25]))
-
-            st.write("\n\nThe largest valued alignments: ")
-            display = sorted(display, key=func, reverse=True)
-            _visualize_spans(display[:25], other_columns=_span_columns(display[:25]))
+            filtered = [s for s in samples if not math.isnan(func(s))]
+            for message, data in (
+                ("The smallest valued alignments:", sorted(filtered, key=func)[:25]),
+                ("The largest valued alignments:", sorted(filtered, key=func, reverse=True)[:25]),
+            ):
+                st.write(message)
+                other_columns = _span_columns(data)
+                other_columns["value"] = [func(s) for s in data]
+                _visualize_spans(data, other_columns=other_columns)
 
     with beta_expander("Random Sample of Filtered Alignments"):
-        is_include = (
-            lambda s: s.audio_length > 0.1
-            and s.seconds_per_character() >= 0.04
-            and (s.rms_edges()[0] < -25 and s.rms_edges()[1] < -25)
-            and s.longest_inner_silence() < 0.1
-        )
+        is_include = lambda s: s.audio_length > 0.1 and s.seconds_per_character() >= 0.04
         display = [s for s in samples if is_include(s)]
         st.write(f"Filtered out {1 - (len(display) / len(samples)):.2%} of alignments.")
         _visualize_spans(display[:50], other_columns=_span_columns(display[:50]))
@@ -625,6 +631,25 @@ def _maybe_analyze_spans(dataset: Dataset, spans: typing.List[Span]):
         unaligned = [{"script": m[0], "transcript": m[1]} for m in mistranscriptions]
         st.table(unaligned)
 
+    for func, title, unit, bucket_size in [
+        (lambda s: s.silence(), "Silence", "Seconds", ALIGNMENT_PRECISION),
+        (lambda s: s.num_silences(), "Number of Silences", "Silences", 1),
+        (lambda s: s.longest_silence(), "Long Silences", "Seconds", ALIGNMENT_PRECISION),
+        (lambda s: s.seconds_per_character(), "Speed", "Seconds per character", 0.01),
+    ]:
+        with beta_expander(f"Survey of {title} (in {unit.lower()})"):
+            st.write("The alignment count for each bucket:")
+            _bucket_and_visualize(_map(spans, func), bucket_size, x=unit)
+            filtered = [s for s in spans if not math.isnan(func(s))]
+            for message, data in (
+                ("The smallest valued alignments:", sorted(filtered, key=func)[:25]),
+                ("The largest valued alignments:", sorted(filtered, key=func, reverse=True)[:25]),
+            ):
+                st.write(message)
+                other_columns = _span_columns(data)
+                other_columns["value"] = [func(s) for s in data]
+                _visualize_spans(data, other_columns=other_columns)
+
     logger.info(f"Finished analyzing spans! {mazel_tov()}")
 
 
@@ -645,21 +670,12 @@ def _maybe_analyze_filtered_spans(dataset: Dataset, spans: typing.List[Span]):
         return
 
     total = len(spans)
-    pause = lambda u: u[-1][-1] - u[-1][0]
-    _is_include = (
-        lambda s: s.audio_length > 0.1
-        and s.seconds_per_character() >= 0.04
-        and s.longest_inner_silence() < 0.1
-    )
-    interval = ALIGNMENT_PRECISION
+    _is_include = lambda a: a.audio_length > 0.1 and a.seconds_per_character() >= 0.04
     is_include = lambda s: (
-        len(s.mistranscriptions) == 0
-        and (
-            (pause(s.unaligned[0]) > 0 or s.rms_(0, (interval, 0)) < 40)
-            and (pause(s.unaligned[-1]) > 0 or s.rms_(s.audio_length, (0, interval)) < 40)
-        )
-        and (_is_include(s[0]) and _is_include(s[-1]))
+        len(s.mistranscriptions) == 0 and (_is_include(s[0]) and _is_include(s[-1]))
     )
+
+    excluded = [s for s, i in zip(spans, _map(spans, is_include)) if not i]
     spans = [s for s, i in zip(spans, _map(spans, is_include)) if i]
     st.markdown(
         f"The filtered segmentations represent **{len(spans) / total:.2%}** of the "
@@ -668,8 +684,11 @@ def _maybe_analyze_filtered_spans(dataset: Dataset, spans: typing.List[Span]):
         f"representing of **{_span_coverage(dataset, spans):.2%}** all alignments."
     )
 
-    with beta_expander("Random Sample of Filtered Spans"):
+    with beta_expander("Random Sample of Included Spans"):
         _visualize_spans(spans[:50], other_columns=_span_columns(spans[:50]))
+
+    with beta_expander("Random Sample of Excluded Spans"):
+        _visualize_spans(excluded[:50], other_columns=_span_columns(excluded[:50]))
 
     for label, func, bucket_size in [
         ("loudness", lambda s: _signal_to_loudness(s.audio(), s.audio_file.sample_rate), 1),
