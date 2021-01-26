@@ -35,7 +35,7 @@ from torchnlp.random import fork_rng
 import lib
 import run
 from lib.audio import amplitude_to_db, signal_to_rms
-from lib.datasets import DATASETS, Alignment, Passage
+from lib.datasets import DATASETS, Passage
 from lib.utils import clamp, flatten, mazel_tov, seconds_to_string
 from run._config import Dataset
 
