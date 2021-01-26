@@ -382,5 +382,33 @@ def call_once(
     return callable_(*args, **kwargs)
 
 
+_MappedIteratorItem = typing.TypeVar("_MappedIteratorItem")
+
+
+class MappedIterator(typing.Generic[_MappedIteratorItem]):
+    """ Wrap an iterator with a mapping. """
+
+    def __init__(self, iterator: typing.Iterable[_MappedIteratorItem]):
+        self.iterator = iterator
+        self.iter = None
+        self.offset = 0
+        self.storage = []
+
+    def __getitem__(self, index) -> _MappedIteratorItem:
+        assert index >= self.offset, "Items may only be accessed once."
+        self.iter = iter(self.iterator) if self.iter is None else self.iter
+
+        if index - self.offset >= len(self.storage):
+            for _ in range(index - self.offset + 1):
+                call_once(logger.info, "MappedIterator: Loading first item...")
+                self.storage.append(next(self.iter))
+                call_once(logger.info, "MappedIterator: Loaded first item %s", mazel_tov())
+
+        _return = self.storage[index - self.offset]
+        self.storage = self.storage[index - self.offset + 1 :]
+        self.offset = index + 1
+        return _return
+
+
 def mazel_tov() -> str:
     return random.choice(["🎉", "✨", "🤗", "🍾", "🥂", "🥳"])

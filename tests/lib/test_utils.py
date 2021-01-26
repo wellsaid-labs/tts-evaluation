@@ -361,3 +361,22 @@ def test_call_once():
     assert count == 1
     assert lib.utils.call_once(add_, 0, 0) == 0  # type: ignore
     assert count == 2
+
+
+def test_mapped_iterator():
+    """ Test `MappedIterator` returns iterator items. """
+    map = lib.utils.MappedIterator(iter(range(3)))
+    assert map[0] == 0
+    assert map[1] == 1
+    assert map[2] == 2
+
+
+def test_mapped_iterator__out_of_order():
+    """ Test `MappedIterator` returns iterator items out of order. """
+    map = lib.utils.MappedIterator(iter(range(3)))
+    assert map[1] == 1
+
+    with pytest.raises(AssertionError):
+        assert map[0] == 0
+
+    assert map[2] == 2

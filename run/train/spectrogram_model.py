@@ -27,6 +27,7 @@ import typer
 from hparams import HParam, HParams, add_config, configurable, get_config, parse_hparam_args
 from third_party import get_parameter_norm
 from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter  # type: ignore
+from torchnlp.samplers import BucketBatchSampler, DeterministicSampler, DistributedBatchSampler
 from torchnlp.utils import get_total_parameters, lengths_to_mask, tensors_to
 
 import lib
@@ -56,7 +57,6 @@ from run._utils import (
     maybe_make_experiment_directories,
     maybe_make_experiment_directories_from_checkpoint,
     set_context,
-    worker_init_fn,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,6 +80,8 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
     # based on the number of characters in each dataset.
     dev_steps_per_epoch = (train_steps_per_epoch / (dev_batch_size / train_batch_size)) / 16
     assert dev_steps_per_epoch % 1 == 0, "The number of steps must be an integer."
+    assert train_batch_size % lib.distributed.get_world_size() == 0
+    assert dev_batch_size % lib.distributed.get_world_size() == 0
 
     torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)  # type: ignore
     config = {
@@ -114,7 +116,6 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
             # NOTE: Batch size parameters set after experimentation on a 2 Px100 GPU.
             train_batch_size=train_batch_size,
             dev_batch_size=dev_batch_size,
-            bucket_size_multiplier=8,
             num_workers=8,
         ),
         _DistributedMetrics.log: HParams(num_frame_channels=run._config.NUM_FRAME_CHANNELS),
@@ -267,65 +268,65 @@ class _State:
         return cls(input_encoder, distributed_model, *cls._get_optimizers(model), comet, device)
 
 
-class _DataIterator(torch.utils.data.IterableDataset):
-    def __init__(self, dataset: run._config.Dataset, bucket_size: int):
+def _worker_init_fn(_, config):
+    # TODO: Add a method for transfering global configuration between processes without private
+    # variables.
+    # TODO: After the global configuration is transfered, the functions need to be rechecked
+    # like for a configuration, just in case the configuration is on a new process.
+    hparams.hparams._configuration = config
+    info = torch.utils.data.get_worker_info()
+    logger.info("Worker %d/%d iterator started.", info.id, info.num_workers)
+    _set_seed()  # NOTE: Each worker needs the same random seed to be deterministic.
+    lib.environment.set_basic_logging_config()
+
+
+class _DataIterator(lib.utils.MappedIterator):
+    def __init__(self, dataset: run._config.Dataset, batch_size: int):
         """Generate spans from `run._config.Dataset`.
 
-        TODO: Filter spans based on additional data from `get_spectrogram_model_span`.
+        NOTE: Our training procedure is similar to BERT, the examples are randomly sampled
+        from a large corpus of data with `SpanGenerator`.
 
-        Args:
-            dataset
-            bucket_size: A batch of spans is sampled and sorted to minimize padding.
+        TODO: Any expensive filtering should occur at this step, and it should batch
+        everything together.
+        TODO: We could further speed up data loading by loading the entire bucket at one time.
         """
-        super().__init__()
-        self.dataset = dataset
-        self.bucket_size = bucket_size
-        self.config = get_config()
+        iter_ = run._config.SpanGenerator(dataset)
+        iter_ = BucketBatchSampler(iter_, batch_size, False, lambda s: s.audio_length)
+        iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED, cuda=False)
+        iter_ = DistributedBatchSampler(iter_) if lib.distributed.is_initialized() else iter_
+        super().__init__(iter_)
 
-    def __iter__(self) -> typing.Iterator[lib.datasets.Span]:
-        # TODO: Add a method for transfering global configuration between processes without private
-        # variables.
-        # TODO: After the global configuration is transfered, the functions need to be rechecked
-        # like for a configuration, just in case the configuration is on a new process.
-        hparams.hparams._configuration = self.config
-        # NOTE: Our training procedure is similar to BERT, the examples are randomly sampled
-        # from a large corpus of data.
-        generator = run._config.span_generator(self.dataset)
-        while True:
-            spans = [next(generator) for _ in range(self.bucket_size)]
-            yield from sorted(spans, key=lambda s: s.audio_length)
+    def __len__(self) -> int:
+        return sys.maxsize  # NOTE: The `DataLoader` needs `__len__`.
 
 
 class _DataLoader(collections.abc.Iterable):
-    """Load and batch spans given a dataset `iterator`."""
+    """Load and batch spans given a dataset `iterator`.
+
+    NOTE: The `DataLoader` by default will create a sequential sampler. It'll use that sampler
+    to queue up batches from `_DataIterator`, in order.
+    """
 
     def __init__(
-        self,
-        iterator: _DataIterator,
-        batch_size: int,
-        device: torch.device,
-        input_encoder: InputEncoder,
-        **kwargs,
+        self, iterator: _DataIterator, device: torch.device, input_encoder: InputEncoder, **kwargs
     ):
-        logger.info("Creating `DataLoader` with `batch_size=%d`...", batch_size)
+        logger.info("Creating `DataLoader`...")
         self.device = device
-        self.batch_size = batch_size
         max_parallel = int(os.cpu_count() // lib.distributed.get_world_size())
         nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
         loader = torch.utils.data.dataloader.DataLoader(
-            iterator,
+            typing.cast(torch.utils.data.Dataset, iterator),
             pin_memory=True,
-            batch_size=batch_size,
-            worker_init_fn=partial(
-                worker_init_fn, seed=run._config.RANDOM_SEED, device_index=device.index
-            ),
+            batch_size=None,
+            worker_init_fn=partial(_worker_init_fn, config=get_config()),
             collate_fn=partial(
                 make_span_batch, input_encoder=input_encoder, max_parallel=max_parallel, nlp=nlp
             ),
             multiprocessing_context="fork",
             **kwargs,
         )
-        gc.freeze()
+        gc.freeze()  # NOTE: This has global side-effects.
         self.loader = iter(loader)
         self.num_frames = 0
         self.num_spans = 0
@@ -350,22 +351,14 @@ def _get_data_loaders(
     dev_dataset: run._config.Dataset,
     train_batch_size: int = HParam(),
     dev_batch_size: int = HParam(),
-    bucket_size_multiplier: int = HParam(),
     num_workers: int = HParam(),
 ) -> typing.Tuple[_DataLoader, _DataLoader]:
     """ Initialize training and development data loaders.  """
-    world_size = lib.distributed.get_world_size()
-    assert train_batch_size % world_size == 0, "Train batch size must be divisable by `world_size`."
-    assert dev_batch_size % world_size == 0, "Dev batch size must be divisable by `world_size`."
-    train_batch_size = train_batch_size // world_size
-    dev_batch_size = dev_batch_size // world_size
-    bucket_size = bucket_size_multiplier * train_batch_size
-    _DataIteratorPartial = partial(_DataIterator, bucket_size=bucket_size)
     kwargs = dict(num_workers=num_workers, device=state.device, input_encoder=state.input_encoder)
     DataLoaderPartial = partial(_DataLoader, **kwargs)
     return (
-        DataLoaderPartial(_DataIteratorPartial(train_dataset), train_batch_size),
-        DataLoaderPartial(_DataIteratorPartial(dev_dataset), dev_batch_size),
+        DataLoaderPartial(_DataIterator(train_dataset, train_batch_size)),
+        DataLoaderPartial(_DataIterator(dev_dataset, dev_batch_size)),
     )
 
 

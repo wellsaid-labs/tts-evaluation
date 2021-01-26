@@ -1,6 +1,5 @@
 import functools
 
-import pytest
 import torch
 import torch.distributed
 import torch.multiprocessing
@@ -46,51 +45,6 @@ def test_is_master():
 def test_is_master__not_initialized():
     """ Test `lib.distributed.is_master` returns `True` if distributed is initialized. """
     assert lib.distributed.is_master()
-
-
-def _assert_synced(rank, nprocs, master_value, worker_value):
-    """ Helper function for `test_assert_synced*`. """
-    init_process_group(rank=rank, nprocs=nprocs)
-    value = master_value if lib.distributed.is_master() else worker_value
-    lib.distributed.assert_synced(value)
-
-
-def test_assert_synced():
-    """ Test `lib.distributed.assert_synced` doesn't error if the values do match. """
-    nprocs = 2
-    partial = functools.partial(_assert_synced, nprocs=nprocs, master_value=1, worker_value=1)
-    torch.multiprocessing.spawn(partial, nprocs=nprocs)
-
-
-def test_assert_synced__multiple_digits():
-    """Test `lib.distributed.assert_synced` doesn't error if the values do match and have
-    multiple digits."""
-    nprocs = 2
-    partial = functools.partial(_assert_synced, nprocs=nprocs, master_value=123, worker_value=123)
-    torch.multiprocessing.spawn(partial, nprocs=nprocs)
-
-
-def test_assert_synced__no_match():
-    """ Test `lib.distributed.assert_synced` errors if the values don't match. """
-    nprocs = 2
-    partial = functools.partial(_assert_synced, nprocs=nprocs, master_value=1, worker_value=2)
-    with pytest.raises(Exception):
-        torch.multiprocessing.spawn(partial, nprocs=nprocs)
-
-
-def test_assert_synced__no_match__wrong_length():
-    """ Test `lib.distributed.assert_synced` errors if the values have different lengths. """
-    nprocs = 2
-    partial = functools.partial(_assert_synced, nprocs=nprocs, master_value=12, worker_value=123)
-    with pytest.raises(Exception):
-        torch.multiprocessing.spawn(partial, nprocs=nprocs)
-
-
-def test_assert_synced__single_process():
-    """ Test `lib.distributed.assert_synced` doesn't error if there is only a single process. """
-    nprocs = 1
-    partial = functools.partial(_assert_synced, nprocs=nprocs, master_value=12, worker_value=123)
-    torch.multiprocessing.spawn(partial, nprocs=nprocs)
 
 
 def assert_(

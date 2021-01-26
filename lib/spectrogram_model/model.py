@@ -162,7 +162,7 @@ class SpectrogramModel(torch.nn.Module):
         lengths = torch.zeros(batch_size, dtype=torch.long, device=device)
         stopped = torch.zeros(batch_size, dtype=torch.bool, device=device)
         max_lengths = torch.clamp((num_tokens.float() * self.max_frames_per_token).long(), min=1)
-        max_tokens = num_tokens.max().cpu().item()
+        max_tokens = num_tokens.max().cpu().item() if use_tqdm else None
         progress_bar = tqdm(leave=True, unit="char(s)", total=max_tokens) if use_tqdm else None
         keep_going = lambda: (
             stopped.sum() < batch_size and lengths[~stopped].max() < max_lengths[~stopped].max()

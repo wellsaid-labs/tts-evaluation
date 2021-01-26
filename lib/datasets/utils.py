@@ -235,36 +235,33 @@ class Span:
     audio_length: float = dataclasses.field(init=False)
     speaker: Speaker = dataclasses.field(init=False)
     other_metadata: typing.Dict = dataclasses.field(init=False)
-    unaligned: typing.List[UnalignedType] = dataclasses.field(init=False)
 
     @staticmethod
     def _subtract(a: typing.Tuple[float, float], b: typing.Tuple[float, float]):
         return tuple([a[0] - b[0], a[1] - b[0]])
 
     def __post_init__(self):
-        self._check_invariants()
-
         # Learn more about using `__setattr__`:
         # https://stackoverflow.com/questions/53756788/how-to-set-the-value-of-dataclass-field-in-post-init-when-frozen-true
         set = object.__setattr__
         set(self, "speaker", self.passage.speaker)
         set(self, "audio_file", self.passage.audio_file)
         set(self, "other_metadata", self.passage.other_metadata)
-        set(self, "unaligned", self.passage.unaligned[slice(self.span.start, self.span.stop + 1)])
 
         span = self.passage.alignments[self.span]
-        script = self.passage.script[span[0].script[0] : span[-1].script[-1]]
-        audio_length = span[-1].audio[-1] - span[0].audio[0]
-        transcript = self.passage.transcript[span[0].transcript[0] : span[-1].transcript[-1]]
-        alignments = [tuple([self._subtract(a, b) for a, b in zip(a, span[0])]) for a in span]
 
         set(self, "script_span", slice(span[0].script[0], span[-1].script[-1]))
         set(self, "audio_span", slice(span[0].audio[0], span[-1].audio[-1]))
         set(self, "transcript_span", slice(span[0].transcript[0], span[-1].transcript[-1]))
-        set(self, "script", script)
-        set(self, "audio_length", audio_length)
-        set(self, "transcript", transcript)
+        set(self, "script", self.passage.script[self.script_span])
+        set(self, "audio_length", span[-1].audio[-1] - span[0].audio[0])
+        set(self, "transcript", self.passage.transcript[self.transcript_span])
+        alignments = [tuple([self._subtract(a, b) for a, b in zip(a, span[0])]) for a in span]
         set(self, "alignments", tuple(Alignment(*a) for a in alignments))  # type: ignore
+
+    @property
+    def unaligned(self) -> typing.List[UnalignedType]:
+        return self.passage.unaligned[slice(self.span.start, self.span.stop + 1)]
 
     def audio(self) -> numpy.ndarray:
         start = self.passage.alignments[self.span][0].audio[0]

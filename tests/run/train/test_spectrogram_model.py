@@ -102,7 +102,7 @@ def test_integration(mock_urlretrieve):
 
     batch_size = 1
     train_loader, dev_loader = _get_data_loaders(
-        state, train_dataset, dev_dataset, batch_size, batch_size, 100, 1
+        state, train_dataset, dev_dataset, batch_size, batch_size, 1
     )
 
     # Test `_run_step` with `_DistributedMetrics` and `_State`

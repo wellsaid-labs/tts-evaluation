@@ -28,6 +28,12 @@ def get_master_rank() -> typing.Literal[0]:
     return 0
 
 
+def get_rank():
+    if not is_initialized():
+        return get_master_rank()
+    return torch.distributed.get_rank()
+
+
 def is_master() -> bool:
     """Returns `True` if distributed isn't initialized or if this process is the master process."""
     if not is_initialized():
@@ -40,33 +46,6 @@ def get_world_size() -> int:
 
 
 _default_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-def assert_synced(value: float, message: str = "", device=_default_device):
-    """Assert that `value` is the same between master and worker nodes.
-
-    NOTE: The `value` is split into digits to support large numbers like 128-bit hashes.
-    TODO: Factor out a utility function to `torch.distributed.broadcast` 128-bit bit numbers.
-
-    Args:
-        value: Value to check.
-        message: Assert message.
-    """
-    if is_master():
-        length = torch.tensor([len(str(value))], dtype=torch.long, device=device)
-    else:
-        length = torch.zeros(1, dtype=torch.long, device=device)
-    torch.distributed.broadcast(length, src=get_master_rank())
-    length_ = int(length.item())
-    assert len(str(value)) == length_, message
-    value_tensor = torch.tensor([int(d) for d in str(value)], dtype=torch.long, device=device)
-    if is_master():
-        torch.distributed.broadcast(value_tensor, src=get_master_rank())
-        master_value = value_tensor
-    else:
-        master_value = torch.zeros(length_, dtype=torch.long, device=device)
-        torch.distributed.broadcast(master_value, src=get_master_rank())
-    assert torch.equal(master_value, value_tensor), message
 
 
 def reduce(value: float, dst: int = get_master_rank(), device=_default_device, **kwargs) -> float:

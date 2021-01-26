@@ -514,11 +514,11 @@ def _include_span(span: datasets.Span):
     if any(c.isdigit() for c in span.script):
         return False
 
-    if any(any(c.isalnum() for c in (a + b)) for a, b, _, in span.unaligned):
+    is_not_aligned = lambda s: s.audio_length < 0.2 or (s.audio_length / len(s.script)) < 0.04
+    if is_not_aligned(span[0]) or is_not_aligned(span[-1]):
         return False
 
-    is_not_aligned = lambda s: s.audio_length < 0.2 and (s.audio_length / len(s.script)) < 0.04
-    if is_not_aligned(span[0]) or is_not_aligned(span[-1]):
+    if any(any(c.isalnum() for c in (a + b)) for a, b, _, in span.unaligned):
         return False
 
     return True
@@ -534,7 +534,7 @@ class SpanGenerator(typing.Iterator[datasets.Span]):
 
     def __init__(self, dataset: Dataset, max_seconds: int = 15):
         self.max_seconds = max_seconds
-        self.dataset = self.dataset
+        self.dataset = dataset
         self.generators: typing.Dict[lib.datasets.Speaker, typing.Iterator[lib.datasets.Span]] = {}
         for speaker, passages in dataset.items():
             # NOTE: Some datasets are pre-cut, and this conditional preserves their distribution.

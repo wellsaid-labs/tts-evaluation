@@ -2,7 +2,6 @@ import contextlib
 import dataclasses
 import enum
 import functools
-import hashlib
 import io
 import itertools
 import logging
@@ -186,16 +185,6 @@ def split_passages(
     assert len(dev) > 0, "The dev dataset has no passages."
     assert len(train) > 0, "The train dataset has no passages."
     return train, dev
-
-
-def worker_init_fn(worker_id: int, seed: int, device_index: int, digits: int = 8):
-    """`worker_init_fn` for `torch.utils.data.DataLoader` that ensures each worker has a
-    unique and deterministic random seed."""
-    # NOTE: To ensure each worker generates different dataset spans, set a unique seed for
-    # each worker.
-    # Learn more: https://stackoverflow.com/questions/16008670/how-to-hash-a-string-into-8-digits
-    seed_ = hashlib.sha256(str([seed, device_index, worker_id]).encode("utf-8")).hexdigest()
-    lib.environment.set_seed(int(seed_, 16) % 10 ** digits)
 
 
 def get_dataset_stats(
