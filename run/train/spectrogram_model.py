@@ -728,6 +728,7 @@ def _run_step(
 
     # Update metrics, and log those updates.
     metrics.update_dataset_metrics(batch, state.input_encoder)
+    metrics.append(metrics.num_frames_predicted, batch.spectrogram.lengths)
     metrics.update_alignment_metrics(
         alignment,
         batch.spectrogram_mask.tensor,
