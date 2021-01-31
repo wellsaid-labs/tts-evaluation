@@ -10,6 +10,7 @@ import torch
 import torch.nn
 from hparams import HParams
 from torchnlp.random import fork_rng
+from torchnlp.utils import lengths_to_mask
 
 import lib
 from lib.spectrogram_model import Mode, SpectrogramModel
@@ -29,6 +30,7 @@ class _Inputs(typing.NamedTuple):
     num_tokens: torch.Tensor
     target_stop_token: torch.Tensor
     target_frames: torch.Tensor
+    target_mask: torch.Tensor
     target_lengths: torch.Tensor
 
 
@@ -126,6 +128,8 @@ def _make_inputs(
     target_frames = torch.randn(max_frames, batch_size, num_frame_channels)
     target_lengths = torch.randint(1, max_frames, (batch_size,), dtype=long_)
     target_lengths[-1] = max_frames  # NOTE: Ensure at least one sequence is `max_frames`.
+    # [num_frames, batch_size]
+    target_mask = lengths_to_mask(target_lengths).transpose(0, 1)
 
     target_stop_token = torch.zeros(max_frames, batch_size)
     target_stop_token[-1] = 1.0
@@ -137,6 +141,7 @@ def _make_inputs(
             num_tokens,
             target_stop_token,
             target_frames,
+            target_mask,
             target_lengths,
         ),
         _InputParameters(
@@ -312,7 +317,8 @@ def test_spectrogram_model__train():
         num_tokens,
         target_stop_token,
         target_frames,
-        target_lengths,
+        target_mask,
+        _,
     ), params = _make_inputs()
     model = _make_spectrogram_model(params)
     _mock_model(model)
@@ -323,7 +329,7 @@ def test_spectrogram_model__train():
         target_frames,
         target_stop_token,
         num_tokens=num_tokens,
-        target_lengths=target_lengths,
+        target_mask=target_mask,
     )
 
     assert frames.dtype == torch.float
@@ -446,7 +452,7 @@ def test_spectrogram_model__infer_train():
             speaker,
             num_tokens=num_tokens,
             target_frames=frames,
-            target_lengths=lengths,
+            target_mask=lengths_to_mask(lengths).transpose(0, 1),
             target_stop_token=torch.zeros(frames.shape[0], params.batch_size),
             mode=Mode.FORWARD,
         )
@@ -458,7 +464,7 @@ def test_spectrogram_model__infer_train():
 
 def test_spectrogram_model__infer_generate():
     """ Test `spectrogram_model.SpectrogramModel` outputs for infer and generate are consistent. """
-    (tokens, speaker, num_tokens, target_stop_token, *_), params = _make_inputs()
+    (tokens, speaker, num_tokens, *_), params = _make_inputs()
     model = _make_spectrogram_model(params, dropout=0)
     _mock_model(model)
 
@@ -493,7 +499,7 @@ def test_spectrogram_model__infer_generate():
 
 def test_spectrogram_model__infer_batch_padding_invariance():
     """ Test `spectrogram_model.SpectrogramModel` infer ouput is batch and padding invariant. """
-    (tokens, speaker, num_tokens, target_stop_token, *_), params = _make_inputs()
+    (tokens, speaker, num_tokens, *_), params = _make_inputs()
     model = _make_spectrogram_model(params, dropout=0)
     set_stop_token_rand_offset = _mock_model(model)
 
@@ -530,6 +536,7 @@ def test_spectrogram_model__train_batch_padding_invariance():
         num_tokens,
         target_stop_token,
         target_frames,
+        _,
         target_lengths,
     ), params = _make_inputs(batch_size=5)
     model = _make_spectrogram_model(params, dropout=0)
@@ -546,7 +553,7 @@ def test_spectrogram_model__train_batch_padding_invariance():
             target_frames,
             target_stop_token,
             num_tokens=num_tokens,
-            target_lengths=target_lengths,
+            target_mask=lengths_to_mask(target_lengths).transpose(0, 1),
         )
         (batch_frames[:, i].sum() + batch_stop_token[:, i].sum()).backward()
         batch_grad = [p.grad for p in model.parameters() if p.grad is not None]
@@ -562,7 +569,7 @@ def test_spectrogram_model__train_batch_padding_invariance():
             target_frames[:length, i],
             target_stop_token[:length, i],
             num_tokens=num_tokens[i],
-            target_lengths=target_lengths[i],
+            target_mask=lengths_to_mask(length).transpose(0, 1),
         )
         (frames.sum() + stop_token.sum()).backward()
         grad = [p.grad for p in model.parameters() if p.grad is not None]
@@ -721,14 +728,7 @@ _expected_stop_tokens = torch.tensor([
 def test_spectrogram_model__version():
     """ Test `spectrogram_model.SpectrogramModel` has not changed since it was last tested. """
     with fork_rng(123):
-        (
-            tokens,
-            speaker,
-            num_tokens,
-            target_stop_token,
-            target_frames,
-            target_lengths,
-        ), params = _make_inputs(max_frames=8)
+        (tokens, speaker, num_tokens, *_), params = _make_inputs(max_frames=8)
         assert_almost_equal(torch.randn(1), torch.tensor(-0.16081724))
 
     with fork_rng(123):
@@ -763,7 +763,7 @@ def test_spectrogram_model__version():
             speaker,
             num_tokens=num_tokens,
             target_frames=frames,
-            target_lengths=lengths,
+            target_mask=lengths_to_mask(lengths).transpose(0, 1),
             target_stop_token=torch.zeros(frames.shape[0], params.batch_size),
             mode=Mode.FORWARD,
         )
