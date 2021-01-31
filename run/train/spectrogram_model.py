@@ -280,6 +280,10 @@ def _worker_init_fn(_, config):
     lib.environment.set_basic_logging_config()
 
 
+def _data_iterator_sort_key(span: lib.datasets.Span):
+    return span.audio_length
+
+
 class _DataIterator(lib.utils.MappedIterator):
     def __init__(self, dataset: run._config.Dataset, batch_size: int):
         """Generate spans from `run._config.Dataset`.
@@ -292,7 +296,7 @@ class _DataIterator(lib.utils.MappedIterator):
         TODO: We could further speed up data loading by loading the entire bucket at one time.
         """
         iter_ = run._config.SpanGenerator(dataset)
-        iter_ = BucketBatchSampler(iter_, batch_size, False, lambda s: s.audio_length)
+        iter_ = BucketBatchSampler(iter_, batch_size, False, _data_iterator_sort_key)
         iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED, cuda=False)
         iter_ = DistributedBatchSampler(iter_) if lib.distributed.is_initialized() else iter_
         super().__init__(iter_)
@@ -674,7 +678,8 @@ def _run_step(
         target_frames=batch.spectrogram.tensor,
         target_stop_token=batch.stop_token.tensor,
         num_tokens=batch.encoded_text.lengths,
-        target_lengths=batch.spectrogram.lengths,
+        tokens_mask=batch.encoded_text_mask.tensor,
+        target_mask=batch.spectrogram_mask.tensor,
         mode=lib.spectrogram_model.Mode.FORWARD,
     )
 
