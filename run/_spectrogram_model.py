@@ -475,8 +475,8 @@ def make_span_batch(
 
     docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
     for i in range(length):
-        script_span = spans[i].script_span
-        span = docs[i].char_span(script_span.start, script_span.stop)  # type: ignore
+        script_slice = spans[i].script_slice
+        span = docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
         assert docs[i] is not None, "Invalid `spacy.tokens.Span` selected."
         docs[i] = span.as_doc()
 

@@ -51,7 +51,7 @@ def test_integration(mock_urlretrieve):
     }
 
     # Test splitting data
-    run._utils.normalize_audio(dataset)
+    dataset = run._utils.normalize_audio(dataset)
     dev_speakers = set([JUDY_BIEBER])
     train_dataset, dev_dataset = run._config.split_dataset(dataset, dev_speakers, 3)
 
