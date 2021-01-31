@@ -85,6 +85,7 @@ class UnprocessedPassage:
 def _script_alignments(
     script: str, transcript: str, alignments: lib.utils.Tuples[Alignment]
 ) -> typing.List[typing.Tuple[str, str, typing.Tuple[float, float]]]:
+    """ Get `script` and `transcript` slices given `alignments` with the related `audio` slice. """
     return_ = []
     for alignment in alignments:
         script_ = script[alignment.script[0] : alignment.script[-1]]
@@ -428,18 +429,10 @@ class SpanGenerator(typing.Iterator[Span]):
         self.max_seconds = max_seconds
         self.step = step
         self.eps = eps
-        self._weights = torch.tensor([float(self._max(p) - self._min(p)) for p in passages])
+        self._min = [p.alignments[0].audio[0] for p in passages]
+        self._max = [p.alignments[-1].audio[1] for p in passages]
+        self._weights = torch.tensor([b - a for a, b in zip(self._min, self._max)])
         self._lookup = None if self.max_seconds == float("inf") else self._make_lookup()
-
-    @staticmethod
-    def _min(passage: Passage) -> float:
-        """ Get the minimum audio second. """
-        return passage.alignments[0].audio[0]
-
-    @staticmethod
-    def _max(passage: Passage) -> float:
-        """ Get the maximum audio second. """
-        return passage.alignments[-1].audio[1]
 
     @staticmethod
     def _overlap(slice: typing.Tuple[float, float], other: typing.Tuple[float, float]) -> float:
@@ -463,11 +456,8 @@ class SpanGenerator(typing.Iterator[Span]):
     def _make_lookup(self) -> typing.Tuple[typing.Tuple[typing.Tuple[int]]]:
         """ Create a lookup table mapping positive integers to alignments. """
         lookup_: typing.List[typing.List[typing.List[int]]]
-        lookup_ = [
-            [[] for _ in range(self._stop(self._max(p), self._min(p)))] for p in self.passages
-        ]
-        for i, passage in enumerate(self.passages):
-            min_ = self._min(passage)
+        lookup_ = [[[] for _ in range(self._stop(b, a))] for a, b in zip(self._min, self._max)]
+        for i, (passage, min_) in enumerate(zip(self.passages, self._min)):
             for j, alignment in enumerate(passage.alignments):
                 start = self._start(alignment.audio[0], min_)
                 for k in range(start, self._stop(alignment.audio[1], min_)):
@@ -478,9 +468,9 @@ class SpanGenerator(typing.Iterator[Span]):
         for items in self._lookup[index][start:stop]:
             yield from items
 
-    @staticmethod
     @functools.lru_cache(maxsize=None)
-    def _is_include(start: float, end: float, alignment: Alignment):
+    def _is_include(self, start: float, end: float, passage_index: int, alignment_index: int):
+        alignment = self.passages[passage_index].alignments[alignment_index]
         return SpanGenerator._overlap((start, end), alignment.audio) >= random.random()
 
     def __iter__(self) -> typing.Iterator[Span]:
@@ -501,11 +491,9 @@ class SpanGenerator(typing.Iterator[Span]):
             # NOTE: The `weight` is based on `start` (i.e. the number of spans)
             # NOTE: For some reason, `torch.multinomial(replacement=True)` is faster by a lot.
             index = int(torch.multinomial(self._weights + length, 1, replacement=True).item())
-            passage = self.passages[index]
+            passage, min_, max_ = self.passages[index], self._min[index], self._max[index]
 
             # NOTE: Uniformly sample a span of audio.
-            min_ = self._min(passage)
-            max_ = self._max(passage)
             start = random.uniform(min_ - length, max_)
             end = min(start + length, max_)
             start = max(start, min_)
@@ -513,10 +501,10 @@ class SpanGenerator(typing.Iterator[Span]):
             # NOTE: Based on the overlap, decide which alignments to include in the span.
             part = list(self._get(index, self._start(start, min_), self._stop(end, min_)))
             self._is_include.cache_clear()
-            _is_include = functools.partial(self._is_include, start, end)
+            _is_include = functools.partial(self._is_include, start, end, index)
             bounds = (
-                next((i for i in part if _is_include(passage.alignments[i])), None),
-                next((i for i in reversed(part) if _is_include(passage.alignments[i])), None),
+                next((i for i in part if _is_include(i)), None),
+                next((i for i in reversed(part) if _is_include(i)), None),
             )
             if bounds[0] is not None and bounds[1] is not None and bounds[0] <= bounds[1]:
                 span = passage[bounds[0] : bounds[1] + 1]
@@ -576,7 +564,7 @@ def dataset_loader(
     https://github.com/GoogleCloudPlatform/gsutil/pull/1107
     TODO: It's faster to run `gsutil` without `-m` if the data already exists on disk;
     therefore, if the directory already exists, we should skip multiprocessing.
-    TODO: Support batch loading multiple datasets, for performance.
+    TODO: For performance, support batch loading multiple datasets at the same time.
 
     The structure of the dataset should be:
         - The file structure is similar to:
