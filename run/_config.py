@@ -474,7 +474,7 @@ def get_dataset(
         lambda_ = lambda l: [_handle_passage(p) for p in l if _include_passage(p)]
         items = list(pool.map(lambda i: (i[0], lambda_(i[1](path))), datasets.items()))
     dataset = {k: v for k, v in items}
-    run._utils.normalize_audio(dataset)
+    dataset = run._utils.normalize_audio(dataset)
     return dataset
 
 
@@ -503,6 +503,10 @@ def split_dataset(
     return train, dev
 
 
+DIGIT_REGEX = re.compile(r"\d")
+ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9]")
+
+
 def _include_span(span: datasets.Span):
     """Return `True` iff `span` should be included in the dataset.
 
@@ -511,14 +515,18 @@ def _include_span(span: datasets.Span):
     """
     # NOTE: Filter out any passage(s) with digits because the pronunciation is fundamentally
     # ambigious, and it's much easier to handle this case with text normalization.
-    if any(c.isdigit() for c in span.script):
+    # NOTE: See performance statistics here: https://stackoverflow.com/a/31861306/4804936
+    if DIGIT_REGEX.search(span.script):
         return False
 
     is_not_aligned = lambda s: s.audio_length < 0.2 or (s.audio_length / len(s.script)) < 0.04
     if is_not_aligned(span[0]) or is_not_aligned(span[-1]):
         return False
 
-    if any(any(c.isalnum() for c in (a + b)) for a, b, _, in span.unaligned):
+    if any(
+        ALPHANUMERIC_REGEX.search(a) or ALPHANUMERIC_REGEX.search(b)
+        for a, b, _ in span.script_nonalignments()
+    ):
         return False
 
     return True

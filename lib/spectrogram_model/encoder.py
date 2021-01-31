@@ -218,7 +218,7 @@ class Encoder(torch.nn.Module):
                 ),
                 torch.nn.ReLU(),
             )
-            for i in range(num_convolution_layers)
+            for _ in range(num_convolution_layers)
         )
         self.norm_layers = torch.nn.ModuleList(
             _LayerNorm(hidden_size) for i in range(num_convolution_layers)

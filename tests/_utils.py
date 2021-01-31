@@ -53,7 +53,10 @@ def make_metadata(
 
 
 def make_passage(
-    alignments: typing.Tuple[lib.datasets.Alignment, ...],
+    alignments: lib.utils.Tuples[lib.datasets.Alignment],
+    nonalignments: lib.utils.Tuples[lib.datasets.Alignment] = lib.utils.Tuples(
+        [], lib.datasets.alignment_dtype
+    ),
     speaker: lib.datasets.Speaker = lib.datasets.Speaker(""),
     audio_file: lib.audio.AudioFileMetadata = make_metadata(),
     script: typing.Optional[str] = None,
@@ -65,7 +68,9 @@ def make_passage(
     make_str = lambda attr: "." * max_(attr) if len(alignments) else ""
     script = make_str("script") if script is None else script
     transcript = make_str("transcript") if transcript is None else transcript
-    return lib.datasets.Passage(audio_file, speaker, script, transcript, alignments, **kwargs)
+    return lib.datasets.Passage(
+        audio_file, speaker, script, transcript, alignments, nonalignments, **kwargs
+    )
 
 
 def get_audio_metadata_side_effect(

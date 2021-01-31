@@ -87,7 +87,7 @@ def test_normalize_audio():
         metadata = AudioFileMetadata(audio_path, *args)
         passage = make_passage(tuple(), lib.datasets.LINDA_JOHNSON, metadata)
         dataset = {lib.datasets.LINDA_JOHNSON: [passage]}
-        run._utils.normalize_audio(
+        dataset = run._utils.normalize_audio(
             dataset,
             suffix=suffix,
             encoding=ffmpeg_encoding,

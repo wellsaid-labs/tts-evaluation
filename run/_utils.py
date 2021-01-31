@@ -112,9 +112,10 @@ def _normalize_path(path: pathlib.Path) -> pathlib.Path:
     return path.parent / run._config.TTS_DISK_CACHE_NAME / f"ffmpeg({path.stem}).wav"
 
 
+@lib.utils.log_runtime
 def normalize_audio(
     dataset: Dataset, num_processes: int = typing.cast(int, os.cpu_count()), **kwargs
-):
+) -> Dataset:
     """Normalize audio with ffmpeg in `dataset`.
 
     TODO: Consider using the ffmpeg SoX resampler, instead.
@@ -133,10 +134,13 @@ def normalize_audio(
 
     metadatas = lib.audio.get_audio_metadata([_normalize_path(p) for p in audio_paths])
     lookup = {p: m for p, m in zip(audio_paths, metadatas)}
-    for passages in dataset.values():
-        for passage in passages:
-            lib.datasets.update_passage_audio(passage, lookup[passage.audio_file.path])
+    logger.info("Updating dataset to use normalized audio files...")
+    return_ = {
+        s: [lib.datasets.update_passage_audio(p, lookup[p.audio_file.path]) for p in d]
+        for s, d in dataset.items()
+    }
     logger.info("Normalized dataset audio %s", lib.utils.mazel_tov())
+    return return_
 
 
 def init_distributed(
@@ -161,6 +165,7 @@ def init_distributed(
     return device
 
 
+@lib.utils.log_runtime
 def split_passages(
     passages: typing.List[lib.datasets.Passage], dev_size: float
 ) -> typing.Tuple[typing.List[lib.datasets.Passage], typing.List[lib.datasets.Passage]]:

@@ -13,6 +13,7 @@ import time
 import typing
 from contextlib import contextmanager
 
+import numpy as np
 import torch
 import torch.multiprocessing
 import torch.nn
@@ -402,12 +403,93 @@ class MappedIterator(typing.Generic[_MappedIteratorItem]):
             for _ in range(index - self.offset + 1):
                 call_once(logger.info, "MappedIterator: Loading first item...")
                 self.storage.append(next(self.iter))
-                call_once(logger.info, "MappedIterator: Loaded first item %s", mazel_tov())
+                call_once(logger.info, "MappedIterator: Loaded first item.")
 
         _return = self.storage[index - self.offset]
         self.storage = self.storage[index - self.offset + 1 :]
         self.offset = index + 1
         return _return
+
+
+_TuplesVar = typing.TypeVar("_TuplesVar")
+_TuplesType = typing.TypeVar("_TuplesType", bound="Tuples")
+
+
+class Tuples(typing.Generic[_TuplesVar]):
+    """Datastructure for efficiently storing, and retrieving tuples.
+
+    NOTE: This will not error if the data type doesn't accurately represent the data. For example:
+    ```
+    >>> import numpy as np
+    >>> np.array([10000000], np.int16)
+    array([-27008], dtype=int16)
+    ```
+    NOTE: This doesn't support tuples with numpy objects.
+    """
+
+    __slots__ = "storage", "type"
+
+    def __init__(
+        self,
+        items: typing.Union[typing.List[_TuplesVar], np.ndarray],
+        dtype: typing.Optional[np.dtype] = None,
+        type_: typing.Optional[typing.Type[_TuplesVar]] = None,
+    ):
+        self.storage = np.array([]) if len(items) == 0 else np.array(items, dtype=dtype)
+
+        if isinstance(items, np.ndarray):
+            self.type = type_
+        elif isinstance(items, list) and len(items) > 0:
+            self.type = items[0].__class__
+        elif isinstance(items, list):
+            self.type = None
+        else:
+            raise TypeError("Unsupported arguments.")
+
+    def _convert(self, item: typing.Tuple) -> _TuplesVar:
+        """ Convert numpy `item()` to `self.type`. """
+        return item if self.type is tuple else self.type(*item)
+
+    @typing.overload
+    def __getitem__(self: _TuplesType, key: int) -> _TuplesVar:
+        ...
+
+    @typing.overload
+    def __getitem__(self: _TuplesType, key: slice) -> _TuplesType:
+        ...
+
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            return self.__class__(self.storage[key], dtype=self.storage.dtype, type_=self.type)
+        elif isinstance(key, int):
+            return self._convert(self.storage[key].item())
+        else:
+            raise TypeError("Invalid argument type: {}".format(type(key)))
+
+    def __len__(self) -> int:
+        return len(self.storage)
+
+    def __iter__(self) -> typing.Iterator[_TuplesVar]:
+        return (self._convert(i) for i in self.storage.tolist())
+
+    def __contains__(self, item: _TuplesVar) -> bool:
+        if len(self.storage) == 0:
+            return False
+        return np.array(item, dtype=self.storage.dtype) in self.storage
+
+    def __eq__(self, other):
+        if type(other) is type(self):
+            return tuple(iter(other)) == tuple(iter(self))
+        return False
+
+    def __hash__(self):
+        return hash(tuple(iter(self)))
+
+    def __str__(self):
+        return str(tuple(iter(self)))
+
+    def __repr__(self):
+        return repr(tuple(iter(self)))
 
 
 def mazel_tov() -> str:

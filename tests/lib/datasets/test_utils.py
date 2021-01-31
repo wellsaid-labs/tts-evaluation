@@ -1,5 +1,6 @@
 import functools
 import math
+import pathlib
 import pickle
 import typing
 from collections import Counter
@@ -9,7 +10,8 @@ import numpy as np
 import pytest
 
 import lib
-from lib.datasets import Alignment, IsConnected, Passage
+from lib.datasets import Alignment, Passage, alignment_dtype
+from lib.datasets.utils import UnprocessedPassage, make_passages
 from lib.utils import flatten
 from tests._utils import (
     TEST_DATA_PATH,
@@ -27,9 +29,9 @@ def _make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):
 
 def _make_alignments(
     alignments=typing.Tuple[typing.Tuple[int, int]]
-) -> typing.Tuple[lib.datasets.Alignment, ...]:
+) -> lib.utils.Tuples[lib.datasets.Alignment]:
     """ Make a tuple of `Alignment`(s) for testing. """
-    return tuple([_make_alignment(a, a, a) for a in alignments])
+    return lib.utils.Tuples([_make_alignment(a, a, a) for a in alignments], alignment_dtype)
 
 
 def test_span_generator():
@@ -40,7 +42,7 @@ def test_span_generator():
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
-        counter.update(span.passage.alignments[span.span])
+        counter.update(span.passage.alignments[span.slice])
     assert set(counter.keys()) == set(typing.cast(typing.Tuple[Alignment], dataset[0].alignments))
     assert_uniform_distribution(counter, abs=0.015)
 
@@ -62,7 +64,7 @@ def test_span_generator__zero():
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
-        counter.update(span.passage.alignments[span.span])
+        counter.update(span.passage.alignments[span.slice])
     alignments_ = [dataset[0].alignments, dataset[-1].alignments]
     alignments = [list(typing.cast(typing.Tuple[Alignment], a)) for a in alignments_]
     assert set(counter.keys()) == set(flatten(alignments))
@@ -81,7 +83,7 @@ def test_span_generator__singular():
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
-        counter.update(span.passage.alignments[span.span])
+        counter.update(span.passage.alignments[span.slice])
     alignments = [list(typing.cast(typing.Tuple[Alignment], d.alignments)) for d in dataset]
     assert set(counter.keys()) == set(flatten(alignments))
     assert_uniform_distribution(counter, abs=0.015)
@@ -98,7 +100,7 @@ def test_span_generator__multiple_multiple():
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
-        counter.update(span.passage.alignments[span.span])
+        counter.update(span.passage.alignments[span.slice])
     alignments = [list(typing.cast(typing.Tuple[Alignment], d.alignments)) for d in dataset]
     assert set(counter.keys()) == set(flatten(alignments))
     assert_uniform_distribution(counter, abs=0.015)
@@ -111,7 +113,7 @@ def test_span_generator__pause():
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
-        counter.update(span.passage.alignments[span.span])
+        counter.update(span.passage.alignments[span.slice])
     assert set(counter.keys()) == set(typing.cast(typing.Tuple[Alignment], dataset[0].alignments))
     assert_uniform_distribution(counter, abs=0.02)
 
@@ -129,11 +131,11 @@ def test_span_generator__multiple_unequal_passages__large_max_seconds():
     iterator = lib.datasets.SpanGenerator(dataset, max_seconds=1000000)
 
     alignments_counter: typing.Counter[Alignment] = Counter()
-    spans_counter: typing.Counter[typing.Tuple[Alignment, ...]] = Counter()
+    spans_counter: typing.Counter[lib.utils.Tuples[Alignment]] = Counter()
     num_passages = 10000
     for _ in range(num_passages):
         span = next(iterator)
-        slice_ = span.passage.alignments[span.span]
+        slice_ = span.passage.alignments[span.slice]
         alignments_counter.update(slice_)
         spans_counter[slice_] += 1
 
@@ -154,7 +156,7 @@ def test_span_generator__unequal_alignment_sizes():
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
-        counter.update(span.passage.alignments[span.span])
+        counter.update(span.passage.alignments[span.slice])
     assert set(counter.keys()) == set(typing.cast(typing.Tuple[Alignment], dataset[0].alignments))
     assert_uniform_distribution(counter, abs=0.015)
 
@@ -170,7 +172,7 @@ def test_span_generator__unequal_alignment_sizes__boundary_bias():
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
-        counter.update(span.passage.alignments[span.span])
+        counter.update(span.passage.alignments[span.slice])
     assert set(counter.keys()) == set(typing.cast(typing.Tuple[Alignment], dataset[0].alignments))
     with pytest.raises(AssertionError):
         assert_uniform_distribution(counter, abs=0.015)
@@ -201,6 +203,20 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
             ((43, 47), (2.6, 3.3), (41, 45)),
         ]
     ]
+    nonalignments = [
+        Alignment(a[0], a[1], a[2])
+        for a in [
+            ((0, 0), (0.0, 0.0), (0, 0)),
+            ((6, 7), (0.6, 0.6), (6, 7)),
+            ((9, 10), (0.8, 0.8), (9, 10)),
+            ((13, 14), (0.8, 0.8), (13, 14)),
+            ((20, 21), (1.4, 1.4), (20, 21)),
+            ((27, 28), (1.8, 1.8), (26, 27)),
+            ((34, 35), (2.5, 2.5), (33, 34)),
+            ((42, 43), (2.6, 2.6), (40, 41)),
+            ((47, 47), (3.3, 4.3), (45, 46)),
+        ]
+    ]
 
     path = TEST_DATA_PATH / "datasets/hilary_noriega/recordings/Script 1.wav"
     assert passages[0].audio_file == lib.audio.get_audio_metadata([path])[0]
@@ -210,11 +226,9 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
         "author of the danger Trail Philip Steels Etc. Not at this particular case Tom "
         "apologized Whitmore for the 20th time that evening the two men shook hands"
     )
-    assert passages[0].alignments == tuple(alignments)
+    assert passages[0].alignments == lib.utils.Tuples(alignments, alignment_dtype)
+    assert passages[0].nonalignments == lib.utils.Tuples(nonalignments, alignment_dtype)
     assert passages[0].other_metadata == {"Index": 0, "Source": "CMU", "Title": "CMU"}
-    assert passages[0].index == 0
-    assert passages[0].passages == passages
-    assert passages[0].is_connected == IsConnected(False, True, True)
     assert passages[1].script == "Not at this particular case, Tom, apologized Whittemore."
 
 
@@ -233,7 +247,8 @@ def test_passage_span__identity():
         speaker=lib.datasets.LINDA_JOHNSON,
         script=script,
         transcript=script,
-        alignments=(alignment,),
+        alignments=lib.utils.Tuples([alignment], alignment_dtype),
+        nonalignments=lib.utils.Tuples([alignment], alignment_dtype),
         other_metadata={"chapter": 37},
     )
     span = passage[:]
@@ -242,9 +257,10 @@ def test_passage_span__identity():
     assert passage.alignments == span.alignments
     assert passage.speaker == span.speaker
     assert passage.audio_file == span.audio_file
-    assert passage.unaligned == span.unaligned
     assert passage.other_metadata == span.other_metadata
     assert passage.aligned_audio_length() == span.audio_length
+    assert passage[-1] == span[-1]
+    assert passage[0:0] == span[0:-1]
     assert (
         passage.to_string("audio_file", "other_metadata")[len(passage.__class__.__name__) :]
         == span.to_string("audio_file", "other_metadata")[len(span.__class__.__name__) :]
@@ -257,97 +273,95 @@ def test_passage_span__identity():
 _find = lambda a, b: (a.index(b), a.index(b) + 1)
 
 
-def _add_passage(
+def _make_unprocessed_passage(
     script: str,
     tokens: typing.List[str],
-    passages: typing.List[lib.datasets.Passage],
     transcript: str,
     find_transcript: typing.Callable[[str, str], typing.Tuple[int, int]] = _find,
     find_script: typing.Callable[[str, str], typing.Tuple[int, int]] = _find,
-    **kwargs,
 ):
     """ Helper function for `test_passage_span__unaligned*`. """
     found = [(find_script(script, t), find_transcript(transcript, t)) for t in tokens]
-    passages.append(
-        make_passage(
-            script=script,
-            alignments=tuple(_make_alignment(*arg) for arg in found),
-            transcript=transcript,
-            index=len(passages),
-            passages=passages,
-            **kwargs,
-        )
+    return UnprocessedPassage(
+        audio_path=TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav",
+        speaker=lib.datasets.Speaker(""),
+        script=script,
+        transcript=transcript,
+        alignments=lib.utils.Tuples([_make_alignment(*arg) for arg in found], alignment_dtype),
     )
 
 
-def test_passage_span__unaligned():
-    """Test `lib.datasets.Passage` and `lib.datasets.Span` get the correct unalignments under a
+def test_passage_span__script_nonalignments():
+    """Test `lib.datasets.Passage` and `lib.datasets.Span` get the correct nonalignments under a
     variety of circumstances."""
-    passages = []
     script = "abcdefghijklmnopqrstuvwxyz"
-    is_connected = IsConnected(False, True, True)
-    add_passage = functools.partial(
-        _add_passage, passages=passages, transcript=script, is_connected=is_connected
-    )
+    make = functools.partial(_make_unprocessed_passage, transcript=script)
+    unprocessed_passages = []
 
     # TEST: Largely no issues, except one in the middle.
     split, script = script[:6], script[6:]
-    add_passage(split, ["a", "b", "c", "e", "f"])  # NOTE: split='abcdef'
+    unprocessed_passages.append(make(split, ["a", "b", "c", "e", "f"]))  # NOTE: split='abcdef'
 
     # TEST: Right edge has an issue, along with one in the middle.
     split, script = script[:3], script[3:]
-    add_passage(split, ["g", "i"])  # NOTE: split='ghi'
+    unprocessed_passages.append(make(split, ["g", "i"]))  # NOTE: split='ghi'
 
     # TEST: Left edge has an issue.
     split, script = script[:3], script[3:]
-    add_passage(split, ["l"])  # NOTE: split='jkl'
+    unprocessed_passages.append(make(split, ["l"]))  # NOTE: split='jkl'
 
     # TEST: Right edge has an issue.
     split, script = script[:3], script[3:]
-    add_passage(split, ["m"])  # NOTE: split='mno'
+    unprocessed_passages.append(make(split, ["m"]))  # NOTE: split='mno'
 
     # TEST: Both edges have an issue, and there is no rightward passage.
     split, script = script[:3], script[3:]
-    add_passage(split, ["q"])  # NOTE: split='pqr'
+    unprocessed_passages.append(make(split, ["q"]))  # NOTE: split='pqr'
+
+    kwargs = {"script": False, "transcript": True, "audio": True}
+    passages = list(make_passages([unprocessed_passages], **kwargs))
 
     a = (0.0, 0.0)
     expected = [("", "", a), ("", "", a), ("", "", a), ("d", "d", a), ("", "", a), ("", "", a)]
-    assert passages[0].unaligned == expected
-    assert passages[0][:].unaligned == passages[0].unaligned
-    assert passages[1].unaligned == [("", "", a), ("h", "h", a), ("", "jk", a)]
-    assert passages[1][:].unaligned == passages[1].unaligned
-    assert passages[2].unaligned == [("jk", "jk", a), ("", "", a)]
-    assert passages[2][:].unaligned == passages[2].unaligned
-    assert passages[3].unaligned == [("", "", a), ("no", "nop", a)]
-    assert passages[3][:].unaligned == passages[3].unaligned
-    assert passages[4].unaligned == [("p", "nop", a), ("r", "rstuvwxyz", (0.0, math.inf))]
-    assert passages[4][:].unaligned == passages[4].unaligned
+    assert passages[0].script_nonalignments() == expected
+    assert passages[0][:].script_nonalignments() == passages[0].script_nonalignments()
+    assert passages[1].script_nonalignments() == [("", "", a), ("h", "h", a), ("", "jk", a)]
+    assert passages[1][:].script_nonalignments() == passages[1].script_nonalignments()
+    assert passages[2].script_nonalignments() == [("jk", "jk", a), ("", "", a)]
+    assert passages[3].script_nonalignments() == [("", "", a), ("no", "nop", a)]
+    assert passages[4].script_nonalignments() == [
+        ("p", "nop", a),
+        ("r", "rstuvwxyz", (0.0, 7.583958148956299)),
+    ]
 
     # TEST: Test `spans` get the correct span.
-    assert passages[0][2:4][:].unaligned == [("", "", a), ("d", "d", a), ("", "", a)]
-    assert passages[1][1][:].unaligned == [("h", "h", a), ("", "jk", a)]
+    assert passages[0][2:4][:].script_nonalignments() == [("", "", a), ("d", "d", a), ("", "", a)]
+    assert passages[1][1][:].script_nonalignments() == [("h", "h", a), ("", "jk", a)]
 
 
-def test_passage_span__unaligned__zero_alignments():
-    """Test `lib.datasets.Passage` and `lib.datasets.Span` get the correct unalignments if one
+def test_passage_span__script_nonalignments__zero_alignments():
+    """Test `lib.datasets.Passage` and `lib.datasets.Span` get the correct nonalignments if one
     of the passages has zero alignments."""
-    passages = []
     script = "abcdef"
-    is_connected = IsConnected(False, True, True)
-    add_passage = functools.partial(
-        _add_passage, passages=passages, transcript=script, is_connected=is_connected
-    )
+    make = functools.partial(_make_unprocessed_passage, transcript=script)
+    unprocessed_passages = []
 
     split, script = script[:3], script[3:]
-    add_passage(split, ["b"])  # NOTE: split='abc'
-    add_passage("", [])
+    unprocessed_passages.append(make(split, ["b"]))  # NOTE: split='abc'
+    unprocessed_passages.append(make("", []))
     split, script = script[:3], script[3:]
-    add_passage(split, ["e"])  # NOTE: split='abc'
+    unprocessed_passages.append(make(split, ["e"]))  # NOTE: split='abc'
+
+    kwargs = {"script": False, "transcript": True, "audio": True}
+    passages = list(make_passages([unprocessed_passages], **kwargs))
 
     a = (0.0, 0.0)
-    assert passages[0].unaligned == [("a", "a", a), ("c", "cd", a)]
-    assert passages[1].unaligned == [("", "cd", a)]
-    assert passages[2].unaligned == [("d", "cd", a), ("f", "f", (0.0, math.inf))]
+    assert passages[0].script_nonalignments() == [("a", "a", a), ("c", "cd", a)]
+    assert passages[1].script_nonalignments() == [("", "cd", a)]
+    assert passages[2].script_nonalignments() == [
+        ("d", "cd", a),
+        ("f", "f", (0.0, 7.583958148956299)),
+    ]
 
 
 def test__overlap():

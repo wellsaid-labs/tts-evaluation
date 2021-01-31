@@ -26,7 +26,13 @@ from pathlib import Path
 
 from torchnlp.download import download_file_maybe_extract
 
-from lib.datasets.utils import Passage, Speaker, conventional_dataset_loader
+from lib.datasets.utils import (
+    Passage,
+    Speaker,
+    UnprocessedPassage,
+    conventional_dataset_loader,
+    make_passages,
+)
 
 logger = logging.getLogger(__name__)
 Dataset = typing.NewType("Dataset", str)
@@ -176,11 +182,11 @@ def _m_ailabs_speech_dataset(
     downloaded_books = set([_metadata_path_to_book(p, directory) for p in metadata_paths])
     assert len(set(books) - downloaded_books) == 0, "Unable to find every book in `books`."
 
-    passages = []
+    passages: typing.List[typing.List[UnprocessedPassage]] = []
     for book in books:
         metadata_path = _book_to_metdata_path(book, directory)
         loaded = conventional_dataset_loader(
             metadata_path.parent, book.speaker, additional_metadata={"book": book}
         )
-        passages.extend(loaded)
-    return passages
+        passages.append(loaded)
+    return list(make_passages(passages))

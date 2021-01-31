@@ -53,6 +53,19 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata, _):
         data = lib.datasets.lj_speech_dataset(directory=directory)
         assert len(data) == 13100
         assert sum([len(r.script) for r in data]) == 1310332
+        alignments = lib.utils.Tuples(
+            [lib.datasets.Alignment((0, 151), (0.0, math.inf), (0, 151))],
+            lib.datasets.alignment_dtype,
+        )
+        nonalignments = lib.utils.Tuples(
+            [
+                lib.datasets.Alignment(script=(0, 0), audio=(0.0, 0.0), transcript=(0, 0)),
+                lib.datasets.Alignment(
+                    script=(151, 151), audio=(math.inf, math.inf), transcript=(151, 151)
+                ),
+            ],
+            lib.datasets.alignment_dtype,
+        )
         assert data[0] == lib.datasets.Passage(
             audio_file=_utils.make_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav"),
             speaker=lib.datasets.LINDA_JOHNSON,
@@ -64,7 +77,8 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata, _):
                 "Printing, in the only sense with which we are at present concerned, differs "
                 "from most if not from all the arts and crafts represented in the Exhibition"
             ),
-            alignments=(lib.datasets.Alignment((0, 151), (0.0, math.inf), (0, 151)),),
+            alignments=alignments,
+            nonalignments=nonalignments,
             other_metadata={
                 2: (  # type: ignore
                     "Printing, in the only sense with which we are at present concerned, differs "

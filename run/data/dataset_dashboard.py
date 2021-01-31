@@ -318,7 +318,9 @@ class Span(lib.datasets.Span):
         super().__post_init__()
 
         set = object.__setattr__
-        mistranscriptions = [(a, b) for a, b, _ in self.unaligned if self._is_alnum(a + b)]
+        mistranscriptions = [
+            (a, b) for a, b, _ in self.script_nonalignments() if self._is_alnum(a + b)
+        ]
         set(self, "mistranscriptions", [(a.strip(), b.strip()) for a, b in mistranscriptions])
 
         self._test_implementation()
@@ -335,18 +337,18 @@ class Span(lib.datasets.Span):
         NOTE: Unless the `Passages` are completely connected, it doesn't make sense to
         get the next alignment in the next passage.
         """
-        if self.span.start != 0:
-            return Span(self.passage, slice(self.span.start - 1, self.span.start))
+        if self.slice.start != 0:
+            return Span(self.passage, slice(self.slice.start - 1, self.slice.start))
         return None
 
     def next(self) -> typing.Optional[Span]:
         """ Get the next alignment after `self`. """
-        if self.span.stop != len(self.passage.alignments):
-            return Span(self.passage, slice(self.span.stop, self.span.stop + 1))
+        if self.slice.stop != len(self.passage.alignments):
+            return Span(self.passage, slice(self.slice.stop, self.slice.stop + 1))
         return None
 
     def audio(self) -> np.ndarray:
-        start = self.passage.alignments[self.span][0].audio[0]
+        start = self.passage.alignments[self.slice][0].audio[0]
         return _read_audio_slice(self.passage.audio_file.path, start, self.audio_length)
 
     def as_dict(self) -> typing.Dict[str, typing.Any]:
@@ -382,7 +384,7 @@ class Span(lib.datasets.Span):
     def audio_interval(self, second: float, interval: typing.Tuple[float, float]) -> np.ndarray:
         """ Get the audio surrounding `second`. """
         clamp_ = lambda x: clamp(x, min_=0, max_=self.passage.audio_file.length)
-        second = self.passage.alignments[self.span][0].audio[0] + second
+        second = self.passage.alignments[self.slice][0].audio[0] + second
         start = clamp_(second - interval[0])
         end = clamp_(second + interval[1])
         return _read_audio_slice(self.passage.audio_file.path, start, end - start)
@@ -399,17 +401,17 @@ class Span(lib.datasets.Span):
 
     def silence(self) -> float:
         """ Get the length of silence in `self`. """
-        return sum((b - a) for _, _, (a, b) in self.unaligned[1:-1])
+        return sum((b - a) for _, _, (a, b) in self.script_nonalignments()[1:-1])
 
     def longest_silence(self) -> float:
         """ Get the length of the longest silence, excluding the edges. """
         if len(self.alignments) <= 1:
             return 0.0
-        return max((b - a) for _, _, (a, b) in self.unaligned[1:-1])
+        return max((b - a) for _, _, (a, b) in self.script_nonalignments()[1:-1])
 
     def num_silences(self) -> int:
         """ Get the number of silences. """
-        return sum((b - a) > 0 for _, _, (a, b) in self.unaligned[1:-1])
+        return sum((b - a) > 0 for _, _, (a, b) in self.script_nonalignments()[1:-1])
 
     def seconds_per_character(self) -> float:
         return sum(a.audio[-1] - a.audio[0] for a in self.alignments) / len(self.script)
@@ -453,7 +455,7 @@ def _get_spans(dataset: Dataset, num_samples: int, slice_: bool = True) -> typin
     generator = run._config.SpanGenerator(dataset, **kwargs)
     with fork_rng(123):
         spans = [next(generator) for _ in tqdm.tqdm(range(num_samples), total=num_samples)]
-    return_ = [Span(s.passage, s.span) for s in tqdm.tqdm(spans)]
+    return_ = [Span(s.passage, s.slice) for s in tqdm.tqdm(spans)]
     logger.info(f"Finished generating spans! {mazel_tov()}")
     return return_
 
@@ -463,7 +465,7 @@ def _span_coverage(dataset: Dataset, spans: typing.List[Span]) -> float:
     logger.info("Getting span coverage of dataset...")
     alignments = set()
     for span in spans:
-        alignments.update((span.passage.key, i) for i in range(span.span.start, span.span.stop))
+        alignments.update((span.passage, i) for i in range(span.slice.start, span.slice.stop))
     return len(alignments) / _get_num_alignments(dataset)
 
 

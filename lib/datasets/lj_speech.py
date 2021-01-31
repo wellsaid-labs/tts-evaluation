@@ -11,6 +11,7 @@ from lib.datasets.utils import (
     Passage,
     Speaker,
     conventional_dataset_loader,
+    make_passages,
     update_conventional_passage_script,
 )
 
@@ -70,16 +71,14 @@ def lj_speech_dataset(
         **kwargs: Key word arguments passed to `conventional_dataset_loader`.
     """
     logger.info('Loading "LJSpeech-1.1" speech dataset...')
-    download_file_maybe_extract(
-        url=url, directory=str(directory.absolute()), check_files=check_files
-    )
+    download_file_maybe_extract(url, str(directory.absolute()), check_files=check_files)
     passages = conventional_dataset_loader(
         directory / root_directory_name,
         speaker,
         **kwargs,
         metadata_text_column=metadata_text_column,
     )
-    return [_process_text(passage, verbalize) for passage in passages]
+    return [_process_text(passage, verbalize) for passage in make_passages([passages])]
 
 
 """
@@ -95,7 +94,7 @@ punctuation.".
 """
 
 
-def _process_text(passage: Passage, verbalize: bool):
+def _process_text(passage: Passage, verbalize: bool) -> Passage:
     script = _normalize_whitespace(passage.script)
     script = _normalize_quotations(script)
 
