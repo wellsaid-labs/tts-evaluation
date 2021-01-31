@@ -85,10 +85,7 @@ class _InterpolateAndMask(torch.nn.Module):
         Returns:
             torch.FloatTensor [batch_size, frame_channels, num_frames]
         """
-        with torch.no_grad():
-            mask = torch.nn.functional.interpolate(
-                mask.float(), scale_factor=self.scale_factor
-            ).bool()
+        mask = torch.nn.functional.interpolate(mask.float(), scale_factor=self.scale_factor).bool()
         assert mask.shape[2] >= tensor.shape[2], "Scale factor is too small."
         tensor, mask = lib.utils.trim_tensors(tensor, mask)
         return tensor.masked_fill(~mask, 0.0)

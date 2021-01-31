@@ -16,11 +16,10 @@ def _window_helper(
     length: int, dimension: int, num_dimensions: int, device: torch.device
 ) -> typing.Tuple[torch.Tensor, int]:
     """ Helper to ensure `indices` and `dimension` are not recalculated unnecessarily. """
-    with torch.no_grad():
-        dimension = num_dimensions + dimension if dimension < 0 else dimension
-        indices = torch.arange(0, length, device=device)
-        indices_shape = [1] * dimension + [-1] + [1] * (num_dimensions - dimension - 1)
-        indices = indices.view(*tuple(indices_shape))
+    dimension = num_dimensions + dimension if dimension < 0 else dimension
+    indices = torch.arange(0, length, device=device)
+    indices_shape = [1] * dimension + [-1] + [1] * (num_dimensions - dimension - 1)
+    indices = indices.view(*tuple(indices_shape))
     return indices, dimension
 
 

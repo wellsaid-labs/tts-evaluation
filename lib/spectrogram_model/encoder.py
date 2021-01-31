@@ -15,15 +15,14 @@ def _roll_helper(
     length: int, device: torch.device, dimension: int, num_dimensions: int
 ) -> typing.Tuple[torch.Tensor, int]:
     """ Helper to ensure `indices` and `dimension` are not recalculated unnecessarily. """
-    with torch.no_grad():
-        indices = torch.arange(0, length, device=device)
-        dimension = num_dimensions + dimension if dimension < 0 else dimension
-        # EXAMPLE:
-        # indicies.shape == (3,)
-        # tensor.shape == (1, 2, 3, 4, 5)
-        # indices_shape == [1, 1, 3, 1, 1]
-        indices_shape = [1] * dimension + [-1] + [1] * (num_dimensions - dimension - 1)
-        indices = indices.view(*tuple(indices_shape))
+    indices = torch.arange(0, length, device=device)
+    dimension = num_dimensions + dimension if dimension < 0 else dimension
+    # EXAMPLE:
+    # indicies.shape == (3,)
+    # tensor.shape == (1, 2, 3, 4, 5)
+    # indices_shape == [1, 1, 3, 1, 1]
+    indices_shape = [1] * dimension + [-1] + [1] * (num_dimensions - dimension - 1)
+    indices = indices.view(*tuple(indices_shape))
     return indices, dimension
 
 

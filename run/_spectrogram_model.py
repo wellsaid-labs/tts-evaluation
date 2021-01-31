@@ -298,16 +298,15 @@ def _signals_to_spectrograms(
             torch.LongTensor [1, batch_size]))
     """
     signal_to_spectrogram = lib.audio.get_signal_to_db_mel_spectrogram(**kwargs)
-    with torch.no_grad():
-        signals_ = stack_and_pad_tensors(signals)
-        db_mel_spectrogram = signal_to_spectrogram(signals_.tensor, aligned=True)
-        lengths = signals_.lengths // signal_to_spectrogram.frame_hop
-        mask = lengths_to_mask(lengths)
-        db_mel_spectrogram = (db_mel_spectrogram * mask.unsqueeze(-1)).transpose(0, 1)
-        return (
-            SequenceBatch(db_mel_spectrogram, lengths.unsqueeze(0)),
-            SequenceBatch(mask.transpose(0, 1), lengths.unsqueeze(0)),
-        )
+    signals_ = stack_and_pad_tensors(signals)
+    db_mel_spectrogram = signal_to_spectrogram(signals_.tensor, aligned=True)
+    lengths = signals_.lengths // signal_to_spectrogram.frame_hop
+    mask = lengths_to_mask(lengths)
+    db_mel_spectrogram = (db_mel_spectrogram * mask.unsqueeze(-1)).transpose(0, 1)
+    return (
+        SequenceBatch(db_mel_spectrogram, lengths.unsqueeze(0)),
+        SequenceBatch(mask.transpose(0, 1), lengths.unsqueeze(0)),
+    )
 
 
 def _get_normalized_half_gaussian(length: int, standard_deviation: float) -> torch.Tensor:
