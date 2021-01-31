@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import logging
+import math
 import typing
 from bisect import bisect_left, insort
 from math import floor
 from types import TracebackType
 
-import numpy as np
 import torch
 import torch.nn
 from hparams import HParam, configurable
-from third_party import get_parameter_norm
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +48,7 @@ class AdaptiveGradientNormClipper:
         norm_type: float = HParam(),
     ):
         super().__init__()
-        self.max_norm: typing.Optional[float] = None
+        self.max_norm = math.inf
         self.norm_type: float = norm_type
         self.sorted_window: typing.List[float] = []
         self.window_size: int = window_size
@@ -76,14 +75,10 @@ class AdaptiveGradientNormClipper:
     def clip(self):
         """Clips gradient norm of an iterable of `self.parameters`, and update gradient norm
         history."""
-        norm = get_parameter_norm(self.parameters, self.norm_type)
-        if not np.isfinite(norm):  # type: ignore
+        norm = torch.nn.utils.clip_grad_norm_(self.parameters, self.max_norm, self.norm_type)
+        if not torch.isfinite(norm):  # type: ignore
             raise ValueError(f"Gradient is not finite: {norm}")
-        if self.max_norm is not None:
-            torch.nn.utils.clip_grad_norm_(
-                self.parameters, max_norm=self.max_norm, norm_type=self.norm_type
-            )
-        self._insert(norm)
+        self._insert(typing.cast(float, norm.item()))
         self.max_norm = self._get_median()
 
 
