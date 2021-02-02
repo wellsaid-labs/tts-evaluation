@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 _RandomSampleReturnType = typing.TypeVar("_RandomSampleReturnType")
 
 
+def round_(x: float, bucket_size: float) -> float:
+    """Bin `x` into buckets."""
+    return bucket_size * round(x / bucket_size)
+
+
 def random_sample(
     list_: typing.List[_RandomSampleReturnType], sample_size: int
 ) -> typing.List[_RandomSampleReturnType]:

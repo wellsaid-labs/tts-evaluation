@@ -12,6 +12,14 @@ from lib.utils import pad_tensor
 from tests._utils import assert_almost_equal
 
 
+def test_round_():
+    """Test `lib.utils.round_` handles basic cases."""
+    assert lib.utils.round_(0.3, 1) == 0
+    assert lib.utils.round_(0.4, 0.25) == 0.5
+    assert lib.utils.round_(1, 4) == 0
+    assert lib.utils.round_(3, 4) == 4
+
+
 def test_random_sample():
     """Test `lib.utils.random_sample` handles the basic case, an empty list, and a large
     `sample_size`."""

@@ -45,10 +45,11 @@ def make_metadata(
     length=math.inf,
     bit_rate="",
     precision="",
+    num_samples=0,
 ) -> lib.audio.AudioFileMetadata:
     """ Make a `AudioFileMetadata` for testing. """
     return lib.audio.AudioFileMetadata(
-        path, sample_rate, num_channels, encoding, length, bit_rate, precision
+        path, sample_rate, num_channels, encoding, length, bit_rate, precision, num_samples
     )
 
 

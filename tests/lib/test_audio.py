@@ -92,6 +92,7 @@ def test__parse_audio_metadata():
         length=13588.089818594104,
         bit_rate="1.06M",
         precision="24-bit",
+        num_samples=599234761,
     )
 
 
@@ -116,6 +117,7 @@ def test__parse_audio_metadata__mp3():
         length=738.6229931972789,
         bit_rate="256k",
         precision="16-bit",
+        num_samples=32573274,
     )
 
 
@@ -142,6 +144,7 @@ def test__parse_audio_metadata__multiline_comments():
         length=297.33,
         bit_rate="256k",
         precision="16-bit",
+        num_samples=13112253,
     )
 
 
@@ -155,6 +158,7 @@ def test_get_audio_metadata():
         length=7.583958333333333,
         bit_rate="768k",
         precision="25-bit",
+        num_samples=182015,
     )
 
 
@@ -175,6 +179,7 @@ def test_get_audio_metadata__large_batch():
             length=7.583958333333333,
             bit_rate="768k",
             precision="25-bit",
+            num_samples=182015,
         )
 
 
@@ -188,6 +193,7 @@ def test_get_audio_metadata__multiple_channels():
         length=7.583958333333333,
         bit_rate="1.54M",
         precision="25-bit",
+        num_samples=182015,
     )
 
 
@@ -214,16 +220,25 @@ def test_read_audio():
 
 
 def test_read_audio_slice():
-    """ Test `lib.audio.read_audio_slice` cuts a slice of the correct length. """
+    """ Test `lib.audio.read_audio_slice` gets the correct slice. """
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     start = 1
     length = 2
     slice_ = lib.audio.read_audio_slice(TEST_DATA_LJ, start, length)
     audio = lib.audio.read_audio(TEST_DATA_LJ)
-    np.testing.assert_almost_equal(
-        slice_,
-        audio[start * metadata.sample_rate : (start + length) * metadata.sample_rate],
-    )
+    expected = audio[start * metadata.sample_rate : (start + length) * metadata.sample_rate]
+    np.testing.assert_almost_equal(slice_, expected)
+
+
+def test_read_wave_audio_slice():
+    """ Test `lib.audio.read_wave_audio_slice` gets the correct slice. """
+    metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
+    start = 1
+    length = 2
+    slice_ = lib.audio.read_wave_audio_slice(metadata, start, length)
+    audio = lib.audio.read_audio(TEST_DATA_LJ)
+    expected = audio[start * metadata.sample_rate : (start + length) * metadata.sample_rate]
+    np.testing.assert_almost_equal(slice_, expected)
 
 
 def test_read_audio_slice__identity():
@@ -344,7 +359,7 @@ def test_normalize_audio__assert_audio_normalized():
         )
         metadata = lib.audio.get_audio_metadata(audio_path)
         new_metadata = lib.audio.AudioFileMetadata(
-            new_audio_path, sample_rate, num_channels, sox_encoding, 7.584, "256k", "16-bit"
+            new_audio_path, sample_rate, num_channels, sox_encoding, 7.584, "256k", "16-bit", 60672
         )
         assert lib.audio.get_audio_metadata(new_audio_path) == new_metadata
     lib.audio.assert_audio_normalized(new_metadata, suffix, sox_encoding, sample_rate, num_channels)

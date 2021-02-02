@@ -369,6 +369,11 @@ def _make_stop_token(
     return SequenceBatch(stop_token, spectrogram.lengths)
 
 
+def _span_read_audio_slice(span: lib.datasets.Span) -> numpy.ndarray:
+    start = span._first.audio[0]
+    return lib.audio.read_wave_audio_slice(span.passage.audio_file, start, span.audio_length)
+
+
 class SpanBatch(typing.NamedTuple):
     """Batch of preprocessed `Span` used to training or evaluating the spectrogram model."""
 
@@ -481,13 +486,11 @@ def make_span_batch(
         docs[i] = span.as_doc()
 
     char_to_word = [_get_char_to_word(d) for d in docs]
-    kwargs = {"is_tqdm": False, "max_parallel": max_parallel}
-    phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs, **kwargs))
-    iter_ = zip(spans, phonemes)
-    decoded = [DecodedInput(s.script, p, s.speaker) for s, p in iter_]
+    phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs))
+    decoded = [DecodedInput(s.script, p, s.speaker) for s, p in zip(spans, phonemes)]
     encoded = [input_encoder.encode(d) for d in decoded]
     with multiprocessing.pool.ThreadPool(min(max_parallel, len(spans))) as pool:
-        signals_: typing.List[numpy.ndarray] = list(pool.map(lambda s: s.audio(), spans))
+        signals_: typing.List[numpy.ndarray] = list(pool.map(_span_read_audio_slice, spans))
     loudness = [_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)]
     signals = [_pad_and_trim_signal(s) for s in signals_]
     spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)

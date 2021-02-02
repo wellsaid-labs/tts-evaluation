@@ -10,7 +10,7 @@ from lib.text import _line_grapheme_to_phoneme, _multiline_grapheme_to_phoneme, 
 
 
 def test__line_grapheme_to_phoneme():
-    """ Test `_line_grapheme_to_phoneme` respects white spaces on the edges. """
+    """ Test `_line_grapheme_to_phoneme` can handle some basic cases. """
     in_ = [
         "  Hello World  ",
         "Hello World  ",

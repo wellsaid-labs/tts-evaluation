@@ -38,6 +38,8 @@ class AudioFileMetadata(typing.NamedTuple):
     TODO: The `sample_rate` does not change in porportion to the number of channels; therefore, the
     `sample_rate` should technically be called the `frame_rate` because it measures the number of
     frames per second.
+    TODO: The `length` property is equal to `num_samples / sample_rate`, and it should be defined
+    as such.
 
     Learn more: http://sox.sourceforge.net/soxi.html
 
@@ -49,6 +51,7 @@ class AudioFileMetadata(typing.NamedTuple):
       length: The duration of the audio file in seconds.
       bit_rate: The number of bits per second.
       precision: The estimated sample precision in bits.
+      num_samples: The duration of the audio file in samples.
     """
 
     path: Path
@@ -58,6 +61,7 @@ class AudioFileMetadata(typing.NamedTuple):
     length: float
     bit_rate: str
     precision: str
+    num_samples: int
 
 
 def _parse_audio_metadata(metadata: str) -> AudioFileMetadata:
@@ -80,16 +84,18 @@ def _parse_audio_metadata(metadata: str) -> AudioFileMetadata:
         "Sample Encoding",
     ]
     splits = [s.split(":", maxsplit=1)[1].strip() for s in lines]
-    audio_path = str(splits[0][1:-1])
-    num_channels = int(splits[1])
-    sample_rate = int(splits[2])
-    precision = splits[3]
     assert splits[4].split()[3] == "samples"
-    length = float(splits[4].split()[2]) / sample_rate
-    bit_rate = splits[6]
-    encoding = splits[7]
+    sample_rate = int(splits[2])
+    num_samples = int(splits[4].split()[2])
     return AudioFileMetadata(
-        Path(audio_path), sample_rate, num_channels, encoding, length, bit_rate, precision
+        path=Path(str(splits[0][1:-1])),
+        sample_rate=sample_rate,
+        num_channels=int(splits[1]),
+        encoding=splits[7],
+        length=float(num_samples) / sample_rate,
+        bit_rate=splits[6],
+        precision=splits[3],
+        num_samples=num_samples,
     )
 
 
@@ -212,6 +218,19 @@ def read_audio_slice(path: Path, start: float, length: float) -> np.ndarray:
         subprocess.check_output(command.split(), stderr=subprocess.DEVNULL),
         np.float32,  # type: ignore
     )
+    return clip_waveform(ndarray)
+
+
+def read_wave_audio_slice(metadata: AudioFileMetadata, start: float, length: float) -> np.ndarray:
+    """ Fast read and seek 32-bit floating point WAVE file. """
+    assert metadata.encoding == "32-bit Floating Point PCM"
+    assert metadata.num_channels == 1
+    num_bytes_per_sample = 4
+    sample_rate = metadata.sample_rate
+    header_size = os.path.getsize(metadata.path) - num_bytes_per_sample * metadata.num_samples
+    start = lib.utils.round_(sample_rate * start * num_bytes_per_sample, num_bytes_per_sample)
+    length = lib.utils.round_(sample_rate * length, num_bytes_per_sample)
+    ndarray = np.fromfile(metadata.path, dtype=np.float32, count=length, offset=start + header_size)
     return clip_waveform(ndarray)
 
 
