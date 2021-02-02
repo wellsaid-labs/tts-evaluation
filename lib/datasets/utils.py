@@ -340,7 +340,7 @@ def make_nonalignments(
 
 
 def _exists(path: Path) -> bool:
-    """ Helper function for `conventional_dataset_loader` that can be easily mocked. """
+    """ Helper function for `make_passages` that can be easily mocked. """
     return path.exists() and path.is_file()
 
 
@@ -696,14 +696,10 @@ def update_conventional_passage_script(passage: Passage, script: str) -> Passage
     """Update `passage.script` with `passage.transcript` and `passage.alignments` accordingly
     in a conventional passage."""
     assert len(passage.alignments) == 1
-    slice = (0, len(passage.script))
+    slice = (0, len(script))
     alignments = [passage.alignments[0]._replace(script=slice, transcript=slice)]
-    return dataclasses.replace(
-        passage,
-        script=script,
-        transcript=script,
-        alignments=lib.utils.Tuples(alignments, dtype=alignment_dtype),
-    )
+    alignments_ = lib.utils.Tuples(alignments, dtype=alignment_dtype)
+    return dataclasses.replace(passage, script=script, transcript=script, alignments=alignments_)
 
 
 def _clamp(alignment: Alignment, audio_file: AudioFileMetadata) -> Alignment:
