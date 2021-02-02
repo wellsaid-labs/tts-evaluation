@@ -493,7 +493,7 @@ def make_span_batch(
         signals_: typing.List[numpy.ndarray] = list(pool.map(_span_read_audio_slice, spans))
     loudness = [_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)]
     signals = [_pad_and_trim_signal(s) for s in signals_]
-    spectrogram, spectrogram_mask = _signals_to_spectrograms(signals, aligned=True)
+    spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
     speed = [_random_speed_annotations(s) for s in spans]
 
     stack = functools.partial(stack_and_pad_tensors, dim=1)
