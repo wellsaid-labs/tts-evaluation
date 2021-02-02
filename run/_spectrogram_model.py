@@ -435,7 +435,7 @@ class SpanBatch(typing.NamedTuple):
     #               torch.LongTensor [1, batch_size])
     speed_mask: SequenceBatch
 
-    alignments: typing.List[typing.Tuple[lib.datasets.Alignment, ...]]
+    alignments: typing.List[lib.utils.Tuples[lib.datasets.Alignment]]
 
     other_metadata: typing.List[typing.Dict[typing.Union[str, int], typing.Any]]
 
@@ -482,7 +482,7 @@ def make_span_batch(
     for i in range(length):
         script_slice = spans[i].script_slice
         span = docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
-        assert docs[i] is not None, "Invalid `spacy.tokens.Span` selected."
+        assert span is not None, "Invalid `spacy.tokens.Span` selected."
         docs[i] = span.as_doc()
 
     char_to_word = [_get_char_to_word(d) for d in docs]
@@ -493,7 +493,7 @@ def make_span_batch(
         signals_: typing.List[numpy.ndarray] = list(pool.map(_span_read_audio_slice, spans))
     loudness = [_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)]
     signals = [_pad_and_trim_signal(s) for s in signals_]
-    spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
+    spectrogram, spectrogram_mask = _signals_to_spectrograms(signals, aligned=True)
     speed = [_random_speed_annotations(s) for s in spans]
 
     stack = functools.partial(stack_and_pad_tensors, dim=1)

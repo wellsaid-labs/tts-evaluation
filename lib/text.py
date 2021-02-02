@@ -44,8 +44,8 @@ def _line_grapheme_to_phoneme(
     flags: typing.List[str] = ["--ipa=3", "-q", "-ven-us", "--stdin", "-m"],
     separator: str = "",
     service_separator: str = "_",
-    batch_separator_grapheme: str = "<break> [[_::_::_::_::_::_::_::_::_::_::]] <break>",
-    batch_separator_phoneme: str = "\n _________\n",
+    grapheme_batch_separator: str = "<break> [[_::_::_::_::_::_::_::_::_::_::]] <break>",
+    phoneme_batch_separator: str = "\n _________\n",
     restricted: typing.List[str] = ["[[", "]]", "<", ">"],
 ) -> typing.List[str]:
     """
@@ -58,13 +58,14 @@ def _line_grapheme_to_phoneme(
         flags: The list of flags to add to the service.
         separator: The separator used to separate phonemes.
         service_separator: The separator used by the service between phonemes.
-        batch_separator_grapheme: The seperator used deliminate grapheme sequences.
-        batch_separator_phoneme: The seperator used deliminate phoneme sequences.
+        grapheme_batch_separator: The seperator used deliminate grapheme sequences.
+        phoneme_batch_separator: The seperator used deliminate phoneme sequences.
     """
-    message = "Special character is not allowed."
-    assert all([batch_separator_grapheme not in g for g in graphemes]), message
+    template = "Special character '%s' is not allowed."
+    condition = all([grapheme_batch_separator not in g for g in graphemes])
+    assert condition, template % grapheme_batch_separator
     for substring in restricted:
-        assert all([substring not in g for g in graphemes]), message
+        assert all([substring not in g for g in graphemes]), template % substring
 
     # NOTE: `espeak` can be inconsistent in it's handling of outer spacing; therefore, it's
     # recommended both the `espeak` output and input is trimmed.
@@ -75,13 +76,13 @@ def _line_grapheme_to_phoneme(
     # "--For this community," as a flag.
     inputs = [g for g, _, _ in stripped if len(g) > 0]
     if len(inputs) > 0:
-        input_ = batch_separator_grapheme.join(inputs).encode()
+        input_ = grapheme_batch_separator.join(inputs).encode()
         output = subprocess.check_output([service] + flags, input=input_).decode("utf-8")
 
         message = "The separator is not unique."
         assert not separator or separator == service_separator or separator not in output, message
 
-        phonemes = output.split(batch_separator_phoneme)
+        phonemes = output.split(phoneme_batch_separator)
         assert len(inputs) == len(phonemes)
     phonemes = [phonemes.pop(0) if len(g) > 0 else g for g, _, _ in stripped]  # type: ignore
     assert len(phonemes) == len(graphemes)

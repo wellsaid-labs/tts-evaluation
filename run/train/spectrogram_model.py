@@ -116,7 +116,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
             # NOTE: Batch size parameters set after experimentation on a 2 Px100 GPU.
             train_batch_size=train_batch_size,
             dev_batch_size=dev_batch_size,
-            num_workers=8,
+            num_workers=4,
         ),
         _DistributedMetrics.log: HParams(num_frame_channels=run._config.NUM_FRAME_CHANNELS),
         # SOURCE (Tacotron 2):
@@ -194,7 +194,7 @@ class _State:
         model = lib.spectrogram_model.SpectrogramModel(
             input_encoder.grapheme_encoder.vocab_size,
             input_encoder.speaker_encoder.vocab_size,
-        ).to(device)
+        ).to(device, non_blocking=True)
         comet.set_model_graph(str(model))
         label = get_model_label("num_parameters", Cadence.STATIC)
         comet.log_parameter(label, get_total_parameters(model))
@@ -328,6 +328,7 @@ class _DataLoader(collections.abc.Iterable):
                 make_span_batch, input_encoder=input_encoder, max_parallel=max_parallel, nlp=nlp
             ),
             multiprocessing_context="fork",
+            prefetch_factor=4,
             **kwargs,
         )
         gc.freeze()  # NOTE: This has global side-effects.

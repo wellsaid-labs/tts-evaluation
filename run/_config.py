@@ -454,9 +454,8 @@ def _handle_passage(passage: datasets.Passage) -> datasets.Passage:
     """Update and/or check `passage`."""
     if passage.speaker in set([datasets.JUDY_BIEBER, datasets.MARY_ANN, datasets.ELIZABETH_KLETT]):
         script = lib.text.normalize_vo_script(passage.script)
-        passage = lib.datasets.update_conventional_passage_script(passage, script)
-    else:
-        assert lib.text.is_normalized_vo_script(passage.script)
+        return lib.datasets.update_conventional_passage_script(passage, script)
+    assert lib.text.is_normalized_vo_script(passage.script)
     return passage
 
 
@@ -472,8 +471,9 @@ def get_dataset(
     """
     logger.info("Loading dataset...")
     with multiprocessing.pool.ThreadPool() as pool:
-        lambda_ = lambda l: [_handle_passage(p) for p in l if _include_passage(p)]
-        items = list(pool.map(lambda i: (i[0], lambda_(i[1](path))), datasets.items()))
+        handle_passages = lambda l: [_handle_passage(p) for p in l if _include_passage(p)]
+        load_data = lambda i: (i[0], handle_passages(i[1](path)))
+        items = list(pool.map(load_data, datasets.items()))
     dataset = {k: v for k, v in items}
     dataset = run._utils.normalize_audio(dataset)
     return dataset
@@ -514,6 +514,9 @@ def _include_span(span: datasets.Span):
     TODO: The `span` is still cut-off sometimes, and it's difficult to detect if it is. Instead
     of cutting `span`s via `Alignment`s, we should cut `span`s based on pausing.
     """
+    if "<" in span.script or ">" in span.script:
+        return False
+
     # NOTE: Filter out any passage(s) with digits because the pronunciation is fundamentally
     # ambigious, and it's much easier to handle this case with text normalization.
     # NOTE: See performance statistics here: https://stackoverflow.com/a/31861306/4804936
