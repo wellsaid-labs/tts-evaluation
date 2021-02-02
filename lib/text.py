@@ -1,15 +1,13 @@
+import functools
 import itertools
 import json
 import logging
-import os
 import pathlib
 import re
 import string
 import subprocess
 import typing
 from collections import defaultdict
-from functools import lru_cache, partial
-from multiprocessing.pool import ThreadPool
 from typing import get_args
 
 import ftfy
@@ -41,81 +39,111 @@ logger = logging.getLogger(__name__)
 
 
 def _line_grapheme_to_phoneme(
-    grapheme: str,
+    graphemes: typing.List[str],
     service: typing.Literal["espeak"] = "espeak",
-    flags: typing.List[str] = ["--ipa=3", "-q", "-ven-us", "--stdin"],
+    flags: typing.List[str] = ["--ipa=3", "-q", "-ven-us", "--stdin", "-m"],
     separator: str = "",
     service_separator: str = "_",
-) -> str:
+    batch_separator_grapheme: str = "<break> [[_::_::_::_::_::_::_::_::_::_::]] <break>",
+    batch_separator_phoneme: str = "\n _________\n",
+    restricted: typing.List[str] = ["[[", "]]", "<", ">"],
+) -> typing.List[str]:
     """
     TODO: Support `espeak-ng` `service`, if needed.
+    TODO: Run phonetic processing on the batched `output` instead of the splits.
 
     Args:
-        grapheme
+        graphemes: Batch of grapheme sequences.
         service: The service used to compute phonemes.
         flags: The list of flags to add to the service.
         separator: The separator used to separate phonemes.
         service_separator: The separator used by the service between phonemes.
+        batch_separator_grapheme: The seperator used deliminate grapheme sequences.
+        batch_separator_phoneme: The seperator used deliminate phoneme sequences.
     """
+    message = "Special character is not allowed."
+    assert all([batch_separator_grapheme not in g for g in graphemes]), message
+    for substring in restricted:
+        assert all([substring not in g for g in graphemes]), message
+
     # NOTE: `espeak` can be inconsistent in it's handling of outer spacing; therefore, it's
     # recommended both the `espeak` output and input is trimmed.
-    grapheme, stripped_left, stripped_right = strip(grapheme)
+    stripped = [strip(g) for g in graphemes]
 
     # NOTE: The `--sep` flag is not supported by older versions of `espeak`.
     # NOTE: We recommend using `--stdin` otherwise `espeak` might misinterpret an input like
     # "--For this community," as a flag.
-    phoneme = subprocess.check_output([service] + flags, input=grapheme.encode()).decode("utf-8")
-    assert (
-        not separator or separator == service_separator or separator not in phoneme
-    ), "The separator is not unique."
+    inputs = [g for g, _, _ in stripped if len(g) > 0]
+    if len(inputs) > 0:
+        input_ = batch_separator_grapheme.join(inputs).encode()
+        output = subprocess.check_output([service] + flags, input=input_).decode("utf-8")
 
-    phoneme = " ".join([s.strip() for s in phoneme.strip().split("\n")])
+        message = "The separator is not unique."
+        assert not separator or separator == service_separator or separator not in output, message
 
-    if len(re.findall(r"\(.+?\)", phoneme)) > 0:
-        logger.warning(
-            '`%s` switched languages for phrase "%s" and outputed "%s".', service, grapheme, phoneme
-        )
+        phonemes = output.split(batch_separator_phoneme)
+        assert len(inputs) == len(phonemes)
+    phonemes = [phonemes.pop(0) if len(g) > 0 else g for g, _, _ in stripped]  # type: ignore
+    assert len(phonemes) == len(graphemes)
 
-    # NOTE: Remove language flags like `(en-us)` or `(fr)` that might be included for text like:
-    # Grapheme: “MON DIEU”
-    # Phoneme: “m_ˈɑː_n (fr)_d_j_ˈø_(en-us)”
-    phoneme = re.sub(r"\(.+?\)", "", phoneme)
+    return_ = []
+    for (grapheme, stripped_left, stripped_right), phoneme in zip(stripped, phonemes):
+        phoneme = " ".join([s.strip() for s in phoneme.strip().split("\n")])
 
-    # NOTE: Replace multiple separators in a row without any phonemes in between with one separator.
-    phoneme = re.sub(r"%s+" % re.escape(service_separator), service_separator, phoneme)
-    phoneme = re.sub(r"%s+\s+" % re.escape(service_separator), " ", phoneme)
-    phoneme = re.sub(r"\s+%s+" % re.escape(service_separator), " ", phoneme)
-    phoneme = phoneme.strip()
+        if len(re.findall(r"\(.+?\)", phoneme)) > 0:
+            message = '`%s` switched languages for phrase "%s" and outputed "%s".'
+            logger.warning(message, service, grapheme, phoneme)
 
-    phoneme = stripped_left + phoneme + stripped_right
-    phoneme = phoneme.replace(service_separator, separator)
+        # NOTE: Remove language flags like `(en-us)` or `(fr)` that might be included for text like:
+        # Grapheme: “MON DIEU”
+        # Phoneme: “m_ˈɑː_n (fr)_d_j_ˈø_(en-us)”
+        phoneme = re.sub(r"\(.+?\)", "", phoneme)
 
-    # NOTE: Add separators around stress tokens and words.
-    phoneme = phoneme.replace(" ", separator + " " + separator)
-    phoneme = phoneme.replace("ˈ", separator + "ˈ" + separator)
-    phoneme = phoneme.replace("ˌ", separator + "ˌ" + separator)
-    phoneme = (
-        re.sub(r"%s+" % re.escape(separator), separator, phoneme) if len(separator) > 0 else phoneme
-    )
-    return phoneme.strip(separator)
+        # NOTE: Replace multiple separators in a row without any phonemes in between with one
+        # separator.
+        phoneme = re.sub(r"%s+" % re.escape(service_separator), service_separator, phoneme)
+        phoneme = re.sub(r"%s+\s+" % re.escape(service_separator), " ", phoneme)
+        phoneme = re.sub(r"\s+%s+" % re.escape(service_separator), " ", phoneme)
+        phoneme = phoneme.strip()
+
+        phoneme = stripped_left + phoneme + stripped_right
+        phoneme = phoneme.replace(service_separator, separator)
+
+        # NOTE: Add separators around stress tokens and words.
+        phoneme = phoneme.replace(" ", separator + " " + separator)
+        phoneme = phoneme.replace("ˈ", separator + "ˈ" + separator)
+        phoneme = phoneme.replace("ˌ", separator + "ˌ" + separator)
+        if len(separator) > 0:
+            phoneme = re.sub(r"%s+" % re.escape(separator), separator, phoneme)
+
+        return_.append(phoneme.strip(separator))
+    return return_
 
 
-def _multiline_grapheme_to_phoneme(grapheme: str, separator: str = "", **kwargs) -> str:
+def _multiline_grapheme_to_phoneme(
+    graphemes: typing.List[str], separator: str = "", **kwargs
+) -> typing.List[str]:
     # NOTE: `grapheme` is split on new lines because `espeak` is inconsistent in it's handling of
     # new lines.
-    splits = grapheme.split("\n")
-    split = [_line_grapheme_to_phoneme(s, separator=separator, **kwargs) for s in splits]
-    return_ = (separator + "\n" + separator).join(split)
-    # NOTE: We need to remove double separators from when there are consecutive new lines like
-    # "\n\n\n", for example.
-    if len(separator) > 0:
-        return_ = re.sub(r"%s+" % re.escape(separator), separator, return_).strip(separator)
+    splits = [g.split("\n") for g in graphemes]
+    phonemes = _line_grapheme_to_phoneme(lib.utils.flatten(splits), separator=separator, **kwargs)
+    return_ = []
+    for split in splits:
+        concat = (separator + "\n" + separator).join(phonemes[: len(split)])
+        phonemes = phonemes[len(split) :]
+        # NOTE: We need to remove double separators from when there are consecutive new lines like
+        # "\n\n\n", for example.
+        if len(separator) > 0:
+            concat = re.sub(r"%s+" % re.escape(separator), separator, concat).strip(separator)
+        return_.append(concat)
     return return_
 
 
 def _grapheme_to_phoneme_with_punctuation(
-    doc: spacy.tokens.Doc, separator: str = "", **kwargs
-) -> str:
+    *graphemes: typing.Union[str, spacy.tokens.Doc, spacy.tokens.span.Span],
+    separator: str = "",
+    **kwargs,
+) -> typing.List[str]:
     """Convert grapheme to phoneme while preserving punctuation.
 
     Args:
@@ -125,54 +153,43 @@ def _grapheme_to_phoneme_with_punctuation(
 
     Returns: Phonemes with the original punctuation (as defined by spaCy).
     """
-    assert not separator or all(
-        separator not in t.text for t in doc
-    ), "The separator is not unique."
-
-    # NOTE: `is_punct` is not contextual while `pos == spacy.symbols.PUNCT` is, see:
-    # https://github.com/explosion/spaCy/issues/998. This enables us to phonemize cases like:
-    # - "form of non-linguistic representations"  (ADJ)
-    # - "The psychopaths' empathic reaction"  (PART)
-    # - "judgement, name & face memory" (CCONJ)
-    # - "to public interest/national security" (SYM)
-    # - "spectacular, grand // desco da" (SYM)
-    return_ = []
-    iterator = itertools.groupby(doc, lambda t: t.pos == spacy.symbols.PUNCT)  # type: ignore
-    for is_punct, group in iterator:
-        phrase = "".join([t.text_with_ws for t in group])
-        is_alpha_numeric = any(c.isalpha() or c.isdigit() for c in phrase)
-        if is_punct and is_alpha_numeric:
-            logger.debug("Punctuation contains alphanumeric characters: %s" % phrase)
-        if is_punct and not is_alpha_numeric:
-            return_.extend(list(phrase))
-        else:
-            return_.append(_multiline_grapheme_to_phoneme(phrase, separator=separator, **kwargs))
-    return separator.join([t for t in return_ if len(t) > 0])
-
-
-def _grapheme_to_phoneme(
-    *graphemes: typing.Union[str, spacy.tokens.Doc, spacy.tokens.span.Span],
-    chunk_size: int = 4,
-    max_parallel: int = typing.cast(int, os.cpu_count()),
-    is_tqdm: bool = True,
-    **kwargs,
-) -> typing.Iterator[str]:
     # NOTE: Create a `spacy.tokens.Doc` for every `str`.
     docs = list(graphemes)
     if any(isinstance(d, str) for d in docs):
-        items = {i: d for i, d in enumerate(docs) if isinstance(d, str)}
         nlp = load_en_core_web_md(disable=("parser", "ner"))
-        for i, doc in zip(items.keys(), nlp.pipe(items.values())):
-            docs[i] = doc
+        items = list(nlp.pipe([d for d in docs if isinstance(d, str)]))
+        docs = [(items.pop(0) if isinstance(d, str) else d) for d in docs]
+    docs = typing.cast(typing.Union[spacy.tokens.Doc, spacy.tokens.span.Span], docs)
 
-    partial_ = partial(_grapheme_to_phoneme_with_punctuation, **kwargs)
-    if len(docs) < chunk_size:
-        yield from (partial_(d) for d in docs)
-    else:
-        logger.debug("Getting phonemes for %d graphemes...", len(docs))
-        with ThreadPool(min(max_parallel, len(docs))) as pool:
-            iterator = pool.imap(partial_, docs, chunksize=chunk_size)
-            yield from tqdm(iterator, total=len(docs)) if is_tqdm else iterator
+    splits = []
+    for doc in docs:
+        message = "The separator is not unique."
+        assert not separator or all(separator not in t.text for t in doc), message
+
+        # NOTE: `is_punct` is not contextual while `pos == spacy.symbols.PUNCT` is, see:
+        # https://github.com/explosion/spaCy/issues/998. This enables us to phonemize cases like:
+        # - "form of non-linguistic representations"  (ADJ)
+        # - "The psychopaths' empathic reaction"  (PART)
+        # - "judgement, name & face memory" (CCONJ)
+        # - "to public interest/national security" (SYM)
+        # - "spectacular, grand // desco da" (SYM)
+        items = []
+        iterator = itertools.groupby(doc, lambda t: t.pos == spacy.symbols.PUNCT)  # type: ignore
+        for is_punct, group in iterator:
+            phrase = "".join([t.text_with_ws for t in group])
+            is_alpha_numeric = any(c.isalpha() or c.isdigit() for c in phrase)
+            if is_punct and is_alpha_numeric:
+                logger.debug("Punctuation contains alphanumeric characters: %s" % phrase)
+            items.append(tuple(phrase) if is_punct and not is_alpha_numeric else phrase)
+        splits.append(items)
+
+    inputs = [i for i in lib.utils.flatten(splits) if isinstance(i, str)]
+    phonemes = _multiline_grapheme_to_phoneme(inputs, separator=separator, **kwargs)
+    return_ = []
+    for items in splits:
+        items_ = [(phonemes.pop(0) if isinstance(i, str) else list(i)) for i in items]
+        return_.append(separator.join([t for t in lib.utils.flatten(items_) if len(t) > 0]))
+    return return_
 
 
 @hparams.configurable
@@ -195,11 +212,11 @@ def grapheme_to_phoneme(graphemes, **kwargs):
 
     Args:
         graphemes: The graphemes to convert to phonemes.
-        **kwargs: Key-word arguments passed to `_grapheme_to_phoneme`.
+        **kwargs: Key-word arguments passed to `_grapheme_to_phoneme_with_punctuation`.
     """
     if isinstance(graphemes, (list, tuple)):
-        return list(_grapheme_to_phoneme(*tuple(graphemes), **kwargs))
-    return tuple(_grapheme_to_phoneme(graphemes, **kwargs))[0]
+        return _grapheme_to_phoneme_with_punctuation(*tuple(graphemes), **kwargs)
+    return tuple(_grapheme_to_phoneme_with_punctuation(graphemes, **kwargs))[0]
 
 
 """ Learn more about pronunciation dictionarys:
@@ -370,7 +387,7 @@ def _assert_valid_amepd_word(word):
     ), "Words may only be defined with letter(s) or apostrophe(s)."
 
 
-@lru_cache(maxsize=None)
+@functools.lru_cache(maxsize=None)
 def _load_amepd(
     path: pathlib.Path = lib.environment.ROOT_PATH / "third_party" / "amepd" / "cmudict",
     comment_delimiter: str = ";;;",
@@ -637,19 +654,19 @@ def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:
     return text
 
 
-@lru_cache(maxsize=None)
+@functools.lru_cache(maxsize=None)
 def _nltk_download(dependency):
     """ Run `nltk.download` but only once per process. """
     nltk.download(dependency)
 
 
-@lru_cache(maxsize=None)
+@functools.lru_cache(maxsize=None)
 def load_en_core_web_md(*args, **kwargs) -> spacy_en.English:
     """ Load and cache in memory a spaCy `spacy_en.English` object. """
     return en_core_web_md.load(*args, **kwargs)
 
 
-@lru_cache(maxsize=None)
+@functools.lru_cache(maxsize=None)
 def load_en_english(*args, **kwargs) -> spacy_en.English:
     """ Load and cache in memory a spaCy `spacy_en.English` object. """
     return spacy_en.English(*args, **kwargs)

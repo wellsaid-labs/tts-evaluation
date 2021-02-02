@@ -6,7 +6,26 @@ from unittest import mock
 import pytest
 
 import lib
-from lib.text import _multiline_grapheme_to_phoneme, grapheme_to_phoneme
+from lib.text import _line_grapheme_to_phoneme, _multiline_grapheme_to_phoneme, grapheme_to_phoneme
+
+
+def test__line_grapheme_to_phoneme():
+    """ Test `_line_grapheme_to_phoneme` respects white spaces on the edges. """
+    in_ = [
+        "  Hello World  ",
+        "Hello World  ",
+        "  Hello World",
+        " \n Hello World \n ",
+        " \n\n Hello World \n\n ",
+    ]
+    out = [
+        " _ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _ ",
+        "h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _ ",
+        " _ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d",
+        " _\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_ ",
+        " _\n\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n\n_ ",
+    ]
+    assert _line_grapheme_to_phoneme(in_, separator="_") == out
 
 
 def test__multiline_grapheme_to_phoneme():
@@ -114,14 +133,13 @@ _ _ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n""",
         "h_iː_ _p_ˈ_oʊ_z_d_ _ð_ə_ _k_ˈ_ʌ_p_əl_ _b_ˈ_oːɹ_d_s_t_ˈ_ɪ_f_ _ɪ_n_ _f_ɹ_ˈ_ʌ_n_t_ _ə_v_ə_ "
         "_p_l_ˈ_eɪ_n_ _h_ˈ_aʊ_s_\n_\n_ð_ə_ _m_ˈ_æ_n",
     ]
-    for grapheme, phoneme in zip(in_, out):
-        assert _multiline_grapheme_to_phoneme(grapheme, separator="_") == phoneme
+    assert _multiline_grapheme_to_phoneme(in_, separator="_") == out
 
 
 def test__multiline_grapheme_to_phoneme__special_bash_character():
     """ Test `_multiline_grapheme_to_phoneme` handles double quotes, a bash special character. """
-    in_ = '"It is commonly argued that the notion of'
-    out = "ɪ_t_ _ɪ_z_ _k_ˈ_ɑː_m_ə_n_l_i_ _ˈ_ɑːɹ_ɡ_j_uː_d_ _ð_æ_t_ð_ə_ _n_ˈ_oʊ_ʃ_ə_n_ _ʌ_v"
+    in_ = ['"It is commonly argued that the notion of']
+    out = ["ɪ_t_ _ɪ_z_ _k_ˈ_ɑː_m_ə_n_l_i_ _ˈ_ɑːɹ_ɡ_j_uː_d_ _ð_æ_t_ð_ə_ _n_ˈ_oʊ_ʃ_ə_n_ _ʌ_v"]
     assert _multiline_grapheme_to_phoneme(in_, separator="_") == out
 
 
@@ -141,25 +159,26 @@ def test__multiline_grapheme_to_phoneme__stripping():
         " _\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_ ",
         " _\n_\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_\n_ ",
     ]
-    for grapheme, phoneme in zip(in_, out):
-        assert _multiline_grapheme_to_phoneme(grapheme, separator="_") == phoneme
+    assert _multiline_grapheme_to_phoneme(in_, separator="_") == out
 
 
 def test__multiline_grapheme_to_phoneme__service_separator():
     """ Test `_multiline_grapheme_to_phoneme` works when `separator == service_separator`. """
-    assert _multiline_grapheme_to_phoneme("Hello World", separator="_") == "h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d"
+    assert _multiline_grapheme_to_phoneme(["Hello World"], separator="_") == [
+        "h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d"
+    ]
 
 
 def test__multiline_grapheme_to_phoneme__unique_separator():
     """ Test `_multiline_grapheme_to_phoneme` errors if `separator` is not unique. """
     with pytest.raises(AssertionError):
-        _multiline_grapheme_to_phoneme("Hello World", separator="ə")
+        _multiline_grapheme_to_phoneme(["Hello World"], separator="ə")
 
 
 @mock.patch("lib.text.logger.warning")
 def test__multiline_grapheme_to_phoneme__language_switching(mock_warning):
     """ Test `_multiline_grapheme_to_phoneme` logs a warning if the language is switched. """
-    assert _multiline_grapheme_to_phoneme("mon dieu", separator="|") == "m|ˈ|ɑː|n| |d|j|ˈ|ø"
+    assert _multiline_grapheme_to_phoneme(["mon dieu"], separator="|") == ["m|ˈ|ɑː|n| |d|j|ˈ|ø"]
     assert mock_warning.called == 1
 
 
@@ -172,14 +191,14 @@ def test__multiline_grapheme_to_phoneme__long_number():
     Learn more here: https://github.com/wellsaid-labs/Text-to-Speech/issues/299
     """
     in_ = "3.141592653589793238462643383279502884197169399375105820974944592"
-    assert _multiline_grapheme_to_phoneme(in_, separator="|") == (
+    assert _multiline_grapheme_to_phoneme([in_], separator="|") == [
         "θ|ɹ|ˈ|iː| |p|ɔɪ|n|t| |w|ˈ|ʌ|n| |f|ˈ|oːɹ| |w|ˈ|ʌ|n| |f|ˈ|aɪ|v| |n|ˈ|aɪ|n| |t|ˈ|uː| "
         "|s|ˈ|ɪ|k|s| |f|ˈ|aɪ|v| |θ|ɹ|ˈ|iː| |f|ˈ|aɪ|v| |ˈ|eɪ|t| |n|ˈ|aɪ|n| |s|ˈ|ɛ|v|ə|n| "
         "|n|ˈ|aɪ|n| |θ|ɹ|ˈ|iː| |t|ˈ|uː| |θ|ɹ|ˈ|iː| |ˈ|eɪ|t| |f|ˈ|oːɹ| |s|ˈ|ɪ|k|s| |t|ˈ|uː| "
         "|s|ˈ|ɪ|k|s| |f|ˈ|oːɹ| |θ|ɹ|ˈ|iː| |θ|ɹ|ˈ|iː| |ˈ|eɪ|t| |θ|ɹ|ˈ|iː| |t|ˈ|uː| "
         "|s|ˈ|ɛ|v|ə|n| |n|ˈ|aɪ|n| |f|ˈ|aɪ|v| |z|ˈ|iə|ɹ|oʊ| |t|ˈ|uː| |ˈ|eɪ|t| |ˈ|eɪ|t| "
         "|f|ˈ|oːɹ| |w|ˈ|ʌ|n| |n|ˈ|aɪ"
-    )
+    ]
 
 
 def test_grapheme_to_phoneme():
@@ -259,7 +278,7 @@ def test_grapheme_to_phoneme__spacy_failure_cases():
         "Mesopotamian lexicon: an accumulation of good form or breeding, auspiciousness, "
         "vigor/vitality, and, specifically, sexual allure or charm – all of which are not "
         "only ascribed in text, but equally to be read in imagery.",
-        "This is a test {}:\"><?,./;'[]\\q234567890-=!@##$%%^&*()+",
+        "This is a test {}:\"?,./;'[]\\q234567890-=!@##$%%^&*()+",
     ]
     out = [
         "d_ˈ_ɑː_t_ _s_æ_m_ˈ_ɪ_ɹ_ _ˈ_ɛ_m_ _b_ˈ_ɑː_b_uː_ _ɪ_z_ _ɐ_ _p_ɹ_ə_f_ˈ_ɛ_s_ɚ_ _h_ˌ_uː_ "
@@ -270,7 +289,7 @@ def test_grapheme_to_phoneme__spacy_failure_cases():
         "_h_ˈ_ɛ_l_p_ _f_ɔː_ɹ_ _ˌ_ʌ_s_ _b_ˌ_ʌ_t_ _h_ˌ_æ_v_ɪ_ŋ_ _f_ˈ_eɪ_θ_ _ˈ_aɪ_ "
         "_ð_ə_ _j_ˈ_uː_n_iə_n_._ _θ_ˈ_eɪ_l_ _w_ˈ_ɪ_n_ _ð_ə_ _d_ˈ_eɪ_,_ _s_ˈ_iː_ _ɪ_f_ _ð_eɪ_ "
         "_d_ˈ_ʌ_n_ɑː_t_!",
-        "w_ˈ_ɪɹ_ _ɡ_ˈ_ɛ_t_n_ _ɐ_ _l_ˈ_ɑː_ŋ_ _w_ˈ_eɪ_ _f_ɹ_ʌ_m_ _h_ˈ_oʊ_m_._ _æ_n_d_ _s_ˈ_iː_ _"
+        "w_ɪɹ_ _ɡ_ˈ_ɛ_t_n_ _ɐ_ _l_ˈ_ɑː_ŋ_ _w_ˈ_eɪ_ _f_ɹ_ʌ_m_ _h_ˈ_oʊ_m_._ _æ_n_d_ _s_ˈ_iː_ _"
         "h_ˌ_aʊ_ _ð_ə_ _k_l_ˈ_aʊ_d_z_ _ɑːɹ_ _ɹ_ˈ_oʊ_l_ɪ_ŋ_ _dʒ_ˈ_ʌ_s_t_ _ə_b_ˈ_ʌ_v_ _ˌ_ʌ_s_,_ "
         "_ɹ_ɪ_m_ˈ_ɑːɹ_k_t_ _ð_ə_ _b_ˈ_ɔɪ_,_ _h_ˌ_uː_ _w_ʌ_z_ _ˈ_ɔː_l_m_oʊ_s_t_ _"
         "æ_z_ _ʌ_n_ˈ_iː_z_i_ _æ_z_ _k_ˈ_æ_p_t_ɪ_n_ _b_ˈ_ɪ_l_.",
@@ -283,17 +302,17 @@ def test_grapheme_to_phoneme__spacy_failure_cases():
         "_ɪ_m_ˈ_ɜː_dʒ_ᵻ_z_ _ɪ_n_ð_ə_ _m_ˌ_ɛ_s_ə_p_ə_t_ˈ_eɪ_m_iə_n_ _l_ˈ_ɛ_k_s_ɪ_k_ə_n_:_ "
         "_ɐ_n_ _ɐ_k_j_ˌ_uː_m_j_ʊ_l_ˈ_eɪ_ʃ_ə_n_ _ʌ_v_ _ɡ_ˈ_ʊ_d_ _f_ˈ_ɔːɹ_m_ _ɔːɹ_ "
         "_b_ɹ_ˈ_iː_d_ɪ_ŋ_,_ "
-        "_ɔː_s_p_ˈ_ɪ_ʃ_ə_s_n_ə_s_,_ _v_ˈ_ɪ_ɡ_ɚ_ _s_l_ˈ_æ_ʃ_ _v_aɪ_t_ˈ_æ_l_ɪ_ɾ_i_,_ _ˈ_æ_n_d_,_ "
+        "_ɔː_s_p_ˈ_ɪ_ʃ_ə_s_n_ə_s_,_ _v_ˈ_ɪ_ɡ_ɚ_ _s_l_ˈ_æ_ʃ_ _v_aɪ_t_ˈ_æ_l_ɪ_ɾ_i_,_ _æ_n_d_,_ "
         "_s_p_ə_s_ˈ_ɪ_f_ɪ_k_l_i_,_ _s_ˈ_ɛ_k_ʃ_uː_əl_ _ɐ_l_ˈ_ʊɹ_ _ɔːɹ_ _tʃ_ˈ_ɑːɹ_m_ "
         "_–_ _ˈ_ɔː_l_ _ʌ_v_w_ˈ_ɪ_tʃ_ _ɑːɹ_ _n_ˌ_ɑː_t_ _ˈ_oʊ_n_l_i_ _ɐ_s_k_ɹ_ˈ_aɪ_b_d_ _ɪ_n_ "
         "_t_ˈ_ɛ_k_s_t_,_ _b_ˌ_ʌ_t_ _ˈ_iː_k_w_əl_i_ _t_ə_b_i_ _ɹ_ˈ_ɛ_d_ _ɪ_n_ _ˈ_ɪ_m_ɪ_dʒ_ɹ_i_.",
-        'ð_ɪ_s_ _ɪ_z_ _ɐ_ _t_ˈ_ɛ_s_t_ _{_}_:_"_d_ˈ_ɑː_t_s_l_æ_ʃ_ _b_ˈ_æ_k_s_l_æ_ʃ_ _k_j_ˈ_uː_ '
+        'ð_ɪ_s_ _ɪ_z_ _ɐ_ _t_ˈ_ɛ_s_t_ _{_}_:_"_?_,_d_ˈ_ɑː_t_s_l_æ_ʃ_ _b_ˈ_æ_k_s_l_æ_ʃ_ _k_j_ˈ_uː_ '
         "_t_ˈ_uː_h_ˈ_ʌ_n_d_ɹ_ə_d_ _θ_ˈ_ɜː_ɾ_i_f_ˈ_oːɹ_ _m_ˈ_ɪ_l_iə_n_ _f_ˈ_aɪ_v_h_ˈ_ʌ_n_d_ɹ_ə_d_"
         " _s_ˈ_ɪ_k_s_t_i_s_ˈ_ɛ_v_ə_n_ _θ_ˈ_aʊ_z_ə_n_d_ _ˈ_eɪ_t_h_ˈ_ʌ_n_d_ɹ_ə_d_ _n_ˈ_aɪ_n_t_i_"
         " _ˌ_iː_k_w_əl_z_ˌ_ɛ_k_s_k_l_ə_m_ˌ_eɪ_ʃ_ə_n_ˌ_æ_t_h_ɐ_ʃ_h_ˌ_æ_ʃ_d_ə_l_ɚ_p_ɚ_s_ˈ_ɛ_n_t_p"
         "_ɚ_s_ˈ_ɛ_n_t_ɐ_n_d_ˌ_æ_s_t_ɚ_ɹ_ˌ_ɪ_s_k_p_l_ʌ_s",
     ]
-    assert grapheme_to_phoneme(in_, separator="_", chunk_size=4) == out
+    assert grapheme_to_phoneme(in_, separator="_") == out
 
 
 def test__load_amepd():
