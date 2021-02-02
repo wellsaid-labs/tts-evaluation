@@ -112,7 +112,8 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
     weighted_variance = ((indicies - weighted_mean.unsqueeze(dim=dim)) ** 2 * tensor).sum(dim=dim)
     weighted_standard_deviation = weighted_variance ** 0.5
 
-    assert not torch.isnan(weighted_standard_deviation.min()), "NaN detected."
+    numel = weighted_standard_deviation.numel()
+    assert numel == 0 or not torch.isnan(weighted_standard_deviation.min()), "NaN detected."
 
     return weighted_standard_deviation
 
@@ -398,22 +399,16 @@ class MappedIterator(typing.Generic[_MappedIteratorItem]):
         self.iterator = iterator
         self.iter = None
         self.offset = 0
-        self.storage = []
 
     def __getitem__(self, index) -> _MappedIteratorItem:
         assert index >= self.offset, "Items may only be accessed once."
         self.iter = iter(self.iterator) if self.iter is None else self.iter
-
-        if index - self.offset >= len(self.storage):
-            for _ in range(index - self.offset + 1):
-                call_once(logger.info, "MappedIterator: Loading first item...")
-                self.storage.append(next(self.iter))
-                call_once(logger.info, "MappedIterator: Loaded first item.")
-
-        _return = self.storage[index - self.offset]
-        self.storage = self.storage[index - self.offset + 1 :]
+        for _ in range(index - self.offset):
+            call_once(logger.info, "MappedIterator: Loading first item...")
+            next(self.iter)
+            call_once(logger.info, "MappedIterator: Loaded first item.")
         self.offset = index + 1
-        return _return
+        return next(self.iter)
 
 
 _TuplesVar = typing.TypeVar("_TuplesVar")

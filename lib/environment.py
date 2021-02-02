@@ -108,9 +108,10 @@ class _ColoredFormatter(logging.Formatter):
 
     def __init__(self, id_: int):
         super().__init__()
+        process_id = "" if id_ == os.getpid() else "[%(process)d]"
         logging.Formatter.__init__(
             self,
-            f"{AnsiCodes.DARK_GRAY}[%(asctime)s][{AnsiCodes.RESET_ALL}"
+            f"{AnsiCodes.DARK_GRAY}{process_id}[%(asctime)s][{AnsiCodes.RESET_ALL}"
             f"{self.ID_COLOR_ROTATION[id_ % len(self.ID_COLOR_ROTATION)]}{id_}{AnsiCodes.RESET_ALL}"
             f"{AnsiCodes.DARK_GRAY}][%(name)s][%(levelname)s]{AnsiCodes.RESET_ALL} %(message)s",
         )

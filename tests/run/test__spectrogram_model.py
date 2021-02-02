@@ -202,6 +202,15 @@ def test_get_num_skipped():
     assert num_skips.tolist() == [0.0, 1.0, 0.0, 1.0]
 
 
+def test_get_num_skipped__zero_elements():
+    """ Test `_spectrogram_model.get_num_skipped` handles zero elements correctly. """
+    assert _spectrogram_model.get_num_skipped(
+        torch.empty(1024, 0, 1024),
+        torch.empty(1024, 0, dtype=torch.bool),
+        torch.empty(1024, 0, dtype=torch.bool),
+    ).shape == (0,)
+
+
 def _get_db_spectrogram(signal, **kwargs) -> torch.Tensor:
     spectrogram = torch.stft(signal.view(1, -1), **kwargs)
     spectrogram = torch.norm(spectrogram.double(), dim=-1)

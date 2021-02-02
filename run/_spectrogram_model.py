@@ -539,6 +539,9 @@ def get_num_skipped(
     Returns:
         torch.FloatTensor [batch_size]
     """
+    if alignments.numel() == 0:
+        return torch.empty(alignments.shape[1], dtype=torch.float, device=alignments.device)
+
     indices = alignments.max(dim=2, keepdim=True).indices
     device = alignments.device
     one = torch.ones(*alignments.shape, device=device, dtype=torch.long)

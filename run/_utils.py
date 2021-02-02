@@ -343,6 +343,7 @@ class CometMLExperiment:
         self._last_epoch_step = self.curr_step
         self._last_epoch_time = time.time()
         if self._first_epoch_time is None and self._first_epoch_step is None:
+            assert self.curr_step is not None
             self._first_epoch_step = self.curr_step
             self._first_epoch_time = time.time()
         self._experiment.log_current_epoch(epoch)

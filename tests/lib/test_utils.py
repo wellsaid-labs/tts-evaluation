@@ -83,6 +83,11 @@ def test_get_weighted_std__one_data_point():
     assert lib.utils.get_weighted_std(torch.tensor([0, 1, 0]), dim=0) == torch.zeros(1)
 
 
+def test_get_weighted_std__zero_elements():
+    """Test `lib.utils.get_weighted_std` handles zero elements."""
+    assert lib.utils.get_weighted_std(torch.empty(1024, 0, 1024), dim=2).shape == (1024, 0)
+
+
 def test_get_weighted_std__bias():
     """Test `lib.utils.get_weighted_std` computes the correct standard deviation.
 

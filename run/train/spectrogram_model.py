@@ -1,6 +1,7 @@
 import collections
 import collections.abc
 import dataclasses
+import faulthandler
 import gc
 import logging
 import math
@@ -8,6 +9,7 @@ import os
 import pathlib
 import platform
 import random
+import signal
 import sys
 import typing
 from functools import partial
@@ -59,6 +61,14 @@ from run._utils import (
     set_context,
 )
 
+# NOTE: In order to debug a running process, signal the application with: `kill -SIGUSR1 {pid}`.
+# Learn more:
+# https://stackoverflow.com/questions/21733856/python-is-there-a-downside-to-using-faulthandler
+# https://stackoverflow.com/questions/4163964/python-is-it-possible-to-attach-a-console-into-a-running-process/35113682
+# https://stackoverflow.com/questions/132058/showing-the-stack-trace-from-a-running-python-application/29881630#29881630
+# https://stackoverflow.com/questions/10824886/how-to-signal-an-application-without-killing-it-in-linux
+faulthandler.register(signal.SIGUSR1)
+faulthandler.enable()
 logger = logging.getLogger(__name__)
 app = typer.Typer()
 
@@ -479,8 +489,6 @@ class _DistributedMetrics:
             speakers (torch.LongTensor [1, batch_size])
             ...
         """
-        if spectrogram_mask.sum() == 0 or token_mask.sum() == 0:
-            return
 
         mask = lambda t: t.masked_select(spectrogram_mask)
         weighted_std = lib.utils.get_weighted_std(alignments, dim=2)
@@ -489,6 +497,8 @@ class _DistributedMetrics:
 
         num_skipped = get_num_skipped(alignments, token_mask, spectrogram_mask)
 
+        assert speakers.numel() == num_skipped.numel()
+        assert speakers.numel() == num_tokens.numel()
         iterate = lambda t: flatten(lib.distributed.gather_list(t.view(-1).tolist()))
         iterator = zip(iterate(speakers), iterate(num_skipped), iterate(num_tokens))
         for speaker_index, _num_skipped, _num_tokens in iterator:
@@ -631,6 +641,9 @@ def _visualize_source_vs_target(
             alignment between `frames` and `tokens`.
         ...
     """
+    if not lib.distributed.is_master():
+        return
+
     item = random.randint(0, batch.length - 1)
     spectrogram_length = int(batch.spectrogram.lengths[0, item].item())
     text_length = int(batch.encoded_text.lengths[0, item].item())
@@ -770,6 +783,9 @@ def _visualize_inferred(
         predicted_lengths (torch.LongTensor [1, batch_size]): The sequence length.
         ...
     """
+    if not lib.distributed.is_master():
+        return
+
     item = random.randint(0, batch.length - 1)
     num_frames = int(batch.spectrogram.lengths[0, item].item())
     num_frames_predicted = int(predicted_lengths[0, item].item())
@@ -821,7 +837,7 @@ def _run_inference(
         ...
         visualize: If `True` visualize the results with `comet`.
     """
-    frames, stop_tokens, alignments, lengths, reached_max = state.model(
+    frames, stop_tokens, alignments, lengths, reached_max = state.model.module(
         batch.encoded_text.tensor,
         batch.encoded_speaker.tensor,
         batch.encoded_text.lengths,
@@ -901,6 +917,7 @@ def _run_worker(
         epoch = int(state.step.item() // train_steps_per_epoch)
         message = "Running Epoch %d (Step %d, Example %d)"
         logger.info(message, epoch, state.step.item(), state.num_examples.item())
+        comet.set_step(typing.cast(int, state.step.item()))
         comet.log_current_epoch(epoch)
 
         for context, dataset_type, data_loader, num_steps, handle_batch in contexts:
