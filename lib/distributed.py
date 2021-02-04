@@ -48,7 +48,7 @@ def get_world_size() -> int:
 _default_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def reduce(value: float, dst: int = get_master_rank(), device=_default_device, **kwargs) -> float:
+def reduce(value: float, device: torch.device, dst: int = get_master_rank(), **kwargs) -> float:
     """Reduce `value` from all processes via a reduction operation
     like `torch.distributed.ReduceOp.SUM`."""
     if not is_initialized():
@@ -58,7 +58,7 @@ def reduce(value: float, dst: int = get_master_rank(), device=_default_device, *
     return typing.cast(float, packed.item())
 
 
-def all_gather(value: float, device=_default_device, **kwargs) -> typing.List[float]:
+def all_gather(value: float, device: torch.device, **kwargs) -> typing.List[float]:
     """ Gather `value` from all processes into a `list`. """
     if not is_initialized():
         return [value]
@@ -70,7 +70,7 @@ def all_gather(value: float, device=_default_device, **kwargs) -> typing.List[fl
 
 
 def gather_list(
-    values: typing.List[float], device=_default_device, **kwargs
+    values: typing.List[float], device: torch.device, **kwargs
 ) -> typing.List[typing.List[float]]:
     """Gather `values` from all processes into a `list` on the `dst` process.
 

@@ -66,15 +66,14 @@ def assert_(
 def test_reduce():
     """ Test `lib.distributed.reduce` reduces values from work processes to the main process. """
     nprocs = 3
-    partial = functools.partial(
-        assert_, nprocs=nprocs, callable_=lib.distributed.reduce, expected=3
-    )
+    partial = functools.partial(lib.distributed.reduce, device=torch.device("cpu"))
+    partial = functools.partial(assert_, nprocs=nprocs, callable_=partial, expected=3)
     torch.multiprocessing.spawn(partial, nprocs=nprocs)
 
 
 def test_reduce_identity():
     """ Test `lib.distributed.reduce` functions outside of a distributed environment. """
-    assert lib.distributed.reduce(0) == 0
+    assert lib.distributed.reduce(0, torch.device("cpu")) == 0
 
 
 def test_all_gather():
@@ -83,7 +82,7 @@ def test_all_gather():
     partial = functools.partial(
         assert_,
         nprocs=nprocs,
-        callable_=lib.distributed.all_gather,
+        callable_=functools.partial(lib.distributed.all_gather, device=torch.device("cpu")),
         expected=list(range(nprocs)),
         test_workers=True,
     )
@@ -92,12 +91,12 @@ def test_all_gather():
 
 def test_all_gather__identity():
     """ Test `lib.distributed.all_gather` functions outside of a distributed environment. """
-    assert lib.distributed.all_gather(0) == [0]
+    assert lib.distributed.all_gather(0, torch.device("cpu")) == [0]
 
 
 def _gather_list(rank):
     """ Helper function for `test_gather_list`. """
-    return lib.distributed.gather_list([rank] * rank)
+    return lib.distributed.gather_list([rank] * rank, torch.device("cpu"))
 
 
 def test_gather_list():
@@ -111,4 +110,4 @@ def test_gather_list():
 
 def test_gather_list__identity():
     """ Test `lib.distributed.gather_list` functions outside of a distributed environment. """
-    assert lib.distributed.gather_list([0]) == [[0]]
+    assert lib.distributed.gather_list([0], torch.device("cpu")) == [[0]]
