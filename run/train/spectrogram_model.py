@@ -381,6 +381,13 @@ def _get_data_loaders(
 class _DistributedMetrics:
     """Track metrics with measurements taken on every process for every step.
 
+    TODO: Instead of using CUDA tensors, for synchronizing metadata and metrics, it's more natural
+    to use a `TCPStore` on CPU. Furthermore, `TCPStore` with `json` could store variable length
+    items like lists.
+    Furthermore, we could create a generic metric manager. The workers will communicate with the
+    manager by sending dictionaries. The master would start a thread that listens for, and
+    accumulates metrics from the workers.
+
     Args:
         batch_size: The batch size at each step.
         data_queue_size: This measures the data loader queue each step. This metric should be a
