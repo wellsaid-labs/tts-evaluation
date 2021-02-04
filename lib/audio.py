@@ -680,15 +680,15 @@ def power_spectrogram_to_framed_rms(
     Returns:
         (torch.FloatTensor [batch_size, num_frames])
     """
+    device = power_spectrogram.device
     has_batch_dim = power_spectrogram.dim() == 3
     power_spectrogram = power_spectrogram.view(-1, *power_spectrogram.shape[-2:])
 
     # Learn more:
     # https://community.sw.siemens.com/s/article/window-correction-factors
     # https://www.mathworks.com/matlabcentral/answers/372516-calculate-windowing-correction-factor
-    window_correction_factor = (
-        torch.ones(*window.shape).pow(2).mean().sqrt() / window.pow(2).mean().sqrt()
-    )
+    window_correction_factor = torch.ones(*window.shape, device=device).pow(2).mean().sqrt()
+    window_correction_factor = window_correction_factor / window.pow(2).mean().sqrt()
 
     # TODO: This adjustment might be related to repairing constant-overlap-add, see here:
     # https://ccrma.stanford.edu/~jos/sasp/Overlap_Add_Decomposition.html. It should be better
