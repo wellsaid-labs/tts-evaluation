@@ -356,6 +356,10 @@ class _DataLoader(collections.abc.Iterable):
             batch = next(self.loader)
             self.num_frames += batch.spectrogram.lengths.float().sum().item()
             self.num_spans += batch.length
+            # NOTE: Tensors are moved to CUDA outside of the `DataLoader` workers. Learn more:
+            # > It is generally not recommended to return CUDA tensors in multi-process loading
+            # > because of many subtleties in using CUDA and sharing CUDA tensors in multiprocessing
+            # https://pytorch.org/docs/stable/data.html#multi-process-data-loading
             yield typing.cast(SpanBatch, tensors_to(batch, device=self.device, non_blocking=True))
 
 
