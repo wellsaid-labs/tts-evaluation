@@ -2,7 +2,6 @@ import collections
 import collections.abc
 import dataclasses
 import faulthandler
-import gc
 import logging
 import math
 import os
