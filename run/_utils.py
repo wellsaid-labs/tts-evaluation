@@ -171,6 +171,13 @@ def split_passages(
 ) -> typing.Tuple[typing.List[lib.datasets.Passage], typing.List[lib.datasets.Passage]]:
     """Split a dataset into a development and train set.
 
+    TODO: Since we have multiples copies of the same dataset, with only adjustments in the speaker
+    or even the speaker audio preprocessing, our dev dataset is not completely isolated from
+    our training data. In order to solve this issue, we need to split the WSL datasets together,
+    to ensure that the passages in the dev dataset haven't been seen in any form. We could solve
+    this by picking passages for one speaker, and then ensuring that no other speaker has the
+    same passages (and if they do, they should be included in the dev dataset).
+
     Args:
         passages
         dev_size: Number of seconds of audio data in the development set.
