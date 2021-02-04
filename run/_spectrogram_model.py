@@ -443,7 +443,6 @@ class SpanBatch(typing.NamedTuple):
 def make_span_batch(
     spans: typing.List[lib.datasets.Span],
     input_encoder: InputEncoder,
-    nlp: spacy_en.English,
     max_parallel: int = typing.cast(int, os.cpu_count()),
 ) -> SpanBatch:
     """
@@ -478,6 +477,7 @@ def make_span_batch(
     for span in spans:
         lib.audio.assert_audio_normalized(span.audio_file)
 
+    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
     docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
     for i in range(length):
         script_slice = spans[i].script_slice

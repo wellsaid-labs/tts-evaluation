@@ -320,6 +320,20 @@ class _DataLoader(collections.abc.Iterable):
 
     NOTE: The `DataLoader` by default will create a sequential sampler. It'll use that sampler
     to queue up batches from `_DataIterator`, in order.
+    NOTE: Each `DataLoader` worker replicates the dataset, and other objects. As of
+    02/04/2020, about half of our memory (30 gb) was used by `DataLoader` workers. This
+    can be resolved with memory sharing like "fork" and `gc.freeze`.
+    NOTE: `DataLoader` isn't compatible with "fork" because NCCL isn't fork safe. There
+    are also issues with OMP and CUDA. They have issues with fork, as well. Learn more:
+    > Unfortunately Gloo (that uses Infiniband) and NCCL2 are not fork safe, and you will
+    likely experience deadlocks if you don’t change this setting.
+    https://github.com/pytorch/pytorch/pull/4766
+    > After OpenMP features are utilized, a fork is only allowed if the child process does not
+    > use OpenMP features, or it does so as a completely new process (such as after exec()).
+    https://bisqwit.iki.fi/story/howto/openmp/#OpenmpAndFork
+    https://github.com/pytorch/pytorch/issues/42444
+    > The CUDA runtime does not support the fork start method
+    https://pytorch.org/docs/stable/notes/multiprocessing.html#cuda-in-multiprocessing
     """
 
     def __init__(
@@ -328,20 +342,17 @@ class _DataLoader(collections.abc.Iterable):
         logger.info("Creating `DataLoader`...")
         self.device = device
         max_parallel = int(os.cpu_count() // lib.distributed.get_world_size())
-        nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
         loader = torch.utils.data.dataloader.DataLoader(
             typing.cast(torch.utils.data.Dataset, iterator),
             pin_memory=True,
             batch_size=None,
             worker_init_fn=partial(_worker_init_fn, config=get_config()),
             collate_fn=partial(
-                make_span_batch, input_encoder=input_encoder, max_parallel=max_parallel, nlp=nlp
+                make_span_batch, input_encoder=input_encoder, max_parallel=max_parallel
             ),
-            multiprocessing_context="fork",
             prefetch_factor=4,
             **kwargs,
         )
-        gc.freeze()  # NOTE: This has global side-effects.
         self.loader = iter(loader)
         self.num_frames = 0
         self.num_spans = 0
