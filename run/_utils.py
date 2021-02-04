@@ -145,6 +145,7 @@ def normalize_audio(
 
 def init_distributed(
     rank: int,
+    timeout: timedelta = timedelta(minutes=30),
     backend: str = "nccl",
     init_method: str = "tcp://127.0.0.1:29500",
     world_size: int = torch.cuda.device_count(),
@@ -155,13 +156,15 @@ def init_distributed(
     https://pytorch.org/tutorials/intermediate/dist_tuto.htm
     https://github.com/pytorch/examples/blob/master/imagenet/main.py
     """
-    torch.distributed.init_process_group(
-        backend=backend, init_method=init_method, world_size=world_size, rank=rank
-    )
-    device = torch.device("cuda", rank)
-    torch.cuda.set_device(device)
+    torch.distributed.init_process_group(backend, init_method, timeout, world_size, rank)
     logger.info("Worker %d started.", torch.distributed.get_rank())
     logger.info("%d GPUs found.", world_size)
+    device = torch.device("cuda", rank)
+
+    # NOTE: Unless this is run, PyTorch may use a different GPU for some operations. Learn more:
+    # https://github.com/pytorch/pytorch/issues/3477#issuecomment-342294955
+    # https://github.com/pytorch/pytorch/issues/7071#issuecomment-437469653
+    torch.cuda.set_device(device)
     return device
 
 
