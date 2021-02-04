@@ -966,6 +966,7 @@ def _db_mel_spectrogram_to_spectrogram(
     return np.sqrt(power_spectrogram / weighting)  # type: ignore
 
 
+@lib.utils.log_runtime
 @configurable
 def griffin_lim(
     db_mel_spectrogram: np.ndarray,
