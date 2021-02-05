@@ -465,6 +465,8 @@ def get_dataset(
 ) -> Dataset:
     """Define a TTS dataset.
 
+    TODO: `normalize_audio` could be used replicate datasets with different audio processing.
+
     Args:
         datasets: Dictionary of datasets to load.
         path: Directory to cache the dataset.

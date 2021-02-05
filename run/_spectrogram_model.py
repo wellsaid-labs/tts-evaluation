@@ -185,6 +185,9 @@ def _get_loudness(
 ) -> typing.Optional[float]:
     """Get the loudness in LUFS for an `alignment` in `audio`.
 
+    TODO: `integrated_loudness` filters our quiet sections from the loudness computations.
+    Should this be disabled?
+
     Args:
         ...
         precision: The number of decimal places to round LUFS.

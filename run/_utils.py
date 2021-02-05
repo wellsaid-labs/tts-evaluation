@@ -166,6 +166,8 @@ def init_distributed(
     # https://github.com/pytorch/pytorch/issues/3477#issuecomment-342294955
     # https://github.com/pytorch/pytorch/issues/7071#issuecomment-437469653
     torch.cuda.set_device(device)
+    # TODO: Instead of returning and passing around `torch.device`, rely on `torch.cuda.set_device`
+    # or `torch.cuda.device` to set context.
     return device
 
 

@@ -306,10 +306,6 @@ class _DataIterator(lib.utils.MappedIterator):
 
         NOTE: Our training procedure is similar to BERT, the examples are randomly sampled
         from a large corpus of data with `SpanGenerator`.
-
-        TODO: Any expensive filtering should occur at this step, and it should batch
-        everything together.
-        TODO: We could further speed up data loading by loading the entire bucket at one time.
         """
         iter_ = run._config.SpanGenerator(dataset)
         iter_ = BucketBatchSampler(iter_, batch_size, False, _data_iterator_sort_key)
@@ -350,6 +346,8 @@ class _DataLoader(collections.abc.Iterable):
     everything could be processed in the `_DataIterator` efficiently. Learn more:
     https://github.com/pytorch/pytorch/blob/272f4db043ec2c63ecfe6d2759e7893cb842a3c3/torch/utils/data/_utils/fetch.py#L35
     https://pytorch.org/docs/stable/data.html#disable-automatic-batching
+    This should also help with code locality. Also, if we'd like to run a more expensive dataset
+    filtering, it is more doable in batches.
     """
 
     def __init__(
@@ -992,7 +990,10 @@ def _run(
     checkpoint: typing.Optional[pathlib.Path] = None,
     minimum_disk_space: float = 0.2,
 ):
-    """ Run spectrogram model training. """
+    """Run spectrogram model training.
+
+    TODO: Add a debugging mode with a smaller dataset.
+    """
     lib.environment.check_module_versions()
     lib.environment.assert_enough_disk_space(minimum_disk_space)
 
