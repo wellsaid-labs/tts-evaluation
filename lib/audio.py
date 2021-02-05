@@ -300,6 +300,8 @@ def normalize_audio(
 
     TODO: If the `source` is already normalized, could the performance of this function be
     improved?
+    TODO: Can we use this function to measure, and reduce clipping? For example, SoX has a clipping
+    guard that can be turned on, and it warns about clipping.
     """
     assert destination.suffix == suffix, f'The normalized file must be of type "{suffix}".'
     command = "" if len(audio_filters) == 0 else f"-af {audio_filters}"

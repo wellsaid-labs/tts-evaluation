@@ -444,33 +444,35 @@ def make_span_batch(
     spans: typing.List[lib.datasets.Span],
     input_encoder: InputEncoder,
     max_parallel: int = typing.cast(int, os.cpu_count()),
+    batch_dimension: int = 1,
 ) -> SpanBatch:
     """
-    TODO: For performance reasons, we could consider moving some computations from
-    `get_spectrogram_model_span` to this function for batch processing. This technique would be
-    efficient to use with `DataLoader` because `collate_fn` runs in the same worker process
-    as the basic loader. There is no fancy threading to load multiple spans at the same
-    time.
-    TODO: Gather statistics on pronunciations available in the various datasets with additional
-    notebooks or scripts.
-    TODO: How many OOV words does our dataset have?
-
-    NOTE: This function is intended to be used with `DataLoader`, and `DataLoader` runs both
-    `get_spectrogram_model_span` and `batch_spectrogram_model_spans` in the same process.
-    Specifically, `get_spectrogram_model_span` is run as part of `self.dataset_iter = iter(dataset)`
-    and `next(self.dataset_iter)`. `batch_spectrogram_model_spans` is run as part of
-    `self.collate_fn(data)`. Learn more:
-    https://github.com/pytorch/pytorch/blob/272f4db043ec2c63ecfe6d2759e7893cb842a3c3/torch/utils/data/_utils/fetch.py#L35
-    This is important to note with regard to performance implications.
-
-    NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not. The options are:
+    NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
+    those words will not be found in AmEPD. The options are:
     1. Return two different sequences with two different character to word mappings.
     2. Merge the words with apostrophes, and merge the related word vectors.
     (Choosen) 3. Keep the apostrophes separate, and miss some pronunciations.
 
     NOTE: Contextual word-vectors would likely be more informative than word-vectors; however, they
     are likely not as robust in the presence of OOV words due to intentional misspellings. Our
-    users intentionally misspell words to adjust the pronunciation.
+    users intentionally misspell words to adjust the pronunciation. For that reason, we use
+    word-vectors.
+
+    NOTE: In Janurary 2020, this function profiled like so:
+    - 27% for `_signals_to_spectrograms`
+    - 25% on `nlp.pipe`
+    - 13% on `_random_loudness_annotations`
+    - 13% on `grapheme_to_phoneme`
+    - 6% for `_pad_and_trim_signal`
+    - 5% for `input_encoder.encode`
+    - 4% on `stack_and_pad_tensors`
+
+    TODO: For `spectrogram_model` training, this function is critical for performance and reducing
+    the number of CPUs needed for training. Here are some opportunities for performance:
+    - Using `jit` or `numpy` or `cuda` for a faster spectrogram calculation.
+    - Precomputing `nlp.pipe` and caching the results.
+    - Using `multiprocessing` for `grapheme_to_phoneme`.
+    - Using the precomputed spectrogram for `_pad_and_trim_signal`.
     """
     length = len(spans)
 
@@ -496,7 +498,7 @@ def make_span_batch(
     spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
     speed = [_random_speed_annotations(s) for s in spans]
 
-    stack = functools.partial(stack_and_pad_tensors, dim=1)
+    stack = functools.partial(stack_and_pad_tensors, dim=batch_dimension)
     mask = functools.partial(torch.ones, dtype=torch.bool)
     return SpanBatch(
         length=length,

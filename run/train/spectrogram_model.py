@@ -319,9 +319,11 @@ class _DataLoader(collections.abc.Iterable):
 
     NOTE: The `DataLoader` by default will create a sequential sampler. It'll use that sampler
     to queue up batches from `_DataIterator`, in order.
+
     NOTE: Each `DataLoader` worker replicates the dataset, and other objects. As of
     02/04/2020, about half of our memory (30 gb) was used by `DataLoader` workers. This
     can be resolved with memory sharing like "fork" and `gc.freeze`.
+
     NOTE: `DataLoader` isn't compatible with "fork" because NCCL isn't fork safe. There
     are also issues with OMP and CUDA. They have issues with fork, as well. Learn more:
     > Unfortunately Gloo (that uses Infiniband) and NCCL2 are not fork safe, and you will
@@ -333,6 +335,13 @@ class _DataLoader(collections.abc.Iterable):
     https://github.com/pytorch/pytorch/issues/42444
     > The CUDA runtime does not support the fork start method
     https://pytorch.org/docs/stable/notes/multiprocessing.html#cuda-in-multiprocessing
+
+    TODO: The `DataLoader` runs `make_span_batch` and `iterator` in each worker. For performance,
+    we could move `make_span_batch` to `_DataIterator` and preprocess larger batches at the
+    same time. The `collate_fn` function could be replaced with an `identity` function, and
+    everything could be processed in the `_DataIterator` efficiently. Learn more:
+    https://github.com/pytorch/pytorch/blob/272f4db043ec2c63ecfe6d2759e7893cb842a3c3/torch/utils/data/_utils/fetch.py#L35
+    https://pytorch.org/docs/stable/data.html#disable-automatic-batching
     """
 
     def __init__(
@@ -476,6 +485,12 @@ class _DistributedMetrics:
         metric.append(lib.distributed.reduce(value))
 
     def update_dataset_metrics(self, batch: SpanBatch, input_encoder: InputEncoder):
+        """
+        TODO: Get dataset metrics on OOV words (spaCy and AmEPD) in our dataset.
+        TODO: Create a `streamlit` for measuring coverage in our dataset, and other datasets.
+        TODO: Measure the difference between punctuation in the phonetic vs grapheme phrases.
+        Apart from unique cases, they should have the same punctuation.
+        """
         self.append(self.batch_size, batch.length)
         self.append(self.num_frames, batch.spectrogram.lengths)
 
