@@ -208,6 +208,9 @@ class _State:
         comet.set_model_graph(str(model))
         label = get_model_label("num_parameters", Cadence.STATIC)
         comet.log_parameter(label, get_total_parameters(model))
+        label = get_model_label("parameter_sum", Cadence.STATIC)
+        parameter_sum = torch.stack([param.sum() for param in model.parameters()]).sum().item()
+        comet.log_parameter(label, parameter_sum)
         return model
 
     @staticmethod
