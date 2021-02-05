@@ -83,7 +83,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
     run._config.configure()
 
     train_batch_size = 56
-    dev_batch_size = train_batch_size * 4
+    dev_batch_size = train_batch_size * 2
     train_steps_per_epoch = 1024
     # NOTE: This parameter was set approximately based on the size of each respective
     # dataset. The development dataset is about 16 times smaller than the training dataset
