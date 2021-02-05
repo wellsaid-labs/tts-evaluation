@@ -33,6 +33,7 @@ from torchnlp.utils import get_total_parameters, lengths_to_mask, tensors_to
 
 import lib
 import run
+from lib.distributed import gather_list, get_rank, get_world_size, is_initialized, is_master
 from lib.environment import load, load_most_recent_file, save
 from lib.utils import flatten
 from run._config import (
@@ -89,8 +90,8 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
     # based on the number of characters in each dataset.
     dev_steps_per_epoch = (train_steps_per_epoch / (dev_batch_size / train_batch_size)) / 16
     assert dev_steps_per_epoch % 1 == 0, "The number of steps must be an integer."
-    assert train_batch_size % lib.distributed.get_world_size() == 0
-    assert dev_batch_size % lib.distributed.get_world_size() == 0
+    assert train_batch_size % get_world_size() == 0
+    assert dev_batch_size % get_world_size() == 0
 
     torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)  # type: ignore
     config = {
@@ -162,7 +163,7 @@ class _State:
     num_examples: torch.Tensor = torch.tensor(0, dtype=torch.long)
 
     def update_num_examples(self, count: int):
-        self.num_examples.add_(int(lib.distributed.reduce(count)))
+        self.num_examples.add_(int(lib.distributed.reduce(count, self.device)))
 
     @staticmethod
     def _get_input_encoder(
@@ -307,7 +308,8 @@ class _DataIterator(lib.utils.MappedIterator):
         iter_ = run._config.SpanGenerator(dataset)
         iter_ = BucketBatchSampler(iter_, batch_size, False, _data_iterator_sort_key)
         iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED, cuda=False)
-        iter_ = DistributedBatchSampler(iter_) if lib.distributed.is_initialized() else iter_
+        if is_initialized():
+            iter_ = DistributedBatchSampler(iter_, num_replicas=get_world_size(), rank=get_rank())
         super().__init__(iter_)
 
     def __len__(self) -> int:
@@ -349,7 +351,7 @@ class _DataLoader(collections.abc.Iterable):
     ):
         logger.info("Creating `DataLoader`...")
         self.device = device
-        max_parallel = int(os.cpu_count() // lib.distributed.get_world_size())
+        max_parallel = int(os.cpu_count() // get_world_size())
         loader = torch.utils.data.dataloader.DataLoader(
             typing.cast(torch.utils.data.Dataset, iterator),
             pin_memory=True,
@@ -412,6 +414,7 @@ class _DistributedMetrics:
     accumulates metrics from the workers.
 
     Args:
+        ...
         batch_size: The batch size at each step.
         data_queue_size: This measures the data loader queue each step. This metric should be a
             positive integer indicating that the `data_loader` is loading faster than the data is
@@ -448,6 +451,7 @@ class _DistributedMetrics:
             step.
     """
 
+    device: torch.device
     batch_size: typing.List[float] = dataclasses.field(default_factory=list)
     data_queue_size: typing.List[float] = dataclasses.field(default_factory=list)
     predicted_frame_alignment_norm: typing.List[float] = dataclasses.field(default_factory=list)
@@ -475,14 +479,13 @@ class _DistributedMetrics:
     stop_token_loss: typing.List[float] = dataclasses.field(default_factory=list)
     stop_token_num_correct: typing.List[float] = dataclasses.field(default_factory=list)
 
-    @staticmethod
-    def append(metric: typing.List[float], value: typing.Union[int, float, torch.Tensor]):
+    def append(self, metric: typing.List[float], value: typing.Union[int, float, torch.Tensor]):
         """Append measurement to a `metric`.
 
         NOTE: The measurements will accrue on the master process only.
         """
         value = float(value.sum().item() if isinstance(value, torch.Tensor) else value)
-        metric.append(lib.distributed.reduce(value))
+        metric.append(lib.distributed.reduce(value, self.device))
 
     def update_dataset_metrics(self, batch: SpanBatch, input_encoder: InputEncoder):
         """
@@ -494,10 +497,10 @@ class _DistributedMetrics:
         self.append(self.batch_size, batch.length)
         self.append(self.num_frames, batch.spectrogram.lengths)
 
-        for text in flatten(lib.distributed.gather_list([len(t) for t in batch.text])):
+        for text in flatten(gather_list([len(t) for t in batch.text], self.device)):
             self.num_spans_per_text_length[text // self.text_length_bucket_size] += 1
 
-        lambda_ = lambda t: flatten(lib.distributed.gather_list(t.view(-1).tolist()))
+        lambda_ = lambda t: flatten(gather_list(t.view(-1).tolist(), self.device))
         iterator = zip(lambda_(batch.encoded_speaker.tensor), lambda_(batch.spectrogram.lengths))
         for speaker_index, num_frames in iterator:
             speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
@@ -525,7 +528,6 @@ class _DistributedMetrics:
             speakers (torch.LongTensor [1, batch_size])
             ...
         """
-
         mask = lambda t: t.masked_select(spectrogram_mask)
         weighted_std = lib.utils.get_weighted_std(alignments, dim=2)
         self.append(self.predicted_frame_alignment_std, mask(weighted_std))
@@ -535,7 +537,7 @@ class _DistributedMetrics:
 
         assert speakers.numel() == num_skipped.numel()
         assert speakers.numel() == num_tokens.numel()
-        iterate = lambda t: flatten(lib.distributed.gather_list(t.view(-1).tolist()))
+        iterate = lambda t: flatten(gather_list(t.view(-1).tolist(), self.device))
         iterator = zip(iterate(speakers), iterate(num_skipped), iterate(num_tokens))
         for speaker_index, _num_skipped, _num_tokens in iterator:
             speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
@@ -677,7 +679,7 @@ def _visualize_source_vs_target(
             alignment between `frames` and `tokens`.
         ...
     """
-    if not lib.distributed.is_master():
+    if not is_master():
         return
 
     item = random.randint(0, batch.length - 1)
@@ -819,7 +821,7 @@ def _visualize_inferred(
         predicted_lengths (torch.LongTensor [1, batch_size]): The sequence length.
         ...
     """
-    if not lib.distributed.is_master():
+    if not is_master():
         return
 
     item = random.randint(0, batch.length - 1)
@@ -933,7 +935,7 @@ def _run_worker(
     """ Train and evaluate the spectrogram model on a loop. """
     lib.environment.set_basic_logging_config(device_index)
     device = run._utils.init_distributed(device_index)
-    comet = comet_partial(disabled=not lib.distributed.is_master(), auto_output_logging=False)
+    comet = comet_partial(disabled=not is_master(), auto_output_logging=False)
     _configure(config)
     if checkpoint is None:
         state = _State.from_dataset(train_dataset, dev_dataset, comet, device)
@@ -961,9 +963,9 @@ def _run_worker(
                 # TODO: `metrics` are not propagated and we might want to incorperate that for
                 # dataset metrics like `num_frames_per_speaker` or `num_spans_per_text_length`.
                 # In order to do so, we'd also need to checkpoint those metrics.
-                metrics = _DistributedMetrics()
+                metrics = _DistributedMetrics(state.device)
                 loader = zip(range(num_steps), data_loader)
-                if lib.distributed.is_master():
+                if is_master():
                     loader = tqdm.tqdm(loader, total=num_steps)
                 for i, batch in loader:
                     handle_batch(state, metrics, batch, data_loader, dataset_type, i == 0)
@@ -971,7 +973,7 @@ def _run_worker(
                         metrics.log(comet, lambda l: l[-1], dataset_type, Cadence.STEP)
                 metrics.log(comet, sum, dataset_type, Cadence.MULTI_STEP)
 
-        if lib.distributed.is_master():
+        if is_master():
             path = checkpoints_directory / f"step_{state.step.item()}{lib.environment.PT_EXTENSION}"
             save(path, state.to_checkpoint(checkpoints_directory=checkpoints_directory))
         comet.log_epoch_end(epoch)
