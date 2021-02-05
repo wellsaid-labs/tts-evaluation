@@ -45,9 +45,6 @@ def get_world_size() -> int:
     return torch.distributed.get_world_size() if is_initialized() else 1
 
 
-_default_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
 def reduce(value: float, device: torch.device, dst: int = get_master_rank(), **kwargs) -> float:
     """Reduce `value` from all processes via a reduction operation
     like `torch.distributed.ReduceOp.SUM`."""
