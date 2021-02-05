@@ -274,6 +274,9 @@ class _State:
         """ Create spectrogram training state from the `train_dataset`. """
         input_encoder = cls._get_input_encoder(train_dataset, dev_dataset, comet)
         model = cls._get_model(device, comet, input_encoder)
+        # NOTE: Even if `_get_model` is initialized differently in each process, the parameters
+        # will be synchronized. Learn more:
+        # https://discuss.pytorch.org/t/proper-distributeddataparallel-usage/74564/2
         distributed_model = torch.nn.parallel.DistributedDataParallel(model, [device], device)
         return cls(input_encoder, distributed_model, *cls._get_optimizers(model), comet, device)
 
