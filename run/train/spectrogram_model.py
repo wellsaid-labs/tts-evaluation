@@ -1003,6 +1003,13 @@ def _run(
     comet.log_parameters(run._utils.get_dataset_stats(train_dataset, dev_dataset))
 
     logger.info("Spawning workers %s", lib.utils.mazel_tov())
+    # TODO: PyTorch-Lightning makes strong recommendations to not use `spawn`. Learn more:
+    # https://pytorch-lightning.readthedocs.io/en/stable/multi_gpu.html#distributed-data-parallel
+    # https://github.com/PyTorchLightning/pytorch-lightning/pull/2029
+    # Also, it's less normal to use `spawn` because it wouldn't work with multiple nodes, so
+    # we should consider using `torch.distributed.launch`.
+    # TODO: Should we consider setting OMP num threads similarly:
+    # https://github.com/pytorch/pytorch/issues/22260
     return lib.distributed.spawn(
         _run_worker.get_configured_partial(),  # type: ignore
         args=(
