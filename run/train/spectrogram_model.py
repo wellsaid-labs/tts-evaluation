@@ -1066,21 +1066,27 @@ def _run(
     )
 
 
-def _setup(
-    comet: CometMLExperiment, config: typing.List[str]
-) -> typing.Tuple[typing.Dict[str, typing.Any], lib.environment.RecordStandardStreams]:
-    """ Setup the environment logging and modules. """
+def _setup_logging() -> lib.environment.RecordStandardStreams:
     lib.environment.set_basic_logging_config()
     recorder = lib.environment.RecordStandardStreams()
-    logger.info("Command line args: %s", str(sys.argv))  # NOTE: Ensure command line args are logged
+    # NOTE: Ensure command line args are captured in the logs.
+    logger.info("Command line args: %s", str(sys.argv))
+    return recorder
+
+
+def _setup_config(
+    comet: CometMLExperiment, config: typing.List[str]
+) -> typing.Dict[str, typing.Any]:
+    """
+    TODO: For checkpointed runs, should we triple check the same parameters are getting
+    configured? Should we throw an error if not? Or should we create a new experiment, and ensure
+    that each experiments parameters are immutable?
+    """
     parsed = parse_hparam_args(config)
-    # TODO: For checkpointed runs, should we triple check the same parameters are getting
-    # configured? Should we throw an error if not? Or should we create a new experiment, and ensure
-    # that each experiments parameters are immutable?
     parameters = _configure(parsed)
     params = {get_config_label(k): v for k, v in parameters.items()}
     comet.log_parameters(params)
-    return parsed, recorder
+    return parsed
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -1092,6 +1098,7 @@ def resume(
 ):
     """Resume training from CHECKPOINT. If CHECKPOINT is not given, the most recent checkpoint
     file is loaded."""
+    recorder = _setup_logging()
     pattern = str(SPECTROGRAM_MODEL_EXPERIMENTS_PATH / f"**/*{lib.environment.PT_EXTENSION}")
     if checkpoint:
         loaded = load(checkpoint)
@@ -1099,7 +1106,7 @@ def resume(
         checkpoint, loaded = load_most_recent_file(pattern, load)
     checkpoint_ = typing.cast(Checkpoint, loaded)
     comet = run._utils.CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
-    config, recorder = _setup(comet, context.args)
+    config = _setup_config(comet, context.args)
     _, checkpoints_path = maybe_make_experiment_directories_from_checkpoint(checkpoint_, recorder)
     _run(checkpoints_path, config, comet, checkpoint)
 
@@ -1112,10 +1119,11 @@ def start(
     tags: typing.List[str] = typer.Option([], help="Experiment tags."),
 ):
     """ Start a training run in PROJECT named NAME with TAGS. """
+    recorder = _setup_logging()
     comet = run._utils.CometMLExperiment(project_name=project)
     comet.set_name(name)
     comet.add_tags(tags)
-    config, recorder = _setup(comet, context.args)
+    config = _setup_config(comet, context.args)
     experiment_root = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / lib.environment.bash_time_label()
     run_root, checkpoints_path = maybe_make_experiment_directories(experiment_root, recorder)
     comet.log_other(run._config.get_environment_label("directory"), str(run_root))
