@@ -588,7 +588,7 @@ length of 2048, frame hop of 512 and a sample rate of 24000), doesn't practicall
 """
 
 
-def get_rms_level(
+def get_cumulative_power_rms_level(
     db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None, **kwargs
 ) -> torch.Tensor:
     """Get the sum of the power RMS level for each frame in the spectrogram.
@@ -605,3 +605,21 @@ def get_rms_level(
     # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
     rms = lib.audio.power_spectrogram_to_framed_rms(spectrogram, **kwargs)
     return (rms if mask is None else rms * mask.transpose(0, 1)).pow(2).sum(dim=1)
+
+
+def get_average_db_rms_level(
+    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None, **kwargs
+) -> torch.Tensor:
+    """Get the average, over spectrogram frames, RMS level (dB) for each spectrogram.
+
+    Args:
+        db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
+        mask (torch.FloatTensor [num_frames, batch_size])
+        **kwargs: Additional key word arguments passed to `get_cumulative_power_rms_level`.
+
+    Returns:
+        torch.FloatTensor [batch_size]
+    """
+    num_elements = db_spectrogram.shape[0] if mask is None else mask.sum(dim=0)
+    cumulative_power_rms_level = get_cumulative_power_rms_level(db_spectrogram, mask, **kwargs)
+    return lib.audio.power_to_db(cumulative_power_rms_level / num_elements)

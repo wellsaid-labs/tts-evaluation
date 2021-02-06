@@ -14,7 +14,8 @@ import lib
 import run
 from lib.datasets import Alignment
 from run import _spectrogram_model
-from tests._utils import assert_almost_equal, assert_uniform_distribution
+from run._spectrogram_model import _signals_to_spectrograms
+from tests._utils import TEST_DATA_PATH, assert_almost_equal, assert_uniform_distribution
 
 
 @pytest.fixture(autouse=True)
@@ -204,11 +205,12 @@ def test_get_num_skipped():
 
 def test_get_num_skipped__zero_elements():
     """ Test `_spectrogram_model.get_num_skipped` handles zero elements correctly. """
-    assert _spectrogram_model.get_num_skipped(
+    args = (
         torch.empty(1024, 0, 1024),
         torch.empty(1024, 0, dtype=torch.bool),
         torch.empty(1024, 0, dtype=torch.bool),
-    ).shape == (0,)
+    )
+    assert _spectrogram_model.get_num_skipped(*args).shape == (0,)
 
 
 def _get_db_spectrogram(signal, **kwargs) -> torch.Tensor:
@@ -217,9 +219,9 @@ def _get_db_spectrogram(signal, **kwargs) -> torch.Tensor:
     return lib.audio.amplitude_to_db(spectrogram).permute(2, 0, 1)
 
 
-def test_get_rms_level():
-    """Test `_spectrogram_model.get_rms_level` gets an approximate dB RMS level from a dB
-    spectrogram."""
+def test_get_cumulative_power_rms_level():
+    """Test `_spectrogram_model.get_cumulative_power_rms_level` gets an approximate dB RMS level
+    from a dB spectrogram."""
     frame_length = 1024
     frame_hop = frame_length // 4
     window = torch.ones(frame_length)
@@ -237,12 +239,13 @@ def test_get_rms_level():
         _db_spectrogram(lib.audio.full_scale_sine_wave()),
     ]
     db_spectrogram = torch.cat(db_spectrogram_, dim=1)
-    rms = _spectrogram_model.get_rms_level(db_spectrogram, window=window)
+    rms = _spectrogram_model.get_cumulative_power_rms_level(db_spectrogram, window=window)
     assert_almost_equal(rms / db_spectrogram.shape[0], torch.Tensor([1.0000001, 0.500006]))
 
 
-def test_get_rms_level__precise():
-    """ Test `_spectrogram_model.get_rms_level` gets an exact dB RMS level from a dB spectrogram."""
+def test_get_cumulative_power_rms_level__precise():
+    """Test `_spectrogram_model.get_cumulative_power_rms_level` gets an exact dB RMS level from a
+    dB spectrogram."""
     frame_length = 1024
     frame_hop = frame_length // 4
     window = torch.ones(frame_length)
@@ -260,5 +263,21 @@ def test_get_rms_level__precise():
         _db_spectrogram(lib.audio.full_scale_sine_wave()),
     ]
     db_spectrogram = torch.cat(db_spectrogram_, dim=1)
-    rms = _spectrogram_model.get_rms_level(db_spectrogram, window=window)
+    rms = _spectrogram_model.get_cumulative_power_rms_level(db_spectrogram, window=window)
     assert_almost_equal(rms / (sample_rate / frame_hop), torch.Tensor([1.0, 0.49999998418]))
+
+
+def test_get_average_db_rms_level():
+    """Test `_spectrogram_model.get_cumulative_power_rms_level` gets the correct RMS level for
+    a test file."""
+    audio_path = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
+    metadata = lib.audio.get_audio_metadata(audio_path)
+    lib.audio.assert_audio_normalized(metadata)
+    audio = lib.audio.read_audio(audio_path)
+    audio = _spectrogram_model._pad_and_trim_signal(audio)
+    signal_to_spectrogram = lambda s, **k: _signals_to_spectrograms([s], **k)[0].tensor
+    db_mel_spectrogram = signal_to_spectrogram(audio, get_weighting=lib.audio.identity_weighting)
+    rms_level = _spectrogram_model.get_average_db_rms_level(db_mel_spectrogram).item()
+    # NOTE: Audacity measured this RMS to be -23.6371. And `signal_to_rms` measured RMS to be
+    # -23.6365.
+    assert rms_level == -23.64263916015625

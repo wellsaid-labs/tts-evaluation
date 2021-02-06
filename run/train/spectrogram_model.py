@@ -858,8 +858,8 @@ def _visualize_inferred(
         context=state.comet.context,
         text=batch.text[item],
         speaker=batch.speaker[item],
-        predicted_loudness=get_rms_level(predicted_spectrogram.unsqueeze(1)),
-        gold_loudness=get_rms_level(gold_spectrogram.unsqueeze(1)),
+        predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
+        gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
     )
 
 
