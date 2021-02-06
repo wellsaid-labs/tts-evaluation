@@ -1,3 +1,6 @@
+"""
+TODO: This module should be split up into multiple files, it's quite long.
+"""
 import collections
 import collections.abc
 import dataclasses
