@@ -49,8 +49,9 @@ from run._spectrogram_model import (
     Checkpoint,
     InputEncoder,
     SpanBatch,
+    get_average_db_rms_level,
+    get_cumulative_power_rms_level,
     get_num_skipped,
-    get_rms_level,
     make_span_batch,
 )
 from run._utils import (
@@ -128,7 +129,9 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
             dev_batch_size=dev_batch_size,
             num_workers=4,
         ),
-        _DistributedMetrics.log: HParams(num_frame_channels=run._config.NUM_FRAME_CHANNELS),
+        _DistributedMetrics.get_model_metrics: HParams(
+            num_frame_channels=run._config.NUM_FRAME_CHANNELS
+        ),
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
@@ -406,6 +409,12 @@ def _get_data_loaders(
     )
 
 
+_Measurements = typing.List[float]
+# NOTE: `_Reduce` reduces a list of measurements into a metric.
+_Reduce = typing.Callable[[_Measurements], float]
+_Metrics = typing.Dict[Label, typing.Optional[float]]
+
+
 @dataclasses.dataclass
 class _DistributedMetrics:
     """Track metrics with measurements taken on every process for every step.
@@ -416,6 +425,8 @@ class _DistributedMetrics:
     Furthermore, we could create a generic metric manager. The workers will communicate with the
     manager by sending dictionaries. The master would start a thread that listens for, and
     accumulates metrics from the workers.
+    This could also help reduce a lot of complexity this metrics implementation. There is a lot of
+    code that's focused on appending.
 
     Args:
         ...
@@ -455,6 +466,7 @@ class _DistributedMetrics:
             step.
     """
 
+    comet: CometMLExperiment
     device: torch.device
     batch_size: typing.List[float] = dataclasses.field(default_factory=list)
     data_queue_size: typing.List[float] = dataclasses.field(default_factory=list)
@@ -548,7 +560,7 @@ class _DistributedMetrics:
             self.num_skips_per_speaker[speaker] += _num_skipped
             self.num_tokens_per_speaker[speaker] += _num_tokens
 
-    def update_rms_level_metrics(
+    def update_rms_metrics(
         self,
         target_spectrogram: torch.Tensor,
         predicted_spectrogram: torch.Tensor,
@@ -564,9 +576,9 @@ class _DistributedMetrics:
             predicted_mask (torch.FloatTensor [num_frames, batch_size])
             **kwargs: Additional key word arguments passed to `get_rms_level`.
         """
-        lambda_ = lambda t, m: get_rms_level(t, m, **kwargs)
-        self.append(self.frame_rms_level, lambda_(target_spectrogram, target_mask))
-        self.append(self.predicted_frame_rms_level, lambda_(predicted_spectrogram, predicted_mask))
+        rms_ = lambda s, m: get_cumulative_power_rms_level(s, m, **kwargs)
+        self.append(self.frame_rms_level, rms_(target_spectrogram, target_mask))
+        self.append(self.predicted_frame_rms_level, rms_(predicted_spectrogram, predicted_mask))
 
     def update_stop_token_accuracy(
         self,
@@ -594,33 +606,20 @@ class _DistributedMetrics:
             iterator = typing.cast(_MultiProcessingDataLoaderIter, data_loader.loader)
             self.append(self.data_queue_size, iterator._data_queue.qsize())
 
+    @staticmethod
+    def _div(num: _Measurements, denom: _Measurements, reduce: _Reduce) -> typing.Optional[float]:
+        if len(num) == 0 or len(denom) == 0 or reduce(denom) == 0:
+            return None
+        return reduce(num) / reduce(denom)
+
     @configurable
-    def log(
-        self,
-        comet: CometMLExperiment,
-        reduce: typing.Callable[[typing.List[float]], float],
-        dataset_type: DatasetType,
-        cadence: Cadence,
-        num_frame_channels=HParam(),
-    ):
-        """Log `self` to `comet`.
-
-        Args:
-            comet
-            reduce: If there is a list of measurements, this callable is used to reduce it.
-            ...
-        """
-        div = lambda n, d, r=reduce: r(n) / r(d) if len(n) > 0 and len(d) > 0 else None
-        power_to_db = lambda t: lib.audio.power_to_db(torch.tensor(reduce(t)))
-        predicted_rms = div(self.predicted_frame_rms_level, self.num_frames_predicted, power_to_db)
-        rms = div(self.frame_rms_level, self.num_frames, power_to_db)
-
-        Stats = typing.Dict[str, typing.Optional[float]]
-
+    def get_model_metrics(self, reduce: _Reduce, num_frame_channels=HParam(), **kwargs) -> _Metrics:
+        """ Get model metrics. """
+        div = partial(self._div, reduce=reduce)
         spectrogram_loss = div(self.spectrogram_loss, self.num_frames)
         if spectrogram_loss is not None:
             spectrogram_loss /= num_frame_channels
-        model_stats: Stats = {
+        metrics = {
             "alignment_norm": div(self.predicted_frame_alignment_norm, self.num_frames_predicted),
             "alignment_std": div(self.predicted_frame_alignment_std, self.num_frames_predicted),
             "average_relative_speed": div(self.num_frames_predicted, self.num_frames),
@@ -628,38 +627,76 @@ class _DistributedMetrics:
             "stop_token_loss": div(self.stop_token_loss, self.num_frames),
             "reached_max_frames": div(self.num_reached_max_frames, self.batch_size),
             "spectrogram_loss": spectrogram_loss,
-            "average_predicted_rms_level": predicted_rms,
-            "average_rms_level_delta": (
-                predicted_rms - rms if predicted_rms is not None and rms is not None else None
-            ),
         }
-        dataset_stats: Stats = {
+        return {get_model_label(k, **kwargs): v for k, v in metrics.items()}
+
+    def get_dataset_metrics(self, reduce: _Reduce, **kwargs) -> _Metrics:
+        """ Get generic dataset metrics. """
+        div = partial(self._div, reduce=reduce)
+        metrics = {
             "data_loader_queue_size": div(self.data_queue_size, [1] * len(self.data_queue_size)),
-            "average_rms_level": rms,
             "average_num_frames": div(self.num_frames, self.batch_size),
             "max_num_frames": self.max_num_frames,
         }
-        partial_ = partial(get_dataset_label, type_=dataset_type)
-        iterator: typing.List[typing.Tuple[Stats, typing.Callable[..., Label]]]
-        iterator = [(model_stats, get_model_label), (dataset_stats, partial_)]
-        for stats, get_label in iterator:
-            for name, value in stats.items():
-                if value is not None:
-                    comet.log_metric(get_label(name, cadence=cadence), value)
+        return {get_dataset_label(k, **kwargs): v for k, v in metrics.items()}
 
-        for speaker, count in self.num_frames_per_speaker.items():
-            label = partial_("frequency", cadence=cadence, speaker=speaker)
-            comet.log_metric(label, count / sum(self.num_frames_per_speaker.values()))
+    @staticmethod
+    def _rms(num: _Measurements, denom: _Measurements, reduce: _Reduce) -> typing.Optional[float]:
+        power_rms_level = _DistributedMetrics._div(num, denom, reduce)
+        if power_rms_level is not None:
+            return float(lib.audio.power_to_db(torch.tensor(power_rms_level)).item())
+        return None
 
+    def get_rms_metrics(self, reduce: _Reduce, cadence: Cadence, type_: DatasetType) -> _Metrics:
+        """Get loudness metrics in RMS dB."""
+        predicted_rms = self._rms(self.predicted_frame_rms_level, self.num_frames_predicted, reduce)
+        rms = self._rms(self.frame_rms_level, self.num_frames, reduce)
+        delta = None if predicted_rms is None or rms is None else predicted_rms - rms
+        return {
+            get_model_label("average_predicted_rms_level", cadence=cadence): predicted_rms,
+            get_dataset_label("average_rms_level", cadence=cadence, type_=type_): rms,
+            get_model_label("average_rms_level_delta", cadence=cadence): delta,
+        }
+
+    def get_text_length_metrics(self, **kwargs) -> _Metrics:
+        """ Get metrics summarizing text length bucket frequency. """
+        metrics = {}
         for bucket, count in self.num_spans_per_text_length.items():
             lower = bucket * self.text_length_bucket_size
             upper = (bucket + 1) * self.text_length_bucket_size
-            label = partial_(f"text_length_bucket_{lower}_{upper}", cadence=cadence)
-            comet.log_metric(label, count / sum(self.num_spans_per_text_length.values()))
+            label = get_dataset_label(f"text_length_bucket_{lower}_{upper}", **kwargs)
+            metrics[label] = count / sum(self.num_spans_per_text_length.values())
+        return metrics
 
+    def get_speaker_frequency_metrics(self, **kwargs) -> _Metrics:
+        """ Get metrics summarizing speaker frequency. """
+        metrics = {}
+        for speaker, count in self.num_frames_per_speaker.items():
+            label = get_dataset_label("frequency", speaker=speaker, **kwargs)
+            metrics[label] = count / sum(self.num_frames_per_speaker.values())
+        return metrics
+
+    def get_attention_skip_metrics(self, **kwargs) -> _Metrics:
+        """ Get metrics on token skipping per speaker via attention. """
+        metrics = {}
         zip_ = zip(self.num_tokens_per_speaker.items(), self.num_skips_per_speaker.values())
         for (speaker, num_tokens), num_skips in zip_:
-            comet.log_metric(get_model_label("skips", cadence, speaker), num_skips / num_tokens)
+            metrics[get_model_label("skips", speaker=speaker, **kwargs)] = num_skips / num_tokens
+        return metrics
+
+    @configurable
+    def log(self, reduce: _Reduce, dataset_type: DatasetType, cadence: Cadence):
+        """Log metrics to `self.comet`."""
+        if is_master():
+            metrics = {
+                **self.get_model_metrics(reduce=reduce, cadence=cadence),
+                **self.get_dataset_metrics(reduce=reduce, cadence=cadence, type_=dataset_type),
+                **self.get_rms_metrics(reduce=reduce, cadence=cadence, type_=dataset_type),
+                **self.get_text_length_metrics(cadence=cadence, type_=dataset_type),
+                **self.get_speaker_frequency_metrics(cadence=cadence, type_=dataset_type),
+                **self.get_attention_skip_metrics(cadence=cadence),
+            }
+            self.comet.log_metrics({k: v for k, v in metrics.items() if v is not None})
 
 
 def _visualize_source_vs_target(
@@ -964,18 +1001,13 @@ def _run_worker(
 
         for context, dataset_type, data_loader, num_steps, handle_batch in contexts:
             with _set_context(context):
-                # TODO: `metrics` are not propagated and we might want to incorperate that for
-                # dataset metrics like `num_frames_per_speaker` or `num_spans_per_text_length`.
-                # In order to do so, we'd also need to checkpoint those metrics.
-                metrics = _DistributedMetrics(state.device)
+                metrics = _DistributedMetrics(comet, state.device)
                 loader = zip(range(num_steps), data_loader)
-                if is_master():
-                    loader = tqdm.tqdm(loader, total=num_steps)
-                for i, batch in loader:
+                for i, batch in tqdm.tqdm(loader, total=num_steps) if is_master() else loader:
                     handle_batch(state, metrics, batch, data_loader, dataset_type, i == 0)
                     if Context.TRAIN == context:
-                        metrics.log(comet, lambda l: l[-1], dataset_type, Cadence.STEP)
-                metrics.log(comet, sum, dataset_type, Cadence.MULTI_STEP)
+                        metrics.log(lambda l: l[-1], dataset_type, Cadence.STEP)
+                metrics.log(sum, dataset_type, Cadence.MULTI_STEP)
 
         if is_master():
             path = checkpoints_directory / f"step_{state.step.item()}{lib.environment.PT_EXTENSION}"
