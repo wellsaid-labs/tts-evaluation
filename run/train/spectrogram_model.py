@@ -87,7 +87,7 @@ def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, ty
     run._config.configure()
 
     train_batch_size = 56
-    dev_batch_size = train_batch_size * 2
+    dev_batch_size = train_batch_size * 4
     train_steps_per_epoch = 1024
     # NOTE: This parameter was set approximately based on the size of each respective
     # dataset. The development dataset is about 16 times smaller than the training dataset
@@ -937,24 +937,28 @@ def _run_inference(
     if bool_.sum() > 0:
         max_frames = lengths[:, bool_].max()
         max_tokens = batch.encoded_text.lengths[:, bool_].max()
+        # NOTE: `lengths_to_mask` moves data from gpu to cpu, so it causes a sync
         predicted_mask = lengths_to_mask(lengths[:, bool_], device=lengths.device).transpose(0, 1)
-        metrics.append(metrics.batch_size, batch.length - reached_max.sum().item())
-        metrics.append(metrics.num_frames, batch.spectrogram.lengths[:, bool_])
-        metrics.append(metrics.num_frames_predicted, lengths[:, bool_])
-        metrics.update_rms_level_metrics(
-            batch.spectrogram.tensor[:max_frames, bool_],
-            frames[:max_frames, bool_],
-            batch.spectrogram_mask.tensor[:max_frames, bool_],
-            predicted_mask,
-        )
-        metrics.update_alignment_metrics(
-            alignments[:max_frames, bool_, :max_tokens],
-            predicted_mask,
-            batch.encoded_text_mask.tensor[:max_tokens, bool_],
-            batch.encoded_text.lengths[:max_tokens, bool_],
-            batch.encoded_speaker.tensor[:, bool_],
-            state.input_encoder,
-        )
+    else:
+        max_frames, max_tokens = 0, 0
+        predicted_mask = torch.ones(0, 0, dtype=torch.bool, device=lengths.device)
+    metrics.append(metrics.batch_size, batch.length - reached_max.sum().item())
+    metrics.append(metrics.num_frames, batch.spectrogram.lengths[:, bool_])
+    metrics.append(metrics.num_frames_predicted, lengths[:, bool_])
+    metrics.update_rms_metrics(
+        batch.spectrogram.tensor[:max_frames, bool_],
+        frames[:max_frames, bool_],
+        batch.spectrogram_mask.tensor[:max_frames, bool_],
+        predicted_mask,
+    )
+    metrics.update_alignment_metrics(
+        alignments[:max_frames, bool_, :max_tokens],
+        predicted_mask,
+        batch.encoded_text_mask.tensor[:max_tokens, bool_],
+        batch.encoded_text.lengths[:max_tokens, bool_],
+        batch.encoded_speaker.tensor[:, bool_],
+        state.input_encoder,
+    )
     metrics.update_data_queue_size(data_loader)
     metrics.append(metrics.num_reached_max_frames, reached_max)
 
@@ -976,7 +980,11 @@ def _run_worker(
     train_steps_per_epoch: int = HParam(),
     dev_steps_per_epoch: int = HParam(),
 ) -> typing.NoReturn:
-    """ Train and evaluate the spectrogram model on a loop. """
+    """Train and evaluate the spectrogram model on a loop.
+
+    TODO: Should we checkpoint `metrics` so that metrics like `num_frames_per_speaker`,
+    `num_spans_per_text_length`, or `max_num_frames` can be computed accross epochs?
+    """
     lib.environment.set_basic_logging_config(device_index)
     device = run._utils.init_distributed(device_index)
     comet = comet_partial(disabled=not is_master(), auto_output_logging=False)
