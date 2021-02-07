@@ -17,23 +17,11 @@ Setup your local development environment by following [these instructions](LOCAL
 
 1. Setup your environment variables...
 
-   ... for training the spectrogram model...
-
-   ```zsh
-   TRAIN_SCRIPT_PATH='run/train/spectrogram_model.py'
-   ```
-
-   ... for training the signal model...
-
-   ```zsh
-   TRAIN_SCRIPT_PATH='run/train/signal_model.py'
-   ```
-
-   ❓ LEARN MORE: See our machine type benchmarks [here](TODO).
 
    Also set these environment variables...
 
    ```zsh
+   TRAIN_SCRIPT_PATH='path/to/train.py' # EXAMPLE: run/train/spectrogram_model.py
    ZONE='your-vm-zone' # EXAMPLE: us-central1-a
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    GCP_USER='your-gcp-user-name' # Example: michaelp
@@ -48,7 +36,7 @@ Setup your local development environment by following [these instructions](LOCAL
    python -m run.utils.gcp make-instance \
       --name=$NAME \
       --zone=$ZONE \
-      --machine-type='n1-standard-32' \
+      --machine-type='custom-32-98304' \
       --gpu-type='nvidia-tesla-t4' \
       --gpu-count=4 \
       --disk-size=512 \
@@ -60,6 +48,8 @@ Setup your local development environment by following [these instructions](LOCAL
       --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
    python -m run.utils.gcp watch-instance --name=$NAME --zone=$ZONE
    ```
+
+   ❓ LEARN MORE: See our machine type benchmarks [here](TODO).
 
    💡 TIP: The output of the startup script will be saved on the VM here:
    `/var/log/syslog`
@@ -143,13 +133,15 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Start training...
 
    ```bash
-   # NOTE: Kill any leftover processes from other runs...
    pkill -9 python; sleep 5s; nvidia-smi; \
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PROJECT "$EXPERIMENT_NAME";
    ```
 
    💡 TIP: You may want to include the optional
    `--spectrogram_model_checkpoint=$SPECTROGRAM_CHECKPOINT` argument.
+
+   ❓ LEARN MORE: PyTorch leaves zombie processes that must be killed, check out:
+   https://leimao.github.io/blog/Kill-PyTorch-Distributed-Training-Processes/
 
 1. Detach from your screen session by typing `Ctrl-A` then `D`.
 

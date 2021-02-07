@@ -284,11 +284,11 @@ class CometMLExperiment:
 
         kwargs.update({"project_name": project_name, "workspace": workspace})
         if experiment_key is None:
-            self._experiment = comet_ml.Experiment(**kwargs)
+            self._experiment = comet_ml.Experiment(**kwargs, display_summary_level=0)
             self._experiment.log_html(self._BASE_HTML_STYLING)
         else:
             self._experiment = comet_ml.ExistingExperiment(
-                previous_experiment=experiment_key, **kwargs
+                previous_experiment=experiment_key, **kwargs, display_summary_level=0
             )
 
         self.log_asset = self._experiment.log_asset
@@ -420,11 +420,15 @@ class CometMLExperiment:
             items.append(f'<audio controls preload="metadata" src="{url}"></audio>')
         self.log_html("<section>{}</section>".format("\n".join(items)))
 
-    def log_parameter(self, key: run._config.Label, value: typing.Union[str, int, float]):
-        self._experiment.log_parameter(key, value)
+    def log_parameter(self, key: run._config.Label, value: typing.Any):
+        self._experiment.log_parameter(key, repr(value))
 
-    def log_parameters(self, dict_: typing.Dict[run._config.Label, typing.Union[str, int, float]]):
-        self._experiment.log_parameters(dict_)
+    def log_parameters(self, dict_: typing.Dict[run._config.Label, typing.Any]):
+        """
+        NOTE: Comet doesn't support `typing.Any` so we need to convert to a string representation.
+        For example, Comet will silently fail and not log parameters with `numpy` or `torch` values.
+        """
+        self._experiment.log_parameters({k: repr(v) for k, v in dict_.items()})
 
     def log_other(self, key: run._config.Label, value: typing.Union[str, int, float]):
         self._experiment.log_other(key, value)

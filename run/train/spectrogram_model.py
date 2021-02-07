@@ -3,6 +3,7 @@ TODO: This module should be split up into multiple files, it's quite long.
 """
 import collections
 import collections.abc
+import copy
 import dataclasses
 import faulthandler
 import logging
@@ -299,9 +300,9 @@ def _worker_init_fn(_, config):
     # like for a configuration, just in case the configuration is on a new process.
     hparams.hparams._configuration = config
     info = torch.utils.data.get_worker_info()
-    logger.info("Worker %d/%d iterator started.", info.id, info.num_workers)
-    _set_seed()  # NOTE: Each worker needs the same random seed to be deterministic.
     lib.environment.set_basic_logging_config()
+    logger.info("Worker %d/%d iterator started.", info.id + 1, info.num_workers)
+    _set_seed()  # NOTE: Each worker needs the same random seed to be deterministic.
 
 
 class _DataIterator(lib.utils.MappedIterator):
@@ -356,6 +357,9 @@ class _DataLoader(collections.abc.Iterable):
     https://pytorch.org/docs/stable/data.html#disable-automatic-batching
     This should also help with code locality. Also, if we'd like to run a more expensive dataset
     filtering, it is more doable in batches.
+
+    TODO: Remove `copy.deepcopy` after this issue is fixed:
+    https://github.com/pytorch/pytorch/issues/51849
     """
 
     def __init__(
@@ -368,7 +372,7 @@ class _DataLoader(collections.abc.Iterable):
             typing.cast(torch.utils.data.Dataset, iterator),
             pin_memory=True,
             batch_size=None,
-            worker_init_fn=partial(_worker_init_fn, config=get_config()),
+            worker_init_fn=partial(_worker_init_fn, config=copy.deepcopy(get_config())),
             collate_fn=partial(
                 make_span_batch, input_encoder=input_encoder, max_parallel=max_parallel
             ),
@@ -1072,27 +1076,25 @@ def _run(
     )
 
 
-def _setup_logging(debug: bool) -> lib.environment.RecordStandardStreams:
-    lib.environment.set_basic_logging_config(logging.DEBUG if debug else logging.INFO)
-    recorder = lib.environment.RecordStandardStreams()
-    # NOTE: Ensure command line args are captured in the logs.
-    logger.info("Command line args: %s", str(sys.argv))
-    return recorder
-
-
 def _setup_config(
     comet: CometMLExperiment, config: typing.List[str], debug: bool
-) -> typing.Dict[str, typing.Any]:
+) -> typing.Tuple[typing.Dict[str, typing.Any], lib.environment.RecordStandardStreams]:
     """
     TODO: For checkpointed runs, should we triple check the same parameters are getting
     configured? Should we throw an error if not? Or should we create a new experiment, and ensure
     that each experiments parameters are immutable?
+
+    TODO: `RecordStandardStreams` should be started after `CometMLExperiment`; otherwise,
+    `CometMLExperiment` will not be able to monitor the standard streams. Can this be fixed?
     """
+    recorder = lib.environment.RecordStandardStreams()
+    # NOTE: Ensure command line args are captured in the logs.
+    logger.info("Command line args: %s", str(sys.argv))
     parsed = parse_hparam_args(config)
     parameters = _configure(parsed, debug)
     params = {get_config_label(k): v for k, v in parameters.items()}
     comet.log_parameters(params)
-    return parsed
+    return parsed, recorder
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -1101,11 +1103,11 @@ def resume(
     checkpoint: typing.Optional[pathlib.Path] = typer.Argument(
         None, help="Checkpoint file to restart training from."
     ),
-    debug: bool = typer.Option(False, help="Run in debugging mode."),
+    debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):
     """Resume training from CHECKPOINT. If CHECKPOINT is not given, the most recent checkpoint
     file is loaded."""
-    recorder = _setup_logging(debug)
+    lib.environment.set_basic_logging_config(logging.DEBUG if debug else logging.INFO)
     pattern = str(SPECTROGRAM_MODEL_EXPERIMENTS_PATH / f"**/*{lib.environment.PT_EXTENSION}")
     if checkpoint:
         loaded = load(checkpoint)
@@ -1113,7 +1115,7 @@ def resume(
         checkpoint, loaded = load_most_recent_file(pattern, load)
     checkpoint_ = typing.cast(Checkpoint, loaded)
     comet = run._utils.CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
-    config = _setup_config(comet, context.args, debug)
+    config, recorder = _setup_config(comet, context.args, debug)
     _, checkpoints_path = maybe_make_experiment_directories_from_checkpoint(checkpoint_, recorder)
     _run(checkpoints_path, config, comet, checkpoint, debug=debug)
 
@@ -1124,14 +1126,14 @@ def start(
     project: str = typer.Argument(..., help="Experiment project name."),
     name: str = typer.Argument("", help="Experiment name."),
     tags: typing.List[str] = typer.Option([], help="Experiment tags."),
-    debug: bool = typer.Option(False, help="Run in debugging mode."),
+    debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):
     """ Start a training run in PROJECT named NAME with TAGS. """
-    recorder = _setup_logging(debug)
+    lib.environment.set_basic_logging_config(logging.DEBUG if debug else logging.INFO)
     comet = run._utils.CometMLExperiment(project_name=project)
     comet.set_name(name)
     comet.add_tags(tags)
-    config = _setup_config(comet, context.args, debug)
+    config, recorder = _setup_config(comet, context.args, debug)
     experiment_root = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / lib.environment.bash_time_label()
     run_root, checkpoints_path = maybe_make_experiment_directories(experiment_root, recorder)
     comet.log_other(run._config.get_environment_label("directory"), str(run_root))
