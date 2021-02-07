@@ -812,8 +812,8 @@ def _run_step(
 
         label_ = partial(get_model_label, cadence=Cadence.STEP)
         log_metric = lambda n, v: state.comet.log_metric(label_(n), v)
-        log_metric("grad_norm/two", get_parameter_norm(state.model.parameters(), 2))
-        log_metric("grad_norm/inf", get_parameter_norm(state.model.parameters(), math.inf))
+        log_metric("grad_norm/two", get_parameter_norm(state.model.parameters(), 2).item())
+        log_metric("grad_norm/inf", get_parameter_norm(state.model.parameters(), math.inf).item())
         log_metric("grad_norm/max_norm", state.clipper.max_norm)
         iterator = enumerate(state.optimizer.param_groups)
         [log_metric(f"parameter_{i}/lr", g["lr"]) for i, g in iterator]
