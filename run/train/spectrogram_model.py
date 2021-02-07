@@ -88,9 +88,9 @@ def _configure(
     """ Configure modules for spectrogram model training, and return parameters. """
     run._config.configure()
 
-    train_batch_size = 56
+    train_batch_size = 28 if debug else 56
     dev_batch_size = train_batch_size * 4
-    train_steps_per_epoch = 128 if debug else 1024
+    train_steps_per_epoch = 64 if debug else 1024
     # NOTE: This parameter was set approximately based on the size of each respective
     # dataset. The development dataset is about 16 times smaller than the training dataset
     # based on the number of characters in each dataset.
@@ -132,7 +132,7 @@ def _configure(
             # NOTE: Batch size parameters set after experimentation on a 2 Px100 GPU.
             train_batch_size=train_batch_size,
             dev_batch_size=dev_batch_size,
-            num_workers=4,
+            num_workers=2 if debug else 4,
         ),
         _DistributedMetrics.get_model_metrics: HParams(
             num_frame_channels=run._config.NUM_FRAME_CHANNELS
@@ -1067,7 +1067,7 @@ def _run(
             dev_dataset,
             partial(run._utils.CometMLExperiment, experiment_key=comet.get_key()),
             config,
-            debug
+            debug,
         ),
     )
 
@@ -1113,7 +1113,7 @@ def resume(
         checkpoint, loaded = load_most_recent_file(pattern, load)
     checkpoint_ = typing.cast(Checkpoint, loaded)
     comet = run._utils.CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
-    config = _setup_config(comet, context.args)
+    config = _setup_config(comet, context.args, debug)
     _, checkpoints_path = maybe_make_experiment_directories_from_checkpoint(checkpoint_, recorder)
     _run(checkpoints_path, config, comet, checkpoint, debug=debug)
 
@@ -1131,7 +1131,7 @@ def start(
     comet = run._utils.CometMLExperiment(project_name=project)
     comet.set_name(name)
     comet.add_tags(tags)
-    config = _setup_config(comet, context.args)
+    config = _setup_config(comet, context.args, debug)
     experiment_root = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / lib.environment.bash_time_label()
     run_root, checkpoints_path = maybe_make_experiment_directories(experiment_root, recorder)
     comet.log_other(run._config.get_environment_label("directory"), str(run_root))
