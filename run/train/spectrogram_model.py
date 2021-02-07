@@ -1032,16 +1032,17 @@ def _run(
     comet: CometMLExperiment,
     checkpoint: typing.Optional[pathlib.Path] = None,
     minimum_disk_space: float = 0.2,
+    debug: bool = False,
 ):
-    """Run spectrogram model training.
-
-    TODO: Add a debugging mode with a smaller dataset.
-    """
+    """Run spectrogram model training. """
     lib.environment.check_module_versions()
     lib.environment.assert_enough_disk_space(minimum_disk_space)
 
+    datasets = run._config.DATASETS
+    datasets = {k: v for k, v in list(datasets.items())[:1]} if debug else datasets
+
     # NOTE: Load, preprocess, and cache dataset values.
-    dataset = run._config.get_dataset()
+    dataset = run._config.get_dataset(datasets)
     train_dataset, dev_dataset = run._config.split_dataset(dataset)
     comet.log_parameters(run._utils.get_dataset_stats(train_dataset, dev_dataset))
 
@@ -1067,8 +1068,8 @@ def _run(
     )
 
 
-def _setup_logging() -> lib.environment.RecordStandardStreams:
-    lib.environment.set_basic_logging_config()
+def _setup_logging(debug: bool) -> lib.environment.RecordStandardStreams:
+    lib.environment.set_basic_logging_config(logging.DEBUG if debug else logging.INFO)
     recorder = lib.environment.RecordStandardStreams()
     # NOTE: Ensure command line args are captured in the logs.
     logger.info("Command line args: %s", str(sys.argv))
@@ -1096,10 +1097,11 @@ def resume(
     checkpoint: typing.Optional[pathlib.Path] = typer.Argument(
         None, help="Checkpoint file to restart training from."
     ),
+    debug: bool = typer.Option(False, help="Run in debugging mode."),
 ):
     """Resume training from CHECKPOINT. If CHECKPOINT is not given, the most recent checkpoint
     file is loaded."""
-    recorder = _setup_logging()
+    recorder = _setup_logging(debug)
     pattern = str(SPECTROGRAM_MODEL_EXPERIMENTS_PATH / f"**/*{lib.environment.PT_EXTENSION}")
     if checkpoint:
         loaded = load(checkpoint)
@@ -1109,7 +1111,7 @@ def resume(
     comet = run._utils.CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
     config = _setup_config(comet, context.args)
     _, checkpoints_path = maybe_make_experiment_directories_from_checkpoint(checkpoint_, recorder)
-    _run(checkpoints_path, config, comet, checkpoint)
+    _run(checkpoints_path, config, comet, checkpoint, debug=debug)
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -1118,9 +1120,10 @@ def start(
     project: str = typer.Argument(..., help="Experiment project name."),
     name: str = typer.Argument("", help="Experiment name."),
     tags: typing.List[str] = typer.Option([], help="Experiment tags."),
+    debug: bool = typer.Option(False, help="Run in debugging mode."),
 ):
     """ Start a training run in PROJECT named NAME with TAGS. """
-    recorder = _setup_logging()
+    recorder = _setup_logging(debug)
     comet = run._utils.CometMLExperiment(project_name=project)
     comet.set_name(name)
     comet.add_tags(tags)
@@ -1128,7 +1131,7 @@ def start(
     experiment_root = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / lib.environment.bash_time_label()
     run_root, checkpoints_path = maybe_make_experiment_directories(experiment_root, recorder)
     comet.log_other(run._config.get_environment_label("directory"), str(run_root))
-    _run(checkpoints_path, config, comet)
+    _run(checkpoints_path, config, comet, debug=debug)
 
 
 if __name__ == "__main__":  # pragma: no cover
