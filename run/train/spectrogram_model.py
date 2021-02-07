@@ -82,13 +82,15 @@ def _set_seed(seed=HParam()):
     lib.environment.set_seed(seed)
 
 
-def _configure(more_config: typing.Dict[str, typing.Any]) -> typing.Dict[str, typing.Any]:
+def _configure(
+    more_config: typing.Dict[str, typing.Any], debug: bool
+) -> typing.Dict[str, typing.Any]:
     """ Configure modules for spectrogram model training, and return parameters. """
     run._config.configure()
 
     train_batch_size = 56
     dev_batch_size = train_batch_size * 4
-    train_steps_per_epoch = 1024
+    train_steps_per_epoch = 128 if debug else 1024
     # NOTE: This parameter was set approximately based on the size of each respective
     # dataset. The development dataset is about 16 times smaller than the training dataset
     # based on the number of characters in each dataset.
@@ -977,6 +979,7 @@ def _run_worker(
     dev_dataset: run._config.Dataset,
     comet_partial: typing.Callable[..., CometMLExperiment],
     config: typing.Dict[str, typing.Any],
+    debug: bool,
     train_steps_per_epoch: int = HParam(),
     dev_steps_per_epoch: int = HParam(),
 ) -> typing.NoReturn:
@@ -988,7 +991,7 @@ def _run_worker(
     lib.environment.set_basic_logging_config(device_index)
     device = run._utils.init_distributed(device_index)
     comet = comet_partial(disabled=not is_master(), auto_output_logging=False)
-    _configure(config)
+    _configure(config, debug)
     if checkpoint is None:
         state = _State.from_dataset(train_dataset, dev_dataset, comet, device)
     else:
@@ -1064,6 +1067,7 @@ def _run(
             dev_dataset,
             partial(run._utils.CometMLExperiment, experiment_key=comet.get_key()),
             config,
+            debug
         ),
     )
 
@@ -1077,7 +1081,7 @@ def _setup_logging(debug: bool) -> lib.environment.RecordStandardStreams:
 
 
 def _setup_config(
-    comet: CometMLExperiment, config: typing.List[str]
+    comet: CometMLExperiment, config: typing.List[str], debug: bool
 ) -> typing.Dict[str, typing.Any]:
     """
     TODO: For checkpointed runs, should we triple check the same parameters are getting
@@ -1085,7 +1089,7 @@ def _setup_config(
     that each experiments parameters are immutable?
     """
     parsed = parse_hparam_args(config)
-    parameters = _configure(parsed)
+    parameters = _configure(parsed, debug)
     params = {get_config_label(k): v for k, v in parameters.items()}
     comet.log_parameters(params)
     return parsed
