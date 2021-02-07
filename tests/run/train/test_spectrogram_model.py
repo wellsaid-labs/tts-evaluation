@@ -107,7 +107,7 @@ def test_integration(mock_urlretrieve):
 
     # Test `_run_step` with `_DistributedMetrics` and `_State`
     with run._utils.set_context(Context.TRAIN, state.model, comet):
-        metrics = _DistributedMetrics()
+        metrics = _DistributedMetrics(comet, device)
         batch = next(iter(train_loader))
         assert state.step.item() == 0
 
@@ -129,19 +129,19 @@ def test_integration(mock_urlretrieve):
         assert len(metrics.predicted_frame_alignment_norm) == 1
         assert len(metrics.stop_token_num_correct) == 1
 
-        metrics.log(comet, lambda l: l[-1], DatasetType.TRAIN, Cadence.STEP)
-        metrics.log(comet, sum, DatasetType.TRAIN, Cadence.MULTI_STEP)
+        metrics.log(lambda l: l[-1], DatasetType.TRAIN, Cadence.STEP)
+        metrics.log(sum, DatasetType.TRAIN, Cadence.MULTI_STEP)
 
     # Test `_run_inference` with `_DistributedMetrics` and `_State`
     with run._utils.set_context(Context.EVALUATE_INFERENCE, state.model, comet):
-        metrics = _DistributedMetrics()
+        metrics = _DistributedMetrics(comet, device)
         batch = next(iter(dev_loader))
         _run_inference(state, metrics, batch, dev_loader, DatasetType.DEV, True)
         assert state.step.item() == 1
         assert metrics.num_reached_max_frames[0] + metrics.batch_size[0] == 1
 
-        metrics.log(comet, lambda l: l[-1], DatasetType.DEV, Cadence.STEP)
-        metrics.log(comet, sum, DatasetType.DEV, Cadence.MULTI_STEP)
+        metrics.log(lambda l: l[-1], DatasetType.DEV, Cadence.STEP)
+        metrics.log(sum, DatasetType.DEV, Cadence.MULTI_STEP)
 
     # Test loading and saving a checkpoint
     with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:
