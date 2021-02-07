@@ -1049,6 +1049,7 @@ def _run(
     # TODO: PyTorch-Lightning makes strong recommendations to not use `spawn`. Learn more:
     # https://pytorch-lightning.readthedocs.io/en/stable/multi_gpu.html#distributed-data-parallel
     # https://github.com/PyTorchLightning/pytorch-lightning/pull/2029
+    # https://github.com/PyTorchLightning/pytorch-lightning/issues/5772
     # Also, it's less normal to use `spawn` because it wouldn't work with multiple nodes, so
     # we should consider using `torch.distributed.launch`.
     # TODO: Should we consider setting OMP num threads similarly:
