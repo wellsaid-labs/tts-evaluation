@@ -429,6 +429,9 @@ class CometMLExperiment:
     def log_other(self, key: run._config.Label, value: typing.Union[str, int, float]):
         self._experiment.log_other(key, value)
 
+    def log_metrics(self, dict_: typing.Dict[run._config.Label, float]):
+        [self.log_metric(k, v) for k, v in dict_.items()]
+
     def log_metric(self, name: run._config.Label, value: typing.Union[int, float]):
         self._experiment.log_metric(name, value)
 
@@ -437,7 +440,7 @@ class CometMLExperiment:
 
     def log_figures(self, dict_: typing.Dict[run._config.Label, matplotlib.figure.Figure]):
         """ Log multiple figures from `dict_` via `experiment.log_figure`. """
-        return [self.log_figure(k, v) for k, v in dict_.items()]
+        [self.log_figure(k, v) for k, v in dict_.items()]
 
     def set_name(self, name: str):
         logger.info('Experiment name set to "%s"', name)
