@@ -142,7 +142,7 @@ class _MaxLevelFilter(logging.Filter):
         return record.levelno <= self.maxLevel
 
 
-def set_basic_logging_config(id_: int = os.getpid(), reset=False):
+def set_basic_logging_config(id_: int = os.getpid(), reset=False, level=logging.INFO):
     """
     Inspired by: `logging.basicConfig`
 
@@ -167,14 +167,14 @@ def set_basic_logging_config(id_: int = os.getpid(), reset=False):
             root.removeHandler(root.handlers[0])
 
     if len(root.handlers) == 0:
-        root.setLevel(logging.INFO)
+        root.setLevel(level)
 
         formatter = _ColoredFormatter(id_)
 
         handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(logging.INFO)
+        handler.setLevel(level)
         handler.setFormatter(formatter)
-        handler.addFilter(_MaxLevelFilter(logging.INFO))
+        handler.addFilter(_MaxLevelFilter(level))
         root.addHandler(handler)
 
         handler = logging.StreamHandler(sys.stderr)
