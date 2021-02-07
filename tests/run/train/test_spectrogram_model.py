@@ -23,7 +23,7 @@ from tests import _utils
 
 def test__configure():
     """ Test `spectrogram_model._configure` finds and configures modules. """
-    _configure({})
+    _configure({}, True)
 
 
 def _mock_distributed_data_parallel(module, *_, **__):
@@ -38,7 +38,7 @@ def _mock_distributed_data_parallel(module, *_, **__):
 def test_integration(mock_urlretrieve):
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
 
-    _configure({})
+    _configure({}, True)
 
     # Test loading data
     directory = _utils.TEST_DATA_PATH / "datasets"

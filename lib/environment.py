@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import atexit
+import faulthandler
 import glob
 import logging
 import os
 import platform
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -598,3 +600,18 @@ def get_total_physical_memory() -> typing.Optional[int]:
         command = "awk '/MemTotal/ {print $2}' /proc/meminfo"
         return int(subprocess.check_output(command, shell=True).decode().strip())
     return None
+
+
+def enable_fault_handler():
+    """ This module contains functions to dump Python tracebacks explicitly, on a fault, after a
+    timeout, or on a user signal.
+
+    NOTE: In order to debug a running process, signal the application with: `kill -SIGUSR1 {pid}`.
+    Learn more:
+    https://stackoverflow.com/questions/21733856/python-is-there-a-downside-to-using-faulthandler
+    https://stackoverflow.com/questions/4163964/python-is-it-possible-to-attach-a-console-into-a-running-process/35113682
+    https://stackoverflow.com/questions/132058/showing-the-stack-trace-from-a-running-python-application/29881630#29881630
+    https://stackoverflow.com/questions/10824886/how-to-signal-an-application-without-killing-it-in-linux
+    """
+    faulthandler.register(signal.SIGUSR1)
+    faulthandler.enable()

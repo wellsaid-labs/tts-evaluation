@@ -5,14 +5,12 @@ import collections
 import collections.abc
 import copy
 import dataclasses
-import faulthandler
 import logging
 import math
 import os
 import pathlib
 import platform
 import random
-import signal
 import sys
 import typing
 from functools import partial
@@ -66,14 +64,7 @@ from run._utils import (
     set_context,
 )
 
-# NOTE: In order to debug a running process, signal the application with: `kill -SIGUSR1 {pid}`.
-# Learn more:
-# https://stackoverflow.com/questions/21733856/python-is-there-a-downside-to-using-faulthandler
-# https://stackoverflow.com/questions/4163964/python-is-it-possible-to-attach-a-console-into-a-running-process/35113682
-# https://stackoverflow.com/questions/132058/showing-the-stack-trace-from-a-running-python-application/29881630#29881630
-# https://stackoverflow.com/questions/10824886/how-to-signal-an-application-without-killing-it-in-linux
-faulthandler.register(signal.SIGUSR1)
-faulthandler.enable()
+lib.environment.enable_fault_handler()
 logger = logging.getLogger(__name__)
 app = typer.Typer()
 
@@ -768,6 +759,12 @@ def _run_step(
 ):
     """Run the `model` on the next batch from `data_loader`, and maybe update it.
 
+    TODO: Run the model with a dummy batch that's larger than the largest sequence length, learn
+    more:
+    https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html#pre-allocate-memory-in-case-of-variable-input-length
+    TODO: Maybe enable the CUDNN auto tuner:
+    https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html#enable-cudnn-auto-tuner
+
     Args:
         ...
         visualize: If `True` visualize the results with `comet`.
@@ -806,6 +803,13 @@ def _run_step(
 
         (spectrogram_loss_ + stop_token_loss_).backward()
 
+        state.clipper.clip()
+        state.optimizer.step()
+        state.step.add_(1)
+        state.update_num_examples(batch.length)
+        state.scheduler.step()
+        state.comet.set_step(typing.cast(int, state.step.item()))
+
         label_ = partial(get_model_label, cadence=Cadence.STEP)
         log_metric = lambda n, v: state.comet.log_metric(label_(n), v)
         log_metric("grad_norm/two", get_parameter_norm(state.model.parameters(), 2))
@@ -813,13 +817,6 @@ def _run_step(
         log_metric("grad_norm/max_norm", state.clipper.max_norm)
         iterator = enumerate(state.optimizer.param_groups)
         [log_metric(f"parameter_{i}/lr", g["lr"]) for i, g in iterator]
-
-        state.clipper.clip()
-        state.optimizer.step()
-        state.step.add_(1)
-        state.update_num_examples(batch.length)
-        state.scheduler.step()
-        state.comet.set_step(typing.cast(int, state.step.item()))
 
     if visualize:
         _visualize_source_vs_target(
@@ -1107,7 +1104,7 @@ def resume(
 ):
     """Resume training from CHECKPOINT. If CHECKPOINT is not given, the most recent checkpoint
     file is loaded."""
-    lib.environment.set_basic_logging_config(logging.DEBUG if debug else logging.INFO)
+    lib.environment.set_basic_logging_config()
     pattern = str(SPECTROGRAM_MODEL_EXPERIMENTS_PATH / f"**/*{lib.environment.PT_EXTENSION}")
     if checkpoint:
         loaded = load(checkpoint)
@@ -1129,7 +1126,7 @@ def start(
     debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):
     """ Start a training run in PROJECT named NAME with TAGS. """
-    lib.environment.set_basic_logging_config(logging.DEBUG if debug else logging.INFO)
+    lib.environment.set_basic_logging_config()
     comet = run._utils.CometMLExperiment(project_name=project)
     comet.set_name(name)
     comet.add_tags(tags)

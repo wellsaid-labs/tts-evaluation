@@ -424,7 +424,7 @@ class Tuples(typing.Generic[_TuplesVar]):
     >>> np.array([10000000], np.int16)
     array([-27008], dtype=int16)
     ```
-    NOTE: This doesn't support tuples with numpy objects.
+    NOTE: This doesn't support tuples with `numpy` objects.
     """
 
     __slots__ = "storage", "type"

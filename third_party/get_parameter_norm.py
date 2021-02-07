@@ -23,14 +23,16 @@ def get_parameter_norm(parameters, norm_type=2):
     """
     if isinstance(parameters, torch.Tensor):
         parameters = [parameters]
-    parameters = list(filter(lambda p: p.grad is not None, parameters))
+    parameters = [p for p in parameters if p.grad is not None]
     norm_type = float(norm_type)
+    if len(parameters) == 0:
+        return torch.tensor(0.0)
+    device = parameters[0].grad.device
     if norm_type == math.inf:
-        total_norm = max(p.grad.data.abs().max().item() for p in parameters)
+        total_norm = max(p.grad.detach().abs().max().to(device) for p in parameters)
     else:
-        total_norm = 0
-        for p in parameters:
-            param_norm = p.grad.data.norm(norm_type)
-            total_norm += param_norm.item()**norm_type
-        total_norm = total_norm**(1. / norm_type)
+        total_norm = torch.norm(
+            torch.stack([torch.norm(p.grad.detach(), norm_type).to(device) for p in parameters]),
+            norm_type,
+        )
     return total_norm
