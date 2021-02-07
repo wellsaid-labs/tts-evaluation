@@ -676,15 +676,17 @@ def power_spectrogram_to_framed_rms(
       https://backtracks.fm/blog/whats-the-difference-between-decibels-and-lufs/
 
     Args:
-        power_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
+        power_spectrogram (torch.FloatTensor
+            [batch_size (optional), num_frames, fft_length // 2 + 1])
         window (torch.FloatTensor [window_size])
 
     Returns:
-        (torch.FloatTensor [batch_size, num_frames])
+        (torch.FloatTensor [batch_size (optional), num_frames])
     """
     device = power_spectrogram.device
     has_batch_dim = power_spectrogram.dim() == 3
-    power_spectrogram = power_spectrogram.view(-1, *power_spectrogram.shape[-2:])
+    batch_size = power_spectrogram.shape[0] if has_batch_dim else 1
+    power_spectrogram = power_spectrogram.view(batch_size, *power_spectrogram.shape[-2:])
 
     # Learn more:
     # https://community.sw.siemens.com/s/article/window-correction-factors

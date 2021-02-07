@@ -705,6 +705,14 @@ def test_power_spectrogram_to_framed_rms__batch():
     ).sum().sqrt().item() == pytest.approx(1.0)
 
 
+def test_power_spectrogram_to_framed_rms__zero_elements():
+    """ Test `lib.audio.power_spectrogram_to_framed_rms` on a zero frames. """
+    window = torch.ones(1024)
+    power_spectrogram = torch.zeros(64, 0, 1025)
+    frame_rms = lib.audio.power_spectrogram_to_framed_rms(power_spectrogram, window=window).numpy()
+    assert frame_rms.shape == (64, 0)
+
+
 def test_signal_to_db_mel_spectrogram():
     """ Test `lib.audio.SignalTodBMelSpectrogram` against an equivilant `librosa` implmentation. """
     n_fft = 2048
