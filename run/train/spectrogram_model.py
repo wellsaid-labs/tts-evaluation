@@ -302,10 +302,6 @@ def _worker_init_fn(_, config):
     lib.environment.set_basic_logging_config()
 
 
-def _data_iterator_sort_key(span: lib.datasets.Span):
-    return span.audio_length
-
-
 class _DataIterator(lib.utils.MappedIterator):
     def __init__(self, dataset: run._config.Dataset, batch_size: int):
         """Generate spans from `run._config.Dataset`.
@@ -314,11 +310,15 @@ class _DataIterator(lib.utils.MappedIterator):
         from a large corpus of data with `SpanGenerator`.
         """
         iter_ = run._config.SpanGenerator(dataset)
-        iter_ = BucketBatchSampler(iter_, batch_size, False, _data_iterator_sort_key)
+        iter_ = BucketBatchSampler(iter_, batch_size, False, self._data_iterator_sort_key)
         iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED, cuda=False)
         if is_initialized():
             iter_ = DistributedBatchSampler(iter_, num_replicas=get_world_size(), rank=get_rank())
         super().__init__(iter_)
+
+    @staticmethod
+    def _data_iterator_sort_key(span: lib.datasets.Span):
+        return span.audio_length
 
     def __len__(self) -> int:
         return sys.maxsize  # NOTE: The `DataLoader` needs `__len__`.
