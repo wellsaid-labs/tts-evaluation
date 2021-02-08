@@ -725,7 +725,7 @@ def _visualize_source_vs_target(
 
     item = random.randint(0, batch.length - 1)
     spectrogram_length = int(batch.spectrogram.lengths[0, item].item())
-    text_length = int(batch.encoded_text.lengths[0, item].item())
+    text_length = int(batch.encoded_phonemes.lengths[0, item].item())
 
     # predicted_spectrogram, gold_spectrogram [num_frames, frame_channels]
     predicted_spectrogram = predicted_spectrogram[:spectrogram_length, item]
@@ -829,8 +829,8 @@ def _run_step(
     metrics.update_alignment_metrics(
         alignment,
         batch.spectrogram_mask.tensor,
-        batch.encoded_text_mask.tensor,
-        batch.encoded_text.lengths,
+        batch.encoded_phonemes_mask.tensor,
+        batch.encoded_phonemes.lengths,
         batch.encoded_speaker.tensor,
         state.input_encoder,
     )
@@ -874,7 +874,7 @@ def _visualize_inferred(
     item = random.randint(0, batch.length - 1)
     num_frames = int(batch.spectrogram.lengths[0, item].item())
     num_frames_predicted = int(predicted_lengths[0, item].item())
-    text_length = int(batch.encoded_text.lengths[0, item].item())
+    text_length = int(batch.encoded_phonemes.lengths[0, item].item())
     # gold_spectrogram [num_frames, frame_channels]
     gold_spectrogram = batch.spectrogram.tensor[:num_frames, item]
     # spectrogram [num_frames, frame_channels]
@@ -923,9 +923,9 @@ def _run_inference(
         visualize: If `True` visualize the results with `comet`.
     """
     frames, stop_tokens, alignments, lengths, reached_max = state.model.module(
-        batch.encoded_text.tensor,
+        batch.encoded_phonemes.tensor,
         batch.encoded_speaker.tensor,
-        batch.encoded_text.lengths,
+        batch.encoded_phonemes.lengths,
         mode=lib.spectrogram_model.Mode.INFER,
     )
 
@@ -939,7 +939,7 @@ def _run_inference(
     bool_ = ~reached_max.view(-1)
     if bool_.sum() > 0:
         max_frames = lengths[:, bool_].max()
-        max_tokens = batch.encoded_text.lengths[:, bool_].max()
+        max_tokens = batch.encoded_phonemes.lengths[:, bool_].max()
         # NOTE: `lengths_to_mask` moves data from gpu to cpu, so it causes a sync
         predicted_mask = lengths_to_mask(lengths[:, bool_], device=lengths.device).transpose(0, 1)
     else:
@@ -957,8 +957,8 @@ def _run_inference(
     metrics.update_alignment_metrics(
         alignments[:max_frames, bool_, :max_tokens],
         predicted_mask,
-        batch.encoded_text_mask.tensor[:max_tokens, bool_],
-        batch.encoded_text.lengths[:max_tokens, bool_],
+        batch.encoded_phonemes_mask.tensor[:max_tokens, bool_],
+        batch.encoded_phonemes.lengths[:max_tokens, bool_],
         batch.encoded_speaker.tensor[:, bool_],
         state.input_encoder,
     )
