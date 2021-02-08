@@ -202,7 +202,7 @@ class _State:
         https://discuss.pytorch.org/t/proper-distributeddataparallel-usage/74564
         """
         model = lib.spectrogram_model.SpectrogramModel(
-            input_encoder.grapheme_encoder.vocab_size,
+            input_encoder.phoneme_encoder.vocab_size,
             input_encoder.speaker_encoder.vocab_size,
         ).to(device, non_blocking=True)
         comet.set_model_graph(str(model))
@@ -772,12 +772,12 @@ def _run_step(
         stop_token_min_loss: This thresholds the stop token loss to prevent overfitting.
     """
     frames, stop_token, alignment, spectrogram_loss, stop_token_loss = state.model(
-        tokens=batch.encoded_text.tensor,
+        tokens=batch.encoded_phonemes.tensor,
         speaker=batch.encoded_speaker.tensor,
         target_frames=batch.spectrogram.tensor,
         target_stop_token=batch.stop_token.tensor,
-        num_tokens=batch.encoded_text.lengths,
-        tokens_mask=batch.encoded_text_mask.tensor,
+        num_tokens=batch.encoded_phonemes.lengths,
+        tokens_mask=batch.encoded_phonemes_mask.tensor,
         target_mask=batch.spectrogram_mask.tensor,
         mode=lib.spectrogram_model.Mode.FORWARD,
     )

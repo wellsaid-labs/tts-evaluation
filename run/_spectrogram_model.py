@@ -420,6 +420,9 @@ class SpanBatch(typing.NamedTuple):
     # SequenceBatch[torch.LongTensor [num_phonemes, batch_size], torch.LongTensor [1, batch_size])
     encoded_phonemes: SequenceBatch
 
+    # SequenceBatch[torch.LongTensor [num_phonemes, batch_size], torch.LongTensor [1, batch_size])
+    encoded_phonemes_mask: SequenceBatch
+
     # SequenceBatch[torch.FloatTensor [num_characters, batch_size],
     #               torch.LongTensor [1, batch_size])
     loudness: SequenceBatch
@@ -518,6 +521,7 @@ def make_span_batch(
         encoded_letter_case=stack([e.letter_cases for e in encoded]),
         word_vectors=stack([_get_word_vectors(char_to_word[i], docs[i]) for i in range(length)]),
         encoded_phonemes=stack([s.phonemes for s in encoded]),
+        encoded_phonemes_mask=stack([mask(e.phonemes.shape[0]) for e in encoded]),
         loudness=stack([a[0] for a in loudness]),
         loudness_mask=stack([a[1] for a in loudness]),
         speed=stack([a[0] for a in speed]),
