@@ -183,13 +183,14 @@ def _dataset_loader(
     logger.info("Loading `%s` speech dataset", root_directory_name)
 
     path = directory / root_directory_name
-    if create_root:
+    new_path = directory / rename_template.format(speaker_label=speaker.label)
+    if create_root and not new_path.exists():
         path.mkdir(exist_ok=True)
 
-    new_path = directory / rename_template.format(speaker_label=speaker.label)
     if not new_path.exists():
         download_directory = str((path if create_root else directory).absolute())
         check_files = [str((path / metadata_file_name).absolute())]
+        # TODO: Delete temporary `.tar.gz` files after extracting.
         download_file_maybe_extract(url, download_directory, url_filename, check_files=check_files)
 
     if path.exists():  # NOTE: Normalize file paths.
