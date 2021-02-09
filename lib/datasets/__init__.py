@@ -13,7 +13,7 @@ from lib.datasets.m_ailabs import (
     m_ailabs_en_us_judy_bieber_speech_dataset,
     m_ailabs_en_us_mary_ann_speech_dataset,
 )
-from lib.datasets.old_wsl_datasets import OLD_WSL_DATASETS  # type: ignore
+from lib.datasets.old_wsl_datasets import OLD_WSL_DATASETS
 from lib.datasets.utils import (
     Alignment,
     Passage,
@@ -56,7 +56,7 @@ from lib.datasets.wsl_datasets import (
 
 
 DataLoader = typing.Callable[[Path], typing.List[Passage]]
-DATASETS = typing.cast(typing.Dict[Speaker, DataLoader], WSL_DATASETS)
+DATASETS = typing.cast(typing.Dict[Speaker, DataLoader], WSL_DATASETS.copy())
 DATASETS[LINDA_JOHNSON] = lj_speech_dataset  # type: ignore
 DATASETS[JUDY_BIEBER] = m_ailabs_en_us_judy_bieber_speech_dataset
 DATASETS[MARY_ANN] = m_ailabs_en_us_mary_ann_speech_dataset
@@ -113,4 +113,6 @@ __all__ = [
     "STEVEN_WAHLBERG",
     "SUSAN_MURPHY",
     "DATASETS",
+    "WSL_DATASETS",
+    "OLD_WSL_DATASETS",
 ]
