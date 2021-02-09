@@ -13,6 +13,7 @@ from lib.datasets.m_ailabs import (
     m_ailabs_en_us_judy_bieber_speech_dataset,
     m_ailabs_en_us_mary_ann_speech_dataset,
 )
+from lib.datasets.old_wsl_datasets import OLD_WSL_DATASETS  # type: ignore
 from lib.datasets.utils import (
     Alignment,
     Passage,
