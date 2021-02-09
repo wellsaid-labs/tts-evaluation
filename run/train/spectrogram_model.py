@@ -185,7 +185,7 @@ class _State:
             label("phoneme_vocab_size"): input_encoder.phoneme_encoder.vocab_size,
             label("phoneme_vocab"): sorted(input_encoder.phoneme_encoder.vocab),
             label("num_speakers"): input_encoder.speaker_encoder.vocab_size,
-            label("speakers"): sorted(input_encoder.speaker_encoder.vocab),
+            label("speakers"): sorted([s.label for s in input_encoder.speaker_encoder.vocab]),
         }
         comet.log_parameters(stats)
         return input_encoder
@@ -684,7 +684,6 @@ class _DistributedMetrics:
             metrics[get_model_label("skips", speaker=speaker, **kwargs)] = num_skips / num_tokens
         return metrics
 
-    @configurable
     def log(self, reduce: _Reduce, dataset_type: DatasetType, cadence: Cadence):
         """Log metrics to `self.comet`."""
         if is_master():
