@@ -66,7 +66,7 @@ _metadata = {
         "Sam Scholl",
         SAM_SCHOLL,
         "https://drive.google.com/uc?export=download&id=1AvAwYWgUC300l9VNUMeW1Kk0jUHGJxky",
-        "Sean Hannity.tar.gz",
+        "Sam Scholl.tar.gz",
         False,
     ),
     (
