@@ -188,6 +188,7 @@ def read_audio(path: Path) -> np.ndarray:
 
     NOTE: Audio files with multiple channels will be mixed into a mono channel.
     NOTE: `ffmpeg` may load audio that's not clipped.
+    NOTE: This doesn't support a `path` with spaces.
     """
     command = f"ffmpeg -i {path} -f f32le -acodec pcm_f32le -ac 1 pipe:"
     ndarray = np.frombuffer(
@@ -203,6 +204,7 @@ def read_audio_slice(path: Path, start: float, length: float) -> np.ndarray:
     NOTE: Audio files with multiple channels will be mixed into a mono channel.
     NOTE: Learn more about efficiently selecting a slice of audio with `ffmpeg`:
     https://stackoverflow.com/questions/18444194/cutting-the-videos-based-on-start-and-end-time-using-ffmpeg
+    NOTE: This doesn't support a `path` with spaces.
 
     Args:
         path: Path to load.

@@ -3,6 +3,7 @@ import typing
 from functools import partial
 from pathlib import Path
 
+from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 
 from lib.datasets.utils import Passage, Speaker, conventional_dataset_loader, make_passages
@@ -24,6 +25,11 @@ from lib.datasets.wsl_datasets import (
     STEVEN_WAHLBERG,
     SUSAN_MURPHY,
 )
+
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import pandas
+else:
+    pandas = LazyLoader("pandas", globals(), "pandas")
 
 logger = logging.getLogger(__name__)
 
@@ -150,24 +156,37 @@ def _dataset_loader(
     url: str,
     url_filename: str,
     create_root: bool,
-    check_file: str = "{extracted_name}/metadata.csv",
+    metadata_file_name: str = "metadata.csv",
     metadata_text_column="Content",
     metadata_audio_column="WAV Filename",
     metadata_kwargs={},
     audio_path_template: str = "{directory}/wavs/{file_name}",
+    rename_template: str = "{speaker_label}__old",
 ) -> typing.List[Passage]:
     logger.info("Loading `%s` speech dataset", extracted_name)
-    check_file = check_file.format(extracted_name=extracted_name)
+
+    path = directory / extracted_name
     if create_root:
-        (directory / extracted_name).mkdir(exist_ok=True)
-    download_file_maybe_extract(
-        url=url,
-        directory=str((directory / extracted_name if create_root else directory).absolute()),
-        check_files=[check_file],
-        filename=url_filename,
-    )
+        path.mkdir(exist_ok=True)
+
+    new_path = directory / rename_template.format(speaker_label=speaker.label)
+    if not new_path.exists():
+        download_directory = str((path if create_root else directory).absolute())
+        check_files = [str((path / metadata_file_name).absolute())]
+        download_file_maybe_extract(url, download_directory, url_filename, check_files=check_files)
+
+    if path.exists():  # NOTE: Normalize file paths.
+        path.rename(new_path)
+        for item in list(new_path.glob("**/*")):
+            normalized = item.parent / ((item.stem + item.suffix).replace(" ", "_"))
+            if normalized != item:
+                item.rename(normalized)
+        df = pandas.read_csv(new_path / metadata_file_name, **metadata_kwargs)
+        df[metadata_audio_column] = df[metadata_audio_column].apply(lambda f: f.replace(" ", "_"))
+        df.to_csv(new_path / metadata_file_name, **metadata_kwargs)
+
     passages = conventional_dataset_loader(
-        directory / extracted_name,
+        new_path,
         speaker,
         metadata_text_column=metadata_text_column,
         metadata_audio_column=metadata_audio_column,
