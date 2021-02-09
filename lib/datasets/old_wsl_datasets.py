@@ -151,7 +151,7 @@ _metadata = {
 
 def _dataset_loader(
     directory: Path,
-    extracted_name: str,
+    root_directory_name: str,
     speaker: Speaker,
     url: str,
     url_filename: str,
@@ -163,9 +163,26 @@ def _dataset_loader(
     audio_path_template: str = "{directory}/wavs/{file_name}",
     rename_template: str = "{speaker_label}__old",
 ) -> typing.List[Passage]:
-    logger.info("Loading `%s` speech dataset", extracted_name)
+    """Load an old WSL dataset.
 
-    path = directory / extracted_name
+    Learn more via the old data loader:
+    https://github.com/wellsaid-labs/Text-to-Speech/blob/9b22a020b026bbe35fe3dfb30058effa43f2f3cb/src/datasets/utils.py#L240
+
+    Args:
+        ...
+        root_directory_name: Name of the directory inside `directory` to store data. With
+            `create_root=False`, this assumes the directory will be created while extracting `url`.
+        ...
+        url: URL of the dataset file.
+        url_filename: Name of the file downloaded; Otherwise, a filename is extracted from the url.
+        create_root: If `True` extract tar into `directory / root_directory_name` instead of
+            `directory`.
+        ...
+        rename_template: A template specifying how to rename the top level folder.
+    """
+    logger.info("Loading `%s` speech dataset", root_directory_name)
+
+    path = directory / root_directory_name
     if create_root:
         path.mkdir(exist_ok=True)
 
@@ -199,13 +216,13 @@ def _dataset_loader(
 OLD_WSL_DATASETS = {
     speaker: partial(
         _dataset_loader,
-        extracted_name=extracted_name,
+        root_directory_name=root_directory_name,
         speaker=speaker,
         url=url,
         url_filename=url_filename,
         create_root=create_root,
     )
-    for extracted_name, speaker, url, url_filename, create_root in _metadata
+    for root_directory_name, speaker, url, url_filename, create_root in _metadata
 }
 
 
