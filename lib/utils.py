@@ -494,3 +494,20 @@ class Tuples(typing.Generic[_TuplesVar]):
 
 def mazel_tov() -> str:
     return random.choice(["🎉", "✨", "🤗", "🍾", "🥂", "🥳"])
+
+
+_CorrectedRandomChoiceVar = typing.TypeVar("_CorrectedRandomChoiceVar")
+
+
+def corrected_random_choice(
+    distribution: typing.Dict[_CorrectedRandomChoiceVar, float], eps=1
+) -> _CorrectedRandomChoiceVar:
+    """Choose a key in `distribution` that would help even out the distribution.
+    NOTE: In order to make the `distribution` uniform, we'd need to sample each key
+    `max(values) - value` times; therefore, we use that expectation as a `weight`.
+    NOTE: `eps` is added to ensure each key has some chance of getting sampled.
+    """
+    assert all(v >= 0 for v in distribution.values()), "Must be a valid distribution."
+    keys = list(distribution.keys())
+    max_ = max(distribution.values())
+    return random.choices(keys, [(max_ - v + eps) for v in distribution.values()])[0]

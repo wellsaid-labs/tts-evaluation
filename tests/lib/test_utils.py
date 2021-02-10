@@ -459,3 +459,17 @@ def test_tuples__empty():
     assert tuples[0:0] == tuples
     assert "test" not in tuples
     assert list(tuples) == []
+
+
+def test_corrected_random_choice():
+    """ Test `lib.utils.corrected_random_choice` handles a basic cases. """
+    distribution = {i: 0.0 for i in range(10)}
+    for _ in range(10000):
+        choice = lib.utils.corrected_random_choice(distribution)
+        # NOTE: Every time we sample `choice`, we add `choice` creating non-uniformity.
+        # `corrected_random_choice` should correct for this non-uniformity.
+        distribution[choice] += choice + 1
+
+    total = sum(distribution.values())
+    for value in distribution.values():
+        assert value / total == pytest.approx(1 / len(distribution), abs=0.01)

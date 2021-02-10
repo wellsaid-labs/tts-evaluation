@@ -800,13 +800,7 @@ def _run_step(
 
         (spectrogram_loss_ + stop_token_loss_).backward()
 
-        state.clipper.clip()
-        state.optimizer.step()
-        state.step.add_(1)
-        state.update_num_examples(batch.length)
-        state.scheduler.step()
-        state.comet.set_step(typing.cast(int, state.step.item()))
-
+        # NOTE: Measure the "grad_norm" before `clipper.clip()`.
         label_ = partial(get_model_label, cadence=Cadence.STEP)
         log_metric = lambda n, v: state.comet.log_metric(label_(n), v)
         log_metric("grad_norm/two", get_parameter_norm(state.model.parameters(), 2).item())
@@ -814,6 +808,13 @@ def _run_step(
         log_metric("grad_norm/max_norm", state.clipper.max_norm)
         iterator = enumerate(state.optimizer.param_groups)
         [log_metric(f"parameter_{i}/lr", g["lr"]) for i, g in iterator]
+
+        state.clipper.clip()
+        state.optimizer.step()
+        state.step.add_(1)
+        state.update_num_examples(batch.length)
+        state.scheduler.step()
+        state.comet.set_step(typing.cast(int, state.step.item()))
 
     if visualize:
         _visualize_source_vs_target(

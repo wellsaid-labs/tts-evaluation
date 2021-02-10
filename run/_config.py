@@ -656,9 +656,8 @@ class SpanGenerator(typing.Iterator[datasets.Span]):
 
     def __next__(self) -> datasets.Span:
         while True:  # NOTE: This samples speakers uniformly.
-            total = sum(self.counter.values())
-            distribution = [total / v for v in self.counter.values()]
-            span = next(self.generators[random.choices(self.speakers, distribution)[0]])
+            speaker = lib.utils.corrected_random_choice(self.counter)
+            span = next(self.generators[speaker])
             if span.audio_length < self.max_seconds and _include_span(span):
                 self.counter[span.speaker] += span.audio_length
                 return span
