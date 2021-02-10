@@ -191,7 +191,7 @@ def split(
     totals = list(itertools.accumulate([value(i) for i in list_]))
     index = 0
     for split in splits:
-        lambda_ = lambda x: x < split + (totals[index - 1] if index > 0 else 0)
+        lambda_ = lambda x: x <= split + (totals[index - 1] if index > 0 else 0)
         count = len(list(itertools.takewhile(lambda_, totals[index:])))
         yield list_[index : index + count]
         index = index + count

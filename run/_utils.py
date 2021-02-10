@@ -5,11 +5,9 @@ import functools
 import io
 import itertools
 import logging
-import math
 import multiprocessing.pool
 import os
 import pathlib
-import random
 import time
 import typing
 from datetime import timedelta
@@ -169,40 +167,6 @@ def init_distributed(
     # TODO: Instead of returning and passing around `torch.device`, rely on `torch.cuda.set_device`
     # or `torch.cuda.device` to set context.
     return device
-
-
-@lib.utils.log_runtime
-def split_passages(
-    passages: typing.List[lib.datasets.Passage], dev_size: float
-) -> typing.Tuple[typing.List[lib.datasets.Passage], typing.List[lib.datasets.Passage]]:
-    """Split a dataset into a development and train set.
-
-    TODO: Since we have multiples copies of the same dataset, with only adjustments in the speaker
-    or even the speaker audio preprocessing, our dev dataset is not completely isolated from
-    our training data. In order to solve this issue, we need to split the WSL datasets together,
-    to ensure that the passages in the dev dataset haven't been seen in any form. We could solve
-    this by picking passages for one speaker, and then ensuring that no other speaker has the
-    same passages (and if they do, they should be included in the dev dataset).
-
-    Args:
-        passages
-        dev_size: Number of seconds of audio data in the development set.
-
-    Return:
-        train: The rest of the data.
-        dev: Dataset with `dev_size` of data.
-    """
-    passages = passages.copy()
-    random.shuffle(passages)
-    # NOTE: `len_` assumes that a negligible amount of data is unusable in each passage.
-    len_ = lambda p: p.aligned_audio_length()
-    dev, train = tuple(lib.utils.split(passages, [dev_size, math.inf], len_))
-    dev_size = sum([len_(p) for p in dev])
-    train_size = sum([len_(p) for p in train])
-    assert train_size >= dev_size, "The `dev` dataset is larger than the `train` dataset."
-    assert len(dev) > 0, "The dev dataset has no passages."
-    assert len(train) > 0, "The train dataset has no passages."
-    return train, dev
 
 
 def get_dataset_stats(

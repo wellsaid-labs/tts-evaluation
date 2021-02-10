@@ -150,6 +150,16 @@ def test_split():
     assert list(lib.utils.split([1, 2, 3, 4, 5], [4])) == [[1, 2], [3, 4, 5]]
 
 
+def test_split__exact():
+    """ Test `lib.utils.split` splits exactly on `[1, 2]`. """
+    assert list(lib.utils.split([1, 2, 3], [3])) == [[1, 2], [3]]
+
+
+def test_split__zero():
+    """ Test `lib.utils.split` handles a zero split. """
+    assert list(lib.utils.split([1, 2, 3], [9])) == [[], [1, 2, 3]]
+
+
 def test_split__empty_split():
     """ Test `lib.utils.split` returns empty splits if threshold is not met. """
     assert list(lib.utils.split([3], [2])) == [[], [3]]

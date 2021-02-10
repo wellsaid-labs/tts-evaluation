@@ -6,8 +6,6 @@ import hparams
 import pytest
 import torch
 import torch.nn
-import torchnlp
-import torchnlp.random
 from matplotlib import pyplot
 
 import lib
@@ -99,24 +97,6 @@ def test_normalize_audio():
         new_path = dataset[lib.datasets.LINDA_JOHNSON][0].audio_file.path
         assert new_path.absolute() != audio_path.absolute()
         assert lib.audio.get_audio_metadata(new_path) == AudioFileMetadata(new_path, *args)
-
-
-def test_split_passages():
-    """Test `run._utils.split_passages` randomly splits `passages` into train and dev lists. """
-    _make = lambda a, s: make_passage((Alignment((0, a), (0, a), (0, a)),), s)
-    with torchnlp.random.fork_rng(123):
-        a = lib.datasets.Speaker("a")
-        b = lib.datasets.Speaker("b")
-        passages = [_make(1, a), _make(2, a), _make(3, a), _make(1, b), _make(2, b), _make(3, b)]
-        train, dev = run._utils.split_passages(passages, 6)
-        assert train == [_make(3, b), _make(3, a), _make(1, a)]
-        assert dev == [_make(1, b), _make(2, b), _make(2, a)]
-
-
-def test_split_passages__empty_list():
-    """Test `run._utils.split_passages` errors if there are not enough passages. """
-    with pytest.raises(AssertionError):
-        run._utils.split_passages([], 6)
 
 
 def test_worker_init_fn():

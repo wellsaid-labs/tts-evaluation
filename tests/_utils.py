@@ -54,7 +54,9 @@ def make_metadata(
 
 
 def make_passage(
-    alignments: lib.utils.Tuples[lib.datasets.Alignment],
+    alignments: lib.utils.Tuples[lib.datasets.Alignment] = lib.utils.Tuples(
+        [], lib.datasets.alignment_dtype
+    ),
     nonalignments: lib.utils.Tuples[lib.datasets.Alignment] = lib.utils.Tuples(
         [], lib.datasets.alignment_dtype
     ),
