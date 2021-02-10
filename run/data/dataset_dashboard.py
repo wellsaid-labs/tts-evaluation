@@ -36,7 +36,7 @@ import lib
 import run
 from lib.audio import amplitude_to_db, signal_to_rms
 from lib.datasets import DATASETS, Passage
-from lib.utils import clamp, flatten, mazel_tov, seconds_to_string
+from lib.utils import clamp, flatten, mazel_tov, round_, seconds_to_string
 from run._config import Dataset
 
 lib.environment.set_basic_logging_config(reset=True)
@@ -60,22 +60,6 @@ def _random_sample(
     with fork_rng(seed):
         return random.sample(list_, min(len(list_), max_samples))
 
-
-def _round(x: float, bucket_size: float) -> float:
-    """Bin `x` into buckets."""
-    return bucket_size * round(x / bucket_size)
-
-
-assert _round(0.3, 1) == 0
-assert _round(0.4, 0.25) == 0.5
-
-
-def _floor(x: float, bucket_size: float) -> float:
-    """Bin `x` into buckets."""
-    return bucket_size * math.floor(x / bucket_size)
-
-
-assert _floor(0.899958, 0.000500) == 0.8995
 
 _MapInputType = typing.TypeVar("_MapInputType")
 _MapReturnType = typing.TypeVar("_MapReturnType")
@@ -232,8 +216,7 @@ def _visualize_signal(
     assert frames.shape[1] == ratio
     envelope = np.max(np.abs(frames), axis=-1)
     assert envelope.shape[0] == frames.shape[0]
-    stop = _floor(signal.shape[0] / sample_rate, ratio / sample_rate)
-    seconds = np.arange(0, stop, ratio / sample_rate)
+    seconds = np.arange(0, envelope.shape[0] * ratio / sample_rate, ratio / sample_rate)
     waveform = alt.Chart(pd.DataFrame({"seconds": seconds, "y_max": envelope, "y_min": -envelope}))
     y = alt.Y("y_min:Q", scale=alt.Scale(domain=(-1.0, 1.0)))
     waveform = waveform.mark_area().encode(x="seconds:Q", y=y, y2="y_max:Q")
@@ -256,7 +239,7 @@ def _bucket_and_visualize(
         if math.isnan(item):
             nan_count += 1
         else:
-            buckets[round(_round(item, bucket_size), ndigits)] += 1
+            buckets[round(round_(item, bucket_size), ndigits)] += 1
     if nan_count > 0:
         logger.warning("Ignoring %d NaNs...", nan_count)
     df = pd.DataFrame({x: buckets.keys(), y: buckets.values()})
@@ -352,9 +335,16 @@ class Span(lib.datasets.Span):
         return _read_audio_slice(self.passage.audio_file.path, start, self.audio_length)
 
     def as_dict(self) -> typing.Dict[str, typing.Any]:
-        """ Get a `dict` without circular dependencies. """
-        fields = dataclasses.fields(self)
-        return {f.name: getattr(self, f.name) for f in fields if f.type != Passage}
+        """Get a `dict` with properties, class variables, and static variables.
+
+        Learn more:
+        https://stackoverflow.com/questions/1251692/how-to-enumerate-an-objects-properties-in-python
+        """
+        return {
+            k: getattr(self, k, "")
+            for k in self.__dir__()
+            if k[:2] != "__" and type(getattr(self, k, "")).__name__ != "method"
+        }
 
     def rms(self) -> float:
         return round(_signal_to_db_rms(self.audio()), 1)
@@ -446,6 +436,17 @@ class Span(lib.datasets.Span):
         if self.audio_length == 0:
             return 0
         return (self.audio_length - self.rms_silence()) / len(self.script)
+
+    def rms_seconds_per_phoneme(self) -> float:
+        if self.audio_length == 0:
+            return 0
+        try:
+            return (self.audio_length - self.rms_silence()) / len(
+                lib.text._line_grapheme_to_phoneme([self.script], separator="|")[0].split("|")
+            )
+        except Exception:
+            logger.exception("`rms_seconds_per_phoneme` encountered an issue.")
+            return np.nan
 
 
 def _get_spans(dataset: Dataset, num_samples: int, slice_: bool = True) -> typing.List[Span]:
@@ -574,6 +575,12 @@ def _maybe_analyze_dataset(dataset: Dataset):
             lambda s: s.rms_seconds_per_character(),
             "Alignment Speeds (rms)",
             "Seconds per character",
+            0.01,
+        ),
+        (
+            lambda s: s.rms_seconds_per_phoneme(),
+            "Alignment Speeds (rms)",
+            "Seconds per phoneme",
             0.01,
         ),
         (lambda s: s.rms(), "Loudness", "dB", 1),

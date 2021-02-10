@@ -157,7 +157,7 @@ def test_split__exact():
 
 def test_split__zero():
     """ Test `lib.utils.split` handles a zero split. """
-    assert list(lib.utils.split([1, 2, 3], [9])) == [[], [1, 2, 3]]
+    assert list(lib.utils.split([1, 2, 3], [0])) == [[], [1, 2, 3]]
 
 
 def test_split__empty_split():
