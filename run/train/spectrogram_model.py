@@ -534,8 +534,6 @@ class _DistributedMetrics:
         norm: float = math.inf,
     ):
         """
-        TODO: Reduce the boiler plate required to track a metric per speaker.
-
         Args:
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
             spectrogram_mask (torch.BoolTensor [num_frames, batch_size])

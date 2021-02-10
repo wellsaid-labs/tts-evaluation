@@ -202,17 +202,20 @@ def read_audio_slice(path: Path, start: float, length: float) -> np.ndarray:
     """Read an audio file slice into a `np.float32` array.
 
     NOTE: Audio files with multiple channels will be mixed into a mono channel.
+
     NOTE: Learn more about efficiently selecting a slice of audio with `ffmpeg`:
     https://stackoverflow.com/questions/18444194/cutting-the-videos-based-on-start-and-end-time-using-ffmpeg
+
     NOTE: This doesn't support a `path` with spaces.
+
+    TODO: Should we implement automatic gain control?
+    https://en.wikipedia.org/wiki/Automatic_gain_control
 
     Args:
         path: Path to load.
         start: The start of the audio segment.
         length: The length of the audio segment.
     """
-    # TODO: Should we implement automatic gain control?
-    # https://en.wikipedia.org/wiki/Automatic_gain_control
     if length == 0:
         return np.array([], dtype=np.float32)  # type: ignore
     command = f"ffmpeg -ss {start} -t {length} -i {path} -f f32le -acodec pcm_f32le -ac 1 pipe:"
@@ -302,6 +305,7 @@ def normalize_audio(
 
     TODO: If the `source` is already normalized, could the performance of this function be
     improved?
+
     TODO: Can we use this function to measure, and reduce clipping? For example, SoX has a clipping
     guard that can be turned on, and it warns about clipping.
     """
