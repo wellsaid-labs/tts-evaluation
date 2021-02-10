@@ -244,13 +244,12 @@ def configure_audio_processing():
         # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
         lib.audio.get_pyloudnorm_meter: HParams(sample_rate=SAMPLE_RATE, filter_class="DeMan"),
         lib.spectrogram_model.SpectrogramModel.__init__: HParams(
-            # NOTE: This is based on one of the slowest legitimate example in the dataset:
-            # "rate(WSL_SMurphyScript34-39,24000)/script_52_chunk_9.wav" # TODO: Rethink?
-            # NOTE: This configuration is related to the dataset preprocessing step:
-            # `_filter_too_much_audio_per_character` # TODO: Remove?
-            # NOTE: This number was configured with the help of this notebook:
-            # `QA_Datasets/Sample_Dataset.ipynb`
-            max_frames_per_token=(0.16 / (frame_hop / SAMPLE_RATE)),
+            # NOTE: This is based on one of the slowest legitimate alignments in
+            # `dataset_dashboard`. With a sample size of 8192, we found that 0.18 frames per token
+            # included everything but 3 alignments. The last three alignments were 0.19 "or",
+            # 0.21 "or", and 0.24 "EEOC". The slowest alignment was the acronym "EEOC" with the
+            # last letter taking 0.5 seconds.
+            max_frames_per_token=(0.18 / (frame_hop / SAMPLE_RATE)),
         ),
         lib.signal_model.SignalModel.__init__: HParams(
             ratios=[2] * int(math.log2(frame_hop)),
