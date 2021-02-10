@@ -572,8 +572,6 @@ def split_dataset(
             random.shuffle(rest)
             seconds = max(approximate_dev_length - sum_(dev[speaker]), 0)
             splits = tuple(lib.utils.split(rest, [seconds, math.inf], len_))
-            assert len(splits) == 2, "Bug!"
-            assert len(splits[0]) + len(splits[1]) == len(rest), "Bug!"
             dev[speaker].extend(splits[0])
             train[speaker].extend(splits[1])
             dev_scripts.update(d.script for d in dev[speaker])
