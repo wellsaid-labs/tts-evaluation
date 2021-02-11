@@ -77,7 +77,7 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Use `run.utils.lsyncd` to live sync your repository to your VM instance...
 
    ```bash
-   VM_NAME=$(python -m run.utils.gcp most-recent --filter $NAME)
+   VM_NAME=$(python -m run.utils.gcp most-recent --filter $USER)
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
