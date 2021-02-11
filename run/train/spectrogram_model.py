@@ -257,14 +257,22 @@ class _State:
         comet: CometMLExperiment,
         device: torch.device,
     ):
-        """ Recreate the spectrogram training state from a `checkpoint`. """
-        tuple_ = dataclasses.astuple(checkpoint)
-        _, _, step, num_examples, encoder, model, optimizer, clipper, scheduler = tuple_
-        model_ = torch.nn.parallel.DistributedDataParallel(model, [device], device)
-        step = torch.tensor(step)
-        num_examples = torch.tensor(num_examples)
-        args = (encoder, model_, optimizer, clipper, scheduler, comet, device, step, num_examples)
-        return cls(*args)
+        """Recreate the spectrogram training state from a `checkpoint`.
+
+        NOTE: `dataclasses.astuple` isn't compatible with PyTorch, learn more:
+        https://github.com/pytorch/pytorch/issues/52127
+        """
+        return cls(
+            checkpoint.input_encoder,
+            torch.nn.parallel.DistributedDataParallel(checkpoint.model, [device], device),
+            checkpoint.optimizer,
+            checkpoint.clipper,
+            checkpoint.scheduler,
+            comet,
+            device,
+            torch.tensor(checkpoint.step),
+            torch.tensor(checkpoint.num_examples),
+        )
 
     @classmethod
     def from_dataset(
@@ -280,8 +288,8 @@ class _State:
         # NOTE: Even if `_get_model` is initialized differently in each process, the parameters
         # will be synchronized. Learn more:
         # https://discuss.pytorch.org/t/proper-distributeddataparallel-usage/74564/2
-        distributed_model = torch.nn.parallel.DistributedDataParallel(model, [device], device)
-        return cls(input_encoder, distributed_model, *cls._get_optimizers(model), comet, device)
+        model = torch.nn.parallel.DistributedDataParallel(model, [device], device)
+        return cls(input_encoder, model, *cls._get_optimizers(model), comet, device)
 
 
 def _worker_init_fn(_, config):
@@ -808,6 +816,10 @@ def _run_step(
         log_metric("grad_norm/max_norm", state.clipper.max_norm)
         iterator = enumerate(state.optimizer.param_groups)
         [log_metric(f"parameter_{i}/lr", g["lr"]) for i, g in iterator]
+
+        # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
+        params = state.optimizer.param_groups[0]["params"]
+        assert all([p.grad is not None for p in params]), "No gradients found."
 
         state.clipper.clip()
         state.optimizer.step()
