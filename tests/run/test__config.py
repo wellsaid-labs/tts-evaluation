@@ -113,6 +113,7 @@ def test_split_dataset__deduplication(_):
         ],
         speaker_d: [
             passage("Outlier test!", speaker_d),  # NOTE: Train set
+            passage("This is a test!", speaker_a),  # NOTE: Non-dev set duplicate passage
         ],
     }
     train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9)
@@ -138,5 +139,4 @@ def test_split_dataset__deduplication(_):
             passage("This is a test.", speaker_b),
         ],
         speaker_c: [passage("I'm testing this!", speaker_c)],
-        speaker_d: [],
     }

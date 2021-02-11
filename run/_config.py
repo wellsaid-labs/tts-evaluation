@@ -547,6 +547,8 @@ def split_dataset(
     dictated by textual similarity. The result of this is that the text in the train and
     development sets is distinct.
 
+    NOTE: Any duplicate data for a speaker, not in `dev_speakers` will be discarded.
+
     Args:
         ...
         dev_speakers: Speakers to include in the development set.
@@ -554,6 +556,7 @@ def split_dataset(
             deduping algorithm may add extra items above the `approximate_dev_length`.
         ...
     """
+    logger.info("Splitting `dataset`...")
     dev: typing.Dict[lib.datasets.Speaker, list] = collections.defaultdict(list)
     train: typing.Dict[lib.datasets.Speaker, list] = collections.defaultdict(list)
     dev_scripts: typing.Set[str] = set()
@@ -590,7 +593,11 @@ def split_dataset(
                 duplicates, rest = _find_duplicate_passages(
                     dev_scripts, train[speaker], min_similarity
                 )
-                dev[speaker].extend(duplicates)
+                if speaker not in dev_speakers and len(duplicates) > 0:
+                    message = "Discarded %d duplicates for non-dev speaker %s. "
+                    logger.warning(message, len(duplicates), speaker)
+                elif speaker in dev_speakers:
+                    dev[speaker].extend(duplicates)
                 train[speaker] = rest
                 dev_scripts.update(d.script for d in duplicates)
 
@@ -649,7 +656,7 @@ class SpanGenerator(typing.Iterator[datasets.Span]):
             max_seconds_ = math.inf if is_singles else max_seconds
             self.generators[speaker] = datasets.SpanGenerator(passages, max_seconds_)
         self.speakers = list(dataset.keys())
-        self.counter = {s: 1.0 for s in self.speakers}
+        self.counter = {s: 0.0 for s in self.speakers}
 
     def __iter__(self) -> typing.Iterator[datasets.Span]:
         return self

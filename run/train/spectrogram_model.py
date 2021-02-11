@@ -178,6 +178,7 @@ class _State:
             run._config.DATASET_PHONETIC_CHARACTERS,
             list(train_dataset.keys()) + list(dev_dataset.keys()),
         )
+
         label = partial(get_dataset_label, cadence=Cadence.STATIC, type_=DatasetType.TRAIN)
         stats = {
             label("grapheme_vocab_size"): input_encoder.grapheme_encoder.vocab_size,
@@ -188,6 +189,14 @@ class _State:
             label("speakers"): sorted([s.label for s in input_encoder.speaker_encoder.vocab]),
         }
         comet.log_parameters(stats)
+
+        label = partial(label, type_=DatasetType.DEV)
+        stats = {
+            label("num_speakers"): len(list(dev_dataset.keys())),
+            label("speakers"): sorted([s.label for s in dev_dataset.keys()]),
+        }
+        comet.log_parameters(stats)
+
         return input_encoder
 
     @staticmethod

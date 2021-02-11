@@ -481,6 +481,8 @@ def make_span_batch(
     - Using the precomputed spectrogram for `_pad_and_trim_signal`.
     """
     length = len(spans)
+    assert length > 0, "Batch must have at least one item."
+    assert max_parallel > 0, "`max_parallel` must be a positive number."
 
     for span in spans:
         lib.audio.assert_audio_normalized(span.audio_file)
