@@ -867,6 +867,8 @@ def _visualize_inferred(
 ):
     """Run in inference mode and visualize results.
 
+    TODO: Visualize any related text annotations.
+
     Args:
         ...
         predicted_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels]):
