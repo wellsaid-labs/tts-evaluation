@@ -700,17 +700,29 @@ class _DistributedMetrics:
         return metrics
 
     def log(self, reduce: _Reduce, dataset_type: DatasetType, cadence: Cadence):
-        """Log metrics to `self.comet`."""
-        if is_master():
-            metrics = {
-                **self.get_model_metrics(reduce=reduce, cadence=cadence),
-                **self.get_dataset_metrics(reduce=reduce, cadence=cadence, type_=dataset_type),
+        """Log metrics to `self.comet`.
+
+        NOTE: Comet is limited in the number of metrics it can handle on a step-by-step basis.
+        It will throttle experiments reporting too many metrics, or it's UI will lag behind.
+        """
+        if not is_master():
+            return
+
+        metrics = {
+            **self.get_model_metrics(reduce=reduce, cadence=cadence),
+            **self.get_dataset_metrics(reduce=reduce, cadence=cadence, type_=dataset_type),
+        }
+
+        if cadence is not Cadence.STEP:
+            more_metrics = {
                 **self.get_rms_metrics(reduce=reduce, cadence=cadence, type_=dataset_type),
                 **self.get_text_length_metrics(cadence=cadence, type_=dataset_type),
                 **self.get_speaker_frequency_metrics(cadence=cadence, type_=dataset_type),
                 **self.get_attention_skip_metrics(cadence=cadence),
             }
-            self.comet.log_metrics({k: v for k, v in metrics.items() if v is not None})
+            metrics.update(more_metrics)
+
+        self.comet.log_metrics({k: v for k, v in metrics.items() if v is not None})
 
 
 def _visualize_source_vs_target(
