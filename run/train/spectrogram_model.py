@@ -627,6 +627,18 @@ class _DistributedMetrics:
             return None
         return reduce(num) / reduce(denom)
 
+    def get_reached_max_frames(self, reduce: _Reduce):
+        """ NOTE: The predicted `self.batch_size` does not include predictions that overflowed. The
+        total number of predicted spectrograms is equal to `batch_size` plus
+        `num_reached_max_frames`.
+        """
+        if len(self.num_reached_max_frames) == 0 or len(self.batch_size) == 0:
+            return None
+        denom = reduce(self.batch_size) + reduce(self.num_reached_max_frames)
+        if denom == 0:
+            return None
+        return reduce(self.num_reached_max_frames) / denom
+
     @configurable
     def get_model_metrics(self, reduce: _Reduce, num_frame_channels=HParam(), **kwargs) -> _Metrics:
         """ Get model metrics. """
@@ -640,7 +652,7 @@ class _DistributedMetrics:
             "average_relative_speed": div(self.num_frames_predicted, self.num_frames),
             "stop_token_accuracy": div(self.stop_token_num_correct, self.num_frames),
             "stop_token_loss": div(self.stop_token_loss, self.num_frames),
-            "reached_max_frames": div(self.num_reached_max_frames, self.batch_size),
+            "reached_max_frames": self.get_reached_max_frames(reduce),
             "spectrogram_loss": spectrogram_loss,
         }
         return {get_model_label(k, **kwargs): v for k, v in metrics.items()}
