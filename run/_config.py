@@ -646,6 +646,7 @@ class SpanGenerator(typing.Iterator[datasets.Span]):
         max_seconds: The maximum seconds delimited by an `Span`.
     """
 
+    @lib.utils.log_runtime
     def __init__(self, dataset: Dataset, max_seconds: int = 15):
         self.max_seconds = max_seconds
         self.dataset = dataset

@@ -419,7 +419,6 @@ class SpanGenerator(typing.Iterator[Span]):
         eps: Add small number so that the end point is also included within the range.
     """
 
-    @lib.utils.log_runtime
     def __init__(
         self, passages: typing.List[Passage], max_seconds: float, step: float = 1.0, eps=1e-8
     ):

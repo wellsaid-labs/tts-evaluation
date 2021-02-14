@@ -468,6 +468,7 @@ class _DistributedMetrics:
         num_spans_per_text_length: For each text length bucket, this counts the number of spans.
         num_frames_per_speaker: For each speaker, this counts the number of spectrogram frames
             each step.
+        num_seconds_per_speaker: For each speaker, this counts the number of seconds each step.
         num_frames_predicted: This measures the number of frames predicte each step.
         num_frames: This measures the number of frames in each step.
         max_num_frames: The maximum number of frames, in a spectrogram, seen.
@@ -503,6 +504,9 @@ class _DistributedMetrics:
     num_frames_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
         default_factory=lambda: collections.defaultdict(float)
     )
+    num_seconds_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
+        default_factory=lambda: collections.defaultdict(float)
+    )
     num_frames_predicted: typing.List[float] = dataclasses.field(default_factory=list)
     num_frames: typing.List[float] = dataclasses.field(default_factory=list)
     max_num_frames: int = dataclasses.field(default_factory=int)
@@ -520,25 +524,37 @@ class _DistributedMetrics:
         value = float(value.sum().item() if isinstance(value, torch.Tensor) else value)
         metric.append(lib.distributed.reduce(value, self.device))
 
+    def gather(
+        self, values: typing.Union[typing.List[float], torch.Tensor], **kwargs
+    ) -> typing.List[float]:
+        values = values.view(-1).tolist() if isinstance(values, torch.Tensor) else values
+        return flatten(gather_list(values, device=self.device, **kwargs))
+
     def update_dataset_metrics(self, batch: SpanBatch, input_encoder: InputEncoder):
         """
         TODO: Get dataset metrics on OOV words (spaCy and AmEPD) in our dataset.
+
         TODO: Create a `streamlit` for measuring coverage in our dataset, and other datasets.
+
         TODO: Measure the difference between punctuation in the phonetic vs grapheme phrases.
         Apart from unique cases, they should have the same punctuation.
         """
         self.append(self.batch_size, batch.length)
         self.append(self.num_frames, batch.spectrogram.lengths)
 
-        for text in flatten(gather_list([len(t) for t in batch.text], self.device)):
-            self.num_spans_per_text_length[text // self.text_length_bucket_size] += 1
+        for text in self.gather([len(s.script) for s in batch.spans]):
+            self.num_spans_per_text_length[int(text // self.text_length_bucket_size)] += 1
 
-        lambda_ = lambda t: flatten(gather_list(t.view(-1).tolist(), self.device))
-        iterator = zip(lambda_(batch.encoded_speaker.tensor), lambda_(batch.spectrogram.lengths))
-        for speaker_index, num_frames in iterator:
+        iterator = zip(
+            self.gather(batch.encoded_speaker.tensor),
+            self.gather(batch.spectrogram.lengths),
+            self.gather([s.audio_length for s in batch.spans]),
+        )
+        for speaker_index, num_frames, num_seconds in iterator:
             speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
             self.num_frames_per_speaker[speaker] += num_frames
-            self.max_num_frames = max(self.max_num_frames, num_frames)
+            self.num_seconds_per_speaker[speaker] += num_seconds
+            self.max_num_frames = max(self.max_num_frames, int(num_frames))
 
     def update_alignment_metrics(
         self,
@@ -568,8 +584,7 @@ class _DistributedMetrics:
 
         assert speakers.numel() == num_skipped.numel()
         assert speakers.numel() == num_tokens.numel()
-        iterate = lambda t: flatten(gather_list(t.view(-1).tolist(), self.device))
-        iterator = zip(iterate(speakers), iterate(num_skipped), iterate(num_tokens))
+        iterator = zip(self.gather(speakers), self.gather(num_skipped), self.gather(num_tokens))
         for speaker_index, _num_skipped, _num_tokens in iterator:
             speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
             self.num_skips_per_speaker[speaker] += _num_skipped
@@ -628,7 +643,7 @@ class _DistributedMetrics:
         return reduce(num) / reduce(denom)
 
     def get_reached_max_frames(self, reduce: _Reduce):
-        """ NOTE: The predicted `self.batch_size` does not include predictions that overflowed. The
+        """NOTE: The predicted `self.batch_size` does not include predictions that overflowed. The
         total number of predicted spectrograms is equal to `batch_size` plus
         `num_reached_max_frames`.
         """
@@ -696,11 +711,24 @@ class _DistributedMetrics:
         return metrics
 
     def get_speaker_frequency_metrics(self, **kwargs) -> _Metrics:
-        """ Get metrics summarizing speaker frequency. """
+        """Get metrics summarizing speaker frequency.
+
+        NOTE: There is a discrepency between `num_frames_per_speaker` and `num_seconds_per_speaker`
+        because `num_seconds_per_speaker` is computed with `Span` and `num_frames_per_speaker`
+        is computed with `SpanBatch`. For example, in Feburary 2021, `make_span_batch` used
+        `_pad_and_trim_signal`. "elizabeth_klett", "mary_ann" and "judy_bieber" tend to need
+        significantly more trimming than other speakers."""
         metrics = {}
+        label = lambda l, **k: get_dataset_label(f"frequency/{l}", **k, **kwargs)
+
+        total = sum(self.num_frames_per_speaker.values())
         for speaker, count in self.num_frames_per_speaker.items():
-            label = get_dataset_label("frequency", speaker=speaker, **kwargs)
-            metrics[label] = count / sum(self.num_frames_per_speaker.values())
+            metrics[label("num_frames", speaker=speaker)] = count / total
+
+        total = sum(self.num_seconds_per_speaker.values())
+        for speaker, count in self.num_seconds_per_speaker.items():
+            metrics[label("num_seconds", speaker=speaker)] = count / total
+
         return metrics
 
     def get_attention_skip_metrics(self, **kwargs) -> _Metrics:
@@ -944,8 +972,8 @@ def _visualize_inferred(
     state.comet.log_html_audio(
         audio=audio,
         context=state.comet.context,
-        text=batch.text[item],
-        speaker=batch.speaker[item],
+        text=batch.spans[item].script,
+        speaker=batch.spans[item].speaker,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
     )

@@ -350,6 +350,12 @@ def _make_stop_token(
     relative to the minimum and maximum loudness. This is assuming that at the end of an audio
     clip it gets progressively quieter.
 
+    TODO: Since some speakers are quieter than others, it might more beneficial to create a
+    `stop_token` based on the idea of "voice activity detection". For example, the `stop_token`
+    is a 1 if the speaker is speaking and 0 if the speaker isn't speaking. The model will learn
+    to stop when the speaker stop speaking. Or we could bake in "voice activity detection" when
+    we create the spans, originally.
+
     Args:
         spectrogram (SequenceBatch[torch.FloatTensor [num_frames, batch_size, frame_channels],
             torch.LongTensor [1, batch_size]))
@@ -380,9 +386,9 @@ def _span_read_audio_slice(span: lib.datasets.Span) -> numpy.ndarray:
 class SpanBatch(typing.NamedTuple):
     """Batch of preprocessed `Span` used to training or evaluating the spectrogram model."""
 
-    length: int
+    spans: typing.List[lib.datasets.Span]
 
-    audio_file: typing.List[lib.audio.AudioFileMetadata]
+    length: int
 
     audio: typing.List[torch.Tensor]
 
@@ -397,12 +403,8 @@ class SpanBatch(typing.NamedTuple):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
-    speaker: typing.List[lib.datasets.Speaker]
-
     # SequenceBatch[torch.LongTensor [1, batch_size], torch.LongTensor [1, batch_size])
     encoded_speaker: SequenceBatch
-
-    text: typing.List[str]
 
     # NOTE: Mask padding with `False`.
     # SequenceBatch[torch.BoolTensor [num_characters, batch_size], torch.LongTensor [1, batch_size])
@@ -440,10 +442,6 @@ class SpanBatch(typing.NamedTuple):
     # SequenceBatch[torch.BoolTensor [num_characters, batch_size],
     #               torch.LongTensor [1, batch_size])
     speed_mask: SequenceBatch
-
-    alignments: typing.List[lib.utils.Tuples[lib.datasets.Alignment]]
-
-    other_metadata: typing.List[typing.Dict[typing.Union[str, int], typing.Any]]
 
 
 def make_span_batch(
@@ -509,15 +507,13 @@ def make_span_batch(
     stack = functools.partial(stack_and_pad_tensors, dim=batch_dimension)
     mask = functools.partial(torch.ones, dtype=torch.bool)
     return SpanBatch(
+        spans=spans,
         length=length,
-        audio_file=[s.audio_file for s in spans],
         audio=signals,
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
         stop_token=_make_stop_token(spectrogram),
-        speaker=[s.speaker for s in spans],
         encoded_speaker=stack([s.speaker for s in encoded]),
-        text=[s.script for s in spans],
         encoded_text=stack([s.graphemes for s in encoded]),
         encoded_text_mask=stack([mask(e.graphemes.shape[0]) for e in encoded]),
         encoded_letter_case=stack([e.letter_cases for e in encoded]),
@@ -528,8 +524,6 @@ def make_span_batch(
         loudness_mask=stack([a[1] for a in loudness]),
         speed=stack([a[0] for a in speed]),
         speed_mask=stack([a[1] for a in speed]),
-        alignments=[s.alignments for s in spans],
-        other_metadata=[s.other_metadata for s in spans],
     )
 
 
