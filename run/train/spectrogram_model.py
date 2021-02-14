@@ -1108,12 +1108,10 @@ def _run(
     config: typing.Dict[str, typing.Any],
     comet: CometMLExperiment,
     checkpoint: typing.Optional[pathlib.Path] = None,
-    minimum_disk_space: float = 0.2,
     debug: bool = False,
 ):
     """Run spectrogram model training. """
     lib.environment.check_module_versions()
-    lib.environment.assert_enough_disk_space(minimum_disk_space)
 
     datasets = run._config.DATASETS
     datasets = {k: v for k, v in list(datasets.items())[:1]} if debug else datasets
@@ -1197,8 +1195,10 @@ def start(
     name: str = typer.Argument("", help="Experiment name."),
     tags: typing.List[str] = typer.Option([], help="Experiment tags."),
     debug: bool = typer.Option(False, help="Turn on debugging mode."),
+    min_disk_space: float = 0.2,
 ):
     """ Start a training run in PROJECT named NAME with TAGS. """
+    lib.environment.assert_enough_disk_space(min_disk_space)
     lib.environment.set_basic_logging_config()
     comet = run._utils.CometMLExperiment(project_name=project)
     comet.set_name(name)
