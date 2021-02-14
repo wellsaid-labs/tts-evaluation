@@ -871,12 +871,15 @@ def _run_step(
 
         # NOTE: Measure the "grad_norm" before `clipper.clip()`.
         label_ = partial(get_model_label, cadence=Cadence.STEP)
-        log_metric = lambda n, v: state.comet.log_metric(label_(n), v)
-        log_metric("grad_norm/two", get_parameter_norm(state.model.parameters(), 2).item())
-        log_metric("grad_norm/inf", get_parameter_norm(state.model.parameters(), math.inf).item())
-        log_metric("grad_norm/max_norm", state.clipper.max_norm)
-        iterator = enumerate(state.optimizer.param_groups)
-        [log_metric(f"parameter_{i}/lr", g["lr"]) for i, g in iterator]
+        log = lambda n, v: state.comet.log_metric(label_(n), v)
+        parameter_norm = get_parameter_norm(state.model.parameters(), 2)
+        parameter_norm_inf = get_parameter_norm(state.model.parameters(), math.inf)
+        assert torch.isfinite(parameter_norm), f"Gradient was too large {parameter_norm}."
+        assert torch.isfinite(parameter_norm_inf), f"Gradient was too large {parameter_norm_inf}."
+        log("grad_norm/two", parameter_norm.item())
+        log("grad_norm/inf", parameter_norm_inf.item())
+        log("grad_norm/max_norm", state.clipper.max_norm)
+        [log(f"parameter_{i}/lr", g["lr"]) for i, g in enumerate(state.optimizer.param_groups)]
 
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
         params = state.optimizer.param_groups[0]["params"]
