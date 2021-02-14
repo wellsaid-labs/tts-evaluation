@@ -563,7 +563,7 @@ def split_dataset(
     len_ = lambda _passage: _passage.aligned_audio_length()
     sum_ = lambda _passages: sum([len_(p) for p in _passages])
     with fork_rng(seed=seed):
-        iterator = sorted(dataset.items(), key=lambda i: len(i[1]))
+        iterator = list(sorted(dataset.items(), key=lambda i: (len(i[1]), i[0])))
         for speaker, passages in tqdm.tqdm(iterator):
             if speaker not in dev_speakers:
                 train[speaker] = passages
@@ -589,7 +589,7 @@ def split_dataset(
         while length is None or length != len(dev_scripts):
             logger.info("Rerunning until there are no more duplicates...")
             length = len(dev_scripts)
-            for speaker in tqdm.tqdm(dataset.keys()):
+            for speaker, _ in iterator:
                 duplicates, rest = _find_duplicate_passages(
                     dev_scripts, train[speaker], min_similarity
                 )

@@ -140,3 +140,36 @@ def test_split_dataset__deduplication(_):
         ],
         speaker_c: [passage("I'm testing this!", speaker_c)],
     }
+
+
+@mock.patch("random.shuffle", return_value=None)
+def test_split_dataset__order(_):
+    """ Test `run._config.split_dataset` handles different dictionary orderings. """
+    speaker_a = lib.datasets.Speaker("a")
+    speaker_b = lib.datasets.Speaker("b")
+    alignments = lib.utils.Tuples(
+        [lib.datasets.Alignment((0, 1), (0, 1), (0, 1))], lib.datasets.alignment_dtype
+    )
+    passage = lambda script, speaker: make_passage(
+        script=script, speaker=speaker, alignments=alignments
+    )
+    dev_speakers = set([speaker_a, speaker_b])
+    dev_length = 1
+    dataset = {}
+    dataset[speaker_a] = [
+        passage("This is a test!", speaker_a),
+        passage("I'm testing this.", speaker_a),
+    ]
+    dataset[speaker_b] = [
+        passage("I'm testing this.", speaker_b),
+        passage("This is a test!", speaker_b),
+    ]
+    other_dataset = {}
+    other_dataset[speaker_b] = dataset[speaker_b]
+    other_dataset[speaker_a] = dataset[speaker_a]
+    assert list(other_dataset.keys()) != list(dataset.keys())
+
+    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9)
+    other_train, other_dev = split_dataset(other_dataset, dev_speakers, dev_length, 0.9)
+    assert train == other_train
+    assert dev == other_dev
