@@ -12,6 +12,7 @@ import pathlib
 import platform
 import random
 import sys
+import time
 import typing
 from functools import partial
 from itertools import chain
@@ -397,6 +398,7 @@ class _DataLoader(collections.abc.Iterable):
         return self.num_frames / self.num_spans
 
     def __iter__(self) -> typing.Iterator[SpanBatch]:
+        first = time.time()
         while True:
             batch = next(self.loader)
             self.num_frames += batch.spectrogram.lengths.float().sum().item()
@@ -406,6 +408,10 @@ class _DataLoader(collections.abc.Iterable):
             # > because of many subtleties in using CUDA and sharing CUDA tensors in multiprocessing
             # https://pytorch.org/docs/stable/data.html#multi-process-data-loading
             yield typing.cast(SpanBatch, tensors_to(batch, device=self.device, non_blocking=True))
+            if first is not None:  # NOTE: The first batch will take the longest to load.
+                elapsed = lib.utils.seconds_to_string(time.time() - first)
+                logger.info("Time to first batch was %s.", elapsed)
+                first = None
 
 
 @configurable
@@ -635,6 +641,30 @@ class _DistributedMetrics:
         if is_multiprocessing and platform.system() != "Darwin":
             iterator = typing.cast(_MultiProcessingDataLoaderIter, data_loader.loader)
             self.append(self.data_queue_size, iterator._data_queue.qsize())
+
+    def log_optimizer_metrics(
+        self, optimizer: torch.optim.Adam, clipper: lib.optimizers.AdaptiveGradientNormClipper
+    ):
+        """Log optimizer metrics for `optimizer` and `clipper`. The model parameters have already
+        been sync'd; therefore, there is no need to further sync parameters.
+
+        TODO: Incorperate `optimizer_metrics` into the standard `_DistributedMetrics` usage.
+        """
+        label_ = partial(get_model_label, cadence=Cadence.STEP)
+        log = lambda n, v: self.comet.log_metric(label_(n), v)
+
+        assert len(optimizer.param_groups) == 1, "Expecting only 1 group of parameters."
+        param_group = optimizer.param_groups[0]
+        parameter_norm = get_parameter_norm(param_group["params"], 2)
+        parameter_norm_inf = get_parameter_norm(param_group["params"], math.inf)
+        assert torch.isfinite(parameter_norm), f"Gradient was too large {parameter_norm}."
+        assert torch.isfinite(parameter_norm_inf), f"Gradient was too large {parameter_norm_inf}."
+        log("grad_norm/two", parameter_norm.item())
+        log("grad_norm/inf", parameter_norm_inf.item())
+        log("lr", param_group["lr"])
+
+        if math.isfinite(clipper.max_norm):  # NOTE: Initially, `max_norm` will be `inf`.
+            log("grad_norm/max_norm", clipper.max_norm)
 
     @staticmethod
     def _div(num: _Measurements, denom: _Measurements, reduce: _Reduce) -> typing.Optional[float]:
@@ -870,21 +900,11 @@ def _run_step(
         (spectrogram_loss_ + stop_token_loss_).backward()
 
         # NOTE: Measure the "grad_norm" before `clipper.clip()`.
-        label_ = partial(get_model_label, cadence=Cadence.STEP)
-        log = lambda n, v: state.comet.log_metric(label_(n), v)
-        parameter_norm = get_parameter_norm(state.model.parameters(), 2)
-        parameter_norm_inf = get_parameter_norm(state.model.parameters(), math.inf)
-        assert torch.isfinite(parameter_norm), f"Gradient was too large {parameter_norm}."
-        assert torch.isfinite(parameter_norm_inf), f"Gradient was too large {parameter_norm_inf}."
-        log("grad_norm/two", parameter_norm.item())
-        log("grad_norm/inf", parameter_norm_inf.item())
-        log("grad_norm/max_norm", state.clipper.max_norm)
-        [log(f"parameter_{i}/lr", g["lr"]) for i, g in enumerate(state.optimizer.param_groups)]
+        metrics.log_optimizer_metrics(state.optimizer, state.clipper)
 
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
         params = state.optimizer.param_groups[0]["params"]
         assert all([p.grad is not None for p in params]), "No gradients found."
-
         state.clipper.clip()
         state.optimizer.step()
         state.step.add_(1)

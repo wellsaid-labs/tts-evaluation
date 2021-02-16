@@ -404,9 +404,7 @@ class MappedIterator(typing.Generic[_MappedIteratorItem]):
         assert index >= self.offset, "Items may only be accessed once."
         self.iter = iter(self.iterator) if self.iter is None else self.iter
         for _ in range(index - self.offset):
-            call_once(logger.info, "MappedIterator: Loading first item...")
             next(self.iter)
-            call_once(logger.info, "MappedIterator: Loaded first item.")
         self.offset = index + 1
         return next(self.iter)
 
