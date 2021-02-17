@@ -526,10 +526,31 @@ def _find_duplicate_passages(
     return duplicates, rest
 
 
+DEV_SPEAKERS = [
+    lib.datasets.ADRIENNE_WALKER_HELLER,
+    lib.datasets.ALICIA_HARRIS__MANUAL_POST,
+    lib.datasets.BETH_CAMERON,
+    lib.datasets.ELISE_RANDALL,
+    lib.datasets.FRANK_BONACQUISTI,
+    lib.datasets.GEORGE_DRAKE_JR,
+    lib.datasets.HANUMAN_WELCH,
+    lib.datasets.HEATHER_DOE,
+    lib.datasets.HILARY_NORIEGA,
+    lib.datasets.JACK_RUTKOWSKI__MANUAL_POST,
+    lib.datasets.JOHN_HUNERLACH__NARRATION,
+    lib.datasets.JOHN_HUNERLACH__RADIO,
+    lib.datasets.MARK_ATHERLAY,
+    lib.datasets.MEGAN_SINCLAIR,
+    lib.datasets.SAM_SCHOLL__MANUAL_POST,
+    lib.datasets.STEVEN_WAHLBERG,
+    lib.datasets.SUSAN_MURPHY,
+]
+
+
 @lib.utils.log_runtime
 def split_dataset(
     dataset: Dataset,
-    dev_speakers: typing.Set[lib.datasets.Speaker] = set(WSL_DATASETS.keys()),
+    dev_speakers: typing.Set[lib.datasets.Speaker] = set(DEV_SPEAKERS),
     approximate_dev_length: int = 30 * 60,
     min_similarity: float = 0.9,
     seed: int = 123,
