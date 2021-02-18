@@ -484,7 +484,7 @@ class _DistributedMetrics:
         max_num_frames: The maximum number of frames, in a spectrogram, seen.
         num_reached_max: This measures the number of predicted spectrograms that reach max frames
             each step.
-        num_reached_max_per_speaker:  This measures the number of predicted spectrograms that reach
+        num_reached_max_per_speaker: This measures the number of predicted spectrograms that reach
             max frames each step per speaker.
         predicted_frame_rms_level: This measures the sum of the RMS level for each predicted frame
             in each step.
