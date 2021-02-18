@@ -1,6 +1,7 @@
 import pathlib
 import shutil
 import tempfile
+import typing
 from unittest import mock
 
 import torch
@@ -9,6 +10,7 @@ import lib
 import run
 from lib.datasets import JUDY_BIEBER, LINDA_JOHNSON, m_ailabs_en_us_judy_bieber_speech_dataset
 from run._config import Cadence, DatasetType
+from run._spectrogram_model import SpanBatch
 from run._utils import Context
 from run.train.spectrogram_model import (
     _configure,
@@ -92,12 +94,12 @@ def test_integration(mock_urlretrieve):
     assert state.model.module == state.model  # Enusre the mock worked
     # fmt: off
     assert state.input_encoder.grapheme_encoder.vocab == [
-        '<pad>', '<unk>', '</s>', '<s>', '<copy>', 't', 'h', 'e', ' ', 'b', 'o', 'y', 'n', 'd', '.',
-        'm', 'r', 'a', 's', 'w', 'l', ',', 'i', 'f', 'u', 'k', 'g'
+        '<pad>', '<unk>', '</s>', '<s>', '<copy>', 'a', 't', ' ', 'w', 'l', 's', ',', 'i', 'n', 'f',
+        'o', 'r', 'd', 'h', 'e', 'b', 'y', '.', 'm', 'u', 'k', 'g'
     ]
     # fmt: on
     assert state.input_encoder.speaker_encoder.vocab == list(train_dataset.keys())
-    assert state.model.vocab_size == state.input_encoder.grapheme_encoder.vocab_size
+    assert state.model.vocab_size == state.input_encoder.phoneme_encoder.vocab_size
     assert state.model.num_speakers == state.input_encoder.speaker_encoder.vocab_size
 
     batch_size = 1
@@ -108,7 +110,7 @@ def test_integration(mock_urlretrieve):
     # Test `_run_step` with `_DistributedMetrics` and `_State`
     with run._utils.set_context(Context.TRAIN, state.model, comet):
         metrics = _DistributedMetrics(comet, device)
-        batch = next(iter(train_loader))
+        batch = typing.cast(SpanBatch, next(iter(train_loader)))
         assert state.step.item() == 0
 
         _run_step(state, metrics, batch, train_loader, DatasetType.TRAIN, True)
@@ -116,14 +118,14 @@ def test_integration(mock_urlretrieve):
         assert metrics.batch_size == [batch.length]
         assert metrics.num_frames == [batch.spectrogram.lengths[0].item()]
         assert metrics.num_spans_per_text_length == {
-            len(batch.text[0]) // metrics.text_length_bucket_size: 1.0
+            len(batch.spans[0].script) // metrics.text_length_bucket_size: 1.0
         }
         assert metrics.num_frames_per_speaker == {
-            batch.speaker[0]: batch.spectrogram.lengths[0].item()
+            batch.spans[0].speaker: batch.spectrogram.lengths[0].item()
         }
-        assert list(metrics.num_skips_per_speaker.keys()) == batch.speaker
+        assert list(metrics.num_skips_per_speaker.keys()) == [s.speaker for s in batch.spans]
         assert metrics.num_tokens_per_speaker == {
-            batch.speaker[0]: batch.encoded_text.lengths[0].item()
+            batch.spans[0].speaker: batch.encoded_phonemes.lengths[0].item()
         }
         assert len(metrics.predicted_frame_alignment_std) == 1
         assert len(metrics.predicted_frame_alignment_norm) == 1
@@ -135,10 +137,10 @@ def test_integration(mock_urlretrieve):
     # Test `_run_inference` with `_DistributedMetrics` and `_State`
     with run._utils.set_context(Context.EVALUATE_INFERENCE, state.model, comet):
         metrics = _DistributedMetrics(comet, device)
-        batch = next(iter(dev_loader))
+        batch = typing.cast(SpanBatch, next(iter(train_loader)))
         _run_inference(state, metrics, batch, dev_loader, DatasetType.DEV, True)
         assert state.step.item() == 1
-        assert metrics.num_reached_max_frames[0] + metrics.batch_size[0] == 1
+        assert metrics.num_overflowed[0] + metrics.batch_size[0] == 1
 
         metrics.log(lambda l: l[-1], DatasetType.DEV, Cadence.STEP)
         metrics.log(sum, DatasetType.DEV, Cadence.MULTI_STEP)

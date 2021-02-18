@@ -172,7 +172,10 @@ class _State:
         dev_dataset: run._config.Dataset,
         comet: CometMLExperiment,
     ) -> InputEncoder:
-        """ Initialize an input encoder to encode model input. """
+        """Initialize an input encoder to encode model input.
+
+        TODO: For some reason, Comet doesn't log: "phoneme_vocab".
+        """
         passages = chain(*tuple(chain(train_dataset.values(), dev_dataset.values())))
         input_encoder = InputEncoder(
             flatten([p.script for p in passages]),
@@ -389,8 +392,8 @@ class _DataLoader(collections.abc.Iterable):
             **kwargs,
         )
         self.loader = iter(loader)
-        self.num_frames = 0
-        self.num_spans = 0
+        self.num_frames = 0.0
+        self.num_spans = 0.0
         logger.info("Created `DataLoader`.")
 
     @property
@@ -464,6 +467,7 @@ class _DistributedMetrics:
         predicted_frame_alignment_std: This measures the discrete standard deviation of an alignment
             from a frame to the tokens. As the alignment per frame is localized to a couple
             sequential tokens in the input, this metric goes to zero.
+        num_predictions_per_speaker: The number of spectrograms predicted per speaker for each step.
         num_skips_per_speaker: In the predicted alignment, this tracks the number of tokens
             that were skipped per speaker. This could indicate that the model has issues, or that
             the dataset is flawed.
@@ -478,8 +482,10 @@ class _DistributedMetrics:
         num_frames_predicted: This measures the number of frames predicte each step.
         num_frames: This measures the number of frames in each step.
         max_num_frames: The maximum number of frames, in a spectrogram, seen.
-        num_reached_max_frames: This measures the number of predicted spectrograms that reach max
-            frames each step.
+        num_reached_max: This measures the number of predicted spectrograms that reach max frames
+            each step.
+        num_reached_max_per_speaker:  This measures the number of predicted spectrograms that reach
+            max frames each step per speaker.
         predicted_frame_rms_level: This measures the sum of the RMS level for each predicted frame
             in each step.
         spectrogram_loss: This measures the difference between the original and predicted
@@ -496,6 +502,9 @@ class _DistributedMetrics:
     data_queue_size: typing.List[float] = dataclasses.field(default_factory=list)
     predicted_frame_alignment_norm: typing.List[float] = dataclasses.field(default_factory=list)
     predicted_frame_alignment_std: typing.List[float] = dataclasses.field(default_factory=list)
+    num_predictions_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
+        default_factory=lambda: collections.defaultdict(float)
+    )
     num_skips_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
         default_factory=lambda: collections.defaultdict(float)
     )
@@ -516,7 +525,10 @@ class _DistributedMetrics:
     num_frames_predicted: typing.List[float] = dataclasses.field(default_factory=list)
     num_frames: typing.List[float] = dataclasses.field(default_factory=list)
     max_num_frames: int = dataclasses.field(default_factory=int)
-    num_reached_max_frames: typing.List[float] = dataclasses.field(default_factory=list)
+    num_reached_max: typing.List[float] = dataclasses.field(default_factory=list)
+    num_reached_max_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
+        default_factory=lambda: collections.defaultdict(float)
+    )
     predicted_frame_rms_level: typing.List[float] = dataclasses.field(default_factory=list)
     spectrogram_loss: typing.List[float] = dataclasses.field(default_factory=list)
     stop_token_loss: typing.List[float] = dataclasses.field(default_factory=list)
@@ -596,6 +608,21 @@ class _DistributedMetrics:
             self.num_skips_per_speaker[speaker] += _num_skipped
             self.num_tokens_per_speaker[speaker] += _num_tokens
 
+    def update_reached_max_metrics(
+        self, batch: SpanBatch, input_encoder: InputEncoder, reached_max: torch.Tensor
+    ):
+        """
+        Args:
+            ...
+            reached_max (torch.BoolTensor [1, batch_size])
+        """
+        self.append(self.num_reached_max, reached_max)
+        iterator = zip(self.gather(batch.encoded_speaker.tensor), self.gather(reached_max))
+        for speaker_index, has_reached_max in iterator:
+            speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
+            self.num_reached_max_per_speaker[speaker] += has_reached_max
+            self.num_predictions_per_speaker[speaker] += 1
+
     def update_rms_metrics(
         self,
         target_spectrogram: torch.Tensor,
@@ -672,18 +699,6 @@ class _DistributedMetrics:
             return None
         return reduce(num) / reduce(denom)
 
-    def get_reached_max_frames(self, reduce: _Reduce):
-        """NOTE: The predicted `self.batch_size` does not include predictions that overflowed. The
-        total number of predicted spectrograms is equal to `batch_size` plus
-        `num_reached_max_frames`.
-        """
-        if len(self.num_reached_max_frames) == 0 or len(self.batch_size) == 0:
-            return None
-        denom = reduce(self.batch_size) + reduce(self.num_reached_max_frames)
-        if denom == 0:
-            return None
-        return reduce(self.num_reached_max_frames) / denom
-
     @configurable
     def get_model_metrics(self, reduce: _Reduce, num_frame_channels=HParam(), **kwargs) -> _Metrics:
         """ Get model metrics. """
@@ -697,7 +712,6 @@ class _DistributedMetrics:
             "average_relative_speed": div(self.num_frames_predicted, self.num_frames),
             "stop_token_accuracy": div(self.stop_token_num_correct, self.num_frames),
             "stop_token_loss": div(self.stop_token_loss, self.num_frames),
-            "reached_max_frames": self.get_reached_max_frames(reduce),
             "spectrogram_loss": spectrogram_loss,
         }
         return {get_model_label(k, **kwargs): v for k, v in metrics.items()}
@@ -769,6 +783,28 @@ class _DistributedMetrics:
             metrics[get_model_label("skips", speaker=speaker, **kwargs)] = num_skips / num_tokens
         return metrics
 
+    def get_reached_max_frames(self, reduce: _Reduce):
+        """NOTE: The predicted `self.batch_size` does not include predictions that overflowed. The
+        total number of predicted spectrograms is equal to `batch_size` plus `num_reached_max`.
+        """
+        if len(self.num_reached_max) == 0 or len(self.batch_size) == 0:
+            return None
+        denom = reduce(self.batch_size) + reduce(self.num_reached_max)
+        if denom == 0:
+            return None
+        return reduce(self.num_reached_max) / denom
+
+    def get_reached_max_metrics(self, reduce: _Reduce, **kwargs) -> _Metrics:
+        """ Get metrics on model overflow per speaker via attention. """
+        name = "reached_max_frames"
+        metrics = {get_model_label(name, **kwargs): self.get_reached_max_frames(reduce)}
+        for (speaker, num_predictions), num_reached_max in zip(
+            self.num_predictions_per_speaker.items(), self.num_reached_max_per_speaker.values()
+        ):
+            label = get_model_label(name, speaker=speaker, **kwargs)
+            metrics[label] = num_reached_max / num_predictions
+        return metrics
+
     def log(self, reduce: _Reduce, dataset_type: DatasetType, cadence: Cadence):
         """Log metrics to `self.comet`.
 
@@ -789,6 +825,7 @@ class _DistributedMetrics:
                 **self.get_text_length_metrics(cadence=cadence, type_=dataset_type),
                 **self.get_speaker_frequency_metrics(cadence=cadence, type_=dataset_type),
                 **self.get_attention_skip_metrics(cadence=cadence),
+                **self.get_reached_max_metrics(reduce=reduce, cadence=cadence),
             }
             metrics.update(more_metrics)
 
@@ -1059,7 +1096,7 @@ def _run_inference(
         state.input_encoder,
     )
     metrics.update_data_queue_size(data_loader)
-    metrics.append(metrics.num_reached_max_frames, reached_max)
+    metrics.update_reached_max_metrics(batch, state.input_encoder, reached_max)
 
 
 _BatchHandler = typing.Callable[
